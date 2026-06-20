@@ -1,0 +1,17 @@
+[
+  "hi",
+  "status?",
+  "ok",
+  "thanks!",
+  "what is the status of TASK-1?",
+  "summarise the last three messages",
+  "which agent holds the parser claim?",
+  "explain how the SQLite WAL durability split works and when it can lose data",
+  "design a fault-tolerant architecture for the relay log",
+  "prove that the wait-for graph has no cycle after the release",
+  "refactor the tokenizer to separate grammar from lexing",
+  "analyze the token savings of the lite relay format versus raw json on a session",
+  "optimise the broadcast path to avoid serialising the same json once per client",
+  "derive the formula for the idempotency cache hit rate under reconnect retries",
+  "I would like a thorough walkthrough of every step an agent takes from connecting to the hub through claiming a task, saving a checkpoint, handing it off to a peer, and finally releasing it, including which messages travel each way and how the hub keeps its state consistent across a restart"
+]

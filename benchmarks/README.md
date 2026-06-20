@@ -67,3 +67,33 @@ account for the `lite`-vs-`raw_core_compact` ratio (**87%**); the rest of the
 reduction is the lite format dropping auxiliary fields an observer does not need.
 Core-field roundtrip fidelity is exact. These figures are specific to this
 fixture — re-run against your own trace for a representative number.
+
+## `routing_benchmark.py`
+
+Measures how the task-class router (`synapse_channel.routing.classify`) sorts a
+fixed prompt set into `rule`, `slm`, and `heavy`, and verifies that a
+`TieredChatClient` dispatches each prompt to the backend for its class. The
+output is the class distribution, the per-prompt decision, and a
+`routing_verified` flag — all exact and reproducible.
+
+Backend *latency* is intentionally not measured here: the `slm` and `heavy`
+tiers need a live model server, so timing them is not reproducible offline. The
+committed numbers are the routing decisions only; benchmark real per-tier latency
+against your own model server.
+
+### Run
+
+```bash
+python benchmarks/routing_benchmark.py
+```
+
+### Committed result (routing_prompts.json, 15 prompts)
+
+| Class | Prompts |
+| --- | --- |
+| `rule` | 4 |
+| `slm` | 4 |
+| `heavy` | 7 |
+
+Tiered dispatch verified. The split is specific to this prompt set and the
+default thresholds — tune `rule_max_chars`/`heavy_min_chars` for your workload.

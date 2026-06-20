@@ -228,6 +228,7 @@ def _worker_ns(**overrides: Any) -> argparse.Namespace:
         "min_reply_interval": 0.7,
         "token": None,
         "task_class": None,
+        "heavy_model": "",
     }
     base.update(overrides)
     return argparse.Namespace(**base)
@@ -690,12 +691,21 @@ def test_cmd_worker_threads_task_classes(monkeypatch: pytest.MonkeyPatch) -> Non
             return None
 
     monkeypatch.setattr("synapse_channel.cli.SynapseLLMWorker", FakeWorker)
-    assert cli._cmd_worker(_worker_ns(task_class=["reason"])) == 0
+    assert cli._cmd_worker(_worker_ns(task_class=["reason"], heavy_model="big")) == 0
     assert captured["task_classes"] == ("reason",)
+    assert captured["heavy_model"] == "big"
     # Without --task-class the worker advertises the default class.
     captured.clear()
     assert cli._cmd_worker(_worker_ns()) == 0
     assert captured["task_classes"] == ("chat",)
+
+
+def test_parser_worker_tiered_provider_and_heavy_model() -> None:
+    args = cli.build_parser().parse_args(
+        ["worker", "--provider", "tiered", "--heavy-model", "big"]
+    )
+    assert args.provider == "tiered"
+    assert args.heavy_model == "big"
 
 
 def test_print_manifest_renders_cards(capsys: pytest.CaptureFixture[str]) -> None:

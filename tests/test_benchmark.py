@@ -15,11 +15,18 @@ from pathlib import Path
 
 import pytest
 
-_BENCH_PATH = Path(__file__).resolve().parents[1] / "benchmarks" / "relay_token_benchmark.py"
+_BENCHMARKS = Path(__file__).resolve().parents[1] / "benchmarks"
+_BENCH_PATH = _BENCHMARKS / "relay_token_benchmark.py"
 _SPEC = importlib.util.spec_from_file_location("relay_token_benchmark", _BENCH_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
 bench = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(bench)
+
+_ROUTING_PATH = _BENCHMARKS / "routing_benchmark.py"
+_ROUTING_SPEC = importlib.util.spec_from_file_location("routing_benchmark", _ROUTING_PATH)
+assert _ROUTING_SPEC is not None and _ROUTING_SPEC.loader is not None
+routing_bench = importlib.util.module_from_spec(_ROUTING_SPEC)
+_ROUTING_SPEC.loader.exec_module(routing_bench)
 
 
 def test_get_encoder_returns_real_tokenizer_when_available() -> None:
@@ -115,4 +122,50 @@ def test_main_runs_and_writes(tmp_path: Path, capsys: pytest.CaptureFixture[str]
     assert bench.main(["--results", str(results)]) == 0
     out = capsys.readouterr().out
     assert "core-field roundtrip fidelity: True" in out
+    assert results.exists()
+
+
+# --- routing benchmark -------------------------------------------------------
+
+
+def test_routing_tag_backend_returns_its_tag() -> None:
+    backend = routing_bench._TagBackend("rule")
+    assert backend.generate(system_prompt="", user_prompt="x") == "rule"
+
+
+def test_routing_load_prompts_reads_committed_set() -> None:
+    prompts = routing_bench.load_prompts(routing_bench.DEFAULT_TRACE)
+    assert len(prompts) == 15
+    assert prompts[0] == "hi"
+
+
+def test_routing_summarize_distribution_and_dispatch() -> None:
+    summary = routing_bench.summarize(["hi", "design a coordination system for agents now"])
+    assert summary["prompts"] == 2
+    assert summary["distribution"]["rule"] == 1
+    assert summary["distribution"]["heavy"] == 1
+    assert summary["routing_verified"] is True
+
+
+def test_routing_run_writes_results(tmp_path: Path) -> None:
+    results = tmp_path / "routing.json"
+    summary = routing_bench.run(routing_bench.DEFAULT_TRACE, results)
+    assert summary["trace"] == "routing_prompts.json"
+    assert summary["prompts"] == 15
+    written = json.loads(results.read_text(encoding="utf-8"))
+    assert written["routing_verified"] is True
+
+
+def test_routing_run_without_results_skips_write(tmp_path: Path) -> None:
+    summary = routing_bench.run(routing_bench.DEFAULT_TRACE, None)
+    assert summary["prompts"] == 15
+    assert not list(tmp_path.iterdir())
+
+
+def test_routing_main_runs_and_writes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    results = tmp_path / "routing.json"
+    assert routing_bench.main(["--results", str(results)]) == 0
+    assert "routing dispatch verified: True" in capsys.readouterr().out
     assert results.exists()

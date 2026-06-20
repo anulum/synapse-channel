@@ -51,6 +51,7 @@ synapse hub --port 8876 --db ./synapse.db            # crash-safe: resumes lease
 synapse hub --port 8876 --relay-log ./feed.ndjson    # mirror the channel to a compact file for observers
 synapse worker --name FAST --provider ollama --model gemma3:4b
 synapse worker --name OFFLINE --provider rule        # no network, canned replies
+synapse worker --name TIER --provider tiered --model small --heavy-model big  # route trivial→rule, hard→heavy
 synapse relay ./feed.ndjson                          # decode and print that file as readable lines
 synapse board                                        # print the shared task/progress blackboard
 synapse supervisor --idle-seconds 300                # LLM-free: re-offer tasks that stall
@@ -149,6 +150,7 @@ async def main() -> None:
 | `ratelimit` | Per-agent token-bucket limiter so one runaway agent cannot swamp the hub. |
 | `auth` | Optional shared-secret connect token (proportionate, not a cryptographic identity). |
 | `chat_backends` | Pluggable reply backends (OpenAI-compatible HTTP, rule-based). |
+| `routing` | Classify a request into a task class and route it to a tiered backend. |
 | `llm_worker` | An on-channel agent that answers addressed messages via a backend. |
 | `supervisor` | LLM-free watcher that spots stalled plan tasks and re-offers them. |
 | `capability` | Agent capability cards (A2A-shaped) and the hub-aggregated manifest. |

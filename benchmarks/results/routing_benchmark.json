@@ -1,0 +1,72 @@
+{
+  "by_prompt": [
+    {
+      "class": "rule",
+      "prompt": "hi"
+    },
+    {
+      "class": "rule",
+      "prompt": "status?"
+    },
+    {
+      "class": "rule",
+      "prompt": "ok"
+    },
+    {
+      "class": "rule",
+      "prompt": "thanks!"
+    },
+    {
+      "class": "slm",
+      "prompt": "what is the status of TASK-1?"
+    },
+    {
+      "class": "slm",
+      "prompt": "summarise the last three messages"
+    },
+    {
+      "class": "slm",
+      "prompt": "which agent holds the parser claim?"
+    },
+    {
+      "class": "slm",
+      "prompt": "explain how the SQLite WAL durability split works and when it can lose data"
+    },
+    {
+      "class": "heavy",
+      "prompt": "design a fault-tolerant architecture for the relay log"
+    },
+    {
+      "class": "heavy",
+      "prompt": "prove that the wait-for graph has no cycle after the release"
+    },
+    {
+      "class": "heavy",
+      "prompt": "refactor the tokenizer to separate grammar from lexing"
+    },
+    {
+      "class": "heavy",
+      "prompt": "analyze the token savings of the lite relay format versus raw json on a session"
+    },
+    {
+      "class": "heavy",
+      "prompt": "optimise the broadcast path to avoid serialising the same json once per client"
+    },
+    {
+      "class": "heavy",
+      "prompt": "derive the formula for the idempotency cache hit rate under reconnect retries"
+    },
+    {
+      "class": "heavy",
+      "prompt": "I would like a thorough walkthrough of every step an agent takes from connecting to the hub through claiming a task, saving a checkpoint, handing it off to a peer, and finally releasing it, including which messages travel each way and how the hub keeps its state consistent across a restart"
+    }
+  ],
+  "distribution": {
+    "heavy": 7,
+    "rule": 4,
+    "slm": 4
+  },
+  "prompts": 15,
+  "routing_verified": true,
+  "trace": "routing_prompts.json"
+}

@@ -113,6 +113,9 @@ class SynapseLLMWorker:
     task_classes : tuple[str, ...] or list[str], optional
         Routing classes this worker advertises on its capability card; defaults
         to ``("chat",)``.
+    heavy_model : str, optional
+        Model used for the ``heavy`` tier when ``provider="tiered"``; defaults to
+        ``model`` when empty.
     """
 
     def __init__(
@@ -129,11 +132,13 @@ class SynapseLLMWorker:
         min_reply_interval: float = 0.7,
         token: str | None = None,
         task_classes: tuple[str, ...] | list[str] = ("chat",),
+        heavy_model: str = "",
     ) -> None:
         self.name = name
         self.uri = uri
         self.provider = provider
         self.model = model
+        self.heavy_model = heavy_model or model
         self.base_url = base_url
         self.api_key_env = api_key_env
         self.reply_target_mode = reply_target_mode
@@ -154,30 +159,46 @@ class SynapseLLMWorker:
         Returns
         -------
         ChatBackend
-            A :class:`RuleBasedClient` or :class:`OpenAIChatClient`.
+            A :class:`RuleBasedClient`, :class:`OpenAIChatClient`, or a
+            :class:`~synapse_channel.routing.TieredChatClient` for ``tiered``.
 
         Raises
         ------
         RuntimeError
-            If ``provider`` is not one of ``rule``, ``openai``, or ``ollama``.
+            If ``provider`` is not ``rule``, ``openai``, ``ollama``, or ``tiered``.
         """
         if self.provider == "rule":
             return RuleBasedClient(agent_name=self.name)
         if self.provider in ("openai", "ollama"):
-            api_key = os.getenv(self.api_key_env, "").strip() or "ollama"
-            effective_base = self.base_url
-            # A local Ollama preset left on the OpenAI default is redirected to
-            # the local server, which speaks the same /v1 protocol.
-            if self.provider == "ollama" and self.base_url == OPENAI_DEFAULT_BASE_URL:
-                effective_base = DEFAULT_OLLAMA_BASE_URL
-            return OpenAIChatClient(
-                api_key=api_key,
-                model=self.model,
-                base_url=effective_base,
-                timeout_seconds=60.0,
-            )
+            return self._http_client(self.model)
+        if self.provider == "tiered":
+            return self._build_tiered_client()
         raise RuntimeError(
-            f"Unsupported provider '{self.provider}'. Use openai, ollama or rule."
+            f"Unsupported provider '{self.provider}'. Use openai, ollama, rule, or tiered."
+        )
+
+    def _http_client(self, model: str) -> OpenAIChatClient:
+        """Build an OpenAI-compatible HTTP client for ``model``."""
+        api_key = os.getenv(self.api_key_env, "").strip() or "ollama"
+        effective_base = self.base_url
+        # A local Ollama preset left on the OpenAI default is redirected to the
+        # local server, which speaks the same /v1 protocol.
+        if self.provider in ("ollama", "tiered") and self.base_url == OPENAI_DEFAULT_BASE_URL:
+            effective_base = DEFAULT_OLLAMA_BASE_URL
+        return OpenAIChatClient(
+            api_key=api_key, model=model, base_url=effective_base, timeout_seconds=60.0
+        )
+
+    def _build_tiered_client(self) -> ChatBackend:
+        """Build a tiered backend: a rule path plus SLM and heavy HTTP models."""
+        from synapse_channel.routing import TaskClass, TieredChatClient
+
+        return TieredChatClient(
+            {
+                TaskClass.RULE: RuleBasedClient(agent_name=self.name),
+                TaskClass.SLM: self._http_client(self.model),
+                TaskClass.HEAVY: self._http_client(self.heavy_model),
+            }
         )
 
     async def on_message(self, data: dict[str, Any]) -> None:

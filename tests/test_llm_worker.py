@@ -132,6 +132,18 @@ def test_build_client_rejects_unknown_provider() -> None:
         _worker(provider="telepathy")
 
 
+def test_build_client_tiered_returns_router() -> None:
+    from synapse_channel.routing import TieredChatClient
+
+    worker = _worker(provider="tiered", model="small", heavy_model="big")
+    assert isinstance(worker.client, TieredChatClient)
+
+
+def test_heavy_model_defaults_to_model() -> None:
+    worker = _worker(provider="rule", model="m")
+    assert worker.heavy_model == "m"
+
+
 # --- _should_reply -----------------------------------------------------------
 
 

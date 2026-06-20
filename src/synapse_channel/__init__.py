@@ -18,7 +18,7 @@ command (see :mod:`synapse_channel.cli`) drives all of it.
 
 from __future__ import annotations
 
-__version__ = "0.16.0"
+__version__ = "0.17.0"
 
 from synapse_channel.auth import TokenAuthenticator
 from synapse_channel.capability import CapabilityCard, CapabilityRegistry
@@ -42,6 +42,7 @@ from synapse_channel.protocol import (
     system_message,
 )
 from synapse_channel.relay import decode_lite, encode_lite
+from synapse_channel.routing import TaskClass, TieredChatClient, classify
 from synapse_channel.scoping import paths_overlap, scopes_conflict
 from synapse_channel.state import ResourceOffer, SynapseState, TaskClaim
 from synapse_channel.supervisor import Intervention, SupervisorWorker, detect_stalls
@@ -66,11 +67,14 @@ __all__ = [
     "SynapseLLMWorker",
     "SynapseState",
     "TaskClaim",
+    "TaskClass",
     "TaskStatus",
+    "TieredChatClient",
     "TokenAuthenticator",
     "__version__",
     "build_envelope",
     "can_transition",
+    "classify",
     "decode_lite",
     "detect_stalls",
     "encode_lite",

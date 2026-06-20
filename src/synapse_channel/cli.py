@@ -109,6 +109,7 @@ def _cmd_worker(args: argparse.Namespace) -> int:
         min_reply_interval=args.min_reply_interval,
         token=args.token,
         task_classes=tuple(args.task_class) if args.task_class else ("chat",),
+        heavy_model=args.heavy_model,
     )
     try:
         _run(worker.run())
@@ -462,8 +463,13 @@ def build_parser() -> argparse.ArgumentParser:
     worker = sub.add_parser("worker", help="Run an on-channel model worker.")
     worker.add_argument("--name", default="FAST")
     worker.add_argument("--uri", default=DEFAULT_HUB_URI)
-    worker.add_argument("--provider", choices=["openai", "ollama", "rule"], default="ollama")
+    worker.add_argument(
+        "--provider", choices=["openai", "ollama", "rule", "tiered"], default="ollama"
+    )
     worker.add_argument("--model", default="llama3")
+    worker.add_argument(
+        "--heavy-model", default="", help="Model for the heavy tier when --provider tiered."
+    )
     worker.add_argument("--base-url", default=DEFAULT_OLLAMA_BASE_URL)
     worker.add_argument("--api-key-env", default="OPENAI_API_KEY")
     worker.add_argument("--max-context", type=int, default=8)

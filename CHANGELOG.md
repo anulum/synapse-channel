@@ -11,6 +11,23 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.17.0] - 2026-06-20
+
+### Added
+- Task-class routing (`routing` module): `classify` is an LLM-free, deterministic
+  policy that sorts a prompt into `rule`, `slm`, or `heavy` by its length and a
+  small keyword set, and `TieredChatClient` is a chat backend that dispatches
+  each request to the backend for its class (falling back to a default), so
+  trivial requests are answered cheaply and only hard ones reach a heavy model.
+- The model worker gains a `tiered` provider (a rule path plus SLM and heavy HTTP
+  models) and a `--heavy-model` option. `classify`, `TaskClass`, and
+  `TieredChatClient` are exported.
+- A committed routing benchmark (`benchmarks/routing_benchmark.py`): a fixed
+  prompt set with checked-in results reporting the class distribution, the
+  per-prompt decision, and a verification that a tiered client dispatches each
+  prompt to its class. Decisions are exact and reproducible; backend latency is
+  out of the offline scope (the `slm`/`heavy` tiers need a live model server).
+
 ## [0.16.0] - 2026-06-20
 
 ### Added
