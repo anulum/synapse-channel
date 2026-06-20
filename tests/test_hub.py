@@ -152,9 +152,7 @@ async def test_claim_with_invalid_ttl_falls_back_to_default() -> None:
     hub = _hub()
     ws = FakeServerWS()
     await hub.register(ws)
-    await hub.handle_message(
-        _msg(sender="A", type="claim", task_id="T1", ttl_seconds="abc"), ws
-    )
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", ttl_seconds="abc"), ws)
     assert hub.state.claims["T1"].owner == "A"
 
 
@@ -162,9 +160,7 @@ async def test_claim_with_numeric_ttl_is_used() -> None:
     hub = _hub()
     ws = FakeServerWS()
     await hub.register(ws)
-    await hub.handle_message(
-        _msg(sender="A", type="claim", task_id="T1", ttl_seconds=120), ws
-    )
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", ttl_seconds=120), ws)
     assert "T1" in hub.state.claims
 
 
@@ -509,9 +505,7 @@ async def test_hub_restart_replays_durable_state(tmp_path: Path) -> None:
     hub_a = SynapseHub(default_ttl_seconds=3600.0, hub_id="syn-a", journal=store_a)
     ws = FakeServerWS()
     await hub_a.register(ws)
-    await hub_a.handle_message(
-        _msg(sender="A", type="claim", task_id="T1", paths=["src"]), ws
-    )
+    await hub_a.handle_message(_msg(sender="A", type="claim", task_id="T1", paths=["src"]), ws)
     await hub_a.handle_message(_msg(sender="A", type="chat", payload="persist me"), ws)
     store_a.close()
 
@@ -1010,9 +1004,7 @@ async def test_ledger_task_posted_is_broadcast() -> None:
     hub = _hub()
     ws = FakeServerWS()
     await hub.register(ws)
-    await hub.handle_message(
-        _msg(sender="P", type="ledger_task", task_id="T1", title="Parser"), ws
-    )
+    await hub.handle_message(_msg(sender="P", type="ledger_task", task_id="T1", title="Parser"), ws)
     posted = [m for m in ws.decoded() if m.get("type") == "ledger_task_posted"]
     assert posted[-1]["task"]["task_id"] == "T1"
     assert posted[-1]["task"]["created_by"] == "P"
@@ -1110,9 +1102,7 @@ async def test_manifest_request_returns_advertised_agents() -> None:
     ws_user = FakeServerWS()
     await hub.register(ws_fast)
     await hub.register(ws_user)
-    await hub.handle_message(
-        _msg(sender="FAST", type="advertise", task_classes=["chat"]), ws_fast
-    )
+    await hub.handle_message(_msg(sender="FAST", type="advertise", task_classes=["chat"]), ws_fast)
     await hub.handle_message(_msg(sender="USER", type="manifest_request"), ws_user)
     snap = ws_user.last()
     assert snap["type"] == "manifest_snapshot"

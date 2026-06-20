@@ -74,9 +74,7 @@ def _factory(
     inbound: list[dict[str, Any]] | None = None,
     idle: bool = True,
 ) -> Callable[..., Any]:
-    def make(
-        name: str, callback: Any, *, uri: str, verbose: bool, token: str | None = None
-    ) -> Any:
+    def make(name: str, callback: Any, *, uri: str, verbose: bool, token: str | None = None) -> Any:
         agent = FakeAgent(
             name,
             callback,
@@ -415,9 +413,7 @@ def test_cmd_relay_prints_decoded_events(
     assert "A -> all (chat): hello" in capsys.readouterr().out
 
 
-def test_cmd_relay_resumes_from_cursor(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cmd_relay_resumes_from_cursor(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     log = tmp_path / "feed.ndjson"
     cursor = tmp_path / "feed.cursor"
     _lite_line(log, "one", 1)
@@ -432,9 +428,7 @@ def test_cmd_relay_resumes_from_cursor(
     assert "one" not in second
 
 
-def test_cmd_relay_uses_since_offset(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cmd_relay_uses_since_offset(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     log = tmp_path / "feed.ndjson"
     _lite_line(log, "skip", 1)
     offset = log.stat().st_size
@@ -644,9 +638,7 @@ async def test_board_threads_token_to_agent() -> None:
 
 
 def test_parser_supervisor() -> None:
-    args = cli.build_parser().parse_args(
-        ["supervisor", "--idle-seconds", "60", "--interval", "5"]
-    )
+    args = cli.build_parser().parse_args(["supervisor", "--idle-seconds", "60", "--interval", "5"])
     assert args.idle_seconds == 60.0
     assert args.interval == 5.0
     assert args.func is cli._cmd_supervisor
@@ -701,9 +693,7 @@ def test_cmd_worker_threads_task_classes(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_parser_worker_tiered_provider_and_heavy_model() -> None:
-    args = cli.build_parser().parse_args(
-        ["worker", "--provider", "tiered", "--heavy-model", "big"]
-    )
+    args = cli.build_parser().parse_args(["worker", "--provider", "tiered", "--heavy-model", "big"])
     assert args.provider == "tiered"
     assert args.heavy_model == "big"
 

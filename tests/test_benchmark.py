@@ -162,9 +162,7 @@ def test_routing_run_without_results_skips_write(tmp_path: Path) -> None:
     assert not list(tmp_path.iterdir())
 
 
-def test_routing_main_runs_and_writes(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_routing_main_runs_and_writes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     results = tmp_path / "routing.json"
     assert routing_bench.main(["--results", str(results)]) == 0
     assert "routing dispatch verified: True" in capsys.readouterr().out

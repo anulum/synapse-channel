@@ -46,9 +46,7 @@ class FakeConnect:
         return None
 
 
-def _install_connection(
-    monkeypatch: pytest.MonkeyPatch, websocket: FakeWebSocket
-) -> None:
+def _install_connection(monkeypatch: pytest.MonkeyPatch, websocket: FakeWebSocket) -> None:
     monkeypatch.setattr(client_module, "connect", lambda uri: FakeConnect(websocket))
 
 

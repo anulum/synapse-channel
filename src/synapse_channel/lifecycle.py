@@ -49,12 +49,8 @@ TERMINAL_STATUSES = frozenset({TaskStatus.DONE, TaskStatus.FAILED})
 
 _TRANSITIONS: dict[str, frozenset[str]] = {
     TaskStatus.CLAIMED: frozenset({TaskStatus.WORKING, TaskStatus.DONE, TaskStatus.FAILED}),
-    TaskStatus.WORKING: frozenset(
-        {TaskStatus.INPUT_REQUIRED, TaskStatus.DONE, TaskStatus.FAILED}
-    ),
-    TaskStatus.INPUT_REQUIRED: frozenset(
-        {TaskStatus.WORKING, TaskStatus.DONE, TaskStatus.FAILED}
-    ),
+    TaskStatus.WORKING: frozenset({TaskStatus.INPUT_REQUIRED, TaskStatus.DONE, TaskStatus.FAILED}),
+    TaskStatus.INPUT_REQUIRED: frozenset({TaskStatus.WORKING, TaskStatus.DONE, TaskStatus.FAILED}),
     TaskStatus.DONE: frozenset(),
     TaskStatus.FAILED: frozenset(),
 }

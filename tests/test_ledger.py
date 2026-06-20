@@ -75,9 +75,7 @@ def test_post_task_requires_id_and_title() -> None:
 def test_post_task_upsert_updates_but_keeps_provenance() -> None:
     board = Blackboard()
     board.post_task(task_id="T1", title="old", author="A", now=1.0)
-    ok, message = board.post_task(
-        task_id="T1", title="new", author="B", description="d", now=5.0
-    )
+    ok, message = board.post_task(task_id="T1", title="new", author="B", description="d", now=5.0)
     assert ok and "re-declared by B" in message
     task = board.tasks["T1"]
     assert task.title == "new"
@@ -89,9 +87,7 @@ def test_post_task_upsert_updates_but_keeps_provenance() -> None:
 
 def test_post_task_cleans_dependencies() -> None:
     board = Blackboard()
-    board.post_task(
-        task_id="T1", title="t", author="A", depends_on=[" T2 ", "T2", "", "T1", "T3"]
-    )
+    board.post_task(task_id="T1", title="t", author="A", depends_on=[" T2 ", "T2", "", "T1", "T3"])
     # Stripped, de-duplicated, self-reference and blanks removed.
     assert board.tasks["T1"].depends_on == ("T2", "T3")
 

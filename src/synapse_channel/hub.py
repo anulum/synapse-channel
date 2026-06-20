@@ -69,6 +69,7 @@ def is_loopback_host(host: str) -> bool:
     """Return whether ``host`` binds only the loopback interface."""
     return host.strip().lower() in LOOPBACK_HOSTS
 
+
 _MUTATING_TYPES = (
     frozenset(
         {
@@ -662,9 +663,7 @@ class SynapseHub:
             ),
         )
 
-    async def _handle_wait_request(
-        self, sender: str, data: dict[str, Any], websocket: Any
-    ) -> None:
+    async def _handle_wait_request(self, sender: str, data: dict[str, Any], websocket: Any) -> None:
         """Register an advisory wait for a held task, refusing deadlock.
 
         The wait is advisory: the hub records that ``sender`` waits for whoever

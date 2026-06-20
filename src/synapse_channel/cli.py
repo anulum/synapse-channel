@@ -73,9 +73,7 @@ def _cmd_hub(args: argparse.Namespace) -> int:
     resumes from it on restart; without it the hub is purely in-memory.
     """
     journal = EventStore(args.db) if args.db else None
-    limiter = (
-        RateLimiter(rate_per_second=args.rate, burst=args.burst) if args.rate > 0 else None
-    )
+    limiter = RateLimiter(rate_per_second=args.rate, burst=args.burst) if args.rate > 0 else None
     authenticator = TokenAuthenticator([args.token]) if args.token else None
     hub = SynapseHub(
         journal=journal,
@@ -508,9 +506,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     relay = sub.add_parser("relay", help="Decode and print a hub's lite relay log.")
     relay.add_argument("relay_log", help="Path to the lite relay log to read.")
-    relay.add_argument(
-        "--since", type=int, default=0, help="Byte offset to start reading from."
-    )
+    relay.add_argument("--since", type=int, default=0, help="Byte offset to start reading from.")
     relay.add_argument(
         "--cursor",
         default=None,
@@ -531,9 +527,7 @@ def build_parser() -> argparse.ArgumentParser:
     supervisor.add_argument("--name", default="SUPERVISOR")
     supervisor.add_argument("--idle-seconds", type=float, default=DEFAULT_IDLE_SECONDS)
     supervisor.add_argument("--interval", type=float, default=DEFAULT_INTERVAL_SECONDS)
-    supervisor.add_argument(
-        "--token", default=None, help="Shared-secret token for a secured hub."
-    )
+    supervisor.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     supervisor.set_defaults(func=_cmd_supervisor)
 
     manifest = sub.add_parser("manifest", help="Print the capability manifest of agents.")

@@ -84,7 +84,5 @@ def test_route_exposes_the_class_decision() -> None:
 
 
 def test_tiered_uses_an_injected_classifier() -> None:
-    tiered = TieredChatClient(
-        {TaskClass.SLM: _Echo("S")}, classifier=lambda prompt: TaskClass.SLM
-    )
+    tiered = TieredChatClient({TaskClass.SLM: _Echo("S")}, classifier=lambda prompt: TaskClass.SLM)
     assert tiered.generate(system_prompt="", user_prompt="design heavy thing").startswith("S:")

@@ -71,9 +71,7 @@ def summarize(prompts: list[str]) -> dict[str, Any]:
         client dispatched each prompt to the backend for its class.
     """
     by_prompt = [{"prompt": prompt, "class": classify(prompt)} for prompt in prompts]
-    distribution = {
-        cls: sum(1 for item in by_prompt if item["class"] == cls) for cls in CLASSES
-    }
+    distribution = {cls: sum(1 for item in by_prompt if item["class"] == cls) for cls in CLASSES}
 
     tiered = TieredChatClient({cls: _TagBackend(cls) for cls in CLASSES})
     routing_verified = all(

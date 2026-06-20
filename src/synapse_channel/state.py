@@ -680,9 +680,7 @@ class SynapseState:
                 self.expired_checkpoints[task] = claim.checkpoint
             del self.claims[task]
 
-    def _expire_resources(
-        self, now: float, ttl: float = DEFAULT_RESOURCE_TTL_SECONDS
-    ) -> None:
+    def _expire_resources(self, now: float, ttl: float = DEFAULT_RESOURCE_TTL_SECONDS) -> None:
         """Drop resource offers not refreshed within ``ttl`` seconds of ``now``."""
         stale = [k for k, r in self.resources.items() if (now - r.offered_at) > ttl]
         for k in stale:

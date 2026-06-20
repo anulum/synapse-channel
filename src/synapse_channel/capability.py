@@ -202,6 +202,4 @@ class CapabilityRegistry:
             Names of live agents that can take the task class.
         """
         self.expire(now)
-        return sorted(
-            name for name, card in self.cards.items() if task_class in card.task_classes
-        )
+        return sorted(name for name, card in self.cards.items() if task_class in card.task_classes)

@@ -122,9 +122,7 @@ def detect_stalls(
                     Intervention(task_id, "reoffer", f"no progress in {int(idle_seconds)}s")
                 )
         elif status == "blocked" and _dependencies_satisfied(task, by_id):
-            interventions.append(
-                Intervention(task_id, "reoffer", "dependencies satisfied")
-            )
+            interventions.append(Intervention(task_id, "reoffer", "dependencies satisfied"))
     return sorted(interventions, key=lambda item: item.task_id)
 
 

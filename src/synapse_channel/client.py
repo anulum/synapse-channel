@@ -436,9 +436,7 @@ class SynapseAgent:
             for the full history. Defaults to ``20``.
         """
         if limit is None:
-            await self.send_message(
-                MessageType.HISTORY_REQUEST, target="System", payload="history"
-            )
+            await self.send_message(MessageType.HISTORY_REQUEST, target="System", payload="history")
             return
         n = max(1, int(limit))
         await self.send_message(
@@ -525,9 +523,7 @@ class SynapseAgent:
             extra["suggested_owner"] = suggested_owner
         await self.send_message(MessageType.LEDGER_TASK_UPDATE, target="System", **extra)
 
-    async def post_progress(
-        self, task_id: str, text: str, *, kind: str = "note"
-    ) -> None:
+    async def post_progress(self, task_id: str, text: str, *, kind: str = "note") -> None:
         """Append a structured progress note to the progress ledger.
 
         Parameters

@@ -50,9 +50,7 @@ def test_rule_based_client_returns_canned_reply() -> None:
 
 
 def test_openai_client_strips_base_url_and_clamps_timeout() -> None:
-    client = OpenAIChatClient(
-        api_key="k", model="m", base_url="http://h/v1/", timeout_seconds=0.1
-    )
+    client = OpenAIChatClient(api_key="k", model="m", base_url="http://h/v1/", timeout_seconds=0.1)
     assert client.base_url == "http://h/v1"
     assert client.timeout_seconds == 3.0
 
