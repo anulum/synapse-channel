@@ -95,7 +95,10 @@ identity system.
    claim whose files overlap another agent's live claim — this is how two agents
    are kept off the same files. Agents in different worktrees never contend.
 3. Leases auto-expire, so a crashed agent never holds a claim forever, and each
-   lease carries an epoch so a superseded agent cannot act on a dead claim.
+   lease carries an epoch so a superseded agent cannot act on a dead claim. An
+   owner can save a durable checkpoint on the task; if its lease lapses, the next
+   agent to claim the task inherits that checkpoint and resumes rather than
+   restarting.
 4. Release on completion; status and an optional artefact reference can be
    attached while the task is in progress. A held task can also be handed off
    atomically to another online agent — keeping its scope, status, and context,

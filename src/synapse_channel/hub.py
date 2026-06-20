@@ -75,6 +75,7 @@ _MUTATING_TYPES = (
             MessageType.RELEASE,
             MessageType.TASK_UPDATE,
             MessageType.HANDOFF,
+            MessageType.CHECKPOINT,
         }
     )
     | RESOURCE_TYPE_ALIASES
@@ -319,6 +320,7 @@ class SynapseHub:
                 paths=list(claim.paths),
                 epoch=claim.epoch,
                 version=claim.version,
+                checkpoint=claim.checkpoint,
             )
             self._remember(data, grant)
             await self._broadcast(grant)
@@ -511,6 +513,7 @@ class SynapseHub:
             epoch=claim.epoch,
             version=claim.version,
             lease_expires_at=claim.lease_expires_at,
+            checkpoint=claim.checkpoint,
         )
         self._remember(data, granted)
         await self._broadcast(granted)
@@ -529,6 +532,41 @@ class SynapseHub:
                 msg_type=MessageType.LEDGER_PROGRESS_POSTED,
                 note=note.as_dict(),
             )
+        )
+
+    async def _handle_checkpoint(self, sender: str, data: dict[str, Any], websocket: Any) -> None:
+        """Save a resume checkpoint on an owned task, acking the owner, or deny.
+
+        The checkpoint is durable and survives lease expiry, so a later claimant
+        of the same task resumes from it. The ack is private to the owner.
+        """
+        task_id = str(data.get("task_id") or "").strip()
+        checkpoint = str(data.get("checkpoint") or data.get("payload") or "")
+        ok, message = self.state.save_checkpoint(
+            sender, task_id, checkpoint, epoch=self._optional_int(data, "epoch")
+        )
+        if ok:
+            claim = self.state.claims[task_id]
+            if self.journal is not None:
+                record_claim(self.journal, claim)
+            saved = self._system(
+                message,
+                msg_type=MessageType.CHECKPOINT_SAVED,
+                target=sender,
+                task_id=task_id,
+                version=claim.version,
+            )
+            self._remember(data, saved)
+            await self._send_json(websocket, saved)
+            return
+        await self._send_json(
+            websocket,
+            self._system(
+                message,
+                msg_type=MessageType.CHECKPOINT_DENIED,
+                target=sender,
+                task_id=task_id,
+            ),
         )
 
     async def _handle_state_request(self, sender: str, websocket: Any) -> None:
@@ -971,6 +1009,9 @@ class SynapseHub:
             return
         if msg_type == MessageType.HANDOFF:
             await self._handle_handoff(sender, data, websocket)
+            return
+        if msg_type == MessageType.CHECKPOINT:
+            await self._handle_checkpoint(sender, data, websocket)
             return
         if msg_type == MessageType.LEDGER_TASK:
             await self._handle_ledger_task(sender, data, websocket)

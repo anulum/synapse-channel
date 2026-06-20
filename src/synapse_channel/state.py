@@ -69,6 +69,10 @@ class TaskClaim:
     version : int
         Optimistic-concurrency counter bumped on every field update, used for
         compare-and-swap so a stale update is rejected. Reset on (re)claim.
+    checkpoint : str
+        Opaque resume token the owner saves so the work can continue from where
+        it stopped. It survives lease expiry: a later claimant of the same task
+        inherits the last checkpoint instead of restarting.
     """
 
     task_id: str
@@ -82,6 +86,7 @@ class TaskClaim:
     paths: tuple[str, ...] = ()
     epoch: int = 0
     version: int = 0
+    checkpoint: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable snapshot of this claim.
@@ -104,6 +109,7 @@ class TaskClaim:
             "paths": list(self.paths),
             "epoch": self.epoch,
             "version": self.version,
+            "checkpoint": self.checkpoint,
         }
 
 
@@ -157,6 +163,7 @@ class SynapseState:
         self.last_seen: dict[str, float] = {}
         self.claims: dict[str, TaskClaim] = {}
         self.resources: dict[str, ResourceOffer] = {}
+        self.expired_checkpoints: dict[str, str] = {}
         self._epoch_seq = 0
 
     def _next_epoch(self) -> int:
@@ -251,6 +258,13 @@ class SynapseState:
                 f"Task '{task}' file scope conflicts with '{other_id}' held by {other_owner}.",
             )
 
+        # Carry the checkpoint forward: the same owner renewing keeps its own; a
+        # new owner taking over an expired task resumes the retained checkpoint.
+        if existing is not None and existing.owner == agent:
+            checkpoint = existing.checkpoint
+        else:
+            checkpoint = self.expired_checkpoints.pop(task, "")
+
         self.claims[task] = TaskClaim(
             task_id=task,
             owner=agent,
@@ -260,6 +274,7 @@ class SynapseState:
             worktree=worktree,
             paths=norm_paths,
             epoch=self._next_epoch(),
+            checkpoint=checkpoint,
         )
         return True, f"Task '{task}' claimed by {agent}."
 
@@ -371,6 +386,53 @@ class SynapseState:
         claim.version += 1
         return True, f"Task '{task_id}' updated by {agent}."
 
+    def save_checkpoint(
+        self,
+        agent: str,
+        task_id: str,
+        checkpoint: str,
+        *,
+        epoch: int | None = None,
+        now: float | None = None,
+    ) -> tuple[bool, str]:
+        """Save a resume token on an owned task so it can continue after expiry.
+
+        Only the owner may save, and the checkpoint persists with the claim: if
+        the lease later expires, a new claimant of the same task inherits it.
+
+        Parameters
+        ----------
+        agent : str
+            The owner saving the checkpoint.
+        task_id : str
+            Identifier of the owned task; whitespace is stripped.
+        checkpoint : str
+            Opaque resume token to store.
+        epoch : int or None, optional
+            Expected lease generation; a stale epoch is refused.
+        now : float or None, optional
+            Override for the current wall-clock time, in seconds.
+
+        Returns
+        -------
+        tuple[bool, str]
+            ``(True, message)`` on success, ``(False, reason)`` when the task is
+            unknown, owned by another agent, or carries a stale epoch.
+        """
+        task = task_id.strip()
+        ts = time.time() if now is None else float(now)
+        self.heartbeat(agent, ts)
+        claim = self.claims.get(task)
+        if claim is None:
+            return False, f"Task '{task}' not found."
+        if claim.owner != agent:
+            return False, f"Task '{task}' owned by {claim.owner}, not {agent}."
+        if epoch is not None and epoch != claim.epoch:
+            return False, f"Task '{task}' epoch is stale (current {claim.epoch})."
+        claim.checkpoint = str(checkpoint)
+        claim.version += 1
+        return True, f"Checkpoint saved for '{task}' by {agent}."
+
     def release(
         self,
         agent: str,
@@ -414,6 +476,9 @@ class SynapseState:
         if epoch is not None and epoch != existing.epoch:
             return False, f"Task '{task}' epoch is stale (current {existing.epoch})."
         del self.claims[task]
+        # The task is finished; drop any retained checkpoint so a later, unrelated
+        # claim of the same id does not resurrect stale resume state.
+        self.expired_checkpoints.pop(task, None)
         return True, f"Task '{task}' released by {agent}."
 
     def handoff(
@@ -488,6 +553,7 @@ class SynapseState:
             worktree=claim.worktree,
             paths=claim.paths,
             epoch=self._next_epoch(),
+            checkpoint=claim.checkpoint,
         )
         self.last_seen[target] = ts
         return True, f"Task '{task}' handed from {agent} to {target}."
@@ -602,9 +668,16 @@ class SynapseState:
         }
 
     def _expire_claims(self, now: float) -> None:
-        """Drop every claim whose lease has reached or passed ``now``."""
+        """Drop every claim whose lease has reached or passed ``now``.
+
+        An expiring claim's checkpoint is retained so a later claimant of the
+        same task can resume from it instead of restarting.
+        """
         expired = [task for task, claim in self.claims.items() if claim.lease_expires_at <= now]
         for task in expired:
+            claim = self.claims[task]
+            if claim.checkpoint:
+                self.expired_checkpoints[task] = claim.checkpoint
             del self.claims[task]
 
     def _expire_resources(

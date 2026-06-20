@@ -426,6 +426,24 @@ async def test_handoff_sends_full_and_minimal_envelopes() -> None:
     assert "idem_key" not in minimal
 
 
+async def test_save_checkpoint_sends_full_and_minimal_envelopes() -> None:
+    agent = SynapseAgent("A")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+    await agent.save_checkpoint("  T1 ", "cursor=5", epoch=2, idem_key="k")
+    full = json.loads(ws.sent[-1])
+    assert full["type"] == "checkpoint"
+    assert full["task_id"] == "T1"
+    assert full["checkpoint"] == "cursor=5"
+    assert full["epoch"] == 2
+    assert full["idem_key"] == "k"
+
+    await agent.save_checkpoint("T1", "x")
+    minimal = json.loads(ws.sent[-1])
+    assert "epoch" not in minimal
+    assert "idem_key" not in minimal
+
+
 # --- shared blackboard helpers -----------------------------------------------
 
 

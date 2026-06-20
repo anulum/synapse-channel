@@ -371,6 +371,38 @@ class SynapseAgent:
             MessageType.HANDOFF, target="System", payload=task_id.strip(), **extra
         )
 
+    async def save_checkpoint(
+        self,
+        task_id: str,
+        checkpoint: str,
+        *,
+        epoch: int | None = None,
+        idem_key: str | None = None,
+    ) -> None:
+        """Save a resume checkpoint on an owned task.
+
+        The checkpoint is durable and survives lease expiry: if this agent's
+        lease lapses, the next agent to claim the task inherits it (and receives
+        it in the claim grant) instead of restarting.
+
+        Parameters
+        ----------
+        task_id : str
+            Identifier of the owned task; whitespace is stripped.
+        checkpoint : str
+            Opaque resume token to store.
+        epoch : int or None, optional
+            Expected lease generation; a stale epoch is refused.
+        idem_key : str or None, optional
+            Idempotency key for a safe retry after a reconnect.
+        """
+        extra: dict[str, Any] = {"task_id": task_id.strip(), "checkpoint": checkpoint}
+        if epoch is not None:
+            extra["epoch"] = int(epoch)
+        if idem_key:
+            extra["idem_key"] = idem_key
+        await self.send_message(MessageType.CHECKPOINT, target="System", **extra)
+
     async def request_resume(self, since: int = 0) -> None:
         """Ask the hub for every chat message after a cursor.
 

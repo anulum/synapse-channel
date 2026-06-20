@@ -31,6 +31,7 @@ def test_taskclaim_as_dict_exposes_all_public_fields() -> None:
         status="working",
         data_ref="mem://k",
         version=4,
+        checkpoint="step-3",
     )
     assert claim.as_dict() == {
         "task_id": "T",
@@ -44,6 +45,7 @@ def test_taskclaim_as_dict_exposes_all_public_fields() -> None:
         "paths": [],
         "epoch": 0,
         "version": 4,
+        "checkpoint": "step-3",
     }
 
 
@@ -472,3 +474,66 @@ def test_handoff_rejects_stale_epoch() -> None:
     ok, reason = state.handoff("A", "T1", "B", epoch=999, now=1010.0)
     assert not ok and "epoch is stale" in reason
     assert state.claims["T1"].owner == "A"  # unchanged
+
+
+def test_handoff_preserves_checkpoint() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    state.claim("A", "T1", now=1000.0)
+    state.save_checkpoint("A", "T1", "cp", now=1010.0)
+    state.handoff("A", "T1", "B", now=1020.0)
+    assert state.claims["T1"].checkpoint == "cp"
+
+
+# --- resumable checkpoints ---------------------------------------------------
+
+
+def test_save_checkpoint_stores_and_bumps_version() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    state.claim("A", "T1", now=1000.0)
+    ok, message = state.save_checkpoint("A", "  T1 ", "step-2", now=1005.0)
+    assert ok and "Checkpoint saved" in message
+    assert state.claims["T1"].checkpoint == "step-2"
+    assert state.claims["T1"].version == 1
+
+
+def test_save_checkpoint_rejects_unknown_non_owner_and_stale_epoch() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    assert state.save_checkpoint("A", "GHOST", "x", now=1000.0)[0] is False
+    state.claim("A", "T1", now=1000.0)
+    ok, reason = state.save_checkpoint("B", "T1", "x", now=1001.0)
+    assert not ok and "owned by A" in reason
+    ok, reason = state.save_checkpoint("A", "T1", "x", epoch=999, now=1002.0)
+    assert not ok and "epoch is stale" in reason
+
+
+def test_checkpoint_survives_expiry_and_resumes_on_takeover() -> None:
+    state = SynapseState(default_ttl_seconds=60)
+    state.claim("A", "T1", now=1000.0)
+    state.save_checkpoint("A", "T1", "cursor=42", now=1010.0)
+    # The 60s lease lapses; a heartbeat past it expires the claim and retains cp.
+    state.heartbeat("Z", now=1100.0)
+    assert "T1" not in state.claims
+    assert state.expired_checkpoints["T1"] == "cursor=42"
+    # B takes over and resumes from the retained checkpoint, which is consumed.
+    ok, _ = state.claim("B", "T1", now=1110.0)
+    assert ok
+    assert state.claims["T1"].owner == "B"
+    assert state.claims["T1"].checkpoint == "cursor=42"
+    assert "T1" not in state.expired_checkpoints
+
+
+def test_renewal_preserves_own_checkpoint() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    state.claim("A", "T1", now=1000.0)
+    state.save_checkpoint("A", "T1", "cp", now=1010.0)
+    state.claim("A", "T1", now=1020.0)  # renew while still live
+    assert state.claims["T1"].checkpoint == "cp"  # preserved across renewal
+    assert state.claims["T1"].version == 0  # but the version still resets
+
+
+def test_release_clears_retained_checkpoint() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    state.claim("A", "T1", now=1000.0)
+    state.expired_checkpoints["T1"] = "stale"  # a leftover retained token
+    state.release("A", "T1", now=1010.0)
+    assert "T1" not in state.expired_checkpoints

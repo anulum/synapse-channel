@@ -906,6 +906,103 @@ async def test_hub_replays_handoff_owner(tmp_path: Path) -> None:
     assert hub_b.state.claims["T1"].owner == "B"
 
 
+async def test_handoff_carries_checkpoint() -> None:
+    hub = _hub()
+    ws_a = await _online(hub, "A")
+    await _online(hub, "B")
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws_a)
+    await hub.handle_message(
+        _msg(sender="A", type="checkpoint", task_id="T1", checkpoint="cp"), ws_a
+    )
+    await hub.handle_message(_msg(sender="A", type="handoff", task_id="T1", to_agent="B"), ws_a)
+    granted = [m for m in ws_a.decoded() if m.get("type") == "handoff_granted"][-1]
+    assert granted["checkpoint"] == "cp"
+
+
+# --- resumable checkpoints ---------------------------------------------------
+
+
+async def test_checkpoint_saved_acks_owner() -> None:
+    hub = _hub()
+    ws_a = await _online(hub, "A")
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws_a)
+    await hub.handle_message(
+        _msg(sender="A", type="checkpoint", task_id="T1", checkpoint="cp"), ws_a
+    )
+    assert ws_a.last()["type"] == "checkpoint_saved"
+    assert ws_a.last()["task_id"] == "T1"
+    assert hub.state.claims["T1"].checkpoint == "cp"
+
+
+async def test_checkpoint_by_non_owner_is_denied() -> None:
+    hub = _hub()
+    ws_a = await _online(hub, "A")
+    ws_b = await _online(hub, "B")
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws_a)
+    await hub.handle_message(
+        _msg(sender="B", type="checkpoint", task_id="T1", checkpoint="cp"), ws_b
+    )
+    assert ws_b.last()["type"] == "checkpoint_denied"
+    assert "owned by A" in ws_b.last()["payload"]
+
+
+async def test_claim_grant_includes_empty_checkpoint_for_fresh_task() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
+    granted = [m for m in ws.decoded() if m.get("type") == "claim_granted"][-1]
+    assert granted["checkpoint"] == ""
+
+
+async def test_claim_grant_resumes_checkpoint_after_expiry() -> None:
+    hub = _hub()
+    ws_a = await _online(hub, "A")
+    ws_b = await _online(hub, "B")
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws_a)
+    await hub.handle_message(
+        _msg(sender="A", type="checkpoint", task_id="T1", checkpoint="cursor=9"), ws_a
+    )
+    hub.state.claims["T1"].lease_expires_at = 0.0  # force the lease to lapse
+    await hub.handle_message(_msg(sender="B", type="claim", task_id="T1"), ws_b)
+    granted = [m for m in ws_b.decoded() if m.get("type") == "claim_granted"][-1]
+    assert granted["owner"] == "B"
+    assert granted["checkpoint"] == "cursor=9"  # B resumes where A stopped
+
+
+async def test_duplicate_checkpoint_is_not_reapplied() -> None:
+    hub = _hub()
+    ws_a = await _online(hub, "A")
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws_a)
+    await hub.handle_message(
+        _msg(sender="A", type="checkpoint", task_id="T1", checkpoint="cp", idem_key="c1"), ws_a
+    )
+    version = hub.state.claims["T1"].version
+    await hub.handle_message(
+        _msg(sender="A", type="checkpoint", task_id="T1", checkpoint="cp2", idem_key="c1"), ws_a
+    )
+    assert hub.state.claims["T1"].version == version  # not re-applied
+    assert hub.state.claims["T1"].checkpoint == "cp"  # second save ignored
+    assert ws_a.last()["type"] == "checkpoint_saved"
+
+
+async def test_hub_replays_checkpoint(tmp_path: Path) -> None:
+    db = tmp_path / "events.db"
+    store_a = EventStore(db)
+    hub_a = SynapseHub(default_ttl_seconds=3600.0, hub_id="syn-a", journal=store_a)
+    ws_a = await _online(hub_a, "A")
+    await hub_a.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws_a)
+    await hub_a.handle_message(
+        _msg(sender="A", type="checkpoint", task_id="T1", checkpoint="cp"), ws_a
+    )
+    store_a.close()
+
+    store_b = EventStore(db)
+    hub_b = SynapseHub(default_ttl_seconds=3600.0, hub_id="syn-b", journal=store_b)
+    store_b.close()
+    assert hub_b.state.claims["T1"].checkpoint == "cp"
+
+
 # --- shared blackboard -------------------------------------------------------
 
 

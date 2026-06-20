@@ -156,6 +156,7 @@ def _claim_from_payload(payload: dict[str, Any]) -> TaskClaim:
         worktree=str(payload.get("worktree", "")),
         paths=tuple(str(p) for p in payload.get("paths", ())),
         epoch=int(payload.get("epoch", 0)),
+        checkpoint=str(payload.get("checkpoint", "")),
     )
 
 

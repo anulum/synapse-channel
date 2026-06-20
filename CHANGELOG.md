@@ -11,6 +11,20 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.15.0] - 2026-06-20
+
+### Added
+- Resumable task checkpoints: an owner can save an opaque resume token on a held
+  task (`checkpoint`), and it survives lease expiry — when the lease lapses the
+  checkpoint is retained, and the next agent to claim the same task inherits it
+  in the claim grant instead of restarting. Checkpoints are durable (recorded in
+  the event log and rebuilt on restart), carried across a handoff, and cleared
+  on release. The owner's save is acknowledged privately and is idempotent under
+  an `idem_key`; a non-owner or stale-epoch save is refused.
+- `TaskClaim` gains a `checkpoint` field; `SynapseState.save_checkpoint(...)` and
+  `SynapseAgent.save_checkpoint(...)` drive it; claim and handoff grants now
+  carry the `checkpoint`.
+
 ## [0.14.0] - 2026-06-20
 
 ### Added
