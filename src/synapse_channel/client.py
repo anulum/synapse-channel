@@ -273,6 +273,54 @@ class SynapseAgent:
             MessageType.RELEASE, target="System", payload=task_id.strip(), **extra
         )
 
+    async def update_task(
+        self,
+        task_id: str,
+        *,
+        status: str | None = None,
+        note: str | None = None,
+        data_ref: str | None = None,
+        epoch: int | None = None,
+        expected_version: int | None = None,
+        idem_key: str | None = None,
+    ) -> None:
+        """Update an owned task's status, note, or artefact reference.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier; surrounding whitespace is stripped.
+        status : str or None, optional
+            New lifecycle status (see :mod:`synapse_channel.lifecycle`); the hub
+            rejects an illegal transition.
+        note : str or None, optional
+            Replacement note.
+        data_ref : str or None, optional
+            Replacement artefact reference.
+        epoch : int or None, optional
+            Expected lease generation; a stale epoch is refused.
+        expected_version : int or None, optional
+            Expected field version for compare-and-swap; a mismatch is refused.
+        idem_key : str or None, optional
+            Idempotency key for safe retries after a reconnect.
+        """
+        extra: dict[str, Any] = {"task_id": task_id.strip()}
+        if status is not None:
+            extra["status"] = status
+        if note is not None:
+            extra["note"] = note
+        if data_ref is not None:
+            extra["data_ref"] = data_ref
+        if epoch is not None:
+            extra["epoch"] = int(epoch)
+        if expected_version is not None:
+            extra["expected_version"] = int(expected_version)
+        if idem_key:
+            extra["idem_key"] = idem_key
+        await self.send_message(
+            MessageType.TASK_UPDATE, target="System", payload=task_id.strip(), **extra
+        )
+
     async def request_resume(self, since: int = 0) -> None:
         """Ask the hub for every chat message after a cursor.
 

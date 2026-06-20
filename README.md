@@ -97,8 +97,9 @@ async def main() -> None:
 
 | Module | Responsibility |
 | --- | --- |
-| `state` | Presence, scoped task-claim leases, epochs, and resource offers (transport-agnostic). |
+| `state` | Presence, scoped task-claim leases, epochs/versions, and resource offers (transport-agnostic). |
 | `scoping` | Worktree- and path-overlap detection that keeps two agents off the same files. |
+| `lifecycle` | Typed task-status states and the legal transitions the hub enforces. |
 | `protocol` | The on-wire message envelope and message-type constants. |
 | `hub` | The routing core: connections, names, history, broadcast. |
 | `client` | The reusable async agent connection and coordination helpers. |

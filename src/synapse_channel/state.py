@@ -23,6 +23,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from synapse_channel.lifecycle import TaskStatus, can_transition
 from synapse_channel.scoping import DEFAULT_WORKTREE, normalize_paths, scopes_conflict
 
 MINIMUM_TTL_SECONDS = 30.0
@@ -65,6 +66,9 @@ class TaskClaim:
     epoch : int
         Strictly-increasing lease generation. A mutation carrying a stale epoch is
         rejected, so a paused/expired agent cannot act on a superseded claim.
+    version : int
+        Optimistic-concurrency counter bumped on every field update, used for
+        compare-and-swap so a stale update is rejected. Reset on (re)claim.
     """
 
     task_id: str
@@ -72,11 +76,12 @@ class TaskClaim:
     note: str
     claimed_at: float
     lease_expires_at: float
-    status: str = "claimed"
+    status: str = TaskStatus.CLAIMED
     data_ref: str = ""
     worktree: str = DEFAULT_WORKTREE
     paths: tuple[str, ...] = ()
     epoch: int = 0
+    version: int = 0
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable snapshot of this claim.
@@ -98,6 +103,7 @@ class TaskClaim:
             "worktree": self.worktree,
             "paths": list(self.paths),
             "epoch": self.epoch,
+            "version": self.version,
         }
 
 
@@ -300,14 +306,18 @@ class SynapseState:
         note: str | None = None,
         data_ref: str | None = None,
         epoch: int | None = None,
+        expected_version: int | None = None,
         now: float | None = None,
     ) -> tuple[bool, str]:
         """Update the status, note, or artefact reference of an owned task.
 
         Only the claim owner may mutate it. Fields left as ``None`` are
-        untouched; a non-empty ``status`` replaces the lifecycle marker. When
-        ``epoch`` is supplied it must match the claim's current epoch, so an
-        agent acting on a superseded lease is rejected.
+        untouched; a non-empty ``status`` must be a legal lifecycle transition
+        (see :func:`synapse_channel.lifecycle.can_transition`). When ``epoch`` is
+        supplied it must match the claim's current epoch (lease guard), and when
+        ``expected_version`` is supplied it must match the claim's current version
+        (optimistic-concurrency guard against lost updates). A successful update
+        bumps the version.
 
         Parameters
         ----------
@@ -316,21 +326,26 @@ class SynapseState:
         task_id : str
             Identifier of the task to update.
         status : str or None, optional
-            New lifecycle marker, applied only when truthy.
+            New lifecycle status, applied only when truthy and the transition is
+            legal.
         note : str or None, optional
             Replacement note; stripped before storage.
         data_ref : str or None, optional
             Replacement artefact reference; stripped before storage.
         epoch : int or None, optional
             Expected lease generation; when given and stale, the update is refused.
+        expected_version : int or None, optional
+            Expected field version; when given and mismatched, the update is
+            refused so a stale writer cannot clobber a newer value.
         now : float or None, optional
             Override for the current wall-clock time, in seconds.
 
         Returns
         -------
         tuple[bool, str]
-            ``(True, message)`` on success, ``(False, reason)`` when the task
-            is unknown, owned by a different agent, or carries a stale epoch.
+            ``(True, message)`` on success, ``(False, reason)`` when the task is
+            unknown, owned by a different agent, carries a stale epoch or version,
+            or requests an illegal status transition.
         """
         ts = time.time() if now is None else float(now)
         self.heartbeat(agent, ts)
@@ -342,6 +357,10 @@ class SynapseState:
             return False, f"Task '{task_id}' owned by {claim.owner}, not {agent}."
         if epoch is not None and epoch != claim.epoch:
             return False, f"Task '{task_id}' epoch is stale (current {claim.epoch})."
+        if expected_version is not None and expected_version != claim.version:
+            return False, f"Task '{task_id}' version conflict (current {claim.version})."
+        if status and not can_transition(claim.status, status):
+            return False, f"Task '{task_id}' cannot transition {claim.status} -> {status}."
 
         if status:
             claim.status = status
@@ -349,6 +368,7 @@ class SynapseState:
             claim.note = note.strip()
         if data_ref is not None:
             claim.data_ref = data_ref.strip()
+        claim.version += 1
         return True, f"Task '{task_id}' updated by {agent}."
 
     def release(

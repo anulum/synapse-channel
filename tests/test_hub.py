@@ -187,12 +187,13 @@ async def test_task_update_success_is_broadcast() -> None:
     await hub.register(ws)
     await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
     await hub.handle_message(
-        _msg(sender="A", type="task_update", task_id="T1", status="in_progress", data_ref="r"),
+        _msg(sender="A", type="task_update", task_id="T1", status="working", data_ref="r"),
         ws,
     )
     updated = [m for m in ws.decoded() if m.get("type") == "task_updated"]
-    assert updated[-1]["status"] == "in_progress"
+    assert updated[-1]["status"] == "working"
     assert updated[-1]["data_ref"] == "r"
+    assert updated[-1]["version"] == 1
 
 
 async def test_task_update_failure_errors_sender() -> None:
@@ -471,12 +472,12 @@ async def test_task_update_with_stale_epoch_errors() -> None:
     assert "epoch is stale" in ws.last()["payload"]
 
 
-def test_epoch_of_parsing() -> None:
-    assert SynapseHub._epoch_of({"epoch": 5}) == 5
-    assert SynapseHub._epoch_of({"epoch": 7.0}) == 7
-    assert SynapseHub._epoch_of({"epoch": True}) is None
-    assert SynapseHub._epoch_of({"epoch": "x"}) is None
-    assert SynapseHub._epoch_of({}) is None
+def test_optional_int_parsing() -> None:
+    assert SynapseHub._optional_int({"epoch": 5}, "epoch") == 5
+    assert SynapseHub._optional_int({"epoch": 7.0}, "epoch") == 7
+    assert SynapseHub._optional_int({"epoch": True}, "epoch") is None
+    assert SynapseHub._optional_int({"epoch": "x"}, "epoch") is None
+    assert SynapseHub._optional_int({}, "epoch") is None
 
 
 # --- durable persistence -----------------------------------------------------
@@ -489,7 +490,7 @@ async def test_hub_records_every_mutation_kind(tmp_path: Path) -> None:
     await hub.register(ws)
     await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", paths=["src"]), ws)
     await hub.handle_message(
-        _msg(sender="A", type="task_update", task_id="T1", status="in_progress"), ws
+        _msg(sender="A", type="task_update", task_id="T1", status="working"), ws
     )
     await hub.handle_message(_msg(sender="A", type="chat", payload="hello"), ws)
     await hub.handle_message(_msg(sender="A", type="resource", kind="llm", name="m"), ws)
@@ -645,3 +646,44 @@ async def test_rate_limiter_forgets_agent_on_disconnect() -> None:
     await hub.register(ws2)
     await hub.handle_message(_msg(sender="A", type="chat", payload="3"), ws2)  # fresh bucket
     assert ws2.last()["type"] == "chat"
+
+
+# --- typed lifecycle + CAS over the wire -------------------------------------
+
+
+async def test_claim_grant_includes_version() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
+    granted = [m for m in ws.decoded() if m.get("type") == "claim_granted"][-1]
+    assert granted["version"] == 0
+    assert granted["status"] == "claimed"
+
+
+async def test_illegal_transition_errors_sender() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
+    await hub.handle_message(
+        _msg(sender="A", type="task_update", task_id="T1", status="input_required"), ws
+    )
+    assert ws.last()["type"] == "error"
+    assert "cannot transition" in ws.last()["payload"]
+
+
+async def test_stale_version_update_errors_sender() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
+    await hub.handle_message(
+        _msg(sender="A", type="task_update", task_id="T1", status="working"), ws
+    )
+    # version is now 1; a compare-and-swap against version 0 must fail.
+    await hub.handle_message(
+        _msg(sender="A", type="task_update", task_id="T1", note="late", expected_version=0), ws
+    )
+    assert ws.last()["type"] == "error"
+    assert "version conflict" in ws.last()["payload"]

@@ -11,7 +11,21 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
-## [0.7.0] - 2026-06-20
+## [0.8.0] - 2026-06-20
+
+### Added
+- Typed task lifecycle (`lifecycle` module): a claim moves through
+  `claimed → working → input_required → done/failed`; the hub rejects an illegal
+  transition instead of accepting any free-form status.
+- Optimistic concurrency: each claim carries a `version` bumped on every update;
+  `update_task` accepts an `expected_version` and refuses a stale write
+  (compare-and-swap against lost updates). `claim_granted`/`task_updated` now
+  broadcast `version`.
+- `SynapseAgent.update_task(...)` client helper.
+
+### Changed
+- Task status is now a checked lifecycle value, not a free-form string; the
+  initial status remains `claimed`. A re-claim resets the version.
 
 ### Added
 - Per-agent rate limiting: an optional token-bucket limiter (`ratelimit` module)

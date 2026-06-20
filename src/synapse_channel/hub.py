@@ -246,6 +246,7 @@ class SynapseHub:
                 worktree=claim.worktree,
                 paths=list(claim.paths),
                 epoch=claim.epoch,
+                version=claim.version,
             )
             self._remember(data, grant)
             await self._broadcast(grant)
@@ -261,9 +262,25 @@ class SynapseHub:
         )
 
     @staticmethod
-    def _epoch_of(data: dict[str, Any]) -> int | None:
-        """Extract an optional integer epoch from a message, or ``None``."""
-        value = data.get("epoch")
+    def _optional_int(data: dict[str, Any], key: str) -> int | None:
+        """Extract an optional integer field from a message, or ``None``.
+
+        Booleans and non-numeric values are treated as absent so a stray ``true``
+        is never read as a guard value.
+
+        Parameters
+        ----------
+        data : dict[str, Any]
+            The decoded message.
+        key : str
+            The field to read.
+
+        Returns
+        -------
+        int or None
+            The integer value, or ``None`` when the field is absent or not numeric.
+        """
+        value = data.get(key)
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             return None
         return int(value)
@@ -281,7 +298,8 @@ class SynapseHub:
             status=str(status) if status else None,
             note=str(note) if note is not None else None,
             data_ref=str(data_ref) if data_ref is not None else None,
-            epoch=self._epoch_of(data),
+            epoch=self._optional_int(data, "epoch"),
+            expected_version=self._optional_int(data, "expected_version"),
         )
         if ok:
             claim = self.state.claims.get(task_id)
@@ -294,6 +312,7 @@ class SynapseHub:
                 owner=sender if claim else None,
                 status=claim.status if claim else None,
                 data_ref=claim.data_ref if claim else None,
+                version=claim.version if claim else None,
             )
             self._remember(data, updated)
             await self._broadcast(updated)
@@ -337,7 +356,7 @@ class SynapseHub:
     async def _handle_release(self, sender: str, data: dict[str, Any], websocket: Any) -> None:
         """Release a task and broadcast it, or deny the sender."""
         task_id = str(data.get("task_id") or data.get("payload") or "").strip()
-        ok, message = self.state.release(sender, task_id, epoch=self._epoch_of(data))
+        ok, message = self.state.release(sender, task_id, epoch=self._optional_int(data, "epoch"))
         if ok:
             if self.journal is not None:
                 record_release(self.journal, task_id)

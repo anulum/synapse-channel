@@ -368,3 +368,29 @@ async def test_request_resume_sends_cursor() -> None:
     sent = json.loads(ws.sent[-1])
     assert sent["type"] == "resume_request"
     assert sent["since"] == 7
+
+
+async def test_update_task_sends_lifecycle_and_cas_fields() -> None:
+    agent = SynapseAgent("A")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+    await agent.update_task(
+        "T1", status="working", note="n", data_ref="r", epoch=5, expected_version=2, idem_key="k"
+    )
+    sent = json.loads(ws.sent[-1])
+    assert sent["type"] == "task_update"
+    assert sent["status"] == "working"
+    assert sent["epoch"] == 5
+    assert sent["expected_version"] == 2
+    assert sent["idem_key"] == "k"
+
+
+async def test_update_task_minimal_omits_optional_fields() -> None:
+    agent = SynapseAgent("A")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+    await agent.update_task("T1")
+    sent = json.loads(ws.sent[-1])
+    assert sent["task_id"] == "T1"
+    assert "status" not in sent
+    assert "expected_version" not in sent

@@ -28,8 +28,9 @@ def test_taskclaim_as_dict_exposes_all_public_fields() -> None:
         note="n",
         claimed_at=1.0,
         lease_expires_at=2.0,
-        status="in_progress",
+        status="working",
         data_ref="mem://k",
+        version=4,
     )
     assert claim.as_dict() == {
         "task_id": "T",
@@ -37,11 +38,12 @@ def test_taskclaim_as_dict_exposes_all_public_fields() -> None:
         "note": "n",
         "claimed_at": 1.0,
         "lease_expires_at": 2.0,
-        "status": "in_progress",
+        "status": "working",
         "data_ref": "mem://k",
         "worktree": "",
         "paths": [],
         "epoch": 0,
+        "version": 4,
     }
 
 
@@ -132,11 +134,11 @@ def test_update_task_sets_fields() -> None:
     state = SynapseState(default_ttl_seconds=300)
     state.claim("A", "TASK-8", now=1000.0)
     ok, _ = state.update_task(
-        "A", "TASK-8", status="completed", note="  done  ", data_ref="  mem://x  ", now=1010.0
+        "A", "TASK-8", status="done", note="  done  ", data_ref="  mem://x  ", now=1010.0
     )
     assert ok is True
     claim = state.claims["TASK-8"]
-    assert claim.status == "completed"
+    assert claim.status == "done"
     assert claim.note == "done"
     assert claim.data_ref == "mem://x"
 
@@ -342,9 +344,9 @@ def test_update_task_with_matching_epoch_succeeds() -> None:
     state = SynapseState(default_ttl_seconds=300)
     state.claim("A", "T1", now=1000.0)
     epoch = state.claims["T1"].epoch
-    ok, _ = state.update_task("A", "T1", status="in_progress", epoch=epoch, now=1010.0)
+    ok, _ = state.update_task("A", "T1", status="working", epoch=epoch, now=1010.0)
     assert ok is True
-    assert state.claims["T1"].status == "in_progress"
+    assert state.claims["T1"].status == "working"
 
 
 def test_update_task_with_stale_epoch_is_rejected() -> None:
@@ -362,3 +364,53 @@ def test_epoch_is_strictly_increasing_across_claims() -> None:
     state.claim("A", "T2", paths=["b"], now=1000.0)
     state.claim("A", "T3", paths=["c"], now=1000.0)
     assert [state.claims[t].epoch for t in ("T1", "T2", "T3")] == [1, 2, 3]
+
+
+# --- typed lifecycle + optimistic-concurrency (CAS) --------------------------
+
+
+def test_legal_transition_bumps_version() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    state.claim("A", "T1", now=1000.0)
+    assert state.claims["T1"].version == 0
+    ok, _ = state.update_task("A", "T1", status="working", now=1010.0)
+    assert ok is True
+    assert state.claims["T1"].status == "working"
+    assert state.claims["T1"].version == 1
+
+
+def test_illegal_transition_is_rejected() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    state.claim("A", "T1", now=1000.0)  # status "claimed"
+    ok, msg = state.update_task("A", "T1", status="input_required", now=1010.0)
+    assert ok is False
+    assert "cannot transition claimed -> input_required" in msg
+    assert state.claims["T1"].status == "claimed"
+    assert state.claims["T1"].version == 0  # nothing applied
+
+
+def test_version_match_succeeds_and_bumps() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    state.claim("A", "T1", now=1000.0)
+    ok, _ = state.update_task("A", "T1", status="working", expected_version=0, now=1010.0)
+    assert ok is True
+    assert state.claims["T1"].version == 1
+
+
+def test_stale_version_is_rejected() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    state.claim("A", "T1", now=1000.0)
+    state.update_task("A", "T1", status="working", now=1010.0)  # version -> 1
+    ok, msg = state.update_task("A", "T1", note="late", expected_version=0, now=1020.0)
+    assert ok is False
+    assert "version conflict" in msg
+    assert state.claims["T1"].note == ""  # not applied
+
+
+def test_reclaim_resets_version() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    state.claim("A", "T1", now=1000.0)
+    state.update_task("A", "T1", status="working", now=1010.0)  # version -> 1
+    state.claim("A", "T1", now=1050.0)  # renew -> fresh claim
+    assert state.claims["T1"].version == 0
+    assert state.claims["T1"].status == "claimed"
