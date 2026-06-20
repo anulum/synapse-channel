@@ -27,6 +27,7 @@ from typing import Any
 import websockets
 from websockets.exceptions import ConnectionClosed
 
+from synapse_channel.idempotency import IdempotencyCache
 from synapse_channel.journal import (
     record_chat,
     record_claim,
@@ -47,6 +48,12 @@ logger = logging.getLogger("synapse.hub")
 
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 8876
+
+_MUTATING_TYPES = (
+    frozenset({MessageType.CLAIM, MessageType.RELEASE, MessageType.TASK_UPDATE})
+    | RESOURCE_TYPE_ALIASES
+)
+"""Inbound message types eligible for idempotent replay protection."""
 
 
 class SynapseHub:
@@ -79,6 +86,7 @@ class SynapseHub:
         self.connected_clients: set[Any] = set()
         self.agent_sockets: dict[str, Any] = {}
         self.socket_agent: dict[Any, str] = {}
+        self._idempotency = IdempotencyCache()
         if journal is not None:
             replayed = replay(journal, default_ttl_seconds=default_ttl_seconds)
             self.state = replayed.state
@@ -95,6 +103,49 @@ class SynapseHub:
         """Return a strictly increasing per-hub message sequence number."""
         self._message_seq += 1
         return self._message_seq
+
+    @staticmethod
+    def _idempotency_key(data: dict[str, Any]) -> str:
+        """Return the client-supplied idempotency key, or an empty string."""
+        return str(data.get("idem_key") or "")
+
+    def _remember(self, data: dict[str, Any], response: dict[str, Any]) -> None:
+        """Cache the response of an applied mutation under its idempotency key."""
+        key = self._idempotency_key(data)
+        if key:
+            self._idempotency.put(key, response)
+
+    async def _maybe_replay_duplicate(
+        self, msg_type: str, data: dict[str, Any], websocket: Any
+    ) -> bool:
+        """Replay the cached response for a duplicate mutation, if any.
+
+        Parameters
+        ----------
+        msg_type : str
+            The inbound message type.
+        data : dict[str, Any]
+            The decoded message.
+        websocket : Any
+            The sender's socket.
+
+        Returns
+        -------
+        bool
+            ``True`` when the message was a recognised duplicate of an already
+            applied mutation and its original response was re-sent to the sender;
+            ``False`` when the message should be processed normally.
+        """
+        if msg_type not in _MUTATING_TYPES:
+            return False
+        key = self._idempotency_key(data)
+        if not key:
+            return False
+        cached = self._idempotency.get(key)
+        if cached is None:
+            return False
+        await self._send_json(websocket, cached)
+        return True
 
     def _system(self, payload: str, **extra: Any) -> dict[str, Any]:
         """Build a hub system message stamped with this hub's id."""
@@ -168,20 +219,20 @@ class SynapseHub:
             claim = self.state.claims[task_id]
             if self.journal is not None:
                 record_claim(self.journal, claim)
-            await self._broadcast(
-                self._system(
-                    message,
-                    msg_type=MessageType.CLAIM_GRANTED,
-                    task_id=task_id,
-                    owner=claim.owner,
-                    note=claim.note,
-                    lease_expires_at=claim.lease_expires_at,
-                    status=claim.status,
-                    worktree=claim.worktree,
-                    paths=list(claim.paths),
-                    epoch=claim.epoch,
-                )
+            grant = self._system(
+                message,
+                msg_type=MessageType.CLAIM_GRANTED,
+                task_id=task_id,
+                owner=claim.owner,
+                note=claim.note,
+                lease_expires_at=claim.lease_expires_at,
+                status=claim.status,
+                worktree=claim.worktree,
+                paths=list(claim.paths),
+                epoch=claim.epoch,
             )
+            self._remember(data, grant)
+            await self._broadcast(grant)
             return
         await self._send_json(
             websocket,
@@ -220,16 +271,16 @@ class SynapseHub:
             claim = self.state.claims.get(task_id)
             if self.journal is not None:
                 record_task_update(self.journal, self.state.claims[task_id])
-            await self._broadcast(
-                self._system(
-                    message,
-                    msg_type=MessageType.TASK_UPDATED,
-                    task_id=task_id,
-                    owner=sender if claim else None,
-                    status=claim.status if claim else None,
-                    data_ref=claim.data_ref if claim else None,
-                )
+            updated = self._system(
+                message,
+                msg_type=MessageType.TASK_UPDATED,
+                task_id=task_id,
+                owner=sender if claim else None,
+                status=claim.status if claim else None,
+                data_ref=claim.data_ref if claim else None,
             )
+            self._remember(data, updated)
+            await self._broadcast(updated)
         else:
             await self._send_json(
                 websocket, self._system(message, msg_type=MessageType.ERROR, target=sender)
@@ -256,16 +307,16 @@ class SynapseHub:
         key = self.state.offer_resource(sender, kind=kind, name=name, capacity=capacity, meta=meta)
         if self.journal is not None:
             record_resource(self.journal, self.state.resources[key])
-        await self._broadcast(
-            self._system(
-                f"Resource offered by {sender}",
-                msg_type=MessageType.RESOURCE_OFFERED,
-                agent=sender,
-                kind=kind,
-                name=name,
-                key=key,
-            )
+        offered = self._system(
+            f"Resource offered by {sender}",
+            msg_type=MessageType.RESOURCE_OFFERED,
+            agent=sender,
+            kind=kind,
+            name=name,
+            key=key,
         )
+        self._remember(data, offered)
+        await self._broadcast(offered)
 
     async def _handle_release(self, sender: str, data: dict[str, Any], websocket: Any) -> None:
         """Release a task and broadcast it, or deny the sender."""
@@ -274,14 +325,14 @@ class SynapseHub:
         if ok:
             if self.journal is not None:
                 record_release(self.journal, task_id)
-            await self._broadcast(
-                self._system(
-                    message,
-                    msg_type=MessageType.RELEASE_GRANTED,
-                    task_id=task_id,
-                    owner=sender,
-                )
+            granted = self._system(
+                message,
+                msg_type=MessageType.RELEASE_GRANTED,
+                task_id=task_id,
+                owner=sender,
             )
+            self._remember(data, granted)
+            await self._broadcast(granted)
             return
         await self._send_json(
             websocket,
@@ -346,6 +397,41 @@ class SynapseHub:
                 target=sender,
                 history=history,
                 requested_limit=requested_limit,
+            ),
+        )
+
+    async def _handle_resume_request(
+        self, sender: str, data: dict[str, Any], websocket: Any
+    ) -> None:
+        """Send the requesting agent every chat message after a cursor.
+
+        Lets a reconnected agent catch up on exactly the messages it missed,
+        identified by the ``since`` chat ``msg_id`` it last saw, rather than
+        pulling a fixed-size history window.
+
+        Parameters
+        ----------
+        sender : str
+            The requesting agent.
+        data : dict[str, Any]
+            The request; ``since`` is the last ``msg_id`` the agent has seen.
+        websocket : Any
+            The requesting socket.
+        """
+        raw_since = data.get("since", 0)
+        try:
+            since = int(raw_since)
+        except (TypeError, ValueError):
+            since = 0
+        tail = [m for m in self.chat_history if int(m.get("msg_id", 0)) > since]
+        await self._send_json(
+            websocket,
+            self._system(
+                "Resume snapshot",
+                msg_type=MessageType.RESUME_SNAPSHOT,
+                target=sender,
+                since=since,
+                messages=tail,
             ),
         )
 
@@ -429,6 +515,8 @@ class SynapseHub:
         self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
     ) -> None:
         """Dispatch a parsed, sender-resolved message to its handler."""
+        if await self._maybe_replay_duplicate(msg_type, data, websocket):
+            return
         if msg_type == MessageType.CHAT:
             data["timestamp"] = float(data.get("timestamp") or time.time())
             data["type"] = MessageType.CHAT
@@ -455,6 +543,9 @@ class SynapseHub:
             return
         if msg_type == MessageType.HISTORY_REQUEST:
             await self._handle_history_request(sender, data, websocket)
+            return
+        if msg_type == MessageType.RESUME_REQUEST:
+            await self._handle_resume_request(sender, data, websocket)
             return
         if msg_type == MessageType.TASK_UPDATE:
             await self._handle_task_update(sender, data, websocket)

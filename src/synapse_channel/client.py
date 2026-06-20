@@ -214,6 +214,7 @@ class SynapseAgent:
         *,
         worktree: str = "",
         paths: tuple[str, ...] | list[str] = (),
+        idem_key: str | None = None,
     ) -> None:
         """Request a scoped lease on a task.
 
@@ -230,6 +231,9 @@ class SynapseAgent:
         paths : tuple[str, ...] or list[str], optional
             Declared file/directory paths the claim intends to touch; empty claims
             the whole worktree.
+        idem_key : str or None, optional
+            Idempotency key; reuse the same key when retrying after a reconnect so
+            the hub replays the original result instead of claiming twice.
         """
         extra: dict[str, Any] = {"task_id": task_id.strip(), "note": note}
         if ttl_seconds is not None:
@@ -238,11 +242,15 @@ class SynapseAgent:
             extra["worktree"] = worktree
         if paths:
             extra["paths"] = list(paths)
+        if idem_key:
+            extra["idem_key"] = idem_key
         await self.send_message(
             MessageType.CLAIM, target="System", payload=task_id.strip(), **extra
         )
 
-    async def release(self, task_id: str, *, epoch: int | None = None) -> None:
+    async def release(
+        self, task_id: str, *, epoch: int | None = None, idem_key: str | None = None
+    ) -> None:
         """Release a task lease.
 
         Parameters
@@ -252,12 +260,32 @@ class SynapseAgent:
         epoch : int or None, optional
             Expected lease generation; when given, the hub refuses the release if
             the lease has since been superseded.
+        idem_key : str or None, optional
+            Idempotency key; reuse the same key when retrying after a reconnect so
+            the hub replays the original result instead of releasing twice.
         """
         extra: dict[str, Any] = {"task_id": task_id.strip()}
         if epoch is not None:
             extra["epoch"] = int(epoch)
+        if idem_key:
+            extra["idem_key"] = idem_key
         await self.send_message(
             MessageType.RELEASE, target="System", payload=task_id.strip(), **extra
+        )
+
+    async def request_resume(self, since: int = 0) -> None:
+        """Ask the hub for every chat message after a cursor.
+
+        Use after a reconnect to catch up on exactly the messages missed.
+
+        Parameters
+        ----------
+        since : int, optional
+            The last chat ``msg_id`` already seen; the hub returns messages
+            numbered above it. Defaults to ``0`` (the full history).
+        """
+        await self.send_message(
+            MessageType.RESUME_REQUEST, target="System", payload="resume", since=int(since)
         )
 
     async def request_state(self) -> None:

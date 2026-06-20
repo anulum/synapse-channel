@@ -21,6 +21,8 @@ def test_message_type_values_are_stable_wire_strings() -> None:
     assert MessageType.CHAT == "chat"
     assert MessageType.CLAIM_GRANTED == "claim_granted"
     assert MessageType.NAME_CONFLICT == "name_conflict"
+    assert MessageType.RESUME_REQUEST == "resume_request"
+    assert MessageType.RESUME_SNAPSHOT == "resume_snapshot"
 
 
 def test_resource_aliases_cover_accepted_inbound_types() -> None:

@@ -337,3 +337,34 @@ async def test_release_sends_and_omits_epoch() -> None:
     await agent.release("T1")
     without_epoch = json.loads(ws.sent[-1])
     assert "epoch" not in without_epoch
+
+
+# --- idempotency key + resume ------------------------------------------------
+
+
+async def test_claim_and_release_send_idem_key() -> None:
+    agent = SynapseAgent("A")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+    await agent.claim("T1", idem_key="k1")
+    assert json.loads(ws.sent[-1])["idem_key"] == "k1"
+    await agent.release("T1", idem_key="k2")
+    assert json.loads(ws.sent[-1])["idem_key"] == "k2"
+
+
+async def test_idem_key_omitted_when_unset() -> None:
+    agent = SynapseAgent("A")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+    await agent.claim("T1")
+    assert "idem_key" not in json.loads(ws.sent[-1])
+
+
+async def test_request_resume_sends_cursor() -> None:
+    agent = SynapseAgent("A")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+    await agent.request_resume(since=7)
+    sent = json.loads(ws.sent[-1])
+    assert sent["type"] == "resume_request"
+    assert sent["since"] == 7

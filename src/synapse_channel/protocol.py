@@ -42,6 +42,7 @@ class MessageType:
     STATE_REQUEST = "state_request"
     WHO_REQUEST = "who_request"
     HISTORY_REQUEST = "history_request"
+    RESUME_REQUEST = "resume_request"
     TASK_UPDATE = "task_update"
     RESOURCE = "resource"
 
@@ -58,6 +59,7 @@ class MessageType:
     STATE_SNAPSHOT = "state_snapshot"
     WHO_SNAPSHOT = "who_snapshot"
     HISTORY_SNAPSHOT = "history_snapshot"
+    RESUME_SNAPSHOT = "resume_snapshot"
     ERROR = "error"
     NAME_CONFLICT = "name_conflict"
 

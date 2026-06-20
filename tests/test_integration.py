@@ -207,3 +207,33 @@ async def test_file_scope_overlap_is_rejected_end_to_end() -> None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+
+
+async def test_reconnect_resume_catches_up_end_to_end() -> None:
+    port = _free_port()
+    hub = SynapseHub()
+    server = asyncio.create_task(hub.serve("localhost", port))
+    uri = f"ws://localhost:{port}"
+
+    rx = Recorder()
+    agent = SynapseAgent("ALPHA", rx, uri=uri, verbose=False)
+    conn: asyncio.Task[None] | None = None
+
+    try:
+        await _await_listening(port)
+        conn = asyncio.create_task(agent.connect())
+        assert await agent.wait_until_ready(3.0)
+
+        await agent.chat("one", target="all")
+        await agent.chat("two", target="all")
+        # Same connection is FIFO, so the chats are in history before this runs.
+        await agent.request_resume(since=0)
+        snap = await rx.wait_for(lambda m: m.get("type") == "resume_snapshot")
+        assert [m["payload"] for m in snap["messages"]] == ["one", "two"]
+    finally:
+        agent.running = False
+        for task in (conn, server):
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task

@@ -74,7 +74,8 @@ crash, may lose the last commit on power loss).
 4. Release on completion; status and an optional artefact reference can be
    attached while the task is in progress.
 5. Presence, `who`, full state snapshots, and chat history are queryable at any
-   time.
+   time. After a reconnect, an agent resumes by `idem_key` (retried claims are not
+   applied twice) and a `resume` cursor (fetch exactly the messages it missed).
 
 See [`TEAM_PROTOCOL.md`](TEAM_PROTOCOL.md) for the working agreement and message
 reference.

@@ -11,6 +11,20 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.6.0] - 2026-06-20
+
+### Added
+- Idempotent mutations: a state-mutating message may carry an `idem_key`; the hub
+  caches the response of each applied mutation (`idempotency` module, bounded LRU)
+  and replays it on a repeated key instead of applying twice, so a reconnect retry
+  cannot duplicate a claim. Only applied mutations are cached; failures re-evaluate.
+- Resume cursor: `resume_request`/`resume_snapshot` let a reconnected agent fetch
+  exactly the chat messages numbered after a `since` cursor, rather than a
+  fixed-size history window. `SynapseAgent.request_resume(since)` drives it.
+
+### Changed
+- `claim` and `release` accept an optional `idem_key`.
+
 ## [0.5.0] - 2026-06-20
 
 ### Added

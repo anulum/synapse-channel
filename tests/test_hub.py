@@ -530,3 +530,68 @@ async def test_hub_without_journal_keeps_log_untouched(tmp_path: Path) -> None:
     await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
     assert store.count() == 0  # nothing written when no journal is attached
     store.close()
+
+
+# --- idempotency + resume ----------------------------------------------------
+
+
+async def test_duplicate_claim_is_not_reapplied() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", idem_key="k1"), ws)
+    assert hub.state.claims["T1"].epoch == 1
+
+    sent_before = len(ws.sent)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", idem_key="k1"), ws)
+    # No renewal: epoch unchanged, and the cached grant is re-sent to the sender.
+    assert hub.state.claims["T1"].epoch == 1
+    assert ws.last()["type"] == "claim_granted"
+    assert len(ws.sent) == sent_before + 1
+
+
+async def test_claim_without_idem_key_renews_normally() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
+    assert hub.state.claims["T1"].epoch == 2  # renewed, not deduplicated
+
+
+async def test_denied_claim_is_not_cached() -> None:
+    hub = _hub()
+    ws_a = FakeServerWS()
+    ws_b = FakeServerWS()
+    await hub.register(ws_a)
+    await hub.register(ws_b)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", paths=["src"]), ws_a)
+    await hub.handle_message(
+        _msg(sender="B", type="claim", task_id="T2", paths=["src/app.py"], idem_key="k2"), ws_b
+    )
+    assert ws_b.last()["type"] == "claim_denied"
+    assert "k2" not in hub._idempotency  # only applied mutations are cached
+
+
+async def test_resume_request_returns_tail_after_cursor() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    for i in (1, 2, 3):
+        await hub.handle_message(_msg(sender="A", type="chat", payload=str(i)), ws)
+    await hub.handle_message(_msg(sender="A", type="resume_request", since=1), ws)
+    snap = ws.last()
+    assert snap["type"] == "resume_snapshot"
+    assert snap["since"] == 1
+    assert [m["payload"] for m in snap["messages"]] == ["2", "3"]
+
+
+async def test_resume_request_invalid_cursor_defaults_to_zero() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="chat", payload="x"), ws)
+    await hub.handle_message(_msg(sender="A", type="resume_request", since="bad"), ws)
+    snap = ws.last()
+    assert snap["since"] == 0
+    assert len(snap["messages"]) == 1
