@@ -206,8 +206,16 @@ class SynapseAgent:
         """
         await self.send_message(MessageType.CHAT, target=target, payload=payload)
 
-    async def claim(self, task_id: str, note: str = "", ttl_seconds: float | None = None) -> None:
-        """Request a lease on a task.
+    async def claim(
+        self,
+        task_id: str,
+        note: str = "",
+        ttl_seconds: float | None = None,
+        *,
+        worktree: str = "",
+        paths: tuple[str, ...] | list[str] = (),
+    ) -> None:
+        """Request a scoped lease on a task.
 
         Parameters
         ----------
@@ -217,27 +225,39 @@ class SynapseAgent:
             Human-readable context stored with the claim.
         ttl_seconds : float or None, optional
             Requested lease duration; ``None`` lets the hub apply its default.
+        worktree : str, optional
+            Worktree label; claims in different worktrees never contend for files.
+        paths : tuple[str, ...] or list[str], optional
+            Declared file/directory paths the claim intends to touch; empty claims
+            the whole worktree.
         """
         extra: dict[str, Any] = {"task_id": task_id.strip(), "note": note}
         if ttl_seconds is not None:
             extra["ttl_seconds"] = float(ttl_seconds)
+        if worktree:
+            extra["worktree"] = worktree
+        if paths:
+            extra["paths"] = list(paths)
         await self.send_message(
             MessageType.CLAIM, target="System", payload=task_id.strip(), **extra
         )
 
-    async def release(self, task_id: str) -> None:
+    async def release(self, task_id: str, *, epoch: int | None = None) -> None:
         """Release a task lease.
 
         Parameters
         ----------
         task_id : str
             Task identifier; surrounding whitespace is stripped.
+        epoch : int or None, optional
+            Expected lease generation; when given, the hub refuses the release if
+            the lease has since been superseded.
         """
+        extra: dict[str, Any] = {"task_id": task_id.strip()}
+        if epoch is not None:
+            extra["epoch"] = int(epoch)
         await self.send_message(
-            MessageType.RELEASE,
-            target="System",
-            payload=task_id.strip(),
-            task_id=task_id.strip(),
+            MessageType.RELEASE, target="System", payload=task_id.strip(), **extra
         )
 
     async def request_state(self) -> None:

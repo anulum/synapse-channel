@@ -403,3 +403,74 @@ def test_message_seq_is_monotonic(seq: int) -> None:
     for _ in range(seq):
         value = hub._next_msg_id()
     assert value == seq
+
+
+# --- scoped claims + epoch ---------------------------------------------------
+
+
+async def test_claim_broadcasts_scope_and_epoch() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(
+        _msg(sender="A", type="claim", task_id="T1", worktree="wt", paths=["src"]), ws
+    )
+    granted = [m for m in ws.decoded() if m.get("type") == "claim_granted"][-1]
+    assert granted["worktree"] == "wt"
+    assert granted["paths"] == ["src"]
+    assert granted["epoch"] == 1
+
+
+async def test_scoped_claim_overlap_is_denied() -> None:
+    hub = _hub()
+    ws_a = FakeServerWS()
+    ws_b = FakeServerWS()
+    await hub.register(ws_a)
+    await hub.register(ws_b)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", paths=["src"]), ws_a)
+    await hub.handle_message(
+        _msg(sender="B", type="claim", task_id="T2", paths=["src/app.py"]), ws_b
+    )
+    assert ws_b.last()["type"] == "claim_denied"
+    assert "file scope conflicts with 'T1'" in ws_b.last()["payload"]
+
+
+async def test_release_with_matching_epoch_is_granted() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
+    epoch = hub.state.claims["T1"].epoch
+    await hub.handle_message(_msg(sender="A", type="release", task_id="T1", epoch=epoch), ws)
+    assert any(m.get("type") == "release_granted" for m in ws.decoded())
+
+
+async def test_release_with_stale_epoch_is_denied() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
+    await hub.handle_message(_msg(sender="A", type="release", task_id="T1", epoch=999), ws)
+    assert ws.last()["type"] == "release_denied"
+    assert "epoch is stale" in ws.last()["payload"]
+    assert "T1" in hub.state.claims
+
+
+async def test_task_update_with_stale_epoch_errors() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
+    await hub.handle_message(
+        _msg(sender="A", type="task_update", task_id="T1", status="done", epoch=999), ws
+    )
+    assert ws.last()["type"] == "error"
+    assert "epoch is stale" in ws.last()["payload"]
+
+
+def test_epoch_of_parsing() -> None:
+    assert SynapseHub._epoch_of({"epoch": 5}) == 5
+    assert SynapseHub._epoch_of({"epoch": 7.0}) == 7
+    assert SynapseHub._epoch_of({"epoch": True}) is None
+    assert SynapseHub._epoch_of({"epoch": "x"}) is None
+    assert SynapseHub._epoch_of({}) is None

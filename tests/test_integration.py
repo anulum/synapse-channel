@@ -163,3 +163,47 @@ async def test_duplicate_name_is_rejected_end_to_end() -> None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+
+
+async def test_file_scope_overlap_is_rejected_end_to_end() -> None:
+    port = _free_port()
+    hub = SynapseHub()
+    server = asyncio.create_task(hub.serve("localhost", port))
+    uri = f"ws://localhost:{port}"
+
+    alpha_rx = Recorder()
+    beta_rx = Recorder()
+    alpha = SynapseAgent("ALPHA", alpha_rx, uri=uri, verbose=False)
+    beta = SynapseAgent("BETA", beta_rx, uri=uri, verbose=False)
+    alpha_conn: asyncio.Task[None] | None = None
+    beta_conn: asyncio.Task[None] | None = None
+
+    try:
+        await _await_listening(port)
+        alpha_conn = asyncio.create_task(alpha.connect())
+        beta_conn = asyncio.create_task(beta.connect())
+        assert await alpha.wait_until_ready(3.0)
+        assert await beta.wait_until_ready(3.0)
+
+        # ALPHA owns the whole src/ subtree.
+        await alpha.claim("EDIT-SRC", paths=["src"])
+        await alpha_rx.wait_for(lambda m: m.get("type") == "claim_granted")
+
+        # BETA tries to take a file inside src/ — must be refused.
+        await beta.claim("EDIT-APP", paths=["src/app.py"])
+        denied = await beta_rx.wait_for(lambda m: m.get("type") == "claim_denied")
+        assert "file scope conflicts" in denied["payload"]
+
+        # A disjoint claim by BETA is allowed.
+        await beta.claim("EDIT-TESTS", paths=["tests"])
+        await beta_rx.wait_for(
+            lambda m: m.get("type") == "claim_granted" and m.get("task_id") == "EDIT-TESTS"
+        )
+    finally:
+        alpha.running = False
+        beta.running = False
+        for task in (alpha_conn, beta_conn, server):
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task

@@ -300,3 +300,40 @@ def test_start_keyboard_interrupt_quiet(
     monkeypatch.setattr(SynapseAgent, "connect", fake_connect)
     SynapseAgent("A", verbose=False).start()
     assert capsys.readouterr().out == ""
+
+
+# --- scoped claim + epoch release --------------------------------------------
+
+
+async def test_claim_sends_worktree_and_paths() -> None:
+    agent = SynapseAgent("A")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+    await agent.claim("T1", note="n", worktree="wt", paths=["src", "tests"])
+    sent = json.loads(ws.sent[-1])
+    assert sent["type"] == "claim"
+    assert sent["worktree"] == "wt"
+    assert sent["paths"] == ["src", "tests"]
+
+
+async def test_claim_omits_scope_when_unset() -> None:
+    agent = SynapseAgent("A")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+    await agent.claim("T1")
+    sent = json.loads(ws.sent[-1])
+    assert "worktree" not in sent
+    assert "paths" not in sent
+
+
+async def test_release_sends_and_omits_epoch() -> None:
+    agent = SynapseAgent("A")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+    await agent.release("T1", epoch=4)
+    with_epoch = json.loads(ws.sent[-1])
+    assert with_epoch["epoch"] == 4
+
+    await agent.release("T1")
+    without_epoch = json.loads(ws.sent[-1])
+    assert "epoch" not in without_epoch

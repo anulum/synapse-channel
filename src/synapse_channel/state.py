@@ -23,6 +23,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from synapse_channel.scoping import DEFAULT_WORKTREE, normalize_paths, scopes_conflict
+
 MINIMUM_TTL_SECONDS = 30.0
 """Floor applied to every requested lease/default TTL, in seconds."""
 
@@ -54,6 +56,15 @@ class TaskClaim:
         ``completed``.
     data_ref : str
         Optional pointer to produced artefacts (e.g. a memory key or file path).
+    worktree : str
+        Worktree label the work happens in; claims in different worktrees never
+        contend for files.
+    paths : tuple[str, ...]
+        Declared file/directory paths the claim intends to touch; empty means the
+        whole worktree.
+    epoch : int
+        Strictly-increasing lease generation. A mutation carrying a stale epoch is
+        rejected, so a paused/expired agent cannot act on a superseded claim.
     """
 
     task_id: str
@@ -63,6 +74,9 @@ class TaskClaim:
     lease_expires_at: float
     status: str = "claimed"
     data_ref: str = ""
+    worktree: str = DEFAULT_WORKTREE
+    paths: tuple[str, ...] = ()
+    epoch: int = 0
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable snapshot of this claim.
@@ -81,6 +95,9 @@ class TaskClaim:
             "lease_expires_at": self.lease_expires_at,
             "status": self.status,
             "data_ref": self.data_ref,
+            "worktree": self.worktree,
+            "paths": list(self.paths),
+            "epoch": self.epoch,
         }
 
 
@@ -134,6 +151,12 @@ class SynapseState:
         self.last_seen: dict[str, float] = {}
         self.claims: dict[str, TaskClaim] = {}
         self.resources: dict[str, ResourceOffer] = {}
+        self._epoch_seq = 0
+
+    def _next_epoch(self) -> int:
+        """Return the next strictly-increasing lease generation number."""
+        self._epoch_seq += 1
+        return self._epoch_seq
 
     def heartbeat(self, agent: str, now: float | None = None) -> None:
         """Record that ``agent`` is alive and expire anything now stale.
@@ -158,12 +181,19 @@ class SynapseState:
         note: str = "",
         ttl_seconds: float | None = None,
         now: float | None = None,
+        *,
+        worktree: str = DEFAULT_WORKTREE,
+        paths: tuple[str, ...] | list[str] = (),
     ) -> tuple[bool, str]:
-        """Acquire or renew a lease on a task.
+        """Acquire or renew a scoped lease on a task.
 
-        An owner may freely renew its own live claim, and any agent may take
-        over a task whose lease has expired. A live claim held by another agent
-        blocks the request.
+        An owner may freely renew its own live claim, and any agent may take over
+        a task whose lease has expired. A live claim held by another agent blocks
+        the request. Beyond the task id, a claim may declare a file scope
+        (``worktree`` + ``paths``); the request is also refused when that scope
+        contends with another agent's live claim, which is how the bus prevents
+        two agents from editing the same files. Every successful claim or renewal
+        is stamped with a fresh, strictly-increasing :attr:`TaskClaim.epoch`.
 
         Parameters
         ----------
@@ -178,12 +208,17 @@ class SynapseState:
             :data:`MINIMUM_TTL_SECONDS`. ``None`` uses ``default_ttl_seconds``.
         now : float or None, optional
             Override for the current wall-clock time, in seconds.
+        worktree : str, optional
+            Worktree label; claims in different worktrees never contend.
+        paths : tuple[str, ...] or list[str], optional
+            Declared file/directory paths; empty claims the whole worktree.
 
         Returns
         -------
         tuple[bool, str]
-            ``(True, message)`` on success, ``(False, reason)`` when the task
-            is missing an id or is held by another agent.
+            ``(True, message)`` on success, ``(False, reason)`` when the task is
+            missing an id, held by another agent, or its file scope overlaps
+            another agent's live claim.
         """
         task = task_id.strip()
         if not task:
@@ -196,10 +231,19 @@ class SynapseState:
             else max(float(ttl_seconds), MINIMUM_TTL_SECONDS)
         )
         self.heartbeat(agent, ts)
+        norm_paths = normalize_paths(paths)
 
         existing = self.claims.get(task)
         if existing and existing.owner != agent and existing.lease_expires_at > ts:
             return False, f"Task '{task}' is already claimed by {existing.owner}."
+
+        conflict = self._scope_conflict(task, agent, worktree, norm_paths)
+        if conflict is not None:
+            other_id, other_owner = conflict
+            return (
+                False,
+                f"Task '{task}' file scope conflicts with '{other_id}' held by {other_owner}.",
+            )
 
         self.claims[task] = TaskClaim(
             task_id=task,
@@ -207,8 +251,45 @@ class SynapseState:
             note=note.strip(),
             claimed_at=ts,
             lease_expires_at=ts + ttl,
+            worktree=worktree,
+            paths=norm_paths,
+            epoch=self._next_epoch(),
         )
         return True, f"Task '{task}' claimed by {agent}."
+
+    def _scope_conflict(
+        self, task: str, agent: str, worktree: str, paths: tuple[str, ...]
+    ) -> tuple[str, str] | None:
+        """Return the first other live claim whose file scope contends, if any.
+
+        Claims belonging to ``agent`` and the claim for ``task`` itself are
+        skipped, so renewing a claim or holding several of one's own claims never
+        self-conflicts. Stale claims are assumed already expired by the preceding
+        heartbeat.
+
+        Parameters
+        ----------
+        task : str
+            The task id being claimed (skipped during the scan).
+        agent : str
+            The claiming agent (its own claims are skipped).
+        worktree : str
+            Worktree label of the incoming claim.
+        paths : tuple[str, ...]
+            Normalised declared paths of the incoming claim.
+
+        Returns
+        -------
+        tuple[str, str] or None
+            ``(other_task_id, other_owner)`` of the first conflicting claim, or
+            ``None`` when the scope is free.
+        """
+        for other_id, other in self.claims.items():
+            if other_id == task or other.owner == agent:
+                continue
+            if scopes_conflict(worktree, paths, other.worktree, other.paths):
+                return other_id, other.owner
+        return None
 
     def update_task(
         self,
@@ -218,12 +299,15 @@ class SynapseState:
         status: str | None = None,
         note: str | None = None,
         data_ref: str | None = None,
+        epoch: int | None = None,
         now: float | None = None,
     ) -> tuple[bool, str]:
         """Update the status, note, or artefact reference of an owned task.
 
         Only the claim owner may mutate it. Fields left as ``None`` are
-        untouched; a non-empty ``status`` replaces the lifecycle marker.
+        untouched; a non-empty ``status`` replaces the lifecycle marker. When
+        ``epoch`` is supplied it must match the claim's current epoch, so an
+        agent acting on a superseded lease is rejected.
 
         Parameters
         ----------
@@ -237,6 +321,8 @@ class SynapseState:
             Replacement note; stripped before storage.
         data_ref : str or None, optional
             Replacement artefact reference; stripped before storage.
+        epoch : int or None, optional
+            Expected lease generation; when given and stale, the update is refused.
         now : float or None, optional
             Override for the current wall-clock time, in seconds.
 
@@ -244,7 +330,7 @@ class SynapseState:
         -------
         tuple[bool, str]
             ``(True, message)`` on success, ``(False, reason)`` when the task
-            is unknown or owned by a different agent.
+            is unknown, owned by a different agent, or carries a stale epoch.
         """
         ts = time.time() if now is None else float(now)
         self.heartbeat(agent, ts)
@@ -254,6 +340,8 @@ class SynapseState:
             return False, f"Task '{task_id}' not found."
         if claim.owner != agent:
             return False, f"Task '{task_id}' owned by {claim.owner}, not {agent}."
+        if epoch is not None and epoch != claim.epoch:
+            return False, f"Task '{task_id}' epoch is stale (current {claim.epoch})."
 
         if status:
             claim.status = status
@@ -263,7 +351,14 @@ class SynapseState:
             claim.data_ref = data_ref.strip()
         return True, f"Task '{task_id}' updated by {agent}."
 
-    def release(self, agent: str, task_id: str, now: float | None = None) -> tuple[bool, str]:
+    def release(
+        self,
+        agent: str,
+        task_id: str,
+        now: float | None = None,
+        *,
+        epoch: int | None = None,
+    ) -> tuple[bool, str]:
         """Release a task held by ``agent``.
 
         Parameters
@@ -274,12 +369,16 @@ class SynapseState:
             Identifier of the task; surrounding whitespace is stripped.
         now : float or None, optional
             Override for the current wall-clock time, in seconds.
+        epoch : int or None, optional
+            Expected lease generation; when given and stale, the release is refused
+            so an agent cannot drop a lease that has since been superseded.
 
         Returns
         -------
         tuple[bool, str]
             ``(True, message)`` on success, ``(False, reason)`` when the task
-            id is empty, unclaimed, or owned by another agent.
+            id is empty, unclaimed, owned by another agent, or carries a stale
+            epoch.
         """
         task = task_id.strip()
         if not task:
@@ -292,6 +391,8 @@ class SynapseState:
             return False, f"Task '{task}' is not currently claimed."
         if existing.owner != agent:
             return False, f"Task '{task}' is owned by {existing.owner}, not {agent}."
+        if epoch is not None and epoch != existing.epoch:
+            return False, f"Task '{task}' epoch is stale (current {existing.epoch})."
         del self.claims[task]
         return True, f"Task '{task}' released by {agent}."
 

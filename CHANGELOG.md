@@ -11,6 +11,20 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.4.0] - 2026-06-20
+
+### Added
+- File-scoped work claims: a claim may declare a `worktree` and a set of `paths`,
+  and the hub refuses a claim whose file scope overlaps another agent's live
+  claim (`scoping` module; claims in different worktrees never contend).
+- Claim epochs: every claim/renewal is stamped with a strictly-increasing epoch,
+  and `release`/`task_update` reject a stale epoch so a superseded agent cannot
+  act on a dead lease.
+
+### Changed
+- `claim` gains `worktree`/`paths`; `release`/`update_task` accept an optional
+  `epoch`. Claim grants now broadcast `worktree`, `paths`, and `epoch`.
+
 ## [0.3.0] - 2026-06-20
 
 ### Added

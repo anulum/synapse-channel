@@ -117,10 +117,13 @@ class SynapseHub:
     # -- typed handlers -------------------------------------------------------
 
     async def _handle_claim(self, sender: str, data: dict[str, Any], websocket: Any) -> None:
-        """Apply a claim request and broadcast the grant, or deny the sender."""
+        """Apply a scoped claim request and broadcast the grant, or deny the sender."""
         task_id = str(data.get("task_id") or data.get("payload") or "").strip()
         note = str(data.get("note") or "")
         ttl_seconds = data.get("ttl_seconds")
+        worktree = str(data.get("worktree") or "")
+        raw_paths = data.get("paths")
+        paths = [str(p) for p in raw_paths] if isinstance(raw_paths, list) else []
 
         ttl_val: float | None
         if ttl_seconds is None:
@@ -131,7 +134,9 @@ class SynapseHub:
             except (TypeError, ValueError):
                 ttl_val = None
 
-        ok, message = self.state.claim(sender, task_id, note=note, ttl_seconds=ttl_val)
+        ok, message = self.state.claim(
+            sender, task_id, note=note, ttl_seconds=ttl_val, worktree=worktree, paths=paths
+        )
         if ok:
             claim = self.state.claims[task_id]
             await self._broadcast(
@@ -143,6 +148,9 @@ class SynapseHub:
                     note=claim.note,
                     lease_expires_at=claim.lease_expires_at,
                     status=claim.status,
+                    worktree=claim.worktree,
+                    paths=list(claim.paths),
+                    epoch=claim.epoch,
                 )
             )
             return
@@ -155,6 +163,14 @@ class SynapseHub:
                 task_id=task_id,
             ),
         )
+
+    @staticmethod
+    def _epoch_of(data: dict[str, Any]) -> int | None:
+        """Extract an optional integer epoch from a message, or ``None``."""
+        value = data.get("epoch")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        return int(value)
 
     async def _handle_task_update(self, sender: str, data: dict[str, Any], websocket: Any) -> None:
         """Apply an owner's status/note/data-ref update and broadcast it."""
@@ -169,6 +185,7 @@ class SynapseHub:
             status=str(status) if status else None,
             note=str(note) if note is not None else None,
             data_ref=str(data_ref) if data_ref is not None else None,
+            epoch=self._epoch_of(data),
         )
         if ok:
             claim = self.state.claims.get(task_id)
@@ -220,7 +237,7 @@ class SynapseHub:
     async def _handle_release(self, sender: str, data: dict[str, Any], websocket: Any) -> None:
         """Release a task and broadcast it, or deny the sender."""
         task_id = str(data.get("task_id") or data.get("payload") or "").strip()
-        ok, message = self.state.release(sender, task_id)
+        ok, message = self.state.release(sender, task_id, epoch=self._epoch_of(data))
         if ok:
             await self._broadcast(
                 self._system(

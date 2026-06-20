@@ -55,10 +55,14 @@ synapse worker --name OFFLINE --provider rule        # no network, canned replie
 
 1. Claim before you work: an agent leases a task by id; a live lease blocks other
    agents from claiming the same task.
-2. Leases auto-expire, so a crashed agent never holds a claim forever.
-3. Release on completion; status and an optional artefact reference can be
+2. Declare a file scope on the claim (a `worktree` and `paths`); the hub refuses a
+   claim whose files overlap another agent's live claim — this is how two agents
+   are kept off the same files. Agents in different worktrees never contend.
+3. Leases auto-expire, so a crashed agent never holds a claim forever, and each
+   lease carries an epoch so a superseded agent cannot act on a dead claim.
+4. Release on completion; status and an optional artefact reference can be
    attached while the task is in progress.
-4. Presence, `who`, full state snapshots, and chat history are queryable at any
+5. Presence, `who`, full state snapshots, and chat history are queryable at any
    time.
 
 See [`TEAM_PROTOCOL.md`](TEAM_PROTOCOL.md) for the working agreement and message
@@ -81,7 +85,8 @@ async def main() -> None:
 
 | Module | Responsibility |
 | --- | --- |
-| `state` | Presence, task-claim leases, and resource offers (transport-agnostic). |
+| `state` | Presence, scoped task-claim leases, epochs, and resource offers (transport-agnostic). |
+| `scoping` | Worktree- and path-overlap detection that keeps two agents off the same files. |
 | `protocol` | The on-wire message envelope and message-type constants. |
 | `hub` | The routing core: connections, names, history, broadcast. |
 | `client` | The reusable async agent connection and coordination helpers. |
