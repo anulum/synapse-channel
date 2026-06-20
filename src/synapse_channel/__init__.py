@@ -18,7 +18,7 @@ command (see :mod:`synapse_channel.cli`) drives all of it.
 
 from __future__ import annotations
 
-__version__ = "0.13.0"
+__version__ = "0.14.0"
 
 from synapse_channel.auth import TokenAuthenticator
 from synapse_channel.chat_backends import (
@@ -43,18 +43,21 @@ from synapse_channel.protocol import (
 from synapse_channel.relay import decode_lite, encode_lite
 from synapse_channel.scoping import paths_overlap, scopes_conflict
 from synapse_channel.state import ResourceOffer, SynapseState, TaskClaim
+from synapse_channel.supervisor import Intervention, SupervisorWorker, detect_stalls
 
 __all__ = [
     "DEFAULT_HUB_URI",
     "Blackboard",
     "ChatBackend",
     "EventStore",
+    "Intervention",
     "LedgerTask",
     "MessageType",
     "OpenAIChatClient",
     "ProgressNote",
     "ResourceOffer",
     "RuleBasedClient",
+    "SupervisorWorker",
     "SynapseAgent",
     "SynapseHub",
     "SynapseLLMWorker",
@@ -66,6 +69,7 @@ __all__ = [
     "build_envelope",
     "can_transition",
     "decode_lite",
+    "detect_stalls",
     "encode_lite",
     "is_service_message",
     "paths_overlap",

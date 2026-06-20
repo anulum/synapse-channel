@@ -11,6 +11,20 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.14.0] - 2026-06-20
+
+### Added
+- LLM-free supervisor (`supervisor` module): a rule-based agent that watches the
+  shared blackboard and re-offers stalled work, with no model in the default
+  path. `detect_stalls` is the pure policy — an `in_progress` task with no
+  activity (no progress note and no status change) for longer than an idle
+  threshold, or a `blocked` task whose every dependency has reached a terminal
+  status, is re-offered. Re-offering sets the task back to `open` (so it
+  re-appears in `ready_tasks`) and records an `assessment` progress note; because
+  the status changes, the same stall is not re-flagged.
+- `SupervisorWorker` drives the policy on a poll, and `synapse supervisor` runs
+  it. `SupervisorWorker`, `Intervention`, and `detect_stalls` are exported.
+
 ## [0.13.0] - 2026-06-20
 
 ### Added

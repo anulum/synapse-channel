@@ -633,3 +633,30 @@ async def test_board_threads_token_to_agent() -> None:
     factory = _factory(holder, inbound=[snapshot])
     await cli._board(uri="ws://h", name="U", agent_factory=factory, token="s3cret")
     assert holder[0].token == "s3cret"
+
+
+# --- supervisor --------------------------------------------------------------
+
+
+def test_parser_supervisor() -> None:
+    args = cli.build_parser().parse_args(
+        ["supervisor", "--idle-seconds", "60", "--interval", "5"]
+    )
+    assert args.idle_seconds == 60.0
+    assert args.interval == 5.0
+    assert args.func is cli._cmd_supervisor
+
+
+def test_cmd_supervisor_runs_and_handles_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli, "_run", lambda coro: coro.close())
+    ns = argparse.Namespace(
+        uri="ws://h", name="SUPERVISOR", idle_seconds=300.0, interval=30.0, token=None
+    )
+    assert cli._cmd_supervisor(ns) == 0
+
+    def interrupt(coro: Any) -> None:
+        coro.close()
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "_run", interrupt)
+    assert cli._cmd_supervisor(ns) == 0

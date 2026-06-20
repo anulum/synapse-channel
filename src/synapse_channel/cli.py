@@ -7,7 +7,7 @@
 # SYNAPSE_CHANNEL — unified `synapse` command-line entry point
 """Command-line entry point for the Synapse channel.
 
-The ``synapse`` command exposes seven subcommands:
+The ``synapse`` command exposes eight subcommands:
 
 * ``hub`` — run the coordination hub;
 * ``worker`` — run a model worker that answers on the channel;
@@ -15,7 +15,8 @@ The ``synapse`` command exposes seven subcommands:
 * ``send`` — connect, send one message, optionally wait for replies, and exit;
 * ``listen`` — connect and stream channel messages until interrupted;
 * ``relay`` — decode and print a lite relay log a hub mirrored to a file;
-* ``board`` — print the hub's shared task/progress blackboard.
+* ``board`` — print the hub's shared task/progress blackboard;
+* ``supervisor`` — run an LLM-free supervisor that re-offers stalled tasks.
 
 The send/listen helpers take an injectable agent factory so the dispatch and the
 client flows are unit-testable without a live hub.
@@ -47,6 +48,11 @@ from synapse_channel.persistence import EventStore
 from synapse_channel.protocol import MessageType
 from synapse_channel.ratelimit import RateLimiter
 from synapse_channel.relay import decode_lite, load_offset, read_jsonl_since, save_offset
+from synapse_channel.supervisor import (
+    DEFAULT_IDLE_SECONDS,
+    DEFAULT_INTERVAL_SECONDS,
+    SupervisorWorker,
+)
 
 AgentFactory = Callable[..., SynapseAgent]
 
@@ -106,6 +112,22 @@ def _cmd_worker(args: argparse.Namespace) -> int:
         _run(worker.run())
     except KeyboardInterrupt:
         print(f"\n[{args.name}] stopped by user.")
+    return 0
+
+
+def _cmd_supervisor(args: argparse.Namespace) -> int:
+    """Run an LLM-free supervisor that re-offers stalled tasks until interrupted."""
+    supervisor = SupervisorWorker(
+        name=args.name,
+        uri=args.uri,
+        idle_seconds=args.idle_seconds,
+        interval=args.interval,
+        token=args.token,
+    )
+    try:
+        _run(supervisor.run())
+    except KeyboardInterrupt:
+        print(f"\n[{args.name}] supervisor stopped by user.")
     return 0
 
 
@@ -424,6 +446,18 @@ def build_parser() -> argparse.ArgumentParser:
     board.add_argument("--name", default="USER")
     board.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     board.set_defaults(func=_cmd_board)
+
+    supervisor = sub.add_parser(
+        "supervisor", help="Run an LLM-free supervisor that re-offers stalled tasks."
+    )
+    supervisor.add_argument("--uri", default=DEFAULT_HUB_URI)
+    supervisor.add_argument("--name", default="SUPERVISOR")
+    supervisor.add_argument("--idle-seconds", type=float, default=DEFAULT_IDLE_SECONDS)
+    supervisor.add_argument("--interval", type=float, default=DEFAULT_INTERVAL_SECONDS)
+    supervisor.add_argument(
+        "--token", default=None, help="Shared-secret token for a secured hub."
+    )
+    supervisor.set_defaults(func=_cmd_supervisor)
 
     return parser
 
