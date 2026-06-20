@@ -306,17 +306,48 @@ class Blackboard:
         if kind not in PROGRESS_KINDS:
             return False, f"Unknown progress kind '{kind}'."
         ts = time.time() if now is None else float(now)
-        note = ProgressNote(
-            task_id=task_id.strip(),
-            author=author,
-            kind=kind,
-            text=text,
-            posted_at=ts,
+        return True, self._append(
+            ProgressNote(task_id=task_id.strip(), author=author, kind=kind, text=text, posted_at=ts)
         )
+
+    def note(
+        self, *, task_id: str, author: str, text: str, now: float | None = None
+    ) -> ProgressNote:
+        """Append a plain ``note``-kind progress entry, returning it directly.
+
+        A convenience over :meth:`post_progress` for callers that always use the
+        ``note`` kind (so the kind cannot be rejected) and want the appended
+        :class:`ProgressNote` without unpacking a result tuple.
+
+        Parameters
+        ----------
+        task_id : str
+            Task the note concerns; ``""`` for a board-wide note.
+        author : str
+            Agent posting the note.
+        text : str
+            Body of the note.
+        now : float or None, optional
+            Override for the current wall-clock time, in seconds.
+
+        Returns
+        -------
+        ProgressNote
+            The appended note.
+        """
+        ts = time.time() if now is None else float(now)
+        return self._append(
+            ProgressNote(
+                task_id=task_id.strip(), author=author, kind="note", text=text, posted_at=ts
+            )
+        )
+
+    def _append(self, note: ProgressNote) -> ProgressNote:
+        """Append a note, dropping the oldest beyond the bound, and return it."""
         self.progress.append(note)
         if len(self.progress) > self.max_progress:
             del self.progress[0]
-        return True, note
+        return note
 
     def blocking_dependencies(self, task_id: str) -> list[str]:
         """Return the unmet dependencies of a task, in declaration order.

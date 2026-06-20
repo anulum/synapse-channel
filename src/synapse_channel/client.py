@@ -331,6 +331,46 @@ class SynapseAgent:
             MessageType.TASK_UPDATE, target="System", payload=task_id.strip(), **extra
         )
 
+    async def handoff(
+        self,
+        task_id: str,
+        to_agent: str,
+        *,
+        note: str | None = None,
+        epoch: int | None = None,
+        idem_key: str | None = None,
+    ) -> None:
+        """Hand an owned task to another agent in one atomic step.
+
+        Transfers ownership directly, with no release/re-claim window, carrying
+        the task's scope, status, and artefact reference. The recipient must be
+        online; the hub records the move on the shared blackboard.
+
+        Parameters
+        ----------
+        task_id : str
+            Identifier of the owned task; whitespace is stripped.
+        to_agent : str
+            The agent to receive the task; whitespace is stripped.
+        note : str or None, optional
+            Replacement note for the moved claim; the existing note is kept when
+            ``None``.
+        epoch : int or None, optional
+            Expected lease generation; a stale epoch is refused.
+        idem_key : str or None, optional
+            Idempotency key for a safe retry after a reconnect.
+        """
+        extra: dict[str, Any] = {"task_id": task_id.strip(), "to_agent": to_agent.strip()}
+        if note is not None:
+            extra["note"] = note
+        if epoch is not None:
+            extra["epoch"] = int(epoch)
+        if idem_key:
+            extra["idem_key"] = idem_key
+        await self.send_message(
+            MessageType.HANDOFF, target="System", payload=task_id.strip(), **extra
+        )
+
     async def request_resume(self, since: int = 0) -> None:
         """Ask the hub for every chat message after a cursor.
 

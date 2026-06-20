@@ -814,6 +814,98 @@ def test_no_relay_log_leaves_mirror_a_noop(tmp_path: Path) -> None:
     assert not list(tmp_path.iterdir())  # nothing was written anywhere
 
 
+# --- atomic handoff ----------------------------------------------------------
+
+
+async def _online(hub: SynapseHub, name: str) -> FakeServerWS:
+    """Register a socket and bind ``name`` so the hub sees the agent online."""
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender=name, type="heartbeat"), ws)
+    return ws
+
+
+async def test_handoff_transfers_to_online_agent_and_broadcasts() -> None:
+    hub = _hub()
+    ws_a = await _online(hub, "A")
+    await _online(hub, "B")
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", note="ctx"), ws_a)
+    await hub.handle_message(_msg(sender="A", type="handoff", task_id="T1", to_agent="B"), ws_a)
+
+    granted = [m for m in ws_a.decoded() if m.get("type") == "handoff_granted"][-1]
+    assert granted["owner"] == "B"
+    assert granted["previous_owner"] == "A"
+    assert hub.state.claims["T1"].owner == "B"
+    # The move is recorded on the blackboard for the supervisor to see.
+    notes = hub.blackboard.progress
+    assert notes[-1].text == "handed off to B: ctx"
+    assert any(m.get("type") == "ledger_progress_posted" for m in ws_a.decoded())
+
+
+async def test_handoff_to_offline_agent_is_denied() -> None:
+    hub = _hub()
+    ws_a = await _online(hub, "A")
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws_a)
+    await hub.handle_message(_msg(sender="A", type="handoff", task_id="T1", to_agent="GHOST"), ws_a)
+    assert ws_a.last()["type"] == "handoff_denied"
+    assert "not online" in ws_a.last()["payload"]
+    assert hub.state.claims["T1"].owner == "A"
+
+
+async def test_handoff_by_non_owner_is_denied() -> None:
+    hub = _hub()
+    ws_a = await _online(hub, "A")
+    ws_b = await _online(hub, "B")
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws_a)
+    await hub.handle_message(_msg(sender="B", type="handoff", task_id="T1", to_agent="A"), ws_b)
+    assert ws_b.last()["type"] == "handoff_denied"
+    assert "owned by A" in ws_b.last()["payload"]
+
+
+async def test_handoff_clears_recipient_wait() -> None:
+    hub = _hub()
+    ws_a = await _online(hub, "A")
+    ws_b = await _online(hub, "B")
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", paths=["src"]), ws_a)
+    await hub.handle_message(_msg(sender="B", type="wait_request", task_id="T1"), ws_b)
+    assert hub._waits["B"] == "A"
+    await hub.handle_message(_msg(sender="A", type="handoff", task_id="T1", to_agent="B"), ws_a)
+    assert "B" not in hub._waits  # B now owns it, no longer waiting
+
+
+async def test_duplicate_handoff_is_not_reapplied() -> None:
+    hub = _hub()
+    ws_a = await _online(hub, "A")
+    await _online(hub, "B")
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws_a)
+    await hub.handle_message(
+        _msg(sender="A", type="handoff", task_id="T1", to_agent="B", idem_key="h1"), ws_a
+    )
+    epoch = hub.state.claims["T1"].epoch
+    # A no longer owns T1, but the cached grant is replayed on the repeated key.
+    await hub.handle_message(
+        _msg(sender="A", type="handoff", task_id="T1", to_agent="B", idem_key="h1"), ws_a
+    )
+    assert hub.state.claims["T1"].epoch == epoch  # not re-applied
+    assert ws_a.last()["type"] == "handoff_granted"
+
+
+async def test_hub_replays_handoff_owner(tmp_path: Path) -> None:
+    db = tmp_path / "events.db"
+    store_a = EventStore(db)
+    hub_a = SynapseHub(default_ttl_seconds=3600.0, hub_id="syn-a", journal=store_a)
+    ws_a = await _online(hub_a, "A")
+    await _online(hub_a, "B")
+    await hub_a.handle_message(_msg(sender="A", type="claim", task_id="T1", paths=["src"]), ws_a)
+    await hub_a.handle_message(_msg(sender="A", type="handoff", task_id="T1", to_agent="B"), ws_a)
+    store_a.close()
+
+    store_b = EventStore(db)
+    hub_b = SynapseHub(default_ttl_seconds=3600.0, hub_id="syn-b", journal=store_b)
+    store_b.close()
+    assert hub_b.state.claims["T1"].owner == "B"
+
+
 # --- shared blackboard -------------------------------------------------------
 
 

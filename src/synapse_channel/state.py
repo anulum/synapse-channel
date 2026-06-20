@@ -416,6 +416,82 @@ class SynapseState:
         del self.claims[task]
         return True, f"Task '{task}' released by {agent}."
 
+    def handoff(
+        self,
+        agent: str,
+        task_id: str,
+        to_agent: str,
+        *,
+        note: str | None = None,
+        epoch: int | None = None,
+        now: float | None = None,
+    ) -> tuple[bool, str]:
+        """Transfer an owned task to another agent in one atomic step.
+
+        Ownership moves directly from the holder to ``to_agent`` with no
+        release/re-claim window in which a third agent could grab the task. The
+        task keeps its file scope, status, and artefact reference (its working
+        context) and is stamped with a fresh epoch and a full lease, so the
+        previous owner's epoch becomes stale and cannot act on the moved task.
+        The version counter resets for the new owner.
+
+        Parameters
+        ----------
+        agent : str
+            The current owner requesting the handoff.
+        task_id : str
+            Identifier of the task to hand off; whitespace is stripped.
+        to_agent : str
+            The agent to receive the task; whitespace is stripped.
+        note : str or None, optional
+            Replacement note for the moved claim; the existing note is kept when
+            ``None``.
+        epoch : int or None, optional
+            Expected lease generation; a stale epoch is refused.
+        now : float or None, optional
+            Override for the current wall-clock time, in seconds.
+
+        Returns
+        -------
+        tuple[bool, str]
+            ``(True, message)`` on success, ``(False, reason)`` when the task is
+            missing an id, unclaimed, owned by another agent, handed to its own
+            owner, given no target, or carries a stale epoch.
+        """
+        task = task_id.strip()
+        if not task:
+            return False, "Task ID is required."
+        target = to_agent.strip()
+        if not target:
+            return False, "Handoff target is required."
+
+        ts = time.time() if now is None else float(now)
+        self.heartbeat(agent, ts)
+        claim = self.claims.get(task)
+        if claim is None:
+            return False, f"Task '{task}' is not currently claimed."
+        if claim.owner != agent:
+            return False, f"Task '{task}' is owned by {claim.owner}, not {agent}."
+        if target == agent:
+            return False, f"Task '{task}' is already owned by {agent}."
+        if epoch is not None and epoch != claim.epoch:
+            return False, f"Task '{task}' epoch is stale (current {claim.epoch})."
+
+        self.claims[task] = TaskClaim(
+            task_id=task,
+            owner=target,
+            note=note.strip() if note is not None else claim.note,
+            claimed_at=ts,
+            lease_expires_at=ts + self.default_ttl_seconds,
+            status=claim.status,
+            data_ref=claim.data_ref,
+            worktree=claim.worktree,
+            paths=claim.paths,
+            epoch=self._next_epoch(),
+        )
+        self.last_seen[target] = ts
+        return True, f"Task '{task}' handed from {agent} to {target}."
+
     def offer_resource(
         self,
         agent: str,

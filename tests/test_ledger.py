@@ -184,6 +184,23 @@ def test_post_progress_is_bounded() -> None:
     assert [n.text for n in board.progress] == ["3", "4"]
 
 
+def test_note_appends_a_plain_note_and_returns_it() -> None:
+    board = Blackboard()
+    note = board.note(task_id="  T1 ", author="A", text="moved", now=7.0)
+    assert isinstance(note, ProgressNote)
+    assert note.kind == "note"
+    assert note.task_id == "T1"
+    assert note.posted_at == 7.0
+    assert board.progress[-1] is note
+
+
+def test_note_is_bounded() -> None:
+    board = Blackboard(max_progress=2)
+    for i in range(5):
+        board.note(task_id="T", author="A", text=str(i))
+    assert [n.text for n in board.progress] == ["3", "4"]
+
+
 def test_max_progress_is_clamped_to_one() -> None:
     board = Blackboard(max_progress=0)
     assert board.max_progress == 1

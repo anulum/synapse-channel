@@ -96,7 +96,9 @@ identity system.
 3. Leases auto-expire, so a crashed agent never holds a claim forever, and each
    lease carries an epoch so a superseded agent cannot act on a dead claim.
 4. Release on completion; status and an optional artefact reference can be
-   attached while the task is in progress.
+   attached while the task is in progress. A held task can also be handed off
+   atomically to another online agent — keeping its scope, status, and context,
+   with no window for a third agent to grab it mid-transfer.
 5. Presence, `who`, full state snapshots, and chat history are queryable at any
    time. After a reconnect, an agent resumes by `idem_key` (retried claims are not
    applied twice) and a `resume` cursor (fetch exactly the messages it missed).

@@ -11,6 +11,19 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.13.0] - 2026-06-20
+
+### Added
+- Atomic task handoff: an owner can transfer a held task to another online agent
+  in one hub operation (`handoff`), with no release/re-claim window in which a
+  third agent could grab it. The moved task keeps its file scope, status, and
+  artefact reference, gets a fresh epoch (so the previous owner's epoch goes
+  stale) and a full lease, and resets its version for the new owner. The hub
+  refuses a handoff to an offline agent, by a non-owner, against a stale epoch,
+  or to the current owner, and records the move as a progress note on the shared
+  blackboard. `SynapseAgent.handoff(...)` drives it; handoffs are idempotent
+  under an `idem_key`.
+
 ## [0.12.0] - 2026-06-20
 
 ### Added

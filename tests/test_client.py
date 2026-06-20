@@ -406,6 +406,26 @@ async def test_request_wait_sends_task_id() -> None:
     assert sent["task_id"] == "T1"
 
 
+async def test_handoff_sends_full_and_minimal_envelopes() -> None:
+    agent = SynapseAgent("A")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+    await agent.handoff("  T1 ", "  B ", note="over to you", epoch=3, idem_key="k")
+    full = json.loads(ws.sent[-1])
+    assert full["type"] == "handoff"
+    assert full["task_id"] == "T1"
+    assert full["to_agent"] == "B"
+    assert full["note"] == "over to you"
+    assert full["epoch"] == 3
+    assert full["idem_key"] == "k"
+
+    await agent.handoff("T1", "B")
+    minimal = json.loads(ws.sent[-1])
+    assert "note" not in minimal
+    assert "epoch" not in minimal
+    assert "idem_key" not in minimal
+
+
 # --- shared blackboard helpers -----------------------------------------------
 
 

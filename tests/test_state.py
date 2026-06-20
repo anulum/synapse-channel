@@ -414,3 +414,61 @@ def test_reclaim_resets_version() -> None:
     state.claim("A", "T1", now=1050.0)  # renew -> fresh claim
     assert state.claims["T1"].version == 0
     assert state.claims["T1"].status == "claimed"
+
+
+# --- atomic handoff ----------------------------------------------------------
+
+
+def test_handoff_transfers_ownership_and_preserves_context() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    state.claim("A", "T1", note="parser work", worktree="wt", paths=["src"], now=1000.0)
+    state.update_task("A", "T1", status="working", data_ref="mem://k", now=1005.0)
+    old_epoch = state.claims["T1"].epoch
+
+    ok, message = state.handoff("A", "T1", "B", now=1010.0)
+    assert ok and "handed from A to B" in message
+    claim = state.claims["T1"]
+    assert claim.owner == "B"
+    assert claim.status == "working"  # work continues, not reset
+    assert claim.data_ref == "mem://k"
+    assert claim.note == "parser work"  # kept when no replacement given
+    assert claim.worktree == "wt" and claim.paths == ("src",)  # scope preserved
+    assert claim.epoch > old_epoch  # fresh epoch invalidates the old owner
+    assert claim.version == 0  # fresh CAS baseline for the new owner
+    assert claim.lease_expires_at == 1010.0 + 300
+
+
+def test_handoff_can_replace_the_note() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    state.claim("A", "T1", note="old", now=1000.0)
+    state.handoff("A", "T1", "B", note="  picking up from A  ", now=1010.0)
+    assert state.claims["T1"].note == "picking up from A"
+
+
+def test_handoff_requires_id_and_target() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    state.claim("A", "T1", now=1000.0)
+    assert state.handoff("A", "  ", "B")[0] is False
+    ok, reason = state.handoff("A", "T1", "   ")
+    assert not ok and "target is required" in reason
+
+
+def test_handoff_rejects_unclaimed_and_non_owner_and_self() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    ok, reason = state.handoff("A", "GHOST", "B", now=1000.0)
+    assert not ok and "not currently claimed" in reason
+
+    state.claim("A", "T1", now=1000.0)
+    ok, reason = state.handoff("C", "T1", "B", now=1001.0)
+    assert not ok and "owned by A" in reason
+
+    ok, reason = state.handoff("A", "T1", "A", now=1002.0)
+    assert not ok and "already owned by A" in reason
+
+
+def test_handoff_rejects_stale_epoch() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    state.claim("A", "T1", now=1000.0)
+    ok, reason = state.handoff("A", "T1", "B", epoch=999, now=1010.0)
+    assert not ok and "epoch is stale" in reason
+    assert state.claims["T1"].owner == "A"  # unchanged

@@ -69,7 +69,14 @@ def is_loopback_host(host: str) -> bool:
     return host.strip().lower() in LOOPBACK_HOSTS
 
 _MUTATING_TYPES = (
-    frozenset({MessageType.CLAIM, MessageType.RELEASE, MessageType.TASK_UPDATE})
+    frozenset(
+        {
+            MessageType.CLAIM,
+            MessageType.RELEASE,
+            MessageType.TASK_UPDATE,
+            MessageType.HANDOFF,
+        }
+    )
     | RESOURCE_TYPE_ALIASES
 )
 """Inbound message types eligible for idempotent replay protection."""
@@ -442,6 +449,86 @@ class SynapseHub:
                 target=sender,
                 task_id=task_id,
             ),
+        )
+
+    async def _handle_handoff(self, sender: str, data: dict[str, Any], websocket: Any) -> None:
+        """Transfer an owned task to an online agent and broadcast it, or deny.
+
+        The recipient must be currently online so the work actually moves to a
+        present agent. On success the move is also recorded as a progress note on
+        the shared blackboard, so the supervisor sees who handed what to whom.
+        """
+        task_id = str(data.get("task_id") or "").strip()
+        to_agent = str(data.get("to_agent") or data.get("target") or "").strip()
+        note = data.get("note")
+
+        if to_agent and to_agent not in self.agent_sockets:
+            await self._send_json(
+                websocket,
+                self._system(
+                    f"Handoff target '{to_agent}' is not online.",
+                    msg_type=MessageType.HANDOFF_DENIED,
+                    target=sender,
+                    task_id=task_id,
+                ),
+            )
+            return
+
+        ok, message = self.state.handoff(
+            sender,
+            task_id,
+            to_agent,
+            note=str(note) if note is not None else None,
+            epoch=self._optional_int(data, "epoch"),
+        )
+        if not ok:
+            await self._send_json(
+                websocket,
+                self._system(
+                    message,
+                    msg_type=MessageType.HANDOFF_DENIED,
+                    target=sender,
+                    task_id=task_id,
+                ),
+            )
+            return
+
+        claim = self.state.claims[task_id]
+        self._waits.pop(to_agent, None)  # receiving the task clears any wait for it
+        if self.journal is not None:
+            record_claim(self.journal, claim)
+        await self._record_handoff_progress(task_id, sender, to_agent, claim.note)
+        granted = self._system(
+            message,
+            msg_type=MessageType.HANDOFF_GRANTED,
+            task_id=task_id,
+            owner=claim.owner,
+            previous_owner=sender,
+            note=claim.note,
+            status=claim.status,
+            worktree=claim.worktree,
+            paths=list(claim.paths),
+            epoch=claim.epoch,
+            version=claim.version,
+            lease_expires_at=claim.lease_expires_at,
+        )
+        self._remember(data, granted)
+        await self._broadcast(granted)
+
+    async def _record_handoff_progress(
+        self, task_id: str, from_agent: str, to_agent: str, context: str
+    ) -> None:
+        """Log a handoff as a progress note and broadcast it to observers."""
+        text = f"handed off to {to_agent}: {context}" if context else f"handed off to {to_agent}"
+        note = self.blackboard.note(task_id=task_id, author=from_agent, text=text)
+        if self.journal is not None:
+            record_ledger_progress(self.journal, note)
+        await self._broadcast(
+            self._system(
+                f"Progress from {from_agent}",
+                msg_type=MessageType.LEDGER_PROGRESS_POSTED,
+                note=note.as_dict(),
+            )
         )
 
     async def _handle_state_request(self, sender: str, websocket: Any) -> None:
@@ -881,6 +968,9 @@ class SynapseHub:
             return
         if msg_type == MessageType.TASK_UPDATE:
             await self._handle_task_update(sender, data, websocket)
+            return
+        if msg_type == MessageType.HANDOFF:
+            await self._handle_handoff(sender, data, websocket)
             return
         if msg_type == MessageType.LEDGER_TASK:
             await self._handle_ledger_task(sender, data, websocket)
