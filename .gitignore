@@ -1,0 +1,44 @@
+# Local agent config — never commit
+CLAUDE.md
+.claude/
+AGENTS.md
+GEMINI.md
+*_RULES.md
+*_INSTRUCTIONS.md
+
+# Secrets / environment
+.env
+.env.*
+*.key
+*.pem
+
+# Internal canonical TODO (gitignored by policy)
+TODO.md
+
+# Pre-package experimental scripts kept locally as work-in-progress
+legacy/
+
+# Runtime artefacts (inboxes, cursors, relays, logs)
+runtime/
+*.ndjson
+*.cursor
+*.log
+claude_inbox.log
+claude_outbox.txt
+
+# Python build / cache / virtualenv
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.eggs/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
