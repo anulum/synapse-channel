@@ -34,6 +34,7 @@ from synapse_channel.llm_worker import (
     DEFAULT_OLLAMA_BASE_URL,
     SynapseLLMWorker,
 )
+from synapse_channel.persistence import EventStore
 from synapse_channel.protocol import MessageType
 
 AgentFactory = Callable[..., SynapseAgent]
@@ -48,12 +49,20 @@ def _run(coro: Coroutine[Any, Any, None]) -> None:
 
 
 def _cmd_hub(args: argparse.Namespace) -> int:
-    """Run the coordination hub until interrupted."""
-    hub = SynapseHub()
+    """Run the coordination hub until interrupted.
+
+    With ``--db`` the hub persists authoritative state to a durable event log and
+    resumes from it on restart; without it the hub is purely in-memory.
+    """
+    journal = EventStore(args.db) if args.db else None
+    hub = SynapseHub(journal=journal)
     try:
         _run(hub.serve(host=args.host, port=args.port))
     except KeyboardInterrupt:
         print("\nHub stopped by user.")
+    finally:
+        if journal is not None:
+            journal.close()
     return 0
 
 
@@ -200,6 +209,11 @@ def build_parser() -> argparse.ArgumentParser:
     hub = sub.add_parser("hub", help="Run the coordination hub.")
     hub.add_argument("--host", default=DEFAULT_HOST)
     hub.add_argument("--port", type=int, default=DEFAULT_PORT)
+    hub.add_argument(
+        "--db",
+        default=None,
+        help="Path to a durable event-log database; enables crash-safe persistence.",
+    )
     hub.set_defaults(func=_cmd_hub)
 
     worker = sub.add_parser("worker", help="Run an on-channel model worker.")

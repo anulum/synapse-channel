@@ -11,6 +11,20 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.5.0] - 2026-06-20
+
+### Added
+- Durable persistence: an append-only SQLite event log (`persistence` module,
+  WAL mode, standard-library only). The hub records every authoritative mutation
+  and rebuilds its state on start-up by replaying the log (`journal` module), so a
+  restart resumes live leases and history instead of an empty registry.
+- `synapse hub --db PATH` enables persistence; without it the hub stays in-memory.
+
+### Changed
+- Durability is split by workload: the lease/claim path commits at
+  `synchronous=FULL` (survives an OS crash); the high-volume chat/history path
+  commits at `synchronous=NORMAL` (survives an application crash).
+
 ## [0.4.0] - 2026-06-20
 
 ### Added

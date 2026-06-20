@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 import pytest
 from websockets.exceptions import ConnectionClosed
 
 from synapse_channel.hub import SynapseHub
+from synapse_channel.persistence import EventStore
 
 
 class FakeServerWS:
@@ -474,3 +476,57 @@ def test_epoch_of_parsing() -> None:
     assert SynapseHub._epoch_of({"epoch": True}) is None
     assert SynapseHub._epoch_of({"epoch": "x"}) is None
     assert SynapseHub._epoch_of({}) is None
+
+
+# --- durable persistence -----------------------------------------------------
+
+
+async def test_hub_records_every_mutation_kind(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    hub = SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", paths=["src"]), ws)
+    await hub.handle_message(
+        _msg(sender="A", type="task_update", task_id="T1", status="in_progress"), ws
+    )
+    await hub.handle_message(_msg(sender="A", type="chat", payload="hello"), ws)
+    await hub.handle_message(_msg(sender="A", type="resource", kind="llm", name="m"), ws)
+    await hub.handle_message(_msg(sender="A", type="release", task_id="T1"), ws)
+
+    kinds = {e.kind for e in store.read_all()}
+    store.close()
+    assert kinds == {"claim", "task_update", "chat", "resource", "release"}
+
+
+async def test_hub_restart_replays_durable_state(tmp_path: Path) -> None:
+    db = tmp_path / "events.db"
+    store_a = EventStore(db)
+    hub_a = SynapseHub(default_ttl_seconds=3600.0, hub_id="syn-a", journal=store_a)
+    ws = FakeServerWS()
+    await hub_a.register(ws)
+    await hub_a.handle_message(
+        _msg(sender="A", type="claim", task_id="T1", paths=["src"]), ws
+    )
+    await hub_a.handle_message(_msg(sender="A", type="chat", payload="persist me"), ws)
+    store_a.close()
+
+    # A fresh hub over the same log resumes the live lease and history.
+    store_b = EventStore(db)
+    hub_b = SynapseHub(default_ttl_seconds=3600.0, hub_id="syn-b", journal=store_b)
+    store_b.close()
+    assert "T1" in hub_b.state.claims
+    assert hub_b.state.claims["T1"].paths == ("src",)
+    assert [m["payload"] for m in hub_b.chat_history] == ["persist me"]
+    # Message numbering resumes past the replayed history.
+    assert hub_b._message_seq == 1
+
+
+async def test_hub_without_journal_keeps_log_untouched(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    hub = SynapseHub(default_ttl_seconds=300.0, journal=None)
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
+    assert store.count() == 0  # nothing written when no journal is attached
+    store.close()

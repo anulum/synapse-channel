@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -79,6 +80,7 @@ def _factory(
 def test_parser_hub_defaults() -> None:
     args = cli.build_parser().parse_args(["hub"])
     assert args.host == "localhost"
+    assert args.db is None
     assert args.func is cli._cmd_hub
 
 
@@ -140,7 +142,7 @@ def test_main_routes_to_hub(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_cmd_hub_runs_and_handles_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_run", lambda coro: coro.close())
-    ns = argparse.Namespace(host="localhost", port=8876)
+    ns = argparse.Namespace(host="localhost", port=8876, db=None)
     assert cli._cmd_hub(ns) == 0
 
     def interrupt(coro: Any) -> None:
@@ -149,6 +151,17 @@ def test_cmd_hub_runs_and_handles_interrupt(monkeypatch: pytest.MonkeyPatch) -> 
 
     monkeypatch.setattr(cli, "_run", interrupt)
     assert cli._cmd_hub(ns) == 0
+
+
+def test_cmd_hub_with_db_opens_and_closes_event_store(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(cli, "_run", lambda coro: coro.close())
+    db = tmp_path / "events.db"
+    ns = argparse.Namespace(host="localhost", port=8876, db=str(db))
+    assert cli._cmd_hub(ns) == 0
+    # The persistent store was created (and closed) for the run.
+    assert db.exists()
 
 
 def _worker_ns(**overrides: Any) -> argparse.Namespace:

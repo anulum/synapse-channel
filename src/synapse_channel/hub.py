@@ -27,6 +27,15 @@ from typing import Any
 import websockets
 from websockets.exceptions import ConnectionClosed
 
+from synapse_channel.journal import (
+    record_chat,
+    record_claim,
+    record_release,
+    record_resource,
+    record_task_update,
+    replay,
+)
+from synapse_channel.persistence import EventStore
 from synapse_channel.protocol import (
     RESOURCE_TYPE_ALIASES,
     MessageType,
@@ -51,16 +60,34 @@ class SynapseHub:
     hub_id : str or None, optional
         Stable hub identifier stamped on outgoing system messages. When ``None``
         a random ``"syn-XXXXXXXX"`` id is generated.
+    journal : EventStore or None, optional
+        When given, authoritative mutations are appended to this durable log and
+        the hub's state is rebuilt from it on construction, so a restart resumes
+        live leases and history instead of an empty registry. When ``None`` the
+        hub is purely in-memory.
     """
 
-    def __init__(self, *, default_ttl_seconds: float = 3600.0, hub_id: str | None = None) -> None:
-        self.state = SynapseState(default_ttl_seconds=default_ttl_seconds)
+    def __init__(
+        self,
+        *,
+        default_ttl_seconds: float = 3600.0,
+        hub_id: str | None = None,
+        journal: EventStore | None = None,
+    ) -> None:
+        self.journal = journal
         self.hub_id = hub_id or f"syn-{uuid.uuid4().hex[:8]}"
         self.connected_clients: set[Any] = set()
         self.agent_sockets: dict[str, Any] = {}
         self.socket_agent: dict[Any, str] = {}
-        self.chat_history: list[dict[str, Any]] = []
-        self._message_seq = 0
+        if journal is not None:
+            replayed = replay(journal, default_ttl_seconds=default_ttl_seconds)
+            self.state = replayed.state
+            self.chat_history = replayed.chat_history
+            self._message_seq = replayed.message_seq
+        else:
+            self.state = SynapseState(default_ttl_seconds=default_ttl_seconds)
+            self.chat_history = []
+            self._message_seq = 0
 
     # -- helpers --------------------------------------------------------------
 
@@ -139,6 +166,8 @@ class SynapseHub:
         )
         if ok:
             claim = self.state.claims[task_id]
+            if self.journal is not None:
+                record_claim(self.journal, claim)
             await self._broadcast(
                 self._system(
                     message,
@@ -189,6 +218,8 @@ class SynapseHub:
         )
         if ok:
             claim = self.state.claims.get(task_id)
+            if self.journal is not None:
+                record_task_update(self.journal, self.state.claims[task_id])
             await self._broadcast(
                 self._system(
                     message,
@@ -223,6 +254,8 @@ class SynapseHub:
             return
 
         key = self.state.offer_resource(sender, kind=kind, name=name, capacity=capacity, meta=meta)
+        if self.journal is not None:
+            record_resource(self.journal, self.state.resources[key])
         await self._broadcast(
             self._system(
                 f"Resource offered by {sender}",
@@ -239,6 +272,8 @@ class SynapseHub:
         task_id = str(data.get("task_id") or data.get("payload") or "").strip()
         ok, message = self.state.release(sender, task_id, epoch=self._epoch_of(data))
         if ok:
+            if self.journal is not None:
+                record_release(self.journal, task_id)
             await self._broadcast(
                 self._system(
                     message,
@@ -400,6 +435,8 @@ class SynapseHub:
             data["hub_id"] = self.hub_id
             data["msg_id"] = self._next_msg_id()
             self.chat_history.append(data.copy())
+            if self.journal is not None:
+                record_chat(self.journal, data)
             await self._broadcast(data)
             return
         if msg_type == MessageType.HEARTBEAT:

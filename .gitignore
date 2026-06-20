@@ -45,3 +45,8 @@ coverage.xml
 
 # Internal strategy/audit docs (never published)
 docs/internal/
+
+# SQLite event-log databases
+*.db
+*.db-wal
+*.db-shm
