@@ -63,6 +63,9 @@ class FakeAgent:
     async def request_board(self) -> None:
         self.board_requests = getattr(self, "board_requests", 0) + 1
 
+    async def request_manifest(self) -> None:
+        self.manifest_requests = getattr(self, "manifest_requests", 0) + 1
+
 
 def _factory(
     holder: list[FakeAgent],
@@ -224,6 +227,7 @@ def _worker_ns(**overrides: Any) -> argparse.Namespace:
         "reply_target_mode": "all",
         "min_reply_interval": 0.7,
         "token": None,
+        "task_class": None,
     }
     base.update(overrides)
     return argparse.Namespace(**base)
@@ -660,3 +664,90 @@ def test_cmd_supervisor_runs_and_handles_interrupt(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(cli, "_run", interrupt)
     assert cli._cmd_supervisor(ns) == 0
+
+
+# --- capability manifest -----------------------------------------------------
+
+
+def test_parser_manifest_and_worker_task_class() -> None:
+    parser = cli.build_parser()
+    manifest = parser.parse_args(["manifest", "--name", "WATCH"])
+    assert manifest.name == "WATCH"
+    assert manifest.func is cli._cmd_manifest
+    worker = parser.parse_args(["worker", "--task-class", "reason", "--task-class", "heavy"])
+    assert worker.task_class == ["reason", "heavy"]
+
+
+def test_cmd_worker_threads_task_classes(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(cli, "_run", lambda coro: coro.close())
+
+    class FakeWorker:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+        async def run(self) -> None:
+            return None
+
+    monkeypatch.setattr("synapse_channel.cli.SynapseLLMWorker", FakeWorker)
+    assert cli._cmd_worker(_worker_ns(task_class=["reason"])) == 0
+    assert captured["task_classes"] == ("reason",)
+    # Without --task-class the worker advertises the default class.
+    captured.clear()
+    assert cli._cmd_worker(_worker_ns()) == 0
+    assert captured["task_classes"] == ("chat",)
+
+
+def test_print_manifest_renders_cards(capsys: pytest.CaptureFixture[str]) -> None:
+    manifest = [
+        {"agent": "FAST", "task_classes": ["chat"], "model": "m", "description": "quick"},
+        {"agent": "BARE", "task_classes": [], "model": "", "description": ""},
+    ]
+    cli._print_manifest(manifest)
+    out = capsys.readouterr().out
+    assert "FAST [chat] model=m: quick" in out
+    assert "BARE [none] model=-:" in out
+
+
+async def test_manifest_prints_snapshot(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    snapshot: dict[str, Any] = {
+        "type": "manifest_snapshot",
+        "manifest": [{"agent": "FAST", "task_classes": ["chat"], "model": "m", "description": "q"}],
+    }
+    noise: dict[str, Any] = {"type": "chat", "sender": "X", "payload": "hi"}
+    factory = _factory(holder, inbound=[noise, snapshot])
+    code = await cli._manifest(uri="ws://h", name="USER", agent_factory=factory, token="t")
+    assert code == 0
+    assert holder[0].token == "t"
+    assert "FAST [chat] model=m: q" in capsys.readouterr().out
+
+
+async def test_manifest_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    factory = _factory(holder, ready=False)
+    code = await cli._manifest(uri="ws://h", name="USER", agent_factory=factory)
+    assert code == 1
+    assert "Could not reach hub" in capsys.readouterr().out
+
+
+async def test_manifest_returns_quietly_when_no_snapshot(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("synapse_channel.cli.asyncio.sleep", no_sleep)
+    holder: list[FakeAgent] = []
+    factory = _factory(
+        holder, inbound=[{"type": "chat", "sender": "X", "payload": "noise"}], idle=False
+    )
+    code = await cli._manifest(uri="ws://h", name="USER", agent_factory=factory)
+    assert code == 0
+    assert "Agents" not in capsys.readouterr().out
+
+
+def test_cmd_manifest_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("synapse_channel.cli.asyncio.run", lambda coro: coro.close() or 0)
+    ns = argparse.Namespace(uri="ws://h", name="USER", token=None)
+    assert cli._cmd_manifest(ns) == 0

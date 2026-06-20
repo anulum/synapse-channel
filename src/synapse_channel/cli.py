@@ -7,7 +7,7 @@
 # SYNAPSE_CHANNEL — unified `synapse` command-line entry point
 """Command-line entry point for the Synapse channel.
 
-The ``synapse`` command exposes eight subcommands:
+The ``synapse`` command exposes nine subcommands:
 
 * ``hub`` — run the coordination hub;
 * ``worker`` — run a model worker that answers on the channel;
@@ -16,7 +16,8 @@ The ``synapse`` command exposes eight subcommands:
 * ``listen`` — connect and stream channel messages until interrupted;
 * ``relay`` — decode and print a lite relay log a hub mirrored to a file;
 * ``board`` — print the hub's shared task/progress blackboard;
-* ``supervisor`` — run an LLM-free supervisor that re-offers stalled tasks.
+* ``supervisor`` — run an LLM-free supervisor that re-offers stalled tasks;
+* ``manifest`` — print the capability manifest of advertised agents.
 
 The send/listen helpers take an injectable agent factory so the dispatch and the
 client flows are unit-testable without a live hub.
@@ -107,6 +108,7 @@ def _cmd_worker(args: argparse.Namespace) -> int:
         reply_target_mode=args.reply_target_mode,
         min_reply_interval=args.min_reply_interval,
         token=args.token,
+        task_classes=tuple(args.task_class) if args.task_class else ("chat",),
     )
     try:
         _run(worker.run())
@@ -344,6 +346,69 @@ def _cmd_board(args: argparse.Namespace) -> int:
     return asyncio.run(_board(uri=args.uri, name=args.name, token=args.token))
 
 
+def _print_manifest(manifest: list[dict[str, Any]]) -> None:
+    """Render a capability manifest as readable lines on stdout."""
+    print(f"Agents ({len(manifest)}):")
+    for card in manifest:
+        classes = ", ".join(card.get("task_classes", [])) or "none"
+        model = card.get("model") or "-"
+        description = card.get("description", "")
+        print(f"  {card.get('agent')} [{classes}] model={model}: {description}")
+
+
+async def _manifest(
+    *,
+    uri: str,
+    name: str,
+    agent_factory: AgentFactory = SynapseAgent,
+    token: str | None = None,
+) -> int:
+    """Connect, request the capability manifest, print it, and exit.
+
+    Parameters
+    ----------
+    uri, name : str
+        Hub URI and the requester's display name.
+    agent_factory : AgentFactory, optional
+        Factory for the client agent; injectable for testing.
+    token : str or None, optional
+        Shared-secret token for a secured hub.
+
+    Returns
+    -------
+    int
+        ``0`` once a manifest is printed, ``1`` when the hub could not be reached.
+    """
+    manifests: list[list[dict[str, Any]]] = []
+
+    async def collect(data: dict[str, Any]) -> None:
+        if data.get("type") == MessageType.MANIFEST_SNAPSHOT:
+            manifests.append(data.get("manifest", []))
+
+    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
+    conn_task = asyncio.create_task(agent.connect())
+    try:
+        if not await agent.wait_until_ready(timeout=5.0):
+            print(f"[{name}] Could not reach hub at {uri}.")
+            return 1
+        await agent.request_manifest()
+        for _ in range(50):
+            if manifests:
+                break
+            await asyncio.sleep(0.05)
+        if manifests:
+            _print_manifest(manifests[-1])
+        return 0
+    finally:
+        agent.running = False
+        conn_task.cancel()
+
+
+def _cmd_manifest(args: argparse.Namespace) -> int:
+    """Dispatch the ``manifest`` subcommand."""
+    return asyncio.run(_manifest(uri=args.uri, name=args.name, token=args.token))
+
+
 # -- parser -------------------------------------------------------------------
 
 
@@ -405,6 +470,12 @@ def build_parser() -> argparse.ArgumentParser:
     worker.add_argument("--reply-target-mode", choices=["all", "sender"], default="all")
     worker.add_argument("--min-reply-interval", type=float, default=0.7)
     worker.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    worker.add_argument(
+        "--task-class",
+        action="append",
+        default=None,
+        help="Routing class to advertise (repeatable); defaults to 'chat'.",
+    )
     worker.set_defaults(func=_cmd_worker)
 
     team = sub.add_parser("team", help="Launch a hub plus local workers.")
@@ -458,6 +529,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--token", default=None, help="Shared-secret token for a secured hub."
     )
     supervisor.set_defaults(func=_cmd_supervisor)
+
+    manifest = sub.add_parser("manifest", help="Print the capability manifest of agents.")
+    manifest.add_argument("--uri", default=DEFAULT_HUB_URI)
+    manifest.add_argument("--name", default="USER")
+    manifest.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    manifest.set_defaults(func=_cmd_manifest)
 
     return parser
 

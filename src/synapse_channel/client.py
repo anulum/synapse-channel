@@ -551,6 +551,51 @@ class SynapseAgent:
         """Ask the hub for a snapshot of the shared blackboard."""
         await self.send_message(MessageType.BOARD_REQUEST, target="System", payload="board")
 
+    async def advertise(
+        self,
+        *,
+        description: str = "",
+        skills: tuple[str, ...] | list[str] = (),
+        task_classes: tuple[str, ...] | list[str] = (),
+        model: str = "",
+        meta: dict[str, Any] | None = None,
+    ) -> None:
+        """Advertise this agent's capability card to the hub.
+
+        The card describes what the agent can do — its skills and the task
+        classes it can take — so other agents can discover it and a router can
+        pick it by task class. Re-advertising refreshes the card.
+
+        Parameters
+        ----------
+        description : str, optional
+            Free-form summary of what the agent does.
+        skills : tuple[str, ...] or list[str], optional
+            Capability tags the agent claims.
+        task_classes : tuple[str, ...] or list[str], optional
+            Routing classes the agent can take.
+        model : str, optional
+            Backing model identifier.
+        meta : dict[str, Any] or None, optional
+            Descriptive metadata.
+        """
+        extra: dict[str, Any] = {}
+        if description:
+            extra["description"] = description
+        if skills:
+            extra["skills"] = list(skills)
+        if task_classes:
+            extra["task_classes"] = list(task_classes)
+        if model:
+            extra["model"] = model
+        if meta:
+            extra["meta"] = meta
+        await self.send_message(MessageType.ADVERTISE, target="System", **extra)
+
+    async def request_manifest(self) -> None:
+        """Ask the hub for the capability manifest of all advertised agents."""
+        await self.send_message(MessageType.MANIFEST_REQUEST, target="System", payload="manifest")
+
     def start(self) -> None:
         """Run :meth:`connect` to completion on a fresh event loop.
 

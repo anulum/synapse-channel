@@ -27,6 +27,7 @@ class FakeAgent:
     def __init__(self, *, ready: bool = True, connect_exc: Exception | None = None) -> None:
         self.running = True
         self.chats: list[tuple[str, str]] = []
+        self.cards: list[tuple[str, ...]] = []
         self._ready = ready
         self._connect_exc = connect_exc
 
@@ -39,6 +40,17 @@ class FakeAgent:
 
     async def chat(self, payload: str, *, target: str = "all") -> None:
         self.chats.append((target, payload))
+
+    async def advertise(
+        self,
+        *,
+        description: str = "",
+        skills: tuple[str, ...] | list[str] = (),
+        task_classes: tuple[str, ...] | list[str] = (),
+        model: str = "",
+        meta: dict[str, object] | None = None,
+    ) -> None:
+        self.cards.append(tuple(task_classes))
 
 
 class FakeBackend:
@@ -271,3 +283,19 @@ def test_worker_forwards_token_to_its_agent() -> None:
 def test_worker_default_token_is_none() -> None:
     worker = _worker(name="ALPHA")
     assert worker.agent.token is None
+
+
+async def test_run_advertises_capability_card_when_ready() -> None:
+    worker = _worker(name="ALPHA", task_classes=("chat", "reason"))
+    fake = FakeAgent(ready=True)
+    worker.agent = fake  # type: ignore[assignment]
+    await worker.run()
+    assert fake.cards == [("chat", "reason")]  # advertised its task classes
+
+
+async def test_run_skips_advertise_on_handshake_timeout() -> None:
+    worker = _worker(name="ALPHA")
+    fake = FakeAgent(ready=False)
+    worker.agent = fake  # type: ignore[assignment]
+    await worker.run()
+    assert fake.cards == []  # not advertised when the handshake timed out

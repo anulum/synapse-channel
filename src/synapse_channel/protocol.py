@@ -52,6 +52,8 @@ class MessageType:
     LEDGER_TASK_UPDATE = "ledger_task_update"
     LEDGER_PROGRESS = "ledger_progress"
     BOARD_REQUEST = "board_request"
+    ADVERTISE = "advertise"
+    MANIFEST_REQUEST = "manifest_request"
 
     # Hub -> agent.
     SYSTEM = "system"
@@ -77,6 +79,8 @@ class MessageType:
     LEDGER_TASK_UPDATED = "ledger_task_updated"
     LEDGER_PROGRESS_POSTED = "ledger_progress_posted"
     BOARD_SNAPSHOT = "board_snapshot"
+    CAPABILITY_ADVERTISED = "capability_advertised"
+    MANIFEST_SNAPSHOT = "manifest_snapshot"
     ERROR = "error"
     NAME_CONFLICT = "name_conflict"
     AUTH_DENIED = "auth_denied"

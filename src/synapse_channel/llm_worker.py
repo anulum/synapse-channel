@@ -110,6 +110,9 @@ class SynapseLLMWorker:
     token : str or None, optional
         Shared-secret token presented to a hub that requires authentication;
         ``None`` for an open hub.
+    task_classes : tuple[str, ...] or list[str], optional
+        Routing classes this worker advertises on its capability card; defaults
+        to ``("chat",)``.
     """
 
     def __init__(
@@ -125,6 +128,7 @@ class SynapseLLMWorker:
         reply_target_mode: str = "all",
         min_reply_interval: float = 0.7,
         token: str | None = None,
+        task_classes: tuple[str, ...] | list[str] = ("chat",),
     ) -> None:
         self.name = name
         self.uri = uri
@@ -134,6 +138,7 @@ class SynapseLLMWorker:
         self.api_key_env = api_key_env
         self.reply_target_mode = reply_target_mode
         self.min_reply_interval = max(float(min_reply_interval), 0.0)
+        self.task_classes = tuple(task_classes)
         self.context: deque[tuple[str, str]] = deque(maxlen=max(max_context, 2))
         self.inbox: asyncio.Queue[dict[str, str]] = asyncio.Queue()
         self.last_reply_ts = 0.0
@@ -264,6 +269,15 @@ class SynapseLLMWorker:
         await self.agent.chat(text, target=target)
         self.last_reply_ts = time.time()
 
+    async def _advertise(self) -> None:
+        """Advertise this worker's capability card to the hub."""
+        await self.agent.advertise(
+            description=f"{self.provider} chat worker",
+            skills=(self.provider,),
+            task_classes=self.task_classes,
+            model=self.model,
+        )
+
     async def _worker_loop(self) -> None:
         """Process queued work items until the agent stops running."""
         while self.agent.running:
@@ -280,6 +294,8 @@ class SynapseLLMWorker:
         ready = await self.agent.wait_until_ready(timeout=5.0)
         if not ready:
             print(f"[{self.name}] Warning: handshake timeout.")
+        else:
+            await self._advertise()
         worker_task = asyncio.create_task(self._worker_loop())
         done, pending = await asyncio.wait(
             {conn_task, worker_task}, return_when=asyncio.FIRST_COMPLETED

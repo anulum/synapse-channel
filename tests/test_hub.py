@@ -1079,6 +1079,56 @@ async def test_ledger_progress_posted_and_bad_kind_errors() -> None:
     assert "Unknown progress kind" in ws.last()["payload"]
 
 
+# --- capability cards --------------------------------------------------------
+
+
+async def test_advertise_stores_card_and_broadcasts() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(
+        _msg(
+            sender="FAST",
+            type="advertise",
+            description="quick",
+            skills=["ollama"],
+            task_classes=["chat"],
+            model="gemma3:4b",
+        ),
+        ws,
+    )
+    advertised = [m for m in ws.decoded() if m.get("type") == "capability_advertised"]
+    assert advertised[-1]["agent"] == "FAST"
+    assert advertised[-1]["card"]["task_classes"] == ["chat"]
+    card = hub.capabilities.get("FAST")
+    assert card is not None and card.model == "gemma3:4b"
+
+
+async def test_manifest_request_returns_advertised_agents() -> None:
+    hub = _hub()
+    ws_fast = FakeServerWS()
+    ws_user = FakeServerWS()
+    await hub.register(ws_fast)
+    await hub.register(ws_user)
+    await hub.handle_message(
+        _msg(sender="FAST", type="advertise", task_classes=["chat"]), ws_fast
+    )
+    await hub.handle_message(_msg(sender="USER", type="manifest_request"), ws_user)
+    snap = ws_user.last()
+    assert snap["type"] == "manifest_snapshot"
+    assert [c["agent"] for c in snap["manifest"]] == ["FAST"]
+
+
+async def test_capability_card_dropped_on_disconnect() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="FAST", type="advertise", task_classes=["chat"]), ws)
+    assert hub.capabilities.get("FAST") is not None
+    await hub.unregister(ws)
+    assert hub.capabilities.get("FAST") is None
+
+
 async def test_board_request_returns_snapshot() -> None:
     hub = _hub()
     ws = FakeServerWS()

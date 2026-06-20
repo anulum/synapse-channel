@@ -29,6 +29,7 @@ import websockets
 from websockets.exceptions import ConnectionClosed
 
 from synapse_channel.auth import TokenAuthenticator
+from synapse_channel.capability import CapabilityRegistry
 from synapse_channel.deadlock import would_create_cycle
 from synapse_channel.idempotency import IdempotencyCache
 from synapse_channel.journal import (
@@ -154,6 +155,7 @@ class SynapseHub:
         self.socket_agent: dict[Any, str] = {}
         self._idempotency = IdempotencyCache()
         self._waits: dict[str, str] = {}
+        self.capabilities = CapabilityRegistry()
         if journal is not None:
             replayed = replay(
                 journal, default_ttl_seconds=default_ttl_seconds, max_progress=max_progress
@@ -825,6 +827,44 @@ class SynapseHub:
             ),
         )
 
+    # -- capability cards -----------------------------------------------------
+
+    async def _handle_advertise(self, sender: str, data: dict[str, Any], websocket: Any) -> None:
+        """Store an agent's capability card and broadcast it to the channel."""
+        raw_skills = data.get("skills")
+        raw_classes = data.get("task_classes")
+        skills = [str(s) for s in raw_skills] if isinstance(raw_skills, list) else []
+        task_classes = [str(c) for c in raw_classes] if isinstance(raw_classes, list) else []
+        meta = data.get("meta")
+        card = self.capabilities.advertise(
+            sender,
+            description=str(data.get("description") or ""),
+            skills=skills,
+            task_classes=task_classes,
+            model=str(data.get("model") or ""),
+            meta=meta if isinstance(meta, dict) else None,
+        )
+        await self._broadcast(
+            self._system(
+                f"Capability advertised by {sender}",
+                msg_type=MessageType.CAPABILITY_ADVERTISED,
+                agent=sender,
+                card=card.as_dict(),
+            )
+        )
+
+    async def _handle_manifest_request(self, sender: str, websocket: Any) -> None:
+        """Send the requesting agent the capability manifest."""
+        await self._send_json(
+            websocket,
+            self._system(
+                "Manifest snapshot",
+                msg_type=MessageType.MANIFEST_SNAPSHOT,
+                target=sender,
+                manifest=self.capabilities.manifest(),
+            ),
+        )
+
     def _drop_waits(self, agent: str) -> None:
         """Remove an agent's wait edge and any waits pointing at it."""
         self._waits.pop(agent, None)
@@ -1025,6 +1065,12 @@ class SynapseHub:
         if msg_type == MessageType.BOARD_REQUEST:
             await self._handle_board_request(sender, websocket)
             return
+        if msg_type == MessageType.ADVERTISE:
+            await self._handle_advertise(sender, data, websocket)
+            return
+        if msg_type == MessageType.MANIFEST_REQUEST:
+            await self._handle_manifest_request(sender, websocket)
+            return
         if msg_type in RESOURCE_TYPE_ALIASES:
             await self._handle_resource(sender, data, websocket)
             return
@@ -1059,6 +1105,7 @@ class SynapseHub:
         if name is not None and self.agent_sockets.get(name) == websocket:
             self.agent_sockets.pop(name, None)
             self._drop_waits(name)
+            self.capabilities.forget(name)
             if self.rate_limiter is not None:
                 self.rate_limiter.forget(name)
             await self._broadcast_presence("left", name)

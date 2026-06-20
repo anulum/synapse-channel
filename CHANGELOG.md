@@ -11,6 +11,21 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.16.0] - 2026-06-20
+
+### Added
+- Capability cards and a hub manifest (`capability` module): an agent advertises
+  a small, A2A-shaped card — its description, skills, and the task classes it can
+  take — and the hub keeps one card per agent in a `CapabilityRegistry`, exposed
+  as a manifest so agents can discover who can do what and a router can pick a
+  worker by task class. Cards are ephemeral: re-advertised on connect, dropped on
+  disconnect, and expired after a soft TTL; they are never persisted.
+- Hub handlers for `advertise` (stored and broadcast) and `manifest_request`;
+  `SynapseAgent.advertise(...)`/`request_manifest()` client helpers; a `synapse
+  manifest` view. The model worker advertises its own card on connect, with a
+  `--task-class` option to set the classes it offers. `CapabilityCard` and
+  `CapabilityRegistry` are exported.
+
 ## [0.15.0] - 2026-06-20
 
 ### Added

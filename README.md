@@ -54,6 +54,7 @@ synapse worker --name OFFLINE --provider rule        # no network, canned replie
 synapse relay ./feed.ndjson                          # decode and print that file as readable lines
 synapse board                                        # print the shared task/progress blackboard
 synapse supervisor --idle-seconds 300                # LLM-free: re-offer tasks that stall
+synapse manifest                                     # print the capability cards agents advertised
 synapse hub --host 0.0.0.0 --token s3cret            # require a shared secret when binding off-loopback
 synapse send --token s3cret --name USER "hello"      # agents present the token to a secured hub
 ```
@@ -150,6 +151,7 @@ async def main() -> None:
 | `chat_backends` | Pluggable reply backends (OpenAI-compatible HTTP, rule-based). |
 | `llm_worker` | An on-channel agent that answers addressed messages via a backend. |
 | `supervisor` | LLM-free watcher that spots stalled plan tasks and re-offers them. |
+| `capability` | Agent capability cards (A2A-shaped) and the hub-aggregated manifest. |
 | `launcher` | One-command local hub + worker startup. |
 | `cli` | The unified `synapse` command. |
 

@@ -504,6 +504,34 @@ async def test_request_board_sends_board_request() -> None:
     assert json.loads(ws.sent[-1])["type"] == "board_request"
 
 
+async def test_advertise_sends_full_and_minimal_cards() -> None:
+    agent = SynapseAgent("A")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+    await agent.advertise(
+        description="quick", skills=["ollama"], task_classes=["chat"], model="m", meta={"k": 1}
+    )
+    full = json.loads(ws.sent[-1])
+    assert full["type"] == "advertise"
+    assert full["task_classes"] == ["chat"]
+    assert full["model"] == "m"
+    assert full["meta"] == {"k": 1}
+
+    await agent.advertise()
+    minimal = json.loads(ws.sent[-1])
+    assert "skills" not in minimal
+    assert "task_classes" not in minimal
+    assert "model" not in minimal
+
+
+async def test_request_manifest_sends_manifest_request() -> None:
+    agent = SynapseAgent("A")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+    await agent.request_manifest()
+    assert json.loads(ws.sent[-1])["type"] == "manifest_request"
+
+
 # --- connect authentication --------------------------------------------------
 
 
