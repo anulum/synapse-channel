@@ -46,6 +46,10 @@ class MessageType:
     WAIT_REQUEST = "wait_request"
     TASK_UPDATE = "task_update"
     RESOURCE = "resource"
+    LEDGER_TASK = "ledger_task"
+    LEDGER_TASK_UPDATE = "ledger_task_update"
+    LEDGER_PROGRESS = "ledger_progress"
+    BOARD_REQUEST = "board_request"
 
     # Hub -> agent.
     SYSTEM = "system"
@@ -63,6 +67,10 @@ class MessageType:
     RESUME_SNAPSHOT = "resume_snapshot"
     WAIT_GRANTED = "wait_granted"
     WAIT_DENIED = "wait_denied"
+    LEDGER_TASK_POSTED = "ledger_task_posted"
+    LEDGER_TASK_UPDATED = "ledger_task_updated"
+    LEDGER_PROGRESS_POSTED = "ledger_progress_posted"
+    BOARD_SNAPSHOT = "board_snapshot"
     ERROR = "error"
     NAME_CONFLICT = "name_conflict"
 

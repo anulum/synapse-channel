@@ -27,6 +27,12 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from synapse_channel.ledger import (
+    DEFAULT_MAX_PROGRESS,
+    Blackboard,
+    LedgerTask,
+    ProgressNote,
+)
 from synapse_channel.persistence import EventStore
 from synapse_channel.state import ResourceOffer, SynapseState, TaskClaim
 
@@ -39,6 +45,8 @@ class EventKind:
     TASK_UPDATE = "task_update"
     RESOURCE = "resource"
     CHAT = "chat"
+    LEDGER_TASK = "ledger_task"
+    LEDGER_PROGRESS = "ledger_progress"
 
 
 @dataclass
@@ -54,11 +62,14 @@ class ReplayResult:
     message_seq : int
         Highest chat ``msg_id`` seen, so the hub continues numbering without
         collision.
+    blackboard : Blackboard
+        Shared plan and progress stream rebuilt from the log.
     """
 
     state: SynapseState
     chat_history: list[dict[str, Any]]
     message_seq: int
+    blackboard: Blackboard
 
 
 def record_claim(store: EventStore, claim: TaskClaim) -> None:
@@ -96,6 +107,42 @@ def record_chat(store: EventStore, message: dict[str, Any]) -> None:
     store.append(EventKind.CHAT, message)
 
 
+def record_ledger_task(store: EventStore, task: LedgerTask) -> None:
+    """Append a durable event with a declared/updated ledger task snapshot."""
+    store.append(EventKind.LEDGER_TASK, task.as_dict(), durable=True)
+
+
+def record_ledger_progress(store: EventStore, note: ProgressNote) -> None:
+    """Append a (non-durable) event capturing one progress note."""
+    store.append(EventKind.LEDGER_PROGRESS, note.as_dict())
+
+
+def _ledger_task_from_payload(payload: dict[str, Any]) -> LedgerTask:
+    """Rebuild a :class:`LedgerTask` from a persisted snapshot."""
+    return LedgerTask(
+        task_id=str(payload["task_id"]),
+        title=str(payload["title"]),
+        created_at=float(payload["created_at"]),
+        updated_at=float(payload["updated_at"]),
+        description=str(payload.get("description", "")),
+        depends_on=tuple(str(d) for d in payload.get("depends_on", ())),
+        status=str(payload.get("status", "open")),
+        suggested_owner=str(payload.get("suggested_owner", "")),
+        created_by=str(payload.get("created_by", "")),
+    )
+
+
+def _progress_from_payload(payload: dict[str, Any]) -> ProgressNote:
+    """Rebuild a :class:`ProgressNote` from a persisted snapshot."""
+    return ProgressNote(
+        task_id=str(payload.get("task_id", "")),
+        author=str(payload.get("author", "")),
+        kind=str(payload.get("kind", "note")),
+        text=str(payload.get("text", "")),
+        posted_at=float(payload["posted_at"]),
+    )
+
+
 def _claim_from_payload(payload: dict[str, Any]) -> TaskClaim:
     """Rebuild a :class:`TaskClaim` from a persisted claim snapshot."""
     return TaskClaim(
@@ -116,6 +163,7 @@ def replay(
     store: EventStore,
     *,
     default_ttl_seconds: float = 3600.0,
+    max_progress: int = DEFAULT_MAX_PROGRESS,
     now: float | None = None,
 ) -> ReplayResult:
     """Rebuild coordination state by replaying the whole event log.
@@ -126,6 +174,8 @@ def replay(
         The event log to read.
     default_ttl_seconds : float, optional
         TTL seeded into the reconstructed :class:`SynapseState`.
+    max_progress : int, optional
+        Progress-note bound seeded into the reconstructed :class:`Blackboard`.
     now : float or None, optional
         Wall-clock time used to expire stale leases/offers after replay; the
         system clock is used when ``None``.
@@ -133,11 +183,13 @@ def replay(
     Returns
     -------
     ReplayResult
-        The reconstructed state, chat history, and highest chat message id.
-        Unknown event kinds are skipped so the log can evolve forwards.
+        The reconstructed state, chat history, highest chat message id, and
+        shared blackboard. Unknown event kinds are skipped so the log can evolve
+        forwards.
     """
     state = SynapseState(default_ttl_seconds=default_ttl_seconds)
     chat_history: list[dict[str, Any]] = []
+    blackboard = Blackboard(max_progress=max_progress)
     message_seq = 0
     epoch_seq = 0
 
@@ -148,6 +200,11 @@ def replay(
             state.claims[claim.task_id] = claim
             state.last_seen[claim.owner] = claim.claimed_at
             epoch_seq = max(epoch_seq, claim.epoch)
+        elif event.kind == EventKind.LEDGER_TASK:
+            task = _ledger_task_from_payload(payload)
+            blackboard.tasks[task.task_id] = task
+        elif event.kind == EventKind.LEDGER_PROGRESS:
+            blackboard.progress.append(_progress_from_payload(payload))
         elif event.kind == EventKind.RELEASE:
             state.claims.pop(str(payload["task_id"]), None)
         elif event.kind == EventKind.RESOURCE:
@@ -168,4 +225,12 @@ def replay(
     ts = time.time() if now is None else float(now)
     state._expire_claims(ts)
     state._expire_resources(ts)
-    return ReplayResult(state=state, chat_history=chat_history, message_seq=message_seq)
+    # Trim replayed progress to the bound (the durable log keeps every note).
+    if len(blackboard.progress) > blackboard.max_progress:
+        del blackboard.progress[: len(blackboard.progress) - blackboard.max_progress]
+    return ReplayResult(
+        state=state,
+        chat_history=chat_history,
+        message_seq=message_seq,
+        blackboard=blackboard,
+    )

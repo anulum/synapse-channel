@@ -33,11 +33,14 @@ from synapse_channel.idempotency import IdempotencyCache
 from synapse_channel.journal import (
     record_chat,
     record_claim,
+    record_ledger_progress,
+    record_ledger_task,
     record_release,
     record_resource,
     record_task_update,
     replay,
 )
+from synapse_channel.ledger import DEFAULT_MAX_PROGRESS, Blackboard, ProgressNote
 from synapse_channel.persistence import EventStore
 from synapse_channel.protocol import (
     RESOURCE_TYPE_ALIASES,
@@ -98,6 +101,10 @@ class SynapseHub:
         Upper bound on the relay log: it is trimmed back to its last this-many
         lines once it grows that far past the bound, so the mirror cannot grow
         without limit. Defaults to :data:`DEFAULT_RELAY_MAX_LINES`.
+    max_progress : int, optional
+        Maximum progress notes retained on the shared blackboard; the oldest are
+        dropped beyond this bound. The durable log (when attached) still records
+        every note. Defaults to :data:`~synapse_channel.ledger.DEFAULT_MAX_PROGRESS`.
     """
 
     def __init__(
@@ -110,6 +117,7 @@ class SynapseHub:
         max_history: int = DEFAULT_MAX_HISTORY,
         relay_log: str | Path | None = None,
         relay_max_lines: int = DEFAULT_RELAY_MAX_LINES,
+        max_progress: int = DEFAULT_MAX_PROGRESS,
     ) -> None:
         self.journal = journal
         self.rate_limiter = rate_limiter
@@ -124,14 +132,18 @@ class SynapseHub:
         self._idempotency = IdempotencyCache()
         self._waits: dict[str, str] = {}
         if journal is not None:
-            replayed = replay(journal, default_ttl_seconds=default_ttl_seconds)
+            replayed = replay(
+                journal, default_ttl_seconds=default_ttl_seconds, max_progress=max_progress
+            )
             self.state = replayed.state
             self.chat_history = replayed.chat_history[-self.max_history :]
             self._message_seq = replayed.message_seq
+            self.blackboard = replayed.blackboard
         else:
             self.state = SynapseState(default_ttl_seconds=default_ttl_seconds)
             self.chat_history = []
             self._message_seq = 0
+            self.blackboard = Blackboard(max_progress=max_progress)
 
     # -- helpers --------------------------------------------------------------
 
@@ -577,6 +589,102 @@ class SynapseHub:
             ),
         )
 
+    # -- shared blackboard ----------------------------------------------------
+
+    async def _handle_ledger_task(self, sender: str, data: dict[str, Any], websocket: Any) -> None:
+        """Declare or re-declare a plan task and broadcast it, or reject it."""
+        task_id = str(data.get("task_id") or "").strip()
+        raw_deps = data.get("depends_on")
+        depends_on = [str(d) for d in raw_deps] if isinstance(raw_deps, list) else []
+        ok, message = self.blackboard.post_task(
+            task_id=task_id,
+            title=str(data.get("title") or ""),
+            author=sender,
+            description=str(data.get("description") or ""),
+            depends_on=depends_on,
+            suggested_owner=str(data.get("suggested_owner") or ""),
+        )
+        if ok:
+            task = self.blackboard.tasks[task_id]
+            if self.journal is not None:
+                record_ledger_task(self.journal, task)
+            await self._broadcast(
+                self._system(
+                    message,
+                    msg_type=MessageType.LEDGER_TASK_POSTED,
+                    task=task.as_dict(),
+                )
+            )
+            return
+        await self._send_json(
+            websocket, self._system(message, msg_type=MessageType.ERROR, target=sender)
+        )
+
+    async def _handle_ledger_task_update(
+        self, sender: str, data: dict[str, Any], websocket: Any
+    ) -> None:
+        """Apply a plan-status/suggested-owner change and broadcast it, or reject."""
+        task_id = str(data.get("task_id") or "").strip()
+        status = data.get("status")
+        suggested_owner = data.get("suggested_owner")
+        ok, message = self.blackboard.update_task(
+            task_id,
+            status=str(status) if status is not None else None,
+            suggested_owner=str(suggested_owner) if suggested_owner is not None else None,
+        )
+        if ok:
+            task = self.blackboard.tasks[task_id]
+            if self.journal is not None:
+                record_ledger_task(self.journal, task)
+            await self._broadcast(
+                self._system(
+                    message,
+                    msg_type=MessageType.LEDGER_TASK_UPDATED,
+                    task=task.as_dict(),
+                )
+            )
+            return
+        await self._send_json(
+            websocket, self._system(message, msg_type=MessageType.ERROR, target=sender)
+        )
+
+    async def _handle_ledger_progress(
+        self, sender: str, data: dict[str, Any], websocket: Any
+    ) -> None:
+        """Append a structured progress note and broadcast it, or reject the kind."""
+        ok, result = self.blackboard.post_progress(
+            task_id=str(data.get("task_id") or ""),
+            author=sender,
+            text=str(data.get("text") or data.get("payload") or ""),
+            kind=str(data.get("kind") or "note"),
+        )
+        if not ok or not isinstance(result, ProgressNote):
+            await self._send_json(
+                websocket, self._system(str(result), msg_type=MessageType.ERROR, target=sender)
+            )
+            return
+        if self.journal is not None:
+            record_ledger_progress(self.journal, result)
+        await self._broadcast(
+            self._system(
+                f"Progress from {sender}",
+                msg_type=MessageType.LEDGER_PROGRESS_POSTED,
+                note=result.as_dict(),
+            )
+        )
+
+    async def _handle_board_request(self, sender: str, websocket: Any) -> None:
+        """Send the requesting agent a snapshot of the shared blackboard."""
+        await self._send_json(
+            websocket,
+            self._system(
+                "Board snapshot",
+                msg_type=MessageType.BOARD_SNAPSHOT,
+                target=sender,
+                board=self.blackboard.snapshot(),
+            ),
+        )
+
     def _drop_waits(self, agent: str) -> None:
         """Remove an agent's wait edge and any waits pointing at it."""
         self._waits.pop(agent, None)
@@ -712,6 +820,18 @@ class SynapseHub:
             return
         if msg_type == MessageType.TASK_UPDATE:
             await self._handle_task_update(sender, data, websocket)
+            return
+        if msg_type == MessageType.LEDGER_TASK:
+            await self._handle_ledger_task(sender, data, websocket)
+            return
+        if msg_type == MessageType.LEDGER_TASK_UPDATE:
+            await self._handle_ledger_task_update(sender, data, websocket)
+            return
+        if msg_type == MessageType.LEDGER_PROGRESS:
+            await self._handle_ledger_progress(sender, data, websocket)
+            return
+        if msg_type == MessageType.BOARD_REQUEST:
+            await self._handle_board_request(sender, websocket)
             return
         if msg_type in RESOURCE_TYPE_ALIASES:
             await self._handle_resource(sender, data, websocket)

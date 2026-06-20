@@ -811,3 +811,135 @@ def test_no_relay_log_leaves_mirror_a_noop(tmp_path: Path) -> None:
     hub._mirror_to_relay({"type": "chat", "sender": "A", "payload": "x"})
     assert hub.relay_log is None
     assert not list(tmp_path.iterdir())  # nothing was written anywhere
+
+
+# --- shared blackboard -------------------------------------------------------
+
+
+async def test_ledger_task_posted_is_broadcast() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(
+        _msg(sender="P", type="ledger_task", task_id="T1", title="Parser"), ws
+    )
+    posted = [m for m in ws.decoded() if m.get("type") == "ledger_task_posted"]
+    assert posted[-1]["task"]["task_id"] == "T1"
+    assert posted[-1]["task"]["created_by"] == "P"
+    assert hub.blackboard.tasks["T1"].title == "Parser"
+
+
+async def test_ledger_task_missing_title_errors_sender() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="P", type="ledger_task", task_id="T1"), ws)
+    assert ws.last()["type"] == "error"
+    assert "title is required" in ws.last()["payload"]
+
+
+async def test_ledger_task_cycle_errors_sender() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="P", type="ledger_task", task_id="A", title="a"), ws)
+    await hub.handle_message(
+        _msg(sender="P", type="ledger_task", task_id="B", title="b", depends_on=["A"]), ws
+    )
+    await hub.handle_message(
+        _msg(sender="P", type="ledger_task", task_id="A", title="a", depends_on=["B"]), ws
+    )
+    assert ws.last()["type"] == "error"
+    assert "cycle" in ws.last()["payload"]
+
+
+async def test_ledger_task_update_broadcast_and_unknown_errors() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="P", type="ledger_task", task_id="T1", title="t"), ws)
+    await hub.handle_message(
+        _msg(sender="P", type="ledger_task_update", task_id="T1", status="done"), ws
+    )
+    updated = [m for m in ws.decoded() if m.get("type") == "ledger_task_updated"]
+    assert updated[-1]["task"]["status"] == "done"
+
+    await hub.handle_message(
+        _msg(sender="P", type="ledger_task_update", task_id="GHOST", status="done"), ws
+    )
+    assert ws.last()["type"] == "error"
+    assert "not on the board" in ws.last()["payload"]
+
+
+async def test_ledger_progress_posted_and_bad_kind_errors() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(
+        _msg(sender="P", type="ledger_progress", task_id="T1", payload="started"), ws
+    )
+    notes = [m for m in ws.decoded() if m.get("type") == "ledger_progress_posted"]
+    assert notes[-1]["note"]["text"] == "started"
+    assert notes[-1]["note"]["author"] == "P"
+
+    await hub.handle_message(
+        _msg(sender="P", type="ledger_progress", task_id="T1", payload="x", kind="rant"), ws
+    )
+    assert ws.last()["type"] == "error"
+    assert "Unknown progress kind" in ws.last()["payload"]
+
+
+async def test_board_request_returns_snapshot() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="P", type="ledger_task", task_id="T1", title="t"), ws)
+    await hub.handle_message(_msg(sender="P", type="board_request"), ws)
+    snap = ws.last()
+    assert snap["type"] == "board_snapshot"
+    assert snap["board"]["tasks"][0]["task_id"] == "T1"
+    assert snap["board"]["ready"] == ["T1"]
+
+
+async def test_hub_replays_ledger_tasks_progress_and_updates(tmp_path: Path) -> None:
+    db = tmp_path / "events.db"
+    store_a = EventStore(db)
+    hub_a = SynapseHub(hub_id="syn-a", journal=store_a)
+    ws = FakeServerWS()
+    await hub_a.register(ws)
+    await hub_a.handle_message(
+        _msg(sender="P", type="ledger_task", task_id="T1", title="Parser"), ws
+    )
+    await hub_a.handle_message(
+        _msg(sender="P", type="ledger_task_update", task_id="T1", status="in_progress"), ws
+    )
+    await hub_a.handle_message(
+        _msg(sender="P", type="ledger_progress", task_id="T1", payload="started"), ws
+    )
+    store_a.close()
+
+    store_b = EventStore(db)
+    hub_b = SynapseHub(hub_id="syn-b", journal=store_b)
+    store_b.close()
+    assert hub_b.blackboard.tasks["T1"].title == "Parser"
+    assert hub_b.blackboard.tasks["T1"].status == "in_progress"
+    assert [n.text for n in hub_b.blackboard.progress] == ["started"]
+
+
+async def test_hub_replay_trims_progress_to_bound(tmp_path: Path) -> None:
+    db = tmp_path / "events.db"
+    store_a = EventStore(db)
+    hub_a = SynapseHub(hub_id="syn-a", journal=store_a, max_progress=2)
+    ws = FakeServerWS()
+    await hub_a.register(ws)
+    for i in range(4):
+        await hub_a.handle_message(
+            _msg(sender="P", type="ledger_progress", task_id="T", payload=str(i)), ws
+        )
+    store_a.close()
+
+    store_b = EventStore(db)
+    hub_b = SynapseHub(hub_id="syn-b", journal=store_b, max_progress=2)
+    store_b.close()
+    # The durable log holds all four notes; replay trims to the last two.
+    assert [n.text for n in hub_b.blackboard.progress] == ["2", "3"]

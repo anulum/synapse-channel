@@ -7,14 +7,15 @@
 # SYNAPSE_CHANNEL — unified `synapse` command-line entry point
 """Command-line entry point for the Synapse channel.
 
-The ``synapse`` command exposes six subcommands:
+The ``synapse`` command exposes seven subcommands:
 
 * ``hub`` — run the coordination hub;
 * ``worker`` — run a model worker that answers on the channel;
 * ``team`` — launch a hub plus one or two local workers in one shot;
 * ``send`` — connect, send one message, optionally wait for replies, and exit;
 * ``listen`` — connect and stream channel messages until interrupted;
-* ``relay`` — decode and print a lite relay log a hub mirrored to a file.
+* ``relay`` — decode and print a lite relay log a hub mirrored to a file;
+* ``board`` — print the hub's shared task/progress blackboard.
 
 The send/listen helpers take an injectable agent factory so the dispatch and the
 client flows are unit-testable without a live hub.
@@ -242,6 +243,71 @@ def _cmd_relay(args: argparse.Namespace) -> int:
     return 0
 
 
+def _print_board(board: dict[str, Any]) -> None:
+    """Render a blackboard snapshot as readable lines on stdout."""
+    tasks = board.get("tasks", [])
+    ready = board.get("ready", [])
+    progress = board.get("progress", [])
+    print(f"Tasks ({len(tasks)}):")
+    for task in tasks:
+        deps = ", ".join(task.get("depends_on", []))
+        suffix = f"  (deps: {deps})" if deps else ""
+        print(f"  [{task.get('status')}] {task.get('task_id')} — {task.get('title')}{suffix}")
+    print(f"Ready: {', '.join(ready) if ready else '(none)'}")
+    if progress:
+        print("Recent progress:")
+        for note in progress[-10:]:
+            task_id = note.get("task_id") or "-"
+            print(f"  {note.get('author')} [{note.get('kind')}] {task_id}: {note.get('text')}")
+
+
+async def _board(
+    *, uri: str, name: str, agent_factory: AgentFactory = SynapseAgent
+) -> int:
+    """Connect, request the shared blackboard, print it, and exit.
+
+    Parameters
+    ----------
+    uri, name : str
+        Hub URI and the requester's display name.
+    agent_factory : AgentFactory, optional
+        Factory for the client agent; injectable for testing.
+
+    Returns
+    -------
+    int
+        ``0`` once a snapshot is printed, ``1`` when the hub could not be reached.
+    """
+    boards: list[dict[str, Any]] = []
+
+    async def collect(data: dict[str, Any]) -> None:
+        if data.get("type") == MessageType.BOARD_SNAPSHOT:
+            boards.append(data.get("board", {}))
+
+    agent = agent_factory(name, collect, uri=uri, verbose=False)
+    conn_task = asyncio.create_task(agent.connect())
+    try:
+        if not await agent.wait_until_ready(timeout=5.0):
+            print(f"[{name}] Could not reach hub at {uri}.")
+            return 1
+        await agent.request_board()
+        for _ in range(50):
+            if boards:
+                break
+            await asyncio.sleep(0.05)
+        if boards:
+            _print_board(boards[-1])
+        return 0
+    finally:
+        agent.running = False
+        conn_task.cancel()
+
+
+def _cmd_board(args: argparse.Namespace) -> int:
+    """Dispatch the ``board`` subcommand."""
+    return asyncio.run(_board(uri=args.uri, name=args.name))
+
+
 # -- parser -------------------------------------------------------------------
 
 
@@ -330,6 +396,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="File holding a persisted read offset; resumes where the last run left off.",
     )
     relay.set_defaults(func=_cmd_relay)
+
+    board = sub.add_parser("board", help="Print the hub's shared task/progress board.")
+    board.add_argument("--uri", default=DEFAULT_HUB_URI)
+    board.add_argument("--name", default="USER")
+    board.set_defaults(func=_cmd_board)
 
     return parser
 

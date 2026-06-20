@@ -11,6 +11,26 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.11.0] - 2026-06-20
+
+### Added
+- Shared blackboard (`ledger` module): a task ledger plus an append-only,
+  bounded progress ledger, kept separate from the lease registry. A `LedgerTask`
+  declares a unit of work — title, description, and dependencies — so any agent
+  can read the plan and pick a ready task; dependency cycles are refused so the
+  plan stays a DAG and `Blackboard.ready_tasks` is well-defined. The blackboard
+  is event-sourced and rebuilt on restart alongside claims and chat history.
+- Hub message types and handlers for the blackboard: declare/re-declare a task
+  (`ledger_task`), change its planning status or suggested owner
+  (`ledger_task_update`), append a structured progress note
+  (`ledger_progress`), and request a board snapshot (`board_request`). Task
+  changes are durable; progress notes follow the high-volume commit path.
+- `SynapseAgent.post_task`, `update_ledger_task`, `post_progress`, and
+  `request_board` client helpers, and a `synapse board` command that prints the
+  shared plan, the ready tasks, and recent progress.
+- `Blackboard`, `LedgerTask`, and `ProgressNote` are exported from the package;
+  `SynapseHub` accepts a `max_progress` bound for the progress ledger.
+
 ## [0.10.0] - 2026-06-20
 
 ### Added

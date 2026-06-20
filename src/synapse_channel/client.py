@@ -381,6 +381,94 @@ class SynapseAgent:
             task_id=task_id.strip(),
         )
 
+    async def post_task(
+        self,
+        task_id: str,
+        title: str,
+        *,
+        description: str = "",
+        depends_on: tuple[str, ...] | list[str] = (),
+        suggested_owner: str = "",
+    ) -> None:
+        """Declare or re-declare a task on the shared plan (an upsert).
+
+        This is the planning surface, distinct from :meth:`claim` (the lease on
+        doing the work). Re-posting the same id refines the declaration.
+
+        Parameters
+        ----------
+        task_id : str
+            Stable identifier, shared with any claim taken on the task.
+        title : str
+            Short human-readable name of the work.
+        description : str, optional
+            Longer description or acceptance notes.
+        depends_on : tuple[str, ...] or list[str], optional
+            Prerequisite task ids; the hub refuses dependencies that form a cycle.
+        suggested_owner : str, optional
+            Advisory proposed owner.
+        """
+        extra: dict[str, Any] = {"task_id": task_id.strip(), "title": title}
+        if description:
+            extra["description"] = description
+        if depends_on:
+            extra["depends_on"] = list(depends_on)
+        if suggested_owner:
+            extra["suggested_owner"] = suggested_owner
+        await self.send_message(MessageType.LEDGER_TASK, target="System", **extra)
+
+    async def update_ledger_task(
+        self,
+        task_id: str,
+        *,
+        status: str | None = None,
+        suggested_owner: str | None = None,
+    ) -> None:
+        """Change a plan task's planning status or suggested owner.
+
+        Parameters
+        ----------
+        task_id : str
+            Identifier of the task to update.
+        status : str or None, optional
+            New planning status (``open``/``in_progress``/``blocked``/``done``/
+            ``cancelled``); an unknown status is refused.
+        suggested_owner : str or None, optional
+            Replacement advisory owner (``""`` clears it).
+        """
+        extra: dict[str, Any] = {"task_id": task_id.strip()}
+        if status is not None:
+            extra["status"] = status
+        if suggested_owner is not None:
+            extra["suggested_owner"] = suggested_owner
+        await self.send_message(MessageType.LEDGER_TASK_UPDATE, target="System", **extra)
+
+    async def post_progress(
+        self, task_id: str, text: str, *, kind: str = "note"
+    ) -> None:
+        """Append a structured progress note to the progress ledger.
+
+        Parameters
+        ----------
+        task_id : str
+            Task the note concerns; ``""`` for a board-wide note.
+        text : str
+            Body of the note.
+        kind : str, optional
+            One of ``note``/``blocked``/``assessment``. Defaults to ``"note"``.
+        """
+        await self.send_message(
+            MessageType.LEDGER_PROGRESS,
+            target="System",
+            payload=text,
+            task_id=task_id.strip(),
+            kind=kind,
+        )
+
+    async def request_board(self) -> None:
+        """Ask the hub for a snapshot of the shared blackboard."""
+        await self.send_message(MessageType.BOARD_REQUEST, target="System", payload="board")
+
     def start(self) -> None:
         """Run :meth:`connect` to completion on a fresh event loop.
 

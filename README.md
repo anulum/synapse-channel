@@ -52,6 +52,7 @@ synapse hub --port 8876 --relay-log ./feed.ndjson    # mirror the channel to a c
 synapse worker --name FAST --provider ollama --model gemma3:4b
 synapse worker --name OFFLINE --provider rule        # no network, canned replies
 synapse relay ./feed.ndjson                          # decode and print that file as readable lines
+synapse board                                        # print the shared task/progress blackboard
 ```
 
 ### Durability
@@ -89,6 +90,13 @@ see [`benchmarks/`](benchmarks/).
    time. After a reconnect, an agent resumes by `idem_key` (retried claims are not
    applied twice) and a `resume` cursor (fetch exactly the messages it missed).
 
+Alongside the lease registry, a **shared blackboard** holds the team's plan: a
+task ledger of declared work with dependencies (the hub refuses dependency
+cycles, so `ready` tasks are well-defined) and an append-only progress ledger a
+supervisor can read to spot stalls. A declared `LedgerTask` is the *plan*; a
+claim is the *lease* on doing it — the two share a task id but stay independent,
+so the simple claim flow keeps working. View it with `synapse board`.
+
 See [`TEAM_PROTOCOL.md`](TEAM_PROTOCOL.md) for the working agreement and message
 reference.
 
@@ -110,6 +118,7 @@ async def main() -> None:
 | Module | Responsibility |
 | --- | --- |
 | `state` | Presence, scoped task-claim leases, epochs/versions, and resource offers (transport-agnostic). |
+| `ledger` | Shared blackboard: the declared task plan (with dependencies) and an append-only progress stream. |
 | `scoping` | Worktree- and path-overlap detection that keeps two agents off the same files. |
 | `lifecycle` | Typed task-status states and the legal transitions the hub enforces. |
 | `deadlock` | Wait-for cycle detection so circular hold-and-wait claims are refused. |

@@ -18,7 +18,7 @@ command (see :mod:`synapse_channel.cli`) drives all of it.
 
 from __future__ import annotations
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
 from synapse_channel.chat_backends import (
     ChatBackend,
@@ -30,6 +30,7 @@ from synapse_channel.client import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.deadlock import would_create_cycle
 from synapse_channel.hub import SynapseHub
 from synapse_channel.launcher import plan_team, run_team
+from synapse_channel.ledger import Blackboard, LedgerTask, ProgressNote
 from synapse_channel.lifecycle import TaskStatus, can_transition
 from synapse_channel.llm_worker import SynapseLLMWorker, is_service_message
 from synapse_channel.persistence import EventStore
@@ -44,10 +45,13 @@ from synapse_channel.state import ResourceOffer, SynapseState, TaskClaim
 
 __all__ = [
     "DEFAULT_HUB_URI",
+    "Blackboard",
     "ChatBackend",
     "EventStore",
+    "LedgerTask",
     "MessageType",
     "OpenAIChatClient",
+    "ProgressNote",
     "ResourceOffer",
     "RuleBasedClient",
     "SynapseAgent",
