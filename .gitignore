@@ -42,3 +42,6 @@ dist/
 .coverage.*
 htmlcov/
 coverage.xml
+
+# Internal strategy/audit docs (never published)
+docs/internal/
