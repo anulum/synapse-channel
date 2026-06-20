@@ -46,12 +46,21 @@ dev = [
 benchmark = [
   "tiktoken>=0.7",
 ]
+docs = [
+  "mkdocs-material>=9.5",
+  "mkdocstrings[python]>=0.26",
+]
 
 [project.scripts]
 synapse = "synapse_channel.cli:main"
 
 [project.urls]
 Homepage = "https://www.anulum.li"
+Repository = "https://github.com/anulum/synapse-channel"
+Issues = "https://github.com/anulum/synapse-channel/issues"
+Changelog = "https://github.com/anulum/synapse-channel/blob/main/CHANGELOG.md"
+Documentation = "https://anulum.github.io/synapse-channel"
+Funding = "https://www.anulum.li/licensing"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -103,3 +112,7 @@ exclude_lines = [
   "if TYPE_CHECKING:",
   "raise NotImplementedError",
 ]
+
+[tool.bandit]
+exclude_dirs = ["tests", "benchmarks", "legacy", ".venv"]
+skips = ["B101"]

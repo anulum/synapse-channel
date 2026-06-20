@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Line ending normalization
+* text=auto eol=lf
+
+# Binary files (no diff, no merge)
+*.png binary
+*.jpg binary
+*.svg binary
+*.db binary
+
+# Generated, do not diff
+*.egg-info/** linguist-generated
+benchmarks/results/*.json linguist-generated
