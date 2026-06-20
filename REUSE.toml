@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+version = 1
+
+# --- Source, tests, and benchmarks (AGPL-3.0-or-later) ---
+
+[[annotations]]
+path = ["src/**", "tests/**", "benchmarks/**"]
+SPDX-FileCopyrightText = "1998-2026 Miroslav Šotek <protoscience@anulum.li>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# --- CI, templates, and tooling (AGPL-3.0-or-later) ---
+
+[[annotations]]
+path = [".github/**"]
+SPDX-FileCopyrightText = "1998-2026 Miroslav Šotek <protoscience@anulum.li>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# --- Root config and text files (AGPL-3.0-or-later) ---
+
+[[annotations]]
+path = [
+    "*.md", "*.txt", "*.json", "*.yaml", "*.yml", "*.toml",
+    "*.cfg", "*.ini", "*.in",
+]
+SPDX-FileCopyrightText = "1998-2026 Miroslav Šotek <protoscience@anulum.li>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+[[annotations]]
+path = [
+    ".editorconfig", ".gitignore", ".gitattributes",
+    "CITATION.cff", "Makefile",
+]
+SPDX-FileCopyrightText = "1998-2026 Miroslav Šotek <protoscience@anulum.li>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# --- Documentation and media (AGPL-3.0-or-later) ---
+
+[[annotations]]
+path = ["docs/**", "*.png", "*.svg", "*.jpg"]
+SPDX-FileCopyrightText = "1998-2026 Miroslav Šotek <protoscience@anulum.li>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
