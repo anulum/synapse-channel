@@ -464,3 +464,26 @@ async def test_request_board_sends_board_request() -> None:
     agent.connection = ws  # type: ignore[assignment]
     await agent.request_board()
     assert json.loads(ws.sent[-1])["type"] == "board_request"
+
+
+# --- connect authentication --------------------------------------------------
+
+
+async def test_connect_sends_token_on_registration(monkeypatch: pytest.MonkeyPatch) -> None:
+    welcome = json.dumps({"type": "welcome", "hub_id": "h"})
+    ws = FakeWebSocket([welcome])
+    _install_connection(monkeypatch, ws)
+    agent = SynapseAgent("A", token="s3cret", verbose=False)
+    await agent.connect()
+    first = json.loads(ws.sent[0])
+    assert first["type"] == "heartbeat"
+    assert first["token"] == "s3cret"
+
+
+async def test_connect_omits_token_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    welcome = json.dumps({"type": "welcome", "hub_id": "h"})
+    ws = FakeWebSocket([welcome])
+    _install_connection(monkeypatch, ws)
+    agent = SynapseAgent("A", verbose=False)
+    await agent.connect()
+    assert "token" not in json.loads(ws.sent[0])

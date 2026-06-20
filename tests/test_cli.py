@@ -33,6 +33,7 @@ class FakeAgent:
         *,
         uri: str,
         verbose: bool,
+        token: str | None = None,
         ready: bool = True,
         inbound: list[dict[str, Any]] | None = None,
         idle: bool = True,
@@ -40,6 +41,7 @@ class FakeAgent:
         self.name = name
         self.callback = callback
         self.uri = uri
+        self.token = token
         self.running = True
         self.chats: list[tuple[str, str]] = []
         self._ready = ready
@@ -69,9 +71,18 @@ def _factory(
     inbound: list[dict[str, Any]] | None = None,
     idle: bool = True,
 ) -> Callable[..., Any]:
-    def make(name: str, callback: Any, *, uri: str, verbose: bool) -> Any:
+    def make(
+        name: str, callback: Any, *, uri: str, verbose: bool, token: str | None = None
+    ) -> Any:
         agent = FakeAgent(
-            name, callback, uri=uri, verbose=verbose, ready=ready, inbound=inbound, idle=idle
+            name,
+            callback,
+            uri=uri,
+            verbose=verbose,
+            token=token,
+            ready=ready,
+            inbound=inbound,
+            idle=idle,
         )
         holder.append(agent)
         return agent
@@ -155,6 +166,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "max_history": 10000,
         "relay_log": None,
         "relay_max_lines": 5000,
+        "token": None,
     }
     base.update(overrides)
     return argparse.Namespace(**base)
@@ -211,6 +223,7 @@ def _worker_ns(**overrides: Any) -> argparse.Namespace:
         "max_context": 8,
         "reply_target_mode": "all",
         "min_reply_interval": 0.7,
+        "token": None,
     }
     base.update(overrides)
     return argparse.Namespace(**base)
@@ -312,7 +325,7 @@ async def test_send_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) 
 def test_cmd_send_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("synapse_channel.cli.asyncio.run", lambda coro: coro.close() or 0)
     ns = argparse.Namespace(
-        uri="ws://h", name="USER", target="all", message="hi", wait_seconds=0.0
+        uri="ws://h", name="USER", target="all", message="hi", wait_seconds=0.0, token=None
     )
     assert cli._cmd_send(ns) == 0
 
@@ -337,7 +350,7 @@ async def test_listen_prints_chat_and_presence(capsys: pytest.CaptureFixture[str
 
 def test_cmd_listen_dispatch_and_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("synapse_channel.cli.asyncio.run", lambda coro: coro.close() or 0)
-    ns = argparse.Namespace(uri="ws://h", name="USER")
+    ns = argparse.Namespace(uri="ws://h", name="USER", token=None)
     assert cli._cmd_listen(ns) == 0
 
     def interrupt(coro: Any) -> int:
@@ -531,5 +544,92 @@ async def test_board_returns_quietly_when_no_snapshot_arrives(
 
 def test_cmd_board_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("synapse_channel.cli.asyncio.run", lambda coro: coro.close() or 0)
-    ns = argparse.Namespace(uri="ws://h", name="USER")
+    ns = argparse.Namespace(uri="ws://h", name="USER", token=None)
     assert cli._cmd_board(ns) == 0
+
+
+# --- connect authentication threading ----------------------------------------
+
+
+def test_parser_token_options() -> None:
+    parser = cli.build_parser()
+    assert parser.parse_args(["hub", "--token", "h"]).token == "h"
+    assert parser.parse_args(["worker", "--token", "w"]).token == "w"
+    assert parser.parse_args(["send", "msg", "--token", "s"]).token == "s"
+    assert parser.parse_args(["listen", "--token", "l"]).token == "l"
+    assert parser.parse_args(["board", "--token", "b"]).token == "b"
+
+
+def test_cmd_hub_with_token_builds_authenticator(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(cli, "_run", lambda coro: coro.close())
+
+    def spy_hub(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    monkeypatch.setattr("synapse_channel.cli.SynapseHub", spy_hub)
+    assert cli._cmd_hub(_hub_ns(token="s3cret")) == 0
+    assert captured["authenticator"] is not None
+
+
+def test_cmd_hub_without_token_has_no_authenticator(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(cli, "_run", lambda coro: coro.close())
+
+    def spy_hub(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    monkeypatch.setattr("synapse_channel.cli.SynapseHub", spy_hub)
+    assert cli._cmd_hub(_hub_ns()) == 0
+    assert captured["authenticator"] is None
+
+
+def test_cmd_worker_threads_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(cli, "_run", lambda coro: coro.close())
+
+    class FakeWorker:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+        async def run(self) -> None:
+            return None
+
+    monkeypatch.setattr("synapse_channel.cli.SynapseLLMWorker", FakeWorker)
+    assert cli._cmd_worker(_worker_ns(token="w0rk")) == 0
+    assert captured["token"] == "w0rk"
+
+
+async def test_send_threads_token_to_agent() -> None:
+    holder: list[FakeAgent] = []
+    factory = _factory(holder)
+    await cli._send(
+        uri="ws://h",
+        name="U",
+        target="all",
+        message="hi",
+        wait_seconds=0.0,
+        agent_factory=factory,
+        token="s3cret",
+    )
+    assert holder[0].token == "s3cret"
+
+
+async def test_listen_threads_token_to_agent() -> None:
+    holder: list[FakeAgent] = []
+    factory = _factory(holder, inbound=[], idle=False)
+    await cli._listen(uri="ws://h", name="U", agent_factory=factory, token="s3cret")
+    assert holder[0].token == "s3cret"
+
+
+async def test_board_threads_token_to_agent() -> None:
+    holder: list[FakeAgent] = []
+    snapshot: dict[str, Any] = {
+        "type": "board_snapshot",
+        "board": {"tasks": [], "ready": [], "progress": []},
+    }
+    factory = _factory(holder, inbound=[snapshot])
+    await cli._board(uri="ws://h", name="U", agent_factory=factory, token="s3cret")
+    assert holder[0].token == "s3cret"

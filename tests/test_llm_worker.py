@@ -261,3 +261,13 @@ async def test_run_reports_connection_error(capsys: pytest.CaptureFixture[str]) 
     worker.agent = FakeAgent(connect_exc=RuntimeError("dropped"))  # type: ignore[assignment]
     await worker.run()
     assert "worker stopped: dropped" in capsys.readouterr().out
+
+
+def test_worker_forwards_token_to_its_agent() -> None:
+    worker = _worker(name="ALPHA", token="s3cret")
+    assert worker.agent.token == "s3cret"
+
+
+def test_worker_default_token_is_none() -> None:
+    worker = _worker(name="ALPHA")
+    assert worker.agent.token is None

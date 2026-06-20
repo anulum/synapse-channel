@@ -57,6 +57,10 @@ class SynapseAgent:
         :data:`MINIMUM_HEARTBEAT_INTERVAL`. Defaults to ``20.0``.
     verbose : bool, optional
         When ``True``, connection lifecycle notes are printed. Defaults to ``True``.
+    token : str or None, optional
+        Shared-secret token presented on the registration message when the hub
+        requires authentication. ``None`` sends no token (the default for an
+        open, loopback hub).
     """
 
     def __init__(
@@ -67,6 +71,7 @@ class SynapseAgent:
         uri: str = DEFAULT_HUB_URI,
         heartbeat_interval: float = 20.0,
         verbose: bool = True,
+        token: str | None = None,
     ) -> None:
         self.name = name
         self.uri = uri
@@ -78,6 +83,7 @@ class SynapseAgent:
         self.ready_event = asyncio.Event()
         self.hub_id = "unknown"
         self.verbose = bool(verbose)
+        self.token = token
 
     async def connect(self) -> None:
         """Open the connection and run the inbound listener until it closes.
@@ -93,8 +99,12 @@ class SynapseAgent:
                 if self.verbose:
                     print(f"[{self.name}] Online and connected to Synapse.")
                 # Register identity immediately so presence and /who are accurate
-                # before the first user-issued command.
-                await self.send_message(MessageType.HEARTBEAT, target="System", payload="online")
+                # before the first user-issued command. The token (if any) rides
+                # this first message, which is where the hub gates authentication.
+                extra = {"token": self.token} if self.token else {}
+                await self.send_message(
+                    MessageType.HEARTBEAT, target="System", payload="online", **extra
+                )
                 self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
                 async for raw in websocket:

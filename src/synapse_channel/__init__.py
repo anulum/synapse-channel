@@ -18,8 +18,9 @@ command (see :mod:`synapse_channel.cli`) drives all of it.
 
 from __future__ import annotations
 
-__version__ = "0.11.0"
+__version__ = "0.12.0"
 
+from synapse_channel.auth import TokenAuthenticator
 from synapse_channel.chat_backends import (
     ChatBackend,
     OpenAIChatClient,
@@ -60,6 +61,7 @@ __all__ = [
     "SynapseState",
     "TaskClaim",
     "TaskStatus",
+    "TokenAuthenticator",
     "__version__",
     "build_envelope",
     "can_transition",

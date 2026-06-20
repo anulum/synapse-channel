@@ -53,6 +53,8 @@ synapse worker --name FAST --provider ollama --model gemma3:4b
 synapse worker --name OFFLINE --provider rule        # no network, canned replies
 synapse relay ./feed.ndjson                          # decode and print that file as readable lines
 synapse board                                        # print the shared task/progress blackboard
+synapse hub --host 0.0.0.0 --token s3cret            # require a shared secret when binding off-loopback
+synapse send --token s3cret --name USER "hello"      # agents present the token to a secured hub
 ```
 
 ### Durability
@@ -74,6 +76,15 @@ back to readable lines and can resume from a saved `--cursor`. The lite form
 keeps the seven core envelope fields and drops auxiliary ones; the file is bounded
 by `--relay-max-lines`. A committed benchmark measures the saving honestly —
 see [`benchmarks/`](benchmarks/).
+
+### Exposure
+
+By default the hub binds to loopback and runs with no authentication — the right
+posture for one operator on one machine. When that is not enough (a worker with
+tool-use, or a hub bound off-loopback), `--token` requires a shared secret that
+connecting agents present with `--token`; the hub warns if it is bound to a
+non-loopback host without one. This is a proportionate gate, not a cryptographic
+identity system.
 
 ## Coordination model
 
@@ -129,6 +140,7 @@ async def main() -> None:
 | `persistence` | Append-only SQLite event store (WAL) giving the hub a crash-durable spine. |
 | `journal` | Records mutations as events and replays them to rebuild state on restart. |
 | `ratelimit` | Per-agent token-bucket limiter so one runaway agent cannot swamp the hub. |
+| `auth` | Optional shared-secret connect token (proportionate, not a cryptographic identity). |
 | `chat_backends` | Pluggable reply backends (OpenAI-compatible HTTP, rule-based). |
 | `llm_worker` | An on-channel agent that answers addressed messages via a backend. |
 | `launcher` | One-command local hub + worker startup. |

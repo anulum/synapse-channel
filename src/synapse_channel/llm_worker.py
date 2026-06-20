@@ -107,6 +107,9 @@ class SynapseLLMWorker:
         ``"all"`` to answer the room or ``"sender"`` to answer privately.
     min_reply_interval : float, optional
         Minimum seconds between replies (floored at 0). Defaults to ``0.7``.
+    token : str or None, optional
+        Shared-secret token presented to a hub that requires authentication;
+        ``None`` for an open hub.
     """
 
     def __init__(
@@ -121,6 +124,7 @@ class SynapseLLMWorker:
         max_context: int = 8,
         reply_target_mode: str = "all",
         min_reply_interval: float = 0.7,
+        token: str | None = None,
     ) -> None:
         self.name = name
         self.uri = uri
@@ -134,7 +138,9 @@ class SynapseLLMWorker:
         self.inbox: asyncio.Queue[dict[str, str]] = asyncio.Queue()
         self.last_reply_ts = 0.0
 
-        self.agent = SynapseAgent(self.name, on_message_callback=self.on_message, uri=self.uri)
+        self.agent = SynapseAgent(
+            self.name, on_message_callback=self.on_message, uri=self.uri, token=token
+        )
         self.client: ChatBackend = self._build_client()
 
     def _build_client(self) -> ChatBackend:

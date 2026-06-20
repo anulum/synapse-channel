@@ -29,6 +29,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from synapse_channel import __version__
+from synapse_channel.auth import TokenAuthenticator
 from synapse_channel.client import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.hub import (
     DEFAULT_HOST,
@@ -68,12 +69,14 @@ def _cmd_hub(args: argparse.Namespace) -> int:
     limiter = (
         RateLimiter(rate_per_second=args.rate, burst=args.burst) if args.rate > 0 else None
     )
+    authenticator = TokenAuthenticator([args.token]) if args.token else None
     hub = SynapseHub(
         journal=journal,
         rate_limiter=limiter,
         max_history=args.max_history,
         relay_log=args.relay_log,
         relay_max_lines=args.relay_max_lines,
+        authenticator=authenticator,
     )
     try:
         _run(hub.serve(host=args.host, port=args.port))
@@ -97,6 +100,7 @@ def _cmd_worker(args: argparse.Namespace) -> int:
         max_context=args.max_context,
         reply_target_mode=args.reply_target_mode,
         min_reply_interval=args.min_reply_interval,
+        token=args.token,
     )
     try:
         _run(worker.run())
@@ -123,6 +127,7 @@ async def _send(
     message: str,
     wait_seconds: float,
     agent_factory: AgentFactory = SynapseAgent,
+    token: str | None = None,
 ) -> int:
     """Send one chat message and optionally print replies for a window.
 
@@ -146,7 +151,7 @@ async def _send(
         if data.get("type") == MessageType.CHAT and data.get("sender") != name:
             replies.append(data)
 
-    agent = agent_factory(name, collect, uri=uri, verbose=False)
+    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
     conn_task = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=5.0):
@@ -172,12 +177,17 @@ def _cmd_send(args: argparse.Namespace) -> int:
             target=args.target,
             message=args.message,
             wait_seconds=args.wait_seconds,
+            token=args.token,
         )
     )
 
 
 async def _listen(
-    *, uri: str, name: str, agent_factory: AgentFactory = SynapseAgent
+    *,
+    uri: str,
+    name: str,
+    agent_factory: AgentFactory = SynapseAgent,
+    token: str | None = None,
 ) -> int:
     """Stream chat and presence updates to stdout until the connection ends.
 
@@ -202,7 +212,7 @@ async def _listen(
             online = ", ".join(data.get("online_agents", []))
             print(f"[presence] {data.get('event')} -> online: {online}")
 
-    agent = agent_factory(name, show, uri=uri, verbose=True)
+    agent = agent_factory(name, show, uri=uri, verbose=True, token=token)
     await agent.connect()
     return 0
 
@@ -210,7 +220,7 @@ async def _listen(
 def _cmd_listen(args: argparse.Namespace) -> int:
     """Dispatch the ``listen`` subcommand."""
     try:
-        return asyncio.run(_listen(uri=args.uri, name=args.name))
+        return asyncio.run(_listen(uri=args.uri, name=args.name, token=args.token))
     except KeyboardInterrupt:
         print(f"\n[{args.name}] stopped listening.")
         return 0
@@ -262,7 +272,11 @@ def _print_board(board: dict[str, Any]) -> None:
 
 
 async def _board(
-    *, uri: str, name: str, agent_factory: AgentFactory = SynapseAgent
+    *,
+    uri: str,
+    name: str,
+    agent_factory: AgentFactory = SynapseAgent,
+    token: str | None = None,
 ) -> int:
     """Connect, request the shared blackboard, print it, and exit.
 
@@ -284,7 +298,7 @@ async def _board(
         if data.get("type") == MessageType.BOARD_SNAPSHOT:
             boards.append(data.get("board", {}))
 
-    agent = agent_factory(name, collect, uri=uri, verbose=False)
+    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
     conn_task = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=5.0):
@@ -305,7 +319,7 @@ async def _board(
 
 def _cmd_board(args: argparse.Namespace) -> int:
     """Dispatch the ``board`` subcommand."""
-    return asyncio.run(_board(uri=args.uri, name=args.name))
+    return asyncio.run(_board(uri=args.uri, name=args.name, token=args.token))
 
 
 # -- parser -------------------------------------------------------------------
@@ -351,6 +365,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_RELAY_MAX_LINES,
         help="Upper bound on the relay log before it is trimmed.",
     )
+    hub.add_argument(
+        "--token",
+        default=None,
+        help="Require this shared-secret token from connecting agents (off by default).",
+    )
     hub.set_defaults(func=_cmd_hub)
 
     worker = sub.add_parser("worker", help="Run an on-channel model worker.")
@@ -363,6 +382,7 @@ def build_parser() -> argparse.ArgumentParser:
     worker.add_argument("--max-context", type=int, default=8)
     worker.add_argument("--reply-target-mode", choices=["all", "sender"], default="all")
     worker.add_argument("--min-reply-interval", type=float, default=0.7)
+    worker.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     worker.set_defaults(func=_cmd_worker)
 
     team = sub.add_parser("team", help="Launch a hub plus local workers.")
@@ -377,12 +397,14 @@ def build_parser() -> argparse.ArgumentParser:
     send.add_argument("--name", default="USER")
     send.add_argument("--target", default="all")
     send.add_argument("--wait-seconds", type=float, default=2.0)
+    send.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     send.add_argument("message")
     send.set_defaults(func=_cmd_send)
 
     listen = sub.add_parser("listen", help="Stream channel messages until interrupted.")
     listen.add_argument("--uri", default=DEFAULT_HUB_URI)
     listen.add_argument("--name", default="USER")
+    listen.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     listen.set_defaults(func=_cmd_listen)
 
     relay = sub.add_parser("relay", help="Decode and print a hub's lite relay log.")
@@ -400,6 +422,7 @@ def build_parser() -> argparse.ArgumentParser:
     board = sub.add_parser("board", help="Print the hub's shared task/progress board.")
     board.add_argument("--uri", default=DEFAULT_HUB_URI)
     board.add_argument("--name", default="USER")
+    board.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     board.set_defaults(func=_cmd_board)
 
     return parser

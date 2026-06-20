@@ -28,6 +28,7 @@ from typing import Any
 import websockets
 from websockets.exceptions import ConnectionClosed
 
+from synapse_channel.auth import TokenAuthenticator
 from synapse_channel.deadlock import would_create_cycle
 from synapse_channel.idempotency import IdempotencyCache
 from synapse_channel.journal import (
@@ -58,6 +59,14 @@ DEFAULT_PORT = 8876
 DEFAULT_MAX_HISTORY = 10000
 DEFAULT_MAX_QUEUE = 64
 DEFAULT_RELAY_MAX_LINES = 5000
+
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+"""Bind hosts treated as loopback-only, where running without a token is fine."""
+
+
+def is_loopback_host(host: str) -> bool:
+    """Return whether ``host`` binds only the loopback interface."""
+    return host.strip().lower() in LOOPBACK_HOSTS
 
 _MUTATING_TYPES = (
     frozenset({MessageType.CLAIM, MessageType.RELEASE, MessageType.TASK_UPDATE})
@@ -105,6 +114,10 @@ class SynapseHub:
         Maximum progress notes retained on the shared blackboard; the oldest are
         dropped beyond this bound. The durable log (when attached) still records
         every note. Defaults to :data:`~synapse_channel.ledger.DEFAULT_MAX_PROGRESS`.
+    authenticator : TokenAuthenticator or None, optional
+        When given, a connecting agent must present a valid shared-secret token
+        on its first message or the hub refuses and closes the socket. ``None``
+        leaves the hub open, which is the right default for a loopback bind.
     """
 
     def __init__(
@@ -118,9 +131,11 @@ class SynapseHub:
         relay_log: str | Path | None = None,
         relay_max_lines: int = DEFAULT_RELAY_MAX_LINES,
         max_progress: int = DEFAULT_MAX_PROGRESS,
+        authenticator: TokenAuthenticator | None = None,
     ) -> None:
         self.journal = journal
         self.rate_limiter = rate_limiter
+        self.authenticator = authenticator
         self.max_history = max(int(max_history), 1)
         self.relay_log = Path(relay_log) if relay_log else None
         self.relay_max_lines = max(int(relay_max_lines), 1)
@@ -692,6 +707,49 @@ class SynapseHub:
 
     # -- registration + name resolution --------------------------------------
 
+    async def _authorise(self, sender: str, data: dict[str, Any], websocket: Any) -> bool:
+        """Gate the first message from a socket on the shared-secret token.
+
+        Authentication is checked once, when a socket first binds a name; later
+        messages on an already-bound socket are trusted. With no authenticator
+        the hub is open.
+
+        Parameters
+        ----------
+        sender : str
+            The agent name the connection claims.
+        data : dict[str, Any]
+            The decoded message; the token is read from its ``token`` field.
+        websocket : Any
+            The sender's socket, closed (code ``4010``) when authentication fails.
+
+        Returns
+        -------
+        bool
+            ``True`` when the message may proceed, ``False`` when it was refused
+            and the socket closed.
+        """
+        if self.authenticator is None or self.socket_agent.get(websocket) is not None:
+            return True
+        ok, reason = self.authenticator.authenticate(str(data.get("token") or ""), sender)
+        if ok:
+            return True
+        await self._send_json(
+            websocket,
+            self._system(reason, msg_type=MessageType.AUTH_DENIED, target=sender),
+        )
+        await websocket.close(code=4010, reason="auth denied")
+        return False
+
+    def _warn_if_exposed(self, host: str) -> None:
+        """Warn when binding off-loopback with no token configured."""
+        if not is_loopback_host(host) and self.authenticator is None:
+            logger.warning(
+                "Synapse Hub bound to non-loopback host %r with no token; set an "
+                "authenticator (e.g. synapse hub --token ...) before exposing it.",
+                host,
+            )
+
     async def _resolve_sender(self, sender: str, websocket: Any) -> str | None:
         """Bind a socket to a sender name, enforcing uniqueness.
 
@@ -751,6 +809,9 @@ class SynapseHub:
         target = str(data.get("target") or "all")
         msg_type = str(data.get("type") or MessageType.CHAT).strip().lower()
         payload = str(data.get("payload") or "")
+
+        if not await self._authorise(sender, data, websocket):
+            return
 
         resolved = await self._resolve_sender(sender, websocket)
         if resolved is None:
@@ -895,6 +956,7 @@ class SynapseHub:
         port : int, optional
             Bind port. Defaults to :data:`DEFAULT_PORT`.
         """
+        self._warn_if_exposed(host)
         async with websockets.serve(self.handler, host, port, max_queue=DEFAULT_MAX_QUEUE):
             logger.info("Synapse Hub running on ws://%s:%d", host, port)
             await asyncio.Future()

@@ -16,7 +16,8 @@ from typing import Any
 import pytest
 from websockets.exceptions import ConnectionClosed
 
-from synapse_channel.hub import SynapseHub
+from synapse_channel.auth import TokenAuthenticator
+from synapse_channel.hub import SynapseHub, is_loopback_host
 from synapse_channel.persistence import EventStore
 from synapse_channel.ratelimit import RateLimiter
 from synapse_channel.relay import decode_lite, read_jsonl_since
@@ -943,3 +944,92 @@ async def test_hub_replay_trims_progress_to_bound(tmp_path: Path) -> None:
     store_b.close()
     # The durable log holds all four notes; replay trims to the last two.
     assert [n.text for n in hub_b.blackboard.progress] == ["2", "3"]
+
+
+# --- connect authentication --------------------------------------------------
+
+
+def _secured_hub(token: str = "s3cret") -> SynapseHub:
+    return SynapseHub(
+        default_ttl_seconds=300.0, hub_id="syn-test", authenticator=TokenAuthenticator([token])
+    )
+
+
+async def test_open_hub_processes_without_a_token() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="chat", payload="hi"), ws)
+    assert any(m.get("type") == "chat" for m in ws.decoded())
+
+
+async def test_secured_hub_refuses_missing_token_and_closes() -> None:
+    hub = _secured_hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="chat", payload="hi"), ws)
+    assert ws.last()["type"] == "auth_denied"
+    assert "required" in ws.last()["payload"]
+    assert ws.closed == (4010, "auth denied")
+    assert "A" not in hub.agent_sockets  # never bound
+
+
+async def test_secured_hub_refuses_bad_token() -> None:
+    hub = _secured_hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="heartbeat", token="wrong"), ws)
+    assert ws.last()["type"] == "auth_denied"
+    assert "Invalid" in ws.last()["payload"]
+
+
+async def test_secured_hub_admits_valid_token_then_trusts_socket() -> None:
+    hub = _secured_hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="heartbeat", token="s3cret"), ws)
+    assert "A" in hub.agent_sockets  # bound after authenticating
+    # A later message on the same socket need not re-present the token.
+    await hub.handle_message(_msg(sender="A", type="chat", payload="hi"), ws)
+    assert any(m.get("type") == "chat" for m in ws.decoded())
+
+
+async def test_secured_hub_enforces_per_agent_binding() -> None:
+    hub = SynapseHub(hub_id="syn-test", authenticator=TokenAuthenticator({"tok": ["FAST"]}))
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="REASON", type="heartbeat", token="tok"), ws)
+    assert ws.last()["type"] == "auth_denied"
+    assert "not authorised" in ws.last()["payload"]
+
+
+def test_is_loopback_host_recognises_loopback_addresses() -> None:
+    assert is_loopback_host("localhost")
+    assert is_loopback_host("127.0.0.1")
+    assert is_loopback_host("::1")
+    assert is_loopback_host("  LOCALHOST ")
+    assert not is_loopback_host("0.0.0.0")
+    assert not is_loopback_host("10.0.0.5")
+
+
+def test_warn_if_exposed_warns_off_loopback_without_token(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    hub = _hub()  # no authenticator
+    with caplog.at_level("WARNING", logger="synapse.hub"):
+        hub._warn_if_exposed("0.0.0.0")
+    assert "non-loopback" in caplog.text
+
+
+def test_warn_if_exposed_silent_on_loopback(caplog: pytest.LogCaptureFixture) -> None:
+    hub = _hub()
+    with caplog.at_level("WARNING", logger="synapse.hub"):
+        hub._warn_if_exposed("localhost")
+    assert caplog.records == []
+
+
+def test_warn_if_exposed_silent_when_token_set(caplog: pytest.LogCaptureFixture) -> None:
+    hub = _secured_hub()
+    with caplog.at_level("WARNING", logger="synapse.hub"):
+        hub._warn_if_exposed("0.0.0.0")
+    assert caplog.records == []

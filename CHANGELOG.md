@@ -11,6 +11,22 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.12.0] - 2026-06-20
+
+### Added
+- Proportionate connect authentication (`auth` module): an optional
+  `TokenAuthenticator` validates a shared-secret token a connecting agent
+  presents on its first message, optionally bound to a set of permitted agent
+  names. Tokens are compared in constant time; with no token configured the hub
+  stays open, which remains the default for a loopback bind. This is not a
+  cryptographic identity system — a single secret gates the connection.
+- `synapse hub --token` requires the token; `synapse worker/send/listen/board
+  --token` present it. `SynapseHub` accepts an `authenticator`, and
+  `SynapseAgent`/`SynapseLLMWorker` accept a `token`. `TokenAuthenticator` is
+  exported from the package.
+- The hub logs a warning when bound to a non-loopback host with no token
+  configured, so an exposed deployment is not silently unauthenticated.
+
 ## [0.11.0] - 2026-06-20
 
 ### Added

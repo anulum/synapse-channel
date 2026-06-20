@@ -73,6 +73,7 @@ class MessageType:
     BOARD_SNAPSHOT = "board_snapshot"
     ERROR = "error"
     NAME_CONFLICT = "name_conflict"
+    AUTH_DENIED = "auth_denied"
 
 
 RESOURCE_TYPE_ALIASES = frozenset({"resource", "resource_offer", "offer_resource"})
