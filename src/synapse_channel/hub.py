@@ -27,6 +27,7 @@ from typing import Any
 import websockets
 from websockets.exceptions import ConnectionClosed
 
+from synapse_channel.deadlock import would_create_cycle
 from synapse_channel.idempotency import IdempotencyCache
 from synapse_channel.journal import (
     record_chat,
@@ -103,6 +104,7 @@ class SynapseHub:
         self.agent_sockets: dict[str, Any] = {}
         self.socket_agent: dict[Any, str] = {}
         self._idempotency = IdempotencyCache()
+        self._waits: dict[str, str] = {}
         if journal is not None:
             replayed = replay(journal, default_ttl_seconds=default_ttl_seconds)
             self.state = replayed.state
@@ -233,6 +235,7 @@ class SynapseHub:
         )
         if ok:
             claim = self.state.claims[task_id]
+            self._waits.pop(sender, None)  # a successful claim means no longer blocked
             if self.journal is not None:
                 record_claim(self.journal, claim)
             grant = self._system(
@@ -470,6 +473,80 @@ class SynapseHub:
             ),
         )
 
+    async def _handle_wait_request(
+        self, sender: str, data: dict[str, Any], websocket: Any
+    ) -> None:
+        """Register an advisory wait for a held task, refusing deadlock.
+
+        The wait is advisory: the hub records that ``sender`` waits for whoever
+        holds ``task_id`` and refuses the request if registering it would close a
+        wait-for cycle (a hold-and-wait deadlock). The waiter is expected to retry
+        its claim when the holder releases; the wait clears on its next successful
+        claim or on disconnect.
+
+        Parameters
+        ----------
+        sender : str
+            The agent requesting to wait.
+        data : dict[str, Any]
+            The request; ``task_id`` is the task to wait for.
+        websocket : Any
+            The requesting socket.
+        """
+        task_id = str(data.get("task_id") or data.get("payload") or "").strip()
+        claim = self.state.claims.get(task_id)
+        if claim is None:
+            await self._send_json(
+                websocket,
+                self._system(
+                    f"Task '{task_id}' is not claimed; nothing to wait for.",
+                    msg_type=MessageType.WAIT_DENIED,
+                    target=sender,
+                    task_id=task_id,
+                ),
+            )
+            return
+        holder = claim.owner
+        if holder == sender:
+            await self._send_json(
+                websocket,
+                self._system(
+                    f"You already hold '{task_id}'.",
+                    msg_type=MessageType.WAIT_DENIED,
+                    target=sender,
+                    task_id=task_id,
+                ),
+            )
+            return
+        if would_create_cycle(self._waits, sender, holder):
+            await self._send_json(
+                websocket,
+                self._system(
+                    f"Waiting for '{task_id}' held by {holder} would deadlock.",
+                    msg_type=MessageType.WAIT_DENIED,
+                    target=sender,
+                    task_id=task_id,
+                    holder=holder,
+                ),
+            )
+            return
+        self._waits[sender] = holder
+        await self._send_json(
+            websocket,
+            self._system(
+                f"Waiting for '{task_id}' held by {holder}.",
+                msg_type=MessageType.WAIT_GRANTED,
+                target=sender,
+                task_id=task_id,
+                holder=holder,
+            ),
+        )
+
+    def _drop_waits(self, agent: str) -> None:
+        """Remove an agent's wait edge and any waits pointing at it."""
+        self._waits.pop(agent, None)
+        self._waits = {w: h for w, h in self._waits.items() if h != agent}
+
     # -- registration + name resolution --------------------------------------
 
     async def _resolve_sender(self, sender: str, websocket: Any) -> str | None:
@@ -595,6 +672,9 @@ class SynapseHub:
         if msg_type == MessageType.RESUME_REQUEST:
             await self._handle_resume_request(sender, data, websocket)
             return
+        if msg_type == MessageType.WAIT_REQUEST:
+            await self._handle_wait_request(sender, data, websocket)
+            return
         if msg_type == MessageType.TASK_UPDATE:
             await self._handle_task_update(sender, data, websocket)
             return
@@ -631,6 +711,7 @@ class SynapseHub:
         name = self.socket_agent.pop(websocket, None)
         if name is not None and self.agent_sockets.get(name) == websocket:
             self.agent_sockets.pop(name, None)
+            self._drop_waits(name)
             if self.rate_limiter is not None:
                 self.rate_limiter.forget(name)
             await self._broadcast_presence("left", name)

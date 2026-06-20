@@ -43,6 +43,7 @@ class MessageType:
     WHO_REQUEST = "who_request"
     HISTORY_REQUEST = "history_request"
     RESUME_REQUEST = "resume_request"
+    WAIT_REQUEST = "wait_request"
     TASK_UPDATE = "task_update"
     RESOURCE = "resource"
 
@@ -60,6 +61,8 @@ class MessageType:
     WHO_SNAPSHOT = "who_snapshot"
     HISTORY_SNAPSHOT = "history_snapshot"
     RESUME_SNAPSHOT = "resume_snapshot"
+    WAIT_GRANTED = "wait_granted"
+    WAIT_DENIED = "wait_denied"
     ERROR = "error"
     NAME_CONFLICT = "name_conflict"
 

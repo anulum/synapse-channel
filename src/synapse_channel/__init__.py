@@ -18,7 +18,7 @@ command (see :mod:`synapse_channel.cli`) drives all of it.
 
 from __future__ import annotations
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 from synapse_channel.chat_backends import (
     ChatBackend,
@@ -27,6 +27,7 @@ from synapse_channel.chat_backends import (
     sanitize_text,
 )
 from synapse_channel.client import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.deadlock import would_create_cycle
 from synapse_channel.hub import SynapseHub
 from synapse_channel.launcher import plan_team, run_team
 from synapse_channel.lifecycle import TaskStatus, can_transition
@@ -64,4 +65,5 @@ __all__ = [
     "sanitize_text",
     "scopes_conflict",
     "system_message",
+    "would_create_cycle",
 ]

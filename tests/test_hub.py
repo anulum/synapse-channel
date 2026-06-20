@@ -687,3 +687,77 @@ async def test_stale_version_update_errors_sender() -> None:
     )
     assert ws.last()["type"] == "error"
     assert "version conflict" in ws.last()["payload"]
+
+
+# --- hold-and-wait deadlock detection ----------------------------------------
+
+
+async def test_wait_for_unheld_task_is_denied() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="wait_request", task_id="GHOST"), ws)
+    assert ws.last()["type"] == "wait_denied"
+    assert "not claimed" in ws.last()["payload"]
+
+
+async def test_wait_for_own_task_is_denied() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
+    await hub.handle_message(_msg(sender="A", type="wait_request", task_id="T1"), ws)
+    assert ws.last()["type"] == "wait_denied"
+    assert "already hold" in ws.last()["payload"]
+
+
+async def test_wait_granted_for_another_holder() -> None:
+    hub = _hub()
+    ws_a = FakeServerWS()
+    ws_b = FakeServerWS()
+    await hub.register(ws_a)
+    await hub.register(ws_b)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", paths=["src"]), ws_a)
+    await hub.handle_message(_msg(sender="B", type="wait_request", task_id="T1"), ws_b)
+    assert ws_b.last()["type"] == "wait_granted"
+    assert ws_b.last()["holder"] == "A"
+    assert hub._waits["B"] == "A"
+
+
+async def test_circular_wait_is_denied() -> None:
+    hub = _hub()
+    ws_a = FakeServerWS()
+    ws_b = FakeServerWS()
+    await hub.register(ws_a)
+    await hub.register(ws_b)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", paths=["src"]), ws_a)
+    await hub.handle_message(_msg(sender="B", type="claim", task_id="T2", paths=["tests"]), ws_b)
+    # A waits for B (holder of T2) — fine.
+    await hub.handle_message(_msg(sender="A", type="wait_request", task_id="T2"), ws_a)
+    assert ws_a.last()["type"] == "wait_granted"
+    # B waiting for A (holder of T1) would close the cycle A->B->A.
+    await hub.handle_message(_msg(sender="B", type="wait_request", task_id="T1"), ws_b)
+    assert ws_b.last()["type"] == "wait_denied"
+    assert "deadlock" in ws_b.last()["payload"]
+
+
+async def test_wait_clears_on_successful_claim() -> None:
+    hub = _hub()
+    ws_a = FakeServerWS()
+    ws_b = FakeServerWS()
+    await hub.register(ws_a)
+    await hub.register(ws_b)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", paths=["src"]), ws_a)
+    await hub.handle_message(_msg(sender="B", type="wait_request", task_id="T1"), ws_b)
+    assert hub._waits["B"] == "A"
+    # B claims a disjoint task -> it is no longer blocked.
+    await hub.handle_message(_msg(sender="B", type="claim", task_id="T3", paths=["docs"]), ws_b)
+    assert "B" not in hub._waits
+
+
+def test_drop_waits_removes_waiter_and_holders() -> None:
+    hub = _hub()
+    hub._waits = {"X": "Y", "Z": "X", "W": "Q"}
+    hub._drop_waits("X")
+    # X removed as a waiter; Z->X removed (X was its holder); unrelated W->Q kept.
+    assert hub._waits == {"W": "Q"}

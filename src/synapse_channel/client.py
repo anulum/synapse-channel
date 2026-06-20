@@ -363,6 +363,24 @@ class SynapseAgent:
             MessageType.HISTORY_REQUEST, target="System", payload="history", limit=n
         )
 
+    async def request_wait(self, task_id: str) -> None:
+        """Register an advisory wait for a task another agent holds.
+
+        The hub refuses the wait if it would close a hold-and-wait deadlock cycle.
+        The wait is advisory: retry the claim once the holder releases.
+
+        Parameters
+        ----------
+        task_id : str
+            Identifier of the held task to wait for; whitespace is stripped.
+        """
+        await self.send_message(
+            MessageType.WAIT_REQUEST,
+            target="System",
+            payload=task_id.strip(),
+            task_id=task_id.strip(),
+        )
+
     def start(self) -> None:
         """Run :meth:`connect` to completion on a fresh event loop.
 

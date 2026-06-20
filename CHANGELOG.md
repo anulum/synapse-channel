@@ -11,6 +11,15 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.9.0] - 2026-06-20
+
+### Added
+- Hold-and-wait deadlock detection (`deadlock` module): an agent may register an
+  advisory wait for a task another agent holds (`wait_request`); the hub maintains
+  the wait-for graph and refuses (`wait_denied`) a wait that would close a cycle,
+  granting it (`wait_granted`) otherwise. Waits clear on the waiter's next
+  successful claim or on disconnect. `SynapseAgent.request_wait(task_id)` drives it.
+
 ## [0.8.0] - 2026-06-20
 
 ### Added

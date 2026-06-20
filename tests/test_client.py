@@ -394,3 +394,13 @@ async def test_update_task_minimal_omits_optional_fields() -> None:
     assert sent["task_id"] == "T1"
     assert "status" not in sent
     assert "expected_version" not in sent
+
+
+async def test_request_wait_sends_task_id() -> None:
+    agent = SynapseAgent("A")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+    await agent.request_wait("  T1  ")
+    sent = json.loads(ws.sent[-1])
+    assert sent["type"] == "wait_request"
+    assert sent["task_id"] == "T1"

@@ -237,3 +237,45 @@ async def test_reconnect_resume_catches_up_end_to_end() -> None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+
+
+async def test_circular_wait_is_refused_end_to_end() -> None:
+    port = _free_port()
+    hub = SynapseHub()
+    server = asyncio.create_task(hub.serve("localhost", port))
+    uri = f"ws://localhost:{port}"
+
+    a_rx = Recorder()
+    b_rx = Recorder()
+    a = SynapseAgent("ALPHA", a_rx, uri=uri, verbose=False)
+    b = SynapseAgent("BETA", b_rx, uri=uri, verbose=False)
+    a_conn: asyncio.Task[None] | None = None
+    b_conn: asyncio.Task[None] | None = None
+
+    try:
+        await _await_listening(port)
+        a_conn = asyncio.create_task(a.connect())
+        b_conn = asyncio.create_task(b.connect())
+        assert await a.wait_until_ready(3.0)
+        assert await b.wait_until_ready(3.0)
+
+        await a.claim("EDIT-SRC", paths=["src"])
+        await a_rx.wait_for(lambda m: m.get("type") == "claim_granted")
+        await b.claim("EDIT-TESTS", paths=["tests"])
+        await b_rx.wait_for(lambda m: m.get("type") == "claim_granted")
+
+        # ALPHA waits for BETA's task — allowed.
+        await a.request_wait("EDIT-TESTS")
+        await a_rx.wait_for(lambda m: m.get("type") == "wait_granted")
+        # BETA waiting for ALPHA's task would close the cycle — refused.
+        await b.request_wait("EDIT-SRC")
+        denied = await b_rx.wait_for(lambda m: m.get("type") == "wait_denied")
+        assert "deadlock" in denied["payload"]
+    finally:
+        a.running = False
+        b.running = False
+        for task in (a_conn, b_conn, server):
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task

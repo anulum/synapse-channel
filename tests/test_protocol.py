@@ -23,6 +23,8 @@ def test_message_type_values_are_stable_wire_strings() -> None:
     assert MessageType.NAME_CONFLICT == "name_conflict"
     assert MessageType.RESUME_REQUEST == "resume_request"
     assert MessageType.RESUME_SNAPSHOT == "resume_snapshot"
+    assert MessageType.WAIT_REQUEST == "wait_request"
+    assert MessageType.WAIT_DENIED == "wait_denied"
 
 
 def test_resource_aliases_cover_accepted_inbound_types() -> None:
