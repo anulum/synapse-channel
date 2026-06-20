@@ -28,7 +28,7 @@ from typing import Any
 
 from synapse_channel import __version__
 from synapse_channel.client import DEFAULT_HUB_URI, SynapseAgent
-from synapse_channel.hub import DEFAULT_HOST, DEFAULT_PORT, SynapseHub
+from synapse_channel.hub import DEFAULT_HOST, DEFAULT_MAX_HISTORY, DEFAULT_PORT, SynapseHub
 from synapse_channel.launcher import run_team
 from synapse_channel.llm_worker import (
     DEFAULT_OLLAMA_BASE_URL,
@@ -36,6 +36,7 @@ from synapse_channel.llm_worker import (
 )
 from synapse_channel.persistence import EventStore
 from synapse_channel.protocol import MessageType
+from synapse_channel.ratelimit import RateLimiter
 
 AgentFactory = Callable[..., SynapseAgent]
 
@@ -55,7 +56,10 @@ def _cmd_hub(args: argparse.Namespace) -> int:
     resumes from it on restart; without it the hub is purely in-memory.
     """
     journal = EventStore(args.db) if args.db else None
-    hub = SynapseHub(journal=journal)
+    limiter = (
+        RateLimiter(rate_per_second=args.rate, burst=args.burst) if args.rate > 0 else None
+    )
+    hub = SynapseHub(journal=journal, rate_limiter=limiter, max_history=args.max_history)
     try:
         _run(hub.serve(host=args.host, port=args.port))
     except KeyboardInterrupt:
@@ -213,6 +217,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--db",
         default=None,
         help="Path to a durable event-log database; enables crash-safe persistence.",
+    )
+    hub.add_argument(
+        "--rate",
+        type=float,
+        default=0.0,
+        help="Per-agent sustained message rate (msgs/sec); 0 disables rate limiting.",
+    )
+    hub.add_argument(
+        "--burst", type=float, default=20.0, help="Per-agent burst allowance for --rate."
+    )
+    hub.add_argument(
+        "--max-history",
+        type=int,
+        default=DEFAULT_MAX_HISTORY,
+        help="Maximum chat messages retained in memory.",
     )
     hub.set_defaults(func=_cmd_hub)
 

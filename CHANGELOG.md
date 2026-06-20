@@ -11,6 +11,22 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.7.0] - 2026-06-20
+
+### Added
+- Per-agent rate limiting: an optional token-bucket limiter (`ratelimit` module)
+  refuses non-heartbeat messages from an agent over its sustained rate, so one
+  runaway agent cannot swamp the single hub. `synapse hub --rate/--burst` enable it.
+- Bounded chat history: the hub drops the oldest in-memory messages beyond
+  `--max-history`, so history cannot grow without limit (the durable log, when
+  attached, still records every message).
+- Inbound backpressure: the WebSocket server runs with a bounded per-connection
+  receive queue.
+
+### Changed
+- `SynapseHub` accepts `rate_limiter` and `max_history`; agents' rate buckets are
+  dropped on disconnect.
+
 ## [0.6.0] - 2026-06-20
 
 ### Added

@@ -18,7 +18,7 @@ command (see :mod:`synapse_channel.cli`) drives all of it.
 
 from __future__ import annotations
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 from synapse_channel.chat_backends import (
     ChatBackend,

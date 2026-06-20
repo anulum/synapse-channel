@@ -104,6 +104,7 @@ async def main() -> None:
 | `client` | The reusable async agent connection and coordination helpers. |
 | `persistence` | Append-only SQLite event store (WAL) giving the hub a crash-durable spine. |
 | `journal` | Records mutations as events and replays them to rebuild state on restart. |
+| `ratelimit` | Per-agent token-bucket limiter so one runaway agent cannot swamp the hub. |
 | `chat_backends` | Pluggable reply backends (OpenAI-compatible HTTP, rule-based). |
 | `llm_worker` | An on-channel agent that answers addressed messages via a backend. |
 | `launcher` | One-command local hub + worker startup. |

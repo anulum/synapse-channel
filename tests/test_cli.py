@@ -18,6 +18,7 @@ import pytest
 
 from synapse_channel import cli
 from synapse_channel.client import DEFAULT_HUB_URI
+from synapse_channel.hub import SynapseHub
 from synapse_channel.llm_worker import DEFAULT_OLLAMA_BASE_URL
 
 
@@ -140,9 +141,22 @@ def test_main_routes_to_hub(monkeypatch: pytest.MonkeyPatch) -> None:
 # --- hub / worker handlers ---------------------------------------------------
 
 
+def _hub_ns(**overrides: Any) -> argparse.Namespace:
+    base: dict[str, Any] = {
+        "host": "localhost",
+        "port": 8876,
+        "db": None,
+        "rate": 0.0,
+        "burst": 20.0,
+        "max_history": 10000,
+    }
+    base.update(overrides)
+    return argparse.Namespace(**base)
+
+
 def test_cmd_hub_runs_and_handles_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_run", lambda coro: coro.close())
-    ns = argparse.Namespace(host="localhost", port=8876, db=None)
+    ns = _hub_ns()
     assert cli._cmd_hub(ns) == 0
 
     def interrupt(coro: Any) -> None:
@@ -158,10 +172,26 @@ def test_cmd_hub_with_db_opens_and_closes_event_store(
 ) -> None:
     monkeypatch.setattr(cli, "_run", lambda coro: coro.close())
     db = tmp_path / "events.db"
-    ns = argparse.Namespace(host="localhost", port=8876, db=str(db))
-    assert cli._cmd_hub(ns) == 0
+    assert cli._cmd_hub(_hub_ns(db=str(db))) == 0
     # The persistent store was created (and closed) for the run.
     assert db.exists()
+
+
+def test_cmd_hub_with_rate_limit_builds_limiter(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_run(coro: Any) -> None:
+        coro.close()
+
+    monkeypatch.setattr(cli, "_run", fake_run)
+
+    def spy_hub(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    monkeypatch.setattr("synapse_channel.cli.SynapseHub", spy_hub)
+    assert cli._cmd_hub(_hub_ns(rate=5.0, burst=10.0)) == 0
+    assert captured["rate_limiter"] is not None
 
 
 def _worker_ns(**overrides: Any) -> argparse.Namespace:

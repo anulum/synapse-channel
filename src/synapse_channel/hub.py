@@ -42,12 +42,15 @@ from synapse_channel.protocol import (
     MessageType,
     system_message,
 )
+from synapse_channel.ratelimit import RateLimiter
 from synapse_channel.state import SynapseState
 
 logger = logging.getLogger("synapse.hub")
 
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 8876
+DEFAULT_MAX_HISTORY = 10000
+DEFAULT_MAX_QUEUE = 64
 
 _MUTATING_TYPES = (
     frozenset({MessageType.CLAIM, MessageType.RELEASE, MessageType.TASK_UPDATE})
@@ -72,6 +75,15 @@ class SynapseHub:
         the hub's state is rebuilt from it on construction, so a restart resumes
         live leases and history instead of an empty registry. When ``None`` the
         hub is purely in-memory.
+    rate_limiter : RateLimiter or None, optional
+        When given, non-heartbeat messages from an agent over its limit are
+        refused, so one runaway agent cannot swamp the single hub. ``None``
+        disables rate limiting.
+    max_history : int, optional
+        Maximum chat messages retained in memory; the oldest are dropped beyond
+        this bound so history cannot grow without limit. The durable log (when a
+        journal is attached) still records every message. Defaults to
+        :data:`DEFAULT_MAX_HISTORY`.
     """
 
     def __init__(
@@ -80,8 +92,12 @@ class SynapseHub:
         default_ttl_seconds: float = 3600.0,
         hub_id: str | None = None,
         journal: EventStore | None = None,
+        rate_limiter: RateLimiter | None = None,
+        max_history: int = DEFAULT_MAX_HISTORY,
     ) -> None:
         self.journal = journal
+        self.rate_limiter = rate_limiter
+        self.max_history = max(int(max_history), 1)
         self.hub_id = hub_id or f"syn-{uuid.uuid4().hex[:8]}"
         self.connected_clients: set[Any] = set()
         self.agent_sockets: dict[str, Any] = {}
@@ -90,7 +106,7 @@ class SynapseHub:
         if journal is not None:
             replayed = replay(journal, default_ttl_seconds=default_ttl_seconds)
             self.state = replayed.state
-            self.chat_history = replayed.chat_history
+            self.chat_history = replayed.chat_history[-self.max_history :]
             self._message_seq = replayed.message_seq
         else:
             self.state = SynapseState(default_ttl_seconds=default_ttl_seconds)
@@ -509,6 +525,17 @@ class SynapseHub:
             await self._broadcast_presence("joined", sender)
         logger.info("[%s -> %s] (%s): %s", sender, target, msg_type, payload)
 
+        if (
+            msg_type != MessageType.HEARTBEAT
+            and self.rate_limiter is not None
+            and not self.rate_limiter.allow(sender)
+        ):
+            await self._send_json(
+                websocket,
+                self._system("Rate limit exceeded.", msg_type=MessageType.ERROR, target=sender),
+            )
+            return
+
         await self._route(sender, msg_type, data, websocket)
 
     async def _route(
@@ -523,6 +550,8 @@ class SynapseHub:
             data["hub_id"] = self.hub_id
             data["msg_id"] = self._next_msg_id()
             self.chat_history.append(data.copy())
+            if len(self.chat_history) > self.max_history:
+                del self.chat_history[0]
             if self.journal is not None:
                 record_chat(self.journal, data)
             await self._broadcast(data)
@@ -583,6 +612,8 @@ class SynapseHub:
         name = self.socket_agent.pop(websocket, None)
         if name is not None and self.agent_sockets.get(name) == websocket:
             self.agent_sockets.pop(name, None)
+            if self.rate_limiter is not None:
+                self.rate_limiter.forget(name)
             await self._broadcast_presence("left", name)
         logger.info(
             "Client disconnected: %s (total=%d)", id(websocket), len(self.connected_clients)
@@ -609,6 +640,6 @@ class SynapseHub:
         port : int, optional
             Bind port. Defaults to :data:`DEFAULT_PORT`.
         """
-        async with websockets.serve(self.handler, host, port):
+        async with websockets.serve(self.handler, host, port, max_queue=DEFAULT_MAX_QUEUE):
             logger.info("Synapse Hub running on ws://%s:%d", host, port)
             await asyncio.Future()

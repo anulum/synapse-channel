@@ -18,6 +18,7 @@ from websockets.exceptions import ConnectionClosed
 
 from synapse_channel.hub import SynapseHub
 from synapse_channel.persistence import EventStore
+from synapse_channel.ratelimit import RateLimiter
 
 
 class FakeServerWS:
@@ -595,3 +596,52 @@ async def test_resume_request_invalid_cursor_defaults_to_zero() -> None:
     snap = ws.last()
     assert snap["since"] == 0
     assert len(snap["messages"]) == 1
+
+
+# --- load protection: bounded history + rate limiting ------------------------
+
+
+async def test_chat_history_is_bounded() -> None:
+    hub = SynapseHub(hub_id="syn-test", max_history=2)
+    ws = FakeServerWS()
+    await hub.register(ws)
+    for i in (1, 2, 3):
+        await hub.handle_message(_msg(sender="A", type="chat", payload=str(i)), ws)
+    assert [m["payload"] for m in hub.chat_history] == ["2", "3"]
+
+
+async def test_rate_limiter_rejects_excess_messages() -> None:
+    limiter = RateLimiter(rate_per_second=1.0, burst=1.0)
+    hub = SynapseHub(hub_id="syn-test", rate_limiter=limiter)
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="chat", payload="1"), ws)  # consumes token
+    await hub.handle_message(_msg(sender="A", type="chat", payload="2"), ws)  # over limit
+    assert ws.last()["type"] == "error"
+    assert "Rate limit" in ws.last()["payload"]
+    assert [m["payload"] for m in hub.chat_history] == ["1"]  # second never applied
+
+
+async def test_heartbeat_is_exempt_from_rate_limit() -> None:
+    limiter = RateLimiter(rate_per_second=1.0, burst=1.0)
+    hub = SynapseHub(hub_id="syn-test", rate_limiter=limiter)
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="chat", payload="1"), ws)  # exhaust the token
+    await hub.handle_message(_msg(sender="A", type="heartbeat"), ws)  # exempt, no error
+    assert ws.last()["type"] == "chat"  # heartbeat produced no rate-limit error
+
+
+async def test_rate_limiter_forgets_agent_on_disconnect() -> None:
+    limiter = RateLimiter(rate_per_second=1.0, burst=1.0)
+    hub = SynapseHub(hub_id="syn-test", rate_limiter=limiter)
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="chat", payload="1"), ws)
+    await hub.handle_message(_msg(sender="A", type="chat", payload="2"), ws)  # limited
+    await hub.unregister(ws)
+
+    ws2 = FakeServerWS()
+    await hub.register(ws2)
+    await hub.handle_message(_msg(sender="A", type="chat", payload="3"), ws2)  # fresh bucket
+    assert ws2.last()["type"] == "chat"
