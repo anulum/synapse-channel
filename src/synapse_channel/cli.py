@@ -7,13 +7,14 @@
 # SYNAPSE_CHANNEL — unified `synapse` command-line entry point
 """Command-line entry point for the Synapse channel.
 
-The ``synapse`` command exposes five subcommands:
+The ``synapse`` command exposes six subcommands:
 
 * ``hub`` — run the coordination hub;
 * ``worker`` — run a model worker that answers on the channel;
 * ``team`` — launch a hub plus one or two local workers in one shot;
 * ``send`` — connect, send one message, optionally wait for replies, and exit;
-* ``listen`` — connect and stream channel messages until interrupted.
+* ``listen`` — connect and stream channel messages until interrupted;
+* ``relay`` — decode and print a lite relay log a hub mirrored to a file.
 
 The send/listen helpers take an injectable agent factory so the dispatch and the
 client flows are unit-testable without a live hub.
@@ -28,7 +29,13 @@ from typing import Any
 
 from synapse_channel import __version__
 from synapse_channel.client import DEFAULT_HUB_URI, SynapseAgent
-from synapse_channel.hub import DEFAULT_HOST, DEFAULT_MAX_HISTORY, DEFAULT_PORT, SynapseHub
+from synapse_channel.hub import (
+    DEFAULT_HOST,
+    DEFAULT_MAX_HISTORY,
+    DEFAULT_PORT,
+    DEFAULT_RELAY_MAX_LINES,
+    SynapseHub,
+)
 from synapse_channel.launcher import run_team
 from synapse_channel.llm_worker import (
     DEFAULT_OLLAMA_BASE_URL,
@@ -37,6 +44,7 @@ from synapse_channel.llm_worker import (
 from synapse_channel.persistence import EventStore
 from synapse_channel.protocol import MessageType
 from synapse_channel.ratelimit import RateLimiter
+from synapse_channel.relay import decode_lite, load_offset, read_jsonl_since, save_offset
 
 AgentFactory = Callable[..., SynapseAgent]
 
@@ -59,7 +67,13 @@ def _cmd_hub(args: argparse.Namespace) -> int:
     limiter = (
         RateLimiter(rate_per_second=args.rate, burst=args.burst) if args.rate > 0 else None
     )
-    hub = SynapseHub(journal=journal, rate_limiter=limiter, max_history=args.max_history)
+    hub = SynapseHub(
+        journal=journal,
+        rate_limiter=limiter,
+        max_history=args.max_history,
+        relay_log=args.relay_log,
+        relay_max_lines=args.relay_max_lines,
+    )
     try:
         _run(hub.serve(host=args.host, port=args.port))
     except KeyboardInterrupt:
@@ -201,6 +215,33 @@ def _cmd_listen(args: argparse.Namespace) -> int:
         return 0
 
 
+def _format_relay_line(message: dict[str, Any]) -> str:
+    """Render one decoded relay event as a single human-readable line."""
+    timestamp = message.get("timestamp", 0.0)
+    return (
+        f"[{float(timestamp):.3f}] "
+        f"{message.get('sender', '?')} -> {message.get('target', 'all')} "
+        f"({message.get('type', 'chat')}): {message.get('payload', '')}"
+    )
+
+
+def _cmd_relay(args: argparse.Namespace) -> int:
+    """Decode and print a lite relay log a hub mirrored with ``--relay-log``.
+
+    Reads the compact newline-delimited log, decodes each event back to a full
+    envelope, and prints one line per event. With ``--cursor`` the read position
+    is persisted between runs so repeated calls show only what was appended
+    since; otherwise reading starts at the ``--since`` byte offset.
+    """
+    start = load_offset(args.cursor) if args.cursor else max(int(args.since), 0)
+    events, cursor = read_jsonl_since(args.relay_log, start)
+    for lite in events:
+        print(_format_relay_line(decode_lite(lite)))
+    if args.cursor:
+        save_offset(args.cursor, cursor)
+    return 0
+
+
 # -- parser -------------------------------------------------------------------
 
 
@@ -232,6 +273,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=DEFAULT_MAX_HISTORY,
         help="Maximum chat messages retained in memory.",
+    )
+    hub.add_argument(
+        "--relay-log",
+        default=None,
+        help="Mirror every broadcast to this lite NDJSON log for file-based observers.",
+    )
+    hub.add_argument(
+        "--relay-max-lines",
+        type=int,
+        default=DEFAULT_RELAY_MAX_LINES,
+        help="Upper bound on the relay log before it is trimmed.",
     )
     hub.set_defaults(func=_cmd_hub)
 
@@ -266,6 +318,18 @@ def build_parser() -> argparse.ArgumentParser:
     listen.add_argument("--uri", default=DEFAULT_HUB_URI)
     listen.add_argument("--name", default="USER")
     listen.set_defaults(func=_cmd_listen)
+
+    relay = sub.add_parser("relay", help="Decode and print a hub's lite relay log.")
+    relay.add_argument("relay_log", help="Path to the lite relay log to read.")
+    relay.add_argument(
+        "--since", type=int, default=0, help="Byte offset to start reading from."
+    )
+    relay.add_argument(
+        "--cursor",
+        default=None,
+        help="File holding a persisted read offset; resumes where the last run left off.",
+    )
+    relay.set_defaults(func=_cmd_relay)
 
     return parser
 

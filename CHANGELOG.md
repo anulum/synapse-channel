@@ -11,6 +11,28 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.10.0] - 2026-06-20
+
+### Added
+- First-class lite/heavy relay codec (`relay` module): `encode_lite` packs a full
+  envelope into a short-key form and `decode_lite` reconstructs it, sharing one
+  key schema. Both are exported from the package.
+- `synapse hub --relay-log PATH` mirrors every broadcast to a compact
+  newline-delimited file so a token-budgeted agent can observe the channel by
+  tailing a file instead of holding a socket; the file is bounded by
+  `--relay-max-lines`.
+- `synapse relay PATH` decodes such a log back to readable lines and can resume
+  from a persisted `--cursor`.
+- Committed token benchmark (`benchmarks/`): a fixed broadcast trace and a
+  runnable harness that report the byte and token cost of the lite encoding
+  against the raw wire form, with results checked in under `benchmarks/results/`.
+  Byte counts are exact; token counts use `tiktoken` (`pip install -e ".[benchmark]"`)
+  with a labelled fallback estimate when it is absent.
+
+### Changed
+- The lite relay encoder/decoder were renamed from `compact_event` to the
+  symmetric `encode_lite`/`decode_lite` pair.
+
 ## [0.9.0] - 2026-06-20
 
 ### Added

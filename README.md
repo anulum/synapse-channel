@@ -48,8 +48,10 @@ synapse send --name USER --target FAST "what is the status of TASK-1?"
 ```bash
 synapse hub --port 8876
 synapse hub --port 8876 --db ./synapse.db            # crash-safe: resumes leases + history on restart
+synapse hub --port 8876 --relay-log ./feed.ndjson    # mirror the channel to a compact file for observers
 synapse worker --name FAST --provider ollama --model gemma3:4b
 synapse worker --name OFFLINE --provider rule        # no network, canned replies
+synapse relay ./feed.ndjson                          # decode and print that file as readable lines
 ```
 
 ### Durability
@@ -61,6 +63,16 @@ start-up. The guarantee is split honestly by workload: the lease/claim path
 commits at `synchronous=FULL` (durable across an OS crash); the high-volume
 chat/history path commits at `synchronous=NORMAL` (durable across an application
 crash, may lose the last commit on power loss).
+
+### Token-thrifty observation
+
+`--relay-log` mirrors every broadcast to a newline-delimited file in a compact
+short-key form (`encode_lite`), so a token-budgeted agent can watch the channel
+by tailing a file instead of holding a socket. `synapse relay <file>` decodes it
+back to readable lines and can resume from a saved `--cursor`. The lite form
+keeps the seven core envelope fields and drops auxiliary ones; the file is bounded
+by `--relay-max-lines`. A committed benchmark measures the saving honestly —
+see [`benchmarks/`](benchmarks/).
 
 ## Coordination model
 
@@ -102,6 +114,7 @@ async def main() -> None:
 | `lifecycle` | Typed task-status states and the legal transitions the hub enforces. |
 | `deadlock` | Wait-for cycle detection so circular hold-and-wait claims are refused. |
 | `protocol` | The on-wire message envelope and message-type constants. |
+| `relay` | Lite/heavy codec (`encode_lite`/`decode_lite`) and append-only NDJSON log helpers for file-based observers. |
 | `hub` | The routing core: connections, names, history, broadcast. |
 | `client` | The reusable async agent connection and coordination helpers. |
 | `persistence` | Append-only SQLite event store (WAL) giving the hub a crash-durable spine. |

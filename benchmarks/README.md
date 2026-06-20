@@ -1,0 +1,69 @@
+<!--
+SPDX-License-Identifier: AGPL-3.0-or-later
+Commercial license available
+© Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+© Code 2020–2026 Miroslav Šotek. All rights reserved.
+ORCID: 0009-0009-3560-0851
+Contact: www.anulum.li | protoscience@anulum.li
+-->
+
+# Benchmarks
+
+Runnable, committed measurements for SYNAPSE CHANNEL. Every number quoted in the
+docs comes from a script here run against a committed fixture, with the JSON
+output checked in under `results/` — nothing is estimated by hand.
+
+## `relay_token_benchmark.py`
+
+Measures how much the lite relay encoding shrinks a channel feed for a
+token-budgeted observer. It replays a fixed trace of broadcast envelopes and
+reports three serialisations of each message so the saving is decomposed, not
+quoted as one inflated figure:
+
+- **`raw_wire`** — the full envelope with default `json.dumps` spacing, exactly
+  what the hub broadcasts on the socket.
+- **`raw_core_compact`** — only the seven core envelope fields the lite format
+  keeps, minified. Isolates the short-key win from the field-dropping win.
+- **`lite`** — `encode_lite` output, minified, as written to the relay log.
+
+The lite format is intentionally lossy: it carries the seven core fields
+(`sender`, `target`, `type`, `payload`, `timestamp`, `msg_id`, `hub_id`) and
+drops auxiliary fields such as `task_id` or `paths`. So part of the reduction
+comes from dropping fields and part from shorter keys plus minification — the two
+raw baselines keep those effects separate. Timestamps survive only to the
+millisecond; `roundtrip_core_fidelity` records whether the seven core fields
+reconstruct exactly at that precision.
+
+### Metrics
+
+- **Bytes** are exact and dependency-free — the headline metric.
+- **Tokens** use `tiktoken`'s `cl100k_base` when installed; without it the script
+  falls back to a deterministic, clearly-labelled characters-per-token estimate
+  and records which method produced the numbers in the `tokenizer` field. Install
+  the real tokeniser with `pip install -e ".[benchmark]"`.
+
+### Run
+
+```bash
+python benchmarks/relay_token_benchmark.py
+# or against another trace / output path:
+python benchmarks/relay_token_benchmark.py --trace path/to/trace.json --results path/to/out.json
+```
+
+Output is written to `results/relay_token_benchmark.json` and a short summary is
+printed.
+
+### Committed result (sample_session.json, 12 messages, cl100k_base)
+
+| Serialisation | Bytes | Tokens |
+| --- | --- | --- |
+| `raw_wire` | 2826 | 919 |
+| `raw_core_compact` | 1913 | — |
+| `lite` | 1662 | 568 |
+
+On this trace the lite log is **59%** of the raw wire bytes and **62%** of the
+raw wire tokens. Holding the field set fixed, short keys plus minification alone
+account for the `lite`-vs-`raw_core_compact` ratio (**87%**); the rest of the
+reduction is the lite format dropping auxiliary fields an observer does not need.
+Core-field roundtrip fidelity is exact. These figures are specific to this
+fixture — re-run against your own trace for a representative number.

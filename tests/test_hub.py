@@ -19,6 +19,7 @@ from websockets.exceptions import ConnectionClosed
 from synapse_channel.hub import SynapseHub
 from synapse_channel.persistence import EventStore
 from synapse_channel.ratelimit import RateLimiter
+from synapse_channel.relay import decode_lite, read_jsonl_since
 
 
 class FakeServerWS:
@@ -761,3 +762,52 @@ def test_drop_waits_removes_waiter_and_holders() -> None:
     hub._drop_waits("X")
     # X removed as a waiter; Z->X removed (X was its holder); unrelated W->Q kept.
     assert hub._waits == {"W": "Q"}
+
+
+# --- lite relay log mirror ---------------------------------------------------
+
+
+async def test_relay_log_mirrors_broadcasts_in_compact_form(tmp_path: Path) -> None:
+    log = tmp_path / "relay.ndjson"
+    hub = SynapseHub(hub_id="syn-test", relay_log=log)
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="chat", payload="hello"), ws)
+
+    events, _ = read_jsonl_since(log, 0)
+    # Each mirrored line is the short-key form, not the full envelope.
+    assert all(set(e) <= {"v", "i", "ty", "s", "to", "p", "t", "h"} for e in events)
+    decoded = [decode_lite(e) for e in events]
+    chats = [d for d in decoded if d["type"] == "chat"]
+    assert chats[-1]["payload"] == "hello"
+    assert chats[-1]["sender"] == "A"
+
+
+async def test_relay_log_written_even_without_connected_clients(tmp_path: Path) -> None:
+    log = tmp_path / "relay.ndjson"
+    hub = SynapseHub(hub_id="syn-test", relay_log=log)
+    # No socket is registered: the mirror exists precisely so a file observer
+    # can read the channel without holding a connection.
+    await hub._broadcast({"type": "chat", "sender": "A", "payload": "x", "msg_id": 1})
+    events, _ = read_jsonl_since(log, 0)
+    assert decode_lite(events[0])["payload"] == "x"
+    assert not hub.connected_clients
+
+
+async def test_relay_log_is_bounded_by_trimming(tmp_path: Path) -> None:
+    log = tmp_path / "relay.ndjson"
+    hub = SynapseHub(hub_id="syn-test", relay_log=log, relay_max_lines=2)
+    for i in range(5):
+        await hub._broadcast({"type": "chat", "sender": "A", "payload": str(i), "msg_id": i})
+
+    lines = log.read_text(encoding="utf-8").splitlines()
+    assert len(lines) < 5  # trimming kept the log from growing unbounded
+    assert len(lines) <= hub.relay_max_lines * 2
+    assert decode_lite(json.loads(lines[-1]))["payload"] == "4"  # newest survived
+
+
+def test_no_relay_log_leaves_mirror_a_noop(tmp_path: Path) -> None:
+    hub = SynapseHub(hub_id="syn-test", relay_log=None)
+    hub._mirror_to_relay({"type": "chat", "sender": "A", "payload": "x"})
+    assert hub.relay_log is None
+    assert not list(tmp_path.iterdir())  # nothing was written anywhere

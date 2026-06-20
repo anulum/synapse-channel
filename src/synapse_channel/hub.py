@@ -22,6 +22,7 @@ import json
 import logging
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 import websockets
@@ -44,6 +45,7 @@ from synapse_channel.protocol import (
     system_message,
 )
 from synapse_channel.ratelimit import RateLimiter
+from synapse_channel.relay import append_jsonl, encode_lite, trim_jsonl_tail
 from synapse_channel.state import SynapseState
 
 logger = logging.getLogger("synapse.hub")
@@ -52,6 +54,7 @@ DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 8876
 DEFAULT_MAX_HISTORY = 10000
 DEFAULT_MAX_QUEUE = 64
+DEFAULT_RELAY_MAX_LINES = 5000
 
 _MUTATING_TYPES = (
     frozenset({MessageType.CLAIM, MessageType.RELEASE, MessageType.TASK_UPDATE})
@@ -85,6 +88,16 @@ class SynapseHub:
         this bound so history cannot grow without limit. The durable log (when a
         journal is attached) still records every message. Defaults to
         :data:`DEFAULT_MAX_HISTORY`.
+    relay_log : str or pathlib.Path or None, optional
+        When given, every broadcast message is also mirrored to this newline-
+        delimited log in the compact lite format (see
+        :func:`~synapse_channel.relay.encode_lite`), so a token-budgeted agent
+        can observe the channel by tailing a file instead of holding a socket.
+        ``None`` disables the mirror.
+    relay_max_lines : int, optional
+        Upper bound on the relay log: it is trimmed back to its last this-many
+        lines once it grows that far past the bound, so the mirror cannot grow
+        without limit. Defaults to :data:`DEFAULT_RELAY_MAX_LINES`.
     """
 
     def __init__(
@@ -95,10 +108,15 @@ class SynapseHub:
         journal: EventStore | None = None,
         rate_limiter: RateLimiter | None = None,
         max_history: int = DEFAULT_MAX_HISTORY,
+        relay_log: str | Path | None = None,
+        relay_max_lines: int = DEFAULT_RELAY_MAX_LINES,
     ) -> None:
         self.journal = journal
         self.rate_limiter = rate_limiter
         self.max_history = max(int(max_history), 1)
+        self.relay_log = Path(relay_log) if relay_log else None
+        self.relay_max_lines = max(int(relay_max_lines), 1)
+        self._relay_appends = 0
         self.hub_id = hub_id or f"syn-{uuid.uuid4().hex[:8]}"
         self.connected_clients: set[Any] = set()
         self.agent_sockets: dict[str, Any] = {}
@@ -177,8 +195,25 @@ class SynapseHub:
         """Serialise and send one message to a single socket."""
         await websocket.send(json.dumps(data))
 
+    def _mirror_to_relay(self, data: dict[str, Any]) -> None:
+        """Append one broadcast message to the lite relay log, if configured.
+
+        The log is written even when no socket is connected — its whole point is
+        to let an observer catch up from the file later. It is trimmed back to
+        :attr:`relay_max_lines` once that many lines have been appended since the
+        last trim, bounding the file to roughly twice that many lines.
+        """
+        if self.relay_log is None:
+            return
+        append_jsonl(self.relay_log, encode_lite(data))
+        self._relay_appends += 1
+        if self._relay_appends >= self.relay_max_lines:
+            trim_jsonl_tail(self.relay_log, self.relay_max_lines)
+            self._relay_appends = 0
+
     async def _broadcast(self, data: dict[str, Any]) -> None:
         """Send one message to every connected socket, ignoring failures."""
+        self._mirror_to_relay(data)
         if not self.connected_clients:
             return
         raw = json.dumps(data)

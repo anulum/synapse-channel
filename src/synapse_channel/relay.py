@@ -9,13 +9,15 @@
 
 The lite/heavy relay lets a token-budgeted agent observe and drive the channel
 through newline-delimited JSON files instead of a live socket. This module
-provides the two halves of that bridge:
+provides the halves of that bridge:
 
-* a compact, short-key envelope (:func:`compact_event`) that shrinks a full
-  Synapse message before it is logged;
+* a symmetric codec — :func:`encode_lite` shrinks a full Synapse message into a
+  short-key envelope before it is logged, and :func:`decode_lite` reconstructs
+  the full envelope from it — sharing one key schema (:data:`LITE_KEYS`) so the
+  two halves can never drift apart;
 * append-only log helpers (:func:`append_jsonl`, :func:`read_jsonl_since`,
-  :func:`trim_jsonl_tail`) with a resumable byte cursor that survives partial
-  writes and file truncation;
+  :func:`trim_jsonl_tail`) with a resumable byte cursor (:func:`load_offset`,
+  :func:`save_offset`) that survives partial writes and file truncation;
 * a command normaliser (:func:`normalize_core_command`) that maps the verbose
   and short spellings an agent might emit onto one canonical short form.
 
@@ -29,9 +31,31 @@ import time
 from pathlib import Path
 from typing import Any
 
+# -- lite/heavy relay codec ---------------------------------------------------
 
-def compact_event(message: dict[str, Any]) -> dict[str, Any]:
+LITE_VERSION = 1
+"""Schema version stamped into every lite envelope under the ``v`` key."""
+
+LITE_KEYS: dict[str, str] = {
+    "msg_id": "i",
+    "type": "ty",
+    "sender": "s",
+    "target": "to",
+    "payload": "p",
+    "timestamp": "t",
+    "hub_id": "h",
+}
+"""Heavy envelope field → compact relay key.
+
+The single source of truth both halves of the codec read so the lite wire
+format cannot drift between :func:`encode_lite` and :func:`decode_lite`.
+"""
+
+
+def encode_lite(message: dict[str, Any]) -> dict[str, Any]:
     """Pack a full Synapse message into a short-key relay envelope.
+
+    The encode half of the relay codec; :func:`decode_lite` is its inverse.
 
     Parameters
     ----------
@@ -60,7 +84,7 @@ def compact_event(message: dict[str, Any]) -> dict[str, Any]:
         msg_id_val = 0
 
     return {
-        "v": 1,
+        "v": LITE_VERSION,
         "i": msg_id_val,
         "ty": str(message.get("type", "chat")),
         "s": str(message.get("sender", "?")),
@@ -68,6 +92,46 @@ def compact_event(message: dict[str, Any]) -> dict[str, Any]:
         "p": str(message.get("payload", "")),
         "t": int(ts_val * 1000.0),
         "h": str(message.get("hub_id", "")),
+    }
+
+
+def decode_lite(lite: dict[str, Any]) -> dict[str, Any]:
+    """Reconstruct a full message envelope from a compact relay event.
+
+    The inverse of :func:`encode_lite`. Because the lite format stores the
+    timestamp as a millisecond integer, the reconstructed ``timestamp`` is
+    precise only to the millisecond — sub-millisecond detail from the original
+    envelope is not recoverable. Missing or malformed short keys fall back to
+    the same defaults :func:`encode_lite` itself emits.
+
+    Parameters
+    ----------
+    lite : dict[str, Any]
+        A short-key envelope as produced by :func:`encode_lite`.
+
+    Returns
+    -------
+    dict[str, Any]
+        A full envelope with ``sender``, ``target``, ``type``, ``payload``,
+        ``timestamp`` (seconds), ``msg_id``, and ``hub_id``.
+    """
+    try:
+        ts_ms = int(lite.get("t", 0))
+    except (TypeError, ValueError):
+        ts_ms = 0
+    try:
+        msg_id_val = int(lite.get("i", 0))
+    except (TypeError, ValueError):
+        msg_id_val = 0
+
+    return {
+        "sender": str(lite.get("s", "?")),
+        "target": str(lite.get("to", "all")),
+        "type": str(lite.get("ty", "chat")),
+        "payload": str(lite.get("p", "")),
+        "timestamp": ts_ms / 1000.0,
+        "msg_id": msg_id_val,
+        "hub_id": str(lite.get("h", "")),
     }
 
 

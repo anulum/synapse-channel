@@ -1,0 +1,136 @@
+[
+  {
+    "sender": "SynapseHub",
+    "target": "all",
+    "type": "presence_update",
+    "payload": "Presence update",
+    "timestamp": 1718870400.000,
+    "hub_id": "syn-demo",
+    "online_agents": ["FAST"],
+    "event": "joined",
+    "agent": "FAST"
+  },
+  {
+    "sender": "SynapseHub",
+    "target": "all",
+    "type": "presence_update",
+    "payload": "Presence update",
+    "timestamp": 1718870401.250,
+    "hub_id": "syn-demo",
+    "online_agents": ["FAST", "REASON"],
+    "event": "joined",
+    "agent": "REASON"
+  },
+  {
+    "sender": "USER",
+    "target": "all",
+    "type": "chat",
+    "payload": "Let's split the refactor: FAST takes the parser, REASON takes the type checker.",
+    "timestamp": 1718870405.500,
+    "hub_id": "syn-demo",
+    "msg_id": 1
+  },
+  {
+    "sender": "SynapseHub",
+    "target": "all",
+    "type": "claim_granted",
+    "payload": "FAST claimed parser-refactor",
+    "timestamp": 1718870407.000,
+    "hub_id": "syn-demo",
+    "task_id": "parser-refactor",
+    "owner": "FAST",
+    "note": "splitting tokenizer from grammar",
+    "lease_expires_at": 1718874007.000,
+    "status": "claimed",
+    "worktree": "wt-fast",
+    "paths": ["src/parser"],
+    "epoch": 1,
+    "version": 0
+  },
+  {
+    "sender": "FAST",
+    "target": "all",
+    "type": "chat",
+    "payload": "Claiming the parser module under wt-fast, starting on the tokenizer split now.",
+    "timestamp": 1718870409.750,
+    "hub_id": "syn-demo",
+    "msg_id": 2
+  },
+  {
+    "sender": "SynapseHub",
+    "target": "all",
+    "type": "task_updated",
+    "payload": "parser-refactor -> working",
+    "timestamp": 1718870412.000,
+    "hub_id": "syn-demo",
+    "task_id": "parser-refactor",
+    "owner": "FAST",
+    "status": "working",
+    "data_ref": null,
+    "version": 1
+  },
+  {
+    "sender": "REASON",
+    "target": "all",
+    "type": "chat",
+    "payload": "Type-checker pass found three narrowing issues in scoping.py; fixing them now.",
+    "timestamp": 1718870418.250,
+    "hub_id": "syn-demo",
+    "msg_id": 3
+  },
+  {
+    "sender": "SynapseHub",
+    "target": "all",
+    "type": "resource_offered",
+    "payload": "Resource offered by REASON",
+    "timestamp": 1718870420.000,
+    "hub_id": "syn-demo",
+    "agent": "REASON",
+    "kind": "llm",
+    "name": "local-reasoner",
+    "key": "REASON:llm:local-reasoner"
+  },
+  {
+    "sender": "USER",
+    "target": "all",
+    "type": "chat",
+    "payload": "Nice. Ping me on this channel when the parser lands so I can run the suite.",
+    "timestamp": 1718870425.500,
+    "hub_id": "syn-demo",
+    "msg_id": 4
+  },
+  {
+    "sender": "SynapseHub",
+    "target": "all",
+    "type": "task_updated",
+    "payload": "parser-refactor -> done",
+    "timestamp": 1718870460.000,
+    "hub_id": "syn-demo",
+    "task_id": "parser-refactor",
+    "owner": "FAST",
+    "status": "done",
+    "data_ref": "commit:9f3c1a2",
+    "version": 2
+  },
+  {
+    "sender": "SynapseHub",
+    "target": "all",
+    "type": "release_granted",
+    "payload": "FAST released parser-refactor",
+    "timestamp": 1718870461.500,
+    "hub_id": "syn-demo",
+    "task_id": "parser-refactor",
+    "owner": "FAST"
+  },
+  {
+    "sender": "SynapseHub",
+    "target": "all",
+    "type": "presence_update",
+    "payload": "Presence update",
+    "timestamp": 1718870470.000,
+    "hub_id": "syn-demo",
+    "online_agents": ["REASON"],
+    "event": "left",
+    "agent": "FAST"
+  }
+]

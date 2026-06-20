@@ -18,7 +18,7 @@ command (see :mod:`synapse_channel.cli`) drives all of it.
 
 from __future__ import annotations
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 from synapse_channel.chat_backends import (
     ChatBackend,
@@ -38,6 +38,7 @@ from synapse_channel.protocol import (
     build_envelope,
     system_message,
 )
+from synapse_channel.relay import decode_lite, encode_lite
 from synapse_channel.scoping import paths_overlap, scopes_conflict
 from synapse_channel.state import ResourceOffer, SynapseState, TaskClaim
 
@@ -58,6 +59,8 @@ __all__ = [
     "__version__",
     "build_envelope",
     "can_transition",
+    "decode_lite",
+    "encode_lite",
     "is_service_message",
     "paths_overlap",
     "plan_team",

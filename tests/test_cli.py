@@ -20,6 +20,7 @@ from synapse_channel import cli
 from synapse_channel.client import DEFAULT_HUB_URI
 from synapse_channel.hub import SynapseHub
 from synapse_channel.llm_worker import DEFAULT_OLLAMA_BASE_URL
+from synapse_channel.relay import append_jsonl, encode_lite
 
 
 class FakeAgent:
@@ -149,6 +150,8 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "rate": 0.0,
         "burst": 20.0,
         "max_history": 10000,
+        "relay_log": None,
+        "relay_max_lines": 5000,
     }
     base.update(overrides)
     return argparse.Namespace(**base)
@@ -340,3 +343,97 @@ def test_cmd_listen_dispatch_and_interrupt(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr("synapse_channel.cli.asyncio.run", interrupt)
     assert cli._cmd_listen(ns) == 0
+
+
+# --- relay -------------------------------------------------------------------
+
+
+def test_parser_relay() -> None:
+    args = cli.build_parser().parse_args(["relay", "feed.ndjson", "--since", "10"])
+    assert args.relay_log == "feed.ndjson"
+    assert args.since == 10
+    assert args.cursor is None
+    assert args.func is cli._cmd_relay
+
+
+def test_format_relay_line_renders_envelope() -> None:
+    line = cli._format_relay_line(
+        {"timestamp": 1.5, "sender": "A", "target": "B", "type": "chat", "payload": "hi"}
+    )
+    assert line == "[1.500] A -> B (chat): hi"
+
+
+def _relay_ns(**overrides: Any) -> argparse.Namespace:
+    base: dict[str, Any] = {"relay_log": "feed.ndjson", "since": 0, "cursor": None}
+    base.update(overrides)
+    return argparse.Namespace(**base)
+
+
+def _lite_line(log: Path, payload: str, msg_id: int) -> None:
+    append_jsonl(
+        log,
+        encode_lite(
+            {
+                "sender": "A",
+                "target": "all",
+                "type": "chat",
+                "payload": payload,
+                "timestamp": 2.0,
+                "msg_id": msg_id,
+            }
+        ),
+    )
+
+
+def test_cmd_relay_prints_decoded_events(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    log = tmp_path / "feed.ndjson"
+    _lite_line(log, "hello", 1)
+    assert cli._cmd_relay(_relay_ns(relay_log=str(log))) == 0
+    assert "A -> all (chat): hello" in capsys.readouterr().out
+
+
+def test_cmd_relay_resumes_from_cursor(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    log = tmp_path / "feed.ndjson"
+    cursor = tmp_path / "feed.cursor"
+    _lite_line(log, "one", 1)
+    assert cli._cmd_relay(_relay_ns(relay_log=str(log), cursor=str(cursor))) == 0
+    assert "one" in capsys.readouterr().out
+
+    _lite_line(log, "two", 2)
+    # The persisted cursor means the second run shows only the newly appended line.
+    assert cli._cmd_relay(_relay_ns(relay_log=str(log), cursor=str(cursor))) == 0
+    second = capsys.readouterr().out
+    assert "two" in second
+    assert "one" not in second
+
+
+def test_cmd_relay_uses_since_offset(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    log = tmp_path / "feed.ndjson"
+    _lite_line(log, "skip", 1)
+    offset = log.stat().st_size
+    _lite_line(log, "keep", 2)
+    assert cli._cmd_relay(_relay_ns(relay_log=str(log), since=offset)) == 0
+    out = capsys.readouterr().out
+    assert "keep" in out
+    assert "skip" not in out
+
+
+def test_cmd_hub_wires_relay_log(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(cli, "_run", lambda coro: coro.close())
+
+    def spy_hub(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    monkeypatch.setattr("synapse_channel.cli.SynapseHub", spy_hub)
+    log = tmp_path / "relay.ndjson"
+    assert cli._cmd_hub(_hub_ns(relay_log=str(log), relay_max_lines=42)) == 0
+    assert captured["relay_log"] == str(log)
+    assert captured["relay_max_lines"] == 42
