@@ -8,7 +8,9 @@ Contact: www.anulum.li | protoscience@anulum.li
 SYNAPSE CHANNEL — repository overview
 -->
 
-<h1 align="center">SYNAPSE CHANNEL</h1>
+<p align="center">
+  <img src="docs/assets/header.png" width="1280" alt="SYNAPSE CHANNEL — local-first multi-agent coordination bus">
+</p>
 
 <p align="center">
   <strong>Local-first coordination bus for multiple agents working in parallel on one repository</strong>
@@ -34,6 +36,25 @@ The bus is transport-light (one dependency, `websockets`), hub-centric by design
 machine. Model workers reply on-channel through any OpenAI-compatible endpoint,
 including a local Ollama server, with a deterministic rule-based fallback for
 offline use.
+
+## At a glance
+
+```mermaid
+graph LR
+    A1["Agent"] --> H
+    A2["Agent"] --> H
+    A3["Worker"] --> H
+    SUP["Supervisor"] --> H
+    H["SynapseHub<br/>single source of truth"] --> CL["Claims & leases<br/>scope · epoch · checkpoint"]
+    H --> BB["Blackboard<br/>plan + progress"]
+    H --> CAP["Capabilities<br/>cards + routing"]
+    H --> LOG["Event log (SQLite WAL)<br/>durable · replayed on restart"]
+```
+
+A claim leases a unit of work with a file scope, so two agents never edit the
+same files; the plan, handoffs, checkpoints, and a stall supervisor keep the work
+moving; and the durable event log means a hub restart resumes live leases rather
+than losing them.
 
 ## Install
 
@@ -209,6 +230,37 @@ This snapshot is a static inventory generated from the source tree. Performance 
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`SECURITY.md`](SECURITY.md) · [`GOVERNANCE.md`](GOVERNANCE.md) · [`ROADMAP.md`](ROADMAP.md)
 - Full documentation site: <https://anulum.github.io/synapse-channel>
 
+## Known limitations
+
+- **Single hub, single machine.** There is no built-in failover or horizontal
+  scale; the hub is one process and the design is deliberately local-first. A
+  hub restart resumes from the durable log, but it is not a high-availability
+  cluster.
+- **Connect authentication is a proportionate shared secret**, not a
+  cryptographic identity system — no key exchange, signatures, or per-message
+  authentication. Do not expose the hub on an untrusted network and rely on the
+  token alone.
+- **Agents are trusted.** The bus coordinates agents; it does not sandbox them.
+  An agent is trusted to the extent the operator trusts the process it runs in.
+- **Task-class routing is heuristic.** The classifier sorts a request by length
+  and a keyword set; tune the thresholds for your workload. Per-tier model
+  latency is not benchmarked offline (it needs a live model server).
+
+## How to cite
+
+If you use SYNAPSE CHANNEL in your work, please cite it. Metadata is in
+[`CITATION.cff`](CITATION.cff); a BibTeX entry:
+
+```bibtex
+@software{sotek_synapse_channel,
+  author  = {Šotek, Miroslav},
+  title   = {SYNAPSE CHANNEL: Local-first multi-agent coordination bus},
+  url      = {https://github.com/anulum/synapse-channel},
+  version = {0.17.0},
+  year     = {2026}
+}
+```
+
 ## Licence
 
 Dual-licensed: **AGPL-3.0-or-later**, with a commercial licence available. See
@@ -217,6 +269,12 @@ licensing boundary; contact `protoscience@anulum.li` for commercial terms. The
 repository is [REUSE](https://reuse.software/) 3.x compliant.
 
 ---
+
+<p align="center">
+  <a href="https://www.anulum.li"><img src="docs/assets/anulum_logo_company.jpg" width="170" alt="ANULUM"></a>
+  &nbsp;&nbsp;&nbsp;
+  <img src="docs/assets/fortis_studio_logo.jpg" width="170" alt="Fortis Studio">
+</p>
 
 <p align="center">
   &copy; 1998–2026 Miroslav Šotek &middot; <a href="https://www.anulum.li">anulum.li</a> &middot; <code>protoscience@anulum.li</code>
