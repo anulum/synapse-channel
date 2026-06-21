@@ -43,6 +43,9 @@ dist/
 htmlcov/
 coverage.xml
 
+# Built documentation site
+site/
+
 # Internal strategy/audit docs (never published)
 docs/internal/
 

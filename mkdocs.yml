@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — documentation site configuration
+site_name: SYNAPSE CHANNEL
+site_description: Local-first multi-agent coordination bus
+site_author: Miroslav Šotek
+site_url: https://anulum.github.io/synapse-channel
+repo_url: https://github.com/anulum/synapse-channel
+repo_name: anulum/synapse-channel
+copyright: "&copy; 1998–2026 Miroslav Šotek &middot; <a href='https://www.anulum.li'>anulum.li</a>"
+
+exclude_docs: |
+  internal/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - content.code.copy
+    - navigation.instant
+    - navigation.tabs
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.suggest
+    - toc.follow
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: numpy
+            show_source: false
+            show_root_heading: true
+            members_order: source
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Quick start: quickstart.md
+  - Coordination model: coordination.md
+  - Wire protocol: protocol.md
+  - CLI reference: cli.md
+  - Benchmarks: benchmarks.md
+  - API reference: api.md
+  - Changelog: changelog.md
