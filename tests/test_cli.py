@@ -1033,3 +1033,16 @@ def test_cmd_wait_dispatches_with_for_default(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr("synapse_channel.cli.asyncio.run", lambda coro: coro.close() or 0)
     ns = argparse.Namespace(uri="ws://h", name="X", for_name=None, timeout=0.0, token=None)
     assert cli._cmd_wait(ns) == 0
+
+
+async def test_wait_ignores_own_messages() -> None:
+    holder: list[FakeAgent] = []
+    # A broadcast whose sender is our own identity (we send as for_name) must not wake us.
+    inbound: list[dict[str, Any]] = [
+        {"type": "chat", "sender": "B", "target": "all", "payload": "x"}
+    ]
+    factory = _factory(holder, inbound=inbound, idle=False)
+    code = await cli._wait(
+        uri="ws://h", name="B-rx", for_name="B", timeout=0.2, agent_factory=factory
+    )
+    assert code == 2

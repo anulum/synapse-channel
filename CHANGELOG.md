@@ -11,6 +11,13 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.23.1] - 2026-06-21
+
+### Fixed
+- `synapse wait` no longer wakes on the waiting agent's own messages: a chat whose
+  sender is the waited-for identity is ignored, so the wake loop is not
+  self-triggered by the agent's own sends.
+
 ## [0.23.0] - 2026-06-21
 
 ### Added

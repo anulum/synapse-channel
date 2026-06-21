@@ -252,9 +252,11 @@ async def _wait(
     received: list[dict[str, Any]] = []
 
     async def collect(data: dict[str, Any]) -> None:
+        sender = data.get("sender")
         if (
             data.get("type") == MessageType.CHAT
-            and data.get("sender") != name
+            and sender != name
+            and sender != for_name  # ignore our own sends (the agent sends as for_name)
             and is_recipient(str(data.get("target", "all")), for_name)
         ):
             received.append(data)
