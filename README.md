@@ -60,10 +60,13 @@ than losing them.
 ## Install
 
 ```bash
-python -m pip install -e ".[dev]"   # editable install with the dev toolchain
+python -m pip install synapse-channel       # the release from PyPI
+python -m pip install -e ".[dev]"           # or an editable dev checkout
 ```
 
-This installs the `synapse` command.
+This installs the `synapse` command. To run the hub as an always-on local service
+or a container, see the [deployment guide](docs/deployment.md) (a `systemd` user
+unit and `docker compose` are both included).
 
 ## Quick start
 
@@ -214,7 +217,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 
 | Surface | Current inventory |
 |---|---:|
-| Package version | 0.20.0 |
+| Package version | 0.21.0 |
 | Public API exports | 39 |
 | Package modules | 21 |
 | Classes | 28 |
@@ -222,8 +225,8 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | CLI subcommands | 13 |
 | Test functions | 508 |
 | Benchmark harnesses | 2 |
-| Documentation pages | 9 |
-| GitHub Actions workflows | 8 |
+| Documentation pages | 10 |
+| GitHub Actions workflows | 9 |
 | Optional-dependency groups | 3 |
 
 This snapshot is a static inventory generated from the source tree. Performance and coverage claims have their own committed evidence — see `VALIDATION.md` and `benchmarks/`.

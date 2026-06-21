@@ -11,6 +11,15 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.21.0] - 2026-06-21
+
+### Added
+- Deployment support: a container image (`Dockerfile` + `docker-compose.yml`,
+  published to `ghcr.io/anulum/synapse-channel` on release by a `docker`
+  workflow), a systemd user unit (`deploy/synapse-hub.service`), and a deployment
+  guide covering the local always-on service, containers, exposure/token security,
+  and event-log backups.
+
 ## [0.20.0] - 2026-06-21
 
 ### Added

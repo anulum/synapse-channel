@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — compose file for the coordination hub
+
+services:
+  hub:
+    build: .
+    image: ghcr.io/anulum/synapse-channel:latest
+    container_name: synapse-hub
+    restart: unless-stopped
+    # Loopback-only on the host by default. To reach the hub from other hosts,
+    # change to "8876:8876" AND set SYNAPSE_TOKEN below (never expose it open).
+    ports:
+      - "127.0.0.1:8876:8876"
+    volumes:
+      - synapse-data:/data
+    # Uncomment to require a shared secret when the port is exposed:
+    # command:
+    #   - hub
+    #   - --host=0.0.0.0
+    #   - --port=8876
+    #   - --db=/data/hub.db
+    #   - --relay-log=/data/feed.ndjson
+    #   - --token=${SYNAPSE_TOKEN}
+
+volumes:
+  synapse-data:

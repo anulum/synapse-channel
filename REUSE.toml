@@ -27,7 +27,7 @@ SPDX-License-Identifier = "AGPL-3.0-or-later"
 
 [[annotations]]
 path = [
-    ".editorconfig", ".gitignore", ".gitattributes",
+    ".editorconfig", ".gitignore", ".gitattributes", ".dockerignore",
     "CITATION.cff", "Makefile",
 ]
 SPDX-FileCopyrightText = "1998-2026 Miroslav Šotek <protoscience@anulum.li>"

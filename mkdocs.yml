@@ -70,6 +70,7 @@ nav:
   - Coordination model: coordination-model.md
   - Wire protocol: protocol.md
   - CLI reference: cli.md
+  - Deployment: deployment.md
   - Benchmarks: benchmarks.md
   - API reference: api.md
   - Changelog: changelog.md
