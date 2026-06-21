@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — capability-manifest configuration
+project_label = "SYNAPSE CHANNEL"
+schema_version = "capability-manifest.v1"
+
+[paths]
+pyproject = "pyproject.toml"
+package_root = "src/synapse_channel"
+init_module = "src/synapse_channel/__init__.py"
+protocol_module = "src/synapse_channel/protocol.py"
+cli_module = "src/synapse_channel/cli.py"
+tests_root = "tests"
+benchmarks_root = "benchmarks"
+docs_root = "docs"
+workflows_root = ".github/workflows"
+json_output = "docs/_generated/capability_manifest.json"
+
+[readme]
+path = "README.md"
+marker_start = "<!-- capability-snapshot:start -->"
+marker_end = "<!-- capability-snapshot:end -->"
+
+[labels]
+version = "Package version"
+public_api_exports = "Public API exports"
+package_modules = "Package modules"
+classes = "Classes"
+wire_message_types = "Wire message types"
+cli_subcommands = "CLI subcommands"
+tests = "Test functions"
+benchmark_harnesses = "Benchmark harnesses"
+documentation_pages = "Documentation pages"
+workflows = "GitHub Actions workflows"
+optional_dependency_groups = "Optional-dependency groups"

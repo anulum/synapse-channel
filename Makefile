@@ -13,7 +13,7 @@ SRC := src tests benchmarks
 .DEFAULT_GOAL := help
 
 .PHONY: help install install-hooks lint fmt typecheck test cov preflight \
-	preflight-fast reuse build docs docs-build bench clean
+	preflight-fast reuse manifest manifest-check build docs docs-build bench clean
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -42,12 +42,18 @@ test: ## Run the test suite with the coverage gate
 cov: ## Run tests with a per-line missing-coverage report
 	$(PY) -m pytest --cov=synapse_channel --cov-report=term-missing
 
-preflight: lint typecheck test reuse ## Full local gate before a commit
+preflight: lint typecheck test reuse manifest-check ## Full local gate before a commit
 
 preflight-fast: lint ## Lint-only gate (fast)
 
 reuse: ## Check SPDX/REUSE 3.x licensing compliance
 	$(PY) -m reuse lint
+
+manifest: ## Regenerate the README capability snapshot
+	$(PY) tools/capability_manifest.py --update
+
+manifest-check: ## Fail if the README capability snapshot is stale
+	$(PY) tools/capability_manifest.py --check
 
 build: ## Build the sdist and wheel
 	$(PY) -m build
