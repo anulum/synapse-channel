@@ -51,7 +51,21 @@ synapse manifest
 synapse relay ./feed.ndjson --cursor ./feed.cursor
 ```
 
+## Managing the task plan
+
+`synapse task` lets a human drive the shared blackboard from the command line —
+the persistent plan, not the live leases (claiming/holding a lease belongs to a
+running agent, since a lease is released when its holder disconnects):
+
+```bash
+synapse task declare BUILD --title "Compile the package"
+synapse task declare TEST --title "Run the suite" --depends-on BUILD
+synapse board                                  # BUILD ready, TEST blocked on it
+synapse task update BUILD --status done        # TEST now unblocks
+synapse task progress TEST "started" --kind note
+```
+
 For a secured hub, pass `--token SECRET` to `worker`, `send`, `listen`, `board`,
-and `manifest`.
+`manifest`, and `task`.
 
 Run any command with `--help` for its full set of options.

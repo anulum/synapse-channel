@@ -11,6 +11,16 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.19.0] - 2026-06-21
+
+### Added
+- `synapse task {declare,update,progress}` drives the shared blackboard plan from
+  the command line: declare tasks with dependencies, mark a task done so its
+  dependents unblock, and post progress notes — without writing a client.
+- A runnable `examples/` directory: a narrated coordination demo and an
+  LLM-worker round-trip demo, each starting its own in-process hub, with
+  test-suite smoke coverage.
+
 ## [0.18.0] - 2026-06-21
 
 ### Added

@@ -91,6 +91,8 @@ synapse worker --name OFFLINE --provider rule        # no network, canned replie
 synapse worker --name TIER --provider tiered --model small --heavy-model big  # route trivial→rule, hard→heavy
 synapse relay ./feed.ndjson                          # decode and print that file as readable lines
 synapse board                                        # print the shared task/progress blackboard
+synapse task declare BUILD --title "compile"         # declare/update the shared plan from the CLI
+synapse task update BUILD --status done              # mark a plan task done so dependents unblock
 synapse supervisor --idle-seconds 300                # LLM-free: re-offer tasks that stall
 synapse manifest                                     # print the capability cards agents advertised
 synapse hub --host 0.0.0.0 --token s3cret            # require a shared secret when binding off-loopback
@@ -212,13 +214,13 @@ on-channel model worker a question. Each starts its own in-process hub, so
 
 | Surface | Current inventory |
 |---|---:|
-| Package version | 0.18.0 |
+| Package version | 0.19.0 |
 | Public API exports | 38 |
 | Package modules | 21 |
 | Classes | 28 |
 | Wire message types | 47 |
-| CLI subcommands | 9 |
-| Test functions | 495 |
+| CLI subcommands | 13 |
+| Test functions | 503 |
 | Benchmark harnesses | 2 |
 | Documentation pages | 9 |
 | GitHub Actions workflows | 8 |
