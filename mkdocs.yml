@@ -71,6 +71,7 @@ nav:
   - Wire protocol: protocol.md
   - CLI reference: cli.md
   - Recipes: recipes.md
+  - Examples: examples.md
   - Deployment: deployment.md
   - Benchmarks: benchmarks.md
   - API reference: api.md

@@ -225,7 +225,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | CLI subcommands | 13 |
 | Test functions | 509 |
 | Benchmark harnesses | 2 |
-| Documentation pages | 11 |
+| Documentation pages | 12 |
 | GitHub Actions workflows | 9 |
 | Optional-dependency groups | 3 |
 

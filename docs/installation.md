@@ -2,6 +2,19 @@
 
 SYNAPSE CHANNEL requires Python 3.10 or newer.
 
+## From PyPI
+
+```bash
+pip install synapse-channel
+```
+
+For the `synapse` command on your `PATH` as an isolated CLI, use
+[pipx](https://pipx.pypa.io/):
+
+```bash
+pipx install synapse-channel
+```
+
 ## From source
 
 ```bash

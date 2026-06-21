@@ -29,13 +29,17 @@ state, and every agent connects to it.
   checkpoints**.
 - **Proportionate connect authentication** and **task-class routing** to tiered
   backends.
+- **Direct messaging** — broadcast, a named group (`A,B`), or one agent — with a
+  **per-agent inbox** an idle agent catches up from the durable feed.
+- A **command line** for the whole flow (`synapse hub/worker/team/send/listen/
+  relay/board/supervisor/manifest/task`) and **runnable examples**.
 
 ## Next steps
 
-- [Installation](installation.md)
-- [Quick start](quickstart.md)
-- [Coordination model](coordination-model.md)
-- [Wire protocol](protocol.md)
+- [Installation](installation.md) · [Quick start](quickstart.md)
+- [Coordination model](coordination-model.md) · [Wire protocol](protocol.md)
+- [CLI reference](cli.md) · [Recipes](recipes.md) · [Examples](examples.md)
+- [Deployment](deployment.md)
 
 SYNAPSE CHANNEL is AGPL-3.0-or-later with a commercial licence available. See the
 project's `NOTICE.md`.

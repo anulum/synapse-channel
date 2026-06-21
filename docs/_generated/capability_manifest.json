@@ -3,7 +3,7 @@
     "benchmark_harnesses": 2,
     "classes": 28,
     "cli_subcommands": 13,
-    "documentation_pages": 11,
+    "documentation_pages": 12,
     "optional_dependency_groups": 3,
     "package_modules": 21,
     "public_api_exports": 39,
