@@ -5,9 +5,24 @@ Commercial license available
 © Code 2020–2026 Miroslav Šotek. All rights reserved.
 ORCID: 0009-0009-3560-0851
 Contact: www.anulum.li | protoscience@anulum.li
+SYNAPSE CHANNEL — repository overview
 -->
 
-# SYNAPSE CHANNEL
+<h1 align="center">SYNAPSE CHANNEL</h1>
+
+<p align="center">
+  <strong>Local-first coordination bus for multiple agents working in parallel on one repository</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/anulum/synapse-channel/actions/workflows/ci.yml"><img src="https://github.com/anulum/synapse-channel/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/anulum/synapse-channel/actions/workflows/codeql.yml"><img src="https://github.com/anulum/synapse-channel/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
+  <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/coverage-100%25-brightgreen" alt="Coverage 100%">
+  <a href="https://api.reuse.software/info/github.com/anulum/synapse-channel"><img src="https://api.reuse.software/badge/github.com/anulum/synapse-channel" alt="REUSE status"></a>
+  <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json" alt="Ruff"></a>
+</p>
 
 A local-first coordination bus for multiple agents working in parallel. A single
 WebSocket hub is the source of truth for **presence**, **work claims**, **chat**,
@@ -157,7 +172,24 @@ async def main() -> None:
 | `launcher` | One-command local hub + worker startup. |
 | `cli` | The unified `synapse` command. |
 
+## Documentation and project
+
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — the module map and coordination model.
+- [`TEAM_PROTOCOL.md`](TEAM_PROTOCOL.md) — the working agreement and wire reference.
+- [`VALIDATION.md`](VALIDATION.md) — how it is tested and the gates a change clears.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`SECURITY.md`](SECURITY.md) · [`GOVERNANCE.md`](GOVERNANCE.md) · [`ROADMAP.md`](ROADMAP.md)
+- Full documentation site: <https://anulum.github.io/synapse-channel>
+
 ## Licence
 
-Dual-licensed: AGPL-3.0-or-later, with a commercial licence available. See the
-SPDX headers in each source file and contact `protoscience@anulum.li`.
+Dual-licensed: **AGPL-3.0-or-later**, with a commercial licence available. See
+[`LICENSE`](LICENSE) for the full text and [`NOTICE.md`](NOTICE.md) for the
+licensing boundary; contact `protoscience@anulum.li` for commercial terms. The
+repository is [REUSE](https://reuse.software/) 3.x compliant.
+
+---
+
+<p align="center">
+  &copy; 1998–2026 Miroslav Šotek &middot; <a href="https://www.anulum.li">anulum.li</a> &middot; <code>protoscience@anulum.li</code>
+</p>
+
