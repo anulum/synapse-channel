@@ -163,7 +163,9 @@ class SynapseAgent:
         try:
             await asyncio.wait_for(self.ready_event.wait(), timeout=max(timeout, 0.1))
             return True
-        except TimeoutError:
+        except asyncio.TimeoutError:
+            # On Python 3.10 asyncio.wait_for raises asyncio.TimeoutError, which is
+            # not the builtin TimeoutError (the two are only aliased on 3.11+).
             return False
 
     async def _heartbeat_loop(self) -> None:
