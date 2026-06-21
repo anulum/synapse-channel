@@ -9,7 +9,7 @@ SYNAPSE CHANNEL — repository overview
 -->
 
 <p align="center">
-  <img src="docs/assets/header.png" width="1280" alt="SYNAPSE CHANNEL — local-first multi-agent coordination bus">
+  <img src="https://raw.githubusercontent.com/anulum/synapse-channel/main/docs/assets/header.png" width="1280" alt="SYNAPSE CHANNEL — local-first multi-agent coordination bus">
 </p>
 
 <p align="center">
@@ -272,9 +272,9 @@ repository is [REUSE](https://reuse.software/) 3.x compliant.
 ---
 
 <p align="center">
-  <a href="https://www.anulum.li"><img src="docs/assets/anulum_logo_company.jpg" width="170" alt="ANULUM"></a>
+  <a href="https://www.anulum.li"><img src="https://raw.githubusercontent.com/anulum/synapse-channel/main/docs/assets/anulum_logo_company.jpg" width="170" alt="ANULUM"></a>
   &nbsp;&nbsp;&nbsp;
-  <img src="docs/assets/fortis_studio_logo.jpg" width="170" alt="Fortis Studio">
+  <img src="https://raw.githubusercontent.com/anulum/synapse-channel/main/docs/assets/fortis_studio_logo.jpg" width="170" alt="Fortis Studio">
 </p>
 
 <p align="center">
