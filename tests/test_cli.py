@@ -1439,3 +1439,37 @@ def test_cmd_relay_filters_by_project(tmp_path: Path, capsys: pytest.CaptureFixt
     assert "to instance" in out
     assert "to team" in out
     assert "elsewhere" not in out
+
+
+def test_cmd_wait_derives_rx_name_for_bare_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_wait(**kwargs: Any) -> str:
+        captured.update(kwargs)
+        return "coro"
+
+    monkeypatch.setattr(cli, "_wait", fake_wait)
+    monkeypatch.setattr("synapse_channel.cli.asyncio.run", lambda coro: 0)
+    ns = argparse.Namespace(
+        uri="ws://h", name="CEO", for_name=None, timeout=0.0, directed_only=False, token=None
+    )
+    assert cli._cmd_wait(ns) == 0
+    assert captured["name"] == "CEO-rx"  # bare identity gets a distinct receiver name
+    assert captured["for_name"] == "CEO"
+
+
+def test_cmd_wait_keeps_distinct_connect_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_wait(**kwargs: Any) -> str:
+        captured.update(kwargs)
+        return "coro"
+
+    monkeypatch.setattr(cli, "_wait", fake_wait)
+    monkeypatch.setattr("synapse_channel.cli.asyncio.run", lambda coro: 0)
+    ns = argparse.Namespace(
+        uri="ws://h", name="CEO-rx", for_name="CEO", timeout=0.0, directed_only=False, token=None
+    )
+    assert cli._cmd_wait(ns) == 0
+    assert captured["name"] == "CEO-rx"  # already distinct, left unchanged
+    assert captured["for_name"] == "CEO"

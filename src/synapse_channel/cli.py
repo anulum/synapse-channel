@@ -291,12 +291,20 @@ async def _wait(
 
 
 def _cmd_wait(args: argparse.Namespace) -> int:
-    """Dispatch the ``wait`` subcommand."""
+    """Dispatch the ``wait`` subcommand.
+
+    The waiter connects only to *receive*, so its connection name must never be the
+    bare identity it waits for — otherwise it holds that name and the agent's own
+    sends (which use the same identity) are refused with a name conflict. When the
+    two would coincide, the connection name is suffixed with ``-rx``.
+    """
+    for_name = args.for_name or args.name
+    connect_name = args.name if args.name != for_name else f"{args.name}-rx"
     return asyncio.run(
         _wait(
             uri=args.uri,
-            name=args.name,
-            for_name=args.for_name or args.name,
+            name=connect_name,
+            for_name=for_name,
             timeout=args.timeout,
             directed_only=args.directed_only,
             token=args.token,

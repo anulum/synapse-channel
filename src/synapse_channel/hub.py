@@ -60,6 +60,10 @@ DEFAULT_PORT = 8876
 DEFAULT_MAX_HISTORY = 10000
 DEFAULT_MAX_QUEUE = 64
 DEFAULT_RELAY_MAX_LINES = 5000
+DEFAULT_PING_INTERVAL = 15.0
+"""Seconds between server keepalive pings, so a dead socket is detected promptly."""
+DEFAULT_PING_TIMEOUT = 15.0
+"""Seconds to wait for a ping reply before dropping the connection and freeing its name."""
 
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 """Bind hosts treated as loopback-only, where running without a token is fine."""
@@ -1134,6 +1138,13 @@ class SynapseHub:
             Bind port. Defaults to :data:`DEFAULT_PORT`.
         """
         self._warn_if_exposed(host)
-        async with websockets.serve(self.handler, host, port, max_queue=DEFAULT_MAX_QUEUE):
+        async with websockets.serve(
+            self.handler,
+            host,
+            port,
+            max_queue=DEFAULT_MAX_QUEUE,
+            ping_interval=DEFAULT_PING_INTERVAL,
+            ping_timeout=DEFAULT_PING_TIMEOUT,
+        ):
             logger.info("Synapse Hub running on ws://%s:%d", host, port)
             await asyncio.Future()

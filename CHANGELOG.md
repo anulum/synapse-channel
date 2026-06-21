@@ -11,6 +11,16 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.27.0] - 2026-06-21
+
+### Fixed
+- `synapse wait` no longer holds the bare identity it waits for: when the connection
+  name would equal the waited-for name, it connects as `<name>-rx`, so an agent's
+  own sends under that identity are no longer refused with a name conflict (a bare
+  `synapse wait --name CEO` had locked out `--name CEO` sends).
+- The hub sets an explicit keepalive ping (`ping_interval`/`ping_timeout`, 15s) so a
+  dropped client's socket is reaped and its name freed promptly rather than lingering.
+
 ## [0.26.0] - 2026-06-21
 
 ### Added
