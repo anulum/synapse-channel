@@ -280,4 +280,3 @@ repository is [REUSE](https://reuse.software/) 3.x compliant.
 <p align="center">
   &copy; 1998–2026 Miroslav Šotek &middot; <a href="https://www.anulum.li">anulum.li</a> &middot; <code>protoscience@anulum.li</code>
 </p>
-
