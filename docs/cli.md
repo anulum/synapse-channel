@@ -1,6 +1,6 @@
 # CLI reference
 
-The `synapse` command exposes twelve subcommands.
+The `synapse` command exposes thirteen subcommands.
 
 | Command | What it does |
 | --- | --- |
@@ -15,6 +15,7 @@ The `synapse` command exposes twelve subcommands.
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
 | `synapse manifest` | Print the capability manifest of advertised agents. |
 | `synapse who` | List the agents currently online, optionally for one project. |
+| `synapse lock` | Hold a lease while running a command, to serialise it across agents. |
 | `synapse task` | Declare and update the shared task plan. |
 
 ## Identities and groups
@@ -32,6 +33,15 @@ synapse send --target quantum/* "rebasing main now"   # the whole project team
 
 `synapse wait --directed-only` wakes only on messages that name you (or a group
 you are in), leaving broadcasts to be read later — quieter on a busy channel.
+
+When several agents share a repo, serialise the operations that must not overlap —
+above all commits — by wrapping them in a lease. The hub grants one live lease per
+id, so the others wait their turn instead of clobbering each other:
+
+```bash
+synapse lock quantum:git -- git push          # holds quantum:git while pushing
+synapse lock quantum:git --wait-timeout 0 -- git push   # fail fast if someone holds it
+```
 
 ## Getting woken on a message
 

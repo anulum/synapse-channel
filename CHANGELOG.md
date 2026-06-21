@@ -11,6 +11,15 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.25.0] - 2026-06-21
+
+### Added
+- `synapse lock <id> -- <command>` holds a single live lease on `<id>` while it
+  runs the command and releases it after, so several agents on one repo serialise
+  operations that must not overlap — above all commits (`synapse lock
+  <project>:git -- git push`). It waits its turn while another holds the lease
+  (`--wait-timeout`, `0` fails fast).
+
 ## [0.24.0] - 2026-06-21
 
 ### Added
