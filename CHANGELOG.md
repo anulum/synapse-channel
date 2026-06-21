@@ -11,6 +11,16 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.28.0] - 2026-06-22
+
+### Changed
+- `synapse wait --directed-only` now also wakes on a **priority broadcast** and on
+  any message from **`CEO`**, not only on directed messages — so an important `all`
+  broadcast reaches a quiet waiter promptly while routine peer chatter stays
+  suppressed (directed-only means "no routine broadcast wakes me", not "no broadcast
+  ever"). `synapse send --priority` marks a message as priority. The `wakes`
+  predicate and `PRIORITY_SENDERS` are exported.
+
 ## [0.27.2] - 2026-06-21
 
 ### Security

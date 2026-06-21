@@ -206,7 +206,7 @@ class SynapseAgent:
         msg = build_envelope(self.name, msg_type, target=target, payload=payload, **extra)
         await self.connection.send(json.dumps(msg))
 
-    async def chat(self, payload: str, *, target: str = "all") -> None:
+    async def chat(self, payload: str, *, target: str = "all", priority: bool = False) -> None:
         """Send a chat message to the room or a single agent.
 
         Parameters
@@ -215,8 +215,12 @@ class SynapseAgent:
             Message text.
         target : str, optional
             Recipient agent name, or ``"all"``. Defaults to ``"all"``.
+        priority : bool, optional
+            Mark the message as priority so it wakes even directed-only waiters
+            (use sparingly — for announcements that genuinely must reach everyone).
         """
-        await self.send_message(MessageType.CHAT, target=target, payload=payload)
+        extra = {"priority": True} if priority else {}
+        await self.send_message(MessageType.CHAT, target=target, payload=payload, **extra)
 
     async def claim(
         self,

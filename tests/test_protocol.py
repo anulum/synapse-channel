@@ -131,3 +131,26 @@ def test_addresses_project() -> None:
     assert addresses_project("a,quantum/x", "quantum")
     assert not addresses_project("other/codex-1", "quantum")
     assert not addresses_project("quantum-core/x", "quantum")
+
+
+def test_priority_senders_contains_ceo() -> None:
+    from synapse_channel.protocol import PRIORITY_SENDERS
+
+    assert "CEO" in PRIORITY_SENDERS
+
+
+def test_wakes_normal_and_directed_only() -> None:
+    from synapse_channel.protocol import wakes
+
+    # normal mode: any recipient match, including a broadcast
+    assert wakes("all", "B", directed_only=False, sender="A")
+    assert wakes("B", "B", directed_only=False, sender="A")
+    # directed-only: routine peer broadcast suppressed
+    assert not wakes("all", "B", directed_only=True, sender="A")
+    # directed-only: a directed message still wakes
+    assert wakes("B", "B", directed_only=True, sender="A")
+    assert wakes("quantum/*", "quantum/c-1", directed_only=True, sender="A")
+    # directed-only: a priority broadcast wakes
+    assert wakes("all", "B", directed_only=True, sender="A", priority=True)
+    # directed-only: a CEO broadcast always wakes
+    assert wakes("all", "B", directed_only=True, sender="CEO")

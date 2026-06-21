@@ -52,7 +52,12 @@ from synapse_channel.llm_worker import (
     SynapseLLMWorker,
 )
 from synapse_channel.persistence import EventStore
-from synapse_channel.protocol import MessageType, addresses_project, is_directed, is_recipient
+from synapse_channel.protocol import (
+    MessageType,
+    addresses_project,
+    is_recipient,
+    wakes,
+)
 from synapse_channel.ratelimit import RateLimiter
 from synapse_channel.relay import decode_lite, load_offset, read_jsonl_since, save_offset
 from synapse_channel.supervisor import (
@@ -161,6 +166,7 @@ async def _send(
     target: str,
     message: str,
     wait_seconds: float,
+    priority: bool = False,
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
 ) -> int:
@@ -172,6 +178,8 @@ async def _send(
         Hub URI, sender name, recipient, and message body.
     wait_seconds : float
         Seconds to keep listening for replies after sending (``0`` to skip).
+    priority : bool, optional
+        Mark the message as priority so it wakes even directed-only waiters.
     agent_factory : AgentFactory, optional
         Factory for the client agent; injectable for testing.
 
@@ -192,7 +200,7 @@ async def _send(
         if not await agent.wait_until_ready(timeout=5.0):
             print(f"[{name}] Could not reach hub at {uri}.")
             return 1
-        await agent.chat(message, target=target)
+        await agent.chat(message, target=target, priority=priority)
         if wait_seconds > 0:
             await asyncio.sleep(wait_seconds)
             for reply in replies:
@@ -212,6 +220,7 @@ def _cmd_send(args: argparse.Namespace) -> int:
             target=args.target,
             message=args.message,
             wait_seconds=args.wait_seconds,
+            priority=args.priority,
             token=args.token,
         )
     )
@@ -258,15 +267,20 @@ async def _wait(
         timeout with nothing received.
     """
     received: list[dict[str, Any]] = []
-    matches = is_directed if directed_only else is_recipient
 
     async def collect(data: dict[str, Any]) -> None:
-        sender = data.get("sender")
+        sender = str(data.get("sender", ""))
         if (
             data.get("type") == MessageType.CHAT
             and sender != name
             and sender != for_name  # ignore our own sends (the agent sends as for_name)
-            and matches(str(data.get("target", "all")), for_name)
+            and wakes(
+                str(data.get("target", "all")),
+                for_name,
+                directed_only=directed_only,
+                sender=sender,
+                priority=bool(data.get("priority")),
+            )
         ):
             received.append(data)
 
@@ -1023,6 +1037,11 @@ def build_parser() -> argparse.ArgumentParser:
     send.add_argument("--name", default="USER")
     send.add_argument("--target", default="all")
     send.add_argument("--wait-seconds", type=float, default=2.0)
+    send.add_argument(
+        "--priority",
+        action="store_true",
+        help="Mark as priority so it wakes even directed-only waiters (use sparingly).",
+    )
     send.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     send.add_argument("message")
     send.set_defaults(func=_cmd_send)

@@ -48,8 +48,12 @@ synapse who --project quantum     # only quantum/... instances
 synapse send --target quantum/* "rebasing main now"   # the whole project team
 ```
 
-`synapse wait --directed-only` wakes only on messages that name you (or a group
-you are in), leaving broadcasts to be read later — quieter on a busy channel.
+`synapse wait --directed-only` suppresses *routine* broadcasts: it wakes on messages
+that name you (or a group you are in), but still wakes on a **priority broadcast**
+(`synapse send --priority`) and on any message from **`CEO`** — so an `all` that
+genuinely matters reaches a quiet waiter promptly while peer chatter is left for the
+next `synapse relay`/inbox read. Use `--priority` sparingly, for announcements that
+must reach everyone immediately.
 
 When several agents share a repo, serialise the operations that must not overlap —
 above all commits — by wrapping them in a lease. The hub grants one live lease per

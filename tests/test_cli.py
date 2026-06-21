@@ -62,8 +62,10 @@ class FakeAgent:
     async def wait_until_ready(self, timeout: float = 5.0) -> bool:
         return self._ready
 
-    async def chat(self, payload: str, *, target: str = "all") -> None:
+    async def chat(self, payload: str, *, target: str = "all", priority: bool = False) -> None:
         self.chats.append((target, payload))
+        self.chat_priorities: list[bool] = getattr(self, "chat_priorities", [])
+        self.chat_priorities.append(priority)
 
     async def request_board(self) -> None:
         self.board_requests = getattr(self, "board_requests", 0) + 1
@@ -401,7 +403,13 @@ async def test_send_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) 
 def test_cmd_send_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("synapse_channel.cli.asyncio.run", lambda coro: coro.close() or 0)
     ns = argparse.Namespace(
-        uri="ws://h", name="USER", target="all", message="hi", wait_seconds=0.0, token=None
+        uri="ws://h",
+        name="USER",
+        target="all",
+        message="hi",
+        wait_seconds=0.0,
+        priority=False,
+        token=None,
     )
     assert cli._cmd_send(ns) == 0
 
@@ -1473,3 +1481,59 @@ def test_cmd_wait_keeps_distinct_connect_name(monkeypatch: pytest.MonkeyPatch) -
     assert cli._cmd_wait(ns) == 0
     assert captured["name"] == "CEO-rx"  # already distinct, left unchanged
     assert captured["for_name"] == "CEO"
+
+
+async def test_wait_directed_only_wakes_on_ceo() -> None:
+    holder: list[FakeAgent] = []
+    inbound: list[dict[str, Any]] = [
+        {"type": "chat", "sender": "CEO", "target": "all", "payload": "directive"}
+    ]
+    factory = _factory(holder, inbound=inbound)
+    code = await cli._wait(
+        uri="ws://h",
+        name="B-rx",
+        for_name="B",
+        timeout=2.0,
+        directed_only=True,
+        agent_factory=factory,
+    )
+    assert code == 0  # a CEO broadcast wakes even a directed-only waiter
+
+
+async def test_wait_directed_only_wakes_on_priority_broadcast() -> None:
+    holder: list[FakeAgent] = []
+    inbound: list[dict[str, Any]] = [
+        {"type": "chat", "sender": "A", "target": "all", "payload": "!", "priority": True}
+    ]
+    factory = _factory(holder, inbound=inbound)
+    code = await cli._wait(
+        uri="ws://h",
+        name="B-rx",
+        for_name="B",
+        timeout=2.0,
+        directed_only=True,
+        agent_factory=factory,
+    )
+    assert code == 0  # a priority broadcast wakes even a directed-only waiter
+
+
+def test_parser_send_priority() -> None:
+    args = cli.build_parser().parse_args(["send", "hi", "--priority"])
+    assert args.priority is True
+
+
+async def test_send_marks_priority() -> None:
+    holder: list[FakeAgent] = []
+    factory = _factory(holder, idle=False)
+    code = await cli._send(
+        uri="ws://h",
+        name="U",
+        target="all",
+        message="!",
+        wait_seconds=0.0,
+        priority=True,
+        agent_factory=factory,
+    )
+    assert code == 0
+    assert holder[0].chats == [("all", "!")]
+    assert holder[0].chat_priorities == [True]

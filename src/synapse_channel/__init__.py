@@ -18,7 +18,7 @@ command (see :mod:`synapse_channel.cli`) drives all of it.
 
 from __future__ import annotations
 
-__version__ = "0.27.2"
+__version__ = "0.28.0"
 
 from synapse_channel.auth import TokenAuthenticator
 from synapse_channel.capability import CapabilityCard, CapabilityRegistry
@@ -37,12 +37,14 @@ from synapse_channel.lifecycle import TaskStatus, can_transition
 from synapse_channel.llm_worker import SynapseLLMWorker, is_service_message
 from synapse_channel.persistence import EventStore
 from synapse_channel.protocol import (
+    PRIORITY_SENDERS,
     MessageType,
     addresses_project,
     build_envelope,
     is_directed,
     is_recipient,
     system_message,
+    wakes,
 )
 from synapse_channel.relay import decode_lite, encode_lite
 from synapse_channel.routing import TaskClass, TieredChatClient, classify
@@ -52,6 +54,7 @@ from synapse_channel.supervisor import Intervention, SupervisorWorker, detect_st
 
 __all__ = [
     "DEFAULT_HUB_URI",
+    "PRIORITY_SENDERS",
     "Blackboard",
     "CapabilityCard",
     "CapabilityRegistry",
@@ -91,5 +94,6 @@ __all__ = [
     "sanitize_text",
     "scopes_conflict",
     "system_message",
+    "wakes",
     "would_create_cycle",
 ]

@@ -267,3 +267,53 @@ def addresses_project(target: str, project: str) -> bool:
         for part in cleaned.split(",")
         if part.strip()
     )
+
+
+PRIORITY_SENDERS = frozenset({"CEO"})
+"""Senders whose message wakes a directed-only waiter even on a broadcast.
+
+The CEO command session directs the fleet; a broadcast from it is never merely
+routine peer chatter, so it must reach a quiet waiter promptly.
+"""
+
+
+def wakes(
+    target: str,
+    name: str,
+    *,
+    directed_only: bool,
+    sender: str = "",
+    priority: bool = False,
+) -> bool:
+    """Return whether a chat to ``target`` should wake a waiter listening for ``name``.
+
+    In the default mode any recipient match wakes (:func:`is_recipient`). In
+    directed-only mode only a directed match wakes (:func:`is_directed`) — *except*
+    a priority-flagged message and a message from a :data:`PRIORITY_SENDERS` sender
+    always wake. So an ``"all"`` broadcast that genuinely matters (a CEO directive, a
+    flagged announcement) still reaches a quiet waiter promptly, while routine peer
+    broadcasts stay suppressed. Directed-only means "no *routine* broadcast wakes me",
+    not "no broadcast ever wakes me".
+
+    Parameters
+    ----------
+    target : str
+        The recipient field of the message.
+    name : str
+        The waiter's own identity.
+    directed_only : bool
+        When ``True``, suppress routine broadcasts (wake only on a directed, priority,
+        or priority-sender message).
+    sender : str, optional
+        The message's sender, matched against :data:`PRIORITY_SENDERS`.
+    priority : bool, optional
+        Whether the message carries an explicit priority flag.
+
+    Returns
+    -------
+    bool
+        Whether the waiter should wake on this message.
+    """
+    if not directed_only:
+        return is_recipient(target, name)
+    return is_directed(target, name) or priority or sender in PRIORITY_SENDERS
