@@ -11,6 +11,14 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.23.0] - 2026-06-21
+
+### Added
+- `synapse wait --for <name>`: block on the hub until a message addressed to that
+  name arrives (one, a group, or a broadcast), then print it and exit — a wake
+  trigger a turn-based agent runs as a background task so it reacts to a message
+  instead of polling. It holds presence and costs nothing while it waits.
+
 ## [0.22.0] - 2026-06-21
 
 ### Added

@@ -7,12 +7,13 @@
 # SYNAPSE_CHANNEL — unified `synapse` command-line entry point
 """Command-line entry point for the Synapse channel.
 
-The ``synapse`` command exposes ten subcommands:
+The ``synapse`` command exposes eleven subcommands:
 
 * ``hub`` — run the coordination hub;
 * ``worker`` — run a model worker that answers on the channel;
 * ``team`` — launch a hub plus one or two local workers in one shot;
 * ``send`` — connect, send one message, optionally wait for replies, and exit;
+* ``wait`` — block until a message addressed to you arrives, then exit (a wake trigger);
 * ``listen`` — connect and stream channel messages until interrupted;
 * ``relay`` — decode and print a lite relay log a hub mirrored to a file;
 * ``board`` — print the hub's shared task/progress blackboard;
@@ -207,6 +208,85 @@ def _cmd_send(args: argparse.Namespace) -> int:
             target=args.target,
             message=args.message,
             wait_seconds=args.wait_seconds,
+            token=args.token,
+        )
+    )
+
+
+async def _wait(
+    *,
+    uri: str,
+    name: str,
+    for_name: str,
+    timeout: float,
+    agent_factory: AgentFactory = SynapseAgent,
+    token: str | None = None,
+) -> int:
+    """Block until one message addressed to ``for_name`` arrives, print it, and exit.
+
+    This is the wake primitive: an agent runs it as a background task and the
+    moment a message lands the command exits, which re-invokes the agent. The
+    connection holds presence while it waits.
+
+    Parameters
+    ----------
+    uri, name : str
+        Hub URI and the connecting identity (keep it distinct from the sender
+        name so a waiter and a one-shot ``send`` for the same project never clash).
+    for_name : str
+        Whose messages to wake on; a chat matches when its target addresses
+        ``for_name`` — one agent, a named group, or a broadcast.
+    timeout : float
+        Seconds to wait; ``0`` waits indefinitely.
+    agent_factory : AgentFactory, optional
+        Factory for the client agent; injectable for testing.
+    token : str or None, optional
+        Shared-secret token for a secured hub.
+
+    Returns
+    -------
+    int
+        ``0`` when a message arrived, ``1`` when the hub was unreachable, ``2`` on
+        timeout with nothing received.
+    """
+    received: list[dict[str, Any]] = []
+
+    async def collect(data: dict[str, Any]) -> None:
+        if (
+            data.get("type") == MessageType.CHAT
+            and data.get("sender") != name
+            and is_recipient(str(data.get("target", "all")), for_name)
+        ):
+            received.append(data)
+
+    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
+    conn_task = asyncio.create_task(agent.connect())
+    try:
+        if not await agent.wait_until_ready(timeout=5.0):
+            print(f"[{name}] Could not reach hub at {uri}.")
+            return 1
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout
+        while not received and (timeout <= 0 or loop.time() < deadline):
+            await asyncio.sleep(0.1)
+        if received:
+            message = received[-1]
+            print(f"{message.get('sender')}: {message.get('payload')}")
+            return 0
+        return 2
+    finally:
+        agent.running = False
+        conn_task.cancel()
+
+
+def _cmd_wait(args: argparse.Namespace) -> int:
+    """Dispatch the ``wait`` subcommand."""
+    return asyncio.run(
+        _wait(
+            uri=args.uri,
+            name=args.name,
+            for_name=args.for_name or args.name,
+            timeout=args.timeout,
             token=args.token,
         )
     )
@@ -674,6 +754,23 @@ def build_parser() -> argparse.ArgumentParser:
     send.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     send.add_argument("message")
     send.set_defaults(func=_cmd_send)
+
+    wait = sub.add_parser(
+        "wait", help="Block until a message addressed to you arrives, then exit (a wake trigger)."
+    )
+    wait.add_argument("--uri", default=DEFAULT_HUB_URI)
+    wait.add_argument("--name", default="USER")
+    wait.add_argument(
+        "--for",
+        dest="for_name",
+        default=None,
+        help="Whose messages to wake on (one, a group, or broadcast); defaults to --name.",
+    )
+    wait.add_argument(
+        "--timeout", type=float, default=0.0, help="Seconds to wait; 0 waits indefinitely."
+    )
+    wait.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    wait.set_defaults(func=_cmd_wait)
 
     listen = sub.add_parser("listen", help="Stream channel messages until interrupted.")
     listen.add_argument("--uri", default=DEFAULT_HUB_URI)

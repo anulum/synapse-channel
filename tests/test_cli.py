@@ -987,3 +987,49 @@ def test_parser_relay_and_listen_for_flag() -> None:
     assert relay.for_name == "B"
     listen = cli.build_parser().parse_args(["listen", "--name", "B", "--for", "B"])
     assert listen.for_name == "B"
+
+
+# --- wait (wake trigger) -----------------------------------------------------
+
+
+def test_parser_wait() -> None:
+    args = cli.build_parser().parse_args(["wait", "--name", "X", "--for", "Y", "--timeout", "5"])
+    assert args.name == "X"
+    assert args.for_name == "Y"
+    assert args.timeout == 5.0
+    assert args.func is cli._cmd_wait
+
+
+async def test_wait_returns_on_addressed_message(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    inbound: list[dict[str, Any]] = [
+        {"type": "presence_update", "sender": "hub"},  # not a chat — ignored
+        {"type": "chat", "sender": "A", "target": "B", "payload": "wake up"},
+    ]
+    factory = _factory(holder, inbound=inbound)
+    code = await cli._wait(
+        uri="ws://h", name="B-rx", for_name="B", timeout=2.0, agent_factory=factory
+    )
+    assert code == 0
+    assert "A: wake up" in capsys.readouterr().out
+
+
+async def test_wait_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    factory = _factory(holder, ready=False)
+    code = await cli._wait(uri="ws://h", name="B", for_name="B", timeout=1.0, agent_factory=factory)
+    assert code == 1
+    assert "Could not reach hub" in capsys.readouterr().out
+
+
+async def test_wait_times_out_with_nothing() -> None:
+    holder: list[FakeAgent] = []
+    factory = _factory(holder, inbound=[], idle=False)
+    code = await cli._wait(uri="ws://h", name="B", for_name="B", timeout=0.2, agent_factory=factory)
+    assert code == 2
+
+
+def test_cmd_wait_dispatches_with_for_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("synapse_channel.cli.asyncio.run", lambda coro: coro.close() or 0)
+    ns = argparse.Namespace(uri="ws://h", name="X", for_name=None, timeout=0.0, token=None)
+    assert cli._cmd_wait(ns) == 0

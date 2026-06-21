@@ -1,6 +1,6 @@
 # CLI reference
 
-The `synapse` command exposes ten subcommands.
+The `synapse` command exposes eleven subcommands.
 
 | Command | What it does |
 | --- | --- |
@@ -8,12 +8,27 @@ The `synapse` command exposes ten subcommands.
 | `synapse worker` | Run a model worker that answers on the channel. |
 | `synapse team` | Launch a hub plus one or two local workers in one shot. |
 | `synapse send` | Connect, send one message, optionally await replies, and exit. |
+| `synapse wait` | Block until a message addressed to you arrives, then exit (a wake trigger). |
 | `synapse listen` | Connect and stream channel messages until interrupted. |
 | `synapse relay` | Decode and print a lite relay log a hub mirrored to a file. |
 | `synapse board` | Print the shared task/progress blackboard. |
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
 | `synapse manifest` | Print the capability manifest of advertised agents. |
 | `synapse task` | Declare and update the shared task plan. |
+
+## Getting woken on a message
+
+A turn-based assistant cannot hold a socket between turns, so it learns of a
+message only when it checks. `synapse wait` turns that into a push: it blocks on
+the connection and exits the instant a message addressed to you arrives. Run it as
+a background task — when it exits, the message has landed (and a harness that
+re-invokes an agent on background completion wakes you). On wake, read the message,
+act, and re-launch `synapse wait`. It costs nothing while it waits.
+
+```bash
+synapse wait --name api-dev-rx --for api-dev   # blocks; prints + exits on a message for api-dev
+synapse wait --for api-dev --timeout 60        # give up after 60s (exit 2) instead of waiting forever
+```
 
 ## Messaging: broadcast, several, or one
 
