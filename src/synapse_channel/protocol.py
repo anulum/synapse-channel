@@ -19,6 +19,7 @@ in tests.
 
 from __future__ import annotations
 
+import fnmatch
 import time
 from typing import Any
 
@@ -194,16 +195,45 @@ def is_recipient(target: str, name: str) -> bool:
     ----------
     target : str
         The recipient field: the broadcast keyword ``"all"`` (or empty), a single
-        agent name, or a comma-separated list of names for several recipients.
+        name, a comma-separated list, or a glob such as ``"quantum/*"`` (every
+        agent in the ``quantum`` project) or ``"quantum/claude-*"``.
+    name : str
+        The reader's own agent name, e.g. ``"quantum/claude-7f3a"``.
+
+    Returns
+    -------
+    bool
+        ``True`` for a broadcast or when ``name`` matches one of the target parts
+        (each part is matched as a case-sensitive glob, so a plain name is exact).
+    """
+    cleaned = (target or "all").strip()
+    if cleaned in ("", "all"):
+        return True
+    return any(
+        fnmatch.fnmatchcase(name, part.strip()) for part in cleaned.split(",") if part.strip()
+    )
+
+
+def is_directed(target: str, name: str) -> bool:
+    """Return whether ``target`` names ``name`` specifically rather than broadcasting.
+
+    Like :func:`is_recipient` but ``"all"`` (and an empty target) is *not* a match,
+    so a reader can wake only on messages addressed to it or a group it is in and
+    treat broadcasts as read-when-convenient.
+
+    Parameters
+    ----------
+    target : str
+        The recipient field.
     name : str
         The reader's own agent name.
 
     Returns
     -------
     bool
-        ``True`` for a broadcast or when ``name`` is one of the listed recipients.
+        ``True`` only when ``target`` is a non-broadcast pattern that matches ``name``.
     """
     cleaned = (target or "all").strip()
     if cleaned in ("", "all"):
-        return True
-    return name in {part.strip() for part in cleaned.split(",") if part.strip()}
+        return False
+    return is_recipient(cleaned, name)

@@ -7,7 +7,7 @@
 # SYNAPSE_CHANNEL — unified `synapse` command-line entry point
 """Command-line entry point for the Synapse channel.
 
-The ``synapse`` command exposes eleven subcommands:
+The ``synapse`` command exposes twelve subcommands:
 
 * ``hub`` — run the coordination hub;
 * ``worker`` — run a model worker that answers on the channel;
@@ -19,6 +19,7 @@ The ``synapse`` command exposes eleven subcommands:
 * ``board`` — print the hub's shared task/progress blackboard;
 * ``supervisor`` — run an LLM-free supervisor that re-offers stalled tasks;
 * ``manifest`` — print the capability manifest of advertised agents;
+* ``who`` — list the agents currently online, optionally for one project;
 * ``task`` — declare and update the shared task plan from the command line.
 
 The send/listen helpers take an injectable agent factory so the dispatch and the
@@ -48,7 +49,7 @@ from synapse_channel.llm_worker import (
     SynapseLLMWorker,
 )
 from synapse_channel.persistence import EventStore
-from synapse_channel.protocol import MessageType, is_recipient
+from synapse_channel.protocol import MessageType, is_directed, is_recipient
 from synapse_channel.ratelimit import RateLimiter
 from synapse_channel.relay import decode_lite, load_offset, read_jsonl_since, save_offset
 from synapse_channel.supervisor import (
@@ -219,6 +220,7 @@ async def _wait(
     name: str,
     for_name: str,
     timeout: float,
+    directed_only: bool = False,
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
 ) -> int:
@@ -235,9 +237,12 @@ async def _wait(
         name so a waiter and a one-shot ``send`` for the same project never clash).
     for_name : str
         Whose messages to wake on; a chat matches when its target addresses
-        ``for_name`` — one agent, a named group, or a broadcast.
+        ``for_name`` — one agent, a group glob (``quantum/*``), or a broadcast.
     timeout : float
         Seconds to wait; ``0`` waits indefinitely.
+    directed_only : bool, optional
+        When ``True``, wake only on messages that name ``for_name`` (or a group it
+        is in), not on broadcasts — broadcasts are left for a later ``syn-inbox``.
     agent_factory : AgentFactory, optional
         Factory for the client agent; injectable for testing.
     token : str or None, optional
@@ -250,6 +255,7 @@ async def _wait(
         timeout with nothing received.
     """
     received: list[dict[str, Any]] = []
+    matches = is_directed if directed_only else is_recipient
 
     async def collect(data: dict[str, Any]) -> None:
         sender = data.get("sender")
@@ -257,7 +263,7 @@ async def _wait(
             data.get("type") == MessageType.CHAT
             and sender != name
             and sender != for_name  # ignore our own sends (the agent sends as for_name)
-            and is_recipient(str(data.get("target", "all")), for_name)
+            and matches(str(data.get("target", "all")), for_name)
         ):
             received.append(data)
 
@@ -289,9 +295,77 @@ def _cmd_wait(args: argparse.Namespace) -> int:
             name=args.name,
             for_name=args.for_name or args.name,
             timeout=args.timeout,
+            directed_only=args.directed_only,
             token=args.token,
         )
     )
+
+
+async def _who(
+    *,
+    uri: str,
+    name: str,
+    project: str | None = None,
+    agent_factory: AgentFactory = SynapseAgent,
+    token: str | None = None,
+) -> int:
+    """Connect, print the online roster (optionally one project's agents), and exit.
+
+    Discovery for the directory: when several agents share a project their
+    identities are ``<project>/<agent>``, so ``--project`` lists exactly the
+    instances live on that repo right now.
+
+    Parameters
+    ----------
+    uri, name : str
+        Hub URI and the requester's display name.
+    project : str or None, optional
+        When set, keep only agents named ``project`` or ``project/...``.
+    agent_factory : AgentFactory, optional
+        Factory for the client agent; injectable for testing.
+    token : str or None, optional
+        Shared-secret token for a secured hub.
+
+    Returns
+    -------
+    int
+        ``0`` once a roster is printed, ``1`` when the hub could not be reached.
+    """
+    rosters: list[list[str]] = []
+
+    async def collect(data: dict[str, Any]) -> None:
+        if data.get("type") == MessageType.WHO_SNAPSHOT:
+            rosters.append([str(agent) for agent in data.get("online_agents", [])])
+
+    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
+    conn_task = asyncio.create_task(agent.connect())
+    try:
+        if not await agent.wait_until_ready(timeout=5.0):
+            print(f"[{name}] Could not reach hub at {uri}.")
+            return 1
+        await agent.request_who()
+        for _ in range(50):
+            if rosters:
+                break
+            await asyncio.sleep(0.05)
+        if rosters:
+            agents = sorted(rosters[-1])
+            if project:
+                prefix = f"{project}/"
+                agents = [a for a in agents if a == project or a.startswith(prefix)]
+            label = f"Online in {project}" if project else "Online"
+            print(f"{label} ({len(agents)}):")
+            for agent_name in agents:
+                print(f"  {agent_name}")
+        return 0
+    finally:
+        agent.running = False
+        conn_task.cancel()
+
+
+def _cmd_who(args: argparse.Namespace) -> int:
+    """Dispatch the ``who`` subcommand."""
+    return asyncio.run(_who(uri=args.uri, name=args.name, project=args.project, token=args.token))
 
 
 async def _listen(
@@ -771,8 +845,24 @@ def build_parser() -> argparse.ArgumentParser:
     wait.add_argument(
         "--timeout", type=float, default=0.0, help="Seconds to wait; 0 waits indefinitely."
     )
+    wait.add_argument(
+        "--directed-only",
+        action="store_true",
+        help="Wake only on messages that name you (or a group you are in), not broadcasts.",
+    )
     wait.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     wait.set_defaults(func=_cmd_wait)
+
+    who = sub.add_parser("who", help="List the agents currently online (optionally one project's).")
+    who.add_argument("--uri", default=DEFAULT_HUB_URI)
+    who.add_argument("--name", default="USER")
+    who.add_argument(
+        "--project",
+        default=None,
+        help="Show only agents in this project (matches 'project' or 'project/...').",
+    )
+    who.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    who.set_defaults(func=_cmd_who)
 
     listen = sub.add_parser("listen", help="Stream channel messages until interrupted.")
     listen.add_argument("--uri", default=DEFAULT_HUB_URI)

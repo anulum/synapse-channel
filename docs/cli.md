@@ -1,6 +1,6 @@
 # CLI reference
 
-The `synapse` command exposes eleven subcommands.
+The `synapse` command exposes twelve subcommands.
 
 | Command | What it does |
 | --- | --- |
@@ -14,7 +14,24 @@ The `synapse` command exposes eleven subcommands.
 | `synapse board` | Print the shared task/progress blackboard. |
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
 | `synapse manifest` | Print the capability manifest of advertised agents. |
+| `synapse who` | List the agents currently online, optionally for one project. |
 | `synapse task` | Declare and update the shared task plan. |
+
+## Identities and groups
+
+An identity is a name; when several agents share a project they use composite
+names `<project>/<agent>`, e.g. `quantum/claude-7f3a` and `quantum/codex-2b40`.
+A `target` is then a name, a comma list, a **group glob** (`quantum/*` for every
+agent on the project, `quantum/claude-*` for one role), or `all`. List who is live:
+
+```bash
+synapse who                       # every agent online
+synapse who --project quantum     # only quantum/... instances
+synapse send --target quantum/* "rebasing main now"   # the whole project team
+```
+
+`synapse wait --directed-only` wakes only on messages that name you (or a group
+you are in), leaving broadcasts to be read later — quieter on a busy channel.
 
 ## Getting woken on a message
 

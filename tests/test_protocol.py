@@ -103,3 +103,19 @@ def test_is_recipient_single_and_several() -> None:
     assert is_recipient("B", "C") is False
     assert is_recipient("B, C ,D", "C") is True
     assert is_recipient("B,C", "Z") is False
+
+
+def test_is_recipient_glob_groups() -> None:
+    assert is_recipient("quantum/*", "quantum/claude-7f3a")
+    assert is_recipient("quantum/claude-*", "quantum/claude-7f3a")
+    assert not is_recipient("quantum/*", "other/codex-1")
+    assert is_recipient("quantum/*,other/codex-1", "other/codex-1")
+
+
+def test_is_directed_excludes_broadcast() -> None:
+    from synapse_channel.protocol import is_directed
+
+    assert is_directed("quantum/*", "quantum/claude-1")
+    assert is_directed("B", "B")
+    assert not is_directed("all", "quantum/claude-1")
+    assert not is_directed("", "B")

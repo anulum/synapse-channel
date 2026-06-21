@@ -69,6 +69,9 @@ class FakeAgent:
     async def request_manifest(self) -> None:
         self.manifest_requests = getattr(self, "manifest_requests", 0) + 1
 
+    async def request_who(self) -> None:
+        self.who_requests = getattr(self, "who_requests", 0) + 1
+
     async def post_task(
         self,
         task_id: str,
@@ -1031,7 +1034,9 @@ async def test_wait_times_out_with_nothing() -> None:
 
 def test_cmd_wait_dispatches_with_for_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("synapse_channel.cli.asyncio.run", lambda coro: coro.close() or 0)
-    ns = argparse.Namespace(uri="ws://h", name="X", for_name=None, timeout=0.0, token=None)
+    ns = argparse.Namespace(
+        uri="ws://h", name="X", for_name=None, timeout=0.0, directed_only=False, token=None
+    )
     assert cli._cmd_wait(ns) == 0
 
 
@@ -1046,3 +1051,104 @@ async def test_wait_ignores_own_messages() -> None:
         uri="ws://h", name="B-rx", for_name="B", timeout=0.2, agent_factory=factory
     )
     assert code == 2
+
+
+def test_parser_wait_directed_only() -> None:
+    args = cli.build_parser().parse_args(["wait", "--for", "B", "--directed-only"])
+    assert args.directed_only is True
+
+
+async def test_wait_directed_only_ignores_broadcast() -> None:
+    holder: list[FakeAgent] = []
+    inbound: list[dict[str, Any]] = [
+        {"type": "chat", "sender": "A", "target": "all", "payload": "broadcast"}
+    ]
+    factory = _factory(holder, inbound=inbound, idle=False)
+    code = await cli._wait(
+        uri="ws://h",
+        name="B-rx",
+        for_name="B",
+        timeout=0.2,
+        directed_only=True,
+        agent_factory=factory,
+    )
+    assert code == 2  # a broadcast does not wake in directed-only mode
+
+
+async def test_wait_directed_only_wakes_on_named(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    inbound: list[dict[str, Any]] = [{"type": "chat", "sender": "A", "target": "B", "payload": "p"}]
+    factory = _factory(holder, inbound=inbound)
+    code = await cli._wait(
+        uri="ws://h",
+        name="B-rx",
+        for_name="B",
+        timeout=2.0,
+        directed_only=True,
+        agent_factory=factory,
+    )
+    assert code == 0
+
+
+# --- who (directory) ---------------------------------------------------------
+
+
+def test_parser_who() -> None:
+    args = cli.build_parser().parse_args(["who", "--project", "quantum"])
+    assert args.project == "quantum"
+    assert args.func is cli._cmd_who
+
+
+async def test_who_lists_project_agents(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    snap: dict[str, Any] = {
+        "type": "who_snapshot",
+        "online_agents": ["quantum/claude-1", "quantum/codex-2", "other/gemini-3"],
+    }
+    # The leading non-snapshot message exercises the collect() filter's reject path.
+    factory = _factory(holder, inbound=[{"type": "chat", "payload": "noise"}, snap])
+    code = await cli._who(uri="ws://h", name="U", project="quantum", agent_factory=factory)
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Online in quantum (2)" in out
+    assert "quantum/claude-1" in out
+    assert "other/gemini-3" not in out
+
+
+async def test_who_lists_all_without_project(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    snap: dict[str, Any] = {"type": "who_snapshot", "online_agents": ["a", "b"]}
+    factory = _factory(holder, inbound=[snap])
+    code = await cli._who(uri="ws://h", name="U", agent_factory=factory)
+    assert code == 0
+    assert "Online (2)" in capsys.readouterr().out
+
+
+async def test_who_reports_unreachable(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    factory = _factory(holder, ready=False)
+    code = await cli._who(uri="ws://h", name="U", agent_factory=factory)
+    assert code == 1
+    assert "Could not reach hub" in capsys.readouterr().out
+
+
+async def test_who_returns_quietly_when_no_snapshot(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("synapse_channel.cli.asyncio.sleep", no_sleep)
+    holder: list[FakeAgent] = []
+    factory = _factory(
+        holder, inbound=[{"type": "chat", "sender": "X", "payload": "noise"}], idle=False
+    )
+    code = await cli._who(uri="ws://h", name="U", agent_factory=factory)
+    assert code == 0
+    assert "Online" not in capsys.readouterr().out
+
+
+def test_cmd_who_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("synapse_channel.cli.asyncio.run", lambda coro: coro.close() or 0)
+    ns = argparse.Namespace(uri="ws://h", name="U", project=None, token=None)
+    assert cli._cmd_who(ns) == 0

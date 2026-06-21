@@ -11,6 +11,18 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.24.0] - 2026-06-21
+
+### Added
+- Composite identities and group addressing: a `target` may be a group glob
+  (`quantum/*` for every agent on a project, `quantum/claude-*` for one role),
+  matched by `is_recipient`/`is_directed`, so several agents can share a project
+  as `<project>/<agent>` and still address each other. `is_directed` is exported.
+- `synapse who [--project <name>]` lists the agents currently online (optionally
+  one project's instances) — discovery for the directory.
+- `synapse wait --directed-only` wakes only on messages that name you or a group
+  you are in, not on broadcasts.
+
 ## [0.23.1] - 2026-06-21
 
 ### Fixed
