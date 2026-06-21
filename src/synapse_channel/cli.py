@@ -7,7 +7,7 @@
 # SYNAPSE_CHANNEL — unified `synapse` command-line entry point
 """Command-line entry point for the Synapse channel.
 
-The ``synapse`` command exposes thirteen subcommands:
+The ``synapse`` command exposes fourteen subcommands:
 
 * ``hub`` — run the coordination hub;
 * ``worker`` — run a model worker that answers on the channel;
@@ -20,6 +20,7 @@ The ``synapse`` command exposes thirteen subcommands:
 * ``supervisor`` — run an LLM-free supervisor that re-offers stalled tasks;
 * ``manifest`` — print the capability manifest of advertised agents;
 * ``who`` — list the agents currently online, optionally for one project;
+* ``state`` — print active claims and their checkpoints (a resume view);
 * ``lock`` — hold a lease while running a command, to serialise it across agents;
 * ``task`` — declare and update the shared task plan from the command line.
 
@@ -51,7 +52,7 @@ from synapse_channel.llm_worker import (
     SynapseLLMWorker,
 )
 from synapse_channel.persistence import EventStore
-from synapse_channel.protocol import MessageType, is_directed, is_recipient
+from synapse_channel.protocol import MessageType, addresses_project, is_directed, is_recipient
 from synapse_channel.ratelimit import RateLimiter
 from synapse_channel.relay import decode_lite, load_offset, read_jsonl_since, save_offset
 from synapse_channel.supervisor import (
@@ -370,6 +371,80 @@ def _cmd_who(args: argparse.Namespace) -> int:
     return asyncio.run(_who(uri=args.uri, name=args.name, project=args.project, token=args.token))
 
 
+async def _state(
+    *,
+    uri: str,
+    name: str,
+    owner: str | None = None,
+    agent_factory: AgentFactory = SynapseAgent,
+    token: str | None = None,
+) -> int:
+    """Print the live claims and their checkpoints — the "where was I" recovery view.
+
+    A returning agent reads this to see what is leased and which tasks carry a
+    resume checkpoint, optionally filtered to its own name or project.
+
+    Parameters
+    ----------
+    uri, name : str
+        Hub URI and the requester's display name.
+    owner : str or None, optional
+        Keep only claims owned by this name or project (``owner`` or ``owner/...``).
+    agent_factory : AgentFactory, optional
+        Factory for the client agent; injectable for testing.
+    token : str or None, optional
+        Shared-secret token for a secured hub.
+
+    Returns
+    -------
+    int
+        ``0`` once the claims are printed, ``1`` when the hub could not be reached.
+    """
+    snapshots: list[dict[str, Any]] = []
+
+    async def collect(data: dict[str, Any]) -> None:
+        if data.get("type") == MessageType.STATE_SNAPSHOT:
+            snapshots.append(data.get("snapshot", {}))
+
+    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
+    conn_task = asyncio.create_task(agent.connect())
+    try:
+        if not await agent.wait_until_ready(timeout=5.0):
+            print(f"[{name}] Could not reach hub at {uri}.")
+            return 1
+        await agent.request_state()
+        for _ in range(50):
+            if snapshots:
+                break
+            await asyncio.sleep(0.05)
+        if snapshots:
+            claims = list(snapshots[-1].get("active_claims", []))
+            if owner:
+                prefix = f"{owner}/"
+                claims = [
+                    c
+                    for c in claims
+                    if c.get("owner") == owner or str(c.get("owner", "")).startswith(prefix)
+                ]
+            print(f"Active claims ({len(claims)}):")
+            for claim in claims:
+                paths = ", ".join(claim.get("paths", [])) or "-"
+                checkpoint = claim.get("checkpoint") or "-"
+                print(
+                    f"  {claim.get('task_id')} [{claim.get('status')}] "
+                    f"owner={claim.get('owner')} paths={paths} checkpoint={checkpoint}"
+                )
+        return 0
+    finally:
+        agent.running = False
+        conn_task.cancel()
+
+
+def _cmd_state(args: argparse.Namespace) -> int:
+    """Dispatch the ``state`` subcommand."""
+    return asyncio.run(_state(uri=args.uri, name=args.name, owner=args.owner, token=args.token))
+
+
 LockRunner = Callable[[list[str]], Awaitable[int]]
 
 
@@ -551,11 +626,15 @@ def _cmd_relay(args: argparse.Namespace) -> int:
     events, cursor = read_jsonl_since(args.relay_log, start)
     for lite in events:
         message = decode_lite(lite)
-        if args.for_name and not (
-            message.get("type") == MessageType.CHAT
-            and is_recipient(str(message.get("target", "all")), args.for_name)
-        ):
-            continue
+        if args.for_name or args.project:
+            is_chat = message.get("type") == MessageType.CHAT
+            target = str(message.get("target", "all"))
+            if args.project:
+                keep = is_chat and addresses_project(target, args.project)
+            else:
+                keep = is_chat and is_recipient(target, args.for_name)
+            if not keep:
+                continue
         print(_format_relay_line(message))
     if args.cursor:
         save_offset(args.cursor, cursor)
@@ -973,6 +1052,19 @@ def build_parser() -> argparse.ArgumentParser:
     who.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     who.set_defaults(func=_cmd_who)
 
+    state = sub.add_parser(
+        "state", help="Print active claims and their checkpoints (a resume view)."
+    )
+    state.add_argument("--uri", default=DEFAULT_HUB_URI)
+    state.add_argument("--name", default="USER")
+    state.add_argument(
+        "--owner",
+        default=None,
+        help="Show only claims owned by this name or project (matches 'owner' or 'owner/...').",
+    )
+    state.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    state.set_defaults(func=_cmd_state)
+
     lock = sub.add_parser(
         "lock", help="Hold a lease while running a command (serialise e.g. commits)."
     )
@@ -1021,6 +1113,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Show only chats addressed to this name (or broadcast), dropping other "
         "traffic and presence noise — a per-agent inbox view.",
+    )
+    relay.add_argument(
+        "--project",
+        default=None,
+        help="Show chats addressing any agent in this project (the name, 'project/...', "
+        "or a broadcast) — a project-stable inbox that survives changing instance ids.",
     )
     relay.set_defaults(func=_cmd_relay)
 

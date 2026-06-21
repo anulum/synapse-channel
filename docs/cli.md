@@ -1,6 +1,6 @@
 # CLI reference
 
-The `synapse` command exposes thirteen subcommands.
+The `synapse` command exposes fourteen subcommands.
 
 | Command | What it does |
 | --- | --- |
@@ -15,8 +15,25 @@ The `synapse` command exposes thirteen subcommands.
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
 | `synapse manifest` | Print the capability manifest of advertised agents. |
 | `synapse who` | List the agents currently online, optionally for one project. |
+| `synapse state` | Print active claims and their checkpoints (a resume view). |
 | `synapse lock` | Hold a lease while running a command, to serialise it across agents. |
 | `synapse task` | Declare and update the shared task plan. |
+
+## Recovery: picking up after a restart
+
+Nothing is lost when a terminal or session goes down — the feed, the plan, and the
+event log are durable. On return, catch up everything for your repo regardless of
+the instance id you now run as:
+
+```bash
+synapse relay ./feed.ndjson --project quantum --cursor ./quantum.cursor  # missed messages
+synapse board                                                           # the current plan
+synapse state --owner quantum                                           # your claims + resume checkpoints
+synapse who --project quantum                                           # who is live now
+```
+
+A lapsed claim keeps its checkpoint, so re-claiming the task resumes from it rather
+than restarting.
 
 ## Identities and groups
 

@@ -18,7 +18,7 @@ command (see :mod:`synapse_channel.cli`) drives all of it.
 
 from __future__ import annotations
 
-__version__ = "0.25.0"
+__version__ = "0.26.0"
 
 from synapse_channel.auth import TokenAuthenticator
 from synapse_channel.capability import CapabilityCard, CapabilityRegistry
@@ -38,6 +38,7 @@ from synapse_channel.llm_worker import SynapseLLMWorker, is_service_message
 from synapse_channel.persistence import EventStore
 from synapse_channel.protocol import (
     MessageType,
+    addresses_project,
     build_envelope,
     is_directed,
     is_recipient,
@@ -74,6 +75,7 @@ __all__ = [
     "TieredChatClient",
     "TokenAuthenticator",
     "__version__",
+    "addresses_project",
     "build_envelope",
     "can_transition",
     "classify",

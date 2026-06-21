@@ -119,3 +119,15 @@ def test_is_directed_excludes_broadcast() -> None:
     assert is_directed("B", "B")
     assert not is_directed("all", "quantum/claude-1")
     assert not is_directed("", "B")
+
+
+def test_addresses_project() -> None:
+    from synapse_channel.protocol import addresses_project
+
+    assert addresses_project("all", "quantum")
+    assert addresses_project("quantum", "quantum")
+    assert addresses_project("quantum/claude-1", "quantum")
+    assert addresses_project("quantum/*", "quantum")
+    assert addresses_project("a,quantum/x", "quantum")
+    assert not addresses_project("other/codex-1", "quantum")
+    assert not addresses_project("quantum-core/x", "quantum")

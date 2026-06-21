@@ -11,6 +11,16 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.26.0] - 2026-06-21
+
+### Added
+- Recovery after a restart: `synapse state [--owner <name>]` prints the live claims
+  and their resume checkpoints, and `synapse relay --project <name>` (backed by a
+  new exported `addresses_project` predicate) keeps a project-stable inbox that
+  catches messages to the project, any `project/...` instance or group, and
+  broadcasts — so a returning terminal catches up regardless of the instance id it
+  now runs as.
+
 ## [0.25.0] - 2026-06-21
 
 ### Added

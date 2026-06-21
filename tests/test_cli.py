@@ -74,6 +74,9 @@ class FakeAgent:
     async def request_who(self) -> None:
         self.who_requests = getattr(self, "who_requests", 0) + 1
 
+    async def request_state(self) -> None:
+        self.state_requests = getattr(self, "state_requests", 0) + 1
+
     async def post_task(
         self,
         task_id: str,
@@ -458,6 +461,7 @@ def _relay_ns(**overrides: Any) -> argparse.Namespace:
         "since": 0,
         "cursor": None,
         "for_name": None,
+        "project": None,
     }
     base.update(overrides)
     return argparse.Namespace(**base)
@@ -1321,3 +1325,117 @@ def test_cmd_lock_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
         uri="ws://h", name="X", task_id="g", command=["x"], paths=None, wait_timeout=0.0, token=None
     )
     assert cli._cmd_lock(ns) == 0
+
+
+# --- state + relay --project (recovery) --------------------------------------
+
+
+def test_parser_state() -> None:
+    args = cli.build_parser().parse_args(["state", "--owner", "quantum"])
+    assert args.owner == "quantum"
+    assert args.func is cli._cmd_state
+
+
+async def test_state_prints_claims_filtered(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    snap: dict[str, Any] = {
+        "type": "state_snapshot",
+        "snapshot": {
+            "active_claims": [
+                {
+                    "task_id": "T1",
+                    "status": "working",
+                    "owner": "quantum/claude-1",
+                    "paths": ["src"],
+                    "checkpoint": "cp1",
+                },
+                {
+                    "task_id": "T2",
+                    "status": "claimed",
+                    "owner": "other/codex-2",
+                    "paths": [],
+                    "checkpoint": "",
+                },
+            ]
+        },
+    }
+    factory = _factory(holder, inbound=[{"type": "chat", "payload": "noise"}, snap])
+    code = await cli._state(uri="ws://h", name="U", owner="quantum", agent_factory=factory)
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Active claims (1)" in out
+    assert "T1" in out
+    assert "checkpoint=cp1" in out
+    assert "other/codex-2" not in out
+
+
+async def test_state_lists_all_without_owner(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    snap: dict[str, Any] = {
+        "type": "state_snapshot",
+        "snapshot": {"active_claims": [{"task_id": "T1", "status": "working", "owner": "a"}]},
+    }
+    factory = _factory(holder, inbound=[snap])
+    assert await cli._state(uri="ws://h", name="U", agent_factory=factory) == 0
+    assert "Active claims (1)" in capsys.readouterr().out
+
+
+async def test_state_reports_unreachable(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    factory = _factory(holder, ready=False)
+    assert await cli._state(uri="ws://h", name="U", agent_factory=factory) == 1
+    assert "Could not reach hub" in capsys.readouterr().out
+
+
+async def test_state_quiet_when_no_snapshot(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("synapse_channel.cli.asyncio.sleep", no_sleep)
+    holder: list[FakeAgent] = []
+    factory = _factory(holder, inbound=[{"type": "chat", "payload": "x"}], idle=False)
+    assert await cli._state(uri="ws://h", name="U", agent_factory=factory) == 0
+    assert "Active claims" not in capsys.readouterr().out
+
+
+def test_cmd_state_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("synapse_channel.cli.asyncio.run", lambda coro: coro.close() or 0)
+    ns = argparse.Namespace(uri="ws://h", name="U", owner=None, token=None)
+    assert cli._cmd_state(ns) == 0
+
+
+def test_parser_relay_project() -> None:
+    args = cli.build_parser().parse_args(["relay", "feed.ndjson", "--project", "quantum"])
+    assert args.project == "quantum"
+
+
+def test_cmd_relay_filters_by_project(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    log = tmp_path / "feed.ndjson"
+    rows = [
+        ("all", "everyone", 1),
+        ("quantum/claude-1", "to instance", 2),
+        ("quantum/*", "to team", 3),
+        ("other/codex-1", "elsewhere", 4),
+    ]
+    for target, payload, mid in rows:
+        append_jsonl(
+            log,
+            encode_lite(
+                {
+                    "sender": "A",
+                    "target": target,
+                    "type": "chat",
+                    "payload": payload,
+                    "timestamp": 2.0,
+                    "msg_id": mid,
+                }
+            ),
+        )
+    assert cli._cmd_relay(_relay_ns(relay_log=str(log), project="quantum")) == 0
+    out = capsys.readouterr().out
+    assert "everyone" in out
+    assert "to instance" in out
+    assert "to team" in out
+    assert "elsewhere" not in out

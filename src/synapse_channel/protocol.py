@@ -237,3 +237,33 @@ def is_directed(target: str, name: str) -> bool:
     if cleaned in ("", "all"):
         return False
     return is_recipient(cleaned, name)
+
+
+def addresses_project(target: str, project: str) -> bool:
+    """Return whether a message to ``target`` reaches any agent in ``project``.
+
+    Matches a broadcast, the project name itself, and any ``<project>/...`` identity
+    or group glob — so a returning terminal catches up everything for its repo
+    regardless of which instance id it now runs as.
+
+    Parameters
+    ----------
+    target : str
+        The recipient field of a message.
+    project : str
+        The project (repo) name, e.g. ``"quantum"``.
+
+    Returns
+    -------
+    bool
+        ``True`` for a broadcast, ``target == project``, or any ``project/...`` part.
+    """
+    cleaned = (target or "all").strip()
+    if cleaned in ("", "all"):
+        return True
+    prefix = f"{project}/"
+    return any(
+        part.strip() == project or part.strip().startswith(prefix)
+        for part in cleaned.split(",")
+        if part.strip()
+    )
