@@ -41,5 +41,12 @@ Ask an on-channel model worker a question and print its reply. It uses a local
 Ollama model when one is reachable (a real answer) and falls back to the
 deterministic offline backend otherwise, so the demo runs anywhere.
 
-Both demos expose a `run_demo(port, ...)` coroutine that the test-suite drives,
-so the examples stay correct as the library evolves.
+## `coding_agents_demo.py`
+
+Two agents edit one repository in parallel: one leases the API source, the other
+the tests; the hub refuses the overlapping claim so they never touch the same
+file, and the first messages the second directly when the API is ready. This is
+the worked version of the [parallel coding agents recipe](../docs/recipes.md).
+
+Each demo exposes a `run_demo(port, ...)` coroutine that the test-suite drives, so
+the examples stay correct as the library evolves.

@@ -39,3 +39,15 @@ async def test_llm_team_demo_offline_reply() -> None:
     demo = _load("llm_team_demo")
     reply = await demo.run_demo(demo._free_port(), provider="rule")
     assert reply == "message received via Synapse. I am active on-channel."
+
+
+async def test_coding_agents_demo_prevents_collisions() -> None:
+    demo = _load("coding_agents_demo")
+    log = await demo.run_demo(demo._free_port())
+    # One agent holds a file scope; the other's overlapping claim is refused,
+    # a disjoint claim is granted, a direct message arrives, and the lease is freed.
+    assert any("claimed src/app/api.py" in line for line in log)
+    assert any("refused" in line for line in log)
+    assert any("disjoint scope, granted" in line for line in log)
+    assert any("test-dev received:" in line for line in log)
+    assert any("released" in line for line in log)

@@ -217,15 +217,15 @@ on-channel model worker a question. Each starts its own in-process hub, so
 
 | Surface | Current inventory |
 |---|---:|
-| Package version | 0.21.0 |
+| Package version | 0.22.0 |
 | Public API exports | 39 |
 | Package modules | 21 |
 | Classes | 28 |
 | Wire message types | 47 |
 | CLI subcommands | 13 |
-| Test functions | 508 |
+| Test functions | 509 |
 | Benchmark harnesses | 2 |
-| Documentation pages | 10 |
+| Documentation pages | 11 |
 | GitHub Actions workflows | 9 |
 | Optional-dependency groups | 3 |
 

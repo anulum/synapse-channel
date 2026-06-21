@@ -12,7 +12,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "synapse-channel"
-version = "0.21.0"
+version = "0.22.0"
 description = "Local-first multi-agent coordination bus: work claims, presence, chat, and resource sharing over a WebSocket hub"
 readme = "README.md"
 requires-python = ">=3.10"
