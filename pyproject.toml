@@ -81,6 +81,10 @@ convention = "numpy"
 [tool.ruff.lint.per-file-ignores]
 # Tests favour descriptive function names over docstrings on every case.
 "tests/*" = ["D"]
+# The header generator must select the matplotlib backend before importing pyplot.
+"docs/assets/*" = ["E402"]
+# Dev tooling scripts are not part of the documented API surface.
+"tools/*" = ["D"]
 
 [tool.mypy]
 strict = true
