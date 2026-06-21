@@ -55,4 +55,4 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-See the [coordination model](coordination.md) for what each verb guarantees.
+See the [coordination model](coordination-model.md) for what each verb guarantees.

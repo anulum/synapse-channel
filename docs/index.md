@@ -34,7 +34,7 @@ state, and every agent connects to it.
 
 - [Installation](installation.md)
 - [Quick start](quickstart.md)
-- [Coordination model](coordination.md)
+- [Coordination model](coordination-model.md)
 - [Wire protocol](protocol.md)
 
 SYNAPSE CHANNEL is AGPL-3.0-or-later with a commercial licence available. See the

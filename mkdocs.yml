@@ -67,7 +67,7 @@ nav:
   - Home: index.md
   - Installation: installation.md
   - Quick start: quickstart.md
-  - Coordination model: coordination.md
+  - Coordination model: coordination-model.md
   - Wire protocol: protocol.md
   - CLI reference: cli.md
   - Benchmarks: benchmarks.md
