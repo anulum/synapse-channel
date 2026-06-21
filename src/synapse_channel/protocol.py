@@ -181,3 +181,29 @@ def system_message(
     }
     msg.update(extra)
     return msg
+
+
+def is_recipient(target: str, name: str) -> bool:
+    """Return whether ``name`` is an addressee of a message sent to ``target``.
+
+    The hub broadcasts every chat to every connected client and carries the
+    intended recipient in ``target``; a reader uses this predicate to keep only
+    the messages meant for it.
+
+    Parameters
+    ----------
+    target : str
+        The recipient field: the broadcast keyword ``"all"`` (or empty), a single
+        agent name, or a comma-separated list of names for several recipients.
+    name : str
+        The reader's own agent name.
+
+    Returns
+    -------
+    bool
+        ``True`` for a broadcast or when ``name`` is one of the listed recipients.
+    """
+    cleaned = (target or "all").strip()
+    if cleaned in ("", "all"):
+        return True
+    return name in {part.strip() for part in cleaned.split(",") if part.strip()}

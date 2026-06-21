@@ -403,7 +403,7 @@ async def test_listen_prints_chat_and_presence(capsys: pytest.CaptureFixture[str
 
 def test_cmd_listen_dispatch_and_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("synapse_channel.cli.asyncio.run", lambda coro: coro.close() or 0)
-    ns = argparse.Namespace(uri="ws://h", name="USER", token=None)
+    ns = argparse.Namespace(uri="ws://h", name="USER", token=None, for_name=None)
     assert cli._cmd_listen(ns) == 0
 
     def interrupt(coro: Any) -> int:
@@ -433,7 +433,12 @@ def test_format_relay_line_renders_envelope() -> None:
 
 
 def _relay_ns(**overrides: Any) -> argparse.Namespace:
-    base: dict[str, Any] = {"relay_log": "feed.ndjson", "since": 0, "cursor": None}
+    base: dict[str, Any] = {
+        "relay_log": "feed.ndjson",
+        "since": 0,
+        "cursor": None,
+        "for_name": None,
+    }
     base.update(overrides)
     return argparse.Namespace(**base)
 
@@ -927,3 +932,58 @@ async def test_task_action_returns_quietly_when_no_confirmation(
     )
     assert code == 0
     assert "SHOULD-NOT-PRINT" not in capsys.readouterr().out
+
+
+def test_cmd_relay_filters_by_recipient(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    log = tmp_path / "feed.ndjson"
+    rows = [
+        ("all", "chat", "everyone", 1),
+        ("B,C", "chat", "you two", 2),
+        ("C", "chat", "just C", 3),
+        ("all", "presence_update", "noise", 4),
+    ]
+    for target, mtype, payload, mid in rows:
+        append_jsonl(
+            log,
+            encode_lite(
+                {
+                    "sender": "A",
+                    "target": target,
+                    "type": mtype,
+                    "payload": payload,
+                    "timestamp": 2.0,
+                    "msg_id": mid,
+                }
+            ),
+        )
+    assert cli._cmd_relay(_relay_ns(relay_log=str(log), for_name="B")) == 0
+    out = capsys.readouterr().out
+    assert "everyone" in out  # broadcast reaches everyone
+    assert "you two" in out  # B is one of several named recipients
+    assert "just C" not in out  # addressed only to C
+    assert "noise" not in out  # non-chat presence is dropped in the inbox view
+
+
+async def test_listen_for_filters_to_inbox(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    inbound: list[dict[str, Any]] = [
+        {"type": "chat", "sender": "A", "target": "all", "payload": "everyone"},
+        {"type": "chat", "sender": "A", "target": "B,C", "payload": "you two"},
+        {"type": "chat", "sender": "A", "target": "C", "payload": "just C"},
+        {"type": "presence_update", "event": "joined", "online_agents": ["B"]},
+    ]
+    factory = _factory(holder, inbound=inbound, idle=False)
+    code = await cli._listen(uri="ws://h", name="B", agent_factory=factory, for_name="B")
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "everyone" in out
+    assert "you two" in out
+    assert "just C" not in out
+    assert "presence" not in out
+
+
+def test_parser_relay_and_listen_for_flag() -> None:
+    relay = cli.build_parser().parse_args(["relay", "feed.ndjson", "--for", "B"])
+    assert relay.for_name == "B"
+    listen = cli.build_parser().parse_args(["listen", "--name", "B", "--for", "B"])
+    assert listen.for_name == "B"

@@ -18,7 +18,7 @@ command (see :mod:`synapse_channel.cli`) drives all of it.
 
 from __future__ import annotations
 
-__version__ = "0.19.0"
+__version__ = "0.20.0"
 
 from synapse_channel.auth import TokenAuthenticator
 from synapse_channel.capability import CapabilityCard, CapabilityRegistry
@@ -39,6 +39,7 @@ from synapse_channel.persistence import EventStore
 from synapse_channel.protocol import (
     MessageType,
     build_envelope,
+    is_recipient,
     system_message,
 )
 from synapse_channel.relay import decode_lite, encode_lite
@@ -78,6 +79,7 @@ __all__ = [
     "decode_lite",
     "detect_stalls",
     "encode_lite",
+    "is_recipient",
     "is_service_message",
     "paths_overlap",
     "plan_team",

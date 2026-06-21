@@ -13,6 +13,7 @@ from synapse_channel.protocol import (
     SENDER_HUB,
     MessageType,
     build_envelope,
+    is_recipient,
     system_message,
 )
 
@@ -90,3 +91,15 @@ def test_system_message_uses_system_clock_when_now_is_none() -> None:
     before = __import__("time").time()
     msg = system_message("note", hub_id="h")
     assert msg["timestamp"] >= before
+
+
+def test_is_recipient_broadcast_and_empty() -> None:
+    assert is_recipient("all", "B") is True
+    assert is_recipient("", "B") is True
+
+
+def test_is_recipient_single_and_several() -> None:
+    assert is_recipient("B", "B") is True
+    assert is_recipient("B", "C") is False
+    assert is_recipient("B, C ,D", "C") is True
+    assert is_recipient("B,C", "Z") is False

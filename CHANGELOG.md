@@ -11,6 +11,16 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.20.0] - 2026-06-21
+
+### Added
+- Multi-recipient messages: `--target A,B` addresses several agents at once
+  (alongside `all` for a broadcast and a single name for one).
+- `synapse relay --for <name>` and `synapse listen --for <name>` show only the
+  messages addressed to that name, dropping presence noise and other agents'
+  cross-talk — a per-agent inbox that an offline agent still catches up from the
+  durable relay log. The `is_recipient` predicate is exported.
+
 ## [0.19.0] - 2026-06-21
 
 ### Added

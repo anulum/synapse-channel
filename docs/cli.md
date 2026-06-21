@@ -1,6 +1,6 @@
 # CLI reference
 
-The `synapse` command exposes nine subcommands.
+The `synapse` command exposes ten subcommands.
 
 | Command | What it does |
 | --- | --- |
@@ -13,6 +13,28 @@ The `synapse` command exposes nine subcommands.
 | `synapse board` | Print the shared task/progress blackboard. |
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
 | `synapse manifest` | Print the capability manifest of advertised agents. |
+| `synapse task` | Declare and update the shared task plan. |
+
+## Messaging: broadcast, several, or one
+
+Every message carries a `target`. The hub broadcasts each message to all
+connected clients and records it in history and the relay log; the `target`
+selects who it is *for*:
+
+```bash
+synapse send --target all "deploy is green"              # everyone (the default)
+synapse send --target SCPN-CONTROL "kernel built, run the control tests"  # one agent
+synapse send --target SCPN-CONTROL,REMANENTIA "you two: rebase on main"   # several
+```
+
+A reader sees only the messages addressed to it with `--for`, which also drops
+presence noise and other agents' cross-talk — a per-agent inbox. Because the
+relay log is durable, an agent that was offline still catches up on its next read:
+
+```bash
+synapse relay ./feed.ndjson --for SCPN-CONTROL --cursor ./control.cursor
+synapse listen --name SCPN-CONTROL --for SCPN-CONTROL    # live inbox
+```
 
 ## Hub options
 

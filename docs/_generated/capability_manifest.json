@@ -6,9 +6,9 @@
     "documentation_pages": 9,
     "optional_dependency_groups": 3,
     "package_modules": 21,
-    "public_api_exports": 38,
-    "tests": 503,
-    "version": "0.19.0",
+    "public_api_exports": 39,
+    "tests": 508,
+    "version": "0.20.0",
     "wire_message_types": 47,
     "workflows": 8
   },

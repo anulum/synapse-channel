@@ -47,7 +47,7 @@ from synapse_channel.llm_worker import (
     SynapseLLMWorker,
 )
 from synapse_channel.persistence import EventStore
-from synapse_channel.protocol import MessageType
+from synapse_channel.protocol import MessageType, is_recipient
 from synapse_channel.ratelimit import RateLimiter
 from synapse_channel.relay import decode_lite, load_offset, read_jsonl_since, save_offset
 from synapse_channel.supervisor import (
@@ -218,6 +218,7 @@ async def _listen(
     name: str,
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
+    for_name: str | None = None,
 ) -> int:
     """Stream chat and presence updates to stdout until the connection ends.
 
@@ -227,6 +228,9 @@ async def _listen(
         Hub URI and the listener's display name.
     agent_factory : AgentFactory, optional
         Factory for the client agent; injectable for testing.
+    for_name : str or None, optional
+        When set, show only chats addressed to that name (or broadcast) and
+        suppress presence updates — a focused per-agent inbox view.
 
     Returns
     -------
@@ -237,8 +241,10 @@ async def _listen(
     async def show(data: dict[str, Any]) -> None:
         msg_type = data.get("type")
         if msg_type == MessageType.CHAT:
+            if for_name and not is_recipient(str(data.get("target", "all")), for_name):
+                return
             print(f"{data.get('sender')}: {data.get('payload')}")
-        elif msg_type == MessageType.PRESENCE_UPDATE:
+        elif msg_type == MessageType.PRESENCE_UPDATE and not for_name:
             online = ", ".join(data.get("online_agents", []))
             print(f"[presence] {data.get('event')} -> online: {online}")
 
@@ -250,7 +256,9 @@ async def _listen(
 def _cmd_listen(args: argparse.Namespace) -> int:
     """Dispatch the ``listen`` subcommand."""
     try:
-        return asyncio.run(_listen(uri=args.uri, name=args.name, token=args.token))
+        return asyncio.run(
+            _listen(uri=args.uri, name=args.name, token=args.token, for_name=args.for_name)
+        )
     except KeyboardInterrupt:
         print(f"\n[{args.name}] stopped listening.")
         return 0
@@ -277,7 +285,13 @@ def _cmd_relay(args: argparse.Namespace) -> int:
     start = load_offset(args.cursor) if args.cursor else max(int(args.since), 0)
     events, cursor = read_jsonl_since(args.relay_log, start)
     for lite in events:
-        print(_format_relay_line(decode_lite(lite)))
+        message = decode_lite(lite)
+        if args.for_name and not (
+            message.get("type") == MessageType.CHAT
+            and is_recipient(str(message.get("target", "all")), args.for_name)
+        ):
+            continue
+        print(_format_relay_line(message))
     if args.cursor:
         save_offset(args.cursor, cursor)
     return 0
@@ -665,6 +679,13 @@ def build_parser() -> argparse.ArgumentParser:
     listen.add_argument("--uri", default=DEFAULT_HUB_URI)
     listen.add_argument("--name", default="USER")
     listen.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    listen.add_argument(
+        "--for",
+        dest="for_name",
+        default=None,
+        help="Show only chats addressed to this name (or broadcast) and suppress "
+        "presence updates — a focused per-agent inbox.",
+    )
     listen.set_defaults(func=_cmd_listen)
 
     relay = sub.add_parser("relay", help="Decode and print a hub's lite relay log.")
@@ -674,6 +695,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--cursor",
         default=None,
         help="File holding a persisted read offset; resumes where the last run left off.",
+    )
+    relay.add_argument(
+        "--for",
+        dest="for_name",
+        default=None,
+        help="Show only chats addressed to this name (or broadcast), dropping other "
+        "traffic and presence noise — a per-agent inbox view.",
     )
     relay.set_defaults(func=_cmd_relay)
 
