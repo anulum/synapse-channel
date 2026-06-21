@@ -268,7 +268,7 @@ If you use SYNAPSE CHANNEL in your work, please cite it. Metadata is in
   author  = {Šotek, Miroslav},
   title   = {SYNAPSE CHANNEL: Local-first multi-agent coordination bus},
   url      = {https://github.com/anulum/synapse-channel},
-  version = {0.17.0},
+  version = {0.27.2},
   year     = {2026}
 }
 ```
