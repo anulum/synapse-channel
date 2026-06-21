@@ -11,6 +11,16 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.27.2] - 2026-06-21
+
+### Security
+- Require `pytest>=9.0.3` (dev) to clear GHSA-6w46-j5rx-g56g (pytest tmpdir handling).
+
+### Changed
+- Bump CI actions (docker/setup-buildx-action v4, docker/login-action v4,
+  docker/metadata-action v6, docker/build-push-action v7), the container base image
+  (python 3.14-slim), and the `tomli` floor (>=2.4.1).
+
 ## [0.27.1] - 2026-06-21
 
 ### Added
