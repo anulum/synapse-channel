@@ -168,7 +168,7 @@ class SynapseLLMWorker:
             If ``provider`` is not ``rule``, ``openai``, ``ollama``, or ``tiered``.
         """
         if self.provider == "rule":
-            return RuleBasedClient(agent_name=self.name)
+            return RuleBasedClient()
         if self.provider in ("openai", "ollama"):
             return self._http_client(self.model)
         if self.provider == "tiered":
@@ -195,7 +195,7 @@ class SynapseLLMWorker:
 
         return TieredChatClient(
             {
-                TaskClass.RULE: RuleBasedClient(agent_name=self.name),
+                TaskClass.RULE: RuleBasedClient(),
                 TaskClass.SLM: self._http_client(self.model),
                 TaskClass.HEAVY: self._http_client(self.heavy_model),
             }

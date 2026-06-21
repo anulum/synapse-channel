@@ -160,6 +160,17 @@ def test_plan_team_uses_fallback_when_detection_empty() -> None:
     specs = plan_team(8876, detect=lambda prefs: None)
     assert [label for label, _ in specs] == ["hub", "FAST"]
     assert FALLBACK_MODEL in specs[1][1]
+
+
+def test_plan_team_prefixes_worker_names() -> None:
+    def detect(prefs: list[str]) -> str:
+        return "fast" if prefs == FAST_MODEL_PREFERENCES else "reason"
+
+    specs = plan_team(8876, prefix="remanentia/", detect=detect)
+    assert [label for label, _ in specs] == ["hub", "remanentia/FAST", "remanentia/REASON"]
+    # The prefixed name is also what the worker registers under on the hub.
+    assert "remanentia/FAST" in specs[1][1]
+    assert "remanentia/REASON" in specs[2][1]
     # The reasoning preference list is still consulted.
     assert REASON_MODEL_PREFERENCES  # sanity: constant is populated
 

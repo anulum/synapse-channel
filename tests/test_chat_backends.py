@@ -40,10 +40,10 @@ def test_sanitize_coerces_non_string() -> None:
 
 
 def test_rule_based_client_returns_canned_reply() -> None:
-    client = RuleBasedClient(agent_name="ALPHA")
-    reply = client.generate(system_prompt="s", user_prompt="u")
-    assert reply.startswith("ALPHA:")
-    assert "active on-channel" in reply
+    reply = RuleBasedClient().generate(system_prompt="s", user_prompt="u")
+    assert reply == "message received via Synapse. I am active on-channel."
+    # The reply carries no sender prefix; the envelope already records the author.
+    assert not reply.startswith(("ALPHA:", "FAST:"))
 
 
 # --- OpenAIChatClient construction ------------------------------------------

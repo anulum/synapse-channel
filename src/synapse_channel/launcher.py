@@ -102,6 +102,7 @@ def plan_team(
     no_workers: bool = False,
     fast_model: str | None = None,
     reason_model: str | None = None,
+    prefix: str = "",
     detect: ModelDetector = detect_model,
 ) -> list[ProcessSpec]:
     """Plan the child processes for a team without spawning anything.
@@ -114,6 +115,9 @@ def plan_team(
         When ``True`` only the hub is planned. Defaults to ``False``.
     fast_model, reason_model : str or None, optional
         Explicit model overrides; when ``None`` they are auto-detected.
+    prefix : str, optional
+        Namespace prepended to every worker name, so a team can run per project
+        without clashing with another project's roster. Defaults to ``""``.
     detect : ModelDetector, optional
         Model-detection callable, injectable for testing.
 
@@ -130,20 +134,22 @@ def plan_team(
 
     fast = fast_model or detect(FAST_MODEL_PREFERENCES) or FALLBACK_MODEL
     reason = reason_model or detect(REASON_MODEL_PREFERENCES) or fast
-    specs.append(("FAST", build_worker_command("FAST", fast, uri)))
+    fast_name = f"{prefix}FAST"
+    specs.append((fast_name, build_worker_command(fast_name, fast, uri)))
     if reason != fast:
-        specs.append(("REASON", build_worker_command("REASON", reason, uri)))
+        reason_name = f"{prefix}REASON"
+        specs.append((reason_name, build_worker_command(reason_name, reason, uri)))
     return specs
 
 
-def _print_instructions(port: int) -> None:
+def _print_instructions(port: int, prefix: str = "") -> None:
     """Print how to join the running team from another terminal."""
     uri = f"ws://localhost:{port}"
     print("\n--- READY ---")
     print("Join the channel from another pane/window:")
     print(f"    synapse listen --uri {uri} --name USER")
     print("Send a message from the command line:")
-    print(f'    synapse send --uri {uri} --name USER --target FAST "status?"')
+    print(f'    synapse send --uri {uri} --name USER --target {prefix}FAST "status?"')
     print("Workers reply when mentioned or when USER addresses the room.")
     print("Ctrl+C here stops the background workers + hub.\n")
 
@@ -165,6 +171,7 @@ def run_team(
     no_workers: bool = False,
     fast_model: str | None = None,
     reason_model: str | None = None,
+    prefix: str = "",
     popen: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
     sleep: Callable[[float], None] = time.sleep,
     detect: ModelDetector = detect_model,
@@ -179,6 +186,8 @@ def run_team(
         When ``True`` only the hub is started. Defaults to ``False``.
     fast_model, reason_model : str or None, optional
         Explicit model overrides; auto-detected when ``None``.
+    prefix : str, optional
+        Namespace prepended to every worker name. Defaults to ``""``.
     popen : Callable, optional
         ``subprocess.Popen``-compatible spawner, injectable for testing.
     sleep : Callable, optional
@@ -197,6 +206,7 @@ def run_team(
         no_workers=no_workers,
         fast_model=fast_model,
         reason_model=reason_model,
+        prefix=prefix,
         detect=detect,
     )
     procs: list[tuple[str, subprocess.Popen[str]]] = []
@@ -209,7 +219,7 @@ def run_team(
             if label == "hub":
                 sleep(0.7)
 
-        _print_instructions(port)
+        _print_instructions(port, prefix)
 
         while True:
             sleep(1.5)

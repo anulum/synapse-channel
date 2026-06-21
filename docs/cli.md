@@ -30,10 +30,17 @@ synapse hub --host 0.0.0.0 --token s3cret          # require a shared secret off
 synapse worker --name FAST --provider ollama --model gemma3:4b
 synapse worker --name OFFLINE --provider rule
 synapse worker --name TIER --provider tiered --model small --heavy-model big
+synapse worker --prefix remanentia/ --name FAST --provider rule
 ```
 
 A `tiered` worker classifies each request and routes trivial requests to a cheap
 rule path and hard requests to the heavy model.
+
+`--prefix` is prepended to `--name` to form the identity the worker registers
+under (here `remanentia/FAST`), so the same role can run under several projects on
+one hub without a name clash. `synapse team --prefix remanentia/` namespaces a
+whole team the same way; address a namespaced worker by its full identity, for
+example `synapse send --target remanentia/FAST "status?"`.
 
 ## Observing
 

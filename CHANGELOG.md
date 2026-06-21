@@ -11,6 +11,21 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.18.0] - 2026-06-21
+
+### Added
+- `synapse worker --prefix` and `synapse team --prefix` namespace a worker's
+  registered identity (for example `remanentia/FAST`), so the same role can run
+  under several projects on one hub without a name clash.
+
+### Changed
+- The offline `RuleBasedClient` acknowledgement no longer embeds the sender name;
+  the wire envelope already records the author, so every reader renders the name
+  exactly once.
+
+### Removed
+- `RuleBasedClient` no longer takes an `agent_name` argument.
+
 ## [0.17.0] - 2026-06-20
 
 ### Added

@@ -206,13 +206,13 @@ async def main() -> None:
 
 | Surface | Current inventory |
 |---|---:|
-| Package version | 0.17.0 |
+| Package version | 0.18.0 |
 | Public API exports | 38 |
 | Package modules | 21 |
 | Classes | 28 |
 | Wire message types | 47 |
 | CLI subcommands | 9 |
-| Test functions | 490 |
+| Test functions | 493 |
 | Benchmark harnesses | 2 |
 | Documentation pages | 9 |
 | GitHub Actions workflows | 8 |

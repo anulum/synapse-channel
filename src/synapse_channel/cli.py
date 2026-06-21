@@ -94,9 +94,14 @@ def _cmd_hub(args: argparse.Namespace) -> int:
 
 
 def _cmd_worker(args: argparse.Namespace) -> int:
-    """Run a single on-channel model worker until interrupted."""
+    """Run a single on-channel model worker until interrupted.
+
+    ``--prefix`` is prepended to ``--name`` to form the registered identity, so
+    the same role can run under several projects without a name clash on the hub.
+    """
+    name = f"{args.prefix}{args.name}"
     worker = SynapseLLMWorker(
-        name=args.name,
+        name=name,
         uri=args.uri,
         provider=args.provider,
         model=args.model,
@@ -112,7 +117,7 @@ def _cmd_worker(args: argparse.Namespace) -> int:
     try:
         _run(worker.run())
     except KeyboardInterrupt:
-        print(f"\n[{args.name}] stopped by user.")
+        print(f"\n[{name}] stopped by user.")
     return 0
 
 
@@ -139,6 +144,7 @@ def _cmd_team(args: argparse.Namespace) -> int:
         no_workers=args.no_workers,
         fast_model=args.fast_model,
         reason_model=args.reason_model,
+        prefix=args.prefix,
     )
 
 
@@ -460,6 +466,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     worker = sub.add_parser("worker", help="Run an on-channel model worker.")
     worker.add_argument("--name", default="FAST")
+    worker.add_argument(
+        "--prefix",
+        default="",
+        help="Namespace prepended to --name to form the worker's identity, e.g. "
+        "'remanentia/' so the same role runs per project without a name clash.",
+    )
     worker.add_argument("--uri", default=DEFAULT_HUB_URI)
     worker.add_argument(
         "--provider", choices=["openai", "ollama", "rule", "tiered"], default="ollama"
@@ -487,6 +499,12 @@ def build_parser() -> argparse.ArgumentParser:
     team.add_argument("--no-workers", action="store_true")
     team.add_argument("--fast-model", default=None)
     team.add_argument("--reason-model", default=None)
+    team.add_argument(
+        "--prefix",
+        default="",
+        help="Namespace prepended to every worker name (e.g. 'remanentia/'), so a "
+        "team can run per project without clashing with another project's roster.",
+    )
     team.set_defaults(func=_cmd_team)
 
     send = sub.add_parser("send", help="Send one message and optionally await replies.")

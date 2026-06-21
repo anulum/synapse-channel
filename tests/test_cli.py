@@ -216,6 +216,7 @@ def test_cmd_hub_with_rate_limit_builds_limiter(monkeypatch: pytest.MonkeyPatch)
 def _worker_ns(**overrides: Any) -> argparse.Namespace:
     base: dict[str, Any] = {
         "name": "FAST",
+        "prefix": "",
         "uri": DEFAULT_HUB_URI,
         "provider": "rule",
         "model": "llama3",
@@ -246,8 +247,36 @@ def test_cmd_worker_runs_and_handles_interrupt(monkeypatch: pytest.MonkeyPatch) 
 
 def test_cmd_team_returns_runner_code(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "run_team", lambda **kwargs: 4)
-    ns = argparse.Namespace(port=8876, no_workers=False, fast_model=None, reason_model=None)
+    ns = argparse.Namespace(
+        port=8876, no_workers=False, fast_model=None, reason_model=None, prefix=""
+    )
     assert cli._cmd_team(ns) == 4
+
+
+def test_cmd_worker_applies_name_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, str] = {}
+
+    class _StubWorker:
+        def __init__(self, *, name: str, **_: Any) -> None:
+            captured["name"] = name
+
+        async def run(self) -> None:
+            return None
+
+    monkeypatch.setattr(cli, "SynapseLLMWorker", _StubWorker)
+    monkeypatch.setattr(cli, "_run", lambda coro: coro.close())
+    assert cli._cmd_worker(_worker_ns(prefix="remanentia/", name="FAST")) == 0
+    assert captured["name"] == "remanentia/FAST"
+
+
+def test_cmd_team_threads_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(cli, "run_team", lambda **kwargs: captured.update(kwargs) or 0)
+    ns = argparse.Namespace(
+        port=8876, no_workers=False, fast_model=None, reason_model=None, prefix="proj/"
+    )
+    assert cli._cmd_team(ns) == 0
+    assert captured["prefix"] == "proj/"
 
 
 # --- send --------------------------------------------------------------------

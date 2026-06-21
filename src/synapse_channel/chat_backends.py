@@ -57,14 +57,9 @@ class ChatBackend(Protocol):
 class RuleBasedClient:
     """Deterministic offline backend that acknowledges receipt.
 
-    Parameters
-    ----------
-    agent_name : str
-        Name used to prefix the canned acknowledgement.
+    The reply carries no sender prefix: the wire envelope already records the
+    author, so the hub and every reader render the name once.
     """
-
-    def __init__(self, *, agent_name: str) -> None:
-        self.agent_name = agent_name
 
     def generate(self, *, system_prompt: str, user_prompt: str) -> str:
         """Return a fixed acknowledgement, ignoring both prompts.
@@ -82,7 +77,7 @@ class RuleBasedClient:
             A constant on-channel acknowledgement.
         """
         del system_prompt, user_prompt
-        return f"{self.agent_name}: message received via Synapse. I am active on-channel."
+        return "message received via Synapse. I am active on-channel."
 
 
 class OpenAIChatClient:
