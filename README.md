@@ -169,6 +169,12 @@ async def main() -> None:
     # ... drive the agent: claim, chat, request state ...
 ```
 
+Two self-contained, runnable demos live in [`examples/`](examples/):
+`coordination_demo.py` narrates a full task through the bus (declare, block,
+claim, refuse an overlap, unblock, hand off), and `llm_team_demo.py` asks an
+on-channel model worker a question. Each starts its own in-process hub, so
+`python examples/coordination_demo.py` runs with nothing else set up.
+
 ## Architecture
 
 | Module | Responsibility |
@@ -212,7 +218,7 @@ async def main() -> None:
 | Classes | 28 |
 | Wire message types | 47 |
 | CLI subcommands | 9 |
-| Test functions | 493 |
+| Test functions | 495 |
 | Benchmark harnesses | 2 |
 | Documentation pages | 9 |
 | GitHub Actions workflows | 8 |

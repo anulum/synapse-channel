@@ -93,7 +93,7 @@ convention = "numpy"
 [tool.mypy]
 strict = true
 mypy_path = "src"
-files = ["src/synapse_channel", "tests", "benchmarks", "tools"]
+files = ["src/synapse_channel", "tests", "benchmarks", "tools", "examples"]
 exclude = ["legacy/"]
 warn_unused_configs = true
 warn_return_any = true

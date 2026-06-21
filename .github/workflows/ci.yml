@@ -29,8 +29,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -e ".[dev]"
-      - run: ruff check src tests benchmarks
-      - run: ruff format --check src tests benchmarks
+      - run: ruff check src tests benchmarks examples
+      - run: ruff format --check src tests benchmarks examples
       - name: Capability snapshot drift
         run: python tools/capability_manifest.py --check
 

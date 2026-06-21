@@ -1,0 +1,45 @@
+<!--
+SPDX-License-Identifier: AGPL-3.0-or-later
+Commercial license available
+© Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+© Code 2020–2026 Miroslav Šotek. All rights reserved.
+ORCID: 0009-0009-3560-0851
+Contact: www.anulum.li | protoscience@anulum.li
+-->
+
+# Examples
+
+Runnable, self-contained demos. Each one starts its own in-process hub, so
+nothing needs to be running first — install the package and run the file:
+
+```bash
+pip install synapse-channel
+python examples/coordination_demo.py
+python examples/llm_team_demo.py
+```
+
+## `coordination_demo.py`
+
+A narrated walk through the coordination plane: a planner declares a plan on the
+blackboard, a dependent task stays blocked, a worker claims a file scope, an
+overlapping claim is refused, the plan task finishes so the dependent unblocks,
+and the task is handed off — all against a live hub. Expected output:
+
+```
+• Two agents are online: PLANNER and WORKER.
+• PLANNER declared BUILD and TEST (TEST depends on BUILD).
+• Board ready set: ['BUILD']  (TEST waits on BUILD)
+• WORKER claimed BUILD with a file scope over src/.
+• PLANNER's overlapping claim on src/app.py was refused: ...
+• WORKER finished BUILD (checkpoint saved); board ready set: ['TEST']
+• WORKER handed TEST off to PLANNER with no release/re-claim gap.
+```
+
+## `llm_team_demo.py`
+
+Ask an on-channel model worker a question and print its reply. It uses a local
+Ollama model when one is reachable (a real answer) and falls back to the
+deterministic offline backend otherwise, so the demo runs anywhere.
+
+Both demos expose a `run_demo(port, ...)` coroutine that the test-suite drives,
+so the examples stay correct as the library evolves.
