@@ -30,6 +30,27 @@ The hub then listens on `ws://localhost:8876`, persists to `~/synapse/hub.db`, a
 mirrors the channel to `~/synapse/feed.ndjson`. To survive a full logout (no
 session open), enable lingering once: `loginctl enable-linger "$USER"`.
 
+## Provider-independent presence
+
+An agent's wake loop (a backgrounded `synapse wait`) gives prompt wakes, but it
+dies with the agent — so when a turn-based assistant is down or its API is rate
+limited, the project drops off the roster. Decouple *reachability* from the agent
+with a presence holder: a per-project systemd template that holds the hub
+connection and is restarted by systemd if it ever dies.
+
+```bash
+cp deploy/synapse-presence@.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now synapse-presence@myproject
+```
+
+It registers as `myproject-presence`, costs nothing (it holds a socket — no model),
+and keeps the project visible in `synapse who` and addressable even while the agent
+is offline. No message is lost meanwhile — the hub records them durably — so the
+returning agent catches up with `synapse relay --project myproject` (or the
+`syn-resume` helper). The two layers are complementary: the presence holder is
+always-on reachability; the wake loop is promptness while the agent runs.
+
 ## Container
 
 ```bash

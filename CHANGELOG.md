@@ -11,6 +11,15 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.27.1] - 2026-06-21
+
+### Added
+- A `synapse-presence@.service` systemd template and its deployment guide: a
+  per-project presence holder that keeps a project reachable on the hub even when
+  its agent is down or rate limited (restarted by systemd if it dies, no model, no
+  cost), decoupling reachability from the agent while the wake loop stays the
+  promptness layer.
+
 ## [0.27.0] - 2026-06-21
 
 ### Fixed

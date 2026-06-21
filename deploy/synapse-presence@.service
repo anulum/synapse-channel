@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — systemd template unit for a provider-independent presence holder
+#
+# One instance per project keeps that project reachable on the hub even when its
+# agent (for example a turn-based assistant) is down or rate-limited, and restarts
+# itself if it dies. It only holds the connection — no model, no cost.
+#
+# User install (recommended, local-first):
+#   cp deploy/synapse-presence@.service ~/.config/systemd/user/
+#   systemctl --user enable --now synapse-presence@<project>
+#
+# %h expands to the user's home directory; %i to the instance name (the project).
+
+[Unit]
+Description=SYNAPSE CHANNEL presence holder for %i (provider-independent reachability)
+Documentation=https://github.com/anulum/synapse-channel
+After=synapse-hub.service
+Wants=synapse-hub.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/synapse listen --name %i-presence --for %i --uri ws://localhost:8876
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

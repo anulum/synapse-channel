@@ -217,7 +217,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 
 | Surface | Current inventory |
 |---|---:|
-| Package version | 0.27.0 |
+| Package version | 0.27.1 |
 | Public API exports | 41 |
 | Package modules | 21 |
 | Classes | 28 |
