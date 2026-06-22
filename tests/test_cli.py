@@ -236,6 +236,8 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "max_history": 10000,
         "relay_log": None,
         "relay_max_lines": 5000,
+        "max_clients": 64,
+        "max_msg_kb": 1024,
         "token": None,
     }
     base.update(overrides)
@@ -1707,3 +1709,9 @@ def test_main_resolves_token_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_cmd_board", fake)
     assert cli.main(["board"]) == 0
     assert captured["token"] == "env-tok"
+
+
+def test_parser_hub_caps() -> None:
+    args = cli.build_parser().parse_args(["hub", "--max-clients", "8", "--max-msg-kb", "32"])
+    assert args.max_clients == 8
+    assert args.max_msg_kb == 32

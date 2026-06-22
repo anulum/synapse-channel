@@ -8,10 +8,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import signal
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from websockets.exceptions import ConnectionClosed
@@ -1305,3 +1307,63 @@ async def test_takeover_tolerates_a_failing_close() -> None:
         _msg(sender="Z-rx", type="heartbeat", payload="online", takeover=True), ws_new
     )
     assert hub.agent_sockets["Z-rx"] is ws_new
+
+
+# --- Sprint A: caps, capacity gate, takeover cooldown, signal handlers -------
+
+
+def test_hub_caps_clamped() -> None:
+    hub = SynapseHub(max_clients=0, max_msg_bytes=0, takeover_cooldown=-5.0)
+    assert hub.max_clients == 1
+    assert hub.max_msg_bytes == 1
+    assert hub.takeover_cooldown == 0.0
+
+
+async def test_handler_rejects_at_capacity() -> None:
+    hub = SynapseHub(max_clients=1)
+    hub.connected_clients.add(object())  # already at capacity
+    ws = FakeServerWS()
+    await hub.handler(ws)
+    assert ws.closed == (4013, "hub at capacity")
+    assert ws not in hub.connected_clients
+
+
+async def test_takeover_cooldown_blocks_rapid_eviction() -> None:
+    clock = [100.0]
+    hub = SynapseHub(takeover_cooldown=2.0, clock=lambda: clock[0])
+    old, w1, w2, w3 = FakeServerWS(), FakeServerWS(), FakeServerWS(), FakeServerWS()
+    hub.agent_sockets["A"] = old
+    assert await hub._resolve_sender("A", w1, takeover=True) == "A"
+    assert old.closed == (4010, "superseded")
+    # a second takeover within the cooldown window is refused, protecting w1
+    clock[0] = 101.0
+    hub.agent_sockets["A"] = w1
+    assert await hub._resolve_sender("A", w2, takeover=True) is None
+    assert w2.closed == (4014, "takeover cooldown")
+    # once the cooldown elapses, takeover is allowed again
+    clock[0] = 103.0
+    hub.agent_sockets["A"] = w1
+    assert await hub._resolve_sender("A", w3, takeover=True) == "A"
+
+
+def test_install_signal_handlers_wires_both() -> None:
+    hub = SynapseHub()
+    wired: list[int] = []
+
+    class FakeLoop:
+        def add_signal_handler(self, sig: int, callback: Any) -> None:
+            wired.append(sig)
+
+    hub._install_signal_handlers(cast(asyncio.AbstractEventLoop, FakeLoop()), asyncio.Event())
+    assert signal.SIGTERM in wired
+    assert signal.SIGINT in wired
+
+
+def test_install_signal_handlers_suppresses_unsupported() -> None:
+    hub = SynapseHub()
+
+    class FakeLoop:
+        def add_signal_handler(self, sig: int, callback: Any) -> None:
+            raise NotImplementedError
+
+    hub._install_signal_handlers(cast(asyncio.AbstractEventLoop, FakeLoop()), asyncio.Event())

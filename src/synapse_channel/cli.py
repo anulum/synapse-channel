@@ -45,7 +45,9 @@ from synapse_channel.auth import TokenAuthenticator
 from synapse_channel.client import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.hub import (
     DEFAULT_HOST,
+    DEFAULT_MAX_CLIENTS,
     DEFAULT_MAX_HISTORY,
+    DEFAULT_MAX_MSG_BYTES,
     DEFAULT_PORT,
     DEFAULT_RELAY_MAX_LINES,
     SynapseHub,
@@ -125,6 +127,8 @@ def _cmd_hub(args: argparse.Namespace) -> int:
         relay_log=args.relay_log,
         relay_max_lines=args.relay_max_lines,
         authenticator=authenticator,
+        max_clients=args.max_clients,
+        max_msg_bytes=args.max_msg_kb * 1024,
     )
     try:
         _run(hub.serve(host=args.host, port=args.port))
@@ -1041,6 +1045,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=DEFAULT_RELAY_MAX_LINES,
         help="Upper bound on the relay log before it is trimmed.",
+    )
+    hub.add_argument(
+        "--max-clients",
+        type=int,
+        default=DEFAULT_MAX_CLIENTS,
+        help="Maximum simultaneous connections before further connects are refused.",
+    )
+    hub.add_argument(
+        "--max-msg-kb",
+        type=int,
+        default=DEFAULT_MAX_MSG_BYTES // 1024,
+        help="Largest accepted inbound message in KiB; a larger frame is rejected.",
     )
     hub.add_argument(
         "--token",

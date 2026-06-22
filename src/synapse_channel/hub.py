@@ -18,10 +18,13 @@ one process, which keeps the routing logic deterministic and unit-testable.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
+import signal
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +67,12 @@ DEFAULT_PING_INTERVAL = 15.0
 """Seconds between server keepalive pings, so a dead socket is detected promptly."""
 DEFAULT_PING_TIMEOUT = 15.0
 """Seconds to wait for a ping reply before dropping the connection and freeing its name."""
+DEFAULT_MAX_CLIENTS = 64
+"""Maximum simultaneous connections; a further connect is closed with code 4013."""
+DEFAULT_MAX_MSG_BYTES = 1024 * 1024
+"""Largest accepted inbound frame (bytes); a larger one is rejected by the transport."""
+DEFAULT_TAKEOVER_COOLDOWN = 2.0
+"""Seconds a name is protected from a second takeover, to blunt an eviction storm."""
 
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 """Bind hosts treated as loopback-only, where running without a token is fine."""
@@ -146,10 +155,19 @@ class SynapseHub:
         relay_max_lines: int = DEFAULT_RELAY_MAX_LINES,
         max_progress: int = DEFAULT_MAX_PROGRESS,
         authenticator: TokenAuthenticator | None = None,
+        max_clients: int = DEFAULT_MAX_CLIENTS,
+        max_msg_bytes: int = DEFAULT_MAX_MSG_BYTES,
+        takeover_cooldown: float = DEFAULT_TAKEOVER_COOLDOWN,
+        clock: Callable[[], float] | None = None,
     ) -> None:
         self.journal = journal
         self.rate_limiter = rate_limiter
         self.authenticator = authenticator
+        self.max_clients = max(int(max_clients), 1)
+        self.max_msg_bytes = max(int(max_msg_bytes), 1)
+        self.takeover_cooldown = max(float(takeover_cooldown), 0.0)
+        self._clock = clock or time.monotonic
+        self._last_takeover: dict[str, float] = {}
         self.max_history = max(int(max_history), 1)
         self.relay_log = Path(relay_log) if relay_log else None
         self.relay_max_lines = max(int(relay_max_lines), 1)
@@ -936,6 +954,13 @@ class SynapseHub:
             owner_ws = self.agent_sockets.get(sender)
             if owner_ws is not None and owner_ws != websocket:
                 if takeover:
+                    now = self._clock()
+                    last = self._last_takeover.get(sender)
+                    if last is not None and now - last < self.takeover_cooldown:
+                        # An eviction storm — protect the current holder and reject.
+                        await websocket.close(code=4014, reason="takeover cooldown")
+                        return None
+                    self._last_takeover[sender] = now
                     # Detach the stale holder first so its own unregister will not
                     # reclaim the name, then close it and bind the name to the newcomer.
                     self.socket_agent.pop(owner_ws, None)
@@ -1137,6 +1162,9 @@ class SynapseHub:
 
     async def handler(self, websocket: Any) -> None:
         """Serve one client connection from registration to disconnect."""
+        if len(self.connected_clients) >= self.max_clients:
+            await websocket.close(code=4013, reason="hub at capacity")
+            return
         await self.register(websocket)
         try:
             async for raw in websocket:
@@ -1145,6 +1173,19 @@ class SynapseHub:
             pass
         finally:
             await self.unregister(websocket)
+
+    def _install_signal_handlers(
+        self, loop: asyncio.AbstractEventLoop, stop: asyncio.Event
+    ) -> None:
+        """Wire ``SIGTERM``/``SIGINT`` to set ``stop`` for a graceful shutdown.
+
+        Best-effort: a platform without signal support (e.g. the Windows proactor loop)
+        raises ``NotImplementedError``, which is suppressed — the hub then simply runs
+        until its task is cancelled.
+        """
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            with contextlib.suppress(NotImplementedError):
+                loop.add_signal_handler(sig, stop.set)
 
     async def serve(self, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> None:
         """Run the hub's WebSocket server until cancelled.
@@ -1157,13 +1198,16 @@ class SynapseHub:
             Bind port. Defaults to :data:`DEFAULT_PORT`.
         """
         self._warn_if_exposed(host)
+        stop = asyncio.Event()
+        self._install_signal_handlers(asyncio.get_running_loop(), stop)
         async with websockets.serve(
             self.handler,
             host,
             port,
+            max_size=self.max_msg_bytes,
             max_queue=DEFAULT_MAX_QUEUE,
             ping_interval=DEFAULT_PING_INTERVAL,
             ping_timeout=DEFAULT_PING_TIMEOUT,
         ):
             logger.info("Synapse Hub running on ws://%s:%d", host, port)
-            await asyncio.Future()
+            await stop.wait()
