@@ -7,7 +7,7 @@
 # SYNAPSE_CHANNEL — unified `synapse` command-line entry point
 """Command-line entry point for the Synapse channel.
 
-The ``synapse`` command exposes fourteen subcommands:
+The ``synapse`` command exposes these subcommands:
 
 * ``hub`` — run the coordination hub;
 * ``worker`` — run a model worker that answers on the channel;
@@ -21,8 +21,10 @@ The ``synapse`` command exposes fourteen subcommands:
 * ``manifest`` — print the capability manifest of advertised agents;
 * ``who`` — list the agents currently online, optionally for one project;
 * ``state`` — print active claims and their checkpoints (a resume view);
+* ``health`` — probe the hub and report reachability as the exit code;
 * ``lock`` — hold a lease while running a command, to serialise it across agents;
-* ``task`` — declare and update the shared task plan from the command line.
+* ``task`` — declare and update the shared task plan from the command line;
+* ``mcp`` — run a Model Context Protocol server over stdio, bridged to the hub.
 
 The send/listen helpers take an injectable agent factory so the dispatch and the
 client flows are unit-testable without a live hub.
@@ -57,6 +59,7 @@ from synapse_channel.llm_worker import (
     DEFAULT_OLLAMA_BASE_URL,
     SynapseLLMWorker,
 )
+from synapse_channel.mcp_server import DEFAULT_BRIDGE_NAME, serve_stdio
 from synapse_channel.persistence import EventStore
 from synapse_channel.protocol import (
     MessageType,
@@ -433,6 +436,22 @@ async def _health(
 def _cmd_health(args: argparse.Namespace) -> int:
     """Probe the hub and return its reachability as the process exit code."""
     return asyncio.run(_health(uri=args.uri, name=args.name, token=args.token))
+
+
+def _cmd_mcp(args: argparse.Namespace) -> int:
+    """Run the Model Context Protocol server over stdio, bridged to the hub.
+
+    Exposes the hub's coordination verbs to any MCP client. Requires the optional
+    ``mcp`` extra; a missing extra is reported with the install hint and exit ``1``.
+    """
+    try:
+        return asyncio.run(serve_stdio(uri=args.uri, name=args.name, token=args.token))
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print(f"\n[{args.name}] MCP server stopped.")
+        return 0
 
 
 async def _who(
@@ -1212,6 +1231,15 @@ def build_parser() -> argparse.ArgumentParser:
     health.add_argument("--name", default="HEALTH")
     health.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     health.set_defaults(func=_cmd_health)
+
+    mcp = sub.add_parser(
+        "mcp",
+        help="Run an MCP server over stdio that bridges to the hub (needs the [mcp] extra).",
+    )
+    mcp.add_argument("--uri", default=DEFAULT_HUB_URI)
+    mcp.add_argument("--name", default=DEFAULT_BRIDGE_NAME)
+    mcp.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    mcp.set_defaults(func=_cmd_mcp)
 
     state = sub.add_parser(
         "state", help="Print active claims and their checkpoints (a resume view)."

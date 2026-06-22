@@ -137,6 +137,23 @@ connecting agents present with `--token`; the hub warns if it is bound to a
 non-loopback host without one. This is a proportionate gate, not a cryptographic
 identity system.
 
+### MCP server face
+
+Any MCP-compatible agent — Claude Desktop, Claude Code, an editor assistant —
+coordinates through Synapse with no Synapse-specific code. Install the optional
+extra and point the host at the command:
+
+```bash
+pip install 'synapse-channel[mcp]'
+synapse mcp --uri ws://localhost:8876
+```
+
+`synapse mcp` runs a Model Context Protocol server over stdio that is itself a hub
+client, exposing the coordination verbs as MCP tools (claim, release, send, hand
+off, declare and update tasks) and the board, state, and manifest as live
+resources. The hub stays MCP-agnostic and the core install keeps its single
+dependency — see the [MCP guide](docs/mcp.md).
+
 ## Coordination model
 
 1. Claim before you work: an agent leases a task by id; a live lease blocks other
@@ -223,17 +240,17 @@ on-channel model worker a question. Each starts its own in-process hub, so
 
 | Surface | Current inventory |
 |---|---:|
-| Package version | 0.32.0 |
+| Package version | 0.33.0 |
 | Public API exports | 43 |
-| Package modules | 22 |
-| Classes | 29 |
+| Package modules | 23 |
+| Classes | 30 |
 | Wire message types | 47 |
-| CLI subcommands | 18 |
-| Test functions | 607 |
+| CLI subcommands | 19 |
+| Test functions | 645 |
 | Benchmark harnesses | 2 |
-| Documentation pages | 12 |
+| Documentation pages | 13 |
 | GitHub Actions workflows | 9 |
-| Optional-dependency groups | 3 |
+| Optional-dependency groups | 4 |
 
 This snapshot is a static inventory generated from the source tree. Performance and coverage claims have their own committed evidence — see `VALIDATION.md` and `benchmarks/`.
 <!-- capability-snapshot:end -->
@@ -275,7 +292,7 @@ If you use SYNAPSE CHANNEL in your work, please cite it. Metadata is in
   title   = {SYNAPSE CHANNEL: Local-first multi-agent coordination bus},
   url      = {https://github.com/anulum/synapse-channel},
   doi      = {10.5281/zenodo.20801559},
-  version = {0.32.0},
+  version = {0.33.0},
   year     = {2026}
 }
 ```

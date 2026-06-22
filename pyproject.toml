@@ -12,7 +12,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "synapse-channel"
-version = "0.32.0"
+version = "0.33.0"
 description = "Local-first coordination bus for AI agents across one repository or a whole ecosystem: work claims, presence, chat, a shared plan, and resource sharing over a WebSocket hub"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -43,9 +43,13 @@ dev = [
   "pytest-asyncio>=0.23",
   "pytest-cov>=5.0",
   "tomli>=2.4.1; python_version < '3.11'",
+  "mcp>=1.28.0",
 ]
 benchmark = [
   "tiktoken>=0.7",
+]
+mcp = [
+  "mcp>=1.28.0",
 ]
 docs = [
   "mkdocs-material>=9.5",

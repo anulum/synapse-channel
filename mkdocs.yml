@@ -70,6 +70,7 @@ nav:
   - Coordination model: coordination-model.md
   - Wire protocol: protocol.md
   - CLI reference: cli.md
+  - MCP server: mcp.md
   - Recipes: recipes.md
   - Examples: examples.md
   - Deployment: deployment.md

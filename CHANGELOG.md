@@ -11,6 +11,16 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.33.0] - 2026-06-23
+
+### Added
+- `synapse mcp` runs a Model Context Protocol server over stdio that bridges to the
+  hub: any MCP-compatible agent (Claude Desktop/Code, an editor assistant) claims and
+  releases work, sends messages, hands off and declares/updates tasks, and reads the
+  board, state, and capability manifest as live resources — with no Synapse-specific
+  code. The MCP SDK is an optional extra (`pip install 'synapse-channel[mcp]'`); the
+  core install keeps its single `websockets` dependency and the hub stays MCP-agnostic.
+
 ## [0.32.0] - 2026-06-22
 
 ### Added
