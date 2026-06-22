@@ -32,6 +32,7 @@ def test_discover_returns_every_surface() -> None:
         "src/synapse_channel/__init__.py",
         "README.md citation",
         "CITATION.cff",
+        ".zenodo.json",
     }
     # The repository surfaces are all in sync, so each equals the canonical version.
     assert set(surfaces.values()) == {cvs._pyproject_version()}
