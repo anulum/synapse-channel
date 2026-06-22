@@ -13,7 +13,7 @@ SYNAPSE CHANNEL — repository overview
 </p>
 
 <p align="center">
-  <strong>Local-first coordination bus for multiple agents working in parallel on one repository</strong>
+  <strong>Local-first coordination bus for AI agents working in parallel — one repository or a whole ecosystem of them</strong>
 </p>
 
 <p align="center">
@@ -29,10 +29,12 @@ SYNAPSE CHANNEL — repository overview
   <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json" alt="Ruff"></a>
 </p>
 
-A local-first coordination bus for multiple agents working in parallel. A single
-WebSocket hub is the source of truth for **presence**, **work claims**, **chat**,
-**task status**, and **resource offers**, so concurrent workers do not step on
-each other or duplicate effort.
+A local-first coordination bus for a fleet of AI agents working in parallel —
+within a single repository or spread across a whole ecosystem of them. One
+WebSocket hub is the shared source of truth for **presence**, **work claims**,
+**chat**, **task status**, and **resource offers**: agents address each other
+across projects and share one plan, while file-scope claims keep the agents in any
+one repository off each other's files.
 
 The bus is transport-light (one dependency, `websockets`), hub-centric by design
 (one place owns presence, leases, and history), and runs entirely on the local

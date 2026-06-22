@@ -13,7 +13,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "synapse-channel"
 version = "0.31.0"
-description = "Local-first multi-agent coordination bus: work claims, presence, chat, and resource sharing over a WebSocket hub"
+description = "Local-first coordination bus for AI agents across one repository or a whole ecosystem: work claims, presence, chat, a shared plan, and resource sharing over a WebSocket hub"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "AGPL-3.0-or-later"

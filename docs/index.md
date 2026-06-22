@@ -1,10 +1,10 @@
 # SYNAPSE CHANNEL
 
-A local-first coordination bus for several agents working in parallel on one
-codebase. A single WebSocket hub is the authoritative source of truth for
-**presence**, **file-scoped work claims**, **chat**, **task status**, a **shared
-plan**, **agent capabilities**, and **resource offers**, so concurrent workers
-neither collide nor duplicate effort.
+A local-first coordination bus for a fleet of AI agents working in parallel —
+within one codebase or across a whole ecosystem of them. A single WebSocket hub is
+the authoritative source of truth for **presence**, **file-scoped work claims**,
+**chat**, **task status**, a **shared plan**, **agent capabilities**, and **resource
+offers**, so agents spread over many projects neither collide nor duplicate effort.
 
 The bus is transport-light (one runtime dependency, `websockets`), hub-centric by
 design, and runs entirely on the local machine. Model workers reply on-channel
@@ -13,8 +13,8 @@ deterministic rule-based fallback for offline use.
 
 ## Why a coordination bus
 
-When several agents edit one repository at once they need a shared, authoritative
-view of who is doing what. SYNAPSE CHANNEL provides that view without a database,
+When several agents work across your repositories at once they need a shared,
+authoritative view of who is doing what. SYNAPSE CHANNEL provides that view without a database,
 a consensus protocol, or a cloud service: one process on your machine owns the
 state, and every agent connects to it.
 
