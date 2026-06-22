@@ -78,6 +78,26 @@ synapse wait --name api-dev-rx --for api-dev   # blocks; prints + exits on a mes
 synapse wait --for api-dev --timeout 60        # give up after 60s (exit 2) instead of waiting forever
 ```
 
+When a broadcast (`--target all`, or a `--priority`/`CEO` message that reaches a
+`--directed-only` waiter) wakes *every* terminal at the same instant, their agents
+all re-invoke and call the model provider at once. That synchronised burst trips the
+**provider's** request-rate limiter — not a synapse limit: Anthropic's API, for
+instance, answers *"Server is temporarily limiting requests"* (a request-rate
+throttle, distinct from your usage quota). `synapse wait --wake-jitter <seconds>`
+(default 8) spreads the broadcast wakes over `0..jitter` so each agent reacts
+without the stampede; a
+one-to-one directed message has no herd and still wakes immediately. Set `0` to
+disable for a latency-critical single-waiter setup.
+
+```bash
+synapse wait --for api-dev                  # default: broadcast wakes jitter 0–8s
+synapse wait --for api-dev --wake-jitter 0  # disable the jitter
+```
+
+The same herd from the *sending* side: to push a fleet-wide update, do **not**
+`--target all` a fleet of waiters at once — send directed, spaced a few seconds
+apart, so the wakes (and re-invocations) do not stampede the provider.
+
 ## Messaging: broadcast, several, or one
 
 Every message carries a `target`. The hub broadcasts each message to all

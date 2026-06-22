@@ -95,3 +95,45 @@ its state by replaying it on start-up. Back up the hub by copying the `--db` fil
 (and its `-wal`/`-shm` siblings) or the whole data directory while the hub is
 stopped, or use `sqlite3 hub.db ".backup"` online. The `--relay-log` feed is
 derived state and bounded by `--relay-max-lines`; it is safe to truncate.
+
+## Restarting the hub safely
+
+The hub restarts cleanly because both ends are built for it. With `--db`, a restart
+replays the event log, so active leases are **restored rather than dropped**. On the
+client side a waiter on 0.28.1+ **exits with code 3 when its socket drops** instead
+of hanging on a dead connection, so a hub restart makes every waiter exit and re-arm
+rather than go dark.
+
+When a waiter re-arms right after its process was killed, its old name can still
+linger on the hub for a few seconds (until the keepalive reaps it). A 0.29.0+ client
+re-arms with **takeover**: the hub evicts the stale holder (closing it with code
+`4010` *superseded*) and rebinds the name, so the re-arm succeeds instead of failing
+with a `4009` name conflict. Takeover needs **both ends on 0.29.0+** — the client to
+ask for it, the hub to perform the eviction — and a 15-second keepalive reaps a
+genuine ghost quickly as the backstop.
+
+So a coordinated restart is safe when every live client is on 0.28.1+: announce,
+restart the service, and the fleet re-arms against the fresh hub on its own. Pick a
+quiet moment, announce before and after, and never start a restart that would strand
+a client too old to exit-on-drop.
+
+## Fleet-wide announcements
+
+A broadcast (`--target all`, a `--priority` message, or any `CEO` message) wakes
+every waiter at the same instant; their agents then all re-invoke and call the model
+provider together, and the **provider's** request-rate limiter throttles the burst —
+Anthropic's API, for one, returns *"Server is temporarily limiting requests"*, a
+request-rate limit distinct from your usage quota. Two defences, used together:
+
+- **Receiver side:** `synapse wait --wake-jitter` (default 8s) spreads broadcast
+  wakes over a few seconds so the re-invocations do not land at once.
+- **Sender side:** to roll an update out to a fleet, do **not** `--target all`. Send
+  **directed and staggered** — one message per terminal, a few seconds apart — so the
+  wakes are spread regardless of each waiter's jitter setting:
+
+  ```bash
+  for p in api-dev test-dev docs-dev; do
+    synapse send --target "$p" "upgrade to 0.30.0: pipx upgrade synapse-channel; restart your waiter"
+    sleep 5
+  done
+  ```

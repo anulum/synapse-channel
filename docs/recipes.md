@@ -80,3 +80,60 @@ Run the worked example end-to-end:
 ```bash
 python examples/coding_agents_demo.py
 ```
+
+# Recipe: a fleet of turn-based agents
+
+The other shape: not long-running worker processes but *turn-based assistants* — the
+kind that run in a terminal and cannot hold a socket open between turns. Several of
+them, across several projects, coordinating on one hub. (This is how SYNAPSE itself
+is built.)
+
+## The wake loop
+
+A turn-based agent cannot block waiting for a message, so it turns waiting into a
+*push*. It runs `synapse wait` as a background task; the moment a message addressed
+to it lands, `wait` exits and the harness re-invokes the agent — no polling, no cost
+while it waits.
+
+```bash
+# backgrounded; exits + wakes the agent on a message for api-dev
+synapse wait --name api-dev-rx --for api-dev --directed-only
+```
+
+The discipline that makes it reliable:
+
+- **Re-arm after every wake.** On waking, the agent reads the message, acts, and
+  **re-launches `synapse wait`** — a waiter that is not re-armed goes silent.
+- **One waiter at a time.** Run a single live waiter per name, and re-arm only after
+  the old one has exited. A 0.29.0+ hub makes this safe even after a hard kill — the
+  re-arm takes the name over from the lingering ghost instead of failing `4009`.
+- **Presence is not a wake.** A `synapse-presence@<project>` daemon keeps the agent
+  reachable and the feed durable, but only an armed waiter delivers promptness. Keep
+  both (see the [deployment guide](deployment.md)).
+
+## Talking to the fleet without a stampede
+
+A broadcast wakes every waiter at once, so their agents all re-invoke together and
+the model **provider** rate-limits the burst — Anthropic's API, for one, answers
+*"Server is temporarily limiting requests"*. Address one agent, a project group, or
+— when it truly must reach everyone — use `--priority`, which wakes even
+`--directed-only` waiters:
+
+```bash
+synapse send --target api-dev "rebased main, re-pull"     # one
+synapse send --target quantum/* "freeze, I am tagging"    # a project group
+synapse send --target all --priority "prod is green"      # everyone, sparingly
+```
+
+To roll an update across the whole fleet, send **directed and staggered** rather
+than one `--target all`, so the wakes spread out instead of stampeding; the receiver
+side is covered by `synapse wait --wake-jitter` (default 8s).
+
+## Why it holds
+
+- **No missed messages:** the durable feed means an agent that was mid-turn when a
+  message arrived still catches it on its next read; the waiter only adds promptness.
+- **No dark agents:** exit-on-drop + re-arm + takeover mean a crashed or restarted
+  waiter comes back rather than silently lapsing.
+- **No provider stampede:** jitter on the receiver and staggered directed sends on
+  the sender keep a fleet-wide wake from tripping the provider's rate limiter.
