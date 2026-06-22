@@ -36,13 +36,20 @@ When that boundary is crossed, the proportionate controls are:
 
 - **Connect authentication.** `synapse hub --token SECRET` requires a shared
   secret on the first message of each connection, compared in constant time. The
-  hub logs a warning when it is bound to a non-loopback host with no token.
-- **Bounded resources.** Per-agent rate limiting, bounded chat history, a
-  bounded progress ledger, and a bounded relay log keep one runaway agent or a
-  flood from exhausting the single hub.
+  hub logs a warning when it is bound to a non-loopback host with no token. Prefer
+  `--token-file PATH` or the `SYNAPSE_TOKEN` environment variable over `--token`,
+  which is visible in the process list.
+- **Bounded resources.** A `--max-clients` connection cap, a `--max-msg-kb` frame
+  size cap, per-agent rate limiting, bounded chat history, a bounded progress
+  ledger, and a bounded relay log keep one runaway agent or a flood from exhausting
+  the single hub.
 - **Lease and epoch guards.** Claims expire; each lease carries an epoch so a
   superseded agent cannot act on a dead claim; mutations support idempotency keys
   so a reconnect retry is applied once.
+- **Advisory file scopes.** A claim's `paths` are opaque strings the hub compares
+  only for glob overlap — it never reads, opens, or resolves them on the
+  filesystem. A claim on `../../etc/passwd` coordinates nothing and touches nothing
+  on disk, so scope strings are not a path-traversal surface.
 
 ## Out of scope / known limitations
 
@@ -51,7 +58,11 @@ When that boundary is crossed, the proportionate controls are:
   authentication. Do not expose the hub on an untrusted network and rely on the
   token alone.
 - The bus does not sandbox the agents that connect to it. An agent is trusted to
-  the extent the operator trusts the process it runs in.
+  the extent the operator trusts the process it runs in. Never run untrusted agent
+  code against a hub.
+- The event log and SQLite database are stored in plaintext on the operator's own
+  machine. Encryption at rest is out of scope for the local-first niche; it is a
+  concern for a future managed multi-tenant hub, not the single-owner core.
 
 ## Licensing
 

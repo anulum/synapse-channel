@@ -126,7 +126,18 @@ synapse hub --port 8876
 synapse hub --port 8876 --db ./synapse.db          # crash-safe persistence
 synapse hub --port 8876 --rate 5 --burst 20        # per-agent rate limiting
 synapse hub --port 8876 --relay-log ./feed.ndjson  # mirror the channel to a file
-synapse hub --host 0.0.0.0 --token s3cret          # require a shared secret off-loopback
+synapse hub --max-clients 32 --max-msg-kb 256      # cap connections and frame size
+synapse hub --host 0.0.0.0 --token-file ./tok      # token from a file, not argv (ps-safe)
+```
+
+Supply the token with `--token-file` or the `SYNAPSE_TOKEN` environment variable
+rather than `--token`, which is visible in `ps`. The hub drains on `SIGTERM`/`SIGINT`,
+so a container stop shuts it down cleanly. `synapse health` is a liveness probe —
+exit `0` when the hub answers, `1` otherwise — wired as the Docker `HEALTHCHECK`:
+
+```bash
+synapse health                       # exit 0 if the local hub is reachable
+synapse health --uri ws://host:8876
 ```
 
 ## Worker options

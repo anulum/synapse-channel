@@ -11,6 +11,25 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.32.0] - 2026-06-22
+
+### Added
+- `synapse hub --max-clients N` and `--max-msg-kb K` cap concurrent connections and
+  inbound frame size, so one host or one oversized message cannot exhaust the hub.
+- `synapse health` probes a hub (exit 0 reachable, 1 not), wired as a Docker HEALTHCHECK.
+- The hub token can be supplied with `--token-file PATH` or the `SYNAPSE_TOKEN`
+  environment variable instead of `--token`, which is visible in the process list.
+
+### Changed
+- The hub drains on SIGTERM/SIGINT (graceful shutdown) instead of running on a bare
+  future; a name is protected from an eviction storm by a takeover cooldown.
+- The Docker image is pinned to `python:3.13-slim`, the highest version CI exercises.
+
+### Security
+- SECURITY.md documents the advisory file-scope model (the hub never reads the
+  filesystem, so claim paths are not a traversal surface), the new caps, and that
+  state is plaintext at rest on the local machine.
+
 ## [0.31.0] - 2026-06-22
 
 ### Added
