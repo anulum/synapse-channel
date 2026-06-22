@@ -99,7 +99,7 @@ warn_unused_configs = true
 warn_return_any = true
 
 [[tool.mypy.overrides]]
-module = ["websockets.*", "tiktoken"]
+module = ["websockets.*", "tiktoken", "tomli"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
