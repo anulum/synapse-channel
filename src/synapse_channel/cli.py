@@ -22,6 +22,8 @@ The ``synapse`` command exposes these subcommands:
 * ``who`` — list the agents currently online, optionally for one project;
 * ``state`` — print active claims and their checkpoints (a resume view);
 * ``git-claim`` — claim a task scoped to the current git branch (branch resolved client-side);
+* ``git-hook`` — install git hooks that auto-release branch-scoped claims on commit/merge;
+* ``git-release`` — release branch-scoped claims whose paths were committed/merged (hook-invoked);
 * ``health`` — probe the hub and report reachability as the exit code;
 * ``lock`` — hold a lease while running a command, to serialise it across agents;
 * ``task`` — declare and update the shared task plan from the command line;
@@ -46,7 +48,8 @@ from typing import Any
 from synapse_channel import __version__
 from synapse_channel.auth import TokenAuthenticator
 from synapse_channel.client import DEFAULT_HUB_URI, SynapseAgent
-from synapse_channel.gitclaim import run_git_claim
+from synapse_channel.gitclaim import GitError, run_git_claim
+from synapse_channel.githook import install_hooks, run_git_release
 from synapse_channel.hub import (
     DEFAULT_HOST,
     DEFAULT_MAX_CLIENTS,
@@ -615,6 +618,35 @@ def _cmd_git_claim(args: argparse.Namespace) -> int:
             auto_release_on=args.auto_release_on,
             token=args.token,
         )
+    )
+
+
+def _cmd_git_hook(args: argparse.Namespace) -> int:
+    """Install git hooks that auto-release branch-scoped claims on commit/merge.
+
+    The hooks are written client-side and call ``synapse git-release``; the hub is
+    never involved in installing or running them.
+    """
+    try:
+        lines = install_hooks(
+            uri=args.uri, name=args.name, token_file=getattr(args, "token_file", None)
+        )
+    except GitError as exc:
+        print(f"git error: {exc}", file=sys.stderr)
+        return 1
+    for line in lines:
+        print(line)
+    return 0
+
+
+def _cmd_git_release(args: argparse.Namespace) -> int:
+    """Release branch-scoped claims whose paths were just committed or merged.
+
+    Invoked by the installed git hooks; resolves the changed files client-side and
+    sends an ordinary release for each matching claim.
+    """
+    return asyncio.run(
+        run_git_release(uri=args.uri, name=args.name, trigger=args.trigger, token=args.token)
     )
 
 
@@ -1301,6 +1333,31 @@ def build_parser() -> argparse.ArgumentParser:
     git_claim.add_argument("--name", default="USER")
     git_claim.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     git_claim.set_defaults(func=_cmd_git_claim)
+
+    git_hook = sub.add_parser(
+        "git-hook",
+        help="Install git hooks that auto-release branch-scoped claims on commit/merge.",
+    )
+    git_hook.add_argument("action", choices=["install"], help="The hook action to perform.")
+    git_hook.add_argument("--uri", default=DEFAULT_HUB_URI)
+    git_hook.add_argument("--name", default="USER")
+    git_hook.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    git_hook.set_defaults(func=_cmd_git_hook)
+
+    git_release = sub.add_parser(
+        "git-release",
+        help="Release branch-scoped claims whose paths were committed/merged (used by git hooks).",
+    )
+    git_release.add_argument(
+        "--trigger",
+        choices=["commit", "merge"],
+        required=True,
+        help="Which auto-release trigger fired.",
+    )
+    git_release.add_argument("--uri", default=DEFAULT_HUB_URI)
+    git_release.add_argument("--name", default="USER")
+    git_release.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    git_release.set_defaults(func=_cmd_git_release)
 
     lock = sub.add_parser(
         "lock", help="Hold a lease while running a command (serialise e.g. commits)."

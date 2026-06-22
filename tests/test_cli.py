@@ -18,6 +18,7 @@ import pytest
 
 from synapse_channel import cli
 from synapse_channel.client import DEFAULT_HUB_URI
+from synapse_channel.gitclaim import GitError
 from synapse_channel.hub import SynapseHub
 from synapse_channel.llm_worker import DEFAULT_OLLAMA_BASE_URL
 from synapse_channel.relay import append_jsonl, encode_lite
@@ -1836,3 +1837,46 @@ def test_cmd_mcp_handles_keyboard_interrupt(monkeypatch: pytest.MonkeyPatch) -> 
 
     monkeypatch.setattr(cli, "serve_stdio", fake)
     assert cli._cmd_mcp(_mcp_ns()) == 0
+
+
+def test_parser_git_hook() -> None:
+    args = cli.build_parser().parse_args(["git-hook", "install", "--name", "ME"])
+    assert args.func is cli._cmd_git_hook
+    assert args.action == "install"
+    assert args.name == "ME"
+
+
+def test_cmd_git_hook_dispatches(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli, "install_hooks", lambda **kwargs: ["installed post-commit"])
+    ns = argparse.Namespace(action="install", uri="ws://h", name="ME", token=None, token_file=None)
+    assert cli._cmd_git_hook(ns) == 0
+    assert "installed post-commit" in capsys.readouterr().out
+
+
+def test_cmd_git_hook_reports_git_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def boom(**kwargs: Any) -> list[str]:
+        raise GitError("not a git repository")
+
+    monkeypatch.setattr(cli, "install_hooks", boom)
+    ns = argparse.Namespace(action="install", uri="ws://h", name="ME", token=None, token_file=None)
+    assert cli._cmd_git_hook(ns) == 1
+    assert "not a git repository" in capsys.readouterr().err
+
+
+def test_parser_git_release() -> None:
+    args = cli.build_parser().parse_args(["git-release", "--trigger", "merge"])
+    assert args.func is cli._cmd_git_release
+    assert args.trigger == "merge"
+
+
+def test_cmd_git_release_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake(**kwargs: Any) -> int:
+        return 0
+
+    monkeypatch.setattr(cli, "run_git_release", fake)
+    ns = argparse.Namespace(uri="ws://h", name="ME", trigger="commit", token=None)
+    assert cli._cmd_git_release(ns) == 0
