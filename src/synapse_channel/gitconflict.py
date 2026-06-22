@@ -59,8 +59,12 @@ class PredictedConflict:
 
 
 def _normalise(paths: Any) -> list[str]:
-    """Return claim paths as plain strings with any trailing slash removed."""
-    return [str(p).rstrip("/") for p in paths]
+    """Return claim paths as plain strings with any trailing slash removed.
+
+    A missing or ``None`` scope is treated as the empty list, so a malformed claim
+    snapshot can never crash the prediction.
+    """
+    return [str(p).rstrip("/") for p in (paths or [])]
 
 
 def _overlap(paths_a: list[str], paths_b: list[str]) -> list[str]:
@@ -210,7 +214,7 @@ async def run_conflicts(
             if snapshots:
                 break
             await asyncio.sleep(0.05)
-        claims = snapshots[-1].get("active_claims", []) if snapshots else []
+        claims = (snapshots[-1].get("active_claims") or []) if snapshots else []
         conflicts = find_conflicts(claims)
         if check_diff:
             conflicts = _refine_with_diff(conflicts, runner=runner)

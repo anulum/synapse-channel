@@ -19,6 +19,7 @@ the flow is unit-testable without a real repository.
 from __future__ import annotations
 
 import asyncio
+import shlex
 import stat
 from pathlib import Path
 from typing import Any
@@ -40,12 +41,18 @@ def hooks_directory(*, runner: GitRunner = _default_git_runner) -> Path:
 
 
 def _hook_script(trigger: str, *, uri: str, name: str, token_file: str | None) -> str:
-    """Build the shell-script body of a hook that calls ``synapse git-release``."""
-    auth = f" --token-file {token_file}" if token_file else ""
+    """Build the shell-script body of a hook that calls ``synapse git-release``.
+
+    Every value baked into the script is shell-quoted, so a name, URI, or token
+    path containing spaces or shell metacharacters can neither break the hook nor
+    inject a command into it.
+    """
+    auth = f" --token-file {shlex.quote(token_file)}" if token_file else ""
     return (
         "#!/bin/sh\n"
         f"{HOOK_MARKER}\n"
-        f"synapse git-release --trigger {trigger} --uri {uri} --name {name}{auth} || true\n"
+        f"synapse git-release --trigger {trigger} "
+        f"--uri {shlex.quote(uri)} --name {shlex.quote(name)}{auth} || true\n"
     )
 
 
@@ -84,7 +91,7 @@ def install_hooks(
     results: list[str] = []
     for trigger, filename in sorted(TRIGGER_HOOKS.items()):
         path = target / filename
-        if path.exists() and HOOK_MARKER not in path.read_text(encoding="utf-8"):
+        if path.exists() and HOOK_MARKER not in path.read_text(encoding="utf-8", errors="ignore"):
             results.append(f"skipped {filename}: a non-Synapse hook already exists")
             continue
         path.write_text(
@@ -191,12 +198,12 @@ async def run_git_release(
                 break
             await asyncio.sleep(0.05)
         released: list[str] = []
-        claims = snapshots[-1].get("active_claims", []) if snapshots else []
+        claims = (snapshots[-1].get("active_claims") or []) if snapshots else []
         for claim in claims:
             git = claim.get("git")
             if claim.get("owner") != name or not git or git.get("auto_release_on") != trigger:
                 continue
-            if _paths_overlap([str(p) for p in claim.get("paths", [])], changed):
+            if _paths_overlap([str(p) for p in (claim.get("paths") or [])], changed):
                 task_id = str(claim.get("task_id"))
                 await agent.release(task_id)
                 released.append(task_id)

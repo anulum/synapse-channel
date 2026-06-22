@@ -137,6 +137,22 @@ def test_install_hooks_resolves_dir_from_runner(tmp_path: Path) -> None:
     assert (tmp_path / "post-commit").exists()
 
 
+def test_install_hooks_shell_quotes_values(tmp_path: Path) -> None:
+    # A name with shell metacharacters must be quoted, not injected into the hook.
+    install_hooks(uri="ws://h", name="x; echo PWNED #", hooks_dir=tmp_path)
+    body = (tmp_path / "post-commit").read_text(encoding="utf-8")
+    assert "'x; echo PWNED #'" in body
+    assert "--name x; echo" not in body
+
+
+def test_install_hooks_skips_binary_foreign_hook(tmp_path: Path) -> None:
+    # A non-UTF-8 hook from something else must be detected and left untouched, not crash.
+    (tmp_path / "post-commit").write_bytes(b"\xff\xfe\x00binary")
+    lines = install_hooks(uri="ws://h", name="ME", hooks_dir=tmp_path)
+    assert any("skipped post-commit" in line for line in lines)
+    assert (tmp_path / "post-commit").read_bytes() == b"\xff\xfe\x00binary"
+
+
 # -- changed_files ------------------------------------------------------------
 
 
@@ -282,3 +298,20 @@ async def test_run_git_release_without_snapshot(monkeypatch: pytest.MonkeyPatch)
     )
     assert rc == 0
     assert created[0].releases == []
+
+
+async def test_run_git_release_tolerates_none_paths() -> None:
+    # A claim with an explicit None scope must be treated as the whole worktree, not crash.
+    claims: list[dict[str, Any]] = [
+        {"task_id": "T1", "owner": "me", "paths": None, "git": {"auto_release_on": "commit"}}
+    ]
+    factory, created = make_factory(inbound=[_snapshot(claims)])
+    rc = await run_git_release(
+        uri="ws://t",
+        name="me",
+        trigger="commit",
+        agent_factory=factory,
+        runner=lambda _a: "src/a.py\n",
+    )
+    assert rc == 0
+    assert created[0].releases == ["T1"]

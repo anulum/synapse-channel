@@ -150,6 +150,15 @@ def test_find_conflicts_whole_worktree_pair() -> None:
     assert conflicts[0].paths == ()
 
 
+def test_find_conflicts_tolerates_none_paths() -> None:
+    # A claim carrying an explicit None scope is treated as the whole worktree, not a crash.
+    claims: list[dict[str, Any]] = [
+        {"git": {"branch": "x"}, "paths": None, "owner": "A"},
+        {"git": {"branch": "y"}, "paths": None, "owner": "B"},
+    ]
+    assert len(find_conflicts(claims)) == 1
+
+
 # -- describe -----------------------------------------------------------------
 
 
