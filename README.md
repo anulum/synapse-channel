@@ -223,7 +223,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 28 |
 | Wire message types | 47 |
 | CLI subcommands | 17 |
-| Test functions | 552 |
+| Test functions | 556 |
 | Benchmark harnesses | 2 |
 | Documentation pages | 12 |
 | GitHub Actions workflows | 9 |
@@ -268,7 +268,7 @@ If you use SYNAPSE CHANNEL in your work, please cite it. Metadata is in
   author  = {Šotek, Miroslav},
   title   = {SYNAPSE CHANNEL: Local-first multi-agent coordination bus},
   url      = {https://github.com/anulum/synapse-channel},
-  version = {0.27.2},
+  version = {0.28.1},
   year     = {2026}
 }
 ```

@@ -27,3 +27,11 @@ repos:
     hooks:
       - id: typos
         args: [--config, _typos.toml]
+  - repo: local
+    hooks:
+      - id: version-sync
+        name: version is in sync (pyproject == __init__/README/CITATION)
+        entry: python tools/check_version_sync.py
+        language: system
+        files: ^(pyproject\.toml|src/synapse_channel/__init__\.py|README\.md|CITATION\.cff)$
+        pass_filenames: false
