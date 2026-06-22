@@ -19,6 +19,8 @@ SYNAPSE CHANNEL — repository overview
 <p align="center">
   <a href="https://github.com/anulum/synapse-channel/actions/workflows/ci.yml"><img src="https://github.com/anulum/synapse-channel/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/anulum/synapse-channel/actions/workflows/codeql.yml"><img src="https://github.com/anulum/synapse-channel/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
+  <a href="https://pypi.org/project/synapse-channel/"><img src="https://img.shields.io/pypi/v/synapse-channel" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/synapse-channel/"><img src="https://img.shields.io/pypi/dm/synapse-channel" alt="PyPI downloads"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/coverage-100%25-brightgreen" alt="Coverage 100%">
@@ -217,13 +219,13 @@ on-channel model worker a question. Each starts its own in-process hub, so
 
 | Surface | Current inventory |
 |---|---:|
-| Package version | 0.30.0 |
+| Package version | 0.31.0 |
 | Public API exports | 43 |
-| Package modules | 21 |
-| Classes | 28 |
+| Package modules | 22 |
+| Classes | 29 |
 | Wire message types | 47 |
 | CLI subcommands | 17 |
-| Test functions | 564 |
+| Test functions | 587 |
 | Benchmark harnesses | 2 |
 | Documentation pages | 12 |
 | GitHub Actions workflows | 9 |
@@ -268,7 +270,7 @@ If you use SYNAPSE CHANNEL in your work, please cite it. Metadata is in
   author  = {Šotek, Miroslav},
   title   = {SYNAPSE CHANNEL: Local-first multi-agent coordination bus},
   url      = {https://github.com/anulum/synapse-channel},
-  version = {0.30.0},
+  version = {0.31.0},
   year     = {2026}
 }
 ```

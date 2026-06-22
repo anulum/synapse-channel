@@ -193,9 +193,24 @@ def test_main_without_command_prints_help() -> None:
     assert cli.main([]) == 1
 
 
-def test_main_version_exits() -> None:
+def test_main_version_exits(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli, "update_notice", lambda: None)  # no network in tests
     with pytest.raises(SystemExit):
         cli.main(["--version"])
+    assert "synapse-channel" in capsys.readouterr().out
+
+
+def test_main_version_prints_update_notice(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli, "update_notice", lambda: "  → 9.9.9 is available")
+    with pytest.raises(SystemExit):
+        cli.main(["--version"])
+    captured = capsys.readouterr()
+    assert "synapse-channel" in captured.out
+    assert "9.9.9 is available" in captured.err  # the notice goes to stderr
 
 
 def test_main_routes_to_team(monkeypatch: pytest.MonkeyPatch) -> None:

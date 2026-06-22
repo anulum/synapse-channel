@@ -11,6 +11,16 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.31.0] - 2026-06-22
+
+### Added
+- A best-effort update notice: `synapse --version` checks PyPI (cached once a day,
+  silenced by `SYNAPSE_NO_UPDATE_CHECK=1`) and prints a one-line upgrade hint when a
+  newer release exists; every network or cache failure is non-fatal and silent.
+- CI runs `pip-audit` against the runtime dependencies and fails on any known
+  vulnerability.
+- README: PyPI version and downloads badges.
+
 ## [0.30.0] - 2026-06-22
 
 ### Added

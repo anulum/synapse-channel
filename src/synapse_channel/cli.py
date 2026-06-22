@@ -34,6 +34,7 @@ import argparse
 import asyncio
 import contextlib
 import random
+import sys
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
@@ -66,8 +67,36 @@ from synapse_channel.supervisor import (
     DEFAULT_INTERVAL_SECONDS,
     SupervisorWorker,
 )
+from synapse_channel.update_check import update_notice
 
 AgentFactory = Callable[..., SynapseAgent]
+
+
+class _VersionAction(argparse.Action):
+    """Print the version and a best-effort upgrade notice, then exit.
+
+    Behaves like argparse's built-in ``version`` action (prints and raises
+    ``SystemExit``) but appends a one-line PyPI upgrade notice on stderr when a newer
+    release exists. The notice is best-effort and silenced by ``SYNAPSE_NO_UPDATE_CHECK``.
+    """
+
+    def __init__(self, option_strings: list[str], dest: str, **kwargs: Any) -> None:
+        kwargs.setdefault("nargs", 0)
+        kwargs.setdefault("help", "show the version (and any available upgrade) and exit")
+        super().__init__(option_strings, dest, **kwargs)
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: str | None = None,
+    ) -> None:
+        print(f"synapse-channel {__version__}")
+        notice = update_notice()
+        if notice:
+            print(notice, file=sys.stderr)
+        parser.exit()
 
 
 def _run(coro: Coroutine[Any, Any, None]) -> None:
@@ -974,7 +1003,7 @@ def _cmd_task_help(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     """Build the top-level argument parser with all subcommands."""
     parser = argparse.ArgumentParser(prog="synapse", description="Synapse multi-agent channel.")
-    parser.add_argument("--version", action="version", version=f"synapse-channel {__version__}")
+    parser.add_argument("--version", action=_VersionAction)
     sub = parser.add_subparsers(dest="command")
 
     hub = sub.add_parser("hub", help="Run the coordination hub.")
