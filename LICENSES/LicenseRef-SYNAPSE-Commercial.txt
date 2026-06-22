@@ -1,0 +1,18 @@
+SYNAPSE CHANNEL Commercial License (LicenseRef-SYNAPSE-Commercial)
+
+This identifier marks material that is also offered under a proprietary commercial
+license from ANULUM Institute, as an alternative to the AGPL-3.0-or-later open-source
+license. The commercial license removes the AGPL-3.0 network-copyleft obligation for
+closed-source and SaaS use; there is no difference in the code or feature set between
+the two, only in the licence terms.
+
+The full commercial terms are in COMMERCIAL-LICENSE.md at the repository root, and the
+current tiers and prices are published at https://anulum.li/synapse/pricing.html. A
+commercial license is purchased from ANULUM Institute; for custom, OEM, academic, or
+non-profit terms contact protoscience@anulum.li.
+
+You do not need a commercial license if your own software is released under the
+AGPL-3.0 (or a compatible open-source license): the open-source licence in
+LICENSES/AGPL-3.0-or-later.txt already covers that use.
+
+(c) 1996-2026 Miroslav Sotek. All rights reserved.
