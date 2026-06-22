@@ -551,3 +551,23 @@ async def test_connect_omits_token_when_unset(monkeypatch: pytest.MonkeyPatch) -
     agent = SynapseAgent("A", verbose=False)
     await agent.connect()
     assert "token" not in json.loads(ws.sent[0])
+
+
+async def test_registration_includes_takeover_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    welcome = json.dumps({"type": "welcome", "hub_id": "h"})
+    ws = FakeWebSocket([welcome])
+    _install_connection(monkeypatch, ws)
+    agent = SynapseAgent("A-rx", takeover=True, verbose=False)
+    await agent.connect()
+    first = json.loads(ws.sent[0])
+    assert first["type"] == "heartbeat"
+    assert first["takeover"] is True
+
+
+async def test_registration_omits_takeover_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    welcome = json.dumps({"type": "welcome", "hub_id": "h"})
+    ws = FakeWebSocket([welcome])
+    _install_connection(monkeypatch, ws)
+    agent = SynapseAgent("A", verbose=False)
+    await agent.connect()
+    assert "takeover" not in json.loads(ws.sent[0])

@@ -11,6 +11,16 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.29.0] - 2026-06-22
+
+### Added
+- Name takeover for re-arming waiters: `synapse wait` registers with a takeover flag,
+  so a re-arming waiter evicts a stale holder of its `<name>-rx` (a ghost connection
+  left by an uncleanly-killed waiter) and rebinds the name immediately, instead of
+  being rejected with a name conflict and waiting for the keepalive ping to reap the
+  ghost. The hub closes the superseded socket with code 4010. `SynapseAgent` gains a
+  `takeover` option.
+
 ## [0.28.1] - 2026-06-22
 
 ### Fixed

@@ -72,6 +72,7 @@ class SynapseAgent:
         heartbeat_interval: float = 20.0,
         verbose: bool = True,
         token: str | None = None,
+        takeover: bool = False,
     ) -> None:
         self.name = name
         self.uri = uri
@@ -84,6 +85,7 @@ class SynapseAgent:
         self.hub_id = "unknown"
         self.verbose = bool(verbose)
         self.token = token
+        self.takeover = bool(takeover)
 
     async def connect(self) -> None:
         """Open the connection and run the inbound listener until it closes.
@@ -100,8 +102,13 @@ class SynapseAgent:
                     print(f"[{self.name}] Online and connected to Synapse.")
                 # Register identity immediately so presence and /who are accurate
                 # before the first user-issued command. The token (if any) rides
-                # this first message, which is where the hub gates authentication.
-                extra = {"token": self.token} if self.token else {}
+                # this first message, which is where the hub gates authentication;
+                # ``takeover`` asks the hub to evict a stale holder of this name.
+                extra: dict[str, Any] = {}
+                if self.token:
+                    extra["token"] = self.token
+                if self.takeover:
+                    extra["takeover"] = True
                 await self.send_message(
                     MessageType.HEARTBEAT, target="System", payload="online", **extra
                 )

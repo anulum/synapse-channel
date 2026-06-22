@@ -120,7 +120,15 @@ def _factory(
     inbound: list[dict[str, Any]] | None = None,
     idle: bool = True,
 ) -> Callable[..., Any]:
-    def make(name: str, callback: Any, *, uri: str, verbose: bool, token: str | None = None) -> Any:
+    def make(
+        name: str,
+        callback: Any,
+        *,
+        uri: str,
+        verbose: bool,
+        token: str | None = None,
+        takeover: bool = False,
+    ) -> Any:
         agent = FakeAgent(
             name,
             callback,

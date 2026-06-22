@@ -918,8 +918,15 @@ class SynapseHub:
                 host,
             )
 
-    async def _resolve_sender(self, sender: str, websocket: Any) -> str | None:
+    async def _resolve_sender(
+        self, sender: str, websocket: Any, *, takeover: bool = False
+    ) -> str | None:
         """Bind a socket to a sender name, enforcing uniqueness.
+
+        When ``takeover`` is set and the name is held by another (possibly stale)
+        socket, the holder is evicted and the name rebound to the newcomer — this
+        lets a re-arming waiter reclaim its own ``<name>-rx`` from a ghost connection
+        without waiting for the keepalive ping to reap it.
 
         Returns the resolved name, or ``None`` when a name conflict closed the
         socket.
@@ -928,6 +935,16 @@ class SynapseHub:
         if known_sender is None:
             owner_ws = self.agent_sockets.get(sender)
             if owner_ws is not None and owner_ws != websocket:
+                if takeover:
+                    # Detach the stale holder first so its own unregister will not
+                    # reclaim the name, then close it and bind the name to the newcomer.
+                    self.socket_agent.pop(owner_ws, None)
+                    try:
+                        await owner_ws.close(code=4010, reason="superseded")
+                    except Exception:  # the stale socket may already be half-closed
+                        pass
+                    self.socket_agent[websocket] = sender
+                    return sender
                 await self._send_json(
                     websocket,
                     self._system(
@@ -981,7 +998,9 @@ class SynapseHub:
         if not await self._authorise(sender, data, websocket):
             return
 
-        resolved = await self._resolve_sender(sender, websocket)
+        resolved = await self._resolve_sender(
+            sender, websocket, takeover=bool(data.get("takeover"))
+        )
         if resolved is None:
             return
         sender = resolved

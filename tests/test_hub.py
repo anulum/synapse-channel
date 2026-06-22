@@ -1262,3 +1262,46 @@ def test_warn_if_exposed_silent_when_token_set(caplog: pytest.LogCaptureFixture)
     with caplog.at_level("WARNING", logger="synapse.hub"):
         hub._warn_if_exposed("0.0.0.0")
     assert caplog.records == []
+
+
+async def test_takeover_evicts_stale_holder() -> None:
+    hub = _hub()
+    ws_old = FakeServerWS()
+    ws_new = FakeServerWS()
+    await hub.handle_message(_msg(sender="X-rx", type="heartbeat", payload="online"), ws_old)
+    assert hub.agent_sockets["X-rx"] is ws_old
+    # The re-arming socket takes over the name: the stale holder is closed (4010)
+    # and the name rebinds to the newcomer.
+    await hub.handle_message(
+        _msg(sender="X-rx", type="heartbeat", payload="online", takeover=True), ws_new
+    )
+    assert ws_old.closed == (4010, "superseded")
+    assert hub.agent_sockets["X-rx"] is ws_new
+    assert hub.socket_agent.get(ws_old) is None
+
+
+async def test_name_conflict_without_takeover_rejects_newcomer() -> None:
+    hub = _hub()
+    ws_old = FakeServerWS()
+    ws_new = FakeServerWS()
+    await hub.handle_message(_msg(sender="Y", type="heartbeat", payload="online"), ws_old)
+    await hub.handle_message(_msg(sender="Y", type="heartbeat", payload="online"), ws_new)
+    assert ws_new.closed == (4009, "name conflict")
+    assert hub.agent_sockets["Y"] is ws_old  # the original holder is untouched
+
+
+async def test_takeover_tolerates_a_failing_close() -> None:
+    hub = _hub()
+
+    class _RaisingClose(FakeServerWS):
+        async def close(self, code: int = 1000, reason: str = "") -> None:
+            raise OSError("socket already gone")
+
+    ws_old = _RaisingClose()
+    ws_new = FakeServerWS()
+    await hub.handle_message(_msg(sender="Z-rx", type="heartbeat", payload="online"), ws_old)
+    # The stale holder's close() raises, but takeover still rebinds the name.
+    await hub.handle_message(
+        _msg(sender="Z-rx", type="heartbeat", payload="online", takeover=True), ws_new
+    )
+    assert hub.agent_sockets["Z-rx"] is ws_new
