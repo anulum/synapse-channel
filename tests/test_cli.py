@@ -1647,3 +1647,63 @@ async def test_wait_no_jitter_on_directed_wake(monkeypatch: pytest.MonkeyPatch) 
     )
     assert code == 0
     assert calls == []  # no jitter for a directed message
+
+
+# --- A1: token via env / file -----------------------------------------------
+
+
+def test_resolve_token_prefers_cli() -> None:
+    assert cli._resolve_token(argparse.Namespace(token="cli", token_file=None)) == "cli"
+
+
+def test_resolve_token_from_file(tmp_path: Path) -> None:
+    f = tmp_path / "tok"
+    f.write_text("file-tok\n", encoding="utf-8")
+    assert cli._resolve_token(argparse.Namespace(token=None, token_file=str(f))) == "file-tok"
+
+
+def test_resolve_token_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SYNAPSE_TOKEN", "env-tok")
+    assert cli._resolve_token(argparse.Namespace(token=None, token_file=None)) == "env-tok"
+
+
+def test_resolve_token_precedence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    f = tmp_path / "tok"
+    f.write_text("file-tok", encoding="utf-8")
+    monkeypatch.setenv("SYNAPSE_TOKEN", "env-tok")
+    assert cli._resolve_token(argparse.Namespace(token="cli", token_file=str(f))) == "cli"
+    assert cli._resolve_token(argparse.Namespace(token=None, token_file=str(f))) == "file-tok"
+
+
+def test_resolve_token_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SYNAPSE_TOKEN", raising=False)
+    assert cli._resolve_token(argparse.Namespace(token=None, token_file=None)) is None
+
+
+def test_resolve_token_missing_file(tmp_path: Path) -> None:
+    ns = argparse.Namespace(token=None, token_file=str(tmp_path / "nope"))
+    with pytest.raises(FileNotFoundError):
+        cli._resolve_token(ns)
+
+
+def test_resolve_token_no_token_file_attr(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SYNAPSE_TOKEN", "env-tok")
+    assert cli._resolve_token(argparse.Namespace(token=None)) == "env-tok"
+
+
+def test_parser_adds_token_file_to_token_commands() -> None:
+    args = cli.build_parser().parse_args(["send", "hi", "--token-file", "/x"])
+    assert args.token_file == "/x"
+
+
+def test_main_resolves_token_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SYNAPSE_TOKEN", "env-tok")
+    captured: dict[str, Any] = {}
+
+    def fake(args: argparse.Namespace) -> int:
+        captured["token"] = args.token
+        return 0
+
+    monkeypatch.setattr(cli, "_cmd_board", fake)
+    assert cli.main(["board"]) == 0
+    assert captured["token"] == "env-tok"

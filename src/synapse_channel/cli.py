@@ -33,9 +33,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import os
 import random
 import sys
 from collections.abc import Awaitable, Callable, Coroutine
+from pathlib import Path
 from typing import Any
 
 from synapse_channel import __version__
@@ -1271,7 +1273,45 @@ def build_parser() -> argparse.ArgumentParser:
     _add_task_common(progress)
     progress.set_defaults(func=_cmd_task_progress)
 
+    # Give every command that takes --token a --token-file companion, so the secret
+    # can come from a file instead of argv (which is visible to anyone running `ps`).
+    for subparser in sub.choices.values():
+        if any("--token" in action.option_strings for action in subparser._actions):
+            subparser.add_argument(
+                "--token-file",
+                default=None,
+                help="Read the shared-secret token from this file instead of --token.",
+            )
+
     return parser
+
+
+#: Environment variable read as a fallback source for the hub shared-secret token.
+TOKEN_ENV = "SYNAPSE_TOKEN"
+
+
+def _resolve_token(args: argparse.Namespace) -> str | None:
+    """Resolve the hub token from ``--token``, then ``--token-file``, then the env var.
+
+    The file and the ``SYNAPSE_TOKEN`` environment variable are preferred over a
+    ``--token`` value on the command line, which is visible in the process list.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed arguments; uses ``token`` and the optional ``token_file``.
+
+    Returns
+    -------
+    str or None
+        The resolved token, or ``None`` when no source supplies one.
+    """
+    if args.token:
+        return str(args.token)
+    token_file = getattr(args, "token_file", None)
+    if token_file:
+        return Path(token_file).read_text(encoding="utf-8").strip()
+    return os.environ.get(TOKEN_ENV) or None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1292,6 +1332,8 @@ def main(argv: list[str] | None = None) -> int:
     if not getattr(args, "command", None):
         parser.print_help()
         return 1
+    if hasattr(args, "token"):
+        args.token = _resolve_token(args)
     handler: Callable[[argparse.Namespace], int] = args.func
     return handler(args)
 
