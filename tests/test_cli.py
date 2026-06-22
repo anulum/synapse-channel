@@ -1056,7 +1056,9 @@ async def test_wait_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) 
 
 async def test_wait_times_out_with_nothing() -> None:
     holder: list[FakeAgent] = []
-    factory = _factory(holder, inbound=[], idle=False)
+    # idle=True keeps the connection up so this exercises the timeout path (code 2),
+    # distinct from a dropped connection (code 3).
+    factory = _factory(holder, inbound=[], idle=True)
     code = await cli._wait(uri="ws://h", name="B", for_name="B", timeout=0.2, agent_factory=factory)
     assert code == 2
 
@@ -1075,7 +1077,7 @@ async def test_wait_ignores_own_messages() -> None:
     inbound: list[dict[str, Any]] = [
         {"type": "chat", "sender": "B", "target": "all", "payload": "x"}
     ]
-    factory = _factory(holder, inbound=inbound, idle=False)
+    factory = _factory(holder, inbound=inbound, idle=True)
     code = await cli._wait(
         uri="ws://h", name="B-rx", for_name="B", timeout=0.2, agent_factory=factory
     )
@@ -1092,7 +1094,7 @@ async def test_wait_directed_only_ignores_broadcast() -> None:
     inbound: list[dict[str, Any]] = [
         {"type": "chat", "sender": "A", "target": "all", "payload": "broadcast"}
     ]
-    factory = _factory(holder, inbound=inbound, idle=False)
+    factory = _factory(holder, inbound=inbound, idle=True)
     code = await cli._wait(
         uri="ws://h",
         name="B-rx",
@@ -1537,3 +1539,15 @@ async def test_send_marks_priority() -> None:
     assert code == 0
     assert holder[0].chats == [("all", "!")]
     assert holder[0].chat_priorities == [True]
+
+
+async def test_wait_exits_when_connection_drops() -> None:
+    holder: list[FakeAgent] = []
+    # idle=False → connect() returns at once (the socket closed); no message arrives.
+    # With timeout=0 the old loop hung forever on the dead socket; the waiter must now
+    # exit with code 3 so the caller re-arms instead of going dark.
+    factory = _factory(holder, inbound=[], idle=False)
+    code = await cli._wait(
+        uri="ws://h", name="X-rx", for_name="X", timeout=0.0, agent_factory=factory
+    )
+    assert code == 3

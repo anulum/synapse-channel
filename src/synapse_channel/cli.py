@@ -264,7 +264,8 @@ async def _wait(
     -------
     int
         ``0`` when a message arrived, ``1`` when the hub was unreachable, ``2`` on
-        timeout with nothing received.
+        timeout with nothing received, ``3`` when the connection dropped while
+        waiting (so the caller knows to re-arm rather than treat it as a timeout).
     """
     received: list[dict[str, Any]] = []
 
@@ -293,11 +294,19 @@ async def _wait(
         loop = asyncio.get_event_loop()
         deadline = loop.time() + timeout
         while not received and (timeout <= 0 or loop.time() < deadline):
+            if conn_task.done():
+                break  # the socket closed (hub restart, superseded, network)
             await asyncio.sleep(0.1)
         if received:
             message = received[-1]
             print(f"{message.get('sender')}: {message.get('payload')}")
             return 0
+        if conn_task.done():
+            # The connection dropped without a message. Exit so the caller re-arms,
+            # rather than looping forever on a dead socket — a timeout=0 waiter that
+            # silently stayed up after a hub restart is exactly how an agent goes dark.
+            print(f"[{name}] connection to {uri} closed; re-arm the waiter.")
+            return 3
         return 2
     finally:
         agent.running = False

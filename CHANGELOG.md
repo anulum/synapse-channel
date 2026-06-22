@@ -11,6 +11,15 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.28.1] - 2026-06-22
+
+### Fixed
+- `synapse wait` now exits (code 3) when its connection drops — a hub restart,
+  supersede, or network blip — instead of looping forever on the dead socket. A
+  `--timeout 0` waiter that silently stayed up after a hub restart was exactly how an
+  agent went dark (reachable via its presence daemon, but never woken); it now exits
+  so the caller re-arms.
+
 ## [0.28.0] - 2026-06-22
 
 ### Changed
