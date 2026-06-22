@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from synapse_channel.state import (
     MINIMUM_TTL_SECONDS,
+    GitContext,
     ResourceOffer,
     SynapseState,
     TaskClaim,
@@ -46,6 +47,7 @@ def test_taskclaim_as_dict_exposes_all_public_fields() -> None:
         "epoch": 0,
         "version": 4,
         "checkpoint": "step-3",
+        "git": None,
     }
 
 
@@ -537,3 +539,50 @@ def test_release_clears_retained_checkpoint() -> None:
     state.expired_checkpoints["T1"] = "stale"  # a leftover retained token
     state.release("A", "T1", now=1010.0)
     assert "T1" not in state.expired_checkpoints
+
+
+def test_gitcontext_as_dict_round_trips() -> None:
+    ctx = GitContext(branch="feature/x", base="develop", auto_release_on="commit")
+    assert ctx.as_dict() == {
+        "branch": "feature/x",
+        "base": "develop",
+        "auto_release_on": "commit",
+    }
+    assert GitContext.from_dict(ctx.as_dict()) == ctx
+
+
+def test_gitcontext_defaults() -> None:
+    ctx = GitContext(branch="main")
+    assert ctx.base == "main"
+    assert ctx.auto_release_on == "merge"
+
+
+def test_gitcontext_from_dict_normalises_unknown_mode_and_empty_base() -> None:
+    ctx = GitContext.from_dict({"branch": "wip", "base": "", "auto_release_on": "nonsense"})
+    assert ctx.branch == "wip"
+    assert ctx.base == "main"  # empty base falls back
+    assert ctx.auto_release_on == "manual"  # unknown trigger falls back
+
+
+def test_gitcontext_from_dict_uses_field_defaults() -> None:
+    ctx = GitContext.from_dict({"branch": "wip"})
+    assert ctx == GitContext(branch="wip", base="main", auto_release_on="merge")
+
+
+def test_claim_stores_and_exposes_git_context() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    ctx = GitContext(branch="feature/y", base="main", auto_release_on="merge")
+    ok, _ = state.claim("A", "T1", now=1000.0, git=ctx)
+    assert ok
+    assert state.claims["T1"].git == ctx
+    assert state.claims["T1"].as_dict()["git"] == ctx.as_dict()
+
+
+def test_handoff_carries_git_context() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    ctx = GitContext(branch="feature/z")
+    state.claim("A", "T1", now=1000.0, git=ctx)
+    state.heartbeat("B", now=1000.0)
+    ok, _ = state.handoff("A", "T1", "B", now=1001.0)
+    assert ok
+    assert state.claims["T1"].git == ctx

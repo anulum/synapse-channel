@@ -32,6 +32,65 @@ MINIMUM_TTL_SECONDS = 30.0
 DEFAULT_RESOURCE_TTL_SECONDS = 300.0
 """Soft liveness window after which an un-refreshed resource offer is dropped."""
 
+AUTO_RELEASE_MODES = frozenset({"manual", "commit", "merge"})
+"""Recognised auto-release triggers; an unknown value falls back to ``manual``."""
+
+
+@dataclass(frozen=True)
+class GitContext:
+    """The git branch context a claim is scoped to.
+
+    Opaque to the hub: it is stored on the claim, journalled, replayed, and shown
+    in snapshots, but the hub never reads the filesystem or runs git. All git
+    resolution happens client-side; this record only carries the result, so the
+    hub can group and display claims by branch without ever touching a repository.
+
+    Attributes
+    ----------
+    branch : str
+        The branch the claiming agent is working on.
+    base : str
+        The branch the work will merge back into. Defaults to ``main``.
+    auto_release_on : str
+        When a client-side git hook should release the claim: ``manual`` (never
+        automatically), ``commit``, or ``merge``. Defaults to ``merge``.
+    """
+
+    branch: str
+    base: str = "main"
+    auto_release_on: str = "merge"
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable mapping of the git context."""
+        return {"branch": self.branch, "base": self.base, "auto_release_on": self.auto_release_on}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> GitContext:
+        """Rebuild a :class:`GitContext` from a wire or journal mapping.
+
+        A defensive deserialiser, not an interpreter: an unrecognised
+        ``auto_release_on`` falls back to ``manual`` and an empty ``base`` to
+        ``main``, so a malformed field from a peer never crashes the hub.
+
+        Parameters
+        ----------
+        data : dict[str, Any]
+            The mapping carried on a claim message or replayed from the journal.
+
+        Returns
+        -------
+        GitContext
+            The reconstructed, normalised context.
+        """
+        mode = str(data.get("auto_release_on", "merge"))
+        if mode not in AUTO_RELEASE_MODES:
+            mode = "manual"
+        return cls(
+            branch=str(data.get("branch", "")),
+            base=str(data.get("base") or "main"),
+            auto_release_on=mode,
+        )
+
 
 @dataclass
 class TaskClaim:
@@ -73,6 +132,10 @@ class TaskClaim:
         Opaque resume token the owner saves so the work can continue from where
         it stopped. It survives lease expiry: a later claimant of the same task
         inherits the last checkpoint instead of restarting.
+    git : GitContext or None
+        The branch context the claim is scoped to, set by a git-aware client;
+        ``None`` for a plain claim. Opaque to the hub — stored and displayed but
+        never acted on (the hub runs no git).
     """
 
     task_id: str
@@ -87,6 +150,7 @@ class TaskClaim:
     epoch: int = 0
     version: int = 0
     checkpoint: str = ""
+    git: GitContext | None = None
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable snapshot of this claim.
@@ -110,6 +174,7 @@ class TaskClaim:
             "epoch": self.epoch,
             "version": self.version,
             "checkpoint": self.checkpoint,
+            "git": self.git.as_dict() if self.git is not None else None,
         }
 
 
@@ -197,6 +262,7 @@ class SynapseState:
         *,
         worktree: str = DEFAULT_WORKTREE,
         paths: tuple[str, ...] | list[str] = (),
+        git: GitContext | None = None,
     ) -> tuple[bool, str]:
         """Acquire or renew a scoped lease on a task.
 
@@ -225,6 +291,10 @@ class SynapseState:
             Worktree label; claims in different worktrees never contend.
         paths : tuple[str, ...] or list[str], optional
             Declared file/directory paths; empty claims the whole worktree.
+        git : GitContext or None, optional
+            Branch context to attach to the claim; ``None`` leaves it unset. A
+            renewal replaces it with the supplied value, so a git-aware client
+            keeps the branch current by passing it on every claim.
 
         Returns
         -------
@@ -275,6 +345,7 @@ class SynapseState:
             paths=norm_paths,
             epoch=self._next_epoch(),
             checkpoint=checkpoint,
+            git=git,
         )
         return True, f"Task '{task}' claimed by {agent}."
 
@@ -554,6 +625,7 @@ class SynapseState:
             paths=claim.paths,
             epoch=self._next_epoch(),
             checkpoint=claim.checkpoint,
+            git=claim.git,
         )
         self.last_seen[target] = ts
         return True, f"Task '{task}' handed from {agent} to {target}."

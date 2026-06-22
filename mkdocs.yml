@@ -71,6 +71,7 @@ nav:
   - Wire protocol: protocol.md
   - CLI reference: cli.md
   - MCP server: mcp.md
+  - Git-native claims: git-claims.md
   - Recipes: recipes.md
   - Examples: examples.md
   - Deployment: deployment.md

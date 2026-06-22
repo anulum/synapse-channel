@@ -21,6 +21,7 @@ The ``synapse`` command exposes these subcommands:
 * ``manifest`` — print the capability manifest of advertised agents;
 * ``who`` — list the agents currently online, optionally for one project;
 * ``state`` — print active claims and their checkpoints (a resume view);
+* ``git-claim`` — claim a task scoped to the current git branch (branch resolved client-side);
 * ``health`` — probe the hub and report reachability as the exit code;
 * ``lock`` — hold a lease while running a command, to serialise it across agents;
 * ``task`` — declare and update the shared task plan from the command line;
@@ -45,6 +46,7 @@ from typing import Any
 from synapse_channel import __version__
 from synapse_channel.auth import TokenAuthenticator
 from synapse_channel.client import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.gitclaim import run_git_claim
 from synapse_channel.hub import (
     DEFAULT_HOST,
     DEFAULT_MAX_CLIENTS,
@@ -580,9 +582,11 @@ async def _state(
             for claim in claims:
                 paths = ", ".join(claim.get("paths", [])) or "-"
                 checkpoint = claim.get("checkpoint") or "-"
+                git = claim.get("git")
+                git_suffix = f" git={git['branch']}->{git['base']}" if git else ""
                 print(
                     f"  {claim.get('task_id')} [{claim.get('status')}] "
-                    f"owner={claim.get('owner')} paths={paths} checkpoint={checkpoint}"
+                    f"owner={claim.get('owner')} paths={paths} checkpoint={checkpoint}{git_suffix}"
                 )
         return 0
     finally:
@@ -593,6 +597,25 @@ async def _state(
 def _cmd_state(args: argparse.Namespace) -> int:
     """Dispatch the ``state`` subcommand."""
     return asyncio.run(_state(uri=args.uri, name=args.name, owner=args.owner, token=args.token))
+
+
+def _cmd_git_claim(args: argparse.Namespace) -> int:
+    """Dispatch the ``git-claim`` subcommand: a claim scoped to the current git branch.
+
+    The branch is resolved client-side; the hub stores it as opaque metadata and
+    never runs git itself.
+    """
+    return asyncio.run(
+        run_git_claim(
+            uri=args.uri,
+            name=args.name,
+            task_id=args.task_id,
+            paths=args.paths or [],
+            base=args.base,
+            auto_release_on=args.auto_release_on,
+            token=args.token,
+        )
+    )
 
 
 LockRunner = Callable[[list[str]], Awaitable[int]]
@@ -1253,6 +1276,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     state.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     state.set_defaults(func=_cmd_state)
+
+    git_claim = sub.add_parser(
+        "git-claim",
+        help="Claim a task scoped to the current git branch (branch resolved client-side).",
+    )
+    git_claim.add_argument("task_id")
+    git_claim.add_argument(
+        "--paths",
+        action="append",
+        default=None,
+        help="File-scope path the claim intends to touch (repeatable).",
+    )
+    git_claim.add_argument(
+        "--base", default="main", help="Branch the work merges back into (default: main)."
+    )
+    git_claim.add_argument(
+        "--auto-release-on",
+        choices=["manual", "commit", "merge"],
+        default="merge",
+        help="When a git hook should release the claim; enacted by 'synapse git-hook'.",
+    )
+    git_claim.add_argument("--uri", default=DEFAULT_HUB_URI)
+    git_claim.add_argument("--name", default="USER")
+    git_claim.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    git_claim.set_defaults(func=_cmd_git_claim)
 
     lock = sub.add_parser(
         "lock", help="Hold a lease while running a command (serialise e.g. commits)."

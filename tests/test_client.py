@@ -322,6 +322,17 @@ async def test_claim_omits_scope_when_unset() -> None:
     sent = json.loads(ws.sent[-1])
     assert "worktree" not in sent
     assert "paths" not in sent
+    assert "git" not in sent
+
+
+async def test_claim_sends_git_context() -> None:
+    agent = SynapseAgent("A")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+    git = {"branch": "feature/x", "base": "main", "auto_release_on": "merge"}
+    await agent.claim("T1", paths=["src"], git=git)
+    sent = json.loads(ws.sent[-1])
+    assert sent["git"] == git
 
 
 async def test_release_sends_and_omits_epoch() -> None:

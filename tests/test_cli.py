@@ -1447,6 +1447,56 @@ def test_cmd_state_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cli._cmd_state(ns) == 0
 
 
+async def test_state_shows_git_branch(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    snap: dict[str, Any] = {
+        "type": "state_snapshot",
+        "snapshot": {
+            "active_claims": [
+                {
+                    "task_id": "T1",
+                    "status": "working",
+                    "owner": "a",
+                    "paths": ["src"],
+                    "checkpoint": "",
+                    "git": {"branch": "feature/x", "base": "main", "auto_release_on": "merge"},
+                }
+            ]
+        },
+    }
+    factory = _factory(holder, inbound=[snap])
+    assert await cli._state(uri="ws://h", name="U", agent_factory=factory) == 0
+    assert "git=feature/x->main" in capsys.readouterr().out
+
+
+def test_parser_git_claim() -> None:
+    args = cli.build_parser().parse_args(
+        ["git-claim", "T1", "--paths", "src", "--base", "develop", "--auto-release-on", "commit"]
+    )
+    assert args.func is cli._cmd_git_claim
+    assert args.task_id == "T1"
+    assert args.paths == ["src"]
+    assert args.base == "develop"
+    assert args.auto_release_on == "commit"
+
+
+def test_cmd_git_claim_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake(**kwargs: Any) -> int:
+        return 0
+
+    monkeypatch.setattr(cli, "run_git_claim", fake)
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="U",
+        task_id="T1",
+        paths=["src"],
+        base="main",
+        auto_release_on="merge",
+        token=None,
+    )
+    assert cli._cmd_git_claim(ns) == 0
+
+
 def test_parser_relay_project() -> None:
     args = cli.build_parser().parse_args(["relay", "feed.ndjson", "--project", "quantum"])
     assert args.project == "quantum"

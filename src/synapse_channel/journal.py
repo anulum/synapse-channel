@@ -34,7 +34,7 @@ from synapse_channel.ledger import (
     ProgressNote,
 )
 from synapse_channel.persistence import EventStore
-from synapse_channel.state import ResourceOffer, SynapseState, TaskClaim
+from synapse_channel.state import GitContext, ResourceOffer, SynapseState, TaskClaim
 
 
 class EventKind:
@@ -145,6 +145,8 @@ def _progress_from_payload(payload: dict[str, Any]) -> ProgressNote:
 
 def _claim_from_payload(payload: dict[str, Any]) -> TaskClaim:
     """Rebuild a :class:`TaskClaim` from a persisted claim snapshot."""
+    raw_git = payload.get("git")
+    git = GitContext.from_dict(raw_git) if isinstance(raw_git, dict) else None
     return TaskClaim(
         task_id=str(payload["task_id"]),
         owner=str(payload["owner"]),
@@ -157,6 +159,7 @@ def _claim_from_payload(payload: dict[str, Any]) -> TaskClaim:
         paths=tuple(str(p) for p in payload.get("paths", ())),
         epoch=int(payload.get("epoch", 0)),
         checkpoint=str(payload.get("checkpoint", "")),
+        git=git,
     )
 
 

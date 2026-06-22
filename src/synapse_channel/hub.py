@@ -54,7 +54,7 @@ from synapse_channel.protocol import (
 )
 from synapse_channel.ratelimit import RateLimiter
 from synapse_channel.relay import append_jsonl, encode_lite, trim_jsonl_tail
-from synapse_channel.state import SynapseState
+from synapse_channel.state import GitContext, SynapseState
 
 logger = logging.getLogger("synapse.hub")
 
@@ -315,6 +315,10 @@ class SynapseHub:
         worktree = str(data.get("worktree") or "")
         raw_paths = data.get("paths")
         paths = [str(p) for p in raw_paths] if isinstance(raw_paths, list) else []
+        # The git context is opaque to the hub: deserialise it for storage and
+        # display, but never act on it (the hub runs no git, reads no filesystem).
+        raw_git = data.get("git")
+        git = GitContext.from_dict(raw_git) if isinstance(raw_git, dict) else None
 
         ttl_val: float | None
         if ttl_seconds is None:
@@ -326,7 +330,13 @@ class SynapseHub:
                 ttl_val = None
 
         ok, message = self.state.claim(
-            sender, task_id, note=note, ttl_seconds=ttl_val, worktree=worktree, paths=paths
+            sender,
+            task_id,
+            note=note,
+            ttl_seconds=ttl_val,
+            worktree=worktree,
+            paths=paths,
+            git=git,
         )
         if ok:
             claim = self.state.claims[task_id]
@@ -346,6 +356,7 @@ class SynapseHub:
                 epoch=claim.epoch,
                 version=claim.version,
                 checkpoint=claim.checkpoint,
+                git=claim.git.as_dict() if claim.git is not None else None,
             )
             self._remember(data, grant)
             await self._broadcast(grant)

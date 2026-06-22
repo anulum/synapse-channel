@@ -20,7 +20,7 @@ from synapse_channel.journal import (
     replay,
 )
 from synapse_channel.persistence import EventStore
-from synapse_channel.state import ResourceOffer, TaskClaim
+from synapse_channel.state import GitContext, ResourceOffer, TaskClaim
 
 
 def _store(tmp_path: Path) -> EventStore:
@@ -66,6 +66,15 @@ def test_replay_reconstructs_claim_scope_and_epoch(tmp_path: Path) -> None:
     assert claim.epoch == 3
     assert result.state._epoch_seq == 3
     assert result.state.last_seen["A"] == 1000.0
+
+
+def test_replay_reconstructs_git_context(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    ctx = GitContext(branch="feature/x", base="develop", auto_release_on="commit")
+    record_claim(store, _claim(git=ctx))
+    result = replay(store, now=2000.0)
+    store.close()
+    assert result.state.claims["T1"].git == ctx
 
 
 def test_replay_release_removes_claim(tmp_path: Path) -> None:

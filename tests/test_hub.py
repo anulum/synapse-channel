@@ -23,6 +23,7 @@ from synapse_channel.hub import SynapseHub, is_loopback_host
 from synapse_channel.persistence import EventStore
 from synapse_channel.ratelimit import RateLimiter
 from synapse_channel.relay import decode_lite, read_jsonl_since
+from synapse_channel.state import GitContext
 
 
 class FakeServerWS:
@@ -423,6 +424,29 @@ async def test_claim_broadcasts_scope_and_epoch() -> None:
     assert granted["worktree"] == "wt"
     assert granted["paths"] == ["src"]
     assert granted["epoch"] == 1
+
+
+async def test_claim_carries_git_context() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    git = {"branch": "feature/x", "base": "main", "auto_release_on": "merge"}
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", git=git), ws)
+    granted = [m for m in ws.decoded() if m.get("type") == "claim_granted"][-1]
+    assert granted["git"] == git
+    assert hub.state.claims["T1"].git == GitContext(
+        branch="feature/x", base="main", auto_release_on="merge"
+    )
+
+
+async def test_claim_without_git_leaves_it_unset() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
+    granted = [m for m in ws.decoded() if m.get("type") == "claim_granted"][-1]
+    assert granted["git"] is None
+    assert hub.state.claims["T1"].git is None
 
 
 async def test_scoped_claim_overlap_is_denied() -> None:

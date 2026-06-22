@@ -238,6 +238,7 @@ class SynapseAgent:
         worktree: str = "",
         paths: tuple[str, ...] | list[str] = (),
         idem_key: str | None = None,
+        git: dict[str, Any] | None = None,
     ) -> None:
         """Request a scoped lease on a task.
 
@@ -257,6 +258,11 @@ class SynapseAgent:
         idem_key : str or None, optional
             Idempotency key; reuse the same key when retrying after a reconnect so
             the hub replays the original result instead of claiming twice.
+        git : dict[str, Any] or None, optional
+            Branch context (``branch``/``base``/``auto_release_on``) for a
+            git-scoped claim, as built client-side by
+            :mod:`synapse_channel.gitclaim`. The hub stores and displays it but
+            never acts on it.
         """
         extra: dict[str, Any] = {"task_id": task_id.strip(), "note": note}
         if ttl_seconds is not None:
@@ -267,6 +273,8 @@ class SynapseAgent:
             extra["paths"] = list(paths)
         if idem_key:
             extra["idem_key"] = idem_key
+        if git:
+            extra["git"] = git
         await self.send_message(
             MessageType.CLAIM, target="System", payload=task_id.strip(), **extra
         )
