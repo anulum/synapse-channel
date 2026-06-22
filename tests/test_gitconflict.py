@@ -201,7 +201,7 @@ async def test_run_conflicts_reports_predictions(capsys: pytest.CaptureFixture[s
         inbound=[{"type": "chat", "payload": "noise"}, _snapshot(claims)]
     )
     rc = await run_conflicts(uri="ws://t", name="U", agent_factory=factory, runner=lambda _a: "")
-    assert rc == 0
+    assert rc == 2
     out = capsys.readouterr().out
     assert "Predicted conflicts (1)" in out
     assert "A@feature/x" in out
@@ -254,7 +254,7 @@ async def test_run_conflicts_check_diff_keeps_real_overlap(
         agent_factory=factory,
         runner=lambda _a: "src/auth.py\n",
     )
-    assert rc == 0
+    assert rc == 2
     assert "Predicted conflicts (1)" in capsys.readouterr().out
 
 
@@ -274,7 +274,7 @@ async def test_run_conflicts_check_diff_keeps_when_diff_fails(
     rc = await run_conflicts(
         uri="ws://t", name="U", check_diff=True, agent_factory=factory, runner=bad_runner
     )
-    assert rc == 0
+    assert rc == 2
     assert "Predicted conflicts (1)" in capsys.readouterr().out
 
 
@@ -296,7 +296,7 @@ async def test_run_conflicts_check_diff_caches_repeated_branches(
     rc = await run_conflicts(
         uri="ws://t", name="U", check_diff=True, agent_factory=factory, runner=runner
     )
-    assert rc == 0
+    assert rc == 2
     assert "Predicted conflicts (3)" in capsys.readouterr().out
     # Three branches, each diffed once despite appearing in two pairs (cache hit).
     assert len(calls) == 3

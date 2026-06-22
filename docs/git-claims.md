@@ -84,6 +84,10 @@ Predicted conflicts (1):
   A@feature/x vs B@feature/y (both -> base): src/auth.py
 ```
 
+`synapse conflicts` exits `0` when nothing is predicted, `2` when a conflict is,
+and `1` if the hub is unreachable — so a gate like `synapse conflicts && git
+merge feature/x` proceeds only on a clean, successfully checked result.
+
 The prediction is computed entirely on the client from the ordinary state
 snapshot; the hub runs no git.
 

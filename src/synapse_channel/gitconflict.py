@@ -195,7 +195,10 @@ async def run_conflicts(
     Returns
     -------
     int
-        ``0`` once the prediction is printed, ``1`` when the hub is unreachable.
+        ``0`` when no conflict is predicted (safe to proceed), ``2`` when one or
+        more are predicted, and ``1`` when the hub is unreachable. The non-zero
+        codes let ``synapse conflicts && <merge>`` proceed only on a clean,
+        successfully checked result.
     """
     snapshots: list[dict[str, Any]] = []
 
@@ -224,7 +227,7 @@ async def run_conflicts(
         print(f"Predicted conflicts ({len(conflicts)}):")
         for conflict in conflicts:
             print(f"  {conflict.describe()}")
-        return 0
+        return 2
     finally:
         agent.running = False
         conn_task.cancel()
