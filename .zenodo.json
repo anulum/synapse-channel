@@ -1,7 +1,7 @@
 {
   "title": "SYNAPSE CHANNEL: Local-first multi-agent coordination bus",
-  "version": "0.17.0",
-  "description": "A local-first coordination bus for several agents working in parallel on one codebase. A single WebSocket hub is the authoritative source of truth for presence, file-scoped work claims, chat, a typed task lifecycle, a shared task plan, agent capabilities, and resource offers. Crash-durable persistence (append-only SQLite WAL with replay), reconnect-safe idempotency, atomic handoff, resumable checkpoints, an LLM-free stall supervisor, proportionate connect authentication, and task-class routing to tiered backends. One transport dependency; everything else is the standard library.",
+  "version": "0.31.0",
+  "description": "A local-first coordination bus for a fleet of AI agents working in parallel — within one repository or across a whole ecosystem of them. A single WebSocket hub is the authoritative source of truth for presence, file-scoped work claims, chat, a typed task lifecycle, a shared task plan, agent capabilities, and resource offers, so agents spread over many projects neither collide nor duplicate effort. Crash-durable persistence (append-only SQLite WAL with replay), reconnect-safe idempotency, atomic handoff, resumable checkpoints, an LLM-free stall supervisor, name takeover, broadcast wake-jitter, proportionate connect authentication, and task-class routing to tiered backends. One transport dependency; everything else is the standard library.",
   "creators": [
     {
       "name": "Sotek, Miroslav",
@@ -14,6 +14,8 @@
   "license": "AGPL-3.0-or-later",
   "keywords": [
     "multi-agent coordination",
+    "multi-repository",
+    "agent ecosystem",
     "websocket",
     "task claims",
     "local-first",
