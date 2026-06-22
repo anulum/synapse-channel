@@ -24,6 +24,7 @@ The ``synapse`` command exposes these subcommands:
 * ``git-claim`` — claim a task scoped to the current git branch (branch resolved client-side);
 * ``git-hook`` — install git hooks that auto-release branch-scoped claims on commit/merge;
 * ``git-release`` — release branch-scoped claims whose paths were committed/merged (hook-invoked);
+* ``conflicts`` — predict merge conflicts between branch-scoped claims on different branches;
 * ``health`` — probe the hub and report reachability as the exit code;
 * ``lock`` — hold a lease while running a command, to serialise it across agents;
 * ``task`` — declare and update the shared task plan from the command line;
@@ -49,6 +50,7 @@ from synapse_channel import __version__
 from synapse_channel.auth import TokenAuthenticator
 from synapse_channel.client import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.gitclaim import GitError, run_git_claim
+from synapse_channel.gitconflict import run_conflicts
 from synapse_channel.githook import install_hooks, run_git_release
 from synapse_channel.hub import (
     DEFAULT_HOST,
@@ -647,6 +649,18 @@ def _cmd_git_release(args: argparse.Namespace) -> int:
     """
     return asyncio.run(
         run_git_release(uri=args.uri, name=args.name, trigger=args.trigger, token=args.token)
+    )
+
+
+def _cmd_conflicts(args: argparse.Namespace) -> int:
+    """Predict merge conflicts between branch-scoped claims on different branches.
+
+    Reads the hub's live claims and flags cross-branch path overlaps; ``--check-diff``
+    refines the prediction against each branch's actual ``git diff``. All git work is
+    client-side.
+    """
+    return asyncio.run(
+        run_conflicts(uri=args.uri, name=args.name, token=args.token, check_diff=args.check_diff)
     )
 
 
@@ -1358,6 +1372,20 @@ def build_parser() -> argparse.ArgumentParser:
     git_release.add_argument("--name", default="USER")
     git_release.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     git_release.set_defaults(func=_cmd_git_release)
+
+    conflicts = sub.add_parser(
+        "conflicts",
+        help="Predict merge conflicts between branch-scoped claims on different branches.",
+    )
+    conflicts.add_argument(
+        "--check-diff",
+        action="store_true",
+        help="Refine the prediction against each branch's actual 'git diff base...branch'.",
+    )
+    conflicts.add_argument("--uri", default=DEFAULT_HUB_URI)
+    conflicts.add_argument("--name", default="USER")
+    conflicts.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    conflicts.set_defaults(func=_cmd_conflicts)
 
     lock = sub.add_parser(
         "lock", help="Hold a lease while running a command (serialise e.g. commits)."

@@ -1880,3 +1880,22 @@ def test_cmd_git_release_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "run_git_release", fake)
     ns = argparse.Namespace(uri="ws://h", name="ME", trigger="commit", token=None)
     assert cli._cmd_git_release(ns) == 0
+
+
+def test_parser_conflicts() -> None:
+    args = cli.build_parser().parse_args(["conflicts", "--check-diff"])
+    assert args.func is cli._cmd_conflicts
+    assert args.check_diff is True
+
+
+def test_cmd_conflicts_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(cli, "run_conflicts", fake)
+    ns = argparse.Namespace(uri="ws://h", name="ME", token=None, check_diff=True)
+    assert cli._cmd_conflicts(ns) == 0
+    assert captured["check_diff"] is True

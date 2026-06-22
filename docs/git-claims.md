@@ -63,6 +63,30 @@ hook from anything else is left untouched.
 The hub is never involved: it only ever receives an ordinary release, and a hook
 never blocks a commit — an unreachable hub or no matching claim is simply a no-op.
 
+## Predict merge conflicts
+
+See a collision before it happens:
+
+```bash
+synapse conflicts
+synapse conflicts --check-diff
+```
+
+`synapse conflicts` reads the hub's live claims and flags every pair held on
+*different* branches whose declared paths overlap — two agents about to edit the
+same files on branches that merge into the same base. `--check-diff` refines the
+prediction against each branch's actual `git diff base...branch`, so only files a
+branch has really changed are reported (a branch that is not checked out locally
+is kept as a conservative warning rather than dropped).
+
+```
+Predicted conflicts (1):
+  A@feature/x vs B@feature/y (both -> base): src/auth.py
+```
+
+The prediction is computed entirely on the client from the ordinary state
+snapshot; the hub runs no git.
+
 ## What stays out of the hub
 
 A git-scoped claim is an ordinary claim with one extra field. The hub deserialises

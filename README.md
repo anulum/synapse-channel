@@ -154,6 +154,23 @@ off, declare and update tasks) and the board, state, and manifest as live
 resources. The hub stays MCP-agnostic and the core install keeps its single
 dependency — see the [MCP guide](docs/mcp.md).
 
+### Git-native claims
+
+A claim can be scoped to the git branch it happens on, resolved client-side:
+
+```bash
+synapse git-claim TASK-1 --paths src/auth.py     # claim, tagged with your branch
+synapse git-hook install                         # auto-release on commit/merge
+synapse conflicts --check-diff                   # predict cross-branch merge conflicts
+```
+
+`synapse state` shows each claim's branch; installed git hooks release a claim
+when its files are committed or merged; and `synapse conflicts` flags two agents
+about to edit the same files on branches that merge into the same base. The hub
+stays **git-agnostic** — it stores the branch as opaque metadata and never runs
+git or reads a filesystem — so all git work is on the client. See the
+[git-native claims guide](docs/git-claims.md).
+
 ## Coordination model
 
 1. Claim before you work: an agent leases a task by id; a live lease blocks other
@@ -240,13 +257,13 @@ on-channel model worker a question. Each starts its own in-process hub, so
 
 | Surface | Current inventory |
 |---|---:|
-| Package version | 0.33.0 |
+| Package version | 0.34.0 |
 | Public API exports | 43 |
-| Package modules | 25 |
-| Classes | 32 |
+| Package modules | 26 |
+| Classes | 33 |
 | Wire message types | 47 |
-| CLI subcommands | 22 |
-| Test functions | 690 |
+| CLI subcommands | 23 |
+| Test functions | 710 |
 | Benchmark harnesses | 2 |
 | Documentation pages | 14 |
 | GitHub Actions workflows | 9 |
@@ -292,7 +309,7 @@ If you use SYNAPSE CHANNEL in your work, please cite it. Metadata is in
   title   = {SYNAPSE CHANNEL: Local-first multi-agent coordination bus},
   url      = {https://github.com/anulum/synapse-channel},
   doi      = {10.5281/zenodo.20801559},
-  version = {0.33.0},
+  version = {0.34.0},
   year     = {2026}
 }
 ```

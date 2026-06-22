@@ -11,6 +11,18 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.34.0] - 2026-06-23
+
+### Added
+- Git-native claims. A work claim can be scoped to the git branch it happens on:
+  `synapse git-claim TASK --paths … --base … --auto-release-on …` resolves the current
+  branch client-side, and `synapse state` shows it. `synapse git-hook install` writes
+  post-commit and post-merge hooks that call `synapse git-release`, which releases the
+  agent's claims whose paths were just committed or merged. `synapse conflicts`
+  (optionally `--check-diff`) predicts merge conflicts between claims held on different
+  branches whose paths overlap. All git execution is client-side; the hub stores the
+  branch as opaque metadata and never runs git or reads a filesystem.
+
 ## [0.33.0] - 2026-06-23
 
 ### Added
