@@ -1521,8 +1521,11 @@ TOKEN_ENV = "SYNAPSE_TOKEN"
 def _resolve_token(args: argparse.Namespace) -> str | None:
     """Resolve the hub token from ``--token``, then ``--token-file``, then the env var.
 
-    The file and the ``SYNAPSE_TOKEN`` environment variable are preferred over a
-    ``--token`` value on the command line, which is visible in the process list.
+    Precedence is ``--token`` (an explicit override) → ``--token-file`` → the
+    ``SYNAPSE_TOKEN`` environment variable. Prefer ``--token-file`` or the
+    environment variable for a real secret: a ``--token`` value is visible in the
+    process list. (This describes which source is *used*, not which is more secure
+    — a value passed as ``--token`` is exposed regardless of what wins.)
 
     Parameters
     ----------

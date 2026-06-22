@@ -318,8 +318,10 @@ If you use SYNAPSE CHANNEL in your work, please cite it. Metadata is in
 
 Dual-licensed: **AGPL-3.0-or-later**, with a commercial licence available. See
 [`LICENSE`](LICENSE) for the full text and [`NOTICE.md`](NOTICE.md) for the
-licensing boundary; contact `protoscience@anulum.li` for commercial terms. The
-repository is [REUSE](https://reuse.software/) 3.x compliant.
+licensing boundary. **Commercial licensing:** self-serve Indie and Team plans at
+[anulum.li/synapse](https://www.anulum.li/synapse), or contact
+`protoscience@anulum.li` for enterprise terms. The repository is
+[REUSE](https://reuse.software/) 3.x compliant.
 
 ---
 
