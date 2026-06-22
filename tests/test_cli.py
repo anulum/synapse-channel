@@ -1074,7 +1074,13 @@ async def test_wait_times_out_with_nothing() -> None:
 def test_cmd_wait_dispatches_with_for_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("synapse_channel.cli.asyncio.run", lambda coro: coro.close() or 0)
     ns = argparse.Namespace(
-        uri="ws://h", name="X", for_name=None, timeout=0.0, directed_only=False, token=None
+        uri="ws://h",
+        name="X",
+        for_name=None,
+        timeout=0.0,
+        directed_only=False,
+        wake_jitter=0.0,
+        token=None,
     )
     assert cli._cmd_wait(ns) == 0
 
@@ -1469,7 +1475,13 @@ def test_cmd_wait_derives_rx_name_for_bare_identity(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(cli, "_wait", fake_wait)
     monkeypatch.setattr("synapse_channel.cli.asyncio.run", lambda coro: 0)
     ns = argparse.Namespace(
-        uri="ws://h", name="CEO", for_name=None, timeout=0.0, directed_only=False, token=None
+        uri="ws://h",
+        name="CEO",
+        for_name=None,
+        timeout=0.0,
+        directed_only=False,
+        wake_jitter=0.0,
+        token=None,
     )
     assert cli._cmd_wait(ns) == 0
     assert captured["name"] == "CEO-rx"  # bare identity gets a distinct receiver name
@@ -1486,7 +1498,13 @@ def test_cmd_wait_keeps_distinct_connect_name(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(cli, "_wait", fake_wait)
     monkeypatch.setattr("synapse_channel.cli.asyncio.run", lambda coro: 0)
     ns = argparse.Namespace(
-        uri="ws://h", name="CEO-rx", for_name="CEO", timeout=0.0, directed_only=False, token=None
+        uri="ws://h",
+        name="CEO-rx",
+        for_name="CEO",
+        timeout=0.0,
+        directed_only=False,
+        wake_jitter=0.0,
+        token=None,
     )
     assert cli._cmd_wait(ns) == 0
     assert captured["name"] == "CEO-rx"  # already distinct, left unchanged
@@ -1559,3 +1577,58 @@ async def test_wait_exits_when_connection_drops() -> None:
         uri="ws://h", name="X-rx", for_name="X", timeout=0.0, agent_factory=factory
     )
     assert code == 3
+
+
+def test_parser_wait_wake_jitter() -> None:
+    args = cli.build_parser().parse_args(["wait", "--for", "B", "--wake-jitter", "3"])
+    assert args.wake_jitter == 3.0
+    assert cli.build_parser().parse_args(["wait", "--for", "B"]).wake_jitter == 8.0
+
+
+async def test_wait_jitters_on_broadcast(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[float, float]] = []
+
+    def _rec(a: float, b: float) -> float:
+        calls.append((a, b))
+        return 0.0
+
+    monkeypatch.setattr("synapse_channel.cli.random.uniform", _rec)
+    holder: list[FakeAgent] = []
+    # A CEO broadcast (target "all") wakes a directed-only waiter — and woke every
+    # other terminal too, so the exit is jittered.
+    inbound: list[dict[str, Any]] = [
+        {"type": "chat", "sender": "CEO", "target": "all", "payload": "go"}
+    ]
+    factory = _factory(holder, inbound=inbound)
+    code = await cli._wait(
+        uri="ws://h",
+        name="B-rx",
+        for_name="B",
+        timeout=2.0,
+        directed_only=True,
+        wake_jitter=5.0,
+        agent_factory=factory,
+    )
+    assert code == 0
+    assert calls == [(0.0, 5.0)]  # jitter applied for the broadcast
+
+
+async def test_wait_no_jitter_on_directed_wake(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[float, float]] = []
+
+    def _rec(a: float, b: float) -> float:
+        calls.append((a, b))
+        return 0.0
+
+    monkeypatch.setattr("synapse_channel.cli.random.uniform", _rec)
+    holder: list[FakeAgent] = []
+    # A 1:1 directed message (target == for_name) — no herd, so no jitter.
+    inbound: list[dict[str, Any]] = [
+        {"type": "chat", "sender": "A", "target": "B", "payload": "hi"}
+    ]
+    factory = _factory(holder, inbound=inbound)
+    code = await cli._wait(
+        uri="ws://h", name="B-rx", for_name="B", timeout=2.0, wake_jitter=5.0, agent_factory=factory
+    )
+    assert code == 0
+    assert calls == []  # no jitter for a directed message

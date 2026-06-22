@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import random
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
@@ -233,6 +234,7 @@ async def _wait(
     for_name: str,
     timeout: float,
     directed_only: bool = False,
+    wake_jitter: float = 0.0,
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
 ) -> int:
@@ -255,6 +257,13 @@ async def _wait(
     directed_only : bool, optional
         When ``True``, wake only on messages that name ``for_name`` (or a group it
         is in), not on broadcasts — broadcasts are left for a later ``syn-inbox``.
+    wake_jitter : float, optional
+        Seconds of random delay added before exiting on a *broadcast* wake (a
+        message to ``all`` or a glob/list that reaches many waiters). A broadcast
+        wakes every terminal at once; without jitter their agents all re-invoke in
+        the same instant and the provider rate-limits the burst. Jitter spreads the
+        wakes over ``[0, wake_jitter]`` so each reacts but not simultaneously. A
+        one-to-one directed message wakes immediately (no herd). ``0`` disables it.
     agent_factory : AgentFactory, optional
         Factory for the client agent; injectable for testing.
     token : str or None, optional
@@ -301,6 +310,14 @@ async def _wait(
             await asyncio.sleep(0.1)
         if received:
             message = received[-1]
+            target = str(message.get("target", "all")).strip()
+            # A broadcast woke many terminals at the same instant; jitter the exit
+            # so their agents do not all re-invoke (and hit the provider API)
+            # simultaneously and get rate-limited. A 1:1 directed message has no
+            # herd, so it wakes now.
+            reaches_many = target in ("", "all") or "*" in target or "," in target
+            if reaches_many and wake_jitter > 0:
+                await asyncio.sleep(random.uniform(0.0, wake_jitter))
             print(f"{message.get('sender')}: {message.get('payload')}")
             return 0
         if conn_task.done():
@@ -332,6 +349,7 @@ def _cmd_wait(args: argparse.Namespace) -> int:
             for_name=for_name,
             timeout=args.timeout,
             directed_only=args.directed_only,
+            wake_jitter=args.wake_jitter,
             token=args.token,
         )
     )
@@ -1075,6 +1093,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--directed-only",
         action="store_true",
         help="Wake only on messages that name you (or a group you are in), not broadcasts.",
+    )
+    wait.add_argument(
+        "--wake-jitter",
+        type=float,
+        default=8.0,
+        help="Random seconds (0..N) to delay exiting on a broadcast wake, so many "
+        "terminals do not re-invoke at once and trip the provider rate limit; 0 disables.",
     )
     wait.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     wait.set_defaults(func=_cmd_wait)

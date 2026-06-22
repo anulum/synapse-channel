@@ -11,6 +11,16 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.30.0] - 2026-06-22
+
+### Added
+- `synapse wait --wake-jitter <seconds>` (default 8): a broadcast wakes every
+  terminal at once, so their agents all re-invoke and hit the model-provider API in
+  the same instant — and the provider rate-limits the burst. The waiter now adds a
+  random 0..jitter delay before exiting on a *broadcast* wake, spreading the
+  re-invocations so each reacts without the synchronised stampede; a one-to-one
+  directed message still wakes immediately. Set `0` to disable.
+
 ## [0.29.0] - 2026-06-22
 
 ### Added
