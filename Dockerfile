@@ -7,14 +7,14 @@
 # SYNAPSE CHANNEL — container image for the coordination hub
 
 # Build the wheel in a throwaway stage so the runtime image carries no build tools.
-FROM python:3.14-slim AS build
+FROM python:3.13-slim AS build
 WORKDIR /src
 COPY pyproject.toml README.md ./
 COPY src ./src
 RUN python -m pip install --no-cache-dir build \
     && python -m build --wheel --outdir /dist
 
-FROM python:3.14-slim
+FROM python:3.13-slim
 LABEL org.opencontainers.image.title="synapse-channel" \
       org.opencontainers.image.description="Local-first multi-agent coordination hub" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later" \
@@ -28,6 +28,10 @@ USER synapse
 WORKDIR /home/synapse
 EXPOSE 8876
 VOLUME ["/data"]
+
+# A liveness probe so orchestrators can tell whether the hub accepts connections.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD ["synapse", "health"]
 
 # Bind 0.0.0.0 so the port is reachable across the container boundary. When the
 # port is published beyond the host, require a shared secret with --token (see

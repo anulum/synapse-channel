@@ -390,6 +390,51 @@ def _cmd_wait(args: argparse.Namespace) -> int:
     )
 
 
+async def _drop_message(_data: dict[str, Any]) -> None:
+    """Discard a hub message — for probes that only need the connection to open."""
+    return None
+
+
+async def _health(
+    *,
+    uri: str,
+    name: str = "HEALTH",
+    agent_factory: AgentFactory = SynapseAgent,
+    token: str | None = None,
+) -> int:
+    """Connect and report whether the hub is reachable: ``0`` if so, ``1`` if not.
+
+    A quiet liveness probe for container healthchecks — it opens a connection, waits
+    for the welcome handshake, and exits without printing on success.
+
+    Parameters
+    ----------
+    uri, name : str
+        Hub URI and the probe's display name.
+    agent_factory : AgentFactory, optional
+        Factory for the client agent; injectable for testing.
+    token : str or None, optional
+        Shared-secret token for a secured hub.
+
+    Returns
+    -------
+    int
+        ``0`` when the hub answered, ``1`` otherwise.
+    """
+    agent = agent_factory(name, _drop_message, uri=uri, verbose=False, token=token)
+    conn_task = asyncio.create_task(agent.connect())
+    try:
+        return 0 if await agent.wait_until_ready(timeout=5.0) else 1
+    finally:
+        agent.running = False
+        conn_task.cancel()
+
+
+def _cmd_health(args: argparse.Namespace) -> int:
+    """Probe the hub and return its reachability as the process exit code."""
+    return asyncio.run(_health(uri=args.uri, name=args.name, token=args.token))
+
+
 async def _who(
     *,
     uri: str,
@@ -1161,6 +1206,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     who.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     who.set_defaults(func=_cmd_who)
+
+    health = sub.add_parser("health", help="Probe the hub; exit 0 if reachable, 1 if not.")
+    health.add_argument("--uri", default=DEFAULT_HUB_URI)
+    health.add_argument("--name", default="HEALTH")
+    health.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    health.set_defaults(func=_cmd_health)
 
     state = sub.add_parser(
         "state", help="Print active claims and their checkpoints (a resume view)."

@@ -1715,3 +1715,36 @@ def test_parser_hub_caps() -> None:
     args = cli.build_parser().parse_args(["hub", "--max-clients", "8", "--max-msg-kb", "32"])
     assert args.max_clients == 8
     assert args.max_msg_kb == 32
+
+
+# --- A4: health probe -------------------------------------------------------
+
+
+async def test_health_ok_when_ready() -> None:
+    holder: list[FakeAgent] = []
+    code = await cli._health(uri="ws://h", name="H", agent_factory=_factory(holder, ready=True))
+    assert code == 0
+
+
+async def test_health_fail_when_unreachable() -> None:
+    holder: list[FakeAgent] = []
+    code = await cli._health(uri="ws://h", name="H", agent_factory=_factory(holder, ready=False))
+    assert code == 1
+
+
+async def test_drop_message_is_noop() -> None:
+    await cli._drop_message({"type": "x"})  # a no-op callback; must simply not raise
+
+
+def test_parser_health() -> None:
+    args = cli.build_parser().parse_args(["health", "--uri", "ws://x"])
+    assert args.func is cli._cmd_health
+    assert args.uri == "ws://x"
+
+
+def test_cmd_health_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake(**kwargs: Any) -> int:
+        return 0
+
+    monkeypatch.setattr(cli, "_health", fake)
+    assert cli._cmd_health(argparse.Namespace(uri="ws://h", name="H", token=None)) == 0
