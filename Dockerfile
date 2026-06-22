@@ -7,14 +7,14 @@
 # SYNAPSE CHANNEL — container image for the coordination hub
 
 # Build the wheel in a throwaway stage so the runtime image carries no build tools.
-FROM python:3.13-slim AS build
+FROM python:3.13-slim@sha256:c33f0bc4364a6881bed1ec0cc2665e6c53c87a43e774aaeab88e6f17af105e4f AS build
 WORKDIR /src
 COPY pyproject.toml README.md ./
 COPY src ./src
 RUN python -m pip install --no-cache-dir build \
     && python -m build --wheel --outdir /dist
 
-FROM python:3.13-slim
+FROM python:3.13-slim@sha256:c33f0bc4364a6881bed1ec0cc2665e6c53c87a43e774aaeab88e6f17af105e4f
 LABEL org.opencontainers.image.title="synapse-channel" \
       org.opencontainers.image.description="Local-first multi-agent coordination hub" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later" \
