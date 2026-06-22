@@ -9,9 +9,10 @@
 """Fail when the project version drifts between its declared surfaces.
 
 ``pyproject.toml`` is the source of truth; the package ``__version__``, the README
-citation, and ``CITATION.cff`` must all match it. Run by pre-commit and CI so a
-release bump that misses one surface (the README/citation are easy to forget) is
-caught before it ships a stale number.
+citation, ``CITATION.cff``, and the ``.zenodo.json`` archive metadata must all match
+it. Run by pre-commit and CI so a release bump that misses one surface (the README
+citation and the Zenodo metadata are easy to forget — a stale ``.zenodo.json``
+mislabels the archived DOI) is caught before it ships a stale number.
 """
 
 from __future__ import annotations
@@ -48,6 +49,7 @@ def discover() -> dict[str, str]:
         ),
         "README.md citation": _search("README.md", r"version\s*=\s*\{([^}]+)\}"),
         "CITATION.cff": _search("CITATION.cff", r'^version:\s*"?([^"\n]+?)"?\s*$'),
+        ".zenodo.json": _search(".zenodo.json", r'"version":\s*"([^"]+)"'),
     }
 
 
