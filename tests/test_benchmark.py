@@ -167,3 +167,56 @@ def test_routing_main_runs_and_writes(tmp_path: Path, capsys: pytest.CaptureFixt
     assert routing_bench.main(["--results", str(results)]) == 0
     assert "routing dispatch verified: True" in capsys.readouterr().out
     assert results.exists()
+
+
+# --- scalability benchmark ---------------------------------------------------
+
+_SCALE_PATH = _BENCHMARKS / "scalability_benchmark.py"
+_SCALE_SPEC = importlib.util.spec_from_file_location("scalability_benchmark", _SCALE_PATH)
+assert _SCALE_SPEC is not None and _SCALE_SPEC.loader is not None
+scale_bench = importlib.util.module_from_spec(_SCALE_SPEC)
+_SCALE_SPEC.loader.exec_module(scale_bench)
+
+
+def test_scalability_host_profile_has_fields() -> None:
+    host = scale_bench.host_profile()
+    assert set(host) == {"cpu", "python", "platform"}
+    assert host["python"]
+
+
+def test_scalability_state_with_claims_builds_count() -> None:
+    state = scale_bench.state_with_claims(5)
+    assert len(state.claims) == 5
+
+
+def test_scalability_profile_comparison_count_is_deterministic() -> None:
+    rows = scale_bench.profile(counts=(10, 100), iterations=3)
+    assert [row["active_claims"] for row in rows] == [10, 100]
+    # The comparison count is exact (= active claims), regardless of host speed.
+    assert [row["comparisons_per_scan"] for row in rows] == [10, 100]
+    assert all(row["scan_microseconds"] >= 0 for row in rows)
+    assert all(row["sustained_mutations_per_sec"] >= 0 for row in rows)
+
+
+def test_scalability_run_writes_results(tmp_path: Path) -> None:
+    results = tmp_path / "scale.json"
+    summary = scale_bench.run(results, iterations=3, counts=(10, 100))
+    assert set(summary["host"]) == {"cpu", "python", "platform"}
+    assert len(summary["rows"]) == 2
+    written = json.loads(results.read_text(encoding="utf-8"))
+    assert len(written["rows"]) == 2
+
+
+def test_scalability_run_without_results_skips_write(tmp_path: Path) -> None:
+    summary = scale_bench.run(None, iterations=3, counts=(10,))
+    assert summary["rows"]
+    assert not list(tmp_path.iterdir())
+
+
+def test_scalability_main_runs_and_writes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    results = tmp_path / "scale.json"
+    assert scale_bench.main(["--results", str(results), "--iterations", "3"]) == 0
+    assert "mutations/s on one core" in capsys.readouterr().out
+    assert results.exists()

@@ -263,8 +263,8 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 33 |
 | Wire message types | 47 |
 | CLI subcommands | 23 |
-| Test functions | 714 |
-| Benchmark harnesses | 2 |
+| Test functions | 720 |
+| Benchmark harnesses | 3 |
 | Documentation pages | 14 |
 | GitHub Actions workflows | 9 |
 | Optional-dependency groups | 4 |
@@ -297,6 +297,20 @@ This snapshot is a static inventory generated from the source tree. Performance 
 - **Task-class routing is heuristic.** The classifier sorts a request by length
   and a keyword set; tune the thresholds for your workload. Per-tier model
   latency is not benchmarked offline (it needs a live model server).
+- **File-scope claims are advisory, not filesystem access.** The hub never reads
+  a filesystem; a claim's `paths` are opaque strings compared only for glob
+  overlap, so claiming `../../etc/passwd` coordinates nothing on disk and is not a
+  path-traversal surface. See [`SECURITY.md`](SECURITY.md).
+- **Per-mutation cost is linear in the active claim count.** Each mutation lazily
+  expires stale leases by scanning live claims. This is invisible at the design
+  scale (microseconds for tens of claims) and only a ceiling far past a single
+  local-first hub — the profile is measured, not guessed, in
+  [`benchmarks/`](benchmarks/) and the [benchmarks docs](docs/benchmarks.md).
+- **No built-in metrics endpoint.** Observability is deliberately minimal for a
+  local-first tool; the live board, state, and manifest are available over the
+  CLI and the MCP resources rather than a Prometheus `/metrics` surface.
+- **`synapse --version` checks PyPI for a newer release** (once a day, cached, no
+  payload beyond the request itself). Silence it with `SYNAPSE_NO_UPDATE_CHECK=1`.
 
 ## How to cite
 

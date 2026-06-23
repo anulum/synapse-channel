@@ -1,0 +1,40 @@
+{
+  "host": {
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
+    "platform": "Linux-6.17.0-35-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3"
+  },
+  "iterations_per_count": 200,
+  "rows": [
+    {
+      "active_claims": 10,
+      "comparisons_per_scan": 10,
+      "scan_microseconds": 0.62,
+      "sustained_mutations_per_sec": 1622625
+    },
+    {
+      "active_claims": 100,
+      "comparisons_per_scan": 100,
+      "scan_microseconds": 2.47,
+      "sustained_mutations_per_sec": 404296
+    },
+    {
+      "active_claims": 1000,
+      "comparisons_per_scan": 1000,
+      "scan_microseconds": 21.3,
+      "sustained_mutations_per_sec": 46940
+    },
+    {
+      "active_claims": 10000,
+      "comparisons_per_scan": 10000,
+      "scan_microseconds": 254.05,
+      "sustained_mutations_per_sec": 3936
+    },
+    {
+      "active_claims": 100000,
+      "comparisons_per_scan": 100000,
+      "scan_microseconds": 3105.28,
+      "sustained_mutations_per_sec": 322
+    }
+  ]
+}
