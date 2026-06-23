@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from synapse_channel.auth import TokenAuthenticator
+from synapse_channel.core.auth import TokenAuthenticator
 
 
 def test_iterable_tokens_allow_any_agent() -> None:

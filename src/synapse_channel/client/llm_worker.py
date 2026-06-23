@@ -8,7 +8,7 @@
 """On-channel worker that turns inbound messages into model replies.
 
 :class:`SynapseLLMWorker` joins the hub as a named agent, watches the channel,
-and replies through a :mod:`~synapse_channel.chat_backends` backend when a
+and replies through a :mod:`~synapse_channel.client.chat_backends` backend when a
 message is addressed to it (by target, by mention, or from ``USER``). It keeps a
 short rolling transcript for context, throttles its own output, and filters out
 system and sidecar noise so it never answers itself or coordination chatter.
@@ -22,14 +22,14 @@ import time
 from collections import deque
 from typing import Any
 
-from synapse_channel.chat_backends import (
+from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.client.chat_backends import (
     ChatBackend,
     OpenAIChatClient,
     RuleBasedClient,
     sanitize_text,
 )
-from synapse_channel.client import DEFAULT_HUB_URI, SynapseAgent
-from synapse_channel.protocol import MessageType
+from synapse_channel.core.protocol import MessageType
 
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
 OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
@@ -92,7 +92,7 @@ class SynapseLLMWorker:
     name : str
         Agent name presented on the channel.
     uri : str, optional
-        Hub URI. Defaults to :data:`~synapse_channel.client.DEFAULT_HUB_URI`.
+        Hub URI. Defaults to :data:`~synapse_channel.client.agent.DEFAULT_HUB_URI`.
     provider : str, optional
         Backend provider: ``ollama`` (default), ``openai``, or ``rule``.
     model : str, optional
@@ -160,7 +160,7 @@ class SynapseLLMWorker:
         -------
         ChatBackend
             A :class:`RuleBasedClient`, :class:`OpenAIChatClient`, or a
-            :class:`~synapse_channel.routing.TieredChatClient` for ``tiered``.
+            :class:`~synapse_channel.client.routing.TieredChatClient` for ``tiered``.
 
         Raises
         ------
@@ -191,7 +191,7 @@ class SynapseLLMWorker:
 
     def _build_tiered_client(self) -> ChatBackend:
         """Build a tiered backend: a rule path plus SLM and heavy HTTP models."""
-        from synapse_channel.routing import TaskClass, TieredChatClient
+        from synapse_channel.client.routing import TaskClass, TieredChatClient
 
         return TieredChatClient(
             {

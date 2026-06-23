@@ -18,7 +18,7 @@ deterministic and cheap to run. It applies two rules over a board snapshot:
   stale block and re-offered.
 
 Re-offering sets the task's planning status back to ``open`` so it re-appears in
-:meth:`~synapse_channel.ledger.Blackboard.ready_tasks` for another agent to pick
+:meth:`~synapse_channel.core.ledger.Blackboard.ready_tasks` for another agent to pick
 up, and records an ``assessment`` progress note explaining why. Because the
 re-offer changes the status away from ``in_progress``/``blocked``, the same
 stall is not flagged again on the next pass.
@@ -37,9 +37,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from synapse_channel.client import DEFAULT_HUB_URI, SynapseAgent
-from synapse_channel.ledger import TERMINAL_LEDGER_STATUSES
-from synapse_channel.protocol import MessageType
+from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.core.ledger import TERMINAL_LEDGER_STATUSES
+from synapse_channel.core.protocol import MessageType
 
 DEFAULT_IDLE_SECONDS = 300.0
 """Default no-activity window after which an in-progress task is re-offered."""
@@ -94,7 +94,7 @@ def detect_stalls(
     ----------
     board : dict[str, Any]
         A blackboard snapshot as returned by
-        :meth:`~synapse_channel.ledger.Blackboard.snapshot`.
+        :meth:`~synapse_channel.core.ledger.Blackboard.snapshot`.
     now : float
         Current wall-clock time, in seconds, used to age in-progress tasks.
     idle_seconds : float, optional
@@ -134,7 +134,7 @@ class SupervisorWorker:
     name : str, optional
         Agent name presented on the channel. Defaults to ``"SUPERVISOR"``.
     uri : str, optional
-        Hub URI. Defaults to :data:`~synapse_channel.client.DEFAULT_HUB_URI`.
+        Hub URI. Defaults to :data:`~synapse_channel.client.agent.DEFAULT_HUB_URI`.
     idle_seconds : float, optional
         No-activity window passed to :func:`detect_stalls`.
     interval : float, optional

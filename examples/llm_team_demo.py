@@ -28,7 +28,7 @@ import socket
 from typing import Any
 
 from synapse_channel import SynapseAgent, SynapseHub, SynapseLLMWorker
-from synapse_channel.launcher import detect_model
+from synapse_channel.client.launcher import detect_model
 
 logging.getLogger("websockets.server").setLevel(logging.CRITICAL)
 

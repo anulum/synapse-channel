@@ -11,7 +11,7 @@ The hub keeps its working state in memory; this module gives that state a
 crash-durable spine without adding a runtime dependency — it uses the standard
 library :mod:`sqlite3` in write-ahead-log (WAL) mode. Every authoritative
 mutation is appended as one event, and the state is rebuilt by replaying the log
-on start-up (see :mod:`synapse_channel.journal`).
+on start-up (see :mod:`synapse_channel.core.journal`).
 
 Durability is split honestly to match the workload. The connection runs at
 ``synchronous=NORMAL``, which is durable against a **process/application crash**
@@ -43,7 +43,7 @@ class StoredEvent(NamedTuple):
     ts : float
         Wall-clock time, in seconds, when the event was appended.
     kind : str
-        Event kind tag (see :class:`synapse_channel.journal.EventKind`).
+        Event kind tag (see :class:`synapse_channel.core.journal.EventKind`).
     payload : dict[str, Any]
         The decoded JSON body of the event.
     """

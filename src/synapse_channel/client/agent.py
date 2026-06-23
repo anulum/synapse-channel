@@ -26,7 +26,7 @@ from typing import Any
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosedError
 
-from synapse_channel.protocol import MessageType, build_envelope
+from synapse_channel.core.protocol import MessageType, build_envelope
 
 logging.basicConfig(level=logging.ERROR)
 
@@ -200,7 +200,7 @@ class SynapseAgent:
         Parameters
         ----------
         msg_type : str
-            One of the :class:`~synapse_channel.protocol.MessageType` constants.
+            One of the :class:`~synapse_channel.core.protocol.MessageType` constants.
         target : str, optional
             Recipient agent name, or ``"all"``. Defaults to ``"all"``.
         payload : str, optional
@@ -261,7 +261,7 @@ class SynapseAgent:
         git : dict[str, Any] or None, optional
             Branch context (``branch``/``base``/``auto_release_on``) for a
             git-scoped claim, as built client-side by
-            :mod:`synapse_channel.gitclaim`. The hub stores and displays it but
+            :mod:`synapse_channel.git.gitclaim`. The hub stores and displays it but
             never acts on it.
         """
         extra: dict[str, Any] = {"task_id": task_id.strip(), "note": note}
@@ -322,7 +322,7 @@ class SynapseAgent:
         task_id : str
             Task identifier; surrounding whitespace is stripped.
         status : str or None, optional
-            New lifecycle status (see :mod:`synapse_channel.lifecycle`); the hub
+            New lifecycle status (see :mod:`synapse_channel.core.lifecycle`); the hub
             rejects an illegal transition.
         note : str or None, optional
             Replacement note.

@@ -9,11 +9,11 @@
 
 Routing only pays off if the cheap classes catch the trivial requests and the
 heavy class is reserved for the genuinely hard ones. This benchmark replays a
-committed set of prompts through :func:`synapse_channel.routing.classify` and
+committed set of prompts through :func:`synapse_channel.client.routing.classify` and
 reports the class distribution and the per-prompt decision — all exact and
 reproducible, so the routing policy can be reviewed and tuned from data.
 
-It also verifies routing dispatch: a :class:`~synapse_channel.routing.TieredChatClient`
+It also verifies routing dispatch: a :class:`~synapse_channel.client.routing.TieredChatClient`
 wired to tagging stub backends must send each prompt to the backend for its
 class. Backend *latency* is deliberately not measured here — the ``slm`` and
 ``heavy`` tiers need a live model server, so timing them is not reproducible
@@ -31,7 +31,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.routing import TaskClass, TieredChatClient, classify
+from synapse_channel.client.routing import TaskClass, TieredChatClient, classify
 
 BENCHMARK_DIR = Path(__file__).resolve().parent
 DEFAULT_TRACE = BENCHMARK_DIR / "traces" / "routing_prompts.json"

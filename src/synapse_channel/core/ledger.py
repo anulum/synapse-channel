@@ -8,9 +8,9 @@
 """Shared blackboard for the Synapse hub: a task ledger and a progress ledger.
 
 The blackboard is the team's shared plan, kept separate from the lease registry
-in :mod:`synapse_channel.state`. A :class:`LedgerTask` *declares* a unit of work
+in :mod:`synapse_channel.core.state`. A :class:`LedgerTask` *declares* a unit of work
 — its title, description, and dependencies — so any agent can read the board and
-pick something ready to do; a :class:`~synapse_channel.state.TaskClaim` is the
+pick something ready to do; a :class:`~synapse_channel.core.state.TaskClaim` is the
 *lease* on actually doing it. The two share a ``task_id`` namespace but stay
 independent: a task can sit on the board with no claim, and an ad-hoc claim can
 exist with no board entry, so the simple claim flow keeps working untouched.

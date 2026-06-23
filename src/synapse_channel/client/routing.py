@@ -8,14 +8,14 @@
 """Route a request to the cheapest backend that can handle it.
 
 Not every message needs a large model. This module classifies a prompt into a
-coarse task class and routes it to a matching :mod:`~synapse_channel.chat_backends`
+coarse task class and routes it to a matching :mod:`~synapse_channel.client.chat_backends`
 backend, so trivial requests are answered by a cheap rule-based path and only the
 genuinely hard ones reach a heavy model.
 
 * :func:`classify` is the LLM-free policy — a deterministic function of the
   prompt (its length and a small set of keywords) returning ``rule``, ``slm``,
   or ``heavy``.
-* :class:`TieredChatClient` is a :class:`~synapse_channel.chat_backends.ChatBackend`
+* :class:`TieredChatClient` is a :class:`~synapse_channel.client.chat_backends.ChatBackend`
   that holds one backend per class and dispatches :meth:`generate` through the
   classifier, falling back to a default class when no backend is registered for
   the chosen one.
@@ -29,7 +29,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Mapping
 
-from synapse_channel.chat_backends import ChatBackend
+from synapse_channel.client.chat_backends import ChatBackend
 
 DEFAULT_RULE_MAX_CHARS = 24
 """Prompts at or below this length are treated as trivial (the ``rule`` class)."""

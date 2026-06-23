@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from synapse_channel.capability import CapabilityCard, CapabilityRegistry
+from synapse_channel.core.capability import CapabilityCard, CapabilityRegistry
 
 
 def test_card_as_dict_exposes_all_fields() -> None:

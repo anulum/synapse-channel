@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from synapse_channel.journal import (
+from synapse_channel.core.journal import (
     EventKind,
     record_chat,
     record_claim,
@@ -19,8 +19,8 @@ from synapse_channel.journal import (
     record_task_update,
     replay,
 )
-from synapse_channel.persistence import EventStore
-from synapse_channel.state import GitContext, ResourceOffer, TaskClaim
+from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.state import GitContext, ResourceOffer, TaskClaim
 
 
 def _store(tmp_path: Path) -> EventStore:

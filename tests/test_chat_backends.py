@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from synapse_channel.chat_backends import (
+from synapse_channel.client.chat_backends import (
     OpenAIChatClient,
     RuleBasedClient,
     sanitize_text,

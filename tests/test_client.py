@@ -14,8 +14,8 @@ from typing import Any
 
 import pytest
 
-from synapse_channel import client as client_module
-from synapse_channel.client import DEFAULT_HUB_URI, MINIMUM_HEARTBEAT_INTERVAL, SynapseAgent
+from synapse_channel.client import agent as client_module
+from synapse_channel.client.agent import DEFAULT_HUB_URI, MINIMUM_HEARTBEAT_INTERVAL, SynapseAgent
 
 
 class FakeWebSocket:
@@ -202,7 +202,7 @@ async def test_heartbeat_loop_runs_one_tick(monkeypatch: pytest.MonkeyPatch) -> 
     async def fake_sleep(_seconds: float) -> None:
         agent.running = False  # end the loop after the first sleep
 
-    monkeypatch.setattr("synapse_channel.client.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("synapse_channel.client.agent.asyncio.sleep", fake_sleep)
     await agent._heartbeat_loop()
     assert json.loads(ws.sent[0])["payload"] == "alive"
 

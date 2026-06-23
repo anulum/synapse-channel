@@ -9,7 +9,7 @@
 
 A capability card is a small, A2A-shaped description an agent advertises about
 itself — what it is, the skills it offers, and the task classes it can take —
-distinct from a :class:`~synapse_channel.state.ResourceOffer`, which advertises a
+distinct from a :class:`~synapse_channel.core.state.ResourceOffer`, which advertises a
 *resource* (a model, a device) rather than the agent's own competence. The hub
 keeps one card per agent in a :class:`CapabilityRegistry` and exposes the lot as
 a manifest, so any agent can discover who can do what and a router can pick a

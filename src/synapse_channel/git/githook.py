@@ -7,7 +7,7 @@
 # SYNAPSE_CHANNEL — git hooks that auto-release branch-scoped claims
 """Git hook integration that auto-releases branch-scoped claims.
 
-A companion to :mod:`synapse_channel.gitclaim`. ``synapse git-hook install``
+A companion to :mod:`synapse_channel.git.gitclaim`. ``synapse git-hook install``
 writes ``post-commit`` and ``post-merge`` hooks that call ``synapse git-release``,
 which releases this agent's branch-scoped claims whose declared paths were just
 committed or merged. As everywhere in the git integration, the work is entirely
@@ -24,9 +24,9 @@ import stat
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.client import SynapseAgent
-from synapse_channel.gitclaim import AgentFactory, GitError, GitRunner, _default_git_runner
-from synapse_channel.protocol import MessageType
+from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.core.protocol import MessageType
+from synapse_channel.git.gitclaim import AgentFactory, GitError, GitRunner, _default_git_runner
 
 HOOK_MARKER = "# synapse-git-hook"
 """Marker line that identifies a hook this tool wrote, so it is never clobbered."""

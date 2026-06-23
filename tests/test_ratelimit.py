@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from synapse_channel.ratelimit import MINIMUM_BURST, MINIMUM_RATE, RateLimiter
+from synapse_channel.core.ratelimit import MINIMUM_BURST, MINIMUM_RATE, RateLimiter
 
 
 def test_rate_and_burst_are_clamped() -> None:

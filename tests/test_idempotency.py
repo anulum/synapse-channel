@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from synapse_channel.idempotency import IdempotencyCache
+from synapse_channel.core.idempotency import IdempotencyCache
 
 
 def test_put_then_get_returns_response() -> None:

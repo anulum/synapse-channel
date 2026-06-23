@@ -10,12 +10,12 @@
 :class:`SynapseHub` is the single source of truth for the channel: it tracks
 connected sockets and named agents, enforces unique agent names, relays chat and
 targeted messages, persists chat history, and delegates claim/task/resource
-bookkeeping to a :class:`~synapse_channel.state.SynapseState`. All routing state
+bookkeeping to a :class:`~synapse_channel.core.state.SynapseState`. All routing state
 lives on the instance — there are no module globals — so several hubs can run in
 one process, which keeps the routing logic deterministic and unit-testable.
 
 Each message type is handled by a free coroutine registered in
-:data:`~synapse_channel.handlers.DISPATCH`; the hub parses and authorises a
+:data:`~synapse_channel.core.handlers.DISPATCH`; the hub parses and authorises a
 frame, resolves its sender, then looks the type up and awaits its handler, so the
 routing core stays a table lookup rather than a growing branch ladder.
 """
@@ -36,21 +36,21 @@ from typing import Any
 import websockets
 from websockets.exceptions import ConnectionClosed
 
-from synapse_channel.auth import TokenAuthenticator
-from synapse_channel.capability import CapabilityRegistry
-from synapse_channel.handlers import DISPATCH
-from synapse_channel.idempotency import IdempotencyCache
-from synapse_channel.journal import replay
-from synapse_channel.ledger import DEFAULT_MAX_PROGRESS, Blackboard
-from synapse_channel.persistence import EventStore
-from synapse_channel.protocol import (
+from synapse_channel.core.auth import TokenAuthenticator
+from synapse_channel.core.capability import CapabilityRegistry
+from synapse_channel.core.handlers import DISPATCH
+from synapse_channel.core.idempotency import IdempotencyCache
+from synapse_channel.core.journal import replay
+from synapse_channel.core.ledger import DEFAULT_MAX_PROGRESS, Blackboard
+from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.protocol import (
     RESOURCE_TYPE_ALIASES,
     MessageType,
     system_message,
 )
-from synapse_channel.ratelimit import RateLimiter
+from synapse_channel.core.ratelimit import RateLimiter
+from synapse_channel.core.state import SynapseState
 from synapse_channel.relay import append_jsonl, encode_lite, trim_jsonl_tail
-from synapse_channel.state import SynapseState
 
 logger = logging.getLogger("synapse.hub")
 
@@ -132,7 +132,7 @@ class SynapseHub:
     max_progress : int, optional
         Maximum progress notes retained on the shared blackboard; the oldest are
         dropped beyond this bound. The durable log (when attached) still records
-        every note. Defaults to :data:`~synapse_channel.ledger.DEFAULT_MAX_PROGRESS`.
+        every note. Defaults to :data:`~synapse_channel.core.ledger.DEFAULT_MAX_PROGRESS`.
     authenticator : TokenAuthenticator or None, optional
         When given, a connecting agent must present a valid shared-secret token
         on its first message or the hub refuses and closes the socket. ``None``
@@ -495,7 +495,7 @@ class SynapseHub:
         """Dispatch a parsed, sender-resolved message to its handler.
 
         A duplicate of an already-applied mutation replays its cached response; a
-        recognised type is routed through :data:`~synapse_channel.handlers.DISPATCH`
+        recognised type is routed through :data:`~synapse_channel.core.handlers.DISPATCH`
         to the matching handler; an unknown type is answered with a private error.
         """
         if await self._maybe_replay_duplicate(msg_type, data, websocket):

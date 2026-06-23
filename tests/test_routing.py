@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from synapse_channel.routing import TaskClass, TieredChatClient, classify
+from synapse_channel.client.routing import TaskClass, TieredChatClient, classify
 
 
 class _Echo:

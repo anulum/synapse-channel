@@ -8,7 +8,7 @@
 """Translate hub state changes to durable events and replay them back.
 
 This module is the bridge between the in-memory coordination state and the
-append-only :class:`~synapse_channel.persistence.EventStore`. Each authoritative
+append-only :class:`~synapse_channel.core.persistence.EventStore`. Each authoritative
 mutation — a claim, release, task update, resource offer, or chat message — is
 recorded as one event; :func:`replay` reads the whole log back and rebuilds the
 exact state the hub held, so a restart resumes from durable storage rather than
@@ -27,14 +27,14 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from synapse_channel.ledger import (
+from synapse_channel.core.ledger import (
     DEFAULT_MAX_PROGRESS,
     Blackboard,
     LedgerTask,
     ProgressNote,
 )
-from synapse_channel.persistence import EventStore
-from synapse_channel.state import GitContext, ResourceOffer, SynapseState, TaskClaim
+from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.state import GitContext, ResourceOffer, SynapseState, TaskClaim
 
 
 class EventKind:

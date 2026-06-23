@@ -8,7 +8,7 @@
 """Lease-coordination handlers — the channel's mutual-exclusion core.
 
 Each function applies one authoritative mutation to the hub's
-:class:`~synapse_channel.state.SynapseState`: a scoped claim, its release, a
+:class:`~synapse_channel.core.state.SynapseState`: a scoped claim, its release, a
 handoff to a present agent, a durable resume checkpoint, an owner's status
 update, or an advisory wait. On success the change is journalled (when a durable
 log is attached) and broadcast as a grant; on failure the sender is privately
@@ -22,18 +22,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from synapse_channel.deadlock import would_create_cycle
-from synapse_channel.journal import (
+from synapse_channel.core.deadlock import would_create_cycle
+from synapse_channel.core.journal import (
     record_claim,
     record_ledger_progress,
     record_release,
     record_task_update,
 )
-from synapse_channel.protocol import MessageType
-from synapse_channel.state import GitContext
+from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.state import GitContext
 
 if TYPE_CHECKING:
-    from synapse_channel.hub import SynapseHub
+    from synapse_channel.core.hub import SynapseHub
 
 
 async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import EventStore, StoredEvent
 
 
 def test_append_and_read_all_preserves_order(tmp_path: Path) -> None:

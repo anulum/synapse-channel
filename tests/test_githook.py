@@ -16,8 +16,8 @@ from typing import Any, cast
 
 import pytest
 
-from synapse_channel.gitclaim import AgentFactory, GitError
-from synapse_channel.githook import (
+from synapse_channel.git.gitclaim import AgentFactory, GitError
+from synapse_channel.git.githook import (
     HOOK_MARKER,
     _paths_overlap,
     changed_files,
@@ -287,7 +287,7 @@ async def test_run_git_release_without_snapshot(monkeypatch: pytest.MonkeyPatch)
     async def no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("synapse_channel.githook.asyncio.sleep", no_sleep)
+    monkeypatch.setattr("synapse_channel.git.githook.asyncio.sleep", no_sleep)
     factory, created = make_factory(inbound=[])
     rc = await run_git_release(
         uri="ws://t",

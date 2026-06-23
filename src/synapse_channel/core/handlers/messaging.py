@@ -20,11 +20,11 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
-from synapse_channel.journal import record_chat
-from synapse_channel.protocol import MessageType
+from synapse_channel.core.journal import record_chat
+from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
-    from synapse_channel.hub import SynapseHub
+    from synapse_channel.core.hub import SynapseHub
 
 
 async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:

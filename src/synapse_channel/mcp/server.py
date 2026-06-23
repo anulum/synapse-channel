@@ -8,7 +8,7 @@
 """Model Context Protocol (MCP) server that bridges the hub to any MCP client.
 
 The ``synapse mcp`` command runs an MCP server over stdio that is itself a
-*client* of the hub: it holds one :class:`~synapse_channel.client.SynapseAgent`
+*client* of the hub: it holds one :class:`~synapse_channel.client.agent.SynapseAgent`
 connection and re-exposes the coordination verbs as MCP **tools** (claim,
 release, send, handoff, declare/update a task) and read-only **resources**
 (the board, the state snapshot, the capability manifest). Any MCP-compatible
@@ -32,8 +32,8 @@ import sys
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
-from synapse_channel.client import DEFAULT_HUB_URI, SynapseAgent
-from synapse_channel.protocol import MessageType
+from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -93,7 +93,7 @@ class SynapseHubBridge:
     Parameters
     ----------
     uri : str, optional
-        Hub WebSocket URI. Defaults to :data:`~synapse_channel.client.DEFAULT_HUB_URI`.
+        Hub WebSocket URI. Defaults to :data:`~synapse_channel.client.agent.DEFAULT_HUB_URI`.
     name : str, optional
         Identity registered on the hub. Defaults to :data:`DEFAULT_BRIDGE_NAME`.
     token : str or None, optional

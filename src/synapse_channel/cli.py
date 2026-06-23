@@ -47,12 +47,19 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel import __version__
-from synapse_channel.auth import TokenAuthenticator
-from synapse_channel.client import DEFAULT_HUB_URI, SynapseAgent
-from synapse_channel.gitclaim import GitError, run_git_claim
-from synapse_channel.gitconflict import run_conflicts
-from synapse_channel.githook import install_hooks, run_git_release
-from synapse_channel.hub import (
+from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.client.launcher import run_team
+from synapse_channel.client.llm_worker import (
+    DEFAULT_OLLAMA_BASE_URL,
+    SynapseLLMWorker,
+)
+from synapse_channel.client.supervisor import (
+    DEFAULT_IDLE_SECONDS,
+    DEFAULT_INTERVAL_SECONDS,
+    SupervisorWorker,
+)
+from synapse_channel.core.auth import TokenAuthenticator
+from synapse_channel.core.hub import (
     DEFAULT_HOST,
     DEFAULT_MAX_CLIENTS,
     DEFAULT_MAX_HISTORY,
@@ -61,26 +68,19 @@ from synapse_channel.hub import (
     DEFAULT_RELAY_MAX_LINES,
     SynapseHub,
 )
-from synapse_channel.launcher import run_team
-from synapse_channel.llm_worker import (
-    DEFAULT_OLLAMA_BASE_URL,
-    SynapseLLMWorker,
-)
-from synapse_channel.mcp_server import DEFAULT_BRIDGE_NAME, serve_stdio
-from synapse_channel.persistence import EventStore
-from synapse_channel.protocol import (
+from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.protocol import (
     MessageType,
     addresses_project,
     is_recipient,
     wakes,
 )
-from synapse_channel.ratelimit import RateLimiter
+from synapse_channel.core.ratelimit import RateLimiter
+from synapse_channel.git.gitclaim import GitError, run_git_claim
+from synapse_channel.git.gitconflict import run_conflicts
+from synapse_channel.git.githook import install_hooks, run_git_release
+from synapse_channel.mcp.server import DEFAULT_BRIDGE_NAME, serve_stdio
 from synapse_channel.relay import decode_lite, load_offset, read_jsonl_since, save_offset
-from synapse_channel.supervisor import (
-    DEFAULT_IDLE_SECONDS,
-    DEFAULT_INTERVAL_SECONDS,
-    SupervisorWorker,
-)
 from synapse_channel.update_check import update_notice
 
 AgentFactory = Callable[..., SynapseAgent]

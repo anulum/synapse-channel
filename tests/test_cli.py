@@ -17,10 +17,10 @@ from typing import Any
 import pytest
 
 from synapse_channel import cli
-from synapse_channel.client import DEFAULT_HUB_URI
-from synapse_channel.gitclaim import GitError
-from synapse_channel.hub import SynapseHub
-from synapse_channel.llm_worker import DEFAULT_OLLAMA_BASE_URL
+from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.client.llm_worker import DEFAULT_OLLAMA_BASE_URL
+from synapse_channel.core.hub import SynapseHub
+from synapse_channel.git.gitclaim import GitError
 from synapse_channel.relay import append_jsonl, encode_lite
 
 

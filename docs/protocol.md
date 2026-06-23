@@ -37,5 +37,5 @@ applied once. On a secured hub, the first message of a connection must carry a
   `resume_snapshot`.
 
 The envelope builders and the message-type constants live in
-`synapse_channel.protocol`; the working agreement is in the repository's
+`synapse_channel.core.protocol`; the working agreement is in the repository's
 `TEAM_PROTOCOL.md`.

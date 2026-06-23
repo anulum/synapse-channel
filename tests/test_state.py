@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from synapse_channel.state import (
+from synapse_channel.core.state import (
     MINIMUM_TTL_SECONDS,
     GitContext,
     ResourceOffer,

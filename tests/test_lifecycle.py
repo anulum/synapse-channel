@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from synapse_channel.lifecycle import (
+from synapse_channel.core.lifecycle import (
     TaskStatus,
     can_transition,
     is_known,

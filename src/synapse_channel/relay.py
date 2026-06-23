@@ -61,7 +61,7 @@ def encode_lite(message: dict[str, Any]) -> dict[str, Any]:
     ----------
     message : dict[str, Any]
         A full message envelope as produced by
-        :func:`synapse_channel.protocol.build_envelope`.
+        :func:`synapse_channel.core.protocol.build_envelope`.
 
     Returns
     -------

@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from synapse_channel.deadlock import would_create_cycle
+from synapse_channel.core.deadlock import would_create_cycle
 
 
 def test_self_wait_is_a_cycle() -> None:

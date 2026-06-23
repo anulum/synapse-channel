@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from synapse_channel.ledger import Blackboard, LedgerTask, ProgressNote
+from synapse_channel.core.ledger import Blackboard, LedgerTask, ProgressNote
 
 # --- LedgerTask / ProgressNote -----------------------------------------------
 

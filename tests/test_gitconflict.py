@@ -13,8 +13,8 @@ from typing import Any, cast
 
 import pytest
 
-from synapse_channel.gitclaim import AgentFactory, GitError
-from synapse_channel.gitconflict import (
+from synapse_channel.git.gitclaim import AgentFactory, GitError
+from synapse_channel.git.gitconflict import (
     PredictedConflict,
     _overlap,
     branch_diff_files,
@@ -308,7 +308,7 @@ async def test_run_conflicts_without_snapshot(
     async def no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("synapse_channel.gitconflict.asyncio.sleep", no_sleep)
+    monkeypatch.setattr("synapse_channel.git.gitconflict.asyncio.sleep", no_sleep)
     factory, _created = make_factory(inbound=[])
     rc = await run_conflicts(uri="ws://t", name="U", agent_factory=factory, runner=lambda _a: "")
     assert rc == 0

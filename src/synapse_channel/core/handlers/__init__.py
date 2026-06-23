@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
-from synapse_channel.handlers.leasing import (
+from synapse_channel.core.handlers.leasing import (
     handle_checkpoint,
     handle_claim,
     handle_handoff,
@@ -29,14 +29,14 @@ from synapse_channel.handlers.leasing import (
     handle_task_update,
     handle_wait_request,
 )
-from synapse_channel.handlers.messaging import handle_chat, handle_heartbeat
-from synapse_channel.handlers.offerings import handle_advertise, handle_resource
-from synapse_channel.handlers.planning import (
+from synapse_channel.core.handlers.messaging import handle_chat, handle_heartbeat
+from synapse_channel.core.handlers.offerings import handle_advertise, handle_resource
+from synapse_channel.core.handlers.planning import (
     handle_ledger_progress,
     handle_ledger_task,
     handle_ledger_task_update,
 )
-from synapse_channel.handlers.snapshots import (
+from synapse_channel.core.handlers.snapshots import (
     handle_board_request,
     handle_history_request,
     handle_manifest_request,
@@ -44,10 +44,10 @@ from synapse_channel.handlers.snapshots import (
     handle_state_request,
     handle_who_request,
 )
-from synapse_channel.protocol import RESOURCE_TYPE_ALIASES, MessageType
+from synapse_channel.core.protocol import RESOURCE_TYPE_ALIASES, MessageType
 
 if TYPE_CHECKING:
-    from synapse_channel.hub import SynapseHub
+    from synapse_channel.core.hub import SynapseHub
 
 Handler = Callable[["SynapseHub", str, dict[str, Any], Any], Awaitable[None]]
 """A message handler: ``(hub, sender, data, websocket) -> awaitable[None]``."""

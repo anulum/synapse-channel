@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from synapse_channel.scoping import (
+from synapse_channel.core.scoping import (
     normalize_path,
     normalize_paths,
     paths_overlap,

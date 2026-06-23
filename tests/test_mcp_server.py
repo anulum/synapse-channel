@@ -16,7 +16,8 @@ from typing import Any, cast
 
 import pytest
 
-from synapse_channel.mcp_server import (
+from synapse_channel.core.protocol import MessageType
+from synapse_channel.mcp.server import (
     MCP_EXTRA_HINT,
     AgentFactory,
     SynapseHubBridge,
@@ -24,7 +25,6 @@ from synapse_channel.mcp_server import (
     build_mcp_server,
     serve_stdio,
 )
-from synapse_channel.protocol import MessageType
 
 
 class FakeAgent:

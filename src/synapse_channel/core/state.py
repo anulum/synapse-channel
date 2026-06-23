@@ -23,8 +23,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from synapse_channel.lifecycle import TaskStatus, can_transition
-from synapse_channel.scoping import DEFAULT_WORKTREE, normalize_paths, scopes_conflict
+from synapse_channel.core.lifecycle import TaskStatus, can_transition
+from synapse_channel.core.scoping import DEFAULT_WORKTREE, normalize_paths, scopes_conflict
 
 MINIMUM_TTL_SECONDS = 30.0
 """Floor applied to every requested lease/default TTL, in seconds."""
@@ -399,7 +399,7 @@ class SynapseState:
 
         Only the claim owner may mutate it. Fields left as ``None`` are
         untouched; a non-empty ``status`` must be a legal lifecycle transition
-        (see :func:`synapse_channel.lifecycle.can_transition`). When ``epoch`` is
+        (see :func:`synapse_channel.core.lifecycle.can_transition`). When ``epoch`` is
         supplied it must match the claim's current epoch (lease guard), and when
         ``expected_version`` is supplied it must match the claim's current version
         (optimistic-concurrency guard against lost updates). A successful update

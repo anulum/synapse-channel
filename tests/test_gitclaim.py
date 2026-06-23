@@ -15,14 +15,14 @@ from typing import Any, cast
 
 import pytest
 
-from synapse_channel.gitclaim import (
+from synapse_channel.core.protocol import MessageType
+from synapse_channel.git.gitclaim import (
     AgentFactory,
     GitError,
     _default_git_runner,
     resolve_branch,
     run_git_claim,
 )
-from synapse_channel.protocol import MessageType
 
 
 class FakeAgent:
@@ -91,7 +91,7 @@ def test_default_git_runner_returns_stripped_stdout(monkeypatch: pytest.MonkeyPa
         assert args == ["git", "rev-parse", "--abbrev-ref", "HEAD"]
         return Result()
 
-    monkeypatch.setattr("synapse_channel.gitclaim.subprocess.run", fake_run)
+    monkeypatch.setattr("synapse_channel.git.gitclaim.subprocess.run", fake_run)
     assert _default_git_runner(["rev-parse", "--abbrev-ref", "HEAD"]) == "feature/x"
 
 
@@ -99,7 +99,7 @@ def test_default_git_runner_missing_git(monkeypatch: pytest.MonkeyPatch) -> None
     def fake_run(args: list[str], **_kw: Any) -> Any:
         raise FileNotFoundError
 
-    monkeypatch.setattr("synapse_channel.gitclaim.subprocess.run", fake_run)
+    monkeypatch.setattr("synapse_channel.git.gitclaim.subprocess.run", fake_run)
     with pytest.raises(GitError, match="not installed"):
         _default_git_runner(["status"])
 
@@ -108,7 +108,7 @@ def test_default_git_runner_nonzero_uses_stderr(monkeypatch: pytest.MonkeyPatch)
     def fake_run(args: list[str], **_kw: Any) -> Any:
         raise subprocess.CalledProcessError(1, args, stderr="fatal: not a git repository")
 
-    monkeypatch.setattr("synapse_channel.gitclaim.subprocess.run", fake_run)
+    monkeypatch.setattr("synapse_channel.git.gitclaim.subprocess.run", fake_run)
     with pytest.raises(GitError, match="not a git repository"):
         _default_git_runner(["status"])
 
@@ -117,7 +117,7 @@ def test_default_git_runner_nonzero_without_stderr(monkeypatch: pytest.MonkeyPat
     def fake_run(args: list[str], **_kw: Any) -> Any:
         raise subprocess.CalledProcessError(1, args, stderr="")
 
-    monkeypatch.setattr("synapse_channel.gitclaim.subprocess.run", fake_run)
+    monkeypatch.setattr("synapse_channel.git.gitclaim.subprocess.run", fake_run)
     with pytest.raises(GitError, match="exited non-zero"):
         _default_git_runner(["status"])
 
@@ -239,7 +239,7 @@ async def test_run_git_claim_no_response(monkeypatch: pytest.MonkeyPatch) -> Non
     async def no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("synapse_channel.gitclaim.asyncio.sleep", no_sleep)
+    monkeypatch.setattr("synapse_channel.git.gitclaim.asyncio.sleep", no_sleep)
     factory, _created = make_factory()
     rc = await run_git_claim(
         uri="ws://t",

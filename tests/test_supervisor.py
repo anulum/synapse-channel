@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from synapse_channel.supervisor import SupervisorWorker, detect_stalls
+from synapse_channel.client.supervisor import SupervisorWorker, detect_stalls
 
 
 def _board(
@@ -183,7 +183,7 @@ async def test_cycle_settles_before_evaluating(monkeypatch: pytest.MonkeyPatch) 
     async def fake_sleep(seconds: float) -> None:
         slept.append(seconds)
 
-    monkeypatch.setattr("synapse_channel.supervisor.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("synapse_channel.client.supervisor.asyncio.sleep", fake_sleep)
     await worker._cycle()
     assert 0.1 in slept
 
@@ -194,7 +194,7 @@ async def test_supervise_loop_runs_a_pass_then_exits(monkeypatch: pytest.MonkeyP
     async def stop_after_sleep(_seconds: float) -> None:
         worker.agent.running = False  # end the loop after the first interval
 
-    monkeypatch.setattr("synapse_channel.supervisor.asyncio.sleep", stop_after_sleep)
+    monkeypatch.setattr("synapse_channel.client.supervisor.asyncio.sleep", stop_after_sleep)
     await worker._supervise_loop()
     agent: FakeAgent = worker.agent  # type: ignore[assignment]
     assert agent.board_requests == 1

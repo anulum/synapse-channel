@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from synapse_channel.launcher import (
+from synapse_channel.client.launcher import (
     FALLBACK_MODEL,
     FAST_MODEL_PREFERENCES,
     REASON_MODEL_PREFERENCES,

@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from synapse_channel.protocol import (
+from synapse_channel.core.protocol import (
     RESOURCE_TYPE_ALIASES,
     SENDER_HUB,
     MessageType,
@@ -113,7 +113,7 @@ def test_is_recipient_glob_groups() -> None:
 
 
 def test_is_directed_excludes_broadcast() -> None:
-    from synapse_channel.protocol import is_directed
+    from synapse_channel.core.protocol import is_directed
 
     assert is_directed("quantum/*", "quantum/claude-1")
     assert is_directed("B", "B")
@@ -122,7 +122,7 @@ def test_is_directed_excludes_broadcast() -> None:
 
 
 def test_addresses_project() -> None:
-    from synapse_channel.protocol import addresses_project
+    from synapse_channel.core.protocol import addresses_project
 
     assert addresses_project("all", "quantum")
     assert addresses_project("quantum", "quantum")
@@ -134,13 +134,13 @@ def test_addresses_project() -> None:
 
 
 def test_priority_senders_contains_ceo() -> None:
-    from synapse_channel.protocol import PRIORITY_SENDERS
+    from synapse_channel.core.protocol import PRIORITY_SENDERS
 
     assert "CEO" in PRIORITY_SENDERS
 
 
 def test_wakes_normal_and_directed_only() -> None:
-    from synapse_channel.protocol import wakes
+    from synapse_channel.core.protocol import wakes
 
     # normal mode: any recipient match, including a broadcast
     assert wakes("all", "B", directed_only=False, sender="A")

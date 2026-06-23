@@ -15,8 +15,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from synapse_channel.client import SynapseAgent
-from synapse_channel.hub import SynapseHub
+from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.core.hub import SynapseHub
 
 
 def _free_port() -> int:

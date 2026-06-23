@@ -18,12 +18,12 @@ from typing import Any, cast
 import pytest
 from websockets.exceptions import ConnectionClosed
 
-from synapse_channel.auth import TokenAuthenticator
-from synapse_channel.hub import SynapseHub, is_loopback_host
-from synapse_channel.persistence import EventStore
-from synapse_channel.ratelimit import RateLimiter
+from synapse_channel.core.auth import TokenAuthenticator
+from synapse_channel.core.hub import SynapseHub, is_loopback_host
+from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.ratelimit import RateLimiter
+from synapse_channel.core.state import GitContext
 from synapse_channel.relay import decode_lite, read_jsonl_since
-from synapse_channel.state import GitContext
 
 
 class FakeServerWS:

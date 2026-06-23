@@ -22,9 +22,9 @@ import asyncio
 from dataclasses import dataclass, replace
 from typing import Any
 
-from synapse_channel.client import SynapseAgent
-from synapse_channel.gitclaim import AgentFactory, GitError, GitRunner, _default_git_runner
-from synapse_channel.protocol import MessageType
+from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.core.protocol import MessageType
+from synapse_channel.git.gitclaim import AgentFactory, GitError, GitRunner, _default_git_runner
 
 
 @dataclass(frozen=True)

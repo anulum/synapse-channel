@@ -12,8 +12,8 @@ import time
 
 import pytest
 
-from synapse_channel.chat_backends import OpenAIChatClient, RuleBasedClient
-from synapse_channel.llm_worker import (
+from synapse_channel.client.chat_backends import OpenAIChatClient, RuleBasedClient
+from synapse_channel.client.llm_worker import (
     DEFAULT_OLLAMA_BASE_URL,
     OPENAI_DEFAULT_BASE_URL,
     SynapseLLMWorker,
@@ -133,7 +133,7 @@ def test_build_client_rejects_unknown_provider() -> None:
 
 
 def test_build_client_tiered_returns_router() -> None:
-    from synapse_channel.routing import TieredChatClient
+    from synapse_channel.client.routing import TieredChatClient
 
     worker = _worker(provider="tiered", model="small", heavy_model="big")
     assert isinstance(worker.client, TieredChatClient)
@@ -241,7 +241,7 @@ async def test_process_item_throttles(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_sleep(seconds: float) -> None:
         slept.append(seconds)
 
-    monkeypatch.setattr("synapse_channel.llm_worker.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("synapse_channel.client.llm_worker.asyncio.sleep", fake_sleep)
     await worker._process_item({"sender": "USER", "payload": "go"})
     assert slept and slept[0] > 0
 

@@ -41,7 +41,7 @@ class TokenAuthenticator:
     Notes
     -----
     An authenticator constructed with no usable tokens denies every connection;
-    pass ``None`` to :class:`~synapse_channel.hub.SynapseHub` to leave the hub
+    pass ``None`` to :class:`~synapse_channel.core.hub.SynapseHub` to leave the hub
     open instead.
     """
 

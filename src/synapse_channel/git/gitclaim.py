@@ -12,7 +12,7 @@ git or reads a filesystem: a git-aware agent resolves its current branch locally
 and attaches the result as opaque metadata on an ordinary claim, so the hub can
 display and group claims by branch without ever touching a repository. This
 module resolves the branch and drives a git-scoped claim through a
-:class:`~synapse_channel.client.SynapseAgent`.
+:class:`~synapse_channel.client.agent.SynapseAgent`.
 
 The git subprocess is injectable (``runner``) so the flow is unit-testable
 without a real repository.
@@ -25,9 +25,9 @@ import subprocess
 from collections.abc import Callable
 from typing import Any
 
-from synapse_channel.client import SynapseAgent
-from synapse_channel.protocol import MessageType
-from synapse_channel.state import GitContext
+from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.state import GitContext
 
 GitRunner = Callable[[list[str]], str]
 """Runs a git subcommand (argv after ``git``) and returns its stripped stdout."""

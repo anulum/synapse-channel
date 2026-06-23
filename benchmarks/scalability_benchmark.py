@@ -30,7 +30,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.state import SynapseState, TaskClaim
+from synapse_channel.core.state import SynapseState, TaskClaim
 
 BENCHMARK_DIR = Path(__file__).resolve().parent
 DEFAULT_RESULTS = BENCHMARK_DIR / "results" / "scalability_benchmark.json"
