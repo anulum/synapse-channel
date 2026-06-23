@@ -1,12 +1,14 @@
 # CLI reference
 
-The `synapse` command exposes fourteen subcommands.
+The `synapse` command exposes twenty subcommands.
 
 | Command | What it does |
 | --- | --- |
 | `synapse hub` | Run the coordination hub. |
+| `synapse health` | Probe the hub; exit `0` if reachable, `1` if not (wired as a container healthcheck). |
 | `synapse worker` | Run a model worker that answers on the channel. |
 | `synapse team` | Launch a hub plus one or two local workers in one shot. |
+| `synapse mcp` | Serve the hub to MCP-compatible agents over stdio (see [MCP server](mcp.md)). |
 | `synapse send` | Connect, send one message, optionally await replies, and exit. |
 | `synapse wait` | Block until a message addressed to you arrives, then exit (a wake trigger). |
 | `synapse listen` | Connect and stream channel messages until interrupted. |
@@ -16,6 +18,10 @@ The `synapse` command exposes fourteen subcommands.
 | `synapse manifest` | Print the capability manifest of advertised agents. |
 | `synapse who` | List the agents currently online, optionally for one project. |
 | `synapse state` | Print active claims and their checkpoints (a resume view). |
+| `synapse git-claim` | Claim work scoped to the current git branch (see [Git-native claims](git-claims.md)). |
+| `synapse git-hook` | Install post-commit/post-merge hooks that auto-release a commit's claims. |
+| `synapse git-release` | Release the claims whose paths a commit or merge just touched. |
+| `synapse conflicts` | Predict cross-branch merge conflicts between overlapping claims; exit non-zero on a hit. |
 | `synapse lock` | Hold a lease while running a command, to serialise it across agents. |
 | `synapse task` | Declare and update the shared task plan. |
 
