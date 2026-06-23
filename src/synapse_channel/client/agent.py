@@ -61,6 +61,15 @@ class SynapseAgent:
         Shared-secret token presented on the registration message when the hub
         requires authentication. ``None`` sends no token (the default for an
         open, loopback hub).
+    ping_interval : float, optional
+        Seconds between client keepalive pings, so a half-open connection — a hub
+        that was killed, an ungraceful restart, or an eviction whose close frame
+        never arrived — is detected and :meth:`connect` returns instead of blocking
+        forever. Without this a waiter can linger for days holding a dead socket.
+        Defaults to ``20.0``.
+    ping_timeout : float, optional
+        Seconds to wait for a ping reply before dropping the connection. Defaults
+        to ``20.0``.
     """
 
     def __init__(
@@ -73,6 +82,8 @@ class SynapseAgent:
         verbose: bool = True,
         token: str | None = None,
         takeover: bool = False,
+        ping_interval: float = 20.0,
+        ping_timeout: float = 20.0,
     ) -> None:
         self.name = name
         self.uri = uri
@@ -86,6 +97,8 @@ class SynapseAgent:
         self.verbose = bool(verbose)
         self.token = token
         self.takeover = bool(takeover)
+        self.ping_interval = float(ping_interval)
+        self.ping_timeout = float(ping_timeout)
 
     async def connect(self) -> None:
         """Open the connection and run the inbound listener until it closes.
@@ -96,7 +109,9 @@ class SynapseAgent:
         cancelled on exit.
         """
         try:
-            async with connect(self.uri) as websocket:
+            async with connect(
+                self.uri, ping_interval=self.ping_interval, ping_timeout=self.ping_timeout
+            ) as websocket:
                 self.connection = websocket
                 if self.verbose:
                     print(f"[{self.name}] Online and connected to Synapse.")

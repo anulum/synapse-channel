@@ -205,12 +205,20 @@ def is_recipient(target: str, name: str) -> bool:
     bool
         ``True`` for a broadcast or when ``name`` matches one of the target parts
         (each part is matched as a case-sensitive glob, so a plain name is exact).
+        A bare project target also reaches that project's ``<project>/...`` agents,
+        so a message to ``"quantum"`` addresses ``"quantum/claude-7f3a"`` — keeping
+        this consistent with :func:`addresses_project`, so a sole agent armed under
+        a ``<project>/<id>`` identity still receives project-addressed messages.
     """
     cleaned = (target or "all").strip()
     if cleaned in ("", "all"):
         return True
+    # A ``<project>/<id>`` name is also addressed by its bare project, so a target
+    # of the project reaches every agent in it (mirrors ``addresses_project``).
+    project = name.split("/", 1)[0]
     return any(
-        fnmatch.fnmatchcase(name, part.strip()) for part in cleaned.split(",") if part.strip()
+        fnmatch.fnmatchcase(name, part) or fnmatch.fnmatchcase(project, part)
+        for part in (raw.strip() for raw in cleaned.split(",") if raw.strip())
     )
 
 

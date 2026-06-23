@@ -112,6 +112,25 @@ def test_is_recipient_glob_groups() -> None:
     assert is_recipient("quantum/*,other/codex-1", "other/codex-1")
 
 
+def test_is_recipient_bare_project_reaches_subidentities() -> None:
+    from synapse_channel.core.protocol import is_directed, wakes
+
+    # A bare project target reaches a <project>/<id> agent (the fix: a sole agent
+    # armed under a sub-identity must still receive project-addressed messages).
+    assert is_recipient("quantum", "quantum/claude-7f3a")
+    assert is_recipient("a,quantum", "quantum/claude-7f3a")
+    # and it directs / wakes the same way
+    assert is_directed("quantum", "quantum/claude-7f3a")
+    assert wakes("quantum", "quantum/claude-7f3a", directed_only=True, sender="A")
+    # but it does not leak across projects or partial-prefix names
+    assert not is_recipient("quantum", "other/codex-1")
+    assert not is_recipient("quant", "quantum/claude-7f3a")
+    assert not is_recipient("quantum-core", "quantum/claude-7f3a")
+    # a bare name is unchanged
+    assert is_recipient("quantum", "quantum")
+    assert not is_recipient("quantum", "other")
+
+
 def test_is_directed_excludes_broadcast() -> None:
     from synapse_channel.core.protocol import is_directed
 
