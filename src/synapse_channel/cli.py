@@ -461,6 +461,79 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
         return 0
 
 
+def _identity(data: dict[str, Any]) -> Any:
+    """Return the message unchanged — the default reply transform for a query."""
+    return data
+
+
+async def _query_hub(
+    *,
+    uri: str,
+    name: str,
+    token: str | None,
+    response_type: str,
+    request: Callable[[SynapseAgent], Awaitable[None]],
+    render: Callable[[Any], None],
+    transform: Callable[[dict[str, Any]], Any] = _identity,
+    agent_factory: AgentFactory = SynapseAgent,
+    attempts: int = 50,
+) -> int:
+    """Connect, issue one request, await the matching reply, render it, and exit.
+
+    The shared connect → ready → request → poll → cleanup flow behind ``who``,
+    ``state``, ``board``, ``manifest``, and the task writes; a caller supplies only
+    the reply ``response_type``, how to ``request`` it, what to ``render``, and an
+    optional ``transform`` from the raw message to the rendered value.
+
+    Parameters
+    ----------
+    uri, name : str
+        Hub URI and the requester's display name.
+    token : str or None
+        Shared-secret token for a secured hub.
+    response_type : str
+        The inbound message type that answers the request.
+    request : Callable
+        Coroutine that issues the request on the connected agent.
+    render : Callable
+        Renders the latest (transformed) reply; it prints and returns nothing.
+    transform : Callable, optional
+        Maps the raw reply to the value handed to ``render``. Identity by default.
+    agent_factory : AgentFactory, optional
+        Factory for the client agent; injectable for testing.
+    attempts : int, optional
+        Poll attempts (50 ms each) for the reply before giving up. Defaults to ``50``.
+
+    Returns
+    -------
+    int
+        ``0`` once a reply is rendered (or none arrives), ``1`` when the hub is unreachable.
+    """
+    results: list[Any] = []
+
+    async def collect(data: dict[str, Any]) -> None:
+        if data.get("type") == response_type:
+            results.append(transform(data))
+
+    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
+    conn_task = asyncio.create_task(agent.connect())
+    try:
+        if not await agent.wait_until_ready(timeout=5.0):
+            print(f"[{name}] Could not reach hub at {uri}.")
+            return 1
+        await request(agent)
+        for _ in range(attempts):
+            if results:
+                break
+            await asyncio.sleep(0.05)
+        if results:
+            render(results[-1])
+        return 0
+    finally:
+        agent.running = False
+        conn_task.cancel()
+
+
 async def _who(
     *,
     uri: str,
@@ -491,36 +564,27 @@ async def _who(
     int
         ``0`` once a roster is printed, ``1`` when the hub could not be reached.
     """
-    rosters: list[list[str]] = []
 
-    async def collect(data: dict[str, Any]) -> None:
-        if data.get("type") == MessageType.WHO_SNAPSHOT:
-            rosters.append([str(agent) for agent in data.get("online_agents", [])])
+    def render(roster: list[str]) -> None:
+        agents = sorted(roster)
+        if project:
+            prefix = f"{project}/"
+            agents = [a for a in agents if a == project or a.startswith(prefix)]
+        label = f"Online in {project}" if project else "Online"
+        print(f"{label} ({len(agents)}):")
+        for agent_name in agents:
+            print(f"  {agent_name}")
 
-    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
-    conn_task = asyncio.create_task(agent.connect())
-    try:
-        if not await agent.wait_until_ready(timeout=5.0):
-            print(f"[{name}] Could not reach hub at {uri}.")
-            return 1
-        await agent.request_who()
-        for _ in range(50):
-            if rosters:
-                break
-            await asyncio.sleep(0.05)
-        if rosters:
-            agents = sorted(rosters[-1])
-            if project:
-                prefix = f"{project}/"
-                agents = [a for a in agents if a == project or a.startswith(prefix)]
-            label = f"Online in {project}" if project else "Online"
-            print(f"{label} ({len(agents)}):")
-            for agent_name in agents:
-                print(f"  {agent_name}")
-        return 0
-    finally:
-        agent.running = False
-        conn_task.cancel()
+    return await _query_hub(
+        uri=uri,
+        name=name,
+        token=token,
+        agent_factory=agent_factory,
+        response_type=MessageType.WHO_SNAPSHOT,
+        transform=lambda data: [str(agent) for agent in data.get("online_agents", [])],
+        request=lambda agent: agent.request_who(),
+        render=render,
+    )
 
 
 def _cmd_who(args: argparse.Namespace) -> int:
@@ -557,46 +621,37 @@ async def _state(
     int
         ``0`` once the claims are printed, ``1`` when the hub could not be reached.
     """
-    snapshots: list[dict[str, Any]] = []
 
-    async def collect(data: dict[str, Any]) -> None:
-        if data.get("type") == MessageType.STATE_SNAPSHOT:
-            snapshots.append(data.get("snapshot", {}))
+    def render(snapshot: dict[str, Any]) -> None:
+        claims = list(snapshot.get("active_claims", []))
+        if owner:
+            prefix = f"{owner}/"
+            claims = [
+                c
+                for c in claims
+                if c.get("owner") == owner or str(c.get("owner", "")).startswith(prefix)
+            ]
+        print(f"Active claims ({len(claims)}):")
+        for claim in claims:
+            paths = ", ".join(claim.get("paths", [])) or "-"
+            checkpoint = claim.get("checkpoint") or "-"
+            git = claim.get("git")
+            git_suffix = f" git={git['branch']}->{git['base']}" if git else ""
+            print(
+                f"  {claim.get('task_id')} [{claim.get('status')}] "
+                f"owner={claim.get('owner')} paths={paths} checkpoint={checkpoint}{git_suffix}"
+            )
 
-    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
-    conn_task = asyncio.create_task(agent.connect())
-    try:
-        if not await agent.wait_until_ready(timeout=5.0):
-            print(f"[{name}] Could not reach hub at {uri}.")
-            return 1
-        await agent.request_state()
-        for _ in range(50):
-            if snapshots:
-                break
-            await asyncio.sleep(0.05)
-        if snapshots:
-            claims = list(snapshots[-1].get("active_claims", []))
-            if owner:
-                prefix = f"{owner}/"
-                claims = [
-                    c
-                    for c in claims
-                    if c.get("owner") == owner or str(c.get("owner", "")).startswith(prefix)
-                ]
-            print(f"Active claims ({len(claims)}):")
-            for claim in claims:
-                paths = ", ".join(claim.get("paths", [])) or "-"
-                checkpoint = claim.get("checkpoint") or "-"
-                git = claim.get("git")
-                git_suffix = f" git={git['branch']}->{git['base']}" if git else ""
-                print(
-                    f"  {claim.get('task_id')} [{claim.get('status')}] "
-                    f"owner={claim.get('owner')} paths={paths} checkpoint={checkpoint}{git_suffix}"
-                )
-        return 0
-    finally:
-        agent.running = False
-        conn_task.cancel()
+    return await _query_hub(
+        uri=uri,
+        name=name,
+        token=token,
+        agent_factory=agent_factory,
+        response_type=MessageType.STATE_SNAPSHOT,
+        transform=lambda data: data.get("snapshot", {}),
+        request=lambda agent: agent.request_state(),
+        render=render,
+    )
 
 
 def _cmd_state(args: argparse.Namespace) -> int:
@@ -899,29 +954,16 @@ async def _board(
     int
         ``0`` once a snapshot is printed, ``1`` when the hub could not be reached.
     """
-    boards: list[dict[str, Any]] = []
-
-    async def collect(data: dict[str, Any]) -> None:
-        if data.get("type") == MessageType.BOARD_SNAPSHOT:
-            boards.append(data.get("board", {}))
-
-    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
-    conn_task = asyncio.create_task(agent.connect())
-    try:
-        if not await agent.wait_until_ready(timeout=5.0):
-            print(f"[{name}] Could not reach hub at {uri}.")
-            return 1
-        await agent.request_board()
-        for _ in range(50):
-            if boards:
-                break
-            await asyncio.sleep(0.05)
-        if boards:
-            _print_board(boards[-1])
-        return 0
-    finally:
-        agent.running = False
-        conn_task.cancel()
+    return await _query_hub(
+        uri=uri,
+        name=name,
+        token=token,
+        agent_factory=agent_factory,
+        response_type=MessageType.BOARD_SNAPSHOT,
+        transform=lambda data: data.get("board", {}),
+        request=lambda agent: agent.request_board(),
+        render=_print_board,
+    )
 
 
 def _cmd_board(args: argparse.Namespace) -> int:
@@ -962,29 +1004,16 @@ async def _manifest(
     int
         ``0`` once a manifest is printed, ``1`` when the hub could not be reached.
     """
-    manifests: list[list[dict[str, Any]]] = []
-
-    async def collect(data: dict[str, Any]) -> None:
-        if data.get("type") == MessageType.MANIFEST_SNAPSHOT:
-            manifests.append(data.get("manifest", []))
-
-    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
-    conn_task = asyncio.create_task(agent.connect())
-    try:
-        if not await agent.wait_until_ready(timeout=5.0):
-            print(f"[{name}] Could not reach hub at {uri}.")
-            return 1
-        await agent.request_manifest()
-        for _ in range(50):
-            if manifests:
-                break
-            await asyncio.sleep(0.05)
-        if manifests:
-            _print_manifest(manifests[-1])
-        return 0
-    finally:
-        agent.running = False
-        conn_task.cancel()
+    return await _query_hub(
+        uri=uri,
+        name=name,
+        token=token,
+        agent_factory=agent_factory,
+        response_type=MessageType.MANIFEST_SNAPSHOT,
+        transform=lambda data: data.get("manifest", []),
+        request=lambda agent: agent.request_manifest(),
+        render=_print_manifest,
+    )
 
 
 def _cmd_manifest(args: argparse.Namespace) -> int:
@@ -1024,29 +1053,16 @@ async def _task_action(
     int
         ``0`` once the confirmation is printed, ``1`` when the hub was unreachable.
     """
-    seen: list[dict[str, Any]] = []
-
-    async def collect(data: dict[str, Any]) -> None:
-        if data.get("type") == confirm_type:
-            seen.append(data)
-
-    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
-    conn_task = asyncio.create_task(agent.connect())
-    try:
-        if not await agent.wait_until_ready(timeout=5.0):
-            print(f"[{name}] Could not reach hub at {uri}.")
-            return 1
-        await send(agent)
-        for _ in range(60):
-            if seen:
-                break
-            await asyncio.sleep(0.05)
-        if seen:
-            print(render(seen[-1]))
-        return 0
-    finally:
-        agent.running = False
-        conn_task.cancel()
+    return await _query_hub(
+        uri=uri,
+        name=name,
+        token=token,
+        agent_factory=agent_factory,
+        response_type=confirm_type,
+        request=send,
+        render=lambda data: print(render(data)),
+        attempts=60,
+    )
 
 
 def _cmd_task_declare(
