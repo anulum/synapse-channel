@@ -11,6 +11,27 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.35.1] - 2026-06-23
+
+### Fixed
+- Bare-project message routing. `is_recipient` — and so `is_directed`/`wakes` — now
+  routes a bare `<project>` target to that project's `<project>/<id>` agents, mirroring
+  `addresses_project`. An agent connected under a sub-identity no longer misses
+  messages addressed to the bare project name, in both the wake predicate and the
+  inbox filter. A bare name and cross-project targets are unchanged.
+- Stale-waiter reaping. The client now sets explicit ping keepalive
+  (`ping_interval`/`ping_timeout`, default 20s) on its connection, so a half-open
+  socket — a killed hub, an ungraceful restart, or an eviction whose close frame never
+  arrived — is detected and the connection returns instead of blocking indefinitely.
+
+### Added
+- A daily PyPI download tracker (`tools/pypi_downloads.py` and a scheduled workflow)
+  that records the `without_mirrors` download series to a side `metrics` branch, so
+  real installs can be watched above the CI/mirror baseline.
+
+### Changed
+- Bump `codecov/codecov-action` to v7.0.0.
+
 ## [0.35.0] - 2026-06-23
 
 ### Changed
