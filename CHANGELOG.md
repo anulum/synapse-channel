@@ -11,6 +11,30 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.35.0] - 2026-06-23
+
+### Changed
+- The package is reorganised into subpackages. The flat modules now live under
+  `synapse_channel.core` (the hub, its state, journal, protocol, ledger, and the
+  coordination primitives), `synapse_channel.client` (the agent and its on-channel
+  workers), `synapse_channel.git` (the git-native claim helpers), and
+  `synapse_channel.mcp` (the MCP face); `cli`, `relay`, and `update_check` stay at the
+  top level. The documented public API is unchanged — `from synapse_channel import …`
+  still re-exports every name — but deep imports moved. Migrate by prefixing the
+  subpackage: `from synapse_channel.hub import SynapseHub` becomes
+  `from synapse_channel.core.hub import SynapseHub`; `synapse_channel.client` becomes
+  `synapse_channel.client.agent`; and `synapse_channel.mcp_server` becomes
+  `synapse_channel.mcp.server`.
+- The hub's message handlers moved out of the routing core into a per-responsibility
+  registry (`synapse_channel.core.handlers`), so each message type is one dispatch-table
+  entry and one handler function. The wire protocol and hub behaviour are unchanged.
+
+### Added
+- A measured scalability benchmark (`benchmarks/scalability_benchmark.py`, run with
+  `make bench`) and a documented limits section quantifying the per-mutation lease-expiry
+  scan from 10 to 100000 live claims.
+- A link from the README to the commercial plans.
+
 ## [0.34.0] - 2026-06-23
 
 ### Added
