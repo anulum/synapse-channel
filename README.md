@@ -259,7 +259,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.34.0 |
 | Public API exports | 43 |
-| Package modules | 26 |
+| Package modules | 31 |
 | Classes | 33 |
 | Wire message types | 47 |
 | CLI subcommands | 23 |
