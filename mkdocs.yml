@@ -67,6 +67,8 @@ nav:
   - Home: index.md
   - Installation: installation.md
   - Quick start: quickstart.md
+  - Use cases: use-cases.md
+  - How it compares: comparison.md
   - Coordination model: coordination-model.md
   - Wire protocol: protocol.md
   - CLI reference: cli.md
@@ -77,5 +79,8 @@ nav:
   - Deployment: deployment.md
   - Benchmarks: benchmarks.md
   - API reference: api.md
+  - Troubleshooting: troubleshooting.md
+  - FAQ: faq.md
+  - Glossary: glossary.md
   - Changelog: changelog.md
   - Commercial use: commercial.md

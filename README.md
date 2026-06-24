@@ -302,7 +302,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | CLI subcommands | 26 |
 | Test functions | 980 |
 | Benchmark harnesses | 3 |
-| Documentation pages | 15 |
+| Documentation pages | 20 |
 | GitHub Actions workflows | 10 |
 | Optional-dependency groups | 4 |
 
@@ -313,6 +313,7 @@ This snapshot is a static inventory generated from the source tree. Performance 
 
 ## Documentation and project
 
+- New here? [Use cases](https://anulum.github.io/synapse-channel/use-cases/) · [How it compares](https://anulum.github.io/synapse-channel/comparison/) · [FAQ](https://anulum.github.io/synapse-channel/faq/) · [Troubleshooting](https://anulum.github.io/synapse-channel/troubleshooting/) · [Glossary](https://anulum.github.io/synapse-channel/glossary/)
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — the module map and coordination model.
 - [`TEAM_PROTOCOL.md`](TEAM_PROTOCOL.md) — the working agreement and wire reference.
 - [`VALIDATION.md`](VALIDATION.md) — how it is tested and the gates a change clears.
