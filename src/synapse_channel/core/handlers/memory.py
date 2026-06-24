@@ -12,7 +12,7 @@ indexes, ranks, or interprets them — a downstream adapter (e.g. REMANENTIA)
 consumes the durable log. What the hub *does* add is the one thing only the
 chokepoint every event passes through can: **attestation**. The producing
 identity and the receive-time are stamped by the hub, not self-reported, so a
-recall log cannot be back-dated or mis-attributed by its sender.
+recall log cannot be back-dated or misattributed by its sender.
 
 Recall logging is the query-stream: every lookup the fleet actually makes,
 captured so a memory layer can calibrate recall against the *real* query
