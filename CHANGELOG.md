@@ -36,6 +36,10 @@ All notable changes to this project are documented here.
   hooks are installed and whether the `synapse` executable each one invokes still
   resolves, so a missing hook or a moved binary is caught up front instead of silently
   no-opping the next time a claim should have auto-released. It exits non-zero on any gap.
+- `synapse hub` and `synapse worker` configure logging on startup with
+  `--log-format {text,json}` and `--log-level LEVEL`. The JSON format emits one structured
+  object per line (timestamp, level, logger, message, plus any contextual fields) for log
+  aggregators; human-readable text stays the default.
 
 ### Security
 - Inbound wire frames are rejected before parsing when their array/object nesting
