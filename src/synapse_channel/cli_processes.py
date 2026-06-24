@@ -74,10 +74,16 @@ def _cmd_hub(args: argparse.Namespace) -> int:
     configure_logging(log_format=args.log_format, level=args.log_level)
     journal = EventStore(args.db) if args.db else None
     limiter = RateLimiter(rate_per_second=args.rate, burst=args.burst) if args.rate > 0 else None
+    host_limiter = (
+        RateLimiter(rate_per_second=args.host_rate, burst=args.host_burst)
+        if args.host_rate > 0
+        else None
+    )
     authenticator = TokenAuthenticator([args.token]) if args.token else None
     hub = SynapseHub(
         journal=journal,
         rate_limiter=limiter,
+        host_rate_limiter=host_limiter,
         max_history=args.max_history,
         relay_log=args.relay_log,
         relay_max_lines=args.relay_max_lines,
@@ -234,6 +240,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     hub.add_argument(
         "--burst", type=float, default=20.0, help="Per-agent burst allowance for --rate."
+    )
+    hub.add_argument(
+        "--host-rate",
+        type=float,
+        default=0.0,
+        help="Per-host sustained frame rate (frames/sec, heartbeats included); 0 disables it.",
+    )
+    hub.add_argument(
+        "--host-burst", type=float, default=40.0, help="Per-host burst allowance for --host-rate."
     )
     hub.add_argument(
         "--max-history",

@@ -23,6 +23,7 @@ from synapse_channel.core.hub import (
     SynapseHub,
 )
 from synapse_channel.core.logging_setup import DEFAULT_LOG_FORMAT, DEFAULT_LOG_LEVEL
+from synapse_channel.core.ratelimit import RateLimiter
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 
 # --- parser ------------------------------------------------------------------
@@ -68,6 +69,15 @@ def test_parser_hub_caps() -> None:
     args = cli.build_parser().parse_args(["hub", "--max-clients", "8", "--max-msg-kb", "32"])
     assert args.max_clients == 8
     assert args.max_msg_kb == 32
+
+
+def test_parser_hub_host_rate_caps() -> None:
+    defaults = cli.build_parser().parse_args(["hub"])
+    assert defaults.host_rate == 0.0
+    assert defaults.host_burst == 40.0
+    args = cli.build_parser().parse_args(["hub", "--host-rate", "5", "--host-burst", "12"])
+    assert args.host_rate == 5.0
+    assert args.host_burst == 12.0
 
 
 def test_parser_hub_per_agent_quotas() -> None:
@@ -171,6 +181,8 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "db": None,
         "rate": 0.0,
         "burst": 20.0,
+        "host_rate": 0.0,
+        "host_burst": 40.0,
         "max_history": 10000,
         "relay_log": None,
         "relay_max_lines": 5000,
@@ -293,6 +305,32 @@ def test_cmd_hub_threads_max_unauth_clients(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
     assert cli_processes._cmd_hub(_hub_ns(max_unauth_clients=8)) == 0
     assert captured["max_unauth_clients"] == 8
+
+
+def test_cmd_hub_builds_host_rate_limiter_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
+
+    def spy_hub(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
+    assert cli_processes._cmd_hub(_hub_ns(host_rate=5.0, host_burst=12.0)) == 0
+    assert isinstance(captured["host_rate_limiter"], RateLimiter)
+
+
+def test_cmd_hub_host_rate_limiter_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
+
+    def spy_hub(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
+    assert cli_processes._cmd_hub(_hub_ns()) == 0
+    assert captured["host_rate_limiter"] is None
 
 
 def test_cmd_hub_threads_compact_hint_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
