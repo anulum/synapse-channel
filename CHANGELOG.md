@@ -30,6 +30,14 @@ All notable changes to this project are documented here.
   admitted finding durably, and broadcasts the verdict to the fleet so a producer
   whose claim was floored learns what was downgraded. The hub stays
   memory-agnostic — it carries every record without interpreting it.
+- Distinct durable event kinds for resume checkpoints and handoffs. A saved
+  checkpoint and an atomic handoff were previously journalled as a `claim`
+  re-snapshot; they now record under their own `checkpoint` and `handoff` kinds.
+  Each still carries the full claim snapshot, so replay reconstructs the claim
+  (and a legacy log that journalled them as `claim` still replays unchanged), but
+  the persistent-memory read-side can now pick out resume summaries and ownership
+  transfers — the highest-signal episodic memory — without re-deriving them from
+  generic claim snapshots.
 
 ## [0.37.0] - 2026-06-24
 

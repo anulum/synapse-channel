@@ -24,7 +24,9 @@ from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.deadlock import would_create_cycle
 from synapse_channel.core.journal import (
+    record_checkpoint,
     record_claim,
+    record_handoff,
     record_ledger_progress,
     record_release,
     record_task_update,
@@ -216,7 +218,7 @@ async def handle_handoff(
     claim = hub.state.claims[task_id]
     hub._waits.pop(to_agent, None)  # receiving the task clears any wait for it
     if hub.journal is not None:
-        record_claim(hub.journal, claim)
+        record_handoff(hub.journal, claim)
     await _record_handoff_progress(hub, task_id, sender, to_agent, claim.note)
     granted = hub._system(
         message,
@@ -270,7 +272,7 @@ async def handle_checkpoint(
     if ok:
         claim = hub.state.claims[task_id]
         if hub.journal is not None:
-            record_claim(hub.journal, claim)
+            record_checkpoint(hub.journal, claim)
         saved = hub._system(
             message,
             msg_type=MessageType.CHECKPOINT_SAVED,
