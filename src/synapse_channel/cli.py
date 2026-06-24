@@ -34,13 +34,11 @@ The ``synapse`` command exposes these subcommands:
 * ``mcp`` — run a Model Context Protocol server over stdio, bridged to the hub.
 
 This module keeps the hub-lifecycle commands (hub/worker/team/supervisor) and the
-shared task-plan writes (task declare/update/progress); the messaging
-(send/wait/listen), read-only query (who/state/board/manifest/health), git,
-locking, mcp, and file/event subcommands live in their own ``cli_*`` modules and
-register through :func:`build_parser`. The task writes reuse :func:`_query_hub`
-from :mod:`synapse_channel.cli_queries`, and every helper takes an injectable
-agent factory so the dispatch and the client flows are unit-testable without a
-live hub.
+top-level dispatch (:func:`build_parser`, :func:`main`, and token resolution); the
+messaging (send/wait/listen), read-only query (who/state/board/manifest/health),
+task-plan write (task declare/update/progress), git, locking, mcp, and file/event
+subcommands live in their own ``cli_*`` modules and register through
+:func:`build_parser`.
 """
 
 from __future__ import annotations
@@ -49,7 +47,7 @@ import argparse
 import asyncio
 import os
 import sys
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
 
@@ -58,10 +56,10 @@ from synapse_channel.cli_git import add_parsers as add_git_parsers
 from synapse_channel.cli_locking import add_parsers as add_locking_parsers
 from synapse_channel.cli_mcp import add_parsers as add_mcp_parsers
 from synapse_channel.cli_messaging import add_parsers as add_messaging_parsers
-from synapse_channel.cli_queries import _query_hub
 from synapse_channel.cli_queries import add_parsers as add_query_parsers
 from synapse_channel.cli_streams import add_parsers as add_stream_parsers
-from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.cli_tasks import add_parsers as add_task_parsers
+from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.client.launcher import run_team
 from synapse_channel.client.llm_worker import (
     DEFAULT_OLLAMA_BASE_URL,
@@ -84,13 +82,8 @@ from synapse_channel.core.hub import (
     SynapseHub,
 )
 from synapse_channel.core.persistence import EventStore
-from synapse_channel.core.protocol import (
-    MessageType,
-)
 from synapse_channel.core.ratelimit import RateLimiter
 from synapse_channel.update_check import update_notice
-
-AgentFactory = Callable[..., SynapseAgent]
 
 
 class _VersionAction(argparse.Action):
@@ -213,137 +206,6 @@ def _cmd_team(args: argparse.Namespace) -> int:
         reason_model=args.reason_model,
         prefix=args.prefix,
     )
-
-
-async def _task_action(
-    *,
-    uri: str,
-    name: str,
-    token: str | None,
-    confirm_type: str,
-    send: Callable[[SynapseAgent], Awaitable[None]],
-    render: Callable[[dict[str, Any]], str],
-    agent_factory: AgentFactory = SynapseAgent,
-) -> int:
-    """Connect, run one blackboard write, print the hub's confirmation, and exit.
-
-    Parameters
-    ----------
-    uri, name : str
-        Hub URI and the author's display name.
-    token : str or None
-        Shared-secret token for a secured hub.
-    confirm_type : str
-        Message type the hub broadcasts to confirm the write.
-    send : Callable
-        Coroutine that performs the write on the connected agent.
-    render : Callable
-        Formats the confirmation message into a line for stdout.
-    agent_factory : AgentFactory, optional
-        Factory for the client agent; injectable for testing.
-
-    Returns
-    -------
-    int
-        ``0`` once the confirmation is printed, ``1`` when the hub was unreachable.
-    """
-    return await _query_hub(
-        uri=uri,
-        name=name,
-        token=token,
-        agent_factory=agent_factory,
-        response_type=confirm_type,
-        request=send,
-        render=lambda data: print(render(data)),
-        attempts=60,
-    )
-
-
-def _cmd_task_declare(
-    args: argparse.Namespace, *, agent_factory: AgentFactory = SynapseAgent
-) -> int:
-    """Declare a task on the shared blackboard."""
-    deps = tuple(args.depends_on) if args.depends_on else ()
-
-    async def send(agent: SynapseAgent) -> None:
-        await agent.post_task(args.task_id, title=args.title, depends_on=deps)
-
-    def render(msg: dict[str, Any]) -> str:
-        task = msg.get("task", {})
-        deps_txt = ", ".join(task.get("depends_on", [])) or "none"
-        return f"declared {task.get('task_id')} — {task.get('title')} (deps: {deps_txt})"
-
-    return asyncio.run(
-        _task_action(
-            uri=args.uri,
-            name=args.name,
-            token=args.token,
-            confirm_type=MessageType.LEDGER_TASK_POSTED,
-            send=send,
-            render=render,
-            agent_factory=agent_factory,
-        )
-    )
-
-
-def _cmd_task_update(
-    args: argparse.Namespace, *, agent_factory: AgentFactory = SynapseAgent
-) -> int:
-    """Update a blackboard task's status or suggested owner."""
-
-    async def send(agent: SynapseAgent) -> None:
-        await agent.update_ledger_task(
-            args.task_id, status=args.status, suggested_owner=args.suggested_owner
-        )
-
-    def render(msg: dict[str, Any]) -> str:
-        task = msg.get("task", {})
-        return f"updated {task.get('task_id')} -> status={task.get('status')}"
-
-    return asyncio.run(
-        _task_action(
-            uri=args.uri,
-            name=args.name,
-            token=args.token,
-            confirm_type=MessageType.LEDGER_TASK_UPDATED,
-            send=send,
-            render=render,
-            agent_factory=agent_factory,
-        )
-    )
-
-
-def _cmd_task_progress(
-    args: argparse.Namespace, *, agent_factory: AgentFactory = SynapseAgent
-) -> int:
-    """Post a progress note against a task on the blackboard."""
-
-    async def send(agent: SynapseAgent) -> None:
-        await agent.post_progress(args.task_id, args.text, kind=args.kind)
-
-    def render(msg: dict[str, Any]) -> str:
-        note = msg.get("progress", {})
-        task_id = note.get("task_id") or args.task_id
-        return f"posted {note.get('kind', args.kind)} on {task_id}: {note.get('text', args.text)}"
-
-    return asyncio.run(
-        _task_action(
-            uri=args.uri,
-            name=args.name,
-            token=args.token,
-            confirm_type=MessageType.LEDGER_PROGRESS_POSTED,
-            send=send,
-            render=render,
-            agent_factory=agent_factory,
-        )
-    )
-
-
-def _cmd_task_help(args: argparse.Namespace) -> int:
-    """Print usage when ``synapse task`` is run without an action."""
-    del args
-    print("Usage: synapse task {declare|update|progress} <task_id> ... (see synapse task -h)")
-    return 1
 
 
 # -- parser -------------------------------------------------------------------
@@ -491,40 +353,7 @@ def build_parser() -> argparse.ArgumentParser:
     supervisor.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     supervisor.set_defaults(func=_cmd_supervisor)
 
-    task = sub.add_parser("task", help="Declare and update the shared task plan.")
-    task.set_defaults(func=_cmd_task_help)
-    task_sub = task.add_subparsers(dest="task_command")
-
-    def _add_task_common(parser_: argparse.ArgumentParser) -> None:
-        parser_.add_argument("--uri", default=DEFAULT_HUB_URI)
-        parser_.add_argument("--name", default="USER")
-        parser_.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
-
-    declare = task_sub.add_parser("declare", help="Declare a task on the blackboard.")
-    declare.add_argument("task_id")
-    declare.add_argument("--title", default="")
-    declare.add_argument(
-        "--depends-on",
-        action="append",
-        default=None,
-        help="Task id this one depends on (repeatable).",
-    )
-    _add_task_common(declare)
-    declare.set_defaults(func=_cmd_task_declare)
-
-    update = task_sub.add_parser("update", help="Update a task's status or suggested owner.")
-    update.add_argument("task_id")
-    update.add_argument("--status", default=None, help="New status, e.g. done.")
-    update.add_argument("--suggested-owner", default=None)
-    _add_task_common(update)
-    update.set_defaults(func=_cmd_task_update)
-
-    progress = task_sub.add_parser("progress", help="Post a progress note on a task.")
-    progress.add_argument("task_id")
-    progress.add_argument("text")
-    progress.add_argument("--kind", default="note")
-    _add_task_common(progress)
-    progress.set_defaults(func=_cmd_task_progress)
+    add_task_parsers(sub)
 
     # Give every command that takes --token a --token-file companion, so the secret
     # can come from a file instead of argv (which is visible to anyone running `ps`).
