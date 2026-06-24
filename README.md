@@ -23,6 +23,7 @@ SYNAPSE CHANNEL — repository overview
   <a href="https://pypi.org/project/synapse-channel/"><img src="https://img.shields.io/pypi/dm/synapse-channel" alt="PyPI downloads"></a>
   <a href="https://pepy.tech/project/synapse-channel"><img src="https://static.pepy.tech/badge/synapse-channel" alt="Total downloads"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
+  <a href="https://anulum.li/synapse/pricing.html"><img src="https://img.shields.io/badge/commercial%20licence-available-0a7d3c" alt="Commercial licence available"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
   <a href="https://codecov.io/gh/anulum/synapse-channel"><img src="https://codecov.io/gh/anulum/synapse-channel/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://api.reuse.software/info/github.com/anulum/synapse-channel"><img src="https://api.reuse.software/badge/github.com/anulum/synapse-channel" alt="REUSE status"></a>
@@ -73,6 +74,18 @@ python -m pip install -e ".[dev]"           # or an editable dev checkout
 This installs the `synapse` command. To run the hub as an always-on local service
 or a container, see the [deployment guide](docs/deployment.md) (a `systemd` user
 unit and `docker compose` are both included).
+
+## Releases
+
+This package is developed in the open and dogfooded daily: a fleet of coding
+agents runs its own coordination on it, so problems surface in real use and are
+fixed quickly. Releases are therefore frequent and mostly small — fixes and
+hardening rather than churn. The wire protocol and the public Python API stay
+backwards-compatible within a major version; any breaking change is called out in
+the changelog.
+
+If you need a fixed target, pin a version (`synapse-channel==X.Y.Z`); to get the
+latest fixes, track the newest release. Both are supported.
 
 ## Quick start
 
@@ -289,7 +302,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | CLI subcommands | 26 |
 | Test functions | 979 |
 | Benchmark harnesses | 3 |
-| Documentation pages | 14 |
+| Documentation pages | 15 |
 | GitHub Actions workflows | 10 |
 | Optional-dependency groups | 4 |
 
@@ -335,6 +348,31 @@ This snapshot is a static inventory generated from the source tree. Performance 
 - **`synapse --version` checks PyPI for a newer release** (once a day, cached, no
   payload beyond the request itself). Silence it with `SYNAPSE_NO_UPDATE_CHECK=1`.
 
+## Commercial use
+
+SYNAPSE CHANNEL is **dual-licensed**, and there is **no feature difference between the
+open-source and the commercial build** — the package on PyPI *is* the full product. A
+commercial licence changes the terms, not the code.
+
+- **Use it free under the AGPL-3.0** for open-source, research, internal, or personal
+  work — including inside a company — as long as you do not expose a closed-source or
+  hosted derivative over a network to third parties.
+- **Buy a commercial licence** to ship a **closed-source** product or a **SaaS** without
+  the AGPL's network-copyleft obligation.
+
+| Plan | For | Grant |
+| --- | --- | --- |
+| **Community** — free (AGPL-3.0) | open source, research, personal | the full feature set; copyleft applies |
+| **Indie** — pay-what-you-want, from CHF&nbsp;9.99 | a solo developer or one closed-source project | copyleft exemption for **one** product, perpetual for the purchased version line |
+| **Team** | a company shipping closed-source or SaaS | exemption for **unlimited** projects in one legal entity, with email support |
+| **Managed / Enterprise** | hosted multi-tenant coordination, SLAs, compliance | bespoke terms |
+
+<p align="center">
+  <a href="https://anulum.li/synapse/pricing.html"><img src="https://img.shields.io/badge/View_plans_%26_buy-anulum.li%2Fsynapse-0a7d3c?style=for-the-badge" alt="View plans and buy a commercial licence"></a>
+</p>
+
+Plans and checkout are at **[anulum.li/synapse/pricing.html](https://anulum.li/synapse/pricing.html)** (Polar.sh, CHF). For enterprise, OEM, academic, or non-profit terms, write to [protoscience@anulum.li](mailto:protoscience@anulum.li). The full terms are in [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md).
+
 ## How to cite
 
 If you use SYNAPSE CHANNEL in your work, please cite it. Metadata is in
@@ -353,11 +391,11 @@ If you use SYNAPSE CHANNEL in your work, please cite it. Metadata is in
 
 ## Licence
 
-Dual-licensed: **AGPL-3.0-or-later**, with a commercial licence available. See
-[`LICENSE`](LICENSE) for the full text and [`NOTICE.md`](NOTICE.md) for the
-licensing boundary. **Commercial licensing:** self-serve Indie and Team plans at
-[anulum.li/synapse](https://www.anulum.li/synapse), or contact
-`protoscience@anulum.li` for enterprise terms. The repository is
+Dual-licensed: **AGPL-3.0-or-later**, with a commercial licence available — see
+[Commercial use](#commercial-use) for the plans and
+[pricing](https://anulum.li/synapse/pricing.html). [`LICENSE`](LICENSE) holds the full
+AGPL text, [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md) the commercial terms, and
+[`NOTICE.md`](NOTICE.md) the licensing boundary. The repository is
 [REUSE](https://reuse.software/) 3.x compliant.
 
 ---
