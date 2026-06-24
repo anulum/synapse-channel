@@ -285,7 +285,7 @@ class SynapseAgent:
         subkind: str,
         evidence_kind: str | None = None,
         claim_status: str | None = None,
-        verification: str | None = None,
+        freshness: str | None = None,
         evidence_ref: str | None = None,
         project: str = "",
         session: str = "",
@@ -324,9 +324,9 @@ class SynapseAgent:
         claim_status : str or None, optional
             The epistemic standing (e.g. ``reference-validated``,
             ``bounded-support``); required for a scientific subkind.
-        verification : str or None, optional
-            Whether the reference was checked at source; derived from the freshness
-            signals when left unset.
+        freshness : str or None, optional
+            How recently the reference was re-checked at source; derived from the
+            re-check recency and reference signals when left unset.
         evidence_ref : str or None, optional
             A reference to the evidence (file:line, commit, command output).
         project : str, optional
@@ -376,8 +376,8 @@ class SynapseAgent:
             extra["evidence_kind"] = evidence_kind
         if claim_status is not None:
             extra["claim_status"] = claim_status
-        if verification is not None:
-            extra["verification"] = verification
+        if freshness is not None:
+            extra["freshness"] = freshness
         if evidence_ref is not None:
             extra["evidence_ref"] = evidence_ref
         if lifecycle is not None:

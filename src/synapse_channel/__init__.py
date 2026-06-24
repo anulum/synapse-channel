@@ -39,9 +39,9 @@ from synapse_channel.core.finding import (
     ClaimStatus,
     EvidenceKind,
     Finding,
+    Freshness,
     Lifecycle,
     Subkind,
-    Verification,
 )
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.ledger import Blackboard, LedgerTask, ProgressNote
@@ -73,6 +73,7 @@ __all__ = [
     "EventStore",
     "EvidenceKind",
     "Finding",
+    "Freshness",
     "Intervention",
     "LedgerTask",
     "Lifecycle",
@@ -92,7 +93,6 @@ __all__ = [
     "TaskStatus",
     "TieredChatClient",
     "TokenAuthenticator",
-    "Verification",
     "__version__",
     "addresses_project",
     "admit",

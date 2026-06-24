@@ -18,18 +18,22 @@ All notable changes to this project are documented here.
   A `finding` message and `SynapseAgent.record_finding(...)` author one memory
   atom (a codebase fact, lesson, decision, dead-end, or outcome) and place its
   assertion on three independent axes: what kind of evidence backs it, the
-  standing of the claim, and whether the supporting reference was checked at
-  source. An emit gate admits, floors, or rejects each atom at the hub edge before
-  it is journalled, so a claim stronger than its evidence is lowered rather than
-  trusted: falsified evidence renders a claim refuted, producer-asserted testimony
-  cannot be recorded as reference-validated, and a reference-validated claim with
-  no reference is floored to bounded support. A record missing its provenance,
-  validity window, or a required claim status is refused outright, and an unknown
-  enum member is carried opaquely so the wire format can evolve. The hub attests
-  the producing identity and the time (they cannot be self-reported), journals an
-  admitted finding durably, and broadcasts the verdict to the fleet so a producer
-  whose claim was floored learns what was downgraded. The hub stays
-  memory-agnostic — it carries every record without interpreting it.
+  standing of the claim, and how recently the supporting reference was re-checked
+  at source (`freshness`). An emit gate admits, floors, or rejects each atom at the
+  hub edge before it is journalled, so a claim stronger than its evidence is
+  lowered rather than trusted: falsified evidence renders a claim refuted and,
+  if it also claims reference-validated, is refused outright as a contradiction;
+  producer-asserted testimony cannot be recorded as reference-validated nor declare
+  itself verified-at-source; and a reference-validated claim must carry a reference
+  *and* a source-verified freshness, so a reference that exists but was never
+  re-checked this session is floored to bounded support rather than passing for a
+  validated one. A record missing its provenance, validity window, or a required
+  claim status is refused outright, and an unknown enum member is carried opaquely
+  so the wire format can evolve. The hub attests the producing identity and the
+  time (they cannot be self-reported), journals an admitted finding durably, and
+  broadcasts the verdict to the fleet so a producer whose claim was floored learns
+  what was downgraded. The hub stays memory-agnostic — it carries every record
+  without interpreting it.
 - Distinct durable event kinds for resume checkpoints and handoffs. A saved
   checkpoint and an atomic handoff were previously journalled as a `claim`
   re-snapshot; they now record under their own `checkpoint` and `handoff` kinds.

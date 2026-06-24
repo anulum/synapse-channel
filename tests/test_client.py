@@ -329,7 +329,7 @@ async def test_record_finding_emits_envelope() -> None:
         evidence_kind="measured",
         claim_status="reference-validated",
         evidence_ref="experiments/k_nm.py:88",
-        verification="verified-at-source",
+        freshness="verified-at-source",
         project="SCPN-CONTROL",
         session="s1",
         source_event_seq=7,
@@ -352,7 +352,7 @@ async def test_record_finding_emits_envelope() -> None:
     assert msg["evidence_kind"] == "measured"
     assert msg["claim_status"] == "reference-validated"
     assert msg["evidence_ref"] == "experiments/k_nm.py:88"
-    assert msg["verification"] == "verified-at-source"
+    assert msg["freshness"] == "verified-at-source"
     assert msg["provenance"] == {"project": "SCPN-CONTROL", "session": "s1", "source_event_seq": 7}
     assert msg["validity"] == {"valid_from": 2.0, "valid_to": 20.0}
     assert msg["verified_at_source"] == {"checked_this_session": True, "source_ref": "r=0.951 run"}
@@ -374,7 +374,7 @@ async def test_record_finding_omits_unset_optionals_but_always_sends_envelopes()
     # Optional scalars are omitted when unset...
     assert "evidence_kind" not in msg
     assert "claim_status" not in msg
-    assert "verification" not in msg
+    assert "freshness" not in msg
     assert "lifecycle" not in msg
     assert "entities" not in msg
     # ...but the structural envelopes the gate checks for are always present.

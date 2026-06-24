@@ -23,6 +23,9 @@ def _finding(**overrides: Any) -> Finding:
         "evidence_ref": "tests/test_federation.py:42",
         "provenance": {"project": "SCPN-STUDIO", "session": "s9"},
         "validity": {"valid_from": 1.0},
+        # Re-checked this session, so freshness derives to verified-at-source — the
+        # bar a reference-validated claim must clear (INV-1).
+        "verified_at_source": {"checked_this_session": True, "source_ref": "federation run"},
     }
     base.update(overrides)
     return Finding.from_dict(base)
@@ -137,10 +140,14 @@ def test_producer_asserted_bounded_model_is_capped_at_the_boundary() -> None:
 
 def test_producer_asserted_below_the_boundary_is_left_alone() -> None:
     # ``validation-gap`` already sits at or below the boundary, so the ceiling
-    # neither lifts nor lowers it.
+    # neither lifts nor lowers it; an honest producer-asserted record (not claiming
+    # verified-at-source) passes untouched.
     decision = admit(
         _finding(
-            evidence_kind="producer-asserted", claim_status="validation-gap", evidence_ref=None
+            evidence_kind="producer-asserted",
+            claim_status="validation-gap",
+            evidence_ref=None,
+            verified_at_source={"checked_this_session": False, "source_ref": ""},
         )
     )
     assert decision.verdict == ACCEPT
@@ -148,7 +155,7 @@ def test_producer_asserted_below_the_boundary_is_left_alone() -> None:
     assert decision.finding.claim_status == ClaimStatus.VALIDATION_GAP
 
 
-# --- INV-1: reference-validated needs a reference ----------------------------
+# --- INV-1: reference-validated needs a reference AND source-verified freshness --
 
 
 def test_reference_validated_without_evidence_ref_is_floored() -> None:
@@ -159,23 +166,53 @@ def test_reference_validated_without_evidence_ref_is_floored() -> None:
     assert any("INV-1" in r for r in decision.reasons)
 
 
-# --- invariant ordering ------------------------------------------------------
+def test_reference_validated_without_source_verified_freshness_is_floored() -> None:
+    # The trap: a reference exists but was not re-checked this session, so freshness
+    # derives to traceable-unchecked — reference-validated does not survive it.
+    decision = admit(
+        _finding(verified_at_source={"checked_this_session": False, "source_ref": "old run"})
+    )
+    assert decision.finding is not None and decision.finding.freshness == "traceable-unchecked"
+    assert decision.verdict == FLOOR
+    assert decision.finding.claim_status == ClaimStatus.BOUNDED_SUPPORT
+    assert any("INV-1" in r for r in decision.reasons)
 
 
-def test_falsified_reference_validated_resolves_to_refuted_once() -> None:
-    # INV-2 fires first and sets refuted; INV-1 then sees a non-validated status
-    # and does not also floor, so there is exactly one reason.
-    decision = admit(_finding(evidence_kind="falsified", evidence_ref=None))
+# --- LOCK-4: falsified cannot claim reference-validated ----------------------
+
+
+def test_falsified_reference_validated_is_rejected() -> None:
+    # A direct contradiction — refused outright, not floored to refuted like other
+    # falsified claims.
+    decision = admit(_finding(evidence_kind="falsified"))
+    assert decision.verdict == REJECT
+    assert decision.finding is None
+    assert any("LOCK-4" in r for r in decision.reasons)
+
+
+# --- producer-asserted freshness floor ---------------------------------------
+
+
+def test_producer_asserted_cannot_be_verified_at_source() -> None:
+    # Testimony was not independently re-checked, so a declared verified-at-source
+    # is lowered; the claim status here is below the boundary to isolate the floor.
+    decision = admit(_finding(evidence_kind="producer-asserted", claim_status="bounded-support"))
     assert decision.verdict == FLOOR
     assert decision.finding is not None
-    assert decision.finding.claim_status == ClaimStatus.REFUTED
-    assert len(decision.reasons) == 1
-    assert "INV-2" in decision.reasons[0]
+    assert decision.finding.freshness == "traceable-unchecked"
+    assert decision.finding.claim_status == ClaimStatus.BOUNDED_SUPPORT
 
 
 def test_producer_asserted_unevidenced_is_capped_by_inv6_not_inv1() -> None:
-    # INV-6 caps to bounded-support before INV-1 can fire, so only INV-6 reports.
-    decision = admit(_finding(evidence_kind="producer-asserted", evidence_ref=None))
+    # An honest producer-asserted record (freshness already traceable) is capped to
+    # bounded-support by INV-6 before INV-1 can fire, so only INV-6 reports.
+    decision = admit(
+        _finding(
+            evidence_kind="producer-asserted",
+            evidence_ref=None,
+            verified_at_source={"checked_this_session": False, "source_ref": "x"},
+        )
+    )
     assert decision.verdict == FLOOR
     assert decision.finding is not None
     assert decision.finding.claim_status == ClaimStatus.BOUNDED_SUPPORT
