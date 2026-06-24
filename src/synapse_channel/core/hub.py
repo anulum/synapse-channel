@@ -59,7 +59,11 @@ from synapse_channel.core.protocol import (
     system_message,
 )
 from synapse_channel.core.ratelimit import RateLimiter
-from synapse_channel.core.state import SynapseState
+from synapse_channel.core.state import (
+    MAX_CLAIMS_PER_AGENT,
+    MAX_OFFERS_PER_AGENT,
+    SynapseState,
+)
 from synapse_channel.relay import append_jsonl, encode_lite, trim_jsonl_tail
 
 logger = logging.getLogger("synapse.hub")
@@ -185,6 +189,8 @@ class SynapseHub:
         authenticator: TokenAuthenticator | None = None,
         max_clients: int = DEFAULT_MAX_CLIENTS,
         max_msg_bytes: int = DEFAULT_MAX_MSG_BYTES,
+        max_claims_per_agent: int = MAX_CLAIMS_PER_AGENT,
+        max_offers_per_agent: int = MAX_OFFERS_PER_AGENT,
         takeover_cooldown: float = DEFAULT_TAKEOVER_COOLDOWN,
         enable_metrics: bool = False,
         auth_timeout: float = DEFAULT_AUTH_TIMEOUT,
@@ -216,7 +222,11 @@ class SynapseHub:
         self.capabilities = CapabilityRegistry()
         if journal is not None:
             replayed = replay(
-                journal, default_ttl_seconds=default_ttl_seconds, max_progress=max_progress
+                journal,
+                default_ttl_seconds=default_ttl_seconds,
+                max_progress=max_progress,
+                max_claims_per_agent=max_claims_per_agent,
+                max_offers_per_agent=max_offers_per_agent,
             )
             self.state = replayed.state
             self.chat_history = replayed.chat_history[-self.max_history :]
@@ -228,7 +238,11 @@ class SynapseHub:
             for idem_key, idem_response in replayed.idempotency:
                 self._idempotency.put(idem_key, idem_response)
         else:
-            self.state = SynapseState(default_ttl_seconds=default_ttl_seconds)
+            self.state = SynapseState(
+                default_ttl_seconds=default_ttl_seconds,
+                max_claims_per_agent=max_claims_per_agent,
+                max_offers_per_agent=max_offers_per_agent,
+            )
             self.chat_history = []
             self._message_seq = 0
             self.blackboard = Blackboard(max_progress=max_progress)

@@ -47,6 +47,7 @@ from synapse_channel.core.hub import (
 )
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
+from synapse_channel.core.state import MAX_CLAIMS_PER_AGENT, MAX_OFFERS_PER_AGENT
 
 
 def _run(coro: Coroutine[Any, Any, None]) -> None:
@@ -72,6 +73,8 @@ def _cmd_hub(args: argparse.Namespace) -> int:
         authenticator=authenticator,
         max_clients=args.max_clients,
         max_msg_bytes=args.max_msg_kb * 1024,
+        max_claims_per_agent=args.max_claims_per_agent,
+        max_offers_per_agent=args.max_offers_per_agent,
         enable_metrics=args.metrics,
         auth_timeout=args.auth_timeout,
         metrics_token=args.metrics_token,
@@ -226,6 +229,18 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=int,
         default=DEFAULT_MAX_MSG_BYTES // 1024,
         help="Largest accepted inbound message in KiB; a larger frame is rejected.",
+    )
+    hub.add_argument(
+        "--max-claims-per-agent",
+        type=int,
+        default=MAX_CLAIMS_PER_AGENT,
+        help="Most live claims one agent may hold before further claims are refused.",
+    )
+    hub.add_argument(
+        "--max-offers-per-agent",
+        type=int,
+        default=MAX_OFFERS_PER_AGENT,
+        help="Most live resource offers one agent may register before new offers are refused.",
     )
     hub.add_argument(
         "--token",
