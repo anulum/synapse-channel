@@ -113,15 +113,10 @@ def test_is_recipient_glob_groups() -> None:
 
 
 def test_is_recipient_bare_project_reaches_subidentities() -> None:
-    from synapse_channel.core.protocol import is_directed, wakes
-
-    # A bare project target reaches a <project>/<id> agent (the fix: a sole agent
-    # armed under a sub-identity must still receive project-addressed messages).
+    # A bare project target reaches a <project>/<id> agent for the INBOX (is_recipient): a
+    # sole agent armed under a sub-identity must still receive project-addressed messages.
     assert is_recipient("quantum", "quantum/claude-7f3a")
     assert is_recipient("a,quantum", "quantum/claude-7f3a")
-    # and it directs / wakes the same way
-    assert is_directed("quantum", "quantum/claude-7f3a")
-    assert wakes("quantum", "quantum/claude-7f3a", directed_only=True, sender="A")
     # but it does not leak across projects or partial-prefix names
     assert not is_recipient("quantum", "other/codex-1")
     assert not is_recipient("quant", "quantum/claude-7f3a")
@@ -129,6 +124,35 @@ def test_is_recipient_bare_project_reaches_subidentities() -> None:
     # a bare name is unchanged
     assert is_recipient("quantum", "quantum")
     assert not is_recipient("quantum", "other")
+
+
+def test_bare_project_does_not_wake_a_sub_seat_directed_only() -> None:
+    """A bare-<project> message is a routine broadcast for a <project>/<seat> waiter.
+
+    Regression for the multi-seat wake storm: convene traffic addressed to the bare project
+    woke every seat. A bare project now *directs* (wakes) only the waiter armed as that
+    project, not its sub-seats — though a sub-seat still *receives* it in its inbox, and a
+    CEO or priority project message still wakes it. The inbox question (is_recipient) and the
+    wake question (is_directed) are deliberately not the same matcher.
+    """
+    from synapse_channel.core.protocol import is_directed, wakes
+
+    # the seat still RECEIVES bare-project traffic in its inbox
+    assert is_recipient("quantum", "quantum/claude-7f3a")
+    # but a bare-project message does NOT wake a sub-seat directed-only waiter
+    assert not is_directed("quantum", "quantum/claude-7f3a")
+    assert not wakes("quantum", "quantum/claude-7f3a", directed_only=True, sender="A")
+    # a bare project inside a comma-list is still a broadcast for the seat
+    assert not wakes("a,quantum", "quantum/claude-7f3a", directed_only=True, sender="A")
+    # CEO or priority on a bare-project message still reaches and wakes the seat
+    assert wakes("quantum", "quantum/claude-7f3a", directed_only=True, sender="CEO")
+    assert wakes("quantum", "quantum/claude-7f3a", directed_only=True, priority=True)
+    # the seat IS woken when named explicitly, or by a group glob it is in
+    assert wakes("quantum/claude-7f3a", "quantum/claude-7f3a", directed_only=True, sender="A")
+    assert wakes("quantum/*", "quantum/claude-7f3a", directed_only=True, sender="A")
+    # a sole agent armed as the bare project still wakes on a bare-project message
+    assert is_directed("quantum", "quantum")
+    assert wakes("quantum", "quantum", directed_only=True, sender="A")
 
 
 def test_is_directed_excludes_broadcast() -> None:
