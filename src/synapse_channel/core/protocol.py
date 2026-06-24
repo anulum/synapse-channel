@@ -230,9 +230,18 @@ def is_recipient(target: str, name: str) -> bool:
 def is_directed(target: str, name: str) -> bool:
     """Return whether ``target`` names ``name`` specifically rather than broadcasting.
 
-    Like :func:`is_recipient` but ``"all"`` (and an empty target) is *not* a match,
-    so a reader can wake only on messages addressed to it or a group it is in and
-    treat broadcasts as read-when-convenient.
+    Stricter than :func:`is_recipient` in two ways: ``"all"`` (and an empty target) is
+    *not* a match, and a target part must match the **full** ``name`` rather than its bare
+    project. So a bare ``<project>`` directs the waiter armed as that project, but is a
+    *routine broadcast* — not a wake — for a ``<project>/<seat>`` sub-seat. A reader uses
+    this to wake only on messages addressed to it, or a group glob it is in, and to treat
+    both ``all`` broadcasts and project-level traffic as read-when-convenient.
+
+    This is the WAKE question, deliberately distinct from the INBOX question
+    (:func:`is_recipient`): a sub-seat still *receives* a bare-project message, it just is
+    not *woken* by one (which is why a multi-seat project's convene traffic no longer wakes
+    every seat). A sole agent that wants project-addressed messages to wake it arms
+    ``--for <project>`` (the bare project), not a ``<project>/<id>`` sub-identity.
 
     Parameters
     ----------
@@ -244,12 +253,17 @@ def is_directed(target: str, name: str) -> bool:
     Returns
     -------
     bool
-        ``True`` only when ``target`` is a non-broadcast pattern that matches ``name``.
+        ``True`` only when a non-broadcast target part matches ``name`` directly (an exact
+        name or a glob covering it); a bare project matches a waiter named exactly that
+        project, not its sub-seats.
     """
     cleaned = (target or "all").strip()
     if cleaned in ("", "all"):
         return False
-    return is_recipient(cleaned, name)
+    return any(
+        fnmatch.fnmatchcase(name, part)
+        for part in (raw.strip() for raw in cleaned.split(",") if raw.strip())
+    )
 
 
 def addresses_project(target: str, project: str) -> bool:
