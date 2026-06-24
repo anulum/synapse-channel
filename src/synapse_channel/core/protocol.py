@@ -302,11 +302,13 @@ def wakes(
 
     In the default mode any recipient match wakes (:func:`is_recipient`). In
     directed-only mode only a directed match wakes (:func:`is_directed`) — *except*
-    a priority-flagged message and a message from a :data:`PRIORITY_SENDERS` sender
-    always wake. So an ``"all"`` broadcast that genuinely matters (a CEO directive, a
-    flagged announcement) still reaches a quiet waiter promptly, while routine peer
-    broadcasts stay suppressed. Directed-only means "no *routine* broadcast wakes me",
-    not "no broadcast ever wakes me".
+    that a priority-flagged message, or one from a :data:`PRIORITY_SENDERS` sender,
+    also wakes when it still reaches this waiter (a broadcast, or a message addressed
+    to it). So an ``"all"`` broadcast that genuinely matters (a CEO directive, a
+    flagged announcement) reaches a quiet waiter promptly, while routine peer
+    broadcasts stay suppressed — and a priority or CEO message directed to a *different*
+    agent does not wake one it was never addressed to. Directed-only means "no
+    *routine* broadcast wakes me", not "every priority message anywhere wakes me".
 
     Parameters
     ----------
@@ -329,4 +331,12 @@ def wakes(
     """
     if not directed_only:
         return is_recipient(target, name)
-    return is_directed(target, name) or priority or sender in PRIORITY_SENDERS
+    # A directed match always wakes. A priority flag or a priority sender elevates a
+    # message that still *reaches* this waiter — a broadcast, or one addressed to it —
+    # so a flagged announcement or a CEO directive reaches a quiet waiter promptly. But
+    # a priority or CEO message directed to a *different* agent must not wake this one:
+    # gating on ``is_recipient`` keeps a targeted nudge from becoming a fleet-wide wake
+    # storm across every directed-only waiter that the message was never addressed to.
+    return is_directed(target, name) or (
+        is_recipient(target, name) and (priority or sender in PRIORITY_SENDERS)
+    )

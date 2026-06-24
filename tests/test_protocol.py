@@ -173,3 +173,30 @@ def test_wakes_normal_and_directed_only() -> None:
     assert wakes("all", "B", directed_only=True, sender="A", priority=True)
     # directed-only: a CEO broadcast always wakes
     assert wakes("all", "B", directed_only=True, sender="CEO")
+
+
+def test_wakes_priority_and_ceo_do_not_leak_to_unaddressed_waiters() -> None:
+    """A priority/CEO message directed at one agent must not wake everyone else.
+
+    Regression for the fleet-wide wake storm: ``priority`` and a ``PRIORITY_SENDERS``
+    sender elevate a message that *reaches* the waiter (a broadcast or one addressed to
+    it), not one directed elsewhere. Before the fix a single priority nudge to agent X
+    woke every directed-only waiter on the bus, who then re-armed in a noisy loop.
+    """
+    from synapse_channel.core.protocol import wakes
+
+    # priority does NOT override the recipient check: a priority chat to FUSION must
+    # not wake an unaddressed SYNAPSE-CHANNEL waiter.
+    assert not wakes("FUSION", "SYNAPSE-CHANNEL", directed_only=True, priority=True)
+    # a CEO message directed at one agent does not wake a different one.
+    assert not wakes("FUSION", "SYNAPSE-CHANNEL", directed_only=True, sender="CEO")
+    # a priority message to a comma-list of others does not wake a non-member.
+    assert not wakes("X,Y,Z", "SYNAPSE-CHANNEL", directed_only=True, priority=True)
+    # a priority message to a group glob does not wake an agent outside the group.
+    assert not wakes("quantum/*", "studio/c-1", directed_only=True, priority=True)
+
+    # the elevation still works where the message genuinely reaches the waiter:
+    assert wakes("all", "B", directed_only=True, priority=True)  # priority broadcast
+    assert wakes("all", "B", directed_only=True, sender="CEO")  # CEO broadcast
+    assert wakes("B", "B", directed_only=True, priority=True)  # priority, addressed to B
+    assert wakes("quantum/*", "quantum/c-1", directed_only=True, sender="CEO")  # CEO to my group
