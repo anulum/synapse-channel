@@ -12,12 +12,12 @@ from typing import Any
 
 from synapse_channel.core.finding import (
     Finding,
+    Freshness,
     Lifecycle,
     Provenance,
     SourceCheck,
     Validity,
-    Verification,
-    default_verification,
+    default_freshness,
 )
 
 
@@ -53,7 +53,7 @@ def test_from_dict_parses_every_axis() -> None:
     assert f.subkind == "codebase-fact"
     assert f.evidence_kind == "measured"
     assert f.claim_status == "reference-validated"
-    assert f.verification == Verification.VERIFIED_AT_SOURCE  # checked_this_session True
+    assert f.freshness == Freshness.VERIFIED_AT_SOURCE  # checked_this_session True
     assert f.evidence_ref == "experiments/k_nm.py:88"
     assert f.provenance == Provenance("SCPN-CONTROL", "", "s1", 7, 5.0)
     assert f.validity == Validity(2.0, 9.0)
@@ -113,46 +113,46 @@ def test_source_event_seq_rejects_boolean() -> None:
     assert f.provenance.source_event_seq is None
 
 
-# --- verification default binding --------------------------------------------
+# --- freshness default binding --------------------------------------------
 
 
-def test_explicit_verification_overrides_the_default() -> None:
-    f = Finding.from_dict(_raw(verification="untraceable"))
-    assert f.verification == "untraceable"
+def test_explicit_freshness_overrides_the_default() -> None:
+    f = Finding.from_dict(_raw(freshness="untraceable"))
+    assert f.freshness == "untraceable"
 
 
-def test_default_verification_checked_this_session() -> None:
+def test_default_freshness_checked_this_session() -> None:
     assert (
-        default_verification(checked_this_session=True, evidence_ref=None, source_ref="")
-        == Verification.VERIFIED_AT_SOURCE
+        default_freshness(checked_this_session=True, evidence_ref=None, source_ref="")
+        == Freshness.VERIFIED_AT_SOURCE
     )
 
 
-def test_default_verification_traceable_from_evidence_ref() -> None:
+def test_default_freshness_traceable_from_evidence_ref() -> None:
     assert (
-        default_verification(checked_this_session=False, evidence_ref="f.py:1", source_ref="")
-        == Verification.TRACEABLE_UNCHECKED
+        default_freshness(checked_this_session=False, evidence_ref="f.py:1", source_ref="")
+        == Freshness.TRACEABLE_UNCHECKED
     )
 
 
-def test_default_verification_traceable_from_source_ref_only() -> None:
+def test_default_freshness_traceable_from_source_ref_only() -> None:
     assert (
-        default_verification(checked_this_session=False, evidence_ref=None, source_ref="run-42")
-        == Verification.TRACEABLE_UNCHECKED
+        default_freshness(checked_this_session=False, evidence_ref=None, source_ref="run-42")
+        == Freshness.TRACEABLE_UNCHECKED
     )
 
 
-def test_default_verification_untraceable_without_any_reference() -> None:
+def test_default_freshness_untraceable_without_any_reference() -> None:
     assert (
-        default_verification(checked_this_session=False, evidence_ref=None, source_ref="")
-        == Verification.UNTRACEABLE
+        default_freshness(checked_this_session=False, evidence_ref=None, source_ref="")
+        == Freshness.UNTRACEABLE
     )
 
 
 def test_from_dict_derives_traceable_when_only_evidence_ref_present() -> None:
     raw = _raw(verified_at_source={"checked_this_session": False, "source_ref": ""})
-    f = Finding.from_dict({k: v for k, v in raw.items() if k != "verification"})
-    assert f.verification == Verification.TRACEABLE_UNCHECKED
+    f = Finding.from_dict({k: v for k, v in raw.items() if k != "freshness"})
+    assert f.freshness == Freshness.TRACEABLE_UNCHECKED
 
 
 # --- attestation -------------------------------------------------------------

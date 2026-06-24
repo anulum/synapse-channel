@@ -52,6 +52,9 @@ def _finding_msg(**overrides: Any) -> str:
         "evidence_ref": "tests/test_federation.py:42",
         "provenance": {"project": "SCPN-STUDIO", "session": "s9"},
         "validity": {"valid_from": 1.0},
+        # Re-checked this session so freshness derives to verified-at-source — the
+        # bar a reference-validated claim must clear (INV-1).
+        "verified_at_source": {"checked_this_session": True, "source_ref": "federation run"},
     }
     base.update(overrides)
     return json.dumps(base)

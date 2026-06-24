@@ -12,8 +12,8 @@ the hub (it never indexes or interprets it) and journalled durably so a
 downstream persistent-memory adapter can ingest it. The record places the
 assertion on three *independent* axes — what kind of evidence backs it
 (:class:`EvidenceKind`), how strong the standing of the claim is
-(:class:`ClaimStatus`), and whether the reference was checked at source
-(:class:`Verification`) — plus orthogonal provenance, a bi-temporal validity
+(:class:`ClaimStatus`), and how recently the reference was re-checked at source
+(:class:`Freshness`) — plus orthogonal provenance, a bi-temporal validity
 window, and a lifecycle. The axes have sensible default bindings but stay
 independent: producer-asserted testimony *defaults* to ``traceable-unchecked``
 yet can be ``verified-at-source`` when re-checked this session.
@@ -131,18 +131,25 @@ lowers them.
 """
 
 
-class Verification:
-    """Whether the supporting reference was checked at source."""
+class Freshness:
+    """How recently the supporting reference was re-checked at source.
+
+    The recency-of-re-check axis, orthogonal to *how* the claim is known
+    (:class:`EvidenceKind`): a measured fact can be re-checked this session or
+    left unverified for months. It gates validation — only a source-verified
+    claim renders validated — so a reference that exists but was never re-checked
+    cannot pass for one that was.
+    """
 
     VERIFIED_AT_SOURCE = "verified-at-source"
     TRACEABLE_UNCHECKED = "traceable-unchecked"
     UNTRACEABLE = "untraceable"
 
 
-KNOWN_VERIFICATIONS = frozenset(
-    {Verification.VERIFIED_AT_SOURCE, Verification.TRACEABLE_UNCHECKED, Verification.UNTRACEABLE}
+KNOWN_FRESHNESS = frozenset(
+    {Freshness.VERIFIED_AT_SOURCE, Freshness.TRACEABLE_UNCHECKED, Freshness.UNTRACEABLE}
 )
-"""The verification states the SDK names; any other string is carried opaquely."""
+"""The freshness states the SDK names; any other string is carried opaquely."""
 
 
 class Lifecycle:
@@ -189,12 +196,12 @@ def _str_tuple(raw: Any) -> tuple[str, ...]:
     return tuple(item.strip() for item in raw if isinstance(item, str) and item.strip())
 
 
-def default_verification(
+def default_freshness(
     *, checked_this_session: bool, evidence_ref: str | None, source_ref: str
 ) -> str:
-    """Derive the verification axis from the freshness and reference signals.
+    """Derive the freshness axis from the re-check recency and reference signals.
 
-    Used only when the producer leaves ``verification`` unset; an explicitly
+    Used only when the producer leaves ``freshness`` unset; an explicitly
     supplied value is always carried as-is so the axes stay independent.
 
     Parameters
@@ -213,10 +220,10 @@ def default_verification(
         when a reference exists but was not re-checked, else ``untraceable``.
     """
     if checked_this_session:
-        return Verification.VERIFIED_AT_SOURCE
+        return Freshness.VERIFIED_AT_SOURCE
     if evidence_ref or source_ref:
-        return Verification.TRACEABLE_UNCHECKED
-    return Verification.UNTRACEABLE
+        return Freshness.TRACEABLE_UNCHECKED
+    return Freshness.UNTRACEABLE
 
 
 @dataclass(frozen=True)
@@ -367,8 +374,8 @@ class Finding:
         What backs the claim (:class:`EvidenceKind`); ``None`` when no basis is named.
     claim_status : str or None
         The epistemic standing (:class:`ClaimStatus`); ``None`` when unstated.
-    verification : str
-        Whether the reference was checked at source (:class:`Verification`).
+    freshness : str
+        How recently the reference was re-checked at source (:class:`Freshness`).
     evidence_ref : str or None
         A reference to the evidence (file:line, commit, command output).
     provenance : Provenance or None
@@ -395,7 +402,7 @@ class Finding:
     subkind: str
     evidence_kind: str | None
     claim_status: str | None
-    verification: str
+    freshness: str
     evidence_ref: str | None
     provenance: Provenance | None
     validity: Validity | None
@@ -412,9 +419,9 @@ class Finding:
         """Parse a finding from a wire mapping without raising.
 
         Missing optionals become ``None``, malformed fields become their empty
-        form, and an unknown enum member is carried as-is. The verification axis
-        is derived from the freshness and reference signals only when the producer
-        leaves it unset.
+        form, and an unknown enum member is carried as-is. The freshness axis
+        is derived from the re-check recency and reference signals only when the
+        producer leaves it unset.
 
         Parameters
         ----------
@@ -428,9 +435,9 @@ class Finding:
         """
         evidence_ref = _opt_str(raw.get("evidence_ref"))
         source = SourceCheck.from_producer(raw.get("verified_at_source"))
-        verification = _opt_str(raw.get("verification"))
-        if verification is None:
-            verification = default_verification(
+        freshness = _opt_str(raw.get("freshness"))
+        if freshness is None:
+            freshness = default_freshness(
                 checked_this_session=source.checked_this_session,
                 evidence_ref=evidence_ref,
                 source_ref=source.source_ref,
@@ -440,7 +447,7 @@ class Finding:
             subkind=_str(raw.get("subkind")),
             evidence_kind=_opt_str(raw.get("evidence_kind")),
             claim_status=_opt_str(raw.get("claim_status")),
-            verification=verification,
+            freshness=freshness,
             evidence_ref=evidence_ref,
             provenance=Provenance.from_dict(raw.get("provenance")),
             validity=Validity.from_dict(raw.get("validity")),
@@ -503,7 +510,7 @@ class Finding:
             "subkind": self.subkind,
             "evidence_kind": self.evidence_kind,
             "claim_status": self.claim_status,
-            "verification": self.verification,
+            "freshness": self.freshness,
             "evidence_ref": self.evidence_ref,
             "provenance": self.provenance.as_dict() if self.provenance is not None else None,
             "validity": self.validity.as_dict() if self.validity is not None else None,
