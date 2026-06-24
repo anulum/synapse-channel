@@ -45,6 +45,17 @@ run "pip-audit"            "$V/python" -m pip_audit --skip-editable --desc --pro
 run "mkdocs (strict)"      "$V/python" -m mkdocs build --strict
 rm -rf site coverage.xml
 
+# pre-commit.yml is a SEPARATE push gate, not part of ci.yml. Its ruff/format hooks are
+# already covered above; the remaining gap is the typos spell-check, mirrored here so a
+# green preflight implies a green pre-commit run too (typos splits on hyphens, so a
+# legitimate hyphenated prefix can trip it — catch it locally, not in CI).
+if command -v typos >/dev/null 2>&1; then
+  run "typos"              typos --config _typos.toml
+else
+  printf '\n== typos ==\n  FAIL — typos not installed; run `cargo install typos-cli` (mirrors the pre-commit gate)\n'
+  fails+=("typos")
+fi
+
 # scorecard.yml: every action must be pinned to a full commit SHA (PinnedDependencies).
 printf '\n== action pinning ==\n'
 if grep -rEn 'uses: [^@]+@v[0-9]' .github/workflows/ >/dev/null 2>&1; then
