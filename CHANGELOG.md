@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse worker` prints a loud egress warning to stderr before starting whenever
+  the chosen backend will send channel context off the local machine — the `openai`
+  provider (which also forwards the API key read from `--api-key-env`) or any provider
+  pointed at a non-loopback `--base-url`. Local backends start silently.
+
 ### Security
 - The SQLite event log's write-ahead-log sidecars (`<db>-wal`, `<db>-shm`) are now
   restricted to owner-only access (`0o600`) alongside the main database file. WAL mode

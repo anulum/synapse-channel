@@ -293,6 +293,61 @@ def test_cmd_worker_threads_task_classes(monkeypatch: pytest.MonkeyPatch) -> Non
     assert captured["task_classes"] == ("chat",)
 
 
+def test_egress_warning_openai_flags_context_and_key() -> None:
+    msg = cli_processes._egress_warning("openai", "https://api.openai.com/v1")
+    assert msg is not None
+    assert "SENDS" in msg and "API key" in msg
+    assert "https://api.openai.com/v1" in msg
+
+
+def test_egress_warning_openai_without_base_url_names_the_endpoint() -> None:
+    assert "the configured endpoint" in (cli_processes._egress_warning("openai", "") or "")
+
+
+def test_egress_warning_local_ollama_is_silent() -> None:
+    assert cli_processes._egress_warning("ollama", DEFAULT_OLLAMA_BASE_URL) is None
+    assert cli_processes._egress_warning("ollama", "http://127.0.0.1:11434") is None
+
+
+def test_egress_warning_remote_ollama_warns_without_key() -> None:
+    msg = cli_processes._egress_warning("ollama", "http://10.0.0.5:11434")
+    assert msg is not None
+    assert "SENDS" in msg and "API key" not in msg
+
+
+def test_egress_warning_rule_backend_is_always_silent() -> None:
+    # The rule backend never touches the network, even with a remote base_url set.
+    assert cli_processes._egress_warning("rule", "http://10.0.0.5:11434") is None
+
+
+def test_cmd_worker_prints_egress_warning_only_when_off_host(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
+
+    class FakeWorker:
+        def __init__(self, **_: Any) -> None:
+            pass
+
+        async def run(self) -> None:
+            return None
+
+    monkeypatch.setattr("synapse_channel.cli_processes.SynapseLLMWorker", FakeWorker)
+
+    assert (
+        cli_processes._cmd_worker(
+            _worker_ns(provider="openai", base_url="https://api.openai.com/v1")
+        )
+        == 0
+    )
+    err = capsys.readouterr().err
+    assert "WARNING" in err and "SENDS" in err
+
+    # A local backend starts silently.
+    assert cli_processes._cmd_worker(_worker_ns(provider="rule")) == 0
+    assert "WARNING" not in capsys.readouterr().err
+
+
 # --- team handler ------------------------------------------------------------
 
 

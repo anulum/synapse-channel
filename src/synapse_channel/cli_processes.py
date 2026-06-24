@@ -21,8 +21,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 from collections.abc import Coroutine
 from typing import Any
+from urllib.parse import urlparse
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.client.launcher import run_team
@@ -84,13 +86,51 @@ def _cmd_hub(args: argparse.Namespace) -> int:
     return 0
 
 
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
+
+
+def _egress_warning(provider: str, base_url: str) -> str | None:
+    """Return a one-line warning when a worker will send channel context off-host.
+
+    The ``openai`` provider posts recent channel context and the bearer token read
+    from ``--api-key-env`` to its configured endpoint; any provider pointed at a
+    non-loopback ``base_url`` likewise leaves the machine. The offline ``rule``
+    backend never touches the network and returns ``None``.
+
+    Parameters
+    ----------
+    provider : str
+        The worker backend (``openai``, ``ollama``, ``rule``, or ``tiered``).
+    base_url : str
+        The model endpoint the worker will call.
+
+    Returns
+    -------
+    str or None
+        A warning describing what leaves the host, or ``None`` when the worker
+        stays local.
+    """
+    if provider == "rule":
+        return None
+    host = (urlparse(base_url).hostname or "").lower()
+    if provider != "openai" and host in _LOCAL_HOSTS:
+        return None
+    what = "recent channel context" + (" and the API key" if provider == "openai" else "")
+    return f"this worker SENDS {what} to {base_url or 'the configured endpoint'}"
+
+
 def _cmd_worker(args: argparse.Namespace) -> int:
     """Run a single on-channel model worker until interrupted.
 
     ``--prefix`` is prepended to ``--name`` to form the registered identity, so
     the same role can run under several projects without a name clash on the hub.
+    A worker that will send channel context off the local machine prints a loud
+    egress warning to stderr before it starts.
     """
     name = f"{args.prefix}{args.name}"
+    warning = _egress_warning(args.provider, args.base_url)
+    if warning:
+        print(f"[{name}] WARNING: {warning}.", file=sys.stderr)
     worker = SynapseLLMWorker(
         name=name,
         uri=args.uri,
