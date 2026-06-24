@@ -32,6 +32,10 @@ All notable changes to this project are documented here.
   (seconds a name is protected from a second takeover, blunting an eviction storm) and
   `synapse mcp --request-timeout S` (seconds the MCP bridge awaits a hub reply). Both
   carry their previous defaults.
+- `synapse git-hook test` reports whether the auto-release `post-commit` / `post-merge`
+  hooks are installed and whether the `synapse` executable each one invokes still
+  resolves, so a missing hook or a moved binary is caught up front instead of silently
+  no-opping the next time a claim should have auto-released. It exits non-zero on any gap.
 
 ### Security
 - Inbound wire frames are rejected before parsing when their array/object nesting

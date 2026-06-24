@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, cast
@@ -19,8 +20,11 @@ import pytest
 from synapse_channel.git.gitclaim import AgentFactory, GitError
 from synapse_channel.git.githook import (
     HOOK_MARKER,
+    _binary_resolvable,
+    _hook_synapse_bin,
     _paths_overlap,
     changed_files,
+    check_hooks,
     hook_installed,
     hooks_directory,
     install_hooks,
@@ -189,6 +193,52 @@ def test_hook_installed_unknown_trigger_is_false(tmp_path: Path) -> None:
 def test_hook_installed_resolves_dir_from_runner(tmp_path: Path) -> None:
     install_hooks(uri="ws://h", name="ME", hooks_dir=tmp_path)
     assert hook_installed("merge", runner=lambda _a: str(tmp_path)) is True
+
+
+def test_check_hooks_reports_installed_and_resolvable_binary(tmp_path: Path) -> None:
+    install_hooks(uri="ws://h", name="ME", synapse_bin=sys.executable, hooks_dir=tmp_path)
+    report = check_hooks(hooks_dir=tmp_path)
+    assert {entry["trigger"] for entry in report} == {"commit", "merge"}
+    for entry in report:
+        assert entry["installed"] is True
+        assert entry["synapse_bin"] == sys.executable
+        assert entry["binary_ok"] is True
+
+
+def test_check_hooks_reports_missing_when_not_installed(tmp_path: Path) -> None:
+    report = check_hooks(hooks_dir=tmp_path)
+    assert all(entry["installed"] is False for entry in report)
+    assert all(entry["binary_ok"] is False for entry in report)
+    assert all(entry["synapse_bin"] is None for entry in report)
+
+
+def test_check_hooks_flags_an_unresolvable_binary(tmp_path: Path) -> None:
+    install_hooks(uri="ws://h", name="ME", synapse_bin="/nonexistent/synapse", hooks_dir=tmp_path)
+    report = check_hooks(hooks_dir=tmp_path)
+    for entry in report:
+        assert entry["installed"] is True
+        assert entry["synapse_bin"] == "/nonexistent/synapse"
+        assert entry["binary_ok"] is False
+
+
+def test_check_hooks_resolves_dir_from_runner(tmp_path: Path) -> None:
+    install_hooks(uri="ws://h", name="ME", synapse_bin=sys.executable, hooks_dir=tmp_path)
+    report = check_hooks(runner=lambda _a: str(tmp_path))
+    assert all(entry["installed"] for entry in report)
+
+
+def test_hook_synapse_bin_extracts_or_returns_none() -> None:
+    assert _hook_synapse_bin("/abs/synapse git-release --trigger commit") == "/abs/synapse"
+    assert _hook_synapse_bin(f"#!/bin/sh\n{HOOK_MARKER}\n") is None
+
+
+def test_binary_resolvable_covers_each_path() -> None:
+    assert _binary_resolvable(sys.executable) is True  # absolute, executable
+    assert _binary_resolvable("/nonexistent/synapse") is False  # absolute, missing
+    assert _binary_resolvable("sh") is True  # bare name on PATH
+    assert _binary_resolvable("definitely-not-a-real-binary-xyz") is False  # bare, off PATH
+    assert _binary_resolvable(None) is False
+    assert _binary_resolvable("") is False
 
 
 def test_install_hooks_shell_quotes_values(tmp_path: Path) -> None:
