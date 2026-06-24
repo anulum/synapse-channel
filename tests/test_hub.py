@@ -547,6 +547,41 @@ async def test_hub_restart_replays_durable_state(tmp_path: Path) -> None:
     assert hub_b._message_seq == 1
 
 
+async def test_hub_restart_replays_the_idempotency_guard(tmp_path: Path) -> None:
+    db = tmp_path / "events.db"
+    store_a = EventStore(db)
+    hub_a = SynapseHub(default_ttl_seconds=3600.0, hub_id="syn-a", journal=store_a)
+    ws = FakeServerWS()
+    await hub_a.register(ws)
+    # Claim with an idempotency key, then release — the task is now free.
+    await hub_a.handle_message(_msg(sender="A", type="claim", task_id="T1", idem_key="k1"), ws)
+    await hub_a.handle_message(_msg(sender="A", type="release", task_id="T1"), ws)
+    assert EventKind.IDEMPOTENCY in {e.kind for e in store_a.read_all()}  # guard journalled
+    store_a.close()
+
+    # A fresh hub rebuilds the at-most-once guard from the log.
+    store_b = EventStore(db)
+    hub_b = SynapseHub(default_ttl_seconds=3600.0, hub_id="syn-b", journal=store_b)
+    assert "k1" in hub_b._idempotency  # survived the restart
+    ws2 = FakeServerWS()
+    await hub_b.register(ws2)
+    # Re-send the SAME claim: the guard replays the original grant instead of
+    # re-applying, so the released task is NOT silently re-claimed.
+    await hub_b.handle_message(_msg(sender="A", type="claim", task_id="T1", idem_key="k1"), ws2)
+    store_b.close()
+    assert "T1" not in hub_b.state.claims  # replayed, not re-applied
+    assert ws2.last()["type"] == "claim_granted"  # the original response, replayed
+
+
+async def test_hub_without_journal_still_guards_in_memory(tmp_path: Path) -> None:
+    # No journal: the guard works in memory (covers the no-journal _remember path).
+    hub = SynapseHub(default_ttl_seconds=300.0, journal=None)
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", idem_key="k9"), ws)
+    assert "k9" in hub._idempotency
+
+
 async def test_hub_without_journal_keeps_log_untouched(tmp_path: Path) -> None:
     store = EventStore(tmp_path / "events.db")
     hub = SynapseHub(default_ttl_seconds=300.0, journal=None)

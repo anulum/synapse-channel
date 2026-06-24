@@ -11,6 +11,17 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.40.0] - 2026-06-24
+
+### Fixed
+- The idempotency guard now survives a hub restart. The cache that makes a retried
+  mutation a no-op — so a reconnecting agent that resends a claim or release it is
+  unsure landed replays the original response instead of applying it twice — was
+  held only in memory and lost on restart, the one window where a retry is most
+  likely. Each remembered key/response is now journalled durably (`idempotency`
+  event, committed at `FULL` to match the lease mutations it protects) and the
+  cache is rebuilt on replay, so the at-most-once guarantee holds across a restart.
+
 ## [0.39.0] - 2026-06-24
 
 ### Added

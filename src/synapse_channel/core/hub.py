@@ -40,7 +40,7 @@ from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.handlers import DISPATCH
 from synapse_channel.core.idempotency import IdempotencyCache
-from synapse_channel.core.journal import replay
+from synapse_channel.core.journal import record_idempotency, replay
 from synapse_channel.core.ledger import DEFAULT_MAX_PROGRESS, Blackboard
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import (
@@ -183,6 +183,11 @@ class SynapseHub:
             self.chat_history = replayed.chat_history[-self.max_history :]
             self._message_seq = replayed.message_seq
             self.blackboard = replayed.blackboard
+            # Rebuild the at-most-once guard so a retry after a restart replays the
+            # original response instead of re-applying the mutation. Seeded oldest
+            # first, the bounded cache keeps the most-recent keys.
+            for idem_key, idem_response in replayed.idempotency:
+                self._idempotency.put(idem_key, idem_response)
         else:
             self.state = SynapseState(default_ttl_seconds=default_ttl_seconds)
             self.chat_history = []
@@ -202,10 +207,17 @@ class SynapseHub:
         return str(data.get("idem_key") or "")
 
     def _remember(self, data: dict[str, Any], response: dict[str, Any]) -> None:
-        """Cache the response of an applied mutation under its idempotency key."""
+        """Cache the response of an applied mutation under its idempotency key.
+
+        The cache is also journalled when a durable log is attached, so the
+        at-most-once guarantee survives a hub restart (a retried mutation replays
+        the original response rather than re-applying).
+        """
         key = self._idempotency_key(data)
         if key:
             self._idempotency.put(key, response)
+            if self.journal is not None:
+                record_idempotency(self.journal, key, response)
 
     async def _maybe_replay_duplicate(
         self, msg_type: str, data: dict[str, Any], websocket: Any
