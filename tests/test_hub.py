@@ -1048,6 +1048,7 @@ async def test_claim_grant_resumes_checkpoint_after_expiry() -> None:
         _msg(sender="A", type="checkpoint", task_id="T1", checkpoint="cursor=9"), ws_a
     )
     hub.state.claims["T1"].lease_expires_at = 0.0  # force the lease to lapse
+    hub.state.reindex_leases()  # reflect the directly-edited lease in the expiry heap
     await hub.handle_message(_msg(sender="B", type="claim", task_id="T1"), ws_b)
     granted = [m for m in ws_b.decoded() if m.get("type") == "claim_granted"][-1]
     assert granted["owner"] == "B"

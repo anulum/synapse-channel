@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from synapse_channel.core.state import (
+    LEASE_HEAP_COMPACT_FLOOR,
     MINIMUM_TTL_SECONDS,
     GitContext,
     ResourceOffer,
@@ -586,3 +587,65 @@ def test_handoff_carries_git_context() -> None:
     ok, _ = state.handoff("A", "T1", "B", now=1001.0)
     assert ok
     assert state.claims["T1"].git == ctx
+
+
+# --- lease-expiry heap -------------------------------------------------------
+
+
+def test_renewed_lease_survives_its_superseded_heap_entry() -> None:
+    # A renewal leaves the previous heap entry behind; when that stale entry comes
+    # due the live claim (a newer epoch) must not be expired by it.
+    state = SynapseState(default_ttl_seconds=100.0)
+    state.claim("A", "T1", ttl_seconds=100.0, now=0.0)  # epoch 1, expires 100
+    state.claim("A", "T1", ttl_seconds=100.0, now=50.0)  # epoch 2, expires 150
+    # At t=120 the stale (100, T1, epoch1) entry is due but the live lease is not.
+    state.heartbeat("A", now=120.0)
+    assert "T1" in state.claims
+    assert state.claims["T1"].epoch == 2
+
+
+def test_released_task_leaves_only_a_harmless_stale_heap_entry() -> None:
+    # Release deletes the claim but not its heap entry; popping the orphan later
+    # is a no-op, not a crash.
+    state = SynapseState(default_ttl_seconds=100.0)
+    state.claim("A", "T1", now=0.0)
+    state.release("A", "T1", now=10.0)
+    state.heartbeat("A", now=10_000.0)  # the orphaned (100, T1, 1) entry is skipped
+    assert "T1" not in state.claims
+
+
+def test_lease_heap_stays_bounded_under_renewal_churn() -> None:
+    # Renewing one task many times must not grow the heap without limit: the
+    # churn-bound rebuild keeps it proportional to the live claim count.
+    state = SynapseState(default_ttl_seconds=100.0)
+    for tick in range(40):
+        state.claim("A", "T1", ttl_seconds=100.0, now=float(tick))
+    assert len(state.claims) == 1
+    assert len(state._lease_heap) <= 2 * len(state.claims) + LEASE_HEAP_COMPACT_FLOOR
+    # Expiry is still exact after the compaction.
+    state.heartbeat("A", now=10_000.0)
+    assert state.claims == {}
+
+
+def test_reindex_leases_rebuilds_the_heap_from_live_claims() -> None:
+    state = SynapseState(default_ttl_seconds=100.0)
+    # Distinct worktrees so the two whole-worktree claims do not contend.
+    state.claim("A", "T1", now=0.0, worktree="wtA")
+    state.heartbeat("B", now=0.0)
+    state.claim("B", "T2", now=0.0, worktree="wtB")
+    # Poison the heap with a ghost entry, then rebuild from the registry.
+    state._lease_heap = [(999.0, "ghost", 999)]
+    state.reindex_leases()
+    assert sorted(entry[1] for entry in state._lease_heap) == ["T1", "T2"]
+
+
+def test_many_distinct_claims_all_expire_together() -> None:
+    # The heap must expire every lapsed lease, not just the heap root.
+    state = SynapseState(default_ttl_seconds=100.0)
+    for index in range(30):
+        state.heartbeat(f"A{index}", now=0.0)
+        # Each in its own worktree so whole-worktree scopes never conflict.
+        state.claim(f"A{index}", f"T{index}", ttl_seconds=100.0, now=0.0, worktree=f"wt{index}")
+    assert len(state.claims) == 30
+    state.heartbeat("A0", now=200.0)  # every lease has lapsed by now
+    assert state.claims == {}

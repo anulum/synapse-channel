@@ -26,7 +26,10 @@ Every function is filesystem- or dict-pure and fully unit-testable.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -266,13 +269,50 @@ def save_offset(path: str | Path, offset: int) -> None:
     marker.write_text(str(max(int(offset), 0)), encoding="utf-8")
 
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Replace ``path`` with ``text`` atomically: temp file in the same dir, fsync, rename.
+
+    The new contents are written to a temporary file alongside the target, flushed
+    and ``fsync``-ed to disk, then moved into place with :func:`os.replace`, which
+    is atomic on the same filesystem. A crash therefore leaves the original file
+    fully intact — never a half-written truncation — because the rename either
+    happened completely or not at all. The temporary file is removed if the write
+    fails before the rename.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        Destination file to replace; parent directories are created.
+    text : str
+        The full contents to write.
+    """
+    directory = path.parent
+    directory.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=str(directory), prefix=f"{path.name}.", suffix=".tmp")
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)  # atomic on the same filesystem
+    except BaseException:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink()
+        raise
+
+
 def trim_jsonl_tail(path: str | Path, max_lines: int) -> int:
-    """Truncate an NDJSON log to its last ``max_lines`` lines.
+    """Truncate an NDJSON log to its last ``max_lines`` lines, atomically.
+
+    The kept tail is written to a temporary file and renamed over the log
+    (:func:`_atomic_write_text`), so a crash mid-trim never leaves the relay log
+    half-written — a reader always sees either the old log or the trimmed one.
 
     Parameters
     ----------
     path : str or pathlib.Path
-        NDJSON log to trim in place.
+        NDJSON log to trim.
     max_lines : int
         Maximum number of trailing lines to keep. Values ``<= 0`` are a no-op.
 
@@ -291,7 +331,7 @@ def trim_jsonl_tail(path: str | Path, max_lines: int) -> int:
         return 0
     dropped = len(lines) - max_lines
     kept = lines[-max_lines:]
-    src.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    _atomic_write_text(src, "\n".join(kept) + "\n")
     return dropped
 
 
