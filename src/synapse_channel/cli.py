@@ -50,6 +50,7 @@ from typing import Any
 
 from synapse_channel import __version__
 from synapse_channel.cli_locking import add_parsers as add_locking_parsers
+from synapse_channel.cli_mcp import add_parsers as add_mcp_parsers
 from synapse_channel.cli_streams import add_parsers as add_stream_parsers
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.client.launcher import run_team
@@ -83,7 +84,6 @@ from synapse_channel.core.ratelimit import RateLimiter
 from synapse_channel.git.gitclaim import GitError, run_git_claim
 from synapse_channel.git.gitconflict import run_conflicts
 from synapse_channel.git.githook import install_hooks, run_git_release
-from synapse_channel.mcp.server import DEFAULT_BRIDGE_NAME, serve_stdio
 from synapse_channel.update_check import update_notice
 
 AgentFactory = Callable[..., SynapseAgent]
@@ -449,22 +449,6 @@ async def _health(
 def _cmd_health(args: argparse.Namespace) -> int:
     """Probe the hub and return its reachability as the process exit code."""
     return asyncio.run(_health(uri=args.uri, name=args.name, token=args.token))
-
-
-def _cmd_mcp(args: argparse.Namespace) -> int:
-    """Run the Model Context Protocol server over stdio, bridged to the hub.
-
-    Exposes the hub's coordination verbs to any MCP client. Requires the optional
-    ``mcp`` extra; a missing extra is reported with the install hint and exit ``1``.
-    """
-    try:
-        return asyncio.run(serve_stdio(uri=args.uri, name=args.name, token=args.token))
-    except RuntimeError as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
-    except KeyboardInterrupt:
-        print(f"\n[{args.name}] MCP server stopped.")
-        return 0
 
 
 def _identity(data: dict[str, Any]) -> Any:
@@ -1219,14 +1203,7 @@ def build_parser() -> argparse.ArgumentParser:
     health.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     health.set_defaults(func=_cmd_health)
 
-    mcp = sub.add_parser(
-        "mcp",
-        help="Run an MCP server over stdio that bridges to the hub (needs the [mcp] extra).",
-    )
-    mcp.add_argument("--uri", default=DEFAULT_HUB_URI)
-    mcp.add_argument("--name", default=DEFAULT_BRIDGE_NAME)
-    mcp.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
-    mcp.set_defaults(func=_cmd_mcp)
+    add_mcp_parsers(sub)
 
     state = sub.add_parser(
         "state", help="Print active claims and their checkpoints (a resume view)."
