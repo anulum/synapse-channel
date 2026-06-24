@@ -13,6 +13,18 @@ All notable changes to this project are documented here.
 
 ## [0.41.0] - 2026-06-24
 
+### Security
+- A secured hub (`--token`) now authenticates a connection before it learns
+  anything about the channel. Previously the hub sent the `WELCOME` frame — which
+  carries the online-agent roster and the connection count — on connect, before
+  the first message was authenticated, so an unauthenticated client could read
+  that metadata; and an idle unauthenticated socket held a connection slot
+  indefinitely. The welcome is now withheld until the socket authenticates, and a
+  secured hub closes a socket that does not send an authenticated first frame
+  within `--auth-timeout` seconds (default 10), so an idle unauthenticated
+  connection is reaped instead of consuming the `--max-clients` budget. An open
+  (tokenless) hub is unchanged — it welcomes on connect as before.
+
 ### Fixed
 - Corrected two stale "Known limitations" entries in the README that 0.40.0 had
   made false: per-mutation cost is no longer linear in the active claim count (the
