@@ -11,6 +11,15 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Security
+- The SQLite event log's write-ahead-log sidecars (`<db>-wal`, `<db>-shm`) are now
+  restricted to owner-only access (`0o600`) alongside the main database file. WAL mode
+  creates them on the first write under the process umask, so they previously held the
+  same plaintext chat and findings as the locked-down main file while remaining
+  group/other readable.
+
 ## [0.42.0] - 2026-06-24
 
 ### Fixed

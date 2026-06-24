@@ -28,6 +28,22 @@ def test_event_store_file_is_owner_only(tmp_path: Path) -> None:
     assert mode & 0o077 == 0  # no group/other access to the plaintext event log
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file permissions")
+def test_wal_sidecars_are_owner_only(tmp_path: Path) -> None:
+    # WAL mode mirrors the same plaintext chat/findings into the ``-wal``/``-shm``
+    # sidecars; born under the process umask they would otherwise be group/other
+    # readable while the main file is locked. They must be just as restricted.
+    db = tmp_path / "events.db"
+    store = EventStore(db)
+    store.append("chat", {"p": "secret"})  # force a write so both sidecars exist
+    present = [p for p in (tmp_path / "events.db-wal", tmp_path / "events.db-shm") if p.exists()]
+    assert present, "WAL mode should leave at least one sidecar on disk after a write"
+    for sidecar in present:
+        mode = stat.S_IMODE(os.stat(sidecar).st_mode)
+        assert mode & 0o077 == 0, f"{sidecar.name} is group/other-accessible"
+    store.close()
+
+
 def test_event_store_in_memory_needs_no_chmod() -> None:
     store = EventStore(":memory:")  # the chmod is skipped for the in-memory store
     store.append("chat", {"p": "x"})
