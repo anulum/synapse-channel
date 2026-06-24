@@ -15,11 +15,12 @@ clear. The figures below are reproducible from the repository.
 
 ## Test suite
 
-- A test suite across the `tests/` tree exercises every one of the 21 package
-  modules. The current test-function, module, and surface counts are in the
-  README's capability inventory, which CI keeps in sync with the source tree.
-- Coverage of the `synapse_channel` package is **100%** (2108 statements, 598
-  branches, 0 missed). The gate fails below 95%; in practice it is held at 100%.
+- A test suite across the `tests/` tree exercises every package module. The
+  current test-function, module, and surface counts are in the README's capability
+  inventory, which CI keeps in sync with the source tree.
+- Coverage of the `synapse_channel` package is **100%** — no lines or branches
+  missed, with branch coverage on. The gate fails below 95%; in practice it is held
+  at 100%.
 - Tests are deterministic: time is injected, transports are faked, and no test
   reaches the network.
 
