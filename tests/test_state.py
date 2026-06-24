@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from synapse_channel.core.state import (
     LEASE_HEAP_COMPACT_FLOOR,
+    MAX_CLAIMS_PER_AGENT,
+    MAX_OFFERS_PER_AGENT,
     MINIMUM_TTL_SECONDS,
     GitContext,
     ResourceOffer,
@@ -587,6 +589,32 @@ def test_handoff_carries_git_context() -> None:
     ok, _ = state.handoff("A", "T1", "B", now=1001.0)
     assert ok
     assert state.claims["T1"].git == ctx
+
+
+# --- per-agent quotas --------------------------------------------------------
+
+
+def test_claim_cap_refuses_new_claims_past_the_bound() -> None:
+    state = SynapseState(default_ttl_seconds=10_000.0)
+    for index in range(MAX_CLAIMS_PER_AGENT):
+        ok, _ = state.claim("A", f"T{index}", now=0.0, worktree=f"wt{index}")
+        assert ok
+    refused, message = state.claim("A", "OVERFLOW", now=0.0, worktree="wtX")
+    assert refused is False
+    assert "maximum" in message
+    # Renewing an already-held claim is free, and another agent has its own budget.
+    assert state.claim("A", "T0", now=1.0, worktree="wt0")[0] is True
+    assert state.claim("B", "B-TASK", now=0.0, worktree="wtB")[0] is True
+
+
+def test_offer_cap_refuses_new_offers_past_the_bound() -> None:
+    state = SynapseState()
+    for index in range(MAX_OFFERS_PER_AGENT):
+        assert state.offer_resource("A", kind="llm", name=f"m{index}", now=0.0) is not None
+    assert state.offer_resource("A", kind="llm", name="overflow", now=0.0) is None
+    # Refreshing an existing offer is allowed; a different agent has its own budget.
+    assert state.offer_resource("A", kind="llm", name="m0", now=1.0) is not None
+    assert state.offer_resource("B", kind="llm", name="m0", now=0.0) is not None
 
 
 # --- lease-expiry heap -------------------------------------------------------

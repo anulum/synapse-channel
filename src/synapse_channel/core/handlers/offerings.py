@@ -72,6 +72,16 @@ async def handle_resource(
         return
 
     key = hub.state.offer_resource(sender, kind=kind, name=name, capacity=capacity, meta=meta)
+    if key is None:
+        await hub._send_json(
+            websocket,
+            hub._system(
+                "resource offer quota exceeded",
+                msg_type=MessageType.ERROR,
+                target=sender,
+            ),
+        )
+        return
     if hub.journal is not None:
         record_resource(hub.journal, hub.state.resources[key])
     offered = hub._system(
