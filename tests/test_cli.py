@@ -2199,7 +2199,9 @@ def test_cmd_git_hook_dispatches(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(cli, "install_hooks", lambda **kwargs: ["installed post-commit"])
-    ns = argparse.Namespace(action="install", uri="ws://h", name="ME", token=None, token_file=None)
+    ns = argparse.Namespace(
+        action="install", uri="ws://h", name="ME", token=None, token_file=None, synapse_bin=None
+    )
     assert cli._cmd_git_hook(ns) == 0
     assert "installed post-commit" in capsys.readouterr().out
 
@@ -2211,7 +2213,9 @@ def test_cmd_git_hook_reports_git_error(
         raise GitError("not a git repository")
 
     monkeypatch.setattr(cli, "install_hooks", boom)
-    ns = argparse.Namespace(action="install", uri="ws://h", name="ME", token=None, token_file=None)
+    ns = argparse.Namespace(
+        action="install", uri="ws://h", name="ME", token=None, token_file=None, synapse_bin=None
+    )
     assert cli._cmd_git_hook(ns) == 1
     assert "not a git repository" in capsys.readouterr().err
 

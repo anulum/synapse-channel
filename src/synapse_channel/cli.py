@@ -696,7 +696,10 @@ def _cmd_git_hook(args: argparse.Namespace) -> int:
     """
     try:
         lines = install_hooks(
-            uri=args.uri, name=args.name, token_file=getattr(args, "token_file", None)
+            uri=args.uri,
+            name=args.name,
+            token_file=getattr(args, "token_file", None),
+            synapse_bin=args.synapse_bin,
         )
     except GitError as exc:
         print(f"git error: {exc}", file=sys.stderr)
@@ -1593,6 +1596,12 @@ def build_parser() -> argparse.ArgumentParser:
     git_hook.add_argument("action", choices=["install"], help="The hook action to perform.")
     git_hook.add_argument("--uri", default=DEFAULT_HUB_URI)
     git_hook.add_argument("--name", default="USER")
+    git_hook.add_argument(
+        "--synapse-bin",
+        default=None,
+        help="Path to the synapse executable to invoke from the hook; defaults to the "
+        "absolute path resolved from PATH at install time (hardens against PATH hijack).",
+    )
     git_hook.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     git_hook.set_defaults(func=_cmd_git_hook)
 

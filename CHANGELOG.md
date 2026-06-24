@@ -22,6 +22,11 @@ All notable changes to this project are documented here.
   format drift is caught without taking a runtime dependency on the client.
 
 ### Security
+- `synapse git-hook install` now bakes the absolute path of the `synapse`
+  executable into the generated hooks (resolved from `PATH` at install time, or
+  set explicitly with `--synapse-bin`), instead of invoking `synapse` by bare
+  name, so a hook is not vulnerable to a later `PATH` hijack. It falls back to the
+  bare name only when `synapse` cannot be resolved.
 - Per-agent quotas bound how much state one agent can register, so a runaway or
   buggy agent cannot exhaust the hub. An agent may hold at most 128 live claims
   and 64 live resource offers; a claim or offer past the bound is refused, while

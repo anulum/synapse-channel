@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import shlex
+import shutil
 import stat
 from pathlib import Path
 from typing import Any
@@ -40,18 +41,36 @@ def hooks_directory(*, runner: GitRunner = _default_git_runner) -> Path:
     return Path(runner(["rev-parse", "--git-path", "hooks"]))
 
 
-def _hook_script(trigger: str, *, uri: str, name: str, token_file: str | None) -> str:
+def _resolve_synapse_bin(explicit: str | None) -> str:
+    """Resolve the ``synapse`` executable baked into a hook.
+
+    An explicit path wins; otherwise the absolute path of ``synapse`` on the
+    current ``PATH`` is used, so a hook is not vulnerable to a later ``PATH``
+    hijack. When ``synapse`` cannot be found, the bare name is used as a fallback
+    (resolved from ``PATH`` at hook time).
+    """
+    if explicit:
+        return explicit
+    found = shutil.which("synapse")
+    return str(Path(found).resolve()) if found else "synapse"
+
+
+def _hook_script(
+    trigger: str, *, uri: str, name: str, token_file: str | None, synapse_bin: str
+) -> str:
     """Build the shell-script body of a hook that calls ``synapse git-release``.
 
-    Every value baked into the script is shell-quoted, so a name, URI, or token
-    path containing spaces or shell metacharacters can neither break the hook nor
-    inject a command into it.
+    Every value baked into the script is shell-quoted, so a name, URI, token path,
+    or executable path containing spaces or shell metacharacters can neither break
+    the hook nor inject a command into it. ``synapse_bin`` is the resolved path to
+    the ``synapse`` executable (an absolute path hardens the hook against a
+    ``PATH`` hijack).
     """
     auth = f" --token-file {shlex.quote(token_file)}" if token_file else ""
     return (
         "#!/bin/sh\n"
         f"{HOOK_MARKER}\n"
-        f"synapse git-release --trigger {trigger} "
+        f"{shlex.quote(synapse_bin)} git-release --trigger {trigger} "
         f"--uri {shlex.quote(uri)} --name {shlex.quote(name)}{auth} || true\n"
     )
 
@@ -61,6 +80,7 @@ def install_hooks(
     uri: str,
     name: str,
     token_file: str | None = None,
+    synapse_bin: str | None = None,
     runner: GitRunner = _default_git_runner,
     hooks_dir: Path | None = None,
 ) -> list[str]:
@@ -76,6 +96,10 @@ def install_hooks(
         Hub URI and agent identity baked into the hook's ``git-release`` call.
     token_file : str or None, optional
         A token file passed through to ``git-release`` for a secured hub.
+    synapse_bin : str or None, optional
+        Path to the ``synapse`` executable to invoke from the hook; when ``None``
+        the absolute path of ``synapse`` on the current ``PATH`` is baked in, so
+        the hook is not vulnerable to a later ``PATH`` hijack.
     runner : GitRunner, optional
         The git executor; injectable for testing.
     hooks_dir : Path or None, optional
@@ -88,6 +112,7 @@ def install_hooks(
     """
     target = hooks_dir if hooks_dir is not None else hooks_directory(runner=runner)
     target.mkdir(parents=True, exist_ok=True)
+    binary = _resolve_synapse_bin(synapse_bin)
     results: list[str] = []
     for trigger, filename in sorted(TRIGGER_HOOKS.items()):
         path = target / filename
@@ -95,7 +120,8 @@ def install_hooks(
             results.append(f"skipped {filename}: a non-Synapse hook already exists")
             continue
         path.write_text(
-            _hook_script(trigger, uri=uri, name=name, token_file=token_file), encoding="utf-8"
+            _hook_script(trigger, uri=uri, name=name, token_file=token_file, synapse_bin=binary),
+            encoding="utf-8",
         )
         path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         results.append(f"installed {filename} (releases claims set to auto-release on {trigger})")
