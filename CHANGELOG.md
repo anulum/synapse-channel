@@ -11,6 +11,27 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Fixed
+- A directed-only waiter (`synapse wait --directed-only`) is no longer woken by a
+  priority or CEO message addressed to a *different* agent. The priority flag and a
+  priority sender now elevate only a message that still reaches the waiter — a broadcast,
+  or one addressed to it — so a flagged announcement or a CEO directive still wakes a
+  quiet waiter promptly, while a priority message directed at one agent no longer wakes
+  every directed-only waiter on the bus.
+- On a multi-seat project, a `<project>/<seat>` directed-only waiter is no longer woken by
+  every message addressed to the bare `<project>`. A bare-project message is now treated
+  as a routine project-level broadcast for a seat — it still appears in the seat's inbox,
+  and a CEO or priority project message still wakes it, but routine project traffic does
+  not. A sole agent that wants project-addressed messages to wake it connects with
+  `--for <project>` (the default for the `syn-wait` wrapper).
+
+### Changed
+- The README and the documentation site now carry a "Commercial use" section with the
+  licence tiers and a direct link to the pricing/checkout page, plus a "Releases" note
+  describing the release cadence.
+
 ## [0.41.0] - 2026-06-24
 
 ### Added
