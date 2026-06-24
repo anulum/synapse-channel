@@ -22,6 +22,7 @@ from synapse_channel.core.hub import (
     DEFAULT_TAKEOVER_COOLDOWN,
     SynapseHub,
 )
+from synapse_channel.core.logging_setup import DEFAULT_LOG_FORMAT, DEFAULT_LOG_LEVEL
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 
 # --- parser ------------------------------------------------------------------
@@ -97,6 +98,21 @@ def test_parser_hub_takeover_cooldown() -> None:
     assert args.takeover_cooldown == 5.5
 
 
+def test_parser_hub_logging_options() -> None:
+    defaults = cli.build_parser().parse_args(["hub"])
+    assert defaults.log_format == DEFAULT_LOG_FORMAT
+    assert defaults.log_level == DEFAULT_LOG_LEVEL
+    args = cli.build_parser().parse_args(["hub", "--log-format", "json", "--log-level", "DEBUG"])
+    assert args.log_format == "json"
+    assert args.log_level == "DEBUG"
+
+
+def test_parser_worker_logging_options() -> None:
+    args = cli.build_parser().parse_args(["worker", "--log-format", "json"])
+    assert args.log_format == "json"
+    assert args.log_level == DEFAULT_LOG_LEVEL
+
+
 def test_parser_hub_metrics_query_token_ok() -> None:
     assert cli.build_parser().parse_args(["hub"]).metrics_query_token_ok is False
     opted = cli.build_parser().parse_args(["hub", "--metrics-query-token-ok"])
@@ -166,6 +182,8 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "max_paths_per_claim": MAX_DECLARED_PATHS,
         "compact_hint_threshold": DEFAULT_COMPACT_HINT_THRESHOLD,
         "takeover_cooldown": DEFAULT_TAKEOVER_COOLDOWN,
+        "log_format": DEFAULT_LOG_FORMAT,
+        "log_level": DEFAULT_LOG_LEVEL,
         "token": None,
         "metrics": False,
         "auth_timeout": 10.0,
@@ -303,6 +321,22 @@ def test_cmd_hub_threads_takeover_cooldown(monkeypatch: pytest.MonkeyPatch) -> N
     assert captured["takeover_cooldown"] == 5.5
 
 
+def test_cmd_hub_configures_logging(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
+    monkeypatch.setattr(cli_processes, "configure_logging", lambda **kw: captured.update(kw))
+    assert cli_processes._cmd_hub(_hub_ns(log_format="json", log_level="DEBUG")) == 0
+    assert captured == {"log_format": "json", "level": "DEBUG"}
+
+
+def test_cmd_worker_configures_logging(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
+    monkeypatch.setattr(cli_processes, "configure_logging", lambda **kw: captured.update(kw))
+    assert cli_processes._cmd_worker(_worker_ns(log_format="json", log_level="ERROR")) == 0
+    assert captured == {"log_format": "json", "level": "ERROR"}
+
+
 def test_cmd_hub_with_token_builds_authenticator(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
     monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
@@ -347,6 +381,8 @@ def _worker_ns(**overrides: Any) -> argparse.Namespace:
         "token": None,
         "task_class": None,
         "heavy_model": "",
+        "log_format": DEFAULT_LOG_FORMAT,
+        "log_level": DEFAULT_LOG_LEVEL,
     }
     base.update(overrides)
     return argparse.Namespace(**base)

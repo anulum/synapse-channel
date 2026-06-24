@@ -47,6 +47,13 @@ from synapse_channel.core.hub import (
     DEFAULT_TAKEOVER_COOLDOWN,
     SynapseHub,
 )
+from synapse_channel.core.logging_setup import (
+    DEFAULT_LOG_FORMAT,
+    DEFAULT_LOG_LEVEL,
+    LOG_FORMATS,
+    LOG_LEVELS,
+    configure_logging,
+)
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
@@ -64,6 +71,7 @@ def _cmd_hub(args: argparse.Namespace) -> int:
     With ``--db`` the hub persists authoritative state to a durable event log and
     resumes from it on restart; without it the hub is purely in-memory.
     """
+    configure_logging(log_format=args.log_format, level=args.log_level)
     journal = EventStore(args.db) if args.db else None
     limiter = RateLimiter(rate_per_second=args.rate, burst=args.burst) if args.rate > 0 else None
     authenticator = TokenAuthenticator([args.token]) if args.token else None
@@ -138,6 +146,7 @@ def _cmd_worker(args: argparse.Namespace) -> int:
     A worker that will send channel context off the local machine prints a loud
     egress warning to stderr before it starts.
     """
+    configure_logging(log_format=args.log_format, level=args.log_level)
     name = f"{args.prefix}{args.name}"
     warning = _egress_warning(args.provider, args.base_url)
     if warning:
@@ -190,9 +199,26 @@ def _cmd_team(args: argparse.Namespace) -> int:
     )
 
 
+def _add_logging_args(parser: argparse.ArgumentParser) -> None:
+    """Add the shared ``--log-format`` / ``--log-level`` options to a daemon parser."""
+    parser.add_argument(
+        "--log-format",
+        choices=list(LOG_FORMATS),
+        default=DEFAULT_LOG_FORMAT,
+        help="Log output format: human-readable text or line-delimited JSON.",
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=list(LOG_LEVELS),
+        default=DEFAULT_LOG_LEVEL,
+        help="Minimum level emitted to the log stream.",
+    )
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``hub``, ``worker``, ``team``, and ``supervisor`` subparsers."""
     hub = subparsers.add_parser("hub", help="Run the coordination hub.")
+    _add_logging_args(hub)
     hub.add_argument("--host", default=DEFAULT_HOST)
     hub.add_argument("--port", type=int, default=DEFAULT_PORT)
     hub.add_argument(
@@ -307,6 +333,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     hub.set_defaults(func=_cmd_hub)
 
     worker = subparsers.add_parser("worker", help="Run an on-channel model worker.")
+    _add_logging_args(worker)
     worker.add_argument("--name", default="FAST")
     worker.add_argument(
         "--prefix",
