@@ -148,6 +148,7 @@ def _cmd_hub(args: argparse.Namespace) -> int:
         max_msg_bytes=args.max_msg_kb * 1024,
         enable_metrics=args.metrics,
         auth_timeout=args.auth_timeout,
+        metrics_token=args.metrics_token,
     )
     try:
         _run(hub.serve(host=args.host, port=args.port))
@@ -1426,6 +1427,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_AUTH_TIMEOUT,
         help="On a secured hub (--token), seconds to wait for an authenticated first "
         "frame before closing the socket (no welcome/roster until then).",
+    )
+    hub.add_argument(
+        "--metrics-token",
+        default=None,
+        help="Require this token (Authorization: Bearer, or ?token=) for /metrics and "
+        "/health, so an exposed endpoint does not leak metadata (off by default).",
     )
     hub.set_defaults(func=_cmd_hub)
 

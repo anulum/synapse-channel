@@ -14,6 +14,13 @@ All notable changes to this project are documented here.
 ## [0.41.0] - 2026-06-24
 
 ### Security
+- The optional `/metrics` and `/health` endpoint can now require a token. With
+  `synapse hub --metrics --metrics-token <t>` (or `SynapseHub(metrics_token=...)`)
+  both paths demand the token — presented as `Authorization: Bearer <t>` or a
+  `?token=<t>` query, compared in constant time — and answer `401` without it, so
+  an exposed endpoint no longer leaks operational metadata. Without a token the
+  endpoint stays open (the right default for a loopback bind); a hub that enables
+  metrics on a non-loopback host with no `--metrics-token` now logs a warning.
 - A secured hub (`--token`) now authenticates a connection before it learns
   anything about the channel. Previously the hub sent the `WELCOME` frame — which
   carries the online-agent roster and the connection count — on connect, before

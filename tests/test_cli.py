@@ -246,6 +246,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "token": None,
         "metrics": False,
         "auth_timeout": 10.0,
+        "metrics_token": None,
     }
     base.update(overrides)
     return argparse.Namespace(**base)

@@ -1563,9 +1563,12 @@ def test_install_signal_handlers_suppresses_unsupported() -> None:
 # --- HTTP /metrics and /health endpoints -------------------------------------
 
 
-def _request(path: str) -> Request:
-    """Build a bare HTTP request carrying just the target path."""
-    return Request(path, Headers())
+def _request(path: str, *, authorization: str | None = None) -> Request:
+    """Build an HTTP request for ``path`` with an optional ``Authorization`` header."""
+    headers = Headers()
+    if authorization is not None:
+        headers["Authorization"] = authorization
+    return Request(path, headers)
 
 
 def test_metrics_disabled_by_default() -> None:
@@ -1605,3 +1608,54 @@ def test_process_request_falls_through_for_websocket_paths() -> None:
     # A normal WebSocket client (or any other path) is handed back to the handshake.
     assert hub._process_request(None, _request("/")) is None
     assert hub._process_request(None, _request("/socket")) is None
+
+
+def test_metrics_token_rejects_a_request_without_the_token() -> None:
+    hub = SynapseHub(enable_metrics=True, metrics_token="m3tr1c")
+    response = hub._process_request(None, _request("/metrics"))
+    assert response is not None
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"].startswith("Bearer")
+    assert b"synapse_up" not in response.body  # no metadata leaked
+
+
+def test_metrics_token_admits_a_bearer_header() -> None:
+    hub = SynapseHub(enable_metrics=True, metrics_token="m3tr1c")
+    response = hub._process_request(None, _request("/metrics", authorization="Bearer m3tr1c"))
+    assert response is not None
+    assert response.status_code == 200
+    assert b"synapse_up 1" in response.body
+
+
+def test_metrics_token_admits_a_query_string_token() -> None:
+    hub = SynapseHub(enable_metrics=True, metrics_token="m3tr1c")
+    response = hub._process_request(None, _request("/metrics?token=m3tr1c"))
+    assert response is not None
+    assert response.status_code == 200
+
+
+def test_metrics_token_rejects_a_wrong_token() -> None:
+    hub = SynapseHub(enable_metrics=True, metrics_token="m3tr1c")
+    response = hub._process_request(None, _request("/health", authorization="Bearer nope"))
+    assert response is not None
+    assert response.status_code == 401
+
+
+def test_warn_if_exposed_warns_on_unauthenticated_metrics(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    hub = SynapseHub(authenticator=TokenAuthenticator(["t"]), enable_metrics=True)
+    with caplog.at_level("WARNING", logger="synapse.hub"):
+        hub._warn_if_exposed("0.0.0.0")
+    assert any("metrics" in r.message for r in caplog.records)
+
+
+def test_warn_if_exposed_silent_when_metrics_token_set(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    hub = SynapseHub(
+        authenticator=TokenAuthenticator(["t"]), enable_metrics=True, metrics_token="m"
+    )
+    with caplog.at_level("WARNING", logger="synapse.hub"):
+        hub._warn_if_exposed("0.0.0.0")
+    assert not any("metrics" in r.message for r in caplog.records)
