@@ -58,6 +58,13 @@ All notable changes to this project are documented here.
   (tokenless) hub is unchanged — it welcomes on connect as before.
 
 ### Changed
+- The scalability benchmark now measures the heap-based lease expiry honestly. It
+  was still framed around the pre-0.40.0 linear claim scan (and populated claims in
+  a way that bypassed the lease heap), so its numbers no longer described the code.
+  It now reports the steady-heartbeat cost (near-constant in the claim count, as the
+  heap intends) and the mass-expiry cost separately, and adds an event-replay
+  profile (start-up rebuild cost up to 100k events). Live-hub storm scenarios are
+  noted as needing an integration harness.
 - File-scope path normalisation is now segment-based, so overlap detection is
   more accurate. `..` segments resolve against the path (`src/../tests` now
   overlaps `tests`), duplicate slashes collapse (`tests//app.py` == `tests/app.py`),

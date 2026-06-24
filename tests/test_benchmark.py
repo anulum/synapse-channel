@@ -187,36 +187,60 @@ def test_scalability_host_profile_has_fields() -> None:
 def test_scalability_state_with_claims_builds_count() -> None:
     state = scale_bench.state_with_claims(5)
     assert len(state.claims) == 5
+    assert len(state._lease_heap) == 5  # the heap is populated to match
 
 
-def test_scalability_profile_comparison_count_is_deterministic() -> None:
-    rows = scale_bench.profile(counts=(10, 100), iterations=3)
-    assert [row["active_claims"] for row in rows] == [10, 100]
-    # The comparison count is exact (= active claims), regardless of host speed.
-    assert [row["comparisons_per_scan"] for row in rows] == [10, 100]
-    assert all(row["scan_microseconds"] >= 0 for row in rows)
-    assert all(row["sustained_mutations_per_sec"] >= 0 for row in rows)
+def test_scalability_mass_expiry_drains_every_claim() -> None:
+    assert scale_bench.measure_mass_expiry_seconds(50) >= 0.0
+
+
+def test_scalability_profile_reports_expiry_and_replay() -> None:
+    rows = scale_bench.profile(claim_counts=(10, 100), replay_counts=(10,), iterations=3)
+    assert [row["active_claims"] for row in rows["expiry"]] == [10, 100]
+    assert all(row["steady_heartbeat_microseconds"] >= 0 for row in rows["expiry"])
+    assert all(row["mass_expiry_microseconds"] >= 0 for row in rows["expiry"])
+    assert rows["replay"][0]["events"] == 10
+    assert rows["replay"][0]["replay_milliseconds"] >= 0
+    assert rows["replay"][0]["events_per_sec"] >= 0
 
 
 def test_scalability_run_writes_results(tmp_path: Path) -> None:
     results = tmp_path / "scale.json"
-    summary = scale_bench.run(results, iterations=3, counts=(10, 100))
+    summary = scale_bench.run(results, iterations=3, claim_counts=(10, 100), replay_counts=(10,))
     assert set(summary["host"]) == {"cpu", "python", "platform"}
-    assert len(summary["rows"]) == 2
+    assert len(summary["expiry"]) == 2
     written = json.loads(results.read_text(encoding="utf-8"))
-    assert len(written["rows"]) == 2
+    assert len(written["expiry"]) == 2
+    assert len(written["replay"]) == 1
 
 
 def test_scalability_run_without_results_skips_write(tmp_path: Path) -> None:
-    summary = scale_bench.run(None, iterations=3, counts=(10,))
-    assert summary["rows"]
+    summary = scale_bench.run(None, iterations=3, claim_counts=(10,), replay_counts=(10,))
+    assert summary["expiry"]
     assert not list(tmp_path.iterdir())
+
+
+def test_scalability_counts_parses_overrides() -> None:
+    assert scale_bench._counts("10,100", (1,)) == (10, 100)
+    assert scale_bench._counts(None, (1, 2)) == (1, 2)
 
 
 def test_scalability_main_runs_and_writes(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     results = tmp_path / "scale.json"
-    assert scale_bench.main(["--results", str(results), "--iterations", "3"]) == 0
-    assert "mutations/s on one core" in capsys.readouterr().out
+    rc = scale_bench.main(
+        [
+            "--results",
+            str(results),
+            "--iterations",
+            "3",
+            "--claim-counts",
+            "10,100",
+            "--replay-counts",
+            "10",
+        ]
+    )
+    assert rc == 0
+    assert "event replay" in capsys.readouterr().out
     assert results.exists()
