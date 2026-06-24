@@ -23,7 +23,9 @@ path stays at ``NORMAL``. This module never claims more than it delivers.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import sqlite3
 import time
 from collections.abc import Iterable
@@ -68,6 +70,11 @@ class EventStore:
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
         self._conn = sqlite3.connect(self.path)
+        # The event log holds chat, findings, and recall telemetry in plaintext, so
+        # restrict it to the owner (0o600) where the platform supports it.
+        if self.path != ":memory:":
+            with contextlib.suppress(OSError):
+                os.chmod(self.path, 0o600)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")

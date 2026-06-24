@@ -150,8 +150,14 @@ def append_jsonl(path: str | Path, payload: dict[str, Any]) -> None:
     """
     out_path = Path(path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    newly_created = not out_path.exists()
     with out_path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, ensure_ascii=True, separators=(",", ":")) + "\n")
+    if newly_created:
+        # The relay log mirrors chat in plaintext; restrict a freshly created log
+        # to the owner (0o600) where the platform supports it.
+        with contextlib.suppress(OSError):
+            os.chmod(out_path, 0o600)
 
 
 def read_jsonl_since(path: str | Path, offset: int) -> tuple[list[dict[str, Any]], int]:
