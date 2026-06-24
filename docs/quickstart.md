@@ -1,5 +1,10 @@
 # Quick start
 
+A complete session — declare a plan with a dependency, complete a task, and watch the
+dependent task unblock:
+
+![An example synapse session](assets/demo.png)
+
 ## Launch a team
 
 Bring up a hub plus one or two local model workers in one command:

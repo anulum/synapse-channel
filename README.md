@@ -47,6 +47,10 @@ offline use.
 
 ## At a glance
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/anulum/synapse-channel/main/docs/assets/demo.gif" width="720" alt="A synapse session: declare a plan with a dependency, complete a task, and watch the dependent unblock">
+</p>
+
 ```mermaid
 graph LR
     A1["Agent"] --> H
