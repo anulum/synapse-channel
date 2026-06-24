@@ -13,6 +13,21 @@ All notable changes to this project are documented here.
 
 ## [0.40.0] - 2026-06-24
 
+### Changed
+- Lease expiry no longer scans every claim on each mutation. The state keeps a
+  min-heap of leases keyed by expiry, so an expiry pass pops only the leases that
+  have actually lapsed instead of walking the whole claim table on every
+  heartbeat, claim, update, and release. A renewal's superseded heap entry is
+  recognised and skipped by its lease epoch (lazy deletion), and the heap is
+  rebuilt when renewal churn grows it past the live-claim count, so its size stays
+  bounded. Behaviour is unchanged; only the cost of expiry drops from linear in
+  the number of claims to proportional to the number actually expiring.
+- The relay log is now trimmed atomically. The kept tail is written to a
+  temporary file and renamed over the log (`os.replace`, atomic on the same
+  filesystem) instead of being rewritten in place, so a crash mid-trim can never
+  leave the relay log half-written — a reader always sees either the old log or
+  the fully trimmed one.
+
 ### Added
 - An opt-in retention knob that bounds the durable write log. Resume checkpoints
   and authored findings are committed at full durability and otherwise accumulate

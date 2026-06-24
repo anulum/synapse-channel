@@ -364,6 +364,9 @@ def replay(
         # replays them into the registry.
 
     state._epoch_seq = epoch_seq
+    # Replay assigns claims straight into the registry, so build the lease-expiry
+    # heap from the reconstructed claims before any expiry pass runs against it.
+    state.reindex_leases()
     ts = time.time() if now is None else float(now)
     state._expire_claims(ts)
     state._expire_resources(ts)

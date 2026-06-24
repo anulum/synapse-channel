@@ -19,6 +19,7 @@ injected timestamps via the ``now`` parameters.
 
 from __future__ import annotations
 
+import heapq
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -28,6 +29,10 @@ from synapse_channel.core.scoping import DEFAULT_WORKTREE, normalize_paths, scop
 
 MINIMUM_TTL_SECONDS = 30.0
 """Floor applied to every requested lease/default TTL, in seconds."""
+
+LEASE_HEAP_COMPACT_FLOOR = 16
+"""Slack before the lease heap is rebuilt to shed superseded entries (see
+:meth:`SynapseState._track_lease`)."""
 
 DEFAULT_RESOURCE_TTL_SECONDS = 300.0
 """Soft liveness window after which an un-refreshed resource offer is dropped."""
@@ -230,11 +235,43 @@ class SynapseState:
         self.resources: dict[str, ResourceOffer] = {}
         self.expired_checkpoints: dict[str, str] = {}
         self._epoch_seq = 0
+        # Min-heap of (lease_expires_at, task_id, epoch) so expiry pops only the
+        # leases that have actually lapsed instead of scanning every claim on each
+        # mutation. The epoch makes a heap entry self-validating: a renewal bumps
+        # the claim's epoch, so a superseded entry is recognised and skipped when
+        # popped (lazy deletion) rather than removed up front.
+        self._lease_heap: list[tuple[float, str, int]] = []
 
     def _next_epoch(self) -> int:
         """Return the next strictly-increasing lease generation number."""
         self._epoch_seq += 1
         return self._epoch_seq
+
+    def _track_lease(self, claim: TaskClaim) -> None:
+        """Index a claim's lease for expiry, keeping the heap proportional to live claims.
+
+        Called whenever a live lease is created or renewed. A renewal leaves its
+        previous heap entry behind (lazy deletion reclaims it only when its expiry
+        is reached), so a frequently-renewed claim can pile up future-dated stale
+        entries; once the heap outgrows the live claims by a comfortable margin it
+        is rebuilt (:meth:`reindex_leases`), an O(n) heapify that bounds the heap
+        size to the active-claim count.
+        """
+        heapq.heappush(self._lease_heap, (claim.lease_expires_at, claim.task_id, claim.epoch))
+        if len(self._lease_heap) > 2 * len(self.claims) + LEASE_HEAP_COMPACT_FLOOR:
+            self.reindex_leases()
+
+    def reindex_leases(self) -> None:
+        """Rebuild the lease-expiry heap from the live claims.
+
+        Discards every superseded heap entry in one pass. Used after a bulk load
+        that assigns claims directly — a journal replay — and as the churn-bound
+        rebuild in :meth:`_track_lease`.
+        """
+        self._lease_heap = [
+            (claim.lease_expires_at, task, claim.epoch) for task, claim in self.claims.items()
+        ]
+        heapq.heapify(self._lease_heap)
 
     def heartbeat(self, agent: str, now: float | None = None) -> None:
         """Record that ``agent`` is alive and expire anything now stale.
@@ -335,7 +372,7 @@ class SynapseState:
         else:
             checkpoint = self.expired_checkpoints.pop(task, "")
 
-        self.claims[task] = TaskClaim(
+        claim = TaskClaim(
             task_id=task,
             owner=agent,
             note=note.strip(),
@@ -347,6 +384,8 @@ class SynapseState:
             checkpoint=checkpoint,
             git=git,
         )
+        self.claims[task] = claim
+        self._track_lease(claim)
         return True, f"Task '{task}' claimed by {agent}."
 
     def _scope_conflict(
@@ -613,7 +652,7 @@ class SynapseState:
         if epoch is not None and epoch != claim.epoch:
             return False, f"Task '{task}' epoch is stale (current {claim.epoch})."
 
-        self.claims[task] = TaskClaim(
+        moved = TaskClaim(
             task_id=task,
             owner=target,
             note=note.strip() if note is not None else claim.note,
@@ -627,6 +666,8 @@ class SynapseState:
             checkpoint=claim.checkpoint,
             git=claim.git,
         )
+        self.claims[task] = moved
+        self._track_lease(moved)
         self.last_seen[target] = ts
         return True, f"Task '{task}' handed from {agent} to {target}."
 
@@ -742,12 +783,20 @@ class SynapseState:
     def _expire_claims(self, now: float) -> None:
         """Drop every claim whose lease has reached or passed ``now``.
 
-        An expiring claim's checkpoint is retained so a later claimant of the
-        same task can resume from it instead of restarting.
+        Pops the lease heap while its earliest expiry is due, so the cost is
+        proportional to the number of leases actually expiring, not the total
+        number of claims. A popped entry is applied only when it is the live lease
+        for its task: a missing claim (released or already expired) or an epoch
+        mismatch (the lease was renewed, and a later entry covers the new expiry)
+        means the entry is stale and is skipped. An expiring claim's checkpoint is
+        retained so a later claimant of the same task can resume from it.
         """
-        expired = [task for task, claim in self.claims.items() if claim.lease_expires_at <= now]
-        for task in expired:
-            claim = self.claims[task]
+        heap = self._lease_heap
+        while heap and heap[0][0] <= now:
+            _expires_at, task, epoch = heapq.heappop(heap)
+            claim = self.claims.get(task)
+            if claim is None or claim.epoch != epoch:
+                continue  # superseded entry: released, already expired, or renewed
             if claim.checkpoint:
                 self.expired_checkpoints[task] = claim.checkpoint
             del self.claims[task]
