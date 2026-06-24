@@ -11,6 +11,8 @@ design, and runs entirely on the local machine. Model workers reply on-channel
 through any OpenAI-compatible endpoint, including a local Ollama server, with a
 deterministic rule-based fallback for offline use.
 
+![A synapse session: declare a plan with a dependency, complete a task, and watch the dependent unblock](assets/demo.gif)
+
 ## Why a coordination bus
 
 When several agents work across your repositories at once they need a shared,
