@@ -61,6 +61,15 @@ All notable changes to this project are documented here.
   that drift as the package grows; it defers the live counts to the CI-synced README
   capability inventory and states the gate-enforced 100% coverage instead.
 
+### Upgrade notes
+- No breaking API or wire changes; an in-place upgrade is safe. Every new hub knob
+  (`--max-claims-per-agent` / `--max-offers-per-agent` / `--max-paths-per-claim`,
+  `--takeover-cooldown`, `--compact-hint-threshold`) defaults to the previous behaviour.
+  One default tightens for a token-secured `--metrics` hub: the metrics token is now
+  read only from an `Authorization: Bearer` header unless you pass
+  `--metrics-query-token-ok`. Inbound frames nesting deeper than 64 levels are now
+  rejected as malformed, which no real Synapse envelope reaches.
+
 ## [0.42.0] - 2026-06-24
 
 ### Fixed
