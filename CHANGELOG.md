@@ -38,6 +38,13 @@ All notable changes to this project are documented here.
   silence. `syn arm` builds a directed-only waiter named distinctly from the sender
   in one place, correctly.
 
+### Documentation
+- `MEMORY.md` — the persistent-memory write-side architecture: the two-sided model,
+  the three honesty axes (evidence kind / claim status / freshness), the emit-gate
+  invariants, hub-attested provenance, the durable kinds + `MEMORY_KINDS`, the
+  sequence-cursored ingest seam with a worked example, and the write-side ↔
+  read-side honesty contract.
+
 ### Fixed
 - Honest auto-release feedback. A `git-claim --auto-release-on commit|merge` is
   enacted only by the client-side git hook, never by the hub, so a claim made
