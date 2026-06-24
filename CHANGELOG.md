@@ -42,6 +42,11 @@ All notable changes to this project are documented here.
   aggregators; human-readable text stays the default.
 
 ### Security
+- A hub can now apply a per-host frame-rate ceiling with `synapse hub --host-rate N`
+  (and `--host-burst`), charging every inbound frame — heartbeats included — to a token
+  bucket keyed by the connection's remote host. This bounds a single host that would
+  otherwise flood the hub by cycling agent names or with bare heartbeats, independently
+  of and in addition to the per-agent `--rate`. Off by default.
 - Inbound wire frames are rejected before parsing when their array/object nesting
   exceeds 64 levels, so an adversarially deep payload (within the size cap) can no
   longer drive the JSON decoder into a `RecursionError` and tear down the handler.

@@ -141,6 +141,11 @@ class SynapseHub:
         When given, non-heartbeat messages from an agent over its limit are
         refused, so one runaway agent cannot swamp the single hub. ``None``
         disables rate limiting.
+    host_rate_limiter : RateLimiter or None, optional
+        When given, every inbound frame — heartbeats included — is charged to a
+        bucket keyed by the connection's remote host, so a single host cannot flood
+        the hub by cycling agent names or with bare heartbeats. Independent of and
+        additional to ``rate_limiter``; ``None`` disables the per-host ceiling.
     max_history : int, optional
         Maximum chat messages retained in memory; the oldest are dropped beyond
         this bound so history cannot grow without limit. The durable log (when a
@@ -207,6 +212,7 @@ class SynapseHub:
         hub_id: str | None = None,
         journal: EventStore | None = None,
         rate_limiter: RateLimiter | None = None,
+        host_rate_limiter: RateLimiter | None = None,
         max_history: int = DEFAULT_MAX_HISTORY,
         relay_log: str | Path | None = None,
         relay_max_lines: int = DEFAULT_RELAY_MAX_LINES,
@@ -232,6 +238,7 @@ class SynapseHub:
         self.metrics_token = metrics_token or None
         self.metrics_query_token_ok = bool(metrics_query_token_ok)
         self.rate_limiter = rate_limiter
+        self.host_rate_limiter = host_rate_limiter
         self.authenticator = authenticator
         self.max_clients = max(int(max_clients), 1)
         self.max_unauth_clients = (
@@ -574,6 +581,19 @@ class SynapseHub:
             return None
         return known_sender
 
+    @staticmethod
+    def _remote_host(websocket: Any) -> str:
+        """Return the remote host of ``websocket`` for per-host rate keying.
+
+        Accepts the ``(host, port)`` tuple the websockets server exposes, a bare
+        address, or nothing, collapsing to ``"unknown"`` so the per-host bucket
+        always has a stable key.
+        """
+        address = getattr(websocket, "remote_address", None)
+        if isinstance(address, (tuple, list)) and address:
+            return str(address[0])
+        return str(address) if address else "unknown"
+
     async def handle_message(self, raw_message: str | bytes, websocket: Any) -> None:
         """Parse and route one inbound frame.
 
@@ -589,6 +609,16 @@ class SynapseHub:
         except json.JSONDecodeError:
             await self._send_json(
                 websocket, self._system("Malformed JSON.", msg_type=MessageType.ERROR)
+            )
+            return
+
+        # Charge every frame — heartbeats included — to its remote host before any
+        # further work, so one host cannot flood the hub regardless of agent name.
+        if self.host_rate_limiter is not None and not self.host_rate_limiter.allow(
+            self._remote_host(websocket)
+        ):
+            await self._send_json(
+                websocket, self._system("Host rate limit exceeded.", msg_type=MessageType.ERROR)
             )
             return
 
