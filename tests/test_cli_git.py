@@ -82,6 +82,67 @@ def test_cmd_git_hook_reports_git_error(
     assert "not a git repository" in capsys.readouterr().err
 
 
+def test_parser_git_hook_test_action() -> None:
+    args = cli.build_parser().parse_args(["git-hook", "test"])
+    assert args.func is cli_git._cmd_git_hook
+    assert args.action == "test"
+
+
+def test_cmd_git_hook_test_reports_healthy(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report = [
+        {
+            "trigger": t,
+            "filename": f"post-{t}",
+            "installed": True,
+            "synapse_bin": "/usr/bin/synapse",
+            "binary_ok": True,
+        }
+        for t in ("commit", "merge")
+    ]
+    monkeypatch.setattr(cli_git, "check_hooks", lambda **kwargs: report)
+    assert cli_git._cmd_git_hook(argparse.Namespace(action="test")) == 0
+    assert "ok: post-commit installed -> /usr/bin/synapse" in capsys.readouterr().out
+
+
+def test_cmd_git_hook_test_flags_missing_and_unresolvable(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report = [
+        {
+            "trigger": "commit",
+            "filename": "post-commit",
+            "installed": False,
+            "synapse_bin": None,
+            "binary_ok": False,
+        },
+        {
+            "trigger": "merge",
+            "filename": "post-merge",
+            "installed": True,
+            "synapse_bin": "/gone/synapse",
+            "binary_ok": False,
+        },
+    ]
+    monkeypatch.setattr(cli_git, "check_hooks", lambda **kwargs: report)
+    assert cli_git._cmd_git_hook(argparse.Namespace(action="test")) == 1
+    out = capsys.readouterr().out
+    assert "missing: post-commit not installed" in out
+    assert "warning: post-merge installed but its synapse binary '/gone/synapse'" in out
+
+
+def test_cmd_git_hook_test_reports_git_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def boom(**kwargs: Any) -> list[dict[str, Any]]:
+        raise GitError("not a git repository")
+
+    monkeypatch.setattr(cli_git, "check_hooks", boom)
+    assert cli_git._cmd_git_hook(argparse.Namespace(action="test")) == 1
+    assert "not a git repository" in capsys.readouterr().err
+
+
 # --- git-release -------------------------------------------------------------
 
 

@@ -19,6 +19,7 @@ the flow is unit-testable without a real repository.
 from __future__ import annotations
 
 import asyncio
+import os
 import shlex
 import shutil
 import stat
@@ -162,6 +163,79 @@ def hook_installed(
     target = hooks_dir if hooks_dir is not None else hooks_directory(runner=runner)
     path = target / filename
     return path.exists() and HOOK_MARKER in path.read_text(encoding="utf-8", errors="ignore")
+
+
+def _hook_synapse_bin(text: str) -> str | None:
+    """Return the ``synapse`` executable a Synapse hook script invokes, or ``None``.
+
+    Reads the resolved binary back out of the hook's ``git-release`` line (the
+    first shell token), so a test can confirm the path a hook will actually run.
+    """
+    for line in text.splitlines():
+        if "git-release" in line:
+            tokens = shlex.split(line)
+            return tokens[0] if tokens else None
+    return None
+
+
+def _binary_resolvable(synapse_bin: str | None) -> bool:
+    """Return whether a hook's ``synapse`` executable can be found and run.
+
+    An absolute path must be an executable file; a bare name must resolve on the
+    current ``PATH``. ``None`` (no binary parsed) is never resolvable.
+    """
+    if not synapse_bin:
+        return False
+    candidate = Path(synapse_bin)
+    if candidate.is_absolute():
+        return candidate.is_file() and os.access(candidate, os.X_OK)
+    return shutil.which(synapse_bin) is not None
+
+
+def check_hooks(
+    *,
+    runner: GitRunner = _default_git_runner,
+    hooks_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Report the install state of each auto-release hook and its executable.
+
+    The hub never enacts ``auto_release_on``; only the client-side hook does, and a
+    hook that is missing — or that bakes in a ``synapse`` path which has since moved
+    — fails silently at commit time. This surfaces that state so an operator can
+    confirm a working setup with ``synapse git-hook test`` instead of discovering a
+    no-op the next time a claim should have auto-released.
+
+    Parameters
+    ----------
+    runner : GitRunner, optional
+        The git executor; injectable for testing.
+    hooks_dir : Path or None, optional
+        Override the hooks directory; resolved from git when ``None``.
+
+    Returns
+    -------
+    list[dict[str, Any]]
+        One mapping per trigger (sorted): ``trigger``, ``filename``, ``installed``
+        (carries :data:`HOOK_MARKER`), ``synapse_bin`` (the executable the hook
+        invokes, or ``None``), and ``binary_ok`` (whether that executable resolves).
+    """
+    target = hooks_dir if hooks_dir is not None else hooks_directory(runner=runner)
+    report: list[dict[str, Any]] = []
+    for trigger, filename in sorted(TRIGGER_HOOKS.items()):
+        path = target / filename
+        text = path.read_text(encoding="utf-8", errors="ignore") if path.exists() else ""
+        installed = HOOK_MARKER in text
+        synapse_bin = _hook_synapse_bin(text) if installed else None
+        report.append(
+            {
+                "trigger": trigger,
+                "filename": filename,
+                "installed": installed,
+                "synapse_bin": synapse_bin,
+                "binary_ok": _binary_resolvable(synapse_bin) if installed else False,
+            }
+        )
+    return report
 
 
 def changed_files(trigger: str, *, runner: GitRunner = _default_git_runner) -> list[str]:

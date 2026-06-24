@@ -25,7 +25,7 @@ import sys
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.git.gitclaim import GitError, run_git_claim
 from synapse_channel.git.gitconflict import run_conflicts
-from synapse_channel.git.githook import install_hooks, run_git_release
+from synapse_channel.git.githook import check_hooks, install_hooks, run_git_release
 
 
 def _cmd_git_claim(args: argparse.Namespace) -> int:
@@ -48,11 +48,14 @@ def _cmd_git_claim(args: argparse.Namespace) -> int:
 
 
 def _cmd_git_hook(args: argparse.Namespace) -> int:
-    """Install git hooks that auto-release branch-scoped claims on commit/merge.
+    """Install or test the git hooks that auto-release branch-scoped claims.
 
-    The hooks are written client-side and call ``synapse git-release``; the hub is
-    never involved in installing or running them.
+    The hooks are written and inspected client-side and call ``synapse git-release``;
+    the hub is never involved in installing, testing, or running them. ``test``
+    reports the install state and binary reachability without touching anything.
     """
+    if args.action == "test":
+        return _git_hook_test()
     try:
         lines = install_hooks(
             uri=args.uri,
@@ -66,6 +69,34 @@ def _cmd_git_hook(args: argparse.Namespace) -> int:
     for line in lines:
         print(line)
     return 0
+
+
+def _git_hook_test() -> int:
+    """Report whether each auto-release hook is installed and its binary resolves.
+
+    Returns ``0`` only when every hook is installed and the ``synapse`` executable it
+    invokes resolves; otherwise it prints what is missing and returns ``1``, so a
+    broken setup is caught here rather than silently no-opping at commit time.
+    """
+    try:
+        report = check_hooks()
+    except GitError as exc:
+        print(f"git error: {exc}", file=sys.stderr)
+        return 1
+    healthy = True
+    for entry in report:
+        if not entry["installed"]:
+            print(f"missing: {entry['filename']} not installed (run `synapse git-hook install`)")
+            healthy = False
+        elif not entry["binary_ok"]:
+            print(
+                f"warning: {entry['filename']} installed but its synapse binary "
+                f"{entry['synapse_bin']!r} is not resolvable"
+            )
+            healthy = False
+        else:
+            print(f"ok: {entry['filename']} installed -> {entry['synapse_bin']}")
+    return 0 if healthy else 1
 
 
 def _cmd_git_release(args: argparse.Namespace) -> int:
@@ -139,9 +170,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
 
     git_hook = subparsers.add_parser(
         "git-hook",
-        help="Install git hooks that auto-release branch-scoped claims on commit/merge.",
+        help="Install or test git hooks that auto-release branch-scoped claims on commit/merge.",
     )
-    git_hook.add_argument("action", choices=["install"], help="The hook action to perform.")
+    git_hook.add_argument(
+        "action",
+        choices=["install", "test"],
+        help="install the hooks, or test that they are installed and their binary resolves.",
+    )
     git_hook.add_argument("--uri", default=DEFAULT_HUB_URI)
     git_hook.add_argument("--name", default="USER")
     git_hook.add_argument(
