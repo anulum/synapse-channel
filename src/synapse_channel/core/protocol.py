@@ -55,6 +55,7 @@ class MessageType:
     BOARD_REQUEST = "board_request"
     ADVERTISE = "advertise"
     MANIFEST_REQUEST = "manifest_request"
+    RECALL_LOG = "recall_log"
 
     # Hub -> agent.
     SYSTEM = "system"
@@ -81,6 +82,7 @@ class MessageType:
     LEDGER_PROGRESS_POSTED = "ledger_progress_posted"
     BOARD_SNAPSHOT = "board_snapshot"
     CAPABILITY_ADVERTISED = "capability_advertised"
+    RECALL_LOGGED = "recall_logged"
     MANIFEST_SNAPSHOT = "manifest_snapshot"
     ERROR = "error"
     NAME_CONFLICT = "name_conflict"

@@ -286,6 +286,38 @@ async def test_send_helpers_emit_expected_envelopes() -> None:
     assert "limit" not in hist_all
 
 
+async def test_log_recall_emits_envelope() -> None:
+    agent = SynapseAgent("REASON")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+
+    await agent.log_recall(
+        "what blocked CONTROL?",
+        returned_claim_ids=["c1", "c2"],
+        was_used=True,
+        abstained=False,
+    )
+    msg = json.loads(ws.sent[0])
+    assert msg["type"] == "recall_log"
+    assert msg["sender"] == "REASON"
+    assert msg["query_text"] == "what blocked CONTROL?"
+    assert msg["returned_claim_ids"] == ["c1", "c2"]
+    assert msg["was_used"] is True
+    assert msg["abstained"] is False
+
+
+async def test_log_recall_defaults_to_empty_outcome() -> None:
+    agent = SynapseAgent("A")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+
+    await agent.log_recall("q")
+    msg = json.loads(ws.sent[0])
+    assert msg["returned_claim_ids"] == []
+    assert msg["was_used"] is False
+    assert msg["abstained"] is False
+
+
 # --- start -------------------------------------------------------------------
 
 

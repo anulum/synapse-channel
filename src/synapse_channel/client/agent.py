@@ -244,6 +244,40 @@ class SynapseAgent:
         extra = {"priority": True} if priority else {}
         await self.send_message(MessageType.CHAT, target=target, payload=payload, **extra)
 
+    async def log_recall(
+        self,
+        query_text: str,
+        *,
+        returned_claim_ids: tuple[str, ...] | list[str] = (),
+        was_used: bool = False,
+        abstained: bool = False,
+    ) -> None:
+        """Log one recall query-stream event to the hub.
+
+        Records a lookup the agent (or a memory layer on its behalf) just made, so
+        a downstream persistent-memory adapter can calibrate recall against the
+        real query distribution. The hub stamps the producing identity and the
+        time; only the query and its outcome travel from the client.
+
+        Parameters
+        ----------
+        query_text : str
+            The query that was asked.
+        returned_claim_ids : tuple[str, ...] or list[str], optional
+            Identifiers of the memories returned for the query.
+        was_used : bool, optional
+            Whether the returned answer was actually used.
+        abstained : bool, optional
+            Whether the memory layer abstained (returned no confident answer).
+        """
+        await self.send_message(
+            MessageType.RECALL_LOG,
+            query_text=query_text,
+            returned_claim_ids=list(returned_claim_ids),
+            was_used=was_used,
+            abstained=abstained,
+        )
+
     async def claim(
         self,
         task_id: str,
