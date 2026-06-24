@@ -34,6 +34,10 @@ All notable changes to this project are documented here.
   carry their previous defaults.
 
 ### Security
+- Inbound wire frames are rejected before parsing when their array/object nesting
+  exceeds 64 levels, so an adversarially deep payload (within the size cap) can no
+  longer drive the JSON decoder into a `RecursionError` and tear down the handler.
+  A frame over the depth bound is refused as malformed, like any other bad JSON.
 - The SQLite event log's write-ahead-log sidecars (`<db>-wal`, `<db>-shm`) are now
   restricted to owner-only access (`0o600`) alongside the main database file. WAL mode
   creates them on the first write under the process umask, so they previously held the

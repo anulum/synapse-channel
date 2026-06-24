@@ -101,6 +101,16 @@ async def test_malformed_json_returns_error() -> None:
     assert "Malformed JSON" in ws.last()["payload"]
 
 
+async def test_deeply_nested_json_is_rejected_not_crashed() -> None:
+    # A frame nested far past the depth guard must be refused as malformed, never
+    # drive the decoder into a RecursionError that would tear down the connection.
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.handle_message("[" * 500 + "]" * 500, ws)
+    assert ws.last()["type"] == "error"
+    assert "Malformed JSON" in ws.last()["payload"]
+
+
 async def test_anonymous_sender_gets_generated_name() -> None:
     hub = _hub()
     ws = FakeServerWS()

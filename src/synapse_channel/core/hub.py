@@ -56,6 +56,7 @@ from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import (
     RESOURCE_TYPE_ALIASES,
     MessageType,
+    loads_bounded,
     system_message,
 )
 from synapse_channel.core.ratelimit import RateLimiter
@@ -584,7 +585,7 @@ class SynapseHub:
             The socket the frame arrived on.
         """
         try:
-            data = json.loads(raw_message)
+            data = loads_bounded(raw_message)
         except json.JSONDecodeError:
             await self._send_json(
                 websocket, self._system("Malformed JSON.", msg_type=MessageType.ERROR)
