@@ -78,6 +78,8 @@ DEFAULT_MAX_MSG_BYTES = 1024 * 1024
 """Largest accepted inbound frame (bytes); a larger one is rejected by the transport."""
 DEFAULT_TAKEOVER_COOLDOWN = 2.0
 """Seconds a name is protected from a second takeover, to blunt an eviction storm."""
+DEFAULT_AUTH_TIMEOUT = 10.0
+"""Seconds a secured hub waits for an authenticated first frame before closing a socket."""
 
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 """Bind hosts treated as loopback-only, where running without a token is fine."""
@@ -151,6 +153,13 @@ class SynapseHub:
         text exposition) and ``GET /health`` (a JSON liveness document) on the
         same port as the WebSocket endpoint, for scraping and container probes.
         Off by default — a plain WebSocket hub serves no HTTP.
+    auth_timeout : float, optional
+        On a secured hub (``authenticator`` set), seconds to wait for an
+        authenticated first frame before closing the socket. Until a socket
+        authenticates it is never shown the roster (no ``WELCOME``) and an idle
+        unauthenticated socket is reaped at this deadline so it cannot hold a
+        connection slot. Ignored on an open hub. Defaults to
+        :data:`DEFAULT_AUTH_TIMEOUT`.
     """
 
     def __init__(
@@ -169,10 +178,12 @@ class SynapseHub:
         max_msg_bytes: int = DEFAULT_MAX_MSG_BYTES,
         takeover_cooldown: float = DEFAULT_TAKEOVER_COOLDOWN,
         enable_metrics: bool = False,
+        auth_timeout: float = DEFAULT_AUTH_TIMEOUT,
         clock: Callable[[], float] | None = None,
     ) -> None:
         self.journal = journal
         self.enable_metrics = bool(enable_metrics)
+        self.auth_timeout = max(float(auth_timeout), 0.1)
         self.rate_limiter = rate_limiter
         self.authenticator = authenticator
         self.max_clients = max(int(max_clients), 1)
@@ -487,6 +498,9 @@ class SynapseHub:
         msg_type = str(data.get("type") or MessageType.CHAT).strip().lower()
         payload = str(data.get("payload") or "")
 
+        # Capture whether this socket was already bound before authorising, so a
+        # secured hub can send the withheld welcome the moment it first authenticates.
+        was_bound = websocket in self.socket_agent
         if not await self._authorise(sender, data, websocket):
             return
 
@@ -496,6 +510,8 @@ class SynapseHub:
         if resolved is None:
             return
         sender = resolved
+        if self.authenticator is not None and not was_bound:
+            await self._send_welcome(websocket)
 
         self.state.heartbeat(sender)
         is_new_agent = sender not in self.agent_sockets
@@ -541,10 +557,8 @@ class SynapseHub:
             return
         await handler(self, sender, data, websocket)
 
-    async def register(self, websocket: Any) -> None:
-        """Record a new socket and send it the welcome message."""
-        self.connected_clients.add(websocket)
-        logger.info("Client connected: %s (total=%d)", id(websocket), len(self.connected_clients))
+    async def _send_welcome(self, websocket: Any) -> None:
+        """Send the welcome frame (roster + connection count) to one socket."""
         await self._send_json(
             websocket,
             self._system(
@@ -555,6 +569,19 @@ class SynapseHub:
                 online_agents=self.online_agents(),
             ),
         )
+
+    async def register(self, websocket: Any) -> None:
+        """Record a new socket; welcome it now only on an open hub.
+
+        On a secured hub the welcome — which carries the online roster and the
+        connection count — is withheld until the socket authenticates (see
+        :meth:`handle_message`), so an unauthenticated client never learns who is
+        online. An open hub has nothing to gate, so it is welcomed on connect.
+        """
+        self.connected_clients.add(websocket)
+        logger.info("Client connected: %s (total=%d)", id(websocket), len(self.connected_clients))
+        if self.authenticator is None:
+            await self._send_welcome(websocket)
 
     async def unregister(self, websocket: Any) -> None:
         """Drop a socket, releasing its agent name and broadcasting departure."""
@@ -571,13 +598,53 @@ class SynapseHub:
             "Client disconnected: %s (total=%d)", id(websocket), len(self.connected_clients)
         )
 
+    async def _authenticate_or_close(self, websocket: Any) -> bool:
+        """On a secured hub, process the first frame under the auth deadline.
+
+        Reads one frame within :attr:`auth_timeout`, routes it (which authenticates
+        and binds the sender, then sends the withheld welcome), and reports whether
+        the socket is now an authenticated, bound client. A socket that sends
+        nothing in time is closed (``4012``) so an idle unauthenticated connection
+        cannot hold a slot; a first frame that fails to authenticate or bind is
+        closed (``4010``).
+
+        Returns
+        -------
+        bool
+            ``True`` when the socket authenticated and bound a name, ``False``
+            when it timed out, disconnected, or failed to authenticate (the socket
+            is closed in every ``False`` case).
+        """
+        try:
+            first = await asyncio.wait_for(websocket.recv(), timeout=self.auth_timeout)
+        except asyncio.TimeoutError:
+            await websocket.close(code=4012, reason="auth timeout")
+            return False
+        except ConnectionClosed:
+            return False
+        await self.handle_message(first, websocket)
+        if websocket not in self.socket_agent:
+            # The first frame did not authenticate and bind a name; _authorise may
+            # already have closed the socket, so closing again is suppressed.
+            with contextlib.suppress(Exception):
+                await websocket.close(code=4010, reason="auth required")
+            return False
+        return True
+
     async def handler(self, websocket: Any) -> None:
-        """Serve one client connection from registration to disconnect."""
+        """Serve one client connection from registration to disconnect.
+
+        On a secured hub the first frame must authenticate within
+        :attr:`auth_timeout` before the connection joins the channel (see
+        :meth:`_authenticate_or_close`).
+        """
         if len(self.connected_clients) >= self.max_clients:
             await websocket.close(code=4013, reason="hub at capacity")
             return
         await self.register(websocket)
         try:
+            if self.authenticator is not None and not await self._authenticate_or_close(websocket):
+                return
             async for raw in websocket:
                 await self.handle_message(raw, websocket)
         except ConnectionClosed:

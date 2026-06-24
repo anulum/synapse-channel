@@ -65,6 +65,7 @@ from synapse_channel.client.supervisor import (
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.compaction import RetentionPolicy, compact
 from synapse_channel.core.hub import (
+    DEFAULT_AUTH_TIMEOUT,
     DEFAULT_HOST,
     DEFAULT_MAX_CLIENTS,
     DEFAULT_MAX_HISTORY,
@@ -146,6 +147,7 @@ def _cmd_hub(args: argparse.Namespace) -> int:
         max_clients=args.max_clients,
         max_msg_bytes=args.max_msg_kb * 1024,
         enable_metrics=args.metrics,
+        auth_timeout=args.auth_timeout,
     )
     try:
         _run(hub.serve(host=args.host, port=args.port))
@@ -1417,6 +1419,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--metrics",
         action="store_true",
         help="Also serve HTTP GET /metrics (Prometheus) and /health on the same port.",
+    )
+    hub.add_argument(
+        "--auth-timeout",
+        type=float,
+        default=DEFAULT_AUTH_TIMEOUT,
+        help="On a secured hub (--token), seconds to wait for an authenticated first "
+        "frame before closing the socket (no welcome/roster until then).",
     )
     hub.set_defaults(func=_cmd_hub)
 

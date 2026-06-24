@@ -32,20 +32,30 @@ from synapse_channel.relay import decode_lite, read_jsonl_since
 class FakeServerWS:
     """Stand-in for a hub-side server connection."""
 
-    def __init__(self, incoming: list[str] | None = None) -> None:
-        self.incoming = incoming or []
+    def __init__(self, incoming: list[str] | None = None, *, recv_blocks: bool = False) -> None:
+        self.incoming = list(incoming or [])
+        self.recv_blocks = recv_blocks
         self.sent: list[str] = []
         self.closed: tuple[int, str] | None = None
 
     async def send(self, raw: str) -> None:
         self.sent.append(raw)
 
+    async def recv(self) -> str:
+        # Used by the secured-hub auth handshake. When asked to block, never return,
+        # so an ``asyncio.wait_for`` around it exercises the auth-timeout path.
+        if self.recv_blocks:
+            await asyncio.Event().wait()
+        if not self.incoming:
+            raise ConnectionClosed(None, None)
+        return self.incoming.pop(0)
+
     async def close(self, code: int = 1000, reason: str = "") -> None:
         self.closed = (code, reason)
 
     async def __aiter__(self) -> AsyncIterator[str]:
-        for message in self.incoming:
-            yield message
+        while self.incoming:
+            yield self.incoming.pop(0)
 
     def last(self) -> Any:
         return json.loads(self.sent[-1])
@@ -1323,6 +1333,96 @@ async def test_secured_hub_enforces_per_agent_binding() -> None:
     await hub.handle_message(_msg(sender="REASON", type="heartbeat", token="tok"), ws)
     assert ws.last()["type"] == "auth_denied"
     assert "not authorised" in ws.last()["payload"]
+
+
+async def test_secured_hub_withholds_welcome_until_authenticated() -> None:
+    # A secured hub must not leak the roster or connection count to an
+    # unauthenticated socket: register() sends nothing.
+    hub = _secured_hub()
+    hub.agent_sockets["SECRET-PEER"] = object()  # someone already online
+    ws = FakeServerWS()
+    await hub.register(ws)
+    assert ws.sent == []  # no welcome, no roster
+    assert ws in hub.connected_clients  # still counted (bounded by auth timeout)
+
+
+async def test_secured_hub_welcomes_after_authentication() -> None:
+    hub = _secured_hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    await hub.handle_message(_msg(sender="A", type="heartbeat", token="s3cret"), ws)
+    welcomes = [m for m in ws.decoded() if m.get("type") == "welcome"]
+    assert len(welcomes) == 1  # welcome sent exactly once, after auth
+    assert "A" in hub.agent_sockets
+    # A second authenticated frame does not re-welcome.
+    await hub.handle_message(_msg(sender="A", type="chat", payload="hi"), ws)
+    assert len([m for m in ws.decoded() if m.get("type") == "welcome"]) == 1
+
+
+async def test_open_hub_still_welcomes_on_connect() -> None:
+    hub = _hub()  # no authenticator
+    ws = FakeServerWS()
+    await hub.register(ws)
+    assert ws.last()["type"] == "welcome"
+
+
+async def test_authenticate_or_close_times_out_idle_socket() -> None:
+    hub = SynapseHub(
+        hub_id="syn-test", authenticator=TokenAuthenticator(["s3cret"]), auth_timeout=0.05
+    )
+    ws = FakeServerWS(recv_blocks=True)
+    await hub.register(ws)
+    assert await hub._authenticate_or_close(ws) is False
+    assert ws.closed == (4012, "auth timeout")
+
+
+async def test_authenticate_or_close_rejects_unauthenticated_first_frame() -> None:
+    hub = _secured_hub()
+    ws = FakeServerWS([_msg(sender="A", type="chat", payload="hi")])  # no token
+    await hub.register(ws)
+    assert await hub._authenticate_or_close(ws) is False
+    assert ws.closed is not None
+    assert "A" not in hub.agent_sockets
+
+
+async def test_authenticate_or_close_admits_valid_first_frame() -> None:
+    hub = _secured_hub()
+    ws = FakeServerWS([_msg(sender="A", type="heartbeat", token="s3cret")])
+    await hub.register(ws)
+    assert await hub._authenticate_or_close(ws) is True
+    assert "A" in hub.agent_sockets
+    assert any(m.get("type") == "welcome" for m in ws.decoded())
+
+
+async def test_authenticate_or_close_handles_immediate_disconnect() -> None:
+    hub = _secured_hub()
+    ws = FakeServerWS()  # empty: recv() raises ConnectionClosed
+    await hub.register(ws)
+    assert await hub._authenticate_or_close(ws) is False
+
+
+async def test_handler_secured_hub_processes_after_auth() -> None:
+    hub = _secured_hub()
+    ws = FakeServerWS(
+        [
+            _msg(sender="A", type="heartbeat", token="s3cret"),
+            _msg(sender="A", type="chat", payload="hi"),
+        ]
+    )
+    await hub.handler(ws)
+    types = [m.get("type") for m in ws.decoded()]
+    assert "welcome" in types  # welcomed only after the authenticated first frame
+    assert any(m.get("type") == "chat" and m.get("payload") == "hi" for m in ws.decoded())
+    assert ws not in hub.connected_clients  # unregistered at the end
+
+
+async def test_handler_secured_hub_closes_on_failed_auth() -> None:
+    hub = _secured_hub()
+    ws = FakeServerWS([_msg(sender="A", type="chat", payload="hi")])  # no token
+    await hub.handler(ws)
+    # The unauthenticated first frame ends the connection; the agent never binds.
+    assert ws not in hub.connected_clients
+    assert "A" not in hub.agent_sockets
 
 
 def test_is_loopback_host_recognises_loopback_addresses() -> None:
