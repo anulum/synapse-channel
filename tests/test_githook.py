@@ -117,6 +117,34 @@ def test_install_hooks_bakes_token_file(tmp_path: Path) -> None:
     assert "--token-file /etc/synapse.token" in body
 
 
+def test_install_hooks_bakes_an_explicit_synapse_bin(tmp_path: Path) -> None:
+    install_hooks(
+        uri="ws://h", name="ME", synapse_bin="/opt/synapse/bin/synapse", hooks_dir=tmp_path
+    )
+    body = (tmp_path / "post-commit").read_text(encoding="utf-8")
+    assert "/opt/synapse/bin/synapse git-release --trigger commit" in body
+
+
+def test_install_hooks_resolves_an_absolute_synapse_from_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "synapse_channel.git.githook.shutil.which", lambda _name: "/usr/local/bin/synapse"
+    )
+    install_hooks(uri="ws://h", name="ME", hooks_dir=tmp_path)
+    body = (tmp_path / "post-commit").read_text(encoding="utf-8")
+    assert "/usr/local/bin/synapse git-release" in body
+
+
+def test_install_hooks_falls_back_to_bare_name_when_synapse_not_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("synapse_channel.git.githook.shutil.which", lambda _name: None)
+    install_hooks(uri="ws://h", name="ME", hooks_dir=tmp_path)
+    body = (tmp_path / "post-commit").read_text(encoding="utf-8")
+    assert "\nsynapse git-release" in body  # bare name resolved from PATH at hook time
+
+
 def test_install_hooks_overwrites_its_own_hook(tmp_path: Path) -> None:
     install_hooks(uri="ws://h", name="ME", hooks_dir=tmp_path)
     lines = install_hooks(uri="ws://h", name="ME2", hooks_dir=tmp_path)
