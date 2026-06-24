@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hmac
 import json
 import logging
 import signal
@@ -160,6 +161,12 @@ class SynapseHub:
         unauthenticated socket is reaped at this deadline so it cannot hold a
         connection slot. Ignored on an open hub. Defaults to
         :data:`DEFAULT_AUTH_TIMEOUT`.
+    metrics_token : str or None, optional
+        When set (and ``enable_metrics`` is on), ``GET /metrics`` and ``GET
+        /health`` require this token — presented as ``Authorization: Bearer
+        <token>`` or a ``?token=<token>`` query — and answer ``401`` without it,
+        so an exposed metrics endpoint does not leak operational metadata. ``None``
+        leaves the endpoint open, which is the right default for a loopback bind.
     """
 
     def __init__(
@@ -179,11 +186,13 @@ class SynapseHub:
         takeover_cooldown: float = DEFAULT_TAKEOVER_COOLDOWN,
         enable_metrics: bool = False,
         auth_timeout: float = DEFAULT_AUTH_TIMEOUT,
+        metrics_token: str | None = None,
         clock: Callable[[], float] | None = None,
     ) -> None:
         self.journal = journal
         self.enable_metrics = bool(enable_metrics)
         self.auth_timeout = max(float(auth_timeout), 0.1)
+        self.metrics_token = metrics_token or None
         self.rate_limiter = rate_limiter
         self.authenticator = authenticator
         self.max_clients = max(int(max_clients), 1)
@@ -406,11 +415,19 @@ class SynapseHub:
         return False
 
     def _warn_if_exposed(self, host: str) -> None:
-        """Warn when binding off-loopback with no token configured."""
-        if not is_loopback_host(host) and self.authenticator is None:
+        """Warn when binding off-loopback without the matching guard configured."""
+        if is_loopback_host(host):
+            return
+        if self.authenticator is None:
             logger.warning(
                 "Synapse Hub bound to non-loopback host %r with no token; set an "
                 "authenticator (e.g. synapse hub --token ...) before exposing it.",
+                host,
+            )
+        if self.enable_metrics and self.metrics_token is None:
+            logger.warning(
+                "Synapse Hub metrics enabled on non-loopback host %r with no "
+                "--metrics-token; /metrics and /health are unauthenticated.",
                 host,
             )
 
@@ -673,21 +690,54 @@ class SynapseHub:
         headers["Content-Length"] = str(len(body))
         return Response(200, "OK", headers, body)
 
-    def _http_endpoint_response(self, path: str) -> Response | None:
+    @staticmethod
+    def _http_unauthorized() -> Response:
+        """Build a ``401`` response for a metrics request missing a valid token."""
+        body = b"unauthorized\n"
+        headers = Headers()
+        headers["Content-Type"] = "text/plain; charset=utf-8"
+        headers["Content-Length"] = str(len(body))
+        headers["WWW-Authenticate"] = 'Bearer realm="synapse-metrics"'
+        return Response(401, "Unauthorized", headers, body)
+
+    @staticmethod
+    def _request_metrics_token(request: Request) -> str:
+        """Extract the metrics token from the ``Authorization`` header or a query string."""
+        authorization = request.headers.get("Authorization", "")
+        prefix = "Bearer "
+        if authorization.startswith(prefix):
+            return authorization[len(prefix) :].strip()
+        _, _, query = request.path.partition("?")
+        for part in query.split("&"):
+            if part.startswith("token="):
+                return part[len("token=") :]
+        return ""
+
+    def _metrics_authorised(self, request: Request) -> bool:
+        """Return whether a metrics request carries the configured token (if any)."""
+        if self.metrics_token is None:
+            return True
+        return hmac.compare_digest(self._request_metrics_token(request), self.metrics_token)
+
+    def _http_endpoint_response(self, request: Request) -> Response | None:
         """Return the HTTP response for a probe path, or ``None`` to fall through to WS.
 
         ``/metrics`` renders the Prometheus exposition and ``/health`` a JSON
         liveness document; any other path returns ``None`` so a normal client
-        proceeds to the WebSocket handshake. A query string is ignored.
+        proceeds to the WebSocket handshake. When a :attr:`metrics_token` is set,
+        both paths require it and answer ``401`` without it. A query string is
+        ignored for routing (but read for the token).
         """
-        route = path.split("?", 1)[0]
+        route = request.path.split("?", 1)[0]
+        if route not in ("/metrics", "/health"):
+            return None
+        if not self._metrics_authorised(request):
+            return self._http_unauthorized()
         if route == "/metrics":
             body = render_prometheus(collect_hub_metrics(self)).encode("utf-8")
             return self._http_ok(body, PROMETHEUS_CONTENT_TYPE)
-        if route == "/health":
-            body = json.dumps(health_snapshot(self)).encode("utf-8")
-            return self._http_ok(body, HEALTH_CONTENT_TYPE)
-        return None
+        body = json.dumps(health_snapshot(self)).encode("utf-8")
+        return self._http_ok(body, HEALTH_CONTENT_TYPE)
 
     def _process_request(self, _connection: Any, request: Request) -> Response | None:
         """``websockets`` request hook serving ``/metrics`` and ``/health`` over HTTP.
@@ -697,7 +747,7 @@ class SynapseHub:
         the connection upgrade to WebSocket as usual. Installed only when
         :attr:`enable_metrics` is set.
         """
-        return self._http_endpoint_response(request.path)
+        return self._http_endpoint_response(request)
 
     async def serve(self, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> None:
         """Run the hub's WebSocket server until cancelled.

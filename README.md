@@ -287,7 +287,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 47 |
 | Wire message types | 52 |
 | CLI subcommands | 26 |
-| Test functions | 950 |
+| Test functions | 956 |
 | Benchmark harnesses | 3 |
 | Documentation pages | 14 |
 | GitHub Actions workflows | 10 |
@@ -327,10 +327,11 @@ This snapshot is a static inventory generated from the source tree. Performance 
   path-traversal surface. See [`SECURITY.md`](SECURITY.md).
 - **Metrics are opt-in and off by default.** `synapse hub --metrics` exposes a
   Prometheus `/metrics` and a JSON `/health` endpoint on the hub's port; without
-  the flag the hub serves no HTTP. The endpoint carries operational metadata and
-  no authentication, so keep it on a loopback bind and do not expose it on an
-  untrusted interface. The live board, state, and manifest also remain available
-  over the CLI and the MCP resources.
+  the flag the hub serves no HTTP. The endpoint carries operational metadata, so
+  keep it on a loopback bind, or require a token with `--metrics-token` (presented
+  as `Authorization: Bearer <token>` or `?token=<token>`) before exposing it. The
+  live board, state, and manifest also remain available over the CLI and the MCP
+  resources.
 - **`synapse --version` checks PyPI for a newer release** (once a day, cached, no
   payload beyond the request itself). Silence it with `SYNAPSE_NO_UPDATE_CHECK=1`.
 
