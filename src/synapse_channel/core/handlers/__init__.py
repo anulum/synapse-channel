@@ -29,6 +29,7 @@ from synapse_channel.core.handlers.leasing import (
     handle_task_update,
     handle_wait_request,
 )
+from synapse_channel.core.handlers.memory import handle_recall_log
 from synapse_channel.core.handlers.messaging import handle_chat, handle_heartbeat
 from synapse_channel.core.handlers.offerings import handle_advertise, handle_resource
 from synapse_channel.core.handlers.planning import (
@@ -71,6 +72,7 @@ DISPATCH: dict[str, Handler] = {
     MessageType.BOARD_REQUEST: handle_board_request,
     MessageType.ADVERTISE: handle_advertise,
     MessageType.MANIFEST_REQUEST: handle_manifest_request,
+    MessageType.RECALL_LOG: handle_recall_log,
     **{alias: handle_resource for alias in RESOURCE_TYPE_ALIASES},
 }
 

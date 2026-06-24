@@ -47,6 +47,7 @@ class EventKind:
     CHAT = "chat"
     LEDGER_TASK = "ledger_task"
     LEDGER_PROGRESS = "ledger_progress"
+    RECALL = "recall"
 
 
 @dataclass
@@ -115,6 +116,26 @@ def record_ledger_task(store: EventStore, task: LedgerTask) -> None:
 def record_ledger_progress(store: EventStore, note: ProgressNote) -> None:
     """Append a (non-durable) event capturing one progress note."""
     store.append(EventKind.LEDGER_PROGRESS, note.as_dict())
+
+
+def record_recall(store: EventStore, record: dict[str, Any]) -> None:
+    """Append a (non-durable) event capturing one recall query-stream log.
+
+    The record is memory telemetry — the fleet's actual lookups, captured so a
+    downstream persistent-memory layer can calibrate recall against the real query
+    distribution rather than activity-weighted noise. It is not coordination state,
+    so :func:`replay` ignores it; it is committed at ``NORMAL`` durability (a lost
+    log on an OS crash is statistically harmless, like a dropped chat line).
+
+    Parameters
+    ----------
+    store : EventStore
+        The event log to append to.
+    record : dict[str, Any]
+        The recall event body: the query and its outcome, with the producing
+        identity and time already hub-attested by the handler.
+    """
+    store.append(EventKind.RECALL, record)
 
 
 def _ledger_task_from_payload(payload: dict[str, Any]) -> LedgerTask:

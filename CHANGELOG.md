@@ -11,6 +11,18 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Added
+- A recall query-stream primitive for an optional persistent-memory layer. A
+  `recall_log` message and `SynapseAgent.log_recall(...)` record each lookup the
+  fleet makes — the query and its outcome (returned ids, whether the answer was
+  used, whether the layer abstained) — as a durable `recall` event. The hub
+  attests the producing identity and the time (they cannot be self-reported) and
+  journals the record without broadcasting it, so a downstream memory adapter can
+  calibrate recall against the real query distribution from the durable log. The
+  hub stays memory-agnostic: it carries the record opaquely and never indexes it.
+
 ## [0.36.0] - 2026-06-24
 
 ### Fixed
