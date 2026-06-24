@@ -43,6 +43,8 @@ class EventKind:
     CLAIM = "claim"
     RELEASE = "release"
     TASK_UPDATE = "task_update"
+    CHECKPOINT = "checkpoint"
+    HANDOFF = "handoff"
     RESOURCE = "resource"
     CHAT = "chat"
     LEDGER_TASK = "ledger_task"
@@ -87,6 +89,30 @@ def record_release(store: EventStore, task_id: str) -> None:
 def record_task_update(store: EventStore, claim: TaskClaim) -> None:
     """Append a durable event with the post-update claim snapshot."""
     store.append(EventKind.TASK_UPDATE, claim.as_dict(), durable=True)
+
+
+def record_checkpoint(store: EventStore, claim: TaskClaim) -> None:
+    """Append a durable event capturing a resume checkpoint saved on a claim.
+
+    The payload is the full post-checkpoint claim snapshot, so :func:`replay`
+    reconstructs the claim — including its durable ``checkpoint`` — exactly as a
+    ``claim`` event would. The distinct kind lets the persistent-memory read-side
+    pick out resume summaries (the highest-signal episodic memory) without
+    re-deriving them from generic claim snapshots; coordination replay treats it
+    identically to a claim.
+    """
+    store.append(EventKind.CHECKPOINT, claim.as_dict(), durable=True)
+
+
+def record_handoff(store: EventStore, claim: TaskClaim) -> None:
+    """Append a durable event capturing a task handed to another agent.
+
+    The payload is the full post-handoff claim snapshot — now owned by the
+    recipient — so :func:`replay` reconstructs ownership exactly as a ``claim``
+    event would. The distinct kind lets the read-side trace ownership transfers
+    apart from ordinary claims; coordination replay treats it identically.
+    """
+    store.append(EventKind.HANDOFF, claim.as_dict(), durable=True)
 
 
 def record_resource(store: EventStore, offer: ResourceOffer) -> None:
@@ -244,7 +270,16 @@ def replay(
 
     for event in store.read_all():
         payload = event.payload
-        if event.kind in (EventKind.CLAIM, EventKind.TASK_UPDATE):
+        # CHECKPOINT and HANDOFF carry the full claim snapshot, distinct only so
+        # the memory read-side can pick them out — coordination replay reconstructs
+        # the claim from them exactly as it does a CLAIM/TASK_UPDATE (and a legacy
+        # log that journalled them as CLAIM still replays through this same branch).
+        if event.kind in (
+            EventKind.CLAIM,
+            EventKind.TASK_UPDATE,
+            EventKind.CHECKPOINT,
+            EventKind.HANDOFF,
+        ):
             claim = _claim_from_payload(payload)
             state.claims[claim.task_id] = claim
             state.last_seen[claim.owner] = claim.claimed_at

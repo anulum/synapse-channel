@@ -20,6 +20,7 @@ from websockets.exceptions import ConnectionClosed
 
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub, is_loopback_host
+from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
 from synapse_channel.core.state import GitContext
@@ -924,6 +925,34 @@ async def test_hub_replays_handoff_owner(tmp_path: Path) -> None:
     hub_b = SynapseHub(default_ttl_seconds=3600.0, hub_id="syn-b", journal=store_b)
     store_b.close()
     assert hub_b.state.claims["T1"].owner == "B"
+
+
+async def test_handoff_journals_a_distinct_handoff_kind(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    hub = SynapseHub(default_ttl_seconds=3600.0, hub_id="syn-test", journal=store)
+    ws_a = await _online(hub, "A")
+    await _online(hub, "B")
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", paths=["src"]), ws_a)
+    await hub.handle_message(_msg(sender="A", type="handoff", task_id="T1", to_agent="B"), ws_a)
+    kinds = [e.kind for e in store.read_all()]
+    store.close()
+    # The handoff is journalled under its own kind, not folded into a claim.
+    assert EventKind.HANDOFF in kinds
+    assert kinds.count(EventKind.CLAIM) == 1  # only the original claim
+
+
+async def test_checkpoint_journals_a_distinct_checkpoint_kind(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    hub = SynapseHub(default_ttl_seconds=3600.0, hub_id="syn-test", journal=store)
+    ws_a = await _online(hub, "A")
+    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws_a)
+    await hub.handle_message(
+        _msg(sender="A", type="checkpoint", task_id="T1", checkpoint="cp"), ws_a
+    )
+    kinds = [e.kind for e in store.read_all()]
+    store.close()
+    assert EventKind.CHECKPOINT in kinds
+    assert kinds.count(EventKind.CLAIM) == 1  # the checkpoint is no longer a claim re-snapshot
 
 
 async def test_handoff_carries_checkpoint() -> None:

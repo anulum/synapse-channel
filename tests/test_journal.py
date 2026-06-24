@@ -13,7 +13,9 @@ from pathlib import Path
 from synapse_channel.core.journal import (
     EventKind,
     record_chat,
+    record_checkpoint,
     record_claim,
+    record_handoff,
     record_release,
     record_resource,
     record_task_update,
@@ -84,6 +86,48 @@ def test_replay_release_removes_claim(tmp_path: Path) -> None:
     result = replay(store, now=2000.0)
     store.close()
     assert "T1" not in result.state.claims
+
+
+def test_record_checkpoint_writes_checkpoint_kind(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    record_checkpoint(store, _claim(checkpoint="cursor=9"))
+    events = store.read_all()
+    store.close()
+    # Distinct kind so the read-side can pick out resume summaries.
+    assert events[0].kind == EventKind.CHECKPOINT
+    assert events[0].payload["checkpoint"] == "cursor=9"
+
+
+def test_record_handoff_writes_handoff_kind(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    record_handoff(store, _claim(owner="B"))
+    events = store.read_all()
+    store.close()
+    assert events[0].kind == EventKind.HANDOFF
+    assert events[0].payload["owner"] == "B"
+
+
+def test_replay_reconstructs_claim_from_checkpoint_kind(tmp_path: Path) -> None:
+    # A checkpoint event carries the full claim snapshot, so coordination replay
+    # reconstructs the claim — including the durable checkpoint — from it.
+    store = _store(tmp_path)
+    record_claim(store, _claim(checkpoint=""))
+    record_checkpoint(store, _claim(checkpoint="cursor=9", epoch=4))
+    result = replay(store, now=2000.0)
+    store.close()
+    claim = result.state.claims["T1"]
+    assert claim.checkpoint == "cursor=9"
+    assert claim.epoch == 4
+
+
+def test_replay_reconstructs_owner_from_handoff_kind(tmp_path: Path) -> None:
+    # A handoff event reconstructs ownership exactly as a claim event would.
+    store = _store(tmp_path)
+    record_claim(store, _claim(owner="A"))
+    record_handoff(store, _claim(owner="B"))
+    result = replay(store, now=2000.0)
+    store.close()
+    assert result.state.claims["T1"].owner == "B"
 
 
 def test_replay_task_update_overwrites_claim(tmp_path: Path) -> None:
