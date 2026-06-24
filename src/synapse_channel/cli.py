@@ -145,6 +145,7 @@ def _cmd_hub(args: argparse.Namespace) -> int:
         authenticator=authenticator,
         max_clients=args.max_clients,
         max_msg_bytes=args.max_msg_kb * 1024,
+        enable_metrics=args.metrics,
     )
     try:
         _run(hub.serve(host=args.host, port=args.port))
@@ -1411,6 +1412,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--token",
         default=None,
         help="Require this shared-secret token from connecting agents (off by default).",
+    )
+    hub.add_argument(
+        "--metrics",
+        action="store_true",
+        help="Also serve HTTP GET /metrics (Prometheus) and /health on the same port.",
     )
     hub.set_defaults(func=_cmd_hub)
 

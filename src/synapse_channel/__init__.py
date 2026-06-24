@@ -52,6 +52,12 @@ from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import MEMORY_KINDS
 from synapse_channel.core.ledger import Blackboard, LedgerTask, ProgressNote
 from synapse_channel.core.lifecycle import TaskStatus, can_transition
+from synapse_channel.core.metrics import (
+    Metric,
+    collect_hub_metrics,
+    health_snapshot,
+    render_prometheus,
+)
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import (
     PRIORITY_SENDERS,
@@ -86,6 +92,7 @@ __all__ = [
     "LedgerTask",
     "Lifecycle",
     "MessageType",
+    "Metric",
     "OpenAIChatClient",
     "ProgressNote",
     "ResourceOffer",
@@ -108,15 +115,18 @@ __all__ = [
     "build_envelope",
     "can_transition",
     "classify",
+    "collect_hub_metrics",
     "compact",
     "decode_lite",
     "detect_stalls",
+    "health_snapshot",
     "encode_lite",
     "is_directed",
     "is_recipient",
     "is_service_message",
     "paths_overlap",
     "plan_team",
+    "render_prometheus",
     "run_team",
     "sanitize_text",
     "scopes_conflict",

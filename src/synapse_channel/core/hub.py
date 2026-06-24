@@ -34,7 +34,9 @@ from pathlib import Path
 from typing import Any
 
 import websockets
+from websockets.datastructures import Headers
 from websockets.exceptions import ConnectionClosed
+from websockets.http11 import Request, Response
 
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
@@ -42,6 +44,13 @@ from synapse_channel.core.handlers import DISPATCH
 from synapse_channel.core.idempotency import IdempotencyCache
 from synapse_channel.core.journal import record_idempotency, replay
 from synapse_channel.core.ledger import DEFAULT_MAX_PROGRESS, Blackboard
+from synapse_channel.core.metrics import (
+    HEALTH_CONTENT_TYPE,
+    PROMETHEUS_CONTENT_TYPE,
+    collect_hub_metrics,
+    health_snapshot,
+    render_prometheus,
+)
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import (
     RESOURCE_TYPE_ALIASES,
@@ -137,6 +146,11 @@ class SynapseHub:
         When given, a connecting agent must present a valid shared-secret token
         on its first message or the hub refuses and closes the socket. ``None``
         leaves the hub open, which is the right default for a loopback bind.
+    enable_metrics : bool, optional
+        When ``True`` the server also answers HTTP ``GET /metrics`` (Prometheus
+        text exposition) and ``GET /health`` (a JSON liveness document) on the
+        same port as the WebSocket endpoint, for scraping and container probes.
+        Off by default — a plain WebSocket hub serves no HTTP.
     """
 
     def __init__(
@@ -154,9 +168,11 @@ class SynapseHub:
         max_clients: int = DEFAULT_MAX_CLIENTS,
         max_msg_bytes: int = DEFAULT_MAX_MSG_BYTES,
         takeover_cooldown: float = DEFAULT_TAKEOVER_COOLDOWN,
+        enable_metrics: bool = False,
         clock: Callable[[], float] | None = None,
     ) -> None:
         self.journal = journal
+        self.enable_metrics = bool(enable_metrics)
         self.rate_limiter = rate_limiter
         self.authenticator = authenticator
         self.max_clients = max(int(max_clients), 1)
@@ -582,8 +598,45 @@ class SynapseHub:
             with contextlib.suppress(NotImplementedError):
                 loop.add_signal_handler(sig, stop.set)
 
+    @staticmethod
+    def _http_ok(body: bytes, content_type: str) -> Response:
+        """Build a ``200 OK`` HTTP response with a body and content type."""
+        headers = Headers()
+        headers["Content-Type"] = content_type
+        headers["Content-Length"] = str(len(body))
+        return Response(200, "OK", headers, body)
+
+    def _http_endpoint_response(self, path: str) -> Response | None:
+        """Return the HTTP response for a probe path, or ``None`` to fall through to WS.
+
+        ``/metrics`` renders the Prometheus exposition and ``/health`` a JSON
+        liveness document; any other path returns ``None`` so a normal client
+        proceeds to the WebSocket handshake. A query string is ignored.
+        """
+        route = path.split("?", 1)[0]
+        if route == "/metrics":
+            body = render_prometheus(collect_hub_metrics(self)).encode("utf-8")
+            return self._http_ok(body, PROMETHEUS_CONTENT_TYPE)
+        if route == "/health":
+            body = json.dumps(health_snapshot(self)).encode("utf-8")
+            return self._http_ok(body, HEALTH_CONTENT_TYPE)
+        return None
+
+    def _process_request(self, _connection: Any, request: Request) -> Response | None:
+        """``websockets`` request hook serving ``/metrics`` and ``/health`` over HTTP.
+
+        Returning a :class:`~websockets.http11.Response` short-circuits the
+        WebSocket handshake and sends that HTTP response; returning ``None`` lets
+        the connection upgrade to WebSocket as usual. Installed only when
+        :attr:`enable_metrics` is set.
+        """
+        return self._http_endpoint_response(request.path)
+
     async def serve(self, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> None:
         """Run the hub's WebSocket server until cancelled.
+
+        With :attr:`enable_metrics` set, the same port also answers HTTP
+        ``GET /metrics`` and ``GET /health`` (see :meth:`_process_request`).
 
         Parameters
         ----------
@@ -603,6 +656,7 @@ class SynapseHub:
             max_queue=DEFAULT_MAX_QUEUE,
             ping_interval=DEFAULT_PING_INTERVAL,
             ping_timeout=DEFAULT_PING_TIMEOUT,
+            process_request=self._process_request if self.enable_metrics else None,
         ):
             logger.info("Synapse Hub running on ws://%s:%d", host, port)
             await stop.wait()
