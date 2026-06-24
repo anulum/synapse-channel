@@ -283,11 +283,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.41.0 |
 | Public API exports | 59 |
-| Package modules | 41 |
+| Package modules | 42 |
 | Classes | 47 |
 | Wire message types | 52 |
-| CLI subcommands | 16 |
-| Test functions | 976 |
+| CLI subcommands | 13 |
+| Test functions | 977 |
 | Benchmark harnesses | 3 |
 | Documentation pages | 14 |
 | GitHub Actions workflows | 10 |
