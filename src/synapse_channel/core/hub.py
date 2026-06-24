@@ -167,6 +167,12 @@ class SynapseHub:
         unauthenticated socket is reaped at this deadline so it cannot hold a
         connection slot. Ignored on an open hub. Defaults to
         :data:`DEFAULT_AUTH_TIMEOUT`.
+    max_unauth_clients : int or None, optional
+        On a secured hub, the most sockets allowed in their pre-auth window at once;
+        a further connect is closed with code ``4014`` so an authentication-stall
+        burst cannot fill the connection table for the whole ``auth_timeout``.
+        ``None`` (the default) tracks ``max_clients``, i.e. no extra restriction
+        until an operator sets a tighter value. Ignored on an open hub.
     metrics_token : str or None, optional
         When set (and ``enable_metrics`` is on), ``GET /metrics`` and ``GET
         /health`` require this token — presented as ``Authorization: Bearer
@@ -192,6 +198,7 @@ class SynapseHub:
         max_progress: int = DEFAULT_MAX_PROGRESS,
         authenticator: TokenAuthenticator | None = None,
         max_clients: int = DEFAULT_MAX_CLIENTS,
+        max_unauth_clients: int | None = None,
         max_msg_bytes: int = DEFAULT_MAX_MSG_BYTES,
         max_claims_per_agent: int = MAX_CLAIMS_PER_AGENT,
         max_offers_per_agent: int = MAX_OFFERS_PER_AGENT,
@@ -210,6 +217,9 @@ class SynapseHub:
         self.rate_limiter = rate_limiter
         self.authenticator = authenticator
         self.max_clients = max(int(max_clients), 1)
+        self.max_unauth_clients = (
+            self.max_clients if max_unauth_clients is None else max(int(max_unauth_clients), 1)
+        )
         self.max_msg_bytes = max(int(max_msg_bytes), 1)
         self.takeover_cooldown = max(float(takeover_cooldown), 0.0)
         self._clock = clock or time.monotonic
@@ -221,6 +231,7 @@ class SynapseHub:
         self._relay_appends = 0
         self.hub_id = hub_id or f"syn-{uuid.uuid4().hex[:8]}"
         self.connected_clients: set[Any] = set()
+        self.unauth_clients: set[Any] = set()
         self.agent_sockets: dict[str, Any] = {}
         self.socket_agent: dict[Any, str] = {}
         self._idempotency = IdempotencyCache()
@@ -692,15 +703,27 @@ class SynapseHub:
 
         On a secured hub the first frame must authenticate within
         :attr:`auth_timeout` before the connection joins the channel (see
-        :meth:`_authenticate_or_close`).
+        :meth:`_authenticate_or_close`). A separate :attr:`max_unauth_clients` cap
+        refuses a new socket (code ``4014``) while that many sockets are still in
+        their pre-auth window, so an authentication-stall burst cannot occupy the
+        connection table for the whole timeout.
         """
         if len(self.connected_clients) >= self.max_clients:
             await websocket.close(code=4013, reason="hub at capacity")
             return
+        if self.authenticator is not None and len(self.unauth_clients) >= self.max_unauth_clients:
+            await websocket.close(code=4014, reason="too many unauthenticated connections")
+            return
         await self.register(websocket)
         try:
-            if self.authenticator is not None and not await self._authenticate_or_close(websocket):
-                return
+            if self.authenticator is not None:
+                self.unauth_clients.add(websocket)
+                try:
+                    authenticated = await self._authenticate_or_close(websocket)
+                finally:
+                    self.unauth_clients.discard(websocket)
+                if not authenticated:
+                    return
             async for raw in websocket:
                 await self.handle_message(raw, websocket)
         except ConnectionClosed:
