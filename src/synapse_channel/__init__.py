@@ -18,7 +18,7 @@ command (see :mod:`synapse_channel.cli`) drives all of it.
 
 from __future__ import annotations
 
-__version__ = "0.38.0"
+__version__ = "0.39.0"
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.client.chat_backends import (
@@ -44,6 +44,7 @@ from synapse_channel.core.finding import (
     Subkind,
 )
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import MEMORY_KINDS
 from synapse_channel.core.ledger import Blackboard, LedgerTask, ProgressNote
 from synapse_channel.core.lifecycle import TaskStatus, can_transition
 from synapse_channel.core.persistence import EventStore
@@ -63,6 +64,7 @@ from synapse_channel.relay import decode_lite, encode_lite
 
 __all__ = [
     "DEFAULT_HUB_URI",
+    "MEMORY_KINDS",
     "PRIORITY_SENDERS",
     "Blackboard",
     "CapabilityCard",

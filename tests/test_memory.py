@@ -290,6 +290,25 @@ def test_record_finding_writes_finding_kind_durably(tmp_path: Path) -> None:
     assert events[-1].payload["statement"] == "x"
 
 
+async def test_memory_tag_is_carried_through_chat_opaquely(tmp_path: Path) -> None:
+    # The hub never interprets the tag — it rides the durable chat event and the
+    # broadcast unchanged, so a read-side filter can pick out authored context.
+    store = EventStore(tmp_path / "events.db")
+    hub = _hub(journal=store)
+    ws = _WS()
+    other = _WS()
+    await hub.register(ws)
+    await hub.register(other)
+    await hub.handle_message(
+        _msg(sender="A", type="chat", payload="design rationale", memory_tag="remember"), ws
+    )
+    chat_events = [e for e in store.read_all() if e.kind == EventKind.CHAT]
+    store.close()
+    assert chat_events[0].payload["memory_tag"] == "remember"
+    fanned = [json.loads(r) for r in other.sent if json.loads(r).get("type") == "chat"]
+    assert fanned and fanned[0]["memory_tag"] == "remember"
+
+
 def test_replay_ignores_findings(tmp_path: Path) -> None:
     store = EventStore(tmp_path / "events.db")
     record_finding(store, {"statement": "x", "claim_status": "bounded-support"})

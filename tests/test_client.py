@@ -318,6 +318,21 @@ async def test_log_recall_defaults_to_empty_outcome() -> None:
     assert msg["abstained"] is False
 
 
+async def test_chat_memory_tag_rides_the_envelope_only_when_set() -> None:
+    agent = SynapseAgent("A")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+
+    await agent.chat("plain")
+    await agent.chat("remember me", memory_tag="remember")
+    await agent.chat("urgent", priority=True)
+    plain, tagged, urgent = (json.loads(r) for r in ws.sent)
+    assert "memory_tag" not in plain and "priority" not in plain  # no envelope bloat
+    assert tagged["memory_tag"] == "remember"
+    assert tagged["payload"] == "remember me"
+    assert urgent["priority"] is True
+
+
 async def test_record_finding_emits_envelope() -> None:
     agent = SynapseAgent("SCPN-CONTROL/claude-1")
     ws = FakeWebSocket([])

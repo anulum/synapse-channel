@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ from synapse_channel import cli
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.client.llm_worker import DEFAULT_OLLAMA_BASE_URL
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.git.gitclaim import GitError
 from synapse_channel.relay import append_jsonl, encode_lite
 
@@ -567,6 +569,98 @@ def test_cmd_hub_wires_relay_log(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     assert cli._cmd_hub(_hub_ns(relay_log=str(log), relay_max_lines=42)) == 0
     assert captured["relay_log"] == str(log)
     assert captured["relay_max_lines"] == 42
+
+
+# --- ingest ------------------------------------------------------------------
+
+
+def _ingest_ns(**overrides: Any) -> argparse.Namespace:
+    base: dict[str, Any] = {
+        "db": "events.db",
+        "since": 0,
+        "cursor": None,
+        "kind": None,
+        "memory": False,
+        "limit": None,
+    }
+    base.update(overrides)
+    return argparse.Namespace(**base)
+
+
+def _seed_store(path: Path) -> None:
+    store = EventStore(path)
+    store.append("claim", {"id": "T1"})
+    store.append("finding", {"statement": "a"})
+    store.append("chat", {"payload": "x"})
+    store.close()
+
+
+def test_parser_ingest() -> None:
+    args = cli.build_parser().parse_args(["ingest", "hub.db", "--memory", "--since", "5"])
+    assert args.db == "hub.db"
+    assert args.memory is True
+    assert args.since == 5
+    assert args.func is cli._cmd_ingest
+
+
+def test_cmd_ingest_streams_events_as_ndjson(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "events.db"
+    _seed_store(db)
+    assert cli._cmd_ingest(_ingest_ns(db=str(db))) == 0
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [row["kind"] for row in lines] == ["claim", "finding", "chat"]
+    assert lines[1]["payload"]["statement"] == "a"
+
+
+def test_cmd_ingest_memory_filter_drops_coordination_kinds(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "events.db"
+    _seed_store(db)
+    assert cli._cmd_ingest(_ingest_ns(db=str(db), memory=True)) == 0
+    kinds = [json.loads(line)["kind"] for line in capsys.readouterr().out.splitlines()]
+    assert kinds == ["finding"]  # claim + chat are not memory kinds
+
+
+def test_cmd_ingest_explicit_kind_filter(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "events.db"
+    _seed_store(db)
+    assert cli._cmd_ingest(_ingest_ns(db=str(db), kind=["claim"])) == 0
+    kinds = [json.loads(line)["kind"] for line in capsys.readouterr().out.splitlines()]
+    assert kinds == ["claim"]
+
+
+def test_cmd_ingest_resumes_from_cursor(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    db = tmp_path / "events.db"
+    cursor = tmp_path / "ingest.cursor"
+    store = EventStore(db)
+    store.append("finding", {"statement": "first"})
+    store.close()
+    assert cli._cmd_ingest(_ingest_ns(db=str(db), cursor=str(cursor))) == 0
+    assert "first" in capsys.readouterr().out
+
+    store = EventStore(db)
+    store.append("finding", {"statement": "second"})
+    store.close()
+    # The persisted seq cursor means the second run shows only the new event.
+    assert cli._cmd_ingest(_ingest_ns(db=str(db), cursor=str(cursor))) == 0
+    out = capsys.readouterr().out
+    assert "second" in out
+    assert "first" not in out
+
+
+def test_cmd_ingest_limit_caps_the_batch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "events.db"
+    _seed_store(db)
+    assert cli._cmd_ingest(_ingest_ns(db=str(db), limit=1)) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 1
 
 
 # --- board -------------------------------------------------------------------
