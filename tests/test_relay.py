@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import os
+import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -274,6 +276,14 @@ def test_trim_zero_or_missing_is_noop(tmp_path: Path) -> None:
     append_jsonl(log, {"i": 1})
     assert trim_jsonl_tail(log, 0) == 0
     assert trim_jsonl_tail(tmp_path / "absent.ndjson", 2) == 0
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file permissions")
+def test_append_jsonl_creates_an_owner_only_file(tmp_path: Path) -> None:
+    log = tmp_path / "feed.ndjson"
+    append_jsonl(log, {"i": 1})
+    mode = stat.S_IMODE(os.stat(log).st_mode)
+    assert mode & 0o077 == 0  # no group/other access to the plaintext relay mirror
 
 
 def test_trim_leaves_no_temporary_files(tmp_path: Path) -> None:

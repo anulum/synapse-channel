@@ -21,7 +21,7 @@ from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request
 
 from synapse_channel.core.auth import TokenAuthenticator
-from synapse_channel.core.hub import SynapseHub, is_loopback_host
+from synapse_channel.core.hub import MAX_LOG_PAYLOAD, SynapseHub, is_loopback_host
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
@@ -83,6 +83,14 @@ async def test_register_sends_welcome() -> None:
     assert welcome["type"] == "welcome"
     assert welcome["hub_id"] == "syn-test"
     assert ws in hub.connected_clients
+
+
+def test_redact_payload_truncates_a_long_payload() -> None:
+    assert SynapseHub._redact_payload("short") == "short"
+    long = "x" * 500
+    redacted = SynapseHub._redact_payload(long)
+    assert redacted.startswith("x" * MAX_LOG_PAYLOAD)
+    assert f"(+{500 - MAX_LOG_PAYLOAD} chars)" in redacted
 
 
 async def test_malformed_json_returns_error() -> None:

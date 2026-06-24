@@ -22,6 +22,12 @@ All notable changes to this project are documented here.
   format drift is caught without taking a runtime dependency on the client.
 
 ### Security
+- Logs and at-rest files are tightened. A message payload logged at INFO is now
+  truncated past 120 characters (with a count of what was elided), so one large
+  message cannot bloat the log; and the durable event store and the relay-log
+  mirror — both plaintext — are created with owner-only permissions (`0o600`)
+  where the platform supports it, so a stray group/other reader cannot read the
+  channel's content at rest.
 - `synapse git-hook install` now bakes the absolute path of the `synapse`
   executable into the generated hooks (resolved from `PATH` at install time, or
   set explicitly with `--synapse-bin`), instead of invoking `synapse` by bare

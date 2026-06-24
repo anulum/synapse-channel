@@ -81,6 +81,8 @@ DEFAULT_TAKEOVER_COOLDOWN = 2.0
 """Seconds a name is protected from a second takeover, to blunt an eviction storm."""
 DEFAULT_AUTH_TIMEOUT = 10.0
 """Seconds a secured hub waits for an authenticated first frame before closing a socket."""
+MAX_LOG_PAYLOAD = 120
+"""Characters of a message payload logged at INFO before it is truncated."""
 
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 """Bind hosts treated as loopback-only, where running without a token is fine."""
@@ -291,6 +293,18 @@ class SynapseHub:
     def _system(self, payload: str, **extra: Any) -> dict[str, Any]:
         """Build a hub system message stamped with this hub's id."""
         return system_message(payload, hub_id=self.hub_id, **extra)
+
+    @staticmethod
+    def _redact_payload(payload: str) -> str:
+        """Truncate a message payload for the INFO log so it cannot bloat the log.
+
+        A long payload (e.g. a large tool argument or pasted blob) is cut to
+        :data:`MAX_LOG_PAYLOAD` characters with a count of how many were elided, so
+        a single message cannot write an unbounded amount to the log.
+        """
+        if len(payload) <= MAX_LOG_PAYLOAD:
+            return payload
+        return f"{payload[:MAX_LOG_PAYLOAD]}…(+{len(payload) - MAX_LOG_PAYLOAD} chars)"
 
     def online_agents(self) -> list[str]:
         """Return the sorted names of currently registered agents."""
@@ -540,7 +554,7 @@ class SynapseHub:
         self.agent_sockets[sender] = websocket
         if is_new_agent:
             await self._broadcast_presence("joined", sender)
-        logger.info("[%s -> %s] (%s): %s", sender, target, msg_type, payload)
+        logger.info("[%s -> %s] (%s): %s", sender, target, msg_type, self._redact_payload(payload))
 
         if (
             msg_type != MessageType.HEARTBEAT

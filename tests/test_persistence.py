@@ -8,12 +8,31 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
+import stat
+import sys
 from pathlib import Path
 
 import pytest
 
 from synapse_channel.core.persistence import EventStore, StoredEvent
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file permissions")
+def test_event_store_file_is_owner_only(tmp_path: Path) -> None:
+    db = tmp_path / "events.db"
+    store = EventStore(db)
+    store.close()
+    mode = stat.S_IMODE(os.stat(db).st_mode)
+    assert mode & 0o077 == 0  # no group/other access to the plaintext event log
+
+
+def test_event_store_in_memory_needs_no_chmod() -> None:
+    store = EventStore(":memory:")  # the chmod is skipped for the in-memory store
+    store.append("chat", {"p": "x"})
+    assert store.count() == 1
+    store.close()
 
 
 def test_append_and_read_all_preserves_order(tmp_path: Path) -> None:
