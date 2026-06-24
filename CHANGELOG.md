@@ -29,6 +29,15 @@ All notable changes to this project are documented here.
   the fully trimmed one.
 
 ### Added
+- An optional HTTP observability endpoint on the hub. With `synapse hub
+  --metrics` (or `SynapseHub(enable_metrics=True)`) the same port also answers
+  `GET /metrics` in the Prometheus text exposition format — connected clients,
+  online agents, active claims, resource offers, retained history, blackboard
+  tasks, and a monotonic message counter — and `GET /health` with a small JSON
+  liveness document for container probes. Both are served in the hub's event loop
+  via the WebSocket server's request hook, so a scrape reads a consistent view of
+  the live state with no extra port, thread, or third-party dependency. Off by
+  default — a plain hub serves no HTTP.
 - An opt-in retention knob that bounds the durable write log. Resume checkpoints
   and authored findings are committed at full durability and otherwise accumulate
   without bound; `compact(store, RetentionPolicy(...), floor_seq=...)` (and the

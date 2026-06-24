@@ -16,7 +16,9 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from websockets.datastructures import Headers
 from websockets.exceptions import ConnectionClosed
+from websockets.http11 import Request
 
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub, is_loopback_host
@@ -1456,3 +1458,50 @@ def test_install_signal_handlers_suppresses_unsupported() -> None:
             raise NotImplementedError
 
     hub._install_signal_handlers(cast(asyncio.AbstractEventLoop, FakeLoop()), asyncio.Event())
+
+
+# --- HTTP /metrics and /health endpoints -------------------------------------
+
+
+def _request(path: str) -> Request:
+    """Build a bare HTTP request carrying just the target path."""
+    return Request(path, Headers())
+
+
+def test_metrics_disabled_by_default() -> None:
+    assert SynapseHub().enable_metrics is False
+
+
+def test_process_request_serves_prometheus_metrics() -> None:
+    hub = SynapseHub(enable_metrics=True)
+    response = hub._process_request(None, _request("/metrics"))
+    assert response is not None
+    assert response.status_code == 200
+    assert response.headers["Content-Type"].startswith("text/plain")
+    assert response.headers["Content-Length"] == str(len(response.body))
+    assert b"synapse_up 1" in response.body
+
+
+def test_process_request_serves_health_json() -> None:
+    hub = SynapseHub(hub_id="syn-probe", enable_metrics=True)
+    response = hub._process_request(None, _request("/health"))
+    assert response is not None
+    assert response.status_code == 200
+    assert response.headers["Content-Type"] == "application/json"
+    body = json.loads(response.body)
+    assert body["status"] == "ok"
+    assert body["hub_id"] == "syn-probe"
+
+
+def test_process_request_ignores_a_query_string() -> None:
+    hub = SynapseHub(enable_metrics=True)
+    response = hub._process_request(None, _request("/metrics?step=15s"))
+    assert response is not None
+    assert b"synapse_up 1" in response.body
+
+
+def test_process_request_falls_through_for_websocket_paths() -> None:
+    hub = SynapseHub(enable_metrics=True)
+    # A normal WebSocket client (or any other path) is handed back to the handshake.
+    assert hub._process_request(None, _request("/")) is None
+    assert hub._process_request(None, _request("/socket")) is None

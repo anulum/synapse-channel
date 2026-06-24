@@ -45,6 +45,20 @@ async def _await_listening(port: int, timeout: float = 3.0) -> None:
     raise TimeoutError(f"hub did not start listening on {port}")
 
 
+async def _http_get(port: int, path: str, timeout: float = 3.0) -> tuple[int, str]:
+    """Send one HTTP/1.1 GET to the hub port and return ``(status, body)``."""
+    reader, writer = await asyncio.open_connection("localhost", port)
+    writer.write(f"GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".encode())
+    await writer.drain()
+    raw = await asyncio.wait_for(reader.read(), timeout=timeout)
+    writer.close()
+    with contextlib.suppress(Exception):
+        await writer.wait_closed()
+    head, _, body = raw.partition(b"\r\n\r\n")
+    status = int(head.split(b"\r\n", 1)[0].split()[1])
+    return status, body.decode("utf-8")
+
+
 class Recorder:
     """Collects every message a client receives for assertion helpers."""
 
@@ -230,6 +244,43 @@ async def test_reconnect_resume_catches_up_end_to_end() -> None:
         await agent.request_resume(since=0)
         snap = await rx.wait_for(lambda m: m.get("type") == "resume_snapshot")
         assert [m["payload"] for m in snap["messages"]] == ["one", "two"]
+    finally:
+        agent.running = False
+        for task in (conn, server):
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+
+
+async def test_metrics_and_health_endpoints_end_to_end() -> None:
+    port = _free_port()
+    hub = SynapseHub(hub_id="syn-metrics", enable_metrics=True)
+    server = asyncio.create_task(hub.serve("localhost", port))
+    uri = f"ws://localhost:{port}"
+
+    rx = Recorder()
+    agent = SynapseAgent("ALPHA", rx, uri=uri, verbose=False)
+    conn: asyncio.Task[None] | None = None
+
+    try:
+        await _await_listening(port)
+        conn = asyncio.create_task(agent.connect())
+        assert await agent.wait_until_ready(3.0)
+        await agent.claim("TASK-1")
+        await rx.wait_for(lambda m: m.get("type") == "claim_granted")
+
+        # The live WebSocket session is reflected in the scraped Prometheus text.
+        status, body = await _http_get(port, "/metrics")
+        assert status == 200
+        assert "synapse_up 1" in body
+        assert "synapse_active_claims 1" in body
+
+        # The health probe answers over plain HTTP on the same port.
+        health_status, health_body = await _http_get(port, "/health")
+        assert health_status == 200
+        assert '"status": "ok"' in health_body
+        assert '"hub_id": "syn-metrics"' in health_body
     finally:
         agent.running = False
         for task in (conn, server):

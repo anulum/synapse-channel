@@ -244,6 +244,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "max_clients": 64,
         "max_msg_kb": 1024,
         "token": None,
+        "metrics": False,
     }
     base.update(overrides)
     return argparse.Namespace(**base)
