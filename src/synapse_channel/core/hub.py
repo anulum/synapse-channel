@@ -59,6 +59,7 @@ from synapse_channel.core.protocol import (
     system_message,
 )
 from synapse_channel.core.ratelimit import RateLimiter
+from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 from synapse_channel.core.state import (
     MAX_CLAIMS_PER_AGENT,
     MAX_OFFERS_PER_AGENT,
@@ -202,6 +203,7 @@ class SynapseHub:
         max_msg_bytes: int = DEFAULT_MAX_MSG_BYTES,
         max_claims_per_agent: int = MAX_CLAIMS_PER_AGENT,
         max_offers_per_agent: int = MAX_OFFERS_PER_AGENT,
+        max_paths_per_claim: int = MAX_DECLARED_PATHS,
         takeover_cooldown: float = DEFAULT_TAKEOVER_COOLDOWN,
         enable_metrics: bool = False,
         auth_timeout: float = DEFAULT_AUTH_TIMEOUT,
@@ -244,6 +246,7 @@ class SynapseHub:
                 max_progress=max_progress,
                 max_claims_per_agent=max_claims_per_agent,
                 max_offers_per_agent=max_offers_per_agent,
+                max_paths_per_claim=max_paths_per_claim,
             )
             self.state = replayed.state
             self.chat_history = replayed.chat_history[-self.max_history :]
@@ -259,6 +262,7 @@ class SynapseHub:
                 default_ttl_seconds=default_ttl_seconds,
                 max_claims_per_agent=max_claims_per_agent,
                 max_offers_per_agent=max_offers_per_agent,
+                max_paths_per_claim=max_paths_per_claim,
             )
             self.chat_history = []
             self._message_seq = 0

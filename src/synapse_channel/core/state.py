@@ -25,7 +25,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from synapse_channel.core.lifecycle import TaskStatus, can_transition
-from synapse_channel.core.scoping import DEFAULT_WORKTREE, normalize_paths, scopes_conflict
+from synapse_channel.core.scoping import (
+    DEFAULT_WORKTREE,
+    MAX_DECLARED_PATHS,
+    normalize_paths,
+    scopes_conflict,
+)
 
 MINIMUM_TTL_SECONDS = 30.0
 """Floor applied to every requested lease/default TTL, in seconds."""
@@ -238,6 +243,10 @@ class SynapseState:
     max_offers_per_agent : int, optional
         Most live resource offers one agent may register. Clamped up to ``1``.
         Defaults to :data:`MAX_OFFERS_PER_AGENT`.
+    max_paths_per_claim : int, optional
+        Most distinct paths a single claim may declare before its scope is
+        widened to the whole worktree. Clamped up to ``1``. Defaults to
+        :data:`~synapse_channel.core.scoping.MAX_DECLARED_PATHS`.
     """
 
     def __init__(
@@ -246,10 +255,12 @@ class SynapseState:
         *,
         max_claims_per_agent: int = MAX_CLAIMS_PER_AGENT,
         max_offers_per_agent: int = MAX_OFFERS_PER_AGENT,
+        max_paths_per_claim: int = MAX_DECLARED_PATHS,
     ) -> None:
         self.default_ttl_seconds = max(float(default_ttl_seconds), MINIMUM_TTL_SECONDS)
         self.max_claims_per_agent = max(1, int(max_claims_per_agent))
         self.max_offers_per_agent = max(1, int(max_offers_per_agent))
+        self.max_paths_per_claim = max(1, int(max_paths_per_claim))
         self.last_seen: dict[str, float] = {}
         self.claims: dict[str, TaskClaim] = {}
         self.resources: dict[str, ResourceOffer] = {}
@@ -371,7 +382,7 @@ class SynapseState:
             else max(float(ttl_seconds), MINIMUM_TTL_SECONDS)
         )
         self.heartbeat(agent, ts)
-        norm_paths = normalize_paths(paths)
+        norm_paths = normalize_paths(paths, self.max_paths_per_claim)
 
         existing = self.claims.get(task)
         if existing and existing.owner != agent and existing.lease_expires_at > ts:

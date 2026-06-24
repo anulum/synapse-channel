@@ -18,9 +18,11 @@ All notable changes to this project are documented here.
   the chosen backend will send channel context off the local machine — the `openai`
   provider (which also forwards the API key read from `--api-key-env`) or any provider
   pointed at a non-loopback `--base-url`. Local backends start silently.
-- The hub's per-agent claim and offer quotas are now configurable with
-  `synapse hub --max-claims-per-agent N` and `--max-offers-per-agent N` (defaults 128
-  and 64), for test labs, large monorepos, and managed deployments.
+- The hub's per-agent claim and offer quotas and the per-claim declared-path cap are
+  now configurable with `synapse hub --max-claims-per-agent N`, `--max-offers-per-agent N`,
+  and `--max-paths-per-claim N` (defaults 128, 64, and 512), for test labs, large
+  monorepos, and managed deployments. A claim declaring more distinct paths than the cap
+  widens to own its whole worktree — conservative, so it never misses a conflict.
 
 ### Security
 - The SQLite event log's write-ahead-log sidecars (`<db>-wal`, `<db>-shm`) are now

@@ -437,17 +437,21 @@ def test_default_hub_id_is_generated() -> None:
 
 
 def test_hub_threads_per_agent_quotas_to_state() -> None:
-    hub = SynapseHub(max_claims_per_agent=5, max_offers_per_agent=9)
+    hub = SynapseHub(max_claims_per_agent=5, max_offers_per_agent=9, max_paths_per_claim=7)
     assert hub.state.max_claims_per_agent == 5
     assert hub.state.max_offers_per_agent == 9
+    assert hub.state.max_paths_per_claim == 7
 
 
 def test_hub_with_journal_threads_per_agent_quotas_to_state(tmp_path: Path) -> None:
     store = EventStore(tmp_path / "events.db")
-    hub = SynapseHub(journal=store, max_claims_per_agent=4, max_offers_per_agent=6)
+    hub = SynapseHub(
+        journal=store, max_claims_per_agent=4, max_offers_per_agent=6, max_paths_per_claim=3
+    )
     store.close()
     assert hub.state.max_claims_per_agent == 4
     assert hub.state.max_offers_per_agent == 6
+    assert hub.state.max_paths_per_claim == 3
 
 
 @pytest.mark.parametrize("seq", [1, 2, 3])
