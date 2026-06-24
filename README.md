@@ -281,7 +281,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 
 | Surface | Current inventory |
 |---|---:|
-| Package version | 0.40.0 |
+| Package version | 0.41.0 |
 | Public API exports | 59 |
 | Package modules | 37 |
 | Classes | 47 |
@@ -325,14 +325,12 @@ This snapshot is a static inventory generated from the source tree. Performance 
   a filesystem; a claim's `paths` are opaque strings compared only for glob
   overlap, so claiming `../../etc/passwd` coordinates nothing on disk and is not a
   path-traversal surface. See [`SECURITY.md`](SECURITY.md).
-- **Per-mutation cost is linear in the active claim count.** Each mutation lazily
-  expires stale leases by scanning live claims. This is invisible at the design
-  scale (microseconds for tens of claims) and only a ceiling far past a single
-  local-first hub — the profile is measured, not guessed, in
-  [`benchmarks/`](benchmarks/) and the [benchmarks docs](docs/benchmarks.md).
-- **No built-in metrics endpoint.** Observability is deliberately minimal for a
-  local-first tool; the live board, state, and manifest are available over the
-  CLI and the MCP resources rather than a Prometheus `/metrics` surface.
+- **Metrics are opt-in and off by default.** `synapse hub --metrics` exposes a
+  Prometheus `/metrics` and a JSON `/health` endpoint on the hub's port; without
+  the flag the hub serves no HTTP. The endpoint carries operational metadata and
+  no authentication, so keep it on a loopback bind and do not expose it on an
+  untrusted interface. The live board, state, and manifest also remain available
+  over the CLI and the MCP resources.
 - **`synapse --version` checks PyPI for a newer release** (once a day, cached, no
   payload beyond the request itself). Silence it with `SYNAPSE_NO_UPDATE_CHECK=1`.
 
@@ -347,7 +345,7 @@ If you use SYNAPSE CHANNEL in your work, please cite it. Metadata is in
   title   = {SYNAPSE CHANNEL: Local-first multi-agent coordination bus},
   url      = {https://github.com/anulum/synapse-channel},
   doi      = {10.5281/zenodo.20801559},
-  version = {0.40.0},
+  version = {0.41.0},
   year     = {2026}
 }
 ```

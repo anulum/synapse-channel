@@ -11,6 +11,15 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.41.0] - 2026-06-24
+
+### Fixed
+- Corrected two stale "Known limitations" entries in the README that 0.40.0 had
+  made false: per-mutation cost is no longer linear in the active claim count (the
+  lease-expiry sweep is heap-based since 0.40.0), and the hub does have an opt-in
+  Prometheus `/metrics` + `/health` endpoint (added in 0.40.0). The metrics entry
+  now states the opt-in, no-authentication, loopback-only posture honestly.
+
 ## [0.40.0] - 2026-06-24
 
 ### Changed
