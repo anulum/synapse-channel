@@ -663,6 +663,33 @@ def test_cmd_ingest_limit_caps_the_batch(
     assert len(lines) == 1
 
 
+# --- git-release UX ----------------------------------------------------------
+
+
+def test_parser_git_release_trigger_is_optional() -> None:
+    args = cli.build_parser().parse_args(["git-release"])
+    assert args.task_id is None
+    assert args.trigger is None
+    assert args.func is cli._cmd_git_release
+
+
+def test_cmd_git_release_positional_redirects_to_release(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ns = argparse.Namespace(
+        task_id="studio-panel", trigger=None, uri="ws://h", name="ME", token=None
+    )
+    assert cli._cmd_git_release(ns) == 2
+    err = capsys.readouterr().err
+    assert "synapse release studio-panel --name ME" in err  # the verb they actually wanted
+
+
+def test_cmd_git_release_missing_trigger_explains(capsys: pytest.CaptureFixture[str]) -> None:
+    ns = argparse.Namespace(task_id=None, trigger=None, uri="ws://h", name="ME", token=None)
+    assert cli._cmd_git_release(ns) == 2
+    assert "--trigger" in capsys.readouterr().err
+
+
 # --- board -------------------------------------------------------------------
 
 
@@ -2088,7 +2115,7 @@ def test_cmd_git_release_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
         return 0
 
     monkeypatch.setattr(cli, "run_git_release", fake)
-    ns = argparse.Namespace(uri="ws://h", name="ME", trigger="commit", token=None)
+    ns = argparse.Namespace(task_id=None, uri="ws://h", name="ME", trigger="commit", token=None)
     assert cli._cmd_git_release(ns) == 0
 
 

@@ -38,6 +38,19 @@ All notable changes to this project are documented here.
   silence. `syn arm` builds a directed-only waiter named distinctly from the sender
   in one place, correctly.
 
+### Fixed
+- Honest auto-release feedback. A `git-claim --auto-release-on commit|merge` is
+  enacted only by the client-side git hook, never by the hub, so a claim made
+  without `synapse git-hook` installed would sit held while the banner implied an
+  automation that was not wired. The grant now checks whether the matching hook is
+  installed and, when it is not, says so plainly and points at both remedies
+  (install the hook, or drop the claim with `synapse release <task> --name <you>`).
+- `git-release` no longer traps a manual caller. It is hook-invoked and auto-detects
+  which claims to drop from the git diff, so it takes no task id and needs
+  `--trigger`; running `synapse git-release <task>` or omitting `--trigger` now
+  returns a message pointing at the verb that actually performs a manual drop
+  (`synapse release <task> --name <you>`) instead of a bare argument error.
+
 ## [0.38.0] - 2026-06-24
 
 ### Added

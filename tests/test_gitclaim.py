@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import subprocess
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -24,6 +25,7 @@ from synapse_channel.git.gitclaim import (
     resolve_repo,
     run_git_claim,
 )
+from synapse_channel.git.githook import install_hooks
 
 
 class FakeAgent:
@@ -195,6 +197,85 @@ async def test_run_git_claim_granted_sends_git_context() -> None:
     assert git == {"branch": "feature/x", "base": "develop", "auto_release_on": "commit"}
     await agent.callback({"type": MessageType.CLAIM_GRANTED, "task_id": "T1", "owner": "me"})
     assert await task == 0
+
+
+def _branch_repo_hooks(branch: str, repo: str, hooks: str) -> Callable[[list[str]], str]:
+    """A git runner answering branch, top-level, and hooks-dir queries distinctly."""
+
+    def runner(args: list[str]) -> str:
+        if args == ["rev-parse", "--show-toplevel"]:
+            return repo
+        if args == ["rev-parse", "--git-path", "hooks"]:
+            return hooks
+        return branch
+
+    return runner
+
+
+async def _grant(task: asyncio.Task[int], created: list[FakeAgent]) -> int:
+    agent = await _await_claim_sent(created)
+    await agent.callback({"type": MessageType.CLAIM_GRANTED, "task_id": "T1", "owner": "me"})
+    return await task
+
+
+async def test_run_git_claim_warns_when_auto_release_hook_is_missing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    factory, created = make_factory()
+    task = asyncio.create_task(
+        run_git_claim(
+            uri="ws://t",
+            name="me",
+            task_id="T1",
+            paths=["src"],
+            auto_release_on="merge",
+            agent_factory=factory,
+            runner=_branch_repo_hooks("feature/x", "/repo", str(tmp_path)),
+        )
+    )
+    assert await _grant(task, created) == 0
+    out = capsys.readouterr().out
+    assert "will NOT fire" in out and "synapse git-hook" in out
+    assert "synapse release T1 --name me" in out  # the manual escape hatch
+
+
+async def test_run_git_claim_silent_when_hook_is_installed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    install_hooks(uri="ws://t", name="me", hooks_dir=tmp_path)  # writes post-merge
+    factory, created = make_factory()
+    task = asyncio.create_task(
+        run_git_claim(
+            uri="ws://t",
+            name="me",
+            task_id="T1",
+            paths=["src"],
+            auto_release_on="merge",
+            agent_factory=factory,
+            runner=_branch_repo_hooks("feature/x", "/repo", str(tmp_path)),
+        )
+    )
+    assert await _grant(task, created) == 0
+    assert "will NOT fire" not in capsys.readouterr().out
+
+
+async def test_run_git_claim_no_warning_for_manual_auto_release(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    factory, created = make_factory()
+    task = asyncio.create_task(
+        run_git_claim(
+            uri="ws://t",
+            name="me",
+            task_id="T1",
+            paths=["src"],
+            auto_release_on="manual",
+            agent_factory=factory,
+            runner=lambda _a: "feature/x",
+        )
+    )
+    assert await _grant(task, created) == 0
+    assert "will NOT fire" not in capsys.readouterr().out
 
 
 async def test_run_git_claim_scopes_worktree_to_repo() -> None:

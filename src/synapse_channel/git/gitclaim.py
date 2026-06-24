@@ -116,6 +116,32 @@ def resolve_repo(*, runner: GitRunner = _default_git_runner) -> str:
     return runner(["rev-parse", "--show-toplevel"])
 
 
+def _warn_if_auto_release_unbacked(
+    auto_release_on: str, task_id: str, name: str, *, runner: GitRunner
+) -> None:
+    """Warn when a claim's auto-release trigger has no git hook to enact it.
+
+    ``auto_release_on commit/merge`` is enacted only by the client-side git hook,
+    never by the hub, so without ``synapse git-hook`` installed the claim sits held
+    until it is dropped manually. The note points at both remedies — install the
+    hook, or release it by hand — so the banner never implies an automation that is
+    not actually wired. (Imported lazily because :mod:`synapse_channel.git.githook`
+    imports this module.)
+    """
+    if auto_release_on not in ("commit", "merge"):
+        return
+    from synapse_channel.git.githook import hook_installed
+
+    if hook_installed(auto_release_on, runner=runner):
+        return
+    print(
+        f"  note: auto-release on {auto_release_on} is enacted by a git hook that is "
+        f"not installed in this clone — it will NOT fire. Run `synapse git-hook` once "
+        f"to enable it, or drop the claim manually with "
+        f"`synapse release {task_id} --name {name}`."
+    )
+
+
 async def run_git_claim(
     *,
     uri: str,
@@ -196,6 +222,7 @@ async def run_git_claim(
                 f"claimed '{task_id}' on branch {branch} "
                 f"(base {base}, auto-release on {auto_release_on})"
             )
+            _warn_if_auto_release_unbacked(auto_release_on, task_id, name, runner=runner)
             return 0
         print(f"claim denied for '{task_id}': {outcome.get('denied', 'no response from hub')}")
         return 1
