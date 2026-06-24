@@ -29,12 +29,25 @@ from collections.abc import Iterable, Sequence
 DEFAULT_WORKTREE = ""
 """Label for the shared/default working tree when a claim names no worktree."""
 
+MAX_DECLARED_PATHS = 512
+"""Upper bound on distinct declared paths per claim before the scope is widened.
+
+A claim that declares more distinct paths than this is treated as owning the whole
+worktree (see :func:`normalize_paths`). The bound caps the ``O(n·m)`` cost of
+pairwise overlap checks and widening — rather than dropping paths — keeps the
+result conservative: it never *misses* a conflict, it only over-claims.
+"""
+
 
 def normalize_path(path: str) -> str:
-    """Normalise a declared path for prefix comparison.
+    """Normalise a declared path to canonical segments for prefix comparison.
 
-    Leading ``./`` segments and surrounding whitespace are removed and any
-    trailing slash is stripped, so ``"./src/"`` and ``"src"`` compare equal.
+    The path is split on ``/`` and rebuilt: surrounding whitespace, empty
+    segments (so ``//`` collapses), and ``.`` segments are dropped, and a ``..``
+    segment pops the preceding real segment (so ``src/../tests`` becomes
+    ``tests``). A leading ``..`` that would escape the tree root is kept literally,
+    so an out-of-tree path (``../../etc/passwd``) never normalises to a root-level
+    name and falsely overlaps an in-tree claim.
 
     Parameters
     ----------
@@ -46,10 +59,18 @@ def normalize_path(path: str) -> str:
     str
         The normalised path (``""`` for a path that names the tree root).
     """
-    text = path.strip()
-    while text.startswith("./"):
-        text = text[2:]
-    return text.rstrip("/")
+    segments: list[str] = []
+    for segment in path.strip().split("/"):
+        if segment in ("", "."):
+            continue
+        if segment == "..":
+            if segments and segments[-1] != "..":
+                segments.pop()
+            else:
+                segments.append("..")
+            continue
+        segments.append(segment)
+    return "/".join(segments)
 
 
 def paths_overlap(a: str, b: str) -> bool:
@@ -124,7 +145,8 @@ def normalize_paths(paths: Iterable[str]) -> tuple[str, ...]:
     -------
     tuple[str, ...]
         Normalised, order-preserving, duplicate-free paths; ``("",)`` if any
-        entry names the tree root; ``()`` if the input is empty.
+        entry names the tree root or the distinct count exceeds
+        :data:`MAX_DECLARED_PATHS`; ``()`` if the input is empty.
     """
     seen: set[str] = set()
     out: list[str] = []
@@ -135,4 +157,9 @@ def normalize_paths(paths: Iterable[str]) -> tuple[str, ...]:
         if norm not in seen:
             seen.add(norm)
             out.append(norm)
+            # Too many distinct paths: widen to the whole worktree rather than pay
+            # an unbounded pairwise overlap cost. Conservative — never misses a
+            # conflict; an agent wanting many files should claim their parent dir.
+            if len(out) > MAX_DECLARED_PATHS:
+                return ("",)
     return tuple(out)
