@@ -170,9 +170,13 @@ class SynapseHub:
     metrics_token : str or None, optional
         When set (and ``enable_metrics`` is on), ``GET /metrics`` and ``GET
         /health`` require this token — presented as ``Authorization: Bearer
-        <token>`` or a ``?token=<token>`` query — and answer ``401`` without it,
-        so an exposed metrics endpoint does not leak operational metadata. ``None``
-        leaves the endpoint open, which is the right default for a loopback bind.
+        <token>`` — and answer ``401`` without it, so an exposed metrics endpoint
+        does not leak operational metadata. ``None`` leaves the endpoint open, which
+        is the right default for a loopback bind.
+    metrics_query_token_ok : bool, optional
+        Also accept the token as a ``?token=<token>`` query parameter. Off by
+        default because a query token can leak into access logs, shell history, and
+        proxy records; the ``Authorization`` header is the recommended path.
     """
 
     def __init__(
@@ -195,12 +199,14 @@ class SynapseHub:
         enable_metrics: bool = False,
         auth_timeout: float = DEFAULT_AUTH_TIMEOUT,
         metrics_token: str | None = None,
+        metrics_query_token_ok: bool = False,
         clock: Callable[[], float] | None = None,
     ) -> None:
         self.journal = journal
         self.enable_metrics = bool(enable_metrics)
         self.auth_timeout = max(float(auth_timeout), 0.1)
         self.metrics_token = metrics_token or None
+        self.metrics_query_token_ok = bool(metrics_query_token_ok)
         self.rate_limiter = rate_limiter
         self.authenticator = authenticator
         self.max_clients = max(int(max_clients), 1)
@@ -733,17 +739,23 @@ class SynapseHub:
         headers["WWW-Authenticate"] = 'Bearer realm="synapse-metrics"'
         return Response(401, "Unauthorized", headers, body)
 
-    @staticmethod
-    def _request_metrics_token(request: Request) -> str:
-        """Extract the metrics token from the ``Authorization`` header or a query string."""
+    def _request_metrics_token(self, request: Request) -> str:
+        """Extract the metrics token from the request.
+
+        An ``Authorization: Bearer <token>`` header is always honoured. The
+        ``?token=<token>`` query form is read only when
+        :attr:`metrics_query_token_ok` is set, because a query token can leak into
+        access logs, shell history, browser history, and proxy records.
+        """
         authorization = request.headers.get("Authorization", "")
         prefix = "Bearer "
         if authorization.startswith(prefix):
             return authorization[len(prefix) :].strip()
-        _, _, query = request.path.partition("?")
-        for part in query.split("&"):
-            if part.startswith("token="):
-                return part[len("token=") :]
+        if self.metrics_query_token_ok:
+            _, _, query = request.path.partition("?")
+            for part in query.split("&"):
+                if part.startswith("token="):
+                    return part[len("token=") :]
         return ""
 
     def _metrics_authorised(self, request: Request) -> bool:
