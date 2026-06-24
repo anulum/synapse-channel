@@ -115,16 +115,24 @@ def _count_message_types(protocol_path: Path) -> int:
     return 0
 
 
-def _count_cli_subcommands(cli_path: Path) -> int:
-    """Count ``add_parser`` calls (one per CLI subcommand)."""
-    tree = ast.parse(cli_path.read_text(encoding="utf-8"))
-    return sum(
-        1
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "add_parser"
-    )
+def _count_cli_subcommands(package_root: Path) -> int:
+    """Count ``add_parser`` calls (one per CLI subcommand) across the CLI modules.
+
+    The subcommands are registered across the ``cli`` entry point and the focused
+    ``cli_<group>`` modules it delegates to, so every ``cli*.py`` module in the
+    package is scanned rather than the entry point alone.
+    """
+    total = 0
+    for path in sorted(package_root.glob("cli*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        total += sum(
+            1
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "add_parser"
+        )
+    return total
 
 
 def _count_tests(tests_root: Path) -> int:
@@ -169,7 +177,7 @@ def collect_metrics(root: Path, config: dict[str, Any]) -> dict[str, Any]:
         "package_modules": _count_modules(root / paths["package_root"]),
         "classes": _count_classes(root / paths["package_root"]),
         "wire_message_types": _count_message_types(root / paths["protocol_module"]),
-        "cli_subcommands": _count_cli_subcommands(root / paths["cli_module"]),
+        "cli_subcommands": _count_cli_subcommands(root / paths["package_root"]),
         "tests": _count_tests(root / paths["tests_root"]),
         "benchmark_harnesses": _count_benchmarks(root / paths["benchmarks_root"]),
         "documentation_pages": _count_docs(root / paths["docs_root"]),

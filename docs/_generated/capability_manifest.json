@@ -2,10 +2,10 @@
   "metrics": {
     "benchmark_harnesses": 3,
     "classes": 47,
-    "cli_subcommands": 4,
+    "cli_subcommands": 26,
     "documentation_pages": 14,
     "optional_dependency_groups": 4,
-    "package_modules": 44,
+    "package_modules": 45,
     "public_api_exports": 59,
     "tests": 978,
     "version": "0.41.0",
