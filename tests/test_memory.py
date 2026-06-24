@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.journal import EventKind, record_recall, replay
+from synapse_channel.core.journal import EventKind, record_finding, record_recall, replay
 from synapse_channel.core.persistence import EventStore
 
 
@@ -39,6 +39,26 @@ def _msg(**fields: Any) -> str:
 
 def _hub(journal: EventStore | None = None) -> SynapseHub:
     return SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=journal)
+
+
+def _finding_msg(**overrides: Any) -> str:
+    base: dict[str, Any] = {
+        "sender": "AUTHOR",
+        "type": "finding",
+        "statement": "studio bundle validates byte-parity across federation",
+        "subkind": "codebase-fact",
+        "evidence_kind": "measured",
+        "claim_status": "reference-validated",
+        "evidence_ref": "tests/test_federation.py:42",
+        "provenance": {"project": "SCPN-STUDIO", "session": "s9"},
+        "validity": {"valid_from": 1.0},
+    }
+    base.update(overrides)
+    return json.dumps(base)
+
+
+def _findings(store: EventStore) -> list[dict[str, Any]]:
+    return [e.payload for e in store.read_all() if e.kind == EventKind.FINDING]
 
 
 async def test_recall_log_journals_with_hub_attested_origin(tmp_path: Path) -> None:
@@ -140,5 +160,138 @@ def test_replay_ignores_recall_telemetry(tmp_path: Path) -> None:
     result = replay(store)
     store.close()
     # Recall is memory telemetry, not coordination state — it must not reconstruct any.
+    assert result.state.claims == {}
+    assert result.chat_history == []
+
+
+# --- findings (the durable memory spine) -------------------------------------
+
+
+async def test_finding_journals_durably_with_hub_attested_origin(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    hub = _hub(journal=store)
+    ws = _WS()
+    await hub.register(ws)
+    await hub.handle_message(_finding_msg(), ws)
+    records = _findings(store)
+    store.close()
+    assert len(records) == 1
+    rec = records[0]
+    assert rec["statement"] == "studio bundle validates byte-parity across federation"
+    assert rec["claim_status"] == "reference-validated"  # admitted unchanged
+    # Origin is hub-attested, not taken from the client.
+    assert rec["provenance"]["actor"] == "AUTHOR"
+    assert isinstance(rec["provenance"]["ts"], float)
+    assert rec["verified_at_source"]["by"] == "AUTHOR"
+    assert isinstance(rec["verified_at_source"]["at"], float)
+    # The producer's project survives; an unset validity start is anchored.
+    assert rec["provenance"]["project"] == "SCPN-STUDIO"
+    # The verdict is broadcast for fleet visibility.
+    recorded = next(
+        json.loads(r) for r in ws.sent if json.loads(r).get("type") == "finding_recorded"
+    )
+    assert recorded["verdict"] == "accept"
+    assert recorded["claim_status"] == "reference-validated"
+
+
+async def test_finding_origin_cannot_be_forged(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    hub = _hub(journal=store)
+    ws = _WS()
+    await hub.register(ws)
+    # The sender tries to self-report a different actor and re-check origin.
+    await hub.handle_message(
+        _finding_msg(
+            provenance={"project": "SCPN-STUDIO", "actor": "CEO"},
+            verified_at_source={
+                "checked_this_session": True,
+                "source_ref": "r",
+                "by": "CEO",
+                "at": 1.0,
+            },
+        ),
+        ws,
+    )
+    rec = _findings(store)[0]
+    store.close()
+    assert rec["provenance"]["actor"] == "AUTHOR"  # overwritten by the hub
+    assert rec["verified_at_source"]["by"] == "AUTHOR"
+    assert rec["verified_at_source"]["at"] != 1.0
+
+
+async def test_finding_with_unsupported_claim_is_floored(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    hub = _hub(journal=store)
+    ws = _WS()
+    await hub.register(ws)
+    # reference-validated with no evidence_ref -> floored to bounded-support (INV-1).
+    await hub.handle_message(_finding_msg(evidence_ref=None), ws)
+    rec = _findings(store)[0]
+    store.close()
+    assert rec["claim_status"] == "bounded-support"
+    recorded = next(
+        json.loads(r) for r in ws.sent if json.loads(r).get("type") == "finding_recorded"
+    )
+    assert recorded["verdict"] == "floor"
+    assert "INV-1" in recorded["payload"]
+
+
+async def test_finding_rejected_is_private_and_not_journalled(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    hub = _hub(journal=store)
+    ws_a = _WS()
+    ws_b = _WS()
+    await hub.register(ws_a)
+    await hub.register(ws_b)
+    await hub.handle_message(_finding_msg(provenance="nope"), ws_a)
+    records = _findings(store)
+    store.close()
+    # Nothing enters the spine.
+    assert records == []
+    # The sender is privately denied with the reasons.
+    denied = next(
+        json.loads(r) for r in ws_a.sent if json.loads(r).get("type") == "finding_rejected"
+    )
+    assert denied["target"] == "AUTHOR"
+    assert any("provenance" in reason for reason in denied["reasons"])
+    # The rest of the fleet never sees the rejected atom.
+    assert all(json.loads(r).get("type") != "finding_rejected" for r in ws_b.sent)
+    assert all(json.loads(r).get("type") != "finding_recorded" for r in ws_b.sent)
+
+
+async def test_finding_recorded_is_broadcast_to_the_fleet(tmp_path: Path) -> None:
+    # Unlike recall telemetry, an admitted finding is fanned out so the fleet sees it.
+    hub = _hub(journal=EventStore(tmp_path / "events.db"))
+    ws_a = _WS()
+    ws_b = _WS()
+    await hub.register(ws_a)
+    await hub.register(ws_b)
+    await hub.handle_message(_finding_msg(sender="AUTHOR"), ws_b)
+    assert any(json.loads(r).get("type") == "finding_recorded" for r in ws_a.sent)
+
+
+async def test_finding_without_journal_still_broadcasts() -> None:
+    hub = _hub(journal=None)
+    ws = _WS()
+    await hub.register(ws)
+    await hub.handle_message(_finding_msg(), ws)
+    assert any(json.loads(r).get("type") == "finding_recorded" for r in ws.sent)
+
+
+def test_record_finding_writes_finding_kind_durably(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    record_finding(store, {"statement": "x", "claim_status": "bounded-support"})
+    events = store.read_all()
+    store.close()
+    assert events[-1].kind == EventKind.FINDING
+    assert events[-1].payload["statement"] == "x"
+
+
+def test_replay_ignores_findings(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    record_finding(store, {"statement": "x", "claim_status": "bounded-support"})
+    result = replay(store)
+    store.close()
+    # A finding is the durable memory spine, not coordination state.
     assert result.state.claims == {}
     assert result.chat_history == []

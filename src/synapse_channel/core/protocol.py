@@ -56,6 +56,7 @@ class MessageType:
     ADVERTISE = "advertise"
     MANIFEST_REQUEST = "manifest_request"
     RECALL_LOG = "recall_log"
+    FINDING = "finding"
 
     # Hub -> agent.
     SYSTEM = "system"
@@ -83,6 +84,8 @@ class MessageType:
     BOARD_SNAPSHOT = "board_snapshot"
     CAPABILITY_ADVERTISED = "capability_advertised"
     RECALL_LOGGED = "recall_logged"
+    FINDING_RECORDED = "finding_recorded"
+    FINDING_REJECTED = "finding_rejected"
     MANIFEST_SNAPSHOT = "manifest_snapshot"
     ERROR = "error"
     NAME_CONFLICT = "name_conflict"

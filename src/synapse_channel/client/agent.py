@@ -278,6 +278,122 @@ class SynapseAgent:
             abstained=abstained,
         )
 
+    async def record_finding(
+        self,
+        statement: str,
+        *,
+        subkind: str,
+        evidence_kind: str | None = None,
+        claim_status: str | None = None,
+        verification: str | None = None,
+        evidence_ref: str | None = None,
+        project: str = "",
+        session: str = "",
+        source_event_seq: int | None = None,
+        valid_from: float | None = None,
+        valid_to: float | None = None,
+        lifecycle: str | None = None,
+        supersedes: str | None = None,
+        checked_this_session: bool = False,
+        source_ref: str = "",
+        producer_confidence: float | None = None,
+        execution_substrate: str | None = None,
+        entities: tuple[str, ...] | list[str] = (),
+        tags: tuple[str, ...] | list[str] = (),
+    ) -> None:
+        """Record one finding to the durable memory spine.
+
+        Authors an assertion the agent wants remembered. The hub runs it through
+        the emit gate, stamps its origin (the producing identity and time, which
+        the client cannot forge), journals it, and broadcasts the verdict — so a
+        claim stronger than its evidence comes back floored rather than refused.
+        The provenance and validity envelopes are always sent so the gate sees
+        them present; the hub fills the identity, the receive-time, and an unset
+        ``valid_from``.
+
+        Parameters
+        ----------
+        statement : str
+            The assertion being remembered.
+        subkind : str
+            The episodic category — ``codebase-fact``, ``lesson``, ``decision``,
+            ``dead-end``, or ``outcome``.
+        evidence_kind : str or None, optional
+            What backs the claim (e.g. ``measured``, ``producer-asserted``);
+            required for a factual subkind.
+        claim_status : str or None, optional
+            The epistemic standing (e.g. ``reference-validated``,
+            ``bounded-support``); required for a scientific subkind.
+        verification : str or None, optional
+            Whether the reference was checked at source; derived from the freshness
+            signals when left unset.
+        evidence_ref : str or None, optional
+            A reference to the evidence (file:line, commit, command output).
+        project : str, optional
+            The project the finding belongs to; the hub falls back to the agent's
+            project when blank.
+        session : str, optional
+            The producer's session identifier.
+        source_event_seq : int or None, optional
+            The hub-log sequence of the carrying message, when known.
+        valid_from : float or None, optional
+            When the fact starts holding; the hub anchors it to receive-time when
+            left unset.
+        valid_to : float or None, optional
+            When the fact stops holding, or ``None`` for an open window.
+        lifecycle : str or None, optional
+            ``active`` (default), ``superseded``, or ``retracted``.
+        supersedes : str or None, optional
+            Identifier of the atom this one replaces.
+        checked_this_session : bool, optional
+            Whether the reference was re-verified at source this session.
+        source_ref : str, optional
+            The reference that was re-checked.
+        producer_confidence : float or None, optional
+            Advisory producer confidence; never gates recall.
+        execution_substrate : str or None, optional
+            Where the result was produced, when relevant.
+        entities : tuple[str, ...] or list[str], optional
+            Named entities the finding concerns.
+        tags : tuple[str, ...] or list[str], optional
+            Free-form tags for read-side hierarchy.
+        """
+        extra: dict[str, Any] = {
+            "statement": statement,
+            "subkind": subkind,
+            "provenance": {
+                "project": project,
+                "session": session,
+                "source_event_seq": source_event_seq,
+            },
+            "validity": {"valid_from": valid_from, "valid_to": valid_to},
+            "verified_at_source": {
+                "checked_this_session": checked_this_session,
+                "source_ref": source_ref,
+            },
+        }
+        if evidence_kind is not None:
+            extra["evidence_kind"] = evidence_kind
+        if claim_status is not None:
+            extra["claim_status"] = claim_status
+        if verification is not None:
+            extra["verification"] = verification
+        if evidence_ref is not None:
+            extra["evidence_ref"] = evidence_ref
+        if lifecycle is not None:
+            extra["lifecycle"] = lifecycle
+        if supersedes is not None:
+            extra["supersedes"] = supersedes
+        if producer_confidence is not None:
+            extra["producer_confidence"] = producer_confidence
+        if execution_substrate is not None:
+            extra["execution_substrate"] = execution_substrate
+        if entities:
+            extra["entities"] = list(entities)
+        if tags:
+            extra["tags"] = list(tags)
+        await self.send_message(MessageType.FINDING, target="System", **extra)
+
     async def claim(
         self,
         task_id: str,

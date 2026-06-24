@@ -318,6 +318,71 @@ async def test_log_recall_defaults_to_empty_outcome() -> None:
     assert msg["abstained"] is False
 
 
+async def test_record_finding_emits_envelope() -> None:
+    agent = SynapseAgent("SCPN-CONTROL/claude-1")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+
+    await agent.record_finding(
+        "K_nm correlates with directed coupling at r=0.951",
+        subkind="codebase-fact",
+        evidence_kind="measured",
+        claim_status="reference-validated",
+        evidence_ref="experiments/k_nm.py:88",
+        verification="verified-at-source",
+        project="SCPN-CONTROL",
+        session="s1",
+        source_event_seq=7,
+        valid_from=2.0,
+        valid_to=20.0,
+        lifecycle="active",
+        supersedes="prior-hash",
+        checked_this_session=True,
+        source_ref="r=0.951 run",
+        producer_confidence=0.9,
+        execution_substrate="ml350-gpu0",
+        entities=["K_nm"],
+        tags=["correlation"],
+    )
+    msg = json.loads(ws.sent[0])
+    assert msg["type"] == "finding"
+    assert msg["sender"] == "SCPN-CONTROL/claude-1"
+    assert msg["statement"] == "K_nm correlates with directed coupling at r=0.951"
+    assert msg["subkind"] == "codebase-fact"
+    assert msg["evidence_kind"] == "measured"
+    assert msg["claim_status"] == "reference-validated"
+    assert msg["evidence_ref"] == "experiments/k_nm.py:88"
+    assert msg["verification"] == "verified-at-source"
+    assert msg["provenance"] == {"project": "SCPN-CONTROL", "session": "s1", "source_event_seq": 7}
+    assert msg["validity"] == {"valid_from": 2.0, "valid_to": 20.0}
+    assert msg["verified_at_source"] == {"checked_this_session": True, "source_ref": "r=0.951 run"}
+    assert msg["lifecycle"] == "active"
+    assert msg["supersedes"] == "prior-hash"
+    assert msg["producer_confidence"] == 0.9
+    assert msg["execution_substrate"] == "ml350-gpu0"
+    assert msg["entities"] == ["K_nm"]
+    assert msg["tags"] == ["correlation"]
+
+
+async def test_record_finding_omits_unset_optionals_but_always_sends_envelopes() -> None:
+    agent = SynapseAgent("A")
+    ws = FakeWebSocket([])
+    agent.connection = ws  # type: ignore[assignment]
+
+    await agent.record_finding("we chose worktree isolation", subkind="decision")
+    msg = json.loads(ws.sent[0])
+    # Optional scalars are omitted when unset...
+    assert "evidence_kind" not in msg
+    assert "claim_status" not in msg
+    assert "verification" not in msg
+    assert "lifecycle" not in msg
+    assert "entities" not in msg
+    # ...but the structural envelopes the gate checks for are always present.
+    assert msg["provenance"] == {"project": "", "session": "", "source_event_seq": None}
+    assert msg["validity"] == {"valid_from": None, "valid_to": None}
+    assert msg["verified_at_source"] == {"checked_this_session": False, "source_ref": ""}
+
+
 # --- start -------------------------------------------------------------------
 
 

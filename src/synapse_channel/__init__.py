@@ -18,7 +18,7 @@ command (see :mod:`synapse_channel.cli`) drives all of it.
 
 from __future__ import annotations
 
-__version__ = "0.37.0"
+__version__ = "0.38.0"
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.client.chat_backends import (
@@ -34,6 +34,15 @@ from synapse_channel.client.supervisor import Intervention, SupervisorWorker, de
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityCard, CapabilityRegistry
 from synapse_channel.core.deadlock import would_create_cycle
+from synapse_channel.core.emit_gate import Decision, admit
+from synapse_channel.core.finding import (
+    ClaimStatus,
+    EvidenceKind,
+    Finding,
+    Lifecycle,
+    Subkind,
+    Verification,
+)
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.ledger import Blackboard, LedgerTask, ProgressNote
 from synapse_channel.core.lifecycle import TaskStatus, can_transition
@@ -59,14 +68,20 @@ __all__ = [
     "CapabilityCard",
     "CapabilityRegistry",
     "ChatBackend",
+    "ClaimStatus",
+    "Decision",
     "EventStore",
+    "EvidenceKind",
+    "Finding",
     "Intervention",
     "LedgerTask",
+    "Lifecycle",
     "MessageType",
     "OpenAIChatClient",
     "ProgressNote",
     "ResourceOffer",
     "RuleBasedClient",
+    "Subkind",
     "SupervisorWorker",
     "SynapseAgent",
     "SynapseHub",
@@ -77,8 +92,10 @@ __all__ = [
     "TaskStatus",
     "TieredChatClient",
     "TokenAuthenticator",
+    "Verification",
     "__version__",
     "addresses_project",
+    "admit",
     "build_envelope",
     "can_transition",
     "classify",
