@@ -11,7 +11,7 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
-## [Unreleased]
+## [0.37.0] - 2026-06-24
 
 ### Added
 - A recall query-stream primitive for an optional persistent-memory layer. A
