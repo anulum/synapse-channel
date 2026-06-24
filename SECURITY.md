@@ -50,6 +50,23 @@ When that boundary is crossed, the proportionate controls are:
   only for glob overlap — it never reads, opens, or resolves them on the
   filesystem. A claim on `../../etc/passwd` coordinates nothing and touches nothing
   on disk, so scope strings are not a path-traversal surface.
+- **Metrics endpoint.** The optional `synapse hub --metrics` endpoint is off by
+  default and, when enabled, carries operational metadata with no authentication.
+  Keep it on a loopback bind, or require a token with `--metrics-token`; the hub
+  warns when metrics are enabled on a non-loopback host without one.
+
+The core hub and its state stay on the operator's machine, but two boundaries are
+worth stating plainly:
+
+- **Model workers are a deliberate egress.** An on-channel model worker
+  (`synapse worker`) sends recent channel context — and an `Authorization` bearer
+  token — to the OpenAI-compatible endpoint the operator configures with
+  `--base-url`. The hub is local-first, but a worker is an intentional bridge to
+  whatever backend it is pointed at, so `--base-url` must be trusted. A rule-based
+  worker (`--provider rule`) never leaves the machine.
+- **Update check.** `synapse --version` makes one request a day to PyPI to check
+  for a newer release; it sends nothing beyond the request itself. Silence it with
+  `SYNAPSE_NO_UPDATE_CHECK=1`.
 
 ## Out of scope / known limitations
 
