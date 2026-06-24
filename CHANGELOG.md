@@ -11,7 +11,7 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
-## [Unreleased]
+## [0.42.0] - 2026-06-24
 
 ### Fixed
 - A directed-only waiter (`synapse wait --directed-only`) is no longer woken by a
