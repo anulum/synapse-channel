@@ -64,6 +64,14 @@ def test_parser_hub_caps() -> None:
     assert args.max_msg_kb == 32
 
 
+def test_parser_hub_per_agent_quotas() -> None:
+    args = cli.build_parser().parse_args(
+        ["hub", "--max-claims-per-agent", "10", "--max-offers-per-agent", "5"]
+    )
+    assert args.max_claims_per_agent == 10
+    assert args.max_offers_per_agent == 5
+
+
 # --- main dispatch through the process handlers ------------------------------
 
 
@@ -115,6 +123,8 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "relay_max_lines": 5000,
         "max_clients": 64,
         "max_msg_kb": 1024,
+        "max_claims_per_agent": 128,
+        "max_offers_per_agent": 64,
         "token": None,
         "metrics": False,
         "auth_timeout": 10.0,
@@ -177,6 +187,20 @@ def test_cmd_hub_wires_relay_log(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     assert cli_processes._cmd_hub(_hub_ns(relay_log=str(log), relay_max_lines=42)) == 0
     assert captured["relay_log"] == str(log)
     assert captured["relay_max_lines"] == 42
+
+
+def test_cmd_hub_threads_per_agent_quotas(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
+
+    def spy_hub(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
+    assert cli_processes._cmd_hub(_hub_ns(max_claims_per_agent=7, max_offers_per_agent=3)) == 0
+    assert captured["max_claims_per_agent"] == 7
+    assert captured["max_offers_per_agent"] == 3
 
 
 def test_cmd_hub_with_token_builds_authenticator(monkeypatch: pytest.MonkeyPatch) -> None:

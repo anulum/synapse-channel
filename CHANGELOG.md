@@ -18,6 +18,9 @@ All notable changes to this project are documented here.
   the chosen backend will send channel context off the local machine — the `openai`
   provider (which also forwards the API key read from `--api-key-env`) or any provider
   pointed at a non-loopback `--base-url`. Local backends start silently.
+- The hub's per-agent claim and offer quotas are now configurable with
+  `synapse hub --max-claims-per-agent N` and `--max-offers-per-agent N` (defaults 128
+  and 64), for test labs, large monorepos, and managed deployments.
 
 ### Security
 - The SQLite event log's write-ahead-log sidecars (`<db>-wal`, `<db>-shm`) are now

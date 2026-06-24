@@ -232,10 +232,24 @@ class SynapseState:
         Lease duration applied to a claim when the caller does not request an
         explicit TTL. Clamped up to :data:`MINIMUM_TTL_SECONDS`. Defaults to
         ``3600.0``.
+    max_claims_per_agent : int, optional
+        Most live claims one agent may hold. Clamped up to ``1``. Defaults to
+        :data:`MAX_CLAIMS_PER_AGENT`.
+    max_offers_per_agent : int, optional
+        Most live resource offers one agent may register. Clamped up to ``1``.
+        Defaults to :data:`MAX_OFFERS_PER_AGENT`.
     """
 
-    def __init__(self, default_ttl_seconds: float = 3600.0) -> None:
+    def __init__(
+        self,
+        default_ttl_seconds: float = 3600.0,
+        *,
+        max_claims_per_agent: int = MAX_CLAIMS_PER_AGENT,
+        max_offers_per_agent: int = MAX_OFFERS_PER_AGENT,
+    ) -> None:
         self.default_ttl_seconds = max(float(default_ttl_seconds), MINIMUM_TTL_SECONDS)
+        self.max_claims_per_agent = max(1, int(max_claims_per_agent))
+        self.max_offers_per_agent = max(1, int(max_offers_per_agent))
         self.last_seen: dict[str, float] = {}
         self.claims: dict[str, TaskClaim] = {}
         self.resources: dict[str, ResourceOffer] = {}
@@ -375,8 +389,8 @@ class SynapseState:
         # state. Renewing or taking over a claim the agent already owns is free; only
         # a claim on a task the agent does not yet hold counts toward the cap.
         owns_task = existing is not None and existing.owner == agent
-        if not owns_task and self._claims_owned_by(agent) >= MAX_CLAIMS_PER_AGENT:
-            return False, f"Agent {agent} holds the maximum {MAX_CLAIMS_PER_AGENT} claims."
+        if not owns_task and self._claims_owned_by(agent) >= self.max_claims_per_agent:
+            return False, f"Agent {agent} holds the maximum {self.max_claims_per_agent} claims."
 
         # Carry the checkpoint forward: the same owner renewing keeps its own; a
         # new owner taking over an expired task resumes the retained checkpoint.
@@ -733,7 +747,7 @@ class SynapseState:
         ts = time.time() if now is None else float(now)
         self.heartbeat(agent, ts)
         key = f"{agent}:{kind}:{name}"
-        if key not in self.resources and self._offers_by(agent) >= MAX_OFFERS_PER_AGENT:
+        if key not in self.resources and self._offers_by(agent) >= self.max_offers_per_agent:
             return None
         self.resources[key] = ResourceOffer(
             agent=agent,

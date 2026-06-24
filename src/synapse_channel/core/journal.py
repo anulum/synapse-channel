@@ -35,7 +35,14 @@ from synapse_channel.core.ledger import (
     ProgressNote,
 )
 from synapse_channel.core.persistence import EventStore
-from synapse_channel.core.state import GitContext, ResourceOffer, SynapseState, TaskClaim
+from synapse_channel.core.state import (
+    MAX_CLAIMS_PER_AGENT,
+    MAX_OFFERS_PER_AGENT,
+    GitContext,
+    ResourceOffer,
+    SynapseState,
+    TaskClaim,
+)
 
 
 class EventKind:
@@ -287,6 +294,8 @@ def replay(
     *,
     default_ttl_seconds: float = 3600.0,
     max_progress: int = DEFAULT_MAX_PROGRESS,
+    max_claims_per_agent: int = MAX_CLAIMS_PER_AGENT,
+    max_offers_per_agent: int = MAX_OFFERS_PER_AGENT,
     now: float | None = None,
 ) -> ReplayResult:
     """Rebuild coordination state by replaying the whole event log.
@@ -299,6 +308,10 @@ def replay(
         TTL seeded into the reconstructed :class:`SynapseState`.
     max_progress : int, optional
         Progress-note bound seeded into the reconstructed :class:`Blackboard`.
+    max_claims_per_agent : int, optional
+        Per-agent claim quota seeded into the reconstructed :class:`SynapseState`.
+    max_offers_per_agent : int, optional
+        Per-agent offer quota seeded into the reconstructed :class:`SynapseState`.
     now : float or None, optional
         Wall-clock time used to expire stale leases/offers after replay; the
         system clock is used when ``None``.
@@ -310,7 +323,11 @@ def replay(
         shared blackboard. Unknown event kinds are skipped so the log can evolve
         forwards.
     """
-    state = SynapseState(default_ttl_seconds=default_ttl_seconds)
+    state = SynapseState(
+        default_ttl_seconds=default_ttl_seconds,
+        max_claims_per_agent=max_claims_per_agent,
+        max_offers_per_agent=max_offers_per_agent,
+    )
     chat_history: list[dict[str, Any]] = []
     blackboard = Blackboard(max_progress=max_progress)
     idempotency: OrderedDict[str, dict[str, Any]] = OrderedDict()

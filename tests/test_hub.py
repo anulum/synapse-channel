@@ -436,6 +436,20 @@ def test_default_hub_id_is_generated() -> None:
     assert len(hub.hub_id) == 12  # "syn-" + 8 hex chars
 
 
+def test_hub_threads_per_agent_quotas_to_state() -> None:
+    hub = SynapseHub(max_claims_per_agent=5, max_offers_per_agent=9)
+    assert hub.state.max_claims_per_agent == 5
+    assert hub.state.max_offers_per_agent == 9
+
+
+def test_hub_with_journal_threads_per_agent_quotas_to_state(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    hub = SynapseHub(journal=store, max_claims_per_agent=4, max_offers_per_agent=6)
+    store.close()
+    assert hub.state.max_claims_per_agent == 4
+    assert hub.state.max_offers_per_agent == 6
+
+
 @pytest.mark.parametrize("seq", [1, 2, 3])
 def test_message_seq_is_monotonic(seq: int) -> None:
     hub = _hub()

@@ -72,6 +72,14 @@ def test_replay_reconstructs_claim_scope_and_epoch(tmp_path: Path) -> None:
     assert result.state.last_seen["A"] == 1000.0
 
 
+def test_replay_seeds_custom_per_agent_quotas(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    result = replay(store, max_claims_per_agent=7, max_offers_per_agent=3)
+    store.close()
+    assert result.state.max_claims_per_agent == 7
+    assert result.state.max_offers_per_agent == 3
+
+
 def test_replay_reconstructs_git_context(tmp_path: Path) -> None:
     store = _store(tmp_path)
     ctx = GitContext(branch="feature/x", base="develop", auto_release_on="commit")

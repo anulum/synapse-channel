@@ -617,6 +617,38 @@ def test_offer_cap_refuses_new_offers_past_the_bound() -> None:
     assert state.offer_resource("B", kind="llm", name="m0", now=0.0) is not None
 
 
+def test_claim_cap_honours_a_custom_limit() -> None:
+    state = SynapseState(default_ttl_seconds=10_000.0, max_claims_per_agent=2)
+    assert state.claim("A", "T0", now=0.0, worktree="wt0")[0] is True
+    assert state.claim("A", "T1", now=0.0, worktree="wt1")[0] is True
+    refused, message = state.claim("A", "T2", now=0.0, worktree="wt2")
+    assert refused is False
+    assert "maximum 2 claims" in message
+
+
+def test_offer_cap_honours_a_custom_limit() -> None:
+    state = SynapseState(max_offers_per_agent=2)
+    assert state.offer_resource("A", kind="llm", name="m0", now=0.0) is not None
+    assert state.offer_resource("A", kind="llm", name="m1", now=0.0) is not None
+    assert state.offer_resource("A", kind="llm", name="m2", now=0.0) is None
+
+
+def test_quota_limits_clamp_up_to_one() -> None:
+    state = SynapseState(max_claims_per_agent=0, max_offers_per_agent=-5)
+    assert state.max_claims_per_agent == 1
+    assert state.max_offers_per_agent == 1
+    assert state.claim("A", "T0", now=0.0, worktree="wt0")[0] is True
+    assert state.claim("A", "T1", now=0.0, worktree="wt1")[0] is False
+    assert state.offer_resource("A", kind="llm", name="m0", now=0.0) is not None
+    assert state.offer_resource("A", kind="llm", name="m1", now=0.0) is None
+
+
+def test_quota_limits_default_to_module_constants() -> None:
+    state = SynapseState()
+    assert state.max_claims_per_agent == MAX_CLAIMS_PER_AGENT
+    assert state.max_offers_per_agent == MAX_OFFERS_PER_AGENT
+
+
 # --- lease-expiry heap -------------------------------------------------------
 
 
