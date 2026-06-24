@@ -24,6 +24,7 @@ high-volume chat and the soft resource offers use ordinary commits.
 from __future__ import annotations
 
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any
 
@@ -51,6 +52,7 @@ class EventKind:
     LEDGER_PROGRESS = "ledger_progress"
     RECALL = "recall"
     FINDING = "finding"
+    IDEMPOTENCY = "idempotency"
 
 
 MEMORY_KINDS = frozenset(
@@ -86,12 +88,17 @@ class ReplayResult:
         collision.
     blackboard : Blackboard
         Shared plan and progress stream rebuilt from the log.
+    idempotency : list[tuple[str, dict[str, Any]]]
+        Reconstructed idempotency entries, oldest first and deduplicated to the
+        latest response per key, ready to seed the hub's bounded cache so the
+        at-most-once guarantee survives a restart.
     """
 
     state: SynapseState
     chat_history: list[dict[str, Any]]
     message_seq: int
     blackboard: Blackboard
+    idempotency: list[tuple[str, dict[str, Any]]]
 
 
 def record_claim(store: EventStore, claim: TaskClaim) -> None:
@@ -206,6 +213,29 @@ def record_finding(store: EventStore, record: dict[str, Any]) -> None:
     store.append(EventKind.FINDING, record, durable=True)
 
 
+def record_idempotency(store: EventStore, key: str, response: dict[str, Any]) -> None:
+    """Append a durable record of an idempotency key and the response it replays.
+
+    The idempotency cache makes a retried mutation a no-op by replaying the
+    original response; held only in memory it is lost on a hub restart, so a
+    reconnecting agent's retry would re-apply the mutation. Journalling the
+    ``key``/``response`` pair lets :func:`replay` rebuild the cache, so the
+    at-most-once guarantee survives a restart. It is committed at ``FULL``
+    durability to match the lease mutations it protects: a guard weaker than the
+    mutation would let a retry re-apply after an OS crash.
+
+    Parameters
+    ----------
+    store : EventStore
+        The event log to append to.
+    key : str
+        The client-supplied idempotency key.
+    response : dict[str, Any]
+        The response message to replay for a future duplicate of ``key``.
+    """
+    store.append(EventKind.IDEMPOTENCY, {"key": key, "response": response}, durable=True)
+
+
 def _ledger_task_from_payload(payload: dict[str, Any]) -> LedgerTask:
     """Rebuild a :class:`LedgerTask` from a persisted snapshot."""
     return LedgerTask(
@@ -283,6 +313,7 @@ def replay(
     state = SynapseState(default_ttl_seconds=default_ttl_seconds)
     chat_history: list[dict[str, Any]] = []
     blackboard = Blackboard(max_progress=max_progress)
+    idempotency: OrderedDict[str, dict[str, Any]] = OrderedDict()
     message_seq = 0
     epoch_seq = 0
 
@@ -322,6 +353,11 @@ def replay(
         elif event.kind == EventKind.CHAT:
             chat_history.append(payload)
             message_seq = max(message_seq, int(payload.get("msg_id", 0)))
+        elif event.kind == EventKind.IDEMPOTENCY:
+            key = str(payload.get("key", ""))
+            if key:
+                idempotency[key] = dict(payload.get("response", {}))
+                idempotency.move_to_end(key)  # latest response, most-recently-used
         # EventKind.RECALL and EventKind.FINDING are the memory layer's telemetry
         # and durable spine, not coordination state — they are journalled for the
         # read-side ingest seam and deliberately skipped here, so a restart never
@@ -339,4 +375,5 @@ def replay(
         chat_history=chat_history,
         message_seq=message_seq,
         blackboard=blackboard,
+        idempotency=list(idempotency.items()),
     )

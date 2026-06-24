@@ -17,6 +17,7 @@ from synapse_channel.core.journal import (
     record_checkpoint,
     record_claim,
     record_handoff,
+    record_idempotency,
     record_release,
     record_resource,
     record_task_update,
@@ -196,6 +197,37 @@ def test_memory_kinds_are_the_read_side_ingest_set() -> None:
     }
     assert EventKind.CLAIM not in MEMORY_KINDS
     assert EventKind.CHAT not in MEMORY_KINDS
+
+
+def test_record_idempotency_writes_idempotency_kind(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    record_idempotency(store, "k1", {"type": "claim_granted", "task_id": "T1"})
+    events = store.read_all()
+    store.close()
+    assert events[0].kind == EventKind.IDEMPOTENCY
+    assert events[0].payload == {
+        "key": "k1",
+        "response": {"type": "claim_granted", "task_id": "T1"},
+    }
+
+
+def test_replay_reconstructs_idempotency_latest_per_key(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    record_idempotency(store, "k1", {"v": 1})
+    record_idempotency(store, "k1", {"v": 2})  # re-remembered: latest wins, moves to end
+    record_idempotency(store, "k2", {"v": 3})
+    result = replay(store, now=2000.0)
+    store.close()
+    assert result.idempotency == [("k1", {"v": 2}), ("k2", {"v": 3})]
+
+
+def test_replay_idempotency_skips_a_blank_key(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    record_idempotency(store, "", {"v": 1})  # a keyless mutation leaves no guard
+    record_idempotency(store, "k1", {"v": 2})
+    result = replay(store, now=2000.0)
+    store.close()
+    assert result.idempotency == [("k1", {"v": 2})]
 
 
 def test_replay_empty_log_yields_empty_state(tmp_path: Path) -> None:
