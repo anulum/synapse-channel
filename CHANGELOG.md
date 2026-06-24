@@ -32,6 +32,15 @@ All notable changes to this project are documented here.
   connection is reaped instead of consuming the `--max-clients` budget. An open
   (tokenless) hub is unchanged — it welcomes on connect as before.
 
+### Changed
+- File-scope path normalisation is now segment-based, so overlap detection is
+  more accurate. `..` segments resolve against the path (`src/../tests` now
+  overlaps `tests`), duplicate slashes collapse (`tests//app.py` == `tests/app.py`),
+  and a leading `..` that escapes the tree root is kept literally so an out-of-tree
+  path never falsely overlaps an in-tree claim. A claim that declares more than 512
+  distinct paths is widened to the whole worktree rather than paying an unbounded
+  pairwise-overlap cost — conservative, so a conflict is never missed.
+
 ### Fixed
 - Corrected two stale "Known limitations" entries in the README that 0.40.0 had
   made false: per-mutation cost is no longer linear in the active claim count (the
