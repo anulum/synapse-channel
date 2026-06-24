@@ -72,9 +72,7 @@ class EventStore:
         self._conn = sqlite3.connect(self.path)
         # The event log holds chat, findings, and recall telemetry in plaintext, so
         # restrict it to the owner (0o600) where the platform supports it.
-        if self.path != ":memory:":
-            with contextlib.suppress(OSError):
-                os.chmod(self.path, 0o600)
+        self._restrict(self.path)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
@@ -86,6 +84,26 @@ class EventStore:
             "payload TEXT NOT NULL)"
         )
         self._conn.commit()
+        # WAL mode creates ``-wal`` and ``-shm`` sidecars on the first write (the
+        # ``CREATE TABLE`` commit above). They mirror the same plaintext as the main
+        # file but are born under the process umask, so lock them down once they exist.
+        self._restrict(f"{self.path}-wal")
+        self._restrict(f"{self.path}-shm")
+
+    def _restrict(self, path: str) -> None:
+        """Restrict ``path`` to owner-only access (``0o600``).
+
+        Parameters
+        ----------
+        path : str
+            Filesystem path to chmod. The ``:memory:`` database has no on-disk
+            file, and a sidecar may not exist yet; both cases are skipped silently,
+            as is any platform that does not support ``chmod``.
+        """
+        if path.startswith(":memory:"):
+            return
+        with contextlib.suppress(OSError):
+            os.chmod(path, 0o600)
 
     def append(
         self,
