@@ -20,7 +20,6 @@ from synapse_channel import cli
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.client.llm_worker import DEFAULT_OLLAMA_BASE_URL
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.git.gitclaim import GitError
 
 
 class FakeAgent:
@@ -491,33 +490,6 @@ def test_cmd_hub_wires_relay_log(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     assert cli._cmd_hub(_hub_ns(relay_log=str(log), relay_max_lines=42)) == 0
     assert captured["relay_log"] == str(log)
     assert captured["relay_max_lines"] == 42
-
-
-# --- git-release UX ----------------------------------------------------------
-
-
-def test_parser_git_release_trigger_is_optional() -> None:
-    args = cli.build_parser().parse_args(["git-release"])
-    assert args.task_id is None
-    assert args.trigger is None
-    assert args.func is cli._cmd_git_release
-
-
-def test_cmd_git_release_positional_redirects_to_release(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    ns = argparse.Namespace(
-        task_id="studio-panel", trigger=None, uri="ws://h", name="ME", token=None
-    )
-    assert cli._cmd_git_release(ns) == 2
-    err = capsys.readouterr().err
-    assert "synapse release studio-panel --name ME" in err  # the verb they actually wanted
-
-
-def test_cmd_git_release_missing_trigger_explains(capsys: pytest.CaptureFixture[str]) -> None:
-    ns = argparse.Namespace(task_id=None, trigger=None, uri="ws://h", name="ME", token=None)
-    assert cli._cmd_git_release(ns) == 2
-    assert "--trigger" in capsys.readouterr().err
 
 
 # --- board -------------------------------------------------------------------
@@ -1241,34 +1213,6 @@ async def test_state_shows_git_branch(capsys: pytest.CaptureFixture[str]) -> Non
     assert "git=feature/x->main" in capsys.readouterr().out
 
 
-def test_parser_git_claim() -> None:
-    args = cli.build_parser().parse_args(
-        ["git-claim", "T1", "--paths", "src", "--base", "develop", "--auto-release-on", "commit"]
-    )
-    assert args.func is cli._cmd_git_claim
-    assert args.task_id == "T1"
-    assert args.paths == ["src"]
-    assert args.base == "develop"
-    assert args.auto_release_on == "commit"
-
-
-def test_cmd_git_claim_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake(**kwargs: Any) -> int:
-        return 0
-
-    monkeypatch.setattr(cli, "run_git_claim", fake)
-    ns = argparse.Namespace(
-        uri="ws://h",
-        name="U",
-        task_id="T1",
-        paths=["src"],
-        base="main",
-        auto_release_on="merge",
-        token=None,
-    )
-    assert cli._cmd_git_claim(ns) == 0
-
-
 def test_parser_relay_project() -> None:
     args = cli.build_parser().parse_args(["relay", "feed.ndjson", "--project", "quantum"])
     assert args.project == "quantum"
@@ -1540,69 +1484,3 @@ def test_cmd_health_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(cli, "_health", fake)
     assert cli._cmd_health(argparse.Namespace(uri="ws://h", name="H", token=None)) == 0
-
-
-def test_parser_git_hook() -> None:
-    args = cli.build_parser().parse_args(["git-hook", "install", "--name", "ME"])
-    assert args.func is cli._cmd_git_hook
-    assert args.action == "install"
-    assert args.name == "ME"
-
-
-def test_cmd_git_hook_dispatches(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setattr(cli, "install_hooks", lambda **kwargs: ["installed post-commit"])
-    ns = argparse.Namespace(
-        action="install", uri="ws://h", name="ME", token=None, token_file=None, synapse_bin=None
-    )
-    assert cli._cmd_git_hook(ns) == 0
-    assert "installed post-commit" in capsys.readouterr().out
-
-
-def test_cmd_git_hook_reports_git_error(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    def boom(**kwargs: Any) -> list[str]:
-        raise GitError("not a git repository")
-
-    monkeypatch.setattr(cli, "install_hooks", boom)
-    ns = argparse.Namespace(
-        action="install", uri="ws://h", name="ME", token=None, token_file=None, synapse_bin=None
-    )
-    assert cli._cmd_git_hook(ns) == 1
-    assert "not a git repository" in capsys.readouterr().err
-
-
-def test_parser_git_release() -> None:
-    args = cli.build_parser().parse_args(["git-release", "--trigger", "merge"])
-    assert args.func is cli._cmd_git_release
-    assert args.trigger == "merge"
-
-
-def test_cmd_git_release_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake(**kwargs: Any) -> int:
-        return 0
-
-    monkeypatch.setattr(cli, "run_git_release", fake)
-    ns = argparse.Namespace(task_id=None, uri="ws://h", name="ME", trigger="commit", token=None)
-    assert cli._cmd_git_release(ns) == 0
-
-
-def test_parser_conflicts() -> None:
-    args = cli.build_parser().parse_args(["conflicts", "--check-diff"])
-    assert args.func is cli._cmd_conflicts
-    assert args.check_diff is True
-
-
-def test_cmd_conflicts_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, Any] = {}
-
-    async def fake(**kwargs: Any) -> int:
-        captured.update(kwargs)
-        return 0
-
-    monkeypatch.setattr(cli, "run_conflicts", fake)
-    ns = argparse.Namespace(uri="ws://h", name="ME", token=None, check_diff=True)
-    assert cli._cmd_conflicts(ns) == 0
-    assert captured["check_diff"] is True
