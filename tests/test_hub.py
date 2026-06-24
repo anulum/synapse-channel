@@ -1671,11 +1671,31 @@ def test_metrics_token_admits_a_bearer_header() -> None:
     assert b"synapse_up 1" in response.body
 
 
-def test_metrics_token_admits_a_query_string_token() -> None:
+def test_metrics_token_rejects_a_query_string_token_by_default() -> None:
+    # A query token can leak into logs/history, so it is ignored unless opted in.
     hub = SynapseHub(enable_metrics=True, metrics_token="m3tr1c")
     response = hub._process_request(None, _request("/metrics?token=m3tr1c"))
     assert response is not None
+    assert response.status_code == 401
+
+
+def test_metrics_token_admits_a_query_string_token_when_opted_in() -> None:
+    hub = SynapseHub(enable_metrics=True, metrics_token="m3tr1c", metrics_query_token_ok=True)
+    response = hub._process_request(None, _request("/metrics?token=m3tr1c"))
+    assert response is not None
     assert response.status_code == 200
+    # A non-token query parameter is skipped before the token is found.
+    multi = hub._process_request(None, _request("/metrics?foo=bar&token=m3tr1c"))
+    assert multi is not None
+    assert multi.status_code == 200
+    # An opted-in query that carries no token at all is still rejected.
+    missing = hub._process_request(None, _request("/metrics?foo=bar"))
+    assert missing is not None
+    assert missing.status_code == 401
+    # The Bearer header still works alongside the opt-in query form.
+    bearer = hub._process_request(None, _request("/metrics", authorization="Bearer m3tr1c"))
+    assert bearer is not None
+    assert bearer.status_code == 200
 
 
 def test_metrics_token_rejects_a_wrong_token() -> None:

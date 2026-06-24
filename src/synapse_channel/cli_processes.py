@@ -78,6 +78,7 @@ def _cmd_hub(args: argparse.Namespace) -> int:
         enable_metrics=args.metrics,
         auth_timeout=args.auth_timeout,
         metrics_token=args.metrics_token,
+        metrics_query_token_ok=args.metrics_query_token_ok,
     )
     try:
         _run(hub.serve(host=args.host, port=args.port))
@@ -262,8 +263,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     hub.add_argument(
         "--metrics-token",
         default=None,
-        help="Require this token (Authorization: Bearer, or ?token=) for /metrics and "
-        "/health, so an exposed endpoint does not leak metadata (off by default).",
+        help="Require this token (Authorization: Bearer) for /metrics and /health, so "
+        "an exposed endpoint does not leak metadata (off by default).",
+    )
+    hub.add_argument(
+        "--metrics-query-token-ok",
+        action="store_true",
+        help="Also accept the metrics token as a ?token= query parameter (off by "
+        "default; a query token can leak into logs, history, and proxy records).",
     )
     hub.set_defaults(func=_cmd_hub)
 

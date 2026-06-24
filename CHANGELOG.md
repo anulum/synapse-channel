@@ -28,6 +28,10 @@ All notable changes to this project are documented here.
   creates them on the first write under the process umask, so they previously held the
   same plaintext chat and findings as the locked-down main file while remaining
   group/other readable.
+- A token-protected `GET /metrics` / `/health` no longer accepts the token as a
+  `?token=` query parameter by default — only an `Authorization: Bearer` header —
+  because a query token can leak into access logs, shell history, and proxy records.
+  The query form is available opt-in with `synapse hub --metrics-query-token-ok`.
 
 ### Changed
 - `VALIDATION.md` no longer hard-codes a module count or raw statement/branch totals

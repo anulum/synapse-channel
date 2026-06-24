@@ -72,6 +72,12 @@ def test_parser_hub_per_agent_quotas() -> None:
     assert args.max_offers_per_agent == 5
 
 
+def test_parser_hub_metrics_query_token_ok() -> None:
+    assert cli.build_parser().parse_args(["hub"]).metrics_query_token_ok is False
+    opted = cli.build_parser().parse_args(["hub", "--metrics-query-token-ok"])
+    assert opted.metrics_query_token_ok is True
+
+
 # --- main dispatch through the process handlers ------------------------------
 
 
@@ -129,6 +135,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "metrics": False,
         "auth_timeout": 10.0,
         "metrics_token": None,
+        "metrics_query_token_ok": False,
     }
     base.update(overrides)
     return argparse.Namespace(**base)
@@ -201,6 +208,19 @@ def test_cmd_hub_threads_per_agent_quotas(monkeypatch: pytest.MonkeyPatch) -> No
     assert cli_processes._cmd_hub(_hub_ns(max_claims_per_agent=7, max_offers_per_agent=3)) == 0
     assert captured["max_claims_per_agent"] == 7
     assert captured["max_offers_per_agent"] == 3
+
+
+def test_cmd_hub_threads_metrics_query_token_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
+
+    def spy_hub(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
+    assert cli_processes._cmd_hub(_hub_ns(metrics_query_token_ok=True)) == 0
+    assert captured["metrics_query_token_ok"] is True
 
 
 def test_cmd_hub_with_token_builds_authenticator(monkeypatch: pytest.MonkeyPatch) -> None:
