@@ -35,6 +35,7 @@ from synapse_channel.core.ledger import (
     ProgressNote,
 )
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 from synapse_channel.core.state import (
     MAX_CLAIMS_PER_AGENT,
     MAX_OFFERS_PER_AGENT,
@@ -296,6 +297,7 @@ def replay(
     max_progress: int = DEFAULT_MAX_PROGRESS,
     max_claims_per_agent: int = MAX_CLAIMS_PER_AGENT,
     max_offers_per_agent: int = MAX_OFFERS_PER_AGENT,
+    max_paths_per_claim: int = MAX_DECLARED_PATHS,
     now: float | None = None,
 ) -> ReplayResult:
     """Rebuild coordination state by replaying the whole event log.
@@ -312,6 +314,9 @@ def replay(
         Per-agent claim quota seeded into the reconstructed :class:`SynapseState`.
     max_offers_per_agent : int, optional
         Per-agent offer quota seeded into the reconstructed :class:`SynapseState`.
+    max_paths_per_claim : int, optional
+        Per-claim declared-path cap seeded into the reconstructed
+        :class:`SynapseState`.
     now : float or None, optional
         Wall-clock time used to expire stale leases/offers after replay; the
         system clock is used when ``None``.
@@ -327,6 +332,7 @@ def replay(
         default_ttl_seconds=default_ttl_seconds,
         max_claims_per_agent=max_claims_per_agent,
         max_offers_per_agent=max_offers_per_agent,
+        max_paths_per_claim=max_paths_per_claim,
     )
     chat_history: list[dict[str, Any]] = []
     blackboard = Blackboard(max_progress=max_progress)

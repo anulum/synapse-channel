@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 from synapse_channel.core.state import (
     LEASE_HEAP_COMPACT_FLOOR,
     MAX_CLAIMS_PER_AGENT,
@@ -647,6 +648,35 @@ def test_quota_limits_default_to_module_constants() -> None:
     state = SynapseState()
     assert state.max_claims_per_agent == MAX_CLAIMS_PER_AGENT
     assert state.max_offers_per_agent == MAX_OFFERS_PER_AGENT
+    assert state.max_paths_per_claim == MAX_DECLARED_PATHS
+
+
+def test_max_paths_per_claim_widens_an_oversized_claim_to_the_worktree() -> None:
+    # A claim declaring more distinct paths than the cap owns the whole worktree, so
+    # another agent's disjoint claim in that worktree is then refused (conservative).
+    state = SynapseState(max_paths_per_claim=2)
+    granted, _ = state.claim("A", "T0", now=0.0, worktree="wt", paths=["a/f", "b/f", "c/f"])
+    assert granted is True
+    assert state.claims["T0"].paths == ("",)
+    refused, message = state.claim("B", "T1", now=0.0, worktree="wt", paths=["z/f"])
+    assert refused is False
+    assert "file scope conflicts" in message
+
+
+def test_max_paths_per_claim_keeps_a_claim_within_the_cap_scoped() -> None:
+    # Within the cap the declared paths are kept, so a disjoint claim is granted.
+    state = SynapseState(max_paths_per_claim=2)
+    assert state.claim("A", "T0", now=0.0, worktree="wt", paths=["a/f", "b/f"])[0] is True
+    assert state.claims["T0"].paths == ("a/f", "b/f")
+    assert state.claim("B", "T1", now=0.0, worktree="wt", paths=["z/f"])[0] is True
+
+
+def test_max_paths_per_claim_clamps_up_to_one() -> None:
+    state = SynapseState(max_paths_per_claim=0)
+    assert state.max_paths_per_claim == 1
+    granted, _ = state.claim("A", "T0", now=0.0, worktree="wt", paths=["a/f", "b/f"])
+    assert granted is True
+    assert state.claims["T0"].paths == ("",)
 
 
 # --- lease-expiry heap -------------------------------------------------------

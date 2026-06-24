@@ -80,6 +80,13 @@ def test_replay_seeds_custom_per_agent_quotas(tmp_path: Path) -> None:
     assert result.state.max_offers_per_agent == 3
 
 
+def test_replay_seeds_custom_max_paths_per_claim(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    result = replay(store, max_paths_per_claim=9)
+    store.close()
+    assert result.state.max_paths_per_claim == 9
+
+
 def test_replay_reconstructs_git_context(tmp_path: Path) -> None:
     store = _store(tmp_path)
     ctx = GitContext(branch="feature/x", base="develop", auto_release_on="commit")

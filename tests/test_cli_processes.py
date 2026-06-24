@@ -18,6 +18,7 @@ from synapse_channel import cli, cli_processes
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.client.llm_worker import DEFAULT_OLLAMA_BASE_URL
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 
 # --- parser ------------------------------------------------------------------
 
@@ -70,6 +71,12 @@ def test_parser_hub_per_agent_quotas() -> None:
     )
     assert args.max_claims_per_agent == 10
     assert args.max_offers_per_agent == 5
+
+
+def test_parser_hub_max_paths_per_claim() -> None:
+    assert cli.build_parser().parse_args(["hub"]).max_paths_per_claim == MAX_DECLARED_PATHS
+    args = cli.build_parser().parse_args(["hub", "--max-paths-per-claim", "20"])
+    assert args.max_paths_per_claim == 20
 
 
 def test_parser_hub_metrics_query_token_ok() -> None:
@@ -138,6 +145,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "max_msg_kb": 1024,
         "max_claims_per_agent": 128,
         "max_offers_per_agent": 64,
+        "max_paths_per_claim": MAX_DECLARED_PATHS,
         "token": None,
         "metrics": False,
         "auth_timeout": 10.0,
@@ -212,9 +220,15 @@ def test_cmd_hub_threads_per_agent_quotas(monkeypatch: pytest.MonkeyPatch) -> No
         return SynapseHub(**kwargs)
 
     monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
-    assert cli_processes._cmd_hub(_hub_ns(max_claims_per_agent=7, max_offers_per_agent=3)) == 0
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(max_claims_per_agent=7, max_offers_per_agent=3, max_paths_per_claim=9)
+        )
+        == 0
+    )
     assert captured["max_claims_per_agent"] == 7
     assert captured["max_offers_per_agent"] == 3
+    assert captured["max_paths_per_claim"] == 9
 
 
 def test_cmd_hub_threads_metrics_query_token_ok(monkeypatch: pytest.MonkeyPatch) -> None:

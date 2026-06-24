@@ -131,3 +131,18 @@ def test_normalize_paths_keeps_a_set_at_the_cap() -> None:
     result = normalize_paths(exactly)
     assert len(result) == MAX_DECLARED_PATHS
     assert result != ("",)
+
+
+def test_normalize_paths_custom_cap_widens_earlier_than_the_default() -> None:
+    # A tighter cap collapses to the whole worktree well below MAX_DECLARED_PATHS.
+    assert normalize_paths(["a/f", "b/f", "c/f"], 2) == ("",)
+
+
+def test_normalize_paths_custom_cap_keeps_a_set_within_it() -> None:
+    assert normalize_paths(["a/f", "b/f"], 2) == ("a/f", "b/f")
+
+
+def test_normalize_paths_custom_cap_clamps_up_to_one() -> None:
+    # A non-positive cap floors at one path: a single path survives, a second widens.
+    assert normalize_paths(["only/f"], 0) == ("only/f",)
+    assert normalize_paths(["a/f", "b/f"], 0) == ("",)

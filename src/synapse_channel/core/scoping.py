@@ -130,7 +130,7 @@ def scopes_conflict(
     return any(paths_overlap(a, b) for a in paths_a for b in paths_b)
 
 
-def normalize_paths(paths: Iterable[str]) -> tuple[str, ...]:
+def normalize_paths(paths: Iterable[str], max_declared_paths: int | None = None) -> tuple[str, ...]:
     """Normalise and de-duplicate a set of declared paths, preserving order.
 
     Empty results (paths that normalise to the tree root) collapse the set to a
@@ -140,14 +140,19 @@ def normalize_paths(paths: Iterable[str]) -> tuple[str, ...]:
     ----------
     paths : Iterable[str]
         Raw declared paths.
+    max_declared_paths : int or None, optional
+        Most distinct paths to keep before the scope is widened to the whole
+        worktree. Clamped up to ``1``. ``None`` (the default) uses
+        :data:`MAX_DECLARED_PATHS`.
 
     Returns
     -------
     tuple[str, ...]
         Normalised, order-preserving, duplicate-free paths; ``("",)`` if any
-        entry names the tree root or the distinct count exceeds
-        :data:`MAX_DECLARED_PATHS`; ``()`` if the input is empty.
+        entry names the tree root or the distinct count exceeds the cap; ``()``
+        if the input is empty.
     """
+    cap = MAX_DECLARED_PATHS if max_declared_paths is None else max(1, int(max_declared_paths))
     seen: set[str] = set()
     out: list[str] = []
     for raw in paths:
@@ -160,6 +165,6 @@ def normalize_paths(paths: Iterable[str]) -> tuple[str, ...]:
             # Too many distinct paths: widen to the whole worktree rather than pay
             # an unbounded pairwise overlap cost. Conservative — never misses a
             # conflict; an agent wanting many files should claim their parent dir.
-            if len(out) > MAX_DECLARED_PATHS:
+            if len(out) > cap:
                 return ("",)
     return tuple(out)

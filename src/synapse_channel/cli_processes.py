@@ -47,6 +47,7 @@ from synapse_channel.core.hub import (
 )
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
+from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 from synapse_channel.core.state import MAX_CLAIMS_PER_AGENT, MAX_OFFERS_PER_AGENT
 
 
@@ -76,6 +77,7 @@ def _cmd_hub(args: argparse.Namespace) -> int:
         max_msg_bytes=args.max_msg_kb * 1024,
         max_claims_per_agent=args.max_claims_per_agent,
         max_offers_per_agent=args.max_offers_per_agent,
+        max_paths_per_claim=args.max_paths_per_claim,
         enable_metrics=args.metrics,
         auth_timeout=args.auth_timeout,
         metrics_token=args.metrics_token,
@@ -250,6 +252,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=int,
         default=MAX_OFFERS_PER_AGENT,
         help="Most live resource offers one agent may register before new offers are refused.",
+    )
+    hub.add_argument(
+        "--max-paths-per-claim",
+        type=int,
+        default=MAX_DECLARED_PATHS,
+        help="Most distinct paths one claim may declare before its scope widens to the worktree.",
     )
     hub.add_argument(
         "--token",
