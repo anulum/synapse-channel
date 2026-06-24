@@ -490,6 +490,7 @@ async def serve_stdio(
     uri: str = DEFAULT_HUB_URI,
     name: str = DEFAULT_BRIDGE_NAME,
     token: str | None = None,
+    request_timeout: float = DEFAULT_REQUEST_TIMEOUT,
     agent_factory: AgentFactory = SynapseAgent,
     server_builder: Callable[[SynapseHubBridge], Any] = build_mcp_server,
 ) -> int:
@@ -503,6 +504,9 @@ async def serve_stdio(
         Identity to register on the hub.
     token : str or None, optional
         Shared-secret token for a secured hub.
+    request_timeout : float, optional
+        Seconds to await a hub reply before reporting no response. Defaults to
+        :data:`DEFAULT_REQUEST_TIMEOUT`.
     agent_factory : AgentFactory, optional
         Factory for the hub client; injectable for testing.
     server_builder : Callable, optional
@@ -513,7 +517,13 @@ async def serve_stdio(
     int
         ``0`` once the MCP client disconnects, ``1`` when the hub is unreachable.
     """
-    bridge = SynapseHubBridge(uri=uri, name=name, token=token, agent_factory=agent_factory)
+    bridge = SynapseHubBridge(
+        uri=uri,
+        name=name,
+        token=token,
+        request_timeout=request_timeout,
+        agent_factory=agent_factory,
+    )
     conn_task = asyncio.create_task(bridge.agent.connect())
     try:
         if not await bridge.agent.wait_until_ready(timeout=5.0):

@@ -17,7 +17,11 @@ import pytest
 from synapse_channel import cli, cli_processes
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.client.llm_worker import DEFAULT_OLLAMA_BASE_URL
-from synapse_channel.core.hub import DEFAULT_COMPACT_HINT_THRESHOLD, SynapseHub
+from synapse_channel.core.hub import (
+    DEFAULT_COMPACT_HINT_THRESHOLD,
+    DEFAULT_TAKEOVER_COOLDOWN,
+    SynapseHub,
+)
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 
 # --- parser ------------------------------------------------------------------
@@ -84,6 +88,13 @@ def test_parser_hub_compact_hint_threshold() -> None:
     assert default == DEFAULT_COMPACT_HINT_THRESHOLD
     args = cli.build_parser().parse_args(["hub", "--compact-hint-threshold", "500"])
     assert args.compact_hint_threshold == 500
+
+
+def test_parser_hub_takeover_cooldown() -> None:
+    default = cli.build_parser().parse_args(["hub"]).takeover_cooldown
+    assert default == DEFAULT_TAKEOVER_COOLDOWN
+    args = cli.build_parser().parse_args(["hub", "--takeover-cooldown", "5.5"])
+    assert args.takeover_cooldown == 5.5
 
 
 def test_parser_hub_metrics_query_token_ok() -> None:
@@ -154,6 +165,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "max_offers_per_agent": 64,
         "max_paths_per_claim": MAX_DECLARED_PATHS,
         "compact_hint_threshold": DEFAULT_COMPACT_HINT_THRESHOLD,
+        "takeover_cooldown": DEFAULT_TAKEOVER_COOLDOWN,
         "token": None,
         "metrics": False,
         "auth_timeout": 10.0,
@@ -276,6 +288,19 @@ def test_cmd_hub_threads_compact_hint_threshold(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
     assert cli_processes._cmd_hub(_hub_ns(compact_hint_threshold=42)) == 0
     assert captured["compact_hint_threshold"] == 42
+
+
+def test_cmd_hub_threads_takeover_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
+
+    def spy_hub(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
+    assert cli_processes._cmd_hub(_hub_ns(takeover_cooldown=5.5)) == 0
+    assert captured["takeover_cooldown"] == 5.5
 
 
 def test_cmd_hub_with_token_builds_authenticator(monkeypatch: pytest.MonkeyPatch) -> None:
