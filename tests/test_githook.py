@@ -21,6 +21,7 @@ from synapse_channel.git.githook import (
     HOOK_MARKER,
     _paths_overlap,
     changed_files,
+    hook_installed,
     hooks_directory,
     install_hooks,
     run_git_release,
@@ -135,6 +136,31 @@ def test_install_hooks_skips_foreign_hook(tmp_path: Path) -> None:
 def test_install_hooks_resolves_dir_from_runner(tmp_path: Path) -> None:
     install_hooks(uri="ws://h", name="ME", runner=lambda _a: str(tmp_path))
     assert (tmp_path / "post-commit").exists()
+
+
+def test_hook_installed_true_after_install(tmp_path: Path) -> None:
+    install_hooks(uri="ws://h", name="ME", hooks_dir=tmp_path)
+    assert hook_installed("merge", hooks_dir=tmp_path) is True
+    assert hook_installed("commit", hooks_dir=tmp_path) is True
+
+
+def test_hook_installed_false_when_absent(tmp_path: Path) -> None:
+    assert hook_installed("merge", hooks_dir=tmp_path) is False
+
+
+def test_hook_installed_false_for_a_foreign_hook(tmp_path: Path) -> None:
+    (tmp_path / "post-merge").write_text("#!/bin/sh\necho mine\n", encoding="utf-8")
+    assert hook_installed("merge", hooks_dir=tmp_path) is False  # no marker → not ours
+
+
+def test_hook_installed_unknown_trigger_is_false(tmp_path: Path) -> None:
+    install_hooks(uri="ws://h", name="ME", hooks_dir=tmp_path)
+    assert hook_installed("push", hooks_dir=tmp_path) is False
+
+
+def test_hook_installed_resolves_dir_from_runner(tmp_path: Path) -> None:
+    install_hooks(uri="ws://h", name="ME", hooks_dir=tmp_path)
+    assert hook_installed("merge", runner=lambda _a: str(tmp_path)) is True
 
 
 def test_install_hooks_shell_quotes_values(tmp_path: Path) -> None:

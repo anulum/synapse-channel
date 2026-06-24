@@ -102,6 +102,42 @@ def install_hooks(
     return results
 
 
+def hook_installed(
+    trigger: str,
+    *,
+    runner: GitRunner = _default_git_runner,
+    hooks_dir: Path | None = None,
+) -> bool:
+    """Return whether this tool's auto-release hook for ``trigger`` is installed.
+
+    The hub never enacts ``auto_release_on`` — only the client-side git hook does —
+    so this is what tells a caller whether a ``--auto-release-on commit/merge`` claim
+    will actually be released automatically, or is waiting on a ``synapse git-hook``.
+
+    Parameters
+    ----------
+    trigger : str
+        ``commit`` or ``merge``; any other value returns ``False``.
+    runner : GitRunner, optional
+        The git executor; injectable for testing.
+    hooks_dir : Path or None, optional
+        Override the hooks directory; resolved from git when ``None``.
+
+    Returns
+    -------
+    bool
+        ``True`` only when the matching hook file exists and carries
+        :data:`HOOK_MARKER` (so a user's unrelated hook of the same name is not
+        mistaken for one of ours).
+    """
+    filename = TRIGGER_HOOKS.get(trigger)
+    if filename is None:
+        return False
+    target = hooks_dir if hooks_dir is not None else hooks_directory(runner=runner)
+    path = target / filename
+    return path.exists() and HOOK_MARKER in path.read_text(encoding="utf-8", errors="ignore")
+
+
 def changed_files(trigger: str, *, runner: GitRunner = _default_git_runner) -> list[str]:
     """Return the files touched by the just-completed commit or merge.
 

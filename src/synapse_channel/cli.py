@@ -703,8 +703,27 @@ def _cmd_git_release(args: argparse.Namespace) -> int:
     """Release branch-scoped claims whose paths were just committed or merged.
 
     Invoked by the installed git hooks; resolves the changed files client-side and
-    sends an ordinary release for each matching claim.
+    sends an ordinary release for each matching claim. It takes no task id — it
+    auto-detects which claims to drop from the git diff — so a stray positional or
+    a missing ``--trigger`` is answered with a hint at the right command rather than
+    a bare argparse error (the trap that sent agents to the wrong verb).
     """
+    if args.task_id is not None:
+        print(
+            f"git-release is hook-invoked and takes no task id (it auto-detects claims "
+            f"from the git diff). For a manual drop use: "
+            f"synapse release {args.task_id} --name {args.name}",
+            file=sys.stderr,
+        )
+        return 2
+    if args.trigger is None:
+        print(
+            "git-release needs --trigger {commit,merge}; it is normally invoked by the "
+            "hooks `synapse git-hook` installs, not run by hand. For a manual drop use "
+            "`synapse release <task> --name <you>`.",
+            file=sys.stderr,
+        )
+        return 2
     return asyncio.run(
         run_git_release(uri=args.uri, name=args.name, trigger=args.trigger, token=args.token)
     )
@@ -1501,10 +1520,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Release branch-scoped claims whose paths were committed/merged (used by git hooks).",
     )
     git_release.add_argument(
+        "task_id",
+        nargs="?",
+        default=None,
+        help="(not accepted) git-release is hook-invoked and auto-detects claims; "
+        "for a manual drop use `synapse release <task> --name <you>`.",
+    )
+    git_release.add_argument(
         "--trigger",
         choices=["commit", "merge"],
-        required=True,
-        help="Which auto-release trigger fired.",
+        default=None,
+        help="Which auto-release trigger fired (required for the hook-invoked release).",
     )
     git_release.add_argument("--uri", default=DEFAULT_HUB_URI)
     git_release.add_argument("--name", default="USER")
