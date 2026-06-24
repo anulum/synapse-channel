@@ -72,6 +72,7 @@ def _cmd_hub(args: argparse.Namespace) -> int:
         relay_max_lines=args.relay_max_lines,
         authenticator=authenticator,
         max_clients=args.max_clients,
+        max_unauth_clients=args.max_unauth_clients,
         max_msg_bytes=args.max_msg_kb * 1024,
         max_claims_per_agent=args.max_claims_per_agent,
         max_offers_per_agent=args.max_offers_per_agent,
@@ -224,6 +225,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=int,
         default=DEFAULT_MAX_CLIENTS,
         help="Maximum simultaneous connections before further connects are refused.",
+    )
+    hub.add_argument(
+        "--max-unauth-clients",
+        type=int,
+        default=None,
+        help="On a secured hub, the most sockets allowed mid-authentication at once "
+        "(default: same as --max-clients), bounding an authentication-stall burst.",
     )
     hub.add_argument(
         "--max-msg-kb",

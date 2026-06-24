@@ -32,6 +32,10 @@ All notable changes to this project are documented here.
   `?token=` query parameter by default — only an `Authorization: Bearer` header —
   because a query token can leak into access logs, shell history, and proxy records.
   The query form is available opt-in with `synapse hub --metrics-query-token-ok`.
+- A secured hub now caps the number of sockets in their pre-authentication window
+  with `synapse hub --max-unauth-clients N` (default: same as `--max-clients`), so an
+  authentication-stall burst cannot occupy the connection table for the whole
+  `--auth-timeout`. A connect over the cap is closed with code `4014`.
 
 ### Changed
 - `VALIDATION.md` no longer hard-codes a module count or raw statement/branch totals

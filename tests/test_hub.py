@@ -1449,6 +1449,7 @@ async def test_handler_secured_hub_processes_after_auth() -> None:
     assert "welcome" in types  # welcomed only after the authenticated first frame
     assert any(m.get("type") == "chat" and m.get("payload") == "hi" for m in ws.decoded())
     assert ws not in hub.connected_clients  # unregistered at the end
+    assert hub.unauth_clients == set()  # released its pre-auth slot once authenticated
 
 
 async def test_handler_secured_hub_closes_on_failed_auth() -> None:
@@ -1458,6 +1459,7 @@ async def test_handler_secured_hub_closes_on_failed_auth() -> None:
     # The unauthenticated first frame ends the connection; the agent never binds.
     assert ws not in hub.connected_clients
     assert "A" not in hub.agent_sockets
+    assert hub.unauth_clients == set()  # the pre-auth slot is released even on failure
 
 
 def test_is_loopback_host_recognises_loopback_addresses() -> None:
@@ -1552,6 +1554,21 @@ async def test_handler_rejects_at_capacity() -> None:
     await hub.handler(ws)
     assert ws.closed == (4013, "hub at capacity")
     assert ws not in hub.connected_clients
+
+
+async def test_handler_rejects_when_unauth_cap_reached() -> None:
+    hub = SynapseHub(authenticator=TokenAuthenticator(["t"]), max_unauth_clients=1)
+    hub.unauth_clients.add(object())  # one socket already mid-authentication
+    ws = FakeServerWS()
+    await hub.handler(ws)
+    assert ws.closed == (4014, "too many unauthenticated connections")
+    assert ws not in hub.connected_clients  # never registered
+
+
+def test_max_unauth_clients_defaults_to_max_clients_and_clamps() -> None:
+    assert SynapseHub(max_clients=20).max_unauth_clients == 20  # tracks max_clients
+    assert SynapseHub(max_clients=20, max_unauth_clients=5).max_unauth_clients == 5
+    assert SynapseHub(max_unauth_clients=0).max_unauth_clients == 1  # clamped up to 1
 
 
 async def test_takeover_cooldown_blocks_rapid_eviction() -> None:
