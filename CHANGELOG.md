@@ -20,6 +20,11 @@ All notable changes to this project are documented here.
   same plaintext chat and findings as the locked-down main file while remaining
   group/other readable.
 
+### Changed
+- `VALIDATION.md` no longer hard-codes a module count or raw statement/branch totals
+  that drift as the package grows; it defers the live counts to the CI-synced README
+  capability inventory and states the gate-enforced 100% coverage instead.
+
 ## [0.42.0] - 2026-06-24
 
 ### Fixed
