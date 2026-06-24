@@ -37,6 +37,7 @@ from synapse_channel.client.supervisor import (
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import (
     DEFAULT_AUTH_TIMEOUT,
+    DEFAULT_COMPACT_HINT_THRESHOLD,
     DEFAULT_HOST,
     DEFAULT_MAX_CLIENTS,
     DEFAULT_MAX_HISTORY,
@@ -78,6 +79,7 @@ def _cmd_hub(args: argparse.Namespace) -> int:
         max_claims_per_agent=args.max_claims_per_agent,
         max_offers_per_agent=args.max_offers_per_agent,
         max_paths_per_claim=args.max_paths_per_claim,
+        compact_hint_threshold=args.compact_hint_threshold,
         enable_metrics=args.metrics,
         auth_timeout=args.auth_timeout,
         metrics_token=args.metrics_token,
@@ -258,6 +260,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=int,
         default=MAX_DECLARED_PATHS,
         help="Most distinct paths one claim may declare before its scope widens to the worktree.",
+    )
+    hub.add_argument(
+        "--compact-hint-threshold",
+        type=int,
+        default=DEFAULT_COMPACT_HINT_THRESHOLD,
+        help="Event-log record count past which the hub hints at running `synapse compact`.",
     )
     hub.add_argument(
         "--token",

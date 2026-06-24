@@ -88,6 +88,13 @@ DEFAULT_AUTH_TIMEOUT = 10.0
 """Seconds a secured hub waits for an authenticated first frame before closing a socket."""
 MAX_LOG_PAYLOAD = 120
 """Characters of a message payload logged at INFO before it is truncated."""
+DEFAULT_COMPACT_HINT_THRESHOLD = 100_000
+"""Event-log record count past which the hub logs a one-off ``synapse compact`` hint.
+
+The durable log grows append-only and is never auto-compacted — pruning is safe only
+below a sequence the read-side has already consumed, which the hub cannot know. So
+instead of silently growing or unsafely trimming, a hub started on a log larger than
+this emits a single startup hint to run :class:`compact` manually."""
 
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 """Bind hosts treated as loopback-only, where running without a token is fine."""
@@ -152,6 +159,12 @@ class SynapseHub:
         Maximum progress notes retained on the shared blackboard; the oldest are
         dropped beyond this bound. The durable log (when attached) still records
         every note. Defaults to :data:`~synapse_channel.core.ledger.DEFAULT_MAX_PROGRESS`.
+    compact_hint_threshold : int, optional
+        Record count past which a hub started on a durable log emits a one-off
+        startup hint to run ``synapse compact`` (the log is never auto-compacted —
+        pruning is safe only below a consumed read-side cursor). Clamped up to
+        ``1``; set it very high to silence the hint. Defaults to
+        :data:`DEFAULT_COMPACT_HINT_THRESHOLD`.
     authenticator : TokenAuthenticator or None, optional
         When given, a connecting agent must present a valid shared-secret token
         on its first message or the hub refuses and closes the socket. ``None``
@@ -197,6 +210,7 @@ class SynapseHub:
         relay_log: str | Path | None = None,
         relay_max_lines: int = DEFAULT_RELAY_MAX_LINES,
         max_progress: int = DEFAULT_MAX_PROGRESS,
+        compact_hint_threshold: int = DEFAULT_COMPACT_HINT_THRESHOLD,
         authenticator: TokenAuthenticator | None = None,
         max_clients: int = DEFAULT_MAX_CLIENTS,
         max_unauth_clients: int | None = None,
@@ -228,6 +242,7 @@ class SynapseHub:
         self._started = self._clock()
         self._last_takeover: dict[str, float] = {}
         self.max_history = max(int(max_history), 1)
+        self.compact_hint_threshold = max(1, int(compact_hint_threshold))
         self.relay_log = Path(relay_log) if relay_log else None
         self.relay_max_lines = max(int(relay_max_lines), 1)
         self._relay_appends = 0
@@ -257,6 +272,18 @@ class SynapseHub:
             # first, the bounded cache keeps the most-recent keys.
             for idem_key, idem_response in replayed.idempotency:
                 self._idempotency.put(idem_key, idem_response)
+            # The durable log is append-only and never auto-compacted (pruning is safe
+            # only below a sequence the read-side has consumed, which the hub cannot
+            # know); a hub started on an oversized log emits one hint to compact manually.
+            record_count = journal.count()
+            if record_count > self.compact_hint_threshold:
+                logger.warning(
+                    "Event log holds %d records (over the %d hint threshold); it grows "
+                    "append-only and is never auto-compacted. Run `synapse compact <db>` "
+                    "to bound it — safe only below a sequence the read-side has consumed.",
+                    record_count,
+                    self.compact_hint_threshold,
+                )
         else:
             self.state = SynapseState(
                 default_ttl_seconds=default_ttl_seconds,
