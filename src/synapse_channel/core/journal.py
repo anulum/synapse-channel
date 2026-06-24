@@ -48,6 +48,7 @@ class EventKind:
     LEDGER_TASK = "ledger_task"
     LEDGER_PROGRESS = "ledger_progress"
     RECALL = "recall"
+    FINDING = "finding"
 
 
 @dataclass
@@ -136,6 +137,29 @@ def record_recall(store: EventStore, record: dict[str, Any]) -> None:
         identity and time already hub-attested by the handler.
     """
     store.append(EventKind.RECALL, record)
+
+
+def record_finding(store: EventStore, record: dict[str, Any]) -> None:
+    """Append one finding to the durable memory spine.
+
+    A finding is an authored memory atom — a fact, lesson, decision, dead-end, or
+    outcome the producer wants remembered — that has already passed the emit gate
+    (:mod:`synapse_channel.core.emit_gate`) and been stamped with its hub-attested
+    origin. Unlike recall telemetry, a finding is the durable record a
+    persistent-memory adapter ingests, so it is committed at ``FULL`` durability
+    (``durable=True``): it must survive an OS crash, like the lease path. It is
+    not coordination state, so :func:`replay` skips it when rebuilding the hub's
+    working state.
+
+    Parameters
+    ----------
+    store : EventStore
+        The event log to append to.
+    record : dict[str, Any]
+        The serialised, gate-admitted, hub-attested finding (see
+        :meth:`synapse_channel.core.finding.Finding.as_dict`).
+    """
+    store.append(EventKind.FINDING, record, durable=True)
 
 
 def _ledger_task_from_payload(payload: dict[str, Any]) -> LedgerTask:
@@ -245,6 +269,10 @@ def replay(
         elif event.kind == EventKind.CHAT:
             chat_history.append(payload)
             message_seq = max(message_seq, int(payload.get("msg_id", 0)))
+        # EventKind.RECALL and EventKind.FINDING are the memory layer's telemetry
+        # and durable spine, not coordination state — they are journalled for the
+        # read-side ingest seam and deliberately skipped here, so a restart never
+        # replays them into the registry.
 
     state._epoch_seq = epoch_seq
     ts = time.time() if now is None else float(now)
