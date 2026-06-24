@@ -33,6 +33,11 @@ from synapse_channel.client.routing import TaskClass, TieredChatClient, classify
 from synapse_channel.client.supervisor import Intervention, SupervisorWorker, detect_stalls
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityCard, CapabilityRegistry
+from synapse_channel.core.compaction import (
+    CompactionResult,
+    RetentionPolicy,
+    compact,
+)
 from synapse_channel.core.deadlock import would_create_cycle
 from synapse_channel.core.emit_gate import Decision, admit
 from synapse_channel.core.finding import (
@@ -71,6 +76,7 @@ __all__ = [
     "CapabilityRegistry",
     "ChatBackend",
     "ClaimStatus",
+    "CompactionResult",
     "Decision",
     "EventStore",
     "EvidenceKind",
@@ -83,6 +89,7 @@ __all__ = [
     "OpenAIChatClient",
     "ProgressNote",
     "ResourceOffer",
+    "RetentionPolicy",
     "RuleBasedClient",
     "Subkind",
     "SupervisorWorker",
@@ -101,6 +108,7 @@ __all__ = [
     "build_envelope",
     "can_transition",
     "classify",
+    "compact",
     "decode_lite",
     "detect_stalls",
     "encode_lite",

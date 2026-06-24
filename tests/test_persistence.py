@@ -144,3 +144,77 @@ def test_context_manager_closes_connection(tmp_path: Path) -> None:
     # After exit the connection is closed and rejects further use.
     with pytest.raises(sqlite3.ProgrammingError):
         store.count()
+
+
+def test_max_seq_is_zero_on_an_empty_log(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    assert store.max_seq() == 0
+    store.close()
+
+
+def test_max_seq_tracks_the_highest_sequence(tmp_path: Path) -> None:
+    store = _seeded(tmp_path)
+    tail = store.read_all()[-1].seq
+    assert store.max_seq() == tail
+    store.close()
+
+
+def test_delete_removes_named_sequences_and_returns_the_count(tmp_path: Path) -> None:
+    store = _seeded(tmp_path)
+    events = store.read_all()
+    removed = store.delete([events[0].seq, events[2].seq])
+    remaining = [e.kind for e in store.read_all()]
+    store.close()
+    assert removed == 2
+    assert remaining == ["finding", "recall", "finding"]
+
+
+def test_delete_of_nothing_is_a_no_op(tmp_path: Path) -> None:
+    store = _seeded(tmp_path)
+    assert store.delete([]) == 0
+    assert store.count() == 5
+    store.close()
+
+
+def test_delete_does_not_recycle_sequence_numbers(tmp_path: Path) -> None:
+    # The AUTOINCREMENT key must keep climbing past a deleted seq, so a downstream
+    # read_since cursor walks the gap instead of re-reading a recycled sequence.
+    store = EventStore(tmp_path / "events.db")
+    store.append("chat", {"p": "a"})
+    store.append("chat", {"p": "b"})
+    tail = store.read_all()[-1].seq
+    store.delete([tail])
+    store.append("chat", {"p": "c"})
+    new_seq = store.read_all()[-1].seq
+    store.close()
+    assert new_seq > tail  # the freed sequence was not reused
+
+
+def test_delete_only_named_sequences_survives_reopen(tmp_path: Path) -> None:
+    db = tmp_path / "events.db"
+    store = EventStore(db)
+    store.append("finding", {"statement": "keep"}, ts=1.0)
+    store.append("finding", {"statement": "drop"}, ts=2.0)
+    doomed = store.read_all()[-1].seq
+    store.delete([doomed])
+    store.close()
+
+    reopened = EventStore(db)
+    survivors = [e.payload["statement"] for e in reopened.read_all()]
+    reopened.close()
+    assert survivors == ["keep"]
+
+
+def test_vacuum_keeps_the_surviving_rows_intact(tmp_path: Path) -> None:
+    store = _seeded(tmp_path)
+    events = store.read_all()
+    store.delete([events[0].seq])
+    store.vacuum()
+    survivors = [e.kind for e in store.read_all()]
+    # Vacuum reclaims free pages without disturbing the rows that remain.
+    assert survivors == ["finding", "chat", "recall", "finding"]
+    assert store.count() == 4
+    # The connection is usable after the rewrite (writes still commit).
+    store.append("chat", {"p": "after"})
+    assert store.count() == 5
+    store.close()

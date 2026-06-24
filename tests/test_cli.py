@@ -663,6 +663,115 @@ def test_cmd_ingest_limit_caps_the_batch(
     assert len(lines) == 1
 
 
+# --- compact -----------------------------------------------------------------
+
+
+def _compact_ns(**overrides: Any) -> argparse.Namespace:
+    base: dict[str, Any] = {
+        "db": "events.db",
+        "max_checkpoints_per_task": None,
+        "finding_grace_seconds": None,
+        "floor_seq": None,
+        "all": False,
+        "vacuum": False,
+    }
+    base.update(overrides)
+    return argparse.Namespace(**base)
+
+
+def _seed_checkpoints(path: Path, task_id: str, count: int) -> None:
+    store = EventStore(path)
+    for index in range(count):
+        store.append("checkpoint", {"task_id": task_id, "checkpoint": f"c{index}"}, ts=float(index))
+    store.close()
+
+
+def test_parser_compact() -> None:
+    args = cli.build_parser().parse_args(
+        ["compact", "hub.db", "--max-checkpoints-per-task", "3", "--all", "--vacuum"]
+    )
+    assert args.db == "hub.db"
+    assert args.max_checkpoints_per_task == 3
+    assert args.all is True
+    assert args.vacuum is True
+    assert args.func is cli._cmd_compact
+
+
+def test_parser_compact_floor_and_all_are_mutually_exclusive() -> None:
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(["compact", "hub.db", "--floor-seq", "5", "--all"])
+
+
+def test_cmd_compact_requires_a_floor(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    db = tmp_path / "events.db"
+    _seed_checkpoints(db, "T1", 3)
+    rc = cli._cmd_compact(_compact_ns(db=str(db), max_checkpoints_per_task=1))
+    assert rc == 2
+    assert "needs a floor" in capsys.readouterr().err
+
+
+def test_cmd_compact_requires_a_retention_knob(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "events.db"
+    _seed_checkpoints(db, "T1", 3)
+    rc = cli._cmd_compact(_compact_ns(db=str(db), all=True))
+    assert rc == 2
+    assert "retention knob" in capsys.readouterr().err
+
+
+def test_cmd_compact_rejects_an_invalid_policy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "events.db"
+    _seed_checkpoints(db, "T1", 3)
+    rc = cli._cmd_compact(_compact_ns(db=str(db), all=True, max_checkpoints_per_task=0))
+    assert rc == 2
+    assert "invalid retention policy" in capsys.readouterr().err
+
+
+def test_cmd_compact_removes_superseded_checkpoints_with_all(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "events.db"
+    _seed_checkpoints(db, "T1", 4)
+    rc = cli._cmd_compact(_compact_ns(db=str(db), all=True, max_checkpoints_per_task=1))
+    assert rc == 0
+    assert "removed 3 checkpoint(s), 0 finding(s)" in capsys.readouterr().out
+    store = EventStore(db)
+    survivors = [e.payload["checkpoint"] for e in store.read_all()]
+    store.close()
+    assert survivors == ["c3"]  # only the newest checkpoint per task remains
+
+
+def test_cmd_compact_honours_an_explicit_floor(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "events.db"
+    _seed_checkpoints(db, "T1", 3)
+    store = EventStore(db)
+    floor = store.read_all()[1].seq  # only the first two checkpoints are settled
+    store.close()
+    rc = cli._cmd_compact(_compact_ns(db=str(db), floor_seq=floor, max_checkpoints_per_task=1))
+    assert rc == 0
+    assert "removed 1 checkpoint(s)" in capsys.readouterr().out
+
+
+def test_cmd_compact_with_vacuum_reports_and_reclaims(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "events.db"
+    _seed_checkpoints(db, "T1", 4)
+    rc = cli._cmd_compact(
+        _compact_ns(db=str(db), all=True, max_checkpoints_per_task=1, vacuum=True)
+    )
+    assert rc == 0
+    assert "(vacuumed)" in capsys.readouterr().out
+    store = EventStore(db)
+    assert store.count() == 1
+    store.close()
+
+
 # --- git-release UX ----------------------------------------------------------
 
 

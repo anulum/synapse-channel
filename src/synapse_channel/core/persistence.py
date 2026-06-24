@@ -187,6 +187,56 @@ class EventStore:
         row = self._conn.execute("SELECT COUNT(*) FROM events").fetchone()
         return int(row[0])
 
+    def max_seq(self) -> int:
+        """Return the highest sequence number stored, or ``0`` when the log is empty.
+
+        Useful as a fully-settled compaction floor: with no read-side consumer
+        lagging behind, the whole log up to the latest sequence may be compacted
+        (see :mod:`synapse_channel.core.compaction`).
+        """
+        row = self._conn.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()
+        return int(row[0])
+
+    def delete(self, seqs: Iterable[int]) -> int:
+        """Delete the events with these sequence numbers; return how many were removed.
+
+        A maintenance primitive for retention/compaction
+        (:mod:`synapse_channel.core.compaction`). A deleted sequence is never
+        reused — the ``AUTOINCREMENT`` primary key only ever increases — so a
+        downstream :meth:`read_since` cursor stays correct across a compaction: a
+        removed sequence simply becomes a gap the cursor walks past. The delete
+        commits at ``NORMAL`` durability; a delete lost to an OS crash is harmless
+        because re-running compaction removes the same rows again.
+
+        Parameters
+        ----------
+        seqs : Iterable[int]
+            Sequence numbers to remove; an empty iterable is a no-op.
+
+        Returns
+        -------
+        int
+            The number of rows actually deleted.
+        """
+        seq_list = [int(s) for s in seqs]
+        if not seq_list:
+            return 0
+        placeholders = ",".join("?" for _ in seq_list)
+        cursor = self._conn.execute(f"DELETE FROM events WHERE seq IN ({placeholders})", seq_list)
+        self._conn.commit()
+        return int(cursor.rowcount)
+
+    def vacuum(self) -> None:
+        """Reclaim free pages left by deletes, shrinking the database file on disk.
+
+        A ``DELETE`` marks pages free for reuse but does not return them to the
+        filesystem, so a large retention sweep leaves the file the same size until
+        ``VACUUM`` rewrites the database to release the free pages. It rewrites the
+        whole database, so call it from a maintenance path, not the hot loop.
+        """
+        self._conn.commit()  # VACUUM cannot run inside an open transaction
+        self._conn.execute("VACUUM")
+
     def close(self) -> None:
         """Close the underlying database connection."""
         self._conn.close()
