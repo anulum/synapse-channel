@@ -8,12 +8,19 @@
 
 from __future__ import annotations
 
+import json
+
+import pytest
+
 from synapse_channel.core.protocol import (
+    MAX_JSON_DEPTH,
     RESOURCE_TYPE_ALIASES,
     SENDER_HUB,
     MessageType,
+    _exceeds_json_depth,
     build_envelope,
     is_recipient,
+    loads_bounded,
     system_message,
 )
 
@@ -224,3 +231,53 @@ def test_wakes_priority_and_ceo_do_not_leak_to_unaddressed_waiters() -> None:
     assert wakes("all", "B", directed_only=True, sender="CEO")  # CEO broadcast
     assert wakes("B", "B", directed_only=True, priority=True)  # priority, addressed to B
     assert wakes("quantum/*", "quantum/c-1", directed_only=True, sender="CEO")  # CEO to my group
+
+
+# --- bounded JSON decode -----------------------------------------------------
+
+
+def test_loads_bounded_parses_normal_json() -> None:
+    assert loads_bounded('{"a": [1, 2, {"b": 3}]}') == {"a": [1, 2, {"b": 3}]}
+
+
+def test_loads_bounded_accepts_bytes() -> None:
+    assert loads_bounded(b'{"x": 1}') == {"x": 1}
+
+
+def test_loads_bounded_accepts_nesting_at_the_limit() -> None:
+    payload = "[" * MAX_JSON_DEPTH + "]" * MAX_JSON_DEPTH
+    result = loads_bounded(payload)
+    assert isinstance(result, list)
+
+
+def test_loads_bounded_rejects_nesting_past_the_limit() -> None:
+    payload = "[" * (MAX_JSON_DEPTH + 1) + "]" * (MAX_JSON_DEPTH + 1)
+    with pytest.raises(json.JSONDecodeError, match="nested deeper"):
+        loads_bounded(payload)
+
+
+def test_loads_bounded_rejects_a_far_too_deep_frame_without_recursing() -> None:
+    # Far past any interpreter recursion limit: the guard rejects, never recurses.
+    payload = "[" * 5000 + "]" * 5000
+    with pytest.raises(json.JSONDecodeError):
+        loads_bounded(payload)
+
+
+def test_loads_bounded_reraises_malformed_json() -> None:
+    with pytest.raises(json.JSONDecodeError):
+        loads_bounded("{not json")
+
+
+def test_exceeds_json_depth_ignores_brackets_inside_strings() -> None:
+    # A string value packed with brackets is structurally shallow.
+    assert _exceeds_json_depth('{"k": "[[[[[[[[]]]]]]]]"}', 2) is False
+
+
+def test_exceeds_json_depth_honours_escaped_quotes() -> None:
+    # The escaped quote does not end the string, so the bracket run stays quoted.
+    assert _exceeds_json_depth('{"k": "a\\"[[[", "m": 1}', 2) is False
+
+
+def test_exceeds_json_depth_counts_real_nesting() -> None:
+    assert _exceeds_json_depth("[[[[]]]]", 3) is True
+    assert _exceeds_json_depth("[[[[]]]]", 4) is False

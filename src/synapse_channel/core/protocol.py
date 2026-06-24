@@ -20,11 +20,94 @@ in tests.
 from __future__ import annotations
 
 import fnmatch
+import json
 import time
 from typing import Any
 
 SENDER_HUB = "SynapseHub"
 """Reserved sender name stamped on every hub-originated message."""
+
+MAX_JSON_DEPTH = 64
+"""Deepest array/object nesting accepted in an inbound wire frame.
+
+A frame nested deeper than this is rejected before parsing, so an adversarially
+deep payload cannot drive the JSON decoder into a ``RecursionError``. The hub's
+``--max-msg-kb`` cap already bounds a frame's *width*; this bounds its *depth*.
+Real Synapse envelopes nest only a few levels, so the bound is generous headroom
+well under the interpreter recursion limit.
+"""
+
+
+def _exceeds_json_depth(text: str, max_depth: int) -> bool:
+    """Return whether ``text`` nests arrays/objects deeper than ``max_depth``.
+
+    A single character scan that tracks ``[``/``{`` nesting while skipping bracket
+    characters inside string literals (honouring backslash escapes), so a brace
+    written inside a string is never miscounted. Returns at the first level over
+    the bound rather than scanning the whole frame.
+
+    Parameters
+    ----------
+    text : str
+        The raw JSON text.
+    max_depth : int
+        The deepest array/object nesting permitted.
+
+    Returns
+    -------
+    bool
+        ``True`` as soon as the nesting exceeds ``max_depth``.
+    """
+    depth = 0
+    in_string = False
+    escaped = False
+    for char in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char in "[{":
+            depth += 1
+            if depth > max_depth:
+                return True
+        elif char in "]}":
+            depth = max(depth - 1, 0)
+    return False
+
+
+def loads_bounded(raw: str | bytes, max_depth: int = MAX_JSON_DEPTH) -> Any:
+    """Parse one inbound JSON frame, rejecting one nested past ``max_depth``.
+
+    The depth guard runs before :func:`json.loads`, so an adversarially deep frame
+    raises a clean :class:`json.JSONDecodeError` instead of crashing the decoder
+    with a ``RecursionError``.
+
+    Parameters
+    ----------
+    raw : str or bytes
+        The raw frame received from a socket.
+    max_depth : int, optional
+        Deepest array/object nesting accepted. Defaults to :data:`MAX_JSON_DEPTH`.
+
+    Returns
+    -------
+    Any
+        The decoded JSON value.
+
+    Raises
+    ------
+    json.JSONDecodeError
+        When the frame is malformed or nested deeper than ``max_depth``.
+    """
+    text = raw if isinstance(raw, str) else raw.decode("utf-8", "replace")
+    if _exceeds_json_depth(text, max_depth):
+        raise json.JSONDecodeError(f"JSON nested deeper than {max_depth} levels", text, 0)
+    return json.loads(raw)
 
 
 class MessageType:
