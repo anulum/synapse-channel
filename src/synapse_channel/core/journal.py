@@ -53,6 +53,24 @@ class EventKind:
     FINDING = "finding"
 
 
+MEMORY_KINDS = frozenset(
+    {
+        EventKind.RECALL,
+        EventKind.FINDING,
+        EventKind.CHECKPOINT,
+        EventKind.HANDOFF,
+    }
+)
+"""The durable event kinds the persistent-memory read-side ingests.
+
+The query-stream (``recall``), the authored atoms (``finding``), and the
+highest-signal episodic state (``checkpoint``/``handoff``) — the subset of the
+log a downstream memory adapter reads through the seq-cursored ingest seam. The
+pure coordination kinds (``claim``/``release``/``task_update``/``resource``/the
+ledger kinds) are excluded; ``chat`` is filtered read-side, not here.
+"""
+
+
 @dataclass
 class ReplayResult:
     """The state reconstructed from a full replay of the event log.

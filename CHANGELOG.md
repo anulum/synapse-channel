@@ -11,6 +11,24 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.39.0] - 2026-06-24
+
+### Added
+- A sequence-cursored ingest seam over the durable event store, for an optional
+  persistent-memory adapter. `EventStore.read_since(after_seq, kinds=..., limit=...)`
+  returns events whose monotonic sequence is above a cursor, optionally filtered to
+  a set of kinds and capped to a batch size — so an adapter tracks the last sequence
+  it consumed, polls forward in batches, and resumes with no loss or duplication
+  across hub restarts. `MEMORY_KINDS` names the subset a memory layer ingests
+  (`recall`, `finding`, `checkpoint`, `handoff`), excluding the pure coordination
+  kinds. A `synapse ingest <db> [--since N | --cursor FILE] [--memory | --kind K ...]
+  [--limit N]` command streams the events as newline-delimited JSON for an operator
+  or a non-Python bridge, persisting the cursor between runs.
+- An opaque `memory_tag` on `SynapseAgent.chat(...)` — a free-form marker (e.g.
+  `"remember"`) that rides the durable chat event and the broadcast unchanged so a
+  read-side filter can pick out actively authored context. The hub carries it
+  without interpreting it, and it is omitted from the envelope when blank.
+
 ## [0.38.0] - 2026-06-24
 
 ### Added

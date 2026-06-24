@@ -40,6 +40,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import json
 import os
 import random
 import sys
@@ -69,6 +70,7 @@ from synapse_channel.core.hub import (
     DEFAULT_RELAY_MAX_LINES,
     SynapseHub,
 )
+from synapse_channel.core.journal import MEMORY_KINDS
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import (
     MessageType,
@@ -996,6 +998,45 @@ def _cmd_relay(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_ingest(args: argparse.Namespace) -> int:
+    """Stream durable events from a hub event store since a sequence cursor.
+
+    This is the read-side ingest seam: it opens a hub's SQLite event store
+    (``--db``, e.g. ``~/synapse/hub.db``), reads every event whose sequence is
+    above the cursor, and prints one JSON object per line (``seq``/``ts``/``kind``/
+    ``payload``). With ``--cursor`` the last sequence is persisted between runs so
+    repeated calls walk the log forward with no loss or duplication; ``--memory``
+    (or explicit ``--kind``) restricts the stream to the memory kinds a
+    persistent-memory adapter ingests. The store is opened read-only-by-use — the
+    live hub keeps writing through its own connection (SQLite WAL allows it).
+    """
+    start = load_offset(args.cursor) if args.cursor else max(int(args.since), 0)
+    if args.memory:
+        kinds: frozenset[str] | set[str] | None = MEMORY_KINDS
+    elif args.kind:
+        kinds = set(args.kind)
+    else:
+        kinds = None
+    store = EventStore(args.db)
+    try:
+        events = store.read_since(start, kinds=kinds, limit=args.limit)
+    finally:
+        store.close()
+    last = start
+    for event in events:
+        print(
+            json.dumps(
+                {"seq": event.seq, "ts": event.ts, "kind": event.kind, "payload": event.payload},
+                ensure_ascii=True,
+                separators=(",", ":"),
+            )
+        )
+        last = event.seq
+    if args.cursor and events:
+        save_offset(args.cursor, last)
+    return 0
+
+
 def _print_board(board: dict[str, Any]) -> None:
     """Render a blackboard snapshot as readable lines on stdout."""
     tasks = board.get("tasks", [])
@@ -1551,6 +1592,37 @@ def build_parser() -> argparse.ArgumentParser:
         "or a broadcast) — a project-stable inbox that survives changing instance ids.",
     )
     relay.set_defaults(func=_cmd_relay)
+
+    ingest = sub.add_parser(
+        "ingest",
+        help="Stream durable events from a hub event store since a sequence cursor "
+        "(the persistent-memory read-side seam).",
+    )
+    ingest.add_argument("db", help="Path to the hub event store (e.g. ~/synapse/hub.db).")
+    ingest.add_argument(
+        "--since", type=int, default=0, help="Return events whose sequence is above this."
+    )
+    ingest.add_argument(
+        "--cursor",
+        default=None,
+        help="Persist the last sequence to this file for incremental, loss-free resume.",
+    )
+    ingest.add_argument(
+        "--kind",
+        action="append",
+        default=None,
+        metavar="KIND",
+        help="Restrict to this event kind (repeatable); omit for every kind.",
+    )
+    ingest.add_argument(
+        "--memory",
+        action="store_true",
+        help="Restrict to the memory kinds (recall/finding/checkpoint/handoff).",
+    )
+    ingest.add_argument(
+        "--limit", type=int, default=None, help="Cap the number of events returned."
+    )
+    ingest.set_defaults(func=_cmd_ingest)
 
     board = sub.add_parser("board", help="Print the hub's shared task/progress board.")
     board.add_argument("--uri", default=DEFAULT_HUB_URI)

@@ -83,6 +83,60 @@ def test_default_timestamp_uses_clock(tmp_path: Path) -> None:
     assert event.ts >= before
 
 
+def _seeded(tmp_path: Path) -> EventStore:
+    store = EventStore(tmp_path / "events.db")
+    store.append("claim", {"id": "T1"}, ts=1.0)
+    store.append("finding", {"statement": "a"}, ts=2.0)
+    store.append("chat", {"p": "x"}, ts=3.0)
+    store.append("recall", {"query_text": "q"}, ts=4.0)
+    store.append("finding", {"statement": "b"}, ts=5.0)
+    return store
+
+
+def test_read_since_returns_only_events_above_the_cursor(tmp_path: Path) -> None:
+    store = _seeded(tmp_path)
+    all_events = store.read_all()
+    after = store.read_since(all_events[1].seq)  # everything after the 2nd event
+    store.close()
+    assert [e.kind for e in after] == ["chat", "recall", "finding"]
+    assert all(e.seq > all_events[1].seq for e in after)
+
+
+def test_read_since_zero_returns_the_whole_log(tmp_path: Path) -> None:
+    store = _seeded(tmp_path)
+    assert len(store.read_since(0)) == store.count()
+    store.close()
+
+
+def test_read_since_filters_by_kind(tmp_path: Path) -> None:
+    store = _seeded(tmp_path)
+    findings = store.read_since(0, kinds={"finding", "recall"})
+    store.close()
+    assert [e.kind for e in findings] == ["finding", "recall", "finding"]
+
+
+def test_read_since_empty_kinds_returns_nothing(tmp_path: Path) -> None:
+    store = _seeded(tmp_path)
+    assert store.read_since(0, kinds=()) == []
+    store.close()
+
+
+def test_read_since_honours_limit_for_batched_walking(tmp_path: Path) -> None:
+    store = _seeded(tmp_path)
+    batch = store.read_since(0, limit=2)
+    assert len(batch) == 2
+    nxt = store.read_since(batch[-1].seq, limit=2)
+    store.close()
+    assert [e.seq for e in nxt] == [batch[-1].seq + 1, batch[-1].seq + 2]
+
+
+def test_read_since_at_the_tail_returns_empty(tmp_path: Path) -> None:
+    store = _seeded(tmp_path)
+    tail = store.read_all()[-1].seq
+    assert store.read_since(tail) == []
+    store.close()
+
+
 def test_context_manager_closes_connection(tmp_path: Path) -> None:
     with EventStore(tmp_path / "events.db") as store:
         store.append("chat", {"p": "x"})

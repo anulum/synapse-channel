@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from collections.abc import Iterable
 from pathlib import Path
 from types import TracebackType
 from typing import Any, NamedTuple
@@ -124,6 +125,58 @@ class EventStore:
         rows = self._conn.execute(
             "SELECT seq, ts, kind, payload FROM events ORDER BY seq"
         ).fetchall()
+        return [
+            StoredEvent(seq=int(seq), ts=float(ts), kind=str(kind), payload=json.loads(payload))
+            for seq, ts, kind, payload in rows
+        ]
+
+    def read_since(
+        self,
+        after_seq: int,
+        *,
+        kinds: Iterable[str] | None = None,
+        limit: int | None = None,
+    ) -> list[StoredEvent]:
+        """Return events whose sequence is greater than a cursor, in order.
+
+        This is the durable, presence-free ingest seam a downstream
+        persistent-memory adapter polls: it tracks the last sequence it consumed,
+        calls :meth:`read_since` with it, processes the batch, and advances —
+        resuming with no loss or duplication across hub restarts, because the
+        sequence is a monotonic primary key.
+
+        Parameters
+        ----------
+        after_seq : int
+            Exclusive lower bound; only events with ``seq > after_seq`` are
+            returned. Pass ``0`` for the whole log.
+        kinds : Iterable[str] or None, optional
+            When given, restrict the result to these event kinds (e.g.
+            :data:`~synapse_channel.core.journal.MEMORY_KINDS`); an empty iterable
+            returns nothing. ``None`` returns every kind.
+        limit : int or None, optional
+            Cap the batch size (floored at ``0``); ``None`` returns all matching
+            events. The cap applies after ordering, so repeated calls walk the log
+            forward in fixed-size batches.
+
+        Returns
+        -------
+        list[StoredEvent]
+            Matching events ordered by ascending sequence number.
+        """
+        sql = "SELECT seq, ts, kind, payload FROM events WHERE seq > ?"
+        params: list[Any] = [int(after_seq)]
+        if kinds is not None:
+            kind_list = [str(k) for k in kinds]
+            if not kind_list:
+                return []
+            sql += f" AND kind IN ({','.join('?' for _ in kind_list)})"
+            params.extend(kind_list)
+        sql += " ORDER BY seq"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(max(0, int(limit)))
+        rows = self._conn.execute(sql, params).fetchall()
         return [
             StoredEvent(seq=int(seq), ts=float(ts), kind=str(kind), payload=json.loads(payload))
             for seq, ts, kind, payload in rows

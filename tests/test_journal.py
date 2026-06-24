@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from synapse_channel.core.journal import (
+    MEMORY_KINDS,
     EventKind,
     record_chat,
     record_checkpoint,
@@ -182,6 +183,19 @@ def test_replay_skips_unknown_event_kind(tmp_path: Path) -> None:
     result = replay(store, now=2000.0)
     store.close()
     assert "T1" in result.state.claims  # known event still applied
+
+
+def test_memory_kinds_are_the_read_side_ingest_set() -> None:
+    # The read-side ingests the query-stream, the atoms, and episodic state — and
+    # never the pure coordination kinds (claims/releases/resources/ledger).
+    assert MEMORY_KINDS == {
+        EventKind.RECALL,
+        EventKind.FINDING,
+        EventKind.CHECKPOINT,
+        EventKind.HANDOFF,
+    }
+    assert EventKind.CLAIM not in MEMORY_KINDS
+    assert EventKind.CHAT not in MEMORY_KINDS
 
 
 def test_replay_empty_log_yields_empty_state(tmp_path: Path) -> None:
