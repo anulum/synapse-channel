@@ -37,6 +37,12 @@ LEASE_HEAP_COMPACT_FLOOR = 16
 DEFAULT_RESOURCE_TTL_SECONDS = 300.0
 """Soft liveness window after which an un-refreshed resource offer is dropped."""
 
+MAX_CLAIMS_PER_AGENT = 128
+"""Most live claims one agent may hold, so a runaway agent cannot exhaust state."""
+
+MAX_OFFERS_PER_AGENT = 64
+"""Most live resource offers one agent may register (refreshing an offer is free)."""
+
 AUTO_RELEASE_MODES = frozenset({"manual", "commit", "merge"})
 """Recognised auto-release triggers; an unknown value falls back to ``manual``."""
 
@@ -365,6 +371,13 @@ class SynapseState:
                 f"Task '{task}' file scope conflicts with '{other_id}' held by {other_owner}.",
             )
 
+        # Cap the live claims one agent may hold so a runaway agent cannot exhaust
+        # state. Renewing or taking over a claim the agent already owns is free; only
+        # a claim on a task the agent does not yet hold counts toward the cap.
+        owns_task = existing is not None and existing.owner == agent
+        if not owns_task and self._claims_owned_by(agent) >= MAX_CLAIMS_PER_AGENT:
+            return False, f"Agent {agent} holds the maximum {MAX_CLAIMS_PER_AGENT} claims."
+
         # Carry the checkpoint forward: the same owner renewing keeps its own; a
         # new owner taking over an expired task resumes the retained checkpoint.
         if existing is not None and existing.owner == agent:
@@ -387,6 +400,14 @@ class SynapseState:
         self.claims[task] = claim
         self._track_lease(claim)
         return True, f"Task '{task}' claimed by {agent}."
+
+    def _claims_owned_by(self, agent: str) -> int:
+        """Return how many live claims ``agent`` currently holds."""
+        return sum(1 for claim in self.claims.values() if claim.owner == agent)
+
+    def _offers_by(self, agent: str) -> int:
+        """Return how many live resource offers ``agent`` currently holds."""
+        return sum(1 for offer in self.resources.values() if offer.agent == agent)
 
     def _scope_conflict(
         self, task: str, agent: str, worktree: str, paths: tuple[str, ...]
@@ -680,10 +701,13 @@ class SynapseState:
         capacity: int = 1,
         meta: dict[str, Any] | None = None,
         now: float | None = None,
-    ) -> str:
+    ) -> str | None:
         """Advertise a resource the agent can provide, keyed by agent/kind/name.
 
-        Re-offering the same triple refreshes the offer's liveness timestamp.
+        Re-offering the same triple refreshes the offer's liveness timestamp. A new
+        offer is refused once the agent already holds
+        :data:`MAX_OFFERS_PER_AGENT` live offers, so a runaway agent cannot bloat
+        the registry; refreshing an existing offer is always allowed.
 
         Parameters
         ----------
@@ -702,12 +726,15 @@ class SynapseState:
 
         Returns
         -------
-        str
-            The registry key ``"{agent}:{kind}:{name}"`` of the stored offer.
+        str or None
+            The registry key ``"{agent}:{kind}:{name}"`` of the stored offer, or
+            ``None`` when the agent is at its offer quota and this is a new offer.
         """
         ts = time.time() if now is None else float(now)
         self.heartbeat(agent, ts)
         key = f"{agent}:{kind}:{name}"
+        if key not in self.resources and self._offers_by(agent) >= MAX_OFFERS_PER_AGENT:
+            return None
         self.resources[key] = ResourceOffer(
             agent=agent,
             kind=kind,

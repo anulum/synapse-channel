@@ -22,6 +22,12 @@ All notable changes to this project are documented here.
   format drift is caught without taking a runtime dependency on the client.
 
 ### Security
+- Per-agent quotas bound how much state one agent can register, so a runaway or
+  buggy agent cannot exhaust the hub. An agent may hold at most 128 live claims
+  and 64 live resource offers; a claim or offer past the bound is refused, while
+  renewing a held claim or refreshing an existing offer is always free. (Per-item
+  size — a finding or capability card — is already bounded by `--max-msg-kb`, and
+  the blackboard's progress notes by its existing retention bound.)
 - The optional `/metrics` and `/health` endpoint can now require a token. With
   `synapse hub --metrics --metrics-token <t>` (or `SynapseHub(metrics_token=...)`)
   both paths demand the token — presented as `Authorization: Bearer <t>` or a

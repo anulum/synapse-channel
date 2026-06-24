@@ -25,7 +25,7 @@ from synapse_channel.core.hub import SynapseHub, is_loopback_host
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
-from synapse_channel.core.state import GitContext
+from synapse_channel.core.state import MAX_OFFERS_PER_AGENT, GitContext
 from synapse_channel.relay import decode_lite, read_jsonl_since
 
 
@@ -240,6 +240,19 @@ async def test_resource_offer_missing_fields_errors() -> None:
     await hub.handle_message(_msg(sender="A", type="resource", kind="llm"), ws)
     assert ws.last()["type"] == "error"
     assert "kind+name" in ws.last()["payload"]
+
+
+async def test_resource_offer_quota_is_enforced() -> None:
+    hub = _hub()
+    ws = FakeServerWS()
+    await hub.register(ws)
+    for index in range(MAX_OFFERS_PER_AGENT):
+        await hub.handle_message(
+            _msg(sender="A", type="resource", kind="llm", name=f"m{index}"), ws
+        )
+    await hub.handle_message(_msg(sender="A", type="resource", kind="llm", name="overflow"), ws)
+    assert ws.last()["type"] == "error"
+    assert "quota" in ws.last()["payload"]
 
 
 # --- snapshots ---------------------------------------------------------------
