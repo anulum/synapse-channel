@@ -11,6 +11,25 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [0.36.0] - 2026-06-24
+
+### Fixed
+- Cross-repository lease bleed. A `synapse lock <id> -- <cmd>` with no explicit
+  `--paths` claimed the shared default worktree, so every keyless lock contended with
+  every other claim regardless of its name — one repository's `:git` push-lock could
+  block an unrelated repository's lock or claim. A keyless lock is now a pure named
+  mutex scoped to its own id, so distinct ids never contend; passing `--paths` still
+  opts into shared file-scope overlap. A `git-claim` likewise now resolves the
+  repository root (`git rev-parse --show-toplevel`) and sets it as the claim's
+  worktree, so two repositories declaring identically-named paths no longer conflict
+  while overlaps within one repository are still detected.
+
+### Added
+- `synapse release <task> --name <owner>` — manually drop a claim you own. This is the
+  escape hatch for a claim no commit or merge will auto-release (a
+  `git-claim --auto-release-on manual`), which previously had no command-line release
+  path.
+
 ## [0.35.1] - 2026-06-23
 
 ### Fixed

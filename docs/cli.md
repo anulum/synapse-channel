@@ -23,6 +23,7 @@ The `synapse` command exposes twenty subcommands.
 | `synapse git-release` | Release the claims whose paths a commit or merge just touched. |
 | `synapse conflicts` | Predict cross-branch merge conflicts between overlapping claims; exit non-zero on a hit. |
 | `synapse lock` | Hold a lease while running a command, to serialise it across agents. |
+| `synapse release` | Manually drop a claim you own (e.g. an `--auto-release-on manual` claim). |
 | `synapse task` | Declare and update the shared task plan. |
 
 ## Recovery: picking up after a restart
@@ -69,6 +70,12 @@ id, so the others wait their turn instead of clobbering each other:
 synapse lock quantum:git -- git push          # holds quantum:git while pushing
 synapse lock quantum:git --wait-timeout 0 -- git push   # fail fast if someone holds it
 ```
+
+A lock is a named mutex keyed by its id: `quantum:git` and `physics:git` are
+independent, so one repo's push-lock never blocks another's. The lease is held only
+for the wrapped command and dropped when it exits. A claim that no commit or merge
+will auto-release — a `git-claim --auto-release-on manual` — is dropped by its owner
+with `synapse release <task> --name <owner>`.
 
 ## Getting woken on a message
 

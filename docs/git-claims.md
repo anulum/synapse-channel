@@ -24,8 +24,11 @@ synapse git-claim TASK-1 --paths src/auth.py --base main
 
 The branch is resolved locally with `git rev-parse --abbrev-ref HEAD` and sent on
 an ordinary claim, carrying the branch, the base it will merge into, and the
-declared auto-release policy. `synapse state` then shows the branch alongside the
-claim:
+declared auto-release policy. The repository root is resolved too (with
+`git rev-parse --show-toplevel`) and set as the claim's worktree, so a git-claim is
+isolated to its own repository: two repositories that declare identically-named
+paths never contend, while two claims in the *same* repository still detect an
+overlap. `synapse state` then shows the branch alongside the claim:
 
 ```
 Active claims (1):
