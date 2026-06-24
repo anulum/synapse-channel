@@ -454,6 +454,35 @@ def test_hub_with_journal_threads_per_agent_quotas_to_state(tmp_path: Path) -> N
     assert hub.state.max_paths_per_claim == 3
 
 
+def test_hub_hints_at_compaction_when_the_log_is_oversized(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    store = EventStore(tmp_path / "events.db")
+    store.append(EventKind.CHAT, {"msg_id": 1})
+    store.append(EventKind.CHAT, {"msg_id": 2})
+    with caplog.at_level("WARNING", logger="synapse.hub"):
+        SynapseHub(journal=store, compact_hint_threshold=1)
+    store.close()
+    assert any("synapse compact" in message for message in caplog.messages)
+
+
+def test_hub_stays_quiet_when_the_log_is_within_the_compact_threshold(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    store = EventStore(tmp_path / "events.db")
+    store.append(EventKind.CHAT, {"msg_id": 1})
+    with caplog.at_level("WARNING", logger="synapse.hub"):
+        hub = SynapseHub(journal=store, compact_hint_threshold=100)
+    store.close()
+    assert hub.compact_hint_threshold == 100
+    assert not any("synapse compact" in message for message in caplog.messages)
+
+
+def test_compact_hint_threshold_clamps_up_to_one() -> None:
+    assert SynapseHub(compact_hint_threshold=0).compact_hint_threshold == 1
+    assert SynapseHub(compact_hint_threshold=-9).compact_hint_threshold == 1
+
+
 @pytest.mark.parametrize("seq", [1, 2, 3])
 def test_message_seq_is_monotonic(seq: int) -> None:
     hub = _hub()

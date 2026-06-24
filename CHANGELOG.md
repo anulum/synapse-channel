@@ -23,6 +23,11 @@ All notable changes to this project are documented here.
   and `--max-paths-per-claim N` (defaults 128, 64, and 512), for test labs, large
   monorepos, and managed deployments. A claim declaring more distinct paths than the cap
   widens to own its whole worktree — conservative, so it never misses a conflict.
+- A hub started on a durable log larger than `--compact-hint-threshold N` records
+  (default 100000) now logs a one-off hint to run `synapse compact`. The log is never
+  compacted automatically — pruning is safe only below a sequence the read-side has
+  already consumed, which the hub cannot know — so this surfaces unbounded growth
+  without ever dropping an unconsumed finding or checkpoint.
 
 ### Security
 - The SQLite event log's write-ahead-log sidecars (`<db>-wal`, `<db>-shm`) are now
