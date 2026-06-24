@@ -89,6 +89,33 @@ def resolve_branch(*, runner: GitRunner = _default_git_runner) -> str:
     return runner(["rev-parse", "--abbrev-ref", "HEAD"])
 
 
+def resolve_repo(*, runner: GitRunner = _default_git_runner) -> str:
+    """Return the repository root via ``git rev-parse --show-toplevel``.
+
+    The root path labels the claim's worktree so that claims in *different*
+    repositories never contend: a git-scoped claim must isolate its file scope to
+    its own repository, never to the hub's shared default tree. Two linked git
+    worktrees over one ``.git`` resolve to distinct roots and so stay isolated
+    too, which is the worktree-isolation contract the scope model already honours.
+
+    Parameters
+    ----------
+    runner : GitRunner, optional
+        The git executor; injectable for testing.
+
+    Returns
+    -------
+    str
+        The absolute path of the repository's top-level directory.
+
+    Raises
+    ------
+    GitError
+        When the git command fails.
+    """
+    return runner(["rev-parse", "--show-toplevel"])
+
+
 async def run_git_claim(
     *,
     uri: str,
@@ -104,7 +131,10 @@ async def run_git_claim(
     """Resolve the current branch and send a git-scoped claim, printing the outcome.
 
     The branch is resolved locally and carried as a :class:`GitContext` on an
-    ordinary claim; the hub treats it as opaque metadata.
+    ordinary claim; the hub treats it as opaque metadata. The repository root is
+    also resolved locally and set as the claim's worktree, so a git-scoped claim
+    is isolated to its own repository and never contends with a claim in another
+    repository (even one declaring identically-named paths).
 
     Parameters
     ----------
@@ -134,6 +164,7 @@ async def run_git_claim(
     """
     try:
         branch = resolve_branch(runner=runner)
+        repo = resolve_repo(runner=runner)
     except GitError as exc:
         print(f"git error: {exc}")
         return 1
@@ -155,7 +186,7 @@ async def run_git_claim(
         if not await agent.wait_until_ready(timeout=5.0):
             print(f"[{name}] Could not reach hub at {uri}.")
             return 1
-        await agent.claim(task_id, paths=paths, git=context.as_dict())
+        await agent.claim(task_id, worktree=repo, paths=paths, git=context.as_dict())
         for _ in range(40):
             if outcome:
                 break

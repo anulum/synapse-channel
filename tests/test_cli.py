@@ -49,6 +49,7 @@ class FakeAgent:
         self.ledger_updates: list[tuple[str, str | None]] = []
         self.progress_posts: list[tuple[str, str, str]] = []
         self.claims: list[str] = []
+        self.claim_worktrees: list[str] = []
         self.releases: list[str] = []
         self._ready = ready
         self._inbound = inbound or []
@@ -109,6 +110,7 @@ class FakeAgent:
         idem_key: str | None = None,
     ) -> None:
         self.claims.append(task_id)
+        self.claim_worktrees.append(worktree)
 
     async def release(self, task_id: str, *, idem_key: str | None = None) -> None:
         self.releases.append(task_id)
@@ -1260,7 +1262,34 @@ async def test_lock_runs_command_holding_lease() -> None:
     assert code == 0
     assert ran == [["echo", "hi"]]
     assert holder[0].claims == ["g"]
+    # Explicit --paths opts into shared file-scope overlap: the claim stays in the
+    # default worktree where declared paths are compared.
+    assert holder[0].claim_worktrees == [""]
     assert holder[0].releases == ["g"]
+
+
+async def test_lock_keyless_namespaces_worktree_to_task_id() -> None:
+    holder: list[FakeAgent] = []
+    granted: dict[str, Any] = {"type": "claim_granted", "task_id": "repo:git", "owner": "X"}
+    factory = _factory(holder, inbound=[granted])
+
+    async def runner(command: list[str]) -> int:
+        return 0
+
+    code = await cli._lock(
+        uri="ws://h",
+        name="X",
+        task_id="repo:git",
+        command=["git", "push"],
+        paths=[],
+        wait_timeout=5.0,
+        agent_factory=factory,
+        runner=runner,
+    )
+    assert code == 0
+    # A keyless lock is a pure named mutex: its claim is scoped to its own task id,
+    # so a different repo's lock (a different task id) can never contend with it.
+    assert holder[0].claim_worktrees == ["repo:git"]
 
 
 async def test_lock_fails_fast_when_held(capsys: pytest.CaptureFixture[str]) -> None:
@@ -1367,6 +1396,93 @@ def test_cmd_lock_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
         uri="ws://h", name="X", task_id="g", command=["x"], paths=None, wait_timeout=0.0, token=None
     )
     assert cli._cmd_lock(ns) == 0
+
+
+# --- release -----------------------------------------------------------------
+
+
+def test_parser_release() -> None:
+    args = cli.build_parser().parse_args(["release", "studio-panel-enrich", "--name", "USER"])
+    assert args.task_id == "studio-panel-enrich"
+    assert args.name == "USER"
+    assert args.func is cli._cmd_release
+
+
+async def test_release_granted(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    granted: dict[str, Any] = {
+        "type": "release_granted",
+        "task_id": "studio-panel-enrich",
+        "owner": "USER",
+    }
+    factory = _factory(holder, inbound=[granted])
+    code = await cli._release(
+        uri="ws://h",
+        name="USER",
+        task_id="studio-panel-enrich",
+        agent_factory=factory,
+    )
+    assert code == 0
+    assert holder[0].releases == ["studio-panel-enrich"]
+    assert "released 'studio-panel-enrich'" in capsys.readouterr().out
+
+
+async def test_release_denied_for_non_owner(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    denied: dict[str, Any] = {
+        "type": "release_denied",
+        "task_id": "studio-panel-enrich",
+        "payload": "owned by SCPN-MIF-CORE, not USER",
+    }
+    factory = _factory(holder, inbound=[denied])
+    code = await cli._release(
+        uri="ws://h",
+        name="USER",
+        task_id="studio-panel-enrich",
+        agent_factory=factory,
+    )
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "release refused for 'studio-panel-enrich'" in out
+    assert "owned by SCPN-MIF-CORE" in out
+
+
+async def test_release_ignores_noise_then_confirms(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    inbound: list[dict[str, Any]] = [
+        # A grant for another task is ignored (wrong task id) ...
+        {"type": "release_granted", "task_id": "other", "owner": "USER"},
+        # ... and a grant addressed to a different owner is ignored too ...
+        {"type": "release_granted", "task_id": "t", "owner": "ELSE"},
+        # ... before the grant that actually belongs to this caller.
+        {"type": "release_granted", "task_id": "t", "owner": "USER"},
+    ]
+    factory = _factory(holder, inbound=inbound)
+    code = await cli._release(uri="ws://h", name="USER", task_id="t", agent_factory=factory)
+    assert code == 0
+    assert "released 't'" in capsys.readouterr().out
+
+
+async def test_release_reports_unreachable(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    factory = _factory(holder, ready=False)
+    code = await cli._release(uri="ws://h", name="USER", task_id="t", agent_factory=factory)
+    assert code == 1
+    assert "Could not reach hub" in capsys.readouterr().out
+
+
+async def test_release_gives_up_without_response(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    factory = _factory(holder, inbound=[])
+    code = await cli._release(uri="ws://h", name="USER", task_id="t", agent_factory=factory)
+    assert code == 1
+    assert "no response from hub" in capsys.readouterr().out
+
+
+def test_cmd_release_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("synapse_channel.cli.asyncio.run", lambda coro: coro.close() or 0)
+    ns = argparse.Namespace(uri="ws://h", name="USER", task_id="t", token=None)
+    assert cli._cmd_release(ns) == 0
 
 
 # --- state + relay --project (recovery) --------------------------------------

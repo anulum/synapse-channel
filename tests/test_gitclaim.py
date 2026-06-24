@@ -21,6 +21,7 @@ from synapse_channel.git.gitclaim import (
     GitError,
     _default_git_runner,
     resolve_branch,
+    resolve_repo,
     run_git_claim,
 )
 
@@ -44,6 +45,7 @@ class FakeAgent:
         self.running = True
         self.ready = True
         self.claims: list[tuple[str, list[str], dict[str, Any] | None]] = []
+        self.worktrees: list[str] = []
 
     async def connect(self) -> None:
         return None
@@ -52,9 +54,16 @@ class FakeAgent:
         return self.ready
 
     async def claim(
-        self, task_id: str, *, paths: Any = (), git: dict[str, Any] | None = None, **_kw: Any
+        self,
+        task_id: str,
+        *,
+        worktree: str = "",
+        paths: Any = (),
+        git: dict[str, Any] | None = None,
+        **_kw: Any,
     ) -> None:
         self.claims.append((task_id, list(paths), git))
+        self.worktrees.append(worktree)
 
 
 def make_factory(*, ready: bool = True) -> tuple[AgentFactory, list[FakeAgent]]:
@@ -136,6 +145,31 @@ def test_resolve_branch_calls_rev_parse() -> None:
     assert captured == [["rev-parse", "--abbrev-ref", "HEAD"]]
 
 
+# -- resolve_repo -------------------------------------------------------------
+
+
+def test_resolve_repo_calls_show_toplevel() -> None:
+    captured: list[list[str]] = []
+
+    def runner(args: list[str]) -> str:
+        captured.append(args)
+        return "/home/me/work/repo"
+
+    assert resolve_repo(runner=runner) == "/home/me/work/repo"
+    assert captured == [["rev-parse", "--show-toplevel"]]
+
+
+def _branch_then_repo(branch: str, repo: str) -> Callable[[list[str]], str]:
+    """A git runner that answers branch and top-level queries distinctly."""
+
+    def runner(args: list[str]) -> str:
+        if args == ["rev-parse", "--show-toplevel"]:
+            return repo
+        return branch
+
+    return runner
+
+
 # -- run_git_claim ------------------------------------------------------------
 
 
@@ -161,6 +195,46 @@ async def test_run_git_claim_granted_sends_git_context() -> None:
     assert git == {"branch": "feature/x", "base": "develop", "auto_release_on": "commit"}
     await agent.callback({"type": MessageType.CLAIM_GRANTED, "task_id": "T1", "owner": "me"})
     assert await task == 0
+
+
+async def test_run_git_claim_scopes_worktree_to_repo() -> None:
+    factory, created = make_factory()
+
+    task = asyncio.create_task(
+        run_git_claim(
+            uri="ws://t",
+            name="me",
+            task_id="T1",
+            paths=["src/a.py"],
+            agent_factory=factory,
+            runner=_branch_then_repo("feature/x", "/home/me/work/repo-a"),
+        )
+    )
+    agent = await _await_claim_sent(created)
+    # The claim is isolated to the resolved repository root, so a same-named path
+    # in a different repository can never contend with it.
+    assert agent.worktrees[0] == "/home/me/work/repo-a"
+    await agent.callback({"type": MessageType.CLAIM_GRANTED, "task_id": "T1", "owner": "me"})
+    assert await task == 0
+
+
+async def test_run_git_claim_git_error_on_repo_resolution() -> None:
+    factory, _created = make_factory()
+
+    def runner(args: list[str]) -> str:
+        if args == ["rev-parse", "--show-toplevel"]:
+            raise GitError("not inside a work tree")
+        return "main"
+
+    rc = await run_git_claim(
+        uri="ws://t",
+        name="me",
+        task_id="T1",
+        paths=[],
+        agent_factory=factory,
+        runner=runner,
+    )
+    assert rc == 1
 
 
 async def test_run_git_claim_denied() -> None:
