@@ -16,6 +16,8 @@ The ``synapse`` command exposes these subcommands:
 * ``wait`` — block until a message addressed to you arrives, then exit (a wake trigger);
 * ``listen`` — connect and stream channel messages until interrupted;
 * ``relay`` — decode and print a lite relay log a hub mirrored to a file;
+* ``ingest`` — stream durable events from a hub event store since a sequence cursor (read-side);
+* ``compact`` — bound the durable log: keep latest-N checkpoints per task, age out old findings;
 * ``board`` — print the hub's shared task/progress blackboard;
 * ``supervisor`` — run an LLM-free supervisor that re-offers stalled tasks;
 * ``manifest`` — print the capability manifest of advertised agents;
@@ -61,6 +63,7 @@ from synapse_channel.client.supervisor import (
     SupervisorWorker,
 )
 from synapse_channel.core.auth import TokenAuthenticator
+from synapse_channel.core.compaction import RetentionPolicy, compact
 from synapse_channel.core.hub import (
     DEFAULT_HOST,
     DEFAULT_MAX_CLIENTS,
@@ -1056,6 +1059,62 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_compact(args: argparse.Namespace) -> int:
+    """Apply a retention policy to a hub event store, bounding the durable log.
+
+    The opt-in compaction knob for the durable write log: resume checkpoints and
+    authored findings are kept at full durability and otherwise accumulate
+    without bound. It keeps the latest ``--max-checkpoints-per-task`` checkpoints
+    per task and ages out findings whose validity window closed more than
+    ``--finding-grace-seconds`` ago, deleting only events at or below a floor
+    sequence so a downstream ingest cursor never loses an unconsumed event. The
+    floor is the lowest sequence every memory consumer has already ingested: pass
+    it with ``--floor-seq`` (e.g. the cursor REMANENTIA persists), or ``--all`` to
+    treat the whole log as settled when no read-side consumer lags. ``--vacuum``
+    reclaims the freed disk pages afterwards.
+    """
+    store = EventStore(args.db)
+    try:
+        if args.all:
+            floor = store.max_seq()
+        elif args.floor_seq is not None:
+            floor = max(0, int(args.floor_seq))
+        else:
+            print(
+                "compact needs a floor: pass --floor-seq <seq> (the lowest sequence every "
+                "memory consumer has ingested) or --all to treat the whole log as settled.",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            policy = RetentionPolicy(
+                max_checkpoints_per_task=args.max_checkpoints_per_task,
+                finding_grace_seconds=args.finding_grace_seconds,
+            )
+        except ValueError as exc:
+            print(f"invalid retention policy: {exc}", file=sys.stderr)
+            return 2
+        if policy.is_noop:
+            print(
+                "compact needs a retention knob: --max-checkpoints-per-task N and/or "
+                "--finding-grace-seconds S.",
+                file=sys.stderr,
+            )
+            return 2
+        result = compact(store, policy, floor_seq=floor)
+        if args.vacuum:
+            store.vacuum()
+    finally:
+        store.close()
+    vacuum_note = " (vacuumed)" if args.vacuum else ""
+    print(
+        f"compacted below seq {result.floor_seq}: removed "
+        f"{result.checkpoints_removed} checkpoint(s), "
+        f"{result.findings_removed} finding(s){vacuum_note}"
+    )
+    return 0
+
+
 def _print_board(board: dict[str, Any]) -> None:
     """Render a blackboard snapshot as readable lines on stdout."""
     tasks = board.get("tasks", [])
@@ -1649,6 +1708,45 @@ def build_parser() -> argparse.ArgumentParser:
         "--limit", type=int, default=None, help="Cap the number of events returned."
     )
     ingest.set_defaults(func=_cmd_ingest)
+
+    compact = sub.add_parser(
+        "compact",
+        help="Bound the durable event log: keep the latest-N checkpoints per task and "
+        "age out expired findings (the retention knob).",
+    )
+    compact.add_argument("db", help="Path to the hub event store (e.g. ~/synapse/hub.db).")
+    compact.add_argument(
+        "--max-checkpoints-per-task",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Keep only the latest N resume checkpoints per task; older ones are removed.",
+    )
+    compact.add_argument(
+        "--finding-grace-seconds",
+        type=float,
+        default=None,
+        metavar="S",
+        help="Remove findings whose validity window closed more than S seconds ago.",
+    )
+    floor_group = compact.add_mutually_exclusive_group()
+    floor_group.add_argument(
+        "--floor-seq",
+        type=int,
+        default=None,
+        help="Only compact events at or below this sequence (the min ingested cursor).",
+    )
+    floor_group.add_argument(
+        "--all",
+        action="store_true",
+        help="Treat the whole log as settled (use only when no read-side consumer lags).",
+    )
+    compact.add_argument(
+        "--vacuum",
+        action="store_true",
+        help="Reclaim freed disk pages after compaction (rewrites the database file).",
+    )
+    compact.set_defaults(func=_cmd_compact)
 
     board = sub.add_parser("board", help="Print the hub's shared task/progress board.")
     board.add_argument("--uri", default=DEFAULT_HUB_URI)

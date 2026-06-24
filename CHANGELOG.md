@@ -13,6 +13,19 @@ All notable changes to this project are documented here.
 
 ## [0.40.0] - 2026-06-24
 
+### Added
+- An opt-in retention knob that bounds the durable write log. Resume checkpoints
+  and authored findings are committed at full durability and otherwise accumulate
+  without bound; `compact(store, RetentionPolicy(...), floor_seq=...)` (and the
+  `synapse compact <db>` command) keeps the latest *N* checkpoints per task and
+  ages out findings whose validity window closed more than a grace period ago. It
+  deletes only events at or below a caller-supplied floor sequence, so a downstream
+  ingest cursor at or below the floor never loses an unconsumed event, and a deleted
+  sequence is never reused, so a cursor walks the gap. Keeping the latest checkpoint
+  per task leaves coordination replay reconstructing each claim exactly as before;
+  findings are skipped by replay, so ageing them out never touches coordination
+  state. `EventStore` gains `max_seq()`, `delete(seqs)`, and `vacuum()` to support it.
+
 ### Fixed
 - The idempotency guard now survives a hub restart. The cache that makes a retried
   mutation a no-op — so a reconnecting agent that resends a claim or release it is
