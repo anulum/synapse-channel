@@ -44,6 +44,7 @@ from synapse_channel.core.hub import (
     DEFAULT_MAX_MSG_BYTES,
     DEFAULT_PORT,
     DEFAULT_RELAY_MAX_LINES,
+    DEFAULT_TAKEOVER_COOLDOWN,
     SynapseHub,
 )
 from synapse_channel.core.persistence import EventStore
@@ -80,6 +81,7 @@ def _cmd_hub(args: argparse.Namespace) -> int:
         max_offers_per_agent=args.max_offers_per_agent,
         max_paths_per_claim=args.max_paths_per_claim,
         compact_hint_threshold=args.compact_hint_threshold,
+        takeover_cooldown=args.takeover_cooldown,
         enable_metrics=args.metrics,
         auth_timeout=args.auth_timeout,
         metrics_token=args.metrics_token,
@@ -266,6 +268,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=int,
         default=DEFAULT_COMPACT_HINT_THRESHOLD,
         help="Event-log record count past which the hub hints at running `synapse compact`.",
+    )
+    hub.add_argument(
+        "--takeover-cooldown",
+        type=float,
+        default=DEFAULT_TAKEOVER_COOLDOWN,
+        help="Seconds a name is protected from a second takeover, to blunt an eviction storm.",
     )
     hub.add_argument(
         "--token",

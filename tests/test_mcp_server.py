@@ -452,3 +452,19 @@ async def test_serve_stdio_runs_until_client_closes() -> None:
     )
     assert rc == 0
     assert server.ran
+
+
+async def test_serve_stdio_threads_request_timeout_to_the_bridge() -> None:
+    captured: list[SynapseHubBridge] = []
+
+    def builder(bridge: SynapseHubBridge) -> FakeServer:
+        captured.append(bridge)
+        return FakeServer()
+
+    rc = await serve_stdio(
+        agent_factory=cast(AgentFactory, FakeAgent),
+        server_builder=builder,
+        request_timeout=12.5,
+    )
+    assert rc == 0
+    assert captured[0].request_timeout == 12.5

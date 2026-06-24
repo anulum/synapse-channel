@@ -28,6 +28,10 @@ All notable changes to this project are documented here.
   compacted automatically — pruning is safe only below a sequence the read-side has
   already consumed, which the hub cannot know — so this surfaces unbounded growth
   without ever dropping an unconsumed finding or checkpoint.
+- Two more knobs are now reachable from the CLI: `synapse hub --takeover-cooldown S`
+  (seconds a name is protected from a second takeover, blunting an eviction storm) and
+  `synapse mcp --request-timeout S` (seconds the MCP bridge awaits a hub reply). Both
+  carry their previous defaults.
 
 ### Security
 - The SQLite event log's write-ahead-log sidecars (`<db>-wal`, `<db>-shm`) are now

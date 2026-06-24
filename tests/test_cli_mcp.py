@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 
 from synapse_channel import cli, cli_mcp
+from synapse_channel.mcp.server import DEFAULT_REQUEST_TIMEOUT
 
 
 def test_parser_mcp() -> None:
@@ -23,8 +24,21 @@ def test_parser_mcp() -> None:
     assert args.name == "bridge"
 
 
-def _mcp_ns() -> argparse.Namespace:
-    return argparse.Namespace(uri="ws://x", name="bridge", token=None)
+def test_parser_mcp_request_timeout() -> None:
+    assert cli.build_parser().parse_args(["mcp"]).request_timeout == DEFAULT_REQUEST_TIMEOUT
+    args = cli.build_parser().parse_args(["mcp", "--request-timeout", "12.5"])
+    assert args.request_timeout == 12.5
+
+
+def _mcp_ns(**overrides: Any) -> argparse.Namespace:
+    base: dict[str, Any] = {
+        "uri": "ws://x",
+        "name": "bridge",
+        "token": None,
+        "request_timeout": DEFAULT_REQUEST_TIMEOUT,
+    }
+    base.update(overrides)
+    return argparse.Namespace(**base)
 
 
 def test_cmd_mcp_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -33,6 +47,18 @@ def test_cmd_mcp_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(cli_mcp, "serve_stdio", fake)
     assert cli_mcp._cmd_mcp(_mcp_ns()) == 0
+
+
+def test_cmd_mcp_forwards_request_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(cli_mcp, "serve_stdio", fake)
+    assert cli_mcp._cmd_mcp(_mcp_ns(request_timeout=9.0)) == 0
+    assert captured["request_timeout"] == 9.0
 
 
 def test_cmd_mcp_reports_missing_extra(
