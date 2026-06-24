@@ -1575,6 +1575,15 @@ def test_metrics_disabled_by_default() -> None:
     assert SynapseHub().enable_metrics is False
 
 
+def test_uptime_seconds_is_elapsed_and_never_negative() -> None:
+    forward = iter([10.0, 13.5])
+    hub = SynapseHub(clock=lambda: next(forward))
+    assert hub.uptime_seconds() == 3.5
+    backward = iter([10.0, 9.0])  # a clock that appears to go back
+    hub2 = SynapseHub(clock=lambda: next(backward))
+    assert hub2.uptime_seconds() == 0.0  # clamped, never negative
+
+
 def test_process_request_serves_prometheus_metrics() -> None:
     hub = SynapseHub(enable_metrics=True)
     response = hub._process_request(None, _request("/metrics"))

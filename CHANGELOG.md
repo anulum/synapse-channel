@@ -13,6 +13,14 @@ All notable changes to this project are documented here.
 
 ## [0.41.0] - 2026-06-24
 
+### Added
+- The `/health` document now also reports the package `version` and
+  `uptime_seconds` (alongside the existing `status`, `hub_id`, online-agent, and
+  active-claim fields), so a probe can surface what is running and for how long.
+  The hand-rendered Prometheus exposition is now also checked against the real
+  `prometheus-client` parser in the test suite (a dev-only dependency), so a
+  format drift is caught without taking a runtime dependency on the client.
+
 ### Security
 - The optional `/metrics` and `/health` endpoint can now require a token. With
   `synapse hub --metrics --metrics-token <t>` (or `SynapseHub(metrics_token=...)`)

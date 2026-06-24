@@ -161,12 +161,19 @@ def health_snapshot(hub: SynapseHub) -> dict[str, Any]:
     Returns
     -------
     dict[str, Any]
-        ``status`` (``ok`` whenever the hub answers), the ``hub_id``, and the
-        current online-agent and active-claim counts.
+        ``status`` (``ok`` whenever the hub answers), the package ``version``, the
+        ``hub_id``, the ``uptime_seconds`` since start, and the current
+        online-agent and active-claim counts.
     """
+    # Imported lazily: the package __init__ imports this module, so a top-level
+    # import would be circular; by call time the package is fully initialised.
+    from synapse_channel import __version__
+
     return {
         "status": "ok",
+        "version": __version__,
         "hub_id": hub.hub_id,
+        "uptime_seconds": round(hub.uptime_seconds(), 3),
         "online_agents": len(hub.agent_sockets),
         "active_claims": len(hub.state.claims),
     }
