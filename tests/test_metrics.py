@@ -87,14 +87,32 @@ def test_messages_total_is_a_counter() -> None:
 # -- health_snapshot ----------------------------------------------------------
 
 
-def test_health_snapshot_reports_ok_and_counts() -> None:
-    hub = SynapseHub(hub_id="syn-health")
+def test_health_snapshot_reports_ok_version_uptime_and_counts() -> None:
+    from synapse_channel import __version__
+
+    ticks = iter([100.0, 105.0])  # construction, then the snapshot read
+    hub = SynapseHub(hub_id="syn-health", clock=lambda: next(ticks))
     hub.agent_sockets["A"] = object()
     hub.state.claim("A", "T1", now=0.0)
     snapshot = health_snapshot(hub)
     assert snapshot == {
         "status": "ok",
+        "version": __version__,
         "hub_id": "syn-health",
+        "uptime_seconds": 5.0,
         "online_agents": 1,
         "active_claims": 1,
     }
+
+
+def test_rendered_metrics_parse_with_prometheus_client() -> None:
+    # Validate the hand-rendered exposition against the real Prometheus parser, so
+    # a format drift is caught without taking a runtime dependency on the client.
+    from prometheus_client.parser import text_string_to_metric_families
+
+    text = render_prometheus(collect_hub_metrics(SynapseHub()))
+    families = list(text_string_to_metric_families(text))
+    names = {family.name for family in families}
+    assert "synapse_up" in names
+    assert "synapse_active_claims" in names
+    assert all(family.samples for family in families)  # every family carries a sample

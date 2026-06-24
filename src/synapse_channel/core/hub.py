@@ -199,6 +199,7 @@ class SynapseHub:
         self.max_msg_bytes = max(int(max_msg_bytes), 1)
         self.takeover_cooldown = max(float(takeover_cooldown), 0.0)
         self._clock = clock or time.monotonic
+        self._started = self._clock()
         self._last_takeover: dict[str, float] = {}
         self.max_history = max(int(max_history), 1)
         self.relay_log = Path(relay_log) if relay_log else None
@@ -294,6 +295,10 @@ class SynapseHub:
     def online_agents(self) -> list[str]:
         """Return the sorted names of currently registered agents."""
         return sorted(self.agent_sockets.keys())
+
+    def uptime_seconds(self) -> float:
+        """Return seconds elapsed since the hub was constructed."""
+        return max(0.0, self._clock() - self._started)
 
     async def _send_json(self, websocket: Any, data: dict[str, Any]) -> None:
         """Serialise and send one message to a single socket."""
