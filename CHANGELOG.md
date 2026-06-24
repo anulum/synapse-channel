@@ -73,6 +73,13 @@ All notable changes to this project are documented here.
   Prometheus `/metrics` + `/health` endpoint (added in 0.40.0). The metrics entry
   now states the opt-in, no-authentication, loopback-only posture honestly.
 
+### Upgrade notes
+- No breaking API or wire changes; an in-place upgrade is safe. Two operator
+  notes for a hub exposed off-loopback: a **secured** hub (`--token`) now requires
+  the first frame to authenticate before it is welcomed or counted (tune the grace
+  with `--auth-timeout`); and if you expose `--metrics`, set `--metrics-token` (or
+  keep it on a loopback bind) so the endpoint does not serve metadata unauthenticated.
+
 ## [0.40.0] - 2026-06-24
 
 ### Changed
