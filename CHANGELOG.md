@@ -28,6 +28,15 @@ All notable changes to this project are documented here.
   `"remember"`) that rides the durable chat event and the broadcast unchanged so a
   read-side filter can pick out actively authored context. The hub carries it
   without interpreting it, and it is omitted from the envelope when blank.
+- A first-class `syn` command (with `syn-name`/`syn-wait`/`syn-say`/`syn-inbox`/
+  `syn-board` aliases) — a thin, identity-correct front end over the package
+  commands for the loop an agent runs each session. The project identity is
+  resolved from `--project`, then `$SYN_PROJECT`/`$SYN_IDENTITY`, and the working
+  directory only as a last resort, so a command run from the wrong directory no
+  longer silently coordinates as the wrong project; an identity that looks
+  accidental (the home directory, a system path) is flagged rather than used in
+  silence. `syn arm` builds a directed-only waiter named distinctly from the sender
+  in one place, correctly.
 
 ## [0.38.0] - 2026-06-24
 
