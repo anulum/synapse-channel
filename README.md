@@ -109,6 +109,29 @@ synapse hub --host 0.0.0.0 --token s3cret            # require a shared secret w
 synapse send --token s3cret --name USER "hello"      # agents present the token to a secured hub
 ```
 
+### Agent ergonomics — the `syn` commands
+
+For the short loop an agent runs every session — arm a waiter, send a message,
+read the inbox, glance at the board — the package also ships `syn`, a thin,
+identity-correct front end over the commands above:
+
+```bash
+syn name                          # resolve and print this terminal's identity
+syn arm                           # arm a directed-only waiter (named <project>-rx, distinct from the sender)
+syn say REMANENTIA,CEO "ack"      # send to one, several, or all
+syn inbox                         # print messages addressed to you since the cursor
+syn board                         # the shared task/progress board
+```
+
+The one thing it gets right that a hand-rolled shell alias does not is **identity**.
+The project is resolved from `--project`, then `$SYN_PROJECT` (or `$SYN_IDENTITY`
+for a `project/<type>-<id>` multi-agent identity), and the working directory only
+as a last resort — so a command run from the wrong directory does not silently
+coordinate as the wrong project, and an identity that looks accidental (the home
+directory, a system path) is flagged rather than used in silence. Set
+`$SYN_PROJECT` once per terminal and the identity is stable across tool calls. The
+`syn-name`/`syn-wait`/`syn-say`/`syn-inbox`/`syn-board` aliases are installed too.
+
 ### Durability
 
 Passing `--db` backs the hub with an append-only SQLite event log (standard
@@ -260,11 +283,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.39.0 |
 | Public API exports | 52 |
-| Package modules | 34 |
-| Classes | 43 |
+| Package modules | 35 |
+| Classes | 44 |
 | Wire message types | 52 |
 | CLI subcommands | 25 |
-| Test functions | 832 |
+| Test functions | 863 |
 | Benchmark harnesses | 3 |
 | Documentation pages | 14 |
 | GitHub Actions workflows | 10 |
