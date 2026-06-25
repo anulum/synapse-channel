@@ -13,7 +13,8 @@ SYNAPSE CHANNEL — repository overview
 </p>
 
 <p align="center">
-  <strong>Local-first coordination bus for AI agents working in parallel — one repository or a whole ecosystem of them</strong>
+  <strong>Stop parallel AI coding agents from clobbering each other's files.</strong><br>
+  Local-first coordination bus — file-scope claims, a shared plan, and durable leases — for one repository or a whole ecosystem of them.
 </p>
 
 <p align="center">
@@ -122,9 +123,34 @@ synapse task declare BUILD --title "compile"         # declare/update the shared
 synapse task update BUILD --status done              # mark a plan task done so dependents unblock
 synapse supervisor --idle-seconds 300                # LLM-free: re-offer tasks that stall
 synapse manifest                                     # print the capability cards agents advertised
+synapse doctor                                       # check for common misconfigs (identity, exposure, hub, waiter)
 synapse hub --host 0.0.0.0 --token s3cret            # require a shared secret when binding off-loopback
 synapse send --token s3cret --name USER "hello"      # agents present the token to a secured hub
 ```
+
+### Use it with your coding agent
+
+Synapse coordinates the agents you already run; it does not replace them.
+
+- **Claude Code / Claude Desktop / Cursor (MCP):** point the host at the MCP server
+  and every coordination verb shows up as a tool — no Synapse-specific code.
+
+  ```bash
+  pip install 'synapse-channel[mcp]'
+  synapse mcp --uri ws://localhost:8876        # add this to the host's MCP server config
+  ```
+
+- **Aider, or any non-MCP tool:** claim a file scope before editing and let a git
+  hook release it on commit, so two sessions never touch the same files.
+
+  ```bash
+  synapse git-init --name aider-1              # one step: install the hooks + write the conventions guide
+  synapse git-claim AUTH --paths src/auth --name aider-1
+  aider src/auth/*.py                          # ... edit; the post-commit hook releases the claim
+  ```
+
+- **Check the wiring:** `synapse doctor` reports the common setup mistakes — no live
+  waiter, a hub exposed without a token, an accidental identity — each with its fix.
 
 ### Agent ergonomics — the `syn` commands
 
@@ -174,9 +200,11 @@ see [`benchmarks/`](benchmarks/).
 By default the hub binds to loopback and runs with no authentication — the right
 posture for one operator on one machine. When that is not enough (a worker with
 tool-use, or a hub bound off-loopback), `--token` requires a shared secret that
-connecting agents present with `--token`; the hub warns if it is bound to a
-non-loopback host without one. This is a proportionate gate, not a cryptographic
-identity system.
+connecting agents present with `--token`. Binding off loopback without a token is
+**refused** rather than silently exposed: the hub will not start unless you set a
+token (and `--metrics-token` when metrics are on), or explicitly pass
+`--insecure-off-loopback` to accept the risk. This is a proportionate gate, not a
+cryptographic identity system.
 
 ### MCP server face
 
@@ -200,12 +228,15 @@ dependency — see the [MCP guide](docs/mcp.md).
 A claim can be scoped to the git branch it happens on, resolved client-side:
 
 ```bash
+synapse git-init                                 # one-step setup: install the hooks + write a .synapse/ guide
 synapse git-claim TASK-1 --paths src/auth.py     # claim, tagged with your branch
-synapse git-hook install                         # auto-release on commit/merge
+synapse git-hook install                         # (git-init already does this) auto-release on commit/merge
 synapse conflicts --check-diff                   # predict cross-branch merge conflicts
 ```
 
-`synapse state` shows each claim's branch; installed git hooks release a claim
+`synapse git-init` bundles the hook install with a short `.synapse/git-claims.md`
+onboarding guide (branch convention + worktree workflow). `synapse state` shows
+each claim's branch; installed git hooks release a claim
 when its files are committed or merged; and `synapse conflicts` flags two agents
 about to edit the same files on branches that merge into the same base. The hub
 stays **git-agnostic** — it stores the branch as opaque metadata and never runs

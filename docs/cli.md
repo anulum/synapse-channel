@@ -18,6 +18,8 @@ The `synapse` command exposes twenty subcommands.
 | `synapse manifest` | Print the capability manifest of advertised agents. |
 | `synapse who` | List the agents currently online, optionally for one project. |
 | `synapse state` | Print active claims and their checkpoints (a resume view). |
+| `synapse doctor` | Check for common coordination misconfigs (identity, exposure, hub, waiter); exit non-zero on a failure. |
+| `synapse git-init` | One-step claim-aware setup: install the hooks and write a `.synapse/` conventions guide. |
 | `synapse git-claim` | Claim work scoped to the current git branch (see [Git-native claims](git-claims.md)). |
 | `synapse git-hook` | Install post-commit/post-merge hooks that auto-release a commit's claims. |
 | `synapse git-release` | Release the claims whose paths a commit or merge just touched. |
@@ -141,10 +143,14 @@ synapse hub --port 8876 --rate 5 --burst 20        # per-agent rate limiting
 synapse hub --port 8876 --relay-log ./feed.ndjson  # mirror the channel to a file
 synapse hub --max-clients 32 --max-msg-kb 256      # cap connections and frame size
 synapse hub --host 0.0.0.0 --token-file ./tok      # token from a file, not argv (ps-safe)
+synapse hub --host 0.0.0.0 --insecure-off-loopback # bind off-loopback WITHOUT a token (refused otherwise)
 ```
 
-Supply the token with `--token-file` or the `SYNAPSE_TOKEN` environment variable
-rather than `--token`, which is visible in `ps`. The hub drains on `SIGTERM`/`SIGINT`,
+Binding a non-loopback host without a token (and, with `--metrics`, a metrics
+token) is **refused** by default — the hub will not start exposed by accident;
+`--insecure-off-loopback` downgrades that to a warning for a trusted private
+network. Supply the token with `--token-file` or the `SYNAPSE_TOKEN` environment
+variable rather than `--token`, which is visible in `ps`. The hub drains on `SIGTERM`/`SIGINT`,
 so a container stop shuts it down cleanly. `synapse health` is a liveness probe —
 exit `0` when the hub answers, `1` otherwise — wired as the Docker `HEALTHCHECK`:
 

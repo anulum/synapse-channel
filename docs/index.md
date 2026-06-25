@@ -1,5 +1,7 @@
 # SYNAPSE CHANNEL
 
+**Stop parallel AI coding agents from clobbering each other's files.**
+
 A local-first coordination bus for a fleet of AI agents working in parallel —
 within one codebase or across a whole ecosystem of them. A single WebSocket hub is
 the authoritative source of truth for **presence**, **file-scoped work claims**,

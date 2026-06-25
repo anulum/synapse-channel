@@ -103,12 +103,14 @@ The git-aware commands resolve the branch and changed paths **client-side**, so 
 from inside a git working tree, on a branch. `synapse git-hook install` bakes the absolute
 `synapse` path into the hook; pass `--synapse-bin` if it cannot be resolved from `PATH`.
 
-## The hub logs a warning when bound off-loopback
+## The hub refuses to start when bound off-loopback without a token
 
-Binding `--host 0.0.0.0` (or any non-loopback address) **without** `--token` is flagged: the
-connection secret is the only thing standing between the channel and the network. Do not
-expose the hub on an untrusted network; require `--token`, and if you enable `--metrics`,
-require `--metrics-token` so the endpoint does not leak operational metadata.
+Binding `--host 0.0.0.0` (or any non-loopback address) **without** `--token` is **refused**,
+not just warned about: the connection secret is the only thing standing between the channel
+and the network, so the hub will not start unexposed by accident. Require `--token`, and if
+you enable `--metrics`, require `--metrics-token` so the endpoint does not leak operational
+metadata. To bind an unauthenticated off-loopback hub anyway (a trusted private network),
+pass `--insecure-off-loopback` to downgrade the refusal to a warning.
 
 ## Still stuck?
 

@@ -43,6 +43,11 @@ All notable changes to this project are documented here.
   when metrics are on) rather than override the guard. Loopback-only hubs and any hub
   that already sets a token need no change.
 
+### Documentation
+- The README leads with the file-safety promise and adds a "Use it with your coding
+  agent" quickstart with one recipe each for Claude Code / Claude Desktop / Cursor
+  (via MCP) and Aider or any non-MCP tool (via `git-init` + branch-scoped claims).
+
 ## [0.43.0] - 2026-06-25
 
 ### Added
