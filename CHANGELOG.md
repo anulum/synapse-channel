@@ -47,6 +47,13 @@ All notable changes to this project are documented here.
 - The README leads with the file-safety promise and adds a "Use it with your coding
   agent" quickstart with one recipe each for Claude Code / Claude Desktop / Cursor
   (via MCP) and Aider or any non-MCP tool (via `git-init` + branch-scoped claims).
+- The git-claims guide recommends gating a production setup on `synapse git-hook test`,
+  which catches a missing hook or a moved `synapse` binary before it silently no-ops.
+
+### CI
+- CI now installs the auto-release hooks in a scratch repo and runs `synapse git-hook
+  test` on every push (asserting both that a hookless repo fails and that an installed
+  one passes), so a regression in the hook install-or-resolve path is caught up front.
 
 ## [0.43.0] - 2026-06-25
 

@@ -87,3 +87,28 @@ jobs:
       - run: python -m pip install -e "." pip-audit
       - name: Audit dependencies for known vulnerabilities
         run: pip-audit --skip-editable --desc
+
+  git-hooks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e "."
+      - name: Auto-release hooks install and self-test
+        run: |
+          set -euo pipefail
+          scratch="$(mktemp -d)"
+          git -C "$scratch" init -q
+          # A fresh repo has no auto-release hooks: `git-hook test` must fail (non-zero),
+          # so a broken or no-op install is caught instead of silently passing.
+          if (cd "$scratch" && synapse git-hook test); then
+            echo "::error::git-hook test passed on a repo with no auto-release hooks installed"
+            exit 1
+          fi
+          # After `git-init`, both hooks are installed and their baked-in synapse path
+          # resolves, so `git-hook test` must pass (exit 0).
+          (cd "$scratch" && synapse git-init --name ci)
+          (cd "$scratch" && synapse git-hook test)
+          rm -rf "$scratch"
