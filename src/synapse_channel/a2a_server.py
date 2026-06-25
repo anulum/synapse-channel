@@ -112,7 +112,10 @@ class A2ATaskStore:
         """Load persisted tasks and push configs when a state file exists."""
         if self._storage_path is None or not self._storage_path.exists():
             return
-        data = json.loads(self._storage_path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(self._storage_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid A2A state file: {self._storage_path}") from exc
         tasks = data.get("tasks", {})
         push_configs = data.get("pushConfigs", {})
         if isinstance(tasks, dict):
@@ -641,6 +644,8 @@ class A2ABridge:
         parsed_webhook = urlparse(str(webhook))
         if parsed_webhook.scheme not in {"http", "https"}:
             raise ValueError("pushNotificationConfig.webhookUrl must use http or https")
+        if not parsed_webhook.netloc:
+            raise ValueError("pushNotificationConfig.webhookUrl must include a host")
         stored = dict(config)
         stored["webhookUrl"] = str(webhook)
         return self.store.put_push_config(task_id, stored)
