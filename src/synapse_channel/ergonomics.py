@@ -39,6 +39,9 @@ from pathlib import Path
 
 from synapse_channel import cli
 
+CliDispatcher = Callable[[list[str] | None], int]
+"""Callable surface used to dispatch into the package CLI."""
+
 DEFAULT_AGENT_TYPE = "claude"
 """The agent ``type`` used to build a multi-agent identity when ``--id`` is given."""
 
@@ -268,13 +271,25 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    env: Mapping[str, str] | None = None,
+    cwd_basename: str | None = None,
+    dispatcher: CliDispatcher = cli.main,
+) -> int:
     """Resolve identity and dispatch one ``syn`` verb to the package CLI.
 
     Parameters
     ----------
     argv : Sequence[str] or None, optional
         Argument vector; defaults to ``sys.argv[1:]``.
+    env : Mapping[str, str] or None, optional
+        Environment mapping used for identity and relay-home resolution.
+    cwd_basename : str or None, optional
+        Git toplevel/CWD basename. When omitted, resolved from the process.
+    dispatcher : callable, optional
+        Package CLI entry point to call for verbs that delegate to ``synapse``.
 
     Returns
     -------
@@ -287,13 +302,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         build_parser().print_help()
         return 2
 
-    env = os.environ
+    env = os.environ if env is None else env
     identity = resolve_identity(
         project=args.project,
         agent_id=args.agent_id,
         agent_type=args.agent_type,
         env=env,
-        cwd_basename=_cwd_basename(),
+        cwd_basename=_cwd_basename() if cwd_basename is None else cwd_basename,
         home_basename=Path(env.get("HOME", str(Path.home()))).name,
     )
     rest: list[str] = list(args.rest)
@@ -307,45 +322,65 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.verb == "arm":
         directed_only = "--broadcasts" not in rest
         extra = [token for token in rest if token != "--broadcasts"]
-        return cli.main(arm_argv(identity, directed_only=directed_only, extra=extra))
+        return dispatcher(arm_argv(identity, directed_only=directed_only, extra=extra))
     if args.verb == "say":
         if len(rest) < 2:
             print("syn: usage: syn say <target> <message>", file=sys.stderr)
             return 2
         target, message, *extra = rest
-        return cli.main(say_argv(identity, target, message, extra=extra))
+        return dispatcher(say_argv(identity, target, message, extra=extra))
     if args.verb == "inbox":
         home = _syn_home(env)
         feed = str(home / "feed.ndjson")
         cursor = str(home / f"{identity.project}.cursor")
-        return cli.main(inbox_argv(identity, feed=feed, cursor=cursor))
+        return dispatcher(inbox_argv(identity, feed=feed, cursor=cursor))
     # args.verb == "board"
-    return cli.main(board_argv(identity, extra=rest))
+    return dispatcher(board_argv(identity, extra=rest))
 
 
-def alias_name() -> int:
+def alias_name(
+    argv: Sequence[str] | None = None,
+    *,
+    dispatcher: Callable[[list[str]], int] = main,
+) -> int:
     """Entry point for the ``syn-name`` console alias."""
-    return main(["name", *sys.argv[1:]])
+    return dispatcher(["name", *(sys.argv[1:] if argv is None else argv)])
 
 
-def alias_arm() -> int:
+def alias_arm(
+    argv: Sequence[str] | None = None,
+    *,
+    dispatcher: Callable[[list[str]], int] = main,
+) -> int:
     """Entry point for the ``syn-wait`` console alias."""
-    return main(["arm", *sys.argv[1:]])
+    return dispatcher(["arm", *(sys.argv[1:] if argv is None else argv)])
 
 
-def alias_say() -> int:
+def alias_say(
+    argv: Sequence[str] | None = None,
+    *,
+    dispatcher: Callable[[list[str]], int] = main,
+) -> int:
     """Entry point for the ``syn-say`` console alias."""
-    return main(["say", *sys.argv[1:]])
+    return dispatcher(["say", *(sys.argv[1:] if argv is None else argv)])
 
 
-def alias_inbox() -> int:
+def alias_inbox(
+    argv: Sequence[str] | None = None,
+    *,
+    dispatcher: Callable[[list[str]], int] = main,
+) -> int:
     """Entry point for the ``syn-inbox`` console alias."""
-    return main(["inbox", *sys.argv[1:]])
+    return dispatcher(["inbox", *(sys.argv[1:] if argv is None else argv)])
 
 
-def alias_board() -> int:
+def alias_board(
+    argv: Sequence[str] | None = None,
+    *,
+    dispatcher: Callable[[list[str]], int] = main,
+) -> int:
     """Entry point for the ``syn-board`` console alias."""
-    return main(["board", *sys.argv[1:]])
+    return dispatcher(["board", *(sys.argv[1:] if argv is None else argv)])
 
 
 if __name__ == "__main__":  # pragma: no cover
