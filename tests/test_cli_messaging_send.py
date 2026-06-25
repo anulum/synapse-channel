@@ -9,81 +9,94 @@
 from __future__ import annotations
 
 import argparse
-from typing import Any
+import asyncio
 
 import pytest
 
-from cli_messaging_helpers import FakeAgent, _factory
+from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli_messaging
+from synapse_channel.core.auth import TokenAuthenticator
+from synapse_channel.core.hub import SynapseHub
 
 
 async def test_send_delivers_message_and_prints_replies(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    holder: list[FakeAgent] = []
-    inbound: list[dict[str, Any]] = [
-        {"type": "chat", "sender": "FAST", "payload": "pong"},
-        {"type": "chat", "sender": "USER", "payload": "own-echo"},  # filtered: self
-        {"type": "welcome"},  # filtered: not a chat
-    ]
-    factory = _factory(holder, inbound=inbound)
-    code = await cli_messaging._send(
-        uri="ws://h",
-        name="USER",
-        target="FAST",
-        message="ping",
-        wait_seconds=0.01,
-        agent_factory=factory,
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        fast = await connect_agent("FAST", uri)
+        send_task = asyncio.create_task(
+            cli_messaging._send(
+                uri=uri,
+                name="USER",
+                target="FAST",
+                message="ping",
+                wait_seconds=0.2,
+            )
+        )
+        try:
+            await fast.recorder.wait_for(
+                lambda message: (
+                    message.get("type") == "chat"
+                    and message.get("sender") == "USER"
+                    and message.get("payload") == "ping"
+                )
+            )
+            await fast.agent.chat("pong", target="USER")
+            code = await send_task
+        finally:
+            await close_agents(fast)
+
     assert code == 0
-    assert holder[0].chats == [("FAST", "ping")]
     out = capsys.readouterr().out
     assert "FAST: pong" in out
-    assert "own-echo" not in out
 
 
 async def test_send_waits_but_prints_nothing_without_replies(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    holder: list[FakeAgent] = []
-    factory = _factory(holder, inbound=[])
-    code = await cli_messaging._send(
-        uri="ws://h",
-        name="USER",
-        target="all",
-        message="ping",
-        wait_seconds=0.01,
-        agent_factory=factory,
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        code = await cli_messaging._send(
+            uri=uri,
+            name="USER",
+            target="all",
+            message="ping",
+            wait_seconds=0.01,
+        )
+
     assert code == 0
     assert capsys.readouterr().out == ""
 
 
 async def test_send_skips_wait_when_zero() -> None:
-    holder: list[FakeAgent] = []
-    factory = _factory(holder)
-    code = await cli_messaging._send(
-        uri="ws://h",
-        name="USER",
-        target="all",
-        message="ping",
-        wait_seconds=0.0,
-        agent_factory=factory,
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        try:
+            code = await cli_messaging._send(
+                uri=uri,
+                name="USER",
+                target="all",
+                message="ping",
+                wait_seconds=0.0,
+            )
+            message = await observer.recorder.wait_for(
+                lambda item: item.get("type") == "chat" and item.get("sender") == "USER"
+            )
+        finally:
+            await close_agents(observer)
+
     assert code == 0
-    assert holder[0].chats == [("all", "ping")]
+    assert message["target"] == "all"
+    assert message["payload"] == "ping"
 
 
 async def test_send_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    factory = _factory(holder, ready=False)
     code = await cli_messaging._send(
-        uri="ws://h",
+        uri=f"ws://127.0.0.1:{_free_port()}",
         name="USER",
         target="all",
         message="ping",
         wait_seconds=0.0,
-        agent_factory=factory,
+        ready_timeout=0.1,
     )
     assert code == 1
     assert "Could not reach hub" in capsys.readouterr().out
@@ -104,32 +117,45 @@ def test_cmd_send_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def test_send_threads_token_to_agent() -> None:
-    holder: list[FakeAgent] = []
-    factory = _factory(holder)
-    await cli_messaging._send(
-        uri="ws://h",
-        name="U",
-        target="all",
-        message="hi",
-        wait_seconds=0.0,
-        agent_factory=factory,
-        token="s3cret",
-    )
-    assert holder[0].token == "s3cret"
+    token = "s3cret"
+    async with running_hub(SynapseHub(authenticator=TokenAuthenticator([token]))) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri, token=token)
+        try:
+            code = await cli_messaging._send(
+                uri=uri,
+                name="U",
+                target="all",
+                message="hi",
+                wait_seconds=0.0,
+                token=token,
+            )
+            message = await observer.recorder.wait_for(
+                lambda item: item.get("type") == "chat" and item.get("sender") == "U"
+            )
+        finally:
+            await close_agents(observer)
+
+    assert code == 0
+    assert message["payload"] == "hi"
 
 
 async def test_send_marks_priority() -> None:
-    holder: list[FakeAgent] = []
-    factory = _factory(holder, idle=False)
-    code = await cli_messaging._send(
-        uri="ws://h",
-        name="U",
-        target="all",
-        message="!",
-        wait_seconds=0.0,
-        priority=True,
-        agent_factory=factory,
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        try:
+            code = await cli_messaging._send(
+                uri=uri,
+                name="U",
+                target="all",
+                message="!",
+                wait_seconds=0.0,
+                priority=True,
+            )
+            message = await observer.recorder.wait_for(
+                lambda item: item.get("type") == "chat" and item.get("sender") == "U"
+            )
+        finally:
+            await close_agents(observer)
+
     assert code == 0
-    assert holder[0].chats == [("all", "!")]
-    assert holder[0].chat_priorities == [True]
+    assert message["priority"] is True
