@@ -142,9 +142,11 @@ async def _fetch_manifest(
         conn_task.cancel()
 
 
-async def _drop_message(_data: dict[str, Any]) -> None:
-    """Ignore inbound hub frames for the forwarding-only A2A bridge client."""
-    return None
+async def _a2a_inbound_handler(bridge_ref: dict[str, Any], data: dict[str, Any]) -> None:
+    """Forward inbound SYNAPSE frames to the bridge for A2A task correlation."""
+    bridge = bridge_ref.get("bridge")
+    if bridge is not None:
+        bridge.handle_synapse_frame(data)
 
 
 def _cmd_a2a_serve(args: argparse.Namespace) -> int:
@@ -175,7 +177,12 @@ def _cmd_a2a_serve(args: argparse.Namespace) -> int:
         capabilities["streaming"] = True
         capabilities["pushNotifications"] = True
         capabilities["extendedAgentCard"] = bool(args.bearer_auth)
-    agent = SynapseAgent(args.name, _drop_message, uri=args.uri, verbose=False, token=args.token)
+    bridge_ref: dict[str, Any] = {"bridge": None}
+
+    async def _handler(data: dict[str, Any]) -> None:
+        await _a2a_inbound_handler(bridge_ref, data)
+
+    agent = SynapseAgent(args.name, _handler, uri=args.uri, verbose=False, token=args.token)
     runtime = SynapseAgentRuntime(agent)
     if not runtime.start():
         print(f"[{args.name}] Could not establish persistent hub connection.", file=sys.stderr)
@@ -188,7 +195,10 @@ def _cmd_a2a_serve(args: argparse.Namespace) -> int:
         store=A2ATaskStore(storage_path=args.state_file),
         submit=runtime.run,
         auth_token=args.a2a_token if args.bearer_auth else None,
+        task_timeout_seconds=args.task_timeout,
+        subscribe_wait_seconds=args.subscribe_timeout,
     )
+    bridge_ref["bridge"] = bridge
     try:
         print(f"[{args.name}] A2A bridge listening on http://{args.host}:{args.port}")
         serve_a2a_http(bridge=bridge, host=args.host, port=args.port)
@@ -265,5 +275,17 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--state-file",
         default=None,
         help="Optional JSON state file for persisted A2A tasks and push configs.",
+    )
+    serve.add_argument(
+        "--task-timeout",
+        type=float,
+        default=300.0,
+        help="Seconds before an open A2A task is marked failed while awaiting a SYNAPSE reply.",
+    )
+    serve.add_argument(
+        "--subscribe-timeout",
+        type=float,
+        default=0.0,
+        help="Seconds a task subscription waits for one queued lifecycle update.",
     )
     serve.set_defaults(func=_cmd_a2a_serve)

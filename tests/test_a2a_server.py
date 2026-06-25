@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from http import HTTPStatus
 from io import BytesIO
 from pathlib import Path
@@ -186,9 +187,12 @@ def test_message_send_creates_completed_task_and_forwards_text_to_synapse() -> N
     status, body = harness.run()
 
     assert status == HTTPStatus.OK
-    assert body["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert body["task"]["status"]["state"] == "TASK_STATE_WORKING"
     assert body["task"]["history"][0]["messageId"] == "m1"
-    assert harness.handler.bridge.agent.messages == [("SC-NEUROCORE", "status please")]
+    sent = harness.handler.bridge.agent.messages[0]
+    assert sent[0] == "SC-NEUROCORE"
+    assert sent[1].startswith("status please")
+    assert "[A2A-TASK:" in sent[1]
 
 
 def test_message_send_renders_file_parts_for_synapse_forwarding() -> None:
@@ -215,12 +219,10 @@ def test_message_send_renders_file_parts_for_synapse_forwarding() -> None:
     status, _ = harness.run()
 
     assert status == HTTPStatus.OK
-    assert harness.handler.bridge.agent.messages == [
-        (
-            "WORKER",
-            "[file: report.pdf; application/pdf; https://example.test/report.pdf]",
-        )
-    ]
+    sent = harness.handler.bridge.agent.messages[0]
+    assert sent[0] == "WORKER"
+    assert sent[1].startswith("[file: report.pdf; application/pdf; https://example.test/report.pdf]")
+    assert "[A2A-TASK:" in sent[1]
 
 
 def test_message_stream_sends_sse_task_event_and_forwards_to_synapse() -> None:
@@ -239,9 +241,12 @@ def test_message_stream_sends_sse_task_event_and_forwards_to_synapse() -> None:
     status, body = harness.run_sse()
 
     assert status == HTTPStatus.OK
-    assert body["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert body["task"]["status"]["state"] == "TASK_STATE_WORKING"
     assert body["task"]["history"][0]["messageId"] == "m1"
-    assert harness.handler.bridge.agent.messages == [("WORKER", "stream status")]
+    sent = harness.handler.bridge.agent.messages[0]
+    assert sent[0] == "WORKER"
+    assert sent[1].startswith("stream status")
+    assert "[A2A-TASK:" in sent[1]
 
 
 def test_subscribe_to_completed_task_returns_terminal_state_problem() -> None:
@@ -254,6 +259,8 @@ def test_subscribe_to_completed_task_returns_terminal_state_problem() -> None:
         },
         target="WORKER",
     )
+    task["status"]["state"] = "TASK_STATE_COMPLETED"
+    bridge.store.put(task)
     harness = HandlerHarness("POST", f"/tasks/{task['id']}:subscribe")
     harness.handler.bridge = bridge
 
@@ -463,8 +470,11 @@ def test_json_rpc_message_send_dispatches_to_bridge() -> None:
     assert status == HTTPStatus.OK
     assert body["jsonrpc"] == "2.0"
     assert body["id"] == "req-1"
-    assert body["result"]["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
-    assert harness.handler.bridge.agent.messages == [("WORKER", "json rpc")]
+    assert body["result"]["task"]["status"]["state"] == "TASK_STATE_WORKING"
+    sent = harness.handler.bridge.agent.messages[0]
+    assert sent[0] == "WORKER"
+    assert sent[1].startswith("json rpc")
+    assert "[A2A-TASK:" in sent[1]
 
 
 def test_json_rpc_unknown_method_returns_method_not_found_error() -> None:
@@ -534,6 +544,235 @@ def test_get_task_supports_history_length_query() -> None:
     assert status == HTTPStatus.OK
     assert body["id"] == "task-a"
     assert body["history"] == []
+
+
+def test_handle_synapse_frame_correlates_reply_and_completes_task() -> None:
+    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "compute the answer"}],
+        },
+        target="WORKER",
+    )
+    assert task["status"]["state"] == "TASK_STATE_WORKING"
+    reply_frame = {
+        "type": "chat",
+        "sender": "WORKER",
+        "payload": (
+            "the answer is 42\n[A2A-TASK:"
+            + task["id"]
+            + " contextId="
+            + task["contextId"]
+            + "]"
+        ),
+    }
+    bridge.handle_synapse_frame(reply_frame)
+    updated = bridge.store.get(task["id"])
+    assert updated is not None
+    assert updated["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert len(updated.get("history", [])) >= 2
+    assert any("42" in str(h) for h in updated.get("history", []))
+
+
+def test_handle_synapse_frame_rejects_marker_from_wrong_sender() -> None:
+    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "compute the answer"}],
+        },
+        target="WORKER",
+    )
+
+    bridge.handle_synapse_frame(
+        {
+            "type": "chat",
+            "sender": "OTHER",
+            "payload": f"wrong actor\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+        }
+    )
+
+    updated = bridge.store.get(task["id"])
+    assert updated is not None
+    assert updated["status"]["state"] == "TASK_STATE_WORKING"
+
+
+def test_handle_synapse_frame_strips_correlation_marker_from_reply() -> None:
+    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "compute the answer"}],
+        },
+        target="WORKER",
+    )
+
+    bridge.handle_synapse_frame(
+        {
+            "type": "chat",
+            "sender": "WORKER",
+            "payload": f"answer body\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+        }
+    )
+
+    updated = bridge.store.get(task["id"])
+    assert updated is not None
+    status_message = updated["status"]["message"]
+    assert status_message["parts"][0]["text"] == "answer body"
+
+
+def test_fallback_correlation_preserves_fifo_tasks_for_same_sender() -> None:
+    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    first = bridge.create_completed_task(
+        {
+            "taskId": "task-a",
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "first"}],
+        },
+        target="WORKER",
+    )
+    second = bridge.create_completed_task(
+        {
+            "taskId": "task-b",
+            "messageId": "m2",
+            "role": "ROLE_USER",
+            "parts": [{"text": "second"}],
+        },
+        target="WORKER",
+    )
+
+    bridge.handle_synapse_frame({"type": "chat", "sender": "WORKER", "payload": "first reply"})
+
+    first_updated = bridge.store.get(first["id"])
+    second_updated = bridge.store.get(second["id"])
+    assert first_updated is not None
+    assert second_updated is not None
+    assert first_updated["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert second_updated["status"]["state"] == "TASK_STATE_WORKING"
+
+
+def test_completion_delivers_push_notification_to_stored_config() -> None:
+    deliveries: list[dict[str, Any]] = []
+    bridge = A2ABridge(
+        agent=FakeAgent(),
+        agent_card={},
+        target="WORKER",
+        store=A2ATaskStore(),
+        push_deliverer=deliveries.append,
+    )
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}],
+        },
+        target="WORKER",
+    )
+    bridge.create_push_notification_config(task["id"], {"webhookUrl": "https://example.test/hook"})
+
+    bridge.handle_synapse_frame(
+        {
+            "type": "chat",
+            "sender": "WORKER",
+            "payload": f"done\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+        }
+    )
+
+    assert len(deliveries) == 1
+    assert deliveries[0]["payload"]["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
+
+
+def test_timeout_marks_open_task_failed() -> None:
+    bridge = A2ABridge(
+        agent=FakeAgent(),
+        agent_card={},
+        target="WORKER",
+        store=A2ATaskStore(),
+        task_timeout_seconds=1.0,
+    )
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}],
+        },
+        target="WORKER",
+    )
+    task["metadata"]["updatedAt"] = 10.0
+    bridge.store.put(task)
+
+    failed = bridge.expire_timed_out_tasks(now=12.0)
+
+    assert len(failed) == 1
+    assert failed[0]["status"]["state"] == "TASK_STATE_FAILED"
+
+
+def test_state_file_recovery_fails_stale_working_tasks(tmp_path: Path) -> None:
+    state_file = tmp_path / "a2a-state.json"
+    store = A2ATaskStore(storage_path=state_file)
+    store.put(
+        {
+            "id": "task-a",
+            "contextId": "ctx",
+            "status": {"state": "TASK_STATE_WORKING"},
+            "history": [],
+            "artifacts": [],
+            "metadata": {"synapseTarget": "WORKER", "updatedAt": 1.0},
+        }
+    )
+    loaded = A2ATaskStore(storage_path=state_file)
+
+    A2ABridge(
+        agent=FakeAgent(),
+        agent_card={},
+        target="WORKER",
+        store=loaded,
+        task_timeout_seconds=1.0,
+    )
+
+    recovered = loaded.get("task-a")
+    assert recovered is not None
+    assert recovered["status"]["state"] == "TASK_STATE_FAILED"
+
+
+def test_subscription_queue_receives_terminal_update() -> None:
+    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}],
+        },
+        target="WORKER",
+    )
+    events: list[dict[str, Any]] = []
+
+    def collect_events() -> None:
+        subscribed = bridge.subscribe_task_events(task["id"], wait_seconds=1.0) or []
+        events.extend(subscribed)
+
+    worker = threading.Thread(
+        target=collect_events,
+    )
+    worker.start()
+    bridge.handle_synapse_frame(
+        {
+            "type": "chat",
+            "sender": "WORKER",
+            "payload": f"done\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+        }
+    )
+    worker.join(timeout=2.0)
+
+    assert [event["task"]["status"]["state"] for event in events] == [
+        "TASK_STATE_WORKING",
+        "TASK_STATE_COMPLETED",
+    ]
 
 
 def test_bad_json_returns_a2a_problem_json() -> None:

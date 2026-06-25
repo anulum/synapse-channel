@@ -15,8 +15,12 @@ message, and task routes.
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
+import queue
+import re
 import threading
+import time
 import uuid
 from collections.abc import Callable, Coroutine
 from http import HTTPStatus
@@ -34,6 +38,14 @@ A2A_MEDIA_TYPE = "application/a2a+json"
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 SSE_MEDIA_TYPE = "text/event-stream"
 PushDeliverer = Callable[[JsonMap], None]
+A2A_TASK_MARKER = re.compile(r"\[A2A-TASK:([^\s\]]+)(?:\s+contextId=([^\]\s]+))?\]")
+OPEN_TASK_STATES = {"TASK_STATE_SUBMITTED", "TASK_STATE_WORKING"}
+TERMINAL_TASK_STATES = {
+    "TASK_STATE_COMPLETED",
+    "TASK_STATE_FAILED",
+    "TASK_STATE_CANCELED",
+    "TASK_STATE_REJECTED",
+}
 
 
 def _http_push_deliverer(delivery: JsonMap) -> None:
@@ -231,6 +243,8 @@ class A2ABridge:
         submit: Callable[[Coroutine[Any, Any, Any]], Any] | None = None,
         push_deliverer: PushDeliverer | None = None,
         auth_token: str | None = None,
+        task_timeout_seconds: float = 300.0,
+        subscribe_wait_seconds: float = 0.0,
     ) -> None:
         self.agent = agent
         self.agent_card = agent_card
@@ -239,6 +253,11 @@ class A2ABridge:
         self._submit = submit
         self._push_deliverer = push_deliverer or _http_push_deliverer
         self.auth_token = auth_token
+        self.task_timeout_seconds = max(task_timeout_seconds, 0.0)
+        self.subscribe_wait_seconds = max(subscribe_wait_seconds, 0.0)
+        self._pending_by_target: dict[str, list[str]] = {}
+        self._subscribers: dict[str, list[queue.Queue[JsonMap]]] = {}
+        self._recover_stale_open_tasks(now=time.time())
 
     def _run(self, coro: Coroutine[Any, Any, Any]) -> Any:
         """Run ``coro`` through the configured submitter or a fresh event loop."""
@@ -280,47 +299,51 @@ class A2ABridge:
                 return str(target)
         return fallback or self.target
 
-    def create_completed_task(self, message: JsonMap, *, target: str | None = None) -> JsonMap:
-        """Create a completed A2A task for a delivered SYNAPSE message."""
+    def create_working_task(self, message: JsonMap, *, target: str | None = None) -> JsonMap:
+        """Create a working A2A task and forward the request into SYNAPSE."""
         task_id = str(message.get("taskId") or uuid.uuid4())
         context_id = str(message.get("contextId") or uuid.uuid4())
         resolved_target = self._target_for(message, target)
         text = self._message_text(message)
-        task = {
+        now = time.time()
+        task: JsonMap = {
             "id": task_id,
             "contextId": context_id,
             "status": {
-                "state": "TASK_STATE_COMPLETED",
+                "state": "TASK_STATE_SUBMITTED",
                 "message": {
                     "messageId": str(uuid.uuid4()),
-                    "role": "ROLE_AGENT",
-                    "parts": [
-                        {
-                            "text": f"Delivered to SYNAPSE target {resolved_target}.",
-                            "mediaType": "text/plain",
-                        }
-                    ],
+                    "role": "ROLE_USER",
+                    "parts": message.get("parts", []),
                 },
             },
             "history": [message],
-            "artifacts": [
-                {
-                    "artifactId": "synapse-delivery",
-                    "name": "SYNAPSE delivery receipt",
-                    "description": "Local bridge delivery receipt.",
-                    "parts": [
-                        {
-                            "data": {"target": resolved_target, "delivered": True},
-                            "mediaType": "application/json",
-                        }
-                    ],
-                }
-            ],
-            "metadata": {"synapseTarget": resolved_target},
+            "artifacts": [],
+            "metadata": {
+                "synapseTarget": resolved_target,
+                "a2aTaskId": task_id,
+                "a2aContextId": context_id,
+                "createdAt": now,
+                "updatedAt": now,
+            },
         }
+        self._pending_by_target.setdefault(resolved_target, []).append(task_id)
         if text:
-            self._run(self.agent.chat(text, target=resolved_target))
-        return self.store.put(task)
+            marked = text + f"\n[A2A-TASK:{task_id} contextId={context_id}]"
+            self._run(self.agent.chat(marked, target=resolved_target))
+        task = self._set_task_status(
+            task,
+            state="TASK_STATE_WORKING",
+            message=task["status"]["message"],
+            publish=False,
+        )
+        stored = self.store.put(task)
+        self._publish_task_update(stored, deliver_push=False)
+        return stored
+
+    def create_completed_task(self, message: JsonMap, *, target: str | None = None) -> JsonMap:
+        """Create a task for compatibility with older callers."""
+        return self.create_working_task(message, target=target)
 
     def send_message(self, payload: JsonMap) -> JsonMap:
         """Handle an A2A ``message:send`` request."""
@@ -346,7 +369,7 @@ class A2ABridge:
         parts = message.get("parts")
         if not isinstance(parts, list) or not parts:
             raise ValueError("message.parts must be a non-empty array")
-        return self.create_completed_task(message)
+        return self.create_working_task(message)
 
     def _store_request_push_config(self, payload: JsonMap, *, task_id: str) -> JsonMap | None:
         """Store a send-time push notification config when one is present."""
@@ -390,6 +413,143 @@ class A2ABridge:
         for config in self.store.list_push_configs(str(task["id"])):
             self._deliver_push_notification(task=task, config=config)
 
+    def _set_task_status(
+        self,
+        task: JsonMap,
+        *,
+        state: str,
+        message: JsonMap | None = None,
+        publish: bool = True,
+    ) -> JsonMap:
+        """Set task status and refresh bridge-local lifecycle metadata."""
+        status: JsonMap = {"state": state}
+        if message is not None:
+            status["message"] = message
+        task["status"] = status
+        metadata = task.setdefault("metadata", {})
+        if isinstance(metadata, dict):
+            metadata["updatedAt"] = time.time()
+        stored = self.store.put(task)
+        if publish:
+            self._publish_task_update(stored)
+        return stored
+
+    def _publish_task_update(self, task: JsonMap, *, deliver_push: bool = True) -> None:
+        """Publish one task update to local subscribers and configured webhooks."""
+        event = {"task": copy.deepcopy(task)}
+        for subscriber in list(self._subscribers.get(str(task["id"]), [])):
+            subscriber.put(event)
+        if deliver_push:
+            self._deliver_push_notifications(task)
+
+    def _remove_pending_task(self, task_id: str) -> None:
+        """Remove ``task_id`` from all pending fallback correlation lists."""
+        for target, pending in list(self._pending_by_target.items()):
+            self._pending_by_target[target] = [stored for stored in pending if stored != task_id]
+            if not self._pending_by_target[target]:
+                del self._pending_by_target[target]
+
+    def _pending_task_for_sender(self, sender: str) -> str | None:
+        """Return the oldest pending task for one SYNAPSE sender."""
+        pending = self._pending_by_target.get(sender)
+        if not pending:
+            return None
+        while pending:
+            task_id = pending.pop(0)
+            if self.store.get(task_id) is not None:
+                return task_id
+        del self._pending_by_target[sender]
+        return None
+
+    def _sender_matches_task(self, task: JsonMap, sender: str) -> bool:
+        """Return whether ``sender`` is allowed to complete ``task``."""
+        metadata = task.get("metadata")
+        target = ""
+        if isinstance(metadata, dict):
+            target = str(metadata.get("synapseTarget") or "")
+        return target in {"", "all", sender}
+
+    def _strip_task_marker(self, payload: str) -> str:
+        """Remove bridge correlation markers from user-visible reply text."""
+        return A2A_TASK_MARKER.sub("", payload).strip()
+
+    def handle_synapse_frame(self, data: JsonMap) -> None:
+        """Correlate an inbound SYNAPSE chat frame to an open A2A task."""
+        if data.get("type") != "chat":
+            return
+        payload = str(data.get("payload", ""))
+        sender = str(data.get("sender", ""))
+
+        task_id: str | None = None
+        marker = A2A_TASK_MARKER.search(payload)
+        if marker:
+            task_id = marker.group(1)
+        elif sender in self._pending_by_target:
+            task_id = self._pending_task_for_sender(sender)
+
+        if not task_id:
+            return
+        task = self.store.get(task_id)
+        if task is None or not self._sender_matches_task(task, sender):
+            return
+
+        reply_text = self._strip_task_marker(payload)
+        reply_part: JsonMap = {
+            "messageId": str(uuid.uuid4()),
+            "role": "ROLE_AGENT",
+            "parts": [{"text": reply_text, "mediaType": "text/plain"}],
+        }
+        task.setdefault("history", []).append(reply_part)
+        task.setdefault("artifacts", []).append(
+            {
+                "artifactId": f"synapse-reply-{task_id}",
+                "name": "SYNAPSE reply",
+                "description": f"Correlated reply from {sender}",
+                "parts": [{"text": reply_text, "mediaType": "text/plain"}],
+            }
+        )
+        self._remove_pending_task(task_id)
+        self._set_task_status(task, state="TASK_STATE_COMPLETED", message=reply_part)
+
+    def expire_timed_out_tasks(self, *, now: float | None = None) -> list[JsonMap]:
+        """Fail open tasks whose reply deadline has elapsed."""
+        return self._fail_stale_open_tasks(
+            now=time.time() if now is None else now,
+            detail="Timed out waiting for correlated SYNAPSE reply.",
+        )
+
+    def _recover_stale_open_tasks(self, *, now: float) -> list[JsonMap]:
+        """Fail persisted open tasks that were stale before bridge startup."""
+        return self._fail_stale_open_tasks(
+            now=now,
+            detail="Recovered stale A2A task from persisted bridge state.",
+        )
+
+    def _fail_stale_open_tasks(self, *, now: float, detail: str) -> list[JsonMap]:
+        """Fail open tasks older than the configured timeout."""
+        if self.task_timeout_seconds <= 0.0:
+            return []
+        failed: list[JsonMap] = []
+        for task in self.store.list_tasks():
+            status = task.get("status", {})
+            if not isinstance(status, dict) or status.get("state") not in OPEN_TASK_STATES:
+                continue
+            metadata = task.get("metadata", {})
+            updated_at = 0.0
+            if isinstance(metadata, dict):
+                updated_at = float(metadata.get("updatedAt") or metadata.get("createdAt") or 0.0)
+            if now - updated_at < self.task_timeout_seconds:
+                continue
+            task_id = str(task["id"])
+            message = {
+                "messageId": str(uuid.uuid4()),
+                "role": "ROLE_AGENT",
+                "parts": [{"text": detail, "mediaType": "text/plain"}],
+            }
+            self._remove_pending_task(task_id)
+            failed.append(self._set_task_status(task, state="TASK_STATE_FAILED", message=message))
+        return failed
+
     def list_tasks(
         self,
         *,
@@ -430,14 +590,43 @@ class A2ABridge:
         task = self.store.get(task_id)
         if task is None:
             return None
-        task["status"] = {"state": "TASK_STATE_CANCELED"}
-        self.store.put(task)
-        self._deliver_push_notifications(task)
-        return task
+        self._remove_pending_task(task_id)
+        return self._set_task_status(task, state="TASK_STATE_CANCELED")
 
     def subscribe_task(self, task_id: str) -> JsonMap | None:
         """Return a task snapshot for SSE subscription, or ``None`` when unknown."""
         return self.store.get(task_id)
+
+    def subscribe_task_events(
+        self,
+        task_id: str,
+        *,
+        wait_seconds: float | None = None,
+    ) -> list[JsonMap] | None:
+        """Return the initial task event plus queued updates for one subscription."""
+        task = self.store.get(task_id)
+        if task is None:
+            return None
+        events = [{"task": copy.deepcopy(task)}]
+        state = str(task.get("status", {}).get("state", ""))
+        if state in TERMINAL_TASK_STATES:
+            return events
+        updates: queue.Queue[JsonMap] = queue.Queue()
+        self._subscribers.setdefault(task_id, []).append(updates)
+        timeout = self.subscribe_wait_seconds if wait_seconds is None else max(wait_seconds, 0.0)
+        try:
+            if timeout > 0.0:
+                try:
+                    events.append(updates.get(timeout=timeout))
+                except queue.Empty:
+                    pass
+        finally:
+            subscribers = self._subscribers.get(task_id, [])
+            if updates in subscribers:
+                subscribers.remove(updates)
+            if not subscribers and task_id in self._subscribers:
+                del self._subscribers[task_id]
+        return events
 
     def create_push_notification_config(self, task_id: str, config: JsonMap) -> JsonMap | None:
         """Create a push notification config for a known task."""
@@ -793,17 +982,13 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                 return
             if parsed.path.startswith("/tasks/") and parsed.path.endswith(":subscribe"):
                 task_id = parsed.path.removeprefix("/tasks/").removesuffix(":subscribe")
-                task = self.bridge.subscribe_task(task_id)
-                if task is None:
+                events = self.bridge.subscribe_task_events(task_id)
+                if events is None:
                     self._send_not_found(f"Unknown task: {task_id}")
                     return
+                task = events[0]["task"]
                 state = str(task.get("status", {}).get("state", ""))
-                if state in {
-                    "TASK_STATE_COMPLETED",
-                    "TASK_STATE_FAILED",
-                    "TASK_STATE_CANCELED",
-                    "TASK_STATE_REJECTED",
-                }:
+                if state in TERMINAL_TASK_STATES:
                     self._send_json(
                         HTTPStatus.CONFLICT,
                         _problem(
@@ -814,7 +999,7 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                         media_type=PROBLEM_MEDIA_TYPE,
                     )
                     return
-                self._send_sse(HTTPStatus.OK, {"task": task})
+                self._send_sse(HTTPStatus.OK, events[-1])
                 return
             self._send_not_found()
 

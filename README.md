@@ -233,7 +233,8 @@ the public Agent Card, forwards `POST /message:send` text/data/file parts into
 SYNAPSE chat, supports immediate `POST /message:stream` Server-Sent Events,
 exposes bridge-local task list/get/cancel plus push-notification configuration
 routes, accepts JSON-RPC 2.0 calls on `/rpc`, and can enforce Bearer auth plus
-persist task state with `--state-file`.
+persist task state with `--state-file`, fail stale open tasks with
+`--task-timeout`, and bound one subscription wait with `--subscribe-timeout`.
 
 ### Git-native claims
 
@@ -347,7 +348,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 54 |
 | Wire message types | 52 |
 | CLI subcommands | 30 |
-| Test functions | 1137 |
+| Test functions | 1145 |
 | Benchmark harnesses | 3 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |
