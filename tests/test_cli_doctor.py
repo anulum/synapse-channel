@@ -57,7 +57,7 @@ def _factory(
     *,
     ready: bool = True,
     inbound: list[dict[str, Any]] | None = None,
-) -> Callable[..., FakeAgent]:
+) -> Callable[..., Any]:
     def make(
         name: str,
         callback: Callable[[dict[str, Any]], Awaitable[None]],
