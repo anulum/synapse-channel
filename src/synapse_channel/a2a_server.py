@@ -46,6 +46,7 @@ from synapse_channel.a2a_validation import (
 from synapse_channel.client.agent import SynapseAgent
 
 PushDeliverer = Callable[[JsonMap], None]
+MAX_A2A_JSON_BODY_BYTES = 1024 * 1024
 
 
 def _http_push_deliverer(delivery: JsonMap) -> None:
@@ -678,6 +679,13 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                 length = int(self.headers.get("Content-Length", "0"))
             except ValueError:
                 length = 0
+            if length > MAX_A2A_JSON_BODY_BYTES:
+                self._send_json(
+                    HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                    _problem(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Request body too large"),
+                    media_type=PROBLEM_MEDIA_TYPE,
+                )
+                return None
             raw = self.rfile.read(max(length, 0))
             try:
                 data = json.loads(raw.decode("utf-8") if raw else "{}")
