@@ -102,6 +102,25 @@ def test_parser_a2a_card() -> None:
     assert args.func is cli_a2a._cmd_a2a_card
 
 
+def test_parser_a2a_serve() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "a2a-serve",
+            "--endpoint-url",
+            "https://example.test/a2a/v1",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8899",
+        ]
+    )
+
+    assert args.endpoint_url == "https://example.test/a2a/v1"
+    assert args.host == "127.0.0.1"
+    assert args.port == 8899
+    assert args.func is cli_a2a._cmd_a2a_serve
+
+
 async def test_a2a_card_prints_manifest_projection(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

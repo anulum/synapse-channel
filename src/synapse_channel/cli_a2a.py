@@ -17,9 +17,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import sys
 from typing import Any
 
 from synapse_channel.a2a import agent_card_from_manifest
+from synapse_channel.a2a_server import A2ABridge, A2ATaskStore, SynapseAgentRuntime, serve_a2a_http
 from synapse_channel.cli_queries import _query_hub
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.core.protocol import MessageType
@@ -108,6 +110,83 @@ def _cmd_a2a_card(args: argparse.Namespace) -> int:
     )
 
 
+async def _fetch_manifest(
+    *,
+    uri: str,
+    name: str,
+    token: str | None,
+    agent_factory: Any = SynapseAgent,
+) -> list[dict[str, Any]] | None:
+    """Fetch one manifest snapshot for bridge startup."""
+    results: list[list[dict[str, Any]]] = []
+
+    async def collect(data: dict[str, Any]) -> None:
+        if data.get("type") == MessageType.MANIFEST_SNAPSHOT:
+            manifest = data.get("manifest", [])
+            if isinstance(manifest, list):
+                results.append([card for card in manifest if isinstance(card, dict)])
+
+    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
+    conn_task = asyncio.create_task(agent.connect())
+    try:
+        if not await agent.wait_until_ready(timeout=5.0):
+            return None
+        await agent.request_manifest()
+        for _ in range(50):
+            if results:
+                break
+            await asyncio.sleep(0.05)
+        return results[-1] if results else []
+    finally:
+        agent.running = False
+        conn_task.cancel()
+
+
+async def _drop_message(_data: dict[str, Any]) -> None:
+    """Ignore inbound hub frames for the forwarding-only A2A bridge client."""
+    return None
+
+
+def _cmd_a2a_serve(args: argparse.Namespace) -> int:
+    """Dispatch the ``a2a-serve`` subcommand."""
+    manifest = asyncio.run(
+        _fetch_manifest(uri=args.uri, name=f"{args.name}-manifest", token=args.token)
+    )
+    if manifest is None:
+        print(f"[{args.name}] Could not reach hub at {args.uri}.", file=sys.stderr)
+        return 1
+    agent_card = agent_card_from_manifest(
+        manifest,
+        endpoint_url=args.endpoint_url,
+        name=args.bridge_name,
+        description=args.description
+        or "Local-first A2A bridge for SYNAPSE coordination and capability discovery.",
+        documentation_url=args.documentation_url,
+        bearer_auth=args.bearer_auth,
+    )
+    agent = SynapseAgent(args.name, _drop_message, uri=args.uri, verbose=False, token=args.token)
+    runtime = SynapseAgentRuntime(agent)
+    if not runtime.start():
+        print(f"[{args.name}] Could not establish persistent hub connection.", file=sys.stderr)
+        runtime.stop()
+        return 1
+    bridge = A2ABridge(
+        agent=agent,
+        agent_card=agent_card,
+        target=args.target,
+        store=A2ATaskStore(),
+        submit=runtime.run,
+    )
+    try:
+        print(f"[{args.name}] A2A bridge listening on http://{args.host}:{args.port}")
+        serve_a2a_http(bridge=bridge, host=args.host, port=args.port)
+    except KeyboardInterrupt:
+        print(f"\n[{args.name}] A2A bridge stopped by user.")
+    finally:
+        runtime.stop()
+    return 0
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register A2A bridge subcommands."""
     card = subparsers.add_parser(
@@ -134,3 +213,35 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Declare HTTP Bearer authentication for the advertised A2A endpoint.",
     )
     card.set_defaults(func=_cmd_a2a_card)
+
+    serve = subparsers.add_parser(
+        "a2a-serve",
+        help="Run the stdlib HTTP+JSON A2A bridge for discovery, messages, and tasks.",
+    )
+    serve.add_argument("--uri", default=DEFAULT_HUB_URI)
+    serve.add_argument("--name", default="A2A-BRIDGE")
+    serve.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8877)
+    serve.add_argument(
+        "--endpoint-url",
+        required=True,
+        help="Absolute URL of this A2A bridge endpoint as clients will reach it.",
+    )
+    serve.add_argument(
+        "--target",
+        default="all",
+        help="Default SYNAPSE target for A2A messages without metadata.target.",
+    )
+    serve.add_argument("--bridge-name", default="SYNAPSE CHANNEL")
+    serve.add_argument("--description", default=None)
+    serve.add_argument(
+        "--documentation-url",
+        default="https://anulum.github.io/synapse-channel",
+    )
+    serve.add_argument(
+        "--bearer-auth",
+        action="store_true",
+        help="Declare HTTP Bearer authentication for the advertised A2A endpoint.",
+    )
+    serve.set_defaults(func=_cmd_a2a_serve)
