@@ -176,3 +176,23 @@ def test_auth_token_accepts_bearer_for_message_send() -> None:
 
     assert status == HTTPStatus.OK
     assert body["task"]["status"]["state"] == "TASK_STATE_WORKING"
+
+
+def test_default_timeout_boundary_fails_stale_open_task() -> None:
+    bridge = _bridge()
+    task = bridge.create_working_task(_message("task-timeout"))
+    task["metadata"]["updatedAt"] = 100.0
+    bridge.store.put(task)
+
+    early = bridge.expire_timed_out_tasks(now=399.9)
+    before_deadline = bridge.store.get("task-timeout")
+    assert before_deadline is not None
+    before_deadline_state = before_deadline["status"]["state"]
+    expired = bridge.expire_timed_out_tasks(now=400.0)
+    after_deadline = bridge.store.get("task-timeout")
+
+    assert early == []
+    assert before_deadline_state == "TASK_STATE_WORKING"
+    assert len(expired) == 1
+    assert after_deadline is not None
+    assert after_deadline["status"]["state"] == "TASK_STATE_FAILED"
