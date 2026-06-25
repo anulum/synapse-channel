@@ -45,6 +45,7 @@ async def _a2a_card(
     documentation_url: str = "https://anulum.github.io/synapse-channel",
     bearer_auth: bool = False,
     agent_factory: Any = SynapseAgent,
+    ready_timeout: float = 5.0,
 ) -> int:
     """Connect to the hub, read its manifest, and print an A2A Agent Card.
 
@@ -66,6 +67,8 @@ async def _a2a_card(
         Declare HTTP Bearer authentication on the advertised A2A endpoint.
     agent_factory : Any, optional
         Test seam for the SYNAPSE client factory.
+    ready_timeout : float, optional
+        Seconds to wait for connection readiness.
 
     Returns
     -------
@@ -93,6 +96,7 @@ async def _a2a_card(
         transform=lambda data: data.get("manifest", []),
         request=lambda agent: agent.request_manifest(),
         render=render,
+        ready_timeout=ready_timeout,
     )
 
 
@@ -118,6 +122,9 @@ async def _fetch_manifest(
     name: str,
     token: str | None,
     agent_factory: Any = SynapseAgent,
+    ready_timeout: float = 5.0,
+    attempts: int = 50,
+    poll_interval: float = 0.05,
 ) -> list[dict[str, Any]] | None:
     """Fetch one manifest snapshot for bridge startup."""
     results: list[list[dict[str, Any]]] = []
@@ -131,13 +138,13 @@ async def _fetch_manifest(
     agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
     conn_task = asyncio.create_task(agent.connect())
     try:
-        if not await agent.wait_until_ready(timeout=5.0):
+        if not await agent.wait_until_ready(timeout=ready_timeout):
             return None
         await agent.request_manifest()
-        for _ in range(50):
+        for _ in range(attempts):
             if results:
                 break
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(poll_interval)
         return results[-1] if results else []
     finally:
         agent.running = False
