@@ -21,10 +21,15 @@ guess.
 * **Event replay.** A hub with a durable log rebuilds its state on start-up by
   replaying the log, an ``O(events)`` pass. The ``replay`` measurement times that
   rebuild at growing event counts.
+* **Scope-conflict scan.** A claim checks its file scope against every live claim in
+  the same worktree, an un-indexed ``O(active claims)`` scan. The ``scan`` measurement
+  times one non-overlapping claim (the worst case, since the scan runs to completion)
+  against a growing claim set, so a decision to index that scan rests on data rather
+  than a guess.
 
 The wall-clock times are host-specific, so the host CPU and Python version are
-recorded with every result and the *shape* (near-flat steady expiry, linear
-replay), not the absolute times, is the reproducible finding. Live-hub storm
+recorded with every result and the *shape* (near-flat steady expiry, linear replay,
+linear scan), not the absolute times, is the reproducible finding. Live-hub storm
 scenarios (100-agent reconnect/wake storms, resource-offer floods) need an
 integration harness with real sockets and are out of scope for this in-process
 micro-benchmark.
@@ -58,6 +63,9 @@ REPLAY_COUNTS = (100, 1_000, 10_000, 100_000)
 
 DEFAULT_ITERATIONS = 200
 """Steady heartbeats timed per claim count; the mean over iterations smooths jitter."""
+
+SCAN_ITERATIONS = 25
+"""Probe claims timed per claim count for the scope-conflict scan (each is O(count))."""
 
 NEVER_EXPIRES = 1e18
 """A lease expiry so far ahead that a heartbeat visits the heap top but evicts nothing."""
@@ -144,6 +152,55 @@ def measure_mass_expiry_seconds(count: int) -> float:
     return elapsed
 
 
+def state_with_scoped_claims(count: int) -> SynapseState:
+    """Build a state of ``count`` claims, each declaring a distinct path in one worktree.
+
+    Every claim sits in the shared (default) worktree with its own non-overlapping
+    path, so a probe claim's file-scope check must compare against all of them — the
+    scan this profiles. Claims are inserted directly (set-up is not the measured cost).
+
+    Parameters
+    ----------
+    count : int
+        Number of active scoped claims to populate.
+
+    Returns
+    -------
+    SynapseState
+        A registry with ``count`` scoped claims and a matching lease heap.
+    """
+    state = SynapseState(default_ttl_seconds=1e12)
+    for index in range(count):
+        state.claims[f"T{index}"] = TaskClaim(
+            task_id=f"T{index}",
+            owner="A",
+            note="",
+            claimed_at=0.0,
+            lease_expires_at=NEVER_EXPIRES,
+            paths=(f"d{index}/file",),
+            epoch=index + 1,
+        )
+    state._epoch_seq = count
+    state.reindex_leases()
+    return state
+
+
+def measure_claim_scan_seconds(count: int, iterations: int = SCAN_ITERATIONS) -> float:
+    """Return the mean seconds one scoped claim takes against ``count`` existing claims.
+
+    A claim checks its file scope against every live claim in the same worktree and
+    counts the agent's open claims — both un-indexed ``O(count)`` scans. The probe
+    claims a non-overlapping path so the scope scan runs to completion (the worst case)
+    and is removed after each call to keep the scanned count fixed.
+    """
+    state = state_with_scoped_claims(count)
+    start = time.perf_counter()
+    for _ in range(iterations):
+        state.claim("PROBE", "Z", paths=["zzz_probe/file"], now=1.0)
+        state.claims.pop("PROBE", None)
+    return (time.perf_counter() - start) / iterations
+
+
 def measure_replay_seconds(count: int) -> float:
     """Return the seconds to replay a durable log of ``count`` claim events.
 
@@ -173,14 +230,16 @@ def profile(
     claim_counts: tuple[int, ...] = CLAIM_COUNTS,
     replay_counts: tuple[int, ...] = REPLAY_COUNTS,
     iterations: int = DEFAULT_ITERATIONS,
+    scan_iterations: int = SCAN_ITERATIONS,
 ) -> dict[str, list[dict[str, Any]]]:
-    """Measure the expiry and replay costs at each count.
+    """Measure the expiry, replay, and scope-conflict-scan costs at each count.
 
     Returns
     -------
     dict[str, list[dict[str, Any]]]
         ``expiry`` rows (per claim count: the steady-heartbeat and mass-expiry
-        microseconds) and ``replay`` rows (per event count: the replay milliseconds).
+        microseconds), ``replay`` rows (per event count: the replay milliseconds), and
+        ``scan`` rows (per claim count: the per-claim scope-conflict microseconds).
     """
     expiry_rows: list[dict[str, Any]] = []
     for count in claim_counts:
@@ -203,7 +262,16 @@ def profile(
                 "events_per_sec": int(count / seconds) if seconds > 0 else 0,
             }
         )
-    return {"expiry": expiry_rows, "replay": replay_rows}
+    scan_rows: list[dict[str, Any]] = []
+    for count in claim_counts:
+        seconds = measure_claim_scan_seconds(count, scan_iterations)
+        scan_rows.append(
+            {
+                "active_claims": count,
+                "claim_scan_microseconds": round(seconds * 1e6, 3),
+            }
+        )
+    return {"expiry": expiry_rows, "replay": replay_rows, "scan": scan_rows}
 
 
 def run(
@@ -211,14 +279,17 @@ def run(
     iterations: int = DEFAULT_ITERATIONS,
     claim_counts: tuple[int, ...] = CLAIM_COUNTS,
     replay_counts: tuple[int, ...] = REPLAY_COUNTS,
+    scan_iterations: int = SCAN_ITERATIONS,
 ) -> dict[str, Any]:
     """Run the profile and, when given a path, write the results as JSON."""
-    rows = profile(claim_counts, replay_counts, iterations)
+    rows = profile(claim_counts, replay_counts, iterations, scan_iterations)
     summary: dict[str, Any] = {
         "host": host_profile(),
         "iterations_per_count": iterations,
+        "scan_iterations_per_count": scan_iterations,
         "expiry": rows["expiry"],
         "replay": rows["replay"],
+        "scan": rows["scan"],
     }
     if results_path is not None:
         results_path.parent.mkdir(parents=True, exist_ok=True)
@@ -239,6 +310,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Profile lease-expiry and event-replay cost.")
     parser.add_argument("--results", type=Path, default=DEFAULT_RESULTS)
     parser.add_argument("--iterations", type=int, default=DEFAULT_ITERATIONS)
+    parser.add_argument("--scan-iterations", type=int, default=SCAN_ITERATIONS)
     parser.add_argument(
         "--claim-counts", default=None, help="Comma-separated active-claim counts (e.g. 10,100)."
     )
@@ -252,6 +324,7 @@ def main(argv: list[str] | None = None) -> int:
         args.iterations,
         claim_counts=_counts(args.claim_counts, CLAIM_COUNTS),
         replay_counts=_counts(args.replay_counts, REPLAY_COUNTS),
+        scan_iterations=args.scan_iterations,
     )
     print(f"host: {summary['host']['cpu']} | Python {summary['host']['python']}")
     print("lease expiry (heap-based since 0.40.0):")
@@ -266,6 +339,11 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"  {row['events']:>7} events  "
             f"{row['replay_milliseconds']:>9.3f} ms  ~{row['events_per_sec']:>9} events/s"
+        )
+    print("scope-conflict scan (per claim, un-indexed):")
+    for row in summary["scan"]:
+        print(
+            f"  {row['active_claims']:>7} claims  {row['claim_scan_microseconds']:>10.3f} us/claim"
         )
     print(f"results written to {args.results}")
     return 0
