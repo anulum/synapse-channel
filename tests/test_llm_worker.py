@@ -11,7 +11,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import pytest
 
@@ -26,6 +29,22 @@ from synapse_channel.client.llm_worker import (
     is_service_message,
 )
 from synapse_channel.core.hub import SynapseHub
+
+
+@contextmanager
+def _env_var(name: str, value: str | None) -> Iterator[None]:
+    previous = os.environ.get(name)
+    if value is None:
+        os.environ.pop(name, None)
+    else:
+        os.environ[name] = value
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = previous
 
 
 def _worker(**kwargs: object) -> SynapseLLMWorker:
@@ -95,9 +114,9 @@ def test_build_client_rule() -> None:
     assert isinstance(worker.client, RuleBasedClient)
 
 
-def test_build_client_openai_keeps_base(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    worker = _worker(provider="openai", base_url=OPENAI_DEFAULT_BASE_URL)
+def test_build_client_openai_keeps_base() -> None:
+    with _env_var("OPENAI_API_KEY", None):
+        worker = _worker(provider="openai", base_url=OPENAI_DEFAULT_BASE_URL)
     assert isinstance(worker.client, OpenAIChatClient)
     assert worker.client.base_url == OPENAI_DEFAULT_BASE_URL
     assert worker.client.api_key == "ollama"  # falls back when env is empty
@@ -115,9 +134,9 @@ def test_build_client_ollama_keeps_custom_base() -> None:
     assert worker.client.base_url == "http://gpu:11434/v1"
 
 
-def test_build_client_uses_api_key_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MY_KEY", "secret-token")
-    worker = _worker(provider="openai", api_key_env="MY_KEY")
+def test_build_client_uses_api_key_from_env() -> None:
+    with _env_var("MY_KEY", "secret-token"):
+        worker = _worker(provider="openai", api_key_env="MY_KEY")
     assert isinstance(worker.client, OpenAIChatClient)
     assert worker.client.api_key == "secret-token"
 
