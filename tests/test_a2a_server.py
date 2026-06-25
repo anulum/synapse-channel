@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from http import HTTPStatus
 from io import BytesIO
 from pathlib import Path
@@ -780,6 +781,52 @@ def test_fallback_correlation_preserves_fifo_tasks_for_same_sender() -> None:
     assert second_updated is not None
     assert first_updated["status"]["state"] == "TASK_STATE_COMPLETED"
     assert second_updated["status"]["state"] == "TASK_STATE_WORKING"
+
+
+def test_concurrent_duplicate_task_id_creates_only_one_task() -> None:
+    class SlowMissStore(A2ATaskStore):
+        def get(self, task_id: str) -> dict[str, Any] | None:
+            task = super().get(task_id)
+            if task is None and task_id == "task-a":
+                time.sleep(0.05)
+                return super().get(task_id)
+            return task
+
+    bridge = A2ABridge(
+        agent=FakeAgent(),
+        agent_card={},
+        target="WORKER",
+        store=SlowMissStore(),
+    )
+    results: list[dict[str, Any]] = []
+    errors: list[ValueError] = []
+
+    def send(index: int) -> None:
+        try:
+            results.append(
+                bridge.send_message(
+                    {
+                        "message": {
+                            "taskId": "task-a",
+                            "messageId": f"m-{index}",
+                            "role": "ROLE_USER",
+                            "parts": [{"text": f"task {index}"}],
+                        }
+                    }
+                )
+            )
+        except ValueError as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=send, args=(index,)) for index in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=2.0)
+
+    assert len(results) == 1
+    assert [str(error) for error in errors] == ["message.taskId already exists"]
+    assert bridge.list_tasks()["totalSize"] == 1
 
 
 def test_completion_delivers_push_notification_to_stored_config() -> None:
