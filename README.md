@@ -196,6 +196,19 @@ directory, a system path) is flagged rather than used in silence. Set
 `syn-name`/`syn-wait`/`syn-say`/`syn-inbox`/`syn-board` aliases are installed too;
 `syn-wait` uses the same persistent auto-rearming path as `syn arm`.
 
+To make fresh terminals connect automatically, install the shell hook once:
+
+```bash
+synapse install-shell-hook --shell auto
+```
+
+New Bash/Zsh terminals then resolve the current git project at each prompt, export
+`SYN_PROJECT`/`SYN_IDENTITY`, and keep a cheap `synapse arm` sidecar running for
+that project. The hook also wraps common provider commands (`codex`, `claude`,
+`gemini`, `agent`, `ask`, `ollama`) through `synapse worker-session`, so cloud and
+local LLM sessions inherit the same Synapse identity without polling or manual
+arming. Set `SYNAPSE_AUTO_CONNECT=0` to disable it for a terminal.
+
 ### Durability
 
 Passing `--db` backs the hub with an append-only SQLite event log (standard
@@ -369,11 +382,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.44.1 |
 | Public API exports | 59 |
-| Package modules | 59 |
+| Package modules | 61 |
 | Classes | 56 |
 | Wire message types | 52 |
-| CLI subcommands | 33 |
-| Test functions | 1284 |
+| CLI subcommands | 35 |
+| Test functions | 1295 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

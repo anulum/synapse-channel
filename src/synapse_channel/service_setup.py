@@ -166,6 +166,7 @@ def service_suggestions(
         f'"$(systemd-escape --template=synapse-presence@.service {project!r})"',
         "systemctl --user enable --now "
         f'"$(systemd-escape --template=synapse-arm@.service {identity!r})"',
+        "synapse install-shell-hook --shell auto",
         f"# installed synapse binary detected as: {synapse}",
     ]
 
