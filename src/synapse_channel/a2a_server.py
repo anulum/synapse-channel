@@ -15,9 +15,7 @@ message, and task routes.
 from __future__ import annotations
 
 import asyncio
-import copy
 import json
-import queue
 import threading
 import time
 import uuid
@@ -30,6 +28,7 @@ from urllib.error import URLError
 from urllib.parse import parse_qs, urlparse
 
 from synapse_channel.a2a import JsonMap
+from synapse_channel.a2a_events import A2ATaskEvents
 from synapse_channel.a2a_store import A2ATaskStore
 from synapse_channel.a2a_validation import (
     A2A_MEDIA_TYPE,
@@ -156,7 +155,7 @@ class A2ABridge:
         self.task_timeout_seconds = max(task_timeout_seconds, 0.0)
         self.subscribe_wait_seconds = max(subscribe_wait_seconds, 0.0)
         self._pending_by_target: dict[str, list[str]] = {}
-        self._subscribers: dict[str, list[queue.Queue[JsonMap]]] = {}
+        self._events = A2ATaskEvents()
         self._recover_stale_open_tasks(now=time.time())
 
     def _run(self, coro: Coroutine[Any, Any, Any]) -> Any:
@@ -341,9 +340,7 @@ class A2ABridge:
 
     def _publish_task_update(self, task: JsonMap, *, deliver_push: bool = True) -> None:
         """Publish one task update to local subscribers and configured webhooks."""
-        event = {"task": copy.deepcopy(task)}
-        for subscriber in list(self._subscribers.get(str(task["id"]), [])):
-            subscriber.put(event)
+        self._events.publish(str(task["id"]), task)
         if deliver_push:
             self._deliver_push_notifications(task)
 
@@ -508,26 +505,12 @@ class A2ABridge:
         task = self.store.get(task_id)
         if task is None:
             return None
-        events = [{"task": copy.deepcopy(task)}]
-        state = str(task.get("status", {}).get("state", ""))
-        if state in TERMINAL_TASK_STATES:
-            return events
-        updates: queue.Queue[JsonMap] = queue.Queue()
-        self._subscribers.setdefault(task_id, []).append(updates)
-        timeout = self.subscribe_wait_seconds if wait_seconds is None else max(wait_seconds, 0.0)
-        try:
-            if timeout > 0.0:
-                try:
-                    events.append(updates.get(timeout=timeout))
-                except queue.Empty:
-                    pass
-        finally:
-            subscribers = self._subscribers.get(task_id, [])
-            if updates in subscribers:
-                subscribers.remove(updates)
-            if not subscribers and task_id in self._subscribers:
-                del self._subscribers[task_id]
-        return events
+        return self._events.subscribe(
+            task_id,
+            task,
+            wait_seconds=wait_seconds,
+            default_wait_seconds=self.subscribe_wait_seconds,
+        )
 
     def create_push_notification_config(self, task_id: str, config: JsonMap) -> JsonMap | None:
         """Create a push notification config for a known task."""
