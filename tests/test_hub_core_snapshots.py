@@ -4,48 +4,58 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL - tests for hub state, who, and history snapshots
+# SYNAPSE_CHANNEL - end-to-end tests for hub state, who, and history snapshots
 
 from __future__ import annotations
 
-from hub_helpers import FakeServerWS, _hub, _msg
+from hub_e2e_helpers import close_agents, connect_agent, running_hub
 
 
-async def test_state_request_returns_snapshot() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
-    await hub.handle_message(_msg(sender="A", type="state_request"), ws)
-    assert ws.last()["type"] == "state_snapshot"
-    assert ws.last()["snapshot"]["active_claims"][0]["task_id"] == "T1"
+async def test_state_request_returns_snapshot_end_to_end() -> None:
+    async with running_hub() as (_, uri):
+        alpha = await connect_agent("ALPHA", uri)
+        try:
+            await alpha.agent.claim("T1")
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            await alpha.agent.request_state()
+            snapshot = await alpha.recorder.wait_for(lambda m: m.get("type") == "state_snapshot")
+            assert snapshot["snapshot"]["active_claims"][0]["task_id"] == "T1"
+        finally:
+            await close_agents(alpha)
 
 
-async def test_who_request_returns_roster() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="A", type="who_request"), ws)
-    snap = ws.last()
-    assert snap["type"] == "who_snapshot"
-    assert snap["online_agents"] == ["A"]
-    assert snap["connected_clients"] == 1
+async def test_who_request_returns_roster_end_to_end() -> None:
+    async with running_hub() as (_, uri):
+        alpha = await connect_agent("ALPHA", uri)
+        try:
+            await alpha.agent.request_who()
+            snap = await alpha.recorder.wait_for(lambda m: m.get("type") == "who_snapshot")
+            assert snap["online_agents"] == ["ALPHA"]
+            assert snap["connected_clients"] == 1
+        finally:
+            await close_agents(alpha)
 
 
-async def test_history_request_variants() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    for i in range(3):
-        await hub.handle_message(_msg(sender="A", type="chat", payload=str(i)), ws)
-
-    await hub.handle_message(_msg(sender="A", type="history_request", limit=2), ws)
-    limited = ws.last()
-    assert limited["requested_limit"] == 2
-    assert len(limited["history"]) == 2
-
-    await hub.handle_message(_msg(sender="A", type="history_request"), ws)
-    assert ws.last()["requested_limit"] == "all"
-
-    await hub.handle_message(_msg(sender="A", type="history_request", limit="bad"), ws)
-    assert ws.last()["requested_limit"] == "all"
+async def test_history_request_variants_end_to_end() -> None:
+    async with running_hub() as (_, uri):
+        alpha = await connect_agent("ALPHA", uri)
+        try:
+            for index in range(3):
+                await alpha.agent.chat(str(index), target="all")
+            await alpha.agent.request_history(limit=2)
+            limited = await alpha.recorder.wait_for(
+                lambda m: m.get("type") == "history_snapshot" and m.get("requested_limit") == 2
+            )
+            assert len(limited["history"]) == 2
+            await alpha.agent.request_history(limit=None)
+            all_history = await alpha.recorder.wait_for(
+                lambda m: m.get("type") == "history_snapshot" and m.get("requested_limit") == "all"
+            )
+            assert len(all_history["history"]) == 3
+            await alpha.agent.send_message("history_request", limit="bad")
+            fallback = await alpha.recorder.wait_for(
+                lambda m: m.get("type") == "history_snapshot" and m.get("requested_limit") == "all"
+            )
+            assert len(fallback["history"]) == 3
+        finally:
+            await close_agents(alpha)

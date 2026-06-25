@@ -4,81 +4,98 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL - tests for hub claims, releases, and task updates
+# SYNAPSE_CHANNEL - end-to-end tests for hub claims, releases, and task updates
 
 from __future__ import annotations
 
-from hub_helpers import FakeServerWS, _hub, _msg
+from hub_e2e_helpers import close_agents, connect_agent, running_hub
 
 
-async def test_claim_granted_is_broadcast() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", note="x"), ws)
-    granted = [m for m in ws.decoded() if m.get("type") == "claim_granted"]
-    assert granted[-1]["task_id"] == "T1"
-    assert granted[-1]["owner"] == "A"
+async def test_claim_granted_is_broadcast_end_to_end() -> None:
+    async with running_hub() as (_, uri):
+        alpha = await connect_agent("ALPHA", uri)
+        beta = await connect_agent("BETA", uri)
+        try:
+            await alpha.agent.claim("T1", note="x")
+            granted = await beta.recorder.wait_for(
+                lambda m: m.get("type") == "claim_granted" and m.get("task_id") == "T1"
+            )
+            assert granted["owner"] == "ALPHA"
+        finally:
+            await close_agents(alpha, beta)
 
 
-async def test_claim_denied_goes_to_second_agent() -> None:
-    hub = _hub()
-    ws_a = FakeServerWS()
-    ws_b = FakeServerWS()
-    await hub.register(ws_a)
-    await hub.register(ws_b)
-    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws_a)
-    await hub.handle_message(_msg(sender="B", type="claim", task_id="T1"), ws_b)
-    assert ws_b.last()["type"] == "claim_denied"
-    assert ws_b.last()["task_id"] == "T1"
+async def test_claim_denied_goes_to_second_agent_end_to_end() -> None:
+    async with running_hub() as (_, uri):
+        alpha = await connect_agent("ALPHA", uri)
+        beta = await connect_agent("BETA", uri)
+        try:
+            await alpha.agent.claim("T1")
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            await beta.agent.claim("T1")
+            denied = await beta.recorder.wait_for(lambda m: m.get("type") == "claim_denied")
+            assert denied["task_id"] == "T1"
+        finally:
+            await close_agents(alpha, beta)
 
 
-async def test_claim_with_invalid_ttl_falls_back_to_default() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", ttl_seconds="abc"), ws)
-    assert hub.state.claims["T1"].owner == "A"
+async def test_claim_with_invalid_ttl_falls_back_to_default_end_to_end() -> None:
+    async with running_hub() as (hub, uri):
+        alpha = await connect_agent("ALPHA", uri)
+        try:
+            await alpha.agent.send_message("claim", task_id="T1", ttl_seconds="abc")
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            assert hub.state.claims["T1"].owner == "ALPHA"
+        finally:
+            await close_agents(alpha)
 
 
-async def test_claim_with_numeric_ttl_is_used() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", ttl_seconds=120), ws)
-    assert "T1" in hub.state.claims
+async def test_claim_with_numeric_ttl_is_used_end_to_end() -> None:
+    async with running_hub() as (hub, uri):
+        alpha = await connect_agent("ALPHA", uri)
+        try:
+            await alpha.agent.claim("T1", ttl_seconds=120)
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            assert "T1" in hub.state.claims
+        finally:
+            await close_agents(alpha)
 
 
-async def test_release_granted_and_denied() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
-    await hub.handle_message(_msg(sender="A", type="release", task_id="T1"), ws)
-    assert any(m.get("type") == "release_granted" for m in ws.decoded())
-
-    await hub.handle_message(_msg(sender="A", type="release", task_id="GHOST"), ws)
-    assert ws.last()["type"] == "release_denied"
-
-
-async def test_task_update_success_is_broadcast() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
-    await hub.handle_message(
-        _msg(sender="A", type="task_update", task_id="T1", status="working", data_ref="r"),
-        ws,
-    )
-    updated = [m for m in ws.decoded() if m.get("type") == "task_updated"]
-    assert updated[-1]["status"] == "working"
-    assert updated[-1]["data_ref"] == "r"
-    assert updated[-1]["version"] == 1
+async def test_release_granted_and_denied_end_to_end() -> None:
+    async with running_hub() as (_, uri):
+        alpha = await connect_agent("ALPHA", uri)
+        try:
+            await alpha.agent.claim("T1")
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            await alpha.agent.release("T1")
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "release_granted")
+            await alpha.agent.release("GHOST")
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "release_denied")
+        finally:
+            await close_agents(alpha)
 
 
-async def test_task_update_failure_errors_sender() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="A", type="task_update", task_id="MISSING"), ws)
-    assert ws.last()["type"] == "error"
+async def test_task_update_success_is_broadcast_end_to_end() -> None:
+    async with running_hub() as (_, uri):
+        alpha = await connect_agent("ALPHA", uri)
+        beta = await connect_agent("BETA", uri)
+        try:
+            await alpha.agent.claim("T1")
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            await alpha.agent.update_task("T1", status="working", data_ref="r")
+            updated = await beta.recorder.wait_for(lambda m: m.get("type") == "task_updated")
+            assert updated["status"] == "working"
+            assert updated["data_ref"] == "r"
+            assert updated["version"] == 1
+        finally:
+            await close_agents(alpha, beta)
+
+
+async def test_task_update_failure_errors_sender_end_to_end() -> None:
+    async with running_hub() as (_, uri):
+        alpha = await connect_agent("ALPHA", uri)
+        try:
+            await alpha.agent.update_task("MISSING")
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "error")
+        finally:
+            await close_agents(alpha)
