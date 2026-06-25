@@ -164,6 +164,9 @@ def _cmd_a2a_serve(args: argparse.Namespace) -> int:
         documentation_url=args.documentation_url,
         bearer_auth=args.bearer_auth,
     )
+    capabilities = agent_card.setdefault("capabilities", {})
+    if isinstance(capabilities, dict):
+        capabilities["streaming"] = True
     agent = SynapseAgent(args.name, _drop_message, uri=args.uri, verbose=False, token=args.token)
     runtime = SynapseAgentRuntime(agent)
     if not runtime.start():

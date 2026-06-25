@@ -37,8 +37,9 @@ All notable changes to this project are documented here.
   the hub. It serves `/.well-known/agent-card.json` and `/extendedAgentCard`,
   accepts `POST /message:send` by forwarding text/data parts into SYNAPSE chat,
   exposes `GET /tasks` and `GET /tasks/{id}` over its local task view, and supports
-  `POST /tasks/{id}:cancel`. Streaming and task subscriptions return explicit
-  `501` problem responses rather than silently pretending to work.
+  `POST /tasks/{id}:cancel`. `POST /message:stream` now returns an immediate
+  Server-Sent Events task lifecycle stream; subscribing to a terminal task returns
+  a clear `409` problem response.
 
 ### Changed
 - The hub now **refuses to start** on a non-loopback address (e.g. `--host 0.0.0.0`)
