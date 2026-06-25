@@ -9,46 +9,71 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+from contextlib import AbstractAsyncContextManager
 from typing import Any
 
 import pytest
 
-from cli_messaging_helpers import FakeAgent, _factory
+from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli_messaging
+from synapse_channel.core.hub import SynapseHub
+
+
+async def _wait_for_presence(observer: AgentHandle, name: str) -> None:
+    await observer.recorder.wait_for(
+        lambda message: message.get("type") == "presence_update" and message.get("agent") == name
+    )
+
+
+async def _send_chat(
+    uri: str, sender: str, target: str, payload: str, *, priority: bool = False
+) -> None:
+    handle = await connect_agent(sender, uri)
+    try:
+        await handle.agent.chat(payload, target=target, priority=priority)
+    finally:
+        await close_agents(handle)
 
 
 async def test_wait_returns_on_addressed_message(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    inbound: list[dict[str, Any]] = [
-        {"type": "presence_update", "sender": "hub"},  # not a chat — ignored
-        {"type": "chat", "sender": "A", "target": "B", "payload": "wake up"},
-    ]
-    factory = _factory(holder, inbound=inbound)
-    code = await cli_messaging._wait(
-        uri="ws://h", name="B-rx", for_name="B", timeout=2.0, agent_factory=factory
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        wait_task = asyncio.create_task(
+            cli_messaging._wait(uri=uri, name="B-rx", for_name="B", timeout=2.0)
+        )
+        try:
+            await _wait_for_presence(observer, "B-rx")
+            await _send_chat(uri, "A", "B", "wake up")
+            code = await wait_task
+        finally:
+            await close_agents(observer)
+
     assert code == 0
     assert "A: wake up" in capsys.readouterr().out
 
 
 async def test_wait_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    factory = _factory(holder, ready=False)
     code = await cli_messaging._wait(
-        uri="ws://h", name="B", for_name="B", timeout=1.0, agent_factory=factory
+        uri=f"ws://127.0.0.1:{_free_port()}",
+        name="B",
+        for_name="B",
+        timeout=1.0,
+        ready_timeout=0.1,
     )
     assert code == 1
     assert "Could not reach hub" in capsys.readouterr().out
 
 
 async def test_wait_times_out_with_nothing() -> None:
-    holder: list[FakeAgent] = []
-    # idle=True keeps the connection up so this exercises the timeout path (code 2),
-    # distinct from a dropped connection (code 3).
-    factory = _factory(holder, inbound=[], idle=True)
-    code = await cli_messaging._wait(
-        uri="ws://h", name="B", for_name="B", timeout=0.2, agent_factory=factory
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        code = await cli_messaging._wait(
+            uri=uri,
+            name="B-rx",
+            for_name="B",
+            timeout=0.05,
+            poll_interval=0.01,
+        )
     assert code == 2
 
 
@@ -67,48 +92,71 @@ def test_cmd_wait_dispatches_with_for_default(monkeypatch: pytest.MonkeyPatch) -
 
 
 async def test_wait_ignores_own_messages() -> None:
-    holder: list[FakeAgent] = []
-    # A broadcast whose sender is our own identity (we send as for_name) must not wake us.
-    inbound: list[dict[str, Any]] = [
-        {"type": "chat", "sender": "B", "target": "all", "payload": "x"}
-    ]
-    factory = _factory(holder, inbound=inbound, idle=True)
-    code = await cli_messaging._wait(
-        uri="ws://h", name="B-rx", for_name="B", timeout=0.2, agent_factory=factory
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        wait_task = asyncio.create_task(
+            cli_messaging._wait(
+                uri=uri,
+                name="B-rx",
+                for_name="B",
+                timeout=0.05,
+                poll_interval=0.01,
+            )
+        )
+        try:
+            await _wait_for_presence(observer, "B-rx")
+            await _send_chat(uri, "B", "all", "x")
+            code = await wait_task
+        finally:
+            await close_agents(observer)
+
     assert code == 2
 
 
 async def test_wait_directed_only_ignores_broadcast() -> None:
-    holder: list[FakeAgent] = []
-    inbound: list[dict[str, Any]] = [
-        {"type": "chat", "sender": "A", "target": "all", "payload": "broadcast"}
-    ]
-    factory = _factory(holder, inbound=inbound, idle=True)
-    code = await cli_messaging._wait(
-        uri="ws://h",
-        name="B-rx",
-        for_name="B",
-        timeout=0.2,
-        directed_only=True,
-        agent_factory=factory,
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        wait_task = asyncio.create_task(
+            cli_messaging._wait(
+                uri=uri,
+                name="B-rx",
+                for_name="B",
+                timeout=0.05,
+                directed_only=True,
+                poll_interval=0.01,
+            )
+        )
+        try:
+            await _wait_for_presence(observer, "B-rx")
+            await _send_chat(uri, "A", "all", "broadcast")
+            code = await wait_task
+        finally:
+            await close_agents(observer)
+
     assert code == 2  # a broadcast does not wake in directed-only mode
 
 
 async def test_wait_directed_only_wakes_on_named(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    inbound: list[dict[str, Any]] = [{"type": "chat", "sender": "A", "target": "B", "payload": "p"}]
-    factory = _factory(holder, inbound=inbound)
-    code = await cli_messaging._wait(
-        uri="ws://h",
-        name="B-rx",
-        for_name="B",
-        timeout=2.0,
-        directed_only=True,
-        agent_factory=factory,
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        wait_task = asyncio.create_task(
+            cli_messaging._wait(
+                uri=uri,
+                name="B-rx",
+                for_name="B",
+                timeout=2.0,
+                directed_only=True,
+            )
+        )
+        try:
+            await _wait_for_presence(observer, "B-rx")
+            await _send_chat(uri, "A", "B", "p")
+            code = await wait_task
+        finally:
+            await close_agents(observer)
+
     assert code == 0
+    assert "A: p" in capsys.readouterr().out
 
 
 def test_cmd_wait_derives_rx_name_for_bare_identity(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -158,48 +206,66 @@ def test_cmd_wait_keeps_distinct_connect_name(monkeypatch: pytest.MonkeyPatch) -
 
 
 async def test_wait_directed_only_wakes_on_ceo() -> None:
-    holder: list[FakeAgent] = []
-    inbound: list[dict[str, Any]] = [
-        {"type": "chat", "sender": "CEO", "target": "all", "payload": "directive"}
-    ]
-    factory = _factory(holder, inbound=inbound)
-    code = await cli_messaging._wait(
-        uri="ws://h",
-        name="B-rx",
-        for_name="B",
-        timeout=2.0,
-        directed_only=True,
-        agent_factory=factory,
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        wait_task = asyncio.create_task(
+            cli_messaging._wait(
+                uri=uri,
+                name="B-rx",
+                for_name="B",
+                timeout=2.0,
+                directed_only=True,
+            )
+        )
+        try:
+            await _wait_for_presence(observer, "B-rx")
+            await _send_chat(uri, "CEO", "all", "directive")
+            code = await wait_task
+        finally:
+            await close_agents(observer)
+
     assert code == 0  # a CEO broadcast wakes even a directed-only waiter
 
 
 async def test_wait_directed_only_wakes_on_priority_broadcast() -> None:
-    holder: list[FakeAgent] = []
-    inbound: list[dict[str, Any]] = [
-        {"type": "chat", "sender": "A", "target": "all", "payload": "!", "priority": True}
-    ]
-    factory = _factory(holder, inbound=inbound)
-    code = await cli_messaging._wait(
-        uri="ws://h",
-        name="B-rx",
-        for_name="B",
-        timeout=2.0,
-        directed_only=True,
-        agent_factory=factory,
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        wait_task = asyncio.create_task(
+            cli_messaging._wait(
+                uri=uri,
+                name="B-rx",
+                for_name="B",
+                timeout=2.0,
+                directed_only=True,
+            )
+        )
+        try:
+            await _wait_for_presence(observer, "B-rx")
+            await _send_chat(uri, "A", "all", "!", priority=True)
+            code = await wait_task
+        finally:
+            await close_agents(observer)
+
     assert code == 0  # a priority broadcast wakes even a directed-only waiter
 
 
 async def test_wait_exits_when_connection_drops() -> None:
-    holder: list[FakeAgent] = []
-    # idle=False → connect() returns at once (the socket closed); no message arrives.
-    # With timeout=0 the old loop hung forever on the dead socket; the waiter must now
-    # exit with code 3 so the caller re-arms instead of going dark.
-    factory = _factory(holder, inbound=[], idle=False)
-    code = await cli_messaging._wait(
-        uri="ws://h", name="X-rx", for_name="X", timeout=0.0, agent_factory=factory
+    manager: AbstractAsyncContextManager[tuple[SynapseHub, str]] = running_hub(SynapseHub())
+    _hub, uri = await manager.__aenter__()
+    observer = await connect_agent("OBSERVER", uri)
+    wait_task = asyncio.create_task(
+        cli_messaging._wait(
+            uri=uri,
+            name="X-rx",
+            for_name="X",
+            timeout=0.0,
+            poll_interval=0.01,
+        )
     )
+    await _wait_for_presence(observer, "X-rx")
+    await close_agents(observer)
+    await manager.__aexit__(None, None, None)
+    code = await wait_task
     assert code == 3
 
 
@@ -211,22 +277,25 @@ async def test_wait_jitters_on_broadcast(monkeypatch: pytest.MonkeyPatch) -> Non
         return 0.0
 
     monkeypatch.setattr("synapse_channel.cli_messaging.random.uniform", _rec)
-    holder: list[FakeAgent] = []
-    # A CEO broadcast (target "all") wakes a directed-only waiter — and woke every
-    # other terminal too, so the exit is jittered.
-    inbound: list[dict[str, Any]] = [
-        {"type": "chat", "sender": "CEO", "target": "all", "payload": "go"}
-    ]
-    factory = _factory(holder, inbound=inbound)
-    code = await cli_messaging._wait(
-        uri="ws://h",
-        name="B-rx",
-        for_name="B",
-        timeout=2.0,
-        directed_only=True,
-        wake_jitter=5.0,
-        agent_factory=factory,
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        wait_task = asyncio.create_task(
+            cli_messaging._wait(
+                uri=uri,
+                name="B-rx",
+                for_name="B",
+                timeout=2.0,
+                directed_only=True,
+                wake_jitter=5.0,
+            )
+        )
+        try:
+            await _wait_for_presence(observer, "B-rx")
+            await _send_chat(uri, "CEO", "all", "go")
+            code = await wait_task
+        finally:
+            await close_agents(observer)
+
     assert code == 0
     assert calls == [(0.0, 5.0)]  # jitter applied for the broadcast
 
@@ -239,14 +308,23 @@ async def test_wait_no_jitter_on_directed_wake(monkeypatch: pytest.MonkeyPatch) 
         return 0.0
 
     monkeypatch.setattr("synapse_channel.cli_messaging.random.uniform", _rec)
-    holder: list[FakeAgent] = []
-    # A 1:1 directed message (target == for_name) — no herd, so no jitter.
-    inbound: list[dict[str, Any]] = [
-        {"type": "chat", "sender": "A", "target": "B", "payload": "hi"}
-    ]
-    factory = _factory(holder, inbound=inbound)
-    code = await cli_messaging._wait(
-        uri="ws://h", name="B-rx", for_name="B", timeout=2.0, wake_jitter=5.0, agent_factory=factory
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        wait_task = asyncio.create_task(
+            cli_messaging._wait(
+                uri=uri,
+                name="B-rx",
+                for_name="B",
+                timeout=2.0,
+                wake_jitter=5.0,
+            )
+        )
+        try:
+            await _wait_for_presence(observer, "B-rx")
+            await _send_chat(uri, "A", "B", "hi")
+            code = await wait_task
+        finally:
+            await close_agents(observer)
+
     assert code == 0
     assert calls == []  # no jitter for a directed message

@@ -14,26 +14,58 @@ from typing import Any
 
 import pytest
 
-from cli_messaging_helpers import FakeAgent, _factory
+from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
 from synapse_channel import cli_arm
+from synapse_channel.core.hub import SynapseHub
+
+
+async def _wait_for_presence_count(observer: AgentHandle, name: str, count: int) -> None:
+    await observer.recorder.wait_for(
+        lambda _message: (
+            len(
+                [
+                    item
+                    for item in observer.recorder.messages
+                    if item.get("type") == "presence_update" and item.get("agent") == name
+                ]
+            )
+            >= count
+        )
+    )
+
+
+async def _send_chat(uri: str, sender: str, target: str, payload: str) -> None:
+    handle = await connect_agent(sender, uri)
+    try:
+        await handle.agent.chat(payload, target=target)
+    finally:
+        await close_agents(handle)
 
 
 async def test_arm_rearms_after_each_wake(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    inbound: list[dict[str, Any]] = [
-        {"type": "chat", "sender": "A", "target": "B", "payload": "wake"}
-    ]
-    factory = _factory(holder, inbound=inbound)
-    code = await cli_arm._arm(
-        uri="ws://h",
-        name="B-rx",
-        for_name="B",
-        max_wakes=2,
-        reconnect_delay=0.0,
-        agent_factory=factory,
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        arm_task = asyncio.create_task(
+            cli_arm._arm(
+                uri=uri,
+                name="B-rx",
+                for_name="B",
+                max_wakes=2,
+                reconnect_delay=0.0,
+            )
+        )
+        try:
+            await _wait_for_presence_count(observer, "B-rx", 1)
+            await _send_chat(uri, "A", "B", "wake")
+            deadline = asyncio.get_event_loop().time() + 2.0
+            while not arm_task.done() and asyncio.get_event_loop().time() < deadline:
+                await _send_chat(uri, "A", "B", "wake")
+                await asyncio.sleep(0.05)
+            code = await asyncio.wait_for(arm_task, timeout=0.5)
+        finally:
+            await close_agents(observer)
+
     assert code == 0
-    assert len(holder) == 2
     assert capsys.readouterr().out.count("A: wake") == 2
 
 

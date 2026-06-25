@@ -9,27 +9,42 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 from typing import Any
 
 import pytest
 
-from cli_messaging_helpers import FakeAgent, _factory
+from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
 from synapse_channel import cli_messaging
+from synapse_channel.core.auth import TokenAuthenticator
+from synapse_channel.core.hub import SynapseHub
+
+
+async def _wait_for_presence(observer: AgentHandle, name: str) -> None:
+    await observer.recorder.wait_for(
+        lambda message: message.get("type") == "presence_update" and message.get("agent") == name
+    )
 
 
 async def test_listen_prints_chat_and_presence(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    inbound: list[dict[str, Any]] = [
-        {"type": "chat", "sender": "FAST", "payload": "hi"},
-        {"type": "presence_update", "event": "joined", "online_agents": ["FAST", "USER"]},
-        {"type": "welcome"},  # ignored type
-    ]
-    factory = _factory(holder, inbound=inbound, idle=False)
-    code = await cli_messaging._listen(uri="ws://h", name="USER", agent_factory=factory)
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        listen_task = asyncio.create_task(
+            cli_messaging._listen(uri=uri, name="USER", max_messages=3)
+        )
+        fast = await connect_agent("FAST", uri)
+        try:
+            await _wait_for_presence(observer, "USER")
+            await fast.agent.chat("hi", target="all")
+            await fast.agent.chat("again", target="all")
+            code = await listen_task
+        finally:
+            await close_agents(fast, observer)
+
     assert code == 0
     out = capsys.readouterr().out
     assert "FAST: hi" in out
-    assert "[presence] joined -> online: FAST, USER" in out
+    assert "[presence] joined" in out
 
 
 def test_cmd_listen_dispatch_and_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -46,22 +61,34 @@ def test_cmd_listen_dispatch_and_interrupt(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 async def test_listen_threads_token_to_agent() -> None:
-    holder: list[FakeAgent] = []
-    factory = _factory(holder, inbound=[], idle=False)
-    await cli_messaging._listen(uri="ws://h", name="U", agent_factory=factory, token="s3cret")
-    assert holder[0].token == "s3cret"
+    token = "s3cret"
+    async with running_hub(SynapseHub(authenticator=TokenAuthenticator([token]))) as (_hub, uri):
+        code = await cli_messaging._listen(
+            uri=uri,
+            name="U",
+            token=token,
+            max_messages=0,
+        )
+
+    assert code == 0
 
 
 async def test_listen_for_filters_to_inbox(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    inbound: list[dict[str, Any]] = [
-        {"type": "chat", "sender": "A", "target": "all", "payload": "everyone"},
-        {"type": "chat", "sender": "A", "target": "B,C", "payload": "you two"},
-        {"type": "chat", "sender": "A", "target": "C", "payload": "just C"},
-        {"type": "presence_update", "event": "joined", "online_agents": ["B"]},
-    ]
-    factory = _factory(holder, inbound=inbound, idle=False)
-    code = await cli_messaging._listen(uri="ws://h", name="B", agent_factory=factory, for_name="B")
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        listen_task = asyncio.create_task(
+            cli_messaging._listen(uri=uri, name="B-listener", for_name="B", max_messages=2)
+        )
+        sender = await connect_agent("A", uri)
+        try:
+            await _wait_for_presence(observer, "B-listener")
+            await sender.agent.chat("everyone", target="all")
+            await sender.agent.chat("you two", target="B,C")
+            await sender.agent.chat("just C", target="C")
+            code = await listen_task
+        finally:
+            await close_agents(sender, observer)
+
     assert code == 0
     out = capsys.readouterr().out
     assert "everyone" in out
