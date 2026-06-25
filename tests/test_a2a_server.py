@@ -183,6 +183,46 @@ def test_bearer_auth_protects_extended_card_and_message_routes() -> None:
     assert authorized_body["name"] == "SYNAPSE CHANNEL"
 
 
+def test_message_send_rejects_explicit_non_json_content_type() -> None:
+    harness = HandlerHarness(
+        "POST",
+        "/message:send",
+        body={
+            "message": {
+                "messageId": "m1",
+                "role": "ROLE_USER",
+                "parts": [{"text": "status"}],
+            }
+        },
+        headers={"Content-Type": "text/plain"},
+    )
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.UNSUPPORTED_MEDIA_TYPE
+    assert body["title"] == "Unsupported Media Type"
+
+
+def test_message_send_accepts_a2a_json_content_type() -> None:
+    harness = HandlerHarness(
+        "POST",
+        "/message:send",
+        body={
+            "message": {
+                "messageId": "m1",
+                "role": "ROLE_USER",
+                "parts": [{"text": "status"}],
+            }
+        },
+        headers={"Content-Type": "application/a2a+json; charset=utf-8"},
+    )
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.OK
+    assert body["task"]["status"]["state"] == "TASK_STATE_WORKING"
+
+
 def test_message_send_creates_completed_task_and_forwards_text_to_synapse() -> None:
     harness = HandlerHarness(
         "POST",

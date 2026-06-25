@@ -800,6 +800,15 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
             self.wfile.write(raw)
 
         def _read_json(self) -> JsonMap | None:
+            content_type = self.headers.get("Content-Type", "")
+            media_type = content_type.split(";", 1)[0].strip().lower()
+            if media_type and media_type not in {A2A_MEDIA_TYPE, "application/json"}:
+                self._send_json(
+                    HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                    _problem(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "Unsupported Media Type"),
+                    media_type=PROBLEM_MEDIA_TYPE,
+                )
+                return None
             try:
                 length = int(self.headers.get("Content-Length", "0"))
             except ValueError:
