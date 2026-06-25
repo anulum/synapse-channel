@@ -111,10 +111,11 @@ async def test_board_query_quiet_when_no_matching_snapshot() -> None:
     assert rendered == []
 
 
-def test_cmd_board_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("synapse_channel.cli_queries.asyncio.run", lambda coro: coro.close() or 0)
-    ns = argparse.Namespace(uri="ws://h", name="USER", token=None)
-    assert cli_queries._cmd_board(ns) == 0
+def test_cmd_board_dispatches_real_query() -> None:
+    ns = argparse.Namespace(
+        uri=f"ws://127.0.0.1:{_free_port()}", name="USER", token=None, ready_timeout=0.1
+    )
+    assert cli_queries._cmd_board(ns) == 1
 
 
 async def test_board_threads_token_to_agent() -> None:
