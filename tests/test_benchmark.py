@@ -53,11 +53,11 @@ def test_get_encoder_falls_back_without_tiktoken(monkeypatch: pytest.MonkeyPatch
 
 
 def test_count_tokens_with_encoder() -> None:
-    class FakeEncoder:
+    class WhitespaceTokenEncoder:
         def encode(self, text: str) -> list[int]:
             return list(range(len(text.split())))
 
-    assert bench.count_tokens("a b c", FakeEncoder()) == 3
+    assert bench.count_tokens("a b c", WhitespaceTokenEncoder()) == 3
 
 
 def test_count_tokens_heuristic_handles_empty_and_nonempty() -> None:

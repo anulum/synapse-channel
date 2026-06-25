@@ -13,8 +13,8 @@ import pytest
 from synapse_channel.client.routing import TaskClass, TieredChatClient, classify
 
 
-class _Echo:
-    """A stub backend whose reply names its tag and echoes the prompt."""
+class _TaggedBackend:
+    """Deterministic backend whose reply names its tag and echoes the prompt."""
 
     def __init__(self, tag: str) -> None:
         self.tag = tag
@@ -54,7 +54,11 @@ def test_thresholds_are_tunable() -> None:
 
 def _tiered() -> TieredChatClient:
     return TieredChatClient(
-        {TaskClass.RULE: _Echo("R"), TaskClass.SLM: _Echo("S"), TaskClass.HEAVY: _Echo("H")}
+        {
+            TaskClass.RULE: _TaggedBackend("R"),
+            TaskClass.SLM: _TaggedBackend("S"),
+            TaskClass.HEAVY: _TaggedBackend("H"),
+        }
     )
 
 
@@ -70,13 +74,13 @@ def test_tiered_dispatches_by_class() -> None:
 
 def test_tiered_falls_back_to_default_when_class_absent() -> None:
     # Only SLM registered; a rule-classified prompt falls back to the default.
-    tiered = TieredChatClient({TaskClass.SLM: _Echo("S")}, default_class=TaskClass.SLM)
+    tiered = TieredChatClient({TaskClass.SLM: _TaggedBackend("S")}, default_class=TaskClass.SLM)
     assert tiered.generate(system_prompt="", user_prompt="hi").startswith("S:")
 
 
 def test_tiered_requires_a_default_backend() -> None:
     with pytest.raises(ValueError, match="default class"):
-        TieredChatClient({TaskClass.RULE: _Echo("R")}, default_class=TaskClass.SLM)
+        TieredChatClient({TaskClass.RULE: _TaggedBackend("R")}, default_class=TaskClass.SLM)
 
 
 def test_route_exposes_the_class_decision() -> None:
@@ -84,5 +88,7 @@ def test_route_exposes_the_class_decision() -> None:
 
 
 def test_tiered_uses_an_injected_classifier() -> None:
-    tiered = TieredChatClient({TaskClass.SLM: _Echo("S")}, classifier=lambda prompt: TaskClass.SLM)
+    tiered = TieredChatClient(
+        {TaskClass.SLM: _TaggedBackend("S")}, classifier=lambda prompt: TaskClass.SLM
+    )
     assert tiered.generate(system_prompt="", user_prompt="design heavy thing").startswith("S:")
