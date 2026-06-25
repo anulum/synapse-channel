@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from synapse_channel.cli_queries import AgentFactory, _query_hub
@@ -38,9 +39,17 @@ from synapse_channel.client.diagnostics import (
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.service_setup import install_user_services, service_suggestions
 
+RosterProbe = Callable[..., Awaitable[list[str] | None]]
+"""Async callable that returns the live hub roster for doctor diagnostics."""
+
 
 async def _fetch_roster(
-    *, uri: str, name: str, token: str | None, agent_factory: AgentFactory
+    *,
+    uri: str,
+    name: str,
+    token: str | None,
+    agent_factory: AgentFactory,
+    ready_timeout: float = 5.0,
 ) -> list[str] | None:
     """Return the live roster, or ``None`` when the hub is unreachable.
 
@@ -57,6 +66,7 @@ async def _fetch_roster(
         request=lambda agent: agent.request_who(),
         render=lambda roster: captured.append(roster),
         agent_factory=agent_factory,
+        ready_timeout=ready_timeout,
     )
     if code != 0:
         return None
@@ -71,6 +81,8 @@ async def _diagnose(
     token: str | None,
     send_name: str | None = None,
     agent_factory: AgentFactory = SynapseAgent,
+    ready_timeout: float = 5.0,
+    roster_probe: RosterProbe = _fetch_roster,
 ) -> tuple[int, list[str]]:
     """Resolve the identity, run every check, and return ``(exit_code, report_lines)``.
 
@@ -90,11 +102,12 @@ async def _diagnose(
         check_send_identity(send_name or identity.identity, project=identity.project),
         check_exposure(uri, token),
     ]
-    roster = await _fetch_roster(
+    roster = await roster_probe(
         uri=uri,
         name=f"{identity.identity}-doctor",
         token=token,
         agent_factory=agent_factory,
+        ready_timeout=ready_timeout,
     )
     diagnoses.append(check_reachable(roster is not None, uri))
     diagnoses.append(check_waiter(roster, identity.waiter_name))

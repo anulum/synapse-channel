@@ -96,6 +96,7 @@ async def _query_hub(
     transform: Callable[[dict[str, Any]], Any] = _identity,
     agent_factory: AgentFactory = SynapseAgent,
     attempts: int = 50,
+    ready_timeout: float = 5.0,
 ) -> int:
     """Connect, issue one request, await the matching reply, render it, and exit.
 
@@ -122,6 +123,9 @@ async def _query_hub(
         Factory for the client agent; injectable for testing.
     attempts : int, optional
         Poll attempts (50 ms each) for the reply before giving up. Defaults to ``50``.
+    ready_timeout : float, optional
+        Seconds to wait for the welcome handshake before treating the hub as
+        unreachable. Defaults to ``5.0``.
 
     Returns
     -------
@@ -137,7 +141,7 @@ async def _query_hub(
     agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
     conn_task = asyncio.create_task(agent.connect())
     try:
-        if not await agent.wait_until_ready(timeout=5.0):
+        if not await agent.wait_until_ready(timeout=ready_timeout):
             print(f"[{name}] Could not reach hub at {uri}.")
             return 1
         await request(agent)
