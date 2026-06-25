@@ -88,6 +88,54 @@ def test_parser_git_hook_test_action() -> None:
     assert args.action == "test"
 
 
+# --- git-init ----------------------------------------------------------------
+
+
+def test_parser_git_init() -> None:
+    args = cli.build_parser().parse_args(["git-init", "--name", "ME", "--base", "develop"])
+    assert args.func is cli_git._cmd_git_init
+    assert args.name == "ME"
+    assert args.base == "develop"
+
+
+def test_parser_git_init_has_token_file_companion() -> None:
+    args = cli.build_parser().parse_args(["git-init", "--token-file", "/tmp/tok"])
+    assert args.token_file == "/tmp/tok"
+
+
+def test_cmd_git_init_dispatches(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake(**kwargs: Any) -> list[str]:
+        captured.update(kwargs)
+        return ["installed post-commit", "wrote .synapse/git-claims.md"]
+
+    monkeypatch.setattr(cli_git, "init_repo", fake)
+    ns = argparse.Namespace(
+        uri="ws://h", name="ME", base="trunk", token=None, token_file=None, synapse_bin=None
+    )
+    assert cli_git._cmd_git_init(ns) == 0
+    out = capsys.readouterr().out
+    assert "wrote .synapse/git-claims.md" in out
+    assert captured["base_branch"] == "trunk"
+
+
+def test_cmd_git_init_reports_git_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def boom(**kwargs: Any) -> list[str]:
+        raise GitError("not a git repository")
+
+    monkeypatch.setattr(cli_git, "init_repo", boom)
+    ns = argparse.Namespace(
+        uri="ws://h", name="ME", base="main", token=None, token_file=None, synapse_bin=None
+    )
+    assert cli_git._cmd_git_init(ns) == 1
+    assert "not a git repository" in capsys.readouterr().err
+
+
 def test_cmd_git_hook_test_reports_healthy(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
