@@ -9,156 +9,18 @@
 from __future__ import annotations
 
 import asyncio
-import subprocess
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
 
 import pytest
 
+from gitclaim_helpers import FakeAgent, _await_claim_sent, make_factory
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.git.gitclaim import (
-    AgentFactory,
     GitError,
-    _default_git_runner,
-    resolve_branch,
-    resolve_repo,
     run_git_claim,
 )
 from synapse_channel.git.githook import install_hooks
-
-
-class FakeAgent:
-    """A SynapseAgent stand-in that records claims and exposes its callback."""
-
-    def __init__(
-        self,
-        name: str,
-        callback: Callable[[dict[str, Any]], Awaitable[None]],
-        *,
-        uri: str = "ws://test",
-        verbose: bool = False,
-        token: str | None = None,
-    ) -> None:
-        self.name = name
-        self.callback = callback
-        self.uri = uri
-        self.token = token
-        self.running = True
-        self.ready = True
-        self.claims: list[tuple[str, list[str], dict[str, Any] | None]] = []
-        self.worktrees: list[str] = []
-
-    async def connect(self) -> None:
-        return None
-
-    async def wait_until_ready(self, timeout: float = 5.0) -> bool:
-        return self.ready
-
-    async def claim(
-        self,
-        task_id: str,
-        *,
-        worktree: str = "",
-        paths: Any = (),
-        git: dict[str, Any] | None = None,
-        **_kw: Any,
-    ) -> None:
-        self.claims.append((task_id, list(paths), git))
-        self.worktrees.append(worktree)
-
-
-def make_factory(*, ready: bool = True) -> tuple[AgentFactory, list[FakeAgent]]:
-    """Return an agent factory plus the list it appends each created agent to."""
-    created: list[FakeAgent] = []
-
-    def factory(name: str, callback: Any, **kwargs: Any) -> FakeAgent:
-        agent = FakeAgent(name, callback, **kwargs)
-        agent.ready = ready
-        created.append(agent)
-        return agent
-
-    return cast(AgentFactory, factory), created
-
-
-async def _await_claim_sent(created: list[FakeAgent]) -> FakeAgent:
-    """Spin until the flow has created an agent and sent its claim."""
-
-    for _ in range(100):
-        if created and created[0].claims:
-            return created[0]
-        await asyncio.sleep(0)
-    raise AssertionError("claim was never sent")
-
-
-# -- _default_git_runner ------------------------------------------------------
-
-
-def test_default_git_runner_returns_stripped_stdout(monkeypatch: pytest.MonkeyPatch) -> None:
-    class Result:
-        stdout = "feature/x\n"
-
-    def fake_run(args: list[str], **_kw: Any) -> Result:
-        assert args == ["git", "rev-parse", "--abbrev-ref", "HEAD"]
-        return Result()
-
-    monkeypatch.setattr("synapse_channel.git.gitclaim.subprocess.run", fake_run)
-    assert _default_git_runner(["rev-parse", "--abbrev-ref", "HEAD"]) == "feature/x"
-
-
-def test_default_git_runner_missing_git(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run(args: list[str], **_kw: Any) -> Any:
-        raise FileNotFoundError
-
-    monkeypatch.setattr("synapse_channel.git.gitclaim.subprocess.run", fake_run)
-    with pytest.raises(GitError, match="not installed"):
-        _default_git_runner(["status"])
-
-
-def test_default_git_runner_nonzero_uses_stderr(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run(args: list[str], **_kw: Any) -> Any:
-        raise subprocess.CalledProcessError(1, args, stderr="fatal: not a git repository")
-
-    monkeypatch.setattr("synapse_channel.git.gitclaim.subprocess.run", fake_run)
-    with pytest.raises(GitError, match="not a git repository"):
-        _default_git_runner(["status"])
-
-
-def test_default_git_runner_nonzero_without_stderr(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run(args: list[str], **_kw: Any) -> Any:
-        raise subprocess.CalledProcessError(1, args, stderr="")
-
-    monkeypatch.setattr("synapse_channel.git.gitclaim.subprocess.run", fake_run)
-    with pytest.raises(GitError, match="exited non-zero"):
-        _default_git_runner(["status"])
-
-
-# -- resolve_branch -----------------------------------------------------------
-
-
-def test_resolve_branch_calls_rev_parse() -> None:
-    captured: list[list[str]] = []
-
-    def runner(args: list[str]) -> str:
-        captured.append(args)
-        return "main"
-
-    assert resolve_branch(runner=runner) == "main"
-    assert captured == [["rev-parse", "--abbrev-ref", "HEAD"]]
-
-
-# -- resolve_repo -------------------------------------------------------------
-
-
-def test_resolve_repo_calls_show_toplevel() -> None:
-    captured: list[list[str]] = []
-
-    def runner(args: list[str]) -> str:
-        captured.append(args)
-        return "/home/me/work/repo"
-
-    assert resolve_repo(runner=runner) == "/home/me/work/repo"
-    assert captured == [["rev-parse", "--show-toplevel"]]
 
 
 def _branch_then_repo(branch: str, repo: str) -> Callable[[list[str]], str]:
@@ -170,9 +32,6 @@ def _branch_then_repo(branch: str, repo: str) -> Callable[[list[str]], str]:
         return branch
 
     return runner
-
-
-# -- run_git_claim ------------------------------------------------------------
 
 
 async def test_run_git_claim_granted_sends_git_context() -> None:
