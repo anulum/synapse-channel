@@ -917,6 +917,44 @@ def test_duplicate_correlated_reply_does_not_append_second_completion() -> None:
     assert len(updated.get("artifacts", [])) == artifact_len
 
 
+def test_concurrent_duplicate_correlated_reply_completes_once() -> None:
+    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}],
+        },
+        target="WORKER",
+    )
+    original_set_status = bridge._set_task_status
+
+    def slow_set_status(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        time.sleep(0.05)
+        return original_set_status(*args, **kwargs)
+
+    bridge._set_task_status = slow_set_status  # type: ignore[method-assign]
+    frame = {
+        "type": "chat",
+        "sender": "WORKER",
+        "payload": f"done\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+    }
+
+    threads = [
+        threading.Thread(target=bridge.handle_synapse_frame, args=(frame,)) for _ in range(2)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=2.0)
+
+    updated = bridge.store.get(task["id"])
+    assert updated is not None
+    assert updated["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert len(updated.get("history", [])) == 2
+    assert len(updated.get("artifacts", [])) == 1
+
+
 def test_push_notification_config_rejects_non_http_webhook_url() -> None:
     bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
