@@ -44,15 +44,33 @@ def test_render_shell_hook_zsh_uses_precmd_hook() -> None:
     assert "gemini()" not in hook
 
 
+def test_render_shell_hook_fish_uses_prompt_event() -> None:
+    hook = render_shell_hook(shell="fish", provider_commands=("codex",))
+    assert "function __synapse_auto_arm --on-event fish_prompt" in hook
+    assert "function codex --wraps codex" in hook
+    assert 'synapse worker-session --project "$SYN_PROJECT"' in hook
+
+
 def test_shell_rc_path_detects_auto_shell(tmp_path: Path) -> None:
     assert shell_rc_path("auto", home=tmp_path, env_shell="/bin/zsh") == tmp_path / ".zshrc"
     assert shell_rc_path("auto", home=tmp_path, env_shell="/bin/bash") == tmp_path / ".bashrc"
+    assert (
+        shell_rc_path("auto", home=tmp_path, env_shell="/usr/bin/fish")
+        == tmp_path / ".config" / "fish" / "config.fish"
+    )
 
 
 def test_render_rc_block_loads_live_shell_hook() -> None:
     block = render_rc_block(shell="bash", synapse_bin="/opt/bin/synapse")
     assert START_MARKER in block
     assert 'eval "$(/opt/bin/synapse shell-hook --shell bash)"' in block
+    assert END_MARKER in block
+
+
+def test_render_rc_block_loads_fish_shell_hook() -> None:
+    block = render_rc_block(shell="fish", synapse_bin="/opt/bin/synapse")
+    assert START_MARKER in block
+    assert "/opt/bin/synapse shell-hook --shell fish | source" in block
     assert END_MARKER in block
 
 
@@ -71,9 +89,9 @@ def test_install_shell_hook_is_idempotent(tmp_path: Path) -> None:
 
 
 def test_parser_shell_hook_dispatches() -> None:
-    args = cli.build_parser().parse_args(["shell-hook", "--shell", "zsh", "--provider", "codex"])
+    args = cli.build_parser().parse_args(["shell-hook", "--shell", "fish", "--provider", "codex"])
     assert args.func is cli_shell._cmd_shell_hook
-    assert args.shell == "zsh"
+    assert args.shell == "fish"
     assert args.provider == ["codex"]
 
 
@@ -109,11 +127,11 @@ def test_cmd_install_shell_hook_reports_install(capsys: Any) -> None:
 
 def test_cmd_install_shell_hook_reports_unsupported_shell(capsys: Any) -> None:
     def installer(**kwargs: Any) -> list[str]:
-        raise ValueError("shell integration supports bash and zsh")
+        raise ValueError("shell integration supports bash, fish, and zsh")
 
     ns = cli.build_parser().parse_args(["install-shell-hook", "--shell", "fish"])
     assert cli_shell._cmd_install_shell_hook(ns, installer=installer) == 2
-    assert "bash and zsh" in capsys.readouterr().out
+    assert "bash, fish, and zsh" in capsys.readouterr().out
 
 
 def test_shell_hook_cli_emits_bash_that_parses() -> None:
@@ -129,6 +147,25 @@ def test_shell_hook_cli_emits_bash_that_parses() -> None:
     syntax = subprocess.run(
         ["bash", "-n"],
         input=proc.stdout,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert syntax.returncode == 0, syntax.stderr
+
+
+def test_shell_hook_cli_emits_fish_that_parses() -> None:
+    proc = subprocess.run(
+        [sys.executable, "-m", "synapse_channel.cli", "shell-hook", "--shell", "fish"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode == 0
+    assert "function __synapse_auto_arm --on-event fish_prompt" in proc.stdout
+
+    syntax = subprocess.run(
+        ["fish", "--no-execute", "-c", proc.stdout],
         text=True,
         capture_output=True,
         check=False,

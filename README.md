@@ -202,9 +202,9 @@ To make fresh terminals connect automatically, install the shell hook once:
 synapse install-shell-hook --shell auto
 ```
 
-New Bash/Zsh terminals then resolve the current git project at each prompt, export
-`SYN_PROJECT`/`SYN_IDENTITY`, and keep a cheap `synapse arm` sidecar running for
-that project. The hook also wraps common provider commands (`codex`, `claude`,
+New Bash/Fish/Zsh terminals then resolve the current git project at each prompt,
+export `SYN_PROJECT`/`SYN_IDENTITY`, and keep a cheap `synapse arm` sidecar running
+for that project. The hook also wraps common provider commands (`codex`, `claude`,
 `gemini`, `agent`, `ask`, `ollama`) through `synapse worker-session`, so cloud and
 local LLM sessions inherit the same Synapse identity without polling or manual
 arming. Set `SYNAPSE_AUTO_CONNECT=0` to disable it for a terminal.
@@ -386,7 +386,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 56 |
 | Wire message types | 52 |
 | CLI subcommands | 35 |
-| Test functions | 1295 |
+| Test functions | 1298 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

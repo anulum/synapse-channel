@@ -18,7 +18,7 @@ DEFAULT_PROVIDER_COMMANDS = ("codex", "claude", "gemini", "agent", "ask", "ollam
 
 START_MARKER = "# >>> synapse-channel shell integration >>>"
 END_MARKER = "# <<< synapse-channel shell integration <<<"
-SUPPORTED_SHELLS = frozenset({"bash", "zsh"})
+SUPPORTED_SHELLS = frozenset({"bash", "fish", "zsh"})
 
 
 def normalise_shell(shell: str, *, env_shell: str | None = None) -> str:
@@ -34,7 +34,7 @@ def normalise_shell(shell: str, *, env_shell: str | None = None) -> str:
     Returns
     -------
     str
-        ``"bash"`` or ``"zsh"``.
+        ``"bash"``, ``"fish"``, or ``"zsh"``.
 
     Raises
     ------
@@ -45,7 +45,7 @@ def normalise_shell(shell: str, *, env_shell: str | None = None) -> str:
     if requested == "auto":
         requested = Path(env_shell or os.environ.get("SHELL", "bash")).name.lower()
     if requested not in SUPPORTED_SHELLS:
-        raise ValueError("shell integration supports bash and zsh")
+        raise ValueError("shell integration supports bash, fish, and zsh")
     return requested
 
 
@@ -55,7 +55,7 @@ def shell_rc_path(shell: str, *, home: Path | None = None, env_shell: str | None
     Parameters
     ----------
     shell : str
-        ``"bash"``, ``"zsh"``, or ``"auto"``.
+        ``"bash"``, ``"fish"``, ``"zsh"``, or ``"auto"``.
     home : Path or None, optional
         Home directory override for tests.
     env_shell : str or None, optional
@@ -63,7 +63,11 @@ def shell_rc_path(shell: str, *, home: Path | None = None, env_shell: str | None
     """
     resolved = normalise_shell(shell, env_shell=env_shell)
     root = Path.home() if home is None else home
-    return root / (".zshrc" if resolved == "zsh" else ".bashrc")
+    if resolved == "zsh":
+        return root / ".zshrc"
+    if resolved == "fish":
+        return root / ".config" / "fish" / "config.fish"
+    return root / ".bashrc"
 
 
 def _provider_function(command: str) -> str:
@@ -83,6 +87,113 @@ def _provider_function(command: str) -> str:
     )
 
 
+def _fish_provider_function(command: str) -> str:
+    """Render one Fish provider wrapper function."""
+    name = command.strip()
+    quoted = shlex.quote(name)
+    return (
+        f"function {name} --wraps {quoted}\n"
+        "  __synapse_auto_arm >/dev/null 2>&1; or true\n"
+        "  if command -q synapse\n"
+        '    synapse worker-session --project "$SYN_PROJECT" '
+        f'--identity "$SYN_IDENTITY" -- {quoted} $argv\n'
+        "  else\n"
+        f"    command {quoted} $argv\n"
+        "  end\n"
+        "end\n"
+    )
+
+
+def _render_fish_shell_hook(provider_commands: tuple[str, ...]) -> str:
+    """Render Fish shell integration code."""
+    providers = "\n".join(
+        _fish_provider_function(command) for command in provider_commands if command
+    )
+    return f"""# Synapse Channel shell integration. Set SYNAPSE_AUTO_CONNECT=0 to disable.
+function __synapse_project
+  set -l top (git rev-parse --show-toplevel 2>/dev/null)
+  if test -z "$top"
+    set top "$PWD"
+  end
+  basename "$top"
+end
+
+function __synapse_safe_key
+  printf '%s' "$argv[1]" | tr -c 'A-Za-z0-9_.-' '_'
+end
+
+function __synapse_auto_arm --on-event fish_prompt
+  if test "$SYNAPSE_AUTO_CONNECT" = "0"
+    return 0
+  end
+  command -q synapse; or return 0
+  set -l cwd_project (__synapse_project)
+  test -n "$cwd_project"; or return 0
+
+  set -l project
+  if test -n "$SYN_PROJECT"; and test "$__SYNAPSE_AUTO_PROJECT" != "$SYN_PROJECT"
+    set project "$SYN_PROJECT"
+  else
+    set project "$cwd_project"
+    set -gx SYN_PROJECT "$project"
+    set -gx __SYNAPSE_AUTO_PROJECT "$project"
+  end
+
+  set -l terminal_id "$SYN_AGENT_ID"
+  if test -z "$terminal_id"
+    set terminal_id "$SYNAPSE_TERMINAL_ID"
+  end
+  if test -z "$terminal_id"
+    set terminal_id (echo %self)
+  end
+
+  set -l identity
+  if test -n "$SYN_IDENTITY"; and test "$__SYNAPSE_AUTO_IDENTITY" != "$SYN_IDENTITY"
+    set identity "$SYN_IDENTITY"
+  else
+    set identity "$project/terminal-$terminal_id"
+    if test -n "$SYN_AGENT_TYPE"
+      set identity "$project/$SYN_AGENT_TYPE-$terminal_id"
+    end
+    set -gx SYN_IDENTITY "$identity"
+    set -gx __SYNAPSE_AUTO_IDENTITY "$identity"
+  end
+
+  set -l runtime "$XDG_RUNTIME_DIR/synapse-shell"
+  if test -z "$XDG_RUNTIME_DIR"
+    set runtime "/tmp/synapse-shell"
+  end
+  mkdir -p "$runtime" 2>/dev/null; or return 0
+  set -l key (__synapse_safe_key "$identity")
+  set -l pidfile "$runtime/$key.pid"
+  set -l logfile "$runtime/$key.log"
+  if test -r "$pidfile"
+    set -l pid (cat "$pidfile" 2>/dev/null)
+    if test -n "$pid"; and kill -0 "$pid" 2>/dev/null
+      return 0
+    end
+  end
+  nohup synapse arm --name "$identity-rx" --for "$project" --directed-only \
+    >"$logfile" 2>&1 &
+  echo $last_pid >"$pidfile"
+end
+
+function __synapse_run_provider
+  set -l command_name "$argv[1]"
+  set -e argv[1]
+  __synapse_auto_arm >/dev/null 2>&1; or true
+  if command -q synapse
+    synapse worker-session --project "$SYN_PROJECT" --identity "$SYN_IDENTITY" -- \
+      "$command_name" $argv
+  else
+    command "$command_name" $argv
+  end
+end
+
+{providers}__synapse_auto_arm >/dev/null 2>&1; or true
+"""
+
+
 def render_shell_hook(
     *,
     shell: str = "bash",
@@ -97,6 +208,8 @@ def render_shell_hook(
     and local commands inherit the same identity without manual setup.
     """
     resolved = normalise_shell(shell)
+    if resolved == "fish":
+        return _render_fish_shell_hook(provider_commands)
     providers = "\n".join(_provider_function(command) for command in provider_commands if command)
     prompt_hook = (
         'case ";${PROMPT_COMMAND:-};" in\n'
@@ -179,6 +292,14 @@ __synapse_run_provider() {{
 def render_rc_block(*, shell: str, synapse_bin: str = "synapse") -> str:
     """Render the idempotent startup-file block that loads the live hook."""
     resolved = normalise_shell(shell)
+    if resolved == "fish":
+        return (
+            f"{START_MARKER}\n"
+            f"if command -q {shlex.quote(synapse_bin)}\n"
+            f"  {shlex.quote(synapse_bin)} shell-hook --shell fish | source\n"
+            "end\n"
+            f"{END_MARKER}\n"
+        )
     return (
         f"{START_MARKER}\n"
         f"if command -v {shlex.quote(synapse_bin)} >/dev/null 2>&1; then\n"

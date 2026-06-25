@@ -55,7 +55,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "shell-hook",
         help="Print shell code that auto-arms terminals and wraps provider commands.",
     )
-    hook.add_argument("--shell", default="bash", choices=("bash", "zsh"))
+    hook.add_argument("--shell", default="bash", choices=("bash", "fish", "zsh"))
     hook.add_argument(
         "--provider",
         action="append",
@@ -69,9 +69,9 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
 
     install = subparsers.add_parser(
         "install-shell-hook",
-        help="Install auto-arming shell integration into ~/.bashrc or ~/.zshrc.",
+        help="Install auto-arming shell integration into Bash, Fish, or Zsh startup files.",
     )
-    install.add_argument("--shell", default="auto", help="bash, zsh, or auto from $SHELL.")
+    install.add_argument("--shell", default="auto", help="bash, fish, zsh, or auto from $SHELL.")
     install.add_argument(
         "--synapse-bin",
         default="synapse",
