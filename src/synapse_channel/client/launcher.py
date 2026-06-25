@@ -28,6 +28,8 @@ OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 FAST_MODEL_PREFERENCES = ["gemma3:4b", "gemma3:1b", "llama3", "gemma"]
 REASON_MODEL_PREFERENCES = ["gemma3:12b", "gemma4", "llama3", "gemma3:4b"]
 FALLBACK_MODEL = "llama3"
+SHUTDOWN_TIMEOUT_SECONDS = 2.0
+"""Seconds to wait for a child process to exit after graceful termination."""
 
 # A planned child process: a human-readable label and the argv to spawn.
 ProcessSpec = tuple[str, list[str]]
@@ -160,7 +162,7 @@ def _shutdown(procs: list[tuple[str, subprocess.Popen[str]]]) -> None:
         if proc.poll() is None:
             try:
                 proc.terminate()
-                proc.wait(timeout=2)
+                proc.wait(timeout=SHUTDOWN_TIMEOUT_SECONDS)
             except Exception:
                 proc.kill()
 
