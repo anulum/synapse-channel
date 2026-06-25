@@ -156,6 +156,7 @@ class A2ABridge:
         self.subscribe_wait_seconds = max(subscribe_wait_seconds, 0.0)
         self._pending_by_target: dict[str, list[str]] = {}
         self._events = A2ATaskEvents()
+        self._task_creation_lock = threading.RLock()
         self._recover_stale_open_tasks(now=time.time())
 
     def _run(self, coro: Coroutine[Any, Any, Any]) -> Any:
@@ -258,22 +259,23 @@ class A2ABridge:
 
     def _send_message_task(self, payload: JsonMap) -> JsonMap:
         """Validate a send payload and return the created task."""
-        message = payload.get("message")
-        if not isinstance(message, dict):
-            raise ValueError("message must be an object")
-        if not message.get("messageId"):
-            raise ValueError("message.messageId is required")
-        if message.get("role") != "ROLE_USER":
-            raise ValueError("message.role must be ROLE_USER")
-        parts = message.get("parts")
-        if not isinstance(parts, list) or not parts:
-            raise ValueError("message.parts must be a non-empty array")
-        validate_bridge_id(message.get("taskId"), field="taskId")
-        validate_bridge_id(message.get("contextId"), field="contextId")
-        task_id = message.get("taskId")
-        if task_id is not None and self.store.get(str(task_id)) is not None:
-            raise ValueError("message.taskId already exists")
-        return self.create_working_task(message)
+        with self._task_creation_lock:
+            message = payload.get("message")
+            if not isinstance(message, dict):
+                raise ValueError("message must be an object")
+            if not message.get("messageId"):
+                raise ValueError("message.messageId is required")
+            if message.get("role") != "ROLE_USER":
+                raise ValueError("message.role must be ROLE_USER")
+            parts = message.get("parts")
+            if not isinstance(parts, list) or not parts:
+                raise ValueError("message.parts must be a non-empty array")
+            validate_bridge_id(message.get("taskId"), field="taskId")
+            validate_bridge_id(message.get("contextId"), field="contextId")
+            task_id = message.get("taskId")
+            if task_id is not None and self.store.get(str(task_id)) is not None:
+                raise ValueError("message.taskId already exists")
+            return self.create_working_task(message)
 
     def _store_request_push_config(self, payload: JsonMap, *, task_id: str) -> JsonMap | None:
         """Store a send-time push notification config when one is present."""
