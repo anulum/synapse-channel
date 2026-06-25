@@ -9,13 +9,12 @@
 from __future__ import annotations
 
 import os
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
 
-from synapse_channel import cli, ergonomics
+from synapse_channel import ergonomics
 from synapse_channel.ergonomics import (
     Identity,
     arm_argv,
@@ -143,17 +142,25 @@ def test_cwd_basename_uses_git_toplevel() -> None:
     assert ergonomics._cwd_basename(runner=lambda cmd: "/work/MyRepo") == "MyRepo"
 
 
-def test_cwd_basename_falls_back_to_cwd_when_git_blank(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(Path, "cwd", staticmethod(lambda: Path("/work/elsewhere")))
-    assert ergonomics._cwd_basename(runner=lambda cmd: "") == "elsewhere"
+def test_cwd_basename_falls_back_to_cwd_when_git_blank(tmp_path: Path) -> None:
+    old_cwd = Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        assert ergonomics._cwd_basename(runner=lambda cmd: "") == tmp_path.name
+    finally:
+        os.chdir(old_cwd)
 
 
-def test_cwd_basename_falls_back_when_git_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cwd_basename_falls_back_when_git_errors(tmp_path: Path) -> None:
     def boom(cmd: Sequence[str]) -> str:
         raise OSError("no git")
 
-    monkeypatch.setattr(Path, "cwd", staticmethod(lambda: Path("/work/repoX")))
-    assert ergonomics._cwd_basename(runner=boom) == "repoX"
+    old_cwd = Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        assert ergonomics._cwd_basename(runner=boom) == tmp_path.name
+    finally:
+        os.chdir(old_cwd)
 
 
 def test_cwd_basename_default_runner_returns_a_string() -> None:
@@ -172,37 +179,47 @@ def test_syn_home_defaults_under_home() -> None:
 # --- the `syn` dispatcher ----------------------------------------------------
 
 
-@pytest.fixture
-def captured_cli(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
-    calls: list[list[str]] = []
+class CapturedCalls(list[list[str]]):
+    """Collected CLI dispatches for ergonomics tests."""
 
-    def fake_main(argv: Sequence[str] | None = None) -> int:
-        calls.append(list(argv or []))
+    def dispatch(self, argv: Sequence[str] | None = None) -> int:
+        """Record an argv vector and report success."""
+        self.append(list(argv or []))
         return 0
 
-    monkeypatch.setattr(cli, "main", fake_main)
-    monkeypatch.setattr(ergonomics, "_cwd_basename", lambda: "SYNAPSE-CHANNEL")
-    monkeypatch.setattr(os, "environ", {"HOME": "/home/u"})
-    return calls
+
+@pytest.fixture
+def captured_cli() -> CapturedCalls:
+    return CapturedCalls()
 
 
-def test_main_without_a_verb_prints_help_and_returns_2(
-    captured_cli: list[list[str]], capsys: pytest.CaptureFixture[str]
-) -> None:
+def _dispatch(captured_cli: CapturedCalls) -> ergonomics.CliDispatcher:
+    return captured_cli.dispatch
+
+
+def test_main_without_a_verb_prints_help_and_returns_2(capsys: pytest.CaptureFixture[str]) -> None:
     assert ergonomics.main([]) == 2
     assert "syn" in capsys.readouterr().out
 
 
 def test_main_name_prints_identity_without_calling_the_cli(
-    captured_cli: list[list[str]], capsys: pytest.CaptureFixture[str]
+    captured_cli: CapturedCalls, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert ergonomics.main(["name"]) == 0
+    assert ergonomics.main(["name"], env={"HOME": "/home/u"}, cwd_basename="SYNAPSE-CHANNEL") == 0
     assert "project:  SYNAPSE-CHANNEL" in capsys.readouterr().out
     assert captured_cli == []  # name never reaches the package CLI
 
 
-def test_main_arm_builds_a_directed_only_waiter(captured_cli: list[list[str]]) -> None:
-    assert ergonomics.main(["arm"]) == 0
+def test_main_arm_builds_a_directed_only_waiter(captured_cli: CapturedCalls) -> None:
+    assert (
+        ergonomics.main(
+            ["arm"],
+            env={"HOME": "/home/u"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 0
+    )
     assert captured_cli[0] == [
         "arm",
         "--name",
@@ -213,28 +230,60 @@ def test_main_arm_builds_a_directed_only_waiter(captured_cli: list[list[str]]) -
     ]
 
 
-def test_main_arm_broadcasts_and_passthrough(captured_cli: list[list[str]]) -> None:
-    assert ergonomics.main(["arm", "--broadcasts", "--timeout", "5"]) == 0
+def test_main_arm_broadcasts_and_passthrough(captured_cli: CapturedCalls) -> None:
+    assert (
+        ergonomics.main(
+            ["arm", "--broadcasts", "--timeout", "5"],
+            env={"HOME": "/home/u"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 0
+    )
     argv = captured_cli[0]
     assert "--directed-only" not in argv
     assert argv[-2:] == ["--timeout", "5"]
 
 
-def test_main_say_routes_target_and_message(captured_cli: list[list[str]]) -> None:
-    assert ergonomics.main(["say", "CEO", "ack"]) == 0
+def test_main_say_routes_target_and_message(captured_cli: CapturedCalls) -> None:
+    assert (
+        ergonomics.main(
+            ["say", "CEO", "ack"],
+            env={"HOME": "/home/u"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 0
+    )
     assert captured_cli[0] == ["send", "--name", "SYNAPSE-CHANNEL", "--target", "CEO", "ack"]
 
 
 def test_main_say_without_a_message_is_a_usage_error(
-    captured_cli: list[list[str]], capsys: pytest.CaptureFixture[str]
+    captured_cli: CapturedCalls, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert ergonomics.main(["say", "CEO"]) == 2
+    assert (
+        ergonomics.main(
+            ["say", "CEO"],
+            env={"HOME": "/home/u"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 2
+    )
     assert "usage" in capsys.readouterr().err
     assert captured_cli == []
 
 
-def test_main_inbox_is_project_scoped(captured_cli: list[list[str]]) -> None:
-    assert ergonomics.main(["inbox"]) == 0
+def test_main_inbox_is_project_scoped(captured_cli: CapturedCalls) -> None:
+    assert (
+        ergonomics.main(
+            ["inbox"],
+            env={"HOME": "/home/u"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 0
+    )
     assert captured_cli[0] == [
         "relay",
         "/home/u/synapse/feed.ndjson",
@@ -245,40 +294,45 @@ def test_main_inbox_is_project_scoped(captured_cli: list[list[str]]) -> None:
     ]
 
 
-def test_main_board(captured_cli: list[list[str]]) -> None:
-    assert ergonomics.main(["board"]) == 0
+def test_main_board(captured_cli: CapturedCalls) -> None:
+    assert (
+        ergonomics.main(
+            ["board"],
+            env={"HOME": "/home/u"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 0
+    )
     assert captured_cli[0] == ["board", "--name", "SYNAPSE-CHANNEL"]
 
 
-def test_main_warns_on_an_implausible_identity(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setattr(cli, "main", lambda argv=None: 0)
-    monkeypatch.setattr(ergonomics, "_cwd_basename", lambda: "anulum")
-    monkeypatch.setattr(os, "environ", {"HOME": "/home/anulum"})
-    ergonomics.main(["arm"])
+def test_main_warns_on_an_implausible_identity(capsys: pytest.CaptureFixture[str]) -> None:
+    def dispatch(argv: list[str] | None = None) -> int:
+        return 0
+
+    ergonomics.main(
+        ["arm"],
+        env={"HOME": "/home/anulum"},
+        cwd_basename="anulum",
+        dispatcher=dispatch,
+    )
     assert "looks accidental" in capsys.readouterr().err
 
 
 # --- alias entry points ------------------------------------------------------
 
 
-def test_aliases_dispatch_to_their_verb(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_aliases_dispatch_to_their_verb() -> None:
     seen: list[list[str]] = []
 
-    def fake_main(argv: Sequence[str] | None = None) -> int:
+    def dispatch(argv: Sequence[str]) -> int:
         seen.append(list(argv or []))
         return 0
 
-    monkeypatch.setattr(ergonomics, "main", fake_main)
-    monkeypatch.setattr(sys, "argv", ["syn-wait", "--timeout", "5"])
-    assert ergonomics.alias_arm() == 0
-    monkeypatch.setattr(sys, "argv", ["syn-say", "CEO", "hi"])
-    assert ergonomics.alias_say() == 0
-    monkeypatch.setattr(sys, "argv", ["syn-name"])
-    assert ergonomics.alias_name() == 0
-    monkeypatch.setattr(sys, "argv", ["syn-inbox"])
-    assert ergonomics.alias_inbox() == 0
-    monkeypatch.setattr(sys, "argv", ["syn-board"])
-    assert ergonomics.alias_board() == 0
+    assert ergonomics.alias_arm(["--timeout", "5"], dispatcher=dispatch) == 0
+    assert ergonomics.alias_say(["CEO", "hi"], dispatcher=dispatch) == 0
+    assert ergonomics.alias_name([], dispatcher=dispatch) == 0
+    assert ergonomics.alias_inbox([], dispatcher=dispatch) == 0
+    assert ergonomics.alias_board([], dispatcher=dispatch) == 0
     assert seen == [["arm", "--timeout", "5"], ["say", "CEO", "hi"], ["name"], ["inbox"], ["board"]]
