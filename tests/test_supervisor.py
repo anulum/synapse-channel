@@ -8,11 +8,17 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import time
 from typing import Any
 
 import pytest
 
+from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel.client.supervisor import SupervisorWorker, detect_stalls
+from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.protocol import MessageType
 
 
 def _board(
@@ -100,40 +106,54 @@ def test_detect_stalls_on_empty_board() -> None:
 # --- SupervisorWorker --------------------------------------------------------
 
 
-class FakeAgent:
-    """Stand-in for SynapseAgent capturing the supervisor's actions."""
-
-    def __init__(self, *, ready: bool = True, connect_exc: Exception | None = None) -> None:
-        self.running = True
-        self.board_requests = 0
-        self.progress: list[tuple[str, str, str]] = []
-        self.updates: list[tuple[str, str | None]] = []
-        self._ready = ready
-        self._connect_exc = connect_exc
-
-    async def connect(self) -> None:
-        if self._connect_exc is not None:
-            raise self._connect_exc
-
-    async def wait_until_ready(self, timeout: float = 5.0) -> bool:
-        return self._ready
-
-    async def request_board(self) -> None:
-        self.board_requests += 1
-
-    async def post_progress(self, task_id: str, text: str, *, kind: str = "note") -> None:
-        self.progress.append((task_id, text, kind))
-
-    async def update_ledger_task(
-        self, task_id: str, *, status: str | None = None, suggested_owner: str | None = None
-    ) -> None:
-        self.updates.append((task_id, status))
-
-
 def _worker(**kwargs: Any) -> SupervisorWorker:
-    worker = SupervisorWorker(clock=lambda: 1000.0, settle_seconds=0.0, **kwargs)
-    worker.agent = FakeAgent()  # type: ignore[assignment]
-    return worker
+    params: dict[str, Any] = {"clock": lambda: 1000.0, "settle_seconds": 0.0}
+    params.update(kwargs)
+    return SupervisorWorker(**params)
+
+
+async def _start_supervisor_agent(worker: SupervisorWorker) -> asyncio.Task[None]:
+    task = asyncio.create_task(worker.agent.connect())
+    if not await worker.agent.wait_until_ready(3.0):
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        raise TimeoutError("supervisor agent did not connect")
+    return task
+
+
+async def _stop_supervisor_agent(worker: SupervisorWorker, task: asyncio.Task[None]) -> None:
+    worker.agent.running = False
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+async def _post_task(
+    uri: str,
+    task_id: str,
+    *,
+    status: str = "open",
+    depends_on: list[str] | None = None,
+) -> AgentHandle:
+    handle = await connect_agent(f"PLANNER-{task_id}", uri)
+    await handle.agent.post_task(task_id, title=task_id, depends_on=depends_on or [])
+    await handle.recorder.wait_for(
+        lambda message: (
+            message.get("type") == MessageType.LEDGER_TASK_POSTED
+            and message.get("task", {}).get("task_id") == task_id
+        )
+    )
+    if status != "open":
+        await handle.agent.update_ledger_task(task_id, status=status)
+        await handle.recorder.wait_for(
+            lambda message: (
+                message.get("type") == MessageType.LEDGER_TASK_UPDATED
+                and message.get("task", {}).get("task_id") == task_id
+                and message.get("task", {}).get("status") == status
+            )
+        )
+    return handle
 
 
 def test_interval_and_settle_are_clamped() -> None:
@@ -156,65 +176,97 @@ async def test_evaluate_and_apply_without_board_is_noop() -> None:
 
 
 async def test_evaluate_and_apply_reoffers_and_flags() -> None:
-    worker = _worker(idle_seconds=300.0)
-    worker.latest_board = _board([{"task_id": "T1", "status": "in_progress", "updated_at": 0.0}])
-    applied = await worker.evaluate_and_apply()
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        planner = await _post_task(uri, "T1", status="in_progress")
+        observer = await connect_agent("OBSERVER", uri)
+        worker = _worker(uri=uri, idle_seconds=300.0)
+        task = await _start_supervisor_agent(worker)
+        worker.latest_board = _board(
+            [{"task_id": "T1", "status": "in_progress", "updated_at": 0.0}]
+        )
+        try:
+            applied = await worker.evaluate_and_apply()
+            progress = await observer.recorder.wait_for(
+                lambda message: (
+                    message.get("type") == MessageType.LEDGER_PROGRESS_POSTED
+                    and message.get("note", {}).get("task_id") == "T1"
+                    and message.get("note", {}).get("kind") == "assessment"
+                )
+            )
+            update = await observer.recorder.wait_for(
+                lambda message: (
+                    message.get("type") == MessageType.LEDGER_TASK_UPDATED
+                    and message.get("task", {}).get("task_id") == "T1"
+                    and message.get("task", {}).get("status") == "open"
+                )
+            )
+        finally:
+            await _stop_supervisor_agent(worker, task)
+            await close_agents(observer, planner)
+
     assert [i.task_id for i in applied] == ["T1"]
-    agent: FakeAgent = worker.agent  # type: ignore[assignment]
-    assert agent.updates == [("T1", "open")]
-    assert agent.progress[0][0] == "T1"
-    assert agent.progress[0][2] == "assessment"
+    assert progress["note"]["kind"] == "assessment"
+    assert update["task"]["status"] == "open"
 
 
 async def test_cycle_requests_board_then_applies() -> None:
-    worker = _worker(idle_seconds=300.0)
-    worker.latest_board = _board([{"task_id": "T1", "status": "blocked", "updated_at": 0.0}])
-    applied = await worker._cycle()
-    agent: FakeAgent = worker.agent  # type: ignore[assignment]
-    assert agent.board_requests == 1
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        planner = await _post_task(uri, "T1", status="blocked")
+        worker = _worker(uri=uri, idle_seconds=0.0, settle_seconds=0.05)
+        task = await _start_supervisor_agent(worker)
+        try:
+            applied = await worker._cycle()
+        finally:
+            await _stop_supervisor_agent(worker, task)
+            await close_agents(planner)
+
+    assert worker.latest_board is not None
     assert [i.task_id for i in applied] == ["T1"]
 
 
-async def test_cycle_settles_before_evaluating(monkeypatch: pytest.MonkeyPatch) -> None:
-    worker = SupervisorWorker(clock=lambda: 1000.0, settle_seconds=0.1)
-    worker.agent = FakeAgent()  # type: ignore[assignment]
-    slept: list[float] = []
+async def test_cycle_settles_before_evaluating() -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        worker = _worker(uri=uri, settle_seconds=0.03)
+        task = await _start_supervisor_agent(worker)
+        started = time.monotonic()
+        try:
+            await worker._cycle()
+        finally:
+            await _stop_supervisor_agent(worker, task)
 
-    async def fake_sleep(seconds: float) -> None:
-        slept.append(seconds)
-
-    monkeypatch.setattr("synapse_channel.client.supervisor.asyncio.sleep", fake_sleep)
-    await worker._cycle()
-    assert 0.1 in slept
+    assert time.monotonic() - started >= 0.02
 
 
-async def test_supervise_loop_runs_a_pass_then_exits(monkeypatch: pytest.MonkeyPatch) -> None:
-    worker = _worker()
-
-    async def stop_after_sleep(_seconds: float) -> None:
-        worker.agent.running = False  # end the loop after the first interval
-
-    monkeypatch.setattr("synapse_channel.client.supervisor.asyncio.sleep", stop_after_sleep)
-    await worker._supervise_loop()
-    agent: FakeAgent = worker.agent  # type: ignore[assignment]
-    assert agent.board_requests == 1
+async def test_supervise_loop_runs_a_live_pass() -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        worker = _worker(uri=uri, settle_seconds=0.03, interval=1.0)
+        task = await _start_supervisor_agent(worker)
+        loop_task = asyncio.create_task(worker._supervise_loop())
+        try:
+            deadline = time.monotonic() + 1.0
+            while worker.latest_board is None and time.monotonic() < deadline:
+                await asyncio.sleep(0.01)
+            assert worker.latest_board is not None
+        finally:
+            worker.agent.running = False
+            loop_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await loop_task
+            await _stop_supervisor_agent(worker, task)
 
 
 async def test_run_completes_when_connection_finishes() -> None:
-    worker = SupervisorWorker(settle_seconds=0.0)
-    worker.agent = FakeAgent(ready=True)  # type: ignore[assignment]
-    await worker.run()  # connect returns -> supervise task cancelled -> run returns
+    worker = SupervisorWorker(uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1)
+    await worker.run()
 
 
 async def test_run_warns_on_handshake_timeout(capsys: pytest.CaptureFixture[str]) -> None:
-    worker = SupervisorWorker(settle_seconds=0.0)
-    worker.agent = FakeAgent(ready=False)  # type: ignore[assignment]
+    worker = SupervisorWorker(uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1)
     await worker.run()
     assert "handshake timeout" in capsys.readouterr().out
 
 
 async def test_run_reports_connection_error(capsys: pytest.CaptureFixture[str]) -> None:
-    worker = SupervisorWorker(settle_seconds=0.0)
-    worker.agent = FakeAgent(connect_exc=RuntimeError("dropped"))  # type: ignore[assignment]
+    worker = SupervisorWorker(uri="not-a-websocket-uri", ready_timeout=0.1)
     await worker.run()
-    assert "supervisor stopped: dropped" in capsys.readouterr().out
+    assert "supervisor stopped:" in capsys.readouterr().out
