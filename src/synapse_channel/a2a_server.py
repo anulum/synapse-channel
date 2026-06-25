@@ -37,6 +37,7 @@ from synapse_channel.a2a_validation import (
     SSE_MEDIA_TYPE,
     TERMINAL_TASK_STATES,
     is_supported_json_media_type,
+    marker_context_id,
     marker_task_id,
     strip_task_marker,
     validate_bridge_id,
@@ -390,6 +391,9 @@ class A2ABridge:
                 return
             task = self.store.get(task_id)
             if task is None or not self._sender_matches_task(task, sender):
+                return
+            context_id = marker_context_id(payload)
+            if context_id is not None and str(task.get("contextId", "")) != context_id:
                 return
             status = task.get("status", {})
             if isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES:
