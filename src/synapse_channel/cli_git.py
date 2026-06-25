@@ -21,7 +21,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from collections.abc import Callable, Coroutine
 from pathlib import Path
+from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.git.gitclaim import GitError, run_git_claim
@@ -30,15 +32,23 @@ from synapse_channel.git.githook import check_hooks, install_hooks, run_git_rele
 from synapse_channel.git.gitinit import init_repo
 from synapse_channel.service_setup import install_user_services, service_suggestions
 
+AsyncGitCommand = Callable[..., Coroutine[Any, Any, int]]
+"""Async git command callable used by the CLI dispatchers."""
 
-def _cmd_git_claim(args: argparse.Namespace) -> int:
+
+def _cmd_git_claim(
+    args: argparse.Namespace,
+    *,
+    claim_runner: AsyncGitCommand = run_git_claim,
+    async_runner: Callable[[Coroutine[Any, Any, int]], int] = asyncio.run,
+) -> int:
     """Dispatch the ``git-claim`` subcommand: a claim scoped to the current git branch.
 
     The branch is resolved client-side; the hub stores it as opaque metadata and
     never runs git itself.
     """
-    return asyncio.run(
-        run_git_claim(
+    return async_runner(
+        claim_runner(
             uri=args.uri,
             name=args.name,
             task_id=args.task_id,
@@ -50,7 +60,14 @@ def _cmd_git_claim(args: argparse.Namespace) -> int:
     )
 
 
-def _cmd_git_init(args: argparse.Namespace) -> int:
+def _cmd_git_init(
+    args: argparse.Namespace,
+    *,
+    repo_initializer: Callable[..., list[str]] = init_repo,
+    service_installer: Callable[..., list[str]] = install_user_services,
+    suggestion_builder: Callable[..., list[str]] = service_suggestions,
+    cwd_name: str | None = None,
+) -> int:
     """Set up claim-aware git in one step: install the hooks and write the scaffold.
 
     A thin wrapper over the existing git integration — it installs the same
@@ -59,7 +76,7 @@ def _cmd_git_init(args: argparse.Namespace) -> int:
     idempotent; a re-run refreshes its own files and never clobbers a user's.
     """
     try:
-        lines = init_repo(
+        lines = repo_initializer(
             uri=args.uri,
             name=args.name,
             base_branch=args.base,
@@ -69,11 +86,11 @@ def _cmd_git_init(args: argparse.Namespace) -> int:
     except GitError as exc:
         print(f"git error: {exc}", file=sys.stderr)
         return 1
-    project = args.service_project or Path.cwd().name
+    project = args.service_project or cwd_name or Path.cwd().name
     identity = args.service_identity or project
     if args.install_user_services or args.start_user_services:
         lines.extend(
-            install_user_services(
+            service_installer(
                 project=project,
                 identity=identity,
                 synapse_bin=args.synapse_bin,
@@ -83,14 +100,19 @@ def _cmd_git_init(args: argparse.Namespace) -> int:
     else:
         lines.append("service setup available: run `synapse git-init --install-user-services`")
         lines.extend(
-            service_suggestions(project=project, identity=identity, synapse_bin=args.synapse_bin)
+            suggestion_builder(project=project, identity=identity, synapse_bin=args.synapse_bin)
         )
     for line in lines:
         print(line)
     return 0
 
 
-def _cmd_git_hook(args: argparse.Namespace) -> int:
+def _cmd_git_hook(
+    args: argparse.Namespace,
+    *,
+    installer: Callable[..., list[str]] = install_hooks,
+    hook_checker: Callable[..., list[dict[str, Any]]] = check_hooks,
+) -> int:
     """Install or test the git hooks that auto-release branch-scoped claims.
 
     The hooks are written and inspected client-side and call ``synapse git-release``;
@@ -98,9 +120,9 @@ def _cmd_git_hook(args: argparse.Namespace) -> int:
     reports the install state and binary reachability without touching anything.
     """
     if args.action == "test":
-        return _git_hook_test()
+        return _git_hook_test(hook_checker=hook_checker)
     try:
-        lines = install_hooks(
+        lines = installer(
             uri=args.uri,
             name=args.name,
             token_file=getattr(args, "token_file", None),
@@ -114,7 +136,10 @@ def _cmd_git_hook(args: argparse.Namespace) -> int:
     return 0
 
 
-def _git_hook_test() -> int:
+def _git_hook_test(
+    *,
+    hook_checker: Callable[..., list[dict[str, Any]]] = check_hooks,
+) -> int:
     """Report whether each auto-release hook is installed and its binary resolves.
 
     Returns ``0`` only when every hook is installed and the ``synapse`` executable it
@@ -122,7 +147,7 @@ def _git_hook_test() -> int:
     broken setup is caught here rather than silently no-opping at commit time.
     """
     try:
-        report = check_hooks()
+        report = hook_checker()
     except GitError as exc:
         print(f"git error: {exc}", file=sys.stderr)
         return 1
@@ -142,7 +167,12 @@ def _git_hook_test() -> int:
     return 0 if healthy else 1
 
 
-def _cmd_git_release(args: argparse.Namespace) -> int:
+def _cmd_git_release(
+    args: argparse.Namespace,
+    *,
+    release_runner: AsyncGitCommand = run_git_release,
+    async_runner: Callable[[Coroutine[Any, Any, int]], int] = asyncio.run,
+) -> int:
     """Release branch-scoped claims whose paths were just committed or merged.
 
     Invoked by the installed git hooks; resolves the changed files client-side and
@@ -167,20 +197,25 @@ def _cmd_git_release(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    return asyncio.run(
-        run_git_release(uri=args.uri, name=args.name, trigger=args.trigger, token=args.token)
+    return async_runner(
+        release_runner(uri=args.uri, name=args.name, trigger=args.trigger, token=args.token)
     )
 
 
-def _cmd_conflicts(args: argparse.Namespace) -> int:
+def _cmd_conflicts(
+    args: argparse.Namespace,
+    *,
+    conflict_runner: AsyncGitCommand = run_conflicts,
+    async_runner: Callable[[Coroutine[Any, Any, int]], int] = asyncio.run,
+) -> int:
     """Predict merge conflicts between branch-scoped claims on different branches.
 
     Reads the hub's live claims and flags cross-branch path overlaps; ``--check-diff``
     refines the prediction against each branch's actual ``git diff``. All git work is
     client-side.
     """
-    return asyncio.run(
-        run_conflicts(uri=args.uri, name=args.name, token=args.token, check_diff=args.check_diff)
+    return async_runner(
+        conflict_runner(uri=args.uri, name=args.name, token=args.token, check_diff=args.check_diff)
     )
 
 
