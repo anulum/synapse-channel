@@ -25,6 +25,14 @@ from synapse_channel.core.hub import (
 # --- connect authentication --------------------------------------------------
 
 
+def _close_code(exc: ConnectionClosed) -> int | None:
+    if exc.rcvd is not None:
+        return exc.rcvd.code
+    if exc.sent is not None:
+        return exc.sent.code
+    return None
+
+
 def _open_hub() -> SynapseHub:
     return SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test")
 
@@ -58,7 +66,7 @@ async def test_secured_hub_refuses_missing_token_and_closes() -> None:
             with pytest.raises(ConnectionClosed) as exc_info:
                 await read_json(websocket)
 
-    assert exc_info.value.code == 4010
+    assert _close_code(exc_info.value) == 4010
     assert "A" not in hub.agent_sockets
 
 
@@ -131,7 +139,7 @@ async def test_authentication_times_out_idle_socket() -> None:
             with pytest.raises(ConnectionClosed) as exc_info:
                 await read_json(websocket)
 
-    assert exc_info.value.code == 4012
+    assert _close_code(exc_info.value) == 4012
 
 
 async def test_handler_secured_hub_processes_after_auth() -> None:
@@ -226,7 +234,7 @@ async def test_takeover_evicts_stale_holder() -> None:
             await send_json(new, sender="X-rx", type="chat", payload="still online")
             chat = await read_until_type(new, "chat")
 
-    assert exc_info.value.code == 4010
+    assert _close_code(exc_info.value) == 4010
     assert chat["payload"] == "still online"
 
 
@@ -244,5 +252,5 @@ async def test_name_conflict_without_takeover_rejects_newcomer() -> None:
             chat = await read_until_type(old, "chat")
 
     assert conflict["target"] == "Y"
-    assert exc_info.value.code == 4009
+    assert _close_code(exc_info.value) == 4009
     assert chat["payload"] == "original"
