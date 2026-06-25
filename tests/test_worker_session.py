@@ -8,7 +8,9 @@
 
 from __future__ import annotations
 
-import subprocess
+import json
+import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -18,94 +20,160 @@ from synapse_channel import cli, cli_services
 from synapse_channel.worker_session import run_worker_session
 
 
-class FakePopen:
-    """Minimal Popen stand-in for the wake sidecar."""
-
-    def __init__(self, args: list[str], **kwargs: Any) -> None:
-        self.args = args
-        self.kwargs = kwargs
-        self.terminated = False
-        self.killed = False
-
-    def poll(self) -> None:
-        """Report that the sidecar is still running."""
-        return None
-
-    def terminate(self) -> None:
-        """Record graceful termination."""
-        self.terminated = True
-
-    def wait(self, timeout: float | None = None) -> int:
-        """Return a successful process exit."""
-        return 0
-
-    def kill(self) -> None:
-        """Record forced termination."""
-        self.killed = True
+def _write_script(path: Path, source: str) -> Path:
+    path.write_text("#!/usr/bin/env python3\n" + source, encoding="utf-8")
+    path.chmod(0o700)
+    return path
 
 
-class StubbornPopen(FakePopen):
-    """Sidecar stand-in that ignores graceful termination until killed."""
+def _recording_sidecar(path: Path) -> Path:
+    return _write_script(
+        path,
+        """
+import json
+import os
+import pathlib
+import signal
+import sys
+import time
 
-    def wait(self, timeout: float | None = None) -> int:
-        """Raise on timed waits, then report exit after forced termination."""
-        if self.killed:
-            return 0
-        raise subprocess.TimeoutExpired(self.args, 0.0 if timeout is None else timeout)
-
-
-def test_worker_session_sets_identity_and_starts_sidecar(monkeypatch: pytest.MonkeyPatch) -> None:
-    popens: list[FakePopen] = []
-    runs: list[tuple[list[str], dict[str, str]]] = []
-
-    def fake_popen(args: list[str], **kwargs: Any) -> FakePopen:
-        proc = FakePopen(args, **kwargs)
-        popens.append(proc)
-        return proc
-
-    def fake_run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        runs.append((args, kwargs["env"]))
-        return subprocess.CompletedProcess(args, 0)
-
-    monkeypatch.setattr("synapse_channel.worker_session.subprocess.Popen", fake_popen)
-    monkeypatch.setattr("synapse_channel.worker_session.subprocess.run", fake_run)
-
-    assert run_worker_session(identity="repo/ux", command=["codex"], environ={}) == 0
-    assert popens[0].args[:3] == ["syn", "arm", "--uri"]
-    assert popens[0].terminated is True
-    assert runs[0][0] == ["codex"]
-    assert runs[0][1]["SYN_PROJECT"] == "repo"
-    assert runs[0][1]["SYN_IDENTITY"] == "repo/ux"
-
-
-def test_worker_session_passes_sidecar_auth_options(monkeypatch: pytest.MonkeyPatch) -> None:
-    popens: list[FakePopen] = []
-
-    def fake_popen(args: list[str], **kwargs: Any) -> FakePopen:
-        proc = FakePopen(args, **kwargs)
-        popens.append(proc)
-        return proc
-
-    monkeypatch.setattr("synapse_channel.worker_session.subprocess.Popen", fake_popen)
-    monkeypatch.setattr(
-        "synapse_channel.worker_session.subprocess.run",
-        lambda args, **kwargs: subprocess.CompletedProcess(args, 0),
+record = pathlib.Path(os.environ["SIDECAR_RECORD"])
+record.write_text(
+    json.dumps(
+        {
+            "argv": sys.argv[1:],
+            "pid": os.getpid(),
+            "project": os.environ.get("SYN_PROJECT"),
+            "identity": os.environ.get("SYN_IDENTITY"),
+        }
+    ),
+    encoding="utf-8",
+)
+signal.signal(signal.SIGTERM, lambda _signum, _frame: sys.exit(0))
+while True:
+    time.sleep(0.05)
+""",
     )
+
+
+def _stubborn_sidecar(path: Path) -> Path:
+    return _write_script(
+        path,
+        """
+import json
+import os
+import pathlib
+import signal
+import sys
+import time
+
+record = pathlib.Path(os.environ["SIDECAR_RECORD"])
+record.write_text(
+    json.dumps({"argv": sys.argv[1:], "pid": os.getpid()}),
+    encoding="utf-8",
+)
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+while True:
+    time.sleep(0.05)
+""",
+    )
+
+
+def _provider(path: Path) -> Path:
+    return _write_script(
+        path,
+        """
+import json
+import os
+import pathlib
+import sys
+import time
+
+sidecar_record = pathlib.Path(os.environ["SIDECAR_RECORD"])
+deadline = time.monotonic() + 5
+while not sidecar_record.exists():
+    if time.monotonic() > deadline:
+        raise SystemExit("sidecar did not arm")
+    time.sleep(0.01)
+
+provider_record = pathlib.Path(os.environ["PROVIDER_RECORD"])
+provider_record.write_text(
+    json.dumps(
+        {
+            "argv": sys.argv[1:],
+            "project": os.environ.get("SYN_PROJECT"),
+            "identity": os.environ.get("SYN_IDENTITY"),
+        }
+    ),
+    encoding="utf-8",
+)
+""",
+    )
+
+
+def _process_exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def test_worker_session_sets_identity_and_starts_sidecar(tmp_path: Path) -> None:
+    sidecar_record = tmp_path / "sidecar.json"
+    provider_record = tmp_path / "provider.json"
+    sidecar = _recording_sidecar(tmp_path / "syn")
+    provider = _provider(tmp_path / "provider")
 
     assert (
         run_worker_session(
             identity="repo/ux",
-            command=["provider-cmd"],
-            uri="ws://localhost:9999",
-            syn_bin="/bin/syn",
-            token="secret",
-            token_file="/tmp/token",
-            environ={},
+            command=[str(provider), "run"],
+            syn_bin=str(sidecar),
+            environ={
+                "SIDECAR_RECORD": str(sidecar_record),
+                "PROVIDER_RECORD": str(provider_record),
+            },
         )
         == 0
     )
-    assert popens[0].args == [
-        "/bin/syn",
+
+    sidecar_payload = json.loads(sidecar_record.read_text(encoding="utf-8"))
+    provider_payload = json.loads(provider_record.read_text(encoding="utf-8"))
+    assert sidecar_payload["argv"] == ["arm", "--uri", "ws://localhost:8876"]
+    assert sidecar_payload["project"] == "repo"
+    assert sidecar_payload["identity"] == "repo/ux"
+    assert provider_payload["argv"] == ["run"]
+    assert provider_payload["project"] == "repo"
+    assert provider_payload["identity"] == "repo/ux"
+
+
+def test_worker_session_passes_sidecar_auth_options(tmp_path: Path) -> None:
+    sidecar_record = tmp_path / "sidecar.json"
+    provider_record = tmp_path / "provider.json"
+    sidecar = _recording_sidecar(tmp_path / "syn")
+    provider = _provider(tmp_path / "provider")
+
+    assert (
+        run_worker_session(
+            identity="repo/ux",
+            command=[str(provider)],
+            uri="ws://localhost:9999",
+            syn_bin=str(sidecar),
+            token="secret",
+            token_file="/tmp/token",
+            environ={
+                "SIDECAR_RECORD": str(sidecar_record),
+                "PROVIDER_RECORD": str(provider_record),
+            },
+        )
+        == 0
+    )
+
+    sidecar_payload = json.loads(sidecar_record.read_text(encoding="utf-8"))
+    assert sidecar_payload["argv"] == [
         "arm",
         "--uri",
         "ws://localhost:9999",
@@ -117,32 +185,43 @@ def test_worker_session_passes_sidecar_auth_options(monkeypatch: pytest.MonkeyPa
 
 
 def test_worker_session_kills_sidecar_after_graceful_timeout(
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    popens: list[StubbornPopen] = []
+    if os.name != "posix":
+        pytest.skip("SIGTERM ignore/kill semantics are POSIX-specific")
+    sidecar_record = tmp_path / "sidecar.json"
+    provider_record = tmp_path / "provider.json"
+    sidecar = _stubborn_sidecar(tmp_path / "syn")
+    provider = _provider(tmp_path / "provider")
+    monkeypatch.setattr("synapse_channel.worker_session.SIDECAR_SHUTDOWN_TIMEOUT_SECONDS", 0.05)
 
-    def fake_popen(args: list[str], **kwargs: Any) -> StubbornPopen:
-        proc = StubbornPopen(args, **kwargs)
-        popens.append(proc)
-        return proc
-
-    monkeypatch.setattr("synapse_channel.worker_session.subprocess.Popen", fake_popen)
-    monkeypatch.setattr(
-        "synapse_channel.worker_session.subprocess.run",
-        lambda args, **kwargs: subprocess.CompletedProcess(args, 0),
+    assert (
+        run_worker_session(
+            identity="repo/ux",
+            command=[str(provider)],
+            syn_bin=str(sidecar),
+            environ={
+                "SIDECAR_RECORD": str(sidecar_record),
+                "PROVIDER_RECORD": str(provider_record),
+            },
+        )
+        == 0
     )
 
-    assert run_worker_session(identity="repo/ux", command=["provider-cmd"], environ={}) == 0
-    assert popens[0].terminated is True
-    assert popens[0].killed is True
+    sidecar_pid = json.loads(sidecar_record.read_text(encoding="utf-8"))["pid"]
+    assert not _process_exists(sidecar_pid)
 
 
-def test_worker_session_can_skip_sidecar(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "synapse_channel.worker_session.subprocess.run",
-        lambda args, **kwargs: subprocess.CompletedProcess(args, 7),
+def test_worker_session_can_skip_sidecar() -> None:
+    assert (
+        run_worker_session(
+            identity="repo/ux",
+            command=[sys.executable, "-c", "import sys; sys.exit(7)"],
+            arm=False,
+            environ={},
+        )
+        == 7
     )
-    assert run_worker_session(identity="repo/ux", command=["false"], arm=False, environ={}) == 7
 
 
 def test_worker_session_rejects_empty_command() -> None:

@@ -13,6 +13,9 @@ import os
 import subprocess
 from collections.abc import Mapping, Sequence
 
+SIDECAR_SHUTDOWN_TIMEOUT_SECONDS = 5.0
+"""Seconds to wait for a wake sidecar to exit after graceful termination."""
+
 
 def _project_from_identity(identity: str) -> str:
     """Return the project segment of a ``project`` or ``project/worker`` identity."""
@@ -59,7 +62,7 @@ def run_worker_session(
         if sidecar is not None and sidecar.poll() is None:
             sidecar.terminate()
             try:
-                sidecar.wait(timeout=5)
+                sidecar.wait(timeout=SIDECAR_SHUTDOWN_TIMEOUT_SECONDS)
             except subprocess.TimeoutExpired:
                 sidecar.kill()
                 sidecar.wait()
