@@ -45,6 +45,8 @@ async def _task_action(
     send: Callable[[SynapseAgent], Awaitable[None]],
     render: Callable[[dict[str, Any]], str],
     agent_factory: AgentFactory = SynapseAgent,
+    attempts: int = 60,
+    ready_timeout: float = 5.0,
 ) -> int:
     """Connect, run one blackboard write, print the hub's confirmation, and exit.
 
@@ -62,6 +64,10 @@ async def _task_action(
         Formats the confirmation message into a line for stdout.
     agent_factory : AgentFactory, optional
         Factory for the client agent; injectable for testing.
+    attempts : int, optional
+        Number of confirmation polling attempts.
+    ready_timeout : float, optional
+        Seconds to wait for connection readiness.
 
     Returns
     -------
@@ -76,7 +82,8 @@ async def _task_action(
         response_type=confirm_type,
         request=send,
         render=lambda data: print(render(data)),
-        attempts=60,
+        attempts=attempts,
+        ready_timeout=ready_timeout,
     )
 
 
@@ -143,7 +150,7 @@ def _cmd_task_progress(
         await agent.post_progress(args.task_id, args.text, kind=args.kind)
 
     def render(msg: dict[str, Any]) -> str:
-        note = msg.get("progress", {})
+        note = msg.get("note", {})
         task_id = note.get("task_id") or args.task_id
         return f"posted {note.get('kind', args.kind)} on {task_id}: {note.get('text', args.text)}"
 
