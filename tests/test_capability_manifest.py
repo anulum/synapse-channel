@@ -21,6 +21,50 @@ cap = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(cap)
 
 
+def _write_manifest_repo(root: Path) -> None:
+    (root / "src" / "synapse_channel" / "core").mkdir(parents=True)
+    (root / "tests").mkdir()
+    (root / "benchmarks").mkdir()
+    (root / "docs").mkdir()
+    (root / "pyproject.toml").write_text(
+        '[project]\nversion = "1.2.3"\n[project.optional-dependencies]\ndev = []\n',
+        encoding="utf-8",
+    )
+    (root / "src" / "synapse_channel" / "__init__.py").write_text(
+        '__all__ = ["Thing"]\n',
+        encoding="utf-8",
+    )
+    (root / "src" / "synapse_channel" / "module.py").write_text(
+        "class Thing:\n    pass\n",
+        encoding="utf-8",
+    )
+    (root / "src" / "synapse_channel" / "cli.py").write_text(
+        'subparsers.add_parser("run")\n',
+        encoding="utf-8",
+    )
+    (root / "src" / "synapse_channel" / "core" / "protocol.py").write_text(
+        'class MessageType:\n    CHAT = "chat"\n',
+        encoding="utf-8",
+    )
+    (root / "tests" / "test_sample.py").write_text(
+        "def test_sample():\n    assert True\n",
+        encoding="utf-8",
+    )
+    (root / "benchmarks" / "sample_benchmark.py").write_text(
+        "def run():\n    return None\n",
+        encoding="utf-8",
+    )
+    (root / "docs" / "usage.md").write_text("# Usage\n", encoding="utf-8")
+    (root / "README.md").write_text(
+        "before\n"
+        f"{cap.load_config()['readme']['marker_start']}\n"
+        "stale\n"
+        f"{cap.load_config()['readme']['marker_end']}\n"
+        "after\n",
+        encoding="utf-8",
+    )
+
+
 def test_load_config_has_sections() -> None:
     config = cap.load_config()
     assert config["project_label"] == "SYNAPSE CHANNEL"
@@ -88,17 +132,18 @@ def test_main_check_returns_zero() -> None:
     assert cap.main(["--check"]) == 0
 
 
-def test_main_update_branch(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setattr(cap, "update", lambda root, config: {"tests": 1, "package_modules": 1})
-    assert cap.main(["--update"]) == 0
+def test_main_update_branch(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_manifest_repo(tmp_path)
+    assert cap.main(["--update"], root=tmp_path) == 0
     assert "updated" in capsys.readouterr().out
+    readme = (tmp_path / "README.md").read_text(encoding="utf-8")
+    assert "capability inventory" in readme
+    assert (tmp_path / "docs" / "_generated" / "capability_manifest.json").exists()
 
 
-def test_main_check_stale_returns_one(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cap, "check", lambda root, config: False)
-    assert cap.main(["--check"]) == 1
+def test_main_check_stale_returns_one(tmp_path: Path) -> None:
+    _write_manifest_repo(tmp_path)
+    assert cap.main(["--check"], root=tmp_path) == 1
 
 
 def test_count_all_exports_zero_without_all(tmp_path: Path) -> None:
