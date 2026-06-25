@@ -192,6 +192,50 @@ synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --task-timeout 300 --subs
 synapse relay ./feed.ndjson --cursor ./feed.cursor
 ```
 
+## Agent2Agent bridge
+
+`synapse a2a-card` projects the live SYNAPSE capability manifest into an A2A
+Agent Card. `synapse a2a-serve` runs the local HTTP+JSON bridge and keeps A2A at
+the edge of the system; the hub remains WebSocket-native.
+
+Supported local subset:
+
+- `GET /.well-known/agent-card.json` and `/agent-card.json` for discovery.
+- `POST /message:send` to create a bridge task and forward text/data/file parts
+  into SYNAPSE chat.
+- `POST /message:stream` for an immediate Server-Sent Events task snapshot.
+- `GET /tasks`, `GET /tasks/{id}`, `POST /tasks/{id}:cancel`, and
+  `POST /tasks/{id}:subscribe` for bridge-local task lifecycle operations.
+- `POST|GET|DELETE /tasks/{id}/pushNotificationConfigs[/config_id]` for stored
+  push-notification configuration.
+- `POST /rpc` for JSON-RPC 2.0 dispatch to the same operations.
+
+Operational boundaries:
+
+- Bearer auth is opt-in with `--bearer-auth --a2a-token "$A2A_TOKEN"` and applies
+  to protected bridge routes. The public Agent Card remains public discovery.
+- `--state-file` persists bridge tasks and push configs. Corrupt state files fail
+  fast; non-terminal persisted tasks recover as failed on restart; failed writes
+  roll back the in-memory task/config view.
+- `--task-timeout` marks open tasks failed when no correlated SYNAPSE reply arrives
+  within the configured window.
+- `--subscribe-timeout` bounds one in-process subscription wait. Subscriptions use
+  bounded local replay history, not durable cross-process event streams.
+- Caller-supplied `taskId` and `contextId` values are restricted to bridge-safe
+  characters. Duplicate caller task ids are rejected.
+- Webhook URLs must be HTTP(S), include a host, omit embedded credentials, and not
+  target localhost, loopback, private, or link-local IP literals.
+
+Unsupported or externally gated:
+
+- No claim is made here about third-party A2A conformance until remote CI,
+  independent interoperability/conformance tests, real webhook receiver tests,
+  deployment threat-model review, and operator sign-off complete.
+- The bridge does not make SYNAPSE itself an A2A-native hub; it is a separate edge
+  process translating between A2A-shaped HTTP operations and SYNAPSE chat/tasks.
+- Subscription replay is local process memory. It is not a durable event log shared
+  across bridge restarts or multiple bridge replicas.
+
 ## Managing the task plan
 
 `synapse task` lets a human drive the shared blackboard from the command line —
