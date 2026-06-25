@@ -57,3 +57,19 @@ def test_task_events_replay_previous_updates_for_late_subscribers() -> None:
         "TASK_STATE_SUBMITTED",
         "TASK_STATE_WORKING",
     ]
+
+
+def test_task_events_bound_replay_history() -> None:
+    events = A2ATaskEvents(max_history_events=2)
+    current: JsonMap = {"id": "task-a", "status": {"state": "TASK_STATE_WORKING"}}
+
+    events.publish("task-a", {"id": "task-a", "status": {"state": "TASK_STATE_SUBMITTED"}})
+    events.publish("task-a", {"id": "task-a", "status": {"state": "TASK_STATE_WORKING"}})
+    events.publish("task-a", current)
+
+    received = events.subscribe("task-a", current, wait_seconds=0.0, default_wait_seconds=0.0)
+
+    assert [event["task"]["status"]["state"] for event in received] == [
+        "TASK_STATE_WORKING",
+        "TASK_STATE_WORKING",
+    ]

@@ -20,7 +20,8 @@ from synapse_channel.a2a_validation import TERMINAL_TASK_STATES
 class A2ATaskEvents:
     """In-process subscribers for A2A task lifecycle updates."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, max_history_events: int = 64) -> None:
+        self.max_history_events = max(max_history_events, 1)
         self._subscribers: dict[str, list[queue.Queue[JsonMap]]] = {}
         self._history: dict[str, list[JsonMap]] = {}
         self._lock = threading.RLock()
@@ -29,7 +30,9 @@ class A2ATaskEvents:
         """Publish one task update to local subscribers."""
         event = self._event(task)
         with self._lock:
-            self._history.setdefault(task_id, []).append(copy.deepcopy(event))
+            history = self._history.setdefault(task_id, [])
+            history.append(copy.deepcopy(event))
+            del history[: -self.max_history_events]
             subscribers = list(self._subscribers.get(task_id, []))
         for subscriber in subscribers:
             subscriber.put(copy.deepcopy(event))
