@@ -9,8 +9,16 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+import subprocess
+import sys
+import time
+from collections.abc import Callable
 
+import pytest
+
+import synapse_channel.client.launcher as launcher_module
+from http_server_helpers import LocalHttpResponder
+from hub_e2e_helpers import _free_port
 from synapse_channel.client.launcher import (
     FALLBACK_MODEL,
     FAST_MODEL_PREFERENCES,
@@ -24,89 +32,65 @@ from synapse_channel.client.launcher import (
 )
 
 
-class _FakeResponse:
-    def __init__(self, payload: dict[str, Any]) -> None:
-        self._payload = payload
-
-    def __enter__(self) -> _FakeResponse:
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        return None
-
-    def read(self) -> bytes:
-        return json.dumps(self._payload).encode("utf-8")
+def _detect_with_models(preferred: list[str], models: list[str]) -> str | None:
+    body = json.dumps({"models": [{"name": name} for name in models]}).encode("utf-8")
+    with LocalHttpResponder(body=body) as server:
+        detected = detect_model(preferred, base_url=server.url)
+        assert [(request.method, request.path) for request in server.requests] == [
+            ("GET", "/api/tags")
+        ]
+    return detected
 
 
-def _opener_for(models: list[str]) -> Any:
-    def opener(url: str, timeout: float) -> _FakeResponse:
-        return _FakeResponse({"models": [{"name": name} for name in models]})
-
-    return opener
+def _python_command(source: str) -> list[str]:
+    return [sys.executable, "-c", source]
 
 
-class FakeProc:
-    def __init__(
-        self,
-        poll_results: list[int | None],
-        *,
-        pid: int = 1,
-        terminate_exc: Exception | None = None,
-    ) -> None:
-        self._poll = list(poll_results)
-        self.pid = pid
-        self.terminated = False
-        self.killed = False
-        self.waited = False
-        self._terminate_exc = terminate_exc
+def _launching_popen_factory(
+    commands: list[list[str]],
+) -> tuple[Callable[..., subprocess.Popen[str]], list[subprocess.Popen[str]]]:
+    iterator = iter(commands)
+    launched: list[subprocess.Popen[str]] = []
 
-    def poll(self) -> int | None:
-        return self._poll.pop(0) if len(self._poll) > 1 else self._poll[0]
+    def popen(_argv: list[str], **_kwargs: object) -> subprocess.Popen[str]:
+        proc = subprocess.Popen(
+            next(iterator), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        )
+        launched.append(proc)
+        return proc
 
-    def terminate(self) -> None:
-        self.terminated = True
-        if self._terminate_exc is not None:
-            raise self._terminate_exc
-
-    def wait(self, timeout: float | None = None) -> None:
-        self.waited = True
-
-    def kill(self) -> None:
-        self.killed = True
+    return popen, launched
 
 
 # --- detect_model ------------------------------------------------------------
 
 
 def test_detect_model_match_with_tag_returns_full_name() -> None:
-    got = detect_model(["gemma3:4b"], opener=_opener_for(["gemma3:4b", "llama3:latest"]))
+    got = _detect_with_models(["gemma3:4b"], ["gemma3:4b", "llama3:latest"])
     assert got == "gemma3:4b"
 
 
 def test_detect_model_match_without_tag_returns_family() -> None:
-    got = detect_model(["llama3"], opener=_opener_for(["llama3:latest"]))
+    got = _detect_with_models(["llama3"], ["llama3:latest"])
     assert got == "llama3"
 
 
 def test_detect_model_substring_match() -> None:
-    got = detect_model(["gemma"], opener=_opener_for(["my-gemma:1b"]))
+    got = _detect_with_models(["gemma"], ["my-gemma:1b"])
     assert got == "my-gemma"
 
 
 def test_detect_model_falls_back_to_first_installed() -> None:
-    got = detect_model(["absent"], opener=_opener_for(["foo:1b"]))
+    got = _detect_with_models(["absent"], ["foo:1b"])
     assert got == "foo"
 
 
 def test_detect_model_none_when_empty() -> None:
-    assert detect_model(["x"], opener=_opener_for([])) is None
+    assert _detect_with_models(["x"], []) is None
 
 
 def test_detect_model_none_on_error() -> None:
-    def boom(url: str, timeout: float) -> _FakeResponse:
-        raise OSError("no server")
-
-    assert detect_model(["x"], opener=boom) is None
+    assert detect_model(["x"], base_url=f"http://127.0.0.1:{_free_port()}") is None
 
 
 # --- command builders --------------------------------------------------------
@@ -178,66 +162,83 @@ def test_plan_team_prefixes_worker_names() -> None:
 # --- _shutdown ---------------------------------------------------------------
 
 
-def test_shutdown_terminates_running_kills_on_error_and_skips_exited() -> None:
-    running = FakeProc([None])
-    stubborn = FakeProc([None], terminate_exc=RuntimeError("won't stop"))
-    already_done = FakeProc([0])
-    _shutdown([("a", running), ("b", stubborn), ("c", already_done)])  # type: ignore[list-item]
-    assert running.terminated and running.waited
-    assert stubborn.killed
-    assert already_done.terminated is False
+def test_shutdown_terminates_running_kills_stubborn_and_skips_exited(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(launcher_module, "SHUTDOWN_TIMEOUT_SECONDS", 0.05)
+    running = subprocess.Popen(_python_command("import time; time.sleep(30)"), text=True)
+    stubborn = subprocess.Popen(
+        _python_command(
+            "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)"
+        ),
+        text=True,
+    )
+    already_done = subprocess.Popen(_python_command(""), text=True)
+    already_done.wait(timeout=2)
+
+    try:
+        _shutdown([("a", running), ("b", stubborn), ("c", already_done)])
+        assert running.poll() is not None
+        assert stubborn.poll() is not None
+        assert already_done.poll() == 0
+    finally:
+        for proc in (running, stubborn):
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=2)
 
 
 # --- run_team ----------------------------------------------------------------
 
 
-def _popen_factory(procs: list[FakeProc]) -> Any:
-    iterator = iter(procs)
-
-    def fake_popen(argv: list[str], **kwargs: object) -> FakeProc:
-        return next(iterator)
-
-    return fake_popen
-
-
 def test_run_team_returns_exit_code_of_first_dead_child() -> None:
-    hub = FakeProc([None])
-    fast = FakeProc([3])
+    popen, launched = _launching_popen_factory(
+        [
+            _python_command("import time; time.sleep(30)"),
+            _python_command("import sys; sys.exit(3)"),
+        ]
+    )
     result = run_team(
         9999,
-        popen=_popen_factory([hub, fast]),
-        sleep=lambda s: None,
+        popen=popen,
+        sleep=lambda _seconds: time.sleep(0.05),
         detect=lambda prefs: "m",
     )
     assert result == 3
-    assert hub.terminated  # cleaned up in finally
+    assert all(proc.poll() is not None for proc in launched)
 
 
 def test_run_team_polls_again_while_children_alive() -> None:
-    hub = FakeProc([None, None])
-    fast = FakeProc([None, 5])  # alive on first pass, dead on the second
+    popen, launched = _launching_popen_factory(
+        [
+            _python_command("import time; time.sleep(30)"),
+            _python_command("import sys, time; time.sleep(0.08); sys.exit(5)"),
+        ]
+    )
     result = run_team(
         9999,
-        popen=_popen_factory([hub, fast]),
-        sleep=lambda s: None,
+        popen=popen,
+        sleep=lambda _seconds: time.sleep(0.05),
         detect=lambda prefs: "m",
     )
     assert result == 5
+    assert all(proc.poll() is not None for proc in launched)
 
 
 def test_run_team_maps_zero_exit_to_one() -> None:
-    hub = FakeProc([0])
+    popen, launched = _launching_popen_factory([_python_command("")])
     result = run_team(
         9999,
         no_workers=True,
-        popen=_popen_factory([hub]),
-        sleep=lambda s: None,
+        popen=popen,
+        sleep=lambda _seconds: time.sleep(0.02),
     )
     assert result == 1
+    assert all(proc.poll() is not None for proc in launched)
 
 
 def test_run_team_handles_keyboard_interrupt() -> None:
-    hub = FakeProc([None])
+    popen, launched = _launching_popen_factory([_python_command("import time; time.sleep(30)")])
 
     def interrupting_sleep(seconds: float) -> None:
         raise KeyboardInterrupt
@@ -245,8 +246,8 @@ def test_run_team_handles_keyboard_interrupt() -> None:
     result = run_team(
         9999,
         no_workers=True,
-        popen=_popen_factory([hub]),
+        popen=popen,
         sleep=interrupting_sleep,
     )
     assert result == 0
-    assert hub.terminated
+    assert all(proc.poll() is not None for proc in launched)
