@@ -157,6 +157,7 @@ class A2ABridge:
         self._pending_by_target: dict[str, list[str]] = {}
         self._events = A2ATaskEvents()
         self._task_creation_lock = threading.RLock()
+        self._correlation_lock = threading.RLock()
         self._recover_stale_open_tasks(now=time.time())
 
     def _run(self, coro: Coroutine[Any, Any, Any]) -> Any:
@@ -375,41 +376,42 @@ class A2ABridge:
 
     def handle_synapse_frame(self, data: JsonMap) -> None:
         """Correlate an inbound SYNAPSE chat frame to an open A2A task."""
-        if data.get("type") != "chat":
-            return
-        payload = str(data.get("payload", ""))
-        sender = str(data.get("sender", ""))
+        with self._correlation_lock:
+            if data.get("type") != "chat":
+                return
+            payload = str(data.get("payload", ""))
+            sender = str(data.get("sender", ""))
 
-        task_id = marker_task_id(payload)
-        if task_id is None and sender in self._pending_by_target:
-            task_id = self._pending_task_for_sender(sender)
+            task_id = marker_task_id(payload)
+            if task_id is None and sender in self._pending_by_target:
+                task_id = self._pending_task_for_sender(sender)
 
-        if not task_id:
-            return
-        task = self.store.get(task_id)
-        if task is None or not self._sender_matches_task(task, sender):
-            return
-        status = task.get("status", {})
-        if isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES:
-            return
+            if not task_id:
+                return
+            task = self.store.get(task_id)
+            if task is None or not self._sender_matches_task(task, sender):
+                return
+            status = task.get("status", {})
+            if isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES:
+                return
 
-        reply_text = strip_task_marker(payload)
-        reply_part: JsonMap = {
-            "messageId": str(uuid.uuid4()),
-            "role": "ROLE_AGENT",
-            "parts": [{"text": reply_text, "mediaType": "text/plain"}],
-        }
-        task.setdefault("history", []).append(reply_part)
-        task.setdefault("artifacts", []).append(
-            {
-                "artifactId": f"synapse-reply-{task_id}",
-                "name": "SYNAPSE reply",
-                "description": f"Correlated reply from {sender}",
+            reply_text = strip_task_marker(payload)
+            reply_part: JsonMap = {
+                "messageId": str(uuid.uuid4()),
+                "role": "ROLE_AGENT",
                 "parts": [{"text": reply_text, "mediaType": "text/plain"}],
             }
-        )
-        self._remove_pending_task(task_id)
-        self._set_task_status(task, state="TASK_STATE_COMPLETED", message=reply_part)
+            task.setdefault("history", []).append(reply_part)
+            task.setdefault("artifacts", []).append(
+                {
+                    "artifactId": f"synapse-reply-{task_id}",
+                    "name": "SYNAPSE reply",
+                    "description": f"Correlated reply from {sender}",
+                    "parts": [{"text": reply_text, "mediaType": "text/plain"}],
+                }
+            )
+            self._remove_pending_task(task_id)
+            self._set_task_status(task, state="TASK_STATE_COMPLETED", message=reply_part)
 
     def expire_timed_out_tasks(self, *, now: float | None = None) -> list[JsonMap]:
         """Fail open tasks whose reply deadline has elapsed."""
