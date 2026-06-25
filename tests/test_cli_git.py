@@ -30,11 +30,13 @@ def test_parser_git_claim() -> None:
     assert args.auto_release_on == "commit"
 
 
-def test_cmd_git_claim_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake(**kwargs: Any) -> int:
+def test_cmd_git_claim_dispatches() -> None:
+    captured: dict[str, Any] = {}
+
+    async def run_claim(**kwargs: Any) -> int:
+        captured.update(kwargs)
         return 0
 
-    monkeypatch.setattr(cli_git, "run_git_claim", fake)
     ns = argparse.Namespace(
         uri="ws://h",
         name="U",
@@ -44,7 +46,9 @@ def test_cmd_git_claim_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
         auto_release_on="merge",
         token=None,
     )
-    assert cli_git._cmd_git_claim(ns) == 0
+    assert cli_git._cmd_git_claim(ns, claim_runner=run_claim) == 0
+    assert captured["task_id"] == "T1"
+    assert captured["paths"] == ["src"]
 
 
 # --- git-hook ----------------------------------------------------------------
@@ -57,28 +61,22 @@ def test_parser_git_hook() -> None:
     assert args.name == "ME"
 
 
-def test_cmd_git_hook_dispatches(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setattr(cli_git, "install_hooks", lambda **kwargs: ["installed post-commit"])
+def test_cmd_git_hook_dispatches(capsys: pytest.CaptureFixture[str]) -> None:
     ns = argparse.Namespace(
         action="install", uri="ws://h", name="ME", token=None, token_file=None, synapse_bin=None
     )
-    assert cli_git._cmd_git_hook(ns) == 0
+    assert cli_git._cmd_git_hook(ns, installer=lambda **kwargs: ["installed post-commit"]) == 0
     assert "installed post-commit" in capsys.readouterr().out
 
 
-def test_cmd_git_hook_reports_git_error(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cmd_git_hook_reports_git_error(capsys: pytest.CaptureFixture[str]) -> None:
     def boom(**kwargs: Any) -> list[str]:
         raise GitError("not a git repository")
 
-    monkeypatch.setattr(cli_git, "install_hooks", boom)
     ns = argparse.Namespace(
         action="install", uri="ws://h", name="ME", token=None, token_file=None, synapse_bin=None
     )
-    assert cli_git._cmd_git_hook(ns) == 1
+    assert cli_git._cmd_git_hook(ns, installer=boom) == 1
     assert "not a git repository" in capsys.readouterr().err
 
 
@@ -119,16 +117,13 @@ def test_parser_git_init_service_flags() -> None:
     assert args.service_identity == "repo/ux"
 
 
-def test_cmd_git_init_dispatches(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cmd_git_init_dispatches(capsys: pytest.CaptureFixture[str]) -> None:
     captured: dict[str, Any] = {}
 
-    def fake(**kwargs: Any) -> list[str]:
+    def initialise_repo(**kwargs: Any) -> list[str]:
         captured.update(kwargs)
         return ["installed post-commit", "wrote .synapse/git-claims.md"]
 
-    monkeypatch.setattr(cli_git, "init_repo", fake)
     ns = argparse.Namespace(
         uri="ws://h",
         name="ME",
@@ -141,24 +136,27 @@ def test_cmd_git_init_dispatches(
         service_project="repo",
         service_identity="repo/ux",
     )
-    assert cli_git._cmd_git_init(ns) == 0
+    assert (
+        cli_git._cmd_git_init(
+            ns,
+            repo_initializer=initialise_repo,
+            suggestion_builder=lambda **kwargs: ["suggestion"],
+        )
+        == 0
+    )
     out = capsys.readouterr().out
     assert "wrote .synapse/git-claims.md" in out
     assert "service setup available" in out
     assert captured["base_branch"] == "trunk"
 
 
-def test_cmd_git_init_installs_services(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setattr(cli_git, "init_repo", lambda **kwargs: ["wrote .synapse/git-claims.md"])
+def test_cmd_git_init_installs_services(capsys: pytest.CaptureFixture[str]) -> None:
     captured: dict[str, Any] = {}
 
-    def fake_install(**kwargs: Any) -> list[str]:
+    def install_services(**kwargs: Any) -> list[str]:
         captured.update(kwargs)
         return ["wrote synapse-arm@.service"]
 
-    monkeypatch.setattr(cli_git, "install_user_services", fake_install)
     ns = argparse.Namespace(
         uri="ws://h",
         name="ME",
@@ -171,19 +169,23 @@ def test_cmd_git_init_installs_services(
         service_project="repo",
         service_identity="repo/ux",
     )
-    assert cli_git._cmd_git_init(ns) == 0
+    assert (
+        cli_git._cmd_git_init(
+            ns,
+            repo_initializer=lambda **kwargs: ["wrote .synapse/git-claims.md"],
+            service_installer=install_services,
+        )
+        == 0
+    )
     assert "synapse-arm@.service" in capsys.readouterr().out
     assert captured["project"] == "repo"
     assert captured["identity"] == "repo/ux"
 
 
-def test_cmd_git_init_reports_git_error(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cmd_git_init_reports_git_error(capsys: pytest.CaptureFixture[str]) -> None:
     def boom(**kwargs: Any) -> list[str]:
         raise GitError("not a git repository")
 
-    monkeypatch.setattr(cli_git, "init_repo", boom)
     ns = argparse.Namespace(
         uri="ws://h",
         name="ME",
@@ -196,13 +198,11 @@ def test_cmd_git_init_reports_git_error(
         service_project=None,
         service_identity=None,
     )
-    assert cli_git._cmd_git_init(ns) == 1
+    assert cli_git._cmd_git_init(ns, repo_initializer=boom) == 1
     assert "not a git repository" in capsys.readouterr().err
 
 
-def test_cmd_git_hook_test_reports_healthy(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cmd_git_hook_test_reports_healthy(capsys: pytest.CaptureFixture[str]) -> None:
     report = [
         {
             "trigger": t,
@@ -213,13 +213,17 @@ def test_cmd_git_hook_test_reports_healthy(
         }
         for t in ("commit", "merge")
     ]
-    monkeypatch.setattr(cli_git, "check_hooks", lambda **kwargs: report)
-    assert cli_git._cmd_git_hook(argparse.Namespace(action="test")) == 0
+    assert (
+        cli_git._cmd_git_hook(
+            argparse.Namespace(action="test"), hook_checker=lambda **kwargs: report
+        )
+        == 0
+    )
     assert "ok: post-commit installed -> /usr/bin/synapse" in capsys.readouterr().out
 
 
 def test_cmd_git_hook_test_flags_missing_and_unresolvable(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     report = [
         {
@@ -237,21 +241,22 @@ def test_cmd_git_hook_test_flags_missing_and_unresolvable(
             "binary_ok": False,
         },
     ]
-    monkeypatch.setattr(cli_git, "check_hooks", lambda **kwargs: report)
-    assert cli_git._cmd_git_hook(argparse.Namespace(action="test")) == 1
+    assert (
+        cli_git._cmd_git_hook(
+            argparse.Namespace(action="test"), hook_checker=lambda **kwargs: report
+        )
+        == 1
+    )
     out = capsys.readouterr().out
     assert "missing: post-commit not installed" in out
     assert "warning: post-merge installed but its synapse binary '/gone/synapse'" in out
 
 
-def test_cmd_git_hook_test_reports_git_error(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cmd_git_hook_test_reports_git_error(capsys: pytest.CaptureFixture[str]) -> None:
     def boom(**kwargs: Any) -> list[dict[str, Any]]:
         raise GitError("not a git repository")
 
-    monkeypatch.setattr(cli_git, "check_hooks", boom)
-    assert cli_git._cmd_git_hook(argparse.Namespace(action="test")) == 1
+    assert cli_git._cmd_git_hook(argparse.Namespace(action="test"), hook_checker=boom) == 1
     assert "not a git repository" in capsys.readouterr().err
 
 
@@ -264,13 +269,16 @@ def test_parser_git_release() -> None:
     assert args.trigger == "merge"
 
 
-def test_cmd_git_release_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake(**kwargs: Any) -> int:
+def test_cmd_git_release_dispatches() -> None:
+    captured: dict[str, Any] = {}
+
+    async def release_claims(**kwargs: Any) -> int:
+        captured.update(kwargs)
         return 0
 
-    monkeypatch.setattr(cli_git, "run_git_release", fake)
     ns = argparse.Namespace(task_id=None, uri="ws://h", name="ME", trigger="commit", token=None)
-    assert cli_git._cmd_git_release(ns) == 0
+    assert cli_git._cmd_git_release(ns, release_runner=release_claims) == 0
+    assert captured["trigger"] == "commit"
 
 
 def test_parser_git_release_trigger_is_optional() -> None:
@@ -306,14 +314,13 @@ def test_parser_conflicts() -> None:
     assert args.check_diff is True
 
 
-def test_cmd_conflicts_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_conflicts_dispatches() -> None:
     captured: dict[str, Any] = {}
 
-    async def fake(**kwargs: Any) -> int:
+    async def predict_conflicts(**kwargs: Any) -> int:
         captured.update(kwargs)
         return 0
 
-    monkeypatch.setattr(cli_git, "run_conflicts", fake)
     ns = argparse.Namespace(uri="ws://h", name="ME", token=None, check_diff=True)
-    assert cli_git._cmd_conflicts(ns) == 0
+    assert cli_git._cmd_conflicts(ns, conflict_runner=predict_conflicts) == 0
     assert captured["check_diff"] is True
