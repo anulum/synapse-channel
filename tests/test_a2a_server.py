@@ -275,7 +275,9 @@ def test_message_send_renders_file_parts_for_synapse_forwarding() -> None:
     assert status == HTTPStatus.OK
     sent = harness.handler.bridge.agent.messages[0]
     assert sent[0] == "WORKER"
-    assert sent[1].startswith("[file: report.pdf; application/pdf; https://example.test/report.pdf]")
+    assert sent[1].startswith(
+        "[file: report.pdf; application/pdf; https://example.test/report.pdf]"
+    )
     assert "[A2A-TASK:" in sent[1]
 
 
@@ -689,11 +691,7 @@ def test_handle_synapse_frame_correlates_reply_and_completes_task() -> None:
         "type": "chat",
         "sender": "WORKER",
         "payload": (
-            "the answer is 42\n[A2A-TASK:"
-            + task["id"]
-            + " contextId="
-            + task["contextId"]
-            + "]"
+            "the answer is 42\n[A2A-TASK:" + task["id"] + " contextId=" + task["contextId"] + "]"
         ),
     }
     bridge.handle_synapse_frame(reply_frame)

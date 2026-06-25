@@ -55,6 +55,8 @@ class A2ATaskEvents:
             events = copy.deepcopy(self._history.get(task_id, []))
             if not events:
                 events = [current_event]
+            elif self._last_state(events) in TERMINAL_TASK_STATES:
+                events.insert(0, current_event)
             state = self._last_state(events)
             if state not in TERMINAL_TASK_STATES:
                 self._subscribers.setdefault(task_id, []).append(updates)

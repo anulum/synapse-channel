@@ -538,9 +538,7 @@ class A2ABridge:
     def handle_json_rpc(self, request_body: JsonMap) -> JsonMap:
         """Dispatch one JSON-RPC 2.0 A2A request."""
         rpc_id = request_body.get("id")
-        if request_body.get("jsonrpc") != "2.0" or not isinstance(
-            request_body.get("method"), str
-        ):
+        if request_body.get("jsonrpc") != "2.0" or not isinstance(request_body.get("method"), str):
             return _rpc_error(rpc_id, -32600, "Invalid Request")
         params = request_body.get("params", {})
         if params is None:
@@ -602,22 +600,14 @@ class A2ABridge:
             return self.list_push_notification_configs(task_id)["pushNotificationConfigs"]
         if method == "tasks/pushNotificationConfig/get":
             task_id = str(params.get("taskId") or params.get("id") or "")
-            config_id = str(
-                params.get("pushNotificationConfigId")
-                or params.get("configId")
-                or ""
-            )
+            config_id = str(params.get("pushNotificationConfigId") or params.get("configId") or "")
             config = self.get_push_notification_config(task_id, config_id)
             if config is None:
                 raise ValueError(f"Unknown push notification config: {config_id}")
             return config
         if method == "tasks/pushNotificationConfig/delete":
             task_id = str(params.get("taskId") or params.get("id") or "")
-            config_id = str(
-                params.get("pushNotificationConfigId")
-                or params.get("configId")
-                or ""
-            )
+            config_id = str(params.get("pushNotificationConfigId") or params.get("configId") or "")
             return self.delete_push_notification_config(task_id, config_id)
         if method == "agent/getAuthenticatedExtendedCard":
             return self.agent_card
@@ -763,9 +753,7 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                     HTTPStatus.OK,
                     self.bridge.list_tasks(
                         state=state,
-                        page_size=(
-                            _non_negative_int(page_size) if page_size is not None else None
-                        ),
+                        page_size=(_non_negative_int(page_size) if page_size is not None else None),
                         page_token=page_token,
                     ),
                 )
@@ -780,9 +768,7 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                 task = self.bridge.get_task(
                     task_id,
                     history_length=(
-                        _non_negative_int(history_length)
-                        if history_length is not None
-                        else None
+                        _non_negative_int(history_length) if history_length is not None else None
                     ),
                 )
                 if task is None:
