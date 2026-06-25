@@ -9,9 +9,7 @@
 from __future__ import annotations
 
 import argparse
-from typing import Any
-
-import pytest
+import os
 
 from synapse_channel import cli, cli_processes
 
@@ -26,24 +24,24 @@ def test_run_executes_coroutine() -> None:
     assert marker == [True]
 
 
-def test_main_routes_to_team(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli_processes, "run_team", lambda **kwargs: 9)
-    assert cli.main(["team", "--no-workers"]) == 9
+def test_parser_routes_to_team() -> None:
+    args = cli.build_parser().parse_args(["team", "--no-workers"])
+    assert args.func is cli_processes._cmd_team
+    assert args.no_workers is True
 
 
-def test_main_routes_to_hub(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
-    assert cli.main(["hub", "--port", "9000"]) == 0
+def test_main_routes_to_hub_fail_fast() -> None:
+    assert cli.main(["hub", "--host", "0.0.0.0", "--port", "0"]) == 2
 
 
-def test_main_resolves_token_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SYNAPSE_TOKEN", "env-tok")
-    captured: dict[str, Any] = {}
-
-    def fake(args: argparse.Namespace) -> int:
-        captured["token"] = args.token
-        return 0
-
-    monkeypatch.setattr(cli_processes, "_cmd_worker", fake)
-    assert cli.main(["worker"]) == 0
-    assert captured["token"] == "env-tok"
+def test_resolve_token_from_env_without_handler_patch() -> None:
+    previous = os.environ.get(cli.TOKEN_ENV)
+    os.environ[cli.TOKEN_ENV] = "env-tok"
+    try:
+        args = argparse.Namespace(token=None, token_file=None)
+        assert cli._resolve_token(args) == "env-tok"
+    finally:
+        if previous is None:
+            os.environ.pop(cli.TOKEN_ENV, None)
+        else:
+            os.environ[cli.TOKEN_ENV] = previous
