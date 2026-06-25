@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-06-25
+
 ### Added
 - `synapse doctor` checks for the coordination misconfigs that quietly cost an
   agent its messages: an identity derived by accident (the home directory, a system
@@ -48,6 +50,10 @@ All notable changes to this project are documented here.
   dispatch on `/rpc`, task pagination and history-length controls, Bearer-token
   enforcement for protected routes, file-part forwarding, and optional durable
   task/config state via `synapse a2a-serve --state-file`.
+- The A2A bridge now has committed local benchmark evidence for task creation,
+  reply correlation, task listing, push-delivery callback dispatch, and bounded
+  subscriber fanout. The benchmark is explicitly in-process evidence, not a claim
+  about third-party A2A conformance or real webhook/network latency.
 
 ### Changed
 - The hub now **refuses to start** on a non-loopback address (e.g. `--host 0.0.0.0`)
@@ -55,6 +61,20 @@ All notable changes to this project are documented here.
   `--metrics-token` — instead of only printing a warning and exposing the bus anyway.
   This makes the safe configuration the default: a coordination bus is never put on
   the network unauthenticated by accident. A loopback bind (the default) is unaffected.
+- The A2A bridge now keeps validation, storage, event fanout, and handler logic in
+  separate focused modules instead of growing the HTTP bridge into one large file.
+- Caller-supplied A2A task creation is serialized around validation and insertion,
+  so racing requests with the same `taskId` create one task and reject the duplicate.
+
+### Security
+- A2A webhook URLs now reject localhost, loopback, private, and link-local IP
+  targets, and reject embedded credentials before push configuration enters bridge
+  state.
+- A2A state-file handling now fails fast on corrupt JSON, recovers stale in-flight
+  persisted tasks as failed on restart, and rolls back in-memory task/push-config
+  mutations when a state-file write fails.
+- Caller-supplied A2A `taskId` and `contextId` values are restricted to bridge-safe
+  characters, and duplicate caller task ids are rejected before task creation.
 
 ### Upgrade notes
 - If you intentionally run an unauthenticated hub off loopback, add the new
@@ -69,6 +89,12 @@ All notable changes to this project are documented here.
   (via MCP) and Aider or any non-MCP tool (via `git-init` + branch-scoped claims).
 - The git-claims guide recommends gating a production setup on `synapse git-hook test`,
   which catches a missing hook or a moved `synapse` binary before it silently no-ops.
+- The CLI and benchmark docs now state the A2A bridge's supported local HTTP+JSON
+  subset, auth model, persistence semantics, timeout behavior, webhook validation,
+  subscription replay boundary, benchmark limits, and remaining external validation
+  blockers.
+- GitHub Discussion #20 tracks community A2A interoperability and production
+  validation work as a validation lane, not a bug report.
 
 ### CI
 - CI now installs the auto-release hooks in a scratch repo and runs `synapse git-hook
