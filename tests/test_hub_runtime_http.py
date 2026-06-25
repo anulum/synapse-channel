@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import signal
-from typing import Any, cast
+from collections.abc import Callable
 
 import pytest
 from websockets.asyncio.client import connect
@@ -109,25 +109,30 @@ async def test_takeover_cooldown_blocks_rapid_eviction() -> None:
 
 def test_install_signal_handlers_wires_both() -> None:
     hub = SynapseHub()
-    wired: list[int] = []
-
-    class FakeLoop:
-        def add_signal_handler(self, sig: int, callback: Any) -> None:
-            wired.append(sig)
-
-    hub._install_signal_handlers(cast(asyncio.AbstractEventLoop, FakeLoop()), asyncio.Event())
-    assert signal.SIGTERM in wired
-    assert signal.SIGINT in wired
+    loop = asyncio.new_event_loop()
+    stop = asyncio.Event()
+    try:
+        hub._install_signal_handlers(loop, stop)
+        assert loop.remove_signal_handler(signal.SIGTERM) is True
+        assert loop.remove_signal_handler(signal.SIGINT) is True
+    finally:
+        loop.close()
 
 
 def test_install_signal_handlers_suppresses_unsupported() -> None:
     hub = SynapseHub()
 
-    class FakeLoop:
-        def add_signal_handler(self, sig: int, callback: Any) -> None:
+    class UnsupportedSignalLoop(asyncio.SelectorEventLoop):
+        def add_signal_handler(
+            self, sig: int, callback: Callable[..., object], *args: object
+        ) -> None:
             raise NotImplementedError
 
-    hub._install_signal_handlers(cast(asyncio.AbstractEventLoop, FakeLoop()), asyncio.Event())
+    loop = UnsupportedSignalLoop()
+    try:
+        hub._install_signal_handlers(loop, asyncio.Event())
+    finally:
+        loop.close()
 
 
 # --- HTTP /metrics and /health endpoints -------------------------------------
