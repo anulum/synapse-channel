@@ -1,40 +1,80 @@
 {
+  "expiry": [
+    {
+      "active_claims": 10,
+      "mass_expiry_microseconds": 8.55,
+      "steady_heartbeat_microseconds": 0.338
+    },
+    {
+      "active_claims": 100,
+      "mass_expiry_microseconds": 41.12,
+      "steady_heartbeat_microseconds": 0.276
+    },
+    {
+      "active_claims": 1000,
+      "mass_expiry_microseconds": 484.12,
+      "steady_heartbeat_microseconds": 0.284
+    },
+    {
+      "active_claims": 10000,
+      "mass_expiry_microseconds": 7006.81,
+      "steady_heartbeat_microseconds": 0.424
+    },
+    {
+      "active_claims": 100000,
+      "mass_expiry_microseconds": 104643.27,
+      "steady_heartbeat_microseconds": 0.338
+    }
+  ],
   "host": {
     "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
     "platform": "Linux-6.17.0-35-generic-x86_64-with-glibc2.39",
     "python": "3.12.3"
   },
   "iterations_per_count": 200,
-  "rows": [
+  "replay": [
+    {
+      "events": 100,
+      "events_per_sec": 117078,
+      "replay_milliseconds": 0.854
+    },
+    {
+      "events": 1000,
+      "events_per_sec": 189041,
+      "replay_milliseconds": 5.29
+    },
+    {
+      "events": 10000,
+      "events_per_sec": 101091,
+      "replay_milliseconds": 98.92
+    },
+    {
+      "events": 100000,
+      "events_per_sec": 88585,
+      "replay_milliseconds": 1128.851
+    }
+  ],
+  "scan": [
     {
       "active_claims": 10,
-      "comparisons_per_scan": 10,
-      "scan_microseconds": 0.62,
-      "sustained_mutations_per_sec": 1622625
+      "claim_scan_microseconds": 22.477
     },
     {
       "active_claims": 100,
-      "comparisons_per_scan": 100,
-      "scan_microseconds": 2.47,
-      "sustained_mutations_per_sec": 404296
+      "claim_scan_microseconds": 133.222
     },
     {
       "active_claims": 1000,
-      "comparisons_per_scan": 1000,
-      "scan_microseconds": 21.3,
-      "sustained_mutations_per_sec": 46940
+      "claim_scan_microseconds": 1366.977
     },
     {
       "active_claims": 10000,
-      "comparisons_per_scan": 10000,
-      "scan_microseconds": 254.05,
-      "sustained_mutations_per_sec": 3936
+      "claim_scan_microseconds": 13868.055
     },
     {
       "active_claims": 100000,
-      "comparisons_per_scan": 100000,
-      "scan_microseconds": 3105.28,
-      "sustained_mutations_per_sec": 322
+      "claim_scan_microseconds": 141743.784
     }
-  ]
+  ],
+  "scan_iterations_per_count": 25
 }

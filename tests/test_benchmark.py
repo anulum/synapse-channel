@@ -194,24 +194,43 @@ def test_scalability_mass_expiry_drains_every_claim() -> None:
     assert scale_bench.measure_mass_expiry_seconds(50) >= 0.0
 
 
-def test_scalability_profile_reports_expiry_and_replay() -> None:
-    rows = scale_bench.profile(claim_counts=(10, 100), replay_counts=(10,), iterations=3)
+def test_scalability_state_with_scoped_claims_builds_distinct_paths() -> None:
+    state = scale_bench.state_with_scoped_claims(4)
+    assert len(state.claims) == 4
+    assert state.claims["T0"].paths == ("d0/file",)
+    assert len(state._lease_heap) == 4
+
+
+def test_scalability_measure_claim_scan_is_nonnegative() -> None:
+    assert scale_bench.measure_claim_scan_seconds(20, iterations=3) >= 0.0
+
+
+def test_scalability_profile_reports_expiry_replay_and_scan() -> None:
+    rows = scale_bench.profile(
+        claim_counts=(10, 100), replay_counts=(10,), iterations=3, scan_iterations=3
+    )
     assert [row["active_claims"] for row in rows["expiry"]] == [10, 100]
     assert all(row["steady_heartbeat_microseconds"] >= 0 for row in rows["expiry"])
     assert all(row["mass_expiry_microseconds"] >= 0 for row in rows["expiry"])
     assert rows["replay"][0]["events"] == 10
     assert rows["replay"][0]["replay_milliseconds"] >= 0
     assert rows["replay"][0]["events_per_sec"] >= 0
+    assert [row["active_claims"] for row in rows["scan"]] == [10, 100]
+    assert all(row["claim_scan_microseconds"] >= 0 for row in rows["scan"])
 
 
 def test_scalability_run_writes_results(tmp_path: Path) -> None:
     results = tmp_path / "scale.json"
-    summary = scale_bench.run(results, iterations=3, claim_counts=(10, 100), replay_counts=(10,))
+    summary = scale_bench.run(
+        results, iterations=3, claim_counts=(10, 100), replay_counts=(10,), scan_iterations=3
+    )
     assert set(summary["host"]) == {"cpu", "python", "platform"}
     assert len(summary["expiry"]) == 2
+    assert len(summary["scan"]) == 2
     written = json.loads(results.read_text(encoding="utf-8"))
     assert len(written["expiry"]) == 2
     assert len(written["replay"]) == 1
+    assert len(written["scan"]) == 2
 
 
 def test_scalability_run_without_results_skips_write(tmp_path: Path) -> None:
@@ -235,6 +254,8 @@ def test_scalability_main_runs_and_writes(
             str(results),
             "--iterations",
             "3",
+            "--scan-iterations",
+            "3",
             "--claim-counts",
             "10,100",
             "--replay-counts",
@@ -242,5 +263,7 @@ def test_scalability_main_runs_and_writes(
         ]
     )
     assert rc == 0
-    assert "event replay" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "event replay" in out
+    assert "scope-conflict scan" in out
     assert results.exists()
