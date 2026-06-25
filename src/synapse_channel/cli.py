@@ -33,14 +33,17 @@ The ``synapse`` command exposes these subcommands:
 * ``release`` — manually drop a claim you own (e.g. an ``--auto-release-on manual`` claim);
 * ``task`` — declare and update the shared task plan from the command line;
 * ``mcp`` — run a Model Context Protocol server over stdio, bridged to the hub;
-* ``a2a-card`` — emit an Agent2Agent Agent Card projected from the live manifest.
+* ``a2a-card`` — emit an Agent2Agent Agent Card projected from the live manifest;
+* ``init`` — print or install local user services for hub, presence, and wake arming;
+* ``worker-session`` — launch a provider command with identity env and a wake sidecar.
 
 This module is the thin entry point: it builds the top-level parser
 (:func:`build_parser`), resolves the shared-secret token, and dispatches
 (:func:`main`). Every subcommand group — process (hub/worker/team/supervisor),
 messaging (send/wait/arm/listen), read-only query (who/state/board/manifest/health),
-task-plan write (task declare/update/progress), git, locking, mcp, and file/event
-— lives in its own ``cli_*`` module and registers its subparsers through
+service setup / worker-session, task-plan write (task declare/update/progress),
+git, locking, mcp, and file/event — lives in its own ``cli_*`` module and
+registers its subparsers through
 :func:`build_parser`.
 """
 
@@ -55,6 +58,7 @@ from typing import Any
 
 from synapse_channel import __version__
 from synapse_channel.cli_a2a import add_parsers as add_a2a_parsers
+from synapse_channel.cli_arm import add_parser as add_arm_parser
 from synapse_channel.cli_doctor import add_parsers as add_doctor_parsers
 from synapse_channel.cli_git import add_parsers as add_git_parsers
 from synapse_channel.cli_locking import add_parsers as add_locking_parsers
@@ -62,6 +66,7 @@ from synapse_channel.cli_mcp import add_parsers as add_mcp_parsers
 from synapse_channel.cli_messaging import add_parsers as add_messaging_parsers
 from synapse_channel.cli_processes import add_parsers as add_process_parsers
 from synapse_channel.cli_queries import add_parsers as add_query_parsers
+from synapse_channel.cli_services import add_parsers as add_service_parsers
 from synapse_channel.cli_streams import add_parsers as add_stream_parsers
 from synapse_channel.cli_tasks import add_parsers as add_task_parsers
 from synapse_channel.update_check import update_notice
@@ -107,7 +112,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_messaging_parsers(sub)
 
+    add_arm_parser(sub)
+
     add_query_parsers(sub)
+
+    add_service_parsers(sub)
 
     add_mcp_parsers(sub)
 

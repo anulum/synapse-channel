@@ -4,18 +4,16 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — human/script messaging CLI commands (send, wait, arm, listen)
+# SYNAPSE_CHANNEL — human/script messaging CLI commands (send, wait, listen)
 """The over-the-wire messaging ``synapse`` subcommands.
 
 These commands connect to a live hub and exchange chat with it, as opposed
 to the hub-lifecycle commands or the read-only query views: ``send`` connects,
 delivers one message, optionally prints replies for a window, and exits;
 ``wait`` blocks until one message addressed to you arrives, prints it, and exits
-— a one-shot wake primitive for scripts; ``arm`` keeps re-arming that wake path
-until interrupted so an agent does not go dark after its first message;
-``listen`` streams chat and presence until interrupted. They are grouped here,
-apart from the hub and query flows, so each module stays one responsibility;
-:func:`add_parsers` registers their subparsers on the top-level CLI.
+— a one-shot wake primitive for scripts; ``listen`` streams chat and presence
+until interrupted. Persistent arming lives in :mod:`synapse_channel.cli_arm` so
+this module stays focused on direct messaging flows.
 
 The send/wait/listen helpers take an injectable agent factory so the dispatch and
 the client flows are unit-testable without a live hub.
@@ -230,88 +228,6 @@ def _cmd_wait(args: argparse.Namespace) -> int:
     )
 
 
-async def _arm(
-    *,
-    uri: str,
-    name: str,
-    for_name: str,
-    directed_only: bool = True,
-    wake_jitter: float = 0.0,
-    reconnect_delay: float = 1.0,
-    max_wakes: int | None = None,
-    agent_factory: AgentFactory = SynapseAgent,
-    token: str | None = None,
-) -> int:
-    """Keep a directed waiter armed until interrupted.
-
-    Parameters
-    ----------
-    uri, name : str
-        Hub URI and distinct receiver connection name.
-    for_name : str
-        Identity whose messages should wake the terminal.
-    directed_only : bool, optional
-        When ``True``, routine broadcasts do not wake this listener.
-    wake_jitter : float, optional
-        Random delay range forwarded to the one-shot waiter for broadcast wakes.
-    reconnect_delay : float, optional
-        Seconds to wait before reconnecting after a timeout, dropped connection,
-        or temporarily unreachable hub.
-    max_wakes : int or None, optional
-        Optional bounded mode used by smoke tests and scripts. ``None`` means
-        run until interrupted.
-    agent_factory : AgentFactory, optional
-        Factory for the client agent; injectable for tests.
-    token : str or None, optional
-        Shared-secret token for a secured hub.
-
-    Returns
-    -------
-    int
-        ``0`` after an intentional bounded stop or keyboard interrupt.
-    """
-    wakes_seen = 0
-    while max_wakes is None or wakes_seen < max_wakes:
-        code = await _wait(
-            uri=uri,
-            name=name,
-            for_name=for_name,
-            timeout=0.0,
-            directed_only=directed_only,
-            wake_jitter=wake_jitter,
-            agent_factory=agent_factory,
-            token=token,
-        )
-        if code == 0:
-            wakes_seen += 1
-            continue
-        if reconnect_delay > 0:
-            await asyncio.sleep(reconnect_delay)
-    return 0
-
-
-def _cmd_arm(args: argparse.Namespace) -> int:
-    """Dispatch the persistent ``arm`` subcommand."""
-    for_name = args.for_name or args.name
-    connect_name = args.name if args.name != for_name else f"{args.name}-rx"
-    try:
-        return asyncio.run(
-            _arm(
-                uri=args.uri,
-                name=connect_name,
-                for_name=for_name,
-                directed_only=args.directed_only,
-                wake_jitter=args.wake_jitter,
-                reconnect_delay=args.reconnect_delay,
-                max_wakes=args.max_wakes,
-                token=args.token,
-            )
-        )
-    except KeyboardInterrupt:
-        print(f"\n[{connect_name}] stopped arming for {for_name}.")
-        return 0
-
-
 async def _listen(
     *,
     uri: str,
@@ -365,7 +281,7 @@ def _cmd_listen(args: argparse.Namespace) -> int:
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register the ``send``, ``wait``, ``arm``, and ``listen`` subparsers."""
+    """Register the ``send``, ``wait``, and ``listen`` subparsers."""
     send = subparsers.add_parser("send", help="Send one message and optionally await replies.")
     send.add_argument("--uri", default=DEFAULT_HUB_URI)
     send.add_argument("--name", default="USER")
@@ -408,51 +324,6 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     wait.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     wait.set_defaults(func=_cmd_wait)
-
-    arm = subparsers.add_parser(
-        "arm",
-        help="Keep a waiter armed and re-arm automatically after each wake or reconnect.",
-    )
-    arm.add_argument("--uri", default=DEFAULT_HUB_URI)
-    arm.add_argument("--name", default="USER")
-    arm.add_argument(
-        "--for",
-        dest="for_name",
-        default=None,
-        help="Whose messages to wake on (one, a group, or broadcast); defaults to --name.",
-    )
-    arm.add_argument(
-        "--directed-only",
-        action="store_true",
-        default=True,
-        help="Wake only on messages that name you (or a group you are in), not broadcasts.",
-    )
-    arm.add_argument(
-        "--broadcasts",
-        dest="directed_only",
-        action="store_false",
-        help="Also wake on routine broadcasts to all.",
-    )
-    arm.add_argument(
-        "--wake-jitter",
-        type=float,
-        default=8.0,
-        help="Random seconds (0..N) to delay re-arming after a broadcast wake; 0 disables.",
-    )
-    arm.add_argument(
-        "--reconnect-delay",
-        type=float,
-        default=1.0,
-        help="Seconds to wait before reconnecting after a dropped or temporarily unreachable hub.",
-    )
-    arm.add_argument(
-        "--max-wakes",
-        type=int,
-        default=None,
-        help="Stop after N wakes; primarily useful for smoke tests and scripts.",
-    )
-    arm.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
-    arm.set_defaults(func=_cmd_arm)
 
     listen = subparsers.add_parser("listen", help="Stream channel messages until interrupted.")
     listen.add_argument("--uri", default=DEFAULT_HUB_URI)

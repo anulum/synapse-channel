@@ -103,6 +103,22 @@ def test_parser_git_init_has_token_file_companion() -> None:
     assert args.token_file == "/tmp/tok"
 
 
+def test_parser_git_init_service_flags() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "git-init",
+            "--install-user-services",
+            "--service-project",
+            "repo",
+            "--service-identity",
+            "repo/ux",
+        ]
+    )
+    assert args.install_user_services is True
+    assert args.service_project == "repo"
+    assert args.service_identity == "repo/ux"
+
+
 def test_cmd_git_init_dispatches(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -114,12 +130,51 @@ def test_cmd_git_init_dispatches(
 
     monkeypatch.setattr(cli_git, "init_repo", fake)
     ns = argparse.Namespace(
-        uri="ws://h", name="ME", base="trunk", token=None, token_file=None, synapse_bin=None
+        uri="ws://h",
+        name="ME",
+        base="trunk",
+        token=None,
+        token_file=None,
+        synapse_bin=None,
+        install_user_services=False,
+        start_user_services=False,
+        service_project="repo",
+        service_identity="repo/ux",
     )
     assert cli_git._cmd_git_init(ns) == 0
     out = capsys.readouterr().out
     assert "wrote .synapse/git-claims.md" in out
+    assert "service setup available" in out
     assert captured["base_branch"] == "trunk"
+
+
+def test_cmd_git_init_installs_services(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli_git, "init_repo", lambda **kwargs: ["wrote .synapse/git-claims.md"])
+    captured: dict[str, Any] = {}
+
+    def fake_install(**kwargs: Any) -> list[str]:
+        captured.update(kwargs)
+        return ["wrote synapse-arm@.service"]
+
+    monkeypatch.setattr(cli_git, "install_user_services", fake_install)
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="ME",
+        base="main",
+        token=None,
+        token_file=None,
+        synapse_bin="/bin/synapse",
+        install_user_services=True,
+        start_user_services=False,
+        service_project="repo",
+        service_identity="repo/ux",
+    )
+    assert cli_git._cmd_git_init(ns) == 0
+    assert "synapse-arm@.service" in capsys.readouterr().out
+    assert captured["project"] == "repo"
+    assert captured["identity"] == "repo/ux"
 
 
 def test_cmd_git_init_reports_git_error(
@@ -130,7 +185,16 @@ def test_cmd_git_init_reports_git_error(
 
     monkeypatch.setattr(cli_git, "init_repo", boom)
     ns = argparse.Namespace(
-        uri="ws://h", name="ME", base="main", token=None, token_file=None, synapse_bin=None
+        uri="ws://h",
+        name="ME",
+        base="main",
+        token=None,
+        token_file=None,
+        synapse_bin=None,
+        install_user_services=False,
+        start_user_services=False,
+        service_project=None,
+        service_identity=None,
     )
     assert cli_git._cmd_git_init(ns) == 1
     assert "not a git repository" in capsys.readouterr().err

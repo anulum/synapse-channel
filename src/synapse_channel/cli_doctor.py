@@ -36,6 +36,7 @@ from synapse_channel.client.diagnostics import (
     summarise,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.service_setup import install_user_services, service_suggestions
 
 
 async def _fetch_roster(
@@ -113,6 +114,41 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     )
     for line in lines:
         print(line)
+    if (
+        getattr(args, "fix", False)
+        or getattr(args, "install_user_services", False)
+        or getattr(args, "start_user_services", False)
+    ):
+        from synapse_channel.ergonomics import resolve_identity
+
+        identity = resolve_identity(
+            project=args.project,
+            agent_id=args.id,
+            cwd_basename=Path.cwd().name,
+            home_basename=Path(os.environ.get("HOME", str(Path.home()))).name,
+        )
+        service_identity = getattr(args, "identity", None) or identity.identity
+        if getattr(args, "install_user_services", False) or getattr(
+            args, "start_user_services", False
+        ):
+            fix_lines = install_user_services(
+                project=identity.project,
+                identity=service_identity,
+                synapse_bin=getattr(args, "synapse_bin", None),
+                start=getattr(args, "start_user_services", False),
+            )
+        else:
+            fix_lines = [
+                "[fix] exact local service setup commands:",
+                *service_suggestions(
+                    project=identity.project,
+                    identity=service_identity,
+                    synapse_bin=getattr(args, "synapse_bin", None),
+                ),
+                f"[fix] immediate foreground waker: syn arm --project {identity.project}",
+            ]
+        for line in fix_lines:
+            print(line)
     return code
 
 
@@ -134,4 +170,29 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "resolved identity); flags a <project>-<suffix> name that misses the project inbox.",
     )
     doctor.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    doctor.add_argument(
+        "--fix",
+        action="store_true",
+        help="Print exact commands to install/start local hub, presence, and wake services.",
+    )
+    doctor.add_argument(
+        "--install-user-services",
+        action="store_true",
+        help="Write systemd user units for hub, presence, and wake arming.",
+    )
+    doctor.add_argument(
+        "--start-user-services",
+        action="store_true",
+        help="Install units, daemon-reload, and enable/start hub, presence, and wake arming.",
+    )
+    doctor.add_argument(
+        "--identity",
+        default=None,
+        help="Worker identity to arm when fixing services; defaults to resolved identity.",
+    )
+    doctor.add_argument(
+        "--synapse-bin",
+        default=None,
+        help="Synapse executable path baked into generated units; defaults to PATH lookup.",
+    )
     doctor.set_defaults(func=_cmd_doctor)

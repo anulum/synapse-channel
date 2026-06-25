@@ -97,6 +97,15 @@ def test_parser_doctor_has_token_file_companion() -> None:
     assert args.token_file == "/tmp/tok"
 
 
+def test_parser_doctor_fix_flags() -> None:
+    args = cli.build_parser().parse_args(
+        ["doctor", "--fix", "--install-user-services", "--identity", "repo/ux"]
+    )
+    assert args.fix is True
+    assert args.install_user_services is True
+    assert args.identity == "repo/ux"
+
+
 # --- _diagnose logic ---------------------------------------------------------
 
 
@@ -182,9 +191,46 @@ def test_cmd_doctor_prints_lines_and_returns_code(
         return (1, ["[FAIL] hub: nope", "synapse doctor: FAILED"])
 
     monkeypatch.setattr(cli_doctor, "_diagnose", fake_diagnose)
-    ns = argparse.Namespace(uri="ws://h", project=None, id=None, token=None, send_name=None)
+    ns = argparse.Namespace(
+        uri="ws://h",
+        project=None,
+        id=None,
+        token=None,
+        send_name=None,
+        fix=False,
+        install_user_services=False,
+        start_user_services=False,
+        identity=None,
+        synapse_bin=None,
+    )
     assert cli_doctor._cmd_doctor(ns) == 1
     assert "synapse doctor: FAILED" in capsys.readouterr().out
+
+
+def test_cmd_doctor_fix_prints_service_commands(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def fake_diagnose(**_: Any) -> tuple[int, list[str]]:
+        return (0, ["synapse doctor: all clear"])
+
+    _set_project(monkeypatch, "repo")
+    monkeypatch.setattr(cli_doctor, "_diagnose", fake_diagnose)
+    ns = argparse.Namespace(
+        uri="ws://h",
+        project=None,
+        id=None,
+        token=None,
+        send_name=None,
+        fix=True,
+        install_user_services=False,
+        start_user_services=False,
+        identity="repo/ux",
+        synapse_bin="/bin/synapse",
+    )
+    assert cli_doctor._cmd_doctor(ns) == 0
+    out = capsys.readouterr().out
+    assert "synapse-arm@.service" in out
+    assert "syn arm --project repo" in out
 
 
 def test_main_routes_to_doctor(

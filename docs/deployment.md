@@ -19,16 +19,23 @@ on login, with no root.
 
 ```bash
 pipx install synapse-channel
-mkdir -p ~/.config/systemd/user ~/synapse
-cp deploy/synapse-hub.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now synapse-hub
+synapse init --project myproject --identity myproject/worker --start-user-services
 systemctl --user status synapse-hub
 ```
 
 The hub then listens on `ws://localhost:8876`, persists to `~/synapse/hub.db`, and
 mirrors the channel to `~/synapse/feed.ndjson`. To survive a full logout (no
 session open), enable lingering once: `loginctl enable-linger "$USER"`.
+
+If you prefer to inspect before installing, run:
+
+```bash
+synapse init --project myproject --identity myproject/worker
+```
+
+It prints exact `systemctl --user` commands. `synapse git-init` accepts the same
+`--install-user-services` and `--start-user-services` flags, so claim-aware git
+setup can also write/start the hub, presence, and wake-listener units.
 
 ## Provider-independent presence
 
@@ -38,11 +45,9 @@ limited, the project drops off the roster. Decouple *reachability* from the agen
 with a presence holder: a per-project systemd template that holds the hub
 connection and is restarted by systemd if it ever dies.
 
-```bash
-cp deploy/synapse-presence@.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now synapse-presence@myproject
-```
+`synapse init --start-user-services` installs this as `synapse-presence@...`.
+The checked-in `deploy/synapse-presence@.service` remains a copyable template for
+operators who manage units by hand.
 
 It registers as `myproject-presence`, costs nothing (it holds a socket — no model),
 and keeps the project visible in `synapse who` and addressable even while the agent
@@ -55,6 +60,19 @@ layers are complementary: the presence holder is always-on reachability; the
 > the feed durable, but it does **not** wake the agent — only an active `syn arm` or
 > `synapse arm` listener does. Keep the listener running for promptness; the presence
 > daemon is a safety net for reachability and durability, not a substitute for it.
+
+## Provider-neutral worker session
+
+Use `worker-session` when launching a turn-based coding agent from a terminal:
+
+```bash
+synapse worker-session --identity myproject/worker -- codex --sandbox danger-full-access
+```
+
+The launcher exports `SYN_PROJECT` and `SYN_IDENTITY`, starts a local `syn arm`
+sidecar, runs the provider command, and stops the sidecar when the provider
+command exits. The sidecar is a local socket listener; it does not spend model
+tokens while waiting.
 
 ## Container
 

@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — tests for the messaging CLI commands (send/wait/arm/listen)
+# SYNAPSE_CHANNEL — tests for the messaging CLI commands (send/wait/listen)
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from synapse_channel import cli, cli_messaging
+from synapse_channel import cli, cli_arm, cli_messaging
 
 
 class FakeAgent:
@@ -140,7 +140,7 @@ def test_parser_arm_is_persistent_directed_waiter() -> None:
     assert args.name == "B"
     assert args.for_name == "B"
     assert args.directed_only is True
-    assert args.func is cli_messaging._cmd_arm
+    assert args.func is cli_arm._cmd_arm
 
 
 def test_parser_arm_broadcasts_opt_in() -> None:
@@ -572,7 +572,7 @@ async def test_arm_rearms_after_each_wake(capsys: pytest.CaptureFixture[str]) ->
         {"type": "chat", "sender": "A", "target": "B", "payload": "wake"}
     ]
     factory = _factory(holder, inbound=inbound)
-    code = await cli_messaging._arm(
+    code = await cli_arm._arm(
         uri="ws://h",
         name="B-rx",
         for_name="B",
@@ -592,8 +592,8 @@ def test_cmd_arm_derives_rx_name_for_bare_identity(monkeypatch: pytest.MonkeyPat
         captured.update(kwargs)
         return "coro"
 
-    monkeypatch.setattr(cli_messaging, "_arm", fake_arm)
-    monkeypatch.setattr("synapse_channel.cli_messaging.asyncio.run", lambda coro: 0)
+    monkeypatch.setattr(cli_arm, "_arm", fake_arm)
+    monkeypatch.setattr("synapse_channel.cli_arm.asyncio.run", lambda coro: 0)
     ns = argparse.Namespace(
         uri="ws://h",
         name="B",
@@ -604,7 +604,7 @@ def test_cmd_arm_derives_rx_name_for_bare_identity(monkeypatch: pytest.MonkeyPat
         max_wakes=None,
         token=None,
     )
-    assert cli_messaging._cmd_arm(ns) == 0
+    assert cli_arm._cmd_arm(ns) == 0
     assert captured["name"] == "B-rx"
     assert captured["for_name"] == "B"
 
@@ -616,8 +616,8 @@ def test_cmd_arm_keeps_distinct_connect_name(monkeypatch: pytest.MonkeyPatch) ->
         captured.update(kwargs)
         return "coro"
 
-    monkeypatch.setattr(cli_messaging, "_arm", fake_arm)
-    monkeypatch.setattr("synapse_channel.cli_messaging.asyncio.run", lambda coro: 0)
+    monkeypatch.setattr(cli_arm, "_arm", fake_arm)
+    monkeypatch.setattr("synapse_channel.cli_arm.asyncio.run", lambda coro: 0)
     ns = argparse.Namespace(
         uri="ws://h",
         name="B-rx",
@@ -628,6 +628,6 @@ def test_cmd_arm_keeps_distinct_connect_name(monkeypatch: pytest.MonkeyPatch) ->
         max_wakes=None,
         token=None,
     )
-    assert cli_messaging._cmd_arm(ns) == 0
+    assert cli_arm._cmd_arm(ns) == 0
     assert captured["name"] == "B-rx"
     assert captured["for_name"] == "B"
