@@ -182,26 +182,26 @@ def read_jsonl_since(path: str | Path, offset: int) -> tuple[list[dict[str, Any]
         the updated byte cursor.
     """
     src = Path(path)
-    if not src.exists():
-        return [], offset
-
     try:
-        size = src.stat().st_size
+        with src.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+
+            start = max(int(offset), 0)
+            # A cursor past EOF means the file was truncated/rotated; restart so relay
+            # consumers do not get stuck forever beyond the new end.
+            if start > size:
+                start = 0
+
+            handle.seek(start)
+            chunk = handle.read()
+            end_offset = handle.tell()
+    except FileNotFoundError:
+        return [], offset
     except OSError:
         return [], offset
 
-    start = max(int(offset), 0)
-    # A cursor past EOF means the file was truncated/rotated; restart so relay
-    # consumers do not get stuck forever beyond the new end.
-    if start > size:
-        start = 0
-
     rows: list[dict[str, Any]] = []
-    with src.open("rb") as handle:
-        handle.seek(start)
-        chunk = handle.read()
-        end_offset = handle.tell()
-
     if not chunk:
         return [], end_offset
 

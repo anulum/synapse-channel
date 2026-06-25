@@ -8,7 +8,9 @@
 
 from __future__ import annotations
 
-import os
+import errno
+import resource
+import signal
 import sys
 from pathlib import Path
 
@@ -56,42 +58,43 @@ def test_trim_leaves_no_temporary_files(tmp_path: Path) -> None:
     assert leftovers == []
 
 
-def test_trim_renames_a_temp_file_onto_the_log(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_trim_replaces_the_log_with_only_the_kept_tail(tmp_path: Path) -> None:
     log = tmp_path / "main.ndjson"
     for i in range(4):
         append_jsonl(log, {"i": i})
-    seen: list[tuple[str, str]] = []
-    real_replace = os.replace
+    before_size = log.stat().st_size
 
-    def spy(src: object, dst: object) -> None:
-        seen.append((str(src), str(dst)))
-        real_replace(src, dst)  # type: ignore[arg-type]
-
-    monkeypatch.setattr("synapse_channel.relay.os.replace", spy)
     assert trim_jsonl_tail(log, 2) == 2
-    # A single atomic rename moves the temp file onto the log — never an in-place write.
-    assert len(seen) == 1
-    assert seen[0][0] != str(log)  # source is the temp file, not the log itself
-    assert seen[0][1] == str(log)
+    assert log.stat().st_size < before_size
+    rows, offset = read_jsonl_since(log, 0)
+    assert [row["i"] for row in rows] == [2, 3]
+    assert offset == log.stat().st_size
+    leftovers = [p.name for p in tmp_path.iterdir() if p.name != "main.ndjson"]
+    assert leftovers == []
 
 
-def test_trim_keeps_the_original_intact_when_the_rename_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.mark.skipif(
+    not hasattr(resource, "RLIMIT_FSIZE"),
+    reason="POSIX file size limits are required",
+)
+def test_trim_preserves_log_when_os_write_limit_aborts_temp_file(tmp_path: Path) -> None:
     log = tmp_path / "main.ndjson"
     for i in range(4):
         append_jsonl(log, {"i": i})
     before = log.read_text(encoding="utf-8")
+    old_limit = resource.getrlimit(resource.RLIMIT_FSIZE)
+    old_handler = signal.getsignal(signal.SIGXFSZ)
 
-    def boom(src: object, dst: object) -> None:
-        raise OSError("simulated crash before the rename completes")
+    try:
+        signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+        resource.setrlimit(resource.RLIMIT_FSIZE, (0, old_limit[1]))
+        with pytest.raises(OSError) as exc_info:
+            trim_jsonl_tail(log, 2)
+    finally:
+        resource.setrlimit(resource.RLIMIT_FSIZE, old_limit)
+        signal.signal(signal.SIGXFSZ, old_handler)
 
-    monkeypatch.setattr("synapse_channel.relay.os.replace", boom)
-    with pytest.raises(OSError, match="simulated crash"):
-        trim_jsonl_tail(log, 2)
-    # A failed trim leaves the log byte-for-byte intact and cleans up its temp file.
+    assert exc_info.value.errno == errno.EFBIG
     assert log.read_text(encoding="utf-8") == before
     leftovers = [p.name for p in tmp_path.iterdir() if p.name != "main.ndjson"]
     assert leftovers == []

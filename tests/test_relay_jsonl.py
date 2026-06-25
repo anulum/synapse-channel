@@ -12,8 +12,6 @@ import os
 import stat
 from pathlib import Path
 
-import pytest
-
 from synapse_channel.relay import (
     append_jsonl,
     read_jsonl_since,
@@ -114,23 +112,8 @@ def test_read_recovers_from_truncation(tmp_path: Path) -> None:
     assert off2 == log.stat().st_size
 
 
-def test_read_returns_offset_on_stat_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    log = tmp_path / "events.ndjson"
-    append_jsonl(log, {"i": 1})
-
-    real_stat = Path.stat
-
-    def boom(self: Path, *args: object, **kwargs: object) -> object:
-        if self == log:
-            raise OSError("stat failed")
-        return real_stat(self)
-
-    # Force the existence check to pass so the guarded stat() call is reached.
-    monkeypatch.setattr(Path, "exists", lambda self: True)
-    monkeypatch.setattr(Path, "stat", boom)
-    rows, off = read_jsonl_since(log, 5)
+def test_read_returns_offset_when_path_cannot_be_opened(tmp_path: Path) -> None:
+    rows, off = read_jsonl_since(tmp_path, 5)
     assert rows == []
     assert off == 5
 
