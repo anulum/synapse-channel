@@ -320,6 +320,7 @@ async def _board(
     name: str,
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
+    ready_timeout: float = 5.0,
 ) -> int:
     """Connect, request the shared blackboard, print it, and exit.
 
@@ -329,6 +330,11 @@ async def _board(
         Hub URI and the requester's display name.
     agent_factory : AgentFactory, optional
         Factory for the client agent; injectable for testing.
+    token : str or None, optional
+        Shared-secret token for a secured hub.
+    ready_timeout : float, optional
+        Seconds to wait for the welcome handshake before treating the hub as
+        unreachable. Defaults to ``5.0``.
 
     Returns
     -------
@@ -344,6 +350,7 @@ async def _board(
         transform=lambda data: data.get("board", {}),
         request=lambda agent: agent.request_board(),
         render=_print_board,
+        ready_timeout=ready_timeout,
     )
 
 

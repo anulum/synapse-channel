@@ -9,12 +9,32 @@
 from __future__ import annotations
 
 import argparse
-from typing import Any
 
 import pytest
 
-from cli_queries_helpers import FakeAgent, _factory
+from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli_queries
+from synapse_channel.core.auth import TokenAuthenticator
+from synapse_channel.core.hub import SynapseHub
+
+
+async def _post_board_task(uri: str, name: str, *, token: str | None = None) -> AgentHandle:
+    handle = await connect_agent(name, uri, token=token)
+    await handle.agent.post_task("A", title="Alpha")
+    await handle.recorder.wait_for(
+        lambda message: (
+            message.get("type") == "ledger_task_posted"
+            and message.get("task", {}).get("task_id") == "A"
+        )
+    )
+    await handle.agent.post_progress("A", "go", kind="note")
+    await handle.recorder.wait_for(
+        lambda message: (
+            message.get("type") == "ledger_progress_posted"
+            and message.get("note", {}).get("task_id") == "A"
+        )
+    )
+    return handle
 
 
 def test_print_board_renders_tasks_ready_and_progress(
@@ -54,45 +74,41 @@ def test_print_board_progress_note_without_task(
 
 
 async def test_board_prints_snapshot(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    snapshot: dict[str, Any] = {
-        "type": "board_snapshot",
-        "board": {
-            "tasks": [{"status": "open", "task_id": "A", "title": "Alpha", "depends_on": []}],
-            "ready": ["A"],
-            "progress": [],
-        },
-    }
-    # A non-board message first exercises the snapshot filter's negative path.
-    noise: dict[str, Any] = {"type": "chat", "sender": "X", "payload": "hi"}
-    factory = _factory(holder, inbound=[noise, snapshot])
-    code = await cli_queries._board(uri="ws://h", name="USER", agent_factory=factory)
+    async with running_hub(SynapseHub()) as (_, uri):
+        poster = await _post_board_task(uri, "FAST")
+        try:
+            code = await cli_queries._board(uri=uri, name="USER")
+        finally:
+            await close_agents(poster)
+
     assert code == 0
-    assert "[open] A — Alpha" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "[open] A — Alpha" in out
+    assert "FAST [note] A: go" in out
 
 
 async def test_board_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    factory = _factory(holder, ready=False)
-    code = await cli_queries._board(uri="ws://h", name="USER", agent_factory=factory)
+    code = await cli_queries._board(
+        uri=f"ws://127.0.0.1:{_free_port()}", name="USER", ready_timeout=0.1
+    )
     assert code == 1
     assert "Could not reach hub" in capsys.readouterr().out
 
 
-async def test_board_returns_quietly_when_no_snapshot_arrives(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    async def no_sleep(_seconds: float) -> None:
-        return None
-
-    monkeypatch.setattr("synapse_channel.cli_queries.asyncio.sleep", no_sleep)
-    holder: list[FakeAgent] = []
-    factory = _factory(
-        holder, inbound=[{"type": "chat", "sender": "X", "payload": "noise"}], idle=False
-    )
-    code = await cli_queries._board(uri="ws://h", name="USER", agent_factory=factory)
+async def test_board_query_quiet_when_no_matching_snapshot() -> None:
+    rendered: list[str] = []
+    async with running_hub(SynapseHub()) as (_, uri):
+        code = await cli_queries._query_hub(
+            uri=uri,
+            name="USER",
+            token=None,
+            response_type="not_a_real_snapshot_type",
+            request=lambda agent: agent.request_board(),
+            render=lambda value: rendered.append(str(value)),
+            attempts=1,
+        )
     assert code == 0
-    assert "Tasks" not in capsys.readouterr().out
+    assert rendered == []
 
 
 def test_cmd_board_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -102,11 +118,11 @@ def test_cmd_board_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def test_board_threads_token_to_agent() -> None:
-    holder: list[FakeAgent] = []
-    snapshot: dict[str, Any] = {
-        "type": "board_snapshot",
-        "board": {"tasks": [], "ready": [], "progress": []},
-    }
-    factory = _factory(holder, inbound=[snapshot])
-    await cli_queries._board(uri="ws://h", name="U", agent_factory=factory, token="s3cret")
-    assert holder[0].token == "s3cret"
+    hub = SynapseHub(authenticator=TokenAuthenticator(["s3cret"]))
+    async with running_hub(hub) as (_, uri):
+        poster = await _post_board_task(uri, "FAST", token="s3cret")
+        try:
+            code = await cli_queries._board(uri=uri, name="U", token="s3cret")
+        finally:
+            await close_agents(poster)
+    assert code == 0
