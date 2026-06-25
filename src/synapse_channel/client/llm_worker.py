@@ -107,6 +107,8 @@ class SynapseLLMWorker:
         ``"all"`` to answer the room or ``"sender"`` to answer privately.
     min_reply_interval : float, optional
         Minimum seconds between replies (floored at 0). Defaults to ``0.7``.
+    ready_timeout : float, optional
+        Seconds to wait for the hub handshake in :meth:`run`. Defaults to ``5.0``.
     token : str or None, optional
         Shared-secret token presented to a hub that requires authentication;
         ``None`` for an open hub.
@@ -130,6 +132,7 @@ class SynapseLLMWorker:
         max_context: int = 8,
         reply_target_mode: str = "all",
         min_reply_interval: float = 0.7,
+        ready_timeout: float = 5.0,
         token: str | None = None,
         task_classes: tuple[str, ...] | list[str] = ("chat",),
         heavy_model: str = "",
@@ -143,6 +146,7 @@ class SynapseLLMWorker:
         self.api_key_env = api_key_env
         self.reply_target_mode = reply_target_mode
         self.min_reply_interval = max(float(min_reply_interval), 0.0)
+        self.ready_timeout = max(float(ready_timeout), 0.1)
         self.task_classes = tuple(task_classes)
         self.context: deque[tuple[str, str]] = deque(maxlen=max(max_context, 2))
         self.inbox: asyncio.Queue[dict[str, str]] = asyncio.Queue()
@@ -312,7 +316,7 @@ class SynapseLLMWorker:
         the other is cancelled and any terminal error is reported.
         """
         conn_task = asyncio.create_task(self.agent.connect())
-        ready = await self.agent.wait_until_ready(timeout=5.0)
+        ready = await self.agent.wait_until_ready(timeout=self.ready_timeout)
         if not ready:
             print(f"[{self.name}] Warning: handshake timeout.")
         else:
