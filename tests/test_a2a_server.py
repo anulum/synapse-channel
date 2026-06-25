@@ -132,6 +132,19 @@ def test_task_store_persists_tasks_and_push_configs(tmp_path: Path) -> None:
     assert second_store.get_push_config("task-a", "cfg-a") is not None
 
 
+def test_task_store_reports_corrupt_state_file(tmp_path: Path) -> None:
+    state_file = tmp_path / "a2a-state.json"
+    state_file.write_text("{not valid json", encoding="utf-8")
+
+    try:
+        A2ATaskStore(storage_path=state_file)
+    except ValueError as exc:
+        assert "Invalid A2A state file" in str(exc)
+        assert str(state_file) in str(exc)
+    else:
+        raise AssertionError("corrupt A2A state file was accepted")
+
+
 def test_well_known_agent_card_endpoint_returns_card() -> None:
     status, body = HandlerHarness("GET", "/.well-known/agent-card.json").run()
 
@@ -761,6 +774,25 @@ def test_push_notification_config_rejects_non_http_webhook_url() -> None:
         assert str(exc) == "pushNotificationConfig.webhookUrl must use http or https"
     else:
         raise AssertionError("non-HTTP webhook URL was accepted")
+
+
+def test_push_notification_config_rejects_missing_webhook_host() -> None:
+    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}],
+        },
+        target="WORKER",
+    )
+
+    try:
+        bridge.create_push_notification_config(task["id"], {"webhookUrl": "https:///hook"})
+    except ValueError as exc:
+        assert str(exc) == "pushNotificationConfig.webhookUrl must include a host"
+    else:
+        raise AssertionError("hostless webhook URL was accepted")
 
 
 def test_timeout_marks_open_task_failed() -> None:
