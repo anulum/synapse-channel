@@ -52,6 +52,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel import __version__
+from synapse_channel.cli_doctor import add_parsers as add_doctor_parsers
 from synapse_channel.cli_git import add_parsers as add_git_parsers
 from synapse_channel.cli_locking import add_parsers as add_locking_parsers
 from synapse_channel.cli_mcp import add_parsers as add_mcp_parsers
@@ -114,6 +115,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_stream_parsers(sub)
 
     add_task_parsers(sub)
+
+    add_doctor_parsers(sub)
 
     # Give every command that takes --token a --token-file companion, so the secret
     # can come from a file instead of argv (which is visible to anyone running `ps`).
