@@ -4,100 +4,107 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — tests for the routing hub using fake server sockets
+# SYNAPSE_CHANNEL - end-to-end tests for scoped hub claims
 
 from __future__ import annotations
 
-from hub_helpers import FakeServerWS, _hub, _msg
-from synapse_channel.core.hub import (
-    SynapseHub,
-)
+from hub_e2e_helpers import close_agents, connect_agent, running_hub
+from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.state import GitContext
 
-# --- scoped claims + epoch ---------------------------------------------------
+
+async def test_claim_broadcasts_scope_and_epoch_end_to_end() -> None:
+    async with running_hub() as (_, uri):
+        alpha = await connect_agent("A", uri)
+        try:
+            await alpha.agent.claim("T1", worktree="wt", paths=["src"])
+            granted = await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            assert granted["worktree"] == "wt"
+            assert granted["paths"] == ["src"]
+            assert granted["epoch"] == 1
+        finally:
+            await close_agents(alpha)
 
 
-async def test_claim_broadcasts_scope_and_epoch() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(
-        _msg(sender="A", type="claim", task_id="T1", worktree="wt", paths=["src"]), ws
-    )
-    granted = [m for m in ws.decoded() if m.get("type") == "claim_granted"][-1]
-    assert granted["worktree"] == "wt"
-    assert granted["paths"] == ["src"]
-    assert granted["epoch"] == 1
+async def test_claim_carries_git_context_end_to_end() -> None:
+    async with running_hub() as (hub, uri):
+        alpha = await connect_agent("A", uri)
+        try:
+            git = {"branch": "feature/x", "base": "main", "auto_release_on": "merge"}
+            await alpha.agent.claim("T1", git=git)
+            granted = await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            assert granted["git"] == git
+            assert hub.state.claims["T1"].git == GitContext(
+                branch="feature/x", base="main", auto_release_on="merge"
+            )
+        finally:
+            await close_agents(alpha)
 
 
-async def test_claim_carries_git_context() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    git = {"branch": "feature/x", "base": "main", "auto_release_on": "merge"}
-    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", git=git), ws)
-    granted = [m for m in ws.decoded() if m.get("type") == "claim_granted"][-1]
-    assert granted["git"] == git
-    assert hub.state.claims["T1"].git == GitContext(
-        branch="feature/x", base="main", auto_release_on="merge"
-    )
+async def test_claim_without_git_leaves_it_unset_end_to_end() -> None:
+    async with running_hub() as (hub, uri):
+        alpha = await connect_agent("A", uri)
+        try:
+            await alpha.agent.claim("T1")
+            granted = await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            assert granted["git"] is None
+            assert hub.state.claims["T1"].git is None
+        finally:
+            await close_agents(alpha)
 
 
-async def test_claim_without_git_leaves_it_unset() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
-    granted = [m for m in ws.decoded() if m.get("type") == "claim_granted"][-1]
-    assert granted["git"] is None
-    assert hub.state.claims["T1"].git is None
+async def test_scoped_claim_overlap_is_denied_end_to_end() -> None:
+    async with running_hub() as (_, uri):
+        alpha = await connect_agent("A", uri)
+        beta = await connect_agent("B", uri)
+        try:
+            await alpha.agent.claim("T1", paths=["src"])
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            await beta.agent.claim("T2", paths=["src/app.py"])
+            denied = await beta.recorder.wait_for(lambda m: m.get("type") == "claim_denied")
+            assert "file scope conflicts with 'T1'" in denied["payload"]
+        finally:
+            await close_agents(alpha, beta)
 
 
-async def test_scoped_claim_overlap_is_denied() -> None:
-    hub = _hub()
-    ws_a = FakeServerWS()
-    ws_b = FakeServerWS()
-    await hub.register(ws_a)
-    await hub.register(ws_b)
-    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1", paths=["src"]), ws_a)
-    await hub.handle_message(
-        _msg(sender="B", type="claim", task_id="T2", paths=["src/app.py"]), ws_b
-    )
-    assert ws_b.last()["type"] == "claim_denied"
-    assert "file scope conflicts with 'T1'" in ws_b.last()["payload"]
+async def test_release_with_matching_epoch_is_granted_end_to_end() -> None:
+    async with running_hub() as (hub, uri):
+        alpha = await connect_agent("A", uri)
+        try:
+            await alpha.agent.claim("T1")
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            epoch = hub.state.claims["T1"].epoch
+            await alpha.agent.release("T1", epoch=epoch)
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "release_granted")
+        finally:
+            await close_agents(alpha)
 
 
-async def test_release_with_matching_epoch_is_granted() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
-    epoch = hub.state.claims["T1"].epoch
-    await hub.handle_message(_msg(sender="A", type="release", task_id="T1", epoch=epoch), ws)
-    assert any(m.get("type") == "release_granted" for m in ws.decoded())
+async def test_release_with_stale_epoch_is_denied_end_to_end() -> None:
+    async with running_hub() as (hub, uri):
+        alpha = await connect_agent("A", uri)
+        try:
+            await alpha.agent.claim("T1")
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            await alpha.agent.release("T1", epoch=999)
+            denied = await alpha.recorder.wait_for(lambda m: m.get("type") == "release_denied")
+            assert "epoch is stale" in denied["payload"]
+            assert "T1" in hub.state.claims
+        finally:
+            await close_agents(alpha)
 
 
-async def test_release_with_stale_epoch_is_denied() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
-    await hub.handle_message(_msg(sender="A", type="release", task_id="T1", epoch=999), ws)
-    assert ws.last()["type"] == "release_denied"
-    assert "epoch is stale" in ws.last()["payload"]
-    assert "T1" in hub.state.claims
-
-
-async def test_task_update_with_stale_epoch_errors() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="A", type="claim", task_id="T1"), ws)
-    await hub.handle_message(
-        _msg(sender="A", type="task_update", task_id="T1", status="done", epoch=999), ws
-    )
-    assert ws.last()["type"] == "error"
-    assert "epoch is stale" in ws.last()["payload"]
+async def test_task_update_with_stale_epoch_errors_end_to_end() -> None:
+    async with running_hub() as (_, uri):
+        alpha = await connect_agent("A", uri)
+        try:
+            await alpha.agent.claim("T1")
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            await alpha.agent.update_task("T1", status="done", epoch=999)
+            error = await alpha.recorder.wait_for(lambda m: m.get("type") == "error")
+            assert "epoch is stale" in error["payload"]
+        finally:
+            await close_agents(alpha)
 
 
 def test_optional_int_parsing() -> None:
