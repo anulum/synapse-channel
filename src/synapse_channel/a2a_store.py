@@ -151,6 +151,11 @@ class A2ATaskStore:
             configs = self._push_configs.get(task_id)
             if not configs or config_id not in configs:
                 return False
+            previous = dict(configs)
             del configs[config_id]
-            self._save()
+            try:
+                self._save()
+            except Exception:
+                self._push_configs[task_id] = previous
+                raise
             return True
