@@ -9,23 +9,24 @@
 from __future__ import annotations
 
 import argparse
-from typing import Any
 
 import pytest
 
-from cli_queries_helpers import FakeAgent, _factory
+from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli_queries
+from synapse_channel.core.hub import SynapseHub
 
 
 async def test_who_lists_project_agents(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    snap: dict[str, Any] = {
-        "type": "who_snapshot",
-        "online_agents": ["quantum/agent-1", "quantum/agent-2", "other/agent-3"],
-    }
-    # The leading non-snapshot message exercises the collect() filter's reject path.
-    factory = _factory(holder, inbound=[{"type": "chat", "payload": "noise"}, snap])
-    code = await cli_queries._who(uri="ws://h", name="U", project="quantum", agent_factory=factory)
+    async with running_hub(SynapseHub()) as (_, uri):
+        quantum_one = await connect_agent("quantum/agent-1", uri)
+        quantum_two = await connect_agent("quantum/agent-2", uri)
+        other = await connect_agent("other/agent-3", uri)
+        try:
+            code = await cli_queries._who(uri=uri, name="U", project="quantum")
+        finally:
+            await close_agents(quantum_one, quantum_two, other)
+
     assert code == 0
     out = capsys.readouterr().out
     assert "Online in quantum (2)" in out
@@ -34,36 +35,37 @@ async def test_who_lists_project_agents(capsys: pytest.CaptureFixture[str]) -> N
 
 
 async def test_who_lists_all_without_project(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    snap: dict[str, Any] = {"type": "who_snapshot", "online_agents": ["a", "b"]}
-    factory = _factory(holder, inbound=[snap])
-    code = await cli_queries._who(uri="ws://h", name="U", agent_factory=factory)
+    async with running_hub(SynapseHub()) as (_, uri):
+        b_handle = await connect_agent("b", uri)
+        try:
+            code = await cli_queries._who(uri=uri, name="a")
+        finally:
+            await close_agents(b_handle)
+
     assert code == 0
     assert "Online (2)" in capsys.readouterr().out
 
 
 async def test_who_reports_unreachable(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    factory = _factory(holder, ready=False)
-    code = await cli_queries._who(uri="ws://h", name="U", agent_factory=factory)
+    code = await cli_queries._who(uri=f"ws://127.0.0.1:{_free_port()}", name="U", ready_timeout=0.1)
     assert code == 1
     assert "Could not reach hub" in capsys.readouterr().out
 
 
-async def test_who_returns_quietly_when_no_snapshot(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    async def no_sleep(_seconds: float) -> None:
-        return None
-
-    monkeypatch.setattr("synapse_channel.cli_queries.asyncio.sleep", no_sleep)
-    holder: list[FakeAgent] = []
-    factory = _factory(
-        holder, inbound=[{"type": "chat", "sender": "X", "payload": "noise"}], idle=False
-    )
-    code = await cli_queries._who(uri="ws://h", name="U", agent_factory=factory)
+async def test_query_hub_returns_quietly_when_no_matching_snapshot() -> None:
+    rendered: list[str] = []
+    async with running_hub(SynapseHub()) as (_, uri):
+        code = await cli_queries._query_hub(
+            uri=uri,
+            name="U",
+            token=None,
+            response_type="not_a_real_snapshot_type",
+            request=lambda agent: agent.request_who(),
+            render=lambda value: rendered.append(str(value)),
+            attempts=1,
+        )
     assert code == 0
-    assert "Online" not in capsys.readouterr().out
+    assert rendered == []
 
 
 def test_cmd_who_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:

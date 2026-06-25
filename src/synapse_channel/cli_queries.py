@@ -168,6 +168,7 @@ async def _who(
     project: str | None = None,
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
+    ready_timeout: float = 5.0,
 ) -> int:
     """Connect, print the online roster (optionally one project's agents), and exit.
 
@@ -185,6 +186,9 @@ async def _who(
         Factory for the client agent; injectable for testing.
     token : str or None, optional
         Shared-secret token for a secured hub.
+    ready_timeout : float, optional
+        Seconds to wait for the welcome handshake before treating the hub as
+        unreachable. Defaults to ``5.0``.
 
     Returns
     -------
@@ -211,6 +215,7 @@ async def _who(
         transform=lambda data: [str(agent) for agent in data.get("online_agents", [])],
         request=lambda agent: agent.request_who(),
         render=render,
+        ready_timeout=ready_timeout,
     )
 
 
