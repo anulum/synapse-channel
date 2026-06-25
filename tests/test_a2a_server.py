@@ -550,6 +550,46 @@ def test_json_rpc_unknown_method_returns_method_not_found_error() -> None:
     }
 
 
+def test_message_send_rejects_task_id_with_path_separator() -> None:
+    harness = HandlerHarness(
+        "POST",
+        "/message:send",
+        body={
+            "message": {
+                "taskId": "../task",
+                "messageId": "m1",
+                "role": "ROLE_USER",
+                "parts": [{"text": "status"}],
+            }
+        },
+    )
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.BAD_REQUEST
+    assert body["detail"] == "message.taskId contains unsupported characters"
+
+
+def test_message_send_rejects_context_id_with_path_separator() -> None:
+    harness = HandlerHarness(
+        "POST",
+        "/message:send",
+        body={
+            "message": {
+                "contextId": "ctx/../x",
+                "messageId": "m1",
+                "role": "ROLE_USER",
+                "parts": [{"text": "status"}],
+            }
+        },
+    )
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.BAD_REQUEST
+    assert body["detail"] == "message.contextId contains unsupported characters"
+
+
 def test_task_list_supports_page_size_and_page_token() -> None:
     bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     for task_id in ("task-a", "task-b"):

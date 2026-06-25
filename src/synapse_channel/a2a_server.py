@@ -39,6 +39,7 @@ PROBLEM_MEDIA_TYPE = "application/problem+json"
 SSE_MEDIA_TYPE = "text/event-stream"
 PushDeliverer = Callable[[JsonMap], None]
 A2A_TASK_MARKER = re.compile(r"\[A2A-TASK:([^\s\]]+)(?:\s+contextId=([^\]\s]+))?\]")
+BRIDGE_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 OPEN_TASK_STATES = {"TASK_STATE_SUBMITTED", "TASK_STATE_WORKING"}
 TERMINAL_TASK_STATES = {
     "TASK_STATE_COMPLETED",
@@ -82,6 +83,14 @@ def _non_negative_int(value: object, *, default: int = 0) -> int:
     except (TypeError, ValueError):
         return default
     return max(parsed, 0)
+
+
+def _validate_bridge_id(value: object, *, field: str) -> None:
+    """Reject caller-provided ids that are unsafe for bridge URLs or markers."""
+    if value is None:
+        return
+    if not BRIDGE_ID.fullmatch(str(value)):
+        raise ValueError(f"message.{field} contains unsupported characters")
 
 
 def _push_config_path(path: str) -> tuple[str, str | None] | None:
@@ -372,6 +381,8 @@ class A2ABridge:
         parts = message.get("parts")
         if not isinstance(parts, list) or not parts:
             raise ValueError("message.parts must be a non-empty array")
+        _validate_bridge_id(message.get("taskId"), field="taskId")
+        _validate_bridge_id(message.get("contextId"), field="contextId")
         return self.create_working_task(message)
 
     def _store_request_push_config(self, payload: JsonMap, *, task_id: str) -> JsonMap | None:
