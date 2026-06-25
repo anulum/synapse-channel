@@ -10,6 +10,10 @@
 from __future__ import annotations
 
 import json
+import os
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -17,6 +21,23 @@ import pytest
 from http_server_helpers import LocalHttpResponder
 from hub_e2e_helpers import _free_port
 from synapse_channel import update_check as uc
+
+
+@contextmanager
+def _env_var(name: str, value: str | None) -> Iterator[None]:
+    previous = os.environ.get(name)
+    if value is None:
+        os.environ.pop(name, None)
+    else:
+        os.environ[name] = value
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = previous
+
 
 # --- version parsing + ordering ----------------------------------------------
 
@@ -95,12 +116,10 @@ def test_read_cache_corrupt(tmp_path: Path) -> None:
     assert uc._read_cache(path) is None
 
 
-def test_write_cache_unwritable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    def boom(*args: object, **kwargs: object) -> None:
-        raise OSError("read-only")
-
-    monkeypatch.setattr(Path, "write_text", boom)
-    uc._write_cache(tmp_path / "c.json", 1.0, "0.31.0")  # swallowed, no raise
+def test_write_cache_unwritable(tmp_path: Path) -> None:
+    path = tmp_path / "cache-as-directory"
+    path.mkdir()
+    uc._write_cache(path, 1.0, "0.31.0")  # IsADirectoryError is swallowed, no raise
 
 
 def test_cache_path_xdg(tmp_path: Path) -> None:
@@ -184,9 +203,10 @@ def test_update_notice_offline(tmp_path: Path) -> None:
     )
 
 
-def test_update_notice_uses_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    # Exercise the default env / now / cache_path / fetch resolution without a network call.
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    monkeypatch.delenv(uc.SUPPRESS_ENV, raising=False)
-    monkeypatch.setattr(uc, "_fetch_latest", lambda: None)
-    assert uc.update_notice("0.30.0") is None
+def test_update_notice_uses_defaults(tmp_path: Path) -> None:
+    # Exercise default env / now / cache_path / fetch resolution without a network call:
+    # a fresh default cache is served before the fetch callable is consulted.
+    cache_path = uc._cache_path({"XDG_CACHE_HOME": str(tmp_path)})
+    uc._write_cache(cache_path, time.time(), "0.30.0")
+    with _env_var("XDG_CACHE_HOME", str(tmp_path)), _env_var(uc.SUPPRESS_ENV, None):
+        assert uc.update_notice("0.30.0") is None
