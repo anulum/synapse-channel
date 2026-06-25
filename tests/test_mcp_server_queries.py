@@ -10,48 +10,64 @@ from __future__ import annotations
 
 import json
 
-from mcp_server_helpers import agent_of, drive, make_bridge
-from synapse_channel.core.protocol import MessageType
+from hub_e2e_helpers import close_agents, running_hub
+from mcp_server_helpers import seed_claim, seed_task, start_bridge, start_manifest_agent
+from synapse_channel.mcp.server import SynapseHubBridge
 
 
 async def test_board_returns_json() -> None:
-    bridge = make_bridge()
-    board = {"tasks": [{"task_id": "T1"}], "ready": []}
-    reply = {"type": MessageType.BOARD_SNAPSHOT, "board": board}
-    out = await drive(bridge, bridge.board, reply)
-    assert json.loads(out) == board
-    assert ("request_board",) in agent_of(bridge).calls
+    async with running_hub() as (_, uri):
+        await seed_task(uri, "T1", "Build")
+        handle = await start_bridge(uri)
+        try:
+            out = await handle.bridge.board()
+        finally:
+            await handle.close()
+    board = json.loads(out)
+    assert board["tasks"][0]["task_id"] == "T1"
+    assert board["ready"] == ["T1"]
 
 
 async def test_board_timeout() -> None:
-    bridge = make_bridge(request_timeout=0.05)
+    bridge = SynapseHubBridge(request_timeout=0.05)
     out = await bridge.board()
     assert "did not return the board" in out
 
 
 async def test_state_returns_json() -> None:
-    bridge = make_bridge()
-    snapshot = {"active_claims": [{"task_id": "T1"}]}
-    reply = {"type": MessageType.STATE_SNAPSHOT, "snapshot": snapshot}
-    out = await drive(bridge, bridge.state, reply)
-    assert json.loads(out) == snapshot
+    async with running_hub() as (_, uri):
+        await seed_claim(uri, "OWNER", "T1", paths=["src/a.py"])
+        handle = await start_bridge(uri)
+        try:
+            out = await handle.bridge.state()
+        finally:
+            await handle.close()
+    snapshot = json.loads(out)
+    assert snapshot["active_claims"][0]["task_id"] == "T1"
+    assert snapshot["active_claims"][0]["owner"] == "OWNER"
 
 
 async def test_state_timeout() -> None:
-    bridge = make_bridge(request_timeout=0.05)
+    bridge = SynapseHubBridge(request_timeout=0.05)
     out = await bridge.state()
     assert "did not return its state" in out
 
 
 async def test_manifest_returns_json() -> None:
-    bridge = make_bridge()
-    manifest = [{"agent": "ALPHA", "task_classes": ["chat"]}]
-    reply = {"type": MessageType.MANIFEST_SNAPSHOT, "manifest": manifest}
-    out = await drive(bridge, bridge.manifest, reply)
-    assert json.loads(out) == manifest
+    async with running_hub() as (_, uri):
+        advertiser = await start_manifest_agent(uri)
+        handle = await start_bridge(uri)
+        try:
+            out = await handle.bridge.manifest()
+        finally:
+            await handle.close()
+            await close_agents(advertiser)
+    manifest = json.loads(out)
+    assert manifest[0]["agent"] == "FAST"
+    assert manifest[0]["task_classes"] == ["chat"]
 
 
 async def test_manifest_timeout() -> None:
-    bridge = make_bridge(request_timeout=0.05)
+    bridge = SynapseHubBridge(request_timeout=0.05)
     out = await bridge.manifest()
     assert "did not return the manifest" in out

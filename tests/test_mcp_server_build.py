@@ -12,9 +12,11 @@ import sys
 
 import pytest
 
-from mcp_server_helpers import agent_of, make_bridge
+from hub_e2e_helpers import running_hub
+from mcp_server_helpers import start_bridge
 from synapse_channel.mcp.server import (
     MCP_EXTRA_HINT,
+    SynapseHubBridge,
     _require_fastmcp,
     build_mcp_server,
 )
@@ -32,7 +34,7 @@ def test_require_fastmcp_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 async def test_build_registers_tools_and_resources() -> None:
-    server = build_mcp_server(make_bridge())
+    server = build_mcp_server(SynapseHubBridge(request_timeout=0.05))
     tool_names = {tool.name for tool in await server.list_tools()}
     assert {
         "synapse_claim",
@@ -52,36 +54,35 @@ async def test_build_registers_tools_and_resources() -> None:
 
 
 async def test_every_tool_and_resource_wrapper_dispatches() -> None:
-    bridge = make_bridge(request_timeout=0.05)
-    server = build_mcp_server(bridge)
-    await server.call_tool("synapse_claim", {"task_id": "T", "paths": ["a"]})
-    await server.call_tool("synapse_release", {"task_id": "T"})
-    await server.call_tool("synapse_send", {"target": "X", "message": "m"})
-    await server.call_tool("synapse_handoff", {"task_id": "T", "to_agent": "Y"})
-    await server.call_tool("synapse_task_declare", {"task_id": "T", "title": "t"})
-    await server.call_tool("synapse_task_update", {"task_id": "T", "status": "done"})
-    await server.call_tool("synapse_board", {})
-    await server.call_tool("synapse_state", {})
-    await server.call_tool("synapse_manifest", {})
-    await server.read_resource("synapse://board")
-    await server.read_resource("synapse://state")
-    await server.read_resource("synapse://manifest")
-    kinds = {call[0] for call in agent_of(bridge).calls}
-    assert {
-        "claim",
-        "release",
-        "chat",
-        "handoff",
-        "post_task",
-        "update_ledger_task",
-        "request_board",
-        "request_state",
-        "request_manifest",
-    } <= kinds
+    async with running_hub() as (hub, uri):
+        handle = await start_bridge(uri, request_timeout=0.5)
+        server = build_mcp_server(handle.bridge)
+        try:
+            await server.call_tool("synapse_claim", {"task_id": "T", "paths": ["a"]})
+            await server.call_tool("synapse_release", {"task_id": "T"})
+            await server.call_tool("synapse_send", {"target": "X", "message": "m"})
+            await server.call_tool("synapse_handoff", {"task_id": "T", "to_agent": "Y"})
+            await server.call_tool("synapse_task_declare", {"task_id": "T", "title": "t"})
+            await server.call_tool("synapse_task_update", {"task_id": "T", "status": "done"})
+            board = await server.call_tool("synapse_board", {})
+            state = await server.call_tool("synapse_state", {})
+            manifest = await server.call_tool("synapse_manifest", {})
+            board_resource = await server.read_resource("synapse://board")
+            state_resource = await server.read_resource("synapse://state")
+            manifest_resource = await server.read_resource("synapse://manifest")
+        finally:
+            await handle.close()
+    assert "T" in str(board)
+    assert "active_claims" in str(state)
+    assert "[]" in str(manifest)
+    assert "T" in str(board_resource)
+    assert "active_claims" in str(state_resource)
+    assert "[]" in str(manifest_resource)
+    assert hub.blackboard.tasks["T"].status == "done"
 
 
 async def test_build_requires_mcp_extra(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "mcp.server.fastmcp", None)
     with pytest.raises(RuntimeError, match=r"\[mcp\]"):
-        build_mcp_server(make_bridge())
+        build_mcp_server(SynapseHubBridge(request_timeout=0.05))
     assert "synapse-channel[mcp]" in MCP_EXTRA_HINT
