@@ -8,18 +8,13 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
-
-from mcp_server_helpers import FakeAgent
-from synapse_channel.mcp.server import (
-    AgentFactory,
-    SynapseHubBridge,
-    serve_stdio,
-)
+from hub_e2e_helpers import _free_port, running_hub
+from synapse_channel.core.hub import SynapseHub
+from synapse_channel.mcp.server import SynapseHubBridge, serve_stdio
 
 
-class FakeServer:
-    """A FastMCP stand-in whose stdio run records that it was invoked."""
+class RecordingStdioServer:
+    """Minimal stdio server adapter that records that the serve path invoked it."""
 
     def __init__(self) -> None:
         self.ran = False
@@ -29,22 +24,19 @@ class FakeServer:
 
 
 async def test_serve_stdio_unreachable_hub() -> None:
-    def factory(name: str, callback: Any, **kwargs: Any) -> FakeAgent:
-        agent = FakeAgent(name, callback, **kwargs)
-        agent.ready = False
-        return agent
-
     rc = await serve_stdio(
-        agent_factory=cast(AgentFactory, factory), server_builder=lambda _b: FakeServer()
+        uri=f"ws://127.0.0.1:{_free_port()}",
+        ready_timeout=0.1,
+        server_builder=lambda _bridge: RecordingStdioServer(),
     )
     assert rc == 1
 
 
 async def test_serve_stdio_runs_until_client_closes() -> None:
-    server = FakeServer()
-    rc = await serve_stdio(
-        agent_factory=cast(AgentFactory, FakeAgent), server_builder=lambda _b: server
-    )
+    server = RecordingStdioServer()
+    async with running_hub(SynapseHub()) as (_, uri):
+        rc = await serve_stdio(uri=uri, server_builder=lambda _bridge: server)
+
     assert rc == 0
     assert server.ran
 
@@ -52,14 +44,12 @@ async def test_serve_stdio_runs_until_client_closes() -> None:
 async def test_serve_stdio_threads_request_timeout_to_the_bridge() -> None:
     captured: list[SynapseHubBridge] = []
 
-    def builder(bridge: SynapseHubBridge) -> FakeServer:
+    def builder(bridge: SynapseHubBridge) -> RecordingStdioServer:
         captured.append(bridge)
-        return FakeServer()
+        return RecordingStdioServer()
 
-    rc = await serve_stdio(
-        agent_factory=cast(AgentFactory, FakeAgent),
-        server_builder=builder,
-        request_timeout=12.5,
-    )
+    async with running_hub(SynapseHub()) as (_, uri):
+        rc = await serve_stdio(uri=uri, server_builder=builder, request_timeout=12.5)
+
     assert rc == 0
     assert captured[0].request_timeout == 12.5

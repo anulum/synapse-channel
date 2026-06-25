@@ -491,6 +491,7 @@ async def serve_stdio(
     name: str = DEFAULT_BRIDGE_NAME,
     token: str | None = None,
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT,
+    ready_timeout: float = 5.0,
     agent_factory: AgentFactory = SynapseAgent,
     server_builder: Callable[[SynapseHubBridge], Any] = build_mcp_server,
 ) -> int:
@@ -507,6 +508,9 @@ async def serve_stdio(
     request_timeout : float, optional
         Seconds to await a hub reply before reporting no response. Defaults to
         :data:`DEFAULT_REQUEST_TIMEOUT`.
+    ready_timeout : float, optional
+        Seconds to wait for the bridge agent handshake before reporting the hub
+        unreachable. Defaults to ``5.0``.
     agent_factory : AgentFactory, optional
         Factory for the hub client; injectable for testing.
     server_builder : Callable, optional
@@ -526,7 +530,7 @@ async def serve_stdio(
     )
     conn_task = asyncio.create_task(bridge.agent.connect())
     try:
-        if not await bridge.agent.wait_until_ready(timeout=5.0):
+        if not await bridge.agent.wait_until_ready(timeout=ready_timeout):
             print(f"[{name}] could not reach hub at {uri}", file=sys.stderr)
             return 1
         server = server_builder(bridge)
