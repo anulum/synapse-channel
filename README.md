@@ -301,10 +301,10 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Package version | 0.43.0 |
 | Public API exports | 59 |
 | Package modules | 46 |
-| Classes | 48 |
+| Classes | 49 |
 | Wire message types | 52 |
 | CLI subcommands | 26 |
-| Test functions | 1069 |
+| Test functions | 1077 |
 | Benchmark harnesses | 3 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

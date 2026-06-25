@@ -106,6 +106,17 @@ def is_loopback_host(host: str) -> bool:
     return host.strip().lower() in LOOPBACK_HOSTS
 
 
+class InsecureBindError(RuntimeError):
+    """Raised when a hub would bind off-loopback without an authenticating guard.
+
+    By default the hub refuses to bind a non-loopback interface unless a token
+    authenticator is configured (and, when metrics are served, a metrics token),
+    so a coordination bus is never accidentally exposed unauthenticated to the
+    network. An operator who accepts the risk passes ``insecure_off_loopback``
+    (CLI: ``--insecure-off-loopback``) to downgrade the refusal to a warning.
+    """
+
+
 _MUTATING_TYPES = (
     frozenset(
         {
@@ -203,6 +214,12 @@ class SynapseHub:
         Also accept the token as a ``?token=<token>`` query parameter. Off by
         default because a query token can leak into access logs, shell history, and
         proxy records; the ``Authorization`` header is the recommended path.
+    insecure_off_loopback : bool, optional
+        Bind a non-loopback host even when it would be reachable unauthenticated.
+        Off by default the hub *refuses* such a bind — raising
+        :class:`InsecureBindError` rather than only warning — so a bus is never
+        accidentally exposed to the network without a token (and, with metrics on,
+        a metrics token); set this to downgrade the refusal to a warning.
     """
 
     def __init__(
@@ -230,6 +247,7 @@ class SynapseHub:
         auth_timeout: float = DEFAULT_AUTH_TIMEOUT,
         metrics_token: str | None = None,
         metrics_query_token_ok: bool = False,
+        insecure_off_loopback: bool = False,
         clock: Callable[[], float] | None = None,
     ) -> None:
         self.journal = journal
@@ -237,6 +255,7 @@ class SynapseHub:
         self.auth_timeout = max(float(auth_timeout), 0.1)
         self.metrics_token = metrics_token or None
         self.metrics_query_token_ok = bool(metrics_query_token_ok)
+        self.insecure_off_loopback = bool(insecure_off_loopback)
         self.rate_limiter = rate_limiter
         self.host_rate_limiter = host_rate_limiter
         self.authenticator = authenticator
@@ -503,22 +522,49 @@ class SynapseHub:
         await websocket.close(code=4010, reason="auth denied")
         return False
 
-    def _warn_if_exposed(self, host: str) -> None:
-        """Warn when binding off-loopback without the matching guard configured."""
+    def _exposure_problems(self, host: str) -> list[str]:
+        """Return the exposure problems for binding on ``host`` (empty when safe).
+
+        A loopback bind is always safe. Off loopback, a hub with no token — or
+        with metrics served but no metrics token — is reachable unauthenticated,
+        so each such condition is returned as a human-readable problem.
+        """
         if is_loopback_host(host):
-            return
+            return []
+        problems: list[str] = []
         if self.authenticator is None:
-            logger.warning(
-                "Synapse Hub bound to non-loopback host %r with no token; set an "
-                "authenticator (e.g. synapse hub --token ...) before exposing it.",
-                host,
+            problems.append(
+                f"bound to non-loopback host {host!r} with no token; set an "
+                "authenticator (synapse hub --token ...) before exposing it"
             )
         if self.enable_metrics and self.metrics_token is None:
-            logger.warning(
-                "Synapse Hub metrics enabled on non-loopback host %r with no "
-                "--metrics-token; /metrics and /health are unauthenticated.",
-                host,
+            problems.append(
+                f"metrics enabled on non-loopback host {host!r} with no "
+                "--metrics-token; /metrics and /health would be unauthenticated"
             )
+        return problems
+
+    def _guard_exposure(self, host: str) -> None:
+        """Refuse — or, when overridden, warn — before binding an exposed host.
+
+        Off loopback without the matching guard the hub would be reachable
+        unauthenticated. By default this raises :class:`InsecureBindError` so the
+        bus is never accidentally exposed; with :attr:`insecure_off_loopback` set
+        the problems are logged as warnings and the bind proceeds.
+        """
+        problems = self._exposure_problems(host)
+        if not problems:
+            return
+        if self.insecure_off_loopback:
+            for problem in problems:
+                logger.warning("Synapse Hub %s.", problem)
+            return
+        joined = "; ".join(problems)
+        raise InsecureBindError(
+            f"Refusing to bind: Synapse Hub {joined}. Configure a token "
+            "(and --metrics-token when metrics are on), or pass "
+            "--insecure-off-loopback to bind anyway (not recommended)."
+        )
 
     async def _resolve_sender(
         self, sender: str, websocket: Any, *, takeover: bool = False
@@ -892,7 +938,7 @@ class SynapseHub:
         port : int, optional
             Bind port. Defaults to :data:`DEFAULT_PORT`.
         """
-        self._warn_if_exposed(host)
+        self._guard_exposure(host)
         stop = asyncio.Event()
         self._install_signal_handlers(asyncio.get_running_loop(), stop)
         async with websockets.serve(
