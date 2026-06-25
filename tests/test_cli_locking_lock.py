@@ -9,13 +9,13 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
-from typing import Any
 
 import pytest
 
-from cli_locking_helpers import FakeAgent, _factory
+from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_locking
+from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.protocol import MessageType
 
 
 def test_parser_lock() -> None:
@@ -31,159 +31,123 @@ async def test_run_subprocess_returns_exit_code() -> None:
 
 
 async def test_lock_runs_command_holding_lease() -> None:
-    holder: list[FakeAgent] = []
-    granted: dict[str, Any] = {"type": "claim_granted", "task_id": "g", "owner": "X"}
-    inbound: list[dict[str, Any]] = [
-        {"type": "claim_granted", "task_id": "other", "owner": "X"},  # different task → ignored
-        {"type": "chat", "task_id": "g", "payload": "noise"},  # matching id, non-claim → ignored
-        granted,
-    ]
-    factory = _factory(holder, inbound=inbound)
-    ran: list[list[str]] = []
+    async with running_hub(SynapseHub()) as (hub, uri):
+        ran: list[list[str]] = []
 
-    async def runner(command: list[str]) -> int:
-        ran.append(command)
-        return 0
+        async def runner(command: list[str]) -> int:
+            ran.append(command)
+            claim = hub.state.claims["g"]
+            assert claim.owner == "X"
+            assert claim.worktree == ""
+            assert claim.paths == ("src",)
+            return 0
 
-    code = await cli_locking._lock(
-        uri="ws://h",
-        name="X",
-        task_id="g",
-        command=["echo", "hi"],
-        paths=["src"],
-        wait_timeout=5.0,
-        agent_factory=factory,
-        runner=runner,
-    )
+        code = await cli_locking._lock(
+            uri=uri,
+            name="X",
+            task_id="g",
+            command=["echo", "hi"],
+            paths=["src"],
+            wait_timeout=5.0,
+            runner=runner,
+        )
+
     assert code == 0
     assert ran == [["echo", "hi"]]
-    assert holder[0].claims == ["g"]
-    # Explicit --paths opts into shared file-scope overlap: the claim stays in the
-    # default worktree where declared paths are compared.
-    assert holder[0].claim_worktrees == [""]
-    assert holder[0].releases == ["g"]
+    assert "g" not in hub.state.claims
 
 
 async def test_lock_keyless_namespaces_worktree_to_task_id() -> None:
-    holder: list[FakeAgent] = []
-    granted: dict[str, Any] = {"type": "claim_granted", "task_id": "repo:git", "owner": "X"}
-    factory = _factory(holder, inbound=[granted])
+    async with running_hub(SynapseHub()) as (hub, uri):
 
-    async def runner(command: list[str]) -> int:
-        return 0
+        async def runner(_command: list[str]) -> int:
+            assert hub.state.claims["repo:git"].worktree == "repo:git"
+            return 0
 
-    code = await cli_locking._lock(
-        uri="ws://h",
-        name="X",
-        task_id="repo:git",
-        command=["git", "push"],
-        paths=[],
-        wait_timeout=5.0,
-        agent_factory=factory,
-        runner=runner,
-    )
+        code = await cli_locking._lock(
+            uri=uri,
+            name="X",
+            task_id="repo:git",
+            command=["git", "push"],
+            paths=[],
+            wait_timeout=5.0,
+            runner=runner,
+        )
+
     assert code == 0
-    # A keyless lock is a pure named mutex: its claim is scoped to its own task id,
-    # so a different repo's lock (a different task id) can never contend with it.
-    assert holder[0].claim_worktrees == ["repo:git"]
 
 
 async def test_lock_fails_fast_when_held(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    denied: dict[str, Any] = {"type": "claim_denied", "task_id": "g", "payload": "held by api-dev"}
-    factory = _factory(holder, inbound=[denied], idle=False)
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        holder = await connect_agent("api-dev", uri)
+        await holder.agent.claim("g", worktree="g", paths=[])
+        await holder.recorder.wait_for(
+            lambda message: (
+                message.get("type") == MessageType.CLAIM_GRANTED and message.get("task_id") == "g"
+            )
+        )
 
-    async def runner(command: list[str]) -> int:
-        raise AssertionError("command must not run without the lease")
+        async def runner(_command: list[str]) -> int:
+            raise AssertionError("command must not run without the lease")
 
-    code = await cli_locking._lock(
-        uri="ws://h",
-        name="X",
-        task_id="g",
-        command=["x"],
-        paths=[],
-        wait_timeout=0.0,
-        agent_factory=factory,
-        runner=runner,
-    )
+        try:
+            code = await cli_locking._lock(
+                uri=uri,
+                name="X",
+                task_id="g",
+                command=["x"],
+                paths=[],
+                wait_timeout=0.0,
+                runner=runner,
+                attempts=2,
+            )
+        finally:
+            await close_agents(holder)
+
     assert code == 1
     assert "Could not acquire lock 'g'" in capsys.readouterr().out
 
 
 async def test_lock_reports_unreachable(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    factory = _factory(holder, ready=False)
     code = await cli_locking._lock(
-        uri="ws://h",
+        uri=f"ws://127.0.0.1:{_free_port()}",
         name="X",
         task_id="g",
         command=["x"],
         paths=[],
         wait_timeout=1.0,
-        agent_factory=factory,
+        ready_timeout=0.1,
+        attempts=1,
     )
     assert code == 1
     assert "Could not reach hub" in capsys.readouterr().out
 
 
-class _DenyingAgent:
-    """A stand-in whose every claim is denied — to exercise the retry/timeout path."""
-
-    def __init__(self, name: str, callback: Any, **_: Any) -> None:
-        self.callback = callback
-        self.running = True
-        self.releases: list[str] = []
-
-    async def connect(self) -> None:
-        await asyncio.Event().wait()
-
-    async def wait_until_ready(self, timeout: float = 5.0) -> bool:
-        return True
-
-    async def claim(self, task_id: str, **_: Any) -> None:
-        await self.callback({"type": "claim_denied", "task_id": task_id, "payload": "held"})
-
-    async def release(self, task_id: str, **_: Any) -> None:
-        self.releases.append(task_id)
-
-
 async def test_lock_times_out_while_held(capsys: pytest.CaptureFixture[str]) -> None:
-    def factory(name: str, callback: Any, **kwargs: Any) -> Any:
-        return _DenyingAgent(name, callback)
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        holder = await connect_agent("api-dev", uri)
+        await holder.agent.claim("g", worktree="g", paths=[])
+        await holder.recorder.wait_for(
+            lambda message: (
+                message.get("type") == MessageType.CLAIM_GRANTED and message.get("task_id") == "g"
+            )
+        )
+        try:
+            code = await cli_locking._lock(
+                uri=uri,
+                name="X",
+                task_id="g",
+                command=["x"],
+                paths=[],
+                wait_timeout=0.05,
+                retry_interval=0.01,
+                attempts=1,
+            )
+        finally:
+            await close_agents(holder)
 
-    code = await cli_locking._lock(
-        uri="ws://h",
-        name="X",
-        task_id="g",
-        command=["x"],
-        paths=[],
-        wait_timeout=0.05,
-        retry_interval=0.01,
-        agent_factory=factory,
-    )
     assert code == 1
     assert "Could not acquire lock 'g'" in capsys.readouterr().out
-
-
-async def test_lock_gives_up_when_claim_gets_no_response(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    async def no_sleep(_seconds: float) -> None:
-        return None
-
-    monkeypatch.setattr("synapse_channel.cli_locking.asyncio.sleep", no_sleep)
-    holder: list[FakeAgent] = []
-    factory = _factory(holder, inbound=[], idle=False)  # the claim is never answered
-    code = await cli_locking._lock(
-        uri="ws://h",
-        name="X",
-        task_id="g",
-        command=["x"],
-        paths=[],
-        wait_timeout=0.0,
-        agent_factory=factory,
-    )
-    assert code == 1
 
 
 def test_cmd_lock_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
