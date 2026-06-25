@@ -8,13 +8,12 @@
 
 from __future__ import annotations
 
-import io
 import json
-import urllib.error
-from typing import Any
 
 import pytest
 
+from http_server_helpers import LocalHttpResponder
+from hub_e2e_helpers import _free_port
 from synapse_channel.client.chat_backends import (
     OpenAIChatClient,
     RuleBasedClient,
@@ -58,67 +57,60 @@ def test_openai_client_strips_base_url_and_clamps_timeout() -> None:
 # --- OpenAIChatClient.generate ----------------------------------------------
 
 
-class _FakeResponse:
-    def __init__(self, body: bytes) -> None:
-        self._body = body
-
-    def __enter__(self) -> _FakeResponse:
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        return None
-
-    def read(self) -> bytes:
-        return self._body
-
-
-def _patch_urlopen(monkeypatch: pytest.MonkeyPatch, handler: Any) -> None:
-    monkeypatch.setattr("urllib.request.urlopen", handler)
-
-
-def test_generate_returns_sanitised_content(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_generate_returns_sanitised_content() -> None:
     payload = {"choices": [{"message": {"content": "  hello   world  "}}]}
-
-    def handler(req: Any, timeout: float) -> _FakeResponse:
-        assert timeout == 3.0
-        return _FakeResponse(json.dumps(payload).encode("utf-8"))
-
-    _patch_urlopen(monkeypatch, handler)
-    client = OpenAIChatClient(api_key="k", model="m", base_url="http://h/v1", timeout_seconds=3.0)
-    assert client.generate(system_prompt="s", user_prompt="u") == "hello world"
-
-
-def test_generate_raises_on_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    def handler(req: Any, timeout: float) -> _FakeResponse:
-        raise urllib.error.HTTPError(
-            url="http://h/v1/chat/completions",
-            code=500,
-            msg="boom",
-            hdrs=None,  # type: ignore[arg-type]
-            fp=io.BytesIO(b"server detail"),
+    with LocalHttpResponder(body=json.dumps(payload).encode("utf-8")) as server:
+        client = OpenAIChatClient(
+            api_key="k",
+            model="m",
+            base_url=f"{server.url}/v1",
+            timeout_seconds=3.0,
         )
 
-    _patch_urlopen(monkeypatch, handler)
-    client = OpenAIChatClient(api_key="k", model="m", base_url="http://h/v1", timeout_seconds=3.0)
-    with pytest.raises(RuntimeError, match="HTTP 500"):
-        client.generate(system_prompt="s", user_prompt="u")
+        assert client.generate(system_prompt="s", user_prompt="u") == "hello world"
+
+    request = server.requests[0]
+    assert request.method == "POST"
+    assert request.path == "/v1/chat/completions"
+    assert request.headers["Authorization"] == "Bearer k"
+    body = json.loads(request.body.decode("utf-8"))
+    assert body["model"] == "m"
+    assert body["messages"] == [
+        {"role": "system", "content": "s"},
+        {"role": "user", "content": "u"},
+    ]
 
 
-def test_generate_raises_on_connection_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    def handler(req: Any, timeout: float) -> _FakeResponse:
-        raise urllib.error.URLError("dns failure")
+def test_generate_raises_on_http_error() -> None:
+    with LocalHttpResponder(body=b"server detail", status=500) as server:
+        client = OpenAIChatClient(
+            api_key="k",
+            model="m",
+            base_url=f"{server.url}/v1",
+            timeout_seconds=3.0,
+        )
+        with pytest.raises(RuntimeError, match="HTTP 500"):
+            client.generate(system_prompt="s", user_prompt="u")
 
-    _patch_urlopen(monkeypatch, handler)
-    client = OpenAIChatClient(api_key="k", model="m", base_url="http://h/v1", timeout_seconds=3.0)
+
+def test_generate_raises_on_connection_error() -> None:
+    client = OpenAIChatClient(
+        api_key="k",
+        model="m",
+        base_url=f"http://127.0.0.1:{_free_port()}/v1",
+        timeout_seconds=3.0,
+    )
     with pytest.raises(RuntimeError, match="connection error"):
         client.generate(system_prompt="s", user_prompt="u")
 
 
-def test_generate_raises_on_unexpected_shape(monkeypatch: pytest.MonkeyPatch) -> None:
-    def handler(req: Any, timeout: float) -> _FakeResponse:
-        return _FakeResponse(json.dumps({"unexpected": True}).encode("utf-8"))
-
-    _patch_urlopen(monkeypatch, handler)
-    client = OpenAIChatClient(api_key="k", model="m", base_url="http://h/v1", timeout_seconds=3.0)
-    with pytest.raises(RuntimeError, match="parse error"):
-        client.generate(system_prompt="s", user_prompt="u")
+def test_generate_raises_on_unexpected_shape() -> None:
+    with LocalHttpResponder(body=json.dumps({"unexpected": True}).encode("utf-8")) as server:
+        client = OpenAIChatClient(
+            api_key="k",
+            model="m",
+            base_url=f"{server.url}/v1",
+            timeout_seconds=3.0,
+        )
+        with pytest.raises(RuntimeError, match="parse error"):
+            client.generate(system_prompt="s", user_prompt="u")

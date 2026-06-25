@@ -11,11 +11,12 @@ from __future__ import annotations
 import importlib.util
 import json
 import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Any
 
 import pytest
+
+from http_server_helpers import LocalHttpResponder
 
 _PATH = Path(__file__).resolve().parents[1] / "tools" / "pypi_downloads.py"
 _SPEC = importlib.util.spec_from_file_location("pypi_downloads", _PATH)
@@ -125,19 +126,10 @@ def test_fetch_overall_builds_endpoint_url() -> None:
     assert seen["url"] == "https://pypistats.org/api/packages/my-pkg/overall"
 
 
-def test_http_get_reads_response_body(monkeypatch: pytest.MonkeyPatch) -> None:
-    class _FakeResponse:
-        def __enter__(self) -> _FakeResponse:
-            return self
-
-        def __exit__(self, *exc: object) -> None:
-            return None
-
-        def read(self) -> bytes:
-            return b"payload"
-
-    monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout=0: _FakeResponse())
-    assert dl._http_get("https://example.test") == b"payload"
+def test_http_get_reads_response_body() -> None:
+    with LocalHttpResponder(body=b"payload", content_type="text/plain") as server:
+        assert dl._http_get(server.url) == b"payload"
+    assert server.requests[0].method == "GET"
 
 
 def test_summary_empty_series() -> None:
