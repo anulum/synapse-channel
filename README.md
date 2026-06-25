@@ -277,8 +277,10 @@ git or reads a filesystem — so all git work is on the client. See the
    atomically to another online agent — keeping its scope, status, and context,
    with no window for a third agent to grab it mid-transfer.
 5. Presence, `who`, full state snapshots, and chat history are queryable at any
-   time. After a reconnect, an agent resumes by `idem_key` (retried claims are not
-   applied twice) and a `resume` cursor (fetch exactly the messages it missed).
+   time. After a reconnect to the same running hub, an agent can resume by
+   `idem_key` (retried claims are not applied twice while the hub retains its
+   idempotency cache) and a `resume` cursor (fetch exactly the messages it
+   missed).
 
 Alongside the lease registry, a **shared blackboard** holds the team's plan: a
 task ledger of declared work with dependencies (the hub refuses dependency
@@ -395,9 +397,11 @@ This snapshot is a static inventory generated from the source tree. Performance 
   Prometheus `/metrics` and a JSON `/health` endpoint on the hub's port; without
   the flag the hub serves no HTTP. The endpoint carries operational metadata, so
   keep it on a loopback bind, or require a token with `--metrics-token` (presented
-  as `Authorization: Bearer <token>` or `?token=<token>`) before exposing it. The
-  live board, state, and manifest also remain available over the CLI and the MCP
-  resources.
+  as `Authorization: Bearer <token>`) before exposing it. The query-string form
+  `?token=<token>` is disabled by default and is accepted only with
+  `--metrics-query-token-ok`, because query tokens leak easily into logs and
+  history. The live board, state, and manifest also remain available over the CLI
+  and the MCP resources.
 - **`synapse --version` checks PyPI for a newer release** (once a day, cached, no
   payload beyond the request itself). Silence it with `SYNAPSE_NO_UPDATE_CHECK=1`.
 

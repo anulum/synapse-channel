@@ -8,11 +8,15 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from http import HTTPStatus
 from io import BytesIO
 from typing import Any
 
+import pytest
+
+from synapse_channel import cli_a2a
 from synapse_channel.a2a_server import A2ABridge, build_a2a_handler
 from synapse_channel.a2a_store import A2ATaskStore
 
@@ -176,6 +180,112 @@ def test_auth_token_accepts_bearer_for_message_send() -> None:
 
     assert status == HTTPStatus.OK
     assert body["task"]["status"]["state"] == "TASK_STATE_WORKING"
+
+
+def test_a2a_serve_refuses_exposed_bind_without_bearer_token(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def fail_fetch_manifest(**_kwargs: object) -> list[dict[str, Any]]:
+        raise AssertionError("manifest fetch should not be reached")
+
+    monkeypatch.setattr(cli_a2a, "_fetch_manifest", fail_fetch_manifest)
+    args = argparse.Namespace(
+        uri="ws://hub",
+        name="A2A-BRIDGE",
+        token=None,
+        host="0.0.0.0",
+        port=8877,
+        endpoint_url="http://0.0.0.0:8877",
+        target="all",
+        bridge_name="SYNAPSE CHANNEL",
+        description=None,
+        documentation_url="https://anulum.github.io/synapse-channel",
+        bearer_auth=False,
+        a2a_token=None,
+        state_file=None,
+        task_timeout=300.0,
+        subscribe_timeout=0.0,
+        insecure_off_loopback=False,
+    )
+
+    assert cli_a2a._cmd_a2a_serve(args) == 2
+    assert "Refusing to bind" in capsys.readouterr().err
+
+
+def test_a2a_serve_insecure_override_allows_exposed_manifest_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fetched: list[bool] = []
+
+    async def fail_to_reach_hub(**_kwargs: object) -> list[dict[str, Any]] | None:
+        fetched.append(True)
+        return None
+
+    monkeypatch.setattr(cli_a2a, "_fetch_manifest", fail_to_reach_hub)
+    args = argparse.Namespace(
+        uri="ws://hub",
+        name="A2A-BRIDGE",
+        token=None,
+        host="0.0.0.0",
+        port=8877,
+        endpoint_url="http://0.0.0.0:8877",
+        target="all",
+        bridge_name="SYNAPSE CHANNEL",
+        description=None,
+        documentation_url="https://anulum.github.io/synapse-channel",
+        bearer_auth=False,
+        a2a_token=None,
+        state_file=None,
+        task_timeout=300.0,
+        subscribe_timeout=0.0,
+        insecure_off_loopback=True,
+    )
+
+    assert cli_a2a._cmd_a2a_serve(args) == 1
+    captured = capsys.readouterr()
+    assert fetched == [True]
+    assert "WARNING: binding A2A bridge" in captured.err
+    assert "Could not reach hub" in captured.err
+
+
+def test_a2a_serve_allows_exposed_bearer_auth_without_override(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fetched: list[bool] = []
+
+    async def fail_to_reach_hub(**_kwargs: object) -> list[dict[str, Any]] | None:
+        fetched.append(True)
+        return None
+
+    monkeypatch.setattr(cli_a2a, "_fetch_manifest", fail_to_reach_hub)
+    args = argparse.Namespace(
+        uri="ws://hub",
+        name="A2A-BRIDGE",
+        token=None,
+        host="0.0.0.0",
+        port=8877,
+        endpoint_url="http://0.0.0.0:8877",
+        target="all",
+        bridge_name="SYNAPSE CHANNEL",
+        description=None,
+        documentation_url="https://anulum.github.io/synapse-channel",
+        bearer_auth=True,
+        a2a_token="secret",
+        state_file=None,
+        task_timeout=300.0,
+        subscribe_timeout=0.0,
+        insecure_off_loopback=False,
+    )
+
+    assert cli_a2a._cmd_a2a_serve(args) == 1
+    captured = capsys.readouterr()
+    assert fetched == [True]
+    assert "Refusing to bind" not in captured.err
+    assert "WARNING: binding A2A bridge" not in captured.err
+    assert "Could not reach hub" in captured.err
 
 
 def test_default_timeout_boundary_fails_stale_open_task() -> None:
