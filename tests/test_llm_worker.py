@@ -8,68 +8,63 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import json
 import time
 
 import pytest
 
+from http_server_helpers import LocalHttpResponder
+from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel.client.chat_backends import OpenAIChatClient, RuleBasedClient
 from synapse_channel.client.llm_worker import (
     DEFAULT_OLLAMA_BASE_URL,
     OPENAI_DEFAULT_BASE_URL,
+    SYSTEM_PROMPT,
     SynapseLLMWorker,
     is_service_message,
 )
-
-
-class FakeAgent:
-    """Stand-in for SynapseAgent capturing chat output."""
-
-    def __init__(self, *, ready: bool = True, connect_exc: Exception | None = None) -> None:
-        self.running = True
-        self.chats: list[tuple[str, str]] = []
-        self.cards: list[tuple[str, ...]] = []
-        self._ready = ready
-        self._connect_exc = connect_exc
-
-    async def connect(self) -> None:
-        if self._connect_exc is not None:
-            raise self._connect_exc
-
-    async def wait_until_ready(self, timeout: float = 5.0) -> bool:
-        return self._ready
-
-    async def chat(self, payload: str, *, target: str = "all") -> None:
-        self.chats.append((target, payload))
-
-    async def advertise(
-        self,
-        *,
-        description: str = "",
-        skills: tuple[str, ...] | list[str] = (),
-        task_classes: tuple[str, ...] | list[str] = (),
-        model: str = "",
-        meta: dict[str, object] | None = None,
-    ) -> None:
-        self.cards.append(tuple(task_classes))
-
-
-class FakeBackend:
-    """Chat backend returning a canned reply or raising on demand."""
-
-    def __init__(self, reply: str = "ok", exc: Exception | None = None) -> None:
-        self.reply = reply
-        self.exc = exc
-
-    def generate(self, *, system_prompt: str, user_prompt: str) -> str:
-        if self.exc is not None:
-            raise self.exc
-        return self.reply
+from synapse_channel.core.hub import SynapseHub
 
 
 def _worker(**kwargs: object) -> SynapseLLMWorker:
     params: dict[str, object] = {"name": "ALPHA", "provider": "rule"}
     params.update(kwargs)
     return SynapseLLMWorker(**params)  # type: ignore[arg-type]
+
+
+async def _start_worker_agent(worker: SynapseLLMWorker) -> asyncio.Task[None]:
+    task = asyncio.create_task(worker.agent.connect())
+    if not await worker.agent.wait_until_ready(3.0):
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        raise TimeoutError("worker agent did not connect")
+    return task
+
+
+async def _stop_worker_agent(worker: SynapseLLMWorker, task: asyncio.Task[None]) -> None:
+    worker.agent.running = False
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+async def _worker_and_observer(
+    uri: str, **kwargs: object
+) -> tuple[SynapseLLMWorker, asyncio.Task[None], AgentHandle]:
+    observer = await connect_agent("OBSERVER", uri)
+    kwargs.setdefault("min_reply_interval", 0.0)
+    worker = _worker(uri=uri, **kwargs)
+    task = await _start_worker_agent(worker)
+    return worker, task, observer
+
+
+async def _wait_for_worker_chat(observer: AgentHandle, sender: str = "ALPHA") -> dict[str, object]:
+    return await observer.recorder.wait_for(
+        lambda message: message.get("type") == "chat" and message.get("sender") == sender
+    )
 
 
 # --- is_service_message ------------------------------------------------------
@@ -205,86 +200,128 @@ def test_build_user_prompt_includes_transcript_and_latest() -> None:
 
 
 async def test_process_item_sends_reply_to_room() -> None:
-    worker = _worker(name="ALPHA")
-    worker.agent = FakeAgent()  # type: ignore[assignment]
-    worker.client = FakeBackend(reply="  done   now  ")
-    await worker._process_item({"sender": "USER", "payload": "go"})
-    assert worker.agent.chats == [("all", "done now")]  # type: ignore[attr-defined]
+    payload = {"choices": [{"message": {"content": "  done   now  "}}]}
+    with LocalHttpResponder(body=json.dumps(payload).encode("utf-8")) as server:
+        async with running_hub(SynapseHub()) as (_hub, uri):
+            worker, task, observer = await _worker_and_observer(
+                uri,
+                name="ALPHA",
+                provider="openai",
+                base_url=f"{server.url}/v1",
+            )
+            try:
+                await worker._process_item({"sender": "USER", "payload": "go"})
+                message = await _wait_for_worker_chat(observer)
+            finally:
+                await _stop_worker_agent(worker, task)
+                await close_agents(observer)
+
+    assert message["target"] == "all"
+    assert message["payload"] == "done now"
     assert worker.last_reply_ts > 0
+    request = server.requests[0]
+    body = json.loads(request.body.decode("utf-8"))
+    assert body["messages"][0]["content"] == SYSTEM_PROMPT
 
 
 async def test_process_item_targets_sender_in_private_mode() -> None:
-    worker = _worker(name="ALPHA", reply_target_mode="sender")
-    worker.agent = FakeAgent()  # type: ignore[assignment]
-    worker.client = FakeBackend(reply="hi")
-    await worker._process_item({"sender": "USER", "payload": "go"})
-    assert worker.agent.chats == [("USER", "hi")]  # type: ignore[attr-defined]
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        worker, task, observer = await _worker_and_observer(
+            uri,
+            name="ALPHA",
+            provider="rule",
+            reply_target_mode="sender",
+        )
+        try:
+            await worker._process_item({"sender": "USER", "payload": "go"})
+            message = await _wait_for_worker_chat(observer)
+        finally:
+            await _stop_worker_agent(worker, task)
+            await close_agents(observer)
+
+    assert message["target"] == "USER"
+    assert message["payload"] == "message received via Synapse. I am active on-channel."
 
 
 async def test_process_item_reports_backend_error() -> None:
-    worker = _worker(name="ALPHA")
-    worker.agent = FakeAgent()  # type: ignore[assignment]
-    worker.client = FakeBackend(exc=RuntimeError("model down"))
-    await worker._process_item({"sender": "USER", "payload": "go"})
-    target, text = worker.agent.chats[0]  # type: ignore[attr-defined]
-    assert "model error -> model down" in text
+    with LocalHttpResponder(body=b"model down", status=500) as server:
+        async with running_hub(SynapseHub()) as (_hub, uri):
+            worker, task, observer = await _worker_and_observer(
+                uri,
+                name="ALPHA",
+                provider="openai",
+                base_url=f"{server.url}/v1",
+            )
+            try:
+                await worker._process_item({"sender": "USER", "payload": "go"})
+                message = await _wait_for_worker_chat(observer)
+            finally:
+                await _stop_worker_agent(worker, task)
+                await close_agents(observer)
+
+    assert message["target"] == "all"
+    assert "model error -> chat backend HTTP 500" in str(message["payload"])
 
 
-async def test_process_item_throttles(monkeypatch: pytest.MonkeyPatch) -> None:
-    worker = _worker(name="ALPHA", min_reply_interval=5.0)
-    worker.agent = FakeAgent()  # type: ignore[assignment]
-    worker.client = FakeBackend(reply="hi")
-    worker.last_reply_ts = time.time()  # force a throttle wait
+async def test_process_item_throttles() -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        worker, task, observer = await _worker_and_observer(
+            uri,
+            name="ALPHA",
+            provider="rule",
+            min_reply_interval=0.05,
+        )
+        worker.last_reply_ts = time.time()
+        started = time.monotonic()
+        try:
+            await worker._process_item({"sender": "USER", "payload": "go"})
+            await _wait_for_worker_chat(observer)
+        finally:
+            await _stop_worker_agent(worker, task)
+            await close_agents(observer)
 
-    slept: list[float] = []
-
-    async def fake_sleep(seconds: float) -> None:
-        slept.append(seconds)
-
-    monkeypatch.setattr("synapse_channel.client.llm_worker.asyncio.sleep", fake_sleep)
-    await worker._process_item({"sender": "USER", "payload": "go"})
-    assert slept and slept[0] > 0
+    assert time.monotonic() - started >= 0.03
 
 
 # --- _worker_loop ------------------------------------------------------------
 
 
-async def test_worker_loop_processes_then_stops(monkeypatch: pytest.MonkeyPatch) -> None:
-    worker = _worker(name="ALPHA")
-    worker.agent = FakeAgent()  # type: ignore[assignment]
-    processed: list[dict[str, str]] = []
+async def test_worker_loop_processes_queued_message() -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        worker, task, observer = await _worker_and_observer(uri, name="ALPHA", provider="rule")
+        loop_task = asyncio.create_task(worker._worker_loop())
+        try:
+            await worker.inbox.put({"sender": "USER", "payload": "go"})
+            message = await _wait_for_worker_chat(observer)
+        finally:
+            worker.agent.running = False
+            loop_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await loop_task
+            await _stop_worker_agent(worker, task)
+            await close_agents(observer)
 
-    async def fake_process(item: dict[str, str]) -> None:
-        processed.append(item)
-        worker.agent.running = False  # stop after the first item
-
-    monkeypatch.setattr(worker, "_process_item", fake_process)
-    await worker.inbox.put({"sender": "USER", "payload": "go"})
-    await worker._worker_loop()
-    assert processed == [{"sender": "USER", "payload": "go"}]
+    assert message["payload"] == "message received via Synapse. I am active on-channel."
 
 
 # --- run ---------------------------------------------------------------------
 
 
 async def test_run_completes_when_connection_finishes() -> None:
-    worker = _worker(name="ALPHA")
-    worker.agent = FakeAgent(ready=True)  # type: ignore[assignment]
-    await worker.run()  # connect returns -> worker task cancelled -> run returns
+    worker = _worker(name="ALPHA", uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1)
+    await worker.run()
 
 
 async def test_run_warns_on_handshake_timeout(capsys: pytest.CaptureFixture[str]) -> None:
-    worker = _worker(name="ALPHA")
-    worker.agent = FakeAgent(ready=False)  # type: ignore[assignment]
+    worker = _worker(name="ALPHA", uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1)
     await worker.run()
     assert "handshake timeout" in capsys.readouterr().out
 
 
 async def test_run_reports_connection_error(capsys: pytest.CaptureFixture[str]) -> None:
-    worker = _worker(name="ALPHA")
-    worker.agent = FakeAgent(connect_exc=RuntimeError("dropped"))  # type: ignore[assignment]
+    worker = _worker(name="ALPHA", uri="not-a-websocket-uri", ready_timeout=0.1)
     await worker.run()
-    assert "worker stopped: dropped" in capsys.readouterr().out
+    assert "worker stopped:" in capsys.readouterr().out
 
 
 def test_worker_forwards_token_to_its_agent() -> None:
@@ -298,16 +335,30 @@ def test_worker_default_token_is_none() -> None:
 
 
 async def test_run_advertises_capability_card_when_ready() -> None:
-    worker = _worker(name="ALPHA", task_classes=("chat", "reason"))
-    fake = FakeAgent(ready=True)
-    worker.agent = fake  # type: ignore[assignment]
-    await worker.run()
-    assert fake.cards == [("chat", "reason")]  # advertised its task classes
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        worker = _worker(name="ALPHA", uri=uri, task_classes=("chat", "reason"))
+        run_task = asyncio.create_task(worker.run())
+        try:
+            message = await observer.recorder.wait_for(
+                lambda item: (
+                    item.get("type") == "capability_advertised"
+                    and item.get("card", {}).get("agent") == "ALPHA"
+                )
+            )
+        finally:
+            worker.agent.running = False
+            run_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await run_task
+            await close_agents(observer)
+
+    assert message["card"]["task_classes"] == ["chat", "reason"]
 
 
-async def test_run_skips_advertise_on_handshake_timeout() -> None:
-    worker = _worker(name="ALPHA")
-    fake = FakeAgent(ready=False)
-    worker.agent = fake  # type: ignore[assignment]
+async def test_run_skips_advertise_on_handshake_timeout(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    worker = _worker(name="ALPHA", uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1)
     await worker.run()
-    assert fake.cards == []  # not advertised when the handshake timed out
+    assert "handshake timeout" in capsys.readouterr().out
