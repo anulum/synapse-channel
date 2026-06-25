@@ -9,12 +9,13 @@
 from __future__ import annotations
 
 import argparse
-from typing import Any
 
 import pytest
 
-from cli_locking_helpers import FakeAgent, _factory
+from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_locking
+from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.protocol import MessageType
 
 
 def test_parser_release() -> None:
@@ -24,75 +25,93 @@ def test_parser_release() -> None:
     assert args.func is cli_locking._cmd_release
 
 
-async def test_release_granted(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    granted: dict[str, Any] = {
-        "type": "release_granted",
-        "task_id": "studio-panel-enrich",
-        "owner": "USER",
-    }
-    factory = _factory(holder, inbound=[granted])
-    code = await cli_locking._release(
-        uri="ws://h",
-        name="USER",
-        task_id="studio-panel-enrich",
-        agent_factory=factory,
+async def _claim(uri: str, owner: str, task_id: str) -> AgentHandle:
+    handle = await connect_agent(owner, uri)
+    await handle.agent.claim(task_id, worktree=task_id, paths=[])
+    await handle.recorder.wait_for(
+        lambda message: (
+            message.get("type") == MessageType.CLAIM_GRANTED and message.get("task_id") == task_id
+        )
     )
+    return handle
+
+
+async def test_release_granted(capsys: pytest.CaptureFixture[str]) -> None:
+    async with running_hub(SynapseHub()) as (hub, uri):
+        holder = await _claim(uri, "USER", "studio-panel-enrich")
+        await close_agents(holder)
+        code = await cli_locking._release(
+            uri=uri,
+            name="USER",
+            task_id="studio-panel-enrich",
+        )
+
     assert code == 0
-    assert holder[0].releases == ["studio-panel-enrich"]
+    assert "studio-panel-enrich" not in hub.state.claims
     assert "released 'studio-panel-enrich'" in capsys.readouterr().out
 
 
 async def test_release_denied_for_non_owner(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    denied: dict[str, Any] = {
-        "type": "release_denied",
-        "task_id": "studio-panel-enrich",
-        "payload": "owned by SCPN-MIF-CORE, not USER",
-    }
-    factory = _factory(holder, inbound=[denied])
-    code = await cli_locking._release(
-        uri="ws://h",
-        name="USER",
-        task_id="studio-panel-enrich",
-        agent_factory=factory,
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        holder = await _claim(uri, "SCPN-MIF-CORE", "studio-panel-enrich")
+        try:
+            code = await cli_locking._release(
+                uri=uri,
+                name="USER",
+                task_id="studio-panel-enrich",
+            )
+        finally:
+            await close_agents(holder)
+
     assert code == 1
     out = capsys.readouterr().out
     assert "release refused for 'studio-panel-enrich'" in out
     assert "owned by SCPN-MIF-CORE" in out
 
 
-async def test_release_ignores_noise_then_confirms(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    inbound: list[dict[str, Any]] = [
-        # A grant for another task is ignored (wrong task id) ...
-        {"type": "release_granted", "task_id": "other", "owner": "USER"},
-        # ... and a grant addressed to a different owner is ignored too ...
-        {"type": "release_granted", "task_id": "t", "owner": "ELSE"},
-        # ... before the grant that actually belongs to this caller.
-        {"type": "release_granted", "task_id": "t", "owner": "USER"},
-    ]
-    factory = _factory(holder, inbound=inbound)
-    code = await cli_locking._release(uri="ws://h", name="USER", task_id="t", agent_factory=factory)
+async def test_release_selects_matching_task(capsys: pytest.CaptureFixture[str]) -> None:
+    async with running_hub(SynapseHub()) as (hub, uri):
+        holder = await connect_agent("USER", uri)
+        await holder.agent.claim("other", worktree="other", paths=[])
+        await holder.recorder.wait_for(
+            lambda message: (
+                message.get("type") == MessageType.CLAIM_GRANTED
+                and message.get("task_id") == "other"
+            )
+        )
+        await holder.agent.claim("t", worktree="t", paths=[])
+        await holder.recorder.wait_for(
+            lambda message: (
+                message.get("type") == MessageType.CLAIM_GRANTED and message.get("task_id") == "t"
+            )
+        )
+        await close_agents(holder)
+        code = await cli_locking._release(uri=uri, name="USER", task_id="t")
+
     assert code == 0
     assert "released 't'" in capsys.readouterr().out
+    assert "t" not in hub.state.claims
+    assert "other" in hub.state.claims
 
 
 async def test_release_reports_unreachable(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    factory = _factory(holder, ready=False)
-    code = await cli_locking._release(uri="ws://h", name="USER", task_id="t", agent_factory=factory)
+    code = await cli_locking._release(
+        uri=f"ws://127.0.0.1:{_free_port()}",
+        name="USER",
+        task_id="t",
+        ready_timeout=0.1,
+        attempts=1,
+    )
     assert code == 1
     assert "Could not reach hub" in capsys.readouterr().out
 
 
-async def test_release_gives_up_without_response(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    factory = _factory(holder, inbound=[])
-    code = await cli_locking._release(uri="ws://h", name="USER", task_id="t", agent_factory=factory)
+async def test_release_denies_missing_claim(capsys: pytest.CaptureFixture[str]) -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        code = await cli_locking._release(uri=uri, name="USER", task_id="t", attempts=2)
+
     assert code == 1
-    assert "no response from hub" in capsys.readouterr().out
+    assert "release refused for 't'" in capsys.readouterr().out
 
 
 def test_cmd_release_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:

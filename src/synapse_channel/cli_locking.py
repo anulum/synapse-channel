@@ -49,6 +49,9 @@ async def _lock(
     token: str | None = None,
     runner: LockRunner = _run_subprocess,
     retry_interval: float = 1.0,
+    ready_timeout: float = 5.0,
+    attempts: int = 40,
+    poll_interval: float = 0.05,
 ) -> int:
     """Hold a lease on ``task_id`` while running ``command``, serialising it across agents.
 
@@ -77,6 +80,14 @@ async def _lock(
         Shared-secret token for a secured hub.
     runner : LockRunner, optional
         Coroutine that runs the command; injectable for testing.
+    retry_interval : float, optional
+        Seconds to wait between denied claim attempts.
+    ready_timeout : float, optional
+        Seconds to wait for the hub connection readiness event.
+    attempts : int, optional
+        Claim verdict polling attempts per claim request.
+    poll_interval : float, optional
+        Seconds to wait between verdict polls.
 
     Returns
     -------
@@ -97,7 +108,7 @@ async def _lock(
     agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
     conn_task = asyncio.create_task(agent.connect())
     try:
-        if not await agent.wait_until_ready(timeout=5.0):
+        if not await agent.wait_until_ready(timeout=ready_timeout):
             print(f"[{name}] Could not reach hub at {uri}.")
             return 1
         loop = asyncio.get_event_loop()
@@ -112,10 +123,10 @@ async def _lock(
         while True:
             outcome.clear()
             await agent.claim(task_id, worktree=lock_worktree, paths=paths)
-            for _ in range(40):
+            for _ in range(attempts):
                 if outcome:
                     break
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(poll_interval)
             if outcome.get("granted"):
                 break
             if wait_timeout <= 0 or loop.time() >= deadline:
@@ -152,6 +163,9 @@ async def _release(
     task_id: str,
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
+    ready_timeout: float = 5.0,
+    attempts: int = 40,
+    poll_interval: float = 0.05,
 ) -> int:
     """Drop a claim the caller owns, printing the hub's verdict.
 
@@ -170,6 +184,12 @@ async def _release(
         Factory for the hub client; injectable for testing.
     token : str or None, optional
         Shared-secret token for a secured hub.
+    ready_timeout : float, optional
+        Seconds to wait for the hub connection readiness event.
+    attempts : int, optional
+        Release verdict polling attempts.
+    poll_interval : float, optional
+        Seconds to wait between verdict polls.
 
     Returns
     -------
@@ -190,14 +210,14 @@ async def _release(
     agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
     conn_task = asyncio.create_task(agent.connect())
     try:
-        if not await agent.wait_until_ready(timeout=5.0):
+        if not await agent.wait_until_ready(timeout=ready_timeout):
             print(f"[{name}] Could not reach hub at {uri}.")
             return 1
         await agent.release(task_id)
-        for _ in range(40):
+        for _ in range(attempts):
             if outcome:
                 break
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(poll_interval)
         if outcome.get("released"):
             print(f"released '{task_id}'")
             return 0
