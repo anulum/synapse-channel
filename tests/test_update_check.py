@@ -10,11 +10,12 @@
 from __future__ import annotations
 
 import json
-import urllib.request
 from pathlib import Path
 
 import pytest
 
+from http_server_helpers import LocalHttpResponder
+from hub_e2e_helpers import _free_port
 from synapse_channel import update_check as uc
 
 # --- version parsing + ordering ----------------------------------------------
@@ -50,52 +51,29 @@ def test_is_newer(latest: str, current: str, newer: bool) -> None:
 # --- fetching from PyPI ------------------------------------------------------
 
 
-class _FakeResponse:
-    """Minimal context-manager stand-in for an ``http.client.HTTPResponse``."""
-
-    def __init__(self, body: bytes) -> None:
-        self._body = body
-
-    def read(self) -> bytes:
-        return self._body
-
-    def __enter__(self) -> _FakeResponse:
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        return None
+def test_fetch_latest_success() -> None:
+    with LocalHttpResponder(body=json.dumps({"info": {"version": "0.31.0"}}).encode()) as server:
+        assert uc._fetch_latest(url=server.url) == "0.31.0"
+    assert server.requests[0].method == "GET"
 
 
-def _patch_urlopen(monkeypatch: pytest.MonkeyPatch, body: bytes) -> None:
-    monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout: _FakeResponse(body))
+def test_fetch_latest_network_error() -> None:
+    assert uc._fetch_latest(url=f"http://127.0.0.1:{_free_port()}") is None
 
 
-def test_fetch_latest_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_urlopen(monkeypatch, json.dumps({"info": {"version": "0.31.0"}}).encode())
-    assert uc._fetch_latest() == "0.31.0"
+def test_fetch_latest_bad_json() -> None:
+    with LocalHttpResponder(body=b"not json") as server:
+        assert uc._fetch_latest(url=server.url) is None
 
 
-def test_fetch_latest_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    def boom(url: str, timeout: float) -> _FakeResponse:
-        raise OSError("no network")
-
-    monkeypatch.setattr(urllib.request, "urlopen", boom)
-    assert uc._fetch_latest() is None
+def test_fetch_latest_missing_key() -> None:
+    with LocalHttpResponder(body=b'{"info": {}}') as server:
+        assert uc._fetch_latest(url=server.url) is None
 
 
-def test_fetch_latest_bad_json(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_urlopen(monkeypatch, b"not json")
-    assert uc._fetch_latest() is None
-
-
-def test_fetch_latest_missing_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_urlopen(monkeypatch, b'{"info": {}}')
-    assert uc._fetch_latest() is None
-
-
-def test_fetch_latest_empty_version(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_urlopen(monkeypatch, json.dumps({"info": {"version": ""}}).encode())
-    assert uc._fetch_latest() is None
+def test_fetch_latest_empty_version() -> None:
+    with LocalHttpResponder(body=json.dumps({"info": {"version": ""}}).encode()) as server:
+        assert uc._fetch_latest(url=server.url) is None
 
 
 # --- cache read/write --------------------------------------------------------
