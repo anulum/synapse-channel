@@ -8,13 +8,61 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from typing import Any
 
 from a2a_server_helpers import RecordingAgent, SlowRecordingAgent
+from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
+
+
+async def test_create_working_task_forwards_marked_request_through_live_hub() -> None:
+    async with running_hub() as (_hub, uri):
+        bridge_handle = await connect_agent("A2A-BRIDGE", uri)
+        worker = await connect_agent("WORKER", uri)
+        submitted: list[asyncio.Task[Any]] = []
+
+        def submit(coro: Any) -> asyncio.Task[Any]:
+            task = asyncio.create_task(coro)
+            submitted.append(task)
+            return task
+
+        try:
+            bridge = A2ABridge(
+                agent=bridge_handle.agent,
+                agent_card={},
+                target="WORKER",
+                store=A2ATaskStore(),
+                submit=submit,
+            )
+            task = bridge.create_working_task(
+                {
+                    "taskId": "task-live-forward",
+                    "contextId": "ctx-live-forward",
+                    "messageId": "m-live-forward",
+                    "role": "ROLE_USER",
+                    "parts": [{"text": "compute through the live hub"}],
+                },
+                target="WORKER",
+            )
+            await asyncio.gather(*submitted)
+            frame = await worker.recorder.wait_for(
+                lambda message: (
+                    message.get("type") == "chat"
+                    and message.get("sender") == "A2A-BRIDGE"
+                    and message.get("target") == "WORKER"
+                    and "compute through the live hub" in str(message.get("payload", ""))
+                )
+            )
+        finally:
+            await close_agents(worker, bridge_handle)
+
+    payload = str(frame.get("payload", ""))
+    assert task["id"] == "task-live-forward"
+    assert "[A2A-TASK:task-live-forward contextId=ctx-live-forward]" in payload
 
 
 def test_handle_synapse_frame_correlates_reply_and_completes_task() -> None:
