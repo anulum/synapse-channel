@@ -30,34 +30,46 @@ scope and is documented as such rather than fabricated.
 
 ## Scalability benchmark
 
-`scalability_benchmark.py` profiles the one part of the hub that grows with load:
-every state mutation (claim, release, heartbeat, …) lazily expires stale leases,
-which scans the live claim set — an `O(active_claims)` step. The comparison count
-per scan is exact (it equals the active claim count); the wall-clock time is
-host-specific, so the host CPU and Python version are recorded with each result
-and the **linear shape**, not the absolute times, is the reproducible finding.
+`scalability_benchmark.py` profiles the hub costs that grow with the amount of
+work it holds:
 
-On the committed reference host (Intel i5-11600K, Python 3.12) the mean
-per-mutation scan and the rate at which that scan alone would saturate one core:
+- **Lease expiry.** Since 0.40.0, stale leases are expired through a min-heap
+  keyed by lease expiry. A heartbeat over live claims checks the heap top and is
+  near-constant in the claim count; a mass-expiry event drains the due heap
+  entries.
+- **Event replay.** A hub with a durable log rebuilds state on start-up by
+  replaying events.
+- **Scope-conflict scan.** A new non-overlapping claim checks its file scope
+  against live claims in the same worktree. That scan remains
+  `O(active_claims)`.
 
-| Active claims | µs / mutation | Mutations/s before one core saturates |
+On the committed reference host (Intel i5-11600K, Python 3.12), the current
+results are:
+
+| Active claims | Steady heartbeat expiry (µs) | Mass expiry (µs) | Non-overlap claim scan (µs) |
+|---:|---:|---:|---:|
+| 10 | 0.338 | 8.55 | 22.477 |
+| 100 | 0.276 | 41.12 | 133.222 |
+| 1,000 | 0.284 | 484.12 | 1,366.977 |
+| 10,000 | 0.424 | 7,006.81 | 13,868.055 |
+| 100,000 | 0.338 | 104,643.27 | 141,743.784 |
+
+Replay also scales with event count on the same reference run:
+
+| Events | Replay time (ms) | Events/s |
 |---:|---:|---:|
-| 10 | 0.6 | ~1,600,000 |
-| 100 | 2.5 | ~400,000 |
-| 1,000 | 21 | ~47,000 |
-| 10,000 | 254 | ~3,900 |
-| 100,000 | 3,105 | ~320 |
+| 100 | 0.854 | 117,078 |
+| 1,000 | 5.29 | 189,041 |
+| 10,000 | 98.92 | 101,091 |
+| 100,000 | 1,128.851 | 88,585 |
 
 **Reading it honestly.** At the local-first design scale — a handful to a few
-dozen agents holding tens to low-hundreds of claims — the scan is **0.6–2.5 µs**,
-under a millionth of a core, completely invisible. It stays negligible into the
-thousands of claims. It only becomes a real ceiling around **100,000 active
-claims sustaining hundreds of mutations a second** — far past what a single,
-deliberately local-first hub is meant to hold. And the scan is not the binding
-constraint anyway: a single process and a single event loop cap throughput long
-before the expiry scan does. A heap-based expiry sweeper would turn the `O(n)`
-scan into `O(log n)`, but it would optimise something that is not the limit at any
-scale this design targets — so it is recorded as a tracked option, not a fix.
+dozen agents holding tens to low-hundreds of claims — steady lease expiry is
+effectively flat, because no live lease is due. Mass expiry and durable replay
+scale with the amount of work being drained or replayed. The remaining linear
+hot path is the scope-conflict scan for a new non-overlapping claim; it is
+measured separately so any future indexing work can be justified by data rather
+than by the old, now-stale expiry model.
 
 ## A2A bridge benchmark
 

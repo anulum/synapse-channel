@@ -36,24 +36,38 @@ When that boundary is crossed, the proportionate controls are:
 
 - **Connect authentication.** `synapse hub --token SECRET` requires a shared
   secret on the first message of each connection, compared in constant time. The
-  hub logs a warning when it is bound to a non-loopback host with no token. Prefer
-  `--token-file PATH` or the `SYNAPSE_TOKEN` environment variable over `--token`,
-  which is visible in the process list.
+  hub refuses a non-loopback bind unless a token is configured, or unless the
+  operator explicitly passes `--insecure-off-loopback` to accept an exposed
+  unauthenticated hub. Prefer `--token-file PATH` or the `SYNAPSE_TOKEN`
+  environment variable over `--token`, which is visible in the process list.
 - **Bounded resources.** A `--max-clients` connection cap, a `--max-msg-kb` frame
   size cap, per-agent rate limiting, bounded chat history, a bounded progress
   ledger, and a bounded relay log keep one runaway agent or a flood from exhausting
   the single hub.
 - **Lease and epoch guards.** Claims expire; each lease carries an epoch so a
   superseded agent cannot act on a dead claim; mutations support idempotency keys
-  so a reconnect retry is applied once.
+  so a reconnect retry is applied once while the hub retains its idempotency
+  cache. The idempotency cache is not a durable identity or replay-protection
+  system across arbitrary hub restarts.
 - **Advisory file scopes.** A claim's `paths` are opaque strings the hub compares
   only for glob overlap — it never reads, opens, or resolves them on the
   filesystem. A claim on `../../etc/passwd` coordinates nothing and touches nothing
   on disk, so scope strings are not a path-traversal surface.
 - **Metrics endpoint.** The optional `synapse hub --metrics` endpoint is off by
   default and, when enabled, carries operational metadata with no authentication.
-  Keep it on a loopback bind, or require a token with `--metrics-token`; the hub
-  warns when metrics are enabled on a non-loopback host without one.
+  Keep it on a loopback bind, or require a token with `--metrics-token`; when
+  metrics are enabled on a non-loopback host, the hub refuses to start without a
+  metrics token unless `--insecure-off-loopback` is set. The recommended token
+  presentation is `Authorization: Bearer <token>`. The `?token=<token>` query
+  form is accepted only when the operator opts in with
+  `--metrics-query-token-ok`.
+- **A2A HTTP bridge.** `synapse a2a-serve` is a separate stdlib HTTP edge that
+  defaults to `127.0.0.1`. Its public Agent Card is intentionally readable; the
+  task, RPC, extended-card, and push-configuration routes can require HTTP
+  Bearer auth with `--bearer-auth --a2a-token`. Treat any non-loopback A2A bind
+  as an exposed HTTP service: use bearer auth, keep state files private, and do
+  not claim external A2A conformance until interoperability and webhook
+  validation have run.
 
 The core hub and its state stay on the operator's machine, but two boundaries are
 worth stating plainly:
@@ -80,6 +94,10 @@ worth stating plainly:
 - The event log and SQLite database are stored in plaintext on the operator's own
   machine. Encryption at rest is out of scope for the local-first niche; it is a
   concern for a future managed multi-tenant hub, not the single-owner core.
+- The A2A bridge is a local HTTP+JSON bridge over SYNAPSE capabilities, not a
+  certified A2A implementation. Remote conformance, real webhook receiver
+  behavior, TLS/reverse-proxy deployment, and exposed-edge threat modelling are
+  tracked as future validation work.
 
 ## Licensing
 

@@ -25,6 +25,7 @@ from synapse_channel.a2a_server import A2ABridge, SynapseAgentRuntime, serve_a2a
 from synapse_channel.a2a_store import A2ATaskStore
 from synapse_channel.cli_queries import _query_hub
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.core.hub import is_loopback_host
 from synapse_channel.core.protocol import MessageType
 
 
@@ -158,6 +159,20 @@ def _cmd_a2a_serve(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    if not is_loopback_host(args.host) and not args.bearer_auth:
+        if not args.insecure_off_loopback:
+            print(
+                f"[{args.name}] Refusing to bind A2A bridge to non-loopback host "
+                f"{args.host!r} without --bearer-auth and --a2a-token. Pass "
+                "--insecure-off-loopback to bind anyway.",
+                file=sys.stderr,
+            )
+            return 2
+        print(
+            f"[{args.name}] WARNING: binding A2A bridge to non-loopback host "
+            f"{args.host!r} without bearer authentication.",
+            file=sys.stderr,
+        )
     manifest = asyncio.run(
         _fetch_manifest(uri=args.uri, name=f"{args.name}-manifest", token=args.token)
     )
@@ -271,6 +286,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--a2a-token",
         default=None,
         help="Bearer token required by protected A2A bridge routes.",
+    )
+    serve.add_argument(
+        "--insecure-off-loopback",
+        action="store_true",
+        help="Allow a non-loopback A2A bind without bearer authentication.",
     )
     serve.add_argument(
         "--state-file",
