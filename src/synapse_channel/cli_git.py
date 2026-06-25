@@ -26,6 +26,7 @@ from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.git.gitclaim import GitError, run_git_claim
 from synapse_channel.git.gitconflict import run_conflicts
 from synapse_channel.git.githook import check_hooks, install_hooks, run_git_release
+from synapse_channel.git.gitinit import init_repo
 
 
 def _cmd_git_claim(args: argparse.Namespace) -> int:
@@ -45,6 +46,30 @@ def _cmd_git_claim(args: argparse.Namespace) -> int:
             token=args.token,
         )
     )
+
+
+def _cmd_git_init(args: argparse.Namespace) -> int:
+    """Set up claim-aware git in one step: install the hooks and write the scaffold.
+
+    A thin wrapper over the existing git integration — it installs the same
+    auto-release hooks as ``git-hook install`` and adds a ``.synapse/`` onboarding
+    guide (branch convention + worktree workflow). Everything is client-side and
+    idempotent; a re-run refreshes its own files and never clobbers a user's.
+    """
+    try:
+        lines = init_repo(
+            uri=args.uri,
+            name=args.name,
+            base_branch=args.base,
+            token_file=getattr(args, "token_file", None),
+            synapse_bin=args.synapse_bin,
+        )
+    except GitError as exc:
+        print(f"git error: {exc}", file=sys.stderr)
+        return 1
+    for line in lines:
+        print(line)
+    return 0
 
 
 def _cmd_git_hook(args: argparse.Namespace) -> int:
@@ -167,6 +192,26 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     git_claim.add_argument("--name", default="USER")
     git_claim.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     git_claim.set_defaults(func=_cmd_git_claim)
+
+    git_init = subparsers.add_parser(
+        "git-init",
+        help="Set up claim-aware git in one step: install the hooks and write a .synapse/ guide.",
+    )
+    git_init.add_argument("--uri", default=DEFAULT_HUB_URI)
+    git_init.add_argument("--name", default="USER")
+    git_init.add_argument(
+        "--base",
+        default="main",
+        help="Integration branch the convention branches off (default: main).",
+    )
+    git_init.add_argument(
+        "--synapse-bin",
+        default=None,
+        help="Path to the synapse executable to invoke from the hooks; defaults to the "
+        "absolute path resolved from PATH at install time (hardens against PATH hijack).",
+    )
+    git_init.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    git_init.set_defaults(func=_cmd_git_init)
 
     git_hook = subparsers.add_parser(
         "git-hook",

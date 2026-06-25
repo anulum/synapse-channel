@@ -1,0 +1,134 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE_CHANNEL — one-command claim-aware git onboarding (synapse git-init)
+"""One-command claim-aware git onboarding behind ``synapse git-init``.
+
+:func:`init_repo` installs the auto-release hooks (reusing
+:func:`synapse_channel.git.githook.install_hooks`) and writes a short scaffold
+guide under ``.synapse/`` documenting the branch-naming convention, the
+recommended git-worktree-per-claim workflow, and the exact ``git-claim`` /
+``git-hook`` commands — so a fresh clone becomes claim-aware in one step instead
+of several. Everything is client-side and idempotent; the git executor and the
+target directories are injectable so the flow is unit-testable without a real
+repository.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from synapse_channel.git.gitclaim import GitRunner, _default_git_runner
+from synapse_channel.git.githook import install_hooks
+
+SCAFFOLD_DIR = ".synapse"
+"""Repository-relative directory the onboarding scaffold is written into."""
+
+SCAFFOLD_FILE = "git-claims.md"
+"""Filename of the onboarding guide within :data:`SCAFFOLD_DIR`."""
+
+SCAFFOLD_MARKER = "<!-- synapse-git-init -->"
+"""Marker identifying a scaffold this tool wrote, so a user's own file is never clobbered."""
+
+
+def repo_toplevel(*, runner: GitRunner = _default_git_runner) -> Path:
+    """Return the repository's working-tree root via ``git rev-parse``."""
+    return Path(runner(["rev-parse", "--show-toplevel"]))
+
+
+def _scaffold_body(*, name: str, base_branch: str) -> str:
+    """Build the onboarding guide written into ``.synapse/git-claims.md``."""
+    return (
+        f"{SCAFFOLD_MARKER}\n"
+        "# Claim-aware git in this repository\n\n"
+        "Several agents can edit this repo at once without clobbering each other by\n"
+        "declaring a file-scope claim before they start and releasing it on merge.\n"
+        "`synapse git-init` set this up; the conventions below keep it frictionless.\n\n"
+        "## Branch naming\n\n"
+        f"Branch one claim per unit of work off `{base_branch}`:\n\n"
+        "```\n"
+        "claim/<task-id>      # e.g. claim/auth-refactor\n"
+        "```\n\n"
+        "so the branch name and the claim's task id line up, and a reviewer can see\n"
+        "which branch owns which scope.\n\n"
+        "## One worktree per claim (recommended)\n\n"
+        "Run parallel claims in separate git worktrees, so each has its own checkout\n"
+        "and the file-scope claims never overlap on disk:\n\n"
+        "```\n"
+        "git worktree add ../<repo>-<task-id> -b claim/<task-id>\n"
+        "```\n\n"
+        "## Claiming and releasing\n\n"
+        "```\n"
+        f"synapse git-claim <task-id> --paths src/area --name {name}\n"
+        "# ... edit, commit ...\n"
+        "# the post-commit / post-merge hook auto-releases the claim (installed here)\n"
+        "```\n\n"
+        "The hub only ever sees an ordinary claim and release — all the git awareness\n"
+        "is client-side. Run `synapse conflicts` to predict cross-branch overlaps, and\n"
+        "`synapse git-hook test` to confirm the hooks are healthy.\n"
+    )
+
+
+def init_repo(
+    *,
+    uri: str,
+    name: str,
+    base_branch: str = "main",
+    token_file: str | None = None,
+    synapse_bin: str | None = None,
+    runner: GitRunner = _default_git_runner,
+    hooks_dir: Path | None = None,
+    scaffold_dir: Path | None = None,
+) -> list[str]:
+    """Install the auto-release hooks and write the onboarding scaffold.
+
+    Idempotent: a re-run overwrites a scaffold this tool wrote (carrying
+    :data:`SCAFFOLD_MARKER`) but leaves a user's own ``.synapse/git-claims.md``
+    untouched and reported — the same contract as the hooks.
+
+    Parameters
+    ----------
+    uri, name : str
+        Hub URI and agent identity baked into the installed hooks.
+    base_branch : str, optional
+        The integration branch the convention branches off. Defaults to ``main``.
+    token_file : str or None, optional
+        A token file passed through to the hooks for a secured hub.
+    synapse_bin : str or None, optional
+        Path to the ``synapse`` executable baked into the hooks; resolved from the
+        current ``PATH`` when ``None``.
+    runner : GitRunner, optional
+        The git executor; injectable for testing.
+    hooks_dir, scaffold_dir : Path or None, optional
+        Override the hooks / scaffold directories; resolved from git when ``None``.
+
+    Returns
+    -------
+    list[str]
+        One human-readable line per hook and the scaffold file (installed,
+        updated, or skipped).
+    """
+    results = install_hooks(
+        uri=uri,
+        name=name,
+        token_file=token_file,
+        synapse_bin=synapse_bin,
+        runner=runner,
+        hooks_dir=hooks_dir,
+    )
+    base = scaffold_dir if scaffold_dir is not None else repo_toplevel(runner=runner) / SCAFFOLD_DIR
+    base.mkdir(parents=True, exist_ok=True)
+    guide = base / SCAFFOLD_FILE
+    if guide.exists() and SCAFFOLD_MARKER not in guide.read_text(encoding="utf-8", errors="ignore"):
+        results.append(f"skipped {SCAFFOLD_DIR}/{SCAFFOLD_FILE}: a non-Synapse file already exists")
+    else:
+        existed = guide.exists()
+        guide.write_text(_scaffold_body(name=name, base_branch=base_branch), encoding="utf-8")
+        verb = "updated" if existed else "wrote"
+        results.append(
+            f"{verb} {SCAFFOLD_DIR}/{SCAFFOLD_FILE} (branch convention + worktree guide)"
+        )
+    return results

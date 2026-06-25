@@ -22,6 +22,12 @@ All notable changes to this project are documented here.
   so directed messages never wake you. Each line carries the fix, and the command
   exits non-zero when a check fails, so it slots into a setup script. Point it with
   `--uri`/`--project`/`--id`/`--send-name`/`--token` (or `--token-file`).
+- `synapse git-init` makes a fresh clone claim-aware in one step: it installs the
+  same `post-commit`/`post-merge` auto-release hooks as `git-hook install` and writes
+  a short `.synapse/git-claims.md` guide — the branch-naming convention, the
+  recommended one-worktree-per-claim workflow, and the exact claim/release commands.
+  It is idempotent and never clobbers a file you wrote; `--base` sets the integration
+  branch the convention assumes (default `main`).
 
 ### Changed
 - The hub now **refuses to start** on a non-loopback address (e.g. `--host 0.0.0.0`)
