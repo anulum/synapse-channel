@@ -24,6 +24,14 @@ from synapse_channel.core.hub import InsecureBindError, SynapseHub
 # --- Sprint A: caps, capacity gate, takeover cooldown, signal handlers -------
 
 
+def _close_code(exc: ConnectionClosed) -> int | None:
+    if exc.rcvd is not None:
+        return exc.rcvd.code
+    if exc.sent is not None:
+        return exc.sent.code
+    return None
+
+
 def test_hub_caps_clamped() -> None:
     hub = SynapseHub(max_clients=0, max_msg_bytes=0, takeover_cooldown=-5.0)
     assert hub.max_clients == 1
@@ -39,7 +47,7 @@ async def test_handler_rejects_at_capacity() -> None:
             with pytest.raises(ConnectionClosed) as exc_info:
                 await read_json(websocket)
 
-    assert exc_info.value.code == 4013
+    assert _close_code(exc_info.value) == 4013
 
 
 async def test_handler_rejects_when_unauth_cap_reached() -> None:
@@ -50,7 +58,7 @@ async def test_handler_rejects_when_unauth_cap_reached() -> None:
             with pytest.raises(ConnectionClosed) as exc_info:
                 await read_json(websocket)
 
-    assert exc_info.value.code == 4014
+    assert _close_code(exc_info.value) == 4014
     assert hub.connected_clients == set()
 
 
@@ -84,8 +92,8 @@ async def test_takeover_cooldown_blocks_rapid_eviction() -> None:
             else:
                 pytest.fail("third takeover connection did not close")
 
-    assert first_close.value.code == 4010
-    assert third_close.code == 4014
+    assert _close_code(first_close.value) == 4010
+    assert _close_code(third_close) == 4014
 
 
 def test_install_signal_handlers_wires_both() -> None:
