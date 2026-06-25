@@ -9,11 +9,32 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 
 from synapse_channel import cli
+
+
+@contextmanager
+def _env_var(name: str, value: str | None) -> Iterator[None]:
+    previous = os.environ.get(name)
+    if value is None:
+        os.environ.pop(name, None)
+    else:
+        os.environ[name] = value
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = previous
+
 
 # --- main dispatch -----------------------------------------------------------
 
@@ -22,20 +43,23 @@ def test_main_without_command_prints_help() -> None:
     assert cli.main([]) == 1
 
 
-def test_main_version_exits(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setattr(cli, "update_notice", lambda: None)  # no network in tests
-    with pytest.raises(SystemExit):
+def test_main_version_exits(capsys: pytest.CaptureFixture[str]) -> None:
+    with _env_var("SYNAPSE_NO_UPDATE_CHECK", "1"), pytest.raises(SystemExit):
         cli.main(["--version"])
     assert "synapse-channel" in capsys.readouterr().out
 
 
 def test_main_version_prints_update_notice(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(cli, "update_notice", lambda: "  → 9.9.9 is available")
-    with pytest.raises(SystemExit):
+    cache = tmp_path / "synapse-channel" / "update-check.json"
+    cache.parent.mkdir()
+    cache.write_text(json.dumps({"checked_at": 9_999_999_999.0, "latest": "9.9.9"}))
+    with (
+        _env_var("XDG_CACHE_HOME", str(tmp_path)),
+        _env_var("SYNAPSE_NO_UPDATE_CHECK", None),
+        pytest.raises(SystemExit),
+    ):
         cli.main(["--version"])
     captured = capsys.readouterr()
     assert "synapse-channel" in captured.out
@@ -85,22 +109,22 @@ def test_resolve_token_from_file(tmp_path: Path) -> None:
     assert cli._resolve_token(argparse.Namespace(token=None, token_file=str(f))) == "file-tok"
 
 
-def test_resolve_token_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SYNAPSE_TOKEN", "env-tok")
-    assert cli._resolve_token(argparse.Namespace(token=None, token_file=None)) == "env-tok"
+def test_resolve_token_from_env() -> None:
+    with _env_var("SYNAPSE_TOKEN", "env-tok"):
+        assert cli._resolve_token(argparse.Namespace(token=None, token_file=None)) == "env-tok"
 
 
-def test_resolve_token_precedence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_token_precedence(tmp_path: Path) -> None:
     f = tmp_path / "tok"
     f.write_text("file-tok", encoding="utf-8")
-    monkeypatch.setenv("SYNAPSE_TOKEN", "env-tok")
-    assert cli._resolve_token(argparse.Namespace(token="cli", token_file=str(f))) == "cli"
-    assert cli._resolve_token(argparse.Namespace(token=None, token_file=str(f))) == "file-tok"
+    with _env_var("SYNAPSE_TOKEN", "env-tok"):
+        assert cli._resolve_token(argparse.Namespace(token="cli", token_file=str(f))) == "cli"
+        assert cli._resolve_token(argparse.Namespace(token=None, token_file=str(f))) == "file-tok"
 
 
-def test_resolve_token_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("SYNAPSE_TOKEN", raising=False)
-    assert cli._resolve_token(argparse.Namespace(token=None, token_file=None)) is None
+def test_resolve_token_none() -> None:
+    with _env_var("SYNAPSE_TOKEN", None):
+        assert cli._resolve_token(argparse.Namespace(token=None, token_file=None)) is None
 
 
 def test_resolve_token_missing_file(tmp_path: Path) -> None:
@@ -109,6 +133,6 @@ def test_resolve_token_missing_file(tmp_path: Path) -> None:
         cli._resolve_token(ns)
 
 
-def test_resolve_token_no_token_file_attr(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SYNAPSE_TOKEN", "env-tok")
-    assert cli._resolve_token(argparse.Namespace(token=None)) == "env-tok"
+def test_resolve_token_no_token_file_attr() -> None:
+    with _env_var("SYNAPSE_TOKEN", "env-tok"):
+        assert cli._resolve_token(argparse.Namespace(token=None)) == "env-tok"
