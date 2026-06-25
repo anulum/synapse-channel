@@ -37,6 +37,7 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
                 name=args.name,
                 token=args.token,
                 request_timeout=args.request_timeout,
+                ready_timeout=args.ready_timeout,
             )
         )
     except RuntimeError as exc:
@@ -61,5 +62,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=float,
         default=DEFAULT_REQUEST_TIMEOUT,
         help="Seconds to await a hub reply before reporting no response.",
+    )
+    mcp.add_argument(
+        "--ready-timeout",
+        type=float,
+        default=5.0,
+        help="Seconds to wait for the hub handshake before reporting it unreachable.",
     )
     mcp.set_defaults(func=_cmd_mcp)

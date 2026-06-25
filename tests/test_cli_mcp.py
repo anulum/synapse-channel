@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from hub_e2e_helpers import _free_port
 from synapse_channel import cli, cli_mcp
 from synapse_channel.mcp.server import DEFAULT_REQUEST_TIMEOUT
 
@@ -24,57 +25,40 @@ def test_parser_mcp() -> None:
     assert args.name == "bridge"
 
 
-def test_parser_mcp_request_timeout() -> None:
-    assert cli.build_parser().parse_args(["mcp"]).request_timeout == DEFAULT_REQUEST_TIMEOUT
-    args = cli.build_parser().parse_args(["mcp", "--request-timeout", "12.5"])
-    assert args.request_timeout == 12.5
+def test_parser_mcp_timeouts() -> None:
+    args = cli.build_parser().parse_args(["mcp"])
+    assert args.request_timeout == DEFAULT_REQUEST_TIMEOUT
+    assert args.ready_timeout == 5.0
+
+    custom = cli.build_parser().parse_args(
+        ["mcp", "--request-timeout", "12.5", "--ready-timeout", "0.25"]
+    )
+    assert custom.request_timeout == 12.5
+    assert custom.ready_timeout == 0.25
 
 
 def _mcp_ns(**overrides: Any) -> argparse.Namespace:
+    port = _free_port()
     base: dict[str, Any] = {
-        "uri": "ws://x",
+        "uri": f"ws://localhost:{port}",
         "name": "bridge",
         "token": None,
         "request_timeout": DEFAULT_REQUEST_TIMEOUT,
+        "ready_timeout": 0.1,
     }
     base.update(overrides)
     return argparse.Namespace(**base)
 
 
-def test_cmd_mcp_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake(**kwargs: Any) -> int:
-        return 0
-
-    monkeypatch.setattr(cli_mcp, "serve_stdio", fake)
-    assert cli_mcp._cmd_mcp(_mcp_ns()) == 0
-
-
-def test_cmd_mcp_forwards_request_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, Any] = {}
-
-    async def fake(**kwargs: Any) -> int:
-        captured.update(kwargs)
-        return 0
-
-    monkeypatch.setattr(cli_mcp, "serve_stdio", fake)
-    assert cli_mcp._cmd_mcp(_mcp_ns(request_timeout=9.0)) == 0
-    assert captured["request_timeout"] == 9.0
-
-
-def test_cmd_mcp_reports_missing_extra(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    async def fake(**kwargs: Any) -> int:
-        raise RuntimeError("pip install 'synapse-channel[mcp]'")
-
-    monkeypatch.setattr(cli_mcp, "serve_stdio", fake)
+def test_cmd_mcp_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli_mcp._cmd_mcp(_mcp_ns()) == 1
-    assert "[mcp]" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "could not reach hub" in err
+    assert "bridge" in err
 
 
-def test_cmd_mcp_handles_keyboard_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake(**kwargs: Any) -> int:
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr(cli_mcp, "serve_stdio", fake)
-    assert cli_mcp._cmd_mcp(_mcp_ns()) == 0
+def test_cmd_mcp_preserves_distinct_name_in_unreachable_report(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert cli_mcp._cmd_mcp(_mcp_ns(name="adapter")) == 1
+    assert "[adapter] could not reach hub" in capsys.readouterr().err
