@@ -8,12 +8,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
-from synapse_channel.git.gitclaim import AgentFactory, GitError
+from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
+from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.protocol import MessageType
+from synapse_channel.git.gitclaim import GitError
 from synapse_channel.git.gitconflict import (
     PredictedConflict,
     _overlap,
@@ -21,53 +23,6 @@ from synapse_channel.git.gitconflict import (
     find_conflicts,
     run_conflicts,
 )
-
-
-class FakeAgent:
-    """A SynapseAgent stand-in that replays an inbound state snapshot."""
-
-    def __init__(
-        self,
-        name: str,
-        callback: Callable[[dict[str, Any]], Awaitable[None]],
-        *,
-        uri: str = "ws://test",
-        verbose: bool = False,
-        token: str | None = None,
-        ready: bool = True,
-        inbound: list[dict[str, Any]] | None = None,
-    ) -> None:
-        self.name = name
-        self.callback = callback
-        self.uri = uri
-        self.token = token
-        self.running = True
-        self._ready = ready
-        self._inbound = inbound or []
-        self.state_requests = 0
-
-    async def connect(self) -> None:
-        for message in self._inbound:
-            await self.callback(message)
-
-    async def wait_until_ready(self, timeout: float = 5.0) -> bool:
-        return self._ready
-
-    async def request_state(self) -> None:
-        self.state_requests += 1
-
-
-def make_factory(
-    *, ready: bool = True, inbound: list[dict[str, Any]] | None = None
-) -> tuple[AgentFactory, list[FakeAgent]]:
-    created: list[FakeAgent] = []
-
-    def factory(name: str, callback: Any, **kwargs: Any) -> FakeAgent:
-        agent = FakeAgent(name, callback, ready=ready, inbound=inbound, **kwargs)
-        created.append(agent)
-        return agent
-
-    return cast(AgentFactory, factory), created
 
 
 def _claim(
@@ -83,6 +38,30 @@ def _claim(
 
 def _snapshot(claims: list[dict[str, Any]]) -> dict[str, Any]:
     return {"type": "state_snapshot", "snapshot": {"active_claims": claims}}
+
+
+async def _claim_live(
+    uri: str,
+    name: str,
+    task_id: str,
+    branch: str,
+    paths: list[str],
+    *,
+    worktree: str,
+) -> AgentHandle:
+    handle = await connect_agent(name, uri)
+    await handle.agent.claim(
+        task_id,
+        worktree=worktree,
+        paths=paths,
+        git={"branch": branch, "base": "main", "auto_release_on": "merge"},
+    )
+    await handle.recorder.wait_for(
+        lambda message: (
+            message.get("type") == MessageType.CLAIM_GRANTED and message.get("task_id") == task_id
+        )
+    )
+    return handle
 
 
 # -- _overlap -----------------------------------------------------------------
@@ -193,14 +172,14 @@ def test_branch_diff_files_uses_three_dot_range() -> None:
 
 
 async def test_run_conflicts_reports_predictions(capsys: pytest.CaptureFixture[str]) -> None:
-    claims = [
-        _claim("T1", "A", "feature/x", ["src/auth.py"]),
-        _claim("T2", "B", "feature/y", ["src/auth.py"]),
-    ]
-    factory, _created = make_factory(
-        inbound=[{"type": "chat", "payload": "noise"}, _snapshot(claims)]
-    )
-    rc = await run_conflicts(uri="ws://t", name="U", agent_factory=factory, runner=lambda _a: "")
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        first = await _claim_live(uri, "A", "T1", "feature/x", ["src/auth.py"], worktree="/repo-a")
+        second = await _claim_live(uri, "B", "T2", "feature/y", ["src/auth.py"], worktree="/repo-b")
+        try:
+            rc = await run_conflicts(uri=uri, name="U", runner=lambda _a: "")
+        finally:
+            await close_agents(first, second)
+
     assert rc == 2
     out = capsys.readouterr().out
     assert "Predicted conflicts (1)" in out
@@ -208,33 +187,42 @@ async def test_run_conflicts_reports_predictions(capsys: pytest.CaptureFixture[s
 
 
 async def test_run_conflicts_none(capsys: pytest.CaptureFixture[str]) -> None:
-    claims = [_claim("T1", "A", "feature/x", ["src/auth.py"])]
-    factory, _created = make_factory(inbound=[_snapshot(claims)])
-    rc = await run_conflicts(uri="ws://t", name="U", agent_factory=factory, runner=lambda _a: "")
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        handle = await _claim_live(uri, "A", "T1", "feature/x", ["src/auth.py"], worktree="/repo-a")
+        try:
+            rc = await run_conflicts(uri=uri, name="U", runner=lambda _a: "")
+        finally:
+            await close_agents(handle)
+
     assert rc == 0
     assert "No predicted conflicts." in capsys.readouterr().out
 
 
 async def test_run_conflicts_unreachable() -> None:
-    factory, _created = make_factory(ready=False)
-    rc = await run_conflicts(uri="ws://t", name="U", agent_factory=factory, runner=lambda _a: "")
+    rc = await run_conflicts(
+        uri=f"ws://127.0.0.1:{_free_port()}",
+        name="U",
+        runner=lambda _a: "",
+        ready_timeout=0.1,
+        attempts=1,
+    )
     assert rc == 1
 
 
 async def test_run_conflicts_check_diff_refines(capsys: pytest.CaptureFixture[str]) -> None:
-    claims = [
-        _claim("T1", "A", "feature/x", ["src/auth.py"]),
-        _claim("T2", "B", "feature/y", ["src/auth.py"]),
-    ]
-    factory, _created = make_factory(inbound=[_snapshot(claims)])
-    # Neither branch actually changed the file -> the predicted conflict is dropped.
-    rc = await run_conflicts(
-        uri="ws://t",
-        name="U",
-        check_diff=True,
-        agent_factory=factory,
-        runner=lambda _a: "unrelated.py\n",
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        first = await _claim_live(uri, "A", "T1", "feature/x", ["src/auth.py"], worktree="/repo-a")
+        second = await _claim_live(uri, "B", "T2", "feature/y", ["src/auth.py"], worktree="/repo-b")
+        try:
+            rc = await run_conflicts(
+                uri=uri,
+                name="U",
+                check_diff=True,
+                runner=lambda _a: "unrelated.py\n",
+            )
+        finally:
+            await close_agents(first, second)
+
     assert rc == 0
     assert "No predicted conflicts." in capsys.readouterr().out
 
@@ -242,18 +230,19 @@ async def test_run_conflicts_check_diff_refines(capsys: pytest.CaptureFixture[st
 async def test_run_conflicts_check_diff_keeps_real_overlap(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    claims = [
-        _claim("T1", "A", "feature/x", ["src/auth.py"]),
-        _claim("T2", "B", "feature/y", ["src/auth.py"]),
-    ]
-    factory, _created = make_factory(inbound=[_snapshot(claims)])
-    rc = await run_conflicts(
-        uri="ws://t",
-        name="U",
-        check_diff=True,
-        agent_factory=factory,
-        runner=lambda _a: "src/auth.py\n",
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        first = await _claim_live(uri, "A", "T1", "feature/x", ["src/auth.py"], worktree="/repo-a")
+        second = await _claim_live(uri, "B", "T2", "feature/y", ["src/auth.py"], worktree="/repo-b")
+        try:
+            rc = await run_conflicts(
+                uri=uri,
+                name="U",
+                check_diff=True,
+                runner=lambda _a: "src/auth.py\n",
+            )
+        finally:
+            await close_agents(first, second)
+
     assert rc == 2
     assert "Predicted conflicts (1)" in capsys.readouterr().out
 
@@ -261,19 +250,17 @@ async def test_run_conflicts_check_diff_keeps_real_overlap(
 async def test_run_conflicts_check_diff_keeps_when_diff_fails(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    claims = [
-        _claim("T1", "A", "feature/x", ["src/auth.py"]),
-        _claim("T2", "B", "feature/y", ["src/auth.py"]),
-    ]
-    factory, _created = make_factory(inbound=[_snapshot(claims)])
-
     def bad_runner(_args: list[str]) -> str:
         raise GitError("branch not checked out locally")
 
-    # A branch whose diff cannot be computed is kept unrefined — better to over-warn.
-    rc = await run_conflicts(
-        uri="ws://t", name="U", check_diff=True, agent_factory=factory, runner=bad_runner
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        first = await _claim_live(uri, "A", "T1", "feature/x", ["src/auth.py"], worktree="/repo-a")
+        second = await _claim_live(uri, "B", "T2", "feature/y", ["src/auth.py"], worktree="/repo-b")
+        try:
+            rc = await run_conflicts(uri=uri, name="U", check_diff=True, runner=bad_runner)
+        finally:
+            await close_agents(first, second)
+
     assert rc == 2
     assert "Predicted conflicts (1)" in capsys.readouterr().out
 
@@ -287,29 +274,24 @@ async def test_run_conflicts_check_diff_caches_repeated_branches(
         calls.append(args)
         return "src/auth.py\n"
 
-    claims = [
-        _claim("T1", "A", "feature/x", ["src/auth.py"]),
-        _claim("T2", "B", "feature/y", ["src/auth.py"]),
-        _claim("T3", "C", "feature/z", ["src/auth.py"]),
-    ]
-    factory, _created = make_factory(inbound=[_snapshot(claims)])
-    rc = await run_conflicts(
-        uri="ws://t", name="U", check_diff=True, agent_factory=factory, runner=runner
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        first = await _claim_live(uri, "A", "T1", "feature/x", ["src/auth.py"], worktree="/repo-a")
+        second = await _claim_live(uri, "B", "T2", "feature/y", ["src/auth.py"], worktree="/repo-b")
+        third = await _claim_live(uri, "C", "T3", "feature/z", ["src/auth.py"], worktree="/repo-c")
+        try:
+            rc = await run_conflicts(uri=uri, name="U", check_diff=True, runner=runner)
+        finally:
+            await close_agents(first, second, third)
+
     assert rc == 2
     assert "Predicted conflicts (3)" in capsys.readouterr().out
     # Three branches, each diffed once despite appearing in two pairs (cache hit).
     assert len(calls) == 3
 
 
-async def test_run_conflicts_without_snapshot(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    async def no_sleep(_seconds: float) -> None:
-        return None
+async def test_run_conflicts_empty_live_snapshot(capsys: pytest.CaptureFixture[str]) -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        rc = await run_conflicts(uri=uri, name="U", runner=lambda _a: "")
 
-    monkeypatch.setattr("synapse_channel.git.gitconflict.asyncio.sleep", no_sleep)
-    factory, _created = make_factory(inbound=[])
-    rc = await run_conflicts(uri="ws://t", name="U", agent_factory=factory, runner=lambda _a: "")
     assert rc == 0
     assert "No predicted conflicts." in capsys.readouterr().out
