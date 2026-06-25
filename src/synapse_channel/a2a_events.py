@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import copy
 import queue
+import threading
 
 from synapse_channel.a2a import JsonMap
 from synapse_channel.a2a_validation import TERMINAL_TASK_STATES
@@ -21,12 +22,17 @@ class A2ATaskEvents:
 
     def __init__(self) -> None:
         self._subscribers: dict[str, list[queue.Queue[JsonMap]]] = {}
+        self._history: dict[str, list[JsonMap]] = {}
+        self._lock = threading.RLock()
 
     def publish(self, task_id: str, task: JsonMap) -> None:
         """Publish one task update to local subscribers."""
-        event = {"task": copy.deepcopy(task)}
-        for subscriber in list(self._subscribers.get(task_id, [])):
-            subscriber.put(event)
+        event = self._event(task)
+        with self._lock:
+            self._history.setdefault(task_id, []).append(copy.deepcopy(event))
+            subscribers = list(self._subscribers.get(task_id, []))
+        for subscriber in subscribers:
+            subscriber.put(copy.deepcopy(event))
 
     def subscribe(
         self,
@@ -37,12 +43,20 @@ class A2ATaskEvents:
         default_wait_seconds: float,
     ) -> list[JsonMap]:
         """Return the initial task event plus queued updates for one subscription."""
-        events = [{"task": copy.deepcopy(task)}]
-        state = str(task.get("status", {}).get("state", ""))
+        updates: queue.Queue[JsonMap] = queue.Queue()
+        current_event = self._event(task)
+        current_state = self._last_state([current_event])
+        if current_state in TERMINAL_TASK_STATES:
+            return [current_event]
+        with self._lock:
+            events = copy.deepcopy(self._history.get(task_id, []))
+            if not events:
+                events = [current_event]
+            state = self._last_state(events)
+            if state not in TERMINAL_TASK_STATES:
+                self._subscribers.setdefault(task_id, []).append(updates)
         if state in TERMINAL_TASK_STATES:
             return events
-        updates: queue.Queue[JsonMap] = queue.Queue()
-        self._subscribers.setdefault(task_id, []).append(updates)
         timeout = default_wait_seconds if wait_seconds is None else max(wait_seconds, 0.0)
         try:
             if timeout > 0.0:
@@ -51,9 +65,24 @@ class A2ATaskEvents:
                 except queue.Empty:
                     pass
         finally:
-            subscribers = self._subscribers.get(task_id, [])
-            if updates in subscribers:
-                subscribers.remove(updates)
-            if not subscribers and task_id in self._subscribers:
-                del self._subscribers[task_id]
+            with self._lock:
+                subscribers = self._subscribers.get(task_id, [])
+                if updates in subscribers:
+                    subscribers.remove(updates)
+                if not subscribers and task_id in self._subscribers:
+                    del self._subscribers[task_id]
         return events
+
+    def _event(self, task: JsonMap) -> JsonMap:
+        return {"task": copy.deepcopy(task)}
+
+    def _last_state(self, events: list[JsonMap]) -> str:
+        if not events:
+            return ""
+        task = events[-1].get("task")
+        if not isinstance(task, dict):
+            return ""
+        status = task.get("status")
+        if not isinstance(status, dict):
+            return ""
+        return str(status.get("state", ""))
