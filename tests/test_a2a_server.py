@@ -15,7 +15,8 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.a2a_server import A2ABridge, A2ATaskStore, build_a2a_handler
+from synapse_channel.a2a_server import A2ABridge, build_a2a_handler
+from synapse_channel.a2a_store import A2ATaskStore
 
 
 class FakeAgent:
