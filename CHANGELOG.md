@@ -39,7 +39,11 @@ All notable changes to this project are documented here.
   exposes `GET /tasks` and `GET /tasks/{id}` over its local task view, and supports
   `POST /tasks/{id}:cancel`. `POST /message:stream` now returns an immediate
   Server-Sent Events task lifecycle stream; subscribing to a terminal task returns
-  a clear `409` problem response.
+  a clear `409` problem response. Push-notification configuration is now exposed
+  through `POST/GET /tasks/{id}/pushNotificationConfigs`,
+  `GET/DELETE /tasks/{id}/pushNotificationConfigs/{config_id}`, and send-time
+  `configuration.taskPushNotificationConfig` capture; the served Agent Card
+  advertises both streaming and push notification support.
 
 ### Changed
 - The hub now **refuses to start** on a non-loopback address (e.g. `--host 0.0.0.0`)
