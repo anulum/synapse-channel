@@ -10,11 +10,17 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.service_setup import install_user_services, service_suggestions
 from synapse_channel.worker_session import run_worker_session
+
+ServiceInstaller = Callable[..., list[str]]
+SuggestionBuilder = Callable[..., list[str]]
+ProjectResolver = Callable[[], str]
+WorkerSessionRunner = Callable[..., int]
 
 
 def _default_project() -> str:
@@ -22,12 +28,18 @@ def _default_project() -> str:
     return Path.cwd().name
 
 
-def _cmd_init(args: argparse.Namespace) -> int:
+def _cmd_init(
+    args: argparse.Namespace,
+    *,
+    service_installer: ServiceInstaller = install_user_services,
+    suggestion_builder: SuggestionBuilder = service_suggestions,
+    project_resolver: ProjectResolver = _default_project,
+) -> int:
     """Dispatch ``synapse init`` for local user-service setup."""
-    project = args.project or _default_project()
+    project = args.project or project_resolver()
     identity = args.identity or project
     if args.install_user_services or args.start_user_services:
-        lines = install_user_services(
+        lines = service_installer(
             project=project,
             identity=identity,
             synapse_bin=args.synapse_bin,
@@ -37,23 +49,27 @@ def _cmd_init(args: argparse.Namespace) -> int:
         lines = [
             "User services are not installed automatically unless requested.",
             "To install/start the local hub, project presence, and wake listener:",
-            *service_suggestions(project=project, identity=identity, synapse_bin=args.synapse_bin),
+            *suggestion_builder(project=project, identity=identity, synapse_bin=args.synapse_bin),
         ]
     for line in lines:
         print(line)
     return 0
 
 
-def _cmd_worker_session(args: argparse.Namespace) -> int:
+def _cmd_worker_session(
+    args: argparse.Namespace,
+    *,
+    session_runner: WorkerSessionRunner = run_worker_session,
+) -> int:
     """Dispatch ``synapse worker-session``."""
-    command = list(args.command)
+    command: Sequence[str] = list(args.command)
     if command and command[0] == "--":
         command = command[1:]
     if not command:
         print("worker-session requires a provider command after --")
         return 2
     try:
-        return run_worker_session(
+        return session_runner(
             identity=args.identity,
             command=command,
             project=args.project,

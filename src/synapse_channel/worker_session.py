@@ -33,6 +33,7 @@ def run_worker_session(
     token_file: str | None = None,
     arm: bool = True,
     environ: Mapping[str, str] | None = None,
+    sidecar_shutdown_timeout_seconds: float = SIDECAR_SHUTDOWN_TIMEOUT_SECONDS,
 ) -> int:
     """Run ``command`` with ``SYN_PROJECT``/``SYN_IDENTITY`` and an optional waker.
 
@@ -62,7 +63,7 @@ def run_worker_session(
         if sidecar is not None and sidecar.poll() is None:
             sidecar.terminate()
             try:
-                sidecar.wait(timeout=SIDECAR_SHUTDOWN_TIMEOUT_SECONDS)
+                sidecar.wait(timeout=sidecar_shutdown_timeout_seconds)
             except subprocess.TimeoutExpired:
                 sidecar.kill()
                 sidecar.wait()

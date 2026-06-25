@@ -156,13 +156,17 @@ def _print_instructions(port: int, prefix: str = "") -> None:
     print("Ctrl+C here stops the background workers + hub.\n")
 
 
-def _shutdown(procs: list[tuple[str, subprocess.Popen[str]]]) -> None:
+def _shutdown(
+    procs: list[tuple[str, subprocess.Popen[str]]],
+    *,
+    timeout_seconds: float = SHUTDOWN_TIMEOUT_SECONDS,
+) -> None:
     """Terminate every still-running child process, killing if needed."""
     for _label, proc in reversed(procs):
         if proc.poll() is None:
             try:
                 proc.terminate()
-                proc.wait(timeout=SHUTDOWN_TIMEOUT_SECONDS)
+                proc.wait(timeout=timeout_seconds)
             except Exception:
                 proc.kill()
 
@@ -177,6 +181,7 @@ def run_team(
     popen: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
     sleep: Callable[[float], None] = time.sleep,
     detect: ModelDetector = detect_model,
+    shutdown_timeout_seconds: float = SHUTDOWN_TIMEOUT_SECONDS,
 ) -> int:
     """Spawn a hub and workers, then monitor them until one exits.
 
@@ -196,6 +201,8 @@ def run_team(
         ``time.sleep``-compatible delay, injectable for testing.
     detect : ModelDetector, optional
         Model-detection callable, injectable for testing.
+    shutdown_timeout_seconds : float, optional
+        Seconds to wait during shutdown before killing a child process.
 
     Returns
     -------
@@ -234,4 +241,4 @@ def run_team(
         print("\n[launch] Shutting down...")
         return 0
     finally:
-        _shutdown(procs)
+        _shutdown(procs, timeout_seconds=shutdown_timeout_seconds)
