@@ -152,6 +152,7 @@ def _cmd_lock(args: argparse.Namespace) -> int:
             paths=args.paths or [],
             wait_timeout=args.wait_timeout,
             token=args.token,
+            ready_timeout=args.ready_timeout,
         )
     )
 
@@ -231,7 +232,13 @@ async def _release(
 def _cmd_release(args: argparse.Namespace) -> int:
     """Dispatch the ``release`` subcommand: manually drop an owned claim."""
     return asyncio.run(
-        _release(uri=args.uri, name=args.name, task_id=args.task_id, token=args.token)
+        _release(
+            uri=args.uri,
+            name=args.name,
+            task_id=args.task_id,
+            token=args.token,
+            ready_timeout=args.ready_timeout,
+        )
     )
 
 
@@ -256,6 +263,9 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     lock.add_argument("--uri", default=DEFAULT_HUB_URI)
     lock.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    lock.add_argument(
+        "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
+    )
     lock.set_defaults(func=_cmd_lock)
 
     release = subparsers.add_parser(
@@ -267,4 +277,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     release.add_argument("--uri", default=DEFAULT_HUB_URI)
     release.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    release.add_argument(
+        "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
+    )
     release.set_defaults(func=_cmd_release)

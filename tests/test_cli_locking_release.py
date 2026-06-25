@@ -114,7 +114,13 @@ async def test_release_denies_missing_claim(capsys: pytest.CaptureFixture[str]) 
     assert "release refused for 't'" in capsys.readouterr().out
 
 
-def test_cmd_release_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("synapse_channel.cli_locking.asyncio.run", lambda coro: coro.close() or 0)
-    ns = argparse.Namespace(uri="ws://h", name="USER", task_id="t", token=None)
-    assert cli_locking._cmd_release(ns) == 0
+def test_cmd_release_dispatches_real_command(capsys: pytest.CaptureFixture[str]) -> None:
+    ns = argparse.Namespace(
+        uri=f"ws://127.0.0.1:{_free_port()}",
+        name="USER",
+        task_id="t",
+        token=None,
+        ready_timeout=0.1,
+    )
+    assert cli_locking._cmd_release(ns) == 1
+    assert "Could not reach hub" in capsys.readouterr().out
