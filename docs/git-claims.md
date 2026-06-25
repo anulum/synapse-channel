@@ -66,6 +66,22 @@ hook from anything else is left untouched.
 The hub is never involved: it only ever receives an ordinary release, and a hook
 never blocks a commit — an unreachable hub or no matching claim is simply a no-op.
 
+### Verify the hooks (recommended for production)
+
+Because a missing hook — or one whose baked-in `synapse` path has since moved —
+fails silently at commit time, confirm the setup with:
+
+```bash
+synapse git-hook test
+```
+
+It reports whether each `post-commit`/`post-merge` hook is installed and whether
+the executable it invokes still resolves, exiting non-zero on any gap. Gate your
+deployment on it: this project's own CI installs the hooks in a scratch repo and
+runs `git-hook test` on every push, so a regression in the install-or-resolve path
+is caught before release. (`synapse git-init` installs the hooks and writes the
+conventions guide in one step.)
+
 ## Predict merge conflicts
 
 See a collision before it happens:
