@@ -28,6 +28,11 @@ All notable changes to this project are documented here.
   recommended one-worktree-per-claim workflow, and the exact claim/release commands.
   It is idempotent and never clobbers a file you wrote; `--base` sets the integration
   branch the convention assumes (default `main`).
+- `synapse a2a-card` is the first Agent2Agent bridge slice: it reads the live
+  SYNAPSE capability manifest and prints an A2A Agent Card JSON document that can
+  be served by a thin HTTP edge as `/.well-known/agent-card.json`. It maps each
+  advertised SYNAPSE capability card into an A2A skill and can declare Bearer auth
+  for the advertised bridge endpoint.
 
 ### Changed
 - The hub now **refuses to start** on a non-loopback address (e.g. `--host 0.0.0.0`)
