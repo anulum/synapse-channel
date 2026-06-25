@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections.abc import Coroutine
+from typing import Any
 
 import pytest
 
@@ -80,9 +82,9 @@ async def test_listen_for_filters_to_inbox(capsys: pytest.CaptureFixture[str]) -
         sender = await connect_agent("A", uri)
         try:
             await _wait_for_presence(observer, "B-listener")
+            await sender.agent.chat("just C", target="C")
             await sender.agent.chat("everyone", target="all")
             await sender.agent.chat("you two", target="B,C")
-            await sender.agent.chat("just C", target="C")
             code = await listen_task
         finally:
             await close_agents(sender, observer)
@@ -93,3 +95,22 @@ async def test_listen_for_filters_to_inbox(capsys: pytest.CaptureFixture[str]) -
     assert "you two" in out
     assert "just C" not in out
     assert "presence" not in out
+
+
+def test_cmd_listen_handles_keyboard_interrupt(capsys: pytest.CaptureFixture[str]) -> None:
+    def stop(coro: Coroutine[Any, Any, int]) -> int:
+        coro.close()
+        raise KeyboardInterrupt
+
+    async def listen_once(**_: Any) -> int:
+        return 0
+
+    ns = argparse.Namespace(
+        uri="ws://127.0.0.1:1",
+        name="USER",
+        token=None,
+        for_name=None,
+        ready_timeout=0.1,
+    )
+    assert cli_messaging._cmd_listen(ns, listen_runner=listen_once, async_runner=stop) == 0
+    assert "[USER] stopped listening." in capsys.readouterr().out

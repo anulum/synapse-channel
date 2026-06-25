@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections.abc import Coroutine
 from typing import Any
 
 import pytest
@@ -69,7 +70,7 @@ async def test_arm_rearms_after_each_wake(capsys: pytest.CaptureFixture[str]) ->
     assert capsys.readouterr().out.count("A: wake") == 2
 
 
-async def test_arm_retries_after_non_wake_result(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_arm_retries_after_non_wake_result() -> None:
     results = iter([1, 0])
     sleeps: list[float] = []
     original_sleep = asyncio.sleep
@@ -81,24 +82,21 @@ async def test_arm_retries_after_non_wake_result(monkeypatch: pytest.MonkeyPatch
         sleeps.append(delay)
         await original_sleep(0)
 
-    monkeypatch.setattr(cli_arm, "_wait", wait_once)
-    monkeypatch.setattr("synapse_channel.cli_arm.asyncio.sleep", sleep_once)
-
     code = await cli_arm._arm(
         uri="ws://h",
         name="B-rx",
         for_name="B",
         max_wakes=1,
         reconnect_delay=0.25,
+        wait_runner=wait_once,
+        sleep_runner=sleep_once,
     )
 
     assert code == 0
     assert sleeps == [0.25]
 
 
-async def test_arm_retries_immediately_when_reconnect_delay_is_zero(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_arm_retries_immediately_when_reconnect_delay_is_zero() -> None:
     results = iter([1, 0])
     calls = 0
 
@@ -107,29 +105,29 @@ async def test_arm_retries_immediately_when_reconnect_delay_is_zero(
         calls += 1
         return next(results)
 
-    monkeypatch.setattr(cli_arm, "_wait", wait_once)
-
     code = await cli_arm._arm(
         uri="ws://h",
         name="B-rx",
         for_name="B",
         max_wakes=1,
         reconnect_delay=0.0,
+        wait_runner=wait_once,
     )
 
     assert code == 0
     assert calls == 2
 
 
-def test_cmd_arm_derives_rx_name_for_bare_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_arm_derives_rx_name_for_bare_identity() -> None:
     captured: dict[str, Any] = {}
 
-    def fake_arm(**kwargs: Any) -> str:
+    async def arm_once(**kwargs: Any) -> int:
         captured.update(kwargs)
-        return "coro"
+        return 0
 
-    monkeypatch.setattr(cli_arm, "_arm", fake_arm)
-    monkeypatch.setattr("synapse_channel.cli_arm.asyncio.run", lambda coro: 0)
+    def run_once(coro: Coroutine[Any, Any, int]) -> int:
+        return asyncio.run(coro)
+
     ns = argparse.Namespace(
         uri="ws://h",
         name="B",
@@ -140,19 +138,19 @@ def test_cmd_arm_derives_rx_name_for_bare_identity(monkeypatch: pytest.MonkeyPat
         max_wakes=None,
         token=None,
     )
-    assert cli_arm._cmd_arm(ns) == 0
+    assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=run_once) == 0
     assert captured["name"] == "B-rx"
     assert captured["for_name"] == "B"
 
 
-def test_cmd_arm_handles_keyboard_interrupt(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    def stop(_coro: Any) -> int:
+def test_cmd_arm_handles_keyboard_interrupt(capsys: pytest.CaptureFixture[str]) -> None:
+    def stop(coro: Coroutine[Any, Any, int]) -> int:
+        coro.close()
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(cli_arm, "_arm", lambda **_: "coro")
-    monkeypatch.setattr("synapse_channel.cli_arm.asyncio.run", stop)
+    async def arm_once(**_: Any) -> int:
+        return 0
+
     ns = argparse.Namespace(
         uri="ws://h",
         name="B",
@@ -164,19 +162,20 @@ def test_cmd_arm_handles_keyboard_interrupt(
         token=None,
     )
 
-    assert cli_arm._cmd_arm(ns) == 0
+    assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=stop) == 0
     assert "stopped arming for B" in capsys.readouterr().out
 
 
-def test_cmd_arm_keeps_distinct_connect_name(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_arm_keeps_distinct_connect_name() -> None:
     captured: dict[str, Any] = {}
 
-    def fake_arm(**kwargs: Any) -> str:
+    async def arm_once(**kwargs: Any) -> int:
         captured.update(kwargs)
-        return "coro"
+        return 0
 
-    monkeypatch.setattr(cli_arm, "_arm", fake_arm)
-    monkeypatch.setattr("synapse_channel.cli_arm.asyncio.run", lambda coro: 0)
+    def run_once(coro: Coroutine[Any, Any, int]) -> int:
+        return asyncio.run(coro)
+
     ns = argparse.Namespace(
         uri="ws://h",
         name="B-rx",
@@ -187,6 +186,6 @@ def test_cmd_arm_keeps_distinct_connect_name(monkeypatch: pytest.MonkeyPatch) ->
         max_wakes=None,
         token=None,
     )
-    assert cli_arm._cmd_arm(ns) == 0
+    assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=run_once) == 0
     assert captured["name"] == "B-rx"
     assert captured["for_name"] == "B"

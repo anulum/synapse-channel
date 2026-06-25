@@ -11,9 +11,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections.abc import Awaitable, Callable, Coroutine
+from typing import Any
 
 from synapse_channel.cli_messaging import AgentFactory, _wait
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+
+WaitRunner = Callable[..., Awaitable[int]]
+SleepRunner = Callable[[float], Awaitable[None]]
+ArmRunner = Callable[..., Coroutine[Any, Any, int]]
+AsyncRunner = Callable[[Coroutine[Any, Any, int]], int]
 
 
 async def _arm(
@@ -26,12 +33,14 @@ async def _arm(
     reconnect_delay: float = 1.0,
     max_wakes: int | None = None,
     agent_factory: AgentFactory = SynapseAgent,
+    wait_runner: WaitRunner = _wait,
+    sleep_runner: SleepRunner = asyncio.sleep,
     token: str | None = None,
 ) -> int:
     """Keep a directed waiter armed until interrupted."""
     wakes_seen = 0
     while max_wakes is None or wakes_seen < max_wakes:
-        code = await _wait(
+        code = await wait_runner(
             uri=uri,
             name=name,
             for_name=for_name,
@@ -45,17 +54,22 @@ async def _arm(
             wakes_seen += 1
             continue
         if reconnect_delay > 0:
-            await asyncio.sleep(reconnect_delay)
+            await sleep_runner(reconnect_delay)
     return 0
 
 
-def _cmd_arm(args: argparse.Namespace) -> int:
+def _cmd_arm(
+    args: argparse.Namespace,
+    *,
+    arm_runner: ArmRunner = _arm,
+    async_runner: AsyncRunner = asyncio.run,
+) -> int:
     """Dispatch the persistent ``arm`` subcommand."""
     for_name = args.for_name or args.name
     connect_name = args.name if args.name != for_name else f"{args.name}-rx"
     try:
-        return asyncio.run(
-            _arm(
+        return async_runner(
+            arm_runner(
                 uri=args.uri,
                 name=connect_name,
                 for_name=for_name,
