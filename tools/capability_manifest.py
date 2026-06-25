@@ -31,8 +31,8 @@ from typing import Any
 
 if sys.version_info >= (3, 11):
     import tomllib
-else:  # Python 3.10 has no tomllib in the standard library
-    import tomli as tomllib
+else:  # pragma: no cover - Python 3.10 compatibility path.
+    import tomli as tomllib  # pragma: no cover
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = REPO_ROOT / "tools" / "capability_manifest.toml"
@@ -262,7 +262,7 @@ def check(root: Path, config: dict[str, Any]) -> bool:
     return current == block
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, root: Path = REPO_ROOT) -> int:
     """Run the manifest tool in ``--update`` or ``--check`` mode."""
     parser = argparse.ArgumentParser(description="Generate or verify the capability snapshot.")
     group = parser.add_mutually_exclusive_group(required=True)
@@ -272,14 +272,14 @@ def main(argv: list[str] | None = None) -> int:
 
     config = load_config()
     if args.update:
-        metrics = update(REPO_ROOT, config)
+        metrics = update(root, config)
         print(
             f"capability snapshot updated ({metrics['tests']} test functions, "
             f"{metrics['package_modules']} modules)"
         )
         return 0
 
-    if check(REPO_ROOT, config):
+    if check(root, config):
         print("capability snapshot is up to date")
         return 0
     print(
