@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-import sys
+from typing import NoReturn
 
 import pytest
 
@@ -27,10 +27,12 @@ def test_require_fastmcp_returns_class() -> None:
     assert cls.__name__ == "FastMCP"
 
 
-def test_require_fastmcp_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(sys.modules, "mcp.server.fastmcp", None)
+def test_require_fastmcp_missing_raises() -> None:
+    def missing_fastmcp(_name: str) -> object:
+        raise ImportError("mcp extra unavailable")
+
     with pytest.raises(RuntimeError, match=r"\[mcp\]"):
-        _require_fastmcp()
+        _require_fastmcp(import_module=missing_fastmcp)
 
 
 async def test_build_registers_tools_and_resources() -> None:
@@ -81,8 +83,10 @@ async def test_every_tool_and_resource_wrapper_dispatches() -> None:
     assert hub.blackboard.tasks["T"].status == "done"
 
 
-async def test_build_requires_mcp_extra(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(sys.modules, "mcp.server.fastmcp", None)
+async def test_build_requires_mcp_extra() -> None:
+    def missing_fastmcp() -> NoReturn:
+        raise RuntimeError(MCP_EXTRA_HINT)
+
     with pytest.raises(RuntimeError, match=r"\[mcp\]"):
-        build_mcp_server(SynapseHubBridge(request_timeout=0.05))
+        build_mcp_server(SynapseHubBridge(request_timeout=0.05), fastmcp_loader=missing_fastmcp)
     assert "synapse-channel[mcp]" in MCP_EXTRA_HINT

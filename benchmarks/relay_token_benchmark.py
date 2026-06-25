@@ -41,8 +41,10 @@ Run with ``python benchmarks/relay_token_benchmark.py``; results are written to
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -66,7 +68,9 @@ class Encoder(Protocol):
         """Return the token ids for ``text``."""
 
 
-def get_encoder() -> tuple[Encoder | None, str]:
+def get_encoder(
+    import_module: Callable[[str], Any] = importlib.import_module,
+) -> tuple[Encoder | None, str]:
     """Return a ``cl100k_base`` encoder and its name, or a heuristic fallback.
 
     Returns
@@ -76,8 +80,7 @@ def get_encoder() -> tuple[Encoder | None, str]:
         naming the token-counting method actually used.
     """
     try:
-        import tiktoken
-
+        tiktoken = import_module("tiktoken")
         encoder: Encoder = tiktoken.get_encoding(ENCODING_NAME)
         return encoder, ENCODING_NAME
     except Exception:

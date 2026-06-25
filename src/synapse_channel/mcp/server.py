@@ -27,10 +27,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib
 import json
 import sys
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.core.protocol import MessageType
@@ -57,7 +58,9 @@ MCP_EXTRA_HINT = "The MCP face needs the optional extra: pip install 'synapse-ch
 """Message shown when ``synapse mcp`` runs without the ``mcp`` SDK installed."""
 
 
-def _require_fastmcp() -> type[FastMCP]:
+def _require_fastmcp(
+    import_module: Callable[[str], Any] = importlib.import_module,
+) -> type[FastMCP]:
     """Import and return :class:`FastMCP`, or raise a clear install hint.
 
     The ``mcp`` SDK is an optional extra, so the import lives behind this helper
@@ -75,10 +78,10 @@ def _require_fastmcp() -> type[FastMCP]:
         When the ``mcp`` SDK is not installed, with the extra to install.
     """
     try:
-        from mcp.server.fastmcp import FastMCP
+        module = import_module("mcp.server.fastmcp")
     except ImportError as exc:
         raise RuntimeError(MCP_EXTRA_HINT) from exc
-    return FastMCP
+    return cast("type[FastMCP]", module.FastMCP)
 
 
 class SynapseHubBridge:
@@ -397,7 +400,11 @@ class SynapseHubBridge:
         return self._render(reply, "manifest", "the hub did not return the manifest")
 
 
-def build_mcp_server(bridge: SynapseHubBridge) -> FastMCP:
+def build_mcp_server(
+    bridge: SynapseHubBridge,
+    *,
+    fastmcp_loader: Callable[[], type[FastMCP]] = _require_fastmcp,
+) -> FastMCP:
     """Build a FastMCP server whose tools and resources delegate to ``bridge``.
 
     Parameters
@@ -415,7 +422,7 @@ def build_mcp_server(bridge: SynapseHubBridge) -> FastMCP:
     RuntimeError
         When the ``mcp`` SDK is not installed.
     """
-    fast_mcp = _require_fastmcp()
+    fast_mcp = fastmcp_loader()
     server = fast_mcp("synapse")
 
     @server.tool()

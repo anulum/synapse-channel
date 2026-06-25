@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import sys
 from pathlib import Path
 
 import pytest
@@ -43,11 +42,11 @@ def test_get_encoder_returns_real_tokenizer_when_available() -> None:
     assert encoder.encode("hello world")  # a real tokeniser yields tokens
 
 
-def test_get_encoder_falls_back_without_tiktoken(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A sys.modules entry of None makes `import tiktoken` raise, exercising the
-    # heuristic fallback without uninstalling the dependency.
-    monkeypatch.setitem(sys.modules, "tiktoken", None)
-    encoder, name = bench.get_encoder()
+def test_get_encoder_falls_back_without_tiktoken() -> None:
+    def missing_tiktoken(_name: str) -> object:
+        raise ImportError("tiktoken unavailable in this benchmark environment")
+
+    encoder, name = bench.get_encoder(import_module=missing_tiktoken)
     assert encoder is None
     assert name == bench.HEURISTIC_NAME
 
