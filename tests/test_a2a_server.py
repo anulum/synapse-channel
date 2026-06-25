@@ -86,6 +86,18 @@ class HandlerHarness:
         status = int(header_blob.split(b" ", 2)[1])
         return status, json.loads(body.decode("utf-8"))
 
+    def run_sse(self) -> tuple[int, dict[str, Any]]:
+        """Run the POST handler and return HTTP status plus the first SSE data body."""
+        if self.handler.command != "POST":
+            raise AssertionError(self.handler.command)
+        self.handler.do_POST()
+        raw = self.handler.wfile.getvalue()
+        header_blob, body = raw.split(b"\r\n\r\n", 1)
+        status = int(header_blob.split(b" ", 2)[1])
+        assert b"Content-Type: text/event-stream" in header_blob
+        line = next(part for part in body.splitlines() if part.startswith(b"data: "))
+        return status, json.loads(line.removeprefix(b"data: ").decode("utf-8"))
+
 
 def test_well_known_agent_card_endpoint_returns_card() -> None:
     status, body = HandlerHarness("GET", "/.well-known/agent-card.json").run()
@@ -115,6 +127,46 @@ def test_message_send_creates_completed_task_and_forwards_text_to_synapse() -> N
     assert body["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
     assert body["task"]["history"][0]["messageId"] == "m1"
     assert harness.handler.bridge.agent.messages == [("SC-NEUROCORE", "status please")]
+
+
+def test_message_stream_sends_sse_task_event_and_forwards_to_synapse() -> None:
+    harness = HandlerHarness(
+        "POST",
+        "/message:stream",
+        body={
+            "message": {
+                "messageId": "m1",
+                "role": "ROLE_USER",
+                "parts": [{"text": "stream status"}],
+            }
+        },
+    )
+
+    status, body = harness.run_sse()
+
+    assert status == HTTPStatus.OK
+    assert body["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert body["task"]["history"][0]["messageId"] == "m1"
+    assert harness.handler.bridge.agent.messages == [("WORKER", "stream status")]
+
+
+def test_subscribe_to_completed_task_returns_terminal_state_problem() -> None:
+    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}],
+        },
+        target="WORKER",
+    )
+    harness = HandlerHarness("POST", f"/tasks/{task['id']}:subscribe")
+    harness.handler.bridge = bridge
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.CONFLICT
+    assert body["title"] == "Task is terminal"
 
 
 def test_task_list_get_and_cancel_routes_use_store() -> None:

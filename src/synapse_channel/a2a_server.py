@@ -29,6 +29,7 @@ from synapse_channel.client.agent import SynapseAgent
 
 A2A_MEDIA_TYPE = "application/a2a+json"
 PROBLEM_MEDIA_TYPE = "application/problem+json"
+SSE_MEDIA_TYPE = "text/event-stream"
 
 
 class A2ATaskStore:
@@ -179,6 +180,14 @@ class A2ABridge:
 
     def send_message(self, payload: JsonMap) -> JsonMap:
         """Handle an A2A ``message:send`` request."""
+        return {"task": self._send_message_task(payload)}
+
+    def stream_message(self, payload: JsonMap) -> JsonMap:
+        """Handle an A2A ``message:stream`` request as an immediate lifecycle stream."""
+        return {"task": self._send_message_task(payload)}
+
+    def _send_message_task(self, payload: JsonMap) -> JsonMap:
+        """Validate a send payload and return the created task."""
         message = payload.get("message")
         if not isinstance(message, dict):
             raise ValueError("message must be an object")
@@ -189,7 +198,7 @@ class A2ABridge:
         parts = message.get("parts")
         if not isinstance(parts, list) or not parts:
             raise ValueError("message.parts must be a non-empty array")
-        return {"task": self.create_completed_task(message)}
+        return self.create_completed_task(message)
 
     def list_tasks(self, *, state: str | None = None) -> JsonMap:
         """Return an A2A task-list response."""
@@ -213,6 +222,10 @@ class A2ABridge:
         task["status"] = {"state": "TASK_STATE_CANCELED"}
         self.store.put(task)
         return task
+
+    def subscribe_task(self, task_id: str) -> JsonMap | None:
+        """Return a task snapshot for SSE subscription, or ``None`` when unknown."""
+        return self.store.get(task_id)
 
 
 def _problem(status: HTTPStatus, title: str, detail: str = "") -> JsonMap:
@@ -249,6 +262,16 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
             raw = json.dumps(body, sort_keys=True).encode("utf-8")
             self.send_response(int(status))
             self.send_header("Content-Type", media_type)
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def _send_sse(self, status: HTTPStatus, body: JsonMap) -> None:
+            raw = f"data: {json.dumps(body, sort_keys=True)}\n\n".encode()
+            self.send_response(int(status))
+            self.send_header("Content-Type", SSE_MEDIA_TYPE)
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "close")
             self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
             self.wfile.write(raw)
@@ -312,11 +335,17 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
             """Serve A2A message-send and task-cancel endpoints."""
             parsed = urlparse(self.path)
             if parsed.path == "/message:stream":
-                self._send_json(
-                    HTTPStatus.NOT_IMPLEMENTED,
-                    _problem(HTTPStatus.NOT_IMPLEMENTED, "Streaming is not implemented"),
-                    media_type=PROBLEM_MEDIA_TYPE,
-                )
+                data = self._read_json()
+                if data is None:
+                    return
+                try:
+                    self._send_sse(HTTPStatus.OK, self.bridge.stream_message(data))
+                except ValueError as exc:
+                    self._send_json(
+                        HTTPStatus.BAD_REQUEST,
+                        _problem(HTTPStatus.BAD_REQUEST, "Invalid A2A message", str(exc)),
+                        media_type=PROBLEM_MEDIA_TYPE,
+                    )
                 return
             if parsed.path == "/message:send":
                 data = self._read_json()
@@ -340,11 +369,29 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                 self._send_json(HTTPStatus.OK, task)
                 return
             if parsed.path.startswith("/tasks/") and parsed.path.endswith(":subscribe"):
-                self._send_json(
-                    HTTPStatus.NOT_IMPLEMENTED,
-                    _problem(HTTPStatus.NOT_IMPLEMENTED, "Task subscriptions are not implemented"),
-                    media_type=PROBLEM_MEDIA_TYPE,
-                )
+                task_id = parsed.path.removeprefix("/tasks/").removesuffix(":subscribe")
+                task = self.bridge.subscribe_task(task_id)
+                if task is None:
+                    self._send_not_found(f"Unknown task: {task_id}")
+                    return
+                state = str(task.get("status", {}).get("state", ""))
+                if state in {
+                    "TASK_STATE_COMPLETED",
+                    "TASK_STATE_FAILED",
+                    "TASK_STATE_CANCELED",
+                    "TASK_STATE_REJECTED",
+                }:
+                    self._send_json(
+                        HTTPStatus.CONFLICT,
+                        _problem(
+                            HTTPStatus.CONFLICT,
+                            "Task is terminal",
+                            "Terminal tasks cannot be subscribed to.",
+                        ),
+                        media_type=PROBLEM_MEDIA_TYPE,
+                    )
+                    return
+                self._send_sse(HTTPStatus.OK, {"task": task})
                 return
             self._send_not_found()
 
