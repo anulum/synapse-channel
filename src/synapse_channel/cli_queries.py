@@ -375,6 +375,7 @@ async def _manifest(
     name: str,
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
+    ready_timeout: float = 5.0,
 ) -> int:
     """Connect, request the capability manifest, print it, and exit.
 
@@ -386,6 +387,8 @@ async def _manifest(
         Factory for the client agent; injectable for testing.
     token : str or None, optional
         Shared-secret token for a secured hub.
+    ready_timeout : float, optional
+        Seconds to wait for the connection readiness event.
 
     Returns
     -------
@@ -401,6 +404,7 @@ async def _manifest(
         transform=lambda data: data.get("manifest", []),
         request=lambda agent: agent.request_manifest(),
         render=_print_manifest,
+        ready_timeout=ready_timeout,
     )
 
 

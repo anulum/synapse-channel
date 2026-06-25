@@ -9,12 +9,13 @@
 from __future__ import annotations
 
 import argparse
-from typing import Any
 
 import pytest
 
-from cli_queries_helpers import FakeAgent, _factory
+from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli_queries
+from synapse_channel.core.auth import TokenAuthenticator
+from synapse_channel.core.hub import SynapseHub
 
 
 def test_print_manifest_renders_cards(capsys: pytest.CaptureFixture[str]) -> None:
@@ -28,42 +29,70 @@ def test_print_manifest_renders_cards(capsys: pytest.CaptureFixture[str]) -> Non
     assert "BARE [none] model=-:" in out
 
 
+async def _advertise_manifest_agent(
+    uri: str, name: str, *, token: str | None = None
+) -> AgentHandle:
+    handle = await connect_agent(name, uri, token=token)
+    await handle.agent.advertise(description="q", task_classes=["chat"], model="m")
+    await handle.recorder.wait_for(
+        lambda message: (
+            message.get("type") == "capability_advertised"
+            and message.get("card", {}).get("agent") == name
+        )
+    )
+    return handle
+
+
 async def test_manifest_prints_snapshot(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    snapshot: dict[str, Any] = {
-        "type": "manifest_snapshot",
-        "manifest": [{"agent": "FAST", "task_classes": ["chat"], "model": "m", "description": "q"}],
-    }
-    noise: dict[str, Any] = {"type": "chat", "sender": "X", "payload": "hi"}
-    factory = _factory(holder, inbound=[noise, snapshot])
-    code = await cli_queries._manifest(uri="ws://h", name="USER", agent_factory=factory, token="t")
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        handle = await _advertise_manifest_agent(uri, "FAST")
+        try:
+            code = await cli_queries._manifest(uri=uri, name="USER")
+        finally:
+            await close_agents(handle)
+
     assert code == 0
-    assert holder[0].token == "t"
     assert "FAST [chat] model=m: q" in capsys.readouterr().out
 
 
 async def test_manifest_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    factory = _factory(holder, ready=False)
-    code = await cli_queries._manifest(uri="ws://h", name="USER", agent_factory=factory)
+    code = await cli_queries._manifest(
+        uri=f"ws://127.0.0.1:{_free_port()}", name="USER", ready_timeout=0.1
+    )
     assert code == 1
     assert "Could not reach hub" in capsys.readouterr().out
 
 
 async def test_manifest_returns_quietly_when_no_snapshot(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    async def no_sleep(_seconds: float) -> None:
-        return None
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        code = await cli_queries._query_hub(
+            uri=uri,
+            name="USER",
+            token=None,
+            response_type="not_a_real_snapshot_type",
+            request=lambda agent: agent.request_manifest(),
+            transform=lambda data: data.get("manifest", []),
+            render=cli_queries._print_manifest,
+            attempts=1,
+        )
 
-    monkeypatch.setattr("synapse_channel.cli_queries.asyncio.sleep", no_sleep)
-    holder: list[FakeAgent] = []
-    factory = _factory(
-        holder, inbound=[{"type": "chat", "sender": "X", "payload": "noise"}], idle=False
-    )
-    code = await cli_queries._manifest(uri="ws://h", name="USER", agent_factory=factory)
     assert code == 0
     assert "Agents" not in capsys.readouterr().out
+
+
+async def test_manifest_threads_token_to_agent(capsys: pytest.CaptureFixture[str]) -> None:
+    token = "s3cret"
+    async with running_hub(SynapseHub(authenticator=TokenAuthenticator([token]))) as (_hub, uri):
+        handle = await _advertise_manifest_agent(uri, "FAST", token=token)
+        try:
+            code = await cli_queries._manifest(uri=uri, name="USER", token=token)
+        finally:
+            await close_agents(handle)
+
+    assert code == 0
+    assert "FAST [chat] model=m: q" in capsys.readouterr().out
 
 
 def test_cmd_manifest_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
