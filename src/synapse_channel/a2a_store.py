@@ -15,6 +15,9 @@ import uuid
 from pathlib import Path
 
 from synapse_channel.a2a import JsonMap
+from synapse_channel.a2a_validation import TERMINAL_TASK_STATES
+
+STALE_INFLIGHT_MESSAGE = "Recovered from stale in-flight task state after restart"
 
 
 class A2ATaskStore:
@@ -39,7 +42,7 @@ class A2ATaskStore:
         push_configs = data.get("pushConfigs", {})
         if isinstance(tasks, dict):
             self._tasks = {
-                str(task_id): task
+                str(task_id): self._recover_task(task)
                 for task_id, task in tasks.items()
                 if isinstance(task, dict)
             }
@@ -53,6 +56,22 @@ class A2ATaskStore:
                 for task_id, configs in push_configs.items()
                 if isinstance(configs, dict)
             }
+
+    def _recover_task(self, task: JsonMap) -> JsonMap:
+        """Return a safe restart view for one persisted task."""
+        status = task.get("status")
+        if not isinstance(status, dict):
+            return task
+        state = str(status.get("state", ""))
+        if not state or state in TERMINAL_TASK_STATES:
+            return task
+        recovered = dict(task)
+        recovered["status"] = {
+            **status,
+            "state": "TASK_STATE_FAILED",
+            "message": STALE_INFLIGHT_MESSAGE,
+        }
+        return recovered
 
     def _save(self) -> None:
         """Persist tasks and push configs to disk when configured."""
