@@ -40,6 +40,7 @@ from synapse_channel.a2a_validation import (
     marker_task_id,
     strip_task_marker,
     validate_bridge_id,
+    validate_message_parts,
     validate_webhook_url,
 )
 from synapse_channel.client.agent import SynapseAgent
@@ -268,9 +269,7 @@ class A2ABridge:
                 raise ValueError("message.messageId is required")
             if message.get("role") != "ROLE_USER":
                 raise ValueError("message.role must be ROLE_USER")
-            parts = message.get("parts")
-            if not isinstance(parts, list) or not parts:
-                raise ValueError("message.parts must be a non-empty array")
+            validate_message_parts(message.get("parts"))
             validate_bridge_id(message.get("taskId"), field="taskId")
             validate_bridge_id(message.get("contextId"), field="contextId")
             task_id = message.get("taskId")
