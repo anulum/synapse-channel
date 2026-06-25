@@ -33,6 +33,12 @@ All notable changes to this project are documented here.
   be served by a thin HTTP edge as `/.well-known/agent-card.json`. It maps each
   advertised SYNAPSE capability card into an A2A skill and can declare Bearer auth
   for the advertised bridge endpoint.
+- `synapse a2a-serve` runs a stdlib HTTP+JSON Agent2Agent bridge at the edge of
+  the hub. It serves `/.well-known/agent-card.json` and `/extendedAgentCard`,
+  accepts `POST /message:send` by forwarding text/data parts into SYNAPSE chat,
+  exposes `GET /tasks` and `GET /tasks/{id}` over its local task view, and supports
+  `POST /tasks/{id}:cancel`. Streaming and task subscriptions return explicit
+  `501` problem responses rather than silently pretending to work.
 
 ### Changed
 - The hub now **refuses to start** on a non-loopback address (e.g. `--host 0.0.0.0`)
