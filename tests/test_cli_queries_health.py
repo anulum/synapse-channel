@@ -13,22 +13,20 @@ from typing import Any
 
 import pytest
 
-from cli_queries_helpers import FakeAgent, _factory
+from hub_e2e_helpers import _free_port, running_hub
 from synapse_channel import cli_queries
+from synapse_channel.core.hub import SynapseHub
 
 
 async def test_health_ok_when_ready() -> None:
-    holder: list[FakeAgent] = []
-    code = await cli_queries._health(
-        uri="ws://h", name="H", agent_factory=_factory(holder, ready=True)
-    )
+    async with running_hub(SynapseHub()) as (_, uri):
+        code = await cli_queries._health(uri=uri, name="H")
     assert code == 0
 
 
 async def test_health_fail_when_unreachable() -> None:
-    holder: list[FakeAgent] = []
     code = await cli_queries._health(
-        uri="ws://h", name="H", agent_factory=_factory(holder, ready=False)
+        uri=f"ws://127.0.0.1:{_free_port()}", name="H", ready_timeout=0.1
     )
     assert code == 1
 

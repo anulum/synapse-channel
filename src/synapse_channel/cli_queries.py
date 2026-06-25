@@ -46,6 +46,7 @@ async def _health(
     name: str = "HEALTH",
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
+    ready_timeout: float = 5.0,
 ) -> int:
     """Connect and report whether the hub is reachable: ``0`` if so, ``1`` if not.
 
@@ -60,6 +61,9 @@ async def _health(
         Factory for the client agent; injectable for testing.
     token : str or None, optional
         Shared-secret token for a secured hub.
+    ready_timeout : float, optional
+        Seconds to wait for the welcome handshake before treating the hub as
+        unreachable. Defaults to ``5.0``.
 
     Returns
     -------
@@ -69,7 +73,7 @@ async def _health(
     agent = agent_factory(name, _drop_message, uri=uri, verbose=False, token=token)
     conn_task = asyncio.create_task(agent.connect())
     try:
-        return 0 if await agent.wait_until_ready(timeout=5.0) else 1
+        return 0 if await agent.wait_until_ready(timeout=ready_timeout) else 1
     finally:
         agent.running = False
         conn_task.cancel()
