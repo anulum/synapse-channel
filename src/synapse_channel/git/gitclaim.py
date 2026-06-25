@@ -153,6 +153,9 @@ async def run_git_claim(
     token: str | None = None,
     agent_factory: AgentFactory = SynapseAgent,
     runner: GitRunner = _default_git_runner,
+    ready_timeout: float = 5.0,
+    attempts: int = 40,
+    poll_interval: float = 0.05,
 ) -> int:
     """Resolve the current branch and send a git-scoped claim, printing the outcome.
 
@@ -181,6 +184,12 @@ async def run_git_claim(
         Factory for the hub client; injectable for testing.
     runner : GitRunner, optional
         The git executor; injectable for testing.
+    ready_timeout : float, optional
+        Seconds to wait for the hub connection readiness event.
+    attempts : int, optional
+        Number of claim outcome polling attempts.
+    poll_interval : float, optional
+        Seconds to sleep between claim outcome polls.
 
     Returns
     -------
@@ -209,14 +218,14 @@ async def run_git_claim(
     agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
     conn_task = asyncio.create_task(agent.connect())
     try:
-        if not await agent.wait_until_ready(timeout=5.0):
+        if not await agent.wait_until_ready(timeout=ready_timeout):
             print(f"[{name}] Could not reach hub at {uri}.")
             return 1
         await agent.claim(task_id, worktree=repo, paths=paths, git=context.as_dict())
-        for _ in range(40):
+        for _ in range(attempts):
             if outcome:
                 break
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(poll_interval)
         if outcome.get("granted"):
             print(
                 f"claimed '{task_id}' on branch {branch} "
