@@ -141,6 +141,8 @@ class SupervisorWorker:
         Seconds between passes (floored at 1).
     settle_seconds : float, optional
         Pause after requesting the board to let the snapshot arrive.
+    ready_timeout : float, optional
+        Seconds to wait for the hub handshake in :meth:`run`. Defaults to ``5.0``.
     token : str or None, optional
         Shared-secret token for a secured hub.
     clock : Callable[[], float], optional
@@ -155,6 +157,7 @@ class SupervisorWorker:
         idle_seconds: float = DEFAULT_IDLE_SECONDS,
         interval: float = DEFAULT_INTERVAL_SECONDS,
         settle_seconds: float = DEFAULT_SETTLE_SECONDS,
+        ready_timeout: float = 5.0,
         token: str | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
@@ -162,6 +165,7 @@ class SupervisorWorker:
         self.idle_seconds = idle_seconds
         self.interval = max(float(interval), 1.0)
         self.settle_seconds = max(float(settle_seconds), 0.0)
+        self.ready_timeout = max(float(ready_timeout), 0.1)
         self._clock = clock
         self.latest_board: dict[str, Any] | None = None
         self.agent = SynapseAgent(name, on_message_callback=self.on_message, uri=uri, token=token)
@@ -208,7 +212,7 @@ class SupervisorWorker:
     async def run(self) -> None:
         """Connect, wait for the handshake, and supervise until the link ends."""
         conn_task = asyncio.create_task(self.agent.connect())
-        if not await self.agent.wait_until_ready(timeout=5.0):
+        if not await self.agent.wait_until_ready(timeout=self.ready_timeout):
             print(f"[{self.name}] Warning: handshake timeout.")
         supervise_task = asyncio.create_task(self._supervise_loop())
         done, pending = await asyncio.wait(
