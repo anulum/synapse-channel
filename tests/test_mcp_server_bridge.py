@@ -11,39 +11,38 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from mcp_server_helpers import make_bridge
+from synapse_channel.mcp.server import SynapseHubBridge
 
 
 def test_constructor_wires_callback_and_name() -> None:
-    bridge = make_bridge(name="adapter")
+    bridge = SynapseHubBridge(name="adapter")
     assert bridge.name == "adapter"
     assert bridge.agent.name == "adapter"
-    # The agent's callback is the bridge's response router.
     assert bridge.agent.callback == bridge.on_message
 
 
 async def test_on_message_resolves_only_matching_waiter() -> None:
-    bridge = make_bridge()
+    bridge = SynapseHubBridge(request_timeout=0.05)
     loop = asyncio.get_running_loop()
     future: asyncio.Future[dict[str, Any]] = loop.create_future()
-    bridge._waiters.append((lambda d: d.get("type") == "X", future))
-    await bridge.on_message({"type": "Y"})  # no match
+    bridge._waiters.append((lambda data: data.get("type") == "X", future))
+    await bridge.on_message({"type": "Y"})
     assert not future.done()
-    await bridge.on_message({"type": "X"})  # match resolves
+    await bridge.on_message({"type": "X"})
     assert future.done()
 
 
 async def test_on_message_no_waiters_is_noop() -> None:
-    bridge = make_bridge()
-    await bridge.on_message({"type": "chat"})  # nothing registered, no error
+    bridge = SynapseHubBridge(request_timeout=0.05)
+    await bridge.on_message({"type": "chat"})
     assert bridge._waiters == []
 
 
 async def test_on_message_skips_already_resolved_waiter() -> None:
-    bridge = make_bridge()
+    bridge = SynapseHubBridge(request_timeout=0.05)
     loop = asyncio.get_running_loop()
     done: asyncio.Future[dict[str, Any]] = loop.create_future()
     done.set_result({})
-    bridge._waiters.append((lambda d: True, done))
-    await bridge.on_message({"type": "anything"})  # matches but already done -> skipped
-    assert bridge._waiters  # not removed by on_message
+    bridge._waiters.append((lambda data: True, done))
+    await bridge.on_message({"type": "anything"})
+    assert bridge._waiters
