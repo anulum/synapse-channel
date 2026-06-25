@@ -10,86 +10,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
 from typing import Any
 
 import pytest
 
+from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_a2a
-
-
-class FakeAgent:
-    """Stand-in for SynapseAgent used by the A2A card query flow."""
-
-    def __init__(
-        self,
-        name: str,
-        callback: Callable[[dict[str, Any]], Awaitable[None]],
-        *,
-        uri: str,
-        verbose: bool,
-        token: str | None = None,
-        ready: bool = True,
-        inbound: list[dict[str, Any]] | None = None,
-        idle: bool = True,
-    ) -> None:
-        self.name = name
-        self.callback = callback
-        self.uri = uri
-        self.verbose = verbose
-        self.token = token
-        self.running = True
-        self._ready = ready
-        self._inbound = inbound or []
-        self._idle = idle
-
-    async def connect(self) -> None:
-        """Deliver the scripted inbound messages and optionally idle."""
-        for message in self._inbound:
-            await self.callback(message)
-        if self._idle:
-            await asyncio.Event().wait()
-
-    async def wait_until_ready(self, timeout: float = 5.0) -> bool:
-        """Return the scripted readiness result."""
-        return self._ready
-
-    async def request_manifest(self) -> None:
-        """Record-free stub for the manifest request."""
-        return None
-
-
-def _factory(
-    holder: list[FakeAgent],
-    *,
-    ready: bool = True,
-    inbound: list[dict[str, Any]] | None = None,
-    idle: bool = True,
-) -> Callable[..., Any]:
-    """Build a fake-agent factory for the A2A query tests."""
-
-    def make(
-        name: str,
-        callback: Callable[[dict[str, Any]], Awaitable[None]],
-        *,
-        uri: str,
-        verbose: bool,
-        token: str | None = None,
-    ) -> FakeAgent:
-        agent = FakeAgent(
-            name,
-            callback,
-            uri=uri,
-            verbose=verbose,
-            token=token,
-            ready=ready,
-            inbound=inbound,
-            idle=idle,
-        )
-        holder.append(agent)
-        return agent
-
-    return make
+from synapse_channel.core.auth import TokenAuthenticator
+from synapse_channel.core.hub import SynapseHub
 
 
 def test_parser_a2a_card() -> None:
@@ -138,34 +66,22 @@ def test_parser_a2a_serve() -> None:
 async def test_a2a_card_prints_manifest_projection(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    holder: list[FakeAgent] = []
-    inbound: list[dict[str, Any]] = [
-        {
-            "type": "manifest_snapshot",
-            "manifest": [
-                {
-                    "agent": "FAST",
-                    "description": "quick worker",
-                    "skills": ["chat"],
-                    "task_classes": ["rule"],
-                }
-            ],
-        }
-    ]
-
-    rc = await cli_a2a._a2a_card(
-        uri="ws://hub",
-        name="A2A-TEST",
-        token="secret",
-        endpoint_url="https://example.test/a2a/v1",
-        bridge_name="Synapse Bridge",
-        bearer_auth=True,
-        agent_factory=_factory(holder, inbound=inbound, idle=False),
-    )
+    token = "secret"
+    async with running_hub(SynapseHub(authenticator=TokenAuthenticator([token]))) as (_hub, uri):
+        handle = await _advertise_agent(uri, "FAST", token=token)
+        try:
+            rc = await cli_a2a._a2a_card(
+                uri=uri,
+                name="A2A-TEST",
+                token=token,
+                endpoint_url="https://example.test/a2a/v1",
+                bridge_name="Synapse Bridge",
+                bearer_auth=True,
+            )
+        finally:
+            await close_agents(handle)
 
     assert rc == 0
-    assert holder[0].name == "A2A-TEST"
-    assert holder[0].token == "secret"
     card = json.loads(capsys.readouterr().out)
     assert card["name"] == "Synapse Bridge"
     assert card["supportedInterfaces"][0]["url"] == "https://example.test/a2a/v1"
@@ -174,16 +90,13 @@ async def test_a2a_card_prints_manifest_projection(
 
 
 async def test_a2a_card_uses_explicit_description(capsys: pytest.CaptureFixture[str]) -> None:
-    holder: list[FakeAgent] = []
-    inbound = [{"type": "manifest_snapshot", "manifest": []}]
-
-    rc = await cli_a2a._a2a_card(
-        uri="ws://hub",
-        name="A2A-TEST",
-        endpoint_url="https://example.test/a2a/v1",
-        description="Explicit bridge description.",
-        agent_factory=_factory(holder, inbound=inbound, idle=False),
-    )
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        rc = await cli_a2a._a2a_card(
+            uri=uri,
+            name="A2A-TEST",
+            endpoint_url="https://example.test/a2a/v1",
+            description="Explicit bridge description.",
+        )
 
     assert rc == 0
     card = json.loads(capsys.readouterr().out)
@@ -193,73 +106,71 @@ async def test_a2a_card_uses_explicit_description(capsys: pytest.CaptureFixture[
 async def test_a2a_card_reports_unreachable_hub(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    holder: list[FakeAgent] = []
-
     rc = await cli_a2a._a2a_card(
-        uri="ws://hub",
+        uri=f"ws://127.0.0.1:{_free_port()}",
         name="A2A-TEST",
         endpoint_url="https://example.test/a2a/v1",
-        agent_factory=_factory(holder, ready=False, idle=False),
+        ready_timeout=0.1,
     )
 
     assert rc == 1
     assert "Could not reach hub" in capsys.readouterr().out
 
 
-async def test_fetch_manifest_filters_non_card_entries() -> None:
-    holder: list[FakeAgent] = []
-    inbound = [
-        {
-            "type": "manifest_snapshot",
-            "manifest": [{"agent": "A"}, "bad", {"agent": "B"}],
-        }
-    ]
-
-    manifest = await cli_a2a._fetch_manifest(
-        uri="ws://hub",
-        name="A2A-BOOT",
-        token="secret",
-        agent_factory=_factory(holder, inbound=inbound, idle=False),
+async def _advertise_agent(uri: str, name: str, *, token: str | None = None) -> AgentHandle:
+    handle = await connect_agent(name, uri, token=token)
+    await handle.agent.advertise(
+        description="quick worker",
+        skills=["chat"],
+        task_classes=["rule"],
     )
+    await handle.recorder.wait_for(
+        lambda message: (
+            message.get("type") == "capability_advertised"
+            and message.get("card", {}).get("agent") == name
+        )
+    )
+    return handle
 
-    assert manifest == [{"agent": "A"}, {"agent": "B"}]
-    assert holder[0].token == "secret"
+
+async def test_fetch_manifest_returns_live_manifest() -> None:
+    token = "secret"
+    async with running_hub(SynapseHub(authenticator=TokenAuthenticator([token]))) as (_hub, uri):
+        handle = await _advertise_agent(uri, "FAST", token=token)
+        try:
+            manifest = await cli_a2a._fetch_manifest(
+                uri=uri,
+                name="A2A-BOOT",
+                token=token,
+            )
+        finally:
+            await close_agents(handle)
+
+    assert manifest is not None
+    assert manifest[0]["agent"] == "FAST"
+    assert manifest[0]["skills"] == ["chat"]
 
 
 async def test_fetch_manifest_returns_none_when_hub_never_becomes_ready() -> None:
     manifest = await cli_a2a._fetch_manifest(
-        uri="ws://hub",
+        uri=f"ws://127.0.0.1:{_free_port()}",
         name="A2A-BOOT",
         token=None,
-        agent_factory=_factory([], ready=False, idle=False),
+        ready_timeout=0.1,
+        attempts=1,
     )
 
     assert manifest is None
 
 
-async def test_fetch_manifest_returns_empty_without_valid_snapshot(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    original_sleep = asyncio.sleep
-
-    async def no_sleep(_delay: float) -> None:
-        await original_sleep(0)
-        return None
-
-    monkeypatch.setattr("synapse_channel.cli_a2a.asyncio.sleep", no_sleep)
-    manifest = await cli_a2a._fetch_manifest(
-        uri="ws://hub",
-        name="A2A-BOOT",
-        token=None,
-        agent_factory=_factory(
-            [],
-            inbound=[
-                {"type": "chat", "payload": "ignored"},
-                {"type": "manifest_snapshot", "manifest": "bad"},
-            ],
-            idle=False,
-        ),
-    )
+async def test_fetch_manifest_returns_empty_for_empty_live_manifest() -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        manifest = await cli_a2a._fetch_manifest(
+            uri=uri,
+            name="A2A-BOOT",
+            token=None,
+            attempts=1,
+        )
 
     assert manifest == []
 
