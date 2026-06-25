@@ -16,7 +16,7 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Any, cast
 
-from websockets.asyncio.client import ClientConnection
+from websockets.asyncio.connection import Connection
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.hub import SynapseHub
@@ -151,19 +151,19 @@ async def close_agents(*handles: AgentHandle) -> None:
         await handle.close()
 
 
-async def read_json(websocket: ClientConnection, timeout: float = 3.0) -> dict[str, Any]:
+async def read_json(websocket: Connection, timeout: float = 3.0) -> dict[str, Any]:
     raw = await asyncio.wait_for(websocket.recv(), timeout=timeout)
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8")
     return cast(dict[str, Any], json.loads(raw))
 
 
-async def send_json(websocket: ClientConnection, **payload: Any) -> None:
+async def send_json(websocket: Connection, **payload: Any) -> None:
     await websocket.send(json.dumps(payload))
 
 
 async def read_until_type(
-    websocket: ClientConnection, message_type: str, *, limit: int = 20, timeout: float = 3.0
+    websocket: Connection, message_type: str, *, limit: int = 20, timeout: float = 3.0
 ) -> dict[str, Any]:
     for _ in range(limit):
         message = await read_json(websocket, timeout=timeout)
@@ -172,9 +172,7 @@ async def read_until_type(
     raise TimeoutError(f"message type {message_type!r} did not arrive")
 
 
-async def collect_available(
-    websocket: ClientConnection, duration: float = 0.15
-) -> list[dict[str, Any]]:
+async def collect_available(websocket: Connection, duration: float = 0.15) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
     loop = asyncio.get_event_loop()
     deadline = loop.time() + duration
