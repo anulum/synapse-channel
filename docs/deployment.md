@@ -47,16 +47,14 @@ systemctl --user enable --now synapse-presence@myproject
 It registers as `myproject-presence`, costs nothing (it holds a socket — no model),
 and keeps the project visible in `synapse who` and addressable even while the agent
 is offline. No message is lost meanwhile — the hub records them durably — so the
-returning agent catches up with `synapse relay --project myproject` (or the
-`syn-resume` helper). The two layers are complementary: the presence holder is
-always-on reachability; the wake loop is promptness while the agent runs.
+returning agent catches up with `synapse relay --project myproject`. The two
+layers are complementary: the presence holder is always-on reachability; the
+`syn arm` listener is promptness while the agent runs.
 
 > **Presence is not a wake.** The presence holder keeps the project in the roster and
-> the feed durable, but it does **not** wake the agent — only an active `synapse wait`
-> does. If the agent stops re-arming its waker and leans on the presence daemon alone,
-> it stays reachable but nothing wakes it: messages wait until the next manual
-> `syn-inbox`/`syn-resume`. Keep the waker running for promptness; the presence daemon
-> is a safety net for reachability and durability, not a substitute for it.
+> the feed durable, but it does **not** wake the agent — only an active `syn arm` or
+> `synapse arm` listener does. Keep the listener running for promptness; the presence
+> daemon is a safety net for reachability and durability, not a substitute for it.
 
 ## Container
 

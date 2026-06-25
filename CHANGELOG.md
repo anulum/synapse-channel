@@ -13,6 +13,25 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse arm` now keeps a worker listener armed across repeated wakes and
+  reconnects. The ergonomic `syn arm` and `syn-wait` wrappers use this persistent
+  path instead of the one-shot `synapse wait` wake primitive.
+
+### Security
+- `synapse a2a-serve` now refuses a non-loopback bind unless Bearer auth and
+  `--a2a-token` are configured, or unless the operator explicitly passes
+  `--insecure-off-loopback`. This mirrors the hub's exposed-bind posture for the
+  A2A HTTP edge and keeps unauthenticated network exposure opt-in.
+
+### Documentation
+- SECURITY.md, README.md, and the benchmark notes now state the current exposure
+  and token behavior: metrics tokens use the `Authorization: Bearer` header by
+  default, query-string metrics tokens require `--metrics-query-token-ok`, A2A is
+  documented as a local HTTP+JSON bridge rather than an externally validated
+  implementation, and the scalability notes describe the current heap expiry,
+  replay, and scope-conflict scan measurements.
+
 ## [0.44.0] - 2026-06-25
 
 ### Added

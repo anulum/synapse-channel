@@ -99,7 +99,7 @@ def _ident(project: str = "SCPN-CONTROL", identity: str | None = None) -> Identi
 
 def test_arm_argv_is_directed_only_and_distinct_by_default() -> None:
     argv = arm_argv(_ident())
-    assert argv == ["wait", "--name", "SCPN-CONTROL-rx", "--for", "SCPN-CONTROL", "--directed-only"]
+    assert argv == ["arm", "--name", "SCPN-CONTROL-rx", "--for", "SCPN-CONTROL", "--directed-only"]
 
 
 def test_arm_argv_broadcasts_drops_directed_only_and_keeps_extra() -> None:
@@ -204,7 +204,7 @@ def test_main_name_prints_identity_without_calling_the_cli(
 def test_main_arm_builds_a_directed_only_waiter(captured_cli: list[list[str]]) -> None:
     assert ergonomics.main(["arm"]) == 0
     assert captured_cli[0] == [
-        "wait",
+        "arm",
         "--name",
         "SYNAPSE-CHANNEL-rx",
         "--for",

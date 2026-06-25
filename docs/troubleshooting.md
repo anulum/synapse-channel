@@ -48,7 +48,8 @@ broadcasts to `all` are suppressed.
   seat-addressed traffic. Since 0.42.0 a message to the bare `project` is a routine
   project-level broadcast for a seat (it still reaches the seat's inbox, and a CEO or
   priority message still wakes it). Arm the **bare project** (`--for project`) — the
-  default for the `syn-wait` wrapper — if you want project-level messages to wake you.
+  default for the `syn arm`/`syn-wait` wrapper — if you want project-level messages
+  to wake you.
 
 ## Messages are in the feed but `syn-inbox` shows nothing
 

@@ -14,6 +14,7 @@ The ``synapse`` command exposes these subcommands:
 * ``team`` — launch a hub plus one or two local workers in one shot;
 * ``send`` — connect, send one message, optionally wait for replies, and exit;
 * ``wait`` — block until a message addressed to you arrives, then exit (a wake trigger);
+* ``arm`` — keep a directed waiter armed, re-arming after every wake or reconnect;
 * ``listen`` — connect and stream channel messages until interrupted;
 * ``relay`` — decode and print a lite relay log a hub mirrored to a file;
 * ``ingest`` — stream durable events from a hub event store since a sequence cursor (read-side);
@@ -37,7 +38,7 @@ The ``synapse`` command exposes these subcommands:
 This module is the thin entry point: it builds the top-level parser
 (:func:`build_parser`), resolves the shared-secret token, and dispatches
 (:func:`main`). Every subcommand group — process (hub/worker/team/supervisor),
-messaging (send/wait/listen), read-only query (who/state/board/manifest/health),
+messaging (send/wait/arm/listen), read-only query (who/state/board/manifest/health),
 task-plan write (task declare/update/progress), git, locking, mcp, and file/event
 — lives in its own ``cli_*`` module and registers its subparsers through
 :func:`build_parser`.

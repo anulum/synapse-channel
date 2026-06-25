@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — tests for the messaging CLI commands (send/wait/listen)
+# SYNAPSE_CHANNEL — tests for the messaging CLI commands (send/wait/arm/listen)
 
 from __future__ import annotations
 
@@ -133,6 +133,19 @@ def test_parser_wait_wake_jitter() -> None:
     args = cli.build_parser().parse_args(["wait", "--for", "B", "--wake-jitter", "3"])
     assert args.wake_jitter == 3.0
     assert cli.build_parser().parse_args(["wait", "--for", "B"]).wake_jitter == 8.0
+
+
+def test_parser_arm_is_persistent_directed_waiter() -> None:
+    args = cli.build_parser().parse_args(["arm", "--name", "B", "--for", "B"])
+    assert args.name == "B"
+    assert args.for_name == "B"
+    assert args.directed_only is True
+    assert args.func is cli_messaging._cmd_arm
+
+
+def test_parser_arm_broadcasts_opt_in() -> None:
+    args = cli.build_parser().parse_args(["arm", "--for", "B", "--broadcasts"])
+    assert args.directed_only is False
 
 
 # --- send --------------------------------------------------------------------
@@ -548,3 +561,73 @@ async def test_wait_no_jitter_on_directed_wake(monkeypatch: pytest.MonkeyPatch) 
     )
     assert code == 0
     assert calls == []  # no jitter for a directed message
+
+
+# --- arm (persistent wake trigger) -------------------------------------------
+
+
+async def test_arm_rearms_after_each_wake(capsys: pytest.CaptureFixture[str]) -> None:
+    holder: list[FakeAgent] = []
+    inbound: list[dict[str, Any]] = [
+        {"type": "chat", "sender": "A", "target": "B", "payload": "wake"}
+    ]
+    factory = _factory(holder, inbound=inbound)
+    code = await cli_messaging._arm(
+        uri="ws://h",
+        name="B-rx",
+        for_name="B",
+        max_wakes=2,
+        reconnect_delay=0.0,
+        agent_factory=factory,
+    )
+    assert code == 0
+    assert len(holder) == 2
+    assert capsys.readouterr().out.count("A: wake") == 2
+
+
+def test_cmd_arm_derives_rx_name_for_bare_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_arm(**kwargs: Any) -> str:
+        captured.update(kwargs)
+        return "coro"
+
+    monkeypatch.setattr(cli_messaging, "_arm", fake_arm)
+    monkeypatch.setattr("synapse_channel.cli_messaging.asyncio.run", lambda coro: 0)
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="B",
+        for_name=None,
+        directed_only=True,
+        wake_jitter=0.0,
+        reconnect_delay=0.0,
+        max_wakes=None,
+        token=None,
+    )
+    assert cli_messaging._cmd_arm(ns) == 0
+    assert captured["name"] == "B-rx"
+    assert captured["for_name"] == "B"
+
+
+def test_cmd_arm_keeps_distinct_connect_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_arm(**kwargs: Any) -> str:
+        captured.update(kwargs)
+        return "coro"
+
+    monkeypatch.setattr(cli_messaging, "_arm", fake_arm)
+    monkeypatch.setattr("synapse_channel.cli_messaging.asyncio.run", lambda coro: 0)
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="B-rx",
+        for_name="B",
+        directed_only=True,
+        wake_jitter=0.0,
+        reconnect_delay=0.0,
+        max_wakes=None,
+        token=None,
+    )
+    assert cli_messaging._cmd_arm(ns) == 0
+    assert captured["name"] == "B-rx"
+    assert captured["for_name"] == "B"
