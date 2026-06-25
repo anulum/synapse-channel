@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse doctor` checks for the coordination misconfigs that quietly cost an
+  agent its messages: an identity derived by accident (the home directory, a system
+  path) or fragile (the working directory); a send name like `<project>-keeper`
+  whose replies miss the project inbox; a hub URI exposed off loopback without a
+  token; an unreachable hub; and — the common one — no live `-rx` waiter on the bus,
+  so directed messages never wake you. Each line carries the fix, and the command
+  exits non-zero when a check fails, so it slots into a setup script. Point it with
+  `--uri`/`--project`/`--id`/`--send-name`/`--token` (or `--token-file`).
+
 ### Changed
 - The hub now **refuses to start** on a non-loopback address (e.g. `--host 0.0.0.0`)
   when it would be reachable without a token — and, with `--metrics`, without a
