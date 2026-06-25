@@ -384,6 +384,7 @@ class A2ABridge:
             sender = str(data.get("sender", ""))
 
             task_id = marker_task_id(payload)
+            has_marker = task_id is not None
             if task_id is None and sender in self._pending_by_target:
                 task_id = self._pending_task_for_sender(sender)
 
@@ -393,6 +394,8 @@ class A2ABridge:
             if task is None or not self._sender_matches_task(task, sender):
                 return
             context_id = marker_context_id(payload)
+            if has_marker and context_id is None:
+                return
             if context_id is not None and str(task.get("contextId", "")) != context_id:
                 return
             status = task.get("status", {})
