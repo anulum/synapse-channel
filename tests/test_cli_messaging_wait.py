@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 from contextlib import AbstractAsyncContextManager
-from typing import Any
 
 import pytest
 
@@ -77,18 +76,19 @@ async def test_wait_times_out_with_nothing() -> None:
     assert code == 2
 
 
-def test_cmd_wait_dispatches_with_for_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("synapse_channel.cli_messaging.asyncio.run", lambda coro: coro.close() or 0)
+def test_cmd_wait_dispatches_with_for_default(capsys: pytest.CaptureFixture[str]) -> None:
     ns = argparse.Namespace(
-        uri="ws://h",
+        uri=f"ws://127.0.0.1:{_free_port()}",
         name="X",
         for_name=None,
         timeout=0.0,
         directed_only=False,
         wake_jitter=0.0,
         token=None,
+        ready_timeout=0.1,
     )
-    assert cli_messaging._cmd_wait(ns) == 0
+    assert cli_messaging._cmd_wait(ns) == 1
+    assert "[X-rx] Could not reach hub" in capsys.readouterr().out
 
 
 async def test_wait_ignores_own_messages() -> None:
@@ -159,50 +159,36 @@ async def test_wait_directed_only_wakes_on_named(capsys: pytest.CaptureFixture[s
     assert "A: p" in capsys.readouterr().out
 
 
-def test_cmd_wait_derives_rx_name_for_bare_identity(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, Any] = {}
-
-    def fake_wait(**kwargs: Any) -> str:
-        captured.update(kwargs)
-        return "coro"
-
-    monkeypatch.setattr(cli_messaging, "_wait", fake_wait)
-    monkeypatch.setattr("synapse_channel.cli_messaging.asyncio.run", lambda coro: 0)
+def test_cmd_wait_derives_rx_name_for_bare_identity(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     ns = argparse.Namespace(
-        uri="ws://h",
+        uri=f"ws://127.0.0.1:{_free_port()}",
         name="CEO",
         for_name=None,
         timeout=0.0,
         directed_only=False,
         wake_jitter=0.0,
         token=None,
+        ready_timeout=0.1,
     )
-    assert cli_messaging._cmd_wait(ns) == 0
-    assert captured["name"] == "CEO-rx"  # bare identity gets a distinct receiver name
-    assert captured["for_name"] == "CEO"
+    assert cli_messaging._cmd_wait(ns) == 1
+    assert "[CEO-rx] Could not reach hub" in capsys.readouterr().out
 
 
-def test_cmd_wait_keeps_distinct_connect_name(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, Any] = {}
-
-    def fake_wait(**kwargs: Any) -> str:
-        captured.update(kwargs)
-        return "coro"
-
-    monkeypatch.setattr(cli_messaging, "_wait", fake_wait)
-    monkeypatch.setattr("synapse_channel.cli_messaging.asyncio.run", lambda coro: 0)
+def test_cmd_wait_keeps_distinct_connect_name(capsys: pytest.CaptureFixture[str]) -> None:
     ns = argparse.Namespace(
-        uri="ws://h",
+        uri=f"ws://127.0.0.1:{_free_port()}",
         name="CEO-rx",
         for_name="CEO",
         timeout=0.0,
         directed_only=False,
         wake_jitter=0.0,
         token=None,
+        ready_timeout=0.1,
     )
-    assert cli_messaging._cmd_wait(ns) == 0
-    assert captured["name"] == "CEO-rx"  # already distinct, left unchanged
-    assert captured["for_name"] == "CEO"
+    assert cli_messaging._cmd_wait(ns) == 1
+    assert "[CEO-rx] Could not reach hub" in capsys.readouterr().out
 
 
 async def test_wait_directed_only_wakes_on_ceo() -> None:
