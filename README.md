@@ -123,6 +123,7 @@ synapse task declare BUILD --title "compile"         # declare/update the shared
 synapse task update BUILD --status done              # mark a plan task done so dependents unblock
 synapse supervisor --idle-seconds 300                # LLM-free: re-offer tasks that stall
 synapse manifest                                     # print the capability cards agents advertised
+synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1  # emit A2A Agent Card JSON
 synapse doctor                                       # check for common misconfigs (identity, exposure, hub, waiter)
 synapse hub --host 0.0.0.0 --token s3cret            # require a shared secret when binding off-loopback
 synapse send --token s3cret --name USER "hello"      # agents present the token to a secured hub
@@ -222,6 +223,10 @@ client, exposing the coordination verbs as MCP tools (claim, release, send, hand
 off, declare and update tasks) and the board, state, and manifest as live
 resources. The hub stays MCP-agnostic and the core install keeps its single
 dependency — see the [MCP guide](docs/mcp.md).
+
+For Agent2Agent discovery, `synapse a2a-card --endpoint-url ...` projects the
+live capability manifest into an A2A Agent Card JSON document suitable for a
+thin HTTP edge to serve as `/.well-known/agent-card.json`.
 
 ### Git-native claims
 
@@ -331,11 +336,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.43.0 |
 | Public API exports | 59 |
-| Package modules | 49 |
+| Package modules | 51 |
 | Classes | 50 |
 | Wire message types | 52 |
-| CLI subcommands | 28 |
-| Test functions | 1113 |
+| CLI subcommands | 29 |
+| Test functions | 1119 |
 | Benchmark harnesses | 3 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

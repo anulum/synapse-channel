@@ -1,6 +1,6 @@
 # CLI reference
 
-The `synapse` command exposes twenty subcommands.
+The `synapse` command exposes the following subcommands.
 
 | Command | What it does |
 | --- | --- |
@@ -9,6 +9,7 @@ The `synapse` command exposes twenty subcommands.
 | `synapse worker` | Run a model worker that answers on the channel. |
 | `synapse team` | Launch a hub plus one or two local workers in one shot. |
 | `synapse mcp` | Serve the hub to MCP-compatible agents over stdio (see [MCP server](mcp.md)). |
+| `synapse a2a-card` | Print an Agent2Agent Agent Card projected from the live capability manifest. |
 | `synapse send` | Connect, send one message, optionally await replies, and exit. |
 | `synapse wait` | Block until a message addressed to you arrives, then exit (a wake trigger). |
 | `synapse listen` | Connect and stream channel messages until interrupted. |
@@ -183,6 +184,7 @@ example `synapse send --target remanentia/FAST "status?"`.
 synapse listen --name USER
 synapse board
 synapse manifest
+synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1
 synapse relay ./feed.ndjson --cursor ./feed.cursor
 ```
 
@@ -201,6 +203,6 @@ synapse task progress TEST "started" --kind note
 ```
 
 For a secured hub, pass `--token SECRET` to `worker`, `send`, `listen`, `board`,
-`manifest`, and `task`.
+`manifest`, `a2a-card`, and `task`.
 
 Run any command with `--help` for its full set of options.

@@ -31,7 +31,8 @@ The ``synapse`` command exposes these subcommands:
 * ``lock`` — hold a lease while running a command, to serialise it across agents;
 * ``release`` — manually drop a claim you own (e.g. an ``--auto-release-on manual`` claim);
 * ``task`` — declare and update the shared task plan from the command line;
-* ``mcp`` — run a Model Context Protocol server over stdio, bridged to the hub.
+* ``mcp`` — run a Model Context Protocol server over stdio, bridged to the hub;
+* ``a2a-card`` — emit an Agent2Agent Agent Card projected from the live manifest.
 
 This module is the thin entry point: it builds the top-level parser
 (:func:`build_parser`), resolves the shared-secret token, and dispatches
@@ -52,6 +53,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel import __version__
+from synapse_channel.cli_a2a import add_parsers as add_a2a_parsers
 from synapse_channel.cli_doctor import add_parsers as add_doctor_parsers
 from synapse_channel.cli_git import add_parsers as add_git_parsers
 from synapse_channel.cli_locking import add_parsers as add_locking_parsers
@@ -107,6 +109,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_query_parsers(sub)
 
     add_mcp_parsers(sub)
+
+    add_a2a_parsers(sub)
 
     add_git_parsers(sub)
 
