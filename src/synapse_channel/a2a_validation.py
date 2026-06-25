@@ -18,6 +18,7 @@ PROBLEM_MEDIA_TYPE = "application/problem+json"
 SSE_MEDIA_TYPE = "text/event-stream"
 A2A_TASK_MARKER = re.compile(r"\[A2A-TASK:([^\s\]]+)(?:\s+contextId=([^\]\s]+))?\]")
 BRIDGE_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+MAX_A2A_MESSAGE_PARTS = 64
 OPEN_TASK_STATES = {"TASK_STATE_SUBMITTED", "TASK_STATE_WORKING"}
 TERMINAL_TASK_STATES = {
     "TASK_STATE_COMPLETED",
@@ -44,6 +45,15 @@ def validate_bridge_id(value: object, *, field: str) -> None:
         return
     if not BRIDGE_ID.fullmatch(str(value)):
         raise ValueError(f"message.{field} contains unsupported characters")
+
+
+def validate_message_parts(parts: object) -> list[object]:
+    """Return validated A2A message parts."""
+    if not isinstance(parts, list) or not parts:
+        raise ValueError("message.parts must be a non-empty array")
+    if len(parts) > MAX_A2A_MESSAGE_PARTS:
+        raise ValueError("message.parts exceeds maximum supported length")
+    return parts
 
 
 def validate_webhook_url(value: object) -> str:

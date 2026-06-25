@@ -628,6 +628,26 @@ def test_message_send_rejects_duplicate_task_id() -> None:
     assert stored["history"][0]["messageId"] == "m1"
 
 
+def test_message_send_rejects_oversized_parts_array() -> None:
+    harness = HandlerHarness(
+        "POST",
+        "/message:send",
+        body={
+            "message": {
+                "messageId": "m1",
+                "role": "ROLE_USER",
+                "parts": [{"text": "x"}] * 65,
+            }
+        },
+    )
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.BAD_REQUEST
+    assert body["detail"] == "message.parts exceeds maximum supported length"
+    assert harness.handler.bridge.list_tasks()["totalSize"] == 0
+
+
 def test_task_list_supports_page_size_and_page_token() -> None:
     bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     for task_id in ("task-a", "task-b"):

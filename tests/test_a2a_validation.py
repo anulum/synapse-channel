@@ -9,10 +9,12 @@
 from __future__ import annotations
 
 from synapse_channel.a2a_validation import (
+    MAX_A2A_MESSAGE_PARTS,
     is_supported_json_media_type,
     marker_task_id,
     strip_task_marker,
     validate_bridge_id,
+    validate_message_parts,
     validate_webhook_url,
 )
 
@@ -32,6 +34,15 @@ def test_validate_bridge_id_rejects_path_separator() -> None:
         assert str(exc) == "message.taskId contains unsupported characters"
     else:
         raise AssertionError("path separator was accepted")
+
+
+def test_validate_message_parts_rejects_oversized_part_array() -> None:
+    try:
+        validate_message_parts([{"text": "x"}] * (MAX_A2A_MESSAGE_PARTS + 1))
+    except ValueError as exc:
+        assert str(exc) == "message.parts exceeds maximum supported length"
+    else:
+        raise AssertionError("oversized message.parts array was accepted")
 
 
 def test_validate_webhook_url_requires_http_scheme_and_host() -> None:
