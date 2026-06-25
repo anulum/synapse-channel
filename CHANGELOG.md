@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.44.1] - 2026-06-26
+
 ### Added
 - `synapse arm` now keeps a worker listener armed across repeated wakes and
   reconnects. The ergonomic `syn arm` and `syn-wait` wrappers use this persistent
@@ -29,6 +31,21 @@ All notable changes to this project are documented here.
   `--a2a-token` are configured, or unless the operator explicitly passes
   `--insecure-off-loopback`. This mirrors the hub's exposed-bind posture for the
   A2A HTTP edge and keeps unauthenticated network exposure opt-in.
+
+### Fixed
+- The client now classifies multi-address `OSError` connection refusals as a
+  refused hub connection and keeps quiet mode quiet, matching the documented
+  non-running-hub behaviour across Python versions.
+- Hub-initiated name takeover, takeover-cooldown, and name-conflict closes now
+  wait for close propagation when the WebSocket implementation supports it,
+  making the coordination edge deterministic under CI timing.
+- One-shot query and task CLIs now await client-task cancellation during cleanup,
+  avoiding identity reuse races between sequential real-hub commands.
+- Real-socket hub tests now handle Python 3.10 timeout semantics and wait for
+  observable presence updates before asserting takeover or name-conflict close
+  behaviour, keeping the CI matrix deterministic without fake sockets.
+- The team launcher now waits after escalating a stubborn child process from
+  terminate to kill, so shutdown returns only after the subprocess has exited.
 
 ### Documentation
 - SECURITY.md, README.md, and the benchmark notes now state the current exposure

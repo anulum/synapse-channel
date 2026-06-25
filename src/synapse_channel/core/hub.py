@@ -588,16 +588,13 @@ class SynapseHub:
                     last = self._last_takeover.get(sender)
                     if last is not None and now - last < self.takeover_cooldown:
                         # An eviction storm — protect the current holder and reject.
-                        await websocket.close(code=4014, reason="takeover cooldown")
+                        await self._close_socket(websocket, code=4014, reason="takeover cooldown")
                         return None
                     self._last_takeover[sender] = now
                     # Detach the stale holder first so its own unregister will not
                     # reclaim the name, then close it and bind the name to the newcomer.
                     self.socket_agent.pop(owner_ws, None)
-                    try:
-                        await owner_ws.close(code=4010, reason="superseded")
-                    except Exception:  # pragma: no cover - stale socket may already be half-closed.
-                        pass
+                    await self._close_socket(owner_ws, code=4010, reason="superseded")
                     self.socket_agent[websocket] = sender
                     return sender
                 await self._send_json(
@@ -609,7 +606,7 @@ class SynapseHub:
                         target=sender,
                     ),
                 )
-                await websocket.close(code=4009, reason="name conflict")
+                await self._close_socket(websocket, code=4009, reason="name conflict")
                 return None
             self.socket_agent[websocket] = sender
             return sender
@@ -623,9 +620,20 @@ class SynapseHub:
                     target=known_sender,
                 ),
             )
-            await websocket.close(code=4009, reason="name switch")
+            await self._close_socket(websocket, code=4009, reason="name switch")
             return None
         return known_sender
+
+    @staticmethod
+    async def _close_socket(websocket: Any, *, code: int, reason: str) -> None:
+        """Close a websocket and wait for close propagation when supported."""
+        try:
+            await websocket.close(code=code, reason=reason)
+            wait_closed = getattr(websocket, "wait_closed", None)
+            if callable(wait_closed):
+                await wait_closed()
+        except Exception:  # pragma: no cover - stale sockets may already be half-closed.
+            pass
 
     @staticmethod
     def _remote_host(websocket: Any) -> str:

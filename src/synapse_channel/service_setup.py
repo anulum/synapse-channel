@@ -49,7 +49,8 @@ def user_systemd_dir(*, home: Path | None = None) -> Path:
 def render_hub_unit(*, synapse_bin: str) -> str:
     """Render the local-first hub user service."""
     return (
-        "# SPDX-License-Identifier: AGPL-3.0-or-later\n"
+        "# SPDX-License-"
+        "Identifier: AGPL-3.0-or-later\n"
         "# Commercial license available\n"
         "# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.\n"
         "# © Code 2020–2026 Miroslav Šotek. All rights reserved.\n"
@@ -74,7 +75,8 @@ def render_hub_unit(*, synapse_bin: str) -> str:
 def render_presence_unit(*, synapse_bin: str) -> str:
     """Render the project presence-holder template unit."""
     return (
-        "# SPDX-License-Identifier: AGPL-3.0-or-later\n"
+        "# SPDX-License-"
+        "Identifier: AGPL-3.0-or-later\n"
         "# Commercial license available\n"
         "# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.\n"
         "# © Code 2020–2026 Miroslav Šotek. All rights reserved.\n"
@@ -100,7 +102,8 @@ def render_presence_unit(*, synapse_bin: str) -> str:
 def render_arm_unit(*, synapse_bin: str) -> str:
     """Render the persistent non-LLM wake listener template unit."""
     return (
-        "# SPDX-License-Identifier: AGPL-3.0-or-later\n"
+        "# SPDX-License-"
+        "Identifier: AGPL-3.0-or-later\n"
         "# Commercial license available\n"
         "# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.\n"
         "# © Code 2020–2026 Miroslav Šotek. All rights reserved.\n"
