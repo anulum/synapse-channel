@@ -9,11 +9,25 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from synapse_channel.a2a_store import A2ATaskStore
+
+
+def _writer_failing_after(successes: int) -> Callable[[Path, str], None]:
+    calls = 0
+
+    def write_state(path: Path, payload: str) -> None:
+        nonlocal calls
+        calls += 1
+        if calls > successes:
+            raise OSError(f"blocked write to {path}")
+        path.write_text(payload, encoding="utf-8")
+
+    return write_state
 
 
 def test_a2a_task_store_import_boundary_is_stable() -> None:
@@ -116,16 +130,9 @@ def test_a2a_task_store_keeps_tasks_without_status_unchanged(tmp_path: Path) -> 
     assert store.get("task-a") == {"id": "task-a", "status": "bad"}
 
 
-def test_a2a_task_store_rolls_back_task_when_save_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a2a_task_store_rolls_back_task_when_save_fails(tmp_path: Path) -> None:
     storage_path = tmp_path / "a2a-state.json"
-    store = A2ATaskStore(storage_path)
-
-    def fail_write(path: Path, text: str, *, encoding: str) -> int:
-        raise OSError(f"blocked write to {path}")
-
-    monkeypatch.setattr(Path, "write_text", fail_write)
+    store = A2ATaskStore(storage_path, state_writer=_writer_failing_after(0))
 
     with pytest.raises(OSError, match="blocked write"):
         store.put({"id": "task-a", "status": {"state": "TASK_STATE_COMPLETED"}})
@@ -133,17 +140,10 @@ def test_a2a_task_store_rolls_back_task_when_save_fails(
     assert store.get("task-a") is None
 
 
-def test_a2a_task_store_rolls_back_existing_task_when_save_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a2a_task_store_rolls_back_existing_task_when_save_fails(tmp_path: Path) -> None:
     storage_path = tmp_path / "a2a-state.json"
-    store = A2ATaskStore(storage_path)
+    store = A2ATaskStore(storage_path, state_writer=_writer_failing_after(1))
     original = store.put({"id": "task-a", "status": {"state": "TASK_STATE_WORKING"}})
-
-    def fail_write(path: Path, text: str, *, encoding: str) -> int:
-        raise OSError(f"blocked write to {path}")
-
-    monkeypatch.setattr(Path, "write_text", fail_write)
 
     with pytest.raises(OSError, match="blocked write"):
         store.put({"id": "task-a", "status": {"state": "TASK_STATE_COMPLETED"}})
@@ -151,16 +151,9 @@ def test_a2a_task_store_rolls_back_existing_task_when_save_fails(
     assert store.get("task-a") == original
 
 
-def test_a2a_task_store_rolls_back_push_config_when_save_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a2a_task_store_rolls_back_push_config_when_save_fails(tmp_path: Path) -> None:
     storage_path = tmp_path / "a2a-state.json"
-    store = A2ATaskStore(storage_path)
-
-    def fail_write(path: Path, text: str, *, encoding: str) -> int:
-        raise OSError(f"blocked write to {path}")
-
-    monkeypatch.setattr(Path, "write_text", fail_write)
+    store = A2ATaskStore(storage_path, state_writer=_writer_failing_after(0))
 
     with pytest.raises(OSError, match="blocked write"):
         store.put_push_config("task-a", {"url": "https://example.test/hook"})
@@ -168,17 +161,10 @@ def test_a2a_task_store_rolls_back_push_config_when_save_fails(
     assert store.list_push_configs("task-a") == []
 
 
-def test_a2a_task_store_rolls_back_existing_push_config_when_save_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a2a_task_store_rolls_back_existing_push_config_when_save_fails(tmp_path: Path) -> None:
     storage_path = tmp_path / "a2a-state.json"
-    store = A2ATaskStore(storage_path)
+    store = A2ATaskStore(storage_path, state_writer=_writer_failing_after(1))
     original = store.put_push_config("task-a", {"id": "cfg-a", "url": "https://example.test/a"})
-
-    def fail_write(path: Path, text: str, *, encoding: str) -> int:
-        raise OSError(f"blocked write to {path}")
-
-    monkeypatch.setattr(Path, "write_text", fail_write)
 
     with pytest.raises(OSError, match="blocked write"):
         store.put_push_config("task-a", {"id": "cfg-b", "url": "https://example.test/b"})
@@ -200,17 +186,10 @@ def test_a2a_task_store_push_config_get_list_delete_paths(tmp_path: Path) -> Non
     assert store.list_push_configs("task-a") == []
 
 
-def test_a2a_task_store_rolls_back_push_config_delete_when_save_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a2a_task_store_rolls_back_push_config_delete_when_save_fails(tmp_path: Path) -> None:
     storage_path = tmp_path / "a2a-state.json"
-    store = A2ATaskStore(storage_path)
+    store = A2ATaskStore(storage_path, state_writer=_writer_failing_after(1))
     stored = store.put_push_config("task-a", {"id": "cfg-a", "url": "https://example.test/hook"})
-
-    def fail_write(path: Path, text: str, *, encoding: str) -> int:
-        raise OSError(f"blocked write to {path}")
-
-    monkeypatch.setattr(Path, "write_text", fail_write)
 
     with pytest.raises(OSError, match="blocked write"):
         store.delete_push_config("task-a", "cfg-a")
