@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from urllib.parse import urlparse
 
@@ -53,7 +54,20 @@ def validate_webhook_url(value: object) -> str:
         raise ValueError("pushNotificationConfig.webhookUrl must use http or https")
     if not parsed_webhook.netloc:
         raise ValueError("pushNotificationConfig.webhookUrl must include a host")
+    hostname = parsed_webhook.hostname
+    if hostname is None or _is_local_network_host(hostname):
+        raise ValueError("pushNotificationConfig.webhookUrl must not target local networks")
     return webhook
+
+
+def _is_local_network_host(hostname: str) -> bool:
+    if hostname.lower() == "localhost":
+        return True
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_private or address.is_link_local
 
 
 def is_supported_json_media_type(content_type: str) -> bool:

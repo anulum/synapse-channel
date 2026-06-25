@@ -48,6 +48,21 @@ def test_validate_webhook_url_requires_http_scheme_and_host() -> None:
             raise AssertionError(f"invalid webhook URL was accepted: {value}")
 
 
+def test_validate_webhook_url_rejects_local_network_hosts() -> None:
+    for value in (
+        "http://localhost/hook",
+        "http://127.0.0.1/hook",
+        "http://10.0.0.5/hook",
+        "http://[::1]/hook",
+    ):
+        try:
+            validate_webhook_url(value)
+        except ValueError as exc:
+            assert str(exc) == "pushNotificationConfig.webhookUrl must not target local networks"
+        else:
+            raise AssertionError(f"local webhook URL was accepted: {value}")
+
+
 def test_is_supported_json_media_type_allows_a2a_json_with_charset() -> None:
     assert is_supported_json_media_type("application/a2a+json; charset=utf-8") is True
     assert is_supported_json_media_type("application/json") is True
