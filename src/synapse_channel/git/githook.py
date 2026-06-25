@@ -284,6 +284,7 @@ async def run_git_release(
     token: str | None = None,
     agent_factory: AgentFactory = SynapseAgent,
     runner: GitRunner = _default_git_runner,
+    ready_timeout: float = 5.0,
 ) -> int:
     """Release this agent's branch-scoped claims whose paths were committed/merged.
 
@@ -303,6 +304,8 @@ async def run_git_release(
         Factory for the hub client; injectable for testing.
     runner : GitRunner, optional
         The git executor; injectable for testing.
+    ready_timeout : float, optional
+        Maximum seconds to wait for the hook client to receive the hub welcome.
 
     Returns
     -------
@@ -325,7 +328,7 @@ async def run_git_release(
     agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
     conn_task = asyncio.create_task(agent.connect())
     try:
-        if not await agent.wait_until_ready(timeout=5.0):
+        if not await agent.wait_until_ready(timeout=ready_timeout):
             print(f"[{name}] Could not reach hub at {uri}.")
             return 0
         await agent.request_state()
