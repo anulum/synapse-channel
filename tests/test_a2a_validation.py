@@ -63,6 +63,15 @@ def test_validate_webhook_url_rejects_local_network_hosts() -> None:
             raise AssertionError(f"local webhook URL was accepted: {value}")
 
 
+def test_validate_webhook_url_rejects_embedded_credentials() -> None:
+    try:
+        validate_webhook_url("https://user:secret@example.test/hook")
+    except ValueError as exc:
+        assert str(exc) == "pushNotificationConfig.webhookUrl must not include credentials"
+    else:
+        raise AssertionError("webhook URL with embedded credentials was accepted")
+
+
 def test_is_supported_json_media_type_allows_a2a_json_with_charset() -> None:
     assert is_supported_json_media_type("application/a2a+json; charset=utf-8") is True
     assert is_supported_json_media_type("application/json") is True
