@@ -31,6 +31,28 @@ class FakeAgent:
         self.messages.append((target, payload))
 
 
+class SlowAgent(FakeAgent):
+    """Agent stub that records overlapping chat calls."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._lock = threading.Lock()
+        self._active_chats = 0
+        self.max_active_chats = 0
+
+    async def chat(self, payload: str, *, target: str = "all") -> None:
+        """Record chat calls and the maximum concurrent entry count."""
+        with self._lock:
+            self._active_chats += 1
+            self.max_active_chats = max(self.max_active_chats, self._active_chats)
+        try:
+            time.sleep(0.05)
+            await super().chat(payload, target=target)
+        finally:
+            with self._lock:
+                self._active_chats -= 1
+
+
 class HandlerHarness:
     """Instantiate one stdlib request handler without binding a socket."""
 
@@ -897,6 +919,31 @@ def test_concurrent_duplicate_task_id_creates_only_one_task() -> None:
     assert len(results) == 1
     assert [str(error) for error in errors] == ["message.taskId already exists"]
     assert bridge.list_tasks()["totalSize"] == 1
+
+
+def test_concurrent_direct_task_creation_serializes_same_target_submission() -> None:
+    agent = SlowAgent()
+    bridge = A2ABridge(agent=agent, agent_card={}, target="WORKER", store=A2ATaskStore())
+
+    def create_task(index: int) -> None:
+        bridge.create_working_task(
+            {
+                "taskId": f"task-{index}",
+                "messageId": f"m-{index}",
+                "role": "ROLE_USER",
+                "parts": [{"text": f"task {index}"}],
+            },
+            target="WORKER",
+        )
+
+    threads = [threading.Thread(target=create_task, args=(index,)) for index in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=2.0)
+
+    assert agent.max_active_chats == 1
+    assert bridge.list_tasks()["totalSize"] == 2
 
 
 def test_completion_delivers_push_notification_to_stored_config() -> None:

@@ -205,45 +205,46 @@ class A2ABridge:
 
     def create_working_task(self, message: JsonMap, *, target: str | None = None) -> JsonMap:
         """Create a working A2A task and forward the request into SYNAPSE."""
-        task_id = str(message.get("taskId") or uuid.uuid4())
-        context_id = str(message.get("contextId") or uuid.uuid4())
-        resolved_target = self._target_for(message, target)
-        text = self._message_text(message)
-        now = time.time()
-        task: JsonMap = {
-            "id": task_id,
-            "contextId": context_id,
-            "status": {
-                "state": "TASK_STATE_SUBMITTED",
-                "message": {
-                    "messageId": str(uuid.uuid4()),
-                    "role": "ROLE_USER",
-                    "parts": message.get("parts", []),
+        with self._task_creation_lock:
+            task_id = str(message.get("taskId") or uuid.uuid4())
+            context_id = str(message.get("contextId") or uuid.uuid4())
+            resolved_target = self._target_for(message, target)
+            text = self._message_text(message)
+            now = time.time()
+            task: JsonMap = {
+                "id": task_id,
+                "contextId": context_id,
+                "status": {
+                    "state": "TASK_STATE_SUBMITTED",
+                    "message": {
+                        "messageId": str(uuid.uuid4()),
+                        "role": "ROLE_USER",
+                        "parts": message.get("parts", []),
+                    },
                 },
-            },
-            "history": [message],
-            "artifacts": [],
-            "metadata": {
-                "synapseTarget": resolved_target,
-                "a2aTaskId": task_id,
-                "a2aContextId": context_id,
-                "createdAt": now,
-                "updatedAt": now,
-            },
-        }
-        self._pending_by_target.setdefault(resolved_target, []).append(task_id)
-        if text:
-            marked = text + f"\n[A2A-TASK:{task_id} contextId={context_id}]"
-            self._run(self.agent.chat(marked, target=resolved_target))
-        task = self._set_task_status(
-            task,
-            state="TASK_STATE_WORKING",
-            message=task["status"]["message"],
-            publish=False,
-        )
-        stored = self.store.put(task)
-        self._publish_task_update(stored, deliver_push=False)
-        return stored
+                "history": [message],
+                "artifacts": [],
+                "metadata": {
+                    "synapseTarget": resolved_target,
+                    "a2aTaskId": task_id,
+                    "a2aContextId": context_id,
+                    "createdAt": now,
+                    "updatedAt": now,
+                },
+            }
+            self._pending_by_target.setdefault(resolved_target, []).append(task_id)
+            if text:
+                marked = text + f"\n[A2A-TASK:{task_id} contextId={context_id}]"
+                self._run(self.agent.chat(marked, target=resolved_target))
+            task = self._set_task_status(
+                task,
+                state="TASK_STATE_WORKING",
+                message=task["status"]["message"],
+                publish=False,
+            )
+            stored = self.store.put(task)
+            self._publish_task_update(stored, deliver_push=False)
+            return stored
 
     def create_completed_task(self, message: JsonMap, *, target: str | None = None) -> JsonMap:
         """Create a task for compatibility with older callers."""
