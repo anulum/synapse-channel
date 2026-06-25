@@ -383,6 +383,9 @@ class A2ABridge:
             raise ValueError("message.parts must be a non-empty array")
         _validate_bridge_id(message.get("taskId"), field="taskId")
         _validate_bridge_id(message.get("contextId"), field="contextId")
+        task_id = message.get("taskId")
+        if task_id is not None and self.store.get(str(task_id)) is not None:
+            raise ValueError("message.taskId already exists")
         return self.create_working_task(message)
 
     def _store_request_push_config(self, payload: JsonMap, *, task_id: str) -> JsonMap | None:
