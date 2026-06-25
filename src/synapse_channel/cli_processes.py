@@ -45,6 +45,7 @@ from synapse_channel.core.hub import (
     DEFAULT_PORT,
     DEFAULT_RELAY_MAX_LINES,
     DEFAULT_TAKEOVER_COOLDOWN,
+    InsecureBindError,
     SynapseHub,
 )
 from synapse_channel.core.logging_setup import (
@@ -100,9 +101,13 @@ def _cmd_hub(args: argparse.Namespace) -> int:
         auth_timeout=args.auth_timeout,
         metrics_token=args.metrics_token,
         metrics_query_token_ok=args.metrics_query_token_ok,
+        insecure_off_loopback=args.insecure_off_loopback,
     )
     try:
         _run(hub.serve(host=args.host, port=args.port))
+    except InsecureBindError as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        return 2
     except KeyboardInterrupt:
         print("\nHub stopped by user.")
     finally:
@@ -344,6 +349,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         action="store_true",
         help="Also accept the metrics token as a ?token= query parameter (off by "
         "default; a query token can leak into logs, history, and proxy records).",
+    )
+    hub.add_argument(
+        "--insecure-off-loopback",
+        action="store_true",
+        help="Bind a non-loopback host even without a token (and metrics token); by "
+        "default such an exposed bind is refused rather than only warned about.",
     )
     hub.set_defaults(func=_cmd_hub)
 

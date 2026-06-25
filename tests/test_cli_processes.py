@@ -20,6 +20,7 @@ from synapse_channel.client.llm_worker import DEFAULT_OLLAMA_BASE_URL
 from synapse_channel.core.hub import (
     DEFAULT_COMPACT_HINT_THRESHOLD,
     DEFAULT_TAKEOVER_COOLDOWN,
+    InsecureBindError,
     SynapseHub,
 )
 from synapse_channel.core.logging_setup import DEFAULT_LOG_FORMAT, DEFAULT_LOG_LEVEL
@@ -135,6 +136,12 @@ def test_parser_hub_max_unauth_clients() -> None:
     assert args.max_unauth_clients == 8
 
 
+def test_parser_hub_insecure_off_loopback() -> None:
+    assert cli.build_parser().parse_args(["hub"]).insecure_off_loopback is False
+    opted = cli.build_parser().parse_args(["hub", "--insecure-off-loopback"])
+    assert opted.insecure_off_loopback is True
+
+
 # --- main dispatch through the process handlers ------------------------------
 
 
@@ -201,6 +208,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "auth_timeout": 10.0,
         "metrics_token": None,
         "metrics_query_token_ok": False,
+        "insecure_off_loopback": False,
     }
     base.update(overrides)
     return argparse.Namespace(**base)
@@ -217,6 +225,32 @@ def test_cmd_hub_runs_and_handles_interrupt(monkeypatch: pytest.MonkeyPatch) -> 
 
     monkeypatch.setattr(cli_processes, "_run", interrupt)
     assert cli_processes._cmd_hub(ns) == 0
+
+
+def test_cmd_hub_refuses_insecure_bind(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def refuse(coro: Any) -> None:
+        coro.close()
+        raise InsecureBindError("Refusing to bind: Synapse Hub bound to ... no token.")
+
+    monkeypatch.setattr(cli_processes, "_run", refuse)
+    assert cli_processes._cmd_hub(_hub_ns(host="0.0.0.0")) == 2
+    assert "Refusing to bind" in capsys.readouterr().err
+
+
+def test_cmd_hub_threads_insecure_off_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
+    built: dict[str, Any] = {}
+    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
+    real_init = SynapseHub.__init__
+
+    def capture(self: SynapseHub, **kwargs: Any) -> None:
+        built.update(kwargs)
+        real_init(self, **kwargs)
+
+    monkeypatch.setattr(SynapseHub, "__init__", capture)
+    assert cli_processes._cmd_hub(_hub_ns(insecure_off_loopback=True)) == 0
+    assert built["insecure_off_loopback"] is True
 
 
 def test_cmd_hub_with_db_opens_and_closes_event_store(

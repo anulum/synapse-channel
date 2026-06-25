@@ -11,6 +11,22 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Changed
+- The hub now **refuses to start** on a non-loopback address (e.g. `--host 0.0.0.0`)
+  when it would be reachable without a token — and, with `--metrics`, without a
+  `--metrics-token` — instead of only printing a warning and exposing the bus anyway.
+  This makes the safe configuration the default: a coordination bus is never put on
+  the network unauthenticated by accident. A loopback bind (the default) is unaffected.
+
+### Upgrade notes
+- If you intentionally run an unauthenticated hub off loopback, add the new
+  `synapse hub --insecure-off-loopback` flag to keep the previous warn-and-bind
+  behaviour. The recommended fix is to set a token (`--token`, and `--metrics-token`
+  when metrics are on) rather than override the guard. Loopback-only hubs and any hub
+  that already sets a token need no change.
+
 ## [0.43.0] - 2026-06-25
 
 ### Added

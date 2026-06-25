@@ -21,7 +21,12 @@ from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request
 
 from synapse_channel.core.auth import TokenAuthenticator
-from synapse_channel.core.hub import MAX_LOG_PAYLOAD, SynapseHub, is_loopback_host
+from synapse_channel.core.hub import (
+    MAX_LOG_PAYLOAD,
+    InsecureBindError,
+    SynapseHub,
+    is_loopback_host,
+)
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
@@ -1564,27 +1569,48 @@ def test_is_loopback_host_recognises_loopback_addresses() -> None:
     assert not is_loopback_host("10.0.0.5")
 
 
-def test_warn_if_exposed_warns_off_loopback_without_token(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_exposure_problems_empty_on_loopback() -> None:
+    assert _hub()._exposure_problems("localhost") == []
+    assert _hub()._exposure_problems("127.0.0.1") == []
+
+
+def test_exposure_problems_flags_missing_token_off_loopback() -> None:
+    problems = _hub()._exposure_problems("0.0.0.0")
+    assert len(problems) == 1
+    assert "no token" in problems[0]
+
+
+def test_exposure_problems_empty_when_token_set() -> None:
+    assert _secured_hub()._exposure_problems("0.0.0.0") == []
+
+
+def test_guard_exposure_refuses_off_loopback_without_token() -> None:
     hub = _hub()  # no authenticator
-    with caplog.at_level("WARNING", logger="synapse.hub"):
-        hub._warn_if_exposed("0.0.0.0")
-    assert "non-loopback" in caplog.text
+    with pytest.raises(InsecureBindError, match="Refusing to bind"):
+        hub._guard_exposure("0.0.0.0")
 
 
-def test_warn_if_exposed_silent_on_loopback(caplog: pytest.LogCaptureFixture) -> None:
+def test_guard_exposure_silent_on_loopback(caplog: pytest.LogCaptureFixture) -> None:
     hub = _hub()
     with caplog.at_level("WARNING", logger="synapse.hub"):
-        hub._warn_if_exposed("localhost")
+        hub._guard_exposure("localhost")  # does not raise
     assert caplog.records == []
 
 
-def test_warn_if_exposed_silent_when_token_set(caplog: pytest.LogCaptureFixture) -> None:
+def test_guard_exposure_passes_when_token_set(caplog: pytest.LogCaptureFixture) -> None:
     hub = _secured_hub()
     with caplog.at_level("WARNING", logger="synapse.hub"):
-        hub._warn_if_exposed("0.0.0.0")
+        hub._guard_exposure("0.0.0.0")  # does not raise
     assert caplog.records == []
+
+
+def test_guard_exposure_warns_instead_of_refusing_when_overridden(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    hub = SynapseHub(insecure_off_loopback=True)  # no authenticator
+    with caplog.at_level("WARNING", logger="synapse.hub"):
+        hub._guard_exposure("0.0.0.0")  # warns, does not raise
+    assert "no token" in caplog.text
 
 
 async def test_takeover_evicts_stale_holder() -> None:
@@ -1815,21 +1841,31 @@ def test_metrics_token_rejects_a_wrong_token() -> None:
     assert response.status_code == 401
 
 
-def test_warn_if_exposed_warns_on_unauthenticated_metrics(
+def test_guard_exposure_refuses_unauthenticated_metrics_off_loopback() -> None:
+    hub = SynapseHub(authenticator=TokenAuthenticator(["t"]), enable_metrics=True)
+    with pytest.raises(InsecureBindError, match="metrics"):
+        hub._guard_exposure("0.0.0.0")
+
+
+def test_guard_exposure_warns_on_unauthenticated_metrics_when_overridden(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    hub = SynapseHub(authenticator=TokenAuthenticator(["t"]), enable_metrics=True)
+    hub = SynapseHub(
+        authenticator=TokenAuthenticator(["t"]),
+        enable_metrics=True,
+        insecure_off_loopback=True,
+    )
     with caplog.at_level("WARNING", logger="synapse.hub"):
-        hub._warn_if_exposed("0.0.0.0")
+        hub._guard_exposure("0.0.0.0")
     assert any("metrics" in r.message for r in caplog.records)
 
 
-def test_warn_if_exposed_silent_when_metrics_token_set(
+def test_guard_exposure_passes_when_metrics_token_set(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     hub = SynapseHub(
         authenticator=TokenAuthenticator(["t"]), enable_metrics=True, metrics_token="m"
     )
     with caplog.at_level("WARNING", logger="synapse.hub"):
-        hub._warn_if_exposed("0.0.0.0")
-    assert not any("metrics" in r.message for r in caplog.records)
+        hub._guard_exposure("0.0.0.0")  # both guards satisfied: no raise, no warning
+    assert caplog.records == []
