@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -77,6 +78,8 @@ async def _health(
     finally:
         agent.running = False
         conn_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await conn_task
 
 
 def _cmd_health(args: argparse.Namespace) -> int:
@@ -161,6 +164,8 @@ async def _query_hub(
     finally:
         agent.running = False
         conn_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await conn_task
 
 
 async def _who(

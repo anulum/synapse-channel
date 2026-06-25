@@ -18,6 +18,7 @@ the CLI, and any embedding application use to appear on the channel.
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import logging
 from collections.abc import Awaitable, Callable
@@ -38,6 +39,16 @@ DEFAULT_HUB_URI = "ws://localhost:8876"
 
 MINIMUM_HEARTBEAT_INTERVAL = 5.0
 """Floor applied to the configured heartbeat interval, in seconds."""
+
+
+def _is_connection_refused(exc: OSError) -> bool:
+    """Return whether an OS connection error is a refused hub connection."""
+    if isinstance(exc, ConnectionRefusedError):
+        return True
+    if exc.errno == errno.ECONNREFUSED:
+        return True
+    text = str(exc)
+    return "Connect call failed" in text and f"[Errno {errno.ECONNREFUSED}]" in text
 
 
 class SynapseAgent:
@@ -136,8 +147,15 @@ class SynapseAgent:
         except ConnectionRefusedError:
             if self.verbose:
                 print(f"[{self.name}] Error: could not connect. Is the hub running?")
-        except (ConnectionResetError, OSError, ConnectionClosedError) as exc:
-            print(f"[{self.name}] Connection lost: {exc}")
+        except OSError as exc:
+            if _is_connection_refused(exc):
+                if self.verbose:
+                    print(f"[{self.name}] Error: could not connect. Is the hub running?")
+            elif self.verbose:
+                print(f"[{self.name}] Connection lost: {exc}")
+        except ConnectionClosedError as exc:
+            if self.verbose:
+                print(f"[{self.name}] Connection lost: {exc}")
         finally:
             self.running = False
             if self._heartbeat_task is not None:

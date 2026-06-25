@@ -182,5 +182,5 @@ async def collect_available(websocket: Connection, duration: float = 0.15) -> li
             return messages
         try:
             messages.append(await read_json(websocket, timeout=remaining))
-        except TimeoutError:
+        except (TimeoutError, asyncio.TimeoutError):
             return messages

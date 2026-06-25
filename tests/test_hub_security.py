@@ -227,6 +227,7 @@ async def test_takeover_evicts_stale_holder() -> None:
         async with connect(uri) as old, connect(uri) as new:
             await read_until_type(old, "welcome")
             await send_json(old, sender="X-rx", type="heartbeat", payload="online")
+            await read_until_type(old, "presence_update")
             await read_until_type(new, "welcome")
             await send_json(new, sender="X-rx", type="heartbeat", payload="online", takeover=True)
             with pytest.raises(ConnectionClosed) as exc_info:
@@ -243,6 +244,7 @@ async def test_name_conflict_without_takeover_rejects_newcomer() -> None:
         async with connect(uri) as old, connect(uri) as new:
             await read_until_type(old, "welcome")
             await send_json(old, sender="Y", type="heartbeat", payload="online")
+            await read_until_type(old, "presence_update")
             await read_until_type(new, "welcome")
             await send_json(new, sender="Y", type="heartbeat", payload="online")
             conflict = await read_until_type(new, "name_conflict")

@@ -167,8 +167,12 @@ def _shutdown(
             try:
                 proc.terminate()
                 proc.wait(timeout=timeout_seconds)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=timeout_seconds)
             except Exception:
                 proc.kill()
+                proc.wait(timeout=timeout_seconds)
 
 
 def run_team(

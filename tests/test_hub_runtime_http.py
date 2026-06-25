@@ -86,6 +86,7 @@ async def test_takeover_cooldown_blocks_rapid_eviction() -> None:
         async with connect(uri) as first, connect(uri) as second, connect(uri) as third:
             await read_until_type(first, "welcome")
             await first.send(json.dumps({"sender": "A", "type": "heartbeat"}))
+            await read_until_type(first, "presence_update")
             await read_until_type(second, "welcome")
             await second.send(json.dumps({"sender": "A", "type": "heartbeat", "takeover": True}))
             with pytest.raises(ConnectionClosed) as first_close:
