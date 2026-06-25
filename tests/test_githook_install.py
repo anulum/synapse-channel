@@ -13,8 +13,6 @@ import stat
 import sys
 from pathlib import Path
 
-import pytest
-
 from synapse_channel.git.githook import (
     HOOK_MARKER,
     _binary_resolvable,
@@ -65,23 +63,36 @@ def test_install_hooks_bakes_an_explicit_synapse_bin(tmp_path: Path) -> None:
     assert "/opt/synapse/bin/synapse git-release --trigger commit" in body
 
 
-def test_install_hooks_resolves_an_absolute_synapse_from_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(
-        "synapse_channel.git.githook.shutil.which", lambda _name: "/usr/local/bin/synapse"
-    )
-    install_hooks(uri="ws://h", name="ME", hooks_dir=tmp_path)
-    body = (tmp_path / "post-commit").read_text(encoding="utf-8")
-    assert "/usr/local/bin/synapse git-release" in body
+def test_install_hooks_resolves_an_absolute_synapse_from_path(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    hooks_dir = tmp_path / "hooks"
+    bin_dir.mkdir()
+    synapse = bin_dir / "synapse"
+    synapse.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    synapse.chmod(0o700)
+    old_path = os.environ.get("PATH", "")
+    try:
+        os.environ["PATH"] = str(bin_dir)
+        install_hooks(uri="ws://h", name="ME", hooks_dir=hooks_dir)
+    finally:
+        os.environ["PATH"] = old_path
+
+    body = (hooks_dir / "post-commit").read_text(encoding="utf-8")
+    assert f"{synapse} git-release" in body
 
 
-def test_install_hooks_falls_back_to_bare_name_when_synapse_not_found(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr("synapse_channel.git.githook.shutil.which", lambda _name: None)
-    install_hooks(uri="ws://h", name="ME", hooks_dir=tmp_path)
-    body = (tmp_path / "post-commit").read_text(encoding="utf-8")
+def test_install_hooks_falls_back_to_bare_name_when_synapse_not_found(tmp_path: Path) -> None:
+    empty_bin = tmp_path / "empty-bin"
+    hooks_dir = tmp_path / "hooks"
+    empty_bin.mkdir()
+    old_path = os.environ.get("PATH", "")
+    try:
+        os.environ["PATH"] = str(empty_bin)
+        install_hooks(uri="ws://h", name="ME", hooks_dir=hooks_dir)
+    finally:
+        os.environ["PATH"] = old_path
+
+    body = (hooks_dir / "post-commit").read_text(encoding="utf-8")
     assert "\nsynapse git-release" in body  # bare name resolved from PATH at hook time
 
 
