@@ -58,3 +58,24 @@ constraint anyway: a single process and a single event loop cap throughput long
 before the expiry scan does. A heap-based expiry sweeper would turn the `O(n)`
 scan into `O(log n)`, but it would optimise something that is not the limit at any
 scale this design targets — so it is recorded as a tracked option, not a fix.
+
+## A2A bridge benchmark
+
+`a2a_bridge_benchmark.py` measures the local HTTP+JSON bridge logic without a
+network server: task creation, SYNAPSE reply correlation, task listing, push
+delivery callback dispatch, and bounded subscriber fanout.
+
+On the committed reference run (250 tasks, 32 subscribers, Python 3.12):
+
+| Operation | Result |
+| --- | ---: |
+| Task creation | 7,763 tasks/s |
+| Reply correlation | 19,771 tasks/s |
+| Task listing | 250 tasks listed |
+| Push delivery callbacks | 250 delivered |
+| Subscriber fanout | 32 terminal events delivered |
+
+**Reading it honestly.** These are in-process bridge numbers, useful for spotting
+local regressions and sizing the single-process edge. They do not measure remote
+HTTP server throughput, real webhook receiver latency, TLS, DNS, third-party A2A
+conformance, or multi-replica behavior.
