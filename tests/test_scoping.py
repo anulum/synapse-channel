@@ -12,6 +12,7 @@ import pytest
 
 from synapse_channel.core.scoping import (
     MAX_DECLARED_PATHS,
+    MAX_PATH_LENGTH,
     normalize_path,
     normalize_paths,
     paths_overlap,
@@ -146,3 +147,20 @@ def test_normalize_paths_custom_cap_clamps_up_to_one() -> None:
     # A non-positive cap floors at one path: a single path survives, a second widens.
     assert normalize_paths(["only/f"], 0) == ("only/f",)
     assert normalize_paths(["a/f", "b/f"], 0) == ("",)
+
+
+def test_normalize_paths_widens_on_an_over_long_path(caplog: pytest.LogCaptureFixture) -> None:
+    over_long = "a/" * (MAX_PATH_LENGTH // 2 + 1)  # strictly longer than MAX_PATH_LENGTH
+    with caplog.at_level("DEBUG", logger="synapse.scoping"):
+        assert normalize_paths(["src", over_long]) == ("",)
+    assert any("exceeds" in message for message in caplog.messages)
+
+
+def test_normalize_paths_widens_on_a_non_printable_path() -> None:
+    assert normalize_paths(["src", "evil\nrm -rf"]) == ("",)
+    assert normalize_paths(["a\x00b"]) == ("",)
+
+
+def test_normalize_paths_keeps_a_normal_unicode_path() -> None:
+    # A legitimate accented filename is printable and within length, so it survives.
+    assert normalize_paths(["café/notes", "src"]) == ("café/notes", "src")

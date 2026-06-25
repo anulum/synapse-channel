@@ -24,7 +24,10 @@ any other claim in that worktree.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable, Sequence
+
+logger = logging.getLogger("synapse.scoping")
 
 DEFAULT_WORKTREE = ""
 """Label for the shared/default working tree when a claim names no worktree."""
@@ -36,6 +39,15 @@ A claim that declares more distinct paths than this is treated as owning the who
 worktree (see :func:`normalize_paths`). The bound caps the ``O(n·m)`` cost of
 pairwise overlap checks and widening — rather than dropping paths — keeps the
 result conservative: it never *misses* a conflict, it only over-claims.
+"""
+
+MAX_PATH_LENGTH = 4096
+"""Upper bound on the length of a single declared path before the scope is widened.
+
+A path longer than this — or one carrying non-printable characters — is not a real
+declared scope (a real message is also bounded by the hub's ``--max-msg-kb`` cap), so
+:func:`normalize_paths` widens the claim to the whole worktree rather than trust or
+scan it. Conservative, like the count bound: it never misses a conflict.
 """
 
 
@@ -148,14 +160,25 @@ def normalize_paths(paths: Iterable[str], max_declared_paths: int | None = None)
     Returns
     -------
     tuple[str, ...]
-        Normalised, order-preserving, duplicate-free paths; ``("",)`` if any
-        entry names the tree root or the distinct count exceeds the cap; ``()``
-        if the input is empty.
+        Normalised, order-preserving, duplicate-free paths; ``("",)`` if any entry
+        names the tree root, is over-long (:data:`MAX_PATH_LENGTH`) or non-printable,
+        or the distinct count exceeds the cap; ``()`` if the input is empty.
     """
     cap = MAX_DECLARED_PATHS if max_declared_paths is None else max(1, int(max_declared_paths))
     seen: set[str] = set()
     out: list[str] = []
     for raw in paths:
+        # An over-long or non-printable path is not a real declared scope; widen to the
+        # whole worktree (conservative) rather than trust or scan it. The raw value is
+        # never logged — it may be huge or carry control characters.
+        if len(raw) > MAX_PATH_LENGTH:
+            logger.debug(
+                "widening claim scope: a declared path exceeds %d characters", MAX_PATH_LENGTH
+            )
+            return ("",)
+        if not raw.isprintable():
+            logger.debug("widening claim scope: a declared path has non-printable characters")
+            return ("",)
         norm = normalize_path(raw)
         if norm == "":
             return ("",)

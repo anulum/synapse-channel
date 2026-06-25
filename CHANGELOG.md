@@ -42,6 +42,10 @@ All notable changes to this project are documented here.
   aggregators; human-readable text stays the default.
 
 ### Security
+- A declared claim path that is over-long (more than 4096 characters) or carries
+  non-printable characters now widens the claim to its whole worktree rather than being
+  trusted or scanned, consistent with the existing path-count bound. Claims stay
+  advisory-only — the hub never reads the filesystem — so this only bounds work and noise.
 - A hub can now apply a per-host frame-rate ceiling with `synapse hub --host-rate N`
   (and `--host-burst`), charging every inbound frame — heartbeats included — to a token
   bucket keyed by the connection's remote host. This bounds a single host that would
