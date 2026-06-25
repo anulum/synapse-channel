@@ -66,3 +66,20 @@ def test_a2a_task_store_rolls_back_task_when_save_fails(
         store.put({"id": "task-a", "status": {"state": "TASK_STATE_COMPLETED"}})
 
     assert store.get("task-a") is None
+
+
+def test_a2a_task_store_rolls_back_push_config_when_save_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    storage_path = tmp_path / "a2a-state.json"
+    store = A2ATaskStore(storage_path)
+
+    def fail_write(path: Path, text: str, *, encoding: str) -> int:
+        raise OSError(f"blocked write to {path}")
+
+    monkeypatch.setattr(Path, "write_text", fail_write)
+
+    with pytest.raises(OSError, match="blocked write"):
+        store.put_push_config("task-a", {"url": "https://example.test/hook"})
+
+    assert store.list_push_configs("task-a") == []
