@@ -206,8 +206,14 @@ class A2ABridge:
     def create_working_task(self, message: JsonMap, *, target: str | None = None) -> JsonMap:
         """Create a working A2A task and forward the request into SYNAPSE."""
         with self._task_creation_lock:
-            task_id = str(message.get("taskId") or uuid.uuid4())
-            context_id = str(message.get("contextId") or uuid.uuid4())
+            raw_task_id = message.get("taskId")
+            raw_context_id = message.get("contextId")
+            validate_bridge_id(raw_task_id, field="taskId")
+            validate_bridge_id(raw_context_id, field="contextId")
+            task_id = str(raw_task_id or uuid.uuid4())
+            context_id = str(raw_context_id or uuid.uuid4())
+            if raw_task_id is not None and self.store.get(task_id) is not None:
+                raise ValueError("message.taskId already exists")
             resolved_target = self._target_for(message, target)
             text = self._message_text(message)
             now = time.time()
