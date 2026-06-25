@@ -23,40 +23,40 @@ from pathlib import Path
 
 try:
     import tomllib
-except ModuleNotFoundError:  # Python 3.10 has no stdlib tomllib.
-    import tomli as tomllib  # type: ignore[no-redef]
+except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility path.
+    import tomli as tomllib  # type: ignore[no-redef]  # pragma: no cover
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def _pyproject_version() -> str:
+def _pyproject_version(root: Path = ROOT) -> str:
     """Return the canonical version from ``pyproject.toml``."""
-    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    data = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     return str(data["project"]["version"])
 
 
-def _search(path: str, pattern: str) -> str:
+def _search(root: Path, path: str, pattern: str) -> str:
     """Return the first capture of ``pattern`` in ``path``, or ``""``."""
-    match = re.search(pattern, (ROOT / path).read_text(encoding="utf-8"), re.MULTILINE)
+    match = re.search(pattern, (root / path).read_text(encoding="utf-8"), re.MULTILINE)
     return match.group(1).strip() if match else ""
 
 
-def discover() -> dict[str, str]:
+def discover(root: Path = ROOT) -> dict[str, str]:
     """Return the version each surface declares, keyed by a human label."""
     return {
         "src/synapse_channel/__init__.py": _search(
-            "src/synapse_channel/__init__.py", r'^__version__ = "([^"]+)"'
+            root, "src/synapse_channel/__init__.py", r'^__version__ = "([^"]+)"'
         ),
-        "README.md citation": _search("README.md", r"version\s*=\s*\{([^}]+)\}"),
-        "CITATION.cff": _search("CITATION.cff", r'^version:\s*"?([^"\n]+?)"?\s*$'),
-        ".zenodo.json": _search(".zenodo.json", r'"version":\s*"([^"]+)"'),
+        "README.md citation": _search(root, "README.md", r"version\s*=\s*\{([^}]+)\}"),
+        "CITATION.cff": _search(root, "CITATION.cff", r'^version:\s*"?([^"\n]+?)"?\s*$'),
+        ".zenodo.json": _search(root, ".zenodo.json", r'"version":\s*"([^"]+)"'),
     }
 
 
-def main() -> int:
+def main(root: Path = ROOT) -> int:
     """Compare every surface against ``pyproject.toml``; return non-zero on drift."""
-    canonical = _pyproject_version()
-    drifted = {label: found for label, found in discover().items() if found != canonical}
+    canonical = _pyproject_version(root)
+    drifted = {label: found for label, found in discover(root).items() if found != canonical}
     if drifted:
         detail = "; ".join(f"{label}={found!r}" for label, found in drifted.items())
         print(f"Version desync — pyproject is {canonical!r} but: {detail}")

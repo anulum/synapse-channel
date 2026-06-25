@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from textwrap import dedent
 
 import pytest
 
@@ -43,9 +44,36 @@ def test_main_passes_when_in_sync(capsys: pytest.CaptureFixture[str]) -> None:
     assert "in sync" in capsys.readouterr().out
 
 
-def test_main_fails_on_drift(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_main_fails_on_real_surface_drift(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(cvs, "discover", lambda: {"CITATION.cff": "0.0.1-stale"})
-    assert cvs.main() == 1
+    (tmp_path / "src" / "synapse_channel").mkdir(parents=True)
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nversion = "1.2.3"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "src" / "synapse_channel" / "__init__.py").write_text(
+        '__version__ = "1.2.3"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "README.md").write_text(
+        "@software{synapse_channel,\n  version = {1.2.3}\n}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "CITATION.cff").write_text(
+        "version: 0.0.1-stale\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".zenodo.json").write_text(
+        dedent(
+            """\
+            {
+              "version": "1.2.3"
+            }
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    assert cvs.main(tmp_path) == 1
     assert "desync" in capsys.readouterr().out
