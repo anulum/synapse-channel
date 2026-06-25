@@ -102,18 +102,19 @@ async def test_send_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) 
     assert "Could not reach hub" in capsys.readouterr().out
 
 
-def test_cmd_send_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("synapse_channel.cli_messaging.asyncio.run", lambda coro: coro.close() or 0)
+def test_cmd_send_dispatches_real_command(capsys: pytest.CaptureFixture[str]) -> None:
     ns = argparse.Namespace(
-        uri="ws://h",
+        uri=f"ws://127.0.0.1:{_free_port()}",
         name="USER",
         target="all",
         message="hi",
         wait_seconds=0.0,
         priority=False,
         token=None,
+        ready_timeout=0.1,
     )
-    assert cli_messaging._cmd_send(ns) == 0
+    assert cli_messaging._cmd_send(ns) == 1
+    assert "Could not reach hub" in capsys.readouterr().out
 
 
 async def test_send_threads_token_to_agent() -> None:

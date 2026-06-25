@@ -10,11 +10,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from typing import Any
 
 import pytest
 
-from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli_messaging
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
@@ -47,17 +46,16 @@ async def test_listen_prints_chat_and_presence(capsys: pytest.CaptureFixture[str
     assert "[presence] joined" in out
 
 
-def test_cmd_listen_dispatch_and_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("synapse_channel.cli_messaging.asyncio.run", lambda coro: coro.close() or 0)
-    ns = argparse.Namespace(uri="ws://h", name="USER", token=None, for_name=None)
-    assert cli_messaging._cmd_listen(ns) == 0
-
-    def interrupt(coro: Any) -> int:
-        coro.close()
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr("synapse_channel.cli_messaging.asyncio.run", interrupt)
-    assert cli_messaging._cmd_listen(ns) == 0
+def test_cmd_listen_dispatches_real_command(capsys: pytest.CaptureFixture[str]) -> None:
+    ns = argparse.Namespace(
+        uri=f"ws://127.0.0.1:{_free_port()}",
+        name="USER",
+        token=None,
+        for_name=None,
+        ready_timeout=0.1,
+    )
+    assert cli_messaging._cmd_listen(ns) == 1
+    assert "Could not reach hub" in capsys.readouterr().out
 
 
 async def test_listen_threads_token_to_agent() -> None:

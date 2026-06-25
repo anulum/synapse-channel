@@ -101,6 +101,7 @@ def _cmd_send(args: argparse.Namespace) -> int:
             wait_seconds=args.wait_seconds,
             priority=args.priority,
             token=args.token,
+            ready_timeout=args.ready_timeout,
         )
     )
 
@@ -235,6 +236,7 @@ def _cmd_wait(args: argparse.Namespace) -> int:
             directed_only=args.directed_only,
             wake_jitter=args.wake_jitter,
             token=args.token,
+            ready_timeout=args.ready_timeout,
         )
     )
 
@@ -312,7 +314,13 @@ def _cmd_listen(args: argparse.Namespace) -> int:
     """Dispatch the ``listen`` subcommand."""
     try:
         return asyncio.run(
-            _listen(uri=args.uri, name=args.name, token=args.token, for_name=args.for_name)
+            _listen(
+                uri=args.uri,
+                name=args.name,
+                token=args.token,
+                for_name=args.for_name,
+                ready_timeout=args.ready_timeout,
+            )
         )
     except KeyboardInterrupt:
         print(f"\n[{args.name}] stopped listening.")
@@ -332,6 +340,9 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Mark as priority so it wakes even directed-only waiters (use sparingly).",
     )
     send.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    send.add_argument(
+        "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
+    )
     send.add_argument("message")
     send.set_defaults(func=_cmd_send)
 
@@ -362,12 +373,18 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "terminals do not re-invoke at once and trip the provider rate limit; 0 disables.",
     )
     wait.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    wait.add_argument(
+        "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
+    )
     wait.set_defaults(func=_cmd_wait)
 
     listen = subparsers.add_parser("listen", help="Stream channel messages until interrupted.")
     listen.add_argument("--uri", default=DEFAULT_HUB_URI)
     listen.add_argument("--name", default="USER")
     listen.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    listen.add_argument(
+        "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
+    )
     listen.add_argument(
         "--for",
         dest="for_name",
