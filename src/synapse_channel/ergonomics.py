@@ -24,7 +24,7 @@ that looks accidental (the home directory, a system path, nothing at all) is
 flagged loudly rather than used in silence. Everything else is a thin, correct
 assembly of the arguments the package CLI already implements — the waiter already
 takes over its own name and suffixes ``-rx`` to stay distinct from the sender, so
-``syn arm`` simply builds that call once, correctly.
+``syn arm`` uses the persistent package arm command instead of a one-shot wait.
 """
 
 from __future__ import annotations
@@ -173,8 +173,8 @@ def resolve_identity(
 def arm_argv(
     identity: Identity, *, directed_only: bool = True, extra: Sequence[str] = ()
 ) -> list[str]:
-    """Build the ``synapse wait`` argv for ``syn arm`` (single ``--name``, distinct ``-rx``)."""
-    argv = ["wait", "--name", identity.waiter_name, "--for", identity.project]
+    """Build the ``synapse arm`` argv for ``syn arm`` (persistent, distinct ``-rx``)."""
+    argv = ["arm", "--name", identity.waiter_name, "--for", identity.project]
     if directed_only:
         argv.append("--directed-only")
     argv.extend(extra)
@@ -245,7 +245,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     Identity flags (``--project``/``--id``/``--type``) must precede the verb;
     everything after the verb passes through to the underlying package command, so
-    ``syn arm --timeout 5`` and ``syn say A,B "hello"`` work without re-declaring
+    ``syn arm --max-wakes 1`` and ``syn say A,B "hello"`` work without re-declaring
     each package flag.
     """
     parser = argparse.ArgumentParser(

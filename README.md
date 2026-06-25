@@ -162,7 +162,7 @@ identity-correct front end over the commands above:
 
 ```bash
 syn name                          # resolve and print this terminal's identity
-syn arm                           # arm a directed-only waiter (named <project>-rx, distinct from the sender)
+syn arm                           # keep a directed-only waiter armed (named <project>-rx, distinct from the sender)
 syn say REMANENTIA,CEO "ack"      # send to one, several, or all
 syn inbox                         # print messages addressed to you since the cursor
 syn board                         # the shared task/progress board
@@ -175,7 +175,8 @@ as a last resort — so a command run from the wrong directory does not silently
 coordinate as the wrong project, and an identity that looks accidental (the home
 directory, a system path) is flagged rather than used in silence. Set
 `$SYN_PROJECT` once per terminal and the identity is stable across tool calls. The
-`syn-name`/`syn-wait`/`syn-say`/`syn-inbox`/`syn-board` aliases are installed too.
+`syn-name`/`syn-wait`/`syn-say`/`syn-inbox`/`syn-board` aliases are installed too;
+`syn-wait` uses the same persistent auto-rearming path as `syn arm`.
 
 ### Durability
 
