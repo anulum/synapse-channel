@@ -1110,3 +1110,14 @@ def test_bad_json_returns_a2a_problem_json() -> None:
 
     assert status == HTTPStatus.BAD_REQUEST
     assert body["title"] == "Invalid JSON"
+
+
+def test_oversized_json_body_is_rejected_before_parse() -> None:
+    harness = HandlerHarness("POST", "/message:send")
+    harness.handler.rfile = BytesIO(b"{}")
+    harness.handler.headers = {"Content-Length": str(1024 * 1024 + 1)}
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
+    assert body["title"] == "Request body too large"
