@@ -18,7 +18,6 @@ import asyncio
 import copy
 import json
 import queue
-import re
 import threading
 import time
 import uuid
@@ -32,21 +31,21 @@ from urllib.error import URLError
 from urllib.parse import parse_qs, urlparse
 
 from synapse_channel.a2a import JsonMap
+from synapse_channel.a2a_validation import (
+    A2A_MEDIA_TYPE,
+    OPEN_TASK_STATES,
+    PROBLEM_MEDIA_TYPE,
+    SSE_MEDIA_TYPE,
+    TERMINAL_TASK_STATES,
+    is_supported_json_media_type,
+    marker_task_id,
+    strip_task_marker,
+    validate_bridge_id,
+    validate_webhook_url,
+)
 from synapse_channel.client.agent import SynapseAgent
 
-A2A_MEDIA_TYPE = "application/a2a+json"
-PROBLEM_MEDIA_TYPE = "application/problem+json"
-SSE_MEDIA_TYPE = "text/event-stream"
 PushDeliverer = Callable[[JsonMap], None]
-A2A_TASK_MARKER = re.compile(r"\[A2A-TASK:([^\s\]]+)(?:\s+contextId=([^\]\s]+))?\]")
-BRIDGE_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
-OPEN_TASK_STATES = {"TASK_STATE_SUBMITTED", "TASK_STATE_WORKING"}
-TERMINAL_TASK_STATES = {
-    "TASK_STATE_COMPLETED",
-    "TASK_STATE_FAILED",
-    "TASK_STATE_CANCELED",
-    "TASK_STATE_REJECTED",
-}
 
 
 def _http_push_deliverer(delivery: JsonMap) -> None:
@@ -83,14 +82,6 @@ def _non_negative_int(value: object, *, default: int = 0) -> int:
     except (TypeError, ValueError):
         return default
     return max(parsed, 0)
-
-
-def _validate_bridge_id(value: object, *, field: str) -> None:
-    """Reject caller-provided ids that are unsafe for bridge URLs or markers."""
-    if value is None:
-        return
-    if not BRIDGE_ID.fullmatch(str(value)):
-        raise ValueError(f"message.{field} contains unsupported characters")
 
 
 def _push_config_path(path: str) -> tuple[str, str | None] | None:
@@ -381,8 +372,8 @@ class A2ABridge:
         parts = message.get("parts")
         if not isinstance(parts, list) or not parts:
             raise ValueError("message.parts must be a non-empty array")
-        _validate_bridge_id(message.get("taskId"), field="taskId")
-        _validate_bridge_id(message.get("contextId"), field="contextId")
+        validate_bridge_id(message.get("taskId"), field="taskId")
+        validate_bridge_id(message.get("contextId"), field="contextId")
         task_id = message.get("taskId")
         if task_id is not None and self.store.get(str(task_id)) is not None:
             raise ValueError("message.taskId already exists")
@@ -486,10 +477,6 @@ class A2ABridge:
             target = str(metadata.get("synapseTarget") or "")
         return target in {"", "all", sender}
 
-    def _strip_task_marker(self, payload: str) -> str:
-        """Remove bridge correlation markers from user-visible reply text."""
-        return A2A_TASK_MARKER.sub("", payload).strip()
-
     def handle_synapse_frame(self, data: JsonMap) -> None:
         """Correlate an inbound SYNAPSE chat frame to an open A2A task."""
         if data.get("type") != "chat":
@@ -497,11 +484,8 @@ class A2ABridge:
         payload = str(data.get("payload", ""))
         sender = str(data.get("sender", ""))
 
-        task_id: str | None = None
-        marker = A2A_TASK_MARKER.search(payload)
-        if marker:
-            task_id = marker.group(1)
-        elif sender in self._pending_by_target:
+        task_id = marker_task_id(payload)
+        if task_id is None and sender in self._pending_by_target:
             task_id = self._pending_task_for_sender(sender)
 
         if not task_id:
@@ -513,7 +497,7 @@ class A2ABridge:
         if isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES:
             return
 
-        reply_text = self._strip_task_marker(payload)
+        reply_text = strip_task_marker(payload)
         reply_part: JsonMap = {
             "messageId": str(uuid.uuid4()),
             "role": "ROLE_AGENT",
@@ -655,13 +639,8 @@ class A2ABridge:
         webhook = config.get("webhookUrl") or config.get("url")
         if not webhook:
             raise ValueError("pushNotificationConfig.webhookUrl is required")
-        parsed_webhook = urlparse(str(webhook))
-        if parsed_webhook.scheme not in {"http", "https"}:
-            raise ValueError("pushNotificationConfig.webhookUrl must use http or https")
-        if not parsed_webhook.netloc:
-            raise ValueError("pushNotificationConfig.webhookUrl must include a host")
         stored = dict(config)
-        stored["webhookUrl"] = str(webhook)
+        stored["webhookUrl"] = validate_webhook_url(webhook)
         return self.store.put_push_config(task_id, stored)
 
     def list_push_notification_configs(self, task_id: str) -> JsonMap:
@@ -815,8 +794,7 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
 
         def _read_json(self) -> JsonMap | None:
             content_type = self.headers.get("Content-Type", "")
-            media_type = content_type.split(";", 1)[0].strip().lower()
-            if media_type and media_type not in {A2A_MEDIA_TYPE, "application/json"}:
+            if not is_supported_json_media_type(content_type):
                 self._send_json(
                     HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                     _problem(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "Unsupported Media Type"),
