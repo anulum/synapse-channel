@@ -590,6 +590,40 @@ def test_message_send_rejects_context_id_with_path_separator() -> None:
     assert body["detail"] == "message.contextId contains unsupported characters"
 
 
+def test_message_send_rejects_duplicate_task_id() -> None:
+    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge.create_completed_task(
+        {
+            "taskId": "task-a",
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "first"}],
+        },
+        target="WORKER",
+    )
+    harness = HandlerHarness(
+        "POST",
+        "/message:send",
+        body={
+            "message": {
+                "taskId": "task-a",
+                "messageId": "m2",
+                "role": "ROLE_USER",
+                "parts": [{"text": "second"}],
+            }
+        },
+    )
+    harness.handler.bridge = bridge
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.BAD_REQUEST
+    assert body["detail"] == "message.taskId already exists"
+    stored = bridge.store.get("task-a")
+    assert stored is not None
+    assert stored["history"][0]["messageId"] == "m1"
+
+
 def test_task_list_supports_page_size_and_page_token() -> None:
     bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     for task_id in ("task-a", "task-b"):
