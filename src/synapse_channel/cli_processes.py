@@ -66,14 +66,21 @@ def _run(coro: Coroutine[Any, Any, None]) -> None:
     asyncio.run(coro)
 
 
-def _cmd_hub(args: argparse.Namespace) -> int:
+def _cmd_hub(
+    args: argparse.Namespace,
+    *,
+    runner: Callable[[Coroutine[Any, Any, None]], None] = _run,
+    hub_factory: Callable[..., SynapseHub] = SynapseHub,
+    store_factory: Callable[[str], EventStore] = EventStore,
+    logging_configurator: Callable[..., object] = configure_logging,
+) -> int:
     """Run the coordination hub until interrupted.
 
     With ``--db`` the hub persists authoritative state to a durable event log and
     resumes from it on restart; without it the hub is purely in-memory.
     """
-    configure_logging(log_format=args.log_format, level=args.log_level)
-    journal = EventStore(args.db) if args.db else None
+    logging_configurator(log_format=args.log_format, level=args.log_level)
+    journal = store_factory(args.db) if args.db else None
     limiter = RateLimiter(rate_per_second=args.rate, burst=args.burst) if args.rate > 0 else None
     host_limiter = (
         RateLimiter(rate_per_second=args.host_rate, burst=args.host_burst)
@@ -81,7 +88,7 @@ def _cmd_hub(args: argparse.Namespace) -> int:
         else None
     )
     authenticator = TokenAuthenticator([args.token]) if args.token else None
-    hub = SynapseHub(
+    hub = hub_factory(
         journal=journal,
         rate_limiter=limiter,
         host_rate_limiter=host_limiter,
@@ -104,7 +111,7 @@ def _cmd_hub(args: argparse.Namespace) -> int:
         insecure_off_loopback=args.insecure_off_loopback,
     )
     try:
-        _run(hub.serve(host=args.host, port=args.port))
+        runner(hub.serve(host=args.host, port=args.port))
     except InsecureBindError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2

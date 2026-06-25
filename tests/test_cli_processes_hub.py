@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Coroutine
 from pathlib import Path
 from typing import Any
 
@@ -22,99 +23,101 @@ from synapse_channel.core.hub import (
 from synapse_channel.core.ratelimit import RateLimiter
 
 
-def test_cmd_hub_runs_and_handles_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
-    ns = _hub_ns()
-    assert cli_processes._cmd_hub(ns) == 0
+def _close_runner(coro: Coroutine[Any, Any, None]) -> None:
+    coro.close()
 
-    def interrupt(coro: Any) -> None:
+
+def test_cmd_hub_runs_and_handles_interrupt() -> None:
+    ns = _hub_ns()
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 0
+
+    def interrupt(coro: Coroutine[Any, Any, None]) -> None:
         coro.close()
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(cli_processes, "_run", interrupt)
-    assert cli_processes._cmd_hub(ns) == 0
+    assert cli_processes._cmd_hub(ns, runner=interrupt) == 0
 
 
-def test_cmd_hub_refuses_insecure_bind(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    def refuse(coro: Any) -> None:
+def test_cmd_hub_refuses_insecure_bind(capsys: pytest.CaptureFixture[str]) -> None:
+    def refuse(coro: Coroutine[Any, Any, None]) -> None:
         coro.close()
         raise InsecureBindError("Refusing to bind: Synapse Hub bound to ... no token.")
 
-    monkeypatch.setattr(cli_processes, "_run", refuse)
-    assert cli_processes._cmd_hub(_hub_ns(host="0.0.0.0")) == 2
+    assert cli_processes._cmd_hub(_hub_ns(host="0.0.0.0"), runner=refuse) == 2
     assert "Refusing to bind" in capsys.readouterr().err
 
 
-def test_cmd_hub_threads_insecure_off_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_hub_threads_insecure_off_loopback() -> None:
     built: dict[str, Any] = {}
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
-    real_init = SynapseHub.__init__
 
-    def capture(self: SynapseHub, **kwargs: Any) -> None:
+    def build_hub(**kwargs: Any) -> SynapseHub:
         built.update(kwargs)
-        real_init(self, **kwargs)
+        return SynapseHub(**kwargs)
 
-    monkeypatch.setattr(SynapseHub, "__init__", capture)
-    assert cli_processes._cmd_hub(_hub_ns(insecure_off_loopback=True)) == 0
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(insecure_off_loopback=True), runner=_close_runner, hub_factory=build_hub
+        )
+        == 0
+    )
     assert built["insecure_off_loopback"] is True
 
 
-def test_cmd_hub_with_db_opens_and_closes_event_store(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
+def test_cmd_hub_with_db_opens_and_closes_event_store(tmp_path: Path) -> None:
     db = tmp_path / "events.db"
-    assert cli_processes._cmd_hub(_hub_ns(db=str(db))) == 0
+    assert cli_processes._cmd_hub(_hub_ns(db=str(db)), runner=_close_runner) == 0
     # The persistent store was created (and closed) for the run.
     assert db.exists()
 
 
-def test_cmd_hub_with_rate_limit_builds_limiter(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_hub_with_rate_limit_builds_limiter() -> None:
     captured: dict[str, Any] = {}
 
-    def fake_run(coro: Any) -> None:
-        coro.close()
-
-    monkeypatch.setattr(cli_processes, "_run", fake_run)
-
-    def spy_hub(**kwargs: Any) -> Any:
+    def build_hub(**kwargs: Any) -> SynapseHub:
         captured.update(kwargs)
         return SynapseHub(**kwargs)
 
-    monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
-    assert cli_processes._cmd_hub(_hub_ns(rate=5.0, burst=10.0)) == 0
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(rate=5.0, burst=10.0), runner=_close_runner, hub_factory=build_hub
+        )
+        == 0
+    )
     assert captured["rate_limiter"] is not None
 
 
-def test_cmd_hub_wires_relay_log(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_cmd_hub_wires_relay_log(tmp_path: Path) -> None:
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
 
-    def spy_hub(**kwargs: Any) -> Any:
+    def build_hub(**kwargs: Any) -> SynapseHub:
         captured.update(kwargs)
         return SynapseHub(**kwargs)
 
-    monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
     log = tmp_path / "relay.ndjson"
-    assert cli_processes._cmd_hub(_hub_ns(relay_log=str(log), relay_max_lines=42)) == 0
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(relay_log=str(log), relay_max_lines=42),
+            runner=_close_runner,
+            hub_factory=build_hub,
+        )
+        == 0
+    )
     assert captured["relay_log"] == str(log)
     assert captured["relay_max_lines"] == 42
 
 
-def test_cmd_hub_threads_per_agent_quotas(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_hub_threads_per_agent_quotas() -> None:
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
 
-    def spy_hub(**kwargs: Any) -> Any:
+    def build_hub(**kwargs: Any) -> SynapseHub:
         captured.update(kwargs)
         return SynapseHub(**kwargs)
 
-    monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
     assert (
         cli_processes._cmd_hub(
-            _hub_ns(max_claims_per_agent=7, max_offers_per_agent=3, max_paths_per_claim=9)
+            _hub_ns(max_claims_per_agent=7, max_offers_per_agent=3, max_paths_per_claim=9),
+            runner=_close_runner,
+            hub_factory=build_hub,
         )
         == 0
     )
@@ -123,113 +126,132 @@ def test_cmd_hub_threads_per_agent_quotas(monkeypatch: pytest.MonkeyPatch) -> No
     assert captured["max_paths_per_claim"] == 9
 
 
-def test_cmd_hub_threads_metrics_query_token_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_hub_threads_metrics_query_token_ok() -> None:
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
 
-    def spy_hub(**kwargs: Any) -> Any:
+    def build_hub(**kwargs: Any) -> SynapseHub:
         captured.update(kwargs)
         return SynapseHub(**kwargs)
 
-    monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
-    assert cli_processes._cmd_hub(_hub_ns(metrics_query_token_ok=True)) == 0
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(metrics_query_token_ok=True), runner=_close_runner, hub_factory=build_hub
+        )
+        == 0
+    )
     assert captured["metrics_query_token_ok"] is True
 
 
-def test_cmd_hub_threads_max_unauth_clients(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_hub_threads_max_unauth_clients() -> None:
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
 
-    def spy_hub(**kwargs: Any) -> Any:
+    def build_hub(**kwargs: Any) -> SynapseHub:
         captured.update(kwargs)
         return SynapseHub(**kwargs)
 
-    monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
-    assert cli_processes._cmd_hub(_hub_ns(max_unauth_clients=8)) == 0
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(max_unauth_clients=8), runner=_close_runner, hub_factory=build_hub
+        )
+        == 0
+    )
     assert captured["max_unauth_clients"] == 8
 
 
-def test_cmd_hub_builds_host_rate_limiter_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_hub_builds_host_rate_limiter_when_enabled() -> None:
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
 
-    def spy_hub(**kwargs: Any) -> Any:
+    def build_hub(**kwargs: Any) -> SynapseHub:
         captured.update(kwargs)
         return SynapseHub(**kwargs)
 
-    monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
-    assert cli_processes._cmd_hub(_hub_ns(host_rate=5.0, host_burst=12.0)) == 0
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(host_rate=5.0, host_burst=12.0),
+            runner=_close_runner,
+            hub_factory=build_hub,
+        )
+        == 0
+    )
     assert isinstance(captured["host_rate_limiter"], RateLimiter)
 
 
-def test_cmd_hub_host_rate_limiter_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_hub_host_rate_limiter_off_by_default() -> None:
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
 
-    def spy_hub(**kwargs: Any) -> Any:
+    def build_hub(**kwargs: Any) -> SynapseHub:
         captured.update(kwargs)
         return SynapseHub(**kwargs)
 
-    monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
-    assert cli_processes._cmd_hub(_hub_ns()) == 0
+    assert cli_processes._cmd_hub(_hub_ns(), runner=_close_runner, hub_factory=build_hub) == 0
     assert captured["host_rate_limiter"] is None
 
 
-def test_cmd_hub_threads_compact_hint_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_hub_threads_compact_hint_threshold() -> None:
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
 
-    def spy_hub(**kwargs: Any) -> Any:
+    def build_hub(**kwargs: Any) -> SynapseHub:
         captured.update(kwargs)
         return SynapseHub(**kwargs)
 
-    monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
-    assert cli_processes._cmd_hub(_hub_ns(compact_hint_threshold=42)) == 0
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(compact_hint_threshold=42), runner=_close_runner, hub_factory=build_hub
+        )
+        == 0
+    )
     assert captured["compact_hint_threshold"] == 42
 
 
-def test_cmd_hub_threads_takeover_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_hub_threads_takeover_cooldown() -> None:
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
 
-    def spy_hub(**kwargs: Any) -> Any:
+    def build_hub(**kwargs: Any) -> SynapseHub:
         captured.update(kwargs)
         return SynapseHub(**kwargs)
 
-    monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
-    assert cli_processes._cmd_hub(_hub_ns(takeover_cooldown=5.5)) == 0
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(takeover_cooldown=5.5), runner=_close_runner, hub_factory=build_hub
+        )
+        == 0
+    )
     assert captured["takeover_cooldown"] == 5.5
 
 
-def test_cmd_hub_configures_logging(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_hub_configures_logging() -> None:
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
-    monkeypatch.setattr(cli_processes, "configure_logging", lambda **kw: captured.update(kw))
-    assert cli_processes._cmd_hub(_hub_ns(log_format="json", log_level="DEBUG")) == 0
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(log_format="json", log_level="DEBUG"),
+            runner=_close_runner,
+            logging_configurator=lambda **kw: captured.update(kw),
+        )
+        == 0
+    )
     assert captured == {"log_format": "json", "level": "DEBUG"}
 
 
-def test_cmd_hub_with_token_builds_authenticator(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_hub_with_token_builds_authenticator() -> None:
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
 
-    def spy_hub(**kwargs: Any) -> Any:
+    def build_hub(**kwargs: Any) -> SynapseHub:
         captured.update(kwargs)
         return SynapseHub(**kwargs)
 
-    monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
-    assert cli_processes._cmd_hub(_hub_ns(token="s3cret")) == 0
+    assert (
+        cli_processes._cmd_hub(_hub_ns(token="s3cret"), runner=_close_runner, hub_factory=build_hub)
+        == 0
+    )
     assert captured["authenticator"] is not None
 
 
-def test_cmd_hub_without_token_has_no_authenticator(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_hub_without_token_has_no_authenticator() -> None:
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
 
-    def spy_hub(**kwargs: Any) -> Any:
+    def build_hub(**kwargs: Any) -> SynapseHub:
         captured.update(kwargs)
         return SynapseHub(**kwargs)
 
-    monkeypatch.setattr("synapse_channel.cli_processes.SynapseHub", spy_hub)
-    assert cli_processes._cmd_hub(_hub_ns()) == 0
+    assert cli_processes._cmd_hub(_hub_ns(), runner=_close_runner, hub_factory=build_hub) == 0
     assert captured["authenticator"] is None
