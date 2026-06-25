@@ -191,6 +191,7 @@ def _cmd_supervisor(args: argparse.Namespace) -> int:
         idle_seconds=args.idle_seconds,
         interval=args.interval,
         token=args.token,
+        ready_timeout=args.ready_timeout,
     )
     try:
         _run(supervisor.run())
@@ -410,4 +411,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     supervisor.add_argument("--idle-seconds", type=float, default=DEFAULT_IDLE_SECONDS)
     supervisor.add_argument("--interval", type=float, default=DEFAULT_INTERVAL_SECONDS)
     supervisor.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    supervisor.add_argument(
+        "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
+    )
     supervisor.set_defaults(func=_cmd_supervisor)

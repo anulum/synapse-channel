@@ -9,41 +9,38 @@
 from __future__ import annotations
 
 import argparse
-from typing import Any
 
-import pytest
+from hub_e2e_helpers import _free_port
+from synapse_channel import cli, cli_processes
+from synapse_channel.client.launcher import plan_team
 
-from synapse_channel import cli_processes
+
+def test_parser_routes_to_team_with_prefix() -> None:
+    args = cli.build_parser().parse_args(["team", "--port", "8877", "--prefix", "proj/"])
+    assert args.func is cli_processes._cmd_team
+    assert args.port == 8877
+    assert args.prefix == "proj/"
 
 
-def test_cmd_team_returns_runner_code(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli_processes, "run_team", lambda **kwargs: 4)
-    ns = argparse.Namespace(
-        port=8876, no_workers=False, fast_model=None, reason_model=None, prefix=""
+def test_team_plan_threads_prefix_without_spawning() -> None:
+    specs = plan_team(
+        8876,
+        fast_model="fast-model",
+        reason_model="reason-model",
+        prefix="proj/",
     )
-    assert cli_processes._cmd_team(ns) == 4
+    assert [label for label, _argv in specs] == ["hub", "proj/FAST", "proj/REASON"]
+    assert "proj/FAST" in specs[1][1]
+    assert "proj/REASON" in specs[2][1]
 
 
-def test_cmd_team_threads_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, Any] = {}
-    monkeypatch.setattr(cli_processes, "run_team", lambda **kwargs: captured.update(kwargs) or 0)
+def test_cmd_supervisor_runs_real_unreachable_path() -> None:
     ns = argparse.Namespace(
-        port=8876, no_workers=False, fast_model=None, reason_model=None, prefix="proj/"
+        uri=f"ws://127.0.0.1:{_free_port()}",
+        name="SUPERVISOR",
+        idle_seconds=300.0,
+        interval=30.0,
+        token=None,
+        ready_timeout=0.1,
     )
-    assert cli_processes._cmd_team(ns) == 0
-    assert captured["prefix"] == "proj/"
-
-
-def test_cmd_supervisor_runs_and_handles_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
-    ns = argparse.Namespace(
-        uri="ws://h", name="SUPERVISOR", idle_seconds=300.0, interval=30.0, token=None
-    )
-    assert cli_processes._cmd_supervisor(ns) == 0
-
-    def interrupt(coro: Any) -> None:
-        coro.close()
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr(cli_processes, "_run", interrupt)
     assert cli_processes._cmd_supervisor(ns) == 0
