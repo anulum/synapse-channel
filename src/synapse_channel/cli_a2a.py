@@ -18,7 +18,8 @@ import argparse
 import asyncio
 import json
 import sys
-from typing import Any
+from collections.abc import Callable, Coroutine
+from typing import Any, TypeVar
 
 from synapse_channel.a2a import agent_card_from_manifest
 from synapse_channel.a2a_server import A2ABridge, SynapseAgentRuntime, serve_a2a_http
@@ -27,6 +28,16 @@ from synapse_channel.cli_queries import _query_hub
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.core.hub import is_loopback_host
 from synapse_channel.core.protocol import MessageType
+
+T = TypeVar("T")
+AsyncRunner = Callable[[Coroutine[Any, Any, T]], T]
+A2ACardRunner = Callable[..., Coroutine[Any, Any, int]]
+ManifestFetcher = Callable[..., Coroutine[Any, Any, list[dict[str, Any]] | None]]
+CardBuilder = Callable[..., dict[str, Any]]
+RuntimeFactory = Callable[[Any], Any]
+BridgeFactory = Callable[..., A2ABridge]
+StoreFactory = Callable[..., A2ATaskStore]
+ServerRunner = Callable[..., None]
 
 
 def _print_agent_card(card: dict[str, Any]) -> None:
@@ -100,10 +111,15 @@ async def _a2a_card(
     )
 
 
-def _cmd_a2a_card(args: argparse.Namespace) -> int:
+def _cmd_a2a_card(
+    args: argparse.Namespace,
+    *,
+    card_runner: A2ACardRunner = _a2a_card,
+    async_runner: AsyncRunner[int] = asyncio.run,
+) -> int:
     """Dispatch the ``a2a-card`` subcommand."""
-    return asyncio.run(
-        _a2a_card(
+    return async_runner(
+        card_runner(
             uri=args.uri,
             name=args.name,
             token=args.token,
@@ -158,7 +174,18 @@ async def _a2a_inbound_handler(bridge_ref: dict[str, Any], data: dict[str, Any])
         bridge.handle_synapse_frame(data)
 
 
-def _cmd_a2a_serve(args: argparse.Namespace) -> int:
+def _cmd_a2a_serve(
+    args: argparse.Namespace,
+    *,
+    async_runner: AsyncRunner[Any] = asyncio.run,
+    manifest_fetcher: ManifestFetcher = _fetch_manifest,
+    card_builder: CardBuilder = agent_card_from_manifest,
+    agent_factory: Callable[..., SynapseAgent] = SynapseAgent,
+    runtime_factory: RuntimeFactory = SynapseAgentRuntime,
+    bridge_factory: BridgeFactory = A2ABridge,
+    store_factory: StoreFactory = A2ATaskStore,
+    server_runner: ServerRunner = serve_a2a_http,
+) -> int:
     """Dispatch the ``a2a-serve`` subcommand."""
     if args.bearer_auth and not args.a2a_token:
         print(
@@ -180,13 +207,13 @@ def _cmd_a2a_serve(args: argparse.Namespace) -> int:
             f"{args.host!r} without bearer authentication.",
             file=sys.stderr,
         )
-    manifest = asyncio.run(
-        _fetch_manifest(uri=args.uri, name=f"{args.name}-manifest", token=args.token)
+    manifest = async_runner(
+        manifest_fetcher(uri=args.uri, name=f"{args.name}-manifest", token=args.token)
     )
     if manifest is None:
         print(f"[{args.name}] Could not reach hub at {args.uri}.", file=sys.stderr)
         return 1
-    agent_card = agent_card_from_manifest(
+    agent_card = card_builder(
         manifest,
         endpoint_url=args.endpoint_url,
         name=args.bridge_name,
@@ -205,17 +232,17 @@ def _cmd_a2a_serve(args: argparse.Namespace) -> int:
     async def _handler(data: dict[str, Any]) -> None:
         await _a2a_inbound_handler(bridge_ref, data)
 
-    agent = SynapseAgent(args.name, _handler, uri=args.uri, verbose=False, token=args.token)
-    runtime = SynapseAgentRuntime(agent)
+    agent = agent_factory(args.name, _handler, uri=args.uri, verbose=False, token=args.token)
+    runtime = runtime_factory(agent)
     if not runtime.start():
         print(f"[{args.name}] Could not establish persistent hub connection.", file=sys.stderr)
         runtime.stop()
         return 1
-    bridge = A2ABridge(
+    bridge = bridge_factory(
         agent=agent,
         agent_card=agent_card,
         target=args.target,
-        store=A2ATaskStore(storage_path=args.state_file),
+        store=store_factory(storage_path=args.state_file),
         submit=runtime.run,
         auth_token=args.a2a_token if args.bearer_auth else None,
         task_timeout_seconds=args.task_timeout,
@@ -224,7 +251,7 @@ def _cmd_a2a_serve(args: argparse.Namespace) -> int:
     bridge_ref["bridge"] = bridge
     try:
         print(f"[{args.name}] A2A bridge listening on http://{args.host}:{args.port}")
-        serve_a2a_http(bridge=bridge, host=args.host, port=args.port)
+        server_runner(bridge=bridge, host=args.host, port=args.port)
     except KeyboardInterrupt:
         print(f"\n[{args.name}] A2A bridge stopped by user.")
     finally:

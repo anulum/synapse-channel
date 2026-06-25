@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Coroutine
 from typing import Any
 
 import pytest
@@ -18,6 +19,7 @@ from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent
 from synapse_channel import cli, cli_a2a
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.protocol import MessageType
 
 
 def test_parser_a2a_card() -> None:
@@ -175,6 +177,39 @@ async def test_fetch_manifest_returns_empty_for_empty_live_manifest() -> None:
     assert manifest == []
 
 
+async def test_fetch_manifest_ignores_malformed_manifest_frame() -> None:
+    class MalformedManifestAgent:
+        def __init__(self, name: str, callback: Any, **_: Any) -> None:
+            self.name = name
+            self.callback = callback
+            self.running = True
+
+        async def connect(self) -> None:
+            await self.callback(
+                {
+                    "type": MessageType.MANIFEST_SNAPSHOT,
+                    "manifest": {"unexpected": "shape"},
+                }
+            )
+
+        async def wait_until_ready(self, *, timeout: float) -> bool:
+            return True
+
+        async def request_manifest(self) -> None:
+            return None
+
+    manifest = await cli_a2a._fetch_manifest(
+        uri="ws://not-used",
+        name="A2A-BOOT",
+        token=None,
+        agent_factory=MalformedManifestAgent,
+        attempts=1,
+        poll_interval=0.0,
+    )
+
+    assert manifest == []
+
+
 async def test_inbound_handler_ignores_missing_bridge_and_forwards_when_present() -> None:
     frames: list[dict[str, Any]] = []
 
@@ -188,15 +223,16 @@ async def test_inbound_handler_ignores_missing_bridge_and_forwards_when_present(
     assert frames == [{"type": "chat", "payload": "x"}]
 
 
-def test_cmd_a2a_card_dispatches_async_query(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_a2a_card_dispatches_async_query() -> None:
     captured: dict[str, Any] = {}
 
-    def fake_card(**kwargs: Any) -> str:
+    async def card_once(**kwargs: Any) -> int:
         captured.update(kwargs)
-        return "coro"
+        return 0
 
-    monkeypatch.setattr(cli_a2a, "_a2a_card", fake_card)
-    monkeypatch.setattr("synapse_channel.cli_a2a.asyncio.run", lambda coro: 0)
+    def run_once(coro: Coroutine[Any, Any, int]) -> int:
+        return asyncio.run(coro)
+
     ns = cli.build_parser().parse_args(
         [
             "a2a-card",
@@ -218,7 +254,7 @@ def test_cmd_a2a_card_dispatches_async_query(monkeypatch: pytest.MonkeyPatch) ->
         ]
     )
 
-    assert cli_a2a._cmd_a2a_card(ns) == 0
+    assert cli_a2a._cmd_a2a_card(ns, card_runner=card_once, async_runner=run_once) == 0
     assert captured["uri"] == "ws://hub"
     assert captured["name"] == "A2A"
     assert captured["token"] == "secret"
@@ -250,12 +286,11 @@ def test_cmd_a2a_serve_refuses_unauthenticated_off_loopback(
 
 
 def test_cmd_a2a_serve_warns_when_off_loopback_override_is_explicit(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     async def unavailable(**_: Any) -> None:
         return None
 
-    monkeypatch.setattr(cli_a2a, "_fetch_manifest", unavailable)
     ns = cli.build_parser().parse_args(
         [
             "a2a-serve",
@@ -267,14 +302,14 @@ def test_cmd_a2a_serve_warns_when_off_loopback_override_is_explicit(
         ]
     )
 
-    assert cli_a2a._cmd_a2a_serve(ns) == 1
+    assert cli_a2a._cmd_a2a_serve(ns, manifest_fetcher=unavailable) == 1
     captured = capsys.readouterr()
     assert "WARNING: binding A2A bridge" in captured.err
     assert "Could not reach hub" in captured.err
 
 
 def test_cmd_a2a_serve_starts_bridge_and_stops_runtime(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     events: list[str] = []
 
@@ -305,9 +340,6 @@ def test_cmd_a2a_serve_starts_bridge_and_stops_runtime(
         assert bridge.auth_token == "a2a-secret"
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(cli_a2a, "_fetch_manifest", manifest)
-    monkeypatch.setattr(cli_a2a, "SynapseAgentRuntime", Runtime)
-    monkeypatch.setattr(cli_a2a, "serve_a2a_http", serve)
     ns = cli.build_parser().parse_args(
         [
             "a2a-serve",
@@ -319,14 +351,20 @@ def test_cmd_a2a_serve_starts_bridge_and_stops_runtime(
         ]
     )
 
-    assert cli_a2a._cmd_a2a_serve(ns) == 0
+    assert (
+        cli_a2a._cmd_a2a_serve(
+            ns,
+            manifest_fetcher=manifest,
+            runtime_factory=Runtime,
+            server_runner=serve,
+        )
+        == 0
+    )
     assert events == ["start", "stop"]
     assert "A2A bridge listening" in capsys.readouterr().out
 
 
-def test_cmd_a2a_serve_tolerates_non_mapping_capabilities(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_cmd_a2a_serve_tolerates_non_mapping_capabilities() -> None:
     async def manifest(**_: Any) -> list[dict[str, Any]]:
         return []
 
@@ -351,19 +389,24 @@ def test_cmd_a2a_serve_tolerates_non_mapping_capabilities(
         assert kwargs["bridge"].agent_card["capabilities"] == "bad"
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(cli_a2a, "_fetch_manifest", manifest)
-    monkeypatch.setattr(cli_a2a, "agent_card_from_manifest", card_from_manifest)
-    monkeypatch.setattr(cli_a2a, "SynapseAgentRuntime", Runtime)
-    monkeypatch.setattr(cli_a2a, "serve_a2a_http", serve)
     ns = cli.build_parser().parse_args(
         ["a2a-serve", "--endpoint-url", "https://example.test/a2a/v1"]
     )
 
-    assert cli_a2a._cmd_a2a_serve(ns) == 0
+    assert (
+        cli_a2a._cmd_a2a_serve(
+            ns,
+            manifest_fetcher=manifest,
+            card_builder=card_from_manifest,
+            runtime_factory=Runtime,
+            server_runner=serve,
+        )
+        == 0
+    )
 
 
 def test_cmd_a2a_serve_reports_runtime_start_failure(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     events: list[str] = []
 
@@ -380,12 +423,10 @@ def test_cmd_a2a_serve_reports_runtime_start_failure(
         def stop(self) -> None:
             events.append("stop")
 
-    monkeypatch.setattr(cli_a2a, "_fetch_manifest", manifest)
-    monkeypatch.setattr(cli_a2a, "SynapseAgentRuntime", Runtime)
     ns = cli.build_parser().parse_args(
         ["a2a-serve", "--endpoint-url", "https://example.test/a2a/v1"]
     )
 
-    assert cli_a2a._cmd_a2a_serve(ns) == 1
+    assert cli_a2a._cmd_a2a_serve(ns, manifest_fetcher=manifest, runtime_factory=Runtime) == 1
     assert events == ["stop"]
     assert "Could not establish persistent hub connection" in capsys.readouterr().err
