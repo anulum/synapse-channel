@@ -8,8 +8,12 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
-from typing import Any
+import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 
@@ -19,40 +23,59 @@ from synapse_channel.git.gitclaim import (
 )
 
 
-def test_default_git_runner_returns_stripped_stdout(monkeypatch: pytest.MonkeyPatch) -> None:
-    class Result:
-        stdout = "feature/x\n"
-
-    def fake_run(args: list[str], **_kw: Any) -> Result:
-        assert args == ["git", "rev-parse", "--abbrev-ref", "HEAD"]
-        return Result()
-
-    monkeypatch.setattr("synapse_channel.git.gitclaim.subprocess.run", fake_run)
-    assert _default_git_runner(["rev-parse", "--abbrev-ref", "HEAD"]) == "feature/x"
+def _run_git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True)
 
 
-def test_default_git_runner_missing_git(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run(args: list[str], **_kw: Any) -> Any:
-        raise FileNotFoundError
+@contextmanager
+def _inside(path: Path) -> Iterator[None]:
+    previous = Path.cwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(previous)
 
-    monkeypatch.setattr("synapse_channel.git.gitclaim.subprocess.run", fake_run)
-    with pytest.raises(GitError, match="not installed"):
+
+def test_default_git_runner_returns_stripped_stdout(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _run_git(repo, "init", "-b", "feature/x")
+    _run_git(repo, "config", "user.email", "test@example.invalid")
+    _run_git(repo, "config", "user.name", "Test User")
+    (repo / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+    _run_git(repo, "add", "tracked.txt")
+    _run_git(repo, "commit", "-m", "initial")
+    with _inside(repo):
+        assert _default_git_runner(["rev-parse", "--abbrev-ref", "HEAD"]) == "feature/x"
+
+
+def test_default_git_runner_missing_git() -> None:
+    code = """
+from synapse_channel.git.gitclaim import GitError, _default_git_runner
+try:
+    _default_git_runner(['status'])
+except GitError as exc:
+    raise SystemExit(0 if 'not installed' in str(exc) else 2)
+raise SystemExit(3)
+"""
+    env = os.environ.copy()
+    env["PATH"] = ""
+    result = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+def test_default_git_runner_nonzero_uses_stderr(tmp_path: Path) -> None:
+    with _inside(tmp_path), pytest.raises(GitError, match="not a git repository"):
         _default_git_runner(["status"])
 
 
-def test_default_git_runner_nonzero_uses_stderr(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run(args: list[str], **_kw: Any) -> Any:
-        raise subprocess.CalledProcessError(1, args, stderr="fatal: not a git repository")
-
-    monkeypatch.setattr("synapse_channel.git.gitclaim.subprocess.run", fake_run)
-    with pytest.raises(GitError, match="not a git repository"):
-        _default_git_runner(["status"])
-
-
-def test_default_git_runner_nonzero_without_stderr(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run(args: list[str], **_kw: Any) -> Any:
-        raise subprocess.CalledProcessError(1, args, stderr="")
-
-    monkeypatch.setattr("synapse_channel.git.gitclaim.subprocess.run", fake_run)
-    with pytest.raises(GitError, match="exited non-zero"):
-        _default_git_runner(["status"])
+def test_default_git_runner_nonzero_without_stderr(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _run_git(repo, "init")
+    with (
+        _inside(repo),
+        pytest.raises(GitError, match="git rev-parse --quiet --verify missing-ref exited non-zero"),
+    ):
+        _default_git_runner(["rev-parse", "--quiet", "--verify", "missing-ref"])
