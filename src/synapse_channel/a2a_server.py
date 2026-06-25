@@ -32,11 +32,26 @@ PROBLEM_MEDIA_TYPE = "application/problem+json"
 SSE_MEDIA_TYPE = "text/event-stream"
 
 
+def _push_config_path(path: str) -> tuple[str, str | None] | None:
+    """Parse ``/tasks/{task_id}/pushNotificationConfigs[/config_id]`` paths."""
+    prefix = "/tasks/"
+    marker = "/pushNotificationConfigs"
+    if not path.startswith(prefix) or marker not in path:
+        return None
+    rest = path.removeprefix(prefix)
+    task_id, _, tail = rest.partition(marker)
+    if not task_id:
+        return None
+    config_id = tail.strip("/") or None
+    return task_id, config_id
+
+
 class A2ATaskStore:
     """In-memory task view for one A2A bridge process."""
 
     def __init__(self) -> None:
         self._tasks: dict[str, JsonMap] = {}
+        self._push_configs: dict[str, dict[str, JsonMap]] = {}
 
     def put(self, task: JsonMap) -> JsonMap:
         """Store and return ``task``."""
@@ -47,12 +62,38 @@ class A2ATaskStore:
         """Return one task by id, or ``None``."""
         return self._tasks.get(task_id)
 
-    def list(self, *, state: str | None = None) -> list[JsonMap]:
+    def list_tasks(self, *, state: str | None = None) -> list[JsonMap]:
         """Return tasks, optionally filtered by A2A status state."""
         tasks = list(self._tasks.values())
         if state:
             tasks = [task for task in tasks if task.get("status", {}).get("state") == state]
         return sorted(tasks, key=lambda task: str(task["id"]))
+
+    def put_push_config(self, task_id: str, config: JsonMap) -> JsonMap:
+        """Store one push notification config for ``task_id``."""
+        config_id = str(config.get("id") or uuid.uuid4())
+        stored = dict(config)
+        stored["id"] = config_id
+        stored["taskId"] = task_id
+        self._push_configs.setdefault(task_id, {})[config_id] = stored
+        return stored
+
+    def get_push_config(self, task_id: str, config_id: str) -> JsonMap | None:
+        """Return one push notification config."""
+        return self._push_configs.get(task_id, {}).get(config_id)
+
+    def list_push_configs(self, task_id: str) -> list[JsonMap]:
+        """Return push notification configs for ``task_id`` sorted by id."""
+        configs = list(self._push_configs.get(task_id, {}).values())
+        return sorted(configs, key=lambda config: str(config["id"]))
+
+    def delete_push_config(self, task_id: str, config_id: str) -> bool:
+        """Delete one push notification config."""
+        configs = self._push_configs.get(task_id)
+        if not configs or config_id not in configs:
+            return False
+        del configs[config_id]
+        return True
 
 
 class SynapseAgentRuntime:
@@ -180,11 +221,15 @@ class A2ABridge:
 
     def send_message(self, payload: JsonMap) -> JsonMap:
         """Handle an A2A ``message:send`` request."""
-        return {"task": self._send_message_task(payload)}
+        task = self._send_message_task(payload)
+        self._store_request_push_config(payload, task_id=str(task["id"]))
+        return {"task": task}
 
     def stream_message(self, payload: JsonMap) -> JsonMap:
         """Handle an A2A ``message:stream`` request as an immediate lifecycle stream."""
-        return {"task": self._send_message_task(payload)}
+        task = self._send_message_task(payload)
+        self._store_request_push_config(payload, task_id=str(task["id"]))
+        return {"task": task}
 
     def _send_message_task(self, payload: JsonMap) -> JsonMap:
         """Validate a send payload and return the created task."""
@@ -200,9 +245,22 @@ class A2ABridge:
             raise ValueError("message.parts must be a non-empty array")
         return self.create_completed_task(message)
 
+    def _store_request_push_config(self, payload: JsonMap, *, task_id: str) -> JsonMap | None:
+        """Store a send-time push notification config when one is present."""
+        configuration = payload.get("configuration")
+        if not isinstance(configuration, dict):
+            return None
+        task_config = configuration.get("taskPushNotificationConfig")
+        if not isinstance(task_config, dict):
+            return None
+        config = task_config.get("pushNotificationConfig")
+        if not isinstance(config, dict):
+            return None
+        return self.create_push_notification_config(task_id, config)
+
     def list_tasks(self, *, state: str | None = None) -> JsonMap:
         """Return an A2A task-list response."""
-        tasks = self.store.list(state=state)
+        tasks = self.store.list_tasks(state=state)
         return {
             "tasks": tasks,
             "nextPageToken": "",
@@ -226,6 +284,29 @@ class A2ABridge:
     def subscribe_task(self, task_id: str) -> JsonMap | None:
         """Return a task snapshot for SSE subscription, or ``None`` when unknown."""
         return self.store.get(task_id)
+
+    def create_push_notification_config(self, task_id: str, config: JsonMap) -> JsonMap | None:
+        """Create a push notification config for a known task."""
+        if self.store.get(task_id) is None:
+            return None
+        webhook = config.get("webhookUrl") or config.get("url")
+        if not webhook:
+            raise ValueError("pushNotificationConfig.webhookUrl is required")
+        stored = dict(config)
+        stored["webhookUrl"] = str(webhook)
+        return self.store.put_push_config(task_id, stored)
+
+    def list_push_notification_configs(self, task_id: str) -> JsonMap:
+        """Return all push notification configs for ``task_id``."""
+        return {"pushNotificationConfigs": self.store.list_push_configs(task_id)}
+
+    def get_push_notification_config(self, task_id: str, config_id: str) -> JsonMap | None:
+        """Return one push notification config."""
+        return self.store.get_push_config(task_id, config_id)
+
+    def delete_push_notification_config(self, task_id: str, config_id: str) -> JsonMap:
+        """Delete one push notification config and report whether it existed."""
+        return {"deleted": self.store.delete_push_config(task_id, config_id)}
 
 
 def _problem(status: HTTPStatus, title: str, detail: str = "") -> JsonMap:
@@ -313,6 +394,22 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
             if parsed.path in {"/.well-known/agent-card.json", "/extendedAgentCard"}:
                 self._send_json(HTTPStatus.OK, self.bridge.agent_card)
                 return
+            push_path = _push_config_path(parsed.path)
+            if push_path is not None:
+                task_id, config_id = push_path
+                if self.bridge.get_task(task_id) is None:
+                    self._send_not_found(f"Unknown task: {task_id}")
+                    return
+                if config_id is None:
+                    configs = self.bridge.list_push_notification_configs(task_id)
+                    self._send_json(HTTPStatus.OK, configs)
+                    return
+                config = self.bridge.get_push_notification_config(task_id, config_id)
+                if config is None:
+                    self._send_not_found(f"Unknown push notification config: {config_id}")
+                    return
+                self._send_json(HTTPStatus.OK, config)
+                return
             if parsed.path == "/tasks":
                 query = parse_qs(parsed.query)
                 state = query.get("status", [None])[0]
@@ -334,6 +431,41 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
         def do_POST(self) -> None:
             """Serve A2A message-send and task-cancel endpoints."""
             parsed = urlparse(self.path)
+            push_path = _push_config_path(parsed.path)
+            if push_path is not None:
+                task_id, config_id = push_path
+                if config_id is not None:
+                    self._send_not_found()
+                    return
+                data = self._read_json()
+                if data is None:
+                    return
+                config = data.get("pushNotificationConfig", data)
+                if not isinstance(config, dict):
+                    self._send_json(
+                        HTTPStatus.BAD_REQUEST,
+                        _problem(HTTPStatus.BAD_REQUEST, "Invalid push notification config"),
+                        media_type=PROBLEM_MEDIA_TYPE,
+                    )
+                    return
+                try:
+                    created = self.bridge.create_push_notification_config(task_id, config)
+                except ValueError as exc:
+                    self._send_json(
+                        HTTPStatus.BAD_REQUEST,
+                        _problem(
+                            HTTPStatus.BAD_REQUEST,
+                            "Invalid push notification config",
+                            str(exc),
+                        ),
+                        media_type=PROBLEM_MEDIA_TYPE,
+                    )
+                    return
+                if created is None:
+                    self._send_not_found(f"Unknown task: {task_id}")
+                    return
+                self._send_json(HTTPStatus.OK, created)
+                return
             if parsed.path == "/message:stream":
                 data = self._read_json()
                 if data is None:
@@ -394,6 +526,23 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                 self._send_sse(HTTPStatus.OK, {"task": task})
                 return
             self._send_not_found()
+
+        def do_DELETE(self) -> None:
+            """Serve A2A push-notification config deletion."""
+            parsed = urlparse(self.path)
+            push_path = _push_config_path(parsed.path)
+            if push_path is None:
+                self._send_not_found()
+                return
+            task_id, config_id = push_path
+            if self.bridge.get_task(task_id) is None:
+                self._send_not_found(f"Unknown task: {task_id}")
+                return
+            if config_id is None:
+                self._send_not_found("Missing push notification config id.")
+                return
+            deleted = self.bridge.delete_push_notification_config(task_id, config_id)
+            self._send_json(HTTPStatus.OK, deleted)
 
     A2ARequestHandler.bridge = bridge
     return A2ARequestHandler

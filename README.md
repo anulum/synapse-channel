@@ -231,7 +231,8 @@ thin HTTP edge to serve as `/.well-known/agent-card.json`.
 To run that edge directly, use `synapse a2a-serve --endpoint-url ...`; it serves
 the Agent Card, forwards `POST /message:send` text/data parts into SYNAPSE chat,
 supports immediate `POST /message:stream` Server-Sent Events, and exposes its
-bridge-local task list/get/cancel routes over HTTP+JSON.
+bridge-local task list/get/cancel plus push-notification configuration routes
+over HTTP+JSON.
 
 ### Git-native claims
 
@@ -345,7 +346,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 54 |
 | Wire message types | 52 |
 | CLI subcommands | 30 |
-| Test functions | 1126 |
+| Test functions | 1128 |
 | Benchmark harnesses | 3 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

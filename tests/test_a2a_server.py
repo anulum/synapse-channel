@@ -79,6 +79,8 @@ class HandlerHarness:
             self.handler.do_GET()
         elif self.handler.command == "POST":
             self.handler.do_POST()
+        elif self.handler.command == "DELETE":
+            self.handler.do_DELETE()
         else:
             raise AssertionError(self.handler.command)
         raw = self.handler.wfile.getvalue()
@@ -190,6 +192,83 @@ def test_task_list_get_and_cancel_routes_use_store() -> None:
     canceled = bridge.cancel_task(task["id"])
     assert canceled is not None
     assert canceled["status"]["state"] == "TASK_STATE_CANCELED"
+
+
+def test_push_notification_config_lifecycle_routes_use_store() -> None:
+    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}],
+        },
+        target="WORKER",
+    )
+    harness = HandlerHarness(
+        "POST",
+        f"/tasks/{task['id']}/pushNotificationConfigs",
+        body={
+            "pushNotificationConfig": {
+                "webhookUrl": "https://example.test/hook",
+                "authentication": {"scheme": "Bearer", "credentials": "token"},
+            }
+        },
+    )
+    harness.handler.bridge = bridge
+
+    status, created = harness.run()
+
+    assert status == HTTPStatus.OK
+    config_id = created["id"]
+    assert created["taskId"] == task["id"]
+    assert created["webhookUrl"] == "https://example.test/hook"
+
+    list_harness = HandlerHarness("GET", f"/tasks/{task['id']}/pushNotificationConfigs")
+    list_harness.handler.bridge = bridge
+    list_status, listed = list_harness.run()
+    assert list_status == HTTPStatus.OK
+    assert listed["pushNotificationConfigs"][0]["id"] == config_id
+
+    get_harness = HandlerHarness(
+        "GET",
+        f"/tasks/{task['id']}/pushNotificationConfigs/{config_id}",
+    )
+    get_harness.handler.bridge = bridge
+    get_status, fetched = get_harness.run()
+    assert get_status == HTTPStatus.OK
+    assert fetched["id"] == config_id
+
+    delete_harness = HandlerHarness(
+        "DELETE",
+        f"/tasks/{task['id']}/pushNotificationConfigs/{config_id}",
+    )
+    delete_harness.handler.bridge = bridge
+    delete_status, deleted = delete_harness.run()
+    assert delete_status == HTTPStatus.OK
+    assert deleted["deleted"] is True
+
+
+def test_send_message_stores_push_notification_config_from_request() -> None:
+    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+
+    response = bridge.send_message(
+        {
+            "message": {
+                "messageId": "m1",
+                "role": "ROLE_USER",
+                "parts": [{"text": "hello"}],
+            },
+            "configuration": {
+                "taskPushNotificationConfig": {
+                    "pushNotificationConfig": {"webhookUrl": "https://example.test/hook"}
+                }
+            },
+        }
+    )
+
+    task_id = response["task"]["id"]
+    configs = bridge.list_push_notification_configs(task_id)
+    assert configs["pushNotificationConfigs"][0]["webhookUrl"] == "https://example.test/hook"
 
 
 def test_bad_json_returns_a2a_problem_json() -> None:
