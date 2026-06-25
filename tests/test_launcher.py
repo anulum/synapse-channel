@@ -14,9 +14,6 @@ import sys
 import time
 from collections.abc import Callable
 
-import pytest
-
-import synapse_channel.client.launcher as launcher_module
 from http_server_helpers import LocalHttpResponder
 from hub_e2e_helpers import _free_port
 from synapse_channel.client.launcher import (
@@ -162,10 +159,7 @@ def test_plan_team_prefixes_worker_names() -> None:
 # --- _shutdown ---------------------------------------------------------------
 
 
-def test_shutdown_terminates_running_kills_stubborn_and_skips_exited(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(launcher_module, "SHUTDOWN_TIMEOUT_SECONDS", 0.05)
+def test_shutdown_terminates_running_kills_stubborn_and_skips_exited() -> None:
     running = subprocess.Popen(_python_command("import time; time.sleep(30)"), text=True)
     stubborn = subprocess.Popen(
         _python_command(
@@ -177,7 +171,7 @@ def test_shutdown_terminates_running_kills_stubborn_and_skips_exited(
     already_done.wait(timeout=2)
 
     try:
-        _shutdown([("a", running), ("b", stubborn), ("c", already_done)])
+        _shutdown([("a", running), ("b", stubborn), ("c", already_done)], timeout_seconds=0.05)
         assert running.poll() is not None
         assert stubborn.poll() is not None
         assert already_done.poll() == 0

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -184,16 +185,13 @@ def test_worker_session_passes_sidecar_auth_options(tmp_path: Path) -> None:
     ]
 
 
-def test_worker_session_kills_sidecar_after_graceful_timeout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_worker_session_kills_sidecar_after_graceful_timeout(tmp_path: Path) -> None:
     if os.name != "posix":
         pytest.skip("SIGTERM ignore/kill semantics are POSIX-specific")
     sidecar_record = tmp_path / "sidecar.json"
     provider_record = tmp_path / "provider.json"
     sidecar = _stubborn_sidecar(tmp_path / "syn")
     provider = _provider(tmp_path / "provider")
-    monkeypatch.setattr("synapse_channel.worker_session.SIDECAR_SHUTDOWN_TIMEOUT_SECONDS", 0.05)
 
     assert (
         run_worker_session(
@@ -204,6 +202,7 @@ def test_worker_session_kills_sidecar_after_graceful_timeout(
                 "SIDECAR_RECORD": str(sidecar_record),
                 "PROVIDER_RECORD": str(provider_record),
             },
+            sidecar_shutdown_timeout_seconds=0.05,
         )
         == 0
     )
@@ -236,18 +235,17 @@ def test_parser_worker_session() -> None:
     assert args.command == ["--", "codex"]
 
 
-def test_cmd_worker_session_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_worker_session_dispatches() -> None:
     captured: dict[str, Any] = {}
 
-    def fake(**kwargs: Any) -> int:
+    def run_session(**kwargs: Any) -> int:
         captured.update(kwargs)
         return 0
 
-    monkeypatch.setattr(cli_services, "run_worker_session", fake)
     ns = cli.build_parser().parse_args(
         ["worker-session", "--identity", "repo/ux", "--project", "repo", "--", "codex"]
     )
-    assert cli_services._cmd_worker_session(ns) == 0
+    assert cli_services._cmd_worker_session(ns, session_runner=run_session) == 0
     assert captured["identity"] == "repo/ux"
     assert captured["command"] == ["codex"]
 
@@ -259,14 +257,13 @@ def test_cmd_worker_session_rejects_missing_command(capsys: pytest.CaptureFixtur
 
 
 def test_cmd_worker_session_reports_value_error(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     def fail(**kwargs: Any) -> int:
         raise ValueError("bad worker command")
 
-    monkeypatch.setattr(cli_services, "run_worker_session", fail)
     ns = cli.build_parser().parse_args(["worker-session", "--identity", "repo/ux", "--", "cmd"])
-    assert cli_services._cmd_worker_session(ns) == 2
+    assert cli_services._cmd_worker_session(ns, session_runner=fail) == 2
     assert "bad worker command" in capsys.readouterr().out
 
 
@@ -279,28 +276,46 @@ def test_cmd_init_prints_service_suggestions(capsys: pytest.CaptureFixture[str])
 
 
 def test_cmd_init_defaults_project_to_current_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
 ) -> None:
     project_dir = tmp_path / "repo-from-cwd"
     project_dir.mkdir()
-    monkeypatch.chdir(project_dir)
+    proc = subprocess.run(
+        [sys.executable, "-m", "synapse_channel.cli", "init"],
+        cwd=project_dir,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode == 0
+    out = proc.stdout
+    assert "repo-from-cwd" in out
+
+
+def test_cmd_init_uses_project_resolver(capsys: pytest.CaptureFixture[str]) -> None:
+    ns = cli.build_parser().parse_args(["init"])
+
+    assert cli_services._cmd_init(ns, project_resolver=lambda: "repo-from-resolver") == 0
+    out = capsys.readouterr().out
+    assert "repo-from-resolver" in out
+
+
+def test_cmd_init_defaults_project_to_process_cwd(capsys: pytest.CaptureFixture[str]) -> None:
     ns = cli.build_parser().parse_args(["init"])
 
     assert cli_services._cmd_init(ns) == 0
     out = capsys.readouterr().out
-    assert "repo-from-cwd" in out
+    assert Path.cwd().name in out
 
 
-def test_cmd_init_installs_user_services(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cmd_init_installs_user_services(capsys: pytest.CaptureFixture[str]) -> None:
     captured: dict[str, Any] = {}
 
-    def fake_install(**kwargs: Any) -> list[str]:
+    def install_services(**kwargs: Any) -> list[str]:
         captured.update(kwargs)
         return ["wrote synapse-hub.service", "wrote synapse-arm@.service"]
 
-    monkeypatch.setattr(cli_services, "install_user_services", fake_install)
     ns = cli.build_parser().parse_args(
         [
             "init",
@@ -313,7 +328,7 @@ def test_cmd_init_installs_user_services(
             "/bin/synapse",
         ]
     )
-    assert cli_services._cmd_init(ns) == 0
+    assert cli_services._cmd_init(ns, service_installer=install_services) == 0
     assert captured == {
         "project": "repo",
         "identity": "repo/ux",
