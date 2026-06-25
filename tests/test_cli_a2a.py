@@ -117,6 +117,10 @@ def test_parser_a2a_serve() -> None:
             "secret",
             "--state-file",
             "/tmp/synapse-a2a-state.json",
+            "--task-timeout",
+            "30",
+            "--subscribe-timeout",
+            "0.25",
         ]
     )
 
@@ -126,6 +130,8 @@ def test_parser_a2a_serve() -> None:
     assert args.bearer_auth is True
     assert args.a2a_token == "secret"
     assert args.state_file == "/tmp/synapse-a2a-state.json"
+    assert args.task_timeout == 30.0
+    assert args.subscribe_timeout == 0.25
     assert args.func is cli_a2a._cmd_a2a_serve
 
 
