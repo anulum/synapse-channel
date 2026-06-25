@@ -95,7 +95,8 @@ async def test_manifest_threads_token_to_agent(capsys: pytest.CaptureFixture[str
     assert "FAST [chat] model=m: q" in capsys.readouterr().out
 
 
-def test_cmd_manifest_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("synapse_channel.cli_queries.asyncio.run", lambda coro: coro.close() or 0)
-    ns = argparse.Namespace(uri="ws://h", name="USER", token=None)
-    assert cli_queries._cmd_manifest(ns) == 0
+def test_cmd_manifest_dispatches_real_query() -> None:
+    ns = argparse.Namespace(
+        uri=f"ws://127.0.0.1:{_free_port()}", name="USER", token=None, ready_timeout=0.1
+    )
+    assert cli_queries._cmd_manifest(ns) == 1

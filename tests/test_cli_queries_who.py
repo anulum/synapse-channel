@@ -68,7 +68,12 @@ async def test_query_hub_returns_quietly_when_no_matching_snapshot() -> None:
     assert rendered == []
 
 
-def test_cmd_who_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("synapse_channel.cli_queries.asyncio.run", lambda coro: coro.close() or 0)
-    ns = argparse.Namespace(uri="ws://h", name="U", project=None, token=None)
-    assert cli_queries._cmd_who(ns) == 0
+def test_cmd_who_dispatches_real_query() -> None:
+    ns = argparse.Namespace(
+        uri=f"ws://127.0.0.1:{_free_port()}",
+        name="U",
+        project=None,
+        token=None,
+        ready_timeout=0.1,
+    )
+    assert cli_queries._cmd_who(ns) == 1

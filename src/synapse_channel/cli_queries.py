@@ -81,7 +81,9 @@ async def _health(
 
 def _cmd_health(args: argparse.Namespace) -> int:
     """Probe the hub and return its reachability as the process exit code."""
-    return asyncio.run(_health(uri=args.uri, name=args.name, token=args.token))
+    return asyncio.run(
+        _health(uri=args.uri, name=args.name, token=args.token, ready_timeout=args.ready_timeout)
+    )
 
 
 def _identity(data: dict[str, Any]) -> Any:
@@ -221,7 +223,15 @@ async def _who(
 
 def _cmd_who(args: argparse.Namespace) -> int:
     """Dispatch the ``who`` subcommand."""
-    return asyncio.run(_who(uri=args.uri, name=args.name, project=args.project, token=args.token))
+    return asyncio.run(
+        _who(
+            uri=args.uri,
+            name=args.name,
+            project=args.project,
+            token=args.token,
+            ready_timeout=args.ready_timeout,
+        )
+    )
 
 
 async def _state(
@@ -293,7 +303,15 @@ async def _state(
 
 def _cmd_state(args: argparse.Namespace) -> int:
     """Dispatch the ``state`` subcommand."""
-    return asyncio.run(_state(uri=args.uri, name=args.name, owner=args.owner, token=args.token))
+    return asyncio.run(
+        _state(
+            uri=args.uri,
+            name=args.name,
+            owner=args.owner,
+            token=args.token,
+            ready_timeout=args.ready_timeout,
+        )
+    )
 
 
 def _print_board(board: dict[str, Any]) -> None:
@@ -356,7 +374,9 @@ async def _board(
 
 def _cmd_board(args: argparse.Namespace) -> int:
     """Dispatch the ``board`` subcommand."""
-    return asyncio.run(_board(uri=args.uri, name=args.name, token=args.token))
+    return asyncio.run(
+        _board(uri=args.uri, name=args.name, token=args.token, ready_timeout=args.ready_timeout)
+    )
 
 
 def _print_manifest(manifest: list[dict[str, Any]]) -> None:
@@ -410,7 +430,9 @@ async def _manifest(
 
 def _cmd_manifest(args: argparse.Namespace) -> int:
     """Dispatch the ``manifest`` subcommand."""
-    return asyncio.run(_manifest(uri=args.uri, name=args.name, token=args.token))
+    return asyncio.run(
+        _manifest(uri=args.uri, name=args.name, token=args.token, ready_timeout=args.ready_timeout)
+    )
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -426,12 +448,18 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Show only agents in this project (matches 'project' or 'project/...').",
     )
     who.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    who.add_argument(
+        "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
+    )
     who.set_defaults(func=_cmd_who)
 
     health = subparsers.add_parser("health", help="Probe the hub; exit 0 if reachable, 1 if not.")
     health.add_argument("--uri", default=DEFAULT_HUB_URI)
     health.add_argument("--name", default="HEALTH")
     health.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    health.add_argument(
+        "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
+    )
     health.set_defaults(func=_cmd_health)
 
     state = subparsers.add_parser(
@@ -445,16 +473,25 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Show only claims owned by this name or project (matches 'owner' or 'owner/...').",
     )
     state.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    state.add_argument(
+        "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
+    )
     state.set_defaults(func=_cmd_state)
 
     board = subparsers.add_parser("board", help="Print the hub's shared task/progress board.")
     board.add_argument("--uri", default=DEFAULT_HUB_URI)
     board.add_argument("--name", default="USER")
     board.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    board.add_argument(
+        "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
+    )
     board.set_defaults(func=_cmd_board)
 
     manifest = subparsers.add_parser("manifest", help="Print the capability manifest of agents.")
     manifest.add_argument("--uri", default=DEFAULT_HUB_URI)
     manifest.add_argument("--name", default="USER")
     manifest.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    manifest.add_argument(
+        "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
+    )
     manifest.set_defaults(func=_cmd_manifest)

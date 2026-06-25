@@ -9,9 +9,6 @@
 from __future__ import annotations
 
 import argparse
-from typing import Any
-
-import pytest
 
 from hub_e2e_helpers import _free_port, running_hub
 from synapse_channel import cli_queries
@@ -35,9 +32,8 @@ async def test_drop_message_is_noop() -> None:
     await cli_queries._drop_message({"type": "x"})  # a no-op callback; must simply not raise
 
 
-def test_cmd_health_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake(**kwargs: Any) -> int:
-        return 0
-
-    monkeypatch.setattr(cli_queries, "_health", fake)
-    assert cli_queries._cmd_health(argparse.Namespace(uri="ws://h", name="H", token=None)) == 0
+def test_cmd_health_dispatches_real_probe() -> None:
+    ns = argparse.Namespace(
+        uri=f"ws://127.0.0.1:{_free_port()}", name="H", token=None, ready_timeout=0.1
+    )
+    assert cli_queries._cmd_health(ns) == 1
