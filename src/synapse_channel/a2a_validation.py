@@ -54,6 +54,8 @@ def validate_webhook_url(value: object) -> str:
         raise ValueError("pushNotificationConfig.webhookUrl must use http or https")
     if not parsed_webhook.netloc:
         raise ValueError("pushNotificationConfig.webhookUrl must include a host")
+    if parsed_webhook.username is not None or parsed_webhook.password is not None:
+        raise ValueError("pushNotificationConfig.webhookUrl must not include credentials")
     hostname = parsed_webhook.hostname
     if hostname is None or _is_local_network_host(hostname):
         raise ValueError("pushNotificationConfig.webhookUrl must not target local networks")
