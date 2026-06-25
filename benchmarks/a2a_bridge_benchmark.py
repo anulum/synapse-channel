@@ -102,7 +102,7 @@ def profile(
             {
                 "type": "chat",
                 "sender": "WORKER",
-                "payload": f"done {task_id}\n[A2A-TASK:{task_id}]",
+                "payload": f"done {task_id}\n[A2A-TASK:{task_id} contextId={task['contextId']}]",
             }
         )
     correlation_seconds = time.perf_counter() - start
@@ -130,7 +130,10 @@ def profile(
         {
             "type": "chat",
             "sender": "WORKER",
-            "payload": f"fanout done\n[A2A-TASK:{fanout_task_id}]",
+            "payload": (
+                f"fanout done\n[A2A-TASK:{fanout_task_id} "
+                f"contextId={fanout_task['contextId']}]"
+            ),
         }
     )
     for thread in threads:
