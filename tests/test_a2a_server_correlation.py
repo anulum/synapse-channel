@@ -12,13 +12,13 @@ import threading
 import time
 from typing import Any
 
-from a2a_server_helpers import FakeAgent, SlowAgent
+from a2a_server_helpers import RecordingAgent, SlowRecordingAgent
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 
 
 def test_handle_synapse_frame_correlates_reply_and_completes_task() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
             "messageId": "m1",
@@ -44,7 +44,7 @@ def test_handle_synapse_frame_correlates_reply_and_completes_task() -> None:
 
 
 def test_handle_synapse_frame_rejects_marker_from_wrong_sender() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
             "messageId": "m1",
@@ -68,7 +68,7 @@ def test_handle_synapse_frame_rejects_marker_from_wrong_sender() -> None:
 
 
 def test_handle_synapse_frame_rejects_marker_with_wrong_context() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
             "messageId": "m1",
@@ -93,7 +93,7 @@ def test_handle_synapse_frame_rejects_marker_with_wrong_context() -> None:
 
 
 def test_handle_synapse_frame_rejects_marker_without_context() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
             "messageId": "m1",
@@ -118,7 +118,7 @@ def test_handle_synapse_frame_rejects_marker_without_context() -> None:
 
 
 def test_handle_synapse_frame_strips_correlation_marker_from_reply() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
             "messageId": "m1",
@@ -143,7 +143,7 @@ def test_handle_synapse_frame_strips_correlation_marker_from_reply() -> None:
 
 
 def test_fallback_correlation_preserves_fifo_tasks_for_same_sender() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     first = bridge.create_completed_task(
         {
             "taskId": "task-a",
@@ -183,7 +183,7 @@ def test_concurrent_duplicate_task_id_creates_only_one_task() -> None:
             return task
 
     bridge = A2ABridge(
-        agent=FakeAgent(),
+        agent=RecordingAgent(),
         agent_card={},
         target="WORKER",
         store=SlowMissStore(),
@@ -220,7 +220,7 @@ def test_concurrent_duplicate_task_id_creates_only_one_task() -> None:
 
 
 def test_concurrent_direct_task_creation_serializes_same_target_submission() -> None:
-    agent = SlowAgent()
+    agent = SlowRecordingAgent()
     bridge = A2ABridge(agent=agent, agent_card={}, target="WORKER", store=A2ATaskStore())
 
     def create_task(index: int) -> None:
@@ -245,7 +245,7 @@ def test_concurrent_direct_task_creation_serializes_same_target_submission() -> 
 
 
 def test_late_correlated_reply_does_not_complete_canceled_task() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
             "messageId": "m1",
@@ -272,7 +272,7 @@ def test_late_correlated_reply_does_not_complete_canceled_task() -> None:
 
 
 def test_duplicate_correlated_reply_does_not_append_second_completion() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
             "messageId": "m1",
@@ -302,7 +302,7 @@ def test_duplicate_correlated_reply_does_not_append_second_completion() -> None:
 
 
 def test_concurrent_duplicate_correlated_reply_completes_once() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
             "messageId": "m1",

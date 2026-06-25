@@ -32,6 +32,35 @@ def test_skill_from_manifest_card_maps_capability_fields() -> None:
     }
 
 
+def test_skill_from_manifest_card_falls_back_for_empty_fields() -> None:
+    skill = skill_from_manifest_card(
+        {
+            "agent": "   ",
+            "description": "",
+            "skills": "chat",
+            "task_classes": None,
+        }
+    )
+
+    assert skill["id"] == "synapse-agent"
+    assert skill["name"] == "agent"
+    assert skill["description"] == "SYNAPSE-advertised capability for agent."
+    assert skill["tags"] == ["synapse"]
+
+
+def test_skill_from_manifest_card_ignores_blank_list_entries() -> None:
+    skill = skill_from_manifest_card(
+        {
+            "agent": "worker",
+            "description": "capability",
+            "skills": ["", " chat ", "chat"],
+            "task_classes": [" ", "rule"],
+        }
+    )
+
+    assert skill["tags"] == ["rule", "chat", "synapse"]
+
+
 def test_agent_card_from_manifest_emits_required_a2a_fields() -> None:
     card = agent_card_from_manifest(
         [
@@ -67,6 +96,23 @@ def test_agent_card_from_manifest_emits_required_a2a_fields() -> None:
     assert card["skills"][0]["id"] == "synapse-fast"
     assert card["securitySchemes"]["synapseBearer"]["httpAuthSecurityScheme"]["scheme"] == "Bearer"
     assert card["securityRequirements"] == [{"synapseBearer": []}]
+
+
+def test_agent_card_without_bearer_auth_omits_security_fields() -> None:
+    card = agent_card_from_manifest(
+        [{"agent": "agent", "description": "capability"}],
+        endpoint_url="https://example.test/a2a/v1",
+        provider_organization="Example",
+        provider_url="https://example.test",
+        protocol_binding="JSON-RPC",
+        protocol_version="2.0",
+    )
+
+    assert card["provider"] == {"organization": "Example", "url": "https://example.test"}
+    assert card["supportedInterfaces"][0]["protocolBinding"] == "JSON-RPC"
+    assert card["supportedInterfaces"][0]["protocolVersion"] == "2.0"
+    assert "securitySchemes" not in card
+    assert "securityRequirements" not in card
 
 
 def test_agent_card_from_empty_manifest_keeps_generic_coordination_skill() -> None:

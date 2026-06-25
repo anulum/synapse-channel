@@ -4,13 +4,11 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — tests for the async hub client using an injected transport
+# SYNAPSE_CHANNEL — real WebSocket tests for client send envelopes
 
 from __future__ import annotations
 
-import json
-
-from client_helpers import FakeWebSocket
+from client_helpers import connected_recording_agent, wait_for_recorded_count
 from synapse_channel.client.agent import SynapseAgent
 
 
@@ -20,21 +18,18 @@ async def test_send_message_noop_without_connection() -> None:
 
 
 async def test_send_helpers_emit_expected_envelopes() -> None:
-    agent = SynapseAgent("A")
-    ws = FakeWebSocket([])
-    agent.connection = ws  # type: ignore[assignment]
+    async with connected_recording_agent("A") as (agent, messages):
+        await agent.chat("hello", target="B")
+        await agent.claim("  T1  ", note="work", ttl_seconds=120.0)
+        await agent.claim("T2")
+        await agent.release("  T3 ")
+        await agent.request_state()
+        await agent.request_who()
+        await agent.request_history(5)
+        await agent.request_history(None)
+        await wait_for_recorded_count(messages, 9)
 
-    await agent.chat("hello", target="B")
-    await agent.claim("  T1  ", note="work", ttl_seconds=120.0)
-    await agent.claim("T2")
-    await agent.release("  T3 ")
-    await agent.request_state()
-    await agent.request_who()
-    await agent.request_history(5)
-    await agent.request_history(None)
-
-    sent = [json.loads(raw) for raw in ws.sent]
-    chat, claim_full, claim_min, release, state, who, hist_n, hist_all = sent
+        chat, claim_full, claim_min, release, state, who, hist_n, hist_all = messages[1:]
 
     assert chat == {
         "sender": "A",
@@ -55,17 +50,16 @@ async def test_send_helpers_emit_expected_envelopes() -> None:
 
 
 async def test_log_recall_emits_envelope() -> None:
-    agent = SynapseAgent("REASON")
-    ws = FakeWebSocket([])
-    agent.connection = ws  # type: ignore[assignment]
+    async with connected_recording_agent("REASON") as (agent, messages):
+        await agent.log_recall(
+            "what blocked CONTROL?",
+            returned_claim_ids=["c1", "c2"],
+            was_used=True,
+            abstained=False,
+        )
+        await wait_for_recorded_count(messages, 2)
+        msg = messages[-1]
 
-    await agent.log_recall(
-        "what blocked CONTROL?",
-        returned_claim_ids=["c1", "c2"],
-        was_used=True,
-        abstained=False,
-    )
-    msg = json.loads(ws.sent[0])
     assert msg["type"] == "recall_log"
     assert msg["sender"] == "REASON"
     assert msg["query_text"] == "what blocked CONTROL?"
@@ -75,26 +69,24 @@ async def test_log_recall_emits_envelope() -> None:
 
 
 async def test_log_recall_defaults_to_empty_outcome() -> None:
-    agent = SynapseAgent("A")
-    ws = FakeWebSocket([])
-    agent.connection = ws  # type: ignore[assignment]
+    async with connected_recording_agent("A") as (agent, messages):
+        await agent.log_recall("q")
+        await wait_for_recorded_count(messages, 2)
+        msg = messages[-1]
 
-    await agent.log_recall("q")
-    msg = json.loads(ws.sent[0])
     assert msg["returned_claim_ids"] == []
     assert msg["was_used"] is False
     assert msg["abstained"] is False
 
 
 async def test_chat_memory_tag_rides_the_envelope_only_when_set() -> None:
-    agent = SynapseAgent("A")
-    ws = FakeWebSocket([])
-    agent.connection = ws  # type: ignore[assignment]
+    async with connected_recording_agent("A") as (agent, messages):
+        await agent.chat("plain")
+        await agent.chat("remember me", memory_tag="remember")
+        await agent.chat("urgent", priority=True)
+        await wait_for_recorded_count(messages, 4)
+        plain, tagged, urgent = messages[1:]
 
-    await agent.chat("plain")
-    await agent.chat("remember me", memory_tag="remember")
-    await agent.chat("urgent", priority=True)
-    plain, tagged, urgent = (json.loads(r) for r in ws.sent)
     assert "memory_tag" not in plain and "priority" not in plain  # no envelope bloat
     assert tagged["memory_tag"] == "remember"
     assert tagged["payload"] == "remember me"
@@ -102,32 +94,31 @@ async def test_chat_memory_tag_rides_the_envelope_only_when_set() -> None:
 
 
 async def test_record_finding_emits_envelope() -> None:
-    agent = SynapseAgent("SCPN-CONTROL/agent-1")
-    ws = FakeWebSocket([])
-    agent.connection = ws  # type: ignore[assignment]
+    async with connected_recording_agent("SCPN-CONTROL/agent-1") as (agent, messages):
+        await agent.record_finding(
+            "K_nm correlates with directed coupling at r=0.951",
+            subkind="codebase-fact",
+            evidence_kind="measured",
+            claim_status="reference-validated",
+            evidence_ref="experiments/k_nm.py:88",
+            freshness="verified-at-source",
+            project="SCPN-CONTROL",
+            session="s1",
+            source_event_seq=7,
+            valid_from=2.0,
+            valid_to=20.0,
+            lifecycle="active",
+            supersedes="prior-hash",
+            checked_this_session=True,
+            source_ref="r=0.951 run",
+            producer_confidence=0.9,
+            execution_substrate="ml350-gpu0",
+            entities=["K_nm"],
+            tags=["correlation"],
+        )
+        await wait_for_recorded_count(messages, 2)
+        msg = messages[-1]
 
-    await agent.record_finding(
-        "K_nm correlates with directed coupling at r=0.951",
-        subkind="codebase-fact",
-        evidence_kind="measured",
-        claim_status="reference-validated",
-        evidence_ref="experiments/k_nm.py:88",
-        freshness="verified-at-source",
-        project="SCPN-CONTROL",
-        session="s1",
-        source_event_seq=7,
-        valid_from=2.0,
-        valid_to=20.0,
-        lifecycle="active",
-        supersedes="prior-hash",
-        checked_this_session=True,
-        source_ref="r=0.951 run",
-        producer_confidence=0.9,
-        execution_substrate="ml350-gpu0",
-        entities=["K_nm"],
-        tags=["correlation"],
-    )
-    msg = json.loads(ws.sent[0])
     assert msg["type"] == "finding"
     assert msg["sender"] == "SCPN-CONTROL/agent-1"
     assert msg["statement"] == "K_nm correlates with directed coupling at r=0.951"
@@ -148,12 +139,11 @@ async def test_record_finding_emits_envelope() -> None:
 
 
 async def test_record_finding_omits_unset_optionals_but_always_sends_envelopes() -> None:
-    agent = SynapseAgent("A")
-    ws = FakeWebSocket([])
-    agent.connection = ws  # type: ignore[assignment]
+    async with connected_recording_agent("A") as (agent, messages):
+        await agent.record_finding("we chose worktree isolation", subkind="decision")
+        await wait_for_recorded_count(messages, 2)
+        msg = messages[-1]
 
-    await agent.record_finding("we chose worktree isolation", subkind="decision")
-    msg = json.loads(ws.sent[0])
     # Optional scalars are omitted when unset...
     assert "evidence_kind" not in msg
     assert "claim_status" not in msg

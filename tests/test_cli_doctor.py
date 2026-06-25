@@ -233,6 +233,44 @@ def test_cmd_doctor_fix_prints_service_commands(
     assert "syn arm --project repo" in out
 
 
+def test_cmd_doctor_installs_user_services(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_diagnose(**_: Any) -> tuple[int, list[str]]:
+        return (0, ["synapse doctor: all clear"])
+
+    def fake_install(**kwargs: Any) -> list[str]:
+        captured.update(kwargs)
+        return ["wrote synapse-hub.service", "ok: systemctl --user daemon-reload"]
+
+    _set_project(monkeypatch, "repo")
+    monkeypatch.setattr(cli_doctor, "_diagnose", fake_diagnose)
+    monkeypatch.setattr(cli_doctor, "install_user_services", fake_install)
+    ns = argparse.Namespace(
+        uri="ws://h",
+        project=None,
+        id=None,
+        token=None,
+        send_name=None,
+        fix=False,
+        install_user_services=True,
+        start_user_services=True,
+        identity="repo/ux",
+        synapse_bin="/bin/synapse",
+    )
+
+    assert cli_doctor._cmd_doctor(ns) == 0
+    assert captured == {
+        "project": "repo",
+        "identity": "repo/ux",
+        "synapse_bin": "/bin/synapse",
+        "start": True,
+    }
+    assert "systemctl --user daemon-reload" in capsys.readouterr().out
+
+
 def test_main_routes_to_doctor(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

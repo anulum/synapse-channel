@@ -73,6 +73,31 @@ def test_install_user_services_start_runs_systemctl(tmp_path: Path) -> None:
     assert ["systemctl", "--user", "enable", "--now", "escaped.service"] in commands
 
 
+def test_install_user_services_reports_systemctl_failures(tmp_path: Path) -> None:
+    def runner(
+        args: list[str], *, capture_output: bool = False, text: bool = False, check: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        if args[0] == "systemd-escape":
+            return subprocess.CompletedProcess(args, 0, stdout="escaped.service\n", stderr="")
+        if args[-1] == "synapse-hub.service":
+            return subprocess.CompletedProcess(args, 1, stdout="", stderr="unit failed")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    lines = install_user_services(
+        project="repo",
+        identity="repo/ux",
+        synapse_bin="/bin/synapse",
+        start=True,
+        home=tmp_path,
+        runner=runner,
+    )
+
+    assert any(
+        "failed: systemctl --user enable --now synapse-hub.service" in line for line in lines
+    )
+    assert any("unit failed" in line for line in lines)
+
+
 def test_escaped_instance_falls_back_when_systemd_escape_fails() -> None:
     def runner(
         args: list[str], *, capture_output: bool = False, text: bool = False, check: bool = False
@@ -82,4 +107,16 @@ def test_escaped_instance_falls_back_when_systemd_escape_fails() -> None:
     assert (
         escaped_instance("repo/ux", template="synapse-arm@.service", runner=runner)
         == "synapse-arm@repo-ux.service"
+    )
+
+
+def test_escaped_instance_falls_back_for_non_template_unit() -> None:
+    def runner(
+        args: list[str], *, capture_output: bool = False, text: bool = False, check: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr="missing")
+
+    assert (
+        escaped_instance("repo/ux", template="synapse-arm.service", runner=runner)
+        == "synapse-arm.service-repo-ux"
     )

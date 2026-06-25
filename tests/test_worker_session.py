@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -43,6 +44,16 @@ class FakePopen:
         self.killed = True
 
 
+class StubbornPopen(FakePopen):
+    """Sidecar stand-in that ignores graceful termination until killed."""
+
+    def wait(self, timeout: float | None = None) -> int:
+        """Raise on timed waits, then report exit after forced termination."""
+        if self.killed:
+            return 0
+        raise subprocess.TimeoutExpired(self.args, 0.0 if timeout is None else timeout)
+
+
 def test_worker_session_sets_identity_and_starts_sidecar(monkeypatch: pytest.MonkeyPatch) -> None:
     popens: list[FakePopen] = []
     runs: list[tuple[list[str], dict[str, str]]] = []
@@ -65,6 +76,65 @@ def test_worker_session_sets_identity_and_starts_sidecar(monkeypatch: pytest.Mon
     assert runs[0][0] == ["codex"]
     assert runs[0][1]["SYN_PROJECT"] == "repo"
     assert runs[0][1]["SYN_IDENTITY"] == "repo/ux"
+
+
+def test_worker_session_passes_sidecar_auth_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    popens: list[FakePopen] = []
+
+    def fake_popen(args: list[str], **kwargs: Any) -> FakePopen:
+        proc = FakePopen(args, **kwargs)
+        popens.append(proc)
+        return proc
+
+    monkeypatch.setattr("synapse_channel.worker_session.subprocess.Popen", fake_popen)
+    monkeypatch.setattr(
+        "synapse_channel.worker_session.subprocess.run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 0),
+    )
+
+    assert (
+        run_worker_session(
+            identity="repo/ux",
+            command=["provider-cmd"],
+            uri="ws://localhost:9999",
+            syn_bin="/bin/syn",
+            token="secret",
+            token_file="/tmp/token",
+            environ={},
+        )
+        == 0
+    )
+    assert popens[0].args == [
+        "/bin/syn",
+        "arm",
+        "--uri",
+        "ws://localhost:9999",
+        "--token",
+        "secret",
+        "--token-file",
+        "/tmp/token",
+    ]
+
+
+def test_worker_session_kills_sidecar_after_graceful_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    popens: list[StubbornPopen] = []
+
+    def fake_popen(args: list[str], **kwargs: Any) -> StubbornPopen:
+        proc = StubbornPopen(args, **kwargs)
+        popens.append(proc)
+        return proc
+
+    monkeypatch.setattr("synapse_channel.worker_session.subprocess.Popen", fake_popen)
+    monkeypatch.setattr(
+        "synapse_channel.worker_session.subprocess.run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 0),
+    )
+
+    assert run_worker_session(identity="repo/ux", command=["provider-cmd"], environ={}) == 0
+    assert popens[0].terminated is True
+    assert popens[0].killed is True
 
 
 def test_worker_session_can_skip_sidecar(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -101,3 +171,74 @@ def test_cmd_worker_session_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cli_services._cmd_worker_session(ns) == 0
     assert captured["identity"] == "repo/ux"
     assert captured["command"] == ["codex"]
+
+
+def test_cmd_worker_session_rejects_missing_command(capsys: pytest.CaptureFixture[str]) -> None:
+    ns = cli.build_parser().parse_args(["worker-session", "--identity", "repo/ux"])
+    assert cli_services._cmd_worker_session(ns) == 2
+    assert "requires a provider command" in capsys.readouterr().out
+
+
+def test_cmd_worker_session_reports_value_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fail(**kwargs: Any) -> int:
+        raise ValueError("bad worker command")
+
+    monkeypatch.setattr(cli_services, "run_worker_session", fail)
+    ns = cli.build_parser().parse_args(["worker-session", "--identity", "repo/ux", "--", "cmd"])
+    assert cli_services._cmd_worker_session(ns) == 2
+    assert "bad worker command" in capsys.readouterr().out
+
+
+def test_cmd_init_prints_service_suggestions(capsys: pytest.CaptureFixture[str]) -> None:
+    ns = cli.build_parser().parse_args(["init", "--project", "repo", "--identity", "repo/ux"])
+    assert cli_services._cmd_init(ns) == 0
+    out = capsys.readouterr().out
+    assert "User services are not installed automatically" in out
+    assert "synapse-arm@.service" in out
+
+
+def test_cmd_init_defaults_project_to_current_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    project_dir = tmp_path / "repo-from-cwd"
+    project_dir.mkdir()
+    monkeypatch.chdir(project_dir)
+    ns = cli.build_parser().parse_args(["init"])
+
+    assert cli_services._cmd_init(ns) == 0
+    out = capsys.readouterr().out
+    assert "repo-from-cwd" in out
+
+
+def test_cmd_init_installs_user_services(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_install(**kwargs: Any) -> list[str]:
+        captured.update(kwargs)
+        return ["wrote synapse-hub.service", "wrote synapse-arm@.service"]
+
+    monkeypatch.setattr(cli_services, "install_user_services", fake_install)
+    ns = cli.build_parser().parse_args(
+        [
+            "init",
+            "--project",
+            "repo",
+            "--identity",
+            "repo/ux",
+            "--install-user-services",
+            "--synapse-bin",
+            "/bin/synapse",
+        ]
+    )
+    assert cli_services._cmd_init(ns) == 0
+    assert captured == {
+        "project": "repo",
+        "identity": "repo/ux",
+        "synapse_bin": "/bin/synapse",
+        "start": False,
+    }
+    assert "synapse-arm@.service" in capsys.readouterr().out

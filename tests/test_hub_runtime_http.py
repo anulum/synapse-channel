@@ -62,6 +62,17 @@ async def test_handler_rejects_when_unauth_cap_reached() -> None:
     assert hub.connected_clients == set()
 
 
+async def test_secured_hub_handles_disconnect_before_auth_frame() -> None:
+    hub = SynapseHub(authenticator=TokenAuthenticator(["t"]), auth_timeout=1.0)
+    async with running_hub(hub) as (_, uri):
+        websocket = await connect(uri)
+        await websocket.close()
+        await asyncio.sleep(0.05)
+
+    assert hub.unauth_clients == set()
+    assert hub.connected_clients == set()
+
+
 def test_max_unauth_clients_defaults_to_max_clients_and_clamps() -> None:
     assert SynapseHub(max_clients=20).max_unauth_clients == 20
     assert SynapseHub(max_clients=20, max_unauth_clients=5).max_unauth_clients == 5

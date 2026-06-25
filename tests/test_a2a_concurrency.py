@@ -11,19 +11,13 @@ from __future__ import annotations
 import threading
 from typing import Any
 
+from a2a_server_helpers import RecordingAgent
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 
 
-class FakeAgent:
-    """Small async agent stub for A2A bridge concurrency tests."""
-
-    async def chat(self, payload: str, *, target: str = "all") -> None:
-        """Accept one chat call without touching the live SYNAPSE bus."""
-
-
 def _bridge() -> A2ABridge:
-    return A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    return A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
 
 
 def _message(task_id: str, text: str) -> dict[str, Any]:

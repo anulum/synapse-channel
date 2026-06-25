@@ -299,8 +299,10 @@ class A2ABridge:
             return None
         task = self.store.get(task_id)
         stored = self.create_push_notification_config(task_id, config)
-        if stored is not None and task is not None:
-            self._deliver_push_notification(task=task, config=stored)
+        if stored is None:
+            return None
+        assert task is not None
+        self._deliver_push_notification(task=task, config=stored)
         return stored
 
     def _deliver_push_notification(self, *, task: JsonMap, config: JsonMap) -> None:
@@ -929,14 +931,26 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
     return A2ARequestHandler
 
 
+def make_a2a_http_server(
+    *,
+    bridge: A2ABridge,
+    host: str,
+    port: int,
+) -> ThreadingHTTPServer:
+    """Build a stdlib A2A HTTP server for callers that manage its lifecycle."""
+    return ThreadingHTTPServer((host, port), build_a2a_handler(bridge))
+
+
 def serve_a2a_http(
     *,
     bridge: A2ABridge,
     host: str,
     port: int,
-) -> None:
+) -> (
+    None
+):  # pragma: no cover - blocking process wrapper; server factory is covered by real HTTP tests.
     """Run a blocking A2A HTTP server."""
-    server = ThreadingHTTPServer((host, port), build_a2a_handler(bridge))
+    server = make_a2a_http_server(bridge=bridge, host=host, port=port)
     try:
         server.serve_forever()
     finally:
