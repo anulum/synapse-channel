@@ -687,6 +687,82 @@ def test_completion_delivers_push_notification_to_stored_config() -> None:
     assert deliveries[0]["payload"]["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
 
 
+def test_late_correlated_reply_does_not_complete_canceled_task() -> None:
+    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}],
+        },
+        target="WORKER",
+    )
+    canceled = bridge.cancel_task(task["id"])
+    assert canceled is not None
+
+    bridge.handle_synapse_frame(
+        {
+            "type": "chat",
+            "sender": "WORKER",
+            "payload": f"late\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+        }
+    )
+
+    updated = bridge.store.get(task["id"])
+    assert updated is not None
+    assert updated["status"]["state"] == "TASK_STATE_CANCELED"
+    assert updated.get("artifacts") == []
+
+
+def test_duplicate_correlated_reply_does_not_append_second_completion() -> None:
+    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}],
+        },
+        target="WORKER",
+    )
+    frame = {
+        "type": "chat",
+        "sender": "WORKER",
+        "payload": f"done\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+    }
+
+    bridge.handle_synapse_frame(frame)
+    completed = bridge.store.get(task["id"])
+    assert completed is not None
+    history_len = len(completed.get("history", []))
+    artifact_len = len(completed.get("artifacts", []))
+    bridge.handle_synapse_frame(frame)
+
+    updated = bridge.store.get(task["id"])
+    assert updated is not None
+    assert updated["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert len(updated.get("history", [])) == history_len
+    assert len(updated.get("artifacts", [])) == artifact_len
+
+
+def test_push_notification_config_rejects_non_http_webhook_url() -> None:
+    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}],
+        },
+        target="WORKER",
+    )
+
+    try:
+        bridge.create_push_notification_config(task["id"], {"webhookUrl": "file:///tmp/hook"})
+    except ValueError as exc:
+        assert str(exc) == "pushNotificationConfig.webhookUrl must use http or https"
+    else:
+        raise AssertionError("non-HTTP webhook URL was accepted")
+
+
 def test_timeout_marks_open_task_failed() -> None:
     bridge = A2ABridge(
         agent=FakeAgent(),
