@@ -9,70 +9,13 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
-from collections.abc import Awaitable, Callable
 from typing import Any
 
 import pytest
 
+from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_doctor
-
-
-class FakeAgent:
-    """Stand-in for SynapseAgent used by the doctor roster-fetch tests."""
-
-    def __init__(
-        self,
-        name: str,
-        callback: Callable[[dict[str, Any]], Awaitable[None]],
-        *,
-        uri: str,
-        verbose: bool,
-        token: str | None = None,
-        ready: bool = True,
-        inbound: list[dict[str, Any]] | None = None,
-    ) -> None:
-        self.name = name
-        self.callback = callback
-        self.uri = uri
-        self.token = token
-        self.running = True
-        self._ready = ready
-        self._inbound = inbound or []
-
-    async def connect(self) -> None:
-        for message in self._inbound:
-            await self.callback(message)
-        await asyncio.Event().wait()  # block until cancelled
-
-    async def wait_until_ready(self, timeout: float = 5.0) -> bool:
-        return self._ready
-
-    async def request_who(self) -> None:
-        return None
-
-
-def _factory(
-    holder: list[FakeAgent],
-    *,
-    ready: bool = True,
-    inbound: list[dict[str, Any]] | None = None,
-) -> Callable[..., Any]:
-    def make(
-        name: str,
-        callback: Callable[[dict[str, Any]], Awaitable[None]],
-        *,
-        uri: str,
-        verbose: bool,
-        token: str | None = None,
-    ) -> FakeAgent:
-        agent = FakeAgent(
-            name, callback, uri=uri, verbose=verbose, token=token, ready=ready, inbound=inbound
-        )
-        holder.append(agent)
-        return agent
-
-    return make
+from synapse_channel.core.hub import SynapseHub
 
 
 def _set_project(monkeypatch: pytest.MonkeyPatch, project: str = "demorepo") -> None:
@@ -111,14 +54,17 @@ def test_parser_doctor_fix_flags() -> None:
 
 async def test_diagnose_reachable_with_waiter_passes(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_project(monkeypatch)
-    snapshot = {"type": "who_snapshot", "online_agents": ["demorepo-rx", "other"]}
-    code, lines = await cli_doctor._diagnose(
-        uri="ws://localhost:8876",
-        project=None,
-        agent_id=None,
-        token=None,
-        agent_factory=_factory([], inbound=[snapshot]),
-    )
+    async with running_hub(SynapseHub()) as (_, uri):
+        waiter = await connect_agent("demorepo-rx", uri)
+        try:
+            code, lines = await cli_doctor._diagnose(
+                uri=uri,
+                project=None,
+                agent_id=None,
+                token=None,
+            )
+        finally:
+            await close_agents(waiter)
     text = "\n".join(lines)
     assert "[ok] hub:" in text
     assert "[ok] waiter:" in text
@@ -127,14 +73,13 @@ async def test_diagnose_reachable_with_waiter_passes(monkeypatch: pytest.MonkeyP
 
 async def test_diagnose_reachable_without_waiter_warns(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_project(monkeypatch)
-    snapshot = {"type": "who_snapshot", "online_agents": ["other"]}
-    code, lines = await cli_doctor._diagnose(
-        uri="ws://localhost:8876",
-        project=None,
-        agent_id=None,
-        token=None,
-        agent_factory=_factory([], inbound=[snapshot]),
-    )
+    async with running_hub(SynapseHub()) as (_, uri):
+        code, lines = await cli_doctor._diagnose(
+            uri=uri,
+            project=None,
+            agent_id=None,
+            token=None,
+        )
     text = "\n".join(lines)
     assert "no waiter 'demorepo-rx'" in text
     assert code == 0  # a missing waiter warns but does not fail
@@ -143,11 +88,11 @@ async def test_diagnose_reachable_without_waiter_warns(monkeypatch: pytest.Monke
 async def test_diagnose_unreachable_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_project(monkeypatch)
     code, lines = await cli_doctor._diagnose(
-        uri="ws://localhost:8876",
+        uri=f"ws://127.0.0.1:{_free_port()}",
         project=None,
         agent_id=None,
         token=None,
-        agent_factory=_factory([], ready=False),
+        ready_timeout=0.1,
     )
     text = "\n".join(lines)
     assert "did not answer" in text
@@ -157,27 +102,30 @@ async def test_diagnose_unreachable_fails(monkeypatch: pytest.MonkeyPatch) -> No
 
 async def test_diagnose_flags_off_loopback_without_token(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_project(monkeypatch)
+
+    async def no_roster(**_: Any) -> list[str] | None:
+        return None
+
     _, lines = await cli_doctor._diagnose(
         uri="ws://10.0.0.5:8876",
         project=None,
         agent_id=None,
         token=None,
-        agent_factory=_factory([], ready=False),
+        roster_probe=no_roster,
     )
     assert any("off loopback with no token" in line for line in lines)
 
 
 async def test_diagnose_warns_on_hyphen_send_identity(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_project(monkeypatch)
-    snapshot = {"type": "who_snapshot", "online_agents": []}
-    _, lines = await cli_doctor._diagnose(
-        uri="ws://localhost:8876",
-        project=None,
-        agent_id=None,
-        token=None,
-        send_name="demorepo-keeper",
-        agent_factory=_factory([], inbound=[snapshot]),
-    )
+    async with running_hub(SynapseHub()) as (_, uri):
+        _, lines = await cli_doctor._diagnose(
+            uri=uri,
+            project=None,
+            agent_id=None,
+            token=None,
+            send_name="demorepo-keeper",
+        )
     assert any("hyphen child" in line for line in lines)
 
 
