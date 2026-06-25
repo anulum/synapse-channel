@@ -150,9 +150,16 @@ async def test_lock_times_out_while_held(capsys: pytest.CaptureFixture[str]) -> 
     assert "Could not acquire lock 'g'" in capsys.readouterr().out
 
 
-def test_cmd_lock_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("synapse_channel.cli_locking.asyncio.run", lambda coro: coro.close() or 0)
+def test_cmd_lock_dispatches_real_command(capsys: pytest.CaptureFixture[str]) -> None:
     ns = argparse.Namespace(
-        uri="ws://h", name="X", task_id="g", command=["x"], paths=None, wait_timeout=0.0, token=None
+        uri=f"ws://127.0.0.1:{_free_port()}",
+        name="X",
+        task_id="g",
+        command=["x"],
+        paths=None,
+        wait_timeout=0.0,
+        token=None,
+        ready_timeout=0.1,
     )
-    assert cli_locking._cmd_lock(ns) == 0
+    assert cli_locking._cmd_lock(ns) == 1
+    assert "Could not reach hub" in capsys.readouterr().out
