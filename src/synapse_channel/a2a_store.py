@@ -12,21 +12,34 @@ from __future__ import annotations
 import json
 import threading
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 from synapse_channel.a2a import JsonMap
 from synapse_channel.a2a_validation import TERMINAL_TASK_STATES
 
 STALE_INFLIGHT_MESSAGE = "Recovered from stale in-flight task state after restart"
+StateWriter = Callable[[Path, str], None]
+
+
+def _write_state(path: Path, payload: str) -> None:
+    """Write serialized A2A state to ``path``."""
+    path.write_text(payload, encoding="utf-8")
 
 
 class A2ATaskStore:
     """In-memory task view for one A2A bridge process."""
 
-    def __init__(self, storage_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        storage_path: str | Path | None = None,
+        *,
+        state_writer: StateWriter = _write_state,
+    ) -> None:
         self._tasks: dict[str, JsonMap] = {}
         self._push_configs: dict[str, dict[str, JsonMap]] = {}
         self._storage_path = Path(storage_path) if storage_path is not None else None
+        self._state_writer = state_writer
         self._lock = threading.RLock()
         self._load()
 
@@ -83,7 +96,7 @@ class A2ATaskStore:
             "tasks": self._tasks,
             "pushConfigs": self._push_configs,
         }
-        tmp_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+        self._state_writer(tmp_path, json.dumps(payload, sort_keys=True))
         tmp_path.replace(self._storage_path)
 
     def put(self, task: JsonMap) -> JsonMap:
