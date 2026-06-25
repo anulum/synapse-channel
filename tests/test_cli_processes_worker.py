@@ -14,7 +14,7 @@ import pytest
 
 from cli_processes_helpers import _worker_ns
 from synapse_channel import cli_processes
-from synapse_channel.client.llm_worker import DEFAULT_OLLAMA_BASE_URL
+from synapse_channel.client.llm_worker import DEFAULT_OLLAMA_BASE_URL, SynapseLLMWorker
 
 
 def test_cmd_worker_configures_logging(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -40,47 +40,33 @@ def test_cmd_worker_runs_and_handles_interrupt(monkeypatch: pytest.MonkeyPatch) 
 def test_cmd_worker_applies_name_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, str] = {}
 
-    class _StubWorker:
-        def __init__(self, *, name: str, **_: Any) -> None:
-            captured["name"] = name
+    async def record_run(self: SynapseLLMWorker) -> None:
+        captured["name"] = self.name
 
-        async def run(self) -> None:
-            return None
-
-    monkeypatch.setattr(cli_processes, "SynapseLLMWorker", _StubWorker)
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
+    monkeypatch.setattr(SynapseLLMWorker, "run", record_run)
     assert cli_processes._cmd_worker(_worker_ns(prefix="remanentia/", name="FAST")) == 0
     assert captured["name"] == "remanentia/FAST"
 
 
 def test_cmd_worker_threads_token(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
 
-    class FakeWorker:
-        def __init__(self, **kwargs: Any) -> None:
-            captured.update(kwargs)
+    async def record_run(self: SynapseLLMWorker) -> None:
+        captured["token"] = self.agent.token
 
-        async def run(self) -> None:
-            return None
-
-    monkeypatch.setattr("synapse_channel.cli_processes.SynapseLLMWorker", FakeWorker)
+    monkeypatch.setattr(SynapseLLMWorker, "run", record_run)
     assert cli_processes._cmd_worker(_worker_ns(token="w0rk")) == 0
     assert captured["token"] == "w0rk"
 
 
 def test_cmd_worker_threads_task_classes(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
 
-    class FakeWorker:
-        def __init__(self, **kwargs: Any) -> None:
-            captured.update(kwargs)
+    async def record_run(self: SynapseLLMWorker) -> None:
+        captured["task_classes"] = self.task_classes
+        captured["heavy_model"] = self.heavy_model
 
-        async def run(self) -> None:
-            return None
-
-    monkeypatch.setattr("synapse_channel.cli_processes.SynapseLLMWorker", FakeWorker)
+    monkeypatch.setattr(SynapseLLMWorker, "run", record_run)
     assert cli_processes._cmd_worker(_worker_ns(task_class=["reason"], heavy_model="big")) == 0
     assert captured["task_classes"] == ("reason",)
     assert captured["heavy_model"] == "big"
@@ -120,17 +106,10 @@ def test_egress_warning_rule_backend_is_always_silent() -> None:
 def test_cmd_worker_prints_egress_warning_only_when_off_host(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(cli_processes, "_run", lambda coro: coro.close())
+    async def no_op_run(self: SynapseLLMWorker) -> None:
+        return None
 
-    class FakeWorker:
-        def __init__(self, **_: Any) -> None:
-            pass
-
-        async def run(self) -> None:
-            return None
-
-    monkeypatch.setattr("synapse_channel.cli_processes.SynapseLLMWorker", FakeWorker)
-
+    monkeypatch.setattr(SynapseLLMWorker, "run", no_op_run)
     assert (
         cli_processes._cmd_worker(
             _worker_ns(provider="openai", base_url="https://api.openai.com/v1")
