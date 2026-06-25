@@ -46,6 +46,29 @@ async def _await_listening(port: int, timeout: float = 3.0) -> None:
     raise TimeoutError(f"hub did not start listening on {port}")
 
 
+async def http_get(
+    uri: str, path: str, *, authorization: str | None = None, timeout: float = 3.0
+) -> tuple[int, dict[str, str], str]:
+    port = int(uri.rsplit(":", 1)[1])
+    reader, writer = await asyncio.open_connection("localhost", port)
+    headers = [f"GET {path} HTTP/1.1", "Host: localhost", "Connection: close"]
+    if authorization is not None:
+        headers.append(f"Authorization: {authorization}")
+    writer.write(("\r\n".join(headers) + "\r\n\r\n").encode("utf-8"))
+    await writer.drain()
+    raw = await asyncio.wait_for(reader.read(), timeout=timeout)
+    writer.close()
+    with contextlib.suppress(Exception):
+        await writer.wait_closed()
+    head, _, body = raw.partition(b"\r\n\r\n")
+    status = int(head.split(b"\r\n", 1)[0].split()[1])
+    parsed_headers: dict[str, str] = {}
+    for line in head.split(b"\r\n")[1:]:
+        key, _, value = line.partition(b":")
+        parsed_headers[key.decode("ascii")] = value.strip().decode("ascii")
+    return status, parsed_headers, body.decode("utf-8")
+
+
 @contextlib.asynccontextmanager
 async def running_hub(hub: SynapseHub | None = None) -> AsyncIterator[tuple[SynapseHub, str]]:
     actual = hub if hub is not None else SynapseHub(hub_id="syn-test")
@@ -93,9 +116,24 @@ class AgentHandle:
             await self.task
 
 
-async def connect_agent(name: str, uri: str, *, wait_presence: bool = True) -> AgentHandle:
+async def connect_agent(
+    name: str,
+    uri: str,
+    *,
+    wait_presence: bool = True,
+    token: str | None = None,
+    takeover: bool = False,
+) -> AgentHandle:
     recorder = Recorder()
-    agent = SynapseAgent(name, recorder, uri=uri, heartbeat_interval=60.0, verbose=False)
+    agent = SynapseAgent(
+        name,
+        recorder,
+        uri=uri,
+        heartbeat_interval=60.0,
+        verbose=False,
+        token=token,
+        takeover=takeover,
+    )
     task = asyncio.create_task(agent.connect())
     handle = AgentHandle(agent=agent, recorder=recorder, task=task)
     if not await agent.wait_until_ready(3.0):
@@ -118,6 +156,10 @@ async def read_json(websocket: ClientConnection, timeout: float = 3.0) -> dict[s
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8")
     return cast(dict[str, Any], json.loads(raw))
+
+
+async def send_json(websocket: ClientConnection, **payload: Any) -> None:
+    await websocket.send(json.dumps(payload))
 
 
 async def read_until_type(

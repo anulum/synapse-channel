@@ -4,167 +4,174 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — tests for the routing hub using fake server sockets
+# SYNAPSE_CHANNEL - end-to-end tests for hub blackboard and capability cards
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from hub_helpers import FakeServerWS, _hub, _msg
-from synapse_channel.core.hub import (
-    SynapseHub,
-)
+from hub_e2e_helpers import close_agents, connect_agent, running_hub
+from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 
-# --- shared blackboard -------------------------------------------------------
+
+async def test_ledger_task_posted_is_broadcast_end_to_end() -> None:
+    async with running_hub() as (hub, uri):
+        poster = await connect_agent("P", uri)
+        watcher = await connect_agent("WATCH", uri)
+        try:
+            await poster.agent.post_task("T1", "Parser")
+            posted = await watcher.recorder.wait_for(
+                lambda m: (
+                    m.get("type") == "ledger_task_posted"
+                    and m.get("task", {}).get("task_id") == "T1"
+                )
+            )
+            assert posted["task"]["created_by"] == "P"
+            assert hub.blackboard.tasks["T1"].title == "Parser"
+        finally:
+            await close_agents(poster, watcher)
 
 
-async def test_ledger_task_posted_is_broadcast() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="P", type="ledger_task", task_id="T1", title="Parser"), ws)
-    posted = [m for m in ws.decoded() if m.get("type") == "ledger_task_posted"]
-    assert posted[-1]["task"]["task_id"] == "T1"
-    assert posted[-1]["task"]["created_by"] == "P"
-    assert hub.blackboard.tasks["T1"].title == "Parser"
+async def test_ledger_task_missing_title_errors_sender_end_to_end() -> None:
+    async with running_hub() as (_, uri):
+        poster = await connect_agent("P", uri)
+        try:
+            await poster.agent.send_message("ledger_task", task_id="T1")
+            error = await poster.recorder.wait_for(lambda m: m.get("type") == "error")
+            assert "title is required" in error["payload"]
+        finally:
+            await close_agents(poster)
 
 
-async def test_ledger_task_missing_title_errors_sender() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="P", type="ledger_task", task_id="T1"), ws)
-    assert ws.last()["type"] == "error"
-    assert "title is required" in ws.last()["payload"]
+async def test_ledger_task_cycle_errors_sender_end_to_end() -> None:
+    async with running_hub() as (_, uri):
+        poster = await connect_agent("P", uri)
+        try:
+            await poster.agent.post_task("A", "a")
+            await poster.agent.post_task("B", "b", depends_on=["A"])
+            await poster.agent.post_task("A", "a", depends_on=["B"])
+            error = await poster.recorder.wait_for(lambda m: m.get("type") == "error")
+            assert "cycle" in error["payload"]
+        finally:
+            await close_agents(poster)
 
 
-async def test_ledger_task_cycle_errors_sender() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="P", type="ledger_task", task_id="A", title="a"), ws)
-    await hub.handle_message(
-        _msg(sender="P", type="ledger_task", task_id="B", title="b", depends_on=["A"]), ws
-    )
-    await hub.handle_message(
-        _msg(sender="P", type="ledger_task", task_id="A", title="a", depends_on=["B"]), ws
-    )
-    assert ws.last()["type"] == "error"
-    assert "cycle" in ws.last()["payload"]
+async def test_ledger_task_update_broadcast_and_unknown_errors_end_to_end() -> None:
+    async with running_hub() as (_, uri):
+        poster = await connect_agent("P", uri)
+        watcher = await connect_agent("WATCH", uri)
+        try:
+            await poster.agent.post_task("T1", "t")
+            await poster.agent.update_ledger_task("T1", status="done")
+            updated = await watcher.recorder.wait_for(
+                lambda m: (
+                    m.get("type") == "ledger_task_updated"
+                    and m.get("task", {}).get("task_id") == "T1"
+                )
+            )
+            assert updated["task"]["status"] == "done"
+            await poster.agent.update_ledger_task("GHOST", status="done")
+            error = await poster.recorder.wait_for(
+                lambda m: m.get("type") == "error" and "not on the board" in str(m.get("payload"))
+            )
+            assert "not on the board" in error["payload"]
+        finally:
+            await close_agents(poster, watcher)
 
 
-async def test_ledger_task_update_broadcast_and_unknown_errors() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="P", type="ledger_task", task_id="T1", title="t"), ws)
-    await hub.handle_message(
-        _msg(sender="P", type="ledger_task_update", task_id="T1", status="done"), ws
-    )
-    updated = [m for m in ws.decoded() if m.get("type") == "ledger_task_updated"]
-    assert updated[-1]["task"]["status"] == "done"
-
-    await hub.handle_message(
-        _msg(sender="P", type="ledger_task_update", task_id="GHOST", status="done"), ws
-    )
-    assert ws.last()["type"] == "error"
-    assert "not on the board" in ws.last()["payload"]
-
-
-async def test_ledger_progress_posted_and_bad_kind_errors() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(
-        _msg(sender="P", type="ledger_progress", task_id="T1", payload="started"), ws
-    )
-    notes = [m for m in ws.decoded() if m.get("type") == "ledger_progress_posted"]
-    assert notes[-1]["note"]["text"] == "started"
-    assert notes[-1]["note"]["author"] == "P"
-
-    await hub.handle_message(
-        _msg(sender="P", type="ledger_progress", task_id="T1", payload="x", kind="rant"), ws
-    )
-    assert ws.last()["type"] == "error"
-    assert "Unknown progress kind" in ws.last()["payload"]
+async def test_ledger_progress_posted_and_bad_kind_errors_end_to_end() -> None:
+    async with running_hub() as (_, uri):
+        poster = await connect_agent("P", uri)
+        watcher = await connect_agent("WATCH", uri)
+        try:
+            await poster.agent.post_progress("T1", "started")
+            note = await watcher.recorder.wait_for(
+                lambda m: m.get("type") == "ledger_progress_posted"
+            )
+            assert note["note"]["text"] == "started"
+            assert note["note"]["author"] == "P"
+            await poster.agent.post_progress("T1", "x", kind="rant")
+            error = await poster.recorder.wait_for(
+                lambda m: (
+                    m.get("type") == "error" and "Unknown progress kind" in str(m.get("payload"))
+                )
+            )
+            assert "Unknown progress kind" in error["payload"]
+        finally:
+            await close_agents(poster, watcher)
 
 
-# --- capability cards --------------------------------------------------------
+async def test_advertise_stores_card_and_broadcasts_end_to_end() -> None:
+    async with running_hub() as (hub, uri):
+        fast = await connect_agent("FAST", uri)
+        watcher = await connect_agent("WATCH", uri)
+        try:
+            await fast.agent.advertise(
+                description="quick", skills=["ollama"], task_classes=["chat"], model="gemma3:4b"
+            )
+            advertised = await watcher.recorder.wait_for(
+                lambda m: m.get("type") == "capability_advertised"
+            )
+            assert advertised["agent"] == "FAST"
+            assert advertised["card"]["task_classes"] == ["chat"]
+            card = hub.capabilities.get("FAST")
+            assert card is not None and card.model == "gemma3:4b"
+        finally:
+            await close_agents(fast, watcher)
 
 
-async def test_advertise_stores_card_and_broadcasts() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(
-        _msg(
-            sender="FAST",
-            type="advertise",
-            description="quick",
-            skills=["ollama"],
-            task_classes=["chat"],
-            model="gemma3:4b",
-        ),
-        ws,
-    )
-    advertised = [m for m in ws.decoded() if m.get("type") == "capability_advertised"]
-    assert advertised[-1]["agent"] == "FAST"
-    assert advertised[-1]["card"]["task_classes"] == ["chat"]
-    card = hub.capabilities.get("FAST")
-    assert card is not None and card.model == "gemma3:4b"
+async def test_manifest_request_returns_advertised_agents_end_to_end() -> None:
+    async with running_hub() as (_, uri):
+        fast = await connect_agent("FAST", uri)
+        user = await connect_agent("USER", uri)
+        try:
+            await fast.agent.advertise(task_classes=["chat"])
+            await fast.recorder.wait_for(lambda m: m.get("type") == "capability_advertised")
+            await user.agent.request_manifest()
+            snap = await user.recorder.wait_for(lambda m: m.get("type") == "manifest_snapshot")
+            assert [c["agent"] for c in snap["manifest"]] == ["FAST"]
+        finally:
+            await close_agents(fast, user)
 
 
-async def test_manifest_request_returns_advertised_agents() -> None:
-    hub = _hub()
-    ws_fast = FakeServerWS()
-    ws_user = FakeServerWS()
-    await hub.register(ws_fast)
-    await hub.register(ws_user)
-    await hub.handle_message(_msg(sender="FAST", type="advertise", task_classes=["chat"]), ws_fast)
-    await hub.handle_message(_msg(sender="USER", type="manifest_request"), ws_user)
-    snap = ws_user.last()
-    assert snap["type"] == "manifest_snapshot"
-    assert [c["agent"] for c in snap["manifest"]] == ["FAST"]
+async def test_capability_card_dropped_on_disconnect_end_to_end() -> None:
+    async with running_hub() as (hub, uri):
+        fast = await connect_agent("FAST", uri)
+        await fast.agent.advertise(task_classes=["chat"])
+        await fast.recorder.wait_for(lambda m: m.get("type") == "capability_advertised")
+        assert hub.capabilities.get("FAST") is not None
+        await fast.close()
+        assert hub.capabilities.get("FAST") is None
 
 
-async def test_capability_card_dropped_on_disconnect() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="FAST", type="advertise", task_classes=["chat"]), ws)
-    assert hub.capabilities.get("FAST") is not None
-    await hub.unregister(ws)
-    assert hub.capabilities.get("FAST") is None
-
-
-async def test_board_request_returns_snapshot() -> None:
-    hub = _hub()
-    ws = FakeServerWS()
-    await hub.register(ws)
-    await hub.handle_message(_msg(sender="P", type="ledger_task", task_id="T1", title="t"), ws)
-    await hub.handle_message(_msg(sender="P", type="board_request"), ws)
-    snap = ws.last()
-    assert snap["type"] == "board_snapshot"
-    assert snap["board"]["tasks"][0]["task_id"] == "T1"
-    assert snap["board"]["ready"] == ["T1"]
+async def test_board_request_returns_snapshot_end_to_end() -> None:
+    async with running_hub() as (_, uri):
+        poster = await connect_agent("P", uri)
+        try:
+            await poster.agent.post_task("T1", "t")
+            await poster.agent.request_board()
+            snap = await poster.recorder.wait_for(lambda m: m.get("type") == "board_snapshot")
+            assert snap["board"]["tasks"][0]["task_id"] == "T1"
+            assert snap["board"]["ready"] == ["T1"]
+        finally:
+            await close_agents(poster)
 
 
 async def test_hub_replays_ledger_tasks_progress_and_updates(tmp_path: Path) -> None:
     db = tmp_path / "events.db"
     store_a = EventStore(db)
-    hub_a = SynapseHub(hub_id="syn-a", journal=store_a)
-    ws = FakeServerWS()
-    await hub_a.register(ws)
-    await hub_a.handle_message(
-        _msg(sender="P", type="ledger_task", task_id="T1", title="Parser"), ws
-    )
-    await hub_a.handle_message(
-        _msg(sender="P", type="ledger_task_update", task_id="T1", status="in_progress"), ws
-    )
-    await hub_a.handle_message(
-        _msg(sender="P", type="ledger_progress", task_id="T1", payload="started"), ws
-    )
+    async with running_hub(SynapseHub(hub_id="syn-a", journal=store_a)) as (_, uri):
+        poster = await connect_agent("P", uri)
+        try:
+            await poster.agent.post_task("T1", "Parser")
+            await poster.recorder.wait_for(lambda m: m.get("type") == "ledger_task_posted")
+            await poster.agent.update_ledger_task("T1", status="in_progress")
+            await poster.recorder.wait_for(lambda m: m.get("type") == "ledger_task_updated")
+            await poster.agent.post_progress("T1", "started")
+            await poster.recorder.wait_for(lambda m: m.get("type") == "ledger_progress_posted")
+        finally:
+            await close_agents(poster)
     store_a.close()
 
     store_b = EventStore(db)
@@ -178,17 +185,22 @@ async def test_hub_replays_ledger_tasks_progress_and_updates(tmp_path: Path) -> 
 async def test_hub_replay_trims_progress_to_bound(tmp_path: Path) -> None:
     db = tmp_path / "events.db"
     store_a = EventStore(db)
-    hub_a = SynapseHub(hub_id="syn-a", journal=store_a, max_progress=2)
-    ws = FakeServerWS()
-    await hub_a.register(ws)
-    for i in range(4):
-        await hub_a.handle_message(
-            _msg(sender="P", type="ledger_progress", task_id="T", payload=str(i)), ws
-        )
+    async with running_hub(SynapseHub(hub_id="syn-a", journal=store_a, max_progress=2)) as (_, uri):
+        poster = await connect_agent("P", uri)
+        try:
+            for index in range(4):
+                await poster.agent.post_progress("T", str(index))
+            await poster.recorder.wait_for(
+                lambda m: (
+                    m.get("type") == "ledger_progress_posted"
+                    and m.get("note", {}).get("text") == "3"
+                )
+            )
+        finally:
+            await close_agents(poster)
     store_a.close()
 
     store_b = EventStore(db)
     hub_b = SynapseHub(hub_id="syn-b", journal=store_b, max_progress=2)
     store_b.close()
-    # The durable log holds all four notes; replay trims to the last two.
     assert [n.text for n in hub_b.blackboard.progress] == ["2", "3"]
