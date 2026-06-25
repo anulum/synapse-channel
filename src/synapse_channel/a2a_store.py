@@ -89,8 +89,17 @@ class A2ATaskStore:
     def put(self, task: JsonMap) -> JsonMap:
         """Store and return ``task``."""
         with self._lock:
-            self._tasks[str(task["id"])] = task
-            self._save()
+            task_id = str(task["id"])
+            previous = self._tasks.get(task_id)
+            self._tasks[task_id] = task
+            try:
+                self._save()
+            except Exception:
+                if previous is None:
+                    del self._tasks[task_id]
+                else:
+                    self._tasks[task_id] = previous
+                raise
         return task
 
     def get(self, task_id: str) -> JsonMap | None:
