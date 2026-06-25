@@ -176,6 +176,9 @@ async def run_conflicts(
     check_diff: bool = False,
     agent_factory: AgentFactory = SynapseAgent,
     runner: GitRunner = _default_git_runner,
+    ready_timeout: float = 5.0,
+    attempts: int = 40,
+    poll_interval: float = 0.05,
 ) -> int:
     """Predict merge conflicts from the hub's live claims and print them.
 
@@ -191,6 +194,12 @@ async def run_conflicts(
         Factory for the hub client; injectable for testing.
     runner : GitRunner, optional
         The git executor; injectable for testing.
+    ready_timeout : float, optional
+        Seconds to wait for hub connection readiness.
+    attempts : int, optional
+        Number of state snapshot polling attempts.
+    poll_interval : float, optional
+        Seconds to sleep between state snapshot polls.
 
     Returns
     -------
@@ -209,14 +218,14 @@ async def run_conflicts(
     agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
     conn_task = asyncio.create_task(agent.connect())
     try:
-        if not await agent.wait_until_ready(timeout=5.0):
+        if not await agent.wait_until_ready(timeout=ready_timeout):
             print(f"[{name}] Could not reach hub at {uri}.")
             return 1
         await agent.request_state()
-        for _ in range(40):
+        for _ in range(attempts):
             if snapshots:
                 break
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(poll_interval)
         claims = (snapshots[-1].get("active_claims") or []) if snapshots else []
         conflicts = find_conflicts(claims)
         if check_diff:
