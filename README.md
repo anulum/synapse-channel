@@ -235,6 +235,10 @@ exposes bridge-local task list/get/cancel plus push-notification configuration
 routes, accepts JSON-RPC 2.0 calls on `/rpc`, and can enforce Bearer auth plus
 persist task state with `--state-file`, fail stale open tasks with
 `--task-timeout`, and bound one subscription wait with `--subscribe-timeout`.
+The bridge is intentionally a local-first HTTP+JSON edge: it stores bridge task
+state locally, rejects unsafe caller ids and webhook targets, and does not claim
+independent A2A conformance until remote CI, interoperability, and real webhook
+receiver validation have run.
 
 ### Git-native claims
 
