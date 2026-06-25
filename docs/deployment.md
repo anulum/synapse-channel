@@ -74,6 +74,32 @@ sidecar, runs the provider command, and stops the sidecar when the provider
 command exits. The sidecar is a local socket listener; it does not spend model
 tokens while waiting.
 
+## Fresh terminal auto-connect
+
+Install the shell hook once when you want every new terminal to join the local
+coordination layer automatically:
+
+```bash
+synapse install-shell-hook --shell auto
+```
+
+For Bash, Fish, and Zsh, the installed block loads the current package hook from
+`synapse shell-hook` on shell startup. In a git checkout, each prompt resolves the
+project from the repository root, exports `SYN_PROJECT` and `SYN_IDENTITY`, and
+keeps a background `synapse arm` listener alive for that terminal. The listener is
+only a socket holder; it does not call a model or spend provider tokens while
+waiting.
+
+The hook also wraps common provider commands through `synapse worker-session`:
+`codex`, `claude`, `gemini`, `agent`, `ask`, and `ollama`. That keeps cloud
+providers and local LLM entry points on the same identity path. Disable the hook
+for one terminal with:
+
+```bash
+export SYNAPSE_AUTO_CONNECT=0   # Bash/Zsh
+set -gx SYNAPSE_AUTO_CONNECT 0  # Fish
+```
+
 ## Container
 
 ```bash
