@@ -36,6 +36,7 @@ The ``synapse`` command exposes these subcommands:
 * ``a2a-card`` — emit an Agent2Agent Agent Card projected from the live manifest;
 * ``init`` — print or install local user services for hub, presence, and wake arming;
 * ``worker-session`` — launch a provider command with identity env and a wake sidecar.
+* ``shell-hook`` / ``install-shell-hook`` — auto-arm fresh terminals and provider CLIs.
 
 This module is the thin entry point: it builds the top-level parser
 (:func:`build_parser`), resolves the shared-secret token, and dispatches
@@ -67,6 +68,7 @@ from synapse_channel.cli_messaging import add_parsers as add_messaging_parsers
 from synapse_channel.cli_processes import add_parsers as add_process_parsers
 from synapse_channel.cli_queries import add_parsers as add_query_parsers
 from synapse_channel.cli_services import add_parsers as add_service_parsers
+from synapse_channel.cli_shell import add_parsers as add_shell_parsers
 from synapse_channel.cli_streams import add_parsers as add_stream_parsers
 from synapse_channel.cli_tasks import add_parsers as add_task_parsers
 from synapse_channel.update_check import update_notice
@@ -117,6 +119,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_query_parsers(sub)
 
     add_service_parsers(sub)
+
+    add_shell_parsers(sub)
 
     add_mcp_parsers(sub)
 
