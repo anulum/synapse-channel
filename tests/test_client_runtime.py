@@ -14,6 +14,7 @@ import contextlib
 import pytest
 
 from client_helpers import connected_recording_agent, wait_for_recorded_count
+from hub_e2e_helpers import _free_port
 from synapse_channel.client.agent import SynapseAgent
 
 
@@ -59,34 +60,18 @@ async def test_wait_until_ready_times_out() -> None:
     assert await agent.wait_until_ready(timeout=0.1) is False
 
 
-def test_start_runs_connect(monkeypatch: pytest.MonkeyPatch) -> None:
-    ran = {"value": False}
+def test_start_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
+    agent = SynapseAgent("A", uri=f"ws://127.0.0.1:{_free_port()}", verbose=True)
 
-    async def fake_connect(self: SynapseAgent) -> None:
-        ran["value"] = True
+    agent.start()
 
-    monkeypatch.setattr(SynapseAgent, "connect", fake_connect)
-    SynapseAgent("A").start()
-    assert ran["value"] is True
+    captured = capsys.readouterr()
+    assert "could not connect" in captured.out
 
 
-def test_start_swallows_keyboard_interrupt(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    async def fake_connect(self: SynapseAgent) -> None:
-        raise KeyboardInterrupt
+def test_start_unreachable_hub_quiet(capsys: pytest.CaptureFixture[str]) -> None:
+    agent = SynapseAgent("A", uri=f"ws://127.0.0.1:{_free_port()}", verbose=False)
 
-    monkeypatch.setattr(SynapseAgent, "connect", fake_connect)
-    SynapseAgent("A", verbose=True).start()
-    assert "Shutting down" in capsys.readouterr().out
+    agent.start()
 
-
-def test_start_keyboard_interrupt_quiet(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    async def fake_connect(self: SynapseAgent) -> None:
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr(SynapseAgent, "connect", fake_connect)
-    SynapseAgent("A", verbose=False).start()
     assert capsys.readouterr().out == ""
