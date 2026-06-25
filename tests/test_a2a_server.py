@@ -747,6 +747,31 @@ def test_handle_synapse_frame_rejects_marker_from_wrong_sender() -> None:
     assert updated["status"]["state"] == "TASK_STATE_WORKING"
 
 
+def test_handle_synapse_frame_rejects_marker_with_wrong_context() -> None:
+    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "compute the answer"}],
+        },
+        target="WORKER",
+    )
+
+    bridge.handle_synapse_frame(
+        {
+            "type": "chat",
+            "sender": "WORKER",
+            "payload": f"wrong context\n[A2A-TASK:{task['id']} contextId=other-context]",
+        }
+    )
+
+    updated = bridge.store.get(task["id"])
+    assert updated is not None
+    assert updated["status"]["state"] == "TASK_STATE_WORKING"
+    assert updated.get("artifacts") == []
+
+
 def test_handle_synapse_frame_strips_correlation_marker_from_reply() -> None:
     bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(

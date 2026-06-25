@@ -34,6 +34,12 @@ def marker_task_id(payload: str) -> str | None:
     return marker.group(1) if marker else None
 
 
+def marker_context_id(payload: str) -> str | None:
+    """Return a bridge context id carried by ``payload`` when present."""
+    marker = A2A_TASK_MARKER.search(payload)
+    return marker.group(2) if marker else None
+
+
 def strip_task_marker(payload: str) -> str:
     """Remove bridge correlation markers from user-visible reply text."""
     return A2A_TASK_MARKER.sub("", payload).strip()
