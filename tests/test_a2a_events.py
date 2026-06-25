@@ -42,3 +42,18 @@ def test_task_events_snapshot_mutable_payloads() -> None:
     task["status"]["state"] = "TASK_STATE_CANCELED"
 
     assert received[0]["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
+
+
+def test_task_events_replay_previous_updates_for_late_subscribers() -> None:
+    events = A2ATaskEvents()
+    task: JsonMap = {"id": "task-a", "status": {"state": "TASK_STATE_WORKING"}}
+
+    events.publish("task-a", {"id": "task-a", "status": {"state": "TASK_STATE_SUBMITTED"}})
+    events.publish("task-a", task)
+
+    received = events.subscribe("task-a", task, wait_seconds=0.0, default_wait_seconds=0.0)
+
+    assert [event["task"]["status"]["state"] for event in received] == [
+        "TASK_STATE_SUBMITTED",
+        "TASK_STATE_WORKING",
+    ]
