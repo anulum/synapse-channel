@@ -112,12 +112,20 @@ def test_parser_a2a_serve() -> None:
             "127.0.0.1",
             "--port",
             "8899",
+            "--bearer-auth",
+            "--a2a-token",
+            "secret",
+            "--state-file",
+            "/tmp/synapse-a2a-state.json",
         ]
     )
 
     assert args.endpoint_url == "https://example.test/a2a/v1"
     assert args.host == "127.0.0.1"
     assert args.port == 8899
+    assert args.bearer_auth is True
+    assert args.a2a_token == "secret"
+    assert args.state_file == "/tmp/synapse-a2a-state.json"
     assert args.func is cli_a2a._cmd_a2a_serve
 
 

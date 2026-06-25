@@ -149,6 +149,12 @@ async def _drop_message(_data: dict[str, Any]) -> None:
 
 def _cmd_a2a_serve(args: argparse.Namespace) -> int:
     """Dispatch the ``a2a-serve`` subcommand."""
+    if args.bearer_auth and not args.a2a_token:
+        print(
+            f"[{args.name}] --a2a-token is required when --bearer-auth is enabled.",
+            file=sys.stderr,
+        )
+        return 2
     manifest = asyncio.run(
         _fetch_manifest(uri=args.uri, name=f"{args.name}-manifest", token=args.token)
     )
@@ -168,6 +174,7 @@ def _cmd_a2a_serve(args: argparse.Namespace) -> int:
     if isinstance(capabilities, dict):
         capabilities["streaming"] = True
         capabilities["pushNotifications"] = True
+        capabilities["extendedAgentCard"] = bool(args.bearer_auth)
     agent = SynapseAgent(args.name, _drop_message, uri=args.uri, verbose=False, token=args.token)
     runtime = SynapseAgentRuntime(agent)
     if not runtime.start():
@@ -178,8 +185,9 @@ def _cmd_a2a_serve(args: argparse.Namespace) -> int:
         agent=agent,
         agent_card=agent_card,
         target=args.target,
-        store=A2ATaskStore(),
+        store=A2ATaskStore(storage_path=args.state_file),
         submit=runtime.run,
+        auth_token=args.a2a_token if args.bearer_auth else None,
     )
     try:
         print(f"[{args.name}] A2A bridge listening on http://{args.host}:{args.port}")
@@ -247,5 +255,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--bearer-auth",
         action="store_true",
         help="Declare HTTP Bearer authentication for the advertised A2A endpoint.",
+    )
+    serve.add_argument(
+        "--a2a-token",
+        default=None,
+        help="Bearer token required by protected A2A bridge routes.",
+    )
+    serve.add_argument(
+        "--state-file",
+        default=None,
+        help="Optional JSON state file for persisted A2A tasks and push configs.",
     )
     serve.set_defaults(func=_cmd_a2a_serve)

@@ -21,7 +21,10 @@ import uuid
 from collections.abc import Callable, Coroutine
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
+from urllib import request
+from urllib.error import URLError
 from urllib.parse import parse_qs, urlparse
 
 from synapse_channel.a2a import JsonMap
@@ -30,6 +33,43 @@ from synapse_channel.client.agent import SynapseAgent
 A2A_MEDIA_TYPE = "application/a2a+json"
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 SSE_MEDIA_TYPE = "text/event-stream"
+PushDeliverer = Callable[[JsonMap], None]
+
+
+def _http_push_deliverer(delivery: JsonMap) -> None:
+    """Deliver one push notification over stdlib HTTP."""
+    raw = json.dumps(delivery["payload"], sort_keys=True).encode("utf-8")
+    headers = {
+        "Content-Type": A2A_MEDIA_TYPE,
+        **delivery.get("headers", {}),
+    }
+    req = request.Request(
+        str(delivery["url"]),
+        data=raw,
+        headers=headers,
+        method="POST",
+    )
+    with request.urlopen(req, timeout=5.0) as response:
+        response.read()
+
+
+def _rpc_success(rpc_id: object, result: object) -> JsonMap:
+    """Build a JSON-RPC success response."""
+    return {"jsonrpc": "2.0", "id": rpc_id, "result": result}
+
+
+def _rpc_error(rpc_id: object, code: int, message: str) -> JsonMap:
+    """Build a JSON-RPC error response."""
+    return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": code, "message": message}}
+
+
+def _non_negative_int(value: object, *, default: int = 0) -> int:
+    """Parse a non-negative integer from JSON or query input."""
+    try:
+        parsed = int(str(value))
+    except (TypeError, ValueError):
+        return default
+    return max(parsed, 0)
 
 
 def _push_config_path(path: str) -> tuple[str, str | None] | None:
@@ -49,51 +89,101 @@ def _push_config_path(path: str) -> tuple[str, str | None] | None:
 class A2ATaskStore:
     """In-memory task view for one A2A bridge process."""
 
-    def __init__(self) -> None:
+    def __init__(self, storage_path: str | Path | None = None) -> None:
         self._tasks: dict[str, JsonMap] = {}
         self._push_configs: dict[str, dict[str, JsonMap]] = {}
+        self._storage_path = Path(storage_path) if storage_path is not None else None
+        self._lock = threading.RLock()
+        self._load()
+
+    def _load(self) -> None:
+        """Load persisted tasks and push configs when a state file exists."""
+        if self._storage_path is None or not self._storage_path.exists():
+            return
+        data = json.loads(self._storage_path.read_text(encoding="utf-8"))
+        tasks = data.get("tasks", {})
+        push_configs = data.get("pushConfigs", {})
+        if isinstance(tasks, dict):
+            self._tasks = {
+                str(task_id): task
+                for task_id, task in tasks.items()
+                if isinstance(task, dict)
+            }
+        if isinstance(push_configs, dict):
+            self._push_configs = {
+                str(task_id): {
+                    str(config_id): config
+                    for config_id, config in configs.items()
+                    if isinstance(config, dict)
+                }
+                for task_id, configs in push_configs.items()
+                if isinstance(configs, dict)
+            }
+
+    def _save(self) -> None:
+        """Persist tasks and push configs to disk when configured."""
+        if self._storage_path is None:
+            return
+        self._storage_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = self._storage_path.with_suffix(f"{self._storage_path.suffix}.tmp")
+        payload = {
+            "tasks": self._tasks,
+            "pushConfigs": self._push_configs,
+        }
+        tmp_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+        tmp_path.replace(self._storage_path)
 
     def put(self, task: JsonMap) -> JsonMap:
         """Store and return ``task``."""
-        self._tasks[str(task["id"])] = task
+        with self._lock:
+            self._tasks[str(task["id"])] = task
+            self._save()
         return task
 
     def get(self, task_id: str) -> JsonMap | None:
         """Return one task by id, or ``None``."""
-        return self._tasks.get(task_id)
+        with self._lock:
+            return self._tasks.get(task_id)
 
     def list_tasks(self, *, state: str | None = None) -> list[JsonMap]:
         """Return tasks, optionally filtered by A2A status state."""
-        tasks = list(self._tasks.values())
+        with self._lock:
+            tasks = list(self._tasks.values())
         if state:
             tasks = [task for task in tasks if task.get("status", {}).get("state") == state]
         return sorted(tasks, key=lambda task: str(task["id"]))
 
     def put_push_config(self, task_id: str, config: JsonMap) -> JsonMap:
         """Store one push notification config for ``task_id``."""
-        config_id = str(config.get("id") or uuid.uuid4())
-        stored = dict(config)
-        stored["id"] = config_id
-        stored["taskId"] = task_id
-        self._push_configs.setdefault(task_id, {})[config_id] = stored
+        with self._lock:
+            config_id = str(config.get("id") or uuid.uuid4())
+            stored = dict(config)
+            stored["id"] = config_id
+            stored["taskId"] = task_id
+            self._push_configs.setdefault(task_id, {})[config_id] = stored
+            self._save()
         return stored
 
     def get_push_config(self, task_id: str, config_id: str) -> JsonMap | None:
         """Return one push notification config."""
-        return self._push_configs.get(task_id, {}).get(config_id)
+        with self._lock:
+            return self._push_configs.get(task_id, {}).get(config_id)
 
     def list_push_configs(self, task_id: str) -> list[JsonMap]:
         """Return push notification configs for ``task_id`` sorted by id."""
-        configs = list(self._push_configs.get(task_id, {}).values())
+        with self._lock:
+            configs = list(self._push_configs.get(task_id, {}).values())
         return sorted(configs, key=lambda config: str(config["id"]))
 
     def delete_push_config(self, task_id: str, config_id: str) -> bool:
         """Delete one push notification config."""
-        configs = self._push_configs.get(task_id)
-        if not configs or config_id not in configs:
-            return False
-        del configs[config_id]
-        return True
+        with self._lock:
+            configs = self._push_configs.get(task_id)
+            if not configs or config_id not in configs:
+                return False
+            del configs[config_id]
+            self._save()
+            return True
 
 
 class SynapseAgentRuntime:
@@ -139,12 +229,16 @@ class A2ABridge:
         target: str,
         store: A2ATaskStore | None = None,
         submit: Callable[[Coroutine[Any, Any, Any]], Any] | None = None,
+        push_deliverer: PushDeliverer | None = None,
+        auth_token: str | None = None,
     ) -> None:
         self.agent = agent
         self.agent_card = agent_card
         self.target = target
         self.store = store or A2ATaskStore()
         self._submit = submit
+        self._push_deliverer = push_deliverer or _http_push_deliverer
+        self.auth_token = auth_token
 
     def _run(self, coro: Coroutine[Any, Any, Any]) -> Any:
         """Run ``coro`` through the configured submitter or a fresh event loop."""
@@ -164,6 +258,15 @@ class A2ABridge:
                 rendered.append(json.dumps(part["data"], sort_keys=True))
             elif "url" in part:
                 rendered.append(str(part["url"]))
+            elif isinstance(part.get("file"), dict):
+                file_part = part["file"]
+                file_bits = [
+                    str(file_part[value])
+                    for value in ("name", "mimeType", "uri")
+                    if file_part.get(value)
+                ]
+                if file_bits:
+                    rendered.append(f"[file: {'; '.join(file_bits)}]")
             elif "raw" in part:
                 rendered.append("[raw omitted]")
         return "\n".join(text for text in rendered if text).strip()
@@ -256,21 +359,71 @@ class A2ABridge:
         config = task_config.get("pushNotificationConfig")
         if not isinstance(config, dict):
             return None
-        return self.create_push_notification_config(task_id, config)
+        task = self.store.get(task_id)
+        stored = self.create_push_notification_config(task_id, config)
+        if stored is not None and task is not None:
+            self._deliver_push_notification(task=task, config=stored)
+        return stored
 
-    def list_tasks(self, *, state: str | None = None) -> JsonMap:
+    def _deliver_push_notification(self, *, task: JsonMap, config: JsonMap) -> None:
+        """Deliver one task update to a configured push-notification webhook."""
+        headers: dict[str, str] = {}
+        authentication = config.get("authentication")
+        if isinstance(authentication, dict):
+            scheme = str(authentication.get("scheme") or "").strip()
+            credentials = str(authentication.get("credentials") or "").strip()
+            if scheme and credentials:
+                headers["Authorization"] = f"{scheme} {credentials}"
+        try:
+            self._push_deliverer(
+                {
+                    "url": str(config["webhookUrl"]),
+                    "headers": headers,
+                    "payload": {"task": task},
+                }
+            )
+        except (OSError, TimeoutError, URLError):
+            return
+
+    def _deliver_push_notifications(self, task: JsonMap) -> None:
+        """Deliver one task update to every stored push config for the task."""
+        for config in self.store.list_push_configs(str(task["id"])):
+            self._deliver_push_notification(task=task, config=config)
+
+    def list_tasks(
+        self,
+        *,
+        state: str | None = None,
+        page_size: int | None = None,
+        page_token: str | None = None,
+    ) -> JsonMap:
         """Return an A2A task-list response."""
         tasks = self.store.list_tasks(state=state)
+        total = len(tasks)
+        start = _non_negative_int(page_token, default=0)
+        if page_size is None:
+            page_size = total
+        page_size = max(page_size, 0)
+        end = start + page_size
+        page = tasks[start:end]
+        next_page_token = str(end) if end < total else ""
         return {
-            "tasks": tasks,
-            "nextPageToken": "",
-            "pageSize": len(tasks),
-            "totalSize": len(tasks),
+            "tasks": page,
+            "nextPageToken": next_page_token,
+            "pageSize": len(page),
+            "totalSize": total,
         }
 
-    def get_task(self, task_id: str) -> JsonMap | None:
+    def get_task(self, task_id: str, *, history_length: int | None = None) -> JsonMap | None:
         """Return one A2A task by id."""
-        return self.store.get(task_id)
+        task = self.store.get(task_id)
+        if task is None or history_length is None:
+            return task
+        trimmed = dict(task)
+        history = task.get("history")
+        if isinstance(history, list):
+            trimmed["history"] = history[-history_length:] if history_length > 0 else []
+        return trimmed
 
     def cancel_task(self, task_id: str) -> JsonMap | None:
         """Cancel a stored A2A task."""
@@ -279,6 +432,7 @@ class A2ABridge:
             return None
         task["status"] = {"state": "TASK_STATE_CANCELED"}
         self.store.put(task)
+        self._deliver_push_notifications(task)
         return task
 
     def subscribe_task(self, task_id: str) -> JsonMap | None:
@@ -307,6 +461,94 @@ class A2ABridge:
     def delete_push_notification_config(self, task_id: str, config_id: str) -> JsonMap:
         """Delete one push notification config and report whether it existed."""
         return {"deleted": self.store.delete_push_config(task_id, config_id)}
+
+    def handle_json_rpc(self, request_body: JsonMap) -> JsonMap:
+        """Dispatch one JSON-RPC 2.0 A2A request."""
+        rpc_id = request_body.get("id")
+        if request_body.get("jsonrpc") != "2.0" or not isinstance(
+            request_body.get("method"), str
+        ):
+            return _rpc_error(rpc_id, -32600, "Invalid Request")
+        params = request_body.get("params", {})
+        if params is None:
+            params = {}
+        if not isinstance(params, dict):
+            return _rpc_error(rpc_id, -32602, "Invalid params")
+        method = str(request_body["method"])
+        try:
+            result = self._json_rpc_result(method, params)
+        except KeyError:
+            return _rpc_error(rpc_id, -32601, "Method not found")
+        except ValueError as exc:
+            return _rpc_error(rpc_id, -32602, str(exc))
+        return _rpc_success(rpc_id, result)
+
+    def _json_rpc_result(self, method: str, params: JsonMap) -> object:
+        """Return the result object for one supported JSON-RPC method."""
+        if method == "message/send":
+            return self.send_message(params)
+        if method == "message/stream":
+            return self.stream_message(params)
+        if method == "tasks/get":
+            task_id = str(params.get("id") or params.get("taskId") or "")
+            history_length = params.get("historyLength")
+            task = self.get_task(
+                task_id,
+                history_length=(
+                    _non_negative_int(history_length) if history_length is not None else None
+                ),
+            )
+            if task is None:
+                raise ValueError(f"Unknown task: {task_id}")
+            return task
+        if method == "tasks/list":
+            state = params.get("status")
+            page_size = params.get("pageSize")
+            return self.list_tasks(
+                state=str(state) if state else None,
+                page_size=_non_negative_int(page_size) if page_size is not None else None,
+                page_token=str(params.get("pageToken") or ""),
+            )
+        if method == "tasks/cancel":
+            task_id = str(params.get("id") or params.get("taskId") or "")
+            task = self.cancel_task(task_id)
+            if task is None:
+                raise ValueError(f"Unknown task: {task_id}")
+            return task
+        if method == "tasks/pushNotificationConfig/set":
+            task_id = str(params.get("taskId") or params.get("id") or "")
+            config = params.get("pushNotificationConfig")
+            if not isinstance(config, dict):
+                raise ValueError("pushNotificationConfig is required")
+            created = self.create_push_notification_config(task_id, config)
+            if created is None:
+                raise ValueError(f"Unknown task: {task_id}")
+            return created
+        if method == "tasks/pushNotificationConfig/list":
+            task_id = str(params.get("taskId") or params.get("id") or "")
+            return self.list_push_notification_configs(task_id)["pushNotificationConfigs"]
+        if method == "tasks/pushNotificationConfig/get":
+            task_id = str(params.get("taskId") or params.get("id") or "")
+            config_id = str(
+                params.get("pushNotificationConfigId")
+                or params.get("configId")
+                or ""
+            )
+            config = self.get_push_notification_config(task_id, config_id)
+            if config is None:
+                raise ValueError(f"Unknown push notification config: {config_id}")
+            return config
+        if method == "tasks/pushNotificationConfig/delete":
+            task_id = str(params.get("taskId") or params.get("id") or "")
+            config_id = str(
+                params.get("pushNotificationConfigId")
+                or params.get("configId")
+                or ""
+            )
+            return self.delete_push_notification_config(task_id, config_id)
+        if method == "agent/getAuthenticatedExtendedCard":
+            return self.agent_card
+        raise KeyError(method)
 
 
 def _problem(status: HTTPStatus, title: str, detail: str = "") -> JsonMap:
@@ -388,10 +630,31 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                 media_type=PROBLEM_MEDIA_TYPE,
             )
 
+        def _is_authorized(self) -> bool:
+            token = self.bridge.auth_token
+            if not token:
+                return True
+            return self.headers.get("Authorization") == f"Bearer {token}"
+
+        def _require_authorized(self) -> bool:
+            if self._is_authorized():
+                return True
+            self._send_json(
+                HTTPStatus.UNAUTHORIZED,
+                _problem(HTTPStatus.UNAUTHORIZED, "Unauthorized"),
+                media_type=PROBLEM_MEDIA_TYPE,
+            )
+            return False
+
         def do_GET(self) -> None:
             """Serve A2A discovery and task-read endpoints."""
             parsed = urlparse(self.path)
-            if parsed.path in {"/.well-known/agent-card.json", "/extendedAgentCard"}:
+            if parsed.path == "/.well-known/agent-card.json":
+                self._send_json(HTTPStatus.OK, self.bridge.agent_card)
+                return
+            if not self._require_authorized():
+                return
+            if parsed.path == "/extendedAgentCard":
                 self._send_json(HTTPStatus.OK, self.bridge.agent_card)
                 return
             push_path = _push_config_path(parsed.path)
@@ -413,14 +676,34 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
             if parsed.path == "/tasks":
                 query = parse_qs(parsed.query)
                 state = query.get("status", [None])[0]
-                self._send_json(HTTPStatus.OK, self.bridge.list_tasks(state=state))
+                page_size = query.get("pageSize", [None])[0]
+                page_token = query.get("pageToken", [""])[0]
+                self._send_json(
+                    HTTPStatus.OK,
+                    self.bridge.list_tasks(
+                        state=state,
+                        page_size=(
+                            _non_negative_int(page_size) if page_size is not None else None
+                        ),
+                        page_token=page_token,
+                    ),
+                )
                 return
             if parsed.path.startswith("/tasks/"):
                 task_id = parsed.path.removeprefix("/tasks/")
                 if ":" in task_id:
                     self._send_not_found()
                     return
-                task = self.bridge.get_task(task_id)
+                query = parse_qs(parsed.query)
+                history_length = query.get("historyLength", [None])[0]
+                task = self.bridge.get_task(
+                    task_id,
+                    history_length=(
+                        _non_negative_int(history_length)
+                        if history_length is not None
+                        else None
+                    ),
+                )
                 if task is None:
                     self._send_not_found(f"Unknown task: {task_id}")
                     return
@@ -431,6 +714,8 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
         def do_POST(self) -> None:
             """Serve A2A message-send and task-cancel endpoints."""
             parsed = urlparse(self.path)
+            if not self._require_authorized():
+                return
             push_path = _push_config_path(parsed.path)
             if push_path is not None:
                 task_id, config_id = push_path
@@ -492,6 +777,12 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                         media_type=PROBLEM_MEDIA_TYPE,
                     )
                 return
+            if parsed.path in {"/", "/rpc"}:
+                data = self._read_json()
+                if data is None:
+                    return
+                self._send_json(HTTPStatus.OK, self.bridge.handle_json_rpc(data))
+                return
             if parsed.path.startswith("/tasks/") and parsed.path.endswith(":cancel"):
                 task_id = parsed.path.removeprefix("/tasks/").removesuffix(":cancel")
                 task = self.bridge.cancel_task(task_id)
@@ -530,6 +821,8 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
         def do_DELETE(self) -> None:
             """Serve A2A push-notification config deletion."""
             parsed = urlparse(self.path)
+            if not self._require_authorized():
+                return
             push_path = _push_config_path(parsed.path)
             if push_path is None:
                 self._send_not_found()

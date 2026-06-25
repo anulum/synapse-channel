@@ -44,6 +44,10 @@ All notable changes to this project are documented here.
   `GET/DELETE /tasks/{id}/pushNotificationConfigs/{config_id}`, and send-time
   `configuration.taskPushNotificationConfig` capture; the served Agent Card
   advertises both streaming and push notification support.
+- The A2A bridge now includes outbound push webhook delivery, JSON-RPC 2.0
+  dispatch on `/rpc`, task pagination and history-length controls, Bearer-token
+  enforcement for protected routes, file-part forwarding, and optional durable
+  task/config state via `synapse a2a-serve --state-file`.
 
 ### Changed
 - The hub now **refuses to start** on a non-loopback address (e.g. `--host 0.0.0.0`)

@@ -187,6 +187,7 @@ synapse board
 synapse manifest
 synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877
+synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --bearer-auth --a2a-token "$A2A_TOKEN" --state-file ./a2a-state.json
 synapse relay ./feed.ndjson --cursor ./feed.cursor
 ```
 
