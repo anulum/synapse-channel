@@ -22,7 +22,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from typing import Any
 from urllib.parse import urlparse
 
@@ -149,7 +149,13 @@ def _egress_warning(provider: str, base_url: str) -> str | None:
     return f"this worker SENDS {what} to {base_url or 'the configured endpoint'}"
 
 
-def _cmd_worker(args: argparse.Namespace) -> int:
+def _cmd_worker(
+    args: argparse.Namespace,
+    *,
+    runner: Callable[[Coroutine[Any, Any, None]], None] = _run,
+    logging_configurator: Callable[..., object] = configure_logging,
+    on_worker: Callable[[SynapseLLMWorker], None] | None = None,
+) -> int:
     """Run a single on-channel model worker until interrupted.
 
     ``--prefix`` is prepended to ``--name`` to form the registered identity, so
@@ -157,7 +163,7 @@ def _cmd_worker(args: argparse.Namespace) -> int:
     A worker that will send channel context off the local machine prints a loud
     egress warning to stderr before it starts.
     """
-    configure_logging(log_format=args.log_format, level=args.log_level)
+    logging_configurator(log_format=args.log_format, level=args.log_level)
     name = f"{args.prefix}{args.name}"
     warning = _egress_warning(args.provider, args.base_url)
     if warning:
@@ -176,14 +182,20 @@ def _cmd_worker(args: argparse.Namespace) -> int:
         task_classes=tuple(args.task_class) if args.task_class else ("chat",),
         heavy_model=args.heavy_model,
     )
+    if on_worker is not None:
+        on_worker(worker)
     try:
-        _run(worker.run())
+        runner(worker.run())
     except KeyboardInterrupt:
         print(f"\n[{name}] stopped by user.")
     return 0
 
 
-def _cmd_supervisor(args: argparse.Namespace) -> int:
+def _cmd_supervisor(
+    args: argparse.Namespace,
+    *,
+    runner: Callable[[Coroutine[Any, Any, None]], None] = _run,
+) -> int:
     """Run an LLM-free supervisor that re-offers stalled tasks until interrupted."""
     supervisor = SupervisorWorker(
         name=args.name,
@@ -194,15 +206,19 @@ def _cmd_supervisor(args: argparse.Namespace) -> int:
         ready_timeout=args.ready_timeout,
     )
     try:
-        _run(supervisor.run())
+        runner(supervisor.run())
     except KeyboardInterrupt:
         print(f"\n[{args.name}] supervisor stopped by user.")
     return 0
 
 
-def _cmd_team(args: argparse.Namespace) -> int:
+def _cmd_team(
+    args: argparse.Namespace,
+    *,
+    launcher: Callable[..., int] = run_team,
+) -> int:
     """Launch a local hub plus one or two workers."""
-    return run_team(
+    return launcher(
         port=args.port,
         no_workers=args.no_workers,
         fast_model=args.fast_model,
