@@ -17,12 +17,6 @@ from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_doctor
 from synapse_channel.core.hub import SynapseHub
 
-
-def _set_project(monkeypatch: pytest.MonkeyPatch, project: str = "demorepo") -> None:
-    monkeypatch.setenv("SYN_PROJECT", project)
-    monkeypatch.delenv("SYN_IDENTITY", raising=False)
-
-
 # --- parser ------------------------------------------------------------------
 
 
@@ -52,14 +46,13 @@ def test_parser_doctor_fix_flags() -> None:
 # --- _diagnose logic ---------------------------------------------------------
 
 
-async def test_diagnose_reachable_with_waiter_passes(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_project(monkeypatch)
+async def test_diagnose_reachable_with_waiter_passes() -> None:
     async with running_hub(SynapseHub()) as (_, uri):
         waiter = await connect_agent("demorepo-rx", uri)
         try:
             code, lines = await cli_doctor._diagnose(
                 uri=uri,
-                project=None,
+                project="demorepo",
                 agent_id=None,
                 token=None,
             )
@@ -71,12 +64,11 @@ async def test_diagnose_reachable_with_waiter_passes(monkeypatch: pytest.MonkeyP
     assert code == 0
 
 
-async def test_diagnose_reachable_without_waiter_warns(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_project(monkeypatch)
+async def test_diagnose_reachable_without_waiter_warns() -> None:
     async with running_hub(SynapseHub()) as (_, uri):
         code, lines = await cli_doctor._diagnose(
             uri=uri,
-            project=None,
+            project="demorepo",
             agent_id=None,
             token=None,
         )
@@ -85,11 +77,10 @@ async def test_diagnose_reachable_without_waiter_warns(monkeypatch: pytest.Monke
     assert code == 0  # a missing waiter warns but does not fail
 
 
-async def test_diagnose_unreachable_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_project(monkeypatch)
+async def test_diagnose_unreachable_fails() -> None:
     code, lines = await cli_doctor._diagnose(
         uri=f"ws://127.0.0.1:{_free_port()}",
-        project=None,
+        project="demorepo",
         agent_id=None,
         token=None,
         ready_timeout=0.1,
@@ -100,15 +91,13 @@ async def test_diagnose_unreachable_fails(monkeypatch: pytest.MonkeyPatch) -> No
     assert code == 1
 
 
-async def test_diagnose_flags_off_loopback_without_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_project(monkeypatch)
-
+async def test_diagnose_flags_off_loopback_without_token() -> None:
     async def no_roster(**_: Any) -> list[str] | None:
         return None
 
     _, lines = await cli_doctor._diagnose(
         uri="ws://10.0.0.5:8876",
-        project=None,
+        project="demorepo",
         agent_id=None,
         token=None,
         roster_probe=no_roster,
@@ -116,12 +105,11 @@ async def test_diagnose_flags_off_loopback_without_token(monkeypatch: pytest.Mon
     assert any("off loopback with no token" in line for line in lines)
 
 
-async def test_diagnose_warns_on_hyphen_send_identity(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_project(monkeypatch)
+async def test_diagnose_warns_on_hyphen_send_identity() -> None:
     async with running_hub(SynapseHub()) as (_, uri):
         _, lines = await cli_doctor._diagnose(
             uri=uri,
-            project=None,
+            project="demorepo",
             agent_id=None,
             token=None,
             send_name="demorepo-keeper",
@@ -133,12 +121,11 @@ async def test_diagnose_warns_on_hyphen_send_identity(monkeypatch: pytest.Monkey
 
 
 def test_cmd_doctor_prints_lines_and_returns_code(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    async def fake_diagnose(**_: Any) -> tuple[int, list[str]]:
+    async def diagnose(**_: Any) -> tuple[int, list[str]]:
         return (1, ["[FAIL] hub: nope", "synapse doctor: FAILED"])
 
-    monkeypatch.setattr(cli_doctor, "_diagnose", fake_diagnose)
     ns = argparse.Namespace(
         uri="ws://h",
         project=None,
@@ -151,21 +138,19 @@ def test_cmd_doctor_prints_lines_and_returns_code(
         identity=None,
         synapse_bin=None,
     )
-    assert cli_doctor._cmd_doctor(ns) == 1
+    assert cli_doctor._cmd_doctor(ns, diagnose_runner=diagnose) == 1
     assert "synapse doctor: FAILED" in capsys.readouterr().out
 
 
 def test_cmd_doctor_fix_prints_service_commands(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    async def fake_diagnose(**_: Any) -> tuple[int, list[str]]:
+    async def diagnose(**_: Any) -> tuple[int, list[str]]:
         return (0, ["synapse doctor: all clear"])
 
-    _set_project(monkeypatch, "repo")
-    monkeypatch.setattr(cli_doctor, "_diagnose", fake_diagnose)
     ns = argparse.Namespace(
         uri="ws://h",
-        project=None,
+        project="repo",
         id=None,
         token=None,
         send_name=None,
@@ -175,30 +160,27 @@ def test_cmd_doctor_fix_prints_service_commands(
         identity="repo/ux",
         synapse_bin="/bin/synapse",
     )
-    assert cli_doctor._cmd_doctor(ns) == 0
+    assert cli_doctor._cmd_doctor(ns, diagnose_runner=diagnose) == 0
     out = capsys.readouterr().out
     assert "synapse-arm@.service" in out
     assert "syn arm --project repo" in out
 
 
 def test_cmd_doctor_installs_user_services(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     captured: dict[str, Any] = {}
 
-    async def fake_diagnose(**_: Any) -> tuple[int, list[str]]:
+    async def diagnose(**_: Any) -> tuple[int, list[str]]:
         return (0, ["synapse doctor: all clear"])
 
-    def fake_install(**kwargs: Any) -> list[str]:
+    def install_services(**kwargs: Any) -> list[str]:
         captured.update(kwargs)
         return ["wrote synapse-hub.service", "ok: systemctl --user daemon-reload"]
 
-    _set_project(monkeypatch, "repo")
-    monkeypatch.setattr(cli_doctor, "_diagnose", fake_diagnose)
-    monkeypatch.setattr(cli_doctor, "install_user_services", fake_install)
     ns = argparse.Namespace(
         uri="ws://h",
-        project=None,
+        project="repo",
         id=None,
         token=None,
         send_name=None,
@@ -209,7 +191,14 @@ def test_cmd_doctor_installs_user_services(
         synapse_bin="/bin/synapse",
     )
 
-    assert cli_doctor._cmd_doctor(ns) == 0
+    assert (
+        cli_doctor._cmd_doctor(
+            ns,
+            diagnose_runner=diagnose,
+            service_installer=install_services,
+        )
+        == 0
+    )
     assert captured == {
         "project": "repo",
         "identity": "repo/ux",
@@ -220,11 +209,8 @@ def test_cmd_doctor_installs_user_services(
 
 
 def test_main_routes_to_doctor(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    async def fake_diagnose(**_: Any) -> tuple[int, list[str]]:
-        return (0, ["synapse doctor: all clear"])
-
-    monkeypatch.setattr(cli_doctor, "_diagnose", fake_diagnose)
-    assert cli.main(["doctor"]) == 0
-    assert "all clear" in capsys.readouterr().out
+    port = _free_port()
+    assert cli.main(["doctor", "--uri", f"ws://127.0.0.1:{port}", "--project", "repo"]) == 1
+    assert "did not answer" in capsys.readouterr().out

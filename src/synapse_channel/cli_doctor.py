@@ -22,8 +22,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from pathlib import Path
+from typing import Any
 
 from synapse_channel.cli_queries import AgentFactory, _query_hub
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
@@ -41,6 +42,9 @@ from synapse_channel.service_setup import install_user_services, service_suggest
 
 RosterProbe = Callable[..., Awaitable[list[str] | None]]
 """Async callable that returns the live hub roster for doctor diagnostics."""
+
+DiagnoseRunner = Callable[..., Coroutine[Any, Any, tuple[int, list[str]]]]
+"""Async callable used by the doctor CLI dispatcher."""
 
 
 async def _fetch_roster(
@@ -83,6 +87,9 @@ async def _diagnose(
     agent_factory: AgentFactory = SynapseAgent,
     ready_timeout: float = 5.0,
     roster_probe: RosterProbe = _fetch_roster,
+    env: Mapping[str, str] | None = None,
+    cwd_basename: str | None = None,
+    home_basename: str | None = None,
 ) -> tuple[int, list[str]]:
     """Resolve the identity, run every check, and return ``(exit_code, report_lines)``.
 
@@ -91,11 +98,15 @@ async def _diagnose(
     """
     from synapse_channel.ergonomics import resolve_identity
 
+    env = os.environ if env is None else env
     identity = resolve_identity(
         project=project,
         agent_id=agent_id,
-        cwd_basename=Path.cwd().name,
-        home_basename=Path(os.environ.get("HOME", str(Path.home()))).name,
+        env=env,
+        cwd_basename=Path.cwd().name if cwd_basename is None else cwd_basename,
+        home_basename=(
+            Path(env.get("HOME", str(Path.home()))).name if home_basename is None else home_basename
+        ),
     )
     diagnoses: list[Diagnosis] = [
         check_identity(identity),
@@ -114,10 +125,22 @@ async def _diagnose(
     return summarise(diagnoses)
 
 
-def _cmd_doctor(args: argparse.Namespace) -> int:
+def _cmd_doctor(
+    args: argparse.Namespace,
+    *,
+    diagnose_runner: DiagnoseRunner = _diagnose,
+    async_runner: Callable[[Coroutine[Any, Any, tuple[int, list[str]]]], tuple[int, list[str]]] = (
+        asyncio.run
+    ),
+    service_installer: Callable[..., list[str]] = install_user_services,
+    suggestion_builder: Callable[..., list[str]] = service_suggestions,
+    env: Mapping[str, str] | None = None,
+    cwd_basename: str | None = None,
+    home_basename: str | None = None,
+) -> int:
     """Dispatch ``doctor``: print the report, exit non-zero when a check fails."""
-    code, lines = asyncio.run(
-        _diagnose(
+    code, lines = async_runner(
+        diagnose_runner(
             uri=args.uri,
             project=args.project,
             agent_id=args.id,
@@ -134,17 +157,23 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     ):
         from synapse_channel.ergonomics import resolve_identity
 
+        env = os.environ if env is None else env
         identity = resolve_identity(
             project=args.project,
             agent_id=args.id,
-            cwd_basename=Path.cwd().name,
-            home_basename=Path(os.environ.get("HOME", str(Path.home()))).name,
+            env=env,
+            cwd_basename=Path.cwd().name if cwd_basename is None else cwd_basename,
+            home_basename=(
+                Path(env.get("HOME", str(Path.home()))).name
+                if home_basename is None
+                else home_basename
+            ),
         )
         service_identity = getattr(args, "identity", None) or identity.identity
         if getattr(args, "install_user_services", False) or getattr(
             args, "start_user_services", False
         ):
-            fix_lines = install_user_services(
+            fix_lines = service_installer(
                 project=identity.project,
                 identity=service_identity,
                 synapse_bin=getattr(args, "synapse_bin", None),
@@ -153,7 +182,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         else:
             fix_lines = [
                 "[fix] exact local service setup commands:",
-                *service_suggestions(
+                *suggestion_builder(
                     project=identity.project,
                     identity=service_identity,
                     synapse_bin=getattr(args, "synapse_bin", None),
