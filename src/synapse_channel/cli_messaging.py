@@ -24,13 +24,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.core.protocol import MessageType, is_recipient, wakes
 
 AgentFactory = Callable[..., SynapseAgent]
+JitterFunction = Callable[[float, float], float]
+ListenRunner = Callable[..., Coroutine[Any, Any, int]]
+AsyncRunner = Callable[[Coroutine[Any, Any, int]], int]
 
 
 async def _send(
@@ -115,6 +118,7 @@ async def _wait(
     directed_only: bool = False,
     wake_jitter: float = 0.0,
     agent_factory: AgentFactory = SynapseAgent,
+    jitter_func: JitterFunction = random.uniform,
     token: str | None = None,
     ready_timeout: float = 5.0,
     poll_interval: float = 0.1,
@@ -147,6 +151,8 @@ async def _wait(
         one-to-one directed message wakes immediately (no herd). ``0`` disables it.
     agent_factory : AgentFactory, optional
         Factory for the client agent; injectable for testing.
+    jitter_func : JitterFunction, optional
+        Function used to compute broadcast wake jitter.
     token : str or None, optional
         Shared-secret token for a secured hub.
     ready_timeout : float, optional
@@ -202,7 +208,7 @@ async def _wait(
             # herd, so it wakes now.
             reaches_many = target in ("", "all") or "*" in target or "," in target
             if reaches_many and wake_jitter > 0:
-                await asyncio.sleep(random.uniform(0.0, wake_jitter))
+                await asyncio.sleep(jitter_func(0.0, wake_jitter))
             print(f"{message.get('sender')}: {message.get('payload')}")
             return 0
         if conn_task.done():
@@ -292,8 +298,8 @@ async def _listen(
             printed += 1
             if printed >= max_messages:
                 agent.running = False
-                if agent.connection is not None:
-                    await agent.connection.close()
+                assert agent.connection is not None
+                await agent.connection.close()
 
     agent = agent_factory(name, show, uri=uri, verbose=True, token=token)
     conn_task = asyncio.create_task(agent.connect())
@@ -310,11 +316,16 @@ async def _listen(
         conn_task.cancel()
 
 
-def _cmd_listen(args: argparse.Namespace) -> int:
+def _cmd_listen(
+    args: argparse.Namespace,
+    *,
+    listen_runner: ListenRunner = _listen,
+    async_runner: AsyncRunner = asyncio.run,
+) -> int:
     """Dispatch the ``listen`` subcommand."""
     try:
-        return asyncio.run(
-            _listen(
+        return async_runner(
+            listen_runner(
                 uri=args.uri,
                 name=args.name,
                 token=args.token,

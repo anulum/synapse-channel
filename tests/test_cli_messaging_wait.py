@@ -255,14 +255,13 @@ async def test_wait_exits_when_connection_drops() -> None:
     assert code == 3
 
 
-async def test_wait_jitters_on_broadcast(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_wait_jitters_on_broadcast() -> None:
     calls: list[tuple[float, float]] = []
 
     def _rec(a: float, b: float) -> float:
         calls.append((a, b))
         return 0.0
 
-    monkeypatch.setattr("synapse_channel.cli_messaging.random.uniform", _rec)
     async with running_hub(SynapseHub()) as (_hub, uri):
         observer = await connect_agent("OBSERVER", uri)
         wait_task = asyncio.create_task(
@@ -273,6 +272,7 @@ async def test_wait_jitters_on_broadcast(monkeypatch: pytest.MonkeyPatch) -> Non
                 timeout=2.0,
                 directed_only=True,
                 wake_jitter=5.0,
+                jitter_func=_rec,
             )
         )
         try:
@@ -286,14 +286,13 @@ async def test_wait_jitters_on_broadcast(monkeypatch: pytest.MonkeyPatch) -> Non
     assert calls == [(0.0, 5.0)]  # jitter applied for the broadcast
 
 
-async def test_wait_no_jitter_on_directed_wake(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_wait_no_jitter_on_directed_wake() -> None:
     calls: list[tuple[float, float]] = []
 
     def _rec(a: float, b: float) -> float:
         calls.append((a, b))
         return 0.0
 
-    monkeypatch.setattr("synapse_channel.cli_messaging.random.uniform", _rec)
     async with running_hub(SynapseHub()) as (_hub, uri):
         observer = await connect_agent("OBSERVER", uri)
         wait_task = asyncio.create_task(
@@ -303,6 +302,7 @@ async def test_wait_no_jitter_on_directed_wake(monkeypatch: pytest.MonkeyPatch) 
                 for_name="B",
                 timeout=2.0,
                 wake_jitter=5.0,
+                jitter_func=_rec,
             )
         )
         try:
