@@ -1,0 +1,32 @@
+{
+  "correlated_replies": 250,
+  "correlation": {
+    "seconds": 0.012644943000850617,
+    "tasks_per_sec": 19770.74945954147
+  },
+  "host": {
+    "cpu": "x86_64",
+    "platform": "Linux-6.17.0-35-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3"
+  },
+  "listing": {
+    "seconds": 4.230699960316997e-05,
+    "tasks": 250,
+    "tasks_per_sec": 5909187.660314915
+  },
+  "push_delivery": {
+    "deliveries": 250,
+    "deliveries_per_sec": 19770.74945954147
+  },
+  "subscriber_count": 32,
+  "subscriber_fanout": {
+    "events": 32,
+    "events_per_sec": 21912.135076650608,
+    "seconds": 0.0014603780000470579
+  },
+  "task_creation": {
+    "seconds": 0.032203494999521354,
+    "tasks_per_sec": 7763.132542095688
+  },
+  "tasks": 250
+}

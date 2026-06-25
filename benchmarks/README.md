@@ -97,3 +97,26 @@ python benchmarks/routing_benchmark.py
 
 Tiered dispatch verified. The split is specific to this prompt set and the
 default thresholds — tune `rule_max_chars`/`heavy_min_chars` for your workload.
+
+## `a2a_bridge_benchmark.py`
+
+Measures local Agent2Agent bridge costs without a network server: task creation,
+SYNAPSE reply correlation, bridge-local task listing, push-delivery callback
+dispatch, and bounded subscriber fanout. It is an in-process regression harness,
+not a third-party A2A conformance or real webhook latency test.
+
+### Run
+
+```bash
+python benchmarks/a2a_bridge_benchmark.py
+```
+
+### Committed result (250 tasks, 32 subscribers)
+
+| Operation | Result |
+| --- | ---: |
+| Task creation | 7,763 tasks/s |
+| Reply correlation | 19,771 tasks/s |
+| Task listing | 250 tasks |
+| Push delivery callbacks | 250 deliveries |
+| Subscriber fanout | 32 terminal events |
