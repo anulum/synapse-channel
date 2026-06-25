@@ -4,47 +4,72 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — tests for the async hub client using an injected transport
+# SYNAPSE_CHANNEL — real localhost WebSocket helpers for client tests
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import json
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Any
 
-import pytest
+from websockets.asyncio.server import ServerConnection, serve
 
-from synapse_channel.client import agent as client_module
-
-
-class FakeWebSocket:
-    """Minimal stand-in for a websockets client connection."""
-
-    def __init__(self, incoming: list[str]) -> None:
-        self.incoming = incoming
-        self.sent: list[str] = []
-
-    async def send(self, raw: str) -> None:
-        self.sent.append(raw)
-
-    async def __aiter__(self) -> AsyncIterator[str]:
-        for message in self.incoming:
-            yield message
+from hub_e2e_helpers import _free_port
+from synapse_channel.client.agent import SynapseAgent
 
 
-class FakeConnect:
-    """Async context manager mimicking ``websockets.asyncio.client.connect``."""
+async def wait_for_recorded_count(
+    messages: list[dict[str, Any]],
+    count: int,
+    *,
+    timeout: float = 2.0,
+) -> list[dict[str, Any]]:
+    """Wait until the recording endpoint has received ``count`` messages."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        if len(messages) >= count:
+            return messages
+        await asyncio.sleep(0.01)
+    raise TimeoutError(f"recorded {len(messages)} messages, expected at least {count}")
 
-    def __init__(self, websocket: FakeWebSocket) -> None:
-        self.websocket = websocket
 
-    async def __aenter__(self) -> FakeWebSocket:
-        return self.websocket
+@asynccontextmanager
+async def connected_recording_agent(
+    name: str,
+) -> AsyncIterator[tuple[SynapseAgent, list[dict[str, Any]]]]:
+    """Run a real localhost WebSocket endpoint and connect one client to it."""
+    messages: list[dict[str, Any]] = []
+    ready = asyncio.Event()
 
-    async def __aexit__(self, *exc: object) -> None:
-        return None
+    async def handler(websocket: ServerConnection) -> None:
+        async for raw in websocket:
+            payload = json.loads(raw)
+            messages.append(payload)
+            if payload.get("type") == "heartbeat" and not ready.is_set():
+                await websocket.send(json.dumps({"type": "welcome", "hub_id": "recording-hub"}))
+                ready.set()
 
-
-def _install_connection(monkeypatch: pytest.MonkeyPatch, websocket: FakeWebSocket) -> None:
-    monkeypatch.setattr(client_module, "connect", lambda uri, **kwargs: FakeConnect(websocket))
-
-
-# --- construction ------------------------------------------------------------
+    port = _free_port()
+    server = await serve(handler, "localhost", port)
+    agent = SynapseAgent(
+        name,
+        uri=f"ws://localhost:{port}",
+        heartbeat_interval=60.0,
+        verbose=False,
+    )
+    task = asyncio.create_task(agent.connect())
+    try:
+        if not await agent.wait_until_ready(timeout=2.0):
+            raise TimeoutError("recording websocket did not complete client registration")
+        yield agent, messages
+    finally:
+        agent.running = False
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        server.close()
+        await server.wait_closed()

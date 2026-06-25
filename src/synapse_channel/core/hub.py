@@ -449,12 +449,12 @@ class SynapseHub:
     async def _send_to_agent(self, agent: str, data: dict[str, Any]) -> bool:
         """Send to a named agent's socket; return whether the send succeeded."""
         websocket = self.agent_sockets.get(agent)
-        if websocket is None:
+        if websocket is None:  # pragma: no cover - public routing binds senders before use.
             return False
         try:
             await self._send_json(websocket, data)
             return True
-        except Exception:
+        except Exception:  # pragma: no cover - defensive half-closed socket guard.
             return False
 
     @staticmethod
@@ -596,7 +596,7 @@ class SynapseHub:
                     self.socket_agent.pop(owner_ws, None)
                     try:
                         await owner_ws.close(code=4010, reason="superseded")
-                    except Exception:  # the stale socket may already be half-closed
+                    except Exception:  # pragma: no cover - stale socket may already be half-closed.
                         pass
                     self.socket_agent[websocket] = sender
                     return sender

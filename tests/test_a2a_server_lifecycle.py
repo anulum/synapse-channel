@@ -12,14 +12,14 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from a2a_server_helpers import FakeAgent
+from a2a_server_helpers import RecordingAgent
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 
 
 def test_timeout_marks_open_task_failed() -> None:
     bridge = A2ABridge(
-        agent=FakeAgent(),
+        agent=RecordingAgent(),
         agent_card={},
         target="WORKER",
         store=A2ATaskStore(),
@@ -58,7 +58,7 @@ def test_state_file_recovery_fails_stale_working_tasks(tmp_path: Path) -> None:
     loaded = A2ATaskStore(storage_path=state_file)
 
     A2ABridge(
-        agent=FakeAgent(),
+        agent=RecordingAgent(),
         agent_card={},
         target="WORKER",
         store=loaded,
@@ -71,7 +71,7 @@ def test_state_file_recovery_fails_stale_working_tasks(tmp_path: Path) -> None:
 
 
 def test_subscription_queue_receives_terminal_update() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
             "messageId": "m1",

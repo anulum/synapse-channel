@@ -8,11 +8,12 @@
 
 from __future__ import annotations
 
-import json
+import asyncio
+import contextlib
 
 import pytest
 
-from client_helpers import FakeWebSocket
+from client_helpers import connected_recording_agent, wait_for_recorded_count
 from synapse_channel.client.agent import SynapseAgent
 
 
@@ -22,24 +23,29 @@ async def test_heartbeat_tick_noop_without_connection() -> None:
 
 
 async def test_heartbeat_tick_sends_when_connected() -> None:
+    async with connected_recording_agent("A") as (agent, messages):
+        await agent._heartbeat_tick()
+        await wait_for_recorded_count(messages, 2)
+        assert messages[-1]["payload"] == "alive"
+
+
+async def test_heartbeat_loop_runs_one_tick() -> None:
+    async with connected_recording_agent("A") as (agent, messages):
+        agent.heartbeat_interval = 0.01
+        loop = asyncio.create_task(agent._heartbeat_loop())
+        await wait_for_recorded_count(messages, 2)
+        agent.running = False
+        loop.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await loop
+        assert messages[-1]["payload"] == "alive"
+
+
+async def test_heartbeat_loop_exits_when_agent_is_not_running() -> None:
     agent = SynapseAgent("A")
-    ws = FakeWebSocket([])
-    agent.connection = ws  # type: ignore[assignment]
-    await agent._heartbeat_tick()
-    assert json.loads(ws.sent[0])["payload"] == "alive"
+    agent.running = False
 
-
-async def test_heartbeat_loop_runs_one_tick(monkeypatch: pytest.MonkeyPatch) -> None:
-    agent = SynapseAgent("A")
-    ws = FakeWebSocket([])
-    agent.connection = ws  # type: ignore[assignment]
-
-    async def fake_sleep(_seconds: float) -> None:
-        agent.running = False  # end the loop after the first sleep
-
-    monkeypatch.setattr("synapse_channel.client.agent.asyncio.sleep", fake_sleep)
     await agent._heartbeat_loop()
-    assert json.loads(ws.sent[0])["payload"] == "alive"
 
 
 async def test_wait_until_ready_true_when_set() -> None:

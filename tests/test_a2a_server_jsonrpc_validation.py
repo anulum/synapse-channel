@@ -9,9 +9,8 @@
 from __future__ import annotations
 
 from http import HTTPStatus
-from io import BytesIO
 
-from a2a_server_helpers import FakeAgent, HandlerHarness
+from a2a_server_helpers import HandlerHarness, RecordingAgent
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 
@@ -107,7 +106,7 @@ def test_message_send_rejects_context_id_with_path_separator() -> None:
 
 
 def test_message_send_rejects_duplicate_task_id() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     bridge.create_completed_task(
         {
             "taskId": "task-a",
@@ -161,9 +160,7 @@ def test_message_send_rejects_oversized_parts_array() -> None:
 
 
 def test_bad_json_returns_a2a_problem_json() -> None:
-    harness = HandlerHarness("POST", "/message:send")
-    harness.handler.rfile = BytesIO(b"{")
-    harness.handler.headers = {"Content-Length": "1"}
+    harness = HandlerHarness("POST", "/message:send", body=b"{")
 
     status, body = harness.run()
 
@@ -172,9 +169,12 @@ def test_bad_json_returns_a2a_problem_json() -> None:
 
 
 def test_oversized_json_body_is_rejected_before_parse() -> None:
-    harness = HandlerHarness("POST", "/message:send")
-    harness.handler.rfile = BytesIO(b"{}")
-    harness.handler.headers = {"Content-Length": str(1024 * 1024 + 1)}
+    harness = HandlerHarness(
+        "POST",
+        "/message:send",
+        body=b"{}",
+        headers={"Content-Length": str(1024 * 1024 + 1)},
+    )
 
     status, body = harness.run()
 

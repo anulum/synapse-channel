@@ -11,6 +11,7 @@ from __future__ import annotations
 from synapse_channel.a2a_validation import (
     MAX_A2A_MESSAGE_PARTS,
     is_supported_json_media_type,
+    marker_context_id,
     marker_task_id,
     strip_task_marker,
     validate_bridge_id,
@@ -21,6 +22,9 @@ from synapse_channel.a2a_validation import (
 
 def test_marker_task_id_extracts_task_id_without_leaking_context() -> None:
     assert marker_task_id("reply\n[A2A-TASK:task-a contextId=ctx-a]") == "task-a"
+    assert marker_context_id("reply\n[A2A-TASK:task-a contextId=ctx-a]") == "ctx-a"
+    assert marker_task_id("reply without marker") is None
+    assert marker_context_id("reply without marker") is None
 
 
 def test_strip_task_marker_removes_bridge_marker() -> None:
@@ -28,6 +32,8 @@ def test_strip_task_marker_removes_bridge_marker() -> None:
 
 
 def test_validate_bridge_id_rejects_path_separator() -> None:
+    validate_bridge_id(None, field="taskId")
+    validate_bridge_id("task-1", field="taskId")
     try:
         validate_bridge_id("../task", field="taskId")
     except ValueError as exc:
@@ -37,6 +43,15 @@ def test_validate_bridge_id_rejects_path_separator() -> None:
 
 
 def test_validate_message_parts_rejects_oversized_part_array() -> None:
+    assert validate_message_parts([{"text": "x"}]) == [{"text": "x"}]
+    invalid_values: tuple[object, ...] = (None, [], "bad")
+    for value in invalid_values:
+        try:
+            validate_message_parts(value)
+        except ValueError as exc:
+            assert str(exc) == "message.parts must be a non-empty array"
+        else:
+            raise AssertionError(f"invalid message.parts was accepted: {value!r}")
     try:
         validate_message_parts([{"text": "x"}] * (MAX_A2A_MESSAGE_PARTS + 1))
     except ValueError as exc:

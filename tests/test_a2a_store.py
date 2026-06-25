@@ -24,6 +24,59 @@ def test_a2a_task_store_import_boundary_is_stable() -> None:
     assert store.get("task-a") is not None
 
 
+def test_a2a_task_store_lists_tasks_by_state_and_id() -> None:
+    store = A2ATaskStore()
+    store.put({"id": "task-b", "status": {"state": "TASK_STATE_COMPLETED"}})
+    store.put({"id": "task-a", "status": {"state": "TASK_STATE_WORKING"}})
+
+    assert [task["id"] for task in store.list_tasks()] == ["task-a", "task-b"]
+    assert [task["id"] for task in store.list_tasks(state="TASK_STATE_WORKING")] == ["task-a"]
+
+
+def test_a2a_task_store_rejects_invalid_state_file(tmp_path: Path) -> None:
+    storage_path = tmp_path / "a2a-state.json"
+    storage_path.write_text("{not-json", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Invalid A2A state file"):
+        A2ATaskStore(storage_path)
+
+
+def test_a2a_task_store_ignores_malformed_persisted_sections(tmp_path: Path) -> None:
+    storage_path = tmp_path / "a2a-state.json"
+    storage_path.write_text(
+        json.dumps(
+            {
+                "tasks": {
+                    "valid": {"id": "valid", "status": {}},
+                    "invalid": "bad",
+                },
+                "pushConfigs": {
+                    "task-a": {"cfg-a": {"id": "cfg-a"}, "cfg-b": "bad"},
+                    "task-b": "bad",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    store = A2ATaskStore(storage_path)
+
+    assert store.get("valid") == {"id": "valid", "status": {}}
+    assert store.get("invalid") is None
+    assert store.list_push_configs("task-a") == [{"id": "cfg-a"}]
+    assert store.list_push_configs("task-b") == []
+
+
+def test_a2a_task_store_ignores_non_mapping_persisted_sections(tmp_path: Path) -> None:
+    storage_path = tmp_path / "a2a-state.json"
+    storage_path.write_text(json.dumps({"tasks": [], "pushConfigs": []}), encoding="utf-8")
+
+    store = A2ATaskStore(storage_path)
+
+    assert store.list_tasks() == []
+    assert store.list_push_configs("task-a") == []
+
+
 def test_a2a_task_store_marks_stale_inflight_tasks_failed(tmp_path: Path) -> None:
     storage_path = tmp_path / "a2a-state.json"
     storage_path.write_text(
@@ -51,6 +104,18 @@ def test_a2a_task_store_marks_stale_inflight_tasks_failed(tmp_path: Path) -> Non
     assert store.get("task-b") == {"id": "task-b", "status": {"state": "TASK_STATE_COMPLETED"}}
 
 
+def test_a2a_task_store_keeps_tasks_without_status_unchanged(tmp_path: Path) -> None:
+    storage_path = tmp_path / "a2a-state.json"
+    storage_path.write_text(
+        json.dumps({"tasks": {"task-a": {"id": "task-a", "status": "bad"}}, "pushConfigs": {}}),
+        encoding="utf-8",
+    )
+
+    store = A2ATaskStore(storage_path)
+
+    assert store.get("task-a") == {"id": "task-a", "status": "bad"}
+
+
 def test_a2a_task_store_rolls_back_task_when_save_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -68,6 +133,24 @@ def test_a2a_task_store_rolls_back_task_when_save_fails(
     assert store.get("task-a") is None
 
 
+def test_a2a_task_store_rolls_back_existing_task_when_save_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    storage_path = tmp_path / "a2a-state.json"
+    store = A2ATaskStore(storage_path)
+    original = store.put({"id": "task-a", "status": {"state": "TASK_STATE_WORKING"}})
+
+    def fail_write(path: Path, text: str, *, encoding: str) -> int:
+        raise OSError(f"blocked write to {path}")
+
+    monkeypatch.setattr(Path, "write_text", fail_write)
+
+    with pytest.raises(OSError, match="blocked write"):
+        store.put({"id": "task-a", "status": {"state": "TASK_STATE_COMPLETED"}})
+
+    assert store.get("task-a") == original
+
+
 def test_a2a_task_store_rolls_back_push_config_when_save_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -82,6 +165,38 @@ def test_a2a_task_store_rolls_back_push_config_when_save_fails(
     with pytest.raises(OSError, match="blocked write"):
         store.put_push_config("task-a", {"url": "https://example.test/hook"})
 
+    assert store.list_push_configs("task-a") == []
+
+
+def test_a2a_task_store_rolls_back_existing_push_config_when_save_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    storage_path = tmp_path / "a2a-state.json"
+    store = A2ATaskStore(storage_path)
+    original = store.put_push_config("task-a", {"id": "cfg-a", "url": "https://example.test/a"})
+
+    def fail_write(path: Path, text: str, *, encoding: str) -> int:
+        raise OSError(f"blocked write to {path}")
+
+    monkeypatch.setattr(Path, "write_text", fail_write)
+
+    with pytest.raises(OSError, match="blocked write"):
+        store.put_push_config("task-a", {"id": "cfg-b", "url": "https://example.test/b"})
+
+    assert store.list_push_configs("task-a") == [original]
+
+
+def test_a2a_task_store_push_config_get_list_delete_paths(tmp_path: Path) -> None:
+    store = A2ATaskStore(tmp_path / "a2a-state.json")
+
+    stored = store.put_push_config("task-a", {"id": "cfg-a", "url": "https://example.test/hook"})
+
+    assert store.get_push_config("task-a", "cfg-a") == stored
+    assert store.get_push_config("task-a", "missing") is None
+    assert store.list_push_configs("task-a") == [stored]
+    assert store.delete_push_config("task-a", "missing") is False
+    assert store.delete_push_config("missing", "cfg-a") is False
+    assert store.delete_push_config("task-a", "cfg-a") is True
     assert store.list_push_configs("task-a") == []
 
 

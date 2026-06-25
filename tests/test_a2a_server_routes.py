@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
-from a2a_server_helpers import FakeAgent, HandlerHarness
+from a2a_server_helpers import HandlerHarness, RecordingAgent
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 
@@ -25,7 +25,7 @@ def test_well_known_agent_card_endpoint_returns_card() -> None:
 
 def test_bearer_auth_protects_extended_card_and_message_routes() -> None:
     bridge = A2ABridge(
-        agent=FakeAgent(),
+        agent=RecordingAgent(),
         agent_card={"name": "SYNAPSE CHANNEL"},
         target="WORKER",
         store=A2ATaskStore(),
@@ -175,7 +175,7 @@ def test_message_stream_sends_sse_task_event_and_forwards_to_synapse() -> None:
 
 
 def test_subscribe_to_completed_task_returns_terminal_state_problem() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
             "messageId": "m1",
@@ -196,7 +196,7 @@ def test_subscribe_to_completed_task_returns_terminal_state_problem() -> None:
 
 
 def test_task_list_get_and_cancel_routes_use_store() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
             "messageId": "m1",
@@ -219,7 +219,7 @@ def test_task_list_get_and_cancel_routes_use_store() -> None:
 
 
 def test_task_list_supports_page_size_and_page_token() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     for task_id in ("task-a", "task-b"):
         bridge.create_completed_task(
             {
@@ -247,7 +247,7 @@ def test_task_list_supports_page_size_and_page_token() -> None:
 
 
 def test_get_task_supports_history_length_query() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
             "taskId": "task-a",
@@ -265,3 +265,225 @@ def test_get_task_supports_history_length_query() -> None:
     assert status == HTTPStatus.OK
     assert body["id"] == "task-a"
     assert body["history"] == []
+
+
+def test_unknown_get_routes_return_problem_json() -> None:
+    status, body = HandlerHarness("GET", "/missing").run()
+
+    assert status == HTTPStatus.NOT_FOUND
+    assert body["title"] == "Not Found"
+
+
+def test_get_unknown_task_and_colon_task_return_not_found() -> None:
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    unknown = HandlerHarness("GET", "/tasks/missing")
+    unknown.handler.bridge = bridge
+    colon = HandlerHarness("GET", "/tasks/task-a:cancel")
+    colon.handler.bridge = bridge
+
+    unknown_status, unknown_body = unknown.run()
+    colon_status, colon_body = colon.run()
+
+    assert unknown_status == HTTPStatus.NOT_FOUND
+    assert unknown_body["detail"] == "Unknown task: missing"
+    assert colon_status == HTTPStatus.NOT_FOUND
+    assert colon_body["title"] == "Not Found"
+
+
+def test_push_config_get_unknown_task_and_config_return_not_found() -> None:
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {"messageId": "m1", "role": "ROLE_USER", "parts": [{"text": "hello"}]},
+        target="WORKER",
+    )
+    unknown_task = HandlerHarness("GET", "/tasks/missing/pushNotificationConfigs")
+    unknown_task.handler.bridge = bridge
+    unknown_config = HandlerHarness("GET", f"/tasks/{task['id']}/pushNotificationConfigs/missing")
+    unknown_config.handler.bridge = bridge
+
+    task_status, task_body = unknown_task.run()
+    config_status, config_body = unknown_config.run()
+
+    assert task_status == HTTPStatus.NOT_FOUND
+    assert task_body["detail"] == "Unknown task: missing"
+    assert config_status == HTTPStatus.NOT_FOUND
+    assert config_body["detail"] == "Unknown push notification config: missing"
+
+
+def test_post_push_config_error_routes_return_problem_json() -> None:
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {"messageId": "m1", "role": "ROLE_USER", "parts": [{"text": "hello"}]},
+        target="WORKER",
+    )
+    with_config_id = HandlerHarness(
+        "POST", f"/tasks/{task['id']}/pushNotificationConfigs/cfg-a", body={}
+    )
+    with_config_id.handler.bridge = bridge
+    invalid_config = HandlerHarness(
+        "POST",
+        f"/tasks/{task['id']}/pushNotificationConfigs",
+        body={"pushNotificationConfig": "bad"},
+    )
+    invalid_config.handler.bridge = bridge
+    missing_webhook = HandlerHarness(
+        "POST", f"/tasks/{task['id']}/pushNotificationConfigs", body={}
+    )
+    missing_webhook.handler.bridge = bridge
+    unknown_task = HandlerHarness(
+        "POST",
+        "/tasks/missing/pushNotificationConfigs",
+        body={"webhookUrl": "https://example.test/hook"},
+    )
+    unknown_task.handler.bridge = bridge
+
+    id_status, id_body = with_config_id.run()
+    invalid_status, invalid_body = invalid_config.run()
+    webhook_status, webhook_body = missing_webhook.run()
+    unknown_status, unknown_body = unknown_task.run()
+
+    assert id_status == HTTPStatus.NOT_FOUND
+    assert id_body["title"] == "Not Found"
+    assert invalid_status == HTTPStatus.BAD_REQUEST
+    assert invalid_body["title"] == "Invalid push notification config"
+    assert webhook_status == HTTPStatus.BAD_REQUEST
+    assert webhook_body["detail"] == "pushNotificationConfig.webhookUrl is required"
+    assert unknown_status == HTTPStatus.NOT_FOUND
+    assert unknown_body["detail"] == "Unknown task: missing"
+
+
+def test_stream_invalid_message_returns_problem_json() -> None:
+    status, body = HandlerHarness("POST", "/message:stream", body={"message": "bad"}).run()
+
+    assert status == HTTPStatus.BAD_REQUEST
+    assert body["title"] == "Invalid A2A message"
+    assert body["detail"] == "message must be an object"
+
+
+def test_rpc_accepts_malformed_content_length_as_empty_body() -> None:
+    status, body = HandlerHarness(
+        "POST", "/rpc", body=b"{}", headers={"Content-Length": "bad"}
+    ).run()
+
+    assert status == HTTPStatus.OK
+    assert body["error"]["message"] == "Invalid Request"
+
+
+def test_non_object_json_body_returns_problem_json() -> None:
+    status, body = HandlerHarness("POST", "/message:send", body=b"[]").run()
+
+    assert status == HTTPStatus.BAD_REQUEST
+    assert body["title"] == "Invalid request body"
+
+
+def test_cancel_and_subscribe_unknown_tasks_return_not_found() -> None:
+    cancel_status, cancel_body = HandlerHarness("POST", "/tasks/missing:cancel").run()
+    subscribe_status, subscribe_body = HandlerHarness("POST", "/tasks/missing:subscribe").run()
+
+    assert cancel_status == HTTPStatus.NOT_FOUND
+    assert cancel_body["detail"] == "Unknown task: missing"
+    assert subscribe_status == HTTPStatus.NOT_FOUND
+    assert subscribe_body["detail"] == "Unknown task: missing"
+
+
+def test_subscribe_open_task_returns_sse_snapshot() -> None:
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {"messageId": "m1", "role": "ROLE_USER", "parts": [{"text": "hello"}]},
+        target="WORKER",
+    )
+    harness = HandlerHarness("POST", f"/tasks/{task['id']}:subscribe")
+    harness.handler.bridge = bridge
+
+    status, body = harness.run_sse()
+
+    assert status == HTTPStatus.OK
+    assert body["task"]["id"] == task["id"]
+
+
+def test_delete_push_config_error_routes_return_problem_json() -> None:
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {"messageId": "m1", "role": "ROLE_USER", "parts": [{"text": "hello"}]},
+        target="WORKER",
+    )
+    bad_path = HandlerHarness("DELETE", "/tasks")
+    bad_path.handler.bridge = bridge
+    unknown_task = HandlerHarness("DELETE", "/tasks/missing/pushNotificationConfigs/cfg-a")
+    unknown_task.handler.bridge = bridge
+    missing_config = HandlerHarness("DELETE", f"/tasks/{task['id']}/pushNotificationConfigs")
+    missing_config.handler.bridge = bridge
+
+    bad_status, bad_body = bad_path.run()
+    unknown_status, unknown_body = unknown_task.run()
+    missing_status, missing_body = missing_config.run()
+
+    assert bad_status == HTTPStatus.NOT_FOUND
+    assert bad_body["title"] == "Not Found"
+    assert unknown_status == HTTPStatus.NOT_FOUND
+    assert unknown_body["detail"] == "Unknown task: missing"
+    assert missing_status == HTTPStatus.NOT_FOUND
+    assert missing_body["detail"] == "Missing push notification config id."
+
+
+def test_data_none_branches_return_media_type_problem_json() -> None:
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {"messageId": "m1", "role": "ROLE_USER", "parts": [{"text": "hello"}]},
+        target="WORKER",
+    )
+    push = HandlerHarness(
+        "POST",
+        f"/tasks/{task['id']}/pushNotificationConfigs",
+        body={},
+        headers={"Content-Type": "text/plain"},
+    )
+    push.handler.bridge = bridge
+    stream = HandlerHarness(
+        "POST", "/message:stream", body={}, headers={"Content-Type": "text/plain"}
+    )
+    stream.handler.bridge = bridge
+    rpc = HandlerHarness("POST", "/rpc", body={}, headers={"Content-Type": "text/plain"})
+    rpc.handler.bridge = bridge
+
+    for harness in (push, stream, rpc):
+        status, body = harness.run()
+        assert status == HTTPStatus.UNSUPPORTED_MEDIA_TYPE
+        assert body["title"] == "Unsupported Media Type"
+
+
+def test_cancel_route_success_and_unknown_post_route() -> None:
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {"messageId": "m1", "role": "ROLE_USER", "parts": [{"text": "hello"}]},
+        target="WORKER",
+    )
+    cancel = HandlerHarness("POST", f"/tasks/{task['id']}:cancel")
+    cancel.handler.bridge = bridge
+    unknown = HandlerHarness("POST", "/unknown")
+    unknown.handler.bridge = bridge
+
+    cancel_status, cancel_body = cancel.run()
+    unknown_status, unknown_body = unknown.run()
+
+    assert cancel_status == HTTPStatus.OK
+    assert cancel_body["status"]["state"] == "TASK_STATE_CANCELED"
+    assert unknown_status == HTTPStatus.NOT_FOUND
+    assert unknown_body["title"] == "Not Found"
+
+
+def test_delete_route_requires_authorization() -> None:
+    bridge = A2ABridge(
+        agent=RecordingAgent(),
+        agent_card={},
+        target="WORKER",
+        store=A2ATaskStore(),
+        auth_token="secret",
+    )
+    harness = HandlerHarness("DELETE", "/tasks/task-a/pushNotificationConfigs/cfg-a")
+    harness.handler.bridge = bridge
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.UNAUTHORIZED
+    assert body["title"] == "Unauthorized"

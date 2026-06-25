@@ -11,13 +11,13 @@ from __future__ import annotations
 from http import HTTPStatus
 from typing import Any
 
-from a2a_server_helpers import FakeAgent, HandlerHarness
+from a2a_server_helpers import HandlerHarness, RecordingAgent
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 
 
 def test_push_notification_config_lifecycle_routes_use_store() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
             "messageId": "m1",
@@ -71,7 +71,7 @@ def test_push_notification_config_lifecycle_routes_use_store() -> None:
 
 
 def test_send_message_stores_push_notification_config_from_request() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
 
     response = bridge.send_message(
         {
@@ -96,7 +96,7 @@ def test_send_message_stores_push_notification_config_from_request() -> None:
 def test_send_message_delivers_push_notification_to_configured_webhook() -> None:
     deliveries: list[dict[str, Any]] = []
     bridge = A2ABridge(
-        agent=FakeAgent(),
+        agent=RecordingAgent(),
         agent_card={},
         target="WORKER",
         store=A2ATaskStore(),
@@ -136,7 +136,7 @@ def test_send_message_delivers_push_notification_to_configured_webhook() -> None
 def test_cancel_task_delivers_push_notification_to_stored_configs() -> None:
     deliveries: list[dict[str, Any]] = []
     bridge = A2ABridge(
-        agent=FakeAgent(),
+        agent=RecordingAgent(),
         agent_card={},
         target="WORKER",
         store=A2ATaskStore(),
@@ -173,7 +173,7 @@ def test_cancel_task_delivers_push_notification_to_stored_configs() -> None:
 def test_completion_delivers_push_notification_to_stored_config() -> None:
     deliveries: list[dict[str, Any]] = []
     bridge = A2ABridge(
-        agent=FakeAgent(),
+        agent=RecordingAgent(),
         agent_card={},
         target="WORKER",
         store=A2ATaskStore(),
@@ -202,7 +202,7 @@ def test_completion_delivers_push_notification_to_stored_config() -> None:
 
 
 def test_push_notification_config_rejects_non_http_webhook_url() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
             "messageId": "m1",
@@ -221,7 +221,7 @@ def test_push_notification_config_rejects_non_http_webhook_url() -> None:
 
 
 def test_push_notification_config_rejects_missing_webhook_host() -> None:
-    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
             "messageId": "m1",
