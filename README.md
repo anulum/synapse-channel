@@ -229,10 +229,11 @@ For Agent2Agent discovery, `synapse a2a-card --endpoint-url ...` projects the
 live capability manifest into an A2A Agent Card JSON document suitable for a
 thin HTTP edge to serve as `/.well-known/agent-card.json`.
 To run that edge directly, use `synapse a2a-serve --endpoint-url ...`; it serves
-the Agent Card, forwards `POST /message:send` text/data parts into SYNAPSE chat,
-supports immediate `POST /message:stream` Server-Sent Events, and exposes its
-bridge-local task list/get/cancel plus push-notification configuration routes
-over HTTP+JSON.
+the public Agent Card, forwards `POST /message:send` text/data/file parts into
+SYNAPSE chat, supports immediate `POST /message:stream` Server-Sent Events,
+exposes bridge-local task list/get/cancel plus push-notification configuration
+routes, accepts JSON-RPC 2.0 calls on `/rpc`, and can enforce Bearer auth plus
+persist task state with `--state-file`.
 
 ### Git-native claims
 
@@ -346,7 +347,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 54 |
 | Wire message types | 52 |
 | CLI subcommands | 30 |
-| Test functions | 1128 |
+| Test functions | 1137 |
 | Benchmark harnesses | 3 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

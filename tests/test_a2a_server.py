@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from http import HTTPStatus
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 
 from synapse_channel.a2a_server import A2ABridge, A2ATaskStore, build_a2a_handler
@@ -30,7 +31,14 @@ class FakeAgent:
 class HandlerHarness:
     """Instantiate one stdlib request handler without binding a socket."""
 
-    def __init__(self, method: str, path: str, *, body: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         bridge = A2ABridge(
             agent=FakeAgent(),
             agent_card={
@@ -64,7 +72,7 @@ class HandlerHarness:
         self.handler.request_version = "HTTP/1.1"
         self.handler.requestline = f"{method} {path} HTTP/1.1"
         handler: Any = self.handler
-        handler.headers = {"Content-Length": str(len(payload))}
+        handler.headers = {"Content-Length": str(len(payload)), **(headers or {})}
         self.handler.rfile = BytesIO(payload)
         self.handler.wfile = BytesIO()
         self.handler.close_connection = False
@@ -101,12 +109,64 @@ class HandlerHarness:
         return status, json.loads(line.removeprefix(b"data: ").decode("utf-8"))
 
 
+def test_task_store_persists_tasks_and_push_configs(tmp_path: Path) -> None:
+    state_file = tmp_path / "a2a-state.json"
+    first_store = A2ATaskStore(storage_path=state_file)
+    first_store.put(
+        {
+            "id": "task-a",
+            "contextId": "ctx",
+            "status": {"state": "TASK_STATE_COMPLETED"},
+            "history": [],
+        }
+    )
+    first_store.put_push_config(
+        "task-a",
+        {"id": "cfg-a", "webhookUrl": "https://example.test/hook"},
+    )
+
+    second_store = A2ATaskStore(storage_path=state_file)
+
+    assert second_store.get("task-a") is not None
+    assert second_store.get_push_config("task-a", "cfg-a") is not None
+
+
 def test_well_known_agent_card_endpoint_returns_card() -> None:
     status, body = HandlerHarness("GET", "/.well-known/agent-card.json").run()
 
     assert status == HTTPStatus.OK
     assert body["name"] == "SYNAPSE CHANNEL"
     assert body["supportedInterfaces"][0]["protocolBinding"] == "HTTP+JSON"
+
+
+def test_bearer_auth_protects_extended_card_and_message_routes() -> None:
+    bridge = A2ABridge(
+        agent=FakeAgent(),
+        agent_card={"name": "SYNAPSE CHANNEL"},
+        target="WORKER",
+        store=A2ATaskStore(),
+        auth_token="secret",
+    )
+    public = HandlerHarness("GET", "/.well-known/agent-card.json")
+    public.handler.bridge = bridge
+    extended = HandlerHarness("GET", "/extendedAgentCard")
+    extended.handler.bridge = bridge
+    authorized = HandlerHarness(
+        "GET",
+        "/extendedAgentCard",
+        headers={"Authorization": "Bearer secret"},
+    )
+    authorized.handler.bridge = bridge
+
+    public_status, _ = public.run()
+    extended_status, extended_body = extended.run()
+    authorized_status, authorized_body = authorized.run()
+
+    assert public_status == HTTPStatus.OK
+    assert extended_status == HTTPStatus.UNAUTHORIZED
+    assert extended_body["title"] == "Unauthorized"
+    assert authorized_status == HTTPStatus.OK
+    assert authorized_body["name"] == "SYNAPSE CHANNEL"
 
 
 def test_message_send_creates_completed_task_and_forwards_text_to_synapse() -> None:
@@ -129,6 +189,38 @@ def test_message_send_creates_completed_task_and_forwards_text_to_synapse() -> N
     assert body["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
     assert body["task"]["history"][0]["messageId"] == "m1"
     assert harness.handler.bridge.agent.messages == [("SC-NEUROCORE", "status please")]
+
+
+def test_message_send_renders_file_parts_for_synapse_forwarding() -> None:
+    harness = HandlerHarness(
+        "POST",
+        "/message:send",
+        body={
+            "message": {
+                "messageId": "m1",
+                "role": "ROLE_USER",
+                "parts": [
+                    {
+                        "file": {
+                            "uri": "https://example.test/report.pdf",
+                            "name": "report.pdf",
+                            "mimeType": "application/pdf",
+                        }
+                    }
+                ],
+            }
+        },
+    )
+
+    status, _ = harness.run()
+
+    assert status == HTTPStatus.OK
+    assert harness.handler.bridge.agent.messages == [
+        (
+            "WORKER",
+            "[file: report.pdf; application/pdf; https://example.test/report.pdf]",
+        )
+    ]
 
 
 def test_message_stream_sends_sse_task_event_and_forwards_to_synapse() -> None:
@@ -269,6 +361,179 @@ def test_send_message_stores_push_notification_config_from_request() -> None:
     task_id = response["task"]["id"]
     configs = bridge.list_push_notification_configs(task_id)
     assert configs["pushNotificationConfigs"][0]["webhookUrl"] == "https://example.test/hook"
+
+
+def test_send_message_delivers_push_notification_to_configured_webhook() -> None:
+    deliveries: list[dict[str, Any]] = []
+    bridge = A2ABridge(
+        agent=FakeAgent(),
+        agent_card={},
+        target="WORKER",
+        store=A2ATaskStore(),
+        push_deliverer=deliveries.append,
+    )
+
+    response = bridge.send_message(
+        {
+            "message": {
+                "messageId": "m1",
+                "role": "ROLE_USER",
+                "parts": [{"text": "hello"}],
+            },
+            "configuration": {
+                "taskPushNotificationConfig": {
+                    "pushNotificationConfig": {
+                        "webhookUrl": "https://example.test/hook",
+                        "authentication": {
+                            "scheme": "Bearer",
+                            "credentials": "push-token",
+                        },
+                    }
+                }
+            },
+        }
+    )
+
+    assert deliveries == [
+        {
+            "url": "https://example.test/hook",
+            "headers": {"Authorization": "Bearer push-token"},
+            "payload": {"task": response["task"]},
+        }
+    ]
+
+
+def test_cancel_task_delivers_push_notification_to_stored_configs() -> None:
+    deliveries: list[dict[str, Any]] = []
+    bridge = A2ABridge(
+        agent=FakeAgent(),
+        agent_card={},
+        target="WORKER",
+        store=A2ATaskStore(),
+        push_deliverer=deliveries.append,
+    )
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}],
+        },
+        target="WORKER",
+    )
+    bridge.create_push_notification_config(
+        task["id"],
+        {
+            "webhookUrl": "https://example.test/hook",
+            "authentication": {"scheme": "Bearer", "credentials": "push-token"},
+        },
+    )
+
+    canceled = bridge.cancel_task(task["id"])
+
+    assert canceled is not None
+    assert deliveries == [
+        {
+            "url": "https://example.test/hook",
+            "headers": {"Authorization": "Bearer push-token"},
+            "payload": {"task": canceled},
+        }
+    ]
+
+
+def test_json_rpc_message_send_dispatches_to_bridge() -> None:
+    harness = HandlerHarness(
+        "POST",
+        "/rpc",
+        body={
+            "jsonrpc": "2.0",
+            "id": "req-1",
+            "method": "message/send",
+            "params": {
+                "message": {
+                    "messageId": "m1",
+                    "role": "ROLE_USER",
+                    "parts": [{"text": "json rpc"}],
+                }
+            },
+        },
+    )
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.OK
+    assert body["jsonrpc"] == "2.0"
+    assert body["id"] == "req-1"
+    assert body["result"]["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert harness.handler.bridge.agent.messages == [("WORKER", "json rpc")]
+
+
+def test_json_rpc_unknown_method_returns_method_not_found_error() -> None:
+    status, body = HandlerHarness(
+        "POST",
+        "/rpc",
+        body={
+            "jsonrpc": "2.0",
+            "id": "req-1",
+            "method": "unknown/method",
+            "params": {},
+        },
+    ).run()
+
+    assert status == HTTPStatus.OK
+    assert body == {
+        "jsonrpc": "2.0",
+        "id": "req-1",
+        "error": {"code": -32601, "message": "Method not found"},
+    }
+
+
+def test_task_list_supports_page_size_and_page_token() -> None:
+    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    for task_id in ("task-a", "task-b"):
+        bridge.create_completed_task(
+            {
+                "taskId": task_id,
+                "messageId": f"message-{task_id}",
+                "role": "ROLE_USER",
+                "parts": [{"text": task_id}],
+            },
+            target="WORKER",
+        )
+
+    first = HandlerHarness("GET", "/tasks?pageSize=1")
+    first.handler.bridge = bridge
+    first_status, first_body = first.run()
+    second = HandlerHarness("GET", f"/tasks?pageSize=1&pageToken={first_body['nextPageToken']}")
+    second.handler.bridge = bridge
+    second_status, second_body = second.run()
+
+    assert first_status == HTTPStatus.OK
+    assert first_body["tasks"][0]["id"] == "task-a"
+    assert first_body["nextPageToken"] == "1"
+    assert second_status == HTTPStatus.OK
+    assert second_body["tasks"][0]["id"] == "task-b"
+    assert second_body["nextPageToken"] == ""
+
+
+def test_get_task_supports_history_length_query() -> None:
+    bridge = A2ABridge(agent=FakeAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {
+            "taskId": "task-a",
+            "messageId": "message-a",
+            "role": "ROLE_USER",
+            "parts": [{"text": "task-a"}],
+        },
+        target="WORKER",
+    )
+    harness = HandlerHarness("GET", f"/tasks/{task['id']}?historyLength=0")
+    harness.handler.bridge = bridge
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.OK
+    assert body["id"] == "task-a"
+    assert body["history"] == []
 
 
 def test_bad_json_returns_a2a_problem_json() -> None:
