@@ -21,12 +21,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from pathlib import Path
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.git.gitclaim import GitError, run_git_claim
 from synapse_channel.git.gitconflict import run_conflicts
 from synapse_channel.git.githook import check_hooks, install_hooks, run_git_release
 from synapse_channel.git.gitinit import init_repo
+from synapse_channel.service_setup import install_user_services, service_suggestions
 
 
 def _cmd_git_claim(args: argparse.Namespace) -> int:
@@ -67,6 +69,22 @@ def _cmd_git_init(args: argparse.Namespace) -> int:
     except GitError as exc:
         print(f"git error: {exc}", file=sys.stderr)
         return 1
+    project = args.service_project or Path.cwd().name
+    identity = args.service_identity or project
+    if args.install_user_services or args.start_user_services:
+        lines.extend(
+            install_user_services(
+                project=project,
+                identity=identity,
+                synapse_bin=args.synapse_bin,
+                start=args.start_user_services,
+            )
+        )
+    else:
+        lines.append("service setup available: run `synapse git-init --install-user-services`")
+        lines.extend(
+            service_suggestions(project=project, identity=identity, synapse_bin=args.synapse_bin)
+        )
     for line in lines:
         print(line)
     return 0
@@ -209,6 +227,26 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=None,
         help="Path to the synapse executable to invoke from the hooks; defaults to the "
         "absolute path resolved from PATH at install time (hardens against PATH hijack).",
+    )
+    git_init.add_argument(
+        "--install-user-services",
+        action="store_true",
+        help="Also write systemd user units for hub, project presence, and wake arming.",
+    )
+    git_init.add_argument(
+        "--start-user-services",
+        action="store_true",
+        help="Install units, daemon-reload, and enable/start hub, presence, and wake arming.",
+    )
+    git_init.add_argument(
+        "--service-project",
+        default=None,
+        help="Project instance for generated services; defaults to the current directory name.",
+    )
+    git_init.add_argument(
+        "--service-identity",
+        default=None,
+        help="Worker identity for wake arming; defaults to the service project.",
     )
     git_init.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     git_init.set_defaults(func=_cmd_git_init)

@@ -154,6 +154,24 @@ Synapse coordinates the agents you already run; it does not replace them.
 - **Check the wiring:** `synapse doctor` reports the common setup mistakes — no live
   waiter, a hub exposed without a token, an accidental identity — each with its fix.
 
+- **Install the always-on local services:** `synapse init` prints or installs the
+  hub, project presence, and non-LLM wake listener units. `doctor --fix` prints
+  the exact commands when a waiter is missing.
+
+  ```bash
+  synapse init --project myrepo --identity myrepo/worker --install-user-services
+  synapse init --project myrepo --identity myrepo/worker --start-user-services
+  synapse doctor --fix
+  ```
+
+- **Launch a provider command with a wake sidecar:** `worker-session` exports the
+  identity variables, starts a cheap `syn arm` listener, runs your command, and
+  stops the listener when the command exits.
+
+  ```bash
+  synapse worker-session --identity myrepo/worker -- codex --sandbox danger-full-access
+  ```
+
 ### Agent ergonomics — the `syn` commands
 
 For the short loop an agent runs every session — arm a waiter, send a message,

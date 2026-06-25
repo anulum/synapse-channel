@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — systemd template unit for a provider-independent wake listener
+#
+# One instance per project or worker identity keeps a cheap non-LLM wake listener
+# armed. It holds a socket, prints matching messages, and restarts if it dies.
+#
+# User install:
+#   cp deploy/synapse-arm@.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now "$(systemd-escape --template=synapse-arm@.service '<project-or-identity>')"
+#
+# %I expands to the unescaped instance name, so identities such as PROJECT/ux work
+# when enabled through systemd-escape.
+
+[Unit]
+Description=SYNAPSE CHANNEL wake listener for %I
+Documentation=https://github.com/anulum/synapse-channel
+After=synapse-hub.service
+Wants=synapse-hub.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Environment=SYN_PROJECT=%I
+Environment=SYN_IDENTITY=%I
+ExecStart=%h/.local/bin/synapse arm --name %I-rx --for %I --directed-only --uri ws://localhost:8876
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

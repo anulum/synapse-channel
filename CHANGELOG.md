@@ -17,6 +17,12 @@ All notable changes to this project are documented here.
 - `synapse arm` now keeps a worker listener armed across repeated wakes and
   reconnects. The ergonomic `syn arm` and `syn-wait` wrappers use this persistent
   path instead of the one-shot `synapse wait` wake primitive.
+- `synapse init` now prints or installs local user services for the hub, project
+  presence, and provider-neutral wake arming. `synapse git-init` can install/start
+  the same services, and `synapse doctor --fix` prints or applies the exact setup.
+- `synapse worker-session` launches an arbitrary provider command with
+  `SYN_PROJECT`/`SYN_IDENTITY` set and a cheap `syn arm` sidecar while the command
+  runs.
 
 ### Security
 - `synapse a2a-serve` now refuses a non-loopback bind unless Bearer auth and
