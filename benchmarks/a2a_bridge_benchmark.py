@@ -131,8 +131,7 @@ def profile(
             "type": "chat",
             "sender": "WORKER",
             "payload": (
-                f"fanout done\n[A2A-TASK:{fanout_task_id} "
-                f"contextId={fanout_task['contextId']}]"
+                f"fanout done\n[A2A-TASK:{fanout_task_id} contextId={fanout_task['contextId']}]"
             ),
         }
     )
