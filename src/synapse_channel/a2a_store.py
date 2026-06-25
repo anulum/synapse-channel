@@ -122,8 +122,16 @@ class A2ATaskStore:
             stored = dict(config)
             stored["id"] = config_id
             stored["taskId"] = task_id
+            previous = dict(self._push_configs.get(task_id, {}))
             self._push_configs.setdefault(task_id, {})[config_id] = stored
-            self._save()
+            try:
+                self._save()
+            except Exception:
+                if previous:
+                    self._push_configs[task_id] = previous
+                else:
+                    self._push_configs.pop(task_id, None)
+                raise
         return stored
 
     def get_push_config(self, task_id: str, config_id: str) -> JsonMap | None:
