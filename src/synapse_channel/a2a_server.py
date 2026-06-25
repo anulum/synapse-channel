@@ -492,6 +492,9 @@ class A2ABridge:
         task = self.store.get(task_id)
         if task is None or not self._sender_matches_task(task, sender):
             return
+        status = task.get("status", {})
+        if isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES:
+            return
 
         reply_text = self._strip_task_marker(payload)
         reply_part: JsonMap = {
@@ -635,6 +638,9 @@ class A2ABridge:
         webhook = config.get("webhookUrl") or config.get("url")
         if not webhook:
             raise ValueError("pushNotificationConfig.webhookUrl is required")
+        parsed_webhook = urlparse(str(webhook))
+        if parsed_webhook.scheme not in {"http", "https"}:
+            raise ValueError("pushNotificationConfig.webhookUrl must use http or https")
         stored = dict(config)
         stored["webhookUrl"] = str(webhook)
         return self.store.put_push_config(task_id, stored)
