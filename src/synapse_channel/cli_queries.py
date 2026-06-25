@@ -231,6 +231,7 @@ async def _state(
     owner: str | None = None,
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
+    ready_timeout: float = 5.0,
 ) -> int:
     """Print the live claims and their checkpoints — the "where was I" recovery view.
 
@@ -247,6 +248,9 @@ async def _state(
         Factory for the client agent; injectable for testing.
     token : str or None, optional
         Shared-secret token for a secured hub.
+    ready_timeout : float, optional
+        Seconds to wait for the welcome handshake before treating the hub as
+        unreachable. Defaults to ``5.0``.
 
     Returns
     -------
@@ -283,6 +287,7 @@ async def _state(
         transform=lambda data: data.get("snapshot", {}),
         request=lambda agent: agent.request_state(),
         render=render,
+        ready_timeout=ready_timeout,
     )
 
 
