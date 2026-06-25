@@ -49,6 +49,7 @@ def test_render_shell_hook_fish_uses_prompt_event() -> None:
     assert "function __synapse_auto_arm --on-event fish_prompt" in hook
     assert "function codex --wraps codex" in hook
     assert 'synapse worker-session --project "$SYN_PROJECT"' in hook
+    assert "disown $last_pid" in hook
 
 
 def test_shell_rc_path_detects_auto_shell(tmp_path: Path) -> None:

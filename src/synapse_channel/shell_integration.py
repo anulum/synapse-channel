@@ -176,6 +176,7 @@ function __synapse_auto_arm --on-event fish_prompt
   nohup synapse arm --name "$identity-rx" --for "$project" --directed-only \
     >"$logfile" 2>&1 &
   echo $last_pid >"$pidfile"
+  disown $last_pid 2>/dev/null
 end
 
 function __synapse_run_provider
