@@ -54,8 +54,8 @@ When that boundary is crossed, the proportionate controls are:
   filesystem. A claim on `../../etc/passwd` coordinates nothing and touches nothing
   on disk, so scope strings are not a path-traversal surface.
 - **Metrics endpoint.** The optional `synapse hub --metrics` endpoint is off by
-  default and, when enabled, carries operational metadata with no authentication.
-  Keep it on a loopback bind, or require a token with `--metrics-token`; when
+  default. Without `--metrics-token`, enabled metrics and health probes carry
+  operational metadata unauthenticated, so keep them on a loopback bind. When
   metrics are enabled on a non-loopback host, the hub refuses to start without a
   metrics token unless `--insecure-off-loopback` is set. The recommended token
   presentation is `Authorization: Bearer <token>`. The `?token=<token>` query
@@ -100,10 +100,10 @@ worth stating plainly:
 - The event log and SQLite database are stored in plaintext on the operator's own
   machine. Encryption at rest is out of scope for the local-first niche; it is a
   concern for a future managed multi-tenant hub, not the single-owner core.
-- The A2A bridge is a local HTTP+JSON bridge over SYNAPSE capabilities, not a
-  certified A2A implementation. Remote conformance, real webhook receiver
-  behavior, TLS/reverse-proxy deployment, and exposed-edge threat modelling are
-  tracked as future validation work.
+- The A2A bridge is a local HTTP+JSON bridge over SYNAPSE capabilities, not
+  externally validated for full A2A conformance. Remote conformance, real webhook
+  receiver behavior, TLS/reverse-proxy deployment, and exposed-edge threat
+  modelling are tracked as future validation work.
 
 ## Licensing
 
