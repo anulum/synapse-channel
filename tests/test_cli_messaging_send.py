@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from pathlib import Path
 
 import pytest
 
@@ -17,6 +18,8 @@ from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli_messaging
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 async def test_send_delivers_message_and_prints_replies(
@@ -160,3 +163,36 @@ async def test_send_marks_priority() -> None:
 
     assert code == 0
     assert message["priority"] is True
+
+
+async def test_send_normalizes_waiter_identity_before_connecting() -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        waiter = await connect_agent("api-dev-rx", uri)
+        observer = await connect_agent("OBSERVER", uri)
+        try:
+            code = await cli_messaging._send(
+                uri=uri,
+                name="api-dev-rx",
+                target="OBSERVER",
+                message="ready",
+                wait_seconds=0.0,
+            )
+            message = await observer.recorder.wait_for(
+                lambda item: item.get("type") == "chat" and item.get("payload") == "ready"
+            )
+        finally:
+            await close_agents(waiter, observer)
+
+    assert code == 0
+    assert message["sender"] == "api-dev"
+    assert message["target"] == "OBSERVER"
+
+
+def test_send_waiter_identity_normalization_is_documented() -> None:
+    readme = " ".join((REPO_ROOT / "README.md").read_text(encoding="utf-8").split())
+    cli_docs = " ".join((REPO_ROOT / "docs" / "cli.md").read_text(encoding="utf-8").split())
+
+    assert "synapse send --name api-dev-rx ..." in readme
+    assert "sends as `api-dev`" in readme
+    assert "one-shot send accidentally uses a waiter name" in cli_docs
+    assert "avoids the hub's duplicate-name refusal" in cli_docs

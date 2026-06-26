@@ -1,6 +1,7 @@
 # Local agent config — never commit
 CLAUDE.md
 .claude/
+.coordination/
 AGENTS.md
 GEMINI.md
 *_RULES.md

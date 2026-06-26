@@ -136,6 +136,10 @@ synapse listen --name USER
 synapse send --name USER --target FAST "what is the status of TASK-1?"
 ```
 
+One-shot sends avoid the common waiter-name collision: `synapse send --name
+api-dev-rx ...` sends as `api-dev`, leaving the persistent `api-dev-rx` wake
+socket connected.
+
 ### Running pieces individually
 
 ```bash
@@ -440,7 +444,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 75 |
 | Wire message types | 52 |
 | CLI subcommands | 39 |
-| Test functions | 1394 |
+| Test functions | 1396 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |
