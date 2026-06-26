@@ -28,6 +28,7 @@ from synapse_channel.core.protocol import (
 def test_message_type_values_are_stable_wire_strings() -> None:
     assert MessageType.CHAT == "chat"
     assert MessageType.CLAIM_GRANTED == "claim_granted"
+    assert MessageType.DELIVERY_RECEIPT == "delivery_receipt"
     assert MessageType.NAME_CONFLICT == "name_conflict"
     assert MessageType.RESUME_REQUEST == "resume_request"
     assert MessageType.RESUME_SNAPSHOT == "resume_snapshot"

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 from typing import Any
 
 from synapse_channel.cli_messaging_types import AgentFactory
@@ -46,6 +47,8 @@ async def _send(
     message: str,
     wait_seconds: float,
     priority: bool = False,
+    require_recipient: bool = False,
+    receipt_timeout: float = 2.0,
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
     ready_timeout: float = 5.0,
@@ -60,6 +63,11 @@ async def _send(
         Seconds to keep listening for replies after sending (``0`` to skip).
     priority : bool, optional
         Mark the message as priority so it wakes even directed-only waiters.
+    require_recipient : bool, optional
+        Wait for a hub delivery receipt and return ``1`` when no online recipient
+        matches ``target``.
+    receipt_timeout : float, optional
+        Seconds to wait for the delivery receipt when ``require_recipient`` is set.
     agent_factory : AgentFactory, optional
         Factory for the client agent; injectable for testing.
     token : str or None, optional
@@ -74,10 +82,13 @@ async def _send(
     """
     sender_name = _one_shot_sender_name(name)
     replies: list[dict[str, Any]] = []
+    receipts: list[dict[str, Any]] = []
 
     async def collect(data: dict[str, Any]) -> None:
         if data.get("type") == MessageType.CHAT and data.get("sender") != sender_name:
             replies.append(data)
+        elif data.get("type") == MessageType.DELIVERY_RECEIPT and data.get("target") == sender_name:
+            receipts.append(data)
 
     agent = agent_factory(sender_name, collect, uri=uri, verbose=False, token=token)
     conn_task = asyncio.create_task(agent.connect())
@@ -85,7 +96,20 @@ async def _send(
         if not await agent.wait_until_ready(timeout=ready_timeout):
             print(f"[{sender_name}] Could not reach hub at {uri}.")
             return 1
-        await agent.chat(message, target=target, priority=priority)
+        extra: dict[str, Any] = {}
+        if priority:
+            extra["priority"] = True
+        if require_recipient:
+            extra["receipt_requested"] = True
+        await agent.send_message(MessageType.CHAT, target=target, payload=message, **extra)
+        if require_recipient:
+            receipt = await _wait_for_delivery_receipt(receipts, timeout=receipt_timeout)
+            if receipt is None:
+                print(f"delivery failed: no receipt from hub for {target}")
+                return 1
+            print(str(receipt.get("payload") or "delivery receipt received"))
+            if not bool(receipt.get("delivered")):
+                return 1
         if wait_seconds > 0:
             await asyncio.sleep(wait_seconds)
             for reply in replies:
@@ -94,6 +118,21 @@ async def _send(
     finally:
         agent.running = False
         conn_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await conn_task
+
+
+async def _wait_for_delivery_receipt(
+    receipts: list[dict[str, Any]], *, timeout: float
+) -> dict[str, Any] | None:
+    """Return the first collected delivery receipt before ``timeout`` expires."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + max(float(timeout), 0.0)
+    while loop.time() <= deadline:
+        if receipts:
+            return receipts[-1]
+        await asyncio.sleep(0.01)
+    return None
 
 
 def _cmd_send(args: argparse.Namespace) -> int:
@@ -106,6 +145,8 @@ def _cmd_send(args: argparse.Namespace) -> int:
             message=args.message,
             wait_seconds=args.wait_seconds,
             priority=args.priority,
+            require_recipient=getattr(args, "require_recipient", False),
+            receipt_timeout=getattr(args, "receipt_timeout", 2.0),
             token=args.token,
             ready_timeout=args.ready_timeout,
         )

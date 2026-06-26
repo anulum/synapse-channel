@@ -120,6 +120,7 @@ class MessageType:
 
     # Agent -> hub.
     CHAT = "chat"
+    DELIVERY_RECEIPT = "delivery_receipt"
     HEARTBEAT = "heartbeat"
     CLAIM = "claim"
     RELEASE = "release"

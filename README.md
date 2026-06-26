@@ -134,11 +134,14 @@ Then, from another terminal, watch the channel or send a message:
 ```bash
 synapse listen --name USER
 synapse send --name USER --target FAST "what is the status of TASK-1?"
+synapse send --require-recipient --target FAST "ping"  # fail if FAST is not online
 ```
 
 One-shot sends avoid the common waiter-name collision: `synapse send --name
 api-dev-rx ...` sends as `api-dev`, leaving the persistent `api-dev-rx` wake
-socket connected.
+socket connected. Add `--require-recipient` for directed sends that must not
+silently miss: the hub returns a private receipt naming the matched online
+recipients, and the command exits non-zero when none match `--target`.
 
 ### Running pieces individually
 
@@ -465,9 +468,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Public API exports | 59 |
 | Package modules | 115 |
 | Classes | 83 |
-| Wire message types | 52 |
+| Wire message types | 53 |
 | CLI subcommands | 39 |
-| Test functions | 1448 |
+| Test functions | 1455 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

@@ -47,6 +47,12 @@ def test_parser_send_priority() -> None:
     assert args.priority is True
 
 
+def test_parser_send_require_recipient() -> None:
+    args = cli.build_parser().parse_args(["send", "hi", "--target", "B", "--require-recipient"])
+    assert args.require_recipient is True
+    assert args.receipt_timeout == 2.0
+
+
 def test_parser_wait_wake_jitter() -> None:
     args = cli.build_parser().parse_args(["wait", "--for", "B", "--wake-jitter", "3"])
     assert args.wake_jitter == 3.0

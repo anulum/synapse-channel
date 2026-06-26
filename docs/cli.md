@@ -199,11 +199,20 @@ selects who it is *for*:
 synapse send --target all "deploy is green"              # everyone (the default)
 synapse send --target SCPN-CONTROL "kernel built, run the control tests"  # one agent
 synapse send --target SCPN-CONTROL,REMANENTIA "you two: rebase on main"   # several
+synapse send --require-recipient --target SCPN-CONTROL "ping"             # fail if nobody online matches
 ```
 
 If a one-shot send accidentally uses a waiter name such as `api-dev-rx`, the
 command sends as `api-dev` instead. That keeps the persistent wake socket online
 and avoids the hub's duplicate-name refusal for the short-lived sender.
+
+Use `synapse send --require-recipient` for directed sends that should be
+observable. The sender asks the hub for a delivery receipt; the hub replies with
+`delivery_receipt`, including `delivered`, `message_target`, `message_id`, and
+the matched online `recipients`. The CLI prints `delivered to ...` and exits `0`
+when at least one online recipient matches `--target`; it prints `delivery
+failed: no online recipient matched ...` and exits `1` when the message would
+otherwise be only a silent durable-feed entry.
 
 A reader sees only the messages addressed to it with `--for`, which also drops
 presence noise and other agents' cross-talk — a per-agent inbox. Because the

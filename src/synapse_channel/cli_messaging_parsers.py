@@ -29,6 +29,17 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         action="store_true",
         help="Mark as priority so it wakes even directed-only waiters (use sparingly).",
     )
+    send.add_argument(
+        "--require-recipient",
+        action="store_true",
+        help="Wait for a hub delivery receipt and fail if no online recipient matches --target.",
+    )
+    send.add_argument(
+        "--receipt-timeout",
+        type=float,
+        default=2.0,
+        help="Seconds to wait for a delivery receipt when --require-recipient is used.",
+    )
     send.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     send.add_argument(
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."

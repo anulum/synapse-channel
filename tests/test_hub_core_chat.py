@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from websockets.asyncio.client import connect
 
@@ -20,6 +21,7 @@ from hub_e2e_helpers import (
     running_hub,
 )
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.persistence import EventStore
 
 
 async def test_chat_is_broadcast_and_recorded_end_to_end() -> None:
@@ -81,3 +83,83 @@ async def test_unknown_type_errors_sender_end_to_end() -> None:
             await websocket.send(json.dumps({"sender": "A", "type": "frobnicate"}))
             error = await read_until_type(websocket, "error")
     assert "Unknown message type" in error["payload"]
+
+
+async def test_chat_delivery_receipt_reports_matching_online_recipient() -> None:
+    async with running_hub() as (_, uri):
+        beta = await connect_agent("BETA", uri)
+        try:
+            async with connect(uri) as websocket:
+                await read_until_type(websocket, "welcome")
+                await websocket.send(
+                    json.dumps(
+                        {
+                            "sender": "ALPHA",
+                            "type": "chat",
+                            "target": "BETA",
+                            "payload": "hello",
+                            "receipt_requested": True,
+                        }
+                    )
+                )
+                receipt = await read_until_type(websocket, "delivery_receipt")
+        finally:
+            await close_agents(beta)
+
+    assert receipt["delivered"] is True
+    assert receipt["target"] == "ALPHA"
+    assert receipt["message_target"] == "BETA"
+    assert receipt["recipients"] == ["BETA"]
+    assert receipt["message_id"] == 1
+
+
+async def test_chat_delivery_receipt_reports_no_online_recipient() -> None:
+    async with running_hub() as (_, uri):
+        async with connect(uri) as websocket:
+            await read_until_type(websocket, "welcome")
+            await websocket.send(
+                json.dumps(
+                    {
+                        "sender": "ALPHA",
+                        "type": "chat",
+                        "target": "MISSING",
+                        "payload": "hello",
+                        "receipt_requested": True,
+                    }
+                )
+            )
+            receipt = await read_until_type(websocket, "delivery_receipt")
+
+    assert receipt["delivered"] is False
+    assert receipt["message_target"] == "MISSING"
+    assert receipt["recipients"] == []
+    assert "no online recipient matched MISSING" in receipt["payload"]
+
+
+async def test_chat_delivery_receipt_preserves_history_bound_and_journal(
+    tmp_path: Path,
+) -> None:
+    store = EventStore(tmp_path / "events.db")
+    hub = SynapseHub(journal=store, max_history=1)
+    async with running_hub(hub) as (_, uri):
+        async with connect(uri) as websocket:
+            await read_until_type(websocket, "welcome")
+            await websocket.send(json.dumps({"sender": "ALPHA", "type": "chat", "payload": "one"}))
+            await read_until_type(websocket, "chat")
+            await websocket.send(
+                json.dumps(
+                    {
+                        "sender": "ALPHA",
+                        "type": "chat",
+                        "target": "MISSING",
+                        "payload": "two",
+                        "receipt_requested": True,
+                    }
+                )
+            )
+            await read_until_type(websocket, "delivery_receipt")
+
+    events = store.read_all()
+    store.close()
+    assert [message["payload"] for message in hub.chat_history] == ["two"]
+    assert [event.kind for event in events] == ["chat", "chat"]
