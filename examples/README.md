@@ -32,6 +32,14 @@ python examples/coordination_demo.py
 python examples/llm_team_demo.py
 ```
 
+To generate the coding-agents demo as an editable workspace after install:
+
+```bash
+synapse new coding-fleet ./demo-fleet
+cd ./demo-fleet
+python run_demo.py
+```
+
 ## `coordination_demo.py`
 
 A narrated walk through the coordination plane: a planner declares a plan on the

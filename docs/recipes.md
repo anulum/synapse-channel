@@ -81,6 +81,15 @@ Run the worked example end-to-end:
 python examples/coding_agents_demo.py
 ```
 
+Or generate the same installed workflow into a throwaway workspace with editable
+source and test files:
+
+```bash
+synapse new coding-fleet ./demo-fleet
+cd ./demo-fleet
+python run_demo.py
+```
+
 # Recipe: a fleet of turn-based agents
 
 The other shape: not long-running worker processes but *turn-based assistants* — the
