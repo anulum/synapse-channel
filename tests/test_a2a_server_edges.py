@@ -18,13 +18,9 @@ import pytest
 
 from a2a_server_helpers import RecordingAgent
 from hub_e2e_helpers import _free_port
-from synapse_channel.a2a_server import (
-    A2ABridge,
-    SynapseAgentRuntime,
-    _http_push_deliverer,
-    _push_config_path,
-    make_a2a_http_server,
-)
+from synapse_channel.a2a_http import make_a2a_http_server, parse_push_config_path
+from synapse_channel.a2a_push import http_push_deliverer
+from synapse_channel.a2a_server import A2ABridge, SynapseAgentRuntime
 from synapse_channel.a2a_store import A2ATaskStore
 
 
@@ -71,7 +67,7 @@ def test_http_push_deliverer_posts_json_to_real_http_server() -> None:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        _http_push_deliverer(
+        http_push_deliverer(
             {
                 "url": f"http://127.0.0.1:{port}/hook",
                 "headers": {"Authorization": "Bearer token"},
@@ -160,7 +156,7 @@ def test_synapse_agent_runtime_start_run_and_stop() -> None:
 
 
 def test_push_config_path_rejects_empty_task_id() -> None:
-    assert _push_config_path("/tasks//pushNotificationConfigs") is None
+    assert parse_push_config_path("/tasks//pushNotificationConfigs") is None
 
 
 def test_message_text_renders_supported_part_shapes_and_skips_empty_parts() -> None:

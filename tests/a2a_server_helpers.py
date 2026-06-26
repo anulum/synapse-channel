@@ -18,7 +18,8 @@ from dataclasses import dataclass
 from http.server import ThreadingHTTPServer
 from typing import Any
 
-from synapse_channel.a2a_server import A2ABridge, build_a2a_handler
+from synapse_channel.a2a_http import build_a2a_handler
+from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 
 
