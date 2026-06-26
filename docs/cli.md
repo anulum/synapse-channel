@@ -100,6 +100,8 @@ synapse who                       # every agent online
 synapse who --project quantum     # only quantum/... instances
 synapse who --name quantum/codex-2b40 --me  # this identity plus its -rx waiter status
 syn who --me                      # same check using the resolved syn identity
+syn reap                          # list this identity's shell-hook waiter pidfile
+syn reap --pid 1234               # clean up only that verified identity waiter PID
 synapse send --target quantum/* "rebasing main now"   # the whole project team
 ```
 
@@ -154,6 +156,14 @@ throttle, distinct from your usage quota). `synapse wait --wake-jitter <seconds>
 without the stampede; a
 one-to-one directed message has no herd and still wakes immediately. Set `0` to
 disable for a latency-critical single-waiter setup.
+
+The shell hook records its background waiter in an identity-scoped pidfile under
+`$XDG_RUNTIME_DIR/synapse-shell` (or `/tmp/synapse-shell`). Use `syn reap` to list
+the pidfile for the resolved identity. If the pidfile points at a dead PID,
+`syn reap --pid <pid>` removes only that pidfile; if the PID is live, it sends
+SIGTERM only after the command line verifies as this exact `synapse arm --name
+<identity>-rx --for <project>` waiter. It refuses unrelated PIDs instead of
+searching or pattern-killing.
 
 ```bash
 synapse wait --for api-dev                  # default: broadcast wakes jitter 0–8s

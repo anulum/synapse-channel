@@ -126,6 +126,10 @@ The discipline that makes it reliable:
   both (see the [deployment guide](deployment.md)). Run `syn who --me` for the
   resolved identity, or `synapse who --name <identity> --me` explicitly, to see
   presence and `-rx` waiter status separately; presence is not a wake loop.
+- **Clean up by identity and PID only.** Use `syn reap` to list the resolved
+  identity's shell-hook waiter pidfile, then `syn reap --pid <pid>` when that
+  exact PID needs cleanup. It removes dead pidfiles and signals only a verified
+  `synapse arm --name <identity>-rx --for <project>` waiter; it never pattern-kills.
 
 ## Talking to the fleet without a stampede
 
