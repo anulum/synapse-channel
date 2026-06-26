@@ -89,6 +89,7 @@ a real repository:
 python -m pip install synapse-channel
 synapse doctor
 synapse demo
+synapse quickstart-coding
 ```
 
 `synapse doctor` reports local setup issues such as identity, hub exposure, and
@@ -98,6 +99,14 @@ drives a planner/worker coordination flow, and succeeds when it prints:
 
 ```text
 success: coordination demo completed
+```
+
+`synapse quickstart-coding` creates a temporary coding-fleet workspace, runs the
+same no-collision coding demo used by generated workspaces, removes the temporary
+workspace after success, and prints:
+
+```text
+success: coding fleet demo completed
 ```
 
 ## Releases
@@ -147,6 +156,7 @@ synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1  # emit A2A Age
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877             # run the HTTP+JSON A2A bridge
 synapse doctor                                       # check for common misconfigs (identity, exposure, hub, waiter)
 synapse demo                                         # installed self-check: local hub + planner/worker flow
+synapse quickstart-coding                            # create a temporary coding fleet workspace and run it
 synapse new coding-fleet ./demo-fleet                # scaffold a runnable two-agent coding demo workspace
 synapse hub --host 0.0.0.0 --token s3cret            # require a shared secret when binding off-loopback
 synapse hub --max-connections-per-host 4             # cap simultaneous sockets from one remote host
@@ -169,7 +179,8 @@ Synapse coordinates the agents you already run; it does not replace them.
   hook release it on commit, so two sessions never touch the same files.
 
   ```bash
-  synapse new coding-fleet ./demo-fleet        # optional: generate a runnable no-collision demo
+  synapse quickstart-coding                    # optional: run a temporary no-collision coding demo
+  synapse new coding-fleet ./demo-fleet        # optional: keep the generated workspace
   synapse git-init --name aider-1              # one step: install the hooks + write the conventions guide
   synapse git-claim AUTH --paths src/auth --name aider-1
   aider src/auth/*.py                          # ... edit; the post-commit hook releases the claim
@@ -420,11 +431,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.44.1 |
 | Public API exports | 59 |
-| Package modules | 110 |
+| Package modules | 112 |
 | Classes | 75 |
 | Wire message types | 52 |
-| CLI subcommands | 38 |
-| Test functions | 1380 |
+| CLI subcommands | 39 |
+| Test functions | 1387 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

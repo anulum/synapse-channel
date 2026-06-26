@@ -81,8 +81,13 @@ Run the worked example end-to-end:
 python examples/coding_agents_demo.py
 ```
 
-Or generate the same installed workflow into a throwaway workspace with editable
-source and test files:
+Or run the same installed workflow in a temporary workspace:
+
+```bash
+synapse quickstart-coding
+```
+
+To keep editable source and test files after the run, generate a workspace:
 
 ```bash
 synapse new coding-fleet ./demo-fleet

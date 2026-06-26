@@ -14,12 +14,15 @@ starts its own in-process hub, so nothing needs to be running first:
 
 ```bash
 python -m pip install synapse-channel
+synapse quickstart-coding
 python examples/coordination_demo.py
 python examples/llm_team_demo.py
 python examples/coding_agents_demo.py
 ```
 
-For the coding-agents flow as an installed, editable workspace:
+`synapse quickstart-coding` creates and removes a temporary workspace after it
+prints `success: coding fleet demo completed`. For the coding-agents flow as an
+installed, editable workspace:
 
 ```bash
 synapse new coding-fleet ./demo-fleet

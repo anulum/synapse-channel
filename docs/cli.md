@@ -6,6 +6,7 @@ The `synapse` command exposes the following subcommands.
 | --- | --- |
 | `synapse hub` | Run the coordination hub. |
 | `synapse demo` | Run a self-contained local coordination demo and print a success marker. |
+| `synapse quickstart-coding` | Create a coding-fleet workspace, run the no-collision demo, and print a success marker. |
 | `synapse new coding-fleet` | Scaffold a runnable two-agent coding demo workspace. |
 | `synapse health` | Probe the hub; exit `0` if reachable, `1` if not (wired as a container healthcheck). |
 | `synapse worker` | Run a model worker that answers on the channel. |
@@ -40,6 +41,7 @@ The installed CLI has a source-checkout-free validation path:
 python -m pip install synapse-channel
 synapse doctor
 synapse demo
+synapse quickstart-coding
 ```
 
 `synapse doctor` reports local wiring issues. On a fresh machine, a missing hub or
@@ -49,6 +51,14 @@ prints:
 
 ```text
 success: coordination demo completed
+```
+
+`synapse quickstart-coding` creates a temporary workspace, runs the packaged
+two-agent coding demo, removes the temporary workspace after success, and is
+successful when it prints:
+
+```text
+success: coding fleet demo completed
 ```
 
 For a generated workspace with editable files and a runnable no-collision coding

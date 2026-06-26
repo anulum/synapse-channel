@@ -11,6 +11,7 @@ The ``synapse`` command exposes these subcommands:
 
 * ``hub`` — run the coordination hub;
 * ``demo`` — run a self-contained first-run coordination demo;
+* ``quickstart-coding`` — create and run the coding-fleet first-run demo;
 * ``new`` — create runnable demo workspaces;
 * ``worker`` — run a model worker that answers on the channel;
 * ``team`` — launch a hub plus one or two local workers in one shot;
@@ -71,6 +72,7 @@ from synapse_channel.cli_messaging import add_parsers as add_messaging_parsers
 from synapse_channel.cli_new import add_parsers as add_new_parsers
 from synapse_channel.cli_processes import add_parsers as add_process_parsers
 from synapse_channel.cli_queries import add_parsers as add_query_parsers
+from synapse_channel.cli_quickstart_coding import add_parsers as add_quickstart_coding_parsers
 from synapse_channel.cli_services import add_parsers as add_service_parsers
 from synapse_channel.cli_shell import add_parsers as add_shell_parsers
 from synapse_channel.cli_streams import add_parsers as add_stream_parsers
@@ -117,6 +119,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_process_parsers(sub)
 
     add_demo_parsers(sub)
+
+    add_quickstart_coding_parsers(sub)
 
     add_new_parsers(sub)
 
