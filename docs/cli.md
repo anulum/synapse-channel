@@ -103,6 +103,7 @@ syn who --me                      # same check using the resolved syn identity
 syn reap                          # list this identity's shell-hook waiter pidfile
 syn reap --pid 1234               # clean up only that verified identity waiter PID
 syn locks                         # list this project's leases, scopes, ages, and release commands
+syn ask <target> <message>        # send, require an online recipient, and wait for replies
 synapse send --target quantum/* "rebasing main now"   # the whole project team
 ```
 
@@ -213,6 +214,12 @@ the matched online `recipients`. The CLI prints `delivered to ...` and exits `0`
 when at least one online recipient matches `--target`; it prints `delivery
 failed: no online recipient matched ...` and exits `1` when the message would
 otherwise be only a silent durable-feed entry.
+
+For the common question workflow, use `syn ask <target> <message>`. It resolves
+the same identity as `syn say`, dispatches to `synapse send` with
+`--wait-seconds 30 --require-recipient`, and prints replies during that wait
+window. Override the window with `syn ask --wait 10 <target> <message>`. Use
+`--no-require-recipient` only for broadcasts or durable-feed-only asks.
 
 A reader sees only the messages addressed to it with `--for`, which also drops
 presence noise and other agents' cross-talk — a per-agent inbox. Because the

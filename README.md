@@ -225,6 +225,7 @@ identity-correct front end over the commands above:
 syn name                          # resolve and print this terminal's identity
 syn arm                           # keep a directed-only waiter armed (named <project>-rx, distinct from the sender)
 syn say REMANENTIA,CEO "ack"      # send to one, several, or all
+syn ask CEO "status?"             # send, require an online recipient, and wait for replies
 syn inbox                         # print messages addressed to you since the cursor
 syn board                         # the shared task/progress board
 syn who --me                      # show whether this identity and its -rx waiter are online
@@ -245,7 +246,7 @@ directory, a system path) is flagged rather than used in silence. Set
 it reports the identity's presence separately from its `-rx` waiter because
 presence is not a wake loop.
 
-`syn-name`/`syn-wait`/`syn-say`/`syn-inbox`/`syn-board`/`syn-reap`/`syn-locks`/`syn-ack`
+`syn-name`/`syn-wait`/`syn-say`/`syn-ask`/`syn-inbox`/`syn-board`/`syn-reap`/`syn-locks`/`syn-ack`
 aliases are installed too; `syn-wait` uses the same persistent auto-rearming path
 as `syn arm`. `syn reap` is the safe cleanup path for shell-hook waiter sidecars:
 it only inspects this resolved identity's pidfile, and it refuses to signal a PID
@@ -470,7 +471,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 83 |
 | Wire message types | 53 |
 | CLI subcommands | 39 |
-| Test functions | 1455 |
+| Test functions | 1465 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |
