@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hmac
 import json
+from collections.abc import Iterable
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import TYPE_CHECKING, Any
@@ -163,7 +164,13 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
             self.wfile.write(raw)
 
         def _send_sse(self, status: HTTPStatus, body: JsonMap) -> None:
-            raw = f"data: {json.dumps(body, sort_keys=True)}\n\n".encode()
+            self._send_sse_events(status, [body])
+
+        def _send_sse_events(self, status: HTTPStatus, bodies: Iterable[JsonMap]) -> None:
+            """Send one bounded Server-Sent Events response."""
+            raw = b"".join(
+                f"data: {json.dumps(body, sort_keys=True)}\n\n".encode() for body in bodies
+            )
             self.send_response(int(status))
             self.send_header("Content-Type", SSE_MEDIA_TYPE)
             self.send_header("Cache-Control", "no-cache")
@@ -397,7 +404,7 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                         media_type=PROBLEM_MEDIA_TYPE,
                     )
                     return
-                self._send_sse(HTTPStatus.OK, events[-1])
+                self._send_sse_events(HTTPStatus.OK, events)
                 return
             self._send_not_found()
 

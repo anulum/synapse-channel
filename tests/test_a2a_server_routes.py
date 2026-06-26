@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from http import HTTPStatus
+from pathlib import Path
 
 from a2a_server_helpers import HandlerHarness, RecordingAgent
 from synapse_channel.a2a_server import A2ABridge
@@ -399,6 +400,64 @@ def test_subscribe_open_task_returns_sse_snapshot() -> None:
 
     assert status == HTTPStatus.OK
     assert body["task"]["id"] == task["id"]
+
+
+def test_subscribe_open_task_sends_bounded_local_replay_events() -> None:
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {"messageId": "m1", "role": "ROLE_USER", "parts": [{"text": "hello"}]},
+        target="WORKER",
+    )
+    replayed = dict(task)
+    replayed["status"] = {"state": "TASK_STATE_SUBMITTED"}
+    bridge.store.put(replayed)
+    bridge._events.publish(str(task["id"]), replayed)
+    harness = HandlerHarness("POST", f"/tasks/{task['id']}:subscribe")
+    harness.handler.bridge = bridge
+
+    status, events = harness.run_sse_events()
+
+    assert status == HTTPStatus.OK
+    assert [event["task"]["status"]["state"] for event in events] == [
+        "TASK_STATE_WORKING",
+        "TASK_STATE_SUBMITTED",
+    ]
+
+
+def test_subscribe_after_restart_returns_snapshot_without_durable_replay(tmp_path: Path) -> None:
+    state_file = tmp_path / "a2a-state.json"
+    first_bridge = A2ABridge(
+        agent=RecordingAgent(),
+        agent_card={},
+        target="WORKER",
+        store=A2ATaskStore(storage_path=state_file),
+        task_timeout_seconds=0.0,
+    )
+    task = first_bridge.create_completed_task(
+        {"messageId": "m1", "role": "ROLE_USER", "parts": [{"text": "hello"}]},
+        target="WORKER",
+    )
+    replayed = dict(task)
+    replayed["status"] = {"state": "TASK_STATE_SUBMITTED"}
+    first_bridge.store.put(replayed)
+    first_bridge._events.publish(str(task["id"]), replayed)
+    restarted_bridge = A2ABridge(
+        agent=RecordingAgent(),
+        agent_card={},
+        target="WORKER",
+        store=A2ATaskStore(storage_path=state_file),
+        task_timeout_seconds=0.0,
+    )
+    harness = HandlerHarness("POST", f"/tasks/{task['id']}:subscribe")
+    harness.handler.bridge = restarted_bridge
+
+    status, body = harness.run()
+    stored = restarted_bridge.store.get(str(task["id"]))
+
+    assert status == HTTPStatus.CONFLICT
+    assert body["title"] == "Task is terminal"
+    assert stored is not None
+    assert stored["status"]["state"] == "TASK_STATE_FAILED"
 
 
 def test_delete_push_config_error_routes_return_problem_json() -> None:
