@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import importlib
 import os
 from collections.abc import Sequence
 from pathlib import Path
@@ -136,6 +137,39 @@ def test_say_argv_can_send_as_the_bare_project() -> None:
         _ident(identity="SCPN-CONTROL/coordinator"), "REMANENTIA,CEO", "hello", as_project=True
     )
     assert argv == ["send", "--name", "SCPN-CONTROL", "--target", "REMANENTIA,CEO", "hello"]
+
+
+def test_ask_argv_waits_and_requires_recipient_by_default() -> None:
+    argv = ergonomics.ask_argv(
+        _ident(identity="SCPN-CONTROL/codex-1"),
+        "SCPN-CONTROL/tester",
+        "status?",
+        wait_seconds=15.0,
+    )
+    assert argv == [
+        "send",
+        "--name",
+        "SCPN-CONTROL/codex-1",
+        "--target",
+        "SCPN-CONTROL/tester",
+        "--wait-seconds",
+        "15",
+        "--require-recipient",
+        "status?",
+    ]
+
+
+def test_ask_argv_can_skip_recipient_requirement_and_keep_extra() -> None:
+    argv = ergonomics.ask_argv(
+        _ident(identity="SCPN-CONTROL/codex-1"),
+        "all",
+        "status?",
+        wait_seconds=2.5,
+        require_recipient=False,
+        extra=["--receipt-timeout", "1"],
+    )
+    assert "--require-recipient" not in argv
+    assert argv[-3:] == ["--receipt-timeout", "1", "status?"]
 
 
 def test_inbox_argv_is_project_scoped_and_cursored() -> None:
@@ -358,6 +392,130 @@ def test_main_say_as_project_without_target_and_message_is_a_usage_error(
     assert captured_cli == []
 
 
+def test_main_ask_routes_target_message_wait_and_receipt(captured_cli: CapturedCalls) -> None:
+    assert (
+        ergonomics.main(
+            ["ask", "--wait", "15", "CEO", "status?"],
+            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 0
+    )
+    assert captured_cli[0] == [
+        "send",
+        "--name",
+        "SYNAPSE-CHANNEL/codex-1",
+        "--target",
+        "CEO",
+        "--wait-seconds",
+        "15",
+        "--require-recipient",
+        "status?",
+    ]
+
+
+def test_main_ask_can_disable_recipient_requirement(captured_cli: CapturedCalls) -> None:
+    assert (
+        ergonomics.main(
+            ["ask", "--no-require-recipient", "all", "status?"],
+            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 0
+    )
+    assert "--require-recipient" not in captured_cli[0]
+    assert captured_cli[0][-1] == "status?"
+
+
+def test_main_ask_keeps_extra_send_options(captured_cli: CapturedCalls) -> None:
+    assert (
+        ergonomics.main(
+            ["ask", "--receipt-timeout", "1", "CEO", "status?", "--priority"],
+            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 0
+    )
+    assert captured_cli[0] == [
+        "send",
+        "--name",
+        "SYNAPSE-CHANNEL/codex-1",
+        "--target",
+        "CEO",
+        "--wait-seconds",
+        "30",
+        "--require-recipient",
+        "--receipt-timeout",
+        "1",
+        "--priority",
+        "status?",
+    ]
+
+
+def test_main_ask_keeps_extra_flag_without_value(captured_cli: CapturedCalls) -> None:
+    assert (
+        ergonomics.main(
+            ["ask", "--priority", "--receipt-timeout", "1", "CEO", "status?"],
+            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 0
+    )
+    assert captured_cli[0][-4:] == ["--priority", "--receipt-timeout", "1", "status?"]
+
+
+def test_main_ask_wait_without_seconds_is_a_usage_error(
+    captured_cli: CapturedCalls, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert (
+        ergonomics.main(
+            ["ask", "--wait"],
+            env={"HOME": "/home/u"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 2
+    )
+    assert "usage" in capsys.readouterr().err
+    assert captured_cli == []
+
+
+def test_main_ask_wait_needs_number(
+    captured_cli: CapturedCalls, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert (
+        ergonomics.main(
+            ["ask", "--wait", "soon", "CEO", "status?"],
+            env={"HOME": "/home/u"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 2
+    )
+    assert "--wait needs a number" in capsys.readouterr().err
+    assert captured_cli == []
+
+
+def test_main_ask_without_a_message_is_a_usage_error(
+    captured_cli: CapturedCalls, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert (
+        ergonomics.main(
+            ["ask", "CEO"],
+            env={"HOME": "/home/u"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 2
+    )
+    assert "usage" in capsys.readouterr().err
+    assert captured_cli == []
+
+
 def test_main_inbox_is_project_scoped(captured_cli: CapturedCalls) -> None:
     assert (
         ergonomics.main(
@@ -546,6 +704,7 @@ def test_aliases_dispatch_to_their_verb() -> None:
 
     assert ergonomics.alias_arm(["--timeout", "5"], dispatcher=dispatch) == 0
     assert ergonomics.alias_say(["CEO", "hi"], dispatcher=dispatch) == 0
+    assert ergonomics.alias_ask(["CEO", "status?"], dispatcher=dispatch) == 0
     assert ergonomics.alias_name([], dispatcher=dispatch) == 0
     assert ergonomics.alias_inbox([], dispatcher=dispatch) == 0
     assert ergonomics.alias_board([], dispatcher=dispatch) == 0
@@ -555,6 +714,7 @@ def test_aliases_dispatch_to_their_verb() -> None:
     assert seen == [
         ["arm", "--timeout", "5"],
         ["say", "CEO", "hi"],
+        ["ask", "CEO", "status?"],
         ["name"],
         ["inbox"],
         ["board"],
@@ -562,3 +722,22 @@ def test_aliases_dispatch_to_their_verb() -> None:
         ["locks", "--all"],
         ["ack", "BUILD", "--evidence", "pytest"],
     ]
+
+
+def test_syn_ask_is_packaged_and_documented() -> None:
+    try:
+        toml_parser = importlib.import_module("tomllib")
+    except ModuleNotFoundError:  # pragma: no cover
+        toml_parser = importlib.import_module("tomli")
+
+    root = Path(__file__).resolve().parents[1]
+    pyproject = toml_parser.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    scripts = pyproject["project"]["scripts"]
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    cli_docs = (root / "docs" / "cli.md").read_text(encoding="utf-8")
+    recipes = (root / "docs" / "recipes.md").read_text(encoding="utf-8")
+
+    assert scripts["syn-ask"] == "synapse_channel.ergonomics:alias_ask"
+    assert 'syn ask CEO "status?"' in readme
+    assert "syn ask <target> <message>" in cli_docs
+    assert 'syn ask test-dev "status?"' in recipes

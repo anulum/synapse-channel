@@ -214,6 +214,42 @@ def say_argv(
     return ["send", "--name", sender, "--target", target, *extra, message]
 
 
+def _format_seconds(value: float) -> str:
+    """Format a CLI seconds value without a redundant trailing ``.0``."""
+    return str(int(value)) if value.is_integer() else str(value)
+
+
+def ask_argv(
+    identity: Identity,
+    target: str,
+    message: str,
+    *,
+    wait_seconds: float = 30.0,
+    require_recipient: bool = True,
+    extra: Sequence[str] = (),
+) -> list[str]:
+    """Build the ``synapse send`` argv for ``syn ask``.
+
+    ``syn ask`` is a question-oriented wrapper: it sends as the resolved identity,
+    waits for replies, and by default asks the hub to confirm that at least one
+    online recipient matched the target.
+    """
+    argv = [
+        "send",
+        "--name",
+        identity.identity,
+        "--target",
+        target,
+        "--wait-seconds",
+        _format_seconds(float(wait_seconds)),
+    ]
+    if require_recipient:
+        argv.append("--require-recipient")
+    argv.extend(extra)
+    argv.append(message)
+    return argv
+
+
 def inbox_argv(identity: Identity, *, feed: str, cursor: str) -> list[str]:
     """Build the ``synapse relay`` argv for ``syn inbox`` (project-scoped, cursored delta)."""
     return ["relay", feed, "--project", identity.project, "--cursor", cursor]
@@ -278,7 +314,7 @@ def _run_ack(identity: Identity, rest: Sequence[str]) -> int:
     return ack_command.main(identity, rest)
 
 
-VERBS = ("name", "arm", "say", "inbox", "board", "who", "reap", "locks", "ack")
+VERBS = ("name", "arm", "say", "ask", "inbox", "board", "who", "reap", "locks", "ack")
 """The ``syn`` verbs, each a thin identity-correct wrapper over a package command."""
 
 
@@ -307,7 +343,7 @@ def build_parser() -> argparse.ArgumentParser:
         "verb",
         nargs="?",
         choices=VERBS,
-        help="name | arm | say | inbox | board | who | reap | locks | ack.",
+        help="name | arm | say | ask | inbox | board | who | reap | locks | ack.",
     )
     parser.add_argument(
         "rest", nargs=argparse.REMAINDER, help="Arguments passed through to the package command."
@@ -389,6 +425,44 @@ def main(
             return 2
         target, message, *extra = rest
         return dispatcher(say_argv(identity, target, message, as_project=as_project, extra=extra))
+    if args.verb == "ask":
+        wait_seconds = 30.0
+        require_recipient = True
+        ask_extra: list[str] = []
+        while rest and rest[0].startswith("--"):
+            option = rest.pop(0)
+            if option == "--wait":
+                if not rest:
+                    print(
+                        "syn: usage: syn ask [--wait SECONDS] <target> <message>", file=sys.stderr
+                    )
+                    return 2
+                try:
+                    wait_seconds = float(rest.pop(0))
+                except ValueError:
+                    print("syn: --wait needs a number of seconds", file=sys.stderr)
+                    return 2
+            elif option == "--no-require-recipient":
+                require_recipient = False
+            else:
+                ask_extra.append(option)
+                if rest and not rest[0].startswith("--"):
+                    ask_extra.append(rest.pop(0))
+        if len(rest) < 2:
+            print("syn: usage: syn ask [--wait SECONDS] <target> <message>", file=sys.stderr)
+            return 2
+        target, message, *trailing = rest
+        ask_extra.extend(trailing)
+        return dispatcher(
+            ask_argv(
+                identity,
+                target,
+                message,
+                wait_seconds=wait_seconds,
+                require_recipient=require_recipient,
+                extra=ask_extra,
+            )
+        )
     if args.verb == "inbox":
         home = _syn_home(env)
         feed = str(home / "feed.ndjson")
@@ -431,6 +505,15 @@ def alias_say(
 ) -> int:
     """Entry point for the ``syn-say`` console alias."""
     return dispatcher(["say", *(sys.argv[1:] if argv is None else argv)])
+
+
+def alias_ask(
+    argv: Sequence[str] | None = None,
+    *,
+    dispatcher: Callable[[list[str]], int] = main,
+) -> int:
+    """Entry point for the ``syn-ask`` console alias."""
+    return dispatcher(["ask", *(sys.argv[1:] if argv is None else argv)])
 
 
 def alias_inbox(

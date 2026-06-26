@@ -64,6 +64,7 @@ can hold a strict lease on its behalf.
     ```bash
     synapse send --name api-dev --target test-dev "API ready on src/app/api.py — update the tests"
     synapse send --name api-dev --target test-dev --require-recipient "ping before handoff"
+    syn ask test-dev "status?"
     synapse send --name api-dev --target test-dev,docs-dev "interface changed"
     synapse send --name api-dev --target all "release branch is frozen"
     ```
