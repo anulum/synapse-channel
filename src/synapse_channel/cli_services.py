@@ -78,6 +78,10 @@ def _cmd_worker_session(
             token=args.token,
             token_file=getattr(args, "token_file", None),
             arm=not args.no_arm,
+            terminal_tmux=args.terminal_tmux,
+            tmux_bin=args.tmux_bin,
+            synapse_bin=args.synapse_bin,
+            tmux_session=args.tmux_session,
         )
     except ValueError as exc:
         print(str(exc))
@@ -124,6 +128,23 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--syn-bin", default="syn", help="Syn ergonomic command used for the sidecar."
     )
     worker.add_argument("--no-arm", action="store_true", help="Do not start the wake sidecar.")
+    worker.add_argument(
+        "--terminal-tmux",
+        choices=("auto", "on", "off"),
+        default="auto",
+        help="Run interactive terminal providers through persistent tmux; default auto.",
+    )
+    worker.add_argument("--tmux-bin", default="tmux", help="tmux executable for terminal mode.")
+    worker.add_argument(
+        "--synapse-bin",
+        default="synapse",
+        help="Synapse executable used by persistent tmux waiters.",
+    )
+    worker.add_argument(
+        "--tmux-session",
+        default=None,
+        help="Explicit tmux session name for terminal mode; defaults to the identity.",
+    )
     worker.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     worker.add_argument("command", nargs=argparse.REMAINDER, help="Provider command after --.")
     worker.set_defaults(func=_cmd_worker_session)

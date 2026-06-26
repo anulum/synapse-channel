@@ -11,10 +11,13 @@ synapse demo
 synapse quickstart-coding
 ```
 
-`synapse doctor` checks identity, hub exposure, reachability, and wake-listener
-setup. It may warn that no hub or waiter is running on a fresh machine. The
-installed demo is self-contained: it starts a temporary local hub, runs a
-planner/worker coordination flow, and succeeds when it prints:
+`synapse doctor` checks identity, hub exposure, local disk pressure,
+reachability, and wake-listener setup. It may warn that no hub or waiter is
+running on a fresh machine. It also warns when the checked filesystem is nearly
+full; pass `--disk-path <path>` to inspect the mount that will hold your Synapse
+state, caches, or build artefacts. The installed demo is self-contained: it
+starts a temporary local hub, runs a planner/worker coordination flow, and
+succeeds when it prints:
 
 ```text
 success: coordination demo completed

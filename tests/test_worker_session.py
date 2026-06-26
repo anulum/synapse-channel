@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -116,6 +117,63 @@ def _quiet_provider(path: Path) -> Path:
     return _write_script(path, "raise SystemExit(0)\n")
 
 
+def _recording_tmux(path: Path) -> Path:
+    return _write_script(
+        path,
+        """
+import json
+import os
+import pathlib
+import sys
+
+record = pathlib.Path(os.environ["TMUX_RECORD"])
+entries = []
+if record.exists():
+    entries = json.loads(record.read_text(encoding="utf-8"))
+entries.append(sys.argv[1:])
+record.write_text(json.dumps(entries), encoding="utf-8")
+
+if sys.argv[1:2] == ["has-session"]:
+    raise SystemExit(1)
+raise SystemExit(0)
+""",
+    )
+
+
+def _recording_synapse(path: Path) -> Path:
+    return _write_script(
+        path,
+        """
+import json
+import os
+import pathlib
+import sys
+
+record = pathlib.Path(os.environ["SYNAPSE_RECORD"])
+entries = []
+if record.exists():
+    entries = json.loads(record.read_text(encoding="utf-8"))
+entries.append(sys.argv[1:])
+record.write_text(json.dumps(entries), encoding="utf-8")
+raise SystemExit(0)
+""",
+    )
+
+
+def _failing_tmux(path: Path) -> Path:
+    return _write_script(
+        path,
+        """
+import sys
+
+if sys.argv[1:2] == ["has-session"]:
+    raise SystemExit(1)
+print("tmux new-session failed", file=sys.stderr)
+raise SystemExit(9)
+""",
+    )
+
+
 def _process_exists(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -124,6 +182,15 @@ def _process_exists(pid: int) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def _read_json_when_ready(path: Path) -> Any:
+    deadline = time.monotonic() + 5
+    while not path.exists():
+        if time.monotonic() > deadline:
+            raise AssertionError(f"{path} was not written")
+        time.sleep(0.01)
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def test_worker_session_sets_identity_and_starts_sidecar(tmp_path: Path) -> None:
@@ -145,7 +212,7 @@ def test_worker_session_sets_identity_and_starts_sidecar(tmp_path: Path) -> None
         == 0
     )
 
-    sidecar_payload = json.loads(sidecar_record.read_text(encoding="utf-8"))
+    sidecar_payload = _read_json_when_ready(sidecar_record)
     provider_payload = json.loads(provider_record.read_text(encoding="utf-8"))
     assert sidecar_payload["argv"] == ["arm", "--uri", "ws://localhost:8876"]
     assert sidecar_payload["project"] == "repo"
@@ -227,6 +294,256 @@ def test_worker_session_can_skip_sidecar() -> None:
     )
 
 
+def test_worker_session_rejects_invalid_tmux_mode() -> None:
+    with pytest.raises(ValueError, match="terminal_tmux"):
+        run_worker_session(
+            identity="repo/codex-main",
+            command=["codex"],
+            terminal_tmux="invalid",
+            arm=False,
+            environ={},
+        )
+
+
+def test_worker_session_auto_tmux_mode_runs_directly_without_tty(tmp_path: Path) -> None:
+    provider_record = tmp_path / "provider.json"
+    provider = _write_script(
+        tmp_path / "codex",
+        """
+import os
+import pathlib
+
+pathlib.Path(os.environ["PROVIDER_RECORD"]).write_text("direct", encoding="utf-8")
+""",
+    )
+
+    assert (
+        run_worker_session(
+            identity="repo/codex-main",
+            command=[str(provider)],
+            terminal_tmux="auto",
+            arm=False,
+            environ={"PROVIDER_RECORD": str(provider_record)},
+        )
+        == 0
+    )
+
+    assert provider_record.read_text(encoding="utf-8") == "direct"
+
+
+def test_worker_session_autostarts_interactive_provider_in_tmux(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tmux_record = tmp_path / "tmux.json"
+    synapse_record = tmp_path / "synapse.json"
+    provider_record = tmp_path / "provider.json"
+    tmux = _recording_tmux(tmp_path / "tmux")
+    synapse = _recording_synapse(tmp_path / "synapse")
+    monkeypatch.setenv("TMUX_RECORD", str(tmux_record))
+    monkeypatch.setenv("SYNAPSE_RECORD", str(synapse_record))
+    provider = _write_script(
+        tmp_path / "codex",
+        f"""
+import pathlib
+pathlib.Path({str(provider_record)!r}).write_text("direct provider ran", encoding="utf-8")
+""",
+    )
+
+    assert (
+        run_worker_session(
+            identity="repo/codex-main",
+            command=[str(provider), "--sandbox", "danger-full-access"],
+            project="repo",
+            synapse_bin=str(synapse),
+            tmux_bin=str(tmux),
+            terminal_tmux="on",
+            environ={
+                "TMUX_RECORD": str(tmux_record),
+                "SYNAPSE_RECORD": str(synapse_record),
+                "XDG_RUNTIME_DIR": str(tmp_path),
+            },
+        )
+        == 0
+    )
+
+    tmux_calls = _read_json_when_ready(tmux_record)
+    synapse_calls = _read_json_when_ready(synapse_record)
+    assert tmux_calls[0][:3] == ["has-session", "-t", "synapse-repo_codex-main"]
+    assert tmux_calls[1][:5] == ["new-session", "-d", "-s", "synapse-repo_codex-main", "-c"]
+    assert "SYN_PROJECT=repo" in tmux_calls[1][-1]
+    assert "SYN_IDENTITY=repo/codex-main" in tmux_calls[1][-1]
+    assert str(provider) in tmux_calls[1][-1]
+    assert tmux_calls[-1] == ["attach-session", "-t", "synapse-repo_codex-main"]
+    assert synapse_calls == [
+        [
+            "codex-tmux",
+            "wait",
+            "--identity",
+            "repo/codex-main",
+            "--session",
+            "synapse-repo_codex-main",
+            "--cwd",
+            str(Path.cwd()),
+            "--codex-command",
+            f"{str(provider)} --sandbox danger-full-access",
+        ]
+    ]
+    assert not provider_record.exists()
+
+
+def test_worker_session_tmux_passes_auth_and_custom_uri(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tmux_record = tmp_path / "tmux.json"
+    synapse_record = tmp_path / "synapse.json"
+    tmux = _recording_tmux(tmp_path / "tmux")
+    synapse = _recording_synapse(tmp_path / "synapse")
+    provider = _write_script(tmp_path / "claude", "raise SystemExit(0)\n")
+    monkeypatch.setenv("TMUX_RECORD", str(tmux_record))
+    monkeypatch.setenv("SYNAPSE_RECORD", str(synapse_record))
+
+    assert (
+        run_worker_session(
+            identity="repo/claude-main",
+            command=[str(provider)],
+            uri="ws://localhost:9999",
+            token="secret",
+            synapse_bin=str(synapse),
+            tmux_bin=str(tmux),
+            terminal_tmux="on",
+            environ={
+                "TMUX_RECORD": str(tmux_record),
+                "SYNAPSE_RECORD": str(synapse_record),
+                "XDG_RUNTIME_DIR": str(tmp_path),
+            },
+        )
+        == 0
+    )
+
+    synapse_calls = _read_json_when_ready(synapse_record)
+    assert synapse_calls[0][-4:] == ["--token", "secret", "--uri", "ws://localhost:9999"]
+
+
+def test_worker_session_tmux_reuses_live_waiter_pid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tmux_record = tmp_path / "tmux.json"
+    synapse_record = tmp_path / "synapse.json"
+    runtime = tmp_path / "synapse-provider-tmux"
+    runtime.mkdir()
+    (runtime / "repo_codex-main.pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
+    tmux = _recording_tmux(tmp_path / "tmux")
+    synapse = _recording_synapse(tmp_path / "synapse")
+    provider = _write_script(tmp_path / "codex", "raise SystemExit(0)\n")
+    monkeypatch.setenv("TMUX_RECORD", str(tmux_record))
+    monkeypatch.setenv("SYNAPSE_RECORD", str(synapse_record))
+
+    assert (
+        run_worker_session(
+            identity="repo/codex-main",
+            command=[str(provider)],
+            synapse_bin=str(synapse),
+            tmux_bin=str(tmux),
+            terminal_tmux="on",
+            environ={
+                "TMUX_RECORD": str(tmux_record),
+                "SYNAPSE_RECORD": str(synapse_record),
+                "XDG_RUNTIME_DIR": str(tmp_path),
+            },
+        )
+        == 0
+    )
+
+    assert not synapse_record.exists()
+
+
+def test_worker_session_tmux_restarts_stale_waiter_pid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tmux_record = tmp_path / "tmux.json"
+    synapse_record = tmp_path / "synapse.json"
+    runtime = tmp_path / "synapse-provider-tmux"
+    runtime.mkdir()
+    (runtime / "repo_codex-main.pid").write_text("stale\n", encoding="utf-8")
+    tmux = _recording_tmux(tmp_path / "tmux")
+    synapse = _recording_synapse(tmp_path / "synapse")
+    provider = _write_script(tmp_path / "codex", "raise SystemExit(0)\n")
+    monkeypatch.setenv("TMUX_RECORD", str(tmux_record))
+    monkeypatch.setenv("SYNAPSE_RECORD", str(synapse_record))
+
+    assert (
+        run_worker_session(
+            identity="repo/codex-main",
+            command=[str(provider)],
+            synapse_bin=str(synapse),
+            tmux_bin=str(tmux),
+            terminal_tmux="on",
+            environ={
+                "TMUX_RECORD": str(tmux_record),
+                "SYNAPSE_RECORD": str(synapse_record),
+                "XDG_RUNTIME_DIR": str(tmp_path),
+            },
+        )
+        == 0
+    )
+
+    assert _read_json_when_ready(synapse_record)[0][:2] == [
+        "codex-tmux",
+        "wait",
+    ]
+
+
+def test_worker_session_tmux_start_failure_returns_tmux_code(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    provider = _write_script(tmp_path / "codex", "raise SystemExit(0)\n")
+
+    code = run_worker_session(
+        identity="repo/codex-main",
+        command=[str(provider)],
+        tmux_bin=str(_failing_tmux(tmp_path / "tmux")),
+        terminal_tmux="on",
+        environ={"XDG_RUNTIME_DIR": str(tmp_path)},
+    )
+
+    assert code == 9
+    assert "tmux new-session failed" in capsys.readouterr().out
+
+
+def test_worker_session_tmux_autostart_can_be_disabled_by_env(tmp_path: Path) -> None:
+    provider_record = tmp_path / "provider.json"
+    provider = _write_script(
+        tmp_path / "codex",
+        """
+import json
+import os
+import pathlib
+
+pathlib.Path(os.environ["PROVIDER_RECORD"]).write_text(
+    json.dumps({"identity": os.environ.get("SYN_IDENTITY")}),
+    encoding="utf-8",
+)
+""",
+    )
+
+    assert (
+        run_worker_session(
+            identity="repo/codex-main",
+            command=[str(provider)],
+            arm=False,
+            environ={
+                "SYNAPSE_PROVIDER_TMUX": "0",
+                "SIDECAR_RECORD": str(tmp_path / "sidecar.json"),
+                "PROVIDER_RECORD": str(provider_record),
+            },
+        )
+        == 0
+    )
+
+    payload = json.loads(provider_record.read_text(encoding="utf-8"))
+    assert payload["identity"] == "repo/codex-main"
+
+
 def test_worker_session_sidecar_output_goes_to_runtime_log(tmp_path: Path) -> None:
     sidecar = _write_script(
         tmp_path / "syn",
@@ -305,6 +622,30 @@ def test_cmd_worker_session_dispatches() -> None:
     assert cli_services._cmd_worker_session(ns, session_runner=run_session) == 0
     assert captured["identity"] == "repo/ux"
     assert captured["command"] == ["codex"]
+    assert captured["terminal_tmux"] == "auto"
+
+
+def test_cmd_worker_session_allows_toggling_terminal_tmux() -> None:
+    captured: dict[str, Any] = {}
+
+    def run_session(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 0
+
+    ns = cli.build_parser().parse_args(
+        [
+            "worker-session",
+            "--identity",
+            "repo/ux",
+            "--terminal-tmux",
+            "off",
+            "--",
+            "codex",
+        ]
+    )
+
+    assert cli_services._cmd_worker_session(ns, session_runner=run_session) == 0
+    assert captured["terminal_tmux"] == "off"
 
 
 def test_cmd_worker_session_rejects_missing_command(capsys: pytest.CaptureFixture[str]) -> None:

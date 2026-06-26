@@ -50,6 +50,8 @@ def test_render_shell_hook_auto_arms_and_wraps_default_providers() -> None:
     assert "SYNAPSE_AUTO_PROJECT_FROM_CWD" in hook
     assert "codex()" in hook
     assert "claude()" in hook
+    assert "kimi()" in hook
+    assert "grok()" in hook
     assert "gemini()" in hook
     assert "agent()" in hook
     assert "ask()" in hook
@@ -99,7 +101,9 @@ def test_bash_shell_hook_uses_neutral_project_without_marker(tmp_path: Path) -> 
             + shlex.quote(str(repo))
             + "; source "
             + shlex.quote(str(hook_path))
-            + "; sleep 0.2",
+            + "; for _ in {1..100}; do [ -s "
+            + shlex.quote(str(record))
+            + " ] && break; sleep 0.02; done",
         ],
         text=True,
         capture_output=True,
@@ -140,7 +144,9 @@ def test_bash_shell_hook_uses_marker_project_when_opted_in(tmp_path: Path) -> No
             + shlex.quote(str(repo))
             + "; source "
             + shlex.quote(str(hook_path))
-            + "; sleep 0.2",
+            + "; for _ in {1..100}; do [ -s "
+            + shlex.quote(str(record))
+            + " ] && break; sleep 0.02; done",
         ],
         text=True,
         capture_output=True,

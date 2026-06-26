@@ -65,21 +65,24 @@ layers are complementary: the presence holder is always-on reachability; the
 
 ## Provider-neutral worker session
 
-Use `worker-session` when launching a turn-based coding agent from a terminal:
+Use `worker-session` when launching a coding agent from a terminal:
 
 ```bash
 synapse worker-session --identity myproject/worker -- codex --sandbox danger-full-access
 ```
 
-The launcher exports `SYN_PROJECT` and `SYN_IDENTITY`, starts a local `syn arm`
-sidecar, runs the provider command, and stops the sidecar when the provider
-command exits. The sidecar is a local socket listener; it does not spend model
-tokens while waiting.
+The launcher exports `SYN_PROJECT` and `SYN_IDENTITY` before the provider starts.
+For interactive terminal providers (`codex`, `claude`, `kimi`, `grok`) launched
+from an interactive terminal, it starts or attaches a persistent tmux session,
+starts a directed waiter for that identity, and attaches the current terminal to
+the tmux session. Non-terminal commands keep the temporary `syn arm` sidecar
+path. The listener is only a local socket holder; it does not spend model tokens
+while waiting.
 
 ## Codex tmux wake transport
 
-Use `codex-tmux` when the important state is already loaded in an existing Codex
-terminal session:
+Use `codex-tmux` only when you need to inspect or control the tmux wake path
+manually:
 
 ```bash
 synapse codex-tmux start --identity myproject/codex-main --session myproject-codex --cwd "$PWD"
@@ -87,9 +90,10 @@ synapse codex-tmux wait --identity myproject/codex-main --session myproject-code
 ```
 
 The wait loop blocks on `synapse wait` and then injects one fixed prompt into the
-tmux pane. It never pastes the Synapse message body into the terminal; Codex reads
-its inbox after the prompt. DIRECTOR-style routing can sit above this later, but
-the local tmux transport remains the only component that writes to the terminal.
+tmux pane. It never pastes the Synapse message body into the terminal; the
+provider reads its inbox after the prompt. DIRECTOR-style routing can sit above
+this later, but the local tmux transport remains the only component that writes
+to the terminal.
 
 ## Fresh terminal auto-connect
 
@@ -106,6 +110,10 @@ For Bash, Fish, and Zsh, the installed block loads the current package hook from
 terminal. The listener is only a socket holder; it does not call a model or spend
 provider tokens while waiting.
 
+Before long-running fleet sessions, run `synapse doctor`. The doctor check
+includes root-filesystem pressure by default; pass `--disk-path <workspace>` when
+the workspace, build tree, or package cache lives on a different mount.
+
 The hook does not infer the project from the current git checkout by default.
 Unassigned terminals join `SYNAPSE_DEFAULT_PROJECT`, or the neutral `user` lane
 when unset. Bind a terminal or provider session to a project explicitly with
@@ -120,9 +128,12 @@ Set `SYNAPSE_AUTO_PROJECT_FROM_CWD=1` only when you intentionally want legacy
 CWD-derived project names.
 
 The hook also wraps common provider commands through `synapse worker-session`:
-`codex`, `claude`, `gemini`, `agent`, `ask`, and `ollama`. That keeps cloud
-providers and local LLM entry points on the same identity path. Disable the hook
-for one terminal with:
+`codex`, `claude`, `kimi`, `grok`, `gemini`, `agent`, `ask`, and `ollama`. That
+keeps cloud providers and local LLM entry points on the same identity path from
+process start. In an interactive terminal, Codex/Claude/Kimi/Grok use the
+persistent tmux wake bridge automatically. Disable tmux autostart for terminal
+providers with `SYNAPSE_PROVIDER_TMUX=0`, or disable the hook for one terminal
+with:
 
 ```bash
 export SYNAPSE_AUTO_CONNECT=0   # Bash/Zsh

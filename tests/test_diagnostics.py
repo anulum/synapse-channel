@@ -12,6 +12,7 @@ from typing import Any
 
 from synapse_channel.client.diagnostics import (
     Diagnosis,
+    check_disk_space,
     check_exposure,
     check_identity,
     check_reachable,
@@ -93,6 +94,37 @@ def test_check_exposure_warns_off_loopback_without_token() -> None:
     diagnosis = check_exposure("ws://10.0.0.5:8876", None)
     assert diagnosis.status == "warn"
     assert "no token" in diagnosis.detail
+
+    disk_ok = check_disk_space(
+        "/",
+        total_bytes=100 * 1024 * 1024,
+        free_bytes=20 * 1024 * 1024,
+        warn_used_percent=95.0,
+        warn_free_mib=10,
+    )
+    assert disk_ok.status == "pass"
+    assert "20.0 MiB free" in disk_ok.detail
+
+    disk_warn = check_disk_space(
+        "/",
+        total_bytes=100 * 1024 * 1024,
+        free_bytes=4 * 1024 * 1024,
+        warn_used_percent=95.0,
+        warn_free_mib=10,
+    )
+    assert disk_warn.status == "warn"
+    assert "96.0% used" in disk_warn.detail
+    assert "move build trees" in disk_warn.remedy
+
+    disk_unknown = check_disk_space(
+        "/",
+        total_bytes=0,
+        free_bytes=0,
+        warn_used_percent=95.0,
+        warn_free_mib=10,
+    )
+    assert disk_unknown.status == "warn"
+    assert "could not compute filesystem pressure" in disk_unknown.detail
 
 
 # --- check_reachable ---------------------------------------------------------

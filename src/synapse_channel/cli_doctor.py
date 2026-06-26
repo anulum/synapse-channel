@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import shutil
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,7 @@ from synapse_channel.cli_queries import AgentFactory, _query_hub
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.client.diagnostics import (
     Diagnosis,
+    check_disk_space,
     check_exposure,
     check_identity,
     check_reachable,
@@ -45,6 +47,21 @@ RosterProbe = Callable[..., Awaitable[list[str] | None]]
 
 DiagnoseRunner = Callable[..., Coroutine[Any, Any, tuple[int, list[str]]]]
 """Async callable used by the doctor CLI dispatcher."""
+
+
+DiskUsageProbe = Callable[
+    [int | str | bytes | os.PathLike[str] | os.PathLike[bytes]],
+    tuple[int, int, int],
+]
+"""Callable that returns filesystem usage for a local path."""
+
+
+def _disk_usage(
+    path: int | str | bytes | os.PathLike[str] | os.PathLike[bytes],
+) -> tuple[int, int, int]:
+    """Return local filesystem usage for ``path``."""
+    usage = shutil.disk_usage(path)
+    return (usage.total, usage.used, usage.free)
 
 
 async def _fetch_roster(
@@ -90,6 +107,10 @@ async def _diagnose(
     env: Mapping[str, str] | None = None,
     cwd_basename: str | None = None,
     home_basename: str | None = None,
+    disk_path: Path | None = None,
+    disk_warn_used_percent: float = 95.0,
+    disk_warn_free_mib: int = 1024,
+    disk_usage_probe: DiskUsageProbe = _disk_usage,
 ) -> tuple[int, list[str]]:
     """Resolve the identity, run every check, and return ``(exit_code, report_lines)``.
 
@@ -113,6 +134,17 @@ async def _diagnose(
         check_send_identity(send_name or identity.identity, project=identity.project),
         check_exposure(uri, token),
     ]
+    resolved_disk_path = Path(os.path.abspath(os.sep)) if disk_path is None else disk_path
+    total_bytes, _, free_bytes = disk_usage_probe(resolved_disk_path)
+    diagnoses.append(
+        check_disk_space(
+            resolved_disk_path,
+            total_bytes=total_bytes,
+            free_bytes=free_bytes,
+            warn_used_percent=disk_warn_used_percent,
+            warn_free_mib=disk_warn_free_mib,
+        )
+    )
     roster = await roster_probe(
         uri=uri,
         name=f"{identity.identity}-doctor",
@@ -146,6 +178,9 @@ def _cmd_doctor(
             agent_id=args.id,
             token=args.token,
             send_name=args.send_name,
+            disk_path=Path(getattr(args, "disk_path", os.path.abspath(os.sep))),
+            disk_warn_used_percent=getattr(args, "disk_warn_used_percent", 95.0),
+            disk_warn_free_mib=getattr(args, "disk_warn_free_mib", 1024),
         )
     )
     for line in lines:
@@ -212,6 +247,23 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "resolved identity); flags a <project>-<suffix> name that misses the project inbox.",
     )
     doctor.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    doctor.add_argument(
+        "--disk-path",
+        default=os.path.abspath(os.sep),
+        help="Filesystem path to check for local disk pressure; defaults to the root filesystem.",
+    )
+    doctor.add_argument(
+        "--disk-warn-used-percent",
+        type=float,
+        default=95.0,
+        help="Warn when --disk-path's filesystem is at or above this used percentage.",
+    )
+    doctor.add_argument(
+        "--disk-warn-free-mib",
+        type=int,
+        default=1024,
+        help="Warn when --disk-path's filesystem has less than this many MiB free.",
+    )
     doctor.add_argument(
         "--fix",
         action="store_true",
