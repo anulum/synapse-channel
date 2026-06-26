@@ -350,6 +350,22 @@ synapse task declare TEST --title "Run the suite" --depends-on BUILD
 synapse board                                  # BUILD ready, TEST blocked on it
 synapse task update BUILD --status done        # TEST now unblocks
 synapse task progress TEST "started" --kind note
+syn ack TEST --evidence "pytest tests/test_feature.py -q" --artifact coverage.xml
+```
+
+`syn ack <task>` is the ergonomic closeout path for a completed board task. It
+requires at least one `--evidence` or `--artifact` value, writes those values as an
+`assessment` progress note from the resolved `syn` identity, waits for the hub's
+progress confirmation, marks the task `done`, and waits for the task-update
+confirmation before printing success. Use repeated flags when a task has several
+proof points:
+
+```bash
+syn ack TEST \
+  --evidence "pytest tests/test_feature.py -q" \
+  --evidence "mypy src/synapse_channel/feature.py" \
+  --artifact coverage.xml \
+  --note "ready for release"
 ```
 
 For a secured hub, pass `--token SECRET` to `worker`, `send`, `listen`, `board`,

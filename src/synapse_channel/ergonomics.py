@@ -37,6 +37,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from synapse_channel import ack as ack_command
 from synapse_channel import cli
 from synapse_channel import locks as locks_command
 from synapse_channel import reap as reap_command
@@ -49,6 +50,9 @@ ReapRunner = Callable[["Identity", Sequence[str]], int]
 
 LocksRunner = Callable[["Identity", Sequence[str]], int]
 """Callable surface used to dispatch the identity-scoped ``syn locks`` command."""
+
+AckRunner = Callable[["Identity", Sequence[str]], int]
+"""Callable surface used to dispatch the identity-scoped ``syn ack`` command."""
 
 DEFAULT_AGENT_TYPE = "claude"
 """The agent ``type`` used to build a multi-agent identity when ``--id`` is given."""
@@ -269,7 +273,12 @@ def _warn_if_implausible(identity: Identity) -> None:
         )
 
 
-VERBS = ("name", "arm", "say", "inbox", "board", "who", "reap", "locks")
+def _run_ack(identity: Identity, rest: Sequence[str]) -> int:
+    """Dispatch ``syn ack`` to the acknowledgement command module."""
+    return ack_command.main(identity, rest)
+
+
+VERBS = ("name", "arm", "say", "inbox", "board", "who", "reap", "locks", "ack")
 """The ``syn`` verbs, each a thin identity-correct wrapper over a package command."""
 
 
@@ -298,7 +307,7 @@ def build_parser() -> argparse.ArgumentParser:
         "verb",
         nargs="?",
         choices=VERBS,
-        help="name | arm | say | inbox | board | who | reap | locks.",
+        help="name | arm | say | inbox | board | who | reap | locks | ack.",
     )
     parser.add_argument(
         "rest", nargs=argparse.REMAINDER, help="Arguments passed through to the package command."
@@ -314,6 +323,7 @@ def main(
     dispatcher: CliDispatcher = cli.main,
     reap_runner: ReapRunner = reap_command.main,
     locks_runner: LocksRunner = locks_command.main,
+    ack_runner: AckRunner = _run_ack,
 ) -> int:
     """Resolve identity and dispatch one ``syn`` verb to the package CLI.
 
@@ -331,6 +341,8 @@ def main(
         Identity-scoped waiter cleanup entry point for ``syn reap``.
     locks_runner : callable, optional
         Identity-scoped lease listing entry point for ``syn locks``.
+    ack_runner : callable, optional
+        Identity-scoped task acknowledgement entry point for ``syn ack``.
 
     Returns
     -------
@@ -388,6 +400,8 @@ def main(
         return reap_runner(identity, rest)
     if args.verb == "locks":
         return locks_runner(identity, rest)
+    if args.verb == "ack":
+        return ack_runner(identity, rest)
     # args.verb == "board"
     return dispatcher(board_argv(identity, extra=rest))
 
@@ -453,6 +467,15 @@ def alias_locks(
 ) -> int:
     """Entry point for the ``syn-locks`` console alias."""
     return dispatcher(["locks", *(sys.argv[1:] if argv is None else argv)])
+
+
+def alias_ack(
+    argv: Sequence[str] | None = None,
+    *,
+    dispatcher: Callable[[list[str]], int] = main,
+) -> int:
+    """Entry point for the ``syn-ack`` console alias."""
+    return dispatcher(["ack", *(sys.argv[1:] if argv is None else argv)])
 
 
 if __name__ == "__main__":  # pragma: no cover
