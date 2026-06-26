@@ -479,7 +479,7 @@ class A2ABridge:
         *,
         wait_seconds: float | None = None,
     ) -> list[JsonMap] | None:
-        """Return the initial task event plus queued updates for one subscription."""
+        """Return bounded memory-only task events for one local subscription."""
         self._gc_retained_tasks()
         task = self.store.get(task_id)
         if task is None:

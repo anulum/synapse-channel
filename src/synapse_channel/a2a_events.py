@@ -5,7 +5,12 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — Agent2Agent bridge task events
-"""In-process task-event fanout for the Agent2Agent bridge."""
+"""In-process task-event fanout for the Agent2Agent bridge.
+
+The bridge intentionally keeps subscription replay in local process memory. The
+task store is responsible for durable task snapshots, while this module only
+serves bounded replay for subscribers attached to the currently running bridge.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +24,7 @@ from synapse_channel.a2a_validation import TERMINAL_TASK_STATES
 
 
 class A2ATaskEvents:
-    """In-process subscribers for A2A task lifecycle updates."""
+    """Bounded, memory-only subscribers for A2A task lifecycle updates."""
 
     def __init__(self, *, max_history_events: int = 64) -> None:
         self.max_history_events = max(max_history_events, 1)
@@ -28,7 +33,7 @@ class A2ATaskEvents:
         self._lock = threading.RLock()
 
     def publish(self, task_id: str, task: JsonMap) -> None:
-        """Publish one task update to local subscribers."""
+        """Publish one task update to local subscribers and replay history."""
         event = self._event(task)
         with self._lock:
             history = self._history.setdefault(task_id, [])
@@ -39,7 +44,7 @@ class A2ATaskEvents:
             subscriber.put(copy.deepcopy(event))
 
     def drop(self, task_ids: Iterable[str]) -> None:
-        """Drop replay history and subscribers for removed tasks."""
+        """Drop memory-only replay history and subscribers for removed tasks."""
         with self._lock:
             for task_id in task_ids:
                 self._history.pop(task_id, None)
@@ -53,7 +58,7 @@ class A2ATaskEvents:
         wait_seconds: float | None,
         default_wait_seconds: float,
     ) -> list[JsonMap]:
-        """Return the initial task event plus queued updates for one subscription."""
+        """Return bounded in-process replay plus queued updates for one subscription."""
         updates: queue.Queue[JsonMap] = queue.Queue()
         current_event = self._event(task)
         current_state = self._last_state([current_event])

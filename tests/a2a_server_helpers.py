@@ -123,10 +123,15 @@ class HandlerHarness:
 
     def run_sse(self) -> tuple[int, dict[str, Any]]:
         """Run the configured request and return status plus the first SSE data body."""
+        status, events = self.run_sse_events()
+        return status, events[0]
+
+    def run_sse_events(self) -> tuple[int, list[dict[str, Any]]]:
+        """Run the configured request and return status plus all SSE data bodies."""
         status, headers, body = self._request()
         assert headers.get("Content-Type") == "text/event-stream"
-        line = next(part for part in body.splitlines() if part.startswith(b"data: "))
-        return status, json.loads(line.removeprefix(b"data: ").decode("utf-8"))
+        lines = [part for part in body.splitlines() if part.startswith(b"data: ")]
+        return status, [json.loads(line.removeprefix(b"data: ").decode("utf-8")) for line in lines]
 
     def _request(self) -> tuple[int, dict[str, str], bytes]:
         port = _free_port()

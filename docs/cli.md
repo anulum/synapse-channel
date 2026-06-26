@@ -221,8 +221,11 @@ Operational boundaries:
   reopen or rewrite completed, failed, canceled, or rejected tasks.
 - `--task-timeout` marks open tasks failed when no correlated SYNAPSE reply arrives
   within the configured window.
-- `--subscribe-timeout` bounds one in-process subscription wait. Subscriptions use
-  bounded local replay history, not durable cross-process event streams.
+- `--subscribe-timeout` bounds one in-process subscription wait. Subscriptions
+  emit bounded local replay frames for the current bridge process, then at most
+  one queued update for that wait. Persisted task recovery restores task
+  snapshots only; it does not rebuild durable subscription streams across
+  restarts or bridge replicas.
 - Caller-supplied `taskId` and `contextId` values are restricted to bridge-safe
   characters. Duplicate caller task ids are rejected.
 - Webhook URLs must be HTTP(S), include a host, omit embedded credentials, and not
@@ -236,7 +239,8 @@ Unsupported or externally gated:
 - The bridge does not make SYNAPSE itself an A2A-native hub; it is a separate edge
   process translating between A2A-shaped HTTP operations and SYNAPSE chat/tasks.
 - Subscription replay is local process memory. It is not a durable event log shared
-  across bridge restarts or multiple bridge replicas.
+  across bridge restarts or multiple bridge replicas, and terminal recovered
+  tasks reject subscription with a problem response.
 
 ## Managing the task plan
 
