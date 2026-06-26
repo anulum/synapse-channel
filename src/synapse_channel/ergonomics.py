@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from synapse_channel import cli
+from synapse_channel import locks as locks_command
 from synapse_channel import reap as reap_command
 
 CliDispatcher = Callable[[list[str] | None], int]
@@ -45,6 +46,9 @@ CliDispatcher = Callable[[list[str] | None], int]
 
 ReapRunner = Callable[["Identity", Sequence[str]], int]
 """Callable surface used to dispatch the identity-scoped ``syn reap`` command."""
+
+LocksRunner = Callable[["Identity", Sequence[str]], int]
+"""Callable surface used to dispatch the identity-scoped ``syn locks`` command."""
 
 DEFAULT_AGENT_TYPE = "claude"
 """The agent ``type`` used to build a multi-agent identity when ``--id`` is given."""
@@ -265,7 +269,7 @@ def _warn_if_implausible(identity: Identity) -> None:
         )
 
 
-VERBS = ("name", "arm", "say", "inbox", "board", "who", "reap")
+VERBS = ("name", "arm", "say", "inbox", "board", "who", "reap", "locks")
 """The ``syn`` verbs, each a thin identity-correct wrapper over a package command."""
 
 
@@ -291,7 +295,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Agent type for a multi-agent identity.",
     )
     parser.add_argument(
-        "verb", nargs="?", choices=VERBS, help="name | arm | say | inbox | board | who | reap."
+        "verb",
+        nargs="?",
+        choices=VERBS,
+        help="name | arm | say | inbox | board | who | reap | locks.",
     )
     parser.add_argument(
         "rest", nargs=argparse.REMAINDER, help="Arguments passed through to the package command."
@@ -306,6 +313,7 @@ def main(
     cwd_basename: str | None = None,
     dispatcher: CliDispatcher = cli.main,
     reap_runner: ReapRunner = reap_command.main,
+    locks_runner: LocksRunner = locks_command.main,
 ) -> int:
     """Resolve identity and dispatch one ``syn`` verb to the package CLI.
 
@@ -321,6 +329,8 @@ def main(
         Package CLI entry point to call for verbs that delegate to ``synapse``.
     reap_runner : callable, optional
         Identity-scoped waiter cleanup entry point for ``syn reap``.
+    locks_runner : callable, optional
+        Identity-scoped lease listing entry point for ``syn locks``.
 
     Returns
     -------
@@ -376,6 +386,8 @@ def main(
         return dispatcher(who_argv(identity, extra=rest))
     if args.verb == "reap":
         return reap_runner(identity, rest)
+    if args.verb == "locks":
+        return locks_runner(identity, rest)
     # args.verb == "board"
     return dispatcher(board_argv(identity, extra=rest))
 
@@ -432,6 +444,15 @@ def alias_reap(
 ) -> int:
     """Entry point for the ``syn-reap`` console alias."""
     return dispatcher(["reap", *(sys.argv[1:] if argv is None else argv)])
+
+
+def alias_locks(
+    argv: Sequence[str] | None = None,
+    *,
+    dispatcher: Callable[[list[str]], int] = main,
+) -> int:
+    """Entry point for the ``syn-locks`` console alias."""
+    return dispatcher(["locks", *(sys.argv[1:] if argv is None else argv)])
 
 
 if __name__ == "__main__":  # pragma: no cover

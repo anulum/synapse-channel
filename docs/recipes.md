@@ -48,6 +48,17 @@ can hold a strict lease on its behalf.
         await agent.release("edit-api")
     ```
 
+    Before you release or ask another agent to release, inspect the live lease
+    table:
+
+    ```bash
+    syn locks
+    syn locks --owner api-dev
+    ```
+
+    The output includes each lease's holder, scope, age, remaining TTL, checkpoint,
+    git context, and exact `synapse release <task> --name <owner>` command.
+
 3. **Tell the others what changed.** Address one teammate, several, or everyone:
 
     ```bash
