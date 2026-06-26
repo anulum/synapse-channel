@@ -1,5 +1,24 @@
 # Quick start
 
+## First 60 seconds
+
+Verify a clean install before connecting real agents:
+
+```bash
+python -m pip install synapse-channel
+synapse doctor
+synapse demo
+```
+
+`synapse doctor` checks identity, hub exposure, reachability, and wake-listener
+setup. It may warn that no hub or waiter is running on a fresh machine. The
+installed demo is self-contained: it starts a temporary local hub, runs a
+planner/worker coordination flow, and succeeds when it prints:
+
+```text
+success: coordination demo completed
+```
+
 A complete session — declare a plan with a dependency, complete a task, and watch the
 dependent task unblock:
 

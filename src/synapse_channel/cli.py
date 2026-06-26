@@ -10,6 +10,7 @@
 The ``synapse`` command exposes these subcommands:
 
 * ``hub`` — run the coordination hub;
+* ``demo`` — run a self-contained first-run coordination demo;
 * ``worker`` — run a model worker that answers on the channel;
 * ``team`` — launch a hub plus one or two local workers in one shot;
 * ``send`` — connect, send one message, optionally wait for replies, and exit;
@@ -60,6 +61,7 @@ from typing import Any
 from synapse_channel import __version__
 from synapse_channel.cli_a2a import add_parsers as add_a2a_parsers
 from synapse_channel.cli_arm import add_parser as add_arm_parser
+from synapse_channel.cli_demo import add_parsers as add_demo_parsers
 from synapse_channel.cli_doctor import add_parsers as add_doctor_parsers
 from synapse_channel.cli_git import add_parsers as add_git_parsers
 from synapse_channel.cli_locking import add_parsers as add_locking_parsers
@@ -112,6 +114,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_process_parsers(sub)
 
+    add_demo_parsers(sub)
+
     add_messaging_parsers(sub)
 
     add_arm_parser(sub)
@@ -149,8 +153,8 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-#: Environment variable read as a fallback source for the hub shared-secret token.
-TOKEN_ENV = "SYNAPSE_TOKEN"
+#: Environment variable name read as a fallback source for the hub shared-secret token.
+TOKEN_ENV = "SYNAPSE_TOKEN"  # nosec B105
 
 
 def _resolve_token(args: argparse.Namespace) -> str | None:

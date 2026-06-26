@@ -10,10 +10,24 @@ Contact: www.anulum.li | protoscience@anulum.li
 # Examples
 
 Runnable, self-contained demos. Each one starts its own in-process hub, so
-nothing needs to be running first — install the package and run the file:
+nothing needs to be running first. After installing the package, the source-checkout-free
+first 60 seconds path is:
 
 ```bash
-pip install synapse-channel
+python -m pip install synapse-channel
+synapse doctor
+synapse demo
+```
+
+The installed demo succeeds when it prints:
+
+```text
+success: coordination demo completed
+```
+
+From a source checkout, the same demo code is also available as scripts:
+
+```bash
 python examples/coordination_demo.py
 python examples/llm_team_demo.py
 ```
