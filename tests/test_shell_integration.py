@@ -9,10 +9,13 @@
 from __future__ import annotations
 
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from synapse_channel import cli, cli_shell
 from synapse_channel.shell_integration import (
@@ -263,8 +266,12 @@ def test_shell_hook_cli_emits_fish_that_parses() -> None:
     assert proc.returncode == 0
     assert "function __synapse_auto_arm --on-event fish_prompt" in proc.stdout
 
+    fish = shutil.which("fish")
+    if fish is None:
+        pytest.skip("fish shell is not installed")
+
     syntax = subprocess.run(
-        ["fish", "--no-execute", "-c", proc.stdout],
+        [fish, "--no-execute", "-c", proc.stdout],
         text=True,
         capture_output=True,
         check=False,
