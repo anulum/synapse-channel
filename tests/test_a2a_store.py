@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel.a2a_store import A2ATaskStore
+from synapse_channel.a2a_store import A2ATaskStore, _fsync_parent
 
 
 def _stored_task(
@@ -73,6 +73,32 @@ def test_a2a_task_store_state_file_is_owner_only(tmp_path: Path) -> None:
         store.put({"id": "task-a", "status": {"state": "TASK_STATE_COMPLETED"}})
 
     assert _mode(storage_path) & 0o077 == 0
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX fsync semantics")
+def test_a2a_task_store_fsyncs_state_file_and_parent_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    storage_path = tmp_path / "a2a-state.json"
+    fsync_calls: list[int] = []
+    monkeypatch.setattr(os, "fsync", fsync_calls.append)
+    store = A2ATaskStore(storage_path)
+
+    store.put({"id": "task-a", "status": {"state": "TASK_STATE_COMPLETED"}})
+
+    assert len(fsync_calls) >= 2
+
+
+def test_a2a_task_store_parent_fsync_noops_on_non_posix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail_open(*_args: object, **_kwargs: object) -> int:
+        raise AssertionError("directory fsync should not open paths on non-POSIX platforms")
+
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(os, "open", fail_open)
+
+    _fsync_parent(tmp_path / "a2a-state.json")
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX file permissions")
@@ -311,6 +337,31 @@ def test_a2a_task_store_rolls_back_existing_task_when_save_fails(tmp_path: Path)
         store.put({"id": "task-a", "status": {"state": "TASK_STATE_COMPLETED"}})
 
     assert store.get("task-a") == original
+
+
+def test_a2a_task_store_keeps_committed_state_file_when_temp_write_fails(
+    tmp_path: Path,
+) -> None:
+    storage_path = tmp_path / "a2a-state.json"
+    calls = 0
+
+    def write_state(path: Path, payload: str) -> None:
+        nonlocal calls
+        calls += 1
+        path.write_text(payload, encoding="utf-8")
+        if calls > 1:
+            raise OSError(f"blocked write to {path}")
+
+    store = A2ATaskStore(storage_path, state_writer=write_state)
+    original = store.put({"id": "task-a", "status": {"state": "TASK_STATE_WORKING"}})
+    committed_payload = storage_path.read_text(encoding="utf-8")
+
+    with pytest.raises(OSError, match="blocked write"):
+        store.put({"id": "task-b", "status": {"state": "TASK_STATE_COMPLETED"}})
+
+    assert store.get("task-a") == original
+    assert store.get("task-b") is None
+    assert storage_path.read_text(encoding="utf-8") == committed_payload
 
 
 def test_a2a_task_store_rolls_back_push_config_when_save_fails(tmp_path: Path) -> None:

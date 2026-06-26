@@ -64,6 +64,13 @@ JSON report with `coverage json --fail-under=0` and run:
 The ratchet requires 100% line and branch coverage for `a2a_server.py`,
 `cli_a2a.py`, `a2a_events.py`, and `a2a_store.py`.
 
+The A2A state-file durability matrix in `docs/cli.md` is covered by focused
+store and lifecycle tests. Run the matrix checks directly with:
+
+```bash
+.venv/bin/python -m pytest tests/test_a2a_store.py tests/test_a2a_store_persistence.py tests/test_a2a_server_lifecycle.py::test_state_file_recovery_fails_stale_working_tasks -q
+```
+
 ## Benchmarks
 
 Benchmarks are runnable, committed scripts under `benchmarks/`, with their
