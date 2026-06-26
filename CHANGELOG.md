@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.45.0] - 2026-06-26
+
 ### Added
 - `synapse shell-hook` and `synapse install-shell-hook` now provide opt-in
   Bash/Fish/Zsh auto-arming for fresh terminals. The installed hook now keeps
@@ -20,6 +22,60 @@ All notable changes to this project are documented here.
   set or the repository opts in with `.synapse/project`; it exports
   `SYN_PROJECT`/`SYN_IDENTITY`, keeps a cheap wake sidecar armed, and wraps common
   cloud and local provider commands through `synapse worker-session`.
+- `synapse demo` now provides an installed first-run path that starts its own
+  local hub, drives a planner/worker coordination flow, and prints
+  `success: coordination demo completed`.
+- `synapse new coding-fleet [path]` scaffolds a runnable two-agent coding demo
+  workspace with editable source and test files.
+- `synapse quickstart-coding` creates a temporary coding-fleet workspace, runs the
+  no-collision demo, removes the temporary workspace by default, and can keep or
+  refresh workspaces with `--keep`, explicit paths, and `--force`.
+- `synapse who --me --name <identity>` reports the inspected identity's presence
+  separately from its `<identity>-rx` waiter. The ergonomic `syn who --me` wrapper
+  uses the resolved `syn` identity for the same check.
+- `synapse hub --max-connections-per-host N` caps simultaneous sockets from one
+  remote host independently of the global client, unauthenticated-client, and
+  frame-rate limits.
+
+### Changed
+- The A2A HTTP edge, A2A CLI, MCP registration surface, read-only query CLI,
+  messaging CLI, process CLI, state indexing, finding schema helpers, and client
+  outbound/lifecycle internals were split into focused modules while keeping the
+  previous compatibility import surfaces.
+- Generated capability counts now report 112 package modules, 39 CLI subcommands,
+  and 1394 test functions.
+
+### Security
+- A2A protected routes now compare Bearer tokens with constant-time comparison.
+- A2A HTTP JSON bodies use the bounded parser for depth limits before bridge
+  dispatch.
+- A2A state-file writes use owner-only permissions for state files and write
+  temporaries.
+- A2A webhook delivery validates DNS and redirect targets before delivery and
+  blocks localhost, loopback, private, and link-local destinations.
+- A2A task retention, replay history, push-config counts, task history, artifacts,
+  and terminal-task retention are bounded.
+- Hub admission now enforces the per-host connection cap before authentication so
+  pre-auth socket pressure is counted too.
+
+### Fixed
+- Fish shell auto-arm integration keeps the wake sidecar alive and is skipped in
+  the shell syntax test when Fish is not installed.
+- `syn say` preserves an exact `SYN_IDENTITY` by default, while `--as-project`
+  keeps the explicit shared project sender when needed.
+- Worker-session wake sidecars no longer leak routine output into the provider
+  command's terminal stream.
+- The A2A lifecycle now ignores late replies after timeout and keeps terminal
+  task states immutable on cancel.
+- A2A persistence now preserves the previous state file when a temp write fails
+  and recovers stale working tasks on restart.
+
+### Documentation
+- README, quickstart, CLI, examples, recipes, deployment, troubleshooting,
+  SECURITY, validation, and benchmark docs now describe the installed demo path,
+  coding-fleet workflow, per-host connection cap, `who --me`, A2A bounded local
+  soak evidence, and current A2A/security claim boundaries.
+- The changelog and capability inventory were refreshed for the 0.45.0 release.
 
 ## [0.44.1] - 2026-06-26
 
