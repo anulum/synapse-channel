@@ -187,7 +187,7 @@ Synapse coordinates the agents you already run; it does not replace them.
   synapse quickstart-coding                    # optional: run a temporary no-collision coding demo
   synapse new coding-fleet ./demo-fleet        # optional: keep the generated workspace
   synapse git-init --name aider-1              # one step: install the hooks + write the conventions guide
-  synapse git-claim AUTH --paths src/auth --name aider-1
+  synapse git-claim --task-id AUTH --paths src/auth --name aider-1
   aider src/auth/*.py                          # ... edit; the post-commit hook releases the claim
   ```
 
@@ -351,7 +351,7 @@ A claim can be scoped to the git branch it happens on, resolved client-side:
 
 ```bash
 synapse git-init                                 # one-step setup: install the hooks + write a .synapse/ guide
-synapse git-claim TASK-1 --paths src/auth.py     # claim, tagged with your branch
+synapse git-claim TASK-1 --paths src/auth.py     # or: synapse git-claim --task-id TASK-1 ...
 synapse git-hook install                         # (git-init already does this) auto-release on commit/merge
 synapse conflicts --check-diff                   # predict cross-branch merge conflicts
 ```
@@ -467,7 +467,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 83 |
 | Wire message types | 52 |
 | CLI subcommands | 39 |
-| Test functions | 1443 |
+| Test functions | 1448 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

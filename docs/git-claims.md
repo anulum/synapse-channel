@@ -20,6 +20,8 @@ local-first, single-dependency guarantee intact while making claims branch-aware
 
 ```bash
 synapse git-claim TASK-1 --paths src/auth.py --base main
+# equivalent for structured argv builders:
+synapse git-claim --task-id TASK-1 --paths src/auth.py --base main
 ```
 
 The branch is resolved locally with `git rev-parse --abbrev-ref HEAD` and sent on
@@ -45,6 +47,12 @@ Active claims (1):
 
 The `--auto-release-on` value is the policy stored with the claim; a client-side
 git hook enacts it so a finished branch frees its claim without a manual step.
+
+Use either the positional `TASK-1` form or `--task-id TASK-1`, not both. The named
+form exists for scripts and agent adapters that assemble command arguments from
+structured fields. `synapse git-release` is reserved for the installed hooks and
+auto-detects releasable claims from the git diff; for a manual release, use
+`synapse release <task> --name <owner>`.
 
 ## Auto-release on commit or merge
 
