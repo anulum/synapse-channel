@@ -67,10 +67,12 @@ When that boundary is crossed, the proportionate controls are:
   Bearer auth with `--bearer-auth --a2a-token`, with bearer values compared in
   constant time. Request bodies are capped by byte size and JSON nesting depth
   before A2A dispatch. Persisted A2A state files and write temp files are
-  restricted to owner-only permissions. Treat any non-loopback A2A bind as an
-  exposed HTTP service: use bearer auth, keep state files private, and do not
-  claim external A2A conformance until interoperability and webhook validation
-  have run.
+  restricted to owner-only permissions. Webhook delivery validates resolved
+  target addresses before sending and before following redirects, blocking
+  localhost, loopback, private, and link-local destinations. Treat any
+  non-loopback A2A bind as an exposed HTTP service: use bearer auth, keep state
+  files private, and do not claim external A2A conformance until
+  interoperability and webhook validation have run.
 
 The core hub and its state stay on the operator's machine, but two boundaries are
 worth stating plainly:

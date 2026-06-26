@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.error import URLError
 
@@ -43,49 +42,15 @@ def _message(task_id: str = "task-a", *, parts: list[Any] | None = None) -> dict
     }
 
 
-def test_http_push_deliverer_posts_json_to_real_http_server() -> None:
-    received: list[dict[str, Any]] = []
-
-    class PushHandler(BaseHTTPRequestHandler):
-        def do_POST(self) -> None:
-            length = int(self.headers["Content-Length"])
-            received.append(
-                {
-                    "content_type": self.headers["Content-Type"],
-                    "auth": self.headers["Authorization"],
-                    "body": json.loads(self.rfile.read(length).decode("utf-8")),
-                }
-            )
-            self.send_response(204)
-            self.end_headers()
-
-        def log_message(self, _format: str, *_args: Any) -> None:
-            return None
-
-    port = _free_port()
-    server = ThreadingHTTPServer(("127.0.0.1", port), PushHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
+def test_http_push_deliverer_blocks_loopback_http_target() -> None:
+    with pytest.raises(URLError, match="must not target local networks"):
         http_push_deliverer(
             {
-                "url": f"http://127.0.0.1:{port}/hook",
+                "url": "http://127.0.0.1:8080/hook",
                 "headers": {"Authorization": "Bearer token"},
                 "payload": {"task": {"id": "task-a"}},
             }
         )
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2.0)
-
-    assert received == [
-        {
-            "content_type": "application/a2a+json",
-            "auth": "Bearer token",
-            "body": {"task": {"id": "task-a"}},
-        }
-    ]
 
 
 def test_make_a2a_http_server_serves_agent_card_over_real_http() -> None:
