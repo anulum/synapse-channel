@@ -13,11 +13,22 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-06-27
+
 ### Added
 - `synapse codex-tmux` adds a local tmux-backed wake transport for an existing
   Codex terminal session. The command can start, inspect, wake, or wait-and-wake
   a named tmux session while injecting only a fixed prompt that tells Codex to
   read its Synapse inbox.
+
+### Changed
+- Package metadata and public release notes now mark the `0.x` line as
+  pre-1.0 development releases and reserve `1.0.0` for the first stable
+  commercial release line.
+
+### Fixed
+- The `syn commit` packaging/documentation test now uses the configured
+  Python 3.10 TOML fallback, keeping the full CI matrix green.
 
 ## [0.45.0] - 2026-06-26
 

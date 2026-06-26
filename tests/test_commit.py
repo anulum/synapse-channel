@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import subprocess
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
@@ -148,10 +149,13 @@ def test_stage_failure_stops_before_commit(tmp_path: Path, monkeypatch: pytest.M
 
 
 def test_syn_commit_is_packaged_and_documented() -> None:
-    import tomllib
+    try:
+        toml_parser = importlib.import_module("tomllib")
+    except ModuleNotFoundError:  # pragma: no cover
+        toml_parser = importlib.import_module("tomli")
 
     root = Path(__file__).resolve().parents[1]
-    pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    pyproject = toml_parser.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     scripts = pyproject["project"]["scripts"]
     readme = (root / "README.md").read_text(encoding="utf-8")
     cli_docs = (root / "docs" / "cli.md").read_text(encoding="utf-8")
