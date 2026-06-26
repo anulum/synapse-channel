@@ -10,21 +10,34 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import uuid
 from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
 
 from synapse_channel.a2a import JsonMap
 from synapse_channel.a2a_validation import TERMINAL_TASK_STATES
 
 STALE_INFLIGHT_MESSAGE = "Recovered from stale in-flight task state after restart"
+STATE_FILE_MODE = 0o600
 StateWriter = Callable[[Path, str], None]
 
 
 def _write_state(path: Path, payload: str) -> None:
     """Write serialized A2A state to ``path``."""
-    path.write_text(payload, encoding="utf-8")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = os.open(path, flags, STATE_FILE_MODE)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(payload)
+    _restrict_state_file(path)
+
+
+def _restrict_state_file(path: Path) -> None:
+    """Restrict an A2A state file path to owner-only access when supported."""
+    with suppress(OSError):
+        path.chmod(STATE_FILE_MODE)
 
 
 class A2ATaskStore:
@@ -96,8 +109,15 @@ class A2ATaskStore:
             "tasks": self._tasks,
             "pushConfigs": self._push_configs,
         }
-        self._state_writer(tmp_path, json.dumps(payload, sort_keys=True))
-        tmp_path.replace(self._storage_path)
+        try:
+            self._state_writer(tmp_path, json.dumps(payload, sort_keys=True))
+            _restrict_state_file(tmp_path)
+            tmp_path.replace(self._storage_path)
+            _restrict_state_file(self._storage_path)
+        except Exception:
+            if tmp_path.exists():
+                _restrict_state_file(tmp_path)
+            raise
 
     def put(self, task: JsonMap) -> JsonMap:
         """Store and return ``task``."""

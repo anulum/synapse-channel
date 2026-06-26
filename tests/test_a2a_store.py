@@ -9,12 +9,29 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+import os
+import stat
+import sys
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 
 from synapse_channel.a2a_store import A2ATaskStore
+
+
+@contextmanager
+def _permissive_umask() -> Iterator[None]:
+    previous = os.umask(0)
+    try:
+        yield
+    finally:
+        os.umask(previous)
+
+
+def _mode(path: Path) -> int:
+    return stat.S_IMODE(os.stat(path).st_mode)
 
 
 def _writer_failing_after(successes: int) -> Callable[[Path, str], None]:
@@ -28,6 +45,36 @@ def _writer_failing_after(successes: int) -> Callable[[Path, str], None]:
         path.write_text(payload, encoding="utf-8")
 
     return write_state
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file permissions")
+def test_a2a_task_store_state_file_is_owner_only(tmp_path: Path) -> None:
+    storage_path = tmp_path / "a2a-state.json"
+    store = A2ATaskStore(storage_path)
+
+    with _permissive_umask():
+        store.put({"id": "task-a", "status": {"state": "TASK_STATE_COMPLETED"}})
+
+    assert _mode(storage_path) & 0o077 == 0
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file permissions")
+def test_a2a_task_store_temp_file_is_owner_only_after_failed_write(tmp_path: Path) -> None:
+    storage_path = tmp_path / "a2a-state.json"
+    temp_state_path = storage_path.with_suffix(".json.tmp")
+
+    def write_then_fail(path: Path, payload: str) -> None:
+        path.write_text(payload, encoding="utf-8")
+        raise OSError(f"blocked write to {path}")
+
+    store = A2ATaskStore(storage_path, state_writer=write_then_fail)
+
+    with pytest.raises(OSError, match="blocked write"):
+        with _permissive_umask():
+            store.put({"id": "task-a", "status": {"state": "TASK_STATE_COMPLETED"}})
+
+    assert _mode(temp_state_path) & 0o077 == 0
+    assert not storage_path.exists()
 
 
 def test_a2a_task_store_import_boundary_is_stable() -> None:

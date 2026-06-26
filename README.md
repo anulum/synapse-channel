@@ -279,9 +279,9 @@ request size/depth bounds, persist task state with `--state-file`, fail stale
 open tasks with `--task-timeout`, and bound one subscription wait with
 `--subscribe-timeout`.
 The bridge is intentionally a local-first HTTP+JSON edge: it stores bridge task
-state locally, rejects unsafe caller ids and webhook targets, and does not claim
-independent A2A conformance until remote CI, interoperability, and real webhook
-receiver validation have run.
+state locally in owner-only state/temp files, rejects unsafe caller ids and
+webhook targets, and does not claim independent A2A conformance until remote CI,
+interoperability, and real webhook receiver validation have run.
 
 ### Git-native claims
 
@@ -397,7 +397,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 72 |
 | Wire message types | 52 |
 | CLI subcommands | 35 |
-| Test functions | 1340 |
+| Test functions | 1342 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |
