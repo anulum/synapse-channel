@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -28,6 +29,25 @@ if TYPE_CHECKING:
     from synapse_channel.a2a_server import A2ABridge
 
 MAX_A2A_JSON_BODY_BYTES = 1024 * 1024
+
+
+def bearer_token_matches(authorization: str, token: str) -> bool:
+    """Compare an Authorization header with the configured bearer token.
+
+    Parameters
+    ----------
+    authorization : str
+        Raw ``Authorization`` header value supplied by the HTTP client. Missing
+        headers are represented by an empty string by the caller.
+    token : str
+        Configured bearer token for protected A2A bridge routes.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``authorization`` exactly equals ``"Bearer {token}"``.
+    """
+    return hmac.compare_digest(authorization, f"Bearer {token}")
 
 
 def non_negative_int(value: object, *, default: int = 0) -> int:
@@ -201,7 +221,8 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
             token = self.bridge.auth_token
             if not token:
                 return True
-            return self.headers.get("Authorization") == f"Bearer {token}"
+            authorization = self.headers.get("Authorization", "") or ""
+            return bearer_token_matches(authorization, token)
 
         def _require_authorized(self) -> bool:
             if self._is_authorized():
