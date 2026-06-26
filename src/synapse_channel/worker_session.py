@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import subprocess
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 SIDECAR_SHUTDOWN_TIMEOUT_SECONDS = 5.0
 """Seconds to wait for a wake sidecar to exit after graceful termination."""
@@ -20,6 +21,14 @@ SIDECAR_SHUTDOWN_TIMEOUT_SECONDS = 5.0
 def _project_from_identity(identity: str) -> str:
     """Return the project segment of a ``project`` or ``project/worker`` identity."""
     return identity.split("/", 1)[0].strip()
+
+
+def _sidecar_log_path(identity: str, env: Mapping[str, str]) -> Path:
+    """Return the quiet sidecar log path for a worker-session identity."""
+    runtime = Path(env.get("XDG_RUNTIME_DIR") or "/tmp") / "synapse-worker-session"
+    runtime.mkdir(parents=True, exist_ok=True)
+    safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in identity)
+    return runtime / f"{safe}.log"
 
 
 def run_worker_session(
@@ -55,7 +64,19 @@ def run_worker_session(
             arm_cmd.extend(["--token", token])
         if token_file:
             arm_cmd.extend(["--token-file", token_file])
-        sidecar = subprocess.Popen(arm_cmd, env=env)
+        sidecar_log = _sidecar_log_path(env["SYN_IDENTITY"], env)
+        log_handle = sidecar_log.open("ab")
+        try:
+            sidecar = subprocess.Popen(
+                arm_cmd,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        finally:
+            log_handle.close()
 
     try:
         return subprocess.run(list(command), env=env, check=False).returncode

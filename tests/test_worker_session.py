@@ -112,6 +112,10 @@ provider_record.write_text(
     )
 
 
+def _quiet_provider(path: Path) -> Path:
+    return _write_script(path, "raise SystemExit(0)\n")
+
+
 def _process_exists(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -221,6 +225,59 @@ def test_worker_session_can_skip_sidecar() -> None:
         )
         == 7
     )
+
+
+def test_worker_session_sidecar_output_goes_to_runtime_log(tmp_path: Path) -> None:
+    sidecar = _write_script(
+        tmp_path / "syn",
+        """
+import sys
+print("sidecar stdout leak")
+print("sidecar stderr leak", file=sys.stderr)
+""",
+    )
+    provider = _write_script(
+        tmp_path / "provider",
+        """
+import pathlib
+import time
+
+log = pathlib.Path(__file__).with_name("synapse-worker-session").joinpath("repo_ux.log")
+deadline = time.monotonic() + 5
+while "sidecar stderr leak" not in log.read_text(encoding="utf-8"):
+    if time.monotonic() > deadline:
+        raise SystemExit("sidecar output did not reach runtime log")
+    time.sleep(0.01)
+""",
+    )
+    runner = _write_script(
+        tmp_path / "run_session",
+        f"""
+from synapse_channel.worker_session import run_worker_session
+raise SystemExit(
+    run_worker_session(
+        identity="repo/ux",
+        command=[{str(provider)!r}],
+        syn_bin={str(sidecar)!r},
+        environ={{"XDG_RUNTIME_DIR": {str(tmp_path)!r}}},
+    )
+)
+""",
+    )
+
+    proc = subprocess.run(
+        [sys.executable, str(runner)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode == 0
+    assert "sidecar stdout leak" not in proc.stdout
+    assert "sidecar stderr leak" not in proc.stderr
+    log = tmp_path / "synapse-worker-session" / "repo_ux.log"
+    assert "sidecar stdout leak" in log.read_text(encoding="utf-8")
+    assert "sidecar stderr leak" in log.read_text(encoding="utf-8")
 
 
 def test_worker_session_rejects_empty_command() -> None:
