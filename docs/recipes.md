@@ -72,9 +72,13 @@ can hold a strict lease on its behalf.
 
     ```bash
     synapse task declare ship-api --title "Implement + test the API" --depends-on edit-api
-    synapse task update edit-api --status done
+    syn ack edit-api --evidence "pytest tests/test_api.py -q" --artifact coverage.xml
     synapse supervisor --idle-seconds 300
     ```
+
+    `syn ack` keeps the closeout evidence next to the plan: it posts the evidence
+    and artifacts as an `assessment` progress note from the resolved identity, then
+    marks the task `done` after the hub confirms the note.
 
 ## Why it holds
 

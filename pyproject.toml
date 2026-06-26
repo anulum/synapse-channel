@@ -68,6 +68,7 @@ syn-inbox = "synapse_channel.ergonomics:alias_inbox"
 syn-board = "synapse_channel.ergonomics:alias_board"
 syn-reap = "synapse_channel.ergonomics:alias_reap"
 syn-locks = "synapse_channel.ergonomics:alias_locks"
+syn-ack = "synapse_channel.ergonomics:alias_ack"
 
 [project.urls]
 Homepage = "https://www.anulum.li"

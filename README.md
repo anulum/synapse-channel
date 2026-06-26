@@ -154,6 +154,7 @@ synapse ingest ./synapse.db --memory --cursor ./mem.cursor  # stream durable mem
 synapse board                                        # print the shared task/progress blackboard
 synapse task declare BUILD --title "compile"         # declare/update the shared plan from the CLI
 synapse task update BUILD --status done              # mark a plan task done so dependents unblock
+syn ack BUILD --evidence "pytest -q"                 # post evidence and mark a board task done
 synapse supervisor --idle-seconds 300                # LLM-free: re-offer tasks that stall
 synapse manifest                                     # print the capability cards agents advertised
 synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1  # emit A2A Agent Card JSON
@@ -227,6 +228,7 @@ syn who --me                      # show whether this identity and its -rx waite
 syn reap                          # list this identity's shell-hook waiter pidfile
 syn reap --pid 1234               # remove a dead pidfile or SIGTERM only the verified waiter PID
 syn locks                         # list this project's active leases with release commands
+syn ack BUILD --evidence "pytest -q" --artifact coverage.xml
 ```
 
 The one thing it gets right that a hand-rolled shell alias does not is **identity**.
@@ -240,7 +242,7 @@ directory, a system path) is flagged rather than used in silence. Set
 it reports the identity's presence separately from its `-rx` waiter because
 presence is not a wake loop.
 
-`syn-name`/`syn-wait`/`syn-say`/`syn-inbox`/`syn-board`/`syn-reap`/`syn-locks`
+`syn-name`/`syn-wait`/`syn-say`/`syn-inbox`/`syn-board`/`syn-reap`/`syn-locks`/`syn-ack`
 aliases are installed too; `syn-wait` uses the same persistent auto-rearming path
 as `syn arm`. `syn reap` is the safe cleanup path for shell-hook waiter sidecars:
 it only inspects this resolved identity's pidfile, and it refuses to signal a PID
@@ -248,7 +250,10 @@ unless the live command line verifies as that exact identity's `synapse arm`
 waiter. It never pattern-kills processes. `syn locks` queries the live state
 snapshot using the resolved identity and prints active leases for the project:
 holder, scope, age, remaining TTL, checkpoint/git context, and the explicit
-`synapse release <task> --name <owner>` command.
+`synapse release <task> --name <owner>` command. `syn ack <task>` posts repeatable
+`--evidence` and `--artifact` values as an `assessment` progress note authored by
+the resolved identity, waits for the hub confirmation, then marks the board task
+`done`.
 
 To make fresh terminals connect automatically, install the shell hook once:
 
@@ -458,11 +463,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.45.0 |
 | Public API exports | 59 |
-| Package modules | 114 |
-| Classes | 81 |
+| Package modules | 115 |
+| Classes | 83 |
 | Wire message types | 52 |
 | CLI subcommands | 39 |
-| Test functions | 1429 |
+| Test functions | 1443 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

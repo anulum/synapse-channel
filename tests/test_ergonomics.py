@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+import synapse_channel.ack as ack_module
 from synapse_channel import ergonomics
 from synapse_channel.ergonomics import (
     Identity,
@@ -461,6 +462,65 @@ def test_main_locks_uses_resolved_identity() -> None:
     ]
 
 
+def test_main_ack_uses_resolved_identity() -> None:
+    seen: list[tuple[Identity, list[str]]] = []
+
+    def ack_runner(identity: Identity, rest: Sequence[str]) -> int:
+        seen.append((identity, list(rest)))
+        return 0
+
+    assert (
+        ergonomics.main(
+            ["ack", "BUILD", "--evidence", "pytest"],
+            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            ack_runner=ack_runner,
+        )
+        == 0
+    )
+    assert seen == [
+        (
+            Identity(
+                project="SYNAPSE-CHANNEL",
+                identity="SYNAPSE-CHANNEL/codex-1",
+                source="env",
+                plausible=True,
+            ),
+            ["BUILD", "--evidence", "pytest"],
+        )
+    ]
+
+
+def test_main_ack_default_runner_dispatches_ack_module(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[tuple[Identity, list[str]]] = []
+
+    def ack_main(identity: Identity, rest: Sequence[str] | None = None) -> int:
+        seen.append((identity, list(rest or [])))
+        return 0
+
+    monkeypatch.setattr(ack_module, "main", ack_main)
+
+    assert (
+        ergonomics.main(
+            ["ack", "BUILD", "--evidence", "pytest"],
+            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            cwd_basename="SYNAPSE-CHANNEL",
+        )
+        == 0
+    )
+    assert seen == [
+        (
+            Identity(
+                project="SYNAPSE-CHANNEL",
+                identity="SYNAPSE-CHANNEL/codex-1",
+                source="env",
+                plausible=True,
+            ),
+            ["BUILD", "--evidence", "pytest"],
+        )
+    ]
+
+
 def test_main_warns_on_an_implausible_identity(capsys: pytest.CaptureFixture[str]) -> None:
     def dispatch(argv: list[str] | None = None) -> int:
         return 0
@@ -491,6 +551,7 @@ def test_aliases_dispatch_to_their_verb() -> None:
     assert ergonomics.alias_board([], dispatcher=dispatch) == 0
     assert ergonomics.alias_reap(["--pid", "1234"], dispatcher=dispatch) == 0
     assert ergonomics.alias_locks(["--all"], dispatcher=dispatch) == 0
+    assert ergonomics.alias_ack(["BUILD", "--evidence", "pytest"], dispatcher=dispatch) == 0
     assert seen == [
         ["arm", "--timeout", "5"],
         ["say", "CEO", "hi"],
@@ -499,4 +560,5 @@ def test_aliases_dispatch_to_their_verb() -> None:
         ["board"],
         ["reap", "--pid", "1234"],
         ["locks", "--all"],
+        ["ack", "BUILD", "--evidence", "pytest"],
     ]
