@@ -231,6 +231,17 @@ Operational boundaries:
 - Webhook URLs must be HTTP(S), include a host, omit embedded credentials, and not
   target localhost, loopback, private, or link-local IP literals.
 
+State-file durability matrix:
+
+| Case | Behavior | Focused coverage |
+| --- | --- | --- |
+| Clean restart | Tasks and push configs reload from `--state-file`. | `test_task_store_persists_tasks_and_push_configs` |
+| Corrupt JSON | Startup fails fast with `Invalid A2A state file`. | `test_task_store_reports_corrupt_state_file` |
+| Atomic write | Writes go through an owner-only temp file, fsync the file, replace the state file, and best-effort fsync the parent directory. | `test_a2a_task_store_fsyncs_state_file_and_parent_directory` |
+| Failed write | In-memory task/config changes roll back; the previous committed state file is left intact. | `test_a2a_task_store_keeps_committed_state_file_when_temp_write_fails` |
+| Stale in-flight task | Persisted non-terminal tasks recover as failed on restart. | `test_state_file_recovery_fails_stale_working_tasks` |
+| Push config recovery | Push configs persist, reload, list, get, delete, and roll back failed writes/deletes. | `test_a2a_task_store_push_config_get_list_delete_paths` |
+
 Unsupported or externally gated:
 
 - No claim is made here about third-party A2A conformance until remote CI,

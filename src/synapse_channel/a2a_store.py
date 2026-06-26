@@ -36,7 +36,22 @@ def _write_state(path: Path, payload: str) -> None:
     fd = os.open(path, flags, STATE_FILE_MODE)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
     _restrict_state_file(path)
+
+
+def _fsync_parent(path: Path) -> None:
+    """Best-effort fsync for the parent directory containing ``path``."""
+    if os.name != "posix":
+        return
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    with suppress(OSError):
+        fd = os.open(path.parent, flags)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
 
 
 def _restrict_state_file(path: Path) -> None:
@@ -216,6 +231,7 @@ class A2ATaskStore:
             _restrict_state_file(tmp_path)
             tmp_path.replace(self._storage_path)
             _restrict_state_file(self._storage_path)
+            _fsync_parent(self._storage_path)
         except Exception:
             if tmp_path.exists():
                 _restrict_state_file(tmp_path)
