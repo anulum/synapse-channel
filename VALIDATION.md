@@ -71,6 +71,14 @@ store and lifecycle tests. Run the matrix checks directly with:
 .venv/bin/python -m pytest tests/test_a2a_store.py tests/test_a2a_store_persistence.py tests/test_a2a_server_lifecycle.py::test_state_file_recovery_fails_stale_working_tasks -q
 ```
 
+The bounded local A2A soak checks are deterministic functional tests, not
+benchmarks. They cover real localhost HTTP churn, persistence churn, injected
+webhook delivery failures, and subscriber fanout:
+
+```bash
+.venv/bin/python -m pytest tests/test_a2a_load_soak.py -q
+```
+
 ## Benchmarks
 
 Benchmarks are runnable, committed scripts under `benchmarks/`, with their
