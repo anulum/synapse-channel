@@ -185,10 +185,21 @@ def arm_argv(
 
 
 def say_argv(
-    identity: Identity, target: str, message: str, *, extra: Sequence[str] = ()
+    identity: Identity,
+    target: str,
+    message: str,
+    *,
+    as_project: bool = False,
+    extra: Sequence[str] = (),
 ) -> list[str]:
-    """Build the ``synapse send`` argv for ``syn say`` (sends as the bare project)."""
-    return ["send", "--name", identity.project, "--target", target, *extra, message]
+    """Build the ``synapse send`` argv for ``syn say``.
+
+    Multi-agent sessions send as their full identity by default so directed
+    replies can return to the exact terminal. ``as_project`` preserves the old
+    project-level sender when a deliberate shared project voice is wanted.
+    """
+    sender = identity.project if as_project else identity.identity
+    return ["send", "--name", sender, "--target", target, *extra, message]
 
 
 def inbox_argv(identity: Identity, *, feed: str, cursor: str) -> list[str]:
@@ -325,10 +336,17 @@ def main(
         return dispatcher(arm_argv(identity, directed_only=directed_only, extra=extra))
     if args.verb == "say":
         if len(rest) < 2:
-            print("syn: usage: syn say <target> <message>", file=sys.stderr)
+            print("syn: usage: syn say [--as-project] <target> <message>", file=sys.stderr)
+            return 2
+        as_project = False
+        if "--as-project" in rest:
+            rest.remove("--as-project")
+            as_project = True
+        if len(rest) < 2:
+            print("syn: usage: syn say [--as-project] <target> <message>", file=sys.stderr)
             return 2
         target, message, *extra = rest
-        return dispatcher(say_argv(identity, target, message, extra=extra))
+        return dispatcher(say_argv(identity, target, message, as_project=as_project, extra=extra))
     if args.verb == "inbox":
         home = _syn_home(env)
         feed = str(home / "feed.ndjson")
