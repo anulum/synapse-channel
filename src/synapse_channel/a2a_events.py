@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import queue
 import threading
+from collections.abc import Iterable
 
 from synapse_channel.a2a import JsonMap
 from synapse_channel.a2a_validation import TERMINAL_TASK_STATES
@@ -36,6 +37,13 @@ class A2ATaskEvents:
             subscribers = list(self._subscribers.get(task_id, []))
         for subscriber in subscribers:
             subscriber.put(copy.deepcopy(event))
+
+    def drop(self, task_ids: Iterable[str]) -> None:
+        """Drop replay history and subscribers for removed tasks."""
+        with self._lock:
+            for task_id in task_ids:
+                self._history.pop(task_id, None)
+                self._subscribers.pop(task_id, None)
 
     def subscribe(
         self,

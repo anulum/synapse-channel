@@ -21,6 +21,23 @@ import pytest
 from synapse_channel.a2a_store import A2ATaskStore
 
 
+def _stored_task(
+    task_id: str,
+    *,
+    state: str = "TASK_STATE_COMPLETED",
+    updated_at: float = 0.0,
+    history: list[object] | None = None,
+    artifacts: list[object] | None = None,
+) -> dict[str, object]:
+    return {
+        "id": task_id,
+        "status": {"state": state},
+        "history": history if history is not None else [],
+        "artifacts": artifacts if artifacts is not None else [],
+        "metadata": {"updatedAt": updated_at},
+    }
+
+
 @contextmanager
 def _permissive_umask() -> Iterator[None]:
     previous = os.umask(0)
@@ -92,6 +109,72 @@ def test_a2a_task_store_lists_tasks_by_state_and_id() -> None:
 
     assert [task["id"] for task in store.list_tasks()] == ["task-a", "task-b"]
     assert [task["id"] for task in store.list_tasks(state="TASK_STATE_WORKING")] == ["task-a"]
+
+
+def test_a2a_task_store_bounds_stored_tasks_and_removes_push_configs() -> None:
+    store = A2ATaskStore(max_tasks=2)
+    store.put(_stored_task("old", updated_at=1.0))
+    store.put_push_config("old", {"id": "cfg-old", "webhookUrl": "https://example.test/old"})
+    store.put(_stored_task("middle", updated_at=2.0))
+    store.put(_stored_task("new", updated_at=3.0))
+
+    assert [task["id"] for task in store.list_tasks()] == ["middle", "new"]
+    assert store.get("old") is None
+    assert store.list_push_configs("old") == []
+
+
+def test_a2a_task_store_rolls_back_quota_eviction_when_save_fails(tmp_path: Path) -> None:
+    storage_path = tmp_path / "a2a-state.json"
+    store = A2ATaskStore(storage_path, max_tasks=1, state_writer=_writer_failing_after(1))
+    original = store.put(_stored_task("original", updated_at=1.0))
+
+    with pytest.raises(OSError, match="blocked write"):
+        store.put(_stored_task("replacement", updated_at=2.0))
+
+    assert store.get("original") == original
+    assert store.get("replacement") is None
+
+
+def test_a2a_task_store_prunes_expired_terminal_tasks() -> None:
+    store = A2ATaskStore(retention_seconds=10.0)
+    store.put(_stored_task("old-terminal", updated_at=5.0))
+    store.put_push_config(
+        "old-terminal",
+        {"id": "cfg-old", "webhookUrl": "https://example.test/old"},
+    )
+    store.put(_stored_task("old-open", state="TASK_STATE_WORKING", updated_at=5.0))
+    store.put(_stored_task("recent-terminal", updated_at=12.0))
+
+    removed = store.prune_expired(now=16.0)
+
+    assert removed == ["old-terminal"]
+    assert store.get("old-terminal") is None
+    assert store.list_push_configs("old-terminal") == []
+    assert store.get("old-open") is not None
+    assert store.get("recent-terminal") is not None
+
+
+def test_a2a_task_store_bounds_history_artifacts_and_push_configs() -> None:
+    store = A2ATaskStore(
+        max_task_history=2,
+        max_task_artifacts=1,
+        max_push_configs_per_task=1,
+    )
+    store.put(
+        _stored_task(
+            "task-a",
+            history=[{"messageId": "m1"}, {"messageId": "m2"}, {"messageId": "m3"}],
+            artifacts=[{"artifactId": "a1"}, {"artifactId": "a2"}],
+        )
+    )
+    store.put_push_config("task-a", {"id": "cfg-a", "webhookUrl": "https://example.test/a"})
+
+    stored = store.get("task-a")
+    assert stored is not None
+    assert stored["history"] == [{"messageId": "m2"}, {"messageId": "m3"}]
+    assert stored["artifacts"] == [{"artifactId": "a2"}]
+    with pytest.raises(ValueError, match="pushNotificationConfig limit exceeded"):
+        store.put_push_config("task-a", {"id": "cfg-b", "webhookUrl": "https://example.test/b"})
 
 
 def test_a2a_task_store_rejects_invalid_state_file(tmp_path: Path) -> None:

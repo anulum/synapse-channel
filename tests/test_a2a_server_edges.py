@@ -346,6 +346,27 @@ def test_get_subscribe_and_push_config_unknown_paths() -> None:
         bridge.create_push_notification_config(str(task["id"]), {})
 
 
+def test_list_tasks_runs_retention_gc_and_drops_replay_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = A2ATaskStore(retention_seconds=1.0)
+    bridge = _bridge(store=store)
+    old_task = {
+        "id": "old-task",
+        "status": {"state": "TASK_STATE_COMPLETED"},
+        "metadata": {"updatedAt": 1.0},
+    }
+    store.put(old_task)
+    bridge._events.publish("old-task", old_task)
+    monkeypatch.setattr("synapse_channel.a2a_server.time.time", lambda: 3.0)
+
+    listed = bridge.list_tasks()
+
+    assert listed["tasks"] == []
+    assert bridge.store.get("old-task") is None
+    assert "old-task" not in bridge._events._history
+
+
 def test_get_task_trims_only_list_history() -> None:
     bridge = _bridge()
     task = bridge.create_working_task(_message())

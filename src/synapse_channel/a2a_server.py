@@ -121,6 +121,16 @@ class A2ABridge:
         self._correlation_lock = threading.RLock()
         self._recover_stale_open_tasks(now=time.time())
 
+    def _gc_retained_tasks(self, *, now: float | None = None) -> list[str]:
+        """Prune expired terminal tasks and drop bridge-local indexes."""
+        removed = self.store.prune_expired(now=time.time() if now is None else now)
+        if not removed:
+            return []
+        for task_id in removed:
+            self._remove_pending_task(task_id)
+        self._events.drop(removed)
+        return removed
+
     def _run(self, coro: Coroutine[Any, Any, Any]) -> Any:
         """Run ``coro`` through the configured submitter or a fresh event loop."""
         if self._submit is not None:
@@ -164,6 +174,7 @@ class A2ABridge:
     def create_working_task(self, message: JsonMap, *, target: str | None = None) -> JsonMap:
         """Create a working A2A task and forward the request into SYNAPSE."""
         with self._task_creation_lock:
+            self._gc_retained_tasks()
             raw_task_id = message.get("taskId")
             raw_context_id = message.get("contextId")
             validate_bridge_id(raw_task_id, field="taskId")
@@ -259,7 +270,8 @@ class A2ABridge:
         stored = self.create_push_notification_config(task_id, config)
         if stored is None:
             return None
-        assert task is not None
+        if task is None:
+            return None
         self._deliver_push_notification(task=task, config=stored)
         return stored
 
@@ -418,6 +430,7 @@ class A2ABridge:
         page_token: str | None = None,
     ) -> JsonMap:
         """Return an A2A task-list response."""
+        self._gc_retained_tasks()
         tasks = self.store.list_tasks(state=state)
         total = len(tasks)
         start = _non_negative_int(page_token, default=0)
@@ -436,6 +449,7 @@ class A2ABridge:
 
     def get_task(self, task_id: str, *, history_length: int | None = None) -> JsonMap | None:
         """Return one A2A task by id."""
+        self._gc_retained_tasks()
         task = self.store.get(task_id)
         if task is None or history_length is None:
             return task
@@ -455,6 +469,7 @@ class A2ABridge:
 
     def subscribe_task(self, task_id: str) -> JsonMap | None:
         """Return a task snapshot for SSE subscription, or ``None`` when unknown."""
+        self._gc_retained_tasks()
         return self.store.get(task_id)
 
     def subscribe_task_events(
@@ -464,6 +479,7 @@ class A2ABridge:
         wait_seconds: float | None = None,
     ) -> list[JsonMap] | None:
         """Return the initial task event plus queued updates for one subscription."""
+        self._gc_retained_tasks()
         task = self.store.get(task_id)
         if task is None:
             return None
@@ -476,6 +492,7 @@ class A2ABridge:
 
     def create_push_notification_config(self, task_id: str, config: JsonMap) -> JsonMap | None:
         """Create a push notification config for a known task."""
+        self._gc_retained_tasks()
         if self.store.get(task_id) is None:
             return None
         webhook = config.get("webhookUrl") or config.get("url")
@@ -487,14 +504,17 @@ class A2ABridge:
 
     def list_push_notification_configs(self, task_id: str) -> JsonMap:
         """Return all push notification configs for ``task_id``."""
+        self._gc_retained_tasks()
         return {"pushNotificationConfigs": self.store.list_push_configs(task_id)}
 
     def get_push_notification_config(self, task_id: str, config_id: str) -> JsonMap | None:
         """Return one push notification config."""
+        self._gc_retained_tasks()
         return self.store.get_push_config(task_id, config_id)
 
     def delete_push_notification_config(self, task_id: str, config_id: str) -> JsonMap:
         """Delete one push notification config and report whether it existed."""
+        self._gc_retained_tasks()
         return {"deleted": self.store.delete_push_config(task_id, config_id)}
 
     def handle_json_rpc(self, request_body: JsonMap) -> JsonMap:
