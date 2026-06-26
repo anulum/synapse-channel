@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from synapse_channel.core.scoping import (
@@ -32,10 +34,11 @@ from synapse_channel.core.scoping import (
         ("", ""),
         ("a/b/c", "a/b/c"),
         ("src//app.py", "src/app.py"),  # duplicate slashes collapse
-        ("src/../tests", "tests"),  # .. resolves against the preceding segment
-        ("a/b/../c", "a/c"),
-        ("a/b/../../c", "c"),  # .. up twice lands at the root then descends
-        ("../../etc/passwd", "../../etc/passwd"),  # leading .. (out of tree) kept literal
+        ("src/../tests", ""),  # traversal-like declarations widen to the root
+        ("a/b/../c", ""),
+        ("a/b/../../c", ""),
+        ("../../etc/passwd", ""),
+        ("/src/app.py", ""),
     ],
 )
 def test_normalize_path(raw: str, expected: str) -> None:
@@ -64,15 +67,15 @@ def test_sibling_paths_do_not_overlap() -> None:
     assert paths_overlap("src/app.py", "src/util.py") is False
 
 
-def test_dotdot_normalisation_catches_a_previously_missed_overlap() -> None:
-    # Before segment normalisation these compared as distinct strings.
+def test_dotdot_normalisation_widens_to_the_whole_tree() -> None:
     assert paths_overlap("src/../tests/app.py", "tests") is True
+    assert paths_overlap("src/../tests/app.py", "docs") is True
     assert paths_overlap("tests//app.py", "tests/app.py") is True
 
 
-def test_out_of_tree_path_does_not_overlap_an_in_tree_claim() -> None:
-    # A leading .. is kept, so an out-of-tree path never collides with an in-tree name.
-    assert paths_overlap("../etc/passwd", "etc/passwd") is False
+def test_out_of_tree_path_widens_to_whole_tree() -> None:
+    assert paths_overlap("../etc/passwd", "etc/passwd") is True
+    assert paths_overlap("../etc/passwd", "src/app.py") is True
 
 
 def test_shared_prefix_but_not_directory_boundary_does_not_overlap() -> None:
@@ -161,6 +164,26 @@ def test_normalize_paths_widens_on_a_non_printable_path() -> None:
     assert normalize_paths(["a\x00b"]) == ("",)
 
 
+def test_normalize_paths_widens_on_traversal_like_paths() -> None:
+    assert normalize_paths(["src", "src/../tests"]) == ("",)
+    assert normalize_paths(["../outside"]) == ("",)
+    assert normalize_paths(["/absolute/path"]) == ("",)
+
+
 def test_normalize_paths_keeps_a_normal_unicode_path() -> None:
     # A legitimate accented filename is printable and within length, so it survives.
     assert normalize_paths(["café/notes", "src"]) == ("café/notes", "src")
+
+
+def test_path_scope_policy_is_documented() -> None:
+    root = Path(__file__).resolve().parents[1]
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    cli_docs = (root / "docs" / "cli.md").read_text(encoding="utf-8")
+    git_claims = (root / "docs" / "git-claims.md").read_text(encoding="utf-8")
+
+    assert "widen to the whole worktree" in readme
+    assert "underclaim" in readme
+    assert "miss a conflict" in readme
+    assert "widen to the whole worktree" in cli_docs
+    assert "under-claim" in git_claims
+    assert "miss a real conflict" in git_claims

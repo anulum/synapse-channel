@@ -67,6 +67,23 @@ async def test_scoped_claim_overlap_is_denied_end_to_end() -> None:
             await close_agents(alpha, beta)
 
 
+async def test_traversal_like_claim_widens_to_whole_worktree_end_to_end() -> None:
+    async with running_hub() as (hub, uri):
+        alpha = await connect_agent("A", uri)
+        beta = await connect_agent("B", uri)
+        try:
+            await alpha.agent.claim("T1", paths=["src/../tests"])
+            granted = await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            assert granted["paths"] == [""]
+            assert hub.state.claims["T1"].paths == ("",)
+
+            await beta.agent.claim("T2", paths=["docs"])
+            denied = await beta.recorder.wait_for(lambda m: m.get("type") == "claim_denied")
+            assert "file scope conflicts with 'T1'" in denied["payload"]
+        finally:
+            await close_agents(alpha, beta)
+
+
 async def test_release_with_matching_epoch_is_granted_end_to_end() -> None:
     async with running_hub() as (hub, uri):
         alpha = await connect_agent("A", uri)

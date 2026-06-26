@@ -474,7 +474,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 85 |
 | Wire message types | 53 |
 | CLI subcommands | 39 |
-| Test functions | 1476 |
+| Test functions | 1480 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |
@@ -510,9 +510,11 @@ This snapshot is a static inventory generated from the source tree. Performance 
   and a keyword set; tune the thresholds for your workload. Per-tier model
   latency is not benchmarked offline (it needs a live model server).
 - **File-scope claims are advisory, not filesystem access.** The hub never reads
-  a filesystem; a claim's `paths` are opaque strings compared only for glob
-  overlap, so claiming `../../etc/passwd` coordinates nothing on disk and is not a
-  path-traversal surface. See [`SECURITY.md`](SECURITY.md).
+  a filesystem; a claim's `paths` are opaque strings compared only for overlap.
+  Normal relative paths stay narrow, while absolute or traversal-like declarations
+  such as `../../etc/passwd` widen to the whole worktree so they cannot
+  underclaim and miss a conflict. They do not grant filesystem access. See
+  [`SECURITY.md`](SECURITY.md).
 - **Metrics are opt-in and off by default.** `synapse hub --metrics` exposes a
   Prometheus `/metrics` and a JSON `/health` endpoint on the hub's port; without
   the flag the hub serves no HTTP. The endpoint carries operational metadata, so

@@ -141,6 +141,11 @@ TASK-1 --paths src`) or as a named field (`synapse git-claim --task-id TASK-1
 is hook-invoked and does not take a task id; when a manual drop is needed, use
 `synapse release <task> --name <owner>`.
 
+Claim paths are coordination scopes, not filesystem reads. Normal relative paths
+such as `src/auth.py` stay narrow. Absolute paths and any path containing `..`
+are treated as traversal-like declarations and widen to the whole worktree, so a
+suspicious scope may block more work but cannot miss a conflict.
+
 Use `syn locks` for the operator view before releasing or asking another owner to
 release. It queries the live state snapshot as `<identity>-locks`, filters to the
 resolved project by default, and prints the task id, holder, scope, age, remaining

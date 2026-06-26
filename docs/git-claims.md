@@ -45,6 +45,12 @@ Active claims (1):
 | `--base` | The branch the work merges back into (default: `main`). |
 | `--auto-release-on` | The release trigger recorded on the claim: `manual`, `commit`, or `merge` (default `merge`). |
 
+Claim paths are coordination scopes, not filesystem reads. Use normal
+repository-relative paths such as `src/auth.py` or `docs/cli.md` for narrow
+claims. Absolute paths and any path containing `..` are treated as traversal-like
+declarations and widen to the whole worktree. That conservative fallback may
+over-claim, but it does not under-claim and miss a real conflict.
+
 The `--auto-release-on` value is the policy stored with the claim; a client-side
 git hook enacts it so a finished branch frees its claim without a manual step.
 
