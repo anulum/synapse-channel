@@ -21,6 +21,12 @@ from synapse_channel.core.hub import (
     SynapseHub,
     is_loopback_host,
 )
+from synapse_channel.core.hub_exposure import (
+    InsecureBindError as ExposureInsecureBindError,
+)
+from synapse_channel.core.hub_exposure import (
+    is_loopback_host as exposure_is_loopback_host,
+)
 
 # --- connect authentication --------------------------------------------------
 
@@ -178,6 +184,11 @@ def test_is_loopback_host_recognises_loopback_addresses() -> None:
     assert is_loopback_host("  LOCALHOST ")
     assert not is_loopback_host("0.0.0.0")
     assert not is_loopback_host("10.0.0.5")
+
+
+def test_hub_reexports_exposure_helpers_for_compatibility() -> None:
+    assert is_loopback_host is exposure_is_loopback_host
+    assert InsecureBindError is ExposureInsecureBindError
 
 
 def test_exposure_problems_empty_on_loopback() -> None:

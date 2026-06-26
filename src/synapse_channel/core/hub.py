@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import hmac
 import json
 import logging
 import signal
@@ -35,23 +34,30 @@ from pathlib import Path
 from typing import Any
 
 import websockets
-from websockets.datastructures import Headers
 from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request, Response
 
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.handlers import DISPATCH
+from synapse_channel.core.hub_clients import HubClientRegistry
+from synapse_channel.core.hub_exposure import (
+    LOOPBACK_HOSTS,
+    InsecureBindError,
+    exposure_problems,
+    guard_exposure,
+    is_loopback_host,
+)
+from synapse_channel.core.hub_http import (
+    http_endpoint_response,
+    http_ok,
+    http_unauthorized,
+    metrics_authorised,
+    request_metrics_token,
+)
 from synapse_channel.core.idempotency import IdempotencyCache
 from synapse_channel.core.journal import record_idempotency, replay
 from synapse_channel.core.ledger import DEFAULT_MAX_PROGRESS, Blackboard
-from synapse_channel.core.metrics import (
-    HEALTH_CONTENT_TYPE,
-    PROMETHEUS_CONTENT_TYPE,
-    collect_hub_metrics,
-    health_snapshot,
-    render_prometheus,
-)
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import (
     RESOURCE_TYPE_ALIASES,
@@ -69,6 +75,13 @@ from synapse_channel.core.state import (
 from synapse_channel.relay import append_jsonl, encode_lite, trim_jsonl_tail
 
 logger = logging.getLogger("synapse.hub")
+
+__all__ = [
+    "InsecureBindError",
+    "LOOPBACK_HOSTS",
+    "SynapseHub",
+    "is_loopback_host",
+]
 
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 8876
@@ -96,25 +109,6 @@ The durable log grows append-only and is never auto-compacted — pruning is saf
 below a sequence the read-side has already consumed, which the hub cannot know. So
 instead of silently growing or unsafely trimming, a hub started on a log larger than
 this emits a single startup hint to run :class:`compact` manually."""
-
-LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
-"""Bind hosts treated as loopback-only, where running without a token is fine."""
-
-
-def is_loopback_host(host: str) -> bool:
-    """Return whether ``host`` binds only the loopback interface."""
-    return host.strip().lower() in LOOPBACK_HOSTS
-
-
-class InsecureBindError(RuntimeError):
-    """Raised when a hub would bind off-loopback without an authenticating guard.
-
-    By default the hub refuses to bind a non-loopback interface unless a token
-    authenticator is configured (and, when metrics are served, a metrics token),
-    so a coordination bus is never accidentally exposed unauthenticated to the
-    network. An operator who accepts the risk passes ``insecure_off_loopback``
-    (CLI: ``--insecure-off-loopback``) to downgrade the refusal to a warning.
-    """
 
 
 _MUTATING_TYPES = (
@@ -259,25 +253,28 @@ class SynapseHub:
         self.rate_limiter = rate_limiter
         self.host_rate_limiter = host_rate_limiter
         self.authenticator = authenticator
-        self.max_clients = max(int(max_clients), 1)
-        self.max_unauth_clients = (
-            self.max_clients if max_unauth_clients is None else max(int(max_unauth_clients), 1)
-        )
         self.max_msg_bytes = max(int(max_msg_bytes), 1)
-        self.takeover_cooldown = max(float(takeover_cooldown), 0.0)
         self._clock = clock or time.monotonic
         self._started = self._clock()
-        self._last_takeover: dict[str, float] = {}
+        self.clients = HubClientRegistry(
+            max_clients=max_clients,
+            max_unauth_clients=max_unauth_clients,
+            takeover_cooldown=takeover_cooldown,
+            clock=self._clock,
+        )
+        self.max_clients = self.clients.max_clients
+        self.max_unauth_clients = self.clients.max_unauth_clients
+        self.takeover_cooldown = self.clients.takeover_cooldown
         self.max_history = max(int(max_history), 1)
         self.compact_hint_threshold = max(1, int(compact_hint_threshold))
         self.relay_log = Path(relay_log) if relay_log else None
         self.relay_max_lines = max(int(relay_max_lines), 1)
         self._relay_appends = 0
         self.hub_id = hub_id or f"syn-{uuid.uuid4().hex[:8]}"
-        self.connected_clients: set[Any] = set()
-        self.unauth_clients: set[Any] = set()
-        self.agent_sockets: dict[str, Any] = {}
-        self.socket_agent: dict[Any, str] = {}
+        self.connected_clients = self.clients.connected_clients
+        self.unauth_clients = self.clients.unauth_clients
+        self.agent_sockets = self.clients.agent_sockets
+        self.socket_agent = self.clients.socket_agent
         self._idempotency = IdempotencyCache()
         self._waits: dict[str, str] = {}
         self.capabilities = CapabilityRegistry()
@@ -529,20 +526,12 @@ class SynapseHub:
         with metrics served but no metrics token — is reachable unauthenticated,
         so each such condition is returned as a human-readable problem.
         """
-        if is_loopback_host(host):
-            return []
-        problems: list[str] = []
-        if self.authenticator is None:
-            problems.append(
-                f"bound to non-loopback host {host!r} with no token; set an "
-                "authenticator (synapse hub --token ...) before exposing it"
-            )
-        if self.enable_metrics and self.metrics_token is None:
-            problems.append(
-                f"metrics enabled on non-loopback host {host!r} with no "
-                "--metrics-token; /metrics and /health would be unauthenticated"
-            )
-        return problems
+        return exposure_problems(
+            host,
+            authenticator=self.authenticator,
+            enable_metrics=self.enable_metrics,
+            metrics_token=self.metrics_token,
+        )
 
     def _guard_exposure(self, host: str) -> None:
         """Refuse — or, when overridden, warn — before binding an exposed host.
@@ -552,18 +541,13 @@ class SynapseHub:
         bus is never accidentally exposed; with :attr:`insecure_off_loopback` set
         the problems are logged as warnings and the bind proceeds.
         """
-        problems = self._exposure_problems(host)
-        if not problems:
-            return
-        if self.insecure_off_loopback:
-            for problem in problems:
-                logger.warning("Synapse Hub %s.", problem)
-            return
-        joined = "; ".join(problems)
-        raise InsecureBindError(
-            f"Refusing to bind: Synapse Hub {joined}. Configure a token "
-            "(and --metrics-token when metrics are on), or pass "
-            "--insecure-off-loopback to bind anyway (not recommended)."
+        guard_exposure(
+            host,
+            authenticator=self.authenticator,
+            enable_metrics=self.enable_metrics,
+            metrics_token=self.metrics_token,
+            insecure_off_loopback=self.insecure_off_loopback,
+            logger=logger,
         )
 
     async def _resolve_sender(
@@ -579,61 +563,18 @@ class SynapseHub:
         Returns the resolved name, or ``None`` when a name conflict closed the
         socket.
         """
-        known_sender = self.socket_agent.get(websocket)
-        if known_sender is None:
-            owner_ws = self.agent_sockets.get(sender)
-            if owner_ws is not None and owner_ws != websocket:
-                if takeover:
-                    now = self._clock()
-                    last = self._last_takeover.get(sender)
-                    if last is not None and now - last < self.takeover_cooldown:
-                        # An eviction storm — protect the current holder and reject.
-                        await self._close_socket(websocket, code=4014, reason="takeover cooldown")
-                        return None
-                    self._last_takeover[sender] = now
-                    # Detach the stale holder first so its own unregister will not
-                    # reclaim the name, then close it and bind the name to the newcomer.
-                    self.socket_agent.pop(owner_ws, None)
-                    await self._close_socket(owner_ws, code=4010, reason="superseded")
-                    self.socket_agent[websocket] = sender
-                    return sender
-                await self._send_json(
-                    websocket,
-                    self._system(
-                        f"Name '{sender}' is already online from another session. "
-                        "Use a unique --name.",
-                        msg_type=MessageType.NAME_CONFLICT,
-                        target=sender,
-                    ),
-                )
-                await self._close_socket(websocket, code=4009, reason="name conflict")
-                return None
-            self.socket_agent[websocket] = sender
-            return sender
-        if known_sender != sender:
-            await self._send_json(
-                websocket,
-                self._system(
-                    f"Sender name switch denied: '{known_sender}' -> '{sender}'. "
-                    "Reconnect with a new --name.",
-                    msg_type=MessageType.NAME_CONFLICT,
-                    target=known_sender,
-                ),
-            )
-            await self._close_socket(websocket, code=4009, reason="name switch")
-            return None
-        return known_sender
+        return await self.clients.resolve_sender(
+            sender,
+            websocket,
+            takeover=takeover,
+            send_json=self._send_json,
+            system=self._system,
+        )
 
     @staticmethod
     async def _close_socket(websocket: Any, *, code: int, reason: str) -> None:
         """Close a websocket and wait for close propagation when supported."""
-        try:
-            await websocket.close(code=code, reason=reason)
-            wait_closed = getattr(websocket, "wait_closed", None)
-            if callable(wait_closed):
-                await wait_closed()
-        except Exception:  # pragma: no cover - stale sockets may already be half-closed.
-            pass
+        await HubClientRegistry.close_socket(websocket, code=code, reason=reason)
 
     @staticmethod
     def _remote_host(websocket: Any) -> str:
@@ -643,10 +584,7 @@ class SynapseHub:
         address, or nothing, collapsing to ``"unknown"`` so the per-host bucket
         always has a stable key.
         """
-        address = getattr(websocket, "remote_address", None)
-        if isinstance(address, (tuple, list)) and address:
-            return str(address[0])
-        return str(address) if address else "unknown"
+        return HubClientRegistry.remote_host(websocket)
 
     async def handle_message(self, raw_message: str | bytes, websocket: Any) -> None:
         """Parse and route one inbound frame.
@@ -683,7 +621,7 @@ class SynapseHub:
 
         # Capture whether this socket was already bound before authorising, so a
         # secured hub can send the withheld welcome the moment it first authenticates.
-        was_bound = websocket in self.socket_agent
+        was_bound = self.clients.is_bound(websocket)
         if not await self._authorise(sender, data, websocket):
             return
 
@@ -697,8 +635,7 @@ class SynapseHub:
             await self._send_welcome(websocket)
 
         self.state.heartbeat(sender)
-        is_new_agent = sender not in self.agent_sockets
-        self.agent_sockets[sender] = websocket
+        is_new_agent = self.clients.set_agent_socket(sender, websocket)
         if is_new_agent:
             await self._broadcast_presence("joined", sender)
         logger.info("[%s -> %s] (%s): %s", sender, target, msg_type, self._redact_payload(payload))
@@ -761,17 +698,15 @@ class SynapseHub:
         :meth:`handle_message`), so an unauthenticated client never learns who is
         online. An open hub has nothing to gate, so it is welcomed on connect.
         """
-        self.connected_clients.add(websocket)
+        self.clients.add_client(websocket)
         logger.info("Client connected: %s (total=%d)", id(websocket), len(self.connected_clients))
         if self.authenticator is None:
             await self._send_welcome(websocket)
 
     async def unregister(self, websocket: Any) -> None:
         """Drop a socket, releasing its agent name and broadcasting departure."""
-        self.connected_clients.discard(websocket)
-        name = self.socket_agent.pop(websocket, None)
-        if name is not None and self.agent_sockets.get(name) == websocket:
-            self.agent_sockets.pop(name, None)
+        name = self.clients.drop_client(websocket)
+        if name is not None:
             self._drop_waits(name)
             self.capabilities.forget(name)
             if self.rate_limiter is not None:
@@ -806,7 +741,7 @@ class SynapseHub:
         except ConnectionClosed:
             return False
         await self.handle_message(first, websocket)
-        if websocket not in self.socket_agent:
+        if not self.clients.is_bound(websocket):
             # The first frame did not authenticate and bind a name; _authorise may
             # already have closed the socket, so closing again is suppressed.
             with contextlib.suppress(Exception):
@@ -824,20 +759,20 @@ class SynapseHub:
         their pre-auth window, so an authentication-stall burst cannot occupy the
         connection table for the whole timeout.
         """
-        if len(self.connected_clients) >= self.max_clients:
+        if self.clients.at_capacity():
             await websocket.close(code=4013, reason="hub at capacity")
             return
-        if self.authenticator is not None and len(self.unauth_clients) >= self.max_unauth_clients:
+        if self.authenticator is not None and self.clients.unauthenticated_at_capacity():
             await websocket.close(code=4014, reason="too many unauthenticated connections")
             return
         await self.register(websocket)
         try:
             if self.authenticator is not None:
-                self.unauth_clients.add(websocket)
+                self.clients.add_unauthenticated(websocket)
                 try:
                     authenticated = await self._authenticate_or_close(websocket)
                 finally:
-                    self.unauth_clients.discard(websocket)
+                    self.clients.discard_unauthenticated(websocket)
                 if not authenticated:
                     return
             async for raw in websocket:
@@ -863,20 +798,12 @@ class SynapseHub:
     @staticmethod
     def _http_ok(body: bytes, content_type: str) -> Response:
         """Build a ``200 OK`` HTTP response with a body and content type."""
-        headers = Headers()
-        headers["Content-Type"] = content_type
-        headers["Content-Length"] = str(len(body))
-        return Response(200, "OK", headers, body)
+        return http_ok(body, content_type)
 
     @staticmethod
     def _http_unauthorized() -> Response:
         """Build a ``401`` response for a metrics request missing a valid token."""
-        body = b"unauthorized\n"
-        headers = Headers()
-        headers["Content-Type"] = "text/plain; charset=utf-8"
-        headers["Content-Length"] = str(len(body))
-        headers["WWW-Authenticate"] = 'Bearer realm="synapse-metrics"'
-        return Response(401, "Unauthorized", headers, body)
+        return http_unauthorized()
 
     def _request_metrics_token(self, request: Request) -> str:
         """Extract the metrics token from the request.
@@ -886,22 +813,15 @@ class SynapseHub:
         :attr:`metrics_query_token_ok` is set, because a query token can leak into
         access logs, shell history, browser history, and proxy records.
         """
-        authorization = request.headers.get("Authorization", "")
-        prefix = "Bearer "
-        if authorization.startswith(prefix):
-            return authorization[len(prefix) :].strip()
-        if self.metrics_query_token_ok:
-            _, _, query = request.path.partition("?")
-            for part in query.split("&"):
-                if part.startswith("token="):
-                    return part[len("token=") :]
-        return ""
+        return request_metrics_token(request, query_token_ok=self.metrics_query_token_ok)
 
     def _metrics_authorised(self, request: Request) -> bool:
         """Return whether a metrics request carries the configured token (if any)."""
-        if self.metrics_token is None:
-            return True
-        return hmac.compare_digest(self._request_metrics_token(request), self.metrics_token)
+        return metrics_authorised(
+            request,
+            metrics_token=self.metrics_token,
+            query_token_ok=self.metrics_query_token_ok,
+        )
 
     def _http_endpoint_response(self, request: Request) -> Response | None:
         """Return the HTTP response for a probe path, or ``None`` to fall through to WS.
@@ -912,16 +832,7 @@ class SynapseHub:
         both paths require it and answer ``401`` without it. A query string is
         ignored for routing (but read for the token).
         """
-        route = request.path.split("?", 1)[0]
-        if route not in ("/metrics", "/health"):
-            return None
-        if not self._metrics_authorised(request):
-            return self._http_unauthorized()
-        if route == "/metrics":
-            body = render_prometheus(collect_hub_metrics(self)).encode("utf-8")
-            return self._http_ok(body, PROMETHEUS_CONTENT_TYPE)
-        body = json.dumps(health_snapshot(self)).encode("utf-8")
-        return self._http_ok(body, HEALTH_CONTENT_TYPE)
+        return http_endpoint_response(self, request)
 
     def _process_request(self, _connection: Any, request: Request) -> Response | None:
         """``websockets`` request hook serving ``/metrics`` and ``/health`` over HTTP.
