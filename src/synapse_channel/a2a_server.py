@@ -462,6 +462,9 @@ class A2ABridge:
         task = self.store.get(task_id)
         if task is None:
             return None
+        status = task.get("status", {})
+        if isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES:
+            return task
         self._remove_pending_task(task_id)
         return self._set_task_status(task, state="TASK_STATE_CANCELED")
 

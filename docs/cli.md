@@ -217,6 +217,8 @@ Operational boundaries:
 - `--state-file` persists bridge tasks and push configs. Corrupt state files fail
   fast; non-terminal persisted tasks recover as failed on restart; failed writes
   roll back the in-memory task/config view.
+- Terminal task states are immutable: cancel and late SYNAPSE replies do not
+  reopen or rewrite completed, failed, canceled, or rejected tasks.
 - `--task-timeout` marks open tasks failed when no correlated SYNAPSE reply arrives
   within the configured window.
 - `--subscribe-timeout` bounds one in-process subscription wait. Subscriptions use
