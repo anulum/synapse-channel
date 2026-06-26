@@ -65,9 +65,10 @@ When that boundary is crossed, the proportionate controls are:
   defaults to `127.0.0.1`. Its public Agent Card is intentionally readable; the
   task, RPC, extended-card, and push-configuration routes can require HTTP
   Bearer auth with `--bearer-auth --a2a-token`, with bearer values compared in
-  constant time. Treat any non-loopback A2A bind as an exposed HTTP service: use
-  bearer auth, keep state files private, and do not claim external A2A
-  conformance until interoperability and webhook validation have run.
+  constant time. Request bodies are capped by byte size and JSON nesting depth
+  before A2A dispatch. Treat any non-loopback A2A bind as an exposed HTTP
+  service: use bearer auth, keep state files private, and do not claim external
+  A2A conformance until interoperability and webhook validation have run.
 
 The core hub and its state stay on the operator's machine, but two boundaries are
 worth stating plainly:

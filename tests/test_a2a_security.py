@@ -19,6 +19,7 @@ from a2a_server_helpers import HandlerHarness, RecordingAgent
 from synapse_channel import cli_a2a
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
+from synapse_channel.core.protocol import MAX_JSON_DEPTH
 
 
 def _bridge() -> A2ABridge:
@@ -172,6 +173,17 @@ def test_auth_token_uses_constant_time_bearer_comparison(
 
     assert status == expected_status
     assert calls == [(headers.get("Authorization", ""), "Bearer secret")]
+
+
+def test_message_send_rejects_json_nested_past_wire_depth_limit() -> None:
+    raw = b'{"message":' + (b"[" * MAX_JSON_DEPTH) + b"0" + (b"]" * MAX_JSON_DEPTH) + b"}"
+    harness = HandlerHarness("POST", "/message:send", body=raw)
+    harness.handler.bridge = _bridge()
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.BAD_REQUEST
+    assert body["title"] == "Invalid JSON"
 
 
 def test_a2a_serve_refuses_exposed_bind_without_bearer_token(
