@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import hmac
 from http import HTTPStatus
 from typing import Any
 
@@ -134,6 +135,43 @@ def test_auth_token_accepts_bearer_for_message_send() -> None:
 
     assert status == HTTPStatus.OK
     assert body["task"]["status"]["state"] == "TASK_STATE_WORKING"
+
+
+@pytest.mark.parametrize(
+    ("headers", "expected_status"),
+    [
+        ({}, HTTPStatus.UNAUTHORIZED),
+        ({"Authorization": "Bearer wrong"}, HTTPStatus.UNAUTHORIZED),
+        ({"Authorization": "Bearer secret"}, HTTPStatus.OK),
+    ],
+)
+def test_auth_token_uses_constant_time_bearer_comparison(
+    monkeypatch: pytest.MonkeyPatch,
+    headers: dict[str, str],
+    expected_status: HTTPStatus,
+) -> None:
+    calls: list[tuple[str, str]] = []
+    original_compare_digest = hmac.compare_digest
+
+    def spy_compare_digest(left: str, right: str) -> bool:
+        calls.append((left, right))
+        return original_compare_digest(left, right)
+
+    monkeypatch.setattr(hmac, "compare_digest", spy_compare_digest)
+    bridge = A2ABridge(
+        agent=RecordingAgent(),
+        agent_card={"name": "SYNAPSE CHANNEL"},
+        target="WORKER",
+        store=A2ATaskStore(),
+        auth_token="secret",
+    )
+    harness = HandlerHarness("GET", "/tasks", headers=headers)
+    harness.handler.bridge = bridge
+
+    status, _body = harness.run()
+
+    assert status == expected_status
+    assert calls == [(headers.get("Authorization", ""), "Bearer secret")]
 
 
 def test_a2a_serve_refuses_exposed_bind_without_bearer_token(
