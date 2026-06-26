@@ -52,14 +52,13 @@ scan it. Conservative, like the count bound: it never misses a conflict.
 
 
 def normalize_path(path: str) -> str:
-    """Normalise a declared path to canonical segments for prefix comparison.
+    """Normalise a declared path to canonical in-worktree segments.
 
     The path is split on ``/`` and rebuilt: surrounding whitespace, empty
-    segments (so ``//`` collapses), and ``.`` segments are dropped, and a ``..``
-    segment pops the preceding real segment (so ``src/../tests`` becomes
-    ``tests``). A leading ``..`` that would escape the tree root is kept literally,
-    so an out-of-tree path (``../../etc/passwd``) never normalises to a root-level
-    name and falsely overlaps an in-tree claim.
+    segments (so ``//`` collapses), and ``.`` segments are dropped. Absolute paths
+    and any ``..`` segment are traversal-like declarations, so they widen to the
+    tree root (``""``). This is conservative: a suspicious or host-rooted scope
+    may over-claim, but it cannot under-claim and miss a real file conflict.
 
     Parameters
     ----------
@@ -71,16 +70,15 @@ def normalize_path(path: str) -> str:
     str
         The normalised path (``""`` for a path that names the tree root).
     """
+    normalised = path.strip().replace("\\", "/")
+    if normalised.startswith("/"):
+        return ""
     segments: list[str] = []
-    for segment in path.strip().split("/"):
+    for segment in normalised.split("/"):
         if segment in ("", "."):
             continue
         if segment == "..":
-            if segments and segments[-1] != "..":
-                segments.pop()
-            else:
-                segments.append("..")
-            continue
+            return ""
         segments.append(segment)
     return "/".join(segments)
 
@@ -161,8 +159,9 @@ def normalize_paths(paths: Iterable[str], max_declared_paths: int | None = None)
     -------
     tuple[str, ...]
         Normalised, order-preserving, duplicate-free paths; ``("",)`` if any entry
-        names the tree root, is over-long (:data:`MAX_PATH_LENGTH`) or non-printable,
-        or the distinct count exceeds the cap; ``()`` if the input is empty.
+        names the tree root, is traversal-like, absolute, over-long
+        (:data:`MAX_PATH_LENGTH`) or non-printable, or the distinct count exceeds
+        the cap; ``()`` if the input is empty.
     """
     cap = MAX_DECLARED_PATHS if max_declared_paths is None else max(1, int(max_declared_paths))
     seen: set[str] = set()

@@ -31,6 +31,17 @@ def test_claim_scope_overlap_is_denied() -> None:
     assert "file scope conflicts with 'T1' held by A" in msg
 
 
+def test_traversal_like_claim_widens_to_whole_worktree() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    ok, _ = state.claim("A", "T1", paths=["src/../tests"], now=1000.0)
+    assert ok is True
+    assert state.claims["T1"].paths == ("",)
+
+    ok, msg = state.claim("B", "T2", paths=["docs"], now=1001.0)
+    assert ok is False
+    assert "file scope conflicts with 'T1' held by A" in msg
+
+
 def test_claim_disjoint_scopes_both_succeed() -> None:
     state = SynapseState(default_ttl_seconds=300)
     ok1, _ = state.claim("A", "T1", paths=["src"], now=1000.0)
