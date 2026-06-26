@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -24,10 +25,26 @@ from synapse_channel.shell_integration import (
 )
 
 
+def _write_fake_synapse(tmp_path: Path) -> Path:
+    """Write a fake synapse executable that records the real shell hook argv."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    synapse = bindir / "synapse"
+    synapse.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$*" >> "$SYNAPSE_RECORD"\n',
+        encoding="utf-8",
+    )
+    synapse.chmod(0o755)
+    return bindir
+
+
 def test_render_shell_hook_auto_arms_and_wraps_default_providers() -> None:
     hook = render_shell_hook(shell="bash")
     assert 'synapse arm --name "$identity-rx" --for "$project" --directed-only' in hook
     assert 'synapse worker-session --project "$SYN_PROJECT"' in hook
+    assert "SYNAPSE_DEFAULT_PROJECT:-user" in hook
+    assert ".synapse/project" in hook
+    assert "SYNAPSE_AUTO_PROJECT_FROM_CWD" in hook
     assert "codex()" in hook
     assert "claude()" in hook
     assert "gemini()" in hook
@@ -47,9 +64,90 @@ def test_render_shell_hook_zsh_uses_precmd_hook() -> None:
 def test_render_shell_hook_fish_uses_prompt_event() -> None:
     hook = render_shell_hook(shell="fish", provider_commands=("codex",))
     assert "function __synapse_auto_arm --on-event fish_prompt" in hook
+    assert ".synapse/project" in hook
+    assert "SYNAPSE_AUTO_PROJECT_FROM_CWD" in hook
     assert "function codex --wraps codex" in hook
     assert 'synapse worker-session --project "$SYN_PROJECT"' in hook
     assert "disown $last_pid" in hook
+
+
+def test_bash_shell_hook_uses_neutral_project_without_marker(tmp_path: Path) -> None:
+    bindir = _write_fake_synapse(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, stdout=subprocess.DEVNULL, check=True)
+    hook_path = tmp_path / "hook.sh"
+    record = tmp_path / "record"
+    hook_path.write_text(render_shell_hook(shell="bash", provider_commands=()), encoding="utf-8")
+
+    proc = subprocess.run(
+        [
+            "bash",
+            "--noprofile",
+            "--norc",
+            "-c",
+            "export PATH="
+            + shlex.quote(str(bindir))
+            + ":$PATH; export XDG_RUNTIME_DIR="
+            + shlex.quote(str(tmp_path / "run"))
+            + "; export SYNAPSE_RECORD="
+            + shlex.quote(str(record))
+            + "; cd "
+            + shlex.quote(str(repo))
+            + "; source "
+            + shlex.quote(str(hook_path))
+            + "; sleep 0.2",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    text = record.read_text(encoding="utf-8")
+    assert "arm --name user/terminal-" in text
+    assert "--for user" in text
+    assert "repo" not in text
+
+
+def test_bash_shell_hook_uses_marker_project_when_opted_in(tmp_path: Path) -> None:
+    bindir = _write_fake_synapse(tmp_path)
+    repo = tmp_path / "repo"
+    marker_dir = repo / ".synapse"
+    marker_dir.mkdir(parents=True)
+    (marker_dir / "project").write_text("SYNAPSE-CHANNEL\n", encoding="utf-8")
+    subprocess.run(["git", "init"], cwd=repo, stdout=subprocess.DEVNULL, check=True)
+    hook_path = tmp_path / "hook.sh"
+    record = tmp_path / "record"
+    hook_path.write_text(render_shell_hook(shell="bash", provider_commands=()), encoding="utf-8")
+
+    proc = subprocess.run(
+        [
+            "bash",
+            "--noprofile",
+            "--norc",
+            "-c",
+            "export PATH="
+            + shlex.quote(str(bindir))
+            + ":$PATH; export XDG_RUNTIME_DIR="
+            + shlex.quote(str(tmp_path / "run"))
+            + "; export SYNAPSE_RECORD="
+            + shlex.quote(str(record))
+            + "; cd "
+            + shlex.quote(str(repo))
+            + "; source "
+            + shlex.quote(str(hook_path))
+            + "; sleep 0.2",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    text = record.read_text(encoding="utf-8")
+    assert "arm --name SYNAPSE-CHANNEL/terminal-" in text
+    assert "--for SYNAPSE-CHANNEL" in text
 
 
 def test_shell_rc_path_detects_auto_shell(tmp_path: Path) -> None:

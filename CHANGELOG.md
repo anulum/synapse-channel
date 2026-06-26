@@ -15,10 +15,11 @@ All notable changes to this project are documented here.
 
 ### Added
 - `synapse shell-hook` and `synapse install-shell-hook` now provide opt-in
-  Bash/Fish/Zsh auto-arming for fresh terminals. The installed hook derives the
-  current project, exports `SYN_PROJECT`/`SYN_IDENTITY`, keeps a cheap wake sidecar
-  armed, and wraps common cloud and local provider commands through
-  `synapse worker-session`.
+  Bash/Fish/Zsh auto-arming for fresh terminals. The installed hook now keeps
+  unassigned terminals on a neutral lane unless `SYN_PROJECT`/`SYN_IDENTITY` is
+  set or the repository opts in with `.synapse/project`; it exports
+  `SYN_PROJECT`/`SYN_IDENTITY`, keeps a cheap wake sidecar armed, and wraps common
+  cloud and local provider commands through `synapse worker-session`.
 
 ## [0.44.1] - 2026-06-26
 

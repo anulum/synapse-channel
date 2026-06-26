@@ -110,12 +110,48 @@ def _render_fish_shell_hook(provider_commands: tuple[str, ...]) -> str:
         _fish_provider_function(command) for command in provider_commands if command
     )
     return f"""# Synapse Channel shell integration. Set SYNAPSE_AUTO_CONNECT=0 to disable.
-function __synapse_project
+function __synapse_marker_project
+  set -l top (git rev-parse --show-toplevel 2>/dev/null)
+  test -n "$top"; or return 1
+  set -l marker "$top/.synapse/project"
+  test -r "$marker"; or return 1
+  set -l project (string trim -- (head -n 1 "$marker" 2>/dev/null))
+  if test -n "$project"
+    printf '%s\\n' "$project"
+  else
+    basename "$top"
+  end
+end
+
+function __synapse_cwd_project
   set -l top (git rev-parse --show-toplevel 2>/dev/null)
   if test -z "$top"
     set top "$PWD"
   end
   basename "$top"
+end
+
+function __synapse_project
+  if test -n "$SYN_IDENTITY"; and test "$__SYNAPSE_AUTO_IDENTITY" != "$SYN_IDENTITY"
+    if string match -q "*/*" "$SYN_IDENTITY"
+      string split -m1 / "$SYN_IDENTITY" | head -n 1
+      return 0
+    end
+  end
+  if test "$SYNAPSE_AUTO_PROJECT_FROM_CWD" = "1"
+    __synapse_cwd_project
+    return $status
+  end
+  set -l marker_project (__synapse_marker_project)
+  if test -n "$marker_project"
+    printf '%s\\n' "$marker_project"
+    return 0
+  end
+  if test -n "$SYNAPSE_DEFAULT_PROJECT"
+    printf '%s\\n' "$SYNAPSE_DEFAULT_PROJECT"
+  else
+    printf '%s\\n' user
+  end
 end
 
 function __synapse_safe_key
@@ -127,14 +163,12 @@ function __synapse_auto_arm --on-event fish_prompt
     return 0
   end
   command -q synapse; or return 0
-  set -l cwd_project (__synapse_project)
-  test -n "$cwd_project"; or return 0
-
   set -l project
   if test -n "$SYN_PROJECT"; and test "$__SYNAPSE_AUTO_PROJECT" != "$SYN_PROJECT"
     set project "$SYN_PROJECT"
   else
-    set project "$cwd_project"
+    set project (__synapse_project)
+    test -n "$project"; or return 0
     set -gx SYN_PROJECT "$project"
     set -gx __SYNAPSE_AUTO_PROJECT "$project"
   end
@@ -200,13 +234,15 @@ def render_shell_hook(
     shell: str = "bash",
     provider_commands: tuple[str, ...] = DEFAULT_PROVIDER_COMMANDS,
 ) -> str:
-    """Render shell code that auto-arms the current project and wraps providers.
+    """Render shell code that auto-arms the configured project and wraps providers.
 
-    The hook resolves the project from the git toplevel or current directory at
-    each prompt, exports ``SYN_PROJECT`` and ``SYN_IDENTITY``, and starts one
-    background ``synapse arm`` sidecar per terminal identity. Provider wrappers
-    route commands through ``synapse worker-session`` so Codex, Claude, Gemini,
-    and local commands inherit the same identity without manual setup.
+    The hook keeps fresh terminals connected without silently claiming a project
+    from the current working directory. Project identity is explicit via
+    ``SYN_PROJECT``/``SYN_IDENTITY`` or opt-in via ``.synapse/project``. Without
+    either, the terminal joins ``SYNAPSE_DEFAULT_PROJECT`` or the neutral
+    ``user`` lane. Provider wrappers route commands through ``synapse
+    worker-session`` so Codex, Claude, Gemini, and local commands inherit the
+    same identity without manual setup.
     """
     resolved = normalise_shell(shell)
     if resolved == "fish":
@@ -224,10 +260,41 @@ def render_shell_hook(
         "fi\n"
     )
     return f"""# Synapse Channel shell integration. Set SYNAPSE_AUTO_CONNECT=0 to disable.
-__synapse_project() {{
+__synapse_marker_project() {{
+  local top marker project
+  top="$(git rev-parse --show-toplevel 2>/dev/null)" || return 1
+  marker="$top/.synapse/project"
+  [ -r "$marker" ] || return 1
+  project="$(sed -n '1{{s/^[[:space:]]*//;s/[[:space:]]*$//;p;q;}}' "$marker" 2>/dev/null)"
+  if [ -n "$project" ]; then
+    printf '%s\\n' "$project"
+  else
+    basename "$top"
+  fi
+}}
+
+__synapse_cwd_project() {{
   local top
   top="$(git rev-parse --show-toplevel 2>/dev/null)" || top="$PWD"
   basename "$top"
+}}
+
+__synapse_project() {{
+  local marker_project
+  if [ -n "${{SYN_IDENTITY:-}}" ] && [ "${{__SYNAPSE_AUTO_IDENTITY:-}}" != "$SYN_IDENTITY" ]; then
+    case "$SYN_IDENTITY" in
+      */*) printf '%s\\n' "${{SYN_IDENTITY%%/*}}"; return 0 ;;
+    esac
+  fi
+  if [ "${{SYNAPSE_AUTO_PROJECT_FROM_CWD:-0}}" = "1" ]; then
+    __synapse_cwd_project
+    return $?
+  fi
+  if marker_project="$(__synapse_marker_project)"; then
+    printf '%s\\n' "$marker_project"
+    return 0
+  fi
+  printf '%s\\n' "${{SYNAPSE_DEFAULT_PROJECT:-user}}"
 }}
 
 __synapse_safe_key() {{
@@ -237,14 +304,13 @@ __synapse_safe_key() {{
 __synapse_auto_arm() {{
   [ "${{SYNAPSE_AUTO_CONNECT:-1}}" = "0" ] && return 0
   command -v synapse >/dev/null 2>&1 || return 0
-  local cwd_project project identity terminal_id runtime key pidfile logfile pid
-  cwd_project="$(__synapse_project)" || return 0
-  [ -n "$cwd_project" ] || return 0
+  local project identity terminal_id runtime key pidfile logfile pid
 
   if [ -n "${{SYN_PROJECT:-}}" ] && [ "${{__SYNAPSE_AUTO_PROJECT:-}}" != "$SYN_PROJECT" ]; then
     project="$SYN_PROJECT"
   else
-    project="$cwd_project"
+    project="$(__synapse_project)" || return 0
+    [ -n "$project" ] || return 0
     export SYN_PROJECT="$project"
     export __SYNAPSE_AUTO_PROJECT="$project"
   fi

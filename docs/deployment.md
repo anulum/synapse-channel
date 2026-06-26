@@ -84,11 +84,23 @@ synapse install-shell-hook --shell auto
 ```
 
 For Bash, Fish, and Zsh, the installed block loads the current package hook from
-`synapse shell-hook` on shell startup. In a git checkout, each prompt resolves the
-project from the repository root, exports `SYN_PROJECT` and `SYN_IDENTITY`, and
-keeps a background `synapse arm` listener alive for that terminal. The listener is
-only a socket holder; it does not call a model or spend provider tokens while
-waiting.
+`synapse shell-hook` on shell startup. Each prompt exports `SYN_PROJECT` and
+`SYN_IDENTITY` and keeps a background `synapse arm` listener alive for that
+terminal. The listener is only a socket holder; it does not call a model or spend
+provider tokens while waiting.
+
+The hook does not infer the project from the current git checkout by default.
+Unassigned terminals join `SYNAPSE_DEFAULT_PROJECT`, or the neutral `user` lane
+when unset. Bind a terminal or provider session to a project explicitly with
+`SYN_PROJECT`/`SYN_IDENTITY`, or opt a repository into auto-binding with:
+
+```bash
+mkdir -p .synapse
+printf '%s\n' myproject > .synapse/project
+```
+
+Set `SYNAPSE_AUTO_PROJECT_FROM_CWD=1` only when you intentionally want legacy
+CWD-derived project names.
 
 The hook also wraps common provider commands through `synapse worker-session`:
 `codex`, `claude`, `gemini`, `agent`, `ask`, and `ollama`. That keeps cloud
