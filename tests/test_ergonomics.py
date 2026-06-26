@@ -107,8 +107,22 @@ def test_arm_argv_broadcasts_drops_directed_only_and_keeps_extra() -> None:
     assert argv[-2:] == ["--timeout", "5"]
 
 
-def test_say_argv_sends_as_the_bare_project_not_the_waiter() -> None:
-    argv = say_argv(_ident(), "REMANENTIA,CEO", "hello")
+def test_say_argv_sends_as_the_full_identity_by_default() -> None:
+    argv = say_argv(_ident(identity="SCPN-CONTROL/coordinator"), "REMANENTIA,CEO", "hello")
+    assert argv == [
+        "send",
+        "--name",
+        "SCPN-CONTROL/coordinator",
+        "--target",
+        "REMANENTIA,CEO",
+        "hello",
+    ]
+
+
+def test_say_argv_can_send_as_the_bare_project() -> None:
+    argv = say_argv(
+        _ident(identity="SCPN-CONTROL/coordinator"), "REMANENTIA,CEO", "hello", as_project=True
+    )
     assert argv == ["send", "--name", "SCPN-CONTROL", "--target", "REMANENTIA,CEO", "hello"]
 
 
@@ -250,6 +264,39 @@ def test_main_say_routes_target_and_message(captured_cli: CapturedCalls) -> None
         ergonomics.main(
             ["say", "CEO", "ack"],
             env={"HOME": "/home/u"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 0
+    )
+    assert captured_cli[0] == ["send", "--name", "SYNAPSE-CHANNEL", "--target", "CEO", "ack"]
+
+
+def test_main_say_uses_syn_identity_for_exact_replies(captured_cli: CapturedCalls) -> None:
+    assert (
+        ergonomics.main(
+            ["say", "CEO", "ack"],
+            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/coordinator"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 0
+    )
+    assert captured_cli[0] == [
+        "send",
+        "--name",
+        "SYNAPSE-CHANNEL/coordinator",
+        "--target",
+        "CEO",
+        "ack",
+    ]
+
+
+def test_main_say_as_project_keeps_shared_project_sender(captured_cli: CapturedCalls) -> None:
+    assert (
+        ergonomics.main(
+            ["say", "--as-project", "CEO", "ack"],
+            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/coordinator"},
             cwd_basename="SYNAPSE-CHANNEL",
             dispatcher=_dispatch(captured_cli),
         )
