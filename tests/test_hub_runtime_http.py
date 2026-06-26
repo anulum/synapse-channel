@@ -20,6 +20,7 @@ from websockets.exceptions import ConnectionClosed
 from hub_e2e_helpers import http_get, read_json, read_until_type, running_hub
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import InsecureBindError, SynapseHub
+from synapse_channel.core.hub_clients import HubClientRegistry
 
 # --- Sprint A: caps, capacity gate, takeover cooldown, signal handlers -------
 
@@ -37,6 +38,15 @@ def test_hub_caps_clamped() -> None:
     assert hub.max_clients == 1
     assert hub.max_msg_bytes == 1
     assert hub.takeover_cooldown == 0.0
+
+
+def test_hub_client_registry_keeps_compatibility_references() -> None:
+    hub = SynapseHub(max_clients=3, max_unauth_clients=2)
+    assert isinstance(hub.clients, HubClientRegistry)
+    assert hub.connected_clients is hub.clients.connected_clients
+    assert hub.unauth_clients is hub.clients.unauth_clients
+    assert hub.agent_sockets is hub.clients.agent_sockets
+    assert hub.socket_agent is hub.clients.socket_agent
 
 
 async def test_handler_rejects_at_capacity() -> None:
