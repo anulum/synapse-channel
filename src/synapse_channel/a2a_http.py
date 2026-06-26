@@ -24,6 +24,7 @@ from synapse_channel.a2a_validation import (
     TERMINAL_TASK_STATES,
     is_supported_json_media_type,
 )
+from synapse_channel.core.protocol import loads_bounded
 
 if TYPE_CHECKING:
     from synapse_channel.a2a_server import A2ABridge
@@ -193,7 +194,7 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                 return None
             raw = self.rfile.read(max(length, 0))
             try:
-                data = json.loads(raw.decode("utf-8") if raw else "{}")
+                data = loads_bounded(raw if raw else "{}")
             except (UnicodeDecodeError, json.JSONDecodeError):
                 self._send_json(
                     HTTPStatus.BAD_REQUEST,
