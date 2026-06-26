@@ -13,6 +13,12 @@ design, and runs entirely on the local machine. Model workers reply on-channel
 through any OpenAI-compatible endpoint, including a local Ollama server, with a
 deterministic rule-based fallback for offline use.
 
+Current `0.x` releases are pre-1.0 development releases. `1.0.0` is planned as
+the first stable commercial release of SYNAPSE CHANNEL, with stable operational
+contracts, support surfaces, and commercial licensing terms documented for that
+line. Funding and ecosystem co-ownership discussions are welcome; see
+[Commercial licensing](commercial.md) for the contact path.
+
 ![A synapse session: declare a plan with a dependency, complete a task, and watch the dependent unblock](assets/demo.gif)
 
 ## Why a coordination bus

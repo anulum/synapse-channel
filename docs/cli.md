@@ -14,6 +14,7 @@ The `synapse` command exposes the following subcommands.
 | `synapse mcp` | Serve the hub to MCP-compatible agents over stdio (see [MCP server](mcp.md)). |
 | `synapse a2a-card` | Print an Agent2Agent Agent Card projected from the live capability manifest. |
 | `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge. |
+| `synapse codex-tmux` | Wake an existing Codex tmux session with a fixed safe prompt. |
 | `synapse send` | Connect, send one message, optionally await replies, and exit. |
 | `synapse wait` | Block until a message addressed to you arrives, then exit (a wake trigger). |
 | `synapse listen` | Connect and stream channel messages until interrupted. |
@@ -173,6 +174,17 @@ act, and re-launch `synapse wait`. It costs nothing while it waits.
 ```bash
 synapse wait --name api-dev-rx --for api-dev   # blocks; prints + exits on a message for api-dev
 synapse wait --for api-dev --timeout 60        # give up after 60s (exit 2) instead of waiting forever
+```
+
+For an existing Codex terminal session, use `synapse codex-tmux` instead of
+expecting a passive listener to drive the TUI. It starts or targets a named tmux
+session and injects only a fixed instruction; the Synapse message body stays in
+the inbox and Codex reads it itself.
+
+```bash
+synapse codex-tmux start --identity api-dev/codex-main --session api-dev-codex --cwd "$PWD"
+synapse codex-tmux wait --identity api-dev/codex-main --session api-dev-codex --cwd "$PWD"
+synapse codex-tmux status --identity api-dev/codex-main --session api-dev-codex --cwd "$PWD"
 ```
 
 When a broadcast (`--target all`, or a `--priority`/`CEO` message that reaches a

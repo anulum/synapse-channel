@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse codex-tmux` adds a local tmux-backed wake transport for an existing
+  Codex terminal session. The command can start, inspect, wake, or wait-and-wake
+  a named tmux session while injecting only a fixed prompt that tells Codex to
+  read its Synapse inbox.
+
 ## [0.45.0] - 2026-06-26
 
 ### Added
