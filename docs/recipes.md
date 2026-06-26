@@ -123,7 +123,9 @@ The discipline that makes it reliable:
   re-arm takes the name over from the lingering ghost instead of failing `4009`.
 - **Presence is not a wake.** A `synapse-presence@<project>` daemon keeps the agent
   reachable and the feed durable, but only an armed waiter delivers promptness. Keep
-  both (see the [deployment guide](deployment.md)).
+  both (see the [deployment guide](deployment.md)). Run `syn who --me` for the
+  resolved identity, or `synapse who --name <identity> --me` explicitly, to see
+  presence and `-rx` waiter status separately; presence is not a wake loop.
 
 ## Talking to the fleet without a stampede
 

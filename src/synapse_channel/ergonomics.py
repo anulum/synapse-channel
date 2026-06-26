@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess
+import subprocess  # nosec B404
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -212,6 +212,16 @@ def board_argv(identity: Identity, *, extra: Sequence[str] = ()) -> list[str]:
     return ["board", "--name", identity.project, *extra]
 
 
+def who_argv(identity: Identity, *, extra: Sequence[str] = ()) -> list[str]:
+    """Build the ``synapse who`` argv for ``syn who``.
+
+    The resolved identity is passed as ``--name``. With ``--me``, the package CLI
+    uses a separate temporary query connection and inspects this identity plus
+    its ``-rx`` waiter.
+    """
+    return ["who", "--name", identity.identity, *extra]
+
+
 def name_lines(identity: Identity) -> list[str]:
     """Return the human-readable report ``syn name`` prints."""
     plausible = "yes" if identity.plausible else "NO — looks accidental, set $SYN_PROJECT"
@@ -229,7 +239,8 @@ def _cwd_basename(*, runner: Callable[[Sequence[str]], str] | None = None) -> st
     if runner is None:
 
         def runner(cmd: Sequence[str]) -> str:
-            return subprocess.run(
+            # Fixed-argv git metadata probe; no shell or user command text.
+            return subprocess.run(  # nosec
                 list(cmd), capture_output=True, text=True, check=True
             ).stdout.strip()
 
@@ -250,7 +261,7 @@ def _warn_if_implausible(identity: Identity) -> None:
         )
 
 
-VERBS = ("name", "arm", "say", "inbox", "board")
+VERBS = ("name", "arm", "say", "inbox", "board", "who")
 """The ``syn`` verbs, each a thin identity-correct wrapper over a package command."""
 
 
@@ -275,7 +286,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_AGENT_TYPE,
         help="Agent type for a multi-agent identity.",
     )
-    parser.add_argument("verb", nargs="?", choices=VERBS, help="name | arm | say | inbox | board.")
+    parser.add_argument(
+        "verb", nargs="?", choices=VERBS, help="name | arm | say | inbox | board | who."
+    )
     parser.add_argument(
         "rest", nargs=argparse.REMAINDER, help="Arguments passed through to the package command."
     )
@@ -332,7 +345,7 @@ def main(
     _warn_if_implausible(identity)
     if args.verb == "arm":
         directed_only = "--broadcasts" not in rest
-        extra = [token for token in rest if token != "--broadcasts"]
+        extra = [item for item in rest if item != "--broadcasts"]
         return dispatcher(arm_argv(identity, directed_only=directed_only, extra=extra))
     if args.verb == "say":
         if len(rest) < 2:
@@ -352,6 +365,8 @@ def main(
         feed = str(home / "feed.ndjson")
         cursor = str(home / f"{identity.project}.cursor")
         return dispatcher(inbox_argv(identity, feed=feed, cursor=cursor))
+    if args.verb == "who":
+        return dispatcher(who_argv(identity, extra=rest))
     # args.verb == "board"
     return dispatcher(board_argv(identity, extra=rest))
 

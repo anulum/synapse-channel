@@ -34,6 +34,7 @@ from synapse_channel.cli_query_rendering import (
     _print_manifest,
     _render_state,
     _render_who,
+    _render_who_me,
 )
 from synapse_channel.cli_query_transport import (
     AgentFactory,
@@ -59,6 +60,7 @@ __all__ = [
     "_query_hub",
     "_render_state",
     "_render_who",
+    "_render_who_me",
     "_state",
     "_who",
     "add_parsers",

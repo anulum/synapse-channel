@@ -219,6 +219,7 @@ syn arm                           # keep a directed-only waiter armed (named <pr
 syn say REMANENTIA,CEO "ack"      # send to one, several, or all
 syn inbox                         # print messages addressed to you since the cursor
 syn board                         # the shared task/progress board
+syn who --me                      # show whether this identity and its -rx waiter are online
 ```
 
 The one thing it gets right that a hand-rolled shell alias does not is **identity**.
@@ -228,6 +229,10 @@ as a last resort — so a command run from the wrong directory does not silently
 coordinate as the wrong project, and an identity that looks accidental (the home
 directory, a system path) is flagged rather than used in silence. Set
 `$SYN_PROJECT` once per terminal and the identity is stable across tool calls. The
+`syn who --me` shortcut dispatches to `synapse who --me --name <resolved identity>`;
+it reports the identity's presence separately from its `-rx` waiter because
+presence is not a wake loop.
+
 `syn-name`/`syn-wait`/`syn-say`/`syn-inbox`/`syn-board` aliases are installed too;
 `syn-wait` uses the same persistent auto-rearming path as `syn arm`.
 
@@ -435,7 +440,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 75 |
 | Wire message types | 52 |
 | CLI subcommands | 39 |
-| Test functions | 1387 |
+| Test functions | 1394 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

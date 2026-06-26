@@ -24,6 +24,7 @@ from synapse_channel.ergonomics import (
     name_lines,
     resolve_identity,
     say_argv,
+    who_argv,
 )
 
 # --- identity resolution (the CWD footgun fix) -------------------------------
@@ -150,6 +151,15 @@ def test_inbox_argv_is_project_scoped_and_cursored() -> None:
 
 def test_board_argv() -> None:
     assert board_argv(_ident()) == ["board", "--name", "SCPN-CONTROL"]
+
+
+def test_who_argv_uses_identity_as_the_subject() -> None:
+    assert who_argv(_ident(identity="SCPN-CONTROL/codex-1"), extra=["--me"]) == [
+        "who",
+        "--name",
+        "SCPN-CONTROL/codex-1",
+        "--me",
+    ]
 
 
 def test_name_lines_reports_plausible_and_implausible() -> None:
@@ -331,6 +341,22 @@ def test_main_say_without_a_message_is_a_usage_error(
     assert captured_cli == []
 
 
+def test_main_say_as_project_without_target_and_message_is_a_usage_error(
+    captured_cli: CapturedCalls, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert (
+        ergonomics.main(
+            ["say", "--as-project", "CEO"],
+            env={"HOME": "/home/u"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 2
+    )
+    assert "usage" in capsys.readouterr().err
+    assert captured_cli == []
+
+
 def test_main_inbox_is_project_scoped(captured_cli: CapturedCalls) -> None:
     assert (
         ergonomics.main(
@@ -362,6 +388,19 @@ def test_main_board(captured_cli: CapturedCalls) -> None:
         == 0
     )
     assert captured_cli[0] == ["board", "--name", "SYNAPSE-CHANNEL"]
+
+
+def test_main_who_me_uses_resolved_identity(captured_cli: CapturedCalls) -> None:
+    assert (
+        ergonomics.main(
+            ["who", "--me"],
+            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 0
+    )
+    assert captured_cli[0] == ["who", "--name", "SYNAPSE-CHANNEL/codex-1", "--me"]
 
 
 def test_main_warns_on_an_implausible_identity(capsys: pytest.CaptureFixture[str]) -> None:
