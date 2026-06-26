@@ -8,6 +8,7 @@ Verify a clean install before connecting real agents:
 python -m pip install synapse-channel
 synapse doctor
 synapse demo
+synapse quickstart-coding
 ```
 
 `synapse doctor` checks identity, hub exposure, reachability, and wake-listener
@@ -19,8 +20,16 @@ planner/worker coordination flow, and succeeds when it prints:
 success: coordination demo completed
 ```
 
-To inspect the coding-agent workflow as files you can edit, scaffold a throwaway
-workspace:
+`synapse quickstart-coding` creates a temporary workspace, runs the coding-agent
+no-collision demo, removes that temporary workspace after success, and succeeds
+when it prints:
+
+```text
+success: coding fleet demo completed
+```
+
+To inspect the same coding-agent workflow as files you can edit, scaffold a
+persistent workspace:
 
 ```bash
 synapse new coding-fleet ./demo-fleet

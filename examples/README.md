@@ -17,6 +17,7 @@ first 60 seconds path is:
 python -m pip install synapse-channel
 synapse doctor
 synapse demo
+synapse quickstart-coding
 ```
 
 The installed demo succeeds when it prints:
@@ -25,6 +26,10 @@ The installed demo succeeds when it prints:
 success: coordination demo completed
 ```
 
+`synapse quickstart-coding` creates a temporary coding-agents workspace, runs it,
+removes the temporary workspace after success, and prints `success: coding fleet
+demo completed`.
+
 From a source checkout, the same demo code is also available as scripts:
 
 ```bash
@@ -32,7 +37,7 @@ python examples/coordination_demo.py
 python examples/llm_team_demo.py
 ```
 
-To generate the coding-agents demo as an editable workspace after install:
+To generate the same coding-agents demo as an editable workspace after install:
 
 ```bash
 synapse new coding-fleet ./demo-fleet
