@@ -14,8 +14,8 @@ authors:
     given-names: "Miroslav"
     orcid: "https://orcid.org/0009-0009-3560-0851"
     affiliation: "ANULUM CH & LI"
-version: 0.45.0
-date-released: "2026-06-26"
+version: 0.46.0
+date-released: "2026-06-27"
 doi: "10.5281/zenodo.20801559"
 license: "AGPL-3.0-or-later"
 repository-code: "https://github.com/anulum/synapse-channel"
