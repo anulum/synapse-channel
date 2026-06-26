@@ -8,7 +8,14 @@
 
 from __future__ import annotations
 
-from tools.check_a2a_module_coverage import evaluate_report
+import importlib.util
+from pathlib import Path
+
+_PATH = Path(__file__).resolve().parents[1] / "tools" / "check_a2a_module_coverage.py"
+_SPEC = importlib.util.spec_from_file_location("check_a2a_module_coverage", _PATH)
+assert _SPEC is not None and _SPEC.loader is not None
+tool = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(tool)
 
 
 def test_a2a_module_coverage_ratchet_reports_each_weak_module() -> None:
@@ -21,7 +28,7 @@ def test_a2a_module_coverage_ratchet_reports_each_weak_module() -> None:
         }
     }
 
-    failures = evaluate_report(report)
+    failures = tool.evaluate_report(report)
 
     assert failures == [
         "src/synapse_channel/a2a_server.py: 99.99% < required 100.00%",
@@ -39,4 +46,4 @@ def test_a2a_module_coverage_ratchet_accepts_exact_thresholds() -> None:
         }
     }
 
-    assert evaluate_report(report) == []
+    assert tool.evaluate_report(report) == []
