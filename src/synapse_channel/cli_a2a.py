@@ -22,7 +22,8 @@ from collections.abc import Callable, Coroutine
 from typing import Any, TypeVar
 
 from synapse_channel.a2a import agent_card_from_manifest
-from synapse_channel.a2a_server import A2ABridge, SynapseAgentRuntime, serve_a2a_http
+from synapse_channel.a2a_http import serve_a2a_http
+from synapse_channel.a2a_server import A2ABridge, SynapseAgentRuntime
 from synapse_channel.a2a_store import A2ATaskStore
 from synapse_channel.cli_queries import _query_hub
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
