@@ -7,9 +7,9 @@
     "optional_dependency_groups": 4,
     "package_modules": 115,
     "public_api_exports": 59,
-    "tests": 1448,
+    "tests": 1455,
     "version": "0.45.0",
-    "wire_message_types": 52,
+    "wire_message_types": 53,
     "workflows": 10
   },
   "project": "SYNAPSE CHANNEL",

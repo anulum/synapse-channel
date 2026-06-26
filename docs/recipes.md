@@ -63,9 +63,14 @@ can hold a strict lease on its behalf.
 
     ```bash
     synapse send --name api-dev --target test-dev "API ready on src/app/api.py — update the tests"
+    synapse send --name api-dev --target test-dev --require-recipient "ping before handoff"
     synapse send --name api-dev --target test-dev,docs-dev "interface changed"
     synapse send --name api-dev --target all "release branch is frozen"
     ```
+
+    Use `--require-recipient` when a directed nudge must not disappear into the
+    durable feed unnoticed. The command waits for the hub's receipt and exits
+    non-zero if no online recipient matches the target.
 
 4. **Keep the plan current.** Declare work with dependencies so a finished task
    unblocks the next; a stall supervisor re-offers anything that goes quiet:
@@ -156,6 +161,7 @@ the model **provider** rate-limits the burst — Anthropic's API, for one, answe
 
 ```bash
 synapse send --target api-dev "rebased main, re-pull"     # one
+synapse send --require-recipient --target api-dev "are you online?"  # receipt-gated
 synapse send --target quantum/* "freeze, I am tagging"    # a project group
 synapse send --target all --priority "prod is green"      # everyone, sparingly
 ```

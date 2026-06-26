@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
+from websockets.asyncio.server import ServerConnection, serve
 
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli_messaging
@@ -188,6 +190,73 @@ async def test_send_normalizes_waiter_identity_before_connecting() -> None:
     assert message["target"] == "OBSERVER"
 
 
+async def test_send_require_recipient_succeeds_with_receipt(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        try:
+            code = await cli_messaging._send(
+                uri=uri,
+                name="USER",
+                target="OBSERVER",
+                message="ping",
+                wait_seconds=0.0,
+                require_recipient=True,
+            )
+        finally:
+            await close_agents(observer)
+
+    assert code == 0
+    assert "delivered to OBSERVER" in capsys.readouterr().out
+
+
+async def test_send_require_recipient_fails_without_online_recipient(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        code = await cli_messaging._send(
+            uri=uri,
+            name="USER",
+            target="MISSING",
+            message="ping",
+            wait_seconds=0.0,
+            require_recipient=True,
+            receipt_timeout=0.2,
+        )
+
+    assert code == 1
+    assert "delivery failed: no online recipient matched MISSING" in capsys.readouterr().out
+
+
+async def test_send_require_recipient_fails_without_hub_receipt(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def receiptless_hub(websocket: ServerConnection) -> None:
+        await websocket.send(json.dumps({"type": "welcome", "sender": "Hub", "target": "self"}))
+        async for _message in websocket:
+            await asyncio.sleep(1)
+
+    port = _free_port()
+    server = await serve(receiptless_hub, "localhost", port)
+    try:
+        code = await cli_messaging._send(
+            uri=f"ws://localhost:{port}",
+            name="USER",
+            target="MISSING",
+            message="ping",
+            wait_seconds=0.0,
+            require_recipient=True,
+            receipt_timeout=0.03,
+        )
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    assert code == 1
+    assert "delivery failed: no receipt from hub for MISSING" in capsys.readouterr().out
+
+
 def test_send_waiter_identity_normalization_is_documented() -> None:
     readme = " ".join((REPO_ROOT / "README.md").read_text(encoding="utf-8").split())
     cli_docs = " ".join((REPO_ROOT / "docs" / "cli.md").read_text(encoding="utf-8").split())
@@ -196,3 +265,4 @@ def test_send_waiter_identity_normalization_is_documented() -> None:
     assert "sends as `api-dev`" in readme
     assert "one-shot send accidentally uses a waiter name" in cli_docs
     assert "avoids the hub's duplicate-name refusal" in cli_docs
+    assert "synapse send --require-recipient" in cli_docs
