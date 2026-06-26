@@ -8,10 +8,16 @@
 
 from __future__ import annotations
 
+import socket
 from http import HTTPStatus
 from typing import Any
+from urllib import request
+from urllib.error import URLError
+
+import pytest
 
 from a2a_server_helpers import HandlerHarness, RecordingAgent
+from synapse_channel import a2a_push
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 
@@ -199,6 +205,81 @@ def test_completion_delivers_push_notification_to_stored_config() -> None:
 
     assert len(deliveries) == 1
     assert deliveries[0]["payload"]["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
+
+
+def test_http_push_deliverer_blocks_hostname_resolving_to_loopback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def resolve_loopback(*_args: object, **_kwargs: object) -> list[object]:
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))]
+
+    def fail_urlopen(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("unsafe webhook request reached urlopen")
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve_loopback)
+    monkeypatch.setattr(request, "urlopen", fail_urlopen)
+
+    with pytest.raises(URLError, match="must not target local networks"):
+        a2a_push.http_push_deliverer(
+            {
+                "url": "https://example.test/hook",
+                "headers": {},
+                "payload": {"task": {"id": "task-a"}},
+            }
+        )
+
+
+def test_http_push_deliverer_blocks_redirect_to_loopback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b""
+
+    class FakeOpener:
+        def __init__(self, redirect_handler: Any) -> None:
+            self._redirect_handler = redirect_handler
+
+        def open(self, req: Any, *, timeout: float) -> FakeResponse:
+            redirect_request = self._redirect_handler.redirect_request
+            redirect_request(
+                req,
+                None,
+                HTTPStatus.FOUND,
+                "Found",
+                {"Location": "http://127.0.0.1/hook"},
+                "http://127.0.0.1/hook",
+            )
+            return FakeResponse()
+
+    def resolve_by_host(host: str, *_args: object, **_kwargs: object) -> list[object]:
+        address = "127.0.0.1" if host == "127.0.0.1" else "93.184.216.34"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, 443))]
+
+    def build_fake_opener(redirect_handler: object) -> FakeOpener:
+        return FakeOpener(redirect_handler)
+
+    def fail_urlopen(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("unsafe webhook request bypassed redirect validation")
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve_by_host)
+    monkeypatch.setattr(request, "build_opener", build_fake_opener)
+    monkeypatch.setattr(request, "urlopen", fail_urlopen)
+
+    with pytest.raises(URLError, match="must not target local networks"):
+        a2a_push.http_push_deliverer(
+            {
+                "url": "https://example.test/hook",
+                "headers": {},
+                "payload": {"task": {"id": "task-a"}},
+            }
+        )
 
 
 def test_push_notification_config_rejects_non_http_webhook_url() -> None:
