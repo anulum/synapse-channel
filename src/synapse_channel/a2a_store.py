@@ -22,6 +22,11 @@ from synapse_channel.a2a_validation import TERMINAL_TASK_STATES
 
 STALE_INFLIGHT_MESSAGE = "Recovered from stale in-flight task state after restart"
 STATE_FILE_MODE = 0o600
+DEFAULT_MAX_STORED_TASKS = 1024
+DEFAULT_MAX_TASK_HISTORY = 64
+DEFAULT_MAX_TASK_ARTIFACTS = 64
+DEFAULT_MAX_PUSH_CONFIGS_PER_TASK = 16
+DEFAULT_TASK_RETENTION_SECONDS = 7 * 24 * 60 * 60
 StateWriter = Callable[[Path, str], None]
 
 
@@ -48,11 +53,21 @@ class A2ATaskStore:
         storage_path: str | Path | None = None,
         *,
         state_writer: StateWriter = _write_state,
+        max_tasks: int = DEFAULT_MAX_STORED_TASKS,
+        max_task_history: int = DEFAULT_MAX_TASK_HISTORY,
+        max_task_artifacts: int = DEFAULT_MAX_TASK_ARTIFACTS,
+        max_push_configs_per_task: int = DEFAULT_MAX_PUSH_CONFIGS_PER_TASK,
+        retention_seconds: float = DEFAULT_TASK_RETENTION_SECONDS,
     ) -> None:
         self._tasks: dict[str, JsonMap] = {}
         self._push_configs: dict[str, dict[str, JsonMap]] = {}
         self._storage_path = Path(storage_path) if storage_path is not None else None
         self._state_writer = state_writer
+        self.max_tasks = max(max_tasks, 1)
+        self.max_task_history = max(max_task_history, 0)
+        self.max_task_artifacts = max(max_task_artifacts, 0)
+        self.max_push_configs_per_task = max(max_push_configs_per_task, 0)
+        self.retention_seconds = max(retention_seconds, 0.0)
         self._lock = threading.RLock()
         self._load()
 
@@ -99,6 +114,95 @@ class A2ATaskStore:
         }
         return recovered
 
+    def _normalize_task(self, task: JsonMap) -> JsonMap:
+        """Apply bounded task history and artifact retention."""
+        history = task.get("history")
+        if isinstance(history, list):
+            task["history"] = history[-self.max_task_history :] if self.max_task_history else []
+        artifacts = task.get("artifacts")
+        if isinstance(artifacts, list):
+            task["artifacts"] = (
+                artifacts[-self.max_task_artifacts :] if self.max_task_artifacts else []
+            )
+        return task
+
+    def _task_updated_at(self, task: JsonMap) -> float:
+        """Return the task timestamp used for retention ordering."""
+        metadata = task.get("metadata")
+        if not isinstance(metadata, dict):
+            return 0.0
+        try:
+            return float(metadata.get("updatedAt") or metadata.get("createdAt") or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _is_terminal_task(self, task: JsonMap) -> bool:
+        """Return whether ``task`` is in a terminal A2A state."""
+        status = task.get("status")
+        return isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES
+
+    def _remove_task_locked(self, task_id: str) -> None:
+        """Remove one task and its push configs while the store lock is held."""
+        self._tasks.pop(task_id, None)
+        self._push_configs.pop(task_id, None)
+
+    def _task_ids_by_age(self, *, terminal_only: bool) -> list[str]:
+        """Return task ids ordered oldest first for quota eviction."""
+        candidates = [
+            task_id
+            for task_id, task in self._tasks.items()
+            if not terminal_only or self._is_terminal_task(task)
+        ]
+        return sorted(
+            candidates, key=lambda task_id: (self._task_updated_at(self._tasks[task_id]), task_id)
+        )
+
+    def _enforce_task_limit_locked(self, *, protected_task_id: str) -> list[str]:
+        """Drop old tasks until the store is within the configured task cap."""
+        removed: list[str] = []
+        while len(self._tasks) > self.max_tasks:
+            terminal = [
+                task_id
+                for task_id in self._task_ids_by_age(terminal_only=True)
+                if task_id != protected_task_id
+            ]
+            candidates = terminal or [
+                task_id
+                for task_id in self._task_ids_by_age(terminal_only=False)
+                if task_id != protected_task_id
+            ]
+            if not candidates:
+                candidates = self._task_ids_by_age(terminal_only=False)
+            task_id = candidates[0]
+            self._remove_task_locked(task_id)
+            removed.append(task_id)
+        return removed
+
+    def prune_expired(self, *, now: float) -> list[str]:
+        """Remove expired terminal tasks and return their ids."""
+        with self._lock:
+            previous_tasks = dict(self._tasks)
+            previous_push_configs = {
+                task_id: dict(configs) for task_id, configs in self._push_configs.items()
+            }
+            removed = [
+                task_id
+                for task_id, task in self._tasks.items()
+                if self._is_terminal_task(task)
+                and now - self._task_updated_at(task) >= self.retention_seconds
+            ]
+            if not removed:
+                return []
+            for task_id in removed:
+                self._remove_task_locked(task_id)
+            try:
+                self._save()
+            except Exception:
+                self._tasks = previous_tasks
+                self._push_configs = previous_push_configs
+                raise
+            return sorted(removed)
+
     def _save(self) -> None:
         """Persist tasks and push configs to disk when configured."""
         if self._storage_path is None:
@@ -123,15 +227,17 @@ class A2ATaskStore:
         """Store and return ``task``."""
         with self._lock:
             task_id = str(task["id"])
-            previous = self._tasks.get(task_id)
-            self._tasks[task_id] = task
+            previous_tasks = dict(self._tasks)
+            previous_push_configs = {
+                stored_id: dict(configs) for stored_id, configs in self._push_configs.items()
+            }
+            self._tasks[task_id] = self._normalize_task(task)
+            self._enforce_task_limit_locked(protected_task_id=task_id)
             try:
                 self._save()
             except Exception:
-                if previous is None:
-                    del self._tasks[task_id]
-                else:
-                    self._tasks[task_id] = previous
+                self._tasks = previous_tasks
+                self._push_configs = previous_push_configs
                 raise
         return task
 
@@ -156,6 +262,8 @@ class A2ATaskStore:
             stored["id"] = config_id
             stored["taskId"] = task_id
             previous = dict(self._push_configs.get(task_id, {}))
+            if config_id not in previous and len(previous) >= self.max_push_configs_per_task:
+                raise ValueError("pushNotificationConfig limit exceeded")
             self._push_configs.setdefault(task_id, {})[config_id] = stored
             try:
                 self._save()
