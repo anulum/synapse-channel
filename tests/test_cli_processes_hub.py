@@ -158,6 +158,33 @@ def test_cmd_hub_threads_max_unauth_clients() -> None:
     assert captured["max_unauth_clients"] == 8
 
 
+def test_cmd_hub_threads_max_connections_per_host() -> None:
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(max_connections_per_host=2), runner=_close_runner, hub_factory=build_hub
+        )
+        == 0
+    )
+    assert captured["max_connections_per_host"] == 2
+
+
+def test_cmd_hub_disables_max_connections_per_host_when_zero() -> None:
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert cli_processes._cmd_hub(_hub_ns(), runner=_close_runner, hub_factory=build_hub) == 0
+    assert captured["max_connections_per_host"] is None
+
+
 def test_cmd_hub_builds_host_rate_limiter_when_enabled() -> None:
     captured: dict[str, Any] = {}
 

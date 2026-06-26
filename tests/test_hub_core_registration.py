@@ -12,6 +12,7 @@ import json
 from typing import Any
 
 from websockets.asyncio.client import connect
+from websockets.exceptions import ConnectionClosedError
 
 from hub_e2e_helpers import read_json, read_until_type, running_hub
 from synapse_channel.core.hub import MAX_LOG_PAYLOAD, SynapseHub
@@ -74,6 +75,27 @@ async def test_host_rate_limiter_meters_heartbeats_end_to_end() -> None:
             await websocket.send(json.dumps({"sender": "A", "type": "heartbeat"}))
             error = await read_until_type(websocket, "error")
     assert "Host rate limit exceeded" in error["payload"]
+
+
+async def test_max_connections_per_host_refuses_excess_sockets_end_to_end() -> None:
+    hub = SynapseHub(max_connections_per_host=2)
+    async with running_hub(hub) as (_, uri):
+        async with connect(uri) as first, connect(uri) as second:
+            await read_until_type(first, "welcome")
+            await read_until_type(second, "welcome")
+            async with connect(uri) as third:
+                try:
+                    await third.recv()
+                except ConnectionClosedError as exc:
+                    assert exc.rcvd is not None
+                    assert exc.rcvd.code == 4015
+                    assert "too many connections from host" in exc.rcvd.reason
+                else:  # pragma: no cover - the assertion above must be reached.
+                    raise AssertionError("third same-host connection was not refused")
+        async with connect(uri) as admitted_after_disconnect:
+            assert (await read_until_type(admitted_after_disconnect, "welcome"))[
+                "type"
+            ] == "welcome"
 
 
 def test_remote_host_handles_tuple_bare_and_missing() -> None:

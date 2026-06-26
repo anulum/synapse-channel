@@ -81,6 +81,14 @@ variable — precedence is `--token` → `--token-file` → env. An unauthentica
 no welcome or roster and is closed after `--auth-timeout` seconds (default 10), so an idle
 connection cannot sit on the `--max-clients` budget.
 
+## A client is closed with `too many connections from host`
+
+The hub was started with `--max-connections-per-host <n>` and that remote host
+already has `n` sockets open. Close stale clients, raise the cap for trusted
+local fan-out, or leave the flag at `0` to disable the per-host connection-count
+limit. This is separate from `--host-rate`, which meters frames rather than open
+sockets.
+
 ## `Could not acquire lock 'TASK': …` / `release refused for 'TASK': …`
 
 - **Lock denied or timed out** — another agent holds the lease. Wait, coordinate, or

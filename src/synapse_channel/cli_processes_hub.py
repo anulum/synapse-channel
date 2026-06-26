@@ -54,6 +54,9 @@ def _cmd_hub(
         authenticator=authenticator,
         max_clients=args.max_clients,
         max_unauth_clients=args.max_unauth_clients,
+        max_connections_per_host=(
+            args.max_connections_per_host if args.max_connections_per_host > 0 else None
+        ),
         max_msg_bytes=args.max_msg_kb * 1024,
         max_claims_per_agent=args.max_claims_per_agent,
         max_offers_per_agent=args.max_offers_per_agent,
