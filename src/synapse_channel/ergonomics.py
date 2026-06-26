@@ -39,6 +39,7 @@ from pathlib import Path
 
 from synapse_channel import ack as ack_command
 from synapse_channel import cli
+from synapse_channel import commit as commit_command
 from synapse_channel import locks as locks_command
 from synapse_channel import reap as reap_command
 
@@ -53,6 +54,9 @@ LocksRunner = Callable[["Identity", Sequence[str]], int]
 
 AckRunner = Callable[["Identity", Sequence[str]], int]
 """Callable surface used to dispatch the identity-scoped ``syn ack`` command."""
+
+CommitRunner = Callable[["Identity", Sequence[str]], int]
+"""Callable surface used to dispatch the lease-guarded ``syn commit`` command."""
 
 DEFAULT_AGENT_TYPE = "claude"
 """The agent ``type`` used to build a multi-agent identity when ``--id`` is given."""
@@ -314,7 +318,19 @@ def _run_ack(identity: Identity, rest: Sequence[str]) -> int:
     return ack_command.main(identity, rest)
 
 
-VERBS = ("name", "arm", "say", "ask", "inbox", "board", "who", "reap", "locks", "ack")
+VERBS = (
+    "name",
+    "arm",
+    "say",
+    "ask",
+    "inbox",
+    "board",
+    "who",
+    "reap",
+    "locks",
+    "ack",
+    "commit",
+)
 """The ``syn`` verbs, each a thin identity-correct wrapper over a package command."""
 
 
@@ -343,7 +359,7 @@ def build_parser() -> argparse.ArgumentParser:
         "verb",
         nargs="?",
         choices=VERBS,
-        help="name | arm | say | ask | inbox | board | who | reap | locks | ack.",
+        help="name | arm | say | ask | inbox | board | who | reap | locks | ack | commit.",
     )
     parser.add_argument(
         "rest", nargs=argparse.REMAINDER, help="Arguments passed through to the package command."
@@ -360,6 +376,7 @@ def main(
     reap_runner: ReapRunner = reap_command.main,
     locks_runner: LocksRunner = locks_command.main,
     ack_runner: AckRunner = _run_ack,
+    commit_runner: CommitRunner = commit_command.main,
 ) -> int:
     """Resolve identity and dispatch one ``syn`` verb to the package CLI.
 
@@ -379,6 +396,8 @@ def main(
         Identity-scoped lease listing entry point for ``syn locks``.
     ack_runner : callable, optional
         Identity-scoped task acknowledgement entry point for ``syn ack``.
+    commit_runner : callable, optional
+        Identity-scoped, lease-guarded git commit entry point for ``syn commit``.
 
     Returns
     -------
@@ -476,6 +495,8 @@ def main(
         return locks_runner(identity, rest)
     if args.verb == "ack":
         return ack_runner(identity, rest)
+    if args.verb == "commit":
+        return commit_runner(identity, rest)
     # args.verb == "board"
     return dispatcher(board_argv(identity, extra=rest))
 
@@ -559,6 +580,15 @@ def alias_ack(
 ) -> int:
     """Entry point for the ``syn-ack`` console alias."""
     return dispatcher(["ack", *(sys.argv[1:] if argv is None else argv)])
+
+
+def alias_commit(
+    argv: Sequence[str] | None = None,
+    *,
+    dispatcher: Callable[[list[str]], int] = main,
+) -> int:
+    """Entry point for the ``syn-commit`` console alias."""
+    return dispatcher(["commit", *(sys.argv[1:] if argv is None else argv)])
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -86,6 +86,17 @@ can hold a strict lease on its behalf.
     and artifacts as an `assessment` progress note from the resolved identity, then
     marks the task `done` after the hub confirms the note.
 
+5. **Commit only what this task changed.** Hold the project git lease while
+   staging and committing the intended paths:
+
+    ```bash
+    syn commit src/app/api.py tests/test_api.py -m "ship API change"
+    ```
+
+    The command stages only those paths and passes the same pathspecs to
+    `git commit`, so unrelated staged or modified files remain outside the new
+    commit.
+
 ## Why it holds
 
 - **No collisions:** overlapping file scopes are rejected at claim time, in one
