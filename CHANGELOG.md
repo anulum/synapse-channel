@@ -13,6 +13,20 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse doctor` now reports local filesystem pressure and exposes
+  `--disk-path`, `--disk-warn-used-percent`, and `--disk-warn-free-mib` for
+  workspace-specific checks.
+- Provider shell wrappers now auto-bootstrap interactive Codex, Claude, Kimi, and
+  Grok sessions into persistent tmux-backed Synapse wake targets from normal
+  provider startup.
+
+### Changed
+- `synapse worker-session` now defaults to persistent tmux terminal mode for
+  interactive providers launched from a real terminal, with
+  `SYNAPSE_PROVIDER_TMUX=0` or `--terminal-tmux off` as the direct-execution
+  escape hatch.
+
 ## [0.46.0] - 2026-06-27
 
 ### Added

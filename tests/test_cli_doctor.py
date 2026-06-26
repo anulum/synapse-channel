@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -91,18 +92,26 @@ async def test_diagnose_unreachable_fails() -> None:
     assert code == 1
 
 
-async def test_diagnose_flags_off_loopback_without_token() -> None:
+async def test_diagnose_flags_off_loopback_without_token_and_disk_pressure(
+    tmp_path: Path,
+) -> None:
     async def no_roster(**_: Any) -> list[str] | None:
-        return None
+        return []
 
-    _, lines = await cli_doctor._diagnose(
+    code, lines = await cli_doctor._diagnose(
         uri="ws://10.0.0.5:8876",
         project="demorepo",
         agent_id=None,
         token=None,
         roster_probe=no_roster,
+        disk_path=tmp_path,
+        disk_warn_used_percent=0.0,
+        disk_warn_free_mib=1,
     )
+    assert code == 0
     assert any("off loopback with no token" in line for line in lines)
+    assert any("[warn] disk:" in line for line in lines)
+    assert any(str(tmp_path) in line for line in lines)
 
 
 async def test_diagnose_warns_on_hyphen_send_identity() -> None:
@@ -132,6 +141,9 @@ def test_cmd_doctor_prints_lines_and_returns_code(
         id=None,
         token=None,
         send_name=None,
+        disk_path="/",
+        disk_warn_used_percent=95.0,
+        disk_warn_free_mib=1024,
         fix=False,
         install_user_services=False,
         start_user_services=False,
@@ -154,6 +166,9 @@ def test_cmd_doctor_fix_prints_service_commands(
         id=None,
         token=None,
         send_name=None,
+        disk_path="/",
+        disk_warn_used_percent=95.0,
+        disk_warn_free_mib=1024,
         fix=True,
         install_user_services=False,
         start_user_services=False,
@@ -184,6 +199,9 @@ def test_cmd_doctor_installs_user_services(
         id=None,
         token=None,
         send_name=None,
+        disk_path="/",
+        disk_warn_used_percent=95.0,
+        disk_warn_free_mib=1024,
         fix=False,
         install_user_services=True,
         start_user_services=True,

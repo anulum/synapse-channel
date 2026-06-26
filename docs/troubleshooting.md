@@ -89,6 +89,21 @@ local fan-out, or leave the flag at `0` to disable the per-host connection-count
 limit. This is separate from `--host-rate`, which meters frames rather than open
 sockets.
 
+## `synapse doctor` warns that a filesystem is nearly full
+
+`synapse doctor` checks the root filesystem by default because a full root disk
+can break shell hooks, pipx shims, logs, and service state even when the project
+checkout lives elsewhere. The warning includes the path, free MiB, and used
+percentage. Free space by moving build trees, caches, logs, or virtualenvs off
+the pressured filesystem before running long-lived coordination sessions.
+
+To inspect the mount that holds a specific checkout or runtime tree:
+
+```bash
+synapse doctor --disk-path /media/anulum/GOTM
+synapse doctor --disk-path "$XDG_RUNTIME_DIR"
+```
+
 ## `Could not acquire lock 'TASK': …` / `release refused for 'TASK': …`
 
 - **Lock denied or timed out** — another agent holds the lease. Wait, coordinate, or

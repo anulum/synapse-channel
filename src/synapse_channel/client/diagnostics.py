@@ -18,6 +18,7 @@ gathers the live inputs and renders the report.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from os import PathLike
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse
 
@@ -32,7 +33,14 @@ if TYPE_CHECKING:
 DoctorStatus = Literal["pass", "warn", "fail"]
 """The three verdicts a check can return."""
 
-_STATUS_MARK: dict[DoctorStatus, str] = {"pass": "ok", "warn": "warn", "fail": "FAIL"}
+_STATUS_OK_MARK = "ok"
+"""Rendered marker for a passing doctor check."""
+
+_STATUS_MARK: dict[DoctorStatus, str] = {
+    "pass": _STATUS_OK_MARK,
+    "warn": "warn",
+    "fail": "FAIL",
+}
 """How each status is marked in a rendered report line."""
 
 
@@ -150,6 +158,52 @@ def check_exposure(uri: str, token: str | None) -> Diagnosis:
         detail=f"hub URI {uri!r} is off loopback with no token",
         remedy="set --token (the hub refuses to bind an unauthenticated off-loopback host)",
     )
+
+
+def check_disk_space(
+    path: str | PathLike[str],
+    *,
+    total_bytes: int,
+    free_bytes: int,
+    warn_used_percent: float,
+    warn_free_mib: int,
+) -> Diagnosis:
+    """Report local filesystem pressure for the path Synapse should monitor.
+
+    Parameters
+    ----------
+    path : str or PathLike[str]
+        Filesystem path whose containing mount was measured.
+    total_bytes : int
+        Total bytes available on the containing filesystem.
+    free_bytes : int
+        Free bytes available on the containing filesystem.
+    warn_used_percent : float
+        Warn when used space is greater than or equal to this percentage.
+    warn_free_mib : int
+        Warn when free space is below this many MiB.
+    """
+    free_mib = free_bytes / (1024 * 1024)
+    if total_bytes <= 0:
+        return Diagnosis(
+            check="disk",
+            status="warn",
+            detail=f"could not compute filesystem pressure for {str(path)!r}",
+            remedy="verify the path exists and re-run `synapse doctor --disk-path <path>`",
+        )
+    used_percent = 100.0 * (1.0 - (free_bytes / total_bytes))
+    detail = f"{str(path)!r} has {free_mib:.1f} MiB free ({used_percent:.1f}% used)"
+    if used_percent >= warn_used_percent or free_mib < warn_free_mib:
+        return Diagnosis(
+            check="disk",
+            status="warn",
+            detail=detail,
+            remedy=(
+                "move build trees, caches, logs, or virtualenvs off the pressured "
+                "filesystem before long-running Synapse sessions"
+            ),
+        )
+    return Diagnosis(check="disk", status="pass", detail=detail)
 
 
 def check_reachable(reachable: bool, uri: str) -> Diagnosis:

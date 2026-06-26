@@ -92,10 +92,11 @@ synapse demo
 synapse quickstart-coding
 ```
 
-`synapse doctor` reports local setup issues such as identity, hub exposure, and
-missing waiters. A brand-new machine may warn that no hub or waiter is running;
-that is expected before service setup. `synapse demo` starts its own local hub,
-drives a planner/worker coordination flow, and succeeds when it prints:
+`synapse doctor` reports local setup issues such as identity, hub exposure,
+root-filesystem pressure, and missing waiters. A brand-new machine may warn that
+no hub or waiter is running; that is expected before service setup. `synapse
+demo` starts its own local hub, drives a planner/worker coordination flow, and
+succeeds when it prints:
 
 ```text
 success: coordination demo completed
@@ -205,7 +206,9 @@ Synapse coordinates the agents you already run; it does not replace them.
   ```
 
 - **Check the wiring:** `synapse doctor` reports the common setup mistakes — no live
-  waiter, a hub exposed without a token, an accidental identity — each with its fix.
+  waiter, a hub exposed without a token, an accidental identity, or a pressured
+  root filesystem — each with its fix. Use `--disk-path <path>` to check the
+  filesystem that holds a specific workspace or cache.
 
 - **Install the always-on local services:** `synapse init` prints or installs the
   hub, project presence, and non-LLM wake listener units. `doctor --fix` prints
@@ -217,18 +220,22 @@ Synapse coordinates the agents you already run; it does not replace them.
   synapse doctor --fix
   ```
 
-- **Launch a provider command with a wake sidecar:** `worker-session` exports the
-  identity variables, starts a cheap `syn arm` listener, runs your command, and
-  stops the listener when the command exits.
+- **Launch a provider command with Synapse identity:** `worker-session` exports
+  the identity variables before the provider starts. Interactive terminal
+  providers such as Codex, Claude, Kimi, and Grok run in a persistent tmux
+  session by default when launched from an interactive terminal, with a directed
+  waiter kept alive in the background. Non-terminal commands keep the temporary
+  `syn arm` sidecar path.
 
   ```bash
   synapse worker-session --identity myrepo/worker -- codex --sandbox danger-full-access
   ```
 
-- **Wake an existing Codex terminal session:** `codex-tmux` keeps the Codex TUI
-  in a named tmux session and injects a fixed wake prompt when Synapse receives a
-  directed message. It does not paste the Synapse payload into the terminal;
-  Codex reads the inbox itself after waking.
+- **Inspect or control the tmux wake path manually:** `codex-tmux` is the
+  diagnostic/admin surface behind the automatic provider launch path. It keeps a
+  provider TUI in a named tmux session and injects a fixed wake prompt when
+  Synapse receives a directed message. It does not paste the Synapse payload into
+  the terminal; the provider reads the inbox itself after waking.
 
   ```bash
   synapse codex-tmux start --identity myrepo/codex-main --session myrepo-codex --cwd "$PWD"
@@ -301,9 +308,13 @@ printf '%s\n' myrepo > .synapse/project
 
 For legacy CWD-derived behavior, set `SYNAPSE_AUTO_PROJECT_FROM_CWD=1` in that
 terminal. The hook also wraps common provider commands (`codex`, `claude`,
-`gemini`, `agent`, `ask`, `ollama`) through `synapse worker-session`, so cloud and
-local LLM sessions inherit the same Synapse identity without polling or manual
-arming. Set `SYNAPSE_AUTO_CONNECT=0` to disable it for a terminal.
+`kimi`, `grok`, `gemini`, `agent`, `ask`, `ollama`) through `synapse
+worker-session`, so cloud and local LLM sessions inherit the same Synapse
+identity from process start. In an interactive terminal, Codex/Claude/Kimi/Grok
+launch through a persistent tmux session and directed wake bridge automatically;
+the user still types only the provider command. Set `SYNAPSE_PROVIDER_TMUX=0` to
+keep those providers on the direct execution path, or `SYNAPSE_AUTO_CONNECT=0` to
+disable the hook for a terminal.
 
 ### Durability
 
@@ -491,10 +502,10 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Package version | 0.46.0 |
 | Public API exports | 59 |
 | Package modules | 118 |
-| Classes | 91 |
+| Classes | 92 |
 | Wire message types | 53 |
 | CLI subcommands | 44 |
-| Test functions | 1493 |
+| Test functions | 1502 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

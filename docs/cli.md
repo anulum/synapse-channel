@@ -45,10 +45,11 @@ synapse demo
 synapse quickstart-coding
 ```
 
-`synapse doctor` reports local wiring issues. On a fresh machine, a missing hub or
-waiter can be a warning before services are installed. `synapse demo` starts an
-ephemeral local hub, drives a planner/worker flow, and is successful when it
-prints:
+`synapse doctor` reports local wiring issues, including identity, hub exposure,
+root-filesystem pressure, hub reachability, and the current identity's waiter. On
+a fresh machine, a missing hub or waiter can be a warning before services are
+installed. `synapse demo` starts an ephemeral local hub, drives a planner/worker
+flow, and is successful when it prints:
 
 ```text
 success: coordination demo completed
@@ -176,10 +177,16 @@ synapse wait --name api-dev-rx --for api-dev   # blocks; prints + exits on a mes
 synapse wait --for api-dev --timeout 60        # give up after 60s (exit 2) instead of waiting forever
 ```
 
-For an existing Codex terminal session, use `synapse codex-tmux` instead of
-expecting a passive listener to drive the TUI. It starts or targets a named tmux
-session and injects only a fixed instruction; the Synapse message body stays in
-the inbox and Codex reads it itself.
+When the shell hook launches an interactive provider command, `worker-session`
+automatically starts or attaches a persistent tmux session and keeps a directed
+wake bridge alive. The user still types the provider command normally, for
+example `codex` or `claude`; the provider process starts with `SYN_PROJECT` and
+`SYN_IDENTITY` already set.
+
+Use `synapse codex-tmux` as the manual diagnostic/admin surface for that tmux
+wake path. It starts or targets a named tmux session and injects only a fixed
+instruction; the Synapse message body stays in the inbox and the provider reads
+it itself.
 
 ```bash
 synapse codex-tmux start --identity api-dev/codex-main --session api-dev-codex --cwd "$PWD"
