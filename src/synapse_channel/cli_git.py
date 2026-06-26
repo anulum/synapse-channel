@@ -36,6 +36,32 @@ AsyncGitCommand = Callable[..., Coroutine[Any, Any, int]]
 """Async git command callable used by the CLI dispatchers."""
 
 
+def _resolve_git_claim_task_id(args: argparse.Namespace) -> str | None:
+    """Return the git-claim task id or print a focused usage error.
+
+    ``git-claim`` historically accepted the task id only as a positional argument.
+    The named ``--task-id`` form is now accepted for scripts and agents that build
+    argv from structured fields. Supplying both forms is ambiguous and rejected so
+    automation never has to guess which value won.
+    """
+    positional = str(args.task_id).strip() if args.task_id is not None else ""
+    flagged = str(args.task_id_flag).strip() if args.task_id_flag is not None else ""
+    if positional and flagged:
+        print(
+            "git-claim: use either TASK_ID or --task-id, not both.",
+            file=sys.stderr,
+        )
+        return None
+    task_id = positional or flagged
+    if not task_id:
+        print(
+            "git-claim needs TASK_ID or --task-id TASK_ID.",
+            file=sys.stderr,
+        )
+        return None
+    return task_id
+
+
 def _cmd_git_claim(
     args: argparse.Namespace,
     *,
@@ -47,11 +73,14 @@ def _cmd_git_claim(
     The branch is resolved client-side; the hub stores it as opaque metadata and
     never runs git itself.
     """
+    task_id = _resolve_git_claim_task_id(args)
+    if task_id is None:
+        return 2
     return async_runner(
         claim_runner(
             uri=args.uri,
             name=args.name,
-            task_id=args.task_id,
+            task_id=task_id,
             paths=args.paths or [],
             base=args.base,
             auto_release_on=args.auto_release_on,
@@ -225,7 +254,18 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "git-claim",
         help="Claim a task scoped to the current git branch (branch resolved client-side).",
     )
-    git_claim.add_argument("task_id")
+    git_claim.add_argument(
+        "task_id",
+        nargs="?",
+        default=None,
+        help="Task id to claim. Use --task-id instead when building argv from structured fields.",
+    )
+    git_claim.add_argument(
+        "--task-id",
+        dest="task_id_flag",
+        default=None,
+        help="Task id to claim; equivalent to the positional TASK_ID. Do not pass both.",
+    )
     git_claim.add_argument(
         "--paths",
         action="append",

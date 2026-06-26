@@ -133,6 +133,12 @@ for the wrapped command and dropped when it exits. A claim that no commit or mer
 will auto-release — a `git-claim --auto-release-on manual` — is dropped by its owner
 with `synapse release <task> --name <owner>`.
 
+`synapse git-claim` accepts the task id either positionally (`synapse git-claim
+TASK-1 --paths src`) or as a named field (`synapse git-claim --task-id TASK-1
+--paths src`) for generated argv. Use one form, not both. `synapse git-release`
+is hook-invoked and does not take a task id; when a manual drop is needed, use
+`synapse release <task> --name <owner>`.
+
 Use `syn locks` for the operator view before releasing or asking another owner to
 release. It queries the live state snapshot as `<identity>-locks`, filters to the
 resolved project by default, and prints the task id, holder, scope, age, remaining

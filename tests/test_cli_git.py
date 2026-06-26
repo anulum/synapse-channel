@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -30,6 +31,13 @@ def test_parser_git_claim() -> None:
     assert args.auto_release_on == "commit"
 
 
+def test_parser_git_claim_accepts_task_id_flag() -> None:
+    args = cli.build_parser().parse_args(["git-claim", "--task-id", "T1", "--paths", "src"])
+    assert args.task_id is None
+    assert args.task_id_flag == "T1"
+    assert args.paths == ["src"]
+
+
 def test_cmd_git_claim_dispatches() -> None:
     captured: dict[str, Any] = {}
 
@@ -41,6 +49,7 @@ def test_cmd_git_claim_dispatches() -> None:
         uri="ws://h",
         name="U",
         task_id="T1",
+        task_id_flag=None,
         paths=["src"],
         base="main",
         auto_release_on="merge",
@@ -49,6 +58,76 @@ def test_cmd_git_claim_dispatches() -> None:
     assert cli_git._cmd_git_claim(ns, claim_runner=run_claim) == 0
     assert captured["task_id"] == "T1"
     assert captured["paths"] == ["src"]
+
+
+def test_cmd_git_claim_dispatches_task_id_flag() -> None:
+    captured: dict[str, Any] = {}
+
+    async def run_claim(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 0
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="U",
+        task_id=None,
+        task_id_flag="T1",
+        paths=["src"],
+        base="main",
+        auto_release_on="merge",
+        token=None,
+    )
+    assert cli_git._cmd_git_claim(ns, claim_runner=run_claim) == 0
+    assert captured["task_id"] == "T1"
+
+
+def test_cmd_git_claim_rejects_positional_and_flag(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def run_claim(**kwargs: Any) -> int:
+        raise AssertionError("claim runner must not be called")
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="U",
+        task_id="T1",
+        task_id_flag="T2",
+        paths=["src"],
+        base="main",
+        auto_release_on="merge",
+        token=None,
+    )
+    assert cli_git._cmd_git_claim(ns, claim_runner=run_claim) == 2
+    assert "use either TASK_ID or --task-id" in capsys.readouterr().err
+
+
+def test_cmd_git_claim_requires_a_task_id(capsys: pytest.CaptureFixture[str]) -> None:
+    async def run_claim(**kwargs: Any) -> int:
+        raise AssertionError("claim runner must not be called")
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="U",
+        task_id=None,
+        task_id_flag=None,
+        paths=["src"],
+        base="main",
+        auto_release_on="merge",
+        token=None,
+    )
+    assert cli_git._cmd_git_claim(ns, claim_runner=run_claim) == 2
+    assert "git-claim needs TASK_ID or --task-id" in capsys.readouterr().err
+
+
+def test_git_claim_argument_docs_are_aligned() -> None:
+    root = Path(__file__).resolve().parents[1]
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    cli_doc = (root / "docs/cli.md").read_text(encoding="utf-8")
+    git_claims = (root / "docs/git-claims.md").read_text(encoding="utf-8")
+
+    assert "synapse git-claim --task-id AUTH" in readme
+    assert "synapse git-claim --task-id TASK-1" in cli_doc
+    assert "Use either the positional `TASK-1` form or `--task-id TASK-1`" in git_claims
 
 
 # --- git-hook ----------------------------------------------------------------
