@@ -42,6 +42,68 @@ def test_timeout_marks_open_task_failed() -> None:
     assert failed[0]["status"]["state"] == "TASK_STATE_FAILED"
 
 
+def test_cancel_task_keeps_terminal_task_state_unchanged() -> None:
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}],
+        },
+        target="WORKER",
+    )
+    bridge.handle_synapse_frame(
+        {
+            "type": "chat",
+            "sender": "WORKER",
+            "payload": f"done\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+        }
+    )
+    completed = bridge.store.get(task["id"])
+    assert completed is not None
+
+    canceled = bridge.cancel_task(task["id"])
+
+    assert canceled == completed
+    stored = bridge.store.get(task["id"])
+    assert stored is not None
+    assert stored["status"]["state"] == "TASK_STATE_COMPLETED"
+
+
+def test_late_reply_after_timeout_does_not_reopen_failed_task() -> None:
+    bridge = A2ABridge(
+        agent=RecordingAgent(),
+        agent_card={},
+        target="WORKER",
+        store=A2ATaskStore(),
+        task_timeout_seconds=1.0,
+    )
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}],
+        },
+        target="WORKER",
+    )
+    task["metadata"]["updatedAt"] = 10.0
+    bridge.store.put(task)
+    bridge.expire_timed_out_tasks(now=12.0)
+
+    bridge.handle_synapse_frame(
+        {
+            "type": "chat",
+            "sender": "WORKER",
+            "payload": f"late\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+        }
+    )
+
+    stored = bridge.store.get(task["id"])
+    assert stored is not None
+    assert stored["status"]["state"] == "TASK_STATE_FAILED"
+    assert stored.get("artifacts") == []
+
+
 def test_state_file_recovery_fails_stale_working_tasks(tmp_path: Path) -> None:
     state_file = tmp_path / "a2a-state.json"
     store = A2ATaskStore(storage_path=state_file)
