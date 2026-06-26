@@ -5,6 +5,7 @@ The `synapse` command exposes the following subcommands.
 | Command | What it does |
 | --- | --- |
 | `synapse hub` | Run the coordination hub. |
+| `synapse demo` | Run a self-contained local coordination demo and print a success marker. |
 | `synapse health` | Probe the hub; exit `0` if reachable, `1` if not (wired as a container healthcheck). |
 | `synapse worker` | Run a model worker that answers on the channel. |
 | `synapse team` | Launch a hub plus one or two local workers in one shot. |
@@ -29,6 +30,25 @@ The `synapse` command exposes the following subcommands.
 | `synapse lock` | Hold a lease while running a command, to serialise it across agents. |
 | `synapse release` | Manually drop a claim you own (e.g. an `--auto-release-on manual` claim). |
 | `synapse task` | Declare and update the shared task plan. |
+
+## First 60 seconds
+
+The installed CLI has a source-checkout-free validation path:
+
+```bash
+python -m pip install synapse-channel
+synapse doctor
+synapse demo
+```
+
+`synapse doctor` reports local wiring issues. On a fresh machine, a missing hub or
+waiter can be a warning before services are installed. `synapse demo` starts an
+ephemeral local hub, drives a planner/worker flow, and is successful when it
+prints:
+
+```text
+success: coordination demo completed
+```
 
 ## Recovery: picking up after a restart
 

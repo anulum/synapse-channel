@@ -80,6 +80,26 @@ This installs the `synapse` command. To run the hub as an always-on local servic
 or a container, see the [deployment guide](docs/deployment.md) (a `systemd` user
 unit and `docker compose` are both included).
 
+## First 60 seconds
+
+On a clean Python environment, verify the installed CLI before wiring agents into
+a real repository:
+
+```bash
+python -m pip install synapse-channel
+synapse doctor
+synapse demo
+```
+
+`synapse doctor` reports local setup issues such as identity, hub exposure, and
+missing waiters. A brand-new machine may warn that no hub or waiter is running;
+that is expected before service setup. `synapse demo` starts its own local hub,
+drives a planner/worker coordination flow, and succeeds when it prints:
+
+```text
+success: coordination demo completed
+```
+
 ## Releases
 
 This package is developed in the open and dogfooded daily: a fleet of coding
@@ -126,6 +146,7 @@ synapse manifest                                     # print the capability card
 synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1  # emit A2A Agent Card JSON
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877             # run the HTTP+JSON A2A bridge
 synapse doctor                                       # check for common misconfigs (identity, exposure, hub, waiter)
+synapse demo                                         # installed self-check: local hub + planner/worker flow
 synapse hub --host 0.0.0.0 --token s3cret            # require a shared secret when binding off-loopback
 synapse send --token s3cret --name USER "hello"      # agents present the token to a secured hub
 ```
@@ -396,11 +417,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.44.1 |
 | Public API exports | 59 |
-| Package modules | 105 |
-| Classes | 73 |
+| Package modules | 107 |
+| Classes | 74 |
 | Wire message types | 52 |
-| CLI subcommands | 35 |
-| Test functions | 1366 |
+| CLI subcommands | 36 |
+| Test functions | 1370 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |
