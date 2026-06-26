@@ -147,6 +147,7 @@ synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1  # emit A2A Age
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877             # run the HTTP+JSON A2A bridge
 synapse doctor                                       # check for common misconfigs (identity, exposure, hub, waiter)
 synapse demo                                         # installed self-check: local hub + planner/worker flow
+synapse new coding-fleet ./demo-fleet                # scaffold a runnable two-agent coding demo workspace
 synapse hub --host 0.0.0.0 --token s3cret            # require a shared secret when binding off-loopback
 synapse hub --max-connections-per-host 4             # cap simultaneous sockets from one remote host
 synapse send --token s3cret --name USER "hello"      # agents present the token to a secured hub
@@ -168,6 +169,7 @@ Synapse coordinates the agents you already run; it does not replace them.
   hook release it on commit, so two sessions never touch the same files.
 
   ```bash
+  synapse new coding-fleet ./demo-fleet        # optional: generate a runnable no-collision demo
   synapse git-init --name aider-1              # one step: install the hooks + write the conventions guide
   synapse git-claim AUTH --paths src/auth --name aider-1
   aider src/auth/*.py                          # ... edit; the post-commit hook releases the claim
@@ -418,11 +420,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.44.1 |
 | Public API exports | 59 |
-| Package modules | 107 |
-| Classes | 74 |
+| Package modules | 110 |
+| Classes | 75 |
 | Wire message types | 52 |
-| CLI subcommands | 36 |
-| Test functions | 1374 |
+| CLI subcommands | 38 |
+| Test functions | 1380 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

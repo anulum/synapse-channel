@@ -13,10 +13,18 @@ Three self-contained, runnable demos live in the `examples/` directory. Each one
 starts its own in-process hub, so nothing needs to be running first:
 
 ```bash
-pip install synapse-channel
+python -m pip install synapse-channel
 python examples/coordination_demo.py
 python examples/llm_team_demo.py
 python examples/coding_agents_demo.py
+```
+
+For the coding-agents flow as an installed, editable workspace:
+
+```bash
+synapse new coding-fleet ./demo-fleet
+cd ./demo-fleet
+python run_demo.py
 ```
 
 ## `coordination_demo.py`

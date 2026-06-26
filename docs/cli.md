@@ -6,6 +6,7 @@ The `synapse` command exposes the following subcommands.
 | --- | --- |
 | `synapse hub` | Run the coordination hub. |
 | `synapse demo` | Run a self-contained local coordination demo and print a success marker. |
+| `synapse new coding-fleet` | Scaffold a runnable two-agent coding demo workspace. |
 | `synapse health` | Probe the hub; exit `0` if reachable, `1` if not (wired as a container healthcheck). |
 | `synapse worker` | Run a model worker that answers on the channel. |
 | `synapse team` | Launch a hub plus one or two local workers in one shot. |
@@ -49,6 +50,17 @@ prints:
 ```text
 success: coordination demo completed
 ```
+
+For a generated workspace with editable files and a runnable no-collision coding
+scenario:
+
+```bash
+synapse new coding-fleet ./demo-fleet
+cd ./demo-fleet
+python run_demo.py
+```
+
+The generated demo succeeds when it prints `success: coding fleet demo completed`.
 
 ## Recovery: picking up after a restart
 

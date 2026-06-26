@@ -19,6 +19,21 @@ planner/worker coordination flow, and succeeds when it prints:
 success: coordination demo completed
 ```
 
+To inspect the coding-agent workflow as files you can edit, scaffold a throwaway
+workspace:
+
+```bash
+synapse new coding-fleet ./demo-fleet
+cd ./demo-fleet
+python run_demo.py
+```
+
+That generated workspace succeeds when it prints:
+
+```text
+success: coding fleet demo completed
+```
+
 A complete session — declare a plan with a dependency, complete a task, and watch the
 dependent task unblock:
 
