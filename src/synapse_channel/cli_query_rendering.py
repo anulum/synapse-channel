@@ -24,6 +24,27 @@ def _render_who(roster: list[str], *, project: str | None = None) -> None:
         print(f"  {agent_name}")
 
 
+def _render_who_me(roster: list[str], *, name: str) -> None:
+    """Render one identity's presence and wake-loop status from a roster snapshot.
+
+    Parameters
+    ----------
+    roster : list[str]
+        Online identities reported by the hub.
+    name : str
+        Identity being inspected. The query connection must use a different
+        connection name so this report does not create the presence it describes.
+    """
+    agents = set(roster)
+    waiter = f"{name}-rx"
+    presence = "online" if name in agents else "missing"
+    waiter_state = "online" if waiter in agents else "missing"
+    print(f"Me: {name}")
+    print(f"  presence: {presence}")
+    print(f"  waiter: {waiter_state} ({waiter})")
+    print("  note: presence is not a wake loop; the waiter is what wakes quiet terminals.")
+
+
 def _render_state(snapshot: dict[str, Any], *, owner: str | None = None) -> None:
     """Render live claims and checkpoints, optionally filtered to one owner namespace."""
     claims = list(snapshot.get("active_claims", []))

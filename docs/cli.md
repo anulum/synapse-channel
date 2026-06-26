@@ -21,7 +21,7 @@ The `synapse` command exposes the following subcommands.
 | `synapse board` | Print the shared task/progress blackboard. |
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
 | `synapse manifest` | Print the capability manifest of advertised agents. |
-| `synapse who` | List the agents currently online, optionally for one project. |
+| `synapse who` | List the agents currently online, optionally for one project or this identity with `--me`. |
 | `synapse state` | Print active claims and their checkpoints (a resume view). |
 | `synapse doctor` | Check for common coordination misconfigs (identity, exposure, hub, waiter); exit non-zero on a failure. |
 | `synapse git-init` | One-step claim-aware setup: install the hooks and write a `.synapse/` conventions guide. |
@@ -98,8 +98,15 @@ agent on the project, `quantum/claude-*` for one role), or `all`. List who is li
 ```bash
 synapse who                       # every agent online
 synapse who --project quantum     # only quantum/... instances
+synapse who --name quantum/codex-2b40 --me  # this identity plus its -rx waiter status
+syn who --me                      # same check using the resolved syn identity
 synapse send --target quantum/* "rebasing main now"   # the whole project team
 ```
+
+`synapse who --me` queries as `<name>-who`, then reports `<name>` and
+`<name>-rx`, so the check does not create the presence it describes. It keeps the
+output honest: presence is not a wake loop, and a missing `-rx` waiter means
+directed messages will not wake that terminal promptly.
 
 `synapse wait --directed-only` suppresses *routine* broadcasts: it wakes on messages
 that name you (or a group you are in), but still wakes on a **priority broadcast**

@@ -14,6 +14,14 @@ from synapse_channel import cli, cli_queries
 def test_parser_who() -> None:
     args = cli.build_parser().parse_args(["who", "--project", "quantum"])
     assert args.project == "quantum"
+    assert args.me is False
+    assert args.func is cli_queries._cmd_who
+
+
+def test_parser_who_me() -> None:
+    args = cli.build_parser().parse_args(["who", "--name", "quantum/codex-1", "--me"])
+    assert args.name == "quantum/codex-1"
+    assert args.me is True
     assert args.func is cli_queries._cmd_who
 
 

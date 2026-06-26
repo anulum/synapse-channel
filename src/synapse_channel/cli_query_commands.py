@@ -18,6 +18,7 @@ from synapse_channel.cli_query_rendering import (
     _print_manifest,
     _render_state,
     _render_who,
+    _render_who_me,
 )
 from synapse_channel.cli_query_transport import AgentFactory, _drop_message, _query_hub
 from synapse_channel.client.agent import SynapseAgent
@@ -77,6 +78,7 @@ async def _who(
     uri: str,
     name: str,
     project: str | None = None,
+    me: bool = False,
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
     ready_timeout: float = 5.0,
@@ -93,6 +95,10 @@ async def _who(
         Hub URI and the requester's display name.
     project : str or None, optional
         When set, keep only agents named ``project`` or ``project/...``.
+    me : bool, optional
+        When true, inspect ``name`` and ``name-rx`` instead of printing the full
+        roster. The query uses ``name-who`` as its temporary connection so it does
+        not make ``name`` appear online by asking the question.
     agent_factory : AgentFactory, optional
         Factory for the client agent; injectable for testing.
     token : str or None, optional
@@ -106,15 +112,20 @@ async def _who(
     int
         ``0`` once a roster is printed, ``1`` when the hub could not be reached.
     """
+    query_name = f"{name}-who" if me else name
     return await _query_hub(
         uri=uri,
-        name=name,
+        name=query_name,
         token=token,
         agent_factory=agent_factory,
         response_type=MessageType.WHO_SNAPSHOT,
         transform=lambda data: [str(agent) for agent in data.get("online_agents", [])],
         request=lambda agent: agent.request_who(),
-        render=lambda roster: _render_who(roster, project=project),
+        render=(
+            (lambda roster: _render_who_me(roster, name=name))
+            if me
+            else (lambda roster: _render_who(roster, project=project))
+        ),
         ready_timeout=ready_timeout,
     )
 
@@ -126,6 +137,7 @@ def _cmd_who(args: argparse.Namespace) -> int:
             uri=args.uri,
             name=args.name,
             project=args.project,
+            me=args.me,
             token=args.token,
             ready_timeout=args.ready_timeout,
         )
