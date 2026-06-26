@@ -154,6 +154,38 @@ def test_a2a_task_store_prunes_expired_terminal_tasks() -> None:
     assert store.get("recent-terminal") is not None
 
 
+def test_a2a_task_store_prunes_tasks_with_malformed_retention_timestamps() -> None:
+    store = A2ATaskStore(retention_seconds=1.0)
+    store.put(
+        {
+            "id": "bad-metadata",
+            "status": {"state": "TASK_STATE_COMPLETED"},
+            "metadata": "bad",
+        }
+    )
+    store.put(
+        {
+            "id": "bad-updated-at",
+            "status": {"state": "TASK_STATE_COMPLETED"},
+            "metadata": {"updatedAt": "not-a-float"},
+        }
+    )
+
+    assert store.prune_expired(now=2.0) == ["bad-metadata", "bad-updated-at"]
+    assert store.list_tasks() == []
+
+
+def test_a2a_task_store_rolls_back_expiry_prune_when_save_fails(tmp_path: Path) -> None:
+    storage_path = tmp_path / "a2a-state.json"
+    store = A2ATaskStore(storage_path, retention_seconds=1.0, state_writer=_writer_failing_after(1))
+    original = store.put(_stored_task("old-terminal", updated_at=1.0))
+
+    with pytest.raises(OSError, match="blocked write"):
+        store.prune_expired(now=3.0)
+
+    assert store.get("old-terminal") == original
+
+
 def test_a2a_task_store_bounds_history_artifacts_and_push_configs() -> None:
     store = A2ATaskStore(
         max_task_history=2,

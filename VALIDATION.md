@@ -53,6 +53,17 @@ The coverage gate is configured in `pyproject.toml` (`[tool.coverage]`,
 standard non-executable guards (`if __name__ == "__main__":`, `if TYPE_CHECKING:`,
 `pragma: no cover`); no functional code is excluded.
 
+A2A bridge modules also have a focused module-specific ratchet for the local
+hardening lane. After running the focused A2A tests under coverage, generate a
+JSON report with `coverage json --fail-under=0` and run:
+
+```bash
+.venv/bin/python tools/check_a2a_module_coverage.py .coverage-a2a.json
+```
+
+The ratchet requires 100% line and branch coverage for `a2a_server.py`,
+`cli_a2a.py`, `a2a_events.py`, and `a2a_store.py`.
+
 ## Benchmarks
 
 Benchmarks are runnable, committed scripts under `benchmarks/`, with their

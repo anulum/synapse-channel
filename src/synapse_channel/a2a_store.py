@@ -171,8 +171,6 @@ class A2ATaskStore:
                 for task_id in self._task_ids_by_age(terminal_only=False)
                 if task_id != protected_task_id
             ]
-            if not candidates:
-                candidates = self._task_ids_by_age(terminal_only=False)
             task_id = candidates[0]
             self._remove_task_locked(task_id)
             removed.append(task_id)

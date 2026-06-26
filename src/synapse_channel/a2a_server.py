@@ -20,7 +20,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable, Coroutine
-from typing import Any
+from typing import Any, cast
 
 from synapse_channel.a2a import JsonMap
 from synapse_channel.a2a_events import A2ATaskEvents
@@ -267,11 +267,9 @@ class A2ABridge:
         if not isinstance(config, dict):
             return None
         task = self.store.get(task_id)
-        stored = self.create_push_notification_config(task_id, config)
-        if stored is None:
-            return None
         if task is None:
             return None
+        stored = cast(JsonMap, self.create_push_notification_config(task_id, config))
         self._deliver_push_notification(task=task, config=stored)
         return stored
 
