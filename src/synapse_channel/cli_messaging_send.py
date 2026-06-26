@@ -18,6 +18,26 @@ from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.protocol import MessageType
 
 
+def _one_shot_sender_name(name: str) -> str:
+    """Return the sender identity used by one-shot ``send`` connections.
+
+    Parameters
+    ----------
+    name : str
+        Identity supplied through ``synapse send --name``.
+
+    Returns
+    -------
+    str
+        ``name`` unchanged unless it looks like the common waiter identity
+        ``<agent>-rx``. In that case the one-shot command sends as ``<agent>`` so
+        it does not collide with the persistent wake socket.
+    """
+    if name.endswith("-rx") and len(name) > len("-rx"):
+        return name[: -len("-rx")]
+    return name
+
+
 async def _send(
     *,
     uri: str,
@@ -52,17 +72,18 @@ async def _send(
     int
         ``0`` on success, ``1`` when the hub could not be reached.
     """
+    sender_name = _one_shot_sender_name(name)
     replies: list[dict[str, Any]] = []
 
     async def collect(data: dict[str, Any]) -> None:
-        if data.get("type") == MessageType.CHAT and data.get("sender") != name:
+        if data.get("type") == MessageType.CHAT and data.get("sender") != sender_name:
             replies.append(data)
 
-    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
+    agent = agent_factory(sender_name, collect, uri=uri, verbose=False, token=token)
     conn_task = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
-            print(f"[{name}] Could not reach hub at {uri}.")
+            print(f"[{sender_name}] Could not reach hub at {uri}.")
             return 1
         await agent.chat(message, target=target, priority=priority)
         if wait_seconds > 0:

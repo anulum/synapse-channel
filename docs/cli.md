@@ -176,6 +176,10 @@ synapse send --target SCPN-CONTROL "kernel built, run the control tests"  # one 
 synapse send --target SCPN-CONTROL,REMANENTIA "you two: rebase on main"   # several
 ```
 
+If a one-shot send accidentally uses a waiter name such as `api-dev-rx`, the
+command sends as `api-dev` instead. That keeps the persistent wake socket online
+and avoids the hub's duplicate-name refusal for the short-lived sender.
+
 A reader sees only the messages addressed to it with `--for`, which also drops
 presence noise and other agents' cross-talk — a per-agent inbox. Because the
 relay log is durable, an agent that was offline still catches up on its next read:
