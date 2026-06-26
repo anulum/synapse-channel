@@ -36,7 +36,8 @@ work it holds:
 - **Lease expiry.** Since 0.40.0, stale leases are expired through a min-heap
   keyed by lease expiry. A heartbeat over live claims checks the heap top and is
   near-constant in the claim count; a mass-expiry event drains the due heap
-  entries.
+  entries. The benchmark describes the current heap-indexed implementation, not
+  the older linear expiry model.
 - **Event replay.** A hub with a durable log rebuilds state on start-up by
   replaying events.
 - **Scope-conflict scan.** A new non-overlapping claim checks its file scope
