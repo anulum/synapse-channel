@@ -57,9 +57,11 @@ layers are complementary: the presence holder is always-on reachability; the
 `syn arm` listener is promptness while the agent runs.
 
 > **Presence is not a wake.** The presence holder keeps the project in the roster and
-> the feed durable, but it does **not** wake the agent — only an active `syn arm` or
-> `synapse arm` listener does. Keep the listener running for promptness; the presence
-> daemon is a safety net for reachability and durability, not a substitute for it.
+> the feed durable, but it does **not** wake the agent. Use an active `syn arm` /
+> `synapse arm` listener for passive receiver promptness, or `synapse codex-tmux`
+> when an existing Codex terminal must receive a fixed wake prompt. The presence
+> daemon is a safety net for reachability and durability, not a substitute for
+> either wake path.
 
 ## Provider-neutral worker session
 
@@ -73,6 +75,21 @@ The launcher exports `SYN_PROJECT` and `SYN_IDENTITY`, starts a local `syn arm`
 sidecar, runs the provider command, and stops the sidecar when the provider
 command exits. The sidecar is a local socket listener; it does not spend model
 tokens while waiting.
+
+## Codex tmux wake transport
+
+Use `codex-tmux` when the important state is already loaded in an existing Codex
+terminal session:
+
+```bash
+synapse codex-tmux start --identity myproject/codex-main --session myproject-codex --cwd "$PWD"
+synapse codex-tmux wait --identity myproject/codex-main --session myproject-codex --cwd "$PWD"
+```
+
+The wait loop blocks on `synapse wait` and then injects one fixed prompt into the
+tmux pane. It never pastes the Synapse message body into the terminal; Codex reads
+its inbox after the prompt. DIRECTOR-style routing can sit above this later, but
+the local tmux transport remains the only component that writes to the terminal.
 
 ## Fresh terminal auto-connect
 

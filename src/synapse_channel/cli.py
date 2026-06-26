@@ -39,6 +39,7 @@ The ``synapse`` command exposes these subcommands:
 * ``a2a-card`` — emit an Agent2Agent Agent Card projected from the live manifest;
 * ``init`` — print or install local user services for hub, presence, and wake arming;
 * ``worker-session`` — launch a provider command with identity env and a wake sidecar.
+* ``codex-tmux`` — wake an existing Codex tmux session from Synapse messages;
 * ``shell-hook`` / ``install-shell-hook`` — auto-arm fresh terminals and provider CLIs.
 
 This module is the thin entry point: it builds the top-level parser
@@ -63,6 +64,7 @@ from typing import Any
 from synapse_channel import __version__
 from synapse_channel.cli_a2a import add_parsers as add_a2a_parsers
 from synapse_channel.cli_arm import add_parser as add_arm_parser
+from synapse_channel.cli_codex_tmux import add_parsers as add_codex_tmux_parsers
 from synapse_channel.cli_demo import add_parsers as add_demo_parsers
 from synapse_channel.cli_doctor import add_parsers as add_doctor_parsers
 from synapse_channel.cli_git import add_parsers as add_git_parsers
@@ -131,6 +133,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_query_parsers(sub)
 
     add_service_parsers(sub)
+
+    add_codex_tmux_parsers(sub)
 
     add_shell_parsers(sub)
 

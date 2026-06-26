@@ -118,6 +118,16 @@ hardening rather than churn. The wire protocol and the public Python API stay
 backwards-compatible within a major version; any breaking change is called out in
 the changelog.
 
+Current `0.x` releases are pre-1.0 development releases, not the stable
+commercial release line. `1.0.0` is planned as the first stable commercial
+release of SYNAPSE CHANNEL, with the operational contracts, packaging, support
+surface, and commercial licensing terms documented as part of that release.
+
+Funding and ecosystem co-ownership discussions are welcome for organisations or
+individuals who want to help mature the coordination layer for production
+multi-agent development. See [commercial licensing](docs/commercial.md) or write
+to `protoscience@anulum.li`.
+
 If you need a fixed target, pin a version (`synapse-channel==X.Y.Z`); to get the
 latest fixes, track the newest release. Both are supported.
 
@@ -213,6 +223,16 @@ Synapse coordinates the agents you already run; it does not replace them.
 
   ```bash
   synapse worker-session --identity myrepo/worker -- codex --sandbox danger-full-access
+  ```
+
+- **Wake an existing Codex terminal session:** `codex-tmux` keeps the Codex TUI
+  in a named tmux session and injects a fixed wake prompt when Synapse receives a
+  directed message. It does not paste the Synapse payload into the terminal;
+  Codex reads the inbox itself after waking.
+
+  ```bash
+  synapse codex-tmux start --identity myrepo/codex-main --session myrepo-codex --cwd "$PWD"
+  synapse codex-tmux wait --identity myrepo/codex-main --session myrepo-codex --cwd "$PWD"
   ```
 
 ### Agent ergonomics — the `syn` commands
@@ -470,11 +490,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.45.0 |
 | Public API exports | 59 |
-| Package modules | 116 |
-| Classes | 85 |
+| Package modules | 118 |
+| Classes | 91 |
 | Wire message types | 53 |
-| CLI subcommands | 39 |
-| Test functions | 1480 |
+| CLI subcommands | 44 |
+| Test functions | 1493 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |
