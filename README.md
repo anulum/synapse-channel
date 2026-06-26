@@ -202,9 +202,19 @@ To make fresh terminals connect automatically, install the shell hook once:
 synapse install-shell-hook --shell auto
 ```
 
-New Bash/Fish/Zsh terminals then resolve the current git project at each prompt,
-export `SYN_PROJECT`/`SYN_IDENTITY`, and keep a cheap `synapse arm` sidecar running
-for that project. The hook also wraps common provider commands (`codex`, `claude`,
+New Bash/Fish/Zsh terminals then export `SYN_PROJECT`/`SYN_IDENTITY` and keep a
+cheap `synapse arm` sidecar running. The hook does **not** silently join whatever
+git checkout the terminal happens to start in. It joins the neutral
+`SYNAPSE_DEFAULT_PROJECT` lane, or `user` when unset, unless you explicitly set
+`SYN_PROJECT`/`SYN_IDENTITY` or opt a repository in with `.synapse/project`:
+
+```bash
+mkdir -p .synapse
+printf '%s\n' myrepo > .synapse/project
+```
+
+For legacy CWD-derived behavior, set `SYNAPSE_AUTO_PROJECT_FROM_CWD=1` in that
+terminal. The hook also wraps common provider commands (`codex`, `claude`,
 `gemini`, `agent`, `ask`, `ollama`) through `synapse worker-session`, so cloud and
 local LLM sessions inherit the same Synapse identity without polling or manual
 arming. Set `SYNAPSE_AUTO_CONNECT=0` to disable it for a terminal.
@@ -386,7 +396,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 56 |
 | Wire message types | 52 |
 | CLI subcommands | 35 |
-| Test functions | 1298 |
+| Test functions | 1305 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |
