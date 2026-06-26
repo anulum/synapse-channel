@@ -160,7 +160,7 @@ def resolve_identity(
 
     if agent_id and agent_id.strip():
         identity = f"{proj}/{agent_type.strip()}-{agent_id.strip()}"
-    elif syn_identity and not (project and project.strip()) and not syn_project:
+    elif syn_identity and not (project and project.strip()):
         identity = syn_identity
     else:
         identity = proj
