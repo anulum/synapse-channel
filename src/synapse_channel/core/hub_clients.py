@@ -21,12 +21,16 @@ class HubClientRegistry:
         *,
         max_clients: int,
         max_unauth_clients: int | None,
+        max_connections_per_host: int | None,
         takeover_cooldown: float,
         clock: Callable[[], float],
     ) -> None:
         self.max_clients = max(int(max_clients), 1)
         self.max_unauth_clients = (
             self.max_clients if max_unauth_clients is None else max(int(max_unauth_clients), 1)
+        )
+        self.max_connections_per_host = (
+            None if max_connections_per_host is None else max(int(max_connections_per_host), 1)
         )
         self.takeover_cooldown = max(float(takeover_cooldown), 0.0)
         self._clock = clock
@@ -35,6 +39,8 @@ class HubClientRegistry:
         self.unauth_clients: set[Any] = set()
         self.agent_sockets: dict[str, Any] = {}
         self.socket_agent: dict[Any, str] = {}
+        self._socket_hosts: dict[Any, str] = {}
+        self._host_counts: dict[str, int] = {}
 
     def at_capacity(self) -> bool:
         """Return whether the total connection table is full."""
@@ -44,13 +50,31 @@ class HubClientRegistry:
         """Return whether the pre-authentication connection table is full."""
         return len(self.unauth_clients) >= self.max_unauth_clients
 
+    def host_at_capacity(self, websocket: Any) -> bool:
+        """Return whether ``websocket``'s remote host already holds its socket cap."""
+        if self.max_connections_per_host is None:
+            return False
+        return (
+            self._host_counts.get(self.remote_host(websocket), 0) >= self.max_connections_per_host
+        )
+
     def add_client(self, websocket: Any) -> None:
         """Record a newly admitted socket."""
         self.connected_clients.add(websocket)
+        host = self.remote_host(websocket)
+        self._socket_hosts[websocket] = host
+        self._host_counts[host] = self._host_counts.get(host, 0) + 1
 
     def drop_client(self, websocket: Any) -> str | None:
         """Drop a socket and return the active agent name that disappeared, if any."""
         self.connected_clients.discard(websocket)
+        host = self._socket_hosts.pop(websocket, None)
+        if host is not None:
+            remaining = self._host_counts.get(host, 0) - 1
+            if remaining > 0:
+                self._host_counts[host] = remaining
+            else:
+                self._host_counts.pop(host, None)
         name = self.socket_agent.pop(websocket, None)
         if name is not None and self.agent_sockets.get(name) == websocket:
             self.agent_sockets.pop(name, None)
@@ -139,7 +163,8 @@ class HubClientRegistry:
             wait_closed = getattr(websocket, "wait_closed", None)
             if callable(wait_closed):
                 await wait_closed()
-        except Exception:
+        # Closing is best-effort: the socket may already be gone.
+        except Exception:  # nosec B110
             pass
 
     @staticmethod

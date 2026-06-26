@@ -137,6 +137,10 @@ operator on one machine. Before exposing it beyond `localhost`:
 - Bind off-loopback only with a shared secret: `synapse hub --host 0.0.0.0 --token
   "$SYNAPSE_TOKEN"`. The hub **refuses to start** off-loopback without a token (pass
   `--insecure-off-loopback` to accept the risk and bind anyway).
+- For shared or exposed hosts, cap connection churn from one remote host with
+  `--max-connections-per-host <n>`. This counts simultaneous sockets, including
+  sockets still authenticating, and complements `--host-rate`, which limits frame
+  rate rather than connection count.
 - In compose, change the port mapping to `8876:8876` **and** set `SYNAPSE_TOKEN`
   (uncomment the `command:` block). Clients then pass `--token "$SYNAPSE_TOKEN"`.
 - The token is a proportionate gate (constant-time check), not a cryptographic

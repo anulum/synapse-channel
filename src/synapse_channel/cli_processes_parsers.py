@@ -115,6 +115,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "(default: same as --max-clients), bounding an authentication-stall burst.",
     )
     hub.add_argument(
+        "--max-connections-per-host",
+        type=int,
+        default=0,
+        help="Maximum simultaneous sockets admitted from one remote host; 0 disables "
+        "the per-host connection-count cap.",
+    )
+    hub.add_argument(
         "--max-msg-kb",
         type=int,
         default=DEFAULT_MAX_MSG_BYTES // 1024,

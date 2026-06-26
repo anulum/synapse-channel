@@ -37,6 +37,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "relay_max_lines": 5000,
         "max_clients": 64,
         "max_unauth_clients": None,
+        "max_connections_per_host": 0,
         "max_msg_kb": 1024,
         "max_claims_per_agent": 128,
         "max_offers_per_agent": 64,

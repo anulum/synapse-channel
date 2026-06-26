@@ -164,6 +164,7 @@ synapse hub --port 8876 --db ./synapse.db          # crash-safe persistence
 synapse hub --port 8876 --rate 5 --burst 20        # per-agent rate limiting
 synapse hub --port 8876 --relay-log ./feed.ndjson  # mirror the channel to a file
 synapse hub --max-clients 32 --max-msg-kb 256      # cap connections and frame size
+synapse hub --max-connections-per-host 4           # cap simultaneous sockets from one host
 synapse hub --host 0.0.0.0 --token-file ./tok      # token from a file, not argv (ps-safe)
 synapse hub --host 0.0.0.0 --insecure-off-loopback # bind off-loopback WITHOUT a token (refused otherwise)
 ```
@@ -171,10 +172,13 @@ synapse hub --host 0.0.0.0 --insecure-off-loopback # bind off-loopback WITHOUT a
 Binding a non-loopback host without a token (and, with `--metrics`, a metrics
 token) is **refused** by default — the hub will not start exposed by accident;
 `--insecure-off-loopback` downgrades that to a warning for a trusted private
-network. Supply the token with `--token-file` or the `SYNAPSE_TOKEN` environment
-variable rather than `--token`, which is visible in `ps`. The hub drains on `SIGTERM`/`SIGINT`,
-so a container stop shuts it down cleanly. `synapse health` is a liveness probe —
-exit `0` when the hub answers, `1` otherwise — wired as the Docker `HEALTHCHECK`:
+network. `--max-connections-per-host` is a connection-count cap keyed by the
+remote host; it is separate from `--host-rate`, which meters inbound frames from
+that host. Supply the token with `--token-file` or the `SYNAPSE_TOKEN`
+environment variable rather than `--token`, which is visible in `ps`. The hub
+drains on `SIGTERM`/`SIGINT`, so a container stop shuts it down cleanly. `synapse
+health` is a liveness probe — exit `0` when the hub answers, `1` otherwise —
+wired as the Docker `HEALTHCHECK`:
 
 ```bash
 synapse health                       # exit 0 if the local hub is reachable

@@ -148,6 +148,7 @@ synapse a2a-serve --endpoint-url http://127.0.0.1:8877             # run the HTT
 synapse doctor                                       # check for common misconfigs (identity, exposure, hub, waiter)
 synapse demo                                         # installed self-check: local hub + planner/worker flow
 synapse hub --host 0.0.0.0 --token s3cret            # require a shared secret when binding off-loopback
+synapse hub --max-connections-per-host 4             # cap simultaneous sockets from one remote host
 synapse send --token s3cret --name USER "hello"      # agents present the token to a secured hub
 ```
 
@@ -393,7 +394,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | `client` | The reusable async agent connection and coordination helpers. |
 | `persistence` | Append-only SQLite event store (WAL) giving the hub a crash-durable spine. |
 | `journal` | Records mutations as events and replays them to rebuild state on restart. |
-| `ratelimit` | Per-agent token-bucket limiter so one runaway agent cannot swamp the hub. |
+| `ratelimit` | Per-agent and per-host token-bucket limiters, plus per-host connection caps, so one runaway source cannot swamp the hub. |
 | `auth` | Optional shared-secret connect token (proportionate, not a cryptographic identity). |
 | `chat_backends` | Pluggable reply backends (OpenAI-compatible HTTP, rule-based). |
 | `routing` | Classify a request into a task class and route it to a tiered backend. |
@@ -421,7 +422,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 74 |
 | Wire message types | 52 |
 | CLI subcommands | 36 |
-| Test functions | 1370 |
+| Test functions | 1374 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

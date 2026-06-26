@@ -123,6 +123,12 @@ def test_parser_hub_max_unauth_clients() -> None:
     assert args.max_unauth_clients == 8
 
 
+def test_parser_hub_max_connections_per_host() -> None:
+    assert cli.build_parser().parse_args(["hub"]).max_connections_per_host == 0
+    args = cli.build_parser().parse_args(["hub", "--max-connections-per-host", "2"])
+    assert args.max_connections_per_host == 2
+
+
 def test_parser_hub_insecure_off_loopback() -> None:
     assert cli.build_parser().parse_args(["hub"]).insecure_off_loopback is False
     opted = cli.build_parser().parse_args(["hub", "--insecure-off-loopback"])

@@ -198,6 +198,11 @@ class SynapseHub:
         burst cannot fill the connection table for the whole ``auth_timeout``.
         ``None`` (the default) tracks ``max_clients``, i.e. no extra restriction
         until an operator sets a tighter value. Ignored on an open hub.
+    max_connections_per_host : int or None, optional
+        Maximum simultaneous sockets admitted from one remote host. This is
+        distinct from the total ``max_clients`` ceiling and the frame-rate
+        ``host_rate_limiter``; it counts open sockets, including sockets still in
+        their authentication window. ``None`` disables the per-host connection cap.
     metrics_token : str or None, optional
         When set (and ``enable_metrics`` is on), ``GET /metrics`` and ``GET
         /health`` require this token — presented as ``Authorization: Bearer
@@ -232,6 +237,7 @@ class SynapseHub:
         authenticator: TokenAuthenticator | None = None,
         max_clients: int = DEFAULT_MAX_CLIENTS,
         max_unauth_clients: int | None = None,
+        max_connections_per_host: int | None = None,
         max_msg_bytes: int = DEFAULT_MAX_MSG_BYTES,
         max_claims_per_agent: int = MAX_CLAIMS_PER_AGENT,
         max_offers_per_agent: int = MAX_OFFERS_PER_AGENT,
@@ -259,11 +265,13 @@ class SynapseHub:
         self.clients = HubClientRegistry(
             max_clients=max_clients,
             max_unauth_clients=max_unauth_clients,
+            max_connections_per_host=max_connections_per_host,
             takeover_cooldown=takeover_cooldown,
             clock=self._clock,
         )
         self.max_clients = self.clients.max_clients
         self.max_unauth_clients = self.clients.max_unauth_clients
+        self.max_connections_per_host = self.clients.max_connections_per_host
         self.takeover_cooldown = self.clients.takeover_cooldown
         self.max_history = max(int(max_history), 1)
         self.compact_hint_threshold = max(1, int(compact_hint_threshold))
@@ -761,6 +769,9 @@ class SynapseHub:
         """
         if self.clients.at_capacity():
             await websocket.close(code=4013, reason="hub at capacity")
+            return
+        if self.clients.host_at_capacity(websocket):
+            await websocket.close(code=4015, reason="too many connections from host")
             return
         if self.authenticator is not None and self.clients.unauthenticated_at_capacity():
             await websocket.close(code=4014, reason="too many unauthenticated connections")
