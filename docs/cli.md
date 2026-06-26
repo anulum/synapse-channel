@@ -102,6 +102,7 @@ synapse who --name quantum/codex-2b40 --me  # this identity plus its -rx waiter 
 syn who --me                      # same check using the resolved syn identity
 syn reap                          # list this identity's shell-hook waiter pidfile
 syn reap --pid 1234               # clean up only that verified identity waiter PID
+syn locks                         # list this project's leases, scopes, ages, and release commands
 synapse send --target quantum/* "rebasing main now"   # the whole project team
 ```
 
@@ -131,6 +132,14 @@ independent, so one repo's push-lock never blocks another's. The lease is held o
 for the wrapped command and dropped when it exits. A claim that no commit or merge
 will auto-release — a `git-claim --auto-release-on manual` — is dropped by its owner
 with `synapse release <task> --name <owner>`.
+
+Use `syn locks` for the operator view before releasing or asking another owner to
+release. It queries the live state snapshot as `<identity>-locks`, filters to the
+resolved project by default, and prints the task id, holder, scope, age, remaining
+lease time, checkpoint, git branch context, and the exact `synapse release ...`
+command. `syn locks --all` removes the project filter; `syn locks --owner <name>`
+shows one owner or project namespace; `syn locks --json` emits the same rows as
+JSON.
 
 ## Getting woken on a message
 

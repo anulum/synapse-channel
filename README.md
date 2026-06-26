@@ -226,6 +226,7 @@ syn board                         # the shared task/progress board
 syn who --me                      # show whether this identity and its -rx waiter are online
 syn reap                          # list this identity's shell-hook waiter pidfile
 syn reap --pid 1234               # remove a dead pidfile or SIGTERM only the verified waiter PID
+syn locks                         # list this project's active leases with release commands
 ```
 
 The one thing it gets right that a hand-rolled shell alias does not is **identity**.
@@ -239,12 +240,15 @@ directory, a system path) is flagged rather than used in silence. Set
 it reports the identity's presence separately from its `-rx` waiter because
 presence is not a wake loop.
 
-`syn-name`/`syn-wait`/`syn-say`/`syn-inbox`/`syn-board`/`syn-reap` aliases are
-installed too; `syn-wait` uses the same persistent auto-rearming path as
-`syn arm`. `syn reap` is the safe cleanup path for shell-hook waiter sidecars: it
-only inspects this resolved identity's pidfile, and it refuses to signal a PID
+`syn-name`/`syn-wait`/`syn-say`/`syn-inbox`/`syn-board`/`syn-reap`/`syn-locks`
+aliases are installed too; `syn-wait` uses the same persistent auto-rearming path
+as `syn arm`. `syn reap` is the safe cleanup path for shell-hook waiter sidecars:
+it only inspects this resolved identity's pidfile, and it refuses to signal a PID
 unless the live command line verifies as that exact identity's `synapse arm`
-waiter. It never pattern-kills processes.
+waiter. It never pattern-kills processes. `syn locks` queries the live state
+snapshot using the resolved identity and prints active leases for the project:
+holder, scope, age, remaining TTL, checkpoint/git context, and the explicit
+`synapse release <task> --name <owner>` command.
 
 To make fresh terminals connect automatically, install the shell hook once:
 
@@ -356,6 +360,14 @@ stays **git-agnostic** — it stores the branch as opaque metadata and never run
 git or reads a filesystem — so all git work is on the client. See the
 [git-native claims guide](docs/git-claims.md).
 
+For a concise lease view while coordinating a session:
+
+```bash
+syn locks              # current project only
+syn locks --all        # every active lease
+syn locks --owner api  # one owner or project namespace
+```
+
 ## Coordination model
 
 1. Claim before you work: an agent leases a task by id; a live lease blocks other
@@ -446,11 +458,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.45.0 |
 | Public API exports | 59 |
-| Package modules | 113 |
-| Classes | 79 |
+| Package modules | 114 |
+| Classes | 81 |
 | Wire message types | 52 |
 | CLI subcommands | 39 |
-| Test functions | 1418 |
+| Test functions | 1429 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

@@ -432,6 +432,35 @@ def test_main_reap_uses_resolved_identity() -> None:
     ]
 
 
+def test_main_locks_uses_resolved_identity() -> None:
+    seen: list[tuple[Identity, list[str]]] = []
+
+    def locks_runner(identity: Identity, rest: Sequence[str]) -> int:
+        seen.append((identity, list(rest)))
+        return 0
+
+    assert (
+        ergonomics.main(
+            ["locks", "--all"],
+            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            locks_runner=locks_runner,
+        )
+        == 0
+    )
+    assert seen == [
+        (
+            Identity(
+                project="SYNAPSE-CHANNEL",
+                identity="SYNAPSE-CHANNEL/codex-1",
+                source="env",
+                plausible=True,
+            ),
+            ["--all"],
+        )
+    ]
+
+
 def test_main_warns_on_an_implausible_identity(capsys: pytest.CaptureFixture[str]) -> None:
     def dispatch(argv: list[str] | None = None) -> int:
         return 0
@@ -461,6 +490,7 @@ def test_aliases_dispatch_to_their_verb() -> None:
     assert ergonomics.alias_inbox([], dispatcher=dispatch) == 0
     assert ergonomics.alias_board([], dispatcher=dispatch) == 0
     assert ergonomics.alias_reap(["--pid", "1234"], dispatcher=dispatch) == 0
+    assert ergonomics.alias_locks(["--all"], dispatcher=dispatch) == 0
     assert seen == [
         ["arm", "--timeout", "5"],
         ["say", "CEO", "hi"],
@@ -468,4 +498,5 @@ def test_aliases_dispatch_to_their_verb() -> None:
         ["inbox"],
         ["board"],
         ["reap", "--pid", "1234"],
+        ["locks", "--all"],
     ]
