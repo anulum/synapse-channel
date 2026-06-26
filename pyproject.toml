@@ -70,6 +70,7 @@ syn-board = "synapse_channel.ergonomics:alias_board"
 syn-reap = "synapse_channel.ergonomics:alias_reap"
 syn-locks = "synapse_channel.ergonomics:alias_locks"
 syn-ack = "synapse_channel.ergonomics:alias_ack"
+syn-commit = "synapse_channel.ergonomics:alias_commit"
 
 [project.urls]
 Homepage = "https://www.anulum.li"

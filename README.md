@@ -233,6 +233,7 @@ syn reap                          # list this identity's shell-hook waiter pidfi
 syn reap --pid 1234               # remove a dead pidfile or SIGTERM only the verified waiter PID
 syn locks                         # list this project's active leases with release commands
 syn ack BUILD --evidence "pytest -q" --artifact coverage.xml
+syn commit README.md -m "document the change"
 ```
 
 The one thing it gets right that a hand-rolled shell alias does not is **identity**.
@@ -246,7 +247,7 @@ directory, a system path) is flagged rather than used in silence. Set
 it reports the identity's presence separately from its `-rx` waiter because
 presence is not a wake loop.
 
-`syn-name`/`syn-wait`/`syn-say`/`syn-ask`/`syn-inbox`/`syn-board`/`syn-reap`/`syn-locks`/`syn-ack`
+`syn-name`/`syn-wait`/`syn-say`/`syn-ask`/`syn-inbox`/`syn-board`/`syn-reap`/`syn-locks`/`syn-ack`/`syn-commit`
 aliases are installed too; `syn-wait` uses the same persistent auto-rearming path
 as `syn arm`. `syn reap` is the safe cleanup path for shell-hook waiter sidecars:
 it only inspects this resolved identity's pidfile, and it refuses to signal a PID
@@ -257,7 +258,9 @@ holder, scope, age, remaining TTL, checkpoint/git context, and the explicit
 `synapse release <task> --name <owner>` command. `syn ack <task>` posts repeatable
 `--evidence` and `--artifact` values as an `assessment` progress note authored by
 the resolved identity, waits for the hub confirmation, then marks the board task
-`done`.
+`done`. `syn commit <paths> -m <message>` holds the project git lease, stages only
+the requested paths, and commits only those paths so unrelated staged or modified
+files stay out of the commit.
 
 To make fresh terminals connect automatically, install the shell hook once:
 
@@ -467,11 +470,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.45.0 |
 | Public API exports | 59 |
-| Package modules | 115 |
-| Classes | 83 |
+| Package modules | 116 |
+| Classes | 85 |
 | Wire message types | 53 |
 | CLI subcommands | 39 |
-| Test functions | 1465 |
+| Test functions | 1476 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

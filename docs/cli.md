@@ -104,6 +104,7 @@ syn reap                          # list this identity's shell-hook waiter pidfi
 syn reap --pid 1234               # clean up only that verified identity waiter PID
 syn locks                         # list this project's leases, scopes, ages, and release commands
 syn ask <target> <message>        # send, require an online recipient, and wait for replies
+syn commit <paths> -m <message>   # hold the project git lease and commit only those paths
 synapse send --target quantum/* "rebasing main now"   # the whole project team
 ```
 
@@ -147,6 +148,13 @@ lease time, checkpoint, git branch context, and the exact `synapse release ...`
 command. `syn locks --all` removes the project filter; `syn locks --owner <name>`
 shows one owner or project namespace; `syn locks --json` emits the same rows as
 JSON.
+
+Use `syn commit <paths> -m <message>` for the common commit workflow. It resolves
+the current identity, acquires the `<project>:git` lease, runs `git add -A --`
+only for the supplied paths, and runs `git commit -m <message> --` for the same
+paths. Unrelated staged or modified files stay outside that commit. The command
+rejects empty, absolute, parent-traversal, and `.git` paths before contacting the
+hub.
 
 ## Getting woken on a message
 
