@@ -60,6 +60,16 @@ def test_syn_identity_env_supplies_full_identity() -> None:
     assert ident.source == "env"
 
 
+def test_syn_project_and_identity_env_keep_full_identity() -> None:
+    ident = resolve_identity(
+        env={"SYN_PROJECT": "quantum", "SYN_IDENTITY": "quantum/codex-2b40"},
+        cwd_basename="anulum",
+    )
+    assert ident.project == "quantum"
+    assert ident.identity == "quantum/codex-2b40"
+    assert ident.source == "env"
+
+
 def test_explicit_id_overrides_syn_identity() -> None:
     ident = resolve_identity(
         agent_id="9999", env={"SYN_IDENTITY": "quantum/codex-2b40"}, cwd_basename="x"
