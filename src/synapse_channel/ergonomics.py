@@ -38,9 +38,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from synapse_channel import cli
+from synapse_channel import reap as reap_command
 
 CliDispatcher = Callable[[list[str] | None], int]
 """Callable surface used to dispatch into the package CLI."""
+
+ReapRunner = Callable[["Identity", Sequence[str]], int]
+"""Callable surface used to dispatch the identity-scoped ``syn reap`` command."""
 
 DEFAULT_AGENT_TYPE = "claude"
 """The agent ``type`` used to build a multi-agent identity when ``--id`` is given."""
@@ -261,7 +265,7 @@ def _warn_if_implausible(identity: Identity) -> None:
         )
 
 
-VERBS = ("name", "arm", "say", "inbox", "board", "who")
+VERBS = ("name", "arm", "say", "inbox", "board", "who", "reap")
 """The ``syn`` verbs, each a thin identity-correct wrapper over a package command."""
 
 
@@ -287,7 +291,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Agent type for a multi-agent identity.",
     )
     parser.add_argument(
-        "verb", nargs="?", choices=VERBS, help="name | arm | say | inbox | board | who."
+        "verb", nargs="?", choices=VERBS, help="name | arm | say | inbox | board | who | reap."
     )
     parser.add_argument(
         "rest", nargs=argparse.REMAINDER, help="Arguments passed through to the package command."
@@ -301,6 +305,7 @@ def main(
     env: Mapping[str, str] | None = None,
     cwd_basename: str | None = None,
     dispatcher: CliDispatcher = cli.main,
+    reap_runner: ReapRunner = reap_command.main,
 ) -> int:
     """Resolve identity and dispatch one ``syn`` verb to the package CLI.
 
@@ -314,6 +319,8 @@ def main(
         Git toplevel/CWD basename. When omitted, resolved from the process.
     dispatcher : callable, optional
         Package CLI entry point to call for verbs that delegate to ``synapse``.
+    reap_runner : callable, optional
+        Identity-scoped waiter cleanup entry point for ``syn reap``.
 
     Returns
     -------
@@ -367,6 +374,8 @@ def main(
         return dispatcher(inbox_argv(identity, feed=feed, cursor=cursor))
     if args.verb == "who":
         return dispatcher(who_argv(identity, extra=rest))
+    if args.verb == "reap":
+        return reap_runner(identity, rest)
     # args.verb == "board"
     return dispatcher(board_argv(identity, extra=rest))
 
@@ -414,6 +423,15 @@ def alias_board(
 ) -> int:
     """Entry point for the ``syn-board`` console alias."""
     return dispatcher(["board", *(sys.argv[1:] if argv is None else argv)])
+
+
+def alias_reap(
+    argv: Sequence[str] | None = None,
+    *,
+    dispatcher: Callable[[list[str]], int] = main,
+) -> int:
+    """Entry point for the ``syn-reap`` console alias."""
+    return dispatcher(["reap", *(sys.argv[1:] if argv is None else argv)])
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -224,6 +224,8 @@ syn say REMANENTIA,CEO "ack"      # send to one, several, or all
 syn inbox                         # print messages addressed to you since the cursor
 syn board                         # the shared task/progress board
 syn who --me                      # show whether this identity and its -rx waiter are online
+syn reap                          # list this identity's shell-hook waiter pidfile
+syn reap --pid 1234               # remove a dead pidfile or SIGTERM only the verified waiter PID
 ```
 
 The one thing it gets right that a hand-rolled shell alias does not is **identity**.
@@ -237,8 +239,12 @@ directory, a system path) is flagged rather than used in silence. Set
 it reports the identity's presence separately from its `-rx` waiter because
 presence is not a wake loop.
 
-`syn-name`/`syn-wait`/`syn-say`/`syn-inbox`/`syn-board` aliases are installed too;
-`syn-wait` uses the same persistent auto-rearming path as `syn arm`.
+`syn-name`/`syn-wait`/`syn-say`/`syn-inbox`/`syn-board`/`syn-reap` aliases are
+installed too; `syn-wait` uses the same persistent auto-rearming path as
+`syn arm`. `syn reap` is the safe cleanup path for shell-hook waiter sidecars: it
+only inspects this resolved identity's pidfile, and it refuses to signal a PID
+unless the live command line verifies as that exact identity's `synapse arm`
+waiter. It never pattern-kills processes.
 
 To make fresh terminals connect automatically, install the shell hook once:
 
@@ -440,11 +446,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.45.0 |
 | Public API exports | 59 |
-| Package modules | 112 |
-| Classes | 75 |
+| Package modules | 113 |
+| Classes | 79 |
 | Wire message types | 52 |
 | CLI subcommands | 39 |
-| Test functions | 1396 |
+| Test functions | 1418 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |
