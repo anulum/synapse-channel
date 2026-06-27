@@ -39,6 +39,12 @@ EXPECTED_RESOURCES = {
     "synapse://directory",
 }
 
+EXPECTED_RESOURCE_TEMPLATES = {
+    "synapse://agent/{agent}",
+    "synapse://resource-kind/{kind}",
+    "synapse://task/{task_id}",
+}
+
 
 def test_server_reexports_refactored_mcp_symbols() -> None:
     assert compatibility_module.SynapseHubBridge is bridge_module.SynapseHubBridge
@@ -61,6 +67,9 @@ async def test_build_mcp_server_keeps_tool_and_resource_contract() -> None:
 
     assert {tool.name for tool in await server.list_tools()} == EXPECTED_TOOLS
     assert {str(resource.uri) for resource in await server.list_resources()} == EXPECTED_RESOURCES
+    assert {
+        template.uriTemplate for template in await server.list_resource_templates()
+    } == EXPECTED_RESOURCE_TEMPLATES
 
 
 async def test_bridge_waiter_storage_and_resolution_contract() -> None:

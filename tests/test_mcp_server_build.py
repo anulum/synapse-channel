@@ -61,6 +61,10 @@ async def test_build_registers_tools_and_resources() -> None:
     assert any("state" in uri for uri in resource_uris)
     assert any("manifest" in uri for uri in resource_uris)
     assert any("directory" in uri for uri in resource_uris)
+    template_uris = {template.uriTemplate for template in await server.list_resource_templates()}
+    assert "synapse://task/{task_id}" in template_uris
+    assert "synapse://agent/{agent}" in template_uris
+    assert "synapse://resource-kind/{kind}" in template_uris
 
 
 async def test_every_tool_and_resource_wrapper_dispatches(tmp_path: Path) -> None:
@@ -97,6 +101,9 @@ async def test_every_tool_and_resource_wrapper_dispatches(tmp_path: Path) -> Non
             state_resource = await server.read_resource("synapse://state")
             manifest_resource = await server.read_resource("synapse://manifest")
             directory_resource = await server.read_resource("synapse://directory")
+            task_resource = await server.read_resource("synapse://task/T")
+            agent_resource = await server.read_resource("synapse://agent/me")
+            kind_resource = await server.read_resource("synapse://resource-kind/llm")
         finally:
             await handle.close()
     assert "T" in str(board)
@@ -110,6 +117,9 @@ async def test_every_tool_and_resource_wrapper_dispatches(tmp_path: Path) -> Non
     assert "active_claims" in str(state_resource)
     assert "[]" in str(manifest_resource)
     assert "trust_boundary" in str(directory_resource)
+    assert "task_id" in str(task_resource)
+    assert "capability_card" in str(agent_resource)
+    assert "resources" in str(kind_resource)
     assert hub.blackboard.tasks["T"].status == "done"
 
 

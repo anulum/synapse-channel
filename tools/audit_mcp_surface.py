@@ -57,6 +57,7 @@ class McpSurface:
 
     tools: tuple[str, ...]
     resources: tuple[str, ...]
+    resource_templates: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,7 @@ class AuditResult:
 
     tools: tuple[str, ...]
     resources: tuple[str, ...]
+    resource_templates: tuple[str, ...]
     errors: tuple[str, ...]
 
     @property
@@ -111,6 +113,7 @@ def discover_surface(registration_path: Path) -> McpSurface:
     tree = ast.parse(registration_path.read_text(encoding="utf-8"), filename=str(registration_path))
     tools: list[str] = []
     resources: list[str] = []
+    resource_templates: list[str] = []
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.AsyncFunctionDef):
@@ -120,9 +123,16 @@ def discover_surface(registration_path: Path) -> McpSurface:
                 tools.append(node.name)
             resource = _resource_uri(decorator)
             if resource is not None:
-                resources.append(resource)
+                if "{" in resource and "}" in resource:
+                    resource_templates.append(resource)
+                else:
+                    resources.append(resource)
 
-    return McpSurface(tools=tuple(sorted(tools)), resources=tuple(sorted(resources)))
+    return McpSurface(
+        tools=tuple(sorted(tools)),
+        resources=tuple(sorted(resources)),
+        resource_templates=tuple(sorted(resource_templates)),
+    )
 
 
 def audit_docs(registration_path: Path, docs_path: Path) -> AuditResult:
@@ -141,6 +151,12 @@ def audit_docs(registration_path: Path, docs_path: Path) -> AuditResult:
     if missing_resources:
         errors.append(f"undocumented resources: {', '.join(missing_resources)}")
 
+    missing_templates = tuple(
+        template for template in surface.resource_templates if f"`{template}`" not in docs
+    )
+    if missing_templates:
+        errors.append(f"undocumented resource templates: {', '.join(missing_templates)}")
+
     missing_phrases = tuple(phrase for phrase in REQUIRED_DOC_PHRASES if phrase not in docs)
     if missing_phrases:
         errors.append(f"missing boundary phrases: {'; '.join(missing_phrases)}")
@@ -154,6 +170,7 @@ def audit_docs(registration_path: Path, docs_path: Path) -> AuditResult:
     return AuditResult(
         tools=surface.tools,
         resources=surface.resources,
+        resource_templates=surface.resource_templates,
         errors=tuple(errors),
     )
 
@@ -198,7 +215,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print(
         "MCP surface audit passed: "
-        f"{len(result.tools)} tools, {len(result.resources)} resources documented"
+        f"{len(result.tools)} tools, {len(result.resources)} resources, "
+        f"{len(result.resource_templates)} resource templates documented"
     )
     return 0
 

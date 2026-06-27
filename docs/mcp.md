@@ -100,6 +100,15 @@ issuing a tool call:
 | `synapse://manifest` | The capability cards of advertised agents. |
 | `synapse://directory` | Discovery-only directory joining capability cards and resource offers. |
 
+Three read-only resource templates expose narrow dynamic views without adding
+new tools:
+
+| Resource template | Content |
+|---|---|
+| `synapse://task/{task_id}` | A single board task by id. |
+| `synapse://agent/{agent}` | One agent's capability card plus resource offers. |
+| `synapse://resource-kind/{kind}` | Resource offers matching one resource kind. |
+
 The directory is a marketplace-shaped discovery surface, not an executable
 marketplace. Its entries can help an agent host choose a likely worker or tool,
 but they do not reserve capacity, authorize execution, or certify trust.
@@ -121,6 +130,12 @@ checkpoints, and handoffs into deterministic token matches and returns matched
 hits with source sequence, event kind, source field, task id, actor, evidence
 reference, and matched tokens. It does not create external embeddings, call an
 outside service, certify truth, or mutate hub state.
+
+The dynamic resource templates are MCP v2-style read-only views over the same
+hub snapshots used by `synapse_board`, `synapse_manifest`, and `synapse_state`.
+They provide narrower context retrieval for hosts that support resource
+templates. They do not stream updates, chain tools, reserve resources, assign
+work, or change the hub protocol.
 
 ## Surface audit
 

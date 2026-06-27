@@ -41,7 +41,9 @@ def test_mcp_surface_audit_detects_missing_documented_tool(tmp_path: Path) -> No
         "| `synapse_manifest()` | Return the capability manifest of advertised agents as JSON. |\n"
     )
     drifted_docs.write_text(
-        DOCS.read_text(encoding="utf-8").replace(documented_manifest_tool, ""),
+        DOCS.read_text(encoding="utf-8")
+        .replace(documented_manifest_tool, "")
+        .replace("`synapse_manifest`", "`manifest_removed`"),
         encoding="utf-8",
     )
 
@@ -49,3 +51,17 @@ def test_mcp_surface_audit_detects_missing_documented_tool(tmp_path: Path) -> No
 
     assert result.returncode == 1
     assert "undocumented tools: synapse_manifest" in result.stderr
+
+
+def test_mcp_surface_audit_detects_missing_documented_template(tmp_path: Path) -> None:
+    drifted_docs = tmp_path / "mcp.md"
+    documented_template = "| `synapse://task/{task_id}` | A single board task by id. |\n"
+    drifted_docs.write_text(
+        DOCS.read_text(encoding="utf-8").replace(documented_template, ""),
+        encoding="utf-8",
+    )
+
+    result = _run_audit("--check", "--registration", str(REGISTRATION), "--docs", str(drifted_docs))
+
+    assert result.returncode == 1
+    assert "undocumented resource templates: synapse://task/{task_id}" in result.stderr

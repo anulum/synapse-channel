@@ -35,6 +35,8 @@ All notable changes to this project are documented here.
 - Added `synapse resource-bids` and MCP `synapse_resource_bids` for
   deterministic read-only ranking of live resource offers against board tasks
   without reserving capacity or authorizing execution.
+- Added read-only MCP resource templates for single task, single agent, and
+  resource-kind views while keeping the hub protocol unchanged.
 
 ## [0.53.0] - 2026-06-27
 

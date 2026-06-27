@@ -447,8 +447,9 @@ synapse mcp --uri ws://localhost:8876
 `synapse mcp` runs a Model Context Protocol server over stdio that is itself a hub
 client, exposing the coordination verbs as MCP tools (claim, release, send, hand
 off, declare and update tasks) and the board, state, and manifest as live
-resources. The hub stays MCP-agnostic and the core install keeps its single
-dependency — see the [MCP guide](docs/mcp.md).
+resources. It also exposes read-only MCP resource templates for a single board
+task, one agent, and one resource kind. The hub stays MCP-agnostic and the core
+install keeps its single dependency — see the [MCP guide](docs/mcp.md).
 
 For Agent2Agent discovery, `synapse a2a-card --endpoint-url ...` projects the
 live capability manifest into an A2A Agent Card JSON document suitable for a
@@ -728,11 +729,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.53.0 |
 | Public API exports | 61 |
-| Package modules | 143 |
+| Package modules | 144 |
 | Classes | 131 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1781 |
+| Test functions | 1793 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 21 |
 | GitHub Actions workflows | 10 |
