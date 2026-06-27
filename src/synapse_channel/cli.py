@@ -25,6 +25,7 @@ The ``synapse`` command exposes these subcommands:
 * ``event-query`` — query event-log state at a sequence or timestamp;
 * ``postmortem`` — build a replayable task postmortem from the event log;
 * ``reliability`` — build evidence-only reliability memory from the event log;
+* ``ttl-advice`` — build read-only adaptive lease TTL advice from the event log;
 * ``board`` — print the hub's shared task/progress blackboard;
 * ``supervisor`` — run an LLM-free supervisor that re-offers stalled tasks;
 * ``manifest`` — print the capability manifest of advertised agents;
@@ -66,6 +67,7 @@ from typing import Any
 
 from synapse_channel import __version__
 from synapse_channel.cli_a2a import add_parsers as add_a2a_parsers
+from synapse_channel.cli_adaptive_ttl import add_parsers as add_ttl_advice_parsers
 from synapse_channel.cli_arm import add_parser as add_arm_parser
 from synapse_channel.cli_codex_tmux import add_parsers as add_codex_tmux_parsers
 from synapse_channel.cli_demo import add_parsers as add_demo_parsers
@@ -160,6 +162,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_postmortem_parsers(sub)
 
     add_reliability_parsers(sub)
+
+    add_ttl_advice_parsers(sub)
 
     add_task_parsers(sub)
 

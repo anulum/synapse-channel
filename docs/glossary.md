@@ -142,6 +142,13 @@ Evidence-only owner summaries over the **event log** using
 failed-check evidence, broken handoff candidates, and conflict pairs as audit
 signals, not scores.
 
+### TTL advice
+
+Read-only adaptive lease TTL advice over the **event log** using
+`synapse ttl-advice ./synapse.db`. It derives completed-task duration samples and
+live-claim load, then reports advisory defaults without changing hub settings;
+manual TTL values remain authoritative.
+
 ### Predictive stall detection
 
 The local `synapse supervisor` policy that combines a fixed idle ceiling with

@@ -14,6 +14,8 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Changed
+- Added `synapse ttl-advice` for read-only adaptive lease TTL advice from
+  durable event-log samples while preserving explicit manual TTL control.
 - Added `synapse reliability` for evidence-only reliability memory over the
   durable event store, tracking stale claims, declared failed-check evidence,
   broken handoff candidates, and conflict pairs without producing scores.
