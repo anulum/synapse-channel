@@ -39,3 +39,18 @@ applied once. On a secured hub, the first message of a connection must carry a
 The envelope builders and the message-type constants live in
 `synapse_channel.core.protocol`; the working agreement is in the repository's
 `TEAM_PROTOCOL.md`.
+
+## Decoder hardening
+
+Inbound hub and A2A JSON frames use `loads_bounded()` from
+`synapse_channel.core.protocol`. The helper scans raw text for array/object
+nesting before calling `json.loads`, so a malformed or deeply nested frame fails
+as a normal JSON decode error instead of recursing through the interpreter.
+
+`tools/fuzz_protocol_decode.py` is the local decoder hardening evidence harness.
+Run `PYTHONPATH=src python tools/fuzz_protocol_decode.py --smoke` for the
+deterministic seed corpus, or install Atheris and run
+`PYTHONPATH=src python tools/fuzz_protocol_decode.py` for an open-ended fuzzing
+session. This is not an external protocol-conformance certification; it is local
+coverage for malformed bytes, malformed JSON, quoted bracket runs, valid nested
+JSON, and depth-limit rejection.
