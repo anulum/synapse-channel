@@ -17,6 +17,9 @@ All notable changes to this project are documented here.
 - `tools/audit_mcp_surface.py` checks the registered MCP tools/resources against
   `docs/mcp.md` and pins the documented adapter, authentication, and
   optional-dependency boundaries in the local validation gate.
+- `tools/check_release_claim_hygiene.py` checks changelog and release-note prose
+  for agent-authorship, self-awarded quality labels, and unsupported
+  conformance or certification claims.
 
 ## [0.49.0] - 2026-06-27
 
