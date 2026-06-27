@@ -93,6 +93,9 @@ opening a pull request.
 
 - Buy a licence: **<https://anulum.li/synapse/pricing.html>** (Polar.sh, CHF).
 - Custom, OEM, academic, or non-profit terms: **protoscience@anulum.li**.
+- For custom evaluation, include the legal entity, product/service name,
+  deployment shape, source availability, support expectations, compliance needs,
+  and target version line.
 
 *This document summarises the commercial licence. For a signed enterprise
 agreement, contact us — the signed agreement governs where it differs.*

@@ -38,6 +38,29 @@ The full commercial terms are in
 the open-source licence is
 [AGPL-3.0-or-later](https://github.com/anulum/synapse-channel/blob/main/LICENSE).
 
+## Evaluation path
+
+Use this path before buying or requesting custom terms:
+
+1. Decide whether AGPL-3.0 already covers your use. If your product or service is
+   open source under compatible terms, or your use stays private/internal, the
+   Community path is normally the right fit.
+2. If you will distribute a closed-source product or operate a hosted service
+   without publishing corresponding source, choose the published Indie or Team
+   plan unless your case needs custom terms.
+3. For enterprise, OEM, academic, non-profit, managed-hosting, procurement, or
+   co-ownership discussions, email
+   [protoscience@anulum.li](mailto:protoscience@anulum.li).
+
+Include the legal entity, product or service name, deployment shape
+(distributed product, internal tool, hosted SaaS, managed service, or embedded
+component), expected source availability, expected users or seats, support
+expectations, compliance constraints, and the version line you plan to ship.
+
+This page explains project licensing boundaries; it is not legal advice. If your
+licensing obligations are material to a release or acquisition, review the AGPL
+and the commercial terms with your counsel.
+
 ## Claim hygiene
 
 The commercial documentation is checked by:

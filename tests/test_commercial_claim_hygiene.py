@@ -12,6 +12,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+from tools import check_commercial_claim_hygiene as checker
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CHECKER = REPO_ROOT / "tools" / "check_commercial_claim_hygiene.py"
 COMMERCIAL_DOC = REPO_ROOT / "docs" / "commercial.md"
@@ -65,3 +68,92 @@ def test_commercial_claim_hygiene_detects_feature_split_claim(tmp_path: Path) ->
 
     assert result.returncode == 1
     assert "feature-split-claim" in result.stderr
+
+
+def test_commercial_claim_hygiene_requires_evaluation_flow(tmp_path: Path) -> None:
+    drifted = tmp_path / "commercial.md"
+    text = COMMERCIAL_DOC.read_text(encoding="utf-8")
+    if "## Evaluation path" in text:
+        start = text.index("## Evaluation path")
+        end = text.index("## Claim hygiene")
+        text = text[:start] + text[end:]
+    drifted.write_text(text, encoding="utf-8")
+
+    result = _run_checker("--check", "--path", str(drifted))
+
+    assert result.returncode == 1
+    assert "missing-evaluation-flow" in result.stderr
+
+
+def test_scan_path_reports_missing_evaluation_flow(tmp_path: Path) -> None:
+    drifted = tmp_path / "commercial.md"
+    text = COMMERCIAL_DOC.read_text(encoding="utf-8")
+    start = text.index("## Evaluation path")
+    end = text.index("## Claim hygiene")
+    drifted.write_text(text[:start] + text[end:], encoding="utf-8")
+
+    findings = checker.scan_path(drifted)
+
+    assert any(finding.category == "missing-evaluation-flow" for finding in findings)
+
+
+def test_scan_paths_combines_findings(tmp_path: Path) -> None:
+    missing = tmp_path / "commercial.md"
+    split = tmp_path / "split.md"
+    missing.write_text("commercial licence terms not the code\n", encoding="utf-8")
+    split.write_text(
+        "commercial licence terms not the code\nCommercial-only features ship later.\n",
+        encoding="utf-8",
+    )
+
+    findings = checker.scan_paths((missing, split))
+
+    assert {finding.category for finding in findings} >= {
+        "missing-boundary",
+        "missing-evaluation-flow",
+        "feature-split-claim",
+    }
+
+
+def test_scan_path_ignores_unrelated_document(tmp_path: Path) -> None:
+    unrelated = tmp_path / "notes.md"
+    unrelated.write_text("plain project notes without licensing claims\n", encoding="utf-8")
+
+    assert checker.scan_path(unrelated) == ()
+
+
+def test_parse_args_uses_defaults_and_custom_paths(tmp_path: Path) -> None:
+    custom = tmp_path / "doc.md"
+
+    defaults = checker.parse_args(["--check"])
+    custom_args = checker.parse_args(["--check", "--path", str(custom)])
+
+    assert defaults.check is True
+    assert defaults.paths == checker.DEFAULT_PATHS
+    assert custom_args.paths == (custom,)
+
+
+def test_main_returns_failure_for_findings(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    drifted = tmp_path / "commercial.md"
+    drifted.write_text("commercial licence terms not the code\n", encoding="utf-8")
+
+    code = checker.main(["--check", "--path", str(drifted)])
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "missing-boundary" in captured.err
+
+
+def test_main_returns_success_for_clean_path(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    clean = tmp_path / "notes.md"
+    clean.write_text("plain project notes without licensing claims\n", encoding="utf-8")
+
+    code = checker.main(["--check", "--path", str(clean)])
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "commercial claim hygiene passed" in captured.out

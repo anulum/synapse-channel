@@ -90,7 +90,8 @@ endpoint is available with `synapse hub --metrics`.
 
 The full package is free under the **AGPL-3.0** for open-source, research, internal, and
 personal use. A **commercial licence** lifts the AGPL's network-copyleft for closed-source or
-SaaS use — there is no feature difference between the builds. See [Commercial use](commercial.md).
+SaaS use — there is no feature difference between the builds. See
+[Commercial use](commercial.md) for the evaluation path and contact details.
 
 ## How do I report a bug or ask for help?
 

@@ -18,6 +18,9 @@ All notable changes to this project are documented here.
   `--max-progress`, `--max-progress-per-author`, `--max-progress-per-task`, and
   `--max-findings-per-agent`. The hub applies the same bounds during live
   operation and durable replay.
+- Added a commercial licence evaluation path and checker coverage so public docs
+  keep the AGPL/commercial boundary, self-service plans, and custom-contact
+  requirements aligned.
 
 ## [0.54.0] - 2026-06-28
 
