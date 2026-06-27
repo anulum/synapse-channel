@@ -76,6 +76,7 @@ nav:
   - MCP server: mcp.md
   - Git-native claims: git-claims.md
   - Policy engine: policy-engine.md
+  - Paranoid mode: paranoid-mode.md
   - Recipes: recipes.md
   - Examples: examples.md
   - Deployment: deployment.md

@@ -516,6 +516,13 @@ strict type checking, owner approval, evidence freshness, generated artifact
 parity, and no-merge-without-receipt rules before turning any advisory output
 into a local hook or CI gate.
 
+The planned [`--paranoid` mode](docs/paranoid-mode.md) defines one future
+operator switch for strict local settings and an explicit missing-hook checklist:
+token-required hub access, loopback-first binds, metrics/A2A auth, owner-only
+state files, bounded retention, durable event logs, release receipts, and clear
+gaps for encryption, signed events, identity, ACLs, private channels, and exposed
+deployment review.
+
 `synapse git-init` bundles the hook install with a short `.synapse/git-claims.md`
 onboarding guide (branch convention + worktree workflow). `synapse state` shows
 each claim's branch; installed git hooks release a claim
@@ -750,9 +757,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 131 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1829 |
+| Test functions | 1833 |
 | Benchmark harnesses | 4 |
-| Documentation pages | 22 |
+| Documentation pages | 23 |
 | GitHub Actions workflows | 10 |
 | Optional-dependency groups | 4 |
 

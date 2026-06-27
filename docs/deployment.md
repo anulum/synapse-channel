@@ -127,6 +127,13 @@ printed commands when you are ready to bounce the hub and reconnect the fleet.
 Use `--db-path` if your hub service stores the event log somewhere other than
 `~/synapse/hub.db`.
 
+The planned [`--paranoid` mode](paranoid-mode.md) collects the stricter local
+deployment posture into one future operator switch. Until that flag exists, use
+the design as a manual checklist for token-required access, loopback-first binds,
+metrics/A2A auth, owner-only state files, bounded retention, durable event logs,
+release receipts, and explicit missing hooks for encryption, signed events,
+identity, ACLs, private channels, and exposed deployment threat modelling.
+
 The hook does not infer the project from the current git checkout by default.
 Unassigned terminals join `SYNAPSE_DEFAULT_PROJECT`, or the neutral `user` lane
 when unset. Bind a terminal or provider session to a project explicitly with
