@@ -534,6 +534,19 @@ or `--claims-json claims.json` to feed paths from an external claim snapshot.
 The radar is an advisory local planning check; it predicts likely contention but
 does not replace tests, review, or release receipt evidence.
 
+For post-hoc coordination forensics, query the durable event log directly:
+
+```bash
+synapse event-query ./synapse.db "task TASK-1 timeline"
+synapse event-query ./synapse.db "task TASK-1 at seq 120" --json
+synapse event-query ./synapse.db "path src/auth.py between 0 9999999999"
+synapse event-query ./synapse.db "conflicts at seq 120"
+```
+
+This temporal event-log query path is read-only. It reconstructs task timelines,
+task state at a sequence or timestamp, path-touch windows, and historical
+file-scope conflicts from the SQLite event store created by `synapse hub --db`.
+
 ## Coordination model
 
 1. Claim before you work: an agent leases a task by id; a live lease blocks other
@@ -625,11 +638,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.51.0 |
 | Public API exports | 59 |
-| Package modules | 120 |
-| Classes | 96 |
+| Package modules | 122 |
+| Classes | 99 |
 | Wire message types | 53 |
-| CLI subcommands | 44 |
-| Test functions | 1630 |
+| CLI subcommands | 45 |
+| Test functions | 1654 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

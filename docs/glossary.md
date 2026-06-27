@@ -122,6 +122,12 @@ The durable, append-only SQLite-WAL record of everything authoritative (claims, 
 writes, findings), enabled with `synapse hub --db …`. It is replayed on restart to resume state
 and is the spine for **ingest**.
 
+### Temporal event-log query
+
+Read-only reconstruction over the **event log** using `synapse event-query`: task
+timelines, task state at a sequence or timestamp, path-touch windows, and
+historical claim conflicts.
+
 ### Handoff
 
 One **agent** passing an in-progress **claim** (with its **checkpoint**) to another atomically,

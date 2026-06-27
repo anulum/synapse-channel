@@ -69,6 +69,12 @@ paths, package-local Python import edges, CODEOWNERS, and the test ownership map
 It is advisory: a non-zero `--check` result means review the overlap before
 merge, not that the hub has rejected anything.
 
+`synapse event-query ./synapse.db "task <id> timeline"` is the temporal
+event-log query surface for post-hoc reconstruction. It reads the SQLite event
+store directly and can show a task timeline, task state at a sequence or
+timestamp, path touches between timestamps, or historical claim conflicts. The
+query is read-only and does not change hub state.
+
 ## 4. Hand off and recover
 
 - **Atomic handoff** transfers a held task to another *online* agent in one step,

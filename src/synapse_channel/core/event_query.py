@@ -1,0 +1,445 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE_CHANNEL — temporal event-log query language
+"""Query the durable hub event log for temporal coordination evidence.
+
+The query language is deliberately small and read-only. It opens an existing
+SQLite event store, filters persisted events, and reconstructs task or conflict
+state at a requested sequence or timestamp without contacting a live hub.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.persistence import EventStore, StoredEvent
+
+TASK_EVENT_KINDS = frozenset(
+    {
+        EventKind.CLAIM,
+        EventKind.TASK_UPDATE,
+        EventKind.CHECKPOINT,
+        EventKind.HANDOFF,
+        EventKind.RELEASE,
+    }
+)
+"""Event kinds that can affect a task timeline or live task state."""
+
+CLAIM_SNAPSHOT_KINDS = frozenset(
+    {EventKind.CLAIM, EventKind.TASK_UPDATE, EventKind.CHECKPOINT, EventKind.HANDOFF}
+)
+"""Event kinds whose payload is a full task-claim snapshot."""
+
+
+@dataclass(frozen=True)
+class EventQuery:
+    """Parsed event-log query.
+
+    Attributes
+    ----------
+    kind : str
+        Query kind: ``task_timeline``, ``task_state``, ``path_touched``, or
+        ``conflicts``.
+    task_id : str
+        Task id for task-scoped queries.
+    path : str
+        Path for path-touch queries.
+    lower : float
+        Inclusive lower timestamp for path-touch queries.
+    upper : float
+        Inclusive upper timestamp for path-touch queries.
+    cutoff_kind : str
+        ``seq`` or ``time`` for point-in-time queries.
+    cutoff : float
+        Sequence or timestamp cutoff for point-in-time queries.
+    raw : str
+        Original query text.
+    """
+
+    kind: str
+    task_id: str = ""
+    path: str = ""
+    lower: float = 0.0
+    upper: float = 0.0
+    cutoff_kind: str = ""
+    cutoff: float = 0.0
+    raw: str = ""
+
+
+@dataclass(frozen=True)
+class QueryRecord:
+    """One event selected by an event-log query."""
+
+    event: StoredEvent
+    task_id: str
+    owner: str
+    status: str
+    worktree: str
+    paths: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class QueryResult:
+    """Result returned by one event-log query."""
+
+    kind: str
+    query: str
+    records: tuple[QueryRecord, ...] = ()
+    state: dict[str, object] | None = None
+    conflicts: list[dict[str, object]] | None = None
+
+
+def parse_query(query: str) -> EventQuery:
+    """Parse one temporal event-log query string.
+
+    Parameters
+    ----------
+    query : str
+        Query text. Supported forms are ``task <id> timeline``,
+        ``task <id> at seq <n>``, ``task <id> at time <seconds>``,
+        ``path <path> between <start> <end>``, and ``conflicts at seq|time <n>``.
+
+    Returns
+    -------
+    EventQuery
+        Parsed query object.
+
+    Raises
+    ------
+    ValueError
+        If the query does not match a supported form or a numeric field is
+        invalid.
+    """
+    tokens = query.split()
+    if len(tokens) == 3 and tokens[0] == "task" and tokens[2] == "timeline":
+        return EventQuery(kind="task_timeline", task_id=tokens[1], raw=query)
+    if len(tokens) == 5 and tokens[0] == "task" and tokens[2] == "at":
+        cutoff_kind = _parse_cutoff_kind(tokens[3])
+        return EventQuery(
+            kind="task_state",
+            task_id=tokens[1],
+            cutoff_kind=cutoff_kind,
+            cutoff=_parse_cutoff_value(cutoff_kind, tokens[4]),
+            raw=query,
+        )
+    if len(tokens) == 5 and tokens[0] == "path" and tokens[2] == "between":
+        return EventQuery(
+            kind="path_touched",
+            path=tokens[1],
+            lower=_parse_float(tokens[3], "invalid lower timestamp"),
+            upper=_parse_float(tokens[4], "invalid upper timestamp"),
+            raw=query,
+        )
+    if len(tokens) == 4 and tokens[0] == "conflicts" and tokens[1] == "at":
+        cutoff_kind = _parse_cutoff_kind(tokens[2])
+        return EventQuery(
+            kind="conflicts",
+            cutoff_kind=cutoff_kind,
+            cutoff=_parse_cutoff_value(cutoff_kind, tokens[3]),
+            raw=query,
+        )
+    msg = f"unsupported event query: {query}"
+    raise ValueError(msg)
+
+
+def run_query(db_path: str | Path, query: str) -> QueryResult:
+    """Run one temporal event-log query against an existing SQLite store."""
+    path = Path(db_path)
+    if not path.exists():
+        msg = f"missing event store: {path}"
+        raise ValueError(msg)
+    parsed = parse_query(query)
+    store = EventStore(path)
+    try:
+        events = tuple(store.read_all())
+    finally:
+        store.close()
+    return execute_query(events, parsed)
+
+
+def execute_query(events: Sequence[StoredEvent], query: EventQuery) -> QueryResult:
+    """Execute a parsed query against already-loaded events."""
+    if query.kind == "task_timeline":
+        return QueryResult(
+            kind=query.kind,
+            query=query.raw,
+            records=tuple(
+                _record_from_event(event)
+                for event in events
+                if _event_task_id(event) == query.task_id and event.kind in TASK_EVENT_KINDS
+            ),
+        )
+    if query.kind == "task_state":
+        return QueryResult(
+            kind=query.kind,
+            query=query.raw,
+            state=_task_state_at(events, query.task_id, query.cutoff_kind, query.cutoff),
+        )
+    if query.kind == "path_touched":
+        return QueryResult(
+            kind=query.kind,
+            query=query.raw,
+            records=tuple(
+                record
+                for event in events
+                if query.lower <= event.ts <= query.upper
+                for record in (_record_from_event(event),)
+                if event.kind in CLAIM_SNAPSHOT_KINDS and _paths_overlap(query.path, record.paths)
+            ),
+        )
+    if query.kind == "conflicts":
+        return QueryResult(
+            kind=query.kind,
+            query=query.raw,
+            conflicts=_conflicts_at(events, query.cutoff_kind, query.cutoff),
+        )
+    msg = f"unsupported event query kind: {query.kind}"
+    raise ValueError(msg)
+
+
+def result_to_json(result: QueryResult) -> dict[str, object]:
+    """Convert a query result into a stable JSON-compatible object."""
+    payload: dict[str, object] = {"kind": result.kind, "query": result.query}
+    if result.records:
+        payload["records"] = [_record_to_json(record) for record in result.records]
+    if result.state is not None:
+        payload["state"] = result.state
+    if result.conflicts is not None:
+        payload["conflicts"] = [dict(conflict) for conflict in result.conflicts]
+    return payload
+
+
+def render_human(result: QueryResult) -> str:
+    """Render a query result as compact terminal text."""
+    if result.kind == "task_timeline":
+        task = _query_task_label(result.query)
+        lines = [f"task {task} timeline: {len(result.records)} event(s)"]
+        lines.extend(_format_record(record) for record in result.records)
+        return "\n".join(lines)
+    if result.kind == "task_state":
+        if not result.state:
+            return "task state: not found"
+        return (
+            f"task {result.state['task_id']} state: owner={result.state['owner']} "
+            f"status={result.state['status']} seq={result.state['event_seq']}"
+        )
+    if result.kind == "path_touched":
+        lines = [f"path touched: {len(result.records)} event(s)"]
+        lines.extend(_format_record(record) for record in result.records)
+        return "\n".join(lines)
+    if result.kind == "conflicts":
+        conflicts = [] if result.conflicts is None else result.conflicts
+        lines = [f"conflicts: {len(conflicts)} pair(s)"]
+        lines.extend(_format_conflict(item) for item in conflicts)
+        return "\n".join(lines)
+    return f"{result.kind}: no renderer"
+
+
+def _parse_cutoff_kind(value: str) -> str:
+    """Validate a point-in-time cutoff kind."""
+    if value in {"seq", "time"}:
+        return value
+    msg = f"invalid cutoff kind: {value}"
+    raise ValueError(msg)
+
+
+def _parse_cutoff_value(kind: str, value: str) -> float:
+    """Parse a sequence or timestamp cutoff value."""
+    if kind == "seq":
+        try:
+            return float(int(value))
+        except ValueError as exc:
+            msg = f"invalid sequence: {value}"
+            raise ValueError(msg) from exc
+    return _parse_float(value, "invalid timestamp")
+
+
+def _parse_float(value: str, message: str) -> float:
+    """Parse a float value or raise a labelled ``ValueError``."""
+    try:
+        return float(value)
+    except ValueError as exc:
+        msg = f"{message}: {value}"
+        raise ValueError(msg) from exc
+
+
+def _record_from_event(event: StoredEvent) -> QueryRecord:
+    """Project a stored event into the query-record shape."""
+    payload = event.payload
+    return QueryRecord(
+        event=event,
+        task_id=_event_task_id(event),
+        owner=str(payload.get("owner", "")),
+        status=str(payload.get("status", "")),
+        worktree=str(payload.get("worktree", "")),
+        paths=tuple(str(path) for path in payload.get("paths", ())),
+    )
+
+
+def _event_task_id(event: StoredEvent) -> str:
+    """Return the task id carried by an event payload, if any."""
+    value = event.payload.get("task_id", "")
+    return str(value)
+
+
+def _task_state_at(
+    events: Sequence[StoredEvent],
+    task_id: str,
+    cutoff_kind: str,
+    cutoff: float,
+) -> dict[str, object]:
+    """Reconstruct one task's latest state at a sequence or timestamp cutoff."""
+    state: dict[str, object] | None = None
+    for event in events:
+        if not _event_is_at_or_before(event, cutoff_kind, cutoff):
+            continue
+        if _event_task_id(event) != task_id:
+            continue
+        if event.kind == EventKind.RELEASE:
+            state = None
+            continue
+        if event.kind in CLAIM_SNAPSHOT_KINDS:
+            state = _state_from_snapshot(event)
+    return {} if state is None else state
+
+
+def _state_from_snapshot(event: StoredEvent) -> dict[str, object]:
+    """Return the public task-state fields from a claim snapshot event."""
+    payload = event.payload
+    return {
+        "task_id": str(payload.get("task_id", "")),
+        "owner": str(payload.get("owner", "")),
+        "status": str(payload.get("status", "")),
+        "data_ref": str(payload.get("data_ref", "")),
+        "paths": [str(path) for path in payload.get("paths", ())],
+        "worktree": str(payload.get("worktree", "")),
+        "event_seq": event.seq,
+        "event_ts": event.ts,
+    }
+
+
+def _conflicts_at(
+    events: Sequence[StoredEvent],
+    cutoff_kind: str,
+    cutoff: float,
+) -> list[dict[str, object]]:
+    """Return path-overlap conflicts among live claims at a cutoff."""
+    live: dict[str, QueryRecord] = {}
+    for event in events:
+        if not _event_is_at_or_before(event, cutoff_kind, cutoff):
+            continue
+        task_id = _event_task_id(event)
+        if not task_id:
+            continue
+        if event.kind == EventKind.RELEASE:
+            live.pop(task_id, None)
+            continue
+        if event.kind in CLAIM_SNAPSHOT_KINDS:
+            live[task_id] = _record_from_event(event)
+
+    conflicts: list[dict[str, object]] = []
+    records = tuple(live[key] for key in sorted(live))
+    for left_index, left in enumerate(records):
+        for right in records[left_index + 1 :]:
+            if left.owner == right.owner or left.worktree != right.worktree:
+                continue
+            if _paths_overlap_many(left.paths, right.paths):
+                conflicts.append(
+                    {
+                        "left_task": left.task_id,
+                        "left_owner": left.owner,
+                        "right_task": right.task_id,
+                        "right_owner": right.owner,
+                        "worktree": left.worktree,
+                        "paths": list(_unique_ordered((*left.paths, *right.paths))),
+                    }
+                )
+    return conflicts
+
+
+def _event_is_at_or_before(event: StoredEvent, cutoff_kind: str, cutoff: float) -> bool:
+    """Return whether an event is visible at the requested cutoff."""
+    if cutoff_kind == "seq":
+        return event.seq <= int(cutoff)
+    return event.ts <= cutoff
+
+
+def _paths_overlap(path: str, scopes: Sequence[str]) -> bool:
+    """Return whether ``path`` overlaps any declared path scope."""
+    if not scopes:
+        return True
+    return any(_path_pair_overlaps(path, scope) for scope in scopes)
+
+
+def _paths_overlap_many(left: Sequence[str], right: Sequence[str]) -> bool:
+    """Return whether two path-scope sets overlap."""
+    if not left or not right:
+        return True
+    return any(
+        _path_pair_overlaps(left_path, right_path) for left_path in left for right_path in right
+    )
+
+
+def _path_pair_overlaps(left: str, right: str) -> bool:
+    """Return whether two repository-relative paths overlap."""
+    left_clean = left.rstrip("/")
+    right_clean = right.rstrip("/")
+    return (
+        left_clean == right_clean
+        or left_clean.startswith(f"{right_clean}/")
+        or right_clean.startswith(f"{left_clean}/")
+    )
+
+
+def _unique_ordered(values: Iterable[str]) -> tuple[str, ...]:
+    """Return values without duplicates while preserving order."""
+    return tuple(dict.fromkeys(values))
+
+
+def _record_to_json(record: QueryRecord) -> dict[str, object]:
+    """Convert a selected event record into JSON-compatible fields."""
+    return {
+        "seq": record.event.seq,
+        "ts": record.event.ts,
+        "kind": record.event.kind,
+        "task_id": record.task_id,
+        "owner": record.owner,
+        "status": record.status,
+        "worktree": record.worktree,
+        "paths": list(record.paths),
+        "payload": record.event.payload,
+    }
+
+
+def _format_record(record: QueryRecord) -> str:
+    """Render one selected event record."""
+    return (
+        f"- seq={record.event.seq} ts={record.event.ts:.3f} kind={record.event.kind} "
+        f"task={record.task_id} owner={record.owner} status={record.status}"
+    )
+
+
+def _format_conflict(item: dict[str, object]) -> str:
+    """Render one reconstructed conflict pair."""
+    raw_paths = item.get("paths", ())
+    if isinstance(raw_paths, (list, tuple)):
+        path_text = ",".join(str(path) for path in raw_paths)
+    else:
+        path_text = str(raw_paths)
+    return (
+        f"- {item['left_task']}@{item['left_owner']} <-> "
+        f"{item['right_task']}@{item['right_owner']} paths={path_text}"
+    )
+
+
+def _query_task_label(query: str) -> str:
+    """Return the task label from a supported task query string."""
+    tokens = query.split()
+    return tokens[1] if len(tokens) >= 2 else "?"
