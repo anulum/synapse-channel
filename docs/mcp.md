@@ -80,13 +80,14 @@ tools wait for the hub's grant or denial; query tools return JSON.
 | `synapse_board()` | Return the shared task/progress board as JSON. |
 | `synapse_state()` | Return the live claims and checkpoints as JSON. |
 | `synapse_manifest()` | Return the capability manifest of advertised agents as JSON. |
+| `synapse_directory()` | Return the discovery-only capability directory as JSON. |
 
 When the hub does not answer within the request window the tool returns a clear
 "no response from the hub" line rather than hanging.
 
 ## Resources
 
-Three read-only resources let an agent pull live coordination context without
+Four read-only resources let an agent pull live coordination context without
 issuing a tool call:
 
 | Resource | Content |
@@ -94,6 +95,11 @@ issuing a tool call:
 | `synapse://board` | The shared task/progress blackboard. |
 | `synapse://state` | Active claims and their resume checkpoints. |
 | `synapse://manifest` | The capability cards of advertised agents. |
+| `synapse://directory` | Discovery-only directory joining capability cards and resource offers. |
+
+The directory is a marketplace-shaped discovery surface, not an executable
+marketplace. Its entries can help an agent host choose a likely worker or tool,
+but they do not reserve capacity, authorize execution, or certify trust.
 
 ## Surface audit
 

@@ -394,6 +394,7 @@ example `synapse send --target remanentia/FAST "status?"`.
 synapse listen --name USER
 synapse board
 synapse manifest
+synapse directory --task-class chat --json
 synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --bearer-auth --a2a-token "$A2A_TOKEN" --state-file ./a2a-state.json
@@ -414,6 +415,12 @@ contract count while JSON surfaces such as the MCP manifest resource, A2A Agent
 Card metadata, and dashboard snapshot retain the full `contracts` entries with
 `task_class`, `input_schema`, `output_schema`, `preconditions`, and
 `postconditions`.
+
+`synapse directory` builds a read-only capability directory from the live
+manifest plus resource offers from the state snapshot. It supports `--agent`,
+`--task-class`, `--skill`, `--resource-kind`, and `--json`. The directory is
+discovery metadata only: it helps route or review work, but it does not reserve
+capacity, authorize execution, or certify trust.
 
 `synapse supervisor` watches the shared board and re-offers stalled plan tasks.
 The fixed `--idle-seconds` threshold remains the operator ceiling. By default the

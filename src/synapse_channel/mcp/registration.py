@@ -122,6 +122,11 @@ def build_mcp_server(
         """Return the capability manifest of advertised agents as JSON."""
         return await bridge.manifest()
 
+    @server.tool()
+    async def synapse_directory() -> str:
+        """Return the discovery-only capability directory as JSON."""
+        return await bridge.directory()
+
     @server.resource("synapse://board")
     async def board_resource() -> str:
         """Live shared task/progress blackboard."""
@@ -136,5 +141,10 @@ def build_mcp_server(
     async def manifest_resource() -> str:
         """Live capability manifest of advertised agents."""
         return await bridge.manifest()
+
+    @server.resource("synapse://directory")
+    async def directory_resource() -> str:
+        """Live discovery-only capability directory."""
+        return await bridge.directory()
 
     return server

@@ -16,6 +16,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.core.capability_directory import build_capability_directory, directory_to_json
 from synapse_channel.core.protocol import MessageType
 
 AgentFactory = Callable[..., SynapseAgent]
@@ -348,3 +349,33 @@ class SynapseHubBridge:
             self.agent.request_manifest,
         )
         return self._render(reply, "manifest", "the hub did not return the manifest")
+
+    async def directory(self) -> str:
+        """Return the capability/resource discovery directory as JSON.
+
+        Returns
+        -------
+        str
+            The directory as indented JSON, or a no-response line when either
+            required snapshot is missing.
+        """
+        manifest_reply = await self._await_reply(
+            lambda data: data.get("type") == MessageType.MANIFEST_SNAPSHOT,
+            self.agent.request_manifest,
+        )
+        if manifest_reply is None:
+            return "the hub did not return the capability directory"
+        state_reply = await self._await_reply(
+            lambda data: data.get("type") == MessageType.STATE_SNAPSHOT,
+            self.agent.request_state,
+        )
+        if state_reply is None:
+            return "the hub did not return the capability directory"
+        snapshot = state_reply.get("snapshot", {})
+        resources = snapshot.get("resources", []) if isinstance(snapshot, dict) else []
+        manifest = manifest_reply.get("manifest", [])
+        directory = build_capability_directory(
+            manifest=manifest if isinstance(manifest, list) else [],
+            resources=resources if isinstance(resources, list) else [],
+        )
+        return directory_to_json(directory)

@@ -21,6 +21,8 @@ All notable changes to this project are documented here.
 - Added declarative capability contracts on capability cards, preserving
   per-task-class input/output schemas and optional pre/postconditions in the
   manifest, A2A metadata, CLI counts, and dashboard snapshots.
+- Added a read-only capability directory that joins capability cards and
+  resource offers for discovery-only CLI and MCP surfaces.
 
 ## [0.53.0] - 2026-06-27
 
