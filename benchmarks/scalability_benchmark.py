@@ -67,6 +67,15 @@ DEFAULT_ITERATIONS = 200
 SCAN_ITERATIONS = 25
 """Probe claims timed per claim count for the scope-conflict scan (each is O(count))."""
 
+LOCAL_FIRST_SCAN_CLAIM_CEILING = 100
+"""Largest active-claim count treated as the local-first design envelope."""
+
+LOCAL_FIRST_SCAN_THRESHOLD_MICROSECONDS = 10_000.0
+"""Per-claim scan time that would justify indexing inside the local-first envelope."""
+
+INDEX_REVISIT_CLAIM_FLOOR = 1_000
+"""Active claims in one worktree where operators should revisit scan indexing evidence."""
+
 NEVER_EXPIRES = 1e18
 """A lease expiry so far ahead that a heartbeat visits the heap top but evicts nothing."""
 
@@ -148,7 +157,8 @@ def measure_mass_expiry_seconds(count: int) -> float:
     start = time.perf_counter()
     state.heartbeat("PROBE", now=1e6)
     elapsed = time.perf_counter() - start
-    assert not state.claims  # every lease was due and the heap drained them all
+    if state.claims:
+        raise RuntimeError("mass expiry benchmark failed to drain due leases")
     return elapsed
 
 
@@ -226,6 +236,74 @@ def measure_replay_seconds(count: int) -> float:
     return elapsed
 
 
+def _numeric_field(row: dict[str, Any], key: str) -> float:
+    """Return ``row[key]`` as a float for benchmark decision calculations."""
+    value = row[key]
+    if isinstance(value, int | float):
+        return float(value)
+    raise TypeError(f"{key} must be numeric, got {type(value).__name__}")
+
+
+def _scan_row_for_ceiling(scan_rows: list[dict[str, Any]], ceiling: int) -> dict[str, Any] | None:
+    """Return the largest scan row at or below ``ceiling`` active claims."""
+    eligible = [row for row in scan_rows if _numeric_field(row, "active_claims") <= ceiling]
+    if not eligible:
+        return None
+    return max(eligible, key=lambda row: _numeric_field(row, "active_claims"))
+
+
+def indexing_decision(rows: dict[str, list[dict[str, Any]]]) -> dict[str, dict[str, Any]]:
+    """Summarize whether the measured data justifies adding another state index.
+
+    The decision is intentionally bounded to the local-first envelope. The benchmark
+    also records much larger counts so future work can see the linear scan shape, but
+    those far-past-envelope rows do not by themselves justify complicating the core
+    state structure used by ordinary local fleets.
+
+    Parameters
+    ----------
+    rows : dict[str, list[dict[str, Any]]]
+        Result rows returned by :func:`profile`.
+
+    Returns
+    -------
+    dict[str, dict[str, Any]]
+        Structured recommendation metadata for lease expiry and scope-conflict scans.
+    """
+    scan_rows = rows["scan"]
+    local_row = _scan_row_for_ceiling(scan_rows, LOCAL_FIRST_SCAN_CLAIM_CEILING)
+    local_scan_microseconds = (
+        0.0 if local_row is None else _numeric_field(local_row, "claim_scan_microseconds")
+    )
+    worst_profiled_scan = (
+        0.0
+        if not scan_rows
+        else max(_numeric_field(row, "claim_scan_microseconds") for row in scan_rows)
+    )
+    scan_recommendation = (
+        "keep_linear_scan_for_local_first_envelope"
+        if local_scan_microseconds <= LOCAL_FIRST_SCAN_THRESHOLD_MICROSECONDS
+        else "index_scope_conflict_scan"
+    )
+    return {
+        "lease_expiry": {
+            "current_index": "min_heap",
+            "recommendation": "keep_heap_index",
+            "evidence_class": "loaded_workstation_functional_benchmark",
+        },
+        "scope_conflict_scan": {
+            "current_index": "none",
+            "recommendation": scan_recommendation,
+            "local_first_claim_ceiling": LOCAL_FIRST_SCAN_CLAIM_CEILING,
+            "local_first_scan_microseconds": round(local_scan_microseconds, 3),
+            "index_threshold_microseconds": LOCAL_FIRST_SCAN_THRESHOLD_MICROSECONDS,
+            "revisit_when_active_claims_reach": INDEX_REVISIT_CLAIM_FLOOR,
+            "worst_profiled_scan_microseconds": round(worst_profiled_scan, 3),
+            "evidence_class": "loaded_workstation_functional_benchmark",
+        },
+    }
+
+
 def profile(
     claim_counts: tuple[int, ...] = CLAIM_COUNTS,
     replay_counts: tuple[int, ...] = REPLAY_COUNTS,
@@ -290,6 +368,7 @@ def run(
         "expiry": rows["expiry"],
         "replay": rows["replay"],
         "scan": rows["scan"],
+        "indexing_decision": indexing_decision(rows),
     }
     if results_path is not None:
         results_path.parent.mkdir(parents=True, exist_ok=True)
@@ -345,6 +424,12 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"  {row['active_claims']:>7} claims  {row['claim_scan_microseconds']:>10.3f} us/claim"
         )
+    scan_decision = summary["indexing_decision"]["scope_conflict_scan"]
+    print(
+        "indexing decision: "
+        f"{scan_decision['recommendation']} "
+        f"(local-first scan {scan_decision['local_first_scan_microseconds']} us/claim)"
+    )
     print(f"results written to {args.results}")
     return 0
 

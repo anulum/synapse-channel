@@ -84,3 +84,11 @@ def test_benchmark_docs_describe_heap_expiry_not_stale_linear_sweeper() -> None:
     assert "min-heap" in benchmarks
     assert "now-stale expiry model" in benchmarks
     assert "future heap" not in benchmarks.lower()
+
+
+def test_benchmark_docs_pin_scope_scan_indexing_decision() -> None:
+    benchmarks = _single_spaced(_read_repo_text("docs/benchmarks.md"))
+
+    assert "keep the scope-conflict scan linear inside the local-first envelope" in benchmarks
+    assert "local-first ceiling of 100 active claims" in benchmarks
+    assert "Loaded workstation evidence" in benchmarks
