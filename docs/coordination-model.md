@@ -55,6 +55,13 @@ Use those generated paths in the same file-scope claim and receipt. This
 generated-output dependency map is a coordination aid; freshness still comes from
 the owning generator's check command.
 
+`python tools/semantic_claims.py --selector <kind:value> --claim-args` is the
+semantic claim resolver for local planning. It accepts module, symbol, API,
+source, test, generated, and migration selectors, then emits the ordinary
+file-scope paths that `synapse git-claim` already understands. This keeps the hub
+simple while letting agents coordinate over meaning before submitting path
+claims and release receipt fields.
+
 ## 4. Hand off and recover
 
 - **Atomic handoff** transfers a held task to another *online* agent in one step,

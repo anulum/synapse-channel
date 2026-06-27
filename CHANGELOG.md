@@ -17,6 +17,9 @@ All notable changes to this project are documented here.
 - Added `tools/generated_dependency_claims.py` to map source paths to generated
   outputs that should share the same file-scope claim and release receipt, with
   JSON, `--claim-args`, and integrity-check output.
+- Added `tools/semantic_claims.py` to resolve module, symbol, API, source, test,
+  generated, and migration selectors into ordinary file-scope claim paths and
+  receipt-ready JSON.
 
 ## [0.51.0] - 2026-06-27
 

@@ -506,6 +506,20 @@ emit JSON for release tooling. It is a deterministic coordination aid; the
 owning generator, such as `python tools/capability_manifest.py --check`, remains
 the freshness check for the generated artefact itself.
 
+For semantic task scopes, resolve modules, public symbols, API surfaces, tests,
+generated artefacts, migrations, or source paths into ordinary claim paths:
+
+```bash
+python tools/semantic_claims.py --selector \
+  symbol:synapse_channel.core.receipts.build_release_receipt \
+  --claim-args
+```
+
+The semantic claim resolver prints the source file, likely owning tests, and
+generated outputs that should share the same file-scope claim. It keeps the hub
+path-scope and local-first while giving agents a deterministic semantic planning
+step before they call `synapse git-claim`.
+
 ## Coordination model
 
 1. Claim before you work: an agent leases a task by id; a live lease blocks other
@@ -601,7 +615,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 96 |
 | Wire message types | 53 |
 | CLI subcommands | 44 |
-| Test functions | 1603 |
+| Test functions | 1617 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |
