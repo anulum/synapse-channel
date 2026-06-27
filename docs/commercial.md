@@ -37,3 +37,15 @@ The full commercial terms are in
 [`COMMERCIAL-LICENSE.md`](https://github.com/anulum/synapse-channel/blob/main/COMMERCIAL-LICENSE.md);
 the open-source licence is
 [AGPL-3.0-or-later](https://github.com/anulum/synapse-channel/blob/main/LICENSE).
+
+## Claim hygiene
+
+The commercial documentation is checked by:
+
+```bash
+.venv/bin/python tools/check_commercial_claim_hygiene.py --check
+```
+
+The check keeps the AGPL/commercial boundary visible and fails wording that
+implies paid code paths absent from the public package. Commercial licensing
+changes usage terms, not the package contents.

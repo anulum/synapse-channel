@@ -41,6 +41,7 @@ Every change must clear these gates (run locally with `make preflight`):
 | Formatting | `ruff format --check` | no diff |
 | MCP surface audit | `tools/audit_mcp_surface.py --check` | documented tools/resources and adapter boundaries match registration |
 | Release claim hygiene | `tools/check_release_claim_hygiene.py --check` | changelog/release prose has no agent-authorship, quality-label, or conformance overclaims |
+| Commercial claim hygiene | `tools/check_commercial_claim_hygiene.py --check` | commercial docs preserve the AGPL/commercial boundary and no feature-split claims |
 | Types | `mypy` (strict) | no errors |
 | Tests + coverage | `pytest --cov` | pass, ≥ 95% (held at 100%) |
 | Licensing | `reuse lint` | REUSE 3.x compliant |
@@ -92,6 +93,13 @@ The changelog and release-note prose are checked for public claim hygiene:
 
 ```bash
 .venv/bin/python tools/check_release_claim_hygiene.py --check
+```
+
+The commercial documentation is checked for the AGPL/commercial boundary and for
+claims that imply paid code paths absent from the public package:
+
+```bash
+.venv/bin/python tools/check_commercial_claim_hygiene.py --check
 ```
 
 ## Benchmarks
