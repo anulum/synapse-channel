@@ -556,6 +556,7 @@ synapse event-query ./synapse.db "task TASK-1 at seq 120" --json
 synapse event-query ./synapse.db "path src/auth.py between 0 9999999999"
 synapse event-query ./synapse.db "conflicts at seq 120"
 synapse postmortem ./synapse.db TASK-1
+synapse reliability ./synapse.db
 ```
 
 This temporal event-log query path is read-only. It reconstructs task timelines,
@@ -568,6 +569,11 @@ timeline, owners, releases, assessment evidence, reconstructed path-overlap
 conflicts, and candidate unanswered messages. Candidate unanswered messages mean
 the log contains a directed chat mentioning the task id and no later matching
 chat reply; it is an audit signal, not proof of intent.
+
+Use `synapse reliability ./synapse.db` for evidence-only reliability memory. It
+tracks stale claims, declared failed-check evidence, broken handoff candidates,
+and merge-conflict frequency as audit signals, not scores. It does not rank
+agents, assign trust grades, or replace review of the underlying event rows.
 
 ## Coordination model
 
@@ -668,11 +674,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.52.0 |
 | Public API exports | 60 |
-| Package modules | 126 |
-| Classes | 106 |
+| Package modules | 128 |
+| Classes | 109 |
 | Wire message types | 53 |
-| CLI subcommands | 46 |
-| Test functions | 1684 |
+| CLI subcommands | 47 |
+| Test functions | 1693 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 21 |
 | GitHub Actions workflows | 10 |

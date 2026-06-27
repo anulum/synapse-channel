@@ -83,6 +83,12 @@ message section is deliberately conservative: it reports directed chats that
 mention the task id and have no later matching chat reply in the log; it does
 not prove intent or off-channel response.
 
+`synapse reliability ./synapse.db` aggregates evidence-only reliability memory
+from the event log. It tracks stale claims, declared failed-check evidence,
+broken handoff candidates, and merge-conflict frequency as audit signals, not
+scores. The report is suitable for handovers and routing review, but it does not
+rank agents or assign trust grades.
+
 ## 4. Hand off and recover
 
 - **Atomic handoff** transfers a held task to another *online* agent in one step,

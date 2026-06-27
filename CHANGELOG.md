@@ -14,6 +14,9 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Changed
+- Added `synapse reliability` for evidence-only reliability memory over the
+  durable event store, tracking stale claims, declared failed-check evidence,
+  broken handoff candidates, and conflict pairs without producing scores.
 - Added `synapse postmortem` for replayable task postmortems from the durable
   event store, including timeline, owners, releases, evidence notes,
   reconstructed conflicts, and candidate unanswered messages.

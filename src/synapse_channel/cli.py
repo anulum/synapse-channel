@@ -24,6 +24,7 @@ The ``synapse`` command exposes these subcommands:
 * ``compact`` — bound the durable log: keep latest-N checkpoints per task, age out old findings;
 * ``event-query`` — query event-log state at a sequence or timestamp;
 * ``postmortem`` — build a replayable task postmortem from the event log;
+* ``reliability`` — build evidence-only reliability memory from the event log;
 * ``board`` — print the hub's shared task/progress blackboard;
 * ``supervisor`` — run an LLM-free supervisor that re-offers stalled tasks;
 * ``manifest`` — print the capability manifest of advertised agents;
@@ -79,6 +80,7 @@ from synapse_channel.cli_postmortem import add_parsers as add_postmortem_parsers
 from synapse_channel.cli_processes import add_parsers as add_process_parsers
 from synapse_channel.cli_queries import add_parsers as add_query_parsers
 from synapse_channel.cli_quickstart_coding import add_parsers as add_quickstart_coding_parsers
+from synapse_channel.cli_reliability import add_parsers as add_reliability_parsers
 from synapse_channel.cli_services import add_parsers as add_service_parsers
 from synapse_channel.cli_shell import add_parsers as add_shell_parsers
 from synapse_channel.cli_streams import add_parsers as add_stream_parsers
@@ -156,6 +158,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_event_query_parsers(sub)
 
     add_postmortem_parsers(sub)
+
+    add_reliability_parsers(sub)
 
     add_task_parsers(sub)
 
