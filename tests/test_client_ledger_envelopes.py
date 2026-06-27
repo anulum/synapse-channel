@@ -72,7 +72,18 @@ async def test_request_board_sends_board_request() -> None:
 async def test_advertise_sends_full_and_minimal_cards() -> None:
     async with connected_recording_agent("A") as (agent, messages):
         await agent.advertise(
-            description="quick", skills=["ollama"], task_classes=["chat"], model="m", meta={"k": 1}
+            description="quick",
+            skills=["ollama"],
+            task_classes=["chat"],
+            model="m",
+            meta={"k": 1},
+            contracts=[
+                {
+                    "task_class": "chat",
+                    "input_schema": {"type": "object"},
+                    "output_schema": {"type": "string"},
+                }
+            ],
         )
         await wait_for_recorded_count(messages, 2)
         full = messages[-1]
@@ -84,9 +95,17 @@ async def test_advertise_sends_full_and_minimal_cards() -> None:
     assert full["task_classes"] == ["chat"]
     assert full["model"] == "m"
     assert full["meta"] == {"k": 1}
+    assert full["contracts"] == [
+        {
+            "task_class": "chat",
+            "input_schema": {"type": "object"},
+            "output_schema": {"type": "string"},
+        }
+    ]
     assert "skills" not in minimal
     assert "task_classes" not in minimal
     assert "model" not in minimal
+    assert "contracts" not in minimal
 
 
 async def test_request_manifest_sends_manifest_request() -> None:

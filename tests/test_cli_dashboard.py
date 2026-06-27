@@ -43,7 +43,18 @@ def _http_get(url: str) -> tuple[int, str, str]:
 
 async def _prepare_dashboard_hub(uri: str) -> AgentHandle:
     handle = await connect_agent("SYNAPSE-CHANNEL/demo", uri)
-    await handle.agent.advertise(description="demo worker", task_classes=["chat"], model="local")
+    await handle.agent.advertise(
+        description="demo worker",
+        task_classes=["chat"],
+        model="local",
+        contracts=[
+            {
+                "task_class": "chat",
+                "input_schema": {"type": "object"},
+                "output_schema": {"type": "string"},
+            }
+        ],
+    )
     await handle.recorder.wait_for(
         lambda message: (
             message.get("type") == "capability_advertised"
@@ -122,7 +133,14 @@ def test_dashboard_html_escapes_snapshot_content() -> None:
             "ready": ["T"],
             "progress": [{"author": "A", "kind": "note", "task_id": "T", "text": "<ok>"}],
         },
-        manifest=[{"agent": "A<script>", "task_classes": ["chat"], "description": "<desc>"}],
+        manifest=[
+            {
+                "agent": "A<script>",
+                "task_classes": ["chat"],
+                "description": "<desc>",
+                "contracts": [{"task_class": "<script>"}],
+            }
+        ],
     )
 
     html = render_dashboard_html(snapshot, refresh_seconds=5)
@@ -130,6 +148,7 @@ def test_dashboard_html_escapes_snapshot_content() -> None:
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
     assert "src/&lt;bad&gt;.py" in html
+    assert "contracts: 1" in html
     assert 'http-equiv="refresh"' in html
 
 
@@ -163,6 +182,7 @@ async def test_dashboard_http_server_serves_real_html_and_json() -> None:
     assert json_type == "application/json"
     payload = json.loads(json_body)
     assert payload["board"]["tasks"][0]["task_id"] == "TASK-1"
+    assert payload["manifest"][0]["contracts"][0]["task_class"] == "chat"
 
 
 def test_dashboard_http_server_rejects_unknown_paths() -> None:

@@ -92,4 +92,8 @@ def _print_manifest(manifest: list[dict[str, Any]]) -> None:
         classes = ", ".join(card.get("task_classes", [])) or "none"
         model = card.get("model") or "-"
         description = card.get("description", "")
-        print(f"  {card.get('agent')} [{classes}] model={model}: {description}")
+        contracts = card.get("contracts")
+        suffix = (
+            f" (contracts: {len(contracts)})" if isinstance(contracts, list) and contracts else ""
+        )
+        print(f"  {card.get('agent')} [{classes}] model={model}: {description}{suffix}")

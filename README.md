@@ -209,7 +209,7 @@ synapse task declare BUILD --title "compile"         # declare/update the shared
 synapse task update BUILD --status done              # mark a plan task done so dependents unblock
 syn ack BUILD --evidence "pytest -q"                 # post evidence and mark a board task done
 synapse supervisor --idle-seconds 300 --history-multiplier 3  # re-offer stalled plan tasks
-synapse manifest                                     # print the capability cards agents advertised
+synapse manifest                                     # print capability cards, including contract counts
 synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1  # emit A2A Agent Card JSON
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877             # run the HTTP+JSON A2A bridge
 synapse doctor                                       # check for common misconfigs (identity, exposure, hub, waiter)
@@ -449,6 +449,10 @@ dependency — see the [MCP guide](docs/mcp.md).
 For Agent2Agent discovery, `synapse a2a-card --endpoint-url ...` projects the
 live capability manifest into an A2A Agent Card JSON document suitable for a
 thin HTTP edge to serve as `/.well-known/agent-card.json`.
+Capability cards can also carry declarative capability contracts: per-task-class
+`input_schema` and `output_schema` mappings plus optional preconditions and
+postconditions. These contracts are discovery metadata for routing and review;
+they do not grant executable trust or certify that a remote peer conforms.
 To run that edge directly, use `synapse a2a-serve --endpoint-url ...`; it serves
 the public Agent Card, forwards `POST /message:send` text/data/file parts into
 SYNAPSE chat, supports immediate `POST /message:stream` Server-Sent Events,
@@ -674,6 +678,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | `stall` | Deterministic fixed-threshold and historical-cadence stall policy. |
 | `supervisor` | LLM-free watcher that spots stalled plan tasks and re-offers them. |
 | `capability` | Agent capability cards (A2A-shaped) and the hub-aggregated manifest. |
+| `capability_contracts` | Declarative input/output capability contracts carried by manifest cards. |
 | `launcher` | One-command local hub + worker startup. |
 | `cli` | The unified `synapse` command. |
 
@@ -690,12 +695,12 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Surface | Current inventory |
 |---|---:|
 | Package version | 0.53.0 |
-| Public API exports | 60 |
-| Package modules | 133 |
-| Classes | 118 |
+| Public API exports | 61 |
+| Package modules | 134 |
+| Classes | 119 |
 | Wire message types | 53 |
 | CLI subcommands | 49 |
-| Test functions | 1725 |
+| Test functions | 1729 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 21 |
 | GitHub Actions workflows | 10 |

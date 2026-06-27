@@ -18,6 +18,9 @@ All notable changes to this project are documented here.
   live roster, claims, board tasks, progress notes, and capability cards.
 - Added native hub `wss://` support with `--tls-certfile` and `--tls-keyfile`
   while preserving token requirements for off-loopback binds.
+- Added declarative capability contracts on capability cards, preserving
+  per-task-class input/output schemas and optional pre/postconditions in the
+  manifest, A2A metadata, CLI counts, and dashboard snapshots.
 
 ## [0.53.0] - 2026-06-27
 

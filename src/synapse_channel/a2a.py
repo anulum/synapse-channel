@@ -76,7 +76,7 @@ def skill_from_manifest_card(card: JsonMap) -> JsonMap:
     description = str(card.get("description") or "").strip()
     if not description:
         description = f"SYNAPSE-advertised capability for {agent}."
-    return {
+    skill: JsonMap = {
         "id": f"synapse-{_slug(agent)}",
         "name": agent,
         "description": description,
@@ -84,6 +84,12 @@ def skill_from_manifest_card(card: JsonMap) -> JsonMap:
         "inputModes": list(DEFAULT_INPUT_MODES),
         "outputModes": list(DEFAULT_OUTPUT_MODES),
     }
+    contracts = card.get("contracts")
+    if isinstance(contracts, list):
+        contract_metadata = [dict(item) for item in contracts if isinstance(item, dict)]
+        if contract_metadata:
+            skill["metadata"] = {"synapse": {"contracts": contract_metadata}}
+    return skill
 
 
 def _fallback_skill() -> JsonMap:

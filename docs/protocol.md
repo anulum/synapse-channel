@@ -21,6 +21,20 @@ applied once. On a secured hub, the first message of a connection must carry a
 - **Queries:** `state_request`, `who_request`, `history_request`,
   `resume_request`.
 
+An `advertise` message may include `contracts`, either as a list of contract
+objects or as a task-class keyed mapping. The hub normalizes valid entries into
+the manifest shape:
+
+- `task_class`: the routing class the contract describes.
+- `input_schema` and `output_schema`: JSON-object mappings, usually JSON Schema
+  fragments, describing accepted input and produced output.
+- `preconditions` and `postconditions`: optional lists of declarative checks.
+
+Malformed contract entries are ignored rather than rejecting the advertisement.
+Capability contracts are discovery metadata for routing, dashboards, A2A Agent
+Card metadata, and human review; they do not execute checks, authorize callers,
+or certify external conformance.
+
 ## Hub → agent
 
 - **Session:** `welcome`, `presence_update`, `name_conflict`, `auth_denied`,

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 import pytest
 
@@ -19,13 +20,19 @@ from synapse_channel.core.hub import SynapseHub
 
 
 def test_print_manifest_renders_cards(capsys: pytest.CaptureFixture[str]) -> None:
-    manifest = [
-        {"agent": "FAST", "task_classes": ["chat"], "model": "m", "description": "quick"},
+    manifest: list[dict[str, Any]] = [
+        {
+            "agent": "FAST",
+            "task_classes": ["chat"],
+            "model": "m",
+            "description": "quick",
+            "contracts": [{"task_class": "chat"}],
+        },
         {"agent": "BARE", "task_classes": [], "model": "", "description": ""},
     ]
     cli_queries._print_manifest(manifest)
     out = capsys.readouterr().out
-    assert "FAST [chat] model=m: quick" in out
+    assert "FAST [chat] model=m: quick (contracts: 1)" in out
     assert "BARE [none] model=-:" in out
 
 

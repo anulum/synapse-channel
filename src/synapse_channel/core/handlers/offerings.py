@@ -39,6 +39,7 @@ async def handle_advertise(
         skills=skills,
         task_classes=task_classes,
         model=str(data.get("model") or ""),
+        contracts=data.get("contracts"),
         meta=meta if isinstance(meta, dict) else None,
     )
     await hub._broadcast(
