@@ -81,7 +81,13 @@ declared dev, docs, and benchmark extras:
 
 ```bash
 .venv/bin/python tools/check_dev_dependency_drift.py --check
+.venv/bin/python tools/audit_dependency_tooling.py --check
 ```
+
+The second check is offline. It verifies that local preflight still covers the
+expected tool gates, GitHub Actions are pinned to full commit SHAs, Dependabot
+covers actions/Python/Docker, and the PyPI publish/download metadata surfaces
+remain wired.
 
 This installs the `synapse` command. To run the hub as an always-on local service
 or a container, see the [deployment guide](docs/deployment.md) (a `systemd` user
@@ -656,7 +662,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 102 |
 | Wire message types | 53 |
 | CLI subcommands | 45 |
-| Test functions | 1670 |
+| Test functions | 1681 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

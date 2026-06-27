@@ -32,10 +32,13 @@ run "ruff format"          "$V/ruff" format --check src tests benchmarks example
 run "ruff lint"            "$V/ruff" check src tests benchmarks examples
 run "capability manifest"  "$V/python" tools/capability_manifest.py --check
 run "dev dependency drift" "$V/python" tools/check_dev_dependency_drift.py --check
+run "dependency/tooling audit" "$V/python" tools/audit_dependency_tooling.py --check
 run "version sync"         "$V/python" tools/check_version_sync.py
 run "MCP surface audit"    "$V/python" tools/audit_mcp_surface.py --check
 run "release claim hygiene" "$V/python" tools/check_release_claim_hygiene.py --check
 run "commercial claim hygiene" "$V/python" tools/check_commercial_claim_hygiene.py --check
+run "bandit tooling audit" "$V/python" -m bandit -q tools/audit_dependency_tooling.py \
+  tools/check_dev_dependency_drift.py
 # ci.yml: typecheck
 run "mypy (strict)"        "$V/mypy"
 # ci.yml: test (single-version; CI runs the 3.10-3.13 matrix)

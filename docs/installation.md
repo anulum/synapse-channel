@@ -47,7 +47,14 @@ larger local gates:
 
 ```bash
 .venv/bin/python tools/check_dev_dependency_drift.py --check
+.venv/bin/python tools/audit_dependency_tooling.py --check
 ```
+
+`audit_dependency_tooling.py` is an offline maintenance audit. It checks that
+the local preflight script still includes ruff, mypy, pytest, Bandit, MkDocs,
+pip-audit, dependency drift, and this audit; that workflow actions are pinned to
+full commit SHAs; that Dependabot watches GitHub Actions, Python, and Docker;
+and that PyPI publish/download tracking surfaces remain wired.
 
 ## Verifying
 
