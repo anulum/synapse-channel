@@ -35,9 +35,28 @@ def test_parser_worker_custom() -> None:
 
 
 def test_parser_supervisor() -> None:
-    args = cli.build_parser().parse_args(["supervisor", "--idle-seconds", "60", "--interval", "5"])
+    args = cli.build_parser().parse_args(
+        [
+            "supervisor",
+            "--idle-seconds",
+            "60",
+            "--interval",
+            "5",
+            "--no-predictive-stall",
+            "--history-multiplier",
+            "4",
+            "--min-history-samples",
+            "5",
+            "--min-predictive-idle-seconds",
+            "45",
+        ]
+    )
     assert args.idle_seconds == 60.0
     assert args.interval == 5.0
+    assert args.predictive_stall is False
+    assert args.history_multiplier == 4.0
+    assert args.min_history_samples == 5
+    assert args.min_predictive_idle_seconds == 45.0
     assert args.func is cli_processes._cmd_supervisor
 
 

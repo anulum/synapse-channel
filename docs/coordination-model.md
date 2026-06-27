@@ -81,7 +81,10 @@ query is read-only and does not change hub state.
   with no release/re-claim window for a third agent to grab it. Scope, status,
   and checkpoint move with it.
 - An **LLM-free supervisor** watches the plan and re-offers tasks that stall (no
-  progress while in progress, or blocked with every dependency finished).
+  progress while in progress, or blocked with every dependency finished). Its
+  in-progress rule keeps the fixed idle threshold as the operator ceiling and
+  can optionally supplement it with completed-task progress cadence from the
+  same board.
 - A task taken over after its lease lapses **resumes from its last checkpoint**
   rather than restarting.
 

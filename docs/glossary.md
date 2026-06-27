@@ -128,6 +128,13 @@ Read-only reconstruction over the **event log** using `synapse event-query`: tas
 timelines, task state at a sequence or timestamp, path-touch windows, and
 historical claim conflicts.
 
+### Predictive stall detection
+
+The local `synapse supervisor` policy that combines a fixed idle ceiling with
+completed-task progress cadence from the current board. It can re-offer stalled
+plan tasks earlier on boards with enough fast history, but remains an advisory
+heuristic over board activity, not proof that a worker failed.
+
 ### Handoff
 
 One **agent** passing an in-progress **claim** (with its **checkpoint**) to another atomically,

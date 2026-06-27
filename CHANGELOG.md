@@ -14,6 +14,8 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added historical-cadence stall detection to the LLM-free supervisor, with
+  operator controls for disabling or tuning the predictive supplement.
 - Added `synapse event-query` for read-only temporal event-log queries over the
   hub SQLite store, covering task timelines, point-in-time task state,
   path-touch windows, and historical claim conflicts.

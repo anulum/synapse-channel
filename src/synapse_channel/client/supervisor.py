@@ -12,8 +12,8 @@ nudges it when work gets stuck — with no model in the default path, so it is
 deterministic and cheap to run. It applies two rules over a board snapshot:
 
 * an ``in_progress`` task with no activity (no progress note and no status
-  change) for longer than an idle threshold is treated as stalled and
-  re-offered;
+  change) for longer than the fixed threshold, or a shorter threshold derived
+  from completed-task history, is treated as stalled and re-offered;
 * a ``blocked`` task whose every dependency has reached a terminal status is a
   stale block and re-offered.
 
@@ -23,107 +23,47 @@ up, and records an ``assessment`` progress note explaining why. Because the
 re-offer changes the status away from ``in_progress``/``blocked``, the same
 stall is not flagged again on the next pass.
 
-:func:`detect_stalls` is the pure policy — a function of an observed snapshot and
-the clock — and :class:`SupervisorWorker` is the on-channel driver that polls the
-board and applies what the policy returns.
+:func:`~synapse_channel.core.stall.detect_stalls` is the pure policy — a
+function of an observed snapshot and the clock — and :class:`SupervisorWorker`
+is the on-channel driver that polls the board and applies what the policy
+returns.
 """
 
 from __future__ import annotations
 
 import asyncio
 import time
-from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
-from synapse_channel.core.ledger import TERMINAL_LEDGER_STATUSES
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.stall import (
+    DEFAULT_HISTORY_MULTIPLIER,
+    DEFAULT_IDLE_SECONDS,
+    DEFAULT_INTERVAL_SECONDS,
+    DEFAULT_MIN_HISTORY_SAMPLES,
+    DEFAULT_MIN_PREDICTIVE_IDLE_SECONDS,
+    Intervention,
+    StallPolicy,
+    detect_stalls,
+)
 
-DEFAULT_IDLE_SECONDS = 300.0
-"""Default no-activity window after which an in-progress task is re-offered."""
-
-DEFAULT_INTERVAL_SECONDS = 30.0
-"""Default seconds between supervisor passes."""
+__all__ = [
+    "DEFAULT_HISTORY_MULTIPLIER",
+    "DEFAULT_IDLE_SECONDS",
+    "DEFAULT_INTERVAL_SECONDS",
+    "DEFAULT_MIN_HISTORY_SAMPLES",
+    "DEFAULT_MIN_PREDICTIVE_IDLE_SECONDS",
+    "DEFAULT_SETTLE_SECONDS",
+    "Intervention",
+    "StallPolicy",
+    "SupervisorWorker",
+    "detect_stalls",
+]
 
 DEFAULT_SETTLE_SECONDS = 0.2
 """Default pause after requesting the board to let the snapshot arrive."""
-
-
-@dataclass(frozen=True)
-class Intervention:
-    """A single action the supervisor decided to take on a task.
-
-    Attributes
-    ----------
-    task_id : str
-        The task the intervention concerns.
-    action : str
-        What to do; currently always ``"reoffer"``.
-    reason : str
-        Human-readable explanation, recorded with the re-offer.
-    """
-
-    task_id: str
-    action: str
-    reason: str
-
-
-def _latest_activity(task: dict[str, Any], progress_by_task: dict[str, list[float]]) -> float:
-    """Return the most recent activity time for a task (update or progress)."""
-    times = [float(task.get("updated_at", 0.0))]
-    times.extend(progress_by_task.get(str(task.get("task_id", "")), []))
-    return max(times)
-
-
-def _dependencies_satisfied(task: dict[str, Any], by_id: dict[str, dict[str, Any]]) -> bool:
-    """Return whether every declared dependency has reached a terminal status."""
-    return all(
-        by_id.get(str(dep), {}).get("status") in TERMINAL_LEDGER_STATUSES
-        for dep in task.get("depends_on", [])
-    )
-
-
-def detect_stalls(
-    board: dict[str, Any], *, now: float, idle_seconds: float = DEFAULT_IDLE_SECONDS
-) -> list[Intervention]:
-    """Decide which tasks on a board snapshot are stalled and should be re-offered.
-
-    Parameters
-    ----------
-    board : dict[str, Any]
-        A blackboard snapshot as returned by
-        :meth:`~synapse_channel.core.ledger.Blackboard.snapshot`.
-    now : float
-        Current wall-clock time, in seconds, used to age in-progress tasks.
-    idle_seconds : float, optional
-        No-activity window after which an ``in_progress`` task is stalled.
-
-    Returns
-    -------
-    list[Intervention]
-        One re-offer per stalled task, sorted by ``task_id``.
-    """
-    tasks = list(board.get("tasks", []))
-    by_id = {str(task.get("task_id", "")): task for task in tasks}
-    progress_by_task: dict[str, list[float]] = defaultdict(list)
-    for note in board.get("progress", []):
-        progress_by_task[str(note.get("task_id", ""))].append(float(note.get("posted_at", 0.0)))
-
-    interventions: list[Intervention] = []
-    for task in tasks:
-        task_id = str(task.get("task_id", ""))
-        status = task.get("status")
-        if status == "in_progress":
-            idle = now - _latest_activity(task, progress_by_task)
-            if idle >= idle_seconds:
-                interventions.append(
-                    Intervention(task_id, "reoffer", f"no progress in {int(idle_seconds)}s")
-                )
-        elif status == "blocked" and _dependencies_satisfied(task, by_id):
-            interventions.append(Intervention(task_id, "reoffer", "dependencies satisfied"))
-    return sorted(interventions, key=lambda item: item.task_id)
 
 
 class SupervisorWorker:
@@ -136,7 +76,16 @@ class SupervisorWorker:
     uri : str, optional
         Hub URI. Defaults to :data:`~synapse_channel.client.agent.DEFAULT_HUB_URI`.
     idle_seconds : float, optional
-        No-activity window passed to :func:`detect_stalls`.
+        Fixed no-activity ceiling passed to :func:`detect_stalls`.
+    predictive_stall : bool, optional
+        Whether completed-task history may lower the effective no-activity
+        threshold.
+    history_multiplier : float, optional
+        Multiplier applied to the historical median activity gap.
+    min_history_samples : int, optional
+        Minimum historical gaps required before prediction is used.
+    min_predictive_idle_seconds : float, optional
+        Floor for the predictive threshold.
     interval : float, optional
         Seconds between passes (floored at 1).
     settle_seconds : float, optional
@@ -155,6 +104,10 @@ class SupervisorWorker:
         name: str = "SUPERVISOR",
         uri: str = DEFAULT_HUB_URI,
         idle_seconds: float = DEFAULT_IDLE_SECONDS,
+        predictive_stall: bool = True,
+        history_multiplier: float = DEFAULT_HISTORY_MULTIPLIER,
+        min_history_samples: int = DEFAULT_MIN_HISTORY_SAMPLES,
+        min_predictive_idle_seconds: float = DEFAULT_MIN_PREDICTIVE_IDLE_SECONDS,
         interval: float = DEFAULT_INTERVAL_SECONDS,
         settle_seconds: float = DEFAULT_SETTLE_SECONDS,
         ready_timeout: float = 5.0,
@@ -162,7 +115,14 @@ class SupervisorWorker:
         clock: Callable[[], float] = time.time,
     ) -> None:
         self.name = name
-        self.idle_seconds = idle_seconds
+        self.policy = StallPolicy(
+            idle_seconds=idle_seconds,
+            predictive=predictive_stall,
+            history_multiplier=history_multiplier,
+            min_history_samples=min_history_samples,
+            min_predictive_idle_seconds=min_predictive_idle_seconds,
+        )
+        self.idle_seconds = self.policy.idle_seconds
         self.interval = max(float(interval), 1.0)
         self.settle_seconds = max(float(settle_seconds), 0.0)
         self.ready_timeout = max(float(ready_timeout), 0.1)
@@ -186,9 +146,7 @@ class SupervisorWorker:
         """
         if self.latest_board is None:
             return []
-        interventions = detect_stalls(
-            self.latest_board, now=self._clock(), idle_seconds=self.idle_seconds
-        )
+        interventions = detect_stalls(self.latest_board, now=self._clock(), policy=self.policy)
         for item in interventions:
             await self.agent.post_progress(
                 item.task_id, f"supervisor: {item.reason}; re-offering", kind="assessment"

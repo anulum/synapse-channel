@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -237,6 +237,21 @@ async def test_cycle_settles_before_evaluating() -> None:
     assert time.monotonic() - started >= 0.02
 
 
+async def test_cycle_without_settle_evaluates_immediately() -> None:
+    worker = _worker(settle_seconds=0.0)
+
+    class FakeAgent:
+        async def request_board(self) -> None:
+            worker.latest_board = {"tasks": [], "progress": []}
+
+    worker.agent = cast(Any, FakeAgent())
+
+    applied = await worker._cycle()
+
+    assert worker.latest_board == {"tasks": [], "progress": []}
+    assert applied == []
+
+
 async def test_supervise_loop_runs_a_live_pass() -> None:
     async with running_hub(SynapseHub()) as (_hub, uri):
         worker = _worker(uri=uri, settle_seconds=0.03, interval=1.0)
@@ -255,9 +270,49 @@ async def test_supervise_loop_runs_a_live_pass() -> None:
             await _stop_supervisor_agent(worker, task)
 
 
+async def test_supervise_loop_sleeps_after_one_cycle(monkeypatch: pytest.MonkeyPatch) -> None:
+    worker = _worker(interval=3.0)
+    sleeps: list[float] = []
+
+    async def fake_cycle() -> list[Any]:
+        worker.agent.running = False
+        return []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(worker, "_cycle", fake_cycle)
+    monkeypatch.setattr("synapse_channel.client.supervisor.asyncio.sleep", fake_sleep)
+    worker.agent.running = True
+
+    await worker._supervise_loop()
+
+    assert sleeps == [3.0]
+
+
 async def test_run_completes_when_connection_finishes() -> None:
     worker = SupervisorWorker(uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1)
     await worker.run()
+
+
+async def test_run_with_ready_short_connection_does_not_warn(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class FakeAgent:
+        running = False
+
+        async def connect(self) -> None:
+            await asyncio.sleep(60.0)
+
+        async def wait_until_ready(self, timeout: float) -> bool:
+            return True
+
+    worker = SupervisorWorker(ready_timeout=0.1)
+    worker.agent = cast(Any, FakeAgent())
+
+    await worker.run()
+
+    assert "handshake timeout" not in capsys.readouterr().out
 
 
 async def test_run_warns_on_handshake_timeout(capsys: pytest.CaptureFixture[str]) -> None:
