@@ -376,6 +376,8 @@ synapse relay ./feed.ndjson --cursor ./feed.cursor
 `synapse a2a-card` projects the live SYNAPSE capability manifest into an A2A
 Agent Card. `synapse a2a-serve` runs the local HTTP+JSON bridge and keeps A2A at
 the edge of the system; the hub remains WebSocket-native.
+The bridge is an interop surface for A2A-shaped clients, not a replacement for
+orchestration frameworks, coding agents, or the native SYNAPSE hub protocol.
 
 Supported local subset:
 

@@ -25,6 +25,11 @@ verbs as MCP tools and resources. The hub itself never learns about MCP: the fac
 is a separate adapter process, not a hub change, so the hub stays exactly as
 local-first and dependency-light as before.
 
+This makes MCP an interoperability edge, not a replacement layer. MCP-compatible
+hosts such as Claude Code, Claude Desktop, Cursor, or other editor assistants
+still own their prompt/runtime/editor behavior; SYNAPSE only supplies shared
+coordination state through MCP tools and resources.
+
 The MCP SDK is an **optional extra** — the core install keeps its single
 `websockets` dependency:
 

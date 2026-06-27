@@ -208,6 +208,10 @@ synapse send --token s3cret --name USER "hello"      # agents present the token 
 ### Use it with your coding agent
 
 Synapse coordinates the agents you already run; it does not replace them.
+Its MCP and A2A adapters are interop surfaces: they let Claude Code, Claude
+Desktop, Cursor, Codex, Copilot-style hosts, Aider, orchestration frameworks,
+and other agent tools participate in one local coordination bus while those
+tools still own prompting, model choice, tool use, and editor/runtime behavior.
 
 - **Claude Code / Claude Desktop / Cursor (MCP):** point the host at the MCP server
   and every coordination verb shows up as a tool — no Synapse-specific code.
@@ -542,7 +546,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 93 |
 | Wire message types | 53 |
 | CLI subcommands | 44 |
-| Test functions | 1538 |
+| Test functions | 1541 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |
