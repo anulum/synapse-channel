@@ -21,6 +21,8 @@ All notable changes to this project are documented here.
 - Added a commercial licence evaluation path and checker coverage so public docs
   keep the AGPL/commercial boundary, self-service plans, and custom-contact
   requirements aligned.
+- Added prototype Datalog-like and Cypher-like aliases for `synapse event-query`
+  while preserving the existing read-only event-log execution model.
 
 ## [0.54.0] - 2026-06-28
 

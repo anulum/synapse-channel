@@ -78,7 +78,10 @@ merge, not that the hub has rejected anything.
 event-log query surface for post-hoc reconstruction. It reads the SQLite event
 store directly and can show a task timeline, task state at a sequence or
 timestamp, path touches between timestamps, or historical claim conflicts. The
-query is read-only and does not change hub state.
+query is read-only and does not change hub state. Prototype Datalog-like aliases
+such as `timeline("TASK").` and Cypher-like aliases such as
+`MATCH (task:TASK {id:"TASK"}) RETURN timeline` normalize into that same small
+query model over journal snapshots.
 
 `synapse postmortem ./synapse.db TASK-1` turns those same durable events into a
 replayable postmortem. It reconstructs who claimed the task, release points,

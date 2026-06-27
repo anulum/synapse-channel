@@ -128,7 +128,8 @@ applies the same blackboard retention and finding-quota counters, and is the spi
 
 Read-only reconstruction over the **event log** using `synapse event-query`: task
 timelines, task state at a sequence or timestamp, path-touch windows, and
-historical claim conflicts.
+historical claim conflicts. Prototype Datalog-like and Cypher-like query aliases
+normalize into the same read-only event-log query model.
 
 ### Replayable postmortem
 
