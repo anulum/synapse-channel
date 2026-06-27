@@ -97,6 +97,12 @@ broken handoff candidates, and merge-conflict frequency as audit signals, not
 scores. The report is suitable for handovers and routing review, but it does not
 rank agents or assign trust grades.
 
+The planned [policy engine](policy-engine.md) builds on those same release
+receipts and event-log projections. Its first mode is advisory: required tests,
+strict type checking, owner approval, evidence freshness, generated artifact
+parity, and no-merge-without-receipt rules are evaluated against local evidence
+without changing hub state or merging code.
+
 `synapse ttl-advice ./synapse.db` evaluates adaptive lease TTL inputs from the
 event log. It uses completed-task duration samples and live-claim load to print
 an advisory default, but it does not mutate hub configuration and explicit
