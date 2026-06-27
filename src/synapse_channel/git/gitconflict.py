@@ -52,9 +52,10 @@ class PredictedConflict:
     def describe(self) -> str:
         """Render the predicted conflict as one human-readable line."""
         where = ", ".join(self.paths) if self.paths else "the whole worktree"
+        base = self.base_a if self.base_a == self.base_b else f"{self.base_a}/{self.base_b}"
         return (
             f"{self.owner_a}@{self.branch_a} vs {self.owner_b}@{self.branch_b} "
-            f"(both -> base): {where}"
+            f"(both -> {base}): {where}"
         )
 
 
@@ -85,6 +86,11 @@ def _overlap(paths_a: list[str], paths_b: list[str]) -> list[str]:
     return sorted(shared)
 
 
+def _same_base(git_a: dict[str, Any], git_b: dict[str, Any]) -> bool:
+    """Return whether two git contexts merge back into the same base."""
+    return str(git_a.get("base") or "main") == str(git_b.get("base") or "main")
+
+
 def find_conflicts(claims: list[dict[str, Any]]) -> list[PredictedConflict]:
     """Find every pair of git-scoped claims on different branches that overlap.
 
@@ -105,6 +111,8 @@ def find_conflicts(claims: list[dict[str, Any]]) -> list[PredictedConflict]:
         for second in git_claims[index + 1 :]:
             git_a, git_b = first["git"], second["git"]
             if git_a["branch"] == git_b["branch"]:
+                continue
+            if not _same_base(git_a, git_b):
                 continue
             paths_a = _normalise(first.get("paths", []))
             paths_b = _normalise(second.get("paths", []))
@@ -131,7 +139,24 @@ def branch_diff_files(
 ) -> list[str]:
     """Return the files ``branch`` changed since it diverged from ``base``."""
     out = runner(["diff", "--name-only", f"{base}...{branch}"])
-    return [line for line in out.splitlines() if line.strip()]
+    return [line.strip() for line in out.splitlines() if line.strip()]
+
+
+def _path_overlaps_scope(path: str, scope: str) -> bool:
+    """Return whether a changed file falls inside a claimed path scope."""
+    return path == scope or path.startswith(scope + "/") or scope.startswith(path + "/")
+
+
+def _changed_paths_inside_scope(
+    changed_a: set[str], changed_b: set[str], scopes: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Return common changed files that sit inside the declared overlap scopes."""
+    common = sorted(changed_a & changed_b)
+    if not scopes:
+        return tuple(common)
+    return tuple(
+        path for path in common if any(_path_overlaps_scope(path, scope) for scope in scopes)
+    )
 
 
 def _refine_with_diff(
@@ -159,10 +184,10 @@ def _refine_with_diff(
     for conflict in conflicts:
         changed_a = changed(conflict.branch_a, conflict.base_a)
         changed_b = changed(conflict.branch_b, conflict.base_b)
-        if changed_a is None or changed_b is None or not conflict.paths:
+        if changed_a is None or changed_b is None:
             refined.append(conflict)
             continue
-        kept = tuple(p for p in conflict.paths if p in changed_a and p in changed_b)
+        kept = _changed_paths_inside_scope(changed_a, changed_b, conflict.paths)
         if kept:
             refined.append(replace(conflict, paths=kept))
     return refined

@@ -19,6 +19,12 @@ All notable changes to this project are documented here.
   notes, and a bounded coordination timeline from the pre-compaction event
   snapshot.
 
+### Changed
+- `synapse conflicts` now ignores branch-claim pairs with different merge bases,
+  renders the real shared base in predicted-conflict output, and lets
+  `--check-diff` refine directory-scoped and whole-worktree claims to the common
+  files actually changed on both branches.
+
 ## [0.50.0] - 2026-06-27
 
 ### Added

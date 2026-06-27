@@ -445,9 +445,11 @@ synapse conflicts --check-diff                   # predict cross-branch merge co
 onboarding guide (branch convention + worktree workflow). `synapse state` shows
 each claim's branch; installed git hooks release a claim
 when its files are committed or merged; and `synapse conflicts` flags two agents
-about to edit the same files on branches that merge into the same base. The hub
-stays **git-agnostic** — it stores the branch as opaque metadata and never runs
-git or reads a filesystem — so all git work is on the client. See the
+about to edit the same files on branches that merge into the same base.
+`--check-diff` narrows directory or whole-worktree claims to files both branches
+actually changed when both branch diffs are available. The hub stays
+**git-agnostic** — it stores the branch as opaque metadata and never runs git or
+reads a filesystem — so all git work is on the client. See the
 [git-native claims guide](docs/git-claims.md).
 
 For a concise lease view while coordinating a session:
@@ -563,7 +565,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 96 |
 | Wire message types | 53 |
 | CLI subcommands | 44 |
-| Test functions | 1557 |
+| Test functions | 1563 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

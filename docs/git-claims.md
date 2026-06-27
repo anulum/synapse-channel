@@ -106,15 +106,19 @@ synapse conflicts --check-diff
 ```
 
 `synapse conflicts` reads the hub's live claims and flags every pair held on
-*different* branches whose declared paths overlap — two agents about to edit the
-same files on branches that merge into the same base. `--check-diff` refines the
-prediction against each branch's actual `git diff base...branch`, so only files a
-branch has really changed are reported (a branch that is not checked out locally
-is kept as a conservative warning rather than dropped).
+*different* branches with the same merge base whose declared paths overlap — two
+agents about to edit the same files on branches that will merge into one target.
+Claims with different bases are ignored because their branch-integration risk is
+not the same merge point. `--check-diff` refines the prediction against each
+branch's actual `git diff base...branch`, so only files both branches have really
+changed are reported. A directory-scoped claim such as `--paths src` matches
+changed files below that directory, and a whole-worktree claim is refined to the
+common changed files when both branch diffs are available. A branch that is not
+checked out locally is kept as a conservative warning rather than dropped.
 
 ```
 Predicted conflicts (1):
-  A@feature/x vs B@feature/y (both -> base): src/auth.py
+  A@feature/x vs B@feature/y (both -> main): src/auth.py
 ```
 
 `synapse conflicts` exits `0` when nothing is predicted, `2` when a conflict is,
