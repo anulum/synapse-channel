@@ -16,6 +16,8 @@ All notable changes to this project are documented here.
 ### Added
 - Added `synapse dashboard` for a loopback-only read-only HTML/JSON view of the
   live roster, claims, board tasks, progress notes, and capability cards.
+- Added native hub `wss://` support with `--tls-certfile` and `--tls-keyfile`
+  while preserving token requirements for off-loopback binds.
 
 ## [0.53.0] - 2026-06-27
 

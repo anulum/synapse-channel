@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import ssl
 import sys
 from collections.abc import Callable, Coroutine
 from typing import Any
@@ -20,6 +21,7 @@ from synapse_channel.core.hub import InsecureBindError, SynapseHub
 from synapse_channel.core.logging_setup import configure_logging
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
+from synapse_channel.core.tls import HubTLSConfigError, build_server_ssl_context
 
 
 def _cmd_hub(
@@ -29,6 +31,7 @@ def _cmd_hub(
     hub_factory: Callable[..., SynapseHub] = SynapseHub,
     store_factory: Callable[[str], EventStore] = EventStore,
     logging_configurator: Callable[..., object] = configure_logging,
+    tls_context_factory: Callable[..., ssl.SSLContext | None] = build_server_ssl_context,
 ) -> int:
     """Run the coordination hub until interrupted.
 
@@ -36,6 +39,11 @@ def _cmd_hub(
     resumes from it on restart; without it the hub is purely in-memory.
     """
     logging_configurator(log_format=args.log_format, level=args.log_level)
+    try:
+        ssl_context = tls_context_factory(certfile=args.tls_certfile, keyfile=args.tls_keyfile)
+    except HubTLSConfigError as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        return 2
     journal = store_factory(args.db) if args.db else None
     limiter = RateLimiter(rate_per_second=args.rate, burst=args.burst) if args.rate > 0 else None
     host_limiter = (
@@ -71,7 +79,7 @@ def _cmd_hub(
         insecure_off_loopback=args.insecure_off_loopback,
     )
     try:
-        runner(hub.serve(host=args.host, port=args.port))
+        runner(hub.serve(host=args.host, port=args.port, ssl_context=ssl_context))
     except InsecureBindError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
