@@ -13,6 +13,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Added `synapse dashboard` for a loopback-only read-only HTML/JSON view of the
+  live roster, claims, board tasks, progress notes, and capability cards.
+
 ## [0.53.0] - 2026-06-27
 
 ### Changed

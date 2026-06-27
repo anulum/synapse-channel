@@ -134,6 +134,7 @@ synapse doctor
 synapse demo
 synapse quickstart-coding
 synapse git-init --name trial-agent
+synapse dashboard --port 8765
 synapse a2a-card --endpoint-url http://127.0.0.1:8877
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877
 ```
@@ -252,6 +253,11 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   waiter, a hub exposed without a token, an accidental identity, or a pressured
   root filesystem — each with its fix. Use `--disk-path <path>` to check the
   filesystem that holds a specific workspace or cache.
+
+- **Inspect the live board:** `synapse dashboard --port 8765` opens a
+  loopback-only read-only HTML view of roster, claims, board tasks, progress, and
+  advertised capabilities, with the same snapshot available at `/snapshot.json`
+  for local tooling.
 
 - **Verify a release redeploy:** `synapse doctor --redeploy-checklist` prints
   package, service, roster, durable-state, and git-hook checks for a post-release
@@ -680,10 +686,10 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.53.0 |
 | Public API exports | 60 |
-| Package modules | 130 |
-| Classes | 112 |
+| Package modules | 132 |
+| Classes | 117 |
 | Wire message types | 53 |
-| CLI subcommands | 48 |
+| CLI subcommands | 49 |
 | Test functions | 1715 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 21 |

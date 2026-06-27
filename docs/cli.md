@@ -18,6 +18,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse a2a-card` | Print an Agent2Agent Agent Card projected from the live capability manifest. |
 | `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge. |
 | `synapse codex-tmux` | Wake an existing Codex tmux session with a fixed safe prompt. |
+| `synapse dashboard` | Serve a loopback-only read-only HTML/JSON dashboard for live hub snapshots. |
 | `synapse send` | Connect, send one message, optionally await replies, and exit. |
 | `synapse wait` | Block until a message addressed to you arrives, then exit (a wake trigger). |
 | `synapse listen` | Connect and stream channel messages until interrupted. |
@@ -119,10 +120,17 @@ synapse relay ./feed.ndjson --project quantum --cursor ./quantum.cursor  # misse
 synapse board                                                           # the current plan
 synapse state --owner quantum                                           # your claims + resume checkpoints
 synapse who --project quantum                                           # who is live now
+synapse dashboard --port 8765                                           # local read-only HTML/JSON view
 ```
 
 A lapsed claim keeps its checkpoint, so re-claiming the task resumes from it rather
 than restarting.
+
+`synapse dashboard` binds to `127.0.0.1` by default and reads roster, state,
+board, and manifest snapshots from the live hub. It serves `/` for the browser
+view and `/snapshot.json` for local tooling. Use `--allow-non-loopback` only
+behind trusted local network controls because the page exposes agent names,
+claim scopes, and task text.
 
 ## Identities and groups
 
