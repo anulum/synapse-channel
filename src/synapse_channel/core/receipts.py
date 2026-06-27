@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from typing import NotRequired, TypedDict
+from typing import TypedDict
 
 MAX_RELEASE_RECEIPT_ITEMS = 50
 """Maximum number of values retained for any repeated receipt field."""
@@ -18,9 +18,7 @@ MAX_RELEASE_RECEIPT_ITEM_CHARS = 500
 """Maximum characters retained for one receipt field value."""
 
 
-class ReleaseReceipt(TypedDict):
-    """Machine-readable evidence attached to a successful claim release."""
-
+class _ReleaseReceiptRequired(TypedDict):
     task_id: str
     owner: str
     released: bool
@@ -30,8 +28,15 @@ class ReleaseReceipt(TypedDict):
     changed_files: list[str]
     generated_artifacts: list[str]
     approvals: list[str]
-    confidence: NotRequired[str]
-    freshness_seconds: NotRequired[float]
+
+
+class _ReleaseReceiptOptional(TypedDict, total=False):
+    confidence: str
+    freshness_seconds: float
+
+
+class ReleaseReceipt(_ReleaseReceiptRequired, _ReleaseReceiptOptional):
+    """Machine-readable evidence attached to a successful claim release."""
 
 
 def clean_receipt_items(raw: object) -> list[str]:
