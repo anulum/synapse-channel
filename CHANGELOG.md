@@ -20,6 +20,8 @@ All notable changes to this project are documented here.
 - `tools/check_release_claim_hygiene.py` checks changelog and release-note prose
   for agent-authorship, self-awarded quality labels, and unsupported
   conformance or certification claims.
+- `tools/check_commercial_claim_hygiene.py` checks commercial docs for the
+  AGPL/commercial boundary and for unsupported paid-code-path claims.
 
 ## [0.49.0] - 2026-06-27
 
