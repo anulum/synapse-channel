@@ -23,6 +23,9 @@ All notable changes to this project are documented here.
   requirements aligned.
 - Added prototype Datalog-like and Cypher-like aliases for `synapse event-query`
   while preserving the existing read-only event-log execution model.
+- Added the public policy-engine design, covering advisory local release rules
+  for required tests, type checks, owner approval, evidence freshness, generated
+  artifact parity, and no-merge-without-receipt.
 
 ## [0.54.0] - 2026-06-28
 

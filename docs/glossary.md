@@ -138,6 +138,14 @@ Read-only Markdown or JSON reconstruction over the **event log** using
 release events, assessment evidence, reconstructed path-overlap conflicts, and
 candidate unanswered messages that mention the task id.
 
+### Policy engine
+
+Planned local-first decision layer for evaluating release receipts and event-log
+evidence against configured rules such as required tests, strict type checking,
+owner approval, evidence freshness, generated artifact parity, and
+no-merge-without-receipt. The design is advisory by default and does not merge
+code.
+
 ### Reliability memory
 
 Evidence-only owner summaries over the **event log** using

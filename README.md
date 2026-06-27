@@ -510,6 +510,12 @@ synapse git-hook install                         # (git-init already does this) 
 synapse conflicts --check-diff                   # predict cross-branch merge conflicts
 ```
 
+The planned [policy engine](docs/policy-engine.md) builds on git-native claims,
+release receipts, and event-log evidence so teams can evaluate required tests,
+strict type checking, owner approval, evidence freshness, generated artifact
+parity, and no-merge-without-receipt rules before turning any advisory output
+into a local hook or CI gate.
+
 `synapse git-init` bundles the hook install with a short `.synapse/git-claims.md`
 onboarding guide (branch convention + worktree workflow). `synapse state` shows
 each claim's branch; installed git hooks release a claim
@@ -744,9 +750,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 131 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1825 |
+| Test functions | 1829 |
 | Benchmark harnesses | 4 |
-| Documentation pages | 21 |
+| Documentation pages | 22 |
 | GitHub Actions workflows | 10 |
 | Optional-dependency groups | 4 |
 
