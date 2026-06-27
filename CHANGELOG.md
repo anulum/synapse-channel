@@ -26,6 +26,9 @@ All notable changes to this project are documented here.
 - Added advisory semantic task routing for board tasks via `synapse route-task`
   and `synapse_route_task`, using deterministic local capability-card signals
   without claiming work or assigning owners.
+- Added optional observed capability evidence for routing from positive
+  release-receipt assessment notes in a local event store, preserving source
+  task and sequence provenance without grading agents.
 
 ## [0.53.0] - 2026-06-27
 

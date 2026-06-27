@@ -17,6 +17,7 @@ from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.core.capability_directory import build_capability_directory, directory_to_json
+from synapse_channel.core.capability_observations import read_observed_capability_index
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.semantic_routing import (
     find_task,
@@ -385,7 +386,13 @@ class SynapseHubBridge:
         )
         return directory_to_json(directory)
 
-    async def route_task(self, task_id: str, limit: int = 5, include_zero: bool = False) -> str:
+    async def route_task(
+        self,
+        task_id: str,
+        limit: int = 5,
+        include_zero: bool = False,
+        event_store: str | None = None,
+    ) -> str:
         """Return advisory semantic route recommendations for a board task.
 
         Parameters
@@ -396,6 +403,8 @@ class SynapseHubBridge:
             Maximum number of candidate agents. Defaults to ``5``.
         include_zero : bool, optional
             Include zero-score agents for diagnostics. Defaults to ``False``.
+        event_store : str or None, optional
+            Optional hub event-store path used for observed capability evidence.
 
         Returns
         -------
@@ -432,10 +441,17 @@ class SynapseHubBridge:
             manifest=manifest if isinstance(manifest, list) else [],
             resources=resources if isinstance(resources, list) else [],
         )
+        observations = None
+        if event_store is not None:
+            try:
+                observations = read_observed_capability_index(event_store)
+            except ValueError as exc:
+                return str(exc)
         recommendation = recommend_agents_for_task(
             task,
             directory,
             limit=limit,
             include_zero=include_zero,
+            observations=observations,
         )
         return recommendation_to_json(recommendation)

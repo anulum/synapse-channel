@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
 import pytest
 
 from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_semantic_routing
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.persistence import EventStore
 
 
 async def _seed_routing_hub(uri: str) -> AgentHandle:
@@ -47,12 +50,48 @@ async def _seed_routing_hub(uri: str) -> AgentHandle:
     return handle
 
 
+def _seed_observation_store(path: Path) -> None:
+    """Write one successful prior task for the live FAST agent."""
+    store = EventStore(path)
+    store.append(
+        EventKind.LEDGER_TASK,
+        {
+            "task_id": "DONE",
+            "title": "Websocket routing repair",
+            "description": "Improved local hub fallback.",
+            "depends_on": [],
+            "status": "done",
+            "suggested_owner": "",
+            "created_by": "planner",
+            "created_at": 1.0,
+            "updated_at": 2.0,
+        },
+        ts=1.0,
+        durable=True,
+    )
+    store.append(
+        EventKind.LEDGER_PROGRESS,
+        {
+            "task_id": "DONE",
+            "author": "FAST",
+            "kind": "assessment",
+            "text": "release receipt: evidence=pytest -q; epistemic_status=supported",
+            "posted_at": 3.0,
+        },
+        ts=3.0,
+    )
+    store.close()
+
+
 def test_route_task_parser_wires_command() -> None:
-    args = cli.build_parser().parse_args(["route-task", "ROUTE-1", "--limit", "2", "--json"])
+    args = cli.build_parser().parse_args(
+        ["route-task", "ROUTE-1", "--limit", "2", "--event-store", "events.db", "--json"]
+    )
 
     assert args.command == "route-task"
     assert args.task_id == "ROUTE-1"
     assert args.limit == 2
+    assert args.event_store == "events.db"
     assert args.json is True
     assert args.func is cli_semantic_routing._cmd_route_task
 
@@ -95,6 +134,38 @@ async def test_route_task_prints_json(capsys: pytest.CaptureFixture[str]) -> Non
     assert payload["candidates"][0]["score"] == 40
 
 
+async def test_route_task_uses_observed_event_store(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db = tmp_path / "events.db"
+    _seed_observation_store(db)
+    async with running_hub(SynapseHub()) as (_, uri):
+        handle = await _seed_routing_hub(uri)
+        try:
+            code = await cli_semantic_routing._route_task(
+                uri=uri,
+                name="ROUTER",
+                task_id="ROUTE-1",
+                event_store=str(db),
+                as_json=True,
+            )
+        finally:
+            await close_agents(handle)
+
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["candidates"][0]["agent"] == "FAST"
+    assert "observed:websocket" in payload["candidates"][0]["reasons"]
+    assert payload["candidates"][0]["observed_evidence"] == [
+        {
+            "seq": 2,
+            "task_id": "DONE",
+            "tokens": ["fallback", "hub", "local", "repair", "routing", "websocket"],
+        }
+    ]
+
+
 async def test_route_task_reports_missing_task(capsys: pytest.CaptureFixture[str]) -> None:
     async with running_hub(SynapseHub()) as (_, uri):
         handle = await _seed_routing_hub(uri)
@@ -129,6 +200,7 @@ def test_cmd_route_task_dispatches_real_query() -> None:
         task_id="ROUTE-1",
         limit=5,
         include_zero=False,
+        event_store=None,
         json=False,
     )
 

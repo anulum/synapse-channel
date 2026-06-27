@@ -11,6 +11,10 @@ from __future__ import annotations
 import json
 
 from synapse_channel.core.capability_directory import build_capability_directory
+from synapse_channel.core.capability_observations import (
+    ObservedCapabilityEvidence,
+    ObservedCapabilityIndex,
+)
 from synapse_channel.core.semantic_routing import (
     ROUTING_TRUST_BOUNDARY,
     find_task,
@@ -63,6 +67,63 @@ def test_recommend_agents_scores_structured_and_text_signals() -> None:
         "description:routing",
         "description:websocket",
         "contract:evidence",
+    )
+    assert recommendation.candidates[0].observed_evidence == ()
+
+
+def test_recommend_agents_adds_observed_capability_evidence() -> None:
+    directory = build_capability_directory(
+        manifest=[
+            {
+                "agent": "FAST",
+                "description": "General local worker.",
+                "skills": ["maintenance"],
+                "task_classes": ["ops"],
+            },
+            {
+                "agent": "SLOW",
+                "description": "Python cleanup worker.",
+                "skills": ["python"],
+                "task_classes": ["code"],
+            },
+        ],
+    )
+    observations = ObservedCapabilityIndex(
+        evidence=(
+            ObservedCapabilityEvidence(
+                agent="FAST",
+                task_id="DONE",
+                seq=42,
+                ts=10.0,
+                tokens=("cleanup", "python", "routing"),
+                detail="release receipt: evidence=pytest -q",
+            ),
+            ObservedCapabilityEvidence(
+                agent="FAST",
+                task_id="OTHER",
+                seq=43,
+                ts=11.0,
+                tokens=("unrelated",),
+                detail="release receipt: evidence=pytest -q",
+            ),
+        )
+    )
+    task = {"task_id": "NEXT", "title": "Python routing cleanup", "description": ""}
+
+    recommendation = recommend_agents_for_task(task, directory, observations=observations)
+
+    assert [(candidate.agent, candidate.score) for candidate in recommendation.candidates] == [
+        ("FAST", 18),
+        ("SLOW", 11),
+    ]
+    assert recommendation.candidates[0].reasons == (
+        "observed:cleanup",
+        "observed:python",
+        "observed:routing",
+        "observed_task:DONE@42",
+    )
+    assert recommendation.candidates[0].observed_evidence == (
+        {"task_id": "DONE", "seq": 42, "tokens": ["cleanup", "python", "routing"]},
     )
 
 

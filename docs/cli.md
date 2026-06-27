@@ -396,7 +396,7 @@ synapse listen --name USER
 synapse board
 synapse manifest
 synapse directory --task-class chat --json
-synapse route-task TASK-1 --limit 3 --json
+synapse route-task TASK-1 --limit 3 --event-store ./synapse.db --json
 synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --bearer-auth --a2a-token "$A2A_TOKEN" --state-file ./a2a-state.json
@@ -428,9 +428,12 @@ capacity, authorize execution, or certify trust.
 returns advisory routing recommendations for that board task. The scorer is
 local and deterministic: task-class matches rank first, skill matches and card
 description overlap add explainable evidence, and cards with contracts carry a
-small evidence bonus. `--include-zero` shows unmatched agents for diagnostics;
-no route recommendation claims the task, changes `suggested_owner`, reserves
-capacity, or certifies trust.
+small evidence bonus. `--event-store ./synapse.db` optionally adds observed
+capability evidence from positive release-receipt assessment notes in the
+durable log, preserving the source task id and event sequence for review.
+`--include-zero` shows unmatched agents for diagnostics; no route recommendation
+claims the task, changes `suggested_owner`, reserves capacity, grades an agent,
+or certifies trust.
 
 `synapse supervisor` watches the shared board and re-offers stalled plan tasks.
 The fixed `--idle-seconds` threshold remains the operator ceiling. By default the

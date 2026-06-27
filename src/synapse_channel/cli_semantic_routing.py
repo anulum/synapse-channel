@@ -21,6 +21,7 @@ from synapse_channel.core.capability_directory import (
     CapabilityDirectory,
     build_capability_directory,
 )
+from synapse_channel.core.capability_observations import read_observed_capability_index
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.semantic_routing import (
     RoutingRecommendation,
@@ -135,6 +136,7 @@ async def _route_task(
     response_timeout: float = 2.0,
     limit: int = 5,
     include_zero: bool = False,
+    event_store: str | None = None,
     as_json: bool = False,
 ) -> int:
     """Fetch live snapshots and render advisory route recommendations.
@@ -155,6 +157,9 @@ async def _route_task(
         Maximum candidate count.
     include_zero : bool, optional
         Include zero-score agents for diagnostic output.
+    event_store : str or None, optional
+        Optional hub event-store path used to add observed release-receipt
+        evidence to the advisory ranking.
     as_json : bool, optional
         Print JSON instead of compact text.
 
@@ -179,11 +184,19 @@ async def _route_task(
     if task is None:
         print(f"[{name}] Task {task_id} is not on the board.")
         return 1
+    observations = None
+    if event_store is not None:
+        try:
+            observations = read_observed_capability_index(event_store)
+        except ValueError as exc:
+            print(f"[{name}] {exc}")
+            return 1
     recommendation = recommend_agents_for_task(
         task,
         directory,
         limit=limit,
         include_zero=include_zero,
+        observations=observations,
     )
     if as_json:
         print(recommendation_to_json(recommendation))
@@ -204,6 +217,7 @@ def _cmd_route_task(args: argparse.Namespace) -> int:
             response_timeout=args.response_timeout,
             limit=args.limit,
             include_zero=args.include_zero,
+            event_store=args.event_store,
             as_json=args.json,
         )
     )
@@ -229,6 +243,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--include-zero",
         action="store_true",
         help="Include agents with no local signal match.",
+    )
+    route.add_argument(
+        "--event-store",
+        default=None,
+        help="Optional hub event-store DB used for observed capability evidence.",
     )
     route.add_argument("--json", action="store_true", help="Print JSON instead of text.")
     route.add_argument(
