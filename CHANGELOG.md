@@ -20,6 +20,9 @@ All notable changes to this project are documented here.
 - Added `synapse doctor --redeploy-checklist` so post-release local fleet
   restarts have copyable package, service, roster, durable-state, and git-hook
   verification steps without the diagnostic command mutating services.
+- Added `tools/audit_dependency_tooling.py --check` to keep the local preflight,
+  action pinning, Dependabot ecosystems, and PyPI publish/download metadata
+  surfaces from drifting silently.
 
 ## [0.52.0] - 2026-06-27
 
