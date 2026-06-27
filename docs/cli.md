@@ -2,6 +2,9 @@
 
 The `synapse` command exposes the following subcommands.
 
+For end-to-end examples that combine these commands with existing agent tools,
+see the [Integration demos](integration-demos.md).
+
 | Command | What it does |
 | --- | --- |
 | `synapse hub` | Run the coordination hub. |

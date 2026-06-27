@@ -40,6 +40,9 @@ pip install 'synapse-channel[mcp]'
 Running `synapse mcp` without the extra prints a one-line install hint and exits
 non-zero, so nothing fails silently.
 
+For a bounded local walkthrough that places the MCP adapter beside the CLI and
+A2A surfaces, see the [integration demo matrix](integration-demos.md).
+
 ## Configure an MCP client
 
 Point the host at the command. For a Claude Desktop / Claude Code style
