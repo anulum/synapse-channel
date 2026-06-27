@@ -82,6 +82,7 @@ tools wait for the hub's grant or denial; query tools return JSON.
 | `synapse_manifest()` | Return the capability manifest of advertised agents as JSON. |
 | `synapse_directory()` | Return the discovery-only capability directory as JSON. |
 | `synapse_route_task(task_id, limit?, include_zero?, event_store?)` | Return advisory route recommendations for a board task as JSON. |
+| `synapse_resource_bids(task_id, resource_kind?, limit?, include_zero?)` | Return advisory resource bids for a board task as JSON. |
 | `synapse_memory_recall(event_store, query, limit?, since_seq?)` | Return deterministic local memory recall hits as JSON. |
 
 When the hub does not answer within the request window the tool returns a clear
@@ -108,6 +109,12 @@ candidate. When `event_store` points at a local hub database, the tool also adds
 positive release-receipt evidence with source task ids and event sequences. The
 boundary stays the same: no claim, assignment, capacity reservation, permission
 grant, agent grade, or trust certification happens through the route.
+
+`synapse_resource_bids` uses the same directory and board snapshots to rank live
+resource offers for a task. The JSON report includes resource id, provider,
+kind, name, capacity, score, and reason codes. It is a marketplace-style
+directory hint only: it does not reserve capacity, authorize execution, mutate
+tasks, or certify provider trust.
 
 `synapse_memory_recall` is a local event-store reader. It projects findings,
 checkpoints, and handoffs into deterministic token matches and returns matched

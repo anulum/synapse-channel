@@ -213,6 +213,7 @@ synapse supervisor --idle-seconds 300 --history-multiplier 3  # re-offer stalled
 synapse manifest                                     # print capability cards, including contract counts
 synapse directory                                    # print discovery-only agents/resources
 synapse route-task BUILD --limit 3 --event-store ./synapse.db  # add observed evidence
+synapse resource-bids BUILD --resource-kind gpu      # rank live resource offers without reserving capacity
 synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1  # emit A2A Agent Card JSON
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877             # run the HTTP+JSON A2A bridge
 synapse doctor                                       # check for common misconfigs (identity, exposure, hub, waiter)
@@ -467,6 +468,12 @@ notes as observed evidence and keeps each matched signal tied to its source task
 and durable event sequence. The recommendation is advisory only: it does not
 claim work, mutate the board, reserve resources, grade agents, or turn a
 capability card into executable trust.
+`synapse resource-bids TASK-1` uses the same live directory and board task to
+rank resource offers with deterministic local reasons: resource kind, capacity,
+provider task-class/skill matches, description overlap, resource-name overlap,
+and matching metadata. It is an advisory marketplace-style view only; it does
+not reserve capacity, authorize execution, mutate the board, or certify provider
+trust.
 `synapse memory-recall ./synapse.db "query"` provides the first product slice of
 provenance-preserving memory recall. It reads only the local SQLite event store,
 projects findings, checkpoints, and handoffs into deterministic token matches,
@@ -702,6 +709,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | `capability_directory` | Discovery-only directory joining capability cards and resource offers. |
 | `semantic_routing` | Advisory local task-to-agent recommendations over board tasks and capability cards. |
 | `capability_observations` | Provenance-preserving observed release-receipt evidence for advisory routing. |
+| `resource_bidding` | Advisory resource-offer bids over the live capability directory. |
 | `memory_projection` | Deterministic local recall over durable findings, checkpoints, and handoffs. |
 | `launcher` | One-command local hub + worker startup. |
 | `cli` | The unified `synapse` command. |
@@ -720,11 +728,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.53.0 |
 | Public API exports | 61 |
-| Package modules | 141 |
-| Classes | 129 |
+| Package modules | 143 |
+| Classes | 131 |
 | Wire message types | 53 |
-| CLI subcommands | 52 |
-| Test functions | 1768 |
+| CLI subcommands | 53 |
+| Test functions | 1781 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 21 |
 | GitHub Actions workflows | 10 |
