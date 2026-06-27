@@ -13,6 +13,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `tools/audit_mcp_surface.py` checks the registered MCP tools/resources against
+  `docs/mcp.md` and pins the documented adapter, authentication, and
+  optional-dependency boundaries in the local validation gate.
+
 ## [0.49.0] - 2026-06-27
 
 ### Added
