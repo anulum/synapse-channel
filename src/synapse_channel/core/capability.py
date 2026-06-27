@@ -27,6 +27,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
+from synapse_channel.core.capability_contracts import CapabilityContract, normalize_contracts
+
 DEFAULT_CARD_TTL_SECONDS = 300.0
 """Soft liveness window after which an un-refreshed card is dropped."""
 
@@ -48,6 +50,8 @@ class CapabilityCard:
         used to pick a worker for a task.
     model : str
         Optional model identifier backing the agent.
+    contracts : tuple[CapabilityContract, ...]
+        Declarative input/output contracts keyed by task class.
     meta : dict[str, Any]
         Arbitrary descriptive metadata.
     advertised_at : float
@@ -59,6 +63,7 @@ class CapabilityCard:
     skills: tuple[str, ...] = ()
     task_classes: tuple[str, ...] = ()
     model: str = ""
+    contracts: tuple[CapabilityContract, ...] = ()
     meta: dict[str, Any] = field(default_factory=dict)
     advertised_at: float = field(default_factory=time.time)
 
@@ -70,6 +75,7 @@ class CapabilityCard:
             "skills": list(self.skills),
             "task_classes": list(self.task_classes),
             "model": self.model,
+            "contracts": [contract.as_dict() for contract in self.contracts],
             "meta": self.meta,
             "advertised_at": self.advertised_at,
         }
@@ -111,6 +117,7 @@ class CapabilityRegistry:
         skills: Iterable[str] = (),
         task_classes: Iterable[str] = (),
         model: str = "",
+        contracts: object = (),
         meta: dict[str, Any] | None = None,
         now: float | None = None,
     ) -> CapabilityCard:
@@ -128,6 +135,9 @@ class CapabilityRegistry:
             Routing classes; stripped, de-duplicated, blanks dropped.
         model : str, optional
             Backing model identifier.
+        contracts : object, optional
+            Contract mappings or :class:`CapabilityContract` objects. Malformed
+            entries are ignored and valid entries are normalised.
         meta : dict[str, Any] or None, optional
             Descriptive metadata; ``None`` becomes an empty mapping.
         now : float or None, optional
@@ -145,6 +155,7 @@ class CapabilityRegistry:
             skills=_clean_tags(skills),
             task_classes=_clean_tags(task_classes),
             model=model.strip(),
+            contracts=normalize_contracts(contracts),
             meta=meta or {},
             advertised_at=ts,
         )

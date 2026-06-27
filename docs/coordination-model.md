@@ -110,9 +110,12 @@ manual TTL choices remain authoritative.
 ## 5. Route
 
 Workers advertise **capability cards** describing their skills and the task
-classes they can take; the hub aggregates them into a manifest. A request can be
-classified into a task class and routed to the matching backend, reserving heavy
-models for the genuinely hard requests.
+classes they can take; the hub aggregates them into a manifest. Cards may also
+include declarative capability contracts with per-task-class `input_schema`,
+`output_schema`, preconditions, and postconditions. A request can be classified
+into a task class and routed to the matching backend, reserving heavy models for
+the genuinely hard requests, while the contract metadata remains reviewable
+discovery evidence rather than executable trust.
 
 ## Durability and reconnection
 

@@ -408,6 +408,13 @@ synapse ttl-advice ./synapse.db
 synapse supervisor --idle-seconds 300 --history-multiplier 3
 ```
 
+`synapse manifest` prints live capability cards advertised by connected agents.
+When a card carries capability contracts, the readable output includes the
+contract count while JSON surfaces such as the MCP manifest resource, A2A Agent
+Card metadata, and dashboard snapshot retain the full `contracts` entries with
+`task_class`, `input_schema`, `output_schema`, `preconditions`, and
+`postconditions`.
+
 `synapse supervisor` watches the shared board and re-offers stalled plan tasks.
 The fixed `--idle-seconds` threshold remains the operator ceiling. By default the
 supervisor can lower the effective threshold when completed tasks on the board

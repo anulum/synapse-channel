@@ -108,15 +108,36 @@ async def test_advertise_stores_card_and_broadcasts_end_to_end() -> None:
         watcher = await connect_agent("WATCH", uri)
         try:
             await fast.agent.advertise(
-                description="quick", skills=["ollama"], task_classes=["chat"], model="gemma3:4b"
+                description="quick",
+                skills=["ollama"],
+                task_classes=["chat"],
+                model="gemma3:4b",
+                contracts=[
+                    {
+                        "task_class": " chat ",
+                        "input_schema": {"type": "object"},
+                        "output_schema": {"type": "string"},
+                        "preconditions": ["ready", "ready"],
+                    }
+                ],
             )
             advertised = await watcher.recorder.wait_for(
                 lambda m: m.get("type") == "capability_advertised"
             )
             assert advertised["agent"] == "FAST"
             assert advertised["card"]["task_classes"] == ["chat"]
+            assert advertised["card"]["contracts"] == [
+                {
+                    "task_class": "chat",
+                    "input_schema": {"type": "object"},
+                    "output_schema": {"type": "string"},
+                    "preconditions": ["ready"],
+                    "postconditions": [],
+                }
+            ]
             card = hub.capabilities.get("FAST")
             assert card is not None and card.model == "gemma3:4b"
+            assert [contract.task_class for contract in card.contracts] == ["chat"]
         finally:
             await close_agents(fast, watcher)
 
@@ -126,11 +147,20 @@ async def test_manifest_request_returns_advertised_agents_end_to_end() -> None:
         fast = await connect_agent("FAST", uri)
         user = await connect_agent("USER", uri)
         try:
-            await fast.agent.advertise(task_classes=["chat"])
+            await fast.agent.advertise(
+                task_classes=["chat"],
+                contracts=[
+                    {
+                        "task_class": "chat",
+                        "input_schema": {"type": "object"},
+                    }
+                ],
+            )
             await fast.recorder.wait_for(lambda m: m.get("type") == "capability_advertised")
             await user.agent.request_manifest()
             snap = await user.recorder.wait_for(lambda m: m.get("type") == "manifest_snapshot")
             assert [c["agent"] for c in snap["manifest"]] == ["FAST"]
+            assert snap["manifest"][0]["contracts"][0]["task_class"] == "chat"
         finally:
             await close_agents(fast, user)
 

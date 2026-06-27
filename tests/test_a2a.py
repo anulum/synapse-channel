@@ -19,6 +19,15 @@ def test_skill_from_manifest_card_maps_capability_fields() -> None:
             "description": " answers quick coordination requests ",
             "skills": ["chat", "chat", "handoff"],
             "task_classes": ["rule", "chat"],
+            "contracts": [
+                {
+                    "task_class": "chat",
+                    "input_schema": {"type": "object"},
+                    "output_schema": {"type": "string"},
+                    "preconditions": [],
+                    "postconditions": ["answer returned"],
+                }
+            ],
         }
     )
 
@@ -29,6 +38,19 @@ def test_skill_from_manifest_card_maps_capability_fields() -> None:
         "tags": ["rule", "chat", "handoff", "synapse"],
         "inputModes": ["text/plain", "application/json"],
         "outputModes": ["text/plain", "application/json"],
+        "metadata": {
+            "synapse": {
+                "contracts": [
+                    {
+                        "task_class": "chat",
+                        "input_schema": {"type": "object"},
+                        "output_schema": {"type": "string"},
+                        "preconditions": [],
+                        "postconditions": ["answer returned"],
+                    }
+                ]
+            }
+        },
     }
 
 

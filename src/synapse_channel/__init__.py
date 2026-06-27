@@ -38,6 +38,7 @@ from synapse_channel.client.supervisor import (
 )
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityCard, CapabilityRegistry
+from synapse_channel.core.capability_contracts import CapabilityContract
 from synapse_channel.core.compaction import (
     CompactionResult,
     RetentionPolicy,
@@ -84,6 +85,7 @@ __all__ = [
     "PRIORITY_SENDERS",
     "Blackboard",
     "CapabilityCard",
+    "CapabilityContract",
     "CapabilityRegistry",
     "ChatBackend",
     "ClaimStatus",
