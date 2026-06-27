@@ -25,7 +25,7 @@ import os
 import shutil
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from synapse_channel.cli_queries import AgentFactory, _query_hub
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
@@ -49,19 +49,30 @@ DiagnoseRunner = Callable[..., Coroutine[Any, Any, tuple[int, list[str]]]]
 """Async callable used by the doctor CLI dispatcher."""
 
 
+class DiskUsage(Protocol):
+    """Filesystem usage fields consumed by doctor diagnostics."""
+
+    @property
+    def total(self) -> int:
+        """Total bytes on the filesystem."""
+
+    @property
+    def free(self) -> int:
+        """Free bytes on the filesystem."""
+
+
 DiskUsageProbe = Callable[
     [int | str | bytes | os.PathLike[str] | os.PathLike[bytes]],
-    tuple[int, int, int],
+    DiskUsage,
 ]
 """Callable that returns filesystem usage for a local path."""
 
 
 def _disk_usage(
     path: int | str | bytes | os.PathLike[str] | os.PathLike[bytes],
-) -> tuple[int, int, int]:
+) -> DiskUsage:
     """Return local filesystem usage for ``path``."""
-    usage = shutil.disk_usage(path)
-    return (usage.total, usage.used, usage.free)
+    return shutil.disk_usage(path)
 
 
 async def _fetch_roster(
@@ -135,12 +146,12 @@ async def _diagnose(
         check_exposure(uri, token),
     ]
     resolved_disk_path = Path(os.path.abspath(os.sep)) if disk_path is None else disk_path
-    total_bytes, _, free_bytes = disk_usage_probe(resolved_disk_path)
+    usage = disk_usage_probe(resolved_disk_path)
     diagnoses.append(
         check_disk_space(
             resolved_disk_path,
-            total_bytes=total_bytes,
-            free_bytes=free_bytes,
+            total_bytes=usage.total,
+            free_bytes=usage.free,
             warn_used_percent=disk_warn_used_percent,
             warn_free_mib=disk_warn_free_mib,
         )
