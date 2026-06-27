@@ -49,6 +49,7 @@ async def test_build_registers_tools_and_resources() -> None:
         "synapse_state",
         "synapse_manifest",
         "synapse_directory",
+        "synapse_route_task",
     } <= tool_names
     resource_uris = {str(resource.uri) for resource in await server.list_resources()}
     assert any("board" in uri for uri in resource_uris)
@@ -72,6 +73,7 @@ async def test_every_tool_and_resource_wrapper_dispatches() -> None:
             state = await server.call_tool("synapse_state", {})
             manifest = await server.call_tool("synapse_manifest", {})
             directory = await server.call_tool("synapse_directory", {})
+            route = await server.call_tool("synapse_route_task", {"task_id": "T"})
             board_resource = await server.read_resource("synapse://board")
             state_resource = await server.read_resource("synapse://state")
             manifest_resource = await server.read_resource("synapse://manifest")
@@ -82,6 +84,7 @@ async def test_every_tool_and_resource_wrapper_dispatches() -> None:
     assert "active_claims" in str(state)
     assert "[]" in str(manifest)
     assert "trust_boundary" in str(directory)
+    assert "task_id" in str(route)
     assert "T" in str(board_resource)
     assert "active_claims" in str(state_resource)
     assert "[]" in str(manifest_resource)

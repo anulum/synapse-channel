@@ -18,6 +18,11 @@ from typing import Any
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.core.capability_directory import build_capability_directory, directory_to_json
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.semantic_routing import (
+    find_task,
+    recommend_agents_for_task,
+    recommendation_to_json,
+)
 
 AgentFactory = Callable[..., SynapseAgent]
 """Factory that builds the bridge's hub client; injectable for testing."""
@@ -379,3 +384,58 @@ class SynapseHubBridge:
             resources=resources if isinstance(resources, list) else [],
         )
         return directory_to_json(directory)
+
+    async def route_task(self, task_id: str, limit: int = 5, include_zero: bool = False) -> str:
+        """Return advisory semantic route recommendations for a board task.
+
+        Parameters
+        ----------
+        task_id : str
+            Board task id to route.
+        limit : int, optional
+            Maximum number of candidate agents. Defaults to ``5``.
+        include_zero : bool, optional
+            Include zero-score agents for diagnostics. Defaults to ``False``.
+
+        Returns
+        -------
+        str
+            Recommendation JSON, or a no-response/missing-task line.
+        """
+        board_reply = await self._await_reply(
+            lambda data: data.get("type") == MessageType.BOARD_SNAPSHOT,
+            self.agent.request_board,
+        )
+        if board_reply is None:
+            return "the hub did not return semantic routing snapshots"
+        manifest_reply = await self._await_reply(
+            lambda data: data.get("type") == MessageType.MANIFEST_SNAPSHOT,
+            self.agent.request_manifest,
+        )
+        if manifest_reply is None:
+            return "the hub did not return semantic routing snapshots"
+        state_reply = await self._await_reply(
+            lambda data: data.get("type") == MessageType.STATE_SNAPSHOT,
+            self.agent.request_state,
+        )
+        if state_reply is None:
+            return "the hub did not return semantic routing snapshots"
+
+        board = board_reply.get("board", {})
+        task = find_task(board if isinstance(board, dict) else {}, task_id)
+        if task is None:
+            return f"task '{task_id}' is not on the board"
+        manifest = manifest_reply.get("manifest", [])
+        snapshot = state_reply.get("snapshot", {})
+        resources = snapshot.get("resources", []) if isinstance(snapshot, dict) else []
+        directory = build_capability_directory(
+            manifest=manifest if isinstance(manifest, list) else [],
+            resources=resources if isinstance(resources, list) else [],
+        )
+        recommendation = recommend_agents_for_task(
+            task,
+            directory,
+            limit=limit,
+            include_zero=include_zero,
+        )
+        return recommendation_to_json(recommendation)

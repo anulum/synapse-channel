@@ -117,6 +117,13 @@ into a task class and routed to the matching backend, reserving heavy models for
 the genuinely hard requests, while the contract metadata remains reviewable
 discovery evidence rather than executable trust.
 
+For board work, `synapse route-task <task-id>` and the MCP
+`synapse_route_task` tool provide the same read-only recommendation payload.
+They join the board task with live capability cards and score structured
+task-class matches, skill tags, card description overlap, and contract evidence
+locally. The result is a routing hint only: it does not claim the task, mutate
+the board, reserve capacity, or certify an agent.
+
 ## Durability and reconnection
 
 With `--db`, the hub records every authoritative mutation to an append-only

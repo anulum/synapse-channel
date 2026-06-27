@@ -82,6 +82,22 @@ async def test_directory_returns_json() -> None:
     assert directory["entries"][0]["trust"] == "discovery-only"
 
 
+async def test_route_task_returns_json() -> None:
+    async with running_hub() as (_, uri):
+        await seed_task(uri, "T1", "Chat routing task")
+        advertiser = await start_manifest_agent(uri)
+        handle = await start_bridge(uri)
+        try:
+            out = await handle.bridge.route_task("T1")
+        finally:
+            await handle.close()
+            await close_agents(advertiser)
+    recommendation = json.loads(out)
+    assert recommendation["task_id"] == "T1"
+    assert recommendation["candidates"][0]["agent"] == "FAST"
+    assert recommendation["candidates"][0]["reasons"][0] == "task_class:chat"
+
+
 async def test_manifest_timeout() -> None:
     bridge = SynapseHubBridge(request_timeout=0.05)
     out = await bridge.manifest()
@@ -92,3 +108,9 @@ async def test_directory_timeout() -> None:
     bridge = SynapseHubBridge(request_timeout=0.05)
     out = await bridge.directory()
     assert "did not return the capability directory" in out
+
+
+async def test_route_task_timeout() -> None:
+    bridge = SynapseHubBridge(request_timeout=0.05)
+    out = await bridge.route_task("T1")
+    assert "did not return semantic routing snapshots" in out
