@@ -40,6 +40,7 @@ Every change must clear these gates (run locally with `make preflight`):
 | Lint | `ruff check` (E, F, I, B, UP, D) | no warnings |
 | Formatting | `ruff format --check` | no diff |
 | MCP surface audit | `tools/audit_mcp_surface.py --check` | documented tools/resources and adapter boundaries match registration |
+| Release claim hygiene | `tools/check_release_claim_hygiene.py --check` | changelog/release prose has no agent-authorship, quality-label, or conformance overclaims |
 | Types | `mypy` (strict) | no errors |
 | Tests + coverage | `pytest --cov` | pass, ≥ 95% (held at 100%) |
 | Licensing | `reuse lint` | REUSE 3.x compliant |
@@ -85,6 +86,12 @@ and required adapter/auth/dependency boundary text:
 
 ```bash
 .venv/bin/python tools/audit_mcp_surface.py --check
+```
+
+The changelog and release-note prose are checked for public claim hygiene:
+
+```bash
+.venv/bin/python tools/check_release_claim_hygiene.py --check
 ```
 
 ## Benchmarks
