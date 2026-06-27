@@ -13,6 +13,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+- `synapse --version` no longer performs the PyPI newer-release check by default.
+  Set `SYNAPSE_UPDATE_CHECK=1` to opt in; `SYNAPSE_NO_UPDATE_CHECK=1` still
+  suppresses the check.
+
 ## [0.47.0] - 2026-06-27
 
 ### Added

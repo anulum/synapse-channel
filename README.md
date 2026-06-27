@@ -505,7 +505,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 92 |
 | Wire message types | 53 |
 | CLI subcommands | 44 |
-| Test functions | 1502 |
+| Test functions | 1505 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |
@@ -555,8 +555,10 @@ This snapshot is a static inventory generated from the source tree. Performance 
   is accepted only with `--metrics-query-token-ok`, because query tokens leak
   easily into logs and history. The live board, state, and manifest also remain
   available over the CLI and the MCP resources.
-- **`synapse --version` checks PyPI for a newer release** (once a day, cached, no
-  payload beyond the request itself). Silence it with `SYNAPSE_NO_UPDATE_CHECK=1`.
+- **`synapse --version` is network-silent by default.** Set
+  `SYNAPSE_UPDATE_CHECK=1` to opt in to a best-effort PyPI newer-release check
+  (once a day, cached, no payload beyond the request itself). Set
+  `SYNAPSE_NO_UPDATE_CHECK=1` to suppress the check even when opt-in is present.
 
 ## Commercial use
 

@@ -5,15 +5,17 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — best-effort "a newer release is available" notice
-"""Surface a one-line upgrade notice when a newer release is on PyPI.
+"""Surface an opt-in upgrade notice when a newer release is on PyPI.
 
-The check is deliberately unobtrusive. It is **best-effort and non-blocking**: a
-daily on-disk cache means PyPI is queried at most once per :data:`CACHE_TTL_SECONDS`,
-every failure path (no network, a slow endpoint, malformed JSON, an unwritable cache)
-yields *no notice* rather than an error, and the whole thing is silenced by the
-:data:`SUPPRESS_ENV` environment variable. The public entry point,
-:func:`update_notice`, takes injectable ``env``/``now``/``cache_path``/``fetch``
-parameters so the behaviour is fully deterministic under test.
+The check is deliberately unobtrusive and private by default. ``synapse --version``
+prints only the installed version unless :data:`ENABLE_ENV` is set. When enabled,
+a daily on-disk cache means PyPI is queried at most once per
+:data:`CACHE_TTL_SECONDS`, every failure path (no network, a slow endpoint,
+malformed JSON, an unwritable cache) yields *no notice* rather than an error, and
+the whole thing is silenced by the legacy :data:`SUPPRESS_ENV` environment
+variable. The public entry point, :func:`update_notice`, takes injectable
+``env``/``now``/``cache_path``/``fetch`` parameters so the behaviour is fully
+deterministic under test.
 """
 
 from __future__ import annotations
@@ -31,6 +33,8 @@ from . import __version__
 PYPI_URL = "https://pypi.org/pypi/synapse-channel/json"
 #: Query PyPI at most once per this many seconds; serve the cache in between.
 CACHE_TTL_SECONDS = 86_400.0
+#: Setting this environment variable to any non-empty value enables the check.
+ENABLE_ENV = "SYNAPSE_UPDATE_CHECK"
 #: Setting this environment variable to any non-empty value disables the check.
 SUPPRESS_ENV = "SYNAPSE_NO_UPDATE_CHECK"
 _HTTP_TIMEOUT = 2.0
@@ -71,7 +75,7 @@ def _is_newer(latest: str, current: str) -> bool:
 def _fetch_latest(url: str = PYPI_URL, *, timeout: float = _HTTP_TIMEOUT) -> str | None:
     """Return PyPI's latest version for the package, or ``None`` on any failure."""
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310
+        with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310  # nosec B310
             payload = json.loads(response.read().decode("utf-8"))
         version = payload["info"]["version"]
     except (OSError, ValueError, KeyError, TypeError):
@@ -135,7 +139,8 @@ def update_notice(
     cache_path : Path or None, optional
         Cache file location; defaults to the per-user cache directory.
     fetch : FetchLatest or None, optional
-        Callable returning PyPI's latest version; defaults to a live HTTP fetch.
+        Callable returning PyPI's latest version; defaults to a live HTTP fetch
+        only when ``env`` contains ``SYNAPSE_UPDATE_CHECK``.
 
     Returns
     -------
@@ -145,6 +150,8 @@ def update_notice(
     env = os.environ if env is None else env
     if env.get(SUPPRESS_ENV):
         return None
+    if not env.get(ENABLE_ENV):
+        return None
     now = time.time() if now is None else now
     cache_path = _cache_path(env) if cache_path is None else cache_path
     fetch = _fetch_latest if fetch is None else fetch
@@ -153,6 +160,6 @@ def update_notice(
         return (
             f"  → {latest} is available (you have {current}): "
             f"pipx upgrade synapse-channel\n"
-            f"    (set {SUPPRESS_ENV}=1 to silence)"
+            f"    (unset {ENABLE_ENV} or set {SUPPRESS_ENV}=1 to silence)"
         )
     return None

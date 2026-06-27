@@ -83,16 +83,17 @@ from synapse_channel.update_check import update_notice
 
 
 class _VersionAction(argparse.Action):
-    """Print the version and a best-effort upgrade notice, then exit.
+    """Print the version and an opt-in upgrade notice, then exit.
 
     Behaves like argparse's built-in ``version`` action (prints and raises
-    ``SystemExit``) but appends a one-line PyPI upgrade notice on stderr when a newer
-    release exists. The notice is best-effort and silenced by ``SYNAPSE_NO_UPDATE_CHECK``.
+    ``SystemExit``) but appends a one-line PyPI upgrade notice on stderr when
+    ``SYNAPSE_UPDATE_CHECK=1`` is set and a newer release exists. The notice is
+    best-effort and silenced by ``SYNAPSE_NO_UPDATE_CHECK``.
     """
 
     def __init__(self, option_strings: list[str], dest: str, **kwargs: Any) -> None:
         kwargs.setdefault("nargs", 0)
-        kwargs.setdefault("help", "show the version (and any available upgrade) and exit")
+        kwargs.setdefault("help", "show the version and exit; optional update check is opt-in")
         super().__init__(option_strings, dest, **kwargs)
 
     def __call__(
