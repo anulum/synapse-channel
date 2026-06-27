@@ -100,33 +100,41 @@ def test_max_unauth_clients_defaults_to_max_clients_and_clamps() -> None:
     assert SynapseHub(max_unauth_clients=0).max_unauth_clients == 1
 
 
-async def test_takeover_cooldown_blocks_rapid_eviction() -> None:
+async def test_takeover_cooldown_blocks_rapid_eviction(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     clock = [100.0]
     hub = SynapseHub(takeover_cooldown=2.0, clock=lambda: clock[0])
-    async with running_hub(hub) as (_, uri):
-        async with connect(uri) as first, connect(uri) as second, connect(uri) as third:
-            await read_until_type(first, "welcome")
-            await first.send(json.dumps({"sender": "A", "type": "heartbeat"}))
-            await read_until_type(first, "presence_update")
-            await read_until_type(second, "welcome")
-            await second.send(json.dumps({"sender": "A", "type": "heartbeat", "takeover": True}))
-            with pytest.raises(ConnectionClosed) as first_close:
-                await read_json(first)
+    with caplog.at_level("INFO", logger="synapse.hub"):
+        async with running_hub(hub) as (_, uri):
+            async with connect(uri) as first, connect(uri) as second, connect(uri) as third:
+                await read_until_type(first, "welcome")
+                await first.send(json.dumps({"sender": "A", "type": "heartbeat"}))
+                await read_until_type(first, "presence_update")
+                await read_until_type(second, "welcome")
+                await second.send(
+                    json.dumps({"sender": "A", "type": "heartbeat", "takeover": True})
+                )
+                with pytest.raises(ConnectionClosed) as first_close:
+                    await read_json(first)
 
-            clock[0] = 101.0
-            await read_until_type(third, "welcome")
-            await third.send(json.dumps({"sender": "A", "type": "heartbeat", "takeover": True}))
-            for _ in range(5):
-                try:
-                    await read_json(third)
-                except ConnectionClosed as closed:
-                    third_close = closed
-                    break
-            else:
-                pytest.fail("third takeover connection did not close")
+                clock[0] = 101.0
+                await read_until_type(third, "welcome")
+                await third.send(json.dumps({"sender": "A", "type": "heartbeat", "takeover": True}))
+                for _ in range(5):
+                    try:
+                        await read_json(third)
+                    except ConnectionClosed as closed:
+                        third_close = closed
+                        break
+                else:
+                    pytest.fail("third takeover connection did not close")
 
     assert _close_code(first_close.value) == 4010
     assert _close_code(third_close) == 4014
+    assert "takeover accepted sender=A" in caplog.text
+    assert "takeover refused sender=A" in caplog.text
+    assert "reason=takeover cooldown" in caplog.text
 
 
 def test_install_signal_handlers_wires_both() -> None:

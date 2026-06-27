@@ -61,6 +61,23 @@ def test_update_check_docs_keep_network_access_opt_in() -> None:
     assert "disabled unless `SYNAPSE_UPDATE_CHECK=1` is present" in combined
 
 
+def test_takeover_docs_describe_payload_free_audit_logs() -> None:
+    combined = _single_spaced(
+        "\n".join(
+            [
+                _read_repo_text("README.md"),
+                _read_repo_text("docs/cli.md"),
+                _read_repo_text("docs/deployment.md"),
+                _read_repo_text("docs/troubleshooting.md"),
+            ]
+        )
+    )
+
+    assert "logs takeover/conflict outcomes with sender, remote host, and close reason" in combined
+    assert "without message payloads" in combined or "without chat or task payloads" in combined
+    assert "cooldown refusals" in combined
+
+
 def test_benchmark_docs_describe_heap_expiry_not_stale_linear_sweeper() -> None:
     benchmarks = _read_repo_text("docs/benchmarks.md")
 
