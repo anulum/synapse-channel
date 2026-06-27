@@ -44,6 +44,10 @@ dev = [
   "pytest-cov>=5.0",
   "prometheus-client>=0.20",
   "hypothesis>=6.100",
+  "bandit>=1.7",
+  "pip-audit>=2.7",
+  "pre-commit>=4.0",
+  "reuse>=6.0",
   "tomli>=2.4.1; python_version < '3.11'",
   "mcp>=1.28.0",
 ]

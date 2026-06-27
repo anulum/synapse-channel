@@ -31,6 +31,7 @@ run() {
 run "ruff format"          "$V/ruff" format --check src tests benchmarks examples
 run "ruff lint"            "$V/ruff" check src tests benchmarks examples
 run "capability manifest"  "$V/python" tools/capability_manifest.py --check
+run "dev dependency drift" "$V/python" tools/check_dev_dependency_drift.py --check
 run "version sync"         "$V/python" tools/check_version_sync.py
 run "MCP surface audit"    "$V/python" tools/audit_mcp_surface.py --check
 run "release claim hygiene" "$V/python" tools/check_release_claim_hygiene.py --check
