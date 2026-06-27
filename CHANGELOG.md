@@ -14,6 +14,9 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Changed
+- Added `synapse postmortem` for replayable task postmortems from the durable
+  event store, including timeline, owners, releases, evidence notes,
+  reconstructed conflicts, and candidate unanswered messages.
 - Added a public integration demo matrix with bounded CLI, MCP, and local A2A
   walkthroughs that list supported behavior and keep external validation open.
 - Refreshed the public comparison page with concrete, locally verifiable

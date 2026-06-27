@@ -24,6 +24,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse relay` | Decode and print a lite relay log a hub mirrored to a file. |
 | `synapse ingest` | Stream durable event-store records since a sequence cursor. |
 | `synapse compact` | Apply event-store retention and optionally write an HTML archive report. |
+| `synapse postmortem` | Build a replayable task postmortem from a hub SQLite event store. |
 | `synapse board` | Print the shared task/progress blackboard. |
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
 | `synapse manifest` | Print the capability manifest of advertised agents. |
@@ -388,6 +389,7 @@ synapse relay ./feed.ndjson --cursor ./feed.cursor
 synapse compact ./synapse.db --all --max-checkpoints-per-task 3 --archive-report ./compact-report.html
 synapse event-query ./synapse.db "task TASK-1 timeline"
 synapse event-query ./synapse.db "conflicts at seq 120" --json
+synapse postmortem ./synapse.db TASK-1
 synapse supervisor --idle-seconds 300 --history-multiplier 3
 ```
 
@@ -414,6 +416,14 @@ event store. It supports `task <id> timeline`, `task <id> at seq <n>`,
 `conflicts at seq|time <n>`. It is read-only forensic evidence: it reconstructs
 what the event log said at a sequence or timestamp, but it does not contact the
 live hub or certify that a merge is safe.
+
+`synapse postmortem ./synapse.db TASK-1` builds a replayable postmortem from the
+same event store. The Markdown or `--json` report lists the task timeline,
+observed owners, release events, assessment evidence, reconstructed path-overlap
+conflicts, and candidate unanswered messages that mention the task id. Candidate
+unanswered messages are an audit signal only: the log proves the directed chat
+and the absence of a later matching chat reply, not intent or off-channel
+communication.
 
 ## Agent2Agent bridge
 
