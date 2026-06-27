@@ -53,6 +53,18 @@ REQUIRED_LICENSE_TERMS = (
     "AGPL",
     "commercial licence",
 )
+EVALUATION_FLOW_FILES = {
+    "docs/commercial.md",
+    "commercial.md",
+}
+REQUIRED_EVALUATION_FLOW = (
+    "evaluation path",
+    "deployment shape",
+    "source availability",
+    "support expectations",
+    "legal entity",
+    "protoscience@anulum.li",
+)
 
 
 @dataclass(frozen=True)
@@ -112,7 +124,8 @@ FORBIDDEN_PATTERNS = (
 
 def _normalise(text: str) -> str:
     """Return lowercase prose with markdown emphasis removed."""
-    return re.sub(r"[*_`]+", "", text).lower()
+    stripped = re.sub(r"[*_`]+", "", text).lower()
+    return re.sub(r"\s+", " ", stripped)
 
 
 def _relative_display(path: Path) -> str:
@@ -150,6 +163,18 @@ def _boundary_findings(path: Path, text: str) -> tuple[Finding, ...]:
                         line_number=1,
                         category="missing-boundary",
                         snippet=f"missing required licensing term near commercial prose: {term}",
+                    )
+                )
+
+    if display in EVALUATION_FLOW_FILES or path.name in EVALUATION_FLOW_FILES:
+        for phrase in REQUIRED_EVALUATION_FLOW:
+            if phrase not in normalised:
+                findings.append(
+                    Finding(
+                        path=path,
+                        line_number=1,
+                        category="missing-evaluation-flow",
+                        snippet=f"missing commercial evaluation-flow phrase: {phrase}",
                     )
                 )
 
@@ -216,5 +241,5 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover - exercised by subprocess tests.
     sys.exit(main())

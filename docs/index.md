@@ -17,8 +17,8 @@ Current `0.x` releases are pre-1.0 development releases. `1.0.0` is planned as
 the first stable commercial release of SYNAPSE CHANNEL, with stable operational
 contracts, support surfaces, and commercial licensing terms documented for that
 line. SYNAPSE CHANNEL is seeking startup funding, strategic partners, and aligned
-ecosystem co-owners; see [Commercial licensing](commercial.md) for the contact
-path.
+ecosystem co-owners; see [Commercial licensing](commercial.md) for the evaluation
+and contact path.
 
 ![A synapse session: declare a plan with a dependency, complete a task, and watch the dependent unblock](assets/demo.gif)
 
