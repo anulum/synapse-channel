@@ -29,6 +29,7 @@ The ``synapse`` command exposes these subcommands:
 * ``dashboard`` — serve a local read-only web dashboard for hub snapshots;
 * ``directory`` — print a read-only capability/resource discovery directory;
 * ``route-task`` — recommend agents for a board task from local capability signals;
+* ``memory-recall`` — recall matching durable memory records from a local event store;
 * ``board`` — print the hub's shared task/progress blackboard;
 * ``supervisor`` — run an LLM-free supervisor that re-offers stalled tasks;
 * ``manifest`` — print the capability manifest of advertised agents;
@@ -81,6 +82,7 @@ from synapse_channel.cli_event_query import add_parsers as add_event_query_parse
 from synapse_channel.cli_git import add_parsers as add_git_parsers
 from synapse_channel.cli_locking import add_parsers as add_locking_parsers
 from synapse_channel.cli_mcp import add_parsers as add_mcp_parsers
+from synapse_channel.cli_memory_projection import add_parsers as add_memory_projection_parsers
 from synapse_channel.cli_messaging import add_parsers as add_messaging_parsers
 from synapse_channel.cli_new import add_parsers as add_new_parsers
 from synapse_channel.cli_postmortem import add_parsers as add_postmortem_parsers
@@ -152,6 +154,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_directory_parsers(sub)
 
     add_semantic_routing_parsers(sub)
+
+    add_memory_projection_parsers(sub)
 
     add_service_parsers(sub)
 

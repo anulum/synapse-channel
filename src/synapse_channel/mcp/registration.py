@@ -137,6 +137,16 @@ def build_mcp_server(
         """Return advisory route recommendations for a board task as JSON."""
         return await bridge.route_task(task_id, limit, include_zero, event_store)
 
+    @server.tool()
+    async def synapse_memory_recall(
+        event_store: str,
+        query: str,
+        limit: int = 5,
+        since_seq: int = 0,
+    ) -> str:
+        """Return deterministic local memory recall hits as JSON."""
+        return await bridge.memory_recall(event_store, query, limit, since_seq)
+
     @server.resource("synapse://board")
     async def board_resource() -> str:
         """Live shared task/progress blackboard."""

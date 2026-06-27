@@ -20,6 +20,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse codex-tmux` | Wake an existing Codex tmux session with a fixed safe prompt. |
 | `synapse dashboard` | Serve a loopback-only read-only HTML/JSON dashboard for live hub snapshots. |
 | `synapse route-task` | Recommend agents for a board task using local capability signals. |
+| `synapse memory-recall` | Recall matching durable memory records from a local event store. |
 | `synapse send` | Connect, send one message, optionally await replies, and exit. |
 | `synapse wait` | Block until a message addressed to you arrives, then exit (a wake trigger). |
 | `synapse listen` | Connect and stream channel messages until interrupted. |
@@ -397,6 +398,7 @@ synapse board
 synapse manifest
 synapse directory --task-class chat --json
 synapse route-task TASK-1 --limit 3 --event-store ./synapse.db --json
+synapse memory-recall ./synapse.db "transport handoff" --json
 synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --bearer-auth --a2a-token "$A2A_TOKEN" --state-file ./a2a-state.json
@@ -434,6 +436,16 @@ durable log, preserving the source task id and event sequence for review.
 `--include-zero` shows unmatched agents for diagnostics; no route recommendation
 claims the task, changes `suggested_owner`, reserves capacity, grades an agent,
 or certifies trust.
+
+`synapse memory-recall DB QUERY` reads the same local SQLite event store and
+returns deterministic recall hits over durable memory records. The projection
+uses findings, checkpoints, and handoffs, ignores recall-query telemetry, and
+keeps each hit tied to its source sequence, timestamp, event kind, source field,
+task id, actor, evidence reference, score, and matched tokens. `--since-seq`
+limits the read to records above a cursor, `--limit` bounds output, and `--json`
+prints the stable machine-readable report. This is local event-log projection:
+it does not create external embeddings, contact a service, certify truth, or
+mutate hub state.
 
 `synapse supervisor` watches the shared board and re-offers stalled plan tasks.
 The fixed `--idle-seconds` threshold remains the operator ceiling. By default the

@@ -29,6 +29,9 @@ All notable changes to this project are documented here.
 - Added optional observed capability evidence for routing from positive
   release-receipt assessment notes in a local event store, preserving source
   task and sequence provenance without grading agents.
+- Added `synapse memory-recall` and MCP `synapse_memory_recall` for
+  deterministic local recall over durable findings, checkpoints, and handoffs
+  with matched-token and source-sequence provenance.
 
 ## [0.53.0] - 2026-06-27
 
