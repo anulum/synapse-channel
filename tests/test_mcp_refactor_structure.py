@@ -27,6 +27,7 @@ EXPECTED_TOOLS = {
     "synapse_state",
     "synapse_manifest",
     "synapse_directory",
+    "synapse_route_task",
 }
 
 EXPECTED_RESOURCES = {

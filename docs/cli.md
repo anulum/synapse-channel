@@ -19,6 +19,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge. |
 | `synapse codex-tmux` | Wake an existing Codex tmux session with a fixed safe prompt. |
 | `synapse dashboard` | Serve a loopback-only read-only HTML/JSON dashboard for live hub snapshots. |
+| `synapse route-task` | Recommend agents for a board task using local capability signals. |
 | `synapse send` | Connect, send one message, optionally await replies, and exit. |
 | `synapse wait` | Block until a message addressed to you arrives, then exit (a wake trigger). |
 | `synapse listen` | Connect and stream channel messages until interrupted. |
@@ -395,6 +396,7 @@ synapse listen --name USER
 synapse board
 synapse manifest
 synapse directory --task-class chat --json
+synapse route-task TASK-1 --limit 3 --json
 synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --bearer-auth --a2a-token "$A2A_TOKEN" --state-file ./a2a-state.json
@@ -421,6 +423,14 @@ manifest plus resource offers from the state snapshot. It supports `--agent`,
 `--task-class`, `--skill`, `--resource-kind`, and `--json`. The directory is
 discovery metadata only: it helps route or review work, but it does not reserve
 capacity, authorize execution, or certify trust.
+
+`synapse route-task TASK-1` fetches the board, manifest, and state snapshots and
+returns advisory routing recommendations for that board task. The scorer is
+local and deterministic: task-class matches rank first, skill matches and card
+description overlap add explainable evidence, and cards with contracts carry a
+small evidence bonus. `--include-zero` shows unmatched agents for diagnostics;
+no route recommendation claims the task, changes `suggested_owner`, reserves
+capacity, or certifies trust.
 
 `synapse supervisor` watches the shared board and re-offers stalled plan tasks.
 The fixed `--idle-seconds` threshold remains the operator ceiling. By default the

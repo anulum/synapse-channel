@@ -23,6 +23,9 @@ All notable changes to this project are documented here.
   manifest, A2A metadata, CLI counts, and dashboard snapshots.
 - Added a read-only capability directory that joins capability cards and
   resource offers for discovery-only CLI and MCP surfaces.
+- Added advisory semantic task routing for board tasks via `synapse route-task`
+  and `synapse_route_task`, using deterministic local capability-card signals
+  without claiming work or assigning owners.
 
 ## [0.53.0] - 2026-06-27
 

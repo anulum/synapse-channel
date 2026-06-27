@@ -127,6 +127,11 @@ def build_mcp_server(
         """Return the discovery-only capability directory as JSON."""
         return await bridge.directory()
 
+    @server.tool()
+    async def synapse_route_task(task_id: str, limit: int = 5, include_zero: bool = False) -> str:
+        """Return advisory route recommendations for a board task as JSON."""
+        return await bridge.route_task(task_id, limit, include_zero)
+
     @server.resource("synapse://board")
     async def board_resource() -> str:
         """Live shared task/progress blackboard."""
