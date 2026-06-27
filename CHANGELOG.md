@@ -18,6 +18,9 @@ All notable changes to this project are documented here.
   event-kind counts, compaction removal counts, board tasks, release receipt
   notes, and a bounded coordination timeline from the pre-compaction event
   snapshot.
+- Release receipts now include advisory `epistemic_status` and
+  `epistemic_reasons` fields derived from submitted evidence, freshness, and
+  known failures, and board assessment notes include the same metadata.
 
 ### Changed
 - `synapse conflicts` now ignores branch-claim pairs with different merge bases,

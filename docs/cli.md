@@ -179,7 +179,12 @@ synapse release BUILD --name api-dev \
 ```
 
 The receipt records the releasing owner's submitted evidence; it does not certify
-that the evidence is complete or sufficient.
+that the evidence is complete or sufficient. It also includes advisory
+`epistemic_status` and `epistemic_reasons` fields derived from the submitted
+evidence, known failures, and `--freshness-seconds`: fresh positive evidence is
+`supported`, positive evidence without freshness is `needs_freshness`, old
+positive evidence is `stale`, declared known failures are `degraded`, and no
+positive evidence is `unsupported`.
 
 `synapse git-claim` accepts the task id either positionally (`synapse git-claim
 TASK-1 --paths src`) or as a named field (`synapse git-claim --task-id TASK-1

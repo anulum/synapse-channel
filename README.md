@@ -315,8 +315,11 @@ holder, scope, age, remaining TTL, checkpoint/git context, and the explicit
 the resolved identity, waits for the hub confirmation, then marks the board task
 `done`. `synapse release` can also attach a hub-echoed receipt with evidence,
 artifacts, changed files, generated artifacts, approvals, known failures,
-confidence, and evidence freshness; `--receipt-json` prints the receipt for
-automation, and the board records it as an assessment note. The `syn commit`
+confidence, and evidence freshness. The receipt includes advisory
+`epistemic_status` metadata (`supported`, `needs_freshness`, `stale`,
+`degraded`, or `unsupported`) plus reasons derived from the submitted evidence;
+`--receipt-json` prints the receipt for automation, and the board records it as
+an assessment note. The `syn commit`
 workflow holds the project git lease, stages only the requested paths, and
 commits only those paths so unrelated staged or modified files stay out of the
 commit.
@@ -565,7 +568,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 96 |
 | Wire message types | 53 |
 | CLI subcommands | 44 |
-| Test functions | 1563 |
+| Test functions | 1566 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

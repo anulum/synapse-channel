@@ -111,6 +111,8 @@ async def test_release_granted_carries_receipt_and_records_progress_end_to_end()
         "changed_files": ["src/synapse_channel/core/handlers/leasing.py"],
         "confidence": "medium",
         "evidence": ["pytest tests/test_hub_core_claims.py -q"],
+        "epistemic_reasons": ["known failures declared", "positive evidence present"],
+        "epistemic_status": "degraded",
         "freshness_seconds": 30.0,
         "generated_artifacts": ["docs/_generated/capability_manifest.json"],
         "known_failures": ["mkdocs pending on unrelated branch"],
@@ -124,7 +126,9 @@ async def test_release_granted_carries_receipt_and_records_progress_end_to_end()
         "artifacts=coverage.xml; known_failures=mkdocs pending on unrelated branch; "
         "changed_files=src/synapse_channel/core/handlers/leasing.py; "
         "generated_artifacts=docs/_generated/capability_manifest.json; "
-        "approvals=reviewed-by=owner; confidence=medium; freshness_seconds=30.0"
+        "approvals=reviewed-by=owner; confidence=medium; freshness_seconds=30.0; "
+        "epistemic_status=degraded; "
+        "epistemic_reasons=known failures declared, positive evidence present"
     )
     assert hub.blackboard.progress[-1].text == progress["note"]["text"]
 
