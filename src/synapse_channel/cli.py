@@ -27,6 +27,7 @@ The ``synapse`` command exposes these subcommands:
 * ``reliability`` — build evidence-only reliability memory from the event log;
 * ``ttl-advice`` — build read-only adaptive lease TTL advice from the event log;
 * ``dashboard`` — serve a local read-only web dashboard for hub snapshots;
+* ``directory`` — print a read-only capability/resource discovery directory;
 * ``board`` — print the hub's shared task/progress blackboard;
 * ``supervisor`` — run an LLM-free supervisor that re-offers stalled tasks;
 * ``manifest`` — print the capability manifest of advertised agents;
@@ -73,6 +74,7 @@ from synapse_channel.cli_arm import add_parser as add_arm_parser
 from synapse_channel.cli_codex_tmux import add_parsers as add_codex_tmux_parsers
 from synapse_channel.cli_dashboard import add_parsers as add_dashboard_parsers
 from synapse_channel.cli_demo import add_parsers as add_demo_parsers
+from synapse_channel.cli_directory import add_parsers as add_directory_parsers
 from synapse_channel.cli_doctor import add_parsers as add_doctor_parsers
 from synapse_channel.cli_event_query import add_parsers as add_event_query_parsers
 from synapse_channel.cli_git import add_parsers as add_git_parsers
@@ -144,6 +146,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_query_parsers(sub)
 
     add_dashboard_parsers(sub)
+
+    add_directory_parsers(sub)
 
     add_service_parsers(sub)
 

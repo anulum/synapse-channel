@@ -26,12 +26,14 @@ EXPECTED_TOOLS = {
     "synapse_board",
     "synapse_state",
     "synapse_manifest",
+    "synapse_directory",
 }
 
 EXPECTED_RESOURCES = {
     "synapse://board",
     "synapse://state",
     "synapse://manifest",
+    "synapse://directory",
 }
 
 

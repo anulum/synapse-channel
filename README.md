@@ -210,6 +210,7 @@ synapse task update BUILD --status done              # mark a plan task done so 
 syn ack BUILD --evidence "pytest -q"                 # post evidence and mark a board task done
 synapse supervisor --idle-seconds 300 --history-multiplier 3  # re-offer stalled plan tasks
 synapse manifest                                     # print capability cards, including contract counts
+synapse directory                                    # print discovery-only agents/resources
 synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1  # emit A2A Agent Card JSON
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877             # run the HTTP+JSON A2A bridge
 synapse doctor                                       # check for common misconfigs (identity, exposure, hub, waiter)
@@ -453,6 +454,10 @@ Capability cards can also carry declarative capability contracts: per-task-class
 `input_schema` and `output_schema` mappings plus optional preconditions and
 postconditions. These contracts are discovery metadata for routing and review;
 they do not grant executable trust or certify that a remote peer conforms.
+`synapse directory` joins the live capability manifest with resource offers into
+a discovery-only capability directory for agents and tools. Directory entries
+are routing hints and review evidence only; they do not reserve capacity,
+authorize execution, or certify agent/tool trust.
 To run that edge directly, use `synapse a2a-serve --endpoint-url ...`; it serves
 the public Agent Card, forwards `POST /message:send` text/data/file parts into
 SYNAPSE chat, supports immediate `POST /message:stream` Server-Sent Events,
@@ -679,6 +684,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | `supervisor` | LLM-free watcher that spots stalled plan tasks and re-offers them. |
 | `capability` | Agent capability cards (A2A-shaped) and the hub-aggregated manifest. |
 | `capability_contracts` | Declarative input/output capability contracts carried by manifest cards. |
+| `capability_directory` | Discovery-only directory joining capability cards and resource offers. |
 | `launcher` | One-command local hub + worker startup. |
 | `cli` | The unified `synapse` command. |
 
@@ -696,11 +702,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.53.0 |
 | Public API exports | 61 |
-| Package modules | 134 |
-| Classes | 119 |
+| Package modules | 136 |
+| Classes | 121 |
 | Wire message types | 53 |
-| CLI subcommands | 49 |
-| Test functions | 1729 |
+| CLI subcommands | 50 |
+| Test functions | 1738 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 21 |
 | GitHub Actions workflows | 10 |

@@ -48,11 +48,13 @@ async def test_build_registers_tools_and_resources() -> None:
         "synapse_board",
         "synapse_state",
         "synapse_manifest",
+        "synapse_directory",
     } <= tool_names
     resource_uris = {str(resource.uri) for resource in await server.list_resources()}
     assert any("board" in uri for uri in resource_uris)
     assert any("state" in uri for uri in resource_uris)
     assert any("manifest" in uri for uri in resource_uris)
+    assert any("directory" in uri for uri in resource_uris)
 
 
 async def test_every_tool_and_resource_wrapper_dispatches() -> None:
@@ -69,17 +71,21 @@ async def test_every_tool_and_resource_wrapper_dispatches() -> None:
             board = await server.call_tool("synapse_board", {})
             state = await server.call_tool("synapse_state", {})
             manifest = await server.call_tool("synapse_manifest", {})
+            directory = await server.call_tool("synapse_directory", {})
             board_resource = await server.read_resource("synapse://board")
             state_resource = await server.read_resource("synapse://state")
             manifest_resource = await server.read_resource("synapse://manifest")
+            directory_resource = await server.read_resource("synapse://directory")
         finally:
             await handle.close()
     assert "T" in str(board)
     assert "active_claims" in str(state)
     assert "[]" in str(manifest)
+    assert "trust_boundary" in str(directory)
     assert "T" in str(board_resource)
     assert "active_claims" in str(state_resource)
     assert "[]" in str(manifest_resource)
+    assert "trust_boundary" in str(directory_resource)
     assert hub.blackboard.tasks["T"].status == "done"
 
 

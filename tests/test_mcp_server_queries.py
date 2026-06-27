@@ -67,7 +67,28 @@ async def test_manifest_returns_json() -> None:
     assert manifest[0]["task_classes"] == ["chat"]
 
 
+async def test_directory_returns_json() -> None:
+    async with running_hub() as (_, uri):
+        advertiser = await start_manifest_agent(uri)
+        handle = await start_bridge(uri)
+        try:
+            out = await handle.bridge.directory()
+        finally:
+            await handle.close()
+            await close_agents(advertiser)
+    directory = json.loads(out)
+    assert directory["entries"][0]["id"] == "agent:FAST"
+    assert directory["entries"][0]["task_classes"] == ["chat"]
+    assert directory["entries"][0]["trust"] == "discovery-only"
+
+
 async def test_manifest_timeout() -> None:
     bridge = SynapseHubBridge(request_timeout=0.05)
     out = await bridge.manifest()
     assert "did not return the manifest" in out
+
+
+async def test_directory_timeout() -> None:
+    bridge = SynapseHubBridge(request_timeout=0.05)
+    out = await bridge.directory()
+    assert "did not return the capability directory" in out
