@@ -49,20 +49,20 @@ results are:
 
 | Active claims | Steady heartbeat expiry (µs) | Mass expiry (µs) | Non-overlap claim scan (µs) |
 |---:|---:|---:|---:|
-| 10 | 0.338 | 8.55 | 22.477 |
-| 100 | 0.276 | 41.12 | 133.222 |
-| 1,000 | 0.284 | 484.12 | 1,366.977 |
-| 10,000 | 0.424 | 7,006.81 | 13,868.055 |
-| 100,000 | 0.338 | 104,643.27 | 141,743.784 |
+| 10 | 1.403 | 23.55 | 32.426 |
+| 100 | 0.654 | 72.01 | 213.846 |
+| 1,000 | 0.802 | 977.85 | 2,947.048 |
+| 10,000 | 0.923 | 33,682.23 | 34,752.309 |
+| 100,000 | 0.723 | 264,861.71 | 292,085.834 |
 
 Replay also scales with event count on the same reference run:
 
 | Events | Replay time (ms) | Events/s |
 |---:|---:|---:|
-| 100 | 0.854 | 117,078 |
-| 1,000 | 5.29 | 189,041 |
-| 10,000 | 98.92 | 101,091 |
-| 100,000 | 1,128.851 | 88,585 |
+| 100 | 1.345 | 74,350 |
+| 1,000 | 5.953 | 167,994 |
+| 10,000 | 469.33 | 21,306 |
+| 100,000 | 2,848.315 | 35,108 |
 
 **Reading it honestly.** At the local-first design scale — a handful to a few
 dozen agents holding tens to low-hundreds of claims — steady lease expiry is
@@ -71,6 +71,17 @@ scale with the amount of work being drained or replayed. The remaining linear
 hot path is the scope-conflict scan for a new non-overlapping claim; it is
 measured separately so any future indexing work can be justified by data rather
 than by the old, now-stale expiry model.
+
+**Indexing decision.** Loaded workstation evidence from the committed benchmark
+shows why we keep the scope-conflict scan linear inside the local-first
+envelope. The decision uses a local-first ceiling of 100 active claims in one
+worktree; this run measured 213.846 µs per non-overlapping probe claim at that
+ceiling, below
+the 10,000 µs threshold encoded in the benchmark. Operators should revisit
+indexing when one worktree regularly holds 1,000 or more active claims, where
+this run measured 2,947.048 µs per probe claim and the linear shape becomes
+visible. This benchmark is non-isolated functional evidence, not a production
+throughput claim.
 
 ## A2A bridge benchmark
 

@@ -232,10 +232,17 @@ def test_scalability_run_writes_results(tmp_path: Path) -> None:
     assert set(summary["host"]) == {"cpu", "python", "platform"}
     assert len(summary["expiry"]) == 2
     assert len(summary["scan"]) == 2
+    assert summary["indexing_decision"]["lease_expiry"]["current_index"] == "min_heap"
+    scan_decision = summary["indexing_decision"]["scope_conflict_scan"]
+    assert scan_decision["current_index"] == "none"
+    assert scan_decision["recommendation"] == "keep_linear_scan_for_local_first_envelope"
+    assert scan_decision["local_first_claim_ceiling"] == 100
+    assert scan_decision["local_first_scan_microseconds"] >= 0
     written = json.loads(results.read_text(encoding="utf-8"))
     assert len(written["expiry"]) == 2
     assert len(written["replay"]) == 1
     assert len(written["scan"]) == 2
+    assert written["indexing_decision"] == summary["indexing_decision"]
 
 
 def test_scalability_run_without_results_skips_write(tmp_path: Path) -> None:

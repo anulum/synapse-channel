@@ -14,6 +14,9 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Changed
+- Added explicit scalability benchmark indexing-decision metadata and refreshed
+  the committed scan evidence for when to keep or revisit the linear
+  scope-conflict scan.
 - Added `synapse ttl-advice` for read-only adaptive lease TTL advice from
   durable event-log samples while preserving explicit manual TTL control.
 - Added `synapse reliability` for evidence-only reliability memory over the
