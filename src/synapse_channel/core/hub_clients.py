@@ -9,8 +9,11 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
+
+logger = logging.getLogger("synapse.hub")
 
 
 class HubClientRegistry:
@@ -121,13 +124,31 @@ class HubClientRegistry:
                     now = self._clock()
                     last = self._last_takeover.get(sender)
                     if last is not None and now - last < self.takeover_cooldown:
+                        logger.info(
+                            "takeover refused sender=%s requester_host=%s reason=takeover cooldown",
+                            sender,
+                            self.remote_host(websocket),
+                        )
                         await self.close_socket(websocket, code=4014, reason="takeover cooldown")
                         return None
                     self._last_takeover[sender] = now
                     self.socket_agent.pop(owner_ws, None)
+                    logger.info(
+                        "takeover accepted sender=%s requester_host=%s previous_host=%s "
+                        "reason=superseded",
+                        sender,
+                        self.remote_host(websocket),
+                        self.remote_host(owner_ws),
+                    )
                     await self.close_socket(owner_ws, code=4010, reason="superseded")
                     self.socket_agent[websocket] = sender
                     return sender
+                logger.info(
+                    "name conflict sender=%s requester_host=%s holder_host=%s reason=name conflict",
+                    sender,
+                    self.remote_host(websocket),
+                    self.remote_host(owner_ws),
+                )
                 await send_json(
                     websocket,
                     system(
@@ -142,6 +163,13 @@ class HubClientRegistry:
             self.socket_agent[websocket] = sender
             return sender
         if known_sender != sender:
+            logger.info(
+                "name switch denied original_sender=%s requested_sender=%s remote_host=%s "
+                "reason=name switch",
+                known_sender,
+                sender,
+                self.remote_host(websocket),
+            )
             await send_json(
                 websocket,
                 system(

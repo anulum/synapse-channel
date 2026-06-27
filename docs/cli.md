@@ -289,6 +289,10 @@ wired as the Docker `HEALTHCHECK`. `--shutdown-close-timeout` bounds the
 WebSocket close handshake during stop; accepted mutations are durable at append
 time when `--db` is enabled, not deferred to process exit:
 
+Takeover and identity-conflict paths are logged for auditability without message
+payloads: accepted takeovers, cooldown refusals, name conflicts, and name-switch
+denials include the sender name, remote host, and close reason.
+
 ```bash
 synapse health                       # exit 0 if the local hub is reachable
 synapse health --uri ws://host:8876

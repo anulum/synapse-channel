@@ -506,7 +506,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 92 |
 | Wire message types | 53 |
 | CLI subcommands | 44 |
-| Test functions | 1509 |
+| Test functions | 1517 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |
@@ -540,6 +540,10 @@ This snapshot is a static inventory generated from the source tree. Performance 
   accepting new sockets, close active WebSocket sessions within
   `--shutdown-close-timeout`, and rely on per-mutation persistence for durable
   state already accepted by the hub.
+- **Takeover is a local recovery tool, not authentication.** The hub rate-limits
+  repeated takeovers with `--takeover-cooldown` and logs takeover/conflict
+  outcomes with sender, remote host, and close reason, but agents remain trusted
+  local processes.
 - **Agents are trusted.** The bus coordinates agents; it does not sandbox them.
   An agent is trusted to the extent the operator trusts the process it runs in.
 - **Task-class routing is heuristic.** The classifier sorts a request by length

@@ -36,6 +36,10 @@ network drop). This is expected — re-arm the waiter. A `--timeout 0` (indefini
 waiter prints this instead of hanging on a dead socket, precisely so the caller
 re-arms rather than going silently dark.
 
+If this repeats, inspect the hub log. Accepted takeovers, takeover cooldown
+refusals, name conflicts, and name-switch denials are logged with the sender
+name, remote host, and close reason, without chat or task payloads.
+
 ## I wake on messages that are not addressed to me
 
 A `--directed-only` waiter wakes on a message addressed to **you**, to a **group glob**

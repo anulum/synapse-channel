@@ -232,38 +232,48 @@ def test_guard_exposure_warns_instead_of_refusing_when_overridden(
     assert "no token" in caplog.text
 
 
-async def test_takeover_evicts_stale_holder() -> None:
+async def test_takeover_evicts_stale_holder(caplog: pytest.LogCaptureFixture) -> None:
     hub = _open_hub()
-    async with running_hub(hub) as (_, uri):
-        async with connect(uri) as old, connect(uri) as new:
-            await read_until_type(old, "welcome")
-            await send_json(old, sender="X-rx", type="heartbeat", payload="online")
-            await read_until_type(old, "presence_update")
-            await read_until_type(new, "welcome")
-            await send_json(new, sender="X-rx", type="heartbeat", payload="online", takeover=True)
-            with pytest.raises(ConnectionClosed) as exc_info:
-                await read_json(old)
-            await send_json(new, sender="X-rx", type="chat", payload="still online")
-            chat = await read_until_type(new, "chat")
+    with caplog.at_level("INFO", logger="synapse.hub"):
+        async with running_hub(hub) as (_, uri):
+            async with connect(uri) as old, connect(uri) as new:
+                await read_until_type(old, "welcome")
+                await send_json(old, sender="X-rx", type="heartbeat", payload="online")
+                await read_until_type(old, "presence_update")
+                await read_until_type(new, "welcome")
+                await send_json(
+                    new, sender="X-rx", type="heartbeat", payload="online", takeover=True
+                )
+                with pytest.raises(ConnectionClosed) as exc_info:
+                    await read_json(old)
+                await send_json(new, sender="X-rx", type="chat", payload="still online")
+                chat = await read_until_type(new, "chat")
 
     assert _close_code(exc_info.value) == 4010
     assert chat["payload"] == "still online"
+    assert "takeover accepted sender=X-rx" in caplog.text
+    assert "reason=superseded" in caplog.text
 
 
-async def test_name_conflict_without_takeover_rejects_newcomer() -> None:
-    async with running_hub(_open_hub()) as (_, uri):
-        async with connect(uri) as old, connect(uri) as new:
-            await read_until_type(old, "welcome")
-            await send_json(old, sender="Y", type="heartbeat", payload="online")
-            await read_until_type(old, "presence_update")
-            await read_until_type(new, "welcome")
-            await send_json(new, sender="Y", type="heartbeat", payload="online")
-            conflict = await read_until_type(new, "name_conflict")
-            with pytest.raises(ConnectionClosed) as exc_info:
-                await read_json(new)
-            await send_json(old, sender="Y", type="chat", payload="original")
-            chat = await read_until_type(old, "chat")
+async def test_name_conflict_without_takeover_rejects_newcomer(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level("INFO", logger="synapse.hub"):
+        async with running_hub(_open_hub()) as (_, uri):
+            async with connect(uri) as old, connect(uri) as new:
+                await read_until_type(old, "welcome")
+                await send_json(old, sender="Y", type="heartbeat", payload="online")
+                await read_until_type(old, "presence_update")
+                await read_until_type(new, "welcome")
+                await send_json(new, sender="Y", type="heartbeat", payload="online")
+                conflict = await read_until_type(new, "name_conflict")
+                with pytest.raises(ConnectionClosed) as exc_info:
+                    await read_json(new)
+                await send_json(old, sender="Y", type="chat", payload="original")
+                chat = await read_until_type(old, "chat")
 
     assert conflict["target"] == "Y"
     assert _close_code(exc_info.value) == 4009
     assert chat["payload"] == "original"
+    assert "name conflict sender=Y" in caplog.text
+    assert "reason=name conflict" in caplog.text

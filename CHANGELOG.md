@@ -19,6 +19,8 @@ All notable changes to this project are documented here.
   suppresses the check.
 - `synapse hub` now exposes `--shutdown-close-timeout` so `SIGTERM`/`SIGINT`
   shutdown has an explicit bound for active WebSocket close handshakes.
+- Hub takeover and identity-conflict paths now emit payload-free audit logs for
+  accepted takeovers, cooldown refusals, name conflicts, and name-switch denials.
 
 ## [0.47.0] - 2026-06-27
 

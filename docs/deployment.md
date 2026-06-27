@@ -204,7 +204,9 @@ re-arms with **takeover**: the hub evicts the stale holder (closing it with code
 `4010` *superseded*) and rebinds the name, so the re-arm succeeds instead of failing
 with a `4009` name conflict. Takeover needs **both ends on 0.29.0+** — the client to
 ask for it, the hub to perform the eviction — and a 15-second keepalive reaps a
-genuine ghost quickly as the backstop.
+genuine ghost quickly as the backstop. The hub logs takeover outcomes without
+message payloads: accepted takeovers, cooldown refusals, plain name conflicts,
+and name-switch denials include the sender name, remote host, and close reason.
 
 So a coordinated restart is safe when every live client is on 0.28.1+: announce,
 restart the service, and the fleet re-arms against the fresh hub on its own. Pick a
