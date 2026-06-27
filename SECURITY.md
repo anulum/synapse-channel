@@ -42,8 +42,8 @@ When that boundary is crossed, the proportionate controls are:
   environment variable over `--token`, which is visible in the process list.
 - **Bounded resources.** A `--max-clients` connection cap, a `--max-msg-kb` frame
   size cap, per-agent rate limiting, bounded chat history, a bounded progress
-  ledger, and a bounded relay log keep one runaway agent or a flood from exhausting
-  the single hub.
+  ledger, a bounded relay log, and bounded JSON decode depth keep one runaway
+  agent or a flood from exhausting the single hub.
 - **Lease and epoch guards.** Claims expire; each lease carries an epoch so a
   superseded agent cannot act on a dead claim; mutations support idempotency keys
   so a reconnect retry is applied once while the hub retains its idempotency
@@ -104,6 +104,10 @@ worth stating plainly:
   externally validated for full A2A conformance. Remote conformance, real webhook
   receiver behavior, TLS/reverse-proxy deployment, and exposed-edge threat
   modelling are tracked as future validation work.
+- `tools/fuzz_protocol_decode.py` provides local decoder hardening evidence for
+  malformed bytes, malformed JSON, quoted bracket runs, valid nested JSON, and
+  depth-limit rejection. It is not an external protocol-conformance
+  certification.
 
 ## Licensing
 
