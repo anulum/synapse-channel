@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-06-27
+
 ### Added
 - `synapse doctor` now reports local filesystem pressure and exposes
   `--disk-path`, `--disk-warn-used-percent`, and `--disk-warn-free-mib` for
