@@ -21,6 +21,10 @@ agents (and humans), across processes and repositories. It is complementary: an 
 with any of them can claim work and share presence over SYNAPSE. See the
 [comparison](comparison.md) for the detail.
 
+The same boundary applies to coding-agent surfaces such as Claude Code, Codex, Cursor,
+Copilot, and Aider: keep using them as the runtime/editor interface, and use SYNAPSE for
+claims, presence, directed messages, shared plans, and durable coordination around them.
+
 ## Does it need a cloud account or a hosted service?
 
 No. It runs entirely on the local machine over one WebSocket hub, with a single runtime

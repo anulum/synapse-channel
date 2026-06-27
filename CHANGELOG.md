@@ -20,6 +20,12 @@ All notable changes to this project are documented here.
   `release_granted`, records it as a board assessment note, and `--receipt-json`
   prints the receipt for automation.
 
+### Changed
+- Public interoperability docs now position the MCP and A2A adapters as edge
+  interop surfaces for existing frameworks and coding agents, not replacements
+  for LangGraph, CrewAI, AutoGen, Copilot, Claude Code, Codex, Cursor, Aider,
+  or similar tools.
+
 ## [0.48.0] - 2026-06-27
 
 ### Changed

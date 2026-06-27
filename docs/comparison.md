@@ -4,6 +4,12 @@ The most common question is "how is this different from CrewAI / LangGraph / Aut
 The short answer: they sit at a **different layer**, and SYNAPSE is usually **complementary**
 to them rather than a replacement. This page is meant to be fair — if your problem is the one
 those frameworks solve, use them; SYNAPSE solves the one *next to* it.
+It is not a replacement for orchestration frameworks or coding agents such as
+CrewAI, LangGraph, AutoGen, Copilot, Claude Code, Codex, Cursor, or Aider.
+SYNAPSE sits below and beside those tools: the adapters are interop surfaces
+that let them coordinate through one local bus while they keep owning model
+selection, prompting, tool execution, editor integration, and agent control
+flow.
 
 ## Two different layers
 
@@ -14,6 +20,9 @@ those frameworks solve, use them; SYNAPSE solves the one *next to* it.
   humans, **across processes and repositories**. It does not define an agent's reasoning; it
   gives separate agents one place to claim work, share presence and a plan, address each other,
   and survive a restart.
+- **Adapters** such as the MCP server face and A2A bridge are edge interop processes. They
+  translate existing tool protocols into ordinary SYNAPSE coordination messages; they do not
+  make SYNAPSE an orchestration framework, an editor, or a coding-agent runtime.
 
 An agent built with any orchestration framework can connect to SYNAPSE to claim a file scope,
 read the shared board, and wake on a directed message. The two compose: the framework runs the
@@ -44,12 +53,17 @@ agent, SYNAPSE keeps a fleet of them off each other's work.
   that should wake on a message rather than poll? That is SYNAPSE.
 - **Both at once?** Common and supported: build each agent however you like, and connect them to
   SYNAPSE so the fleet coordinates.
+- **Using a coding agent directly?** Keep using Claude Code, Codex, Cursor, Copilot, Aider, or
+  another editor/terminal agent as the working surface, and use SYNAPSE for claims, presence,
+  directed wakeups, and shared task state around it.
 
 ## What SYNAPSE is deliberately *not*
 
 So the comparison is honest in both directions:
 
 - It carries **no agent reasoning, prompting, or tool-use DSL** — that is the framework's job.
+- It is **not an editor, model host, or coding-agent replacement** — Claude Code, Codex,
+  Cursor, Copilot, Aider, and similar tools remain the interaction/runtime layer.
 - It is **one hub on one machine** — no built-in failover or horizontal scale (a hub restart
   resumes from the durable log, but it is not a high-availability cluster).
 - Its connect authentication is a **proportionate shared secret**, not a cryptographic
