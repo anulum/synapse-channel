@@ -480,6 +480,19 @@ synapse release BUILD --name api-dev \
   --receipt-json
 ```
 
+For safer task selection and release receipts, the local test ownership map
+connects source files to likely owning tests using AST imports plus a
+conservative filename fallback:
+
+```bash
+python tools/test_ownership_map.py --check \
+  --source src/synapse_channel/core/receipts.py \
+  --require-owned src/synapse_channel/core/receipts.py
+```
+
+It is a deterministic local aid for choosing focused tests; it does not replace
+review, coverage, or the release receipt evidence itself.
+
 ## Coordination model
 
 1. Claim before you work: an agent leases a task by id; a live lease blocks other
@@ -575,7 +588,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 96 |
 | Wire message types | 53 |
 | CLI subcommands | 44 |
-| Test functions | 1578 |
+| Test functions | 1592 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

@@ -24,6 +24,9 @@ All notable changes to this project are documented here.
 - Added `tools/check_dev_dependency_drift.py` to verify that the active local
   environment satisfies the repository's declared dev, docs, and benchmark
   extras; local preflight now runs it before the rest of the gate.
+- Added `tools/test_ownership_map.py` to connect source files and symbols to
+  likely owning tests through AST imports plus conservative filename fallback,
+  with JSON, source filtering, and explicit required-ownership checks.
 
 ### Changed
 - `synapse conflicts` now ignores branch-claim pairs with different merge bases,

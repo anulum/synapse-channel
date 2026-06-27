@@ -43,6 +43,11 @@ and fresh evidence age, `needs_freshness` means freshness was not supplied,
 `stale` means the evidence is older than one hour, `degraded` means known
 failures were declared, and `unsupported` means no positive evidence was attached.
 
+Before closeout, `python tools/test_ownership_map.py --check` can map changed
+source files to likely owning tests. The map uses AST imports and a conservative
+test-filename fallback, so it is useful evidence for picking focused tests and
+receipt `changed_file` entries without pretending to be an approval system.
+
 ## 4. Hand off and recover
 
 - **Atomic handoff** transfers a held task to another *online* agent in one step,
