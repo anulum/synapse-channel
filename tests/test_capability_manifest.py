@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -160,6 +161,25 @@ def test_count_message_types_zero_without_class(tmp_path: Path) -> None:
 
 def test_count_workflows_zero_when_absent(tmp_path: Path) -> None:
     assert cap._count_workflows(tmp_path / "missing") == 0
+
+
+def test_count_tests_uses_tracked_files_when_available(tmp_path: Path) -> None:
+    tests_root = tmp_path / "tests"
+    tests_root.mkdir()
+    tracked = tests_root / "test_tracked.py"
+    tracked.write_text("def test_tracked():\n    assert True\n", encoding="utf-8")
+    (tests_root / "test_untracked.py").write_text(
+        "def test_untracked():\n    assert True\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "-C", str(tmp_path), "init"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "add", "tests/test_tracked.py"],
+        check=True,
+        capture_output=True,
+    )
+
+    assert cap._count_tests(tests_root) == 1
 
 
 def test_update_is_idempotent_when_current() -> None:

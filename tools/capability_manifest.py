@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 from typing import Any
@@ -135,10 +136,28 @@ def _count_cli_subcommands(package_root: Path) -> int:
     return total
 
 
+def _tracked_test_files(tests_root: Path) -> list[Path]:
+    """Return Git-tracked test files, or an empty list outside a Git checkout."""
+    repo_root = tests_root.parent
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "ls-files", f"{tests_root.name}/test_*.py"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )  # nosec B603,B607
+    except OSError:
+        return []
+    if result.returncode != 0:
+        return []
+    return [repo_root / line for line in result.stdout.splitlines() if line]
+
+
 def _count_tests(tests_root: Path) -> int:
-    """Count test functions across ``test_*.py`` files."""
+    """Count test functions across shipped ``test_*.py`` files."""
     total = 0
-    for path in sorted(tests_root.glob("test_*.py")):
+    paths = _tracked_test_files(tests_root) or sorted(tests_root.glob("test_*.py"))
+    for path in paths:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         total += sum(
             1
