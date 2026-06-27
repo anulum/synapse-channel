@@ -8,11 +8,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
 from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
+from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.git.gitclaim import GitError
@@ -102,6 +104,14 @@ def test_find_conflicts_same_branch_is_ignored() -> None:
     assert find_conflicts(claims) == []
 
 
+def test_find_conflicts_different_merge_bases_are_ignored() -> None:
+    claims = [
+        _claim("T1", "A", "feature/x", ["src/auth.py"], base="main"),
+        _claim("T2", "B", "feature/y", ["src/auth.py"], base="release/1"),
+    ]
+    assert find_conflicts(claims) == []
+
+
 def test_find_conflicts_no_path_overlap() -> None:
     claims = [
         _claim("T1", "A", "feature/x", ["src/auth.py"]),
@@ -146,6 +156,7 @@ def test_describe_with_paths() -> None:
     line = conflict.describe()
     assert "A@x" in line
     assert "B@y" in line
+    assert "(both -> main)" in line
     assert "src/a.py" in line
 
 
@@ -166,6 +177,15 @@ def test_branch_diff_files_uses_three_dot_range() -> None:
 
     assert branch_diff_files("feature/x", "main", runner=runner) == ["src/a.py", "src/b.py"]
     assert captured == [["diff", "--name-only", "main...feature/x"]]
+
+
+def test_git_conflict_docs_describe_same_base_and_diff_refinement() -> None:
+    root = Path(__file__).resolve().parents[1]
+    docs = (root / "docs" / "git-claims.md").read_text(encoding="utf-8")
+
+    assert "same merge base" in docs
+    assert "directory-scoped claim" in docs
+    assert "(both -> main)" in docs
 
 
 # -- run_conflicts ------------------------------------------------------------
@@ -247,6 +267,71 @@ async def test_run_conflicts_check_diff_keeps_real_overlap(
     assert "Predicted conflicts (1)" in capsys.readouterr().out
 
 
+async def test_run_conflicts_check_diff_keeps_directory_scope_overlap(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        first = await _claim_live(uri, "A", "T1", "feature/x", ["src"], worktree="/repo-a")
+        second = await _claim_live(uri, "B", "T2", "feature/y", ["src"], worktree="/repo-b")
+        try:
+            rc = await run_conflicts(
+                uri=uri,
+                name="U",
+                check_diff=True,
+                runner=lambda _a: "src/auth.py\n",
+            )
+        finally:
+            await close_agents(first, second)
+
+    assert rc == 2
+    out = capsys.readouterr().out
+    assert "Predicted conflicts (1)" in out
+    assert "src/auth.py" in out
+
+
+async def test_run_conflicts_check_diff_drops_whole_worktree_without_common_changes(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def runner(args: list[str]) -> str:
+        if args[-1] == "main...feature/x":
+            return "src/a.py\n"
+        return "docs/b.md\n"
+
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        first = await _claim_live(uri, "A", "T1", "feature/x", [], worktree="/repo-a")
+        second = await _claim_live(uri, "B", "T2", "feature/y", [], worktree="/repo-b")
+        try:
+            rc = await run_conflicts(uri=uri, name="U", check_diff=True, runner=runner)
+        finally:
+            await close_agents(first, second)
+
+    assert rc == 0
+    assert "No predicted conflicts." in capsys.readouterr().out
+
+
+async def test_run_conflicts_check_diff_refines_whole_worktree_to_common_changes(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def runner(args: list[str]) -> str:
+        if args[-1] == "main...feature/x":
+            return "src/common.py\nsrc/only-a.py\n"
+        return "src/common.py\ndocs/only-b.md\n"
+
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        first = await _claim_live(uri, "A", "T1", "feature/x", [], worktree="/repo-a")
+        second = await _claim_live(uri, "B", "T2", "feature/y", [], worktree="/repo-b")
+        try:
+            rc = await run_conflicts(uri=uri, name="U", check_diff=True, runner=runner)
+        finally:
+            await close_agents(first, second)
+
+    assert rc == 2
+    out = capsys.readouterr().out
+    assert "Predicted conflicts (1)" in out
+    assert "src/common.py" in out
+    assert "the whole worktree" not in out
+
+
 async def test_run_conflicts_check_diff_keeps_when_diff_fails(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -292,6 +377,32 @@ async def test_run_conflicts_check_diff_caches_repeated_branches(
 async def test_run_conflicts_empty_live_snapshot(capsys: pytest.CaptureFixture[str]) -> None:
     async with running_hub(SynapseHub()) as (_hub, uri):
         rc = await run_conflicts(uri=uri, name="U", runner=lambda _a: "")
+
+    assert rc == 0
+    assert "No predicted conflicts." in capsys.readouterr().out
+
+
+async def test_run_conflicts_no_snapshot_response(capsys: pytest.CaptureFixture[str]) -> None:
+    class SilentAgent:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.running = True
+
+        async def connect(self) -> None:
+            return None
+
+        async def wait_until_ready(self, *, timeout: float) -> bool:
+            return True
+
+        async def request_state(self) -> None:
+            return None
+
+    rc = await run_conflicts(
+        uri="ws://example.invalid",
+        name="U",
+        agent_factory=cast("type[SynapseAgent]", SilentAgent),
+        runner=lambda _a: "",
+        attempts=0,
+    )
 
     assert rc == 0
     assert "No predicted conflicts." in capsys.readouterr().out
