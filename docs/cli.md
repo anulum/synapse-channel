@@ -341,6 +341,7 @@ synapse hub --port 8876 --relay-log ./feed.ndjson  # mirror the channel to a fil
 synapse hub --max-clients 32 --max-msg-kb 256      # cap connections and frame size
 synapse hub --max-connections-per-host 4           # cap simultaneous sockets from one host
 synapse hub --shutdown-close-timeout 5             # bound active socket close handshakes
+synapse hub --tls-certfile ./hub.crt --tls-keyfile ./hub.key  # native wss://
 synapse hub --host 0.0.0.0 --token-file ./tok      # token from a file, not argv (ps-safe)
 synapse hub --host 0.0.0.0 --insecure-off-loopback # bind off-loopback WITHOUT a token (refused otherwise)
 ```
@@ -350,7 +351,9 @@ token) is **refused** by default — the hub will not start exposed by accident;
 `--insecure-off-loopback` downgrades that to a warning for a trusted private
 network. `--max-connections-per-host` is a connection-count cap keyed by the
 remote host; it is separate from `--host-rate`, which meters inbound frames from
-that host. Supply the token with `--token-file` or the `SYNAPSE_TOKEN`
+that host. Native `wss://` uses `--tls-certfile` plus `--tls-keyfile`; it protects
+the transport but does not replace `--token` for off-loopback binds. Supply the
+token with `--token-file` or the `SYNAPSE_TOKEN`
 environment variable rather than `--token`, which is visible in `ps`. The hub
 drains on `SIGTERM`/`SIGINT`, so a container stop shuts it down cleanly. `synapse
 health` is a liveness probe — exit `0` when the hub answers, `1` otherwise —

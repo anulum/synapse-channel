@@ -178,6 +178,11 @@ operator on one machine. Before exposing it beyond `localhost`:
 - Bind off-loopback only with a shared secret: `synapse hub --host 0.0.0.0 --token
   "$SYNAPSE_TOKEN"`. The hub **refuses to start** off-loopback without a token (pass
   `--insecure-off-loopback` to accept the risk and bind anyway).
+- Use native `wss://` when the hub process must terminate TLS itself:
+  `synapse hub --host 0.0.0.0 --token "$SYNAPSE_TOKEN" --tls-certfile
+  ./hub.crt --tls-keyfile ./hub.key`. The certificate and key must be PEM files
+  readable by the hub process. Native TLS protects the transport; it does not replace `--token`
+  or per-host limits.
 - For shared or exposed hosts, cap connection churn from one remote host with
   `--max-connections-per-host <n>`. This counts simultaneous sockets, including
   sockets still authenticating, and complements `--host-rate`, which limits frame
@@ -186,6 +191,11 @@ operator on one machine. Before exposing it beyond `localhost`:
   (uncomment the `command:` block). Clients then pass `--token "$SYNAPSE_TOKEN"`.
 - The token is a proportionate gate (constant-time check), not a cryptographic
   identity system; put real network controls in front of a multi-host hub.
+
+For reverse-proxy deployments, terminate TLS at the proxy and keep the hub bound
+to loopback or a private interface behind it. In both native and proxy-terminated
+deployments, clients use `wss://host:port` and still pass the shared token for a
+secured hub.
 
 ## Persistence and backups
 

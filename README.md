@@ -197,6 +197,7 @@ synapse hub --port 8876
 synapse hub --port 8876 --db ./synapse.db            # crash-safe: resumes leases + history on restart
 synapse hub --port 8876 --relay-log ./feed.ndjson    # mirror the channel to a compact file for observers
 synapse hub --shutdown-close-timeout 5               # bound active socket close handshakes on stop
+synapse hub --tls-certfile ./hub.crt --tls-keyfile ./hub.key  # native wss://
 synapse worker --name FAST --provider ollama --model gemma3:4b
 synapse worker --name OFFLINE --provider rule        # no network, canned replies
 synapse worker --name TIER --provider tiered --model small --heavy-model big  # route trivial→rule, hard→heavy
@@ -216,6 +217,7 @@ synapse demo                                         # installed self-check: loc
 synapse quickstart-coding                            # create a temporary coding fleet workspace and run it
 synapse new coding-fleet ./demo-fleet                # scaffold a runnable two-agent coding demo workspace
 synapse hub --host 0.0.0.0 --token s3cret            # require a shared secret when binding off-loopback
+synapse hub --host 0.0.0.0 --token s3cret --tls-certfile ./hub.crt --tls-keyfile ./hub.key
 synapse hub --max-connections-per-host 4             # cap simultaneous sockets from one remote host
 synapse send --token s3cret --name USER "hello"      # agents present the token to a secured hub
 ```
@@ -423,6 +425,9 @@ connecting agents present with `--token`. Binding off loopback without a token i
 token (and `--metrics-token` when metrics are on), or explicitly pass
 `--insecure-off-loopback` to accept the risk. This is a proportionate gate, not a
 cryptographic identity system.
+For native `wss://`, pass both `--tls-certfile` and `--tls-keyfile`. TLS protects
+the transport but does not replace `--token`; an off-loopback hub still needs the
+shared secret unless you explicitly opt into `--insecure-off-loopback`.
 
 ### MCP server face
 
@@ -686,11 +691,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.53.0 |
 | Public API exports | 60 |
-| Package modules | 132 |
-| Classes | 117 |
+| Package modules | 133 |
+| Classes | 118 |
 | Wire message types | 53 |
 | CLI subcommands | 49 |
-| Test functions | 1715 |
+| Test functions | 1725 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 21 |
 | GitHub Actions workflows | 10 |

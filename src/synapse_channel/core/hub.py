@@ -27,6 +27,7 @@ import contextlib
 import json
 import logging
 import signal
+import ssl
 import time
 import uuid
 from collections.abc import Callable
@@ -865,7 +866,13 @@ class SynapseHub:
         """
         return self._http_endpoint_response(request)
 
-    async def serve(self, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> None:
+    async def serve(
+        self,
+        host: str = DEFAULT_HOST,
+        port: int = DEFAULT_PORT,
+        *,
+        ssl_context: ssl.SSLContext | None = None,
+    ) -> None:
         """Run the hub's WebSocket server until cancelled.
 
         With :attr:`enable_metrics` set, the same port also answers HTTP
@@ -877,6 +884,9 @@ class SynapseHub:
             Bind address. Defaults to :data:`DEFAULT_HOST`.
         port : int, optional
             Bind port. Defaults to :data:`DEFAULT_PORT`.
+        ssl_context : ssl.SSLContext or None, optional
+            Server-side TLS context. When supplied, the hub serves native
+            ``wss://`` instead of plain ``ws://``.
         """
         self._guard_exposure(host)
         stop = asyncio.Event()
@@ -891,6 +901,8 @@ class SynapseHub:
             ping_timeout=DEFAULT_PING_TIMEOUT,
             close_timeout=self.shutdown_close_timeout,
             process_request=self._process_request if self.enable_metrics else None,
+            ssl=ssl_context,
         ):
-            logger.info("Synapse Hub running on ws://%s:%d", host, port)
+            scheme = "wss" if ssl_context is not None else "ws"
+            logger.info("Synapse Hub running on %s://%s:%d", scheme, host, port)
             await stop.wait()

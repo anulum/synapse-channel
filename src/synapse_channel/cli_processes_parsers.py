@@ -171,6 +171,16 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Seconds active WebSocket close handshakes may delay hub shutdown.",
     )
     hub.add_argument(
+        "--tls-certfile",
+        default=None,
+        help="PEM certificate chain for native WSS; requires --tls-keyfile.",
+    )
+    hub.add_argument(
+        "--tls-keyfile",
+        default=None,
+        help="PEM private key for native WSS; requires --tls-certfile.",
+    )
+    hub.add_argument(
         "--token",
         default=None,
         help="Require this shared-secret token from connecting agents (off by default).",

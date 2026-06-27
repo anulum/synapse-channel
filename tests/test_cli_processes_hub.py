@@ -8,8 +8,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import ssl
 from collections.abc import Coroutine
 from pathlib import Path
+from ssl import SSLContext
 from typing import Any
 
 import pytest
@@ -298,3 +301,36 @@ def test_cmd_hub_without_token_has_no_authenticator() -> None:
 
     assert cli_processes._cmd_hub(_hub_ns(), runner=_close_runner, hub_factory=build_hub) == 0
     assert captured["authenticator"] is None
+
+
+def test_cmd_hub_threads_tls_context_to_serve() -> None:
+    served: dict[str, Any] = {}
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+
+    class CapturingHub(SynapseHub):
+        async def serve(
+            self,
+            host: str = "localhost",
+            port: int = 8876,
+            *,
+            ssl_context: SSLContext | None = None,
+        ) -> None:
+            served.update({"host": host, "port": port, "ssl_context": ssl_context})
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(tls_certfile="cert.pem", tls_keyfile="key.pem"),
+            runner=lambda coro: asyncio.run(coro),
+            hub_factory=lambda **kwargs: CapturingHub(**kwargs),
+            tls_context_factory=lambda certfile, keyfile: context,
+        )
+        == 0
+    )
+
+    assert served == {"host": "localhost", "port": 8876, "ssl_context": context}
+
+
+def test_cmd_hub_rejects_incomplete_tls_config(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli_processes._cmd_hub(_hub_ns(tls_certfile="cert.pem"), runner=_close_runner) == 2
+
+    assert "requires both --tls-certfile and --tls-keyfile" in capsys.readouterr().err
