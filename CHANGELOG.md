@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse compact` can write an owner-only static HTML archive report with
+  event-kind counts, compaction removal counts, board tasks, release receipt
+  notes, and a bounded coordination timeline from the pre-compaction event
+  snapshot.
+
 ## [0.50.0] - 2026-06-27
 
 ### Added
