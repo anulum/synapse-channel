@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-06-27
+
 ### Added
 - `tools/audit_mcp_surface.py` checks the registered MCP tools/resources against
   `docs/mcp.md` and pins the documented adapter, authentication, and
