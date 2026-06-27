@@ -1,13 +1,13 @@
 {
   "metrics": {
     "benchmark_harnesses": 4,
-    "classes": 92,
+    "classes": 93,
     "cli_subcommands": 44,
     "documentation_pages": 20,
     "optional_dependency_groups": 4,
-    "package_modules": 118,
+    "package_modules": 119,
     "public_api_exports": 59,
-    "tests": 1529,
+    "tests": 1538,
     "version": "0.48.0",
     "wire_message_types": 53,
     "workflows": 10

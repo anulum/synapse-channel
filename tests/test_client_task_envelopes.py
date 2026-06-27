@@ -69,6 +69,33 @@ async def test_claim_and_release_send_idem_key() -> None:
     assert release["idem_key"] == "k2"
 
 
+async def test_release_sends_receipt_fields() -> None:
+    async with connected_recording_agent("A") as (agent, messages):
+        await agent.release(
+            "T1",
+            evidence=["pytest tests/test_client_task_envelopes.py -q"],
+            artifacts=["coverage.xml"],
+            known_failures=["mkdocs pending on unrelated branch"],
+            changed_files=["src/synapse_channel/client/agent_outbound_tasks.py"],
+            generated_artifacts=["docs/_generated/capability_manifest.json"],
+            approvals=["reviewed-by=owner"],
+            confidence="medium",
+            freshness_seconds=30.0,
+        )
+        await wait_for_recorded_count(messages, 2)
+        sent = messages[-1]
+
+    assert sent["type"] == "release"
+    assert sent["evidence"] == ["pytest tests/test_client_task_envelopes.py -q"]
+    assert sent["artifacts"] == ["coverage.xml"]
+    assert sent["known_failures"] == ["mkdocs pending on unrelated branch"]
+    assert sent["changed_files"] == ["src/synapse_channel/client/agent_outbound_tasks.py"]
+    assert sent["generated_artifacts"] == ["docs/_generated/capability_manifest.json"]
+    assert sent["approvals"] == ["reviewed-by=owner"]
+    assert sent["confidence"] == "medium"
+    assert sent["freshness_seconds"] == 30.0
+
+
 async def test_idem_key_omitted_when_unset() -> None:
     async with connected_recording_agent("A") as (agent, messages):
         await agent.claim("T1")

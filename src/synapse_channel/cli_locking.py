@@ -21,11 +21,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import json
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.receipts import build_release_receipt
 
 AgentFactory = Callable[..., SynapseAgent]
 LockRunner = Callable[[list[str]], Awaitable[int]]
@@ -162,18 +164,29 @@ async def _release(
     uri: str,
     name: str,
     task_id: str,
+    evidence: list[str] | None = None,
+    artifacts: list[str] | None = None,
+    known_failures: list[str] | None = None,
+    changed_files: list[str] | None = None,
+    generated_artifacts: list[str] | None = None,
+    approvals: list[str] | None = None,
+    confidence: str = "",
+    freshness_seconds: float | None = None,
+    receipt_json: bool = False,
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
     ready_timeout: float = 5.0,
     attempts: int = 40,
     poll_interval: float = 0.05,
 ) -> int:
-    """Drop a claim the caller owns, printing the hub's verdict.
+    """Drop a claim the caller owns, printing the hub's verdict and receipt.
 
     The manual escape hatch for a claim that no automatic trigger will release —
     a ``git-claim --auto-release-on manual``, or any lease whose holder simply
     wants to let go. The hub only honours a release from the claim's owner, so
-    ``--name`` must match the owner recorded on the claim.
+    ``--name`` must match the owner recorded on the claim. Optional receipt
+    fields travel through the real release envelope and are echoed by the hub;
+    ``receipt_json`` prints that echo as machine-readable JSON.
 
     Parameters
     ----------
@@ -181,6 +194,16 @@ async def _release(
         Hub URI and the releasing identity; must equal the claim's owner.
     task_id : str
         Identifier of the claim to release.
+    evidence, artifacts, known_failures, changed_files : list[str] or None, optional
+        Repeated closeout evidence fields attached to the release receipt.
+    generated_artifacts, approvals : list[str] or None, optional
+        Additional repeated artifact/review fields attached to the receipt.
+    confidence : str, optional
+        Optional caller-supplied confidence label.
+    freshness_seconds : float or None, optional
+        Age, in seconds, of the newest evidence.
+    receipt_json : bool, optional
+        Print the release receipt as JSON instead of the legacy one-line text.
     agent_factory : AgentFactory, optional
         Factory for the hub client; injectable for testing.
     token : str or None, optional
@@ -205,6 +228,8 @@ async def _release(
             return
         if data.get("type") == MessageType.RELEASE_GRANTED and data.get("owner") == name:
             outcome["released"] = True
+            if isinstance(data.get("receipt"), dict):
+                outcome["receipt"] = data["receipt"]
         elif data.get("type") == MessageType.RELEASE_DENIED:
             outcome["denied"] = str(data.get("payload") or "release denied")
 
@@ -214,13 +239,29 @@ async def _release(
         if not await agent.wait_until_ready(timeout=ready_timeout):
             print(f"[{name}] Could not reach hub at {uri}.")
             return 1
-        await agent.release(task_id)
+        await agent.release(
+            task_id,
+            evidence=evidence or [],
+            artifacts=artifacts or [],
+            known_failures=known_failures or [],
+            changed_files=changed_files or [],
+            generated_artifacts=generated_artifacts or [],
+            approvals=approvals or [],
+            confidence=confidence,
+            freshness_seconds=freshness_seconds,
+        )
         for _ in range(attempts):
             if outcome:
                 break
             await asyncio.sleep(poll_interval)
         if outcome.get("released"):
-            print(f"released '{task_id}'")
+            if receipt_json:
+                receipt = outcome.get("receipt")
+                if not isinstance(receipt, dict):
+                    receipt = build_release_receipt(task_id=task_id, owner=name)
+                print(json.dumps(receipt, sort_keys=True))
+            else:
+                print(f"released '{task_id}'")
             return 0
         print(f"release refused for '{task_id}': {outcome.get('denied', 'no response from hub')}")
         return 1
@@ -236,6 +277,15 @@ def _cmd_release(args: argparse.Namespace) -> int:
             uri=args.uri,
             name=args.name,
             task_id=args.task_id,
+            evidence=args.evidence,
+            artifacts=args.artifacts,
+            known_failures=args.known_failures,
+            changed_files=args.changed_files,
+            generated_artifacts=args.generated_artifacts,
+            approvals=args.approvals,
+            confidence=args.confidence,
+            freshness_seconds=args.freshness_seconds,
+            receipt_json=args.receipt_json,
             token=args.token,
             ready_timeout=args.ready_timeout,
         )
@@ -277,6 +327,63 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     release.add_argument("--uri", default=DEFAULT_HUB_URI)
     release.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    release.add_argument(
+        "--evidence",
+        action="append",
+        default=[],
+        help="Evidence line for the release receipt, such as a command and result.",
+    )
+    release.add_argument(
+        "--artifact",
+        dest="artifacts",
+        action="append",
+        default=[],
+        help="Artifact path or URI attached to the release receipt.",
+    )
+    release.add_argument(
+        "--known-failure",
+        dest="known_failures",
+        action="append",
+        default=[],
+        help="Known remaining failure or limitation attached to the release receipt.",
+    )
+    release.add_argument(
+        "--changed-file",
+        dest="changed_files",
+        action="append",
+        default=[],
+        help="Changed file path attached to the release receipt.",
+    )
+    release.add_argument(
+        "--generated-artifact",
+        dest="generated_artifacts",
+        action="append",
+        default=[],
+        help="Generated artifact path attached to the release receipt.",
+    )
+    release.add_argument(
+        "--approval",
+        dest="approvals",
+        action="append",
+        default=[],
+        help="Approval or review reference attached to the release receipt.",
+    )
+    release.add_argument(
+        "--confidence",
+        default="",
+        help="Caller-supplied confidence label for the release receipt.",
+    )
+    release.add_argument(
+        "--freshness-seconds",
+        type=float,
+        default=None,
+        help="Age in seconds of the newest evidence attached to the receipt.",
+    )
+    release.add_argument(
+        "--receipt-json",
+        action="store_true",
+        help="Print the release receipt as JSON after the hub confirms release.",
+    )
     release.add_argument(
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
     )

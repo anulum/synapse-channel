@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse release` can attach evidence-backed release receipts with repeated
+  evidence, artifact, changed-file, generated-artifact, approval, known-failure,
+  confidence, and freshness fields. The hub echoes the receipt on
+  `release_granted`, records it as a board assessment note, and `--receipt-json`
+  prints the receipt for automation.
+
 ## [0.48.0] - 2026-06-27
 
 ### Changed

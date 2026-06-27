@@ -32,6 +32,12 @@ from synapse_channel.core.journal import (
     record_task_update,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.receipts import (
+    ReleaseReceipt,
+    build_release_receipt,
+    format_release_receipt_note,
+    release_receipt_has_evidence,
+)
 from synapse_channel.core.state import GitContext
 
 if TYPE_CHECKING:
@@ -151,14 +157,29 @@ async def handle_release(
     if ok:
         if hub.journal is not None:
             record_release(hub.journal, task_id)
+        receipt = build_release_receipt(
+            task_id=task_id,
+            owner=sender,
+            evidence=data.get("evidence", ()),
+            artifacts=data.get("artifacts", ()),
+            known_failures=data.get("known_failures", ()),
+            changed_files=data.get("changed_files", ()),
+            generated_artifacts=data.get("generated_artifacts", ()),
+            approvals=data.get("approvals", ()),
+            confidence=data.get("confidence", ""),
+            freshness_seconds=data.get("freshness_seconds"),
+        )
         granted = hub._system(
             message,
             msg_type=MessageType.RELEASE_GRANTED,
             task_id=task_id,
             owner=sender,
+            receipt=receipt,
         )
         hub._remember(data, granted)
         await hub._broadcast(granted)
+        if release_receipt_has_evidence(receipt):
+            await _record_release_receipt_progress(hub, receipt)
         return
     await hub._send_json(
         websocket,
@@ -168,6 +189,28 @@ async def handle_release(
             target=sender,
             task_id=task_id,
         ),
+    )
+
+
+async def _record_release_receipt_progress(hub: SynapseHub, receipt: ReleaseReceipt) -> None:
+    """Record a release receipt as a blackboard assessment note."""
+    ok, result = hub.blackboard.post_progress(
+        task_id=str(receipt["task_id"]),
+        author=str(receipt["owner"]),
+        kind="assessment",
+        text=format_release_receipt_note(receipt),
+    )
+    if not ok or isinstance(result, str):
+        return
+    note = result
+    if hub.journal is not None:
+        record_ledger_progress(hub.journal, note)
+    await hub._broadcast(
+        hub._system(
+            f"Release receipt from {receipt['owner']}",
+            msg_type=MessageType.LEDGER_PROGRESS_POSTED,
+            note=note.as_dict(),
+        )
     )
 
 
