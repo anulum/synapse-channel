@@ -8,12 +8,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import NoReturn
 
 import pytest
 
 from hub_e2e_helpers import running_hub
 from mcp_server_helpers import start_bridge
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.mcp.server import (
     MCP_EXTRA_HINT,
     SynapseHubBridge,
@@ -50,6 +53,7 @@ async def test_build_registers_tools_and_resources() -> None:
         "synapse_manifest",
         "synapse_directory",
         "synapse_route_task",
+        "synapse_memory_recall",
     } <= tool_names
     resource_uris = {str(resource.uri) for resource in await server.list_resources()}
     assert any("board" in uri for uri in resource_uris)
@@ -58,7 +62,10 @@ async def test_build_registers_tools_and_resources() -> None:
     assert any("directory" in uri for uri in resource_uris)
 
 
-async def test_every_tool_and_resource_wrapper_dispatches() -> None:
+async def test_every_tool_and_resource_wrapper_dispatches(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    store.append(EventKind.FINDING, {"statement": "MCP memory recall"}, ts=1.0)
+    store.close()
     async with running_hub() as (hub, uri):
         handle = await start_bridge(uri, request_timeout=0.5)
         server = build_mcp_server(handle.bridge)
@@ -77,6 +84,10 @@ async def test_every_tool_and_resource_wrapper_dispatches() -> None:
                 "synapse_route_task",
                 {"task_id": "T", "limit": 3, "include_zero": True, "event_store": None},
             )
+            memory = await server.call_tool(
+                "synapse_memory_recall",
+                {"event_store": str(tmp_path / "events.db"), "query": "memory", "limit": 3},
+            )
             board_resource = await server.read_resource("synapse://board")
             state_resource = await server.read_resource("synapse://state")
             manifest_resource = await server.read_resource("synapse://manifest")
@@ -88,6 +99,7 @@ async def test_every_tool_and_resource_wrapper_dispatches() -> None:
     assert "[]" in str(manifest)
     assert "trust_boundary" in str(directory)
     assert "task_id" in str(route)
+    assert "trust_boundary" in str(memory)
     assert "T" in str(board_resource)
     assert "active_claims" in str(state_resource)
     assert "[]" in str(manifest_resource)

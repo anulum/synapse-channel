@@ -127,6 +127,14 @@ sequences so a human or policy layer can audit why the hint exists. The result
 is a routing hint only: it does not claim the task, mutate the board, reserve
 capacity, grade an agent, or certify an agent.
 
+For local durable memory, `synapse memory-recall <db> <query>` and the MCP
+`synapse_memory_recall` tool project findings, checkpoints, and handoffs from
+the SQLite event store into deterministic token matches. Recall hits keep the
+source sequence, event kind, source field, task id, actor, evidence reference,
+and matched tokens so downstream use remains auditable. The projection is local
+and read-only: it does not create external embeddings, call a service, certify
+truth, or mutate hub state.
+
 ## Durability and reconnection
 
 With `--db`, the hub records every authoritative mutation to an append-only

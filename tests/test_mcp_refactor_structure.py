@@ -28,6 +28,7 @@ EXPECTED_TOOLS = {
     "synapse_manifest",
     "synapse_directory",
     "synapse_route_task",
+    "synapse_memory_recall",
 }
 
 EXPECTED_RESOURCES = {

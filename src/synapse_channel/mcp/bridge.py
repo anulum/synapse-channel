@@ -18,6 +18,11 @@ from typing import Any
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.core.capability_directory import build_capability_directory, directory_to_json
 from synapse_channel.core.capability_observations import read_observed_capability_index
+from synapse_channel.core.memory_projection import (
+    MemoryRecallInputError,
+    memory_recall_to_json,
+    read_memory_recall,
+)
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.semantic_routing import (
     find_task,
@@ -455,3 +460,34 @@ class SynapseHubBridge:
             observations=observations,
         )
         return recommendation_to_json(recommendation)
+
+    async def memory_recall(
+        self,
+        event_store: str,
+        query: str,
+        limit: int = 5,
+        since_seq: int = 0,
+    ) -> str:
+        """Return deterministic local memory recall hits as JSON.
+
+        Parameters
+        ----------
+        event_store : str
+            Local hub event-store path to read.
+        query : str
+            Plain-text recall query.
+        limit : int, optional
+            Maximum recall hits. Defaults to ``5``.
+        since_seq : int, optional
+            Exclusive lower event-store sequence bound. Defaults to ``0``.
+
+        Returns
+        -------
+        str
+            Recall report JSON, or a local input error string.
+        """
+        try:
+            report = read_memory_recall(event_store, query, since_seq=since_seq, limit=limit)
+        except MemoryRecallInputError as exc:
+            return str(exc)
+        return memory_recall_to_json(report)

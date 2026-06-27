@@ -203,6 +203,7 @@ synapse worker --name OFFLINE --provider rule        # no network, canned replie
 synapse worker --name TIER --provider tiered --model small --heavy-model big  # route trivial→rule, hard→heavy
 synapse relay ./feed.ndjson                          # decode and print that file as readable lines
 synapse ingest ./synapse.db --memory --cursor ./mem.cursor  # stream durable memory events since a seq cursor (NDJSON)
+synapse memory-recall ./synapse.db "transport handoff"       # local recall over durable memory records
 synapse compact ./synapse.db --all --max-checkpoints-per-task 3 --archive-report ./compact-report.html
 synapse board                                        # print the shared task/progress blackboard
 synapse task declare BUILD --title "compile"         # declare/update the shared plan from the CLI
@@ -466,6 +467,12 @@ notes as observed evidence and keeps each matched signal tied to its source task
 and durable event sequence. The recommendation is advisory only: it does not
 claim work, mutate the board, reserve resources, grade agents, or turn a
 capability card into executable trust.
+`synapse memory-recall ./synapse.db "query"` provides the first product slice of
+provenance-preserving memory recall. It reads only the local SQLite event store,
+projects findings, checkpoints, and handoffs into deterministic token matches,
+and returns the source sequence, event kind, task id, actor, and matched tokens.
+It does not create external embeddings, contact a service, certify truth, or
+mutate hub state.
 To run that edge directly, use `synapse a2a-serve --endpoint-url ...`; it serves
 the public Agent Card, forwards `POST /message:send` text/data/file parts into
 SYNAPSE chat, supports immediate `POST /message:stream` Server-Sent Events,
@@ -695,6 +702,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | `capability_directory` | Discovery-only directory joining capability cards and resource offers. |
 | `semantic_routing` | Advisory local task-to-agent recommendations over board tasks and capability cards. |
 | `capability_observations` | Provenance-preserving observed release-receipt evidence for advisory routing. |
+| `memory_projection` | Deterministic local recall over durable findings, checkpoints, and handoffs. |
 | `launcher` | One-command local hub + worker startup. |
 | `cli` | The unified `synapse` command. |
 
@@ -712,11 +720,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.53.0 |
 | Public API exports | 61 |
-| Package modules | 139 |
-| Classes | 125 |
+| Package modules | 141 |
+| Classes | 129 |
 | Wire message types | 53 |
-| CLI subcommands | 51 |
-| Test functions | 1764 |
+| CLI subcommands | 52 |
+| Test functions | 1768 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 21 |
 | GitHub Actions workflows | 10 |
