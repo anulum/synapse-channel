@@ -110,6 +110,28 @@ workspace after success, and prints:
 success: coding fleet demo completed
 ```
 
+## Fastest safe trial path
+
+After the self-contained demos pass, try Synapse against a real checkout in this
+order:
+
+```bash
+python -m pip install synapse-channel
+synapse doctor
+synapse demo
+synapse quickstart-coding
+synapse git-init --name trial-agent
+synapse a2a-card --endpoint-url http://127.0.0.1:8877
+synapse a2a-serve --endpoint-url http://127.0.0.1:8877
+```
+
+Run this in a disposable or already-versioned repository. `synapse git-init
+--name trial-agent` installs the claim-aware git hooks and writes the local
+`.synapse/` conventions guide before agents edit files. The A2A bridge step is
+optional and local-only: it lets another local tool inspect the Agent Card or
+talk to the HTTP+JSON bridge, but it is not an external conformance claim. Do not
+bind it off-loopback without bearer auth.
+
 ## Releases
 
 This package is developed in the open and dogfooded daily: a fleet of coding
@@ -506,7 +528,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 92 |
 | Wire message types | 53 |
 | CLI subcommands | 44 |
-| Test functions | 1527 |
+| Test functions | 1529 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

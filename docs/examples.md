@@ -14,6 +14,7 @@ starts its own in-process hub, so nothing needs to be running first:
 
 ```bash
 python -m pip install synapse-channel
+synapse doctor
 synapse quickstart-coding
 python examples/coordination_demo.py
 python examples/llm_team_demo.py

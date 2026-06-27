@@ -23,6 +23,8 @@ All notable changes to this project are documented here.
   accepted takeovers, cooldown refusals, name conflicts, and name-switch denials.
 - Added `tools/fuzz_protocol_decode.py`, an Atheris-compatible local fuzz target
   and deterministic smoke corpus for the bounded wire JSON decoder.
+- Refreshed public first-trial docs to foreground `doctor`, `git-init`, and the
+  localhost A2A bridge path without implying external conformance.
 
 ## [0.47.0] - 2026-06-27
 
