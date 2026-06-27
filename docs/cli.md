@@ -53,6 +53,12 @@ a fresh machine, a missing hub or waiter can be a warning before services are
 installed. `synapse demo` starts an ephemeral local hub, drives a planner/worker
 flow, and is successful when it prints:
 
+For post-release local fleet restarts, `synapse doctor --redeploy-checklist`
+prints package, service, roster, durable-state, and git-hook checks. It does not
+restart services by itself; it gives operators copyable verification commands
+for the installed executable, `systemd --user` units, live roster, SQLite event
+log, and claim-aware hooks.
+
 ```text
 success: coordination demo completed
 ```

@@ -40,6 +40,7 @@ from synapse_channel.client.diagnostics import (
     summarise,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.ops_redeploy import build_redeploy_checklist, render_redeploy_checklist
 from synapse_channel.service_setup import install_user_services, service_suggestions
 
 RosterProbe = Callable[..., Awaitable[list[str] | None]]
@@ -196,6 +197,32 @@ def _cmd_doctor(
     )
     for line in lines:
         print(line)
+    if getattr(args, "redeploy_checklist", False):
+        from synapse_channel.ergonomics import resolve_identity
+
+        env = os.environ if env is None else env
+        identity = resolve_identity(
+            project=args.project,
+            agent_id=args.id,
+            env=env,
+            cwd_basename=Path.cwd().name if cwd_basename is None else cwd_basename,
+            home_basename=(
+                Path(env.get("HOME", str(Path.home()))).name
+                if home_basename is None
+                else home_basename
+            ),
+        )
+        service_identity = getattr(args, "identity", None) or identity.identity
+        for line in render_redeploy_checklist(
+            build_redeploy_checklist(
+                project=identity.project,
+                identity=service_identity,
+                hub_uri=args.uri,
+                db_path=getattr(args, "db_path", "~/synapse/hub.db"),
+                synapse_bin=getattr(args, "synapse_bin", None),
+            )
+        ):
+            print(line)
     if (
         getattr(args, "fix", False)
         or getattr(args, "install_user_services", False)
@@ -299,5 +326,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--synapse-bin",
         default=None,
         help="Synapse executable path baked into generated units; defaults to PATH lookup.",
+    )
+    doctor.add_argument(
+        "--redeploy-checklist",
+        action="store_true",
+        help="Print post-release package, service, roster, replay, and git-hook checks.",
+    )
+    doctor.add_argument(
+        "--db-path",
+        default="~/synapse/hub.db",
+        help="Hub SQLite event-store path to include in --redeploy-checklist.",
     )
     doctor.set_defaults(func=_cmd_doctor)
