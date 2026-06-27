@@ -76,6 +76,13 @@ python -m pip install synapse-channel       # the release from PyPI
 python -m pip install -e ".[dev]"           # or an editable dev checkout
 ```
 
+For an editable checkout, keep the local `.venv` aligned with the repository's
+declared dev, docs, and benchmark extras:
+
+```bash
+.venv/bin/python tools/check_dev_dependency_drift.py --check
+```
+
 This installs the `synapse` command. To run the hub as an always-on local service
 or a container, see the [deployment guide](docs/deployment.md) (a `systemd` user
 unit and `docker compose` are both included).
@@ -568,7 +575,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 96 |
 | Wire message types | 53 |
 | CLI subcommands | 44 |
-| Test functions | 1566 |
+| Test functions | 1578 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

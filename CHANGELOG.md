@@ -21,6 +21,9 @@ All notable changes to this project are documented here.
 - Release receipts now include advisory `epistemic_status` and
   `epistemic_reasons` fields derived from submitted evidence, freshness, and
   known failures, and board assessment notes include the same metadata.
+- Added `tools/check_dev_dependency_drift.py` to verify that the active local
+  environment satisfies the repository's declared dev, docs, and benchmark
+  extras; local preflight now runs it before the rest of the gate.
 
 ### Changed
 - `synapse conflicts` now ignores branch-claim pairs with different merge bases,

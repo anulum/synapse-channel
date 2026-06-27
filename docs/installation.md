@@ -41,6 +41,14 @@ Install one or more with, for example:
 pip install -e ".[dev,benchmark]"
 ```
 
+For a contributor checkout, the local `.venv` should mirror the declared
+development, documentation, and benchmark extras. Verify that before running
+larger local gates:
+
+```bash
+.venv/bin/python tools/check_dev_dependency_drift.py --check
+```
+
 ## Verifying
 
 ```bash
