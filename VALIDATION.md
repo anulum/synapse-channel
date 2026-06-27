@@ -39,6 +39,7 @@ Every change must clear these gates (run locally with `make preflight`):
 | --- | --- | --- |
 | Lint | `ruff check` (E, F, I, B, UP, D) | no warnings |
 | Formatting | `ruff format --check` | no diff |
+| MCP surface audit | `tools/audit_mcp_surface.py --check` | documented tools/resources and adapter boundaries match registration |
 | Types | `mypy` (strict) | no errors |
 | Tests + coverage | `pytest --cov` | pass, ≥ 95% (held at 100%) |
 | Licensing | `reuse lint` | REUSE 3.x compliant |
@@ -77,6 +78,13 @@ webhook delivery failures, and subscriber fanout:
 
 ```bash
 .venv/bin/python -m pytest tests/test_a2a_load_soak.py -q
+```
+
+The MCP adapter documentation is checked against the registered FastMCP surface
+and required adapter/auth/dependency boundary text:
+
+```bash
+.venv/bin/python tools/audit_mcp_surface.py --check
 ```
 
 ## Benchmarks

@@ -92,6 +92,21 @@ issuing a tool call:
 | `synapse://state` | Active claims and their resume checkpoints. |
 | `synapse://manifest` | The capability cards of advertised agents. |
 
+## Surface audit
+
+The registered MCP tools and resources are checked against this guide by a
+source parser:
+
+```bash
+.venv/bin/python tools/audit_mcp_surface.py --check
+```
+
+The audit fails when `src/synapse_channel/mcp/registration.py` exposes a tool or
+resource that this page does not list, or when this page loses the adapter,
+authentication, or optional-dependency boundary text. It verifies documentation
+completeness for the local adapter surface; it does not certify external MCP
+client conformance.
+
 ## What stays out of the hub
 
 The adapter holds all MCP knowledge; the hub holds none. The MCP SDK is never a

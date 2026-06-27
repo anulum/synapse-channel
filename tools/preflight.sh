@@ -32,6 +32,7 @@ run "ruff format"          "$V/ruff" format --check src tests benchmarks example
 run "ruff lint"            "$V/ruff" check src tests benchmarks examples
 run "capability manifest"  "$V/python" tools/capability_manifest.py --check
 run "version sync"         "$V/python" tools/check_version_sync.py
+run "MCP surface audit"    "$V/python" tools/audit_mcp_surface.py --check
 # ci.yml: typecheck
 run "mypy (strict)"        "$V/mypy"
 # ci.yml: test (single-version; CI runs the 3.10-3.13 matrix)
