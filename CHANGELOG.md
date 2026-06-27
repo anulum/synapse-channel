@@ -17,6 +17,9 @@ All notable changes to this project are documented here.
 - Refreshed the public comparison page with concrete, locally verifiable
   differences for file-scope claims, Git hooks, durability, metrics, MCP, A2A,
   receipts, and local-first operation.
+- Added `synapse doctor --redeploy-checklist` so post-release local fleet
+  restarts have copyable package, service, roster, durable-state, and git-hook
+  verification steps without the diagnostic command mutating services.
 
 ## [0.52.0] - 2026-06-27
 

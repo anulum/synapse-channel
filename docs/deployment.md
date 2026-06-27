@@ -114,6 +114,19 @@ Before long-running fleet sessions, run `synapse doctor`. The doctor check
 includes root-filesystem pressure by default; pass `--disk-path <workspace>` when
 the workspace, build tree, or package cache lives on a different mount.
 
+After upgrading a local fleet, run:
+
+```bash
+synapse doctor --project myproject --id worker --redeploy-checklist
+```
+
+The checklist prints package, service, roster, durable-state, and git-hook checks
+for the installed executable, hub service, presence daemon, wake listener, SQLite
+event log, and claim-aware hooks. It does not restart services by itself; run the
+printed commands when you are ready to bounce the hub and reconnect the fleet.
+Use `--db-path` if your hub service stores the event log somewhere other than
+`~/synapse/hub.db`.
+
 The hook does not infer the project from the current git checkout by default.
 Unassigned terminals join `SYNAPSE_DEFAULT_PROJECT`, or the neutral `user` lane
 when unset. Bind a terminal or provider session to a project explicitly with

@@ -245,6 +245,12 @@ tools still own prompting, model choice, tool use, and editor/runtime behavior.
   root filesystem — each with its fix. Use `--disk-path <path>` to check the
   filesystem that holds a specific workspace or cache.
 
+- **Verify a release redeploy:** `synapse doctor --redeploy-checklist` prints
+  package, service, roster, durable-state, and git-hook checks for a post-release
+  local fleet restart. It does not restart services by itself; it gives the
+  operator copyable commands for the installed executable, hub service, presence
+  daemon, wake listener, event log, and git hook path.
+
 - **Install the always-on local services:** `synapse init` prints or installs the
   hub, project presence, and non-LLM wake listener units. `doctor --fix` prints
   the exact commands when a waiter is missing.
@@ -646,11 +652,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.52.0 |
 | Public API exports | 60 |
-| Package modules | 123 |
-| Classes | 101 |
+| Package modules | 124 |
+| Classes | 102 |
 | Wire message types | 53 |
 | CLI subcommands | 45 |
-| Test functions | 1665 |
+| Test functions | 1670 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |
