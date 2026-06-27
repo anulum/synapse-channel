@@ -197,6 +197,8 @@ synapse hub --port 8876
 synapse hub --port 8876 --db ./synapse.db            # crash-safe: resumes leases + history on restart
 synapse hub --port 8876 --relay-log ./feed.ndjson    # mirror the channel to a compact file for observers
 synapse hub --shutdown-close-timeout 5               # bound active socket close handshakes on stop
+synapse hub --max-progress-per-author 500            # cap retained board progress per author
+synapse hub --max-findings-per-agent 200             # cap durable findings admitted per agent
 synapse hub --tls-certfile ./hub.crt --tls-keyfile ./hub.key  # native wss://
 synapse worker --name FAST --provider ollama --model gemma3:4b
 synapse worker --name OFFLINE --provider rule        # no network, canned replies
@@ -651,7 +653,12 @@ task ledger of declared work with dependencies (the hub refuses dependency
 cycles, so `ready` tasks are well-defined) and an append-only progress ledger a
 supervisor can read to spot stalls. A declared `LedgerTask` is the *plan*; a
 claim is the *lease* on doing it — the two share a task id but stay independent,
-so the simple claim flow keeps working. View it with `synapse board`.
+so the simple claim flow keeps working. The hub keeps the progress view bounded
+globally, per author, and per task id (`--max-progress`,
+`--max-progress-per-author`, `--max-progress-per-task`), while the durable event
+log remains append-only until explicit compaction. Durable findings also have a
+per-agent admission cap (`--max-findings-per-agent`) so one producer cannot fill
+the shared memory spine. View the board with `synapse board`.
 
 `synapse supervisor` remains deterministic and LLM-free. It re-offers
 `in_progress` tasks after the fixed `--idle-seconds` ceiling, and, by default,
@@ -687,7 +694,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Module | Responsibility |
 | --- | --- |
 | `state` | Presence, scoped task-claim leases, epochs/versions, and resource offers (transport-agnostic). |
-| `ledger` | Shared blackboard: the declared task plan (with dependencies) and an append-only progress stream. |
+| `ledger` | Shared blackboard: the declared task plan (with dependencies) and a bounded progress stream. |
 | `scoping` | Worktree- and path-overlap detection that keeps two agents off the same files. |
 | `lifecycle` | Typed task-status states and the legal transitions the hub enforces. |
 | `deadlock` | Wait-for cycle detection so circular hold-and-wait claims are refused. |
@@ -733,7 +740,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 131 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1799 |
+| Test functions | 1813 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 21 |
 | GitHub Actions workflows | 10 |

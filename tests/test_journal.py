@@ -16,13 +16,17 @@ from synapse_channel.core.journal import (
     record_chat,
     record_checkpoint,
     record_claim,
+    record_finding,
     record_handoff,
     record_idempotency,
+    record_ledger_progress,
+    record_ledger_task,
     record_release,
     record_resource,
     record_task_update,
     replay,
 )
+from synapse_channel.core.ledger import LedgerTask, ProgressNote
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.state import GitContext, ResourceOffer, TaskClaim
 
@@ -78,6 +82,15 @@ def test_replay_seeds_custom_per_agent_quotas(tmp_path: Path) -> None:
     store.close()
     assert result.state.max_claims_per_agent == 7
     assert result.state.max_offers_per_agent == 3
+
+
+def test_replay_seeds_custom_blackboard_progress_bounds(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    result = replay(store, max_progress=9, max_progress_per_author=4, max_progress_per_task=5)
+    store.close()
+    assert result.blackboard.max_progress == 9
+    assert result.blackboard.max_progress_per_author == 4
+    assert result.blackboard.max_progress_per_task == 5
 
 
 def test_replay_seeds_custom_max_paths_per_claim(tmp_path: Path) -> None:
@@ -182,6 +195,88 @@ def test_replay_collects_chat_history_and_message_seq(tmp_path: Path) -> None:
     store.close()
     assert [m["payload"] for m in result.chat_history] == ["a", "b"]
     assert result.message_seq == 2
+
+
+def test_record_ledger_task_replays_blackboard_task(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    record_ledger_task(
+        store,
+        LedgerTask(
+            task_id="PLAN",
+            title="Plan",
+            created_at=1000.0,
+            updated_at=1001.0,
+            description="do the work",
+            depends_on=("READY",),
+            status="blocked",
+            suggested_owner="A",
+            created_by="planner",
+        ),
+    )
+    result = replay(store, now=2000.0)
+    store.close()
+    task = result.blackboard.tasks["PLAN"]
+    assert task.title == "Plan"
+    assert task.depends_on == ("READY",)
+    assert task.status == "blocked"
+
+
+def test_record_ledger_progress_replays_blackboard_note(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    record_ledger_progress(
+        store,
+        ProgressNote(
+            task_id="PLAN",
+            author="A",
+            kind="assessment",
+            text="checked",
+            posted_at=1000.0,
+        ),
+    )
+    result = replay(store, now=2000.0)
+    store.close()
+    assert [
+        (note.task_id, note.author, note.kind, note.text) for note in result.blackboard.progress
+    ] == [("PLAN", "A", "assessment", "checked")]
+
+
+def test_replay_applies_blackboard_progress_retention(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    for text in ("a1", "a2", "a3"):
+        store.append(
+            EventKind.LEDGER_PROGRESS,
+            ProgressNote(task_id="T", author="A", kind="note", text=text).as_dict(),
+        )
+    store.append(
+        EventKind.LEDGER_PROGRESS,
+        ProgressNote(task_id="T", author="B", kind="note", text="b1").as_dict(),
+    )
+    result = replay(store, max_progress=10, max_progress_per_author=2, max_progress_per_task=3)
+    store.close()
+    assert [(note.author, note.text) for note in result.blackboard.progress] == [
+        ("A", "a2"),
+        ("A", "a3"),
+        ("B", "b1"),
+    ]
+
+
+def test_replay_counts_existing_findings_by_actor(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    record_finding(store, {"statement": "a", "provenance": {"actor": "A"}})
+    record_finding(store, {"statement": "b", "provenance": {"actor": "A"}})
+    record_finding(store, {"statement": "c", "provenance": {"actor": "B"}})
+    result = replay(store, now=2000.0)
+    store.close()
+    assert result.finding_counts_by_actor == {"A": 2, "B": 1}
+
+
+def test_replay_ignores_findings_without_actor(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    record_finding(store, {"statement": "a", "provenance": {"actor": ""}})
+    record_finding(store, {"statement": "b", "provenance": "legacy"})
+    result = replay(store, now=2000.0)
+    store.close()
+    assert result.finding_counts_by_actor == {}
 
 
 def test_replay_expires_stale_claim(tmp_path: Path) -> None:

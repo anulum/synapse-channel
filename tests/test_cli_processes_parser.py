@@ -96,6 +96,32 @@ def test_parser_hub_per_agent_quotas() -> None:
     assert args.max_offers_per_agent == 5
 
 
+def test_parser_hub_blackboard_and_memory_quotas() -> None:
+    defaults = cli.build_parser().parse_args(["hub"])
+    assert defaults.max_progress == 5000
+    assert defaults.max_progress_per_author == 1000
+    assert defaults.max_progress_per_task == 1000
+    assert defaults.max_findings_per_agent == 512
+
+    args = cli.build_parser().parse_args(
+        [
+            "hub",
+            "--max-progress",
+            "99",
+            "--max-progress-per-author",
+            "7",
+            "--max-progress-per-task",
+            "8",
+            "--max-findings-per-agent",
+            "9",
+        ]
+    )
+    assert args.max_progress == 99
+    assert args.max_progress_per_author == 7
+    assert args.max_progress_per_task == 8
+    assert args.max_findings_per_agent == 9
+
+
 def test_parser_hub_max_paths_per_claim() -> None:
     assert cli.build_parser().parse_args(["hub"]).max_paths_per_claim == MAX_DECLARED_PATHS
     args = cli.build_parser().parse_args(["hub", "--max-paths-per-claim", "20"])

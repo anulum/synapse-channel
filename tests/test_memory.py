@@ -212,6 +212,79 @@ async def test_finding_with_unsupported_claim_is_floored(tmp_path: Path) -> None
     assert rec["claim_status"] == "bounded-support"
 
 
+async def test_finding_quota_rejects_admitted_memory_without_broadcast(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    async with running_hub(
+        SynapseHub(hub_id="syn-test", journal=store, max_findings_per_agent=1)
+    ) as (_, uri):
+        author = await connect_agent("AUTHOR", uri)
+        watcher = await connect_agent("WATCH", uri)
+        try:
+            for statement in ("first finding", "second finding"):
+                await author.agent.record_finding(
+                    statement,
+                    subkind="codebase-fact",
+                    evidence_kind="measured",
+                    claim_status="reference-validated",
+                    evidence_ref="tests/test_memory.py",
+                    project="SYNAPSE-CHANNEL",
+                    checked_this_session=True,
+                    source_ref="tests/test_memory.py",
+                )
+            recorded = await author.recorder.wait_for(lambda m: m.get("type") == "finding_recorded")
+            rejected = await author.recorder.wait_for(
+                lambda m: m.get("type") == "finding_rejected" and "quota" in str(m.get("payload"))
+            )
+            assert recorded["finding"]["statement"] == "first finding"
+            assert rejected["target"] == "AUTHOR"
+            assert all(
+                not (
+                    message.get("type") == "finding_recorded"
+                    and message.get("finding", {}).get("statement") == "second finding"
+                )
+                for message in watcher.recorder.messages
+            )
+        finally:
+            await close_agents(author, watcher)
+    records = _findings(store)
+    store.close()
+    assert [record["statement"] for record in records] == ["first finding"]
+
+
+async def test_finding_quota_is_seeded_from_replayed_journal(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    record_finding(
+        store,
+        {
+            "statement": "already stored",
+            "claim_status": "reference-validated",
+            "provenance": {"actor": "AUTHOR"},
+        },
+    )
+    async with running_hub(
+        SynapseHub(hub_id="syn-test", journal=store, max_findings_per_agent=1)
+    ) as (_, uri):
+        author = await connect_agent("AUTHOR", uri)
+        try:
+            await author.agent.record_finding(
+                "after restart",
+                subkind="codebase-fact",
+                evidence_kind="measured",
+                claim_status="reference-validated",
+                evidence_ref="tests/test_memory.py",
+                project="SYNAPSE-CHANNEL",
+                checked_this_session=True,
+                source_ref="tests/test_memory.py",
+            )
+            rejected = await author.recorder.wait_for(lambda m: m.get("type") == "finding_rejected")
+            assert "quota" in rejected["payload"]
+        finally:
+            await close_agents(author)
+    records = _findings(store)
+    store.close()
+    assert [record["statement"] for record in records] == ["already stored"]
+
+
 async def test_finding_rejected_is_private_and_not_journalled(tmp_path: Path) -> None:
     store = EventStore(tmp_path / "events.db")
     async with running_hub(SynapseHub(hub_id="syn-test", journal=store)) as (_, uri):

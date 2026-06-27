@@ -58,7 +58,12 @@ from synapse_channel.core.hub_http import (
 )
 from synapse_channel.core.idempotency import IdempotencyCache
 from synapse_channel.core.journal import record_idempotency, replay
-from synapse_channel.core.ledger import DEFAULT_MAX_PROGRESS, Blackboard
+from synapse_channel.core.ledger import (
+    DEFAULT_MAX_PROGRESS,
+    DEFAULT_MAX_PROGRESS_PER_AUTHOR,
+    DEFAULT_MAX_PROGRESS_PER_TASK,
+    Blackboard,
+)
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import (
     RESOURCE_TYPE_ALIASES,
@@ -88,6 +93,8 @@ DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 8876
 DEFAULT_MAX_HISTORY = 10000
 DEFAULT_MAX_QUEUE = 64
+DEFAULT_MAX_FINDINGS_PER_AGENT = 512
+"""Maximum durable findings one agent may admit before private rejection."""
 DEFAULT_RELAY_MAX_LINES = 5000
 DEFAULT_PING_INTERVAL = 15.0
 """Seconds between server keepalive pings, so a dead socket is detected promptly."""
@@ -173,6 +180,15 @@ class SynapseHub:
         Maximum progress notes retained on the shared blackboard; the oldest are
         dropped beyond this bound. The durable log (when attached) still records
         every note. Defaults to :data:`~synapse_channel.core.ledger.DEFAULT_MAX_PROGRESS`.
+    max_progress_per_author : int, optional
+        Maximum progress notes retained for one author on the shared blackboard.
+        Defaults to :data:`~synapse_channel.core.ledger.DEFAULT_MAX_PROGRESS_PER_AUTHOR`.
+    max_progress_per_task : int, optional
+        Maximum progress notes retained for one task id on the shared blackboard.
+        Defaults to :data:`~synapse_channel.core.ledger.DEFAULT_MAX_PROGRESS_PER_TASK`.
+    max_findings_per_agent : int, optional
+        Maximum durable findings one agent may admit before new findings are
+        privately rejected. Defaults to :data:`DEFAULT_MAX_FINDINGS_PER_AGENT`.
     compact_hint_threshold : int, optional
         Record count past which a hub started on a durable log emits a one-off
         startup hint to run ``synapse compact`` (the log is never auto-compacted —
@@ -242,6 +258,9 @@ class SynapseHub:
         relay_log: str | Path | None = None,
         relay_max_lines: int = DEFAULT_RELAY_MAX_LINES,
         max_progress: int = DEFAULT_MAX_PROGRESS,
+        max_progress_per_author: int = DEFAULT_MAX_PROGRESS_PER_AUTHOR,
+        max_progress_per_task: int = DEFAULT_MAX_PROGRESS_PER_TASK,
+        max_findings_per_agent: int = DEFAULT_MAX_FINDINGS_PER_AGENT,
         compact_hint_threshold: int = DEFAULT_COMPACT_HINT_THRESHOLD,
         authenticator: TokenAuthenticator | None = None,
         max_clients: int = DEFAULT_MAX_CLIENTS,
@@ -285,6 +304,7 @@ class SynapseHub:
         self.takeover_cooldown = self.clients.takeover_cooldown
         self.shutdown_close_timeout = max(float(shutdown_close_timeout), 0.1)
         self.max_history = max(int(max_history), 1)
+        self.max_findings_per_agent = max(int(max_findings_per_agent), 1)
         self.compact_hint_threshold = max(1, int(compact_hint_threshold))
         self.relay_log = Path(relay_log) if relay_log else None
         self.relay_max_lines = max(int(relay_max_lines), 1)
@@ -296,12 +316,15 @@ class SynapseHub:
         self.socket_agent = self.clients.socket_agent
         self._idempotency = IdempotencyCache()
         self._waits: dict[str, str] = {}
+        self._findings_by_agent: dict[str, int] = {}
         self.capabilities = CapabilityRegistry()
         if journal is not None:
             replayed = replay(
                 journal,
                 default_ttl_seconds=default_ttl_seconds,
                 max_progress=max_progress,
+                max_progress_per_author=max_progress_per_author,
+                max_progress_per_task=max_progress_per_task,
                 max_claims_per_agent=max_claims_per_agent,
                 max_offers_per_agent=max_offers_per_agent,
                 max_paths_per_claim=max_paths_per_claim,
@@ -310,6 +333,7 @@ class SynapseHub:
             self.chat_history = replayed.chat_history[-self.max_history :]
             self._message_seq = replayed.message_seq
             self.blackboard = replayed.blackboard
+            self._findings_by_agent = dict(replayed.finding_counts_by_actor)
             # Rebuild the at-most-once guard so a retry after a restart replays the
             # original response instead of re-applying the mutation. Seeded oldest
             # first, the bounded cache keeps the most-recent keys.
@@ -336,7 +360,11 @@ class SynapseHub:
             )
             self.chat_history = []
             self._message_seq = 0
-            self.blackboard = Blackboard(max_progress=max_progress)
+            self.blackboard = Blackboard(
+                max_progress=max_progress,
+                max_progress_per_author=max_progress_per_author,
+                max_progress_per_task=max_progress_per_task,
+            )
 
     # -- helpers --------------------------------------------------------------
 
@@ -362,6 +390,32 @@ class SynapseHub:
             self._idempotency.put(key, response)
             if self.journal is not None:
                 record_idempotency(self.journal, key, response)
+
+    def reserve_finding_slot(self, agent: str) -> tuple[bool, str]:
+        """Reserve one durable-finding quota slot for ``agent``.
+
+        Parameters
+        ----------
+        agent : str
+            Hub-authenticated agent name that authored the finding.
+
+        Returns
+        -------
+        tuple[bool, str]
+            ``(True, message)`` when the slot was reserved, otherwise
+            ``(False, reason)`` when the agent already reached
+            :attr:`max_findings_per_agent`.
+        """
+        owner = agent.strip()
+        admitted = self._findings_by_agent.get(owner, 0)
+        if admitted >= self.max_findings_per_agent:
+            return (
+                False,
+                f"Agent '{owner}' has reached the {self.max_findings_per_agent} "
+                "durable-finding quota.",
+            )
+        self._findings_by_agent[owner] = admitted + 1
+        return True, f"Agent '{owner}' finding admitted."
 
     async def _maybe_replay_duplicate(
         self, msg_type: str, data: dict[str, Any], websocket: Any

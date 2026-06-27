@@ -30,6 +30,8 @@ from typing import Any
 
 from synapse_channel.core.ledger import (
     DEFAULT_MAX_PROGRESS,
+    DEFAULT_MAX_PROGRESS_PER_AUTHOR,
+    DEFAULT_MAX_PROGRESS_PER_TASK,
     Blackboard,
     LedgerTask,
     ProgressNote,
@@ -100,6 +102,9 @@ class ReplayResult:
         Reconstructed idempotency entries, oldest first and deduplicated to the
         latest response per key, ready to seed the hub's bounded cache so the
         at-most-once guarantee survives a restart.
+    finding_counts_by_actor : dict[str, int]
+        Count of replayed durable findings per hub-attested actor, used to seed
+        live per-agent finding quotas after a restart.
     """
 
     state: SynapseState
@@ -107,6 +112,7 @@ class ReplayResult:
     message_seq: int
     blackboard: Blackboard
     idempotency: list[tuple[str, dict[str, Any]]]
+    finding_counts_by_actor: dict[str, int]
 
 
 def record_claim(store: EventStore, claim: TaskClaim) -> None:
@@ -295,6 +301,8 @@ def replay(
     *,
     default_ttl_seconds: float = 3600.0,
     max_progress: int = DEFAULT_MAX_PROGRESS,
+    max_progress_per_author: int = DEFAULT_MAX_PROGRESS_PER_AUTHOR,
+    max_progress_per_task: int = DEFAULT_MAX_PROGRESS_PER_TASK,
     max_claims_per_agent: int = MAX_CLAIMS_PER_AGENT,
     max_offers_per_agent: int = MAX_OFFERS_PER_AGENT,
     max_paths_per_claim: int = MAX_DECLARED_PATHS,
@@ -310,6 +318,10 @@ def replay(
         TTL seeded into the reconstructed :class:`SynapseState`.
     max_progress : int, optional
         Progress-note bound seeded into the reconstructed :class:`Blackboard`.
+    max_progress_per_author : int, optional
+        Per-author progress-note bound seeded into the reconstructed blackboard.
+    max_progress_per_task : int, optional
+        Per-task progress-note bound seeded into the reconstructed blackboard.
     max_claims_per_agent : int, optional
         Per-agent claim quota seeded into the reconstructed :class:`SynapseState`.
     max_offers_per_agent : int, optional
@@ -335,8 +347,13 @@ def replay(
         max_paths_per_claim=max_paths_per_claim,
     )
     chat_history: list[dict[str, Any]] = []
-    blackboard = Blackboard(max_progress=max_progress)
+    blackboard = Blackboard(
+        max_progress=max_progress,
+        max_progress_per_author=max_progress_per_author,
+        max_progress_per_task=max_progress_per_task,
+    )
     idempotency: OrderedDict[str, dict[str, Any]] = OrderedDict()
+    finding_counts_by_actor: dict[str, int] = {}
     message_seq = 0
     epoch_seq = 0
 
@@ -360,7 +377,7 @@ def replay(
             task = _ledger_task_from_payload(payload)
             blackboard.tasks[task.task_id] = task
         elif event.kind == EventKind.LEDGER_PROGRESS:
-            blackboard.progress.append(_progress_from_payload(payload))
+            blackboard.restore_progress(_progress_from_payload(payload))
         elif event.kind == EventKind.RELEASE:
             state.claims.pop(str(payload["task_id"]), None)
         elif event.kind == EventKind.RESOURCE:
@@ -381,10 +398,15 @@ def replay(
             if key:
                 idempotency[key] = dict(payload.get("response", {}))
                 idempotency.move_to_end(key)  # latest response, most-recently-used
-        # EventKind.RECALL and EventKind.FINDING are the memory layer's telemetry
-        # and durable spine, not coordination state — they are journalled for the
-        # read-side ingest seam and deliberately skipped here, so a restart never
-        # replays them into the registry.
+        elif event.kind == EventKind.FINDING:
+            provenance = payload.get("provenance")
+            if isinstance(provenance, dict):
+                actor = str(provenance.get("actor") or "").strip()
+                if actor:
+                    finding_counts_by_actor[actor] = finding_counts_by_actor.get(actor, 0) + 1
+        # RECALL is telemetry and FINDING is the durable memory spine. Neither is
+        # coordination state, so replay never inserts them into the registry; findings
+        # only seed live quota counters for the same actor after a restart.
 
     state._epoch_seq = epoch_seq
     # Replay assigns claims straight into the registry, so build the lease-expiry
@@ -393,13 +415,11 @@ def replay(
     ts = time.time() if now is None else float(now)
     state._expire_claims(ts)
     state._expire_resources(ts)
-    # Trim replayed progress to the bound (the durable log keeps every note).
-    if len(blackboard.progress) > blackboard.max_progress:
-        del blackboard.progress[: len(blackboard.progress) - blackboard.max_progress]
     return ReplayResult(
         state=state,
         chat_history=chat_history,
         message_seq=message_seq,
         blackboard=blackboard,
         idempotency=list(idempotency.items()),
+        finding_counts_by_actor=dict(finding_counts_by_actor),
     )

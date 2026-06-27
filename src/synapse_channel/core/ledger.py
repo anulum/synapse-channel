@@ -31,6 +31,7 @@ tests.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -45,6 +46,12 @@ PROGRESS_KINDS = frozenset({"note", "blocked", "assessment"})
 
 DEFAULT_MAX_PROGRESS = 5000
 """Default cap on retained progress notes before the oldest are dropped."""
+
+DEFAULT_MAX_PROGRESS_PER_AUTHOR = 1000
+"""Default cap on retained progress notes per author."""
+
+DEFAULT_MAX_PROGRESS_PER_TASK = 1000
+"""Default cap on retained progress notes per task."""
 
 TERMINAL_LEDGER_STATUSES = frozenset({"done", "cancelled"})
 """Planning statuses that satisfy a dependency edge (the task is finished)."""
@@ -160,12 +167,26 @@ class Blackboard:
         Maximum progress notes retained; the oldest are dropped beyond this
         bound so the stream cannot grow without limit. Clamped up to ``1``.
         Defaults to :data:`DEFAULT_MAX_PROGRESS`.
+    max_progress_per_author : int, optional
+        Maximum progress notes retained for one author. Clamped up to ``1``.
+        Defaults to :data:`DEFAULT_MAX_PROGRESS_PER_AUTHOR`.
+    max_progress_per_task : int, optional
+        Maximum progress notes retained for one task id. Clamped up to ``1``.
+        Defaults to :data:`DEFAULT_MAX_PROGRESS_PER_TASK`.
     """
 
-    def __init__(self, max_progress: int = DEFAULT_MAX_PROGRESS) -> None:
+    def __init__(
+        self,
+        max_progress: int = DEFAULT_MAX_PROGRESS,
+        *,
+        max_progress_per_author: int = DEFAULT_MAX_PROGRESS_PER_AUTHOR,
+        max_progress_per_task: int = DEFAULT_MAX_PROGRESS_PER_TASK,
+    ) -> None:
         self.tasks: dict[str, LedgerTask] = {}
         self.progress: list[ProgressNote] = []
         self.max_progress = max(int(max_progress), 1)
+        self.max_progress_per_author = max(int(max_progress_per_author), 1)
+        self.max_progress_per_task = max(int(max_progress_per_task), 1)
 
     def post_task(
         self,
@@ -343,11 +364,48 @@ class Blackboard:
         )
 
     def _append(self, note: ProgressNote) -> ProgressNote:
-        """Append a note, dropping the oldest beyond the bound, and return it."""
+        """Append a note, dropping the oldest beyond each bound, and return it."""
         self.progress.append(note)
-        if len(self.progress) > self.max_progress:
-            del self.progress[0]
+        self._drop_oldest_matching(lambda _candidate: True, self.max_progress)
+        self._drop_oldest_matching(
+            lambda candidate: candidate.author == note.author,
+            self.max_progress_per_author,
+        )
+        self._drop_oldest_matching(
+            lambda candidate: candidate.task_id == note.task_id,
+            self.max_progress_per_task,
+        )
         return note
+
+    def restore_progress(self, note: ProgressNote) -> ProgressNote:
+        """Restore one persisted progress note while applying retention bounds.
+
+        Parameters
+        ----------
+        note : ProgressNote
+            Persisted note to insert into the retained progress stream.
+
+        Returns
+        -------
+        ProgressNote
+            The restored note.
+        """
+        return self._append(note)
+
+    def _drop_oldest_matching(
+        self, predicate: Callable[[ProgressNote], bool], max_count: int
+    ) -> None:
+        """Drop oldest retained notes matching ``predicate`` until under ``max_count``."""
+        matching_indexes = [
+            index for index, candidate in enumerate(self.progress) if predicate(candidate)
+        ]
+        excess = len(matching_indexes) - max_count
+        if excess <= 0:
+            return
+        drop_indexes = set(matching_indexes[:excess])
+        self.progress = [
+            note for index, note in enumerate(self.progress) if index not in drop_indexes
+        ]
 
     def blocking_dependencies(self, task_id: str) -> list[str]:
         """Return the unmet dependencies of a task, in declaration order.

@@ -180,6 +180,36 @@ def test_post_progress_is_bounded() -> None:
     assert [n.text for n in board.progress] == ["3", "4"]
 
 
+def test_post_progress_is_bounded_per_author() -> None:
+    board = Blackboard(max_progress=10, max_progress_per_author=2)
+
+    board.post_progress(task_id="T", author="A", text="a1")
+    board.post_progress(task_id="T", author="B", text="b1")
+    board.post_progress(task_id="T", author="A", text="a2")
+    board.post_progress(task_id="T", author="A", text="a3")
+
+    assert [(note.author, note.text) for note in board.progress] == [
+        ("B", "b1"),
+        ("A", "a2"),
+        ("A", "a3"),
+    ]
+
+
+def test_post_progress_is_bounded_per_task() -> None:
+    board = Blackboard(max_progress=10, max_progress_per_task=2)
+
+    board.post_progress(task_id="T1", author="A", text="t1-old")
+    board.post_progress(task_id="T2", author="A", text="t2")
+    board.post_progress(task_id="T1", author="B", text="t1-newer")
+    board.post_progress(task_id="T1", author="C", text="t1-newest")
+
+    assert [(note.task_id, note.text) for note in board.progress] == [
+        ("T2", "t2"),
+        ("T1", "t1-newer"),
+        ("T1", "t1-newest"),
+    ]
+
+
 def test_note_appends_a_plain_note_and_returns_it() -> None:
     board = Blackboard()
     note = board.note(task_id="  T1 ", author="A", text="moved", now=7.0)
@@ -200,6 +230,25 @@ def test_note_is_bounded() -> None:
 def test_max_progress_is_clamped_to_one() -> None:
     board = Blackboard(max_progress=0)
     assert board.max_progress == 1
+
+
+def test_progress_per_actor_and_task_bounds_are_clamped_to_one() -> None:
+    board = Blackboard(max_progress_per_author=0, max_progress_per_task=0)
+    assert board.max_progress_per_author == 1
+    assert board.max_progress_per_task == 1
+
+
+def test_restore_progress_applies_retention_bounds() -> None:
+    board = Blackboard(max_progress=10, max_progress_per_author=1, max_progress_per_task=2)
+
+    board.restore_progress(ProgressNote(task_id="T", author="A", kind="note", text="old"))
+    board.restore_progress(ProgressNote(task_id="T", author="A", kind="note", text="new"))
+    board.restore_progress(ProgressNote(task_id="T", author="B", kind="note", text="other"))
+
+    assert [(note.author, note.text) for note in board.progress] == [
+        ("A", "new"),
+        ("B", "other"),
+    ]
 
 
 # --- dependencies + readiness ------------------------------------------------

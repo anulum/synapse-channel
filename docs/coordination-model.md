@@ -9,6 +9,11 @@ title, a description, and optional dependencies. The hub refuses dependency
 cycles, so the set of *ready* tasks (open, with every dependency finished) is
 always well-defined.
 
+The blackboard keeps recent progress bounded by total note count, author, and
+task id. These caps are live hub settings and are also applied when replaying a
+durable event log, so a restart does not resurrect an unbounded in-memory board
+view.
+
 A declared task is the **plan**; a claim is the **lease** on doing it. The two
 share a task id but stay independent, so the simple claim flow keeps working with
 no plan entry at all.
@@ -147,7 +152,9 @@ the SQLite event store into deterministic token matches. Recall hits keep the
 source sequence, event kind, source field, task id, actor, evidence reference,
 and matched tokens so downstream use remains auditable. The projection is local
 and read-only: it does not create external embeddings, call a service, certify
-truth, or mutate hub state.
+truth, or mutate hub state. The live hub also caps durable findings admitted per
+agent before journalling, preventing one producer from dominating the local
+memory spine.
 
 ## Durability and reconnection
 

@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Added `synapse hub` blackboard retention controls:
+  `--max-progress`, `--max-progress-per-author`, `--max-progress-per-task`, and
+  `--max-findings-per-agent`. The hub applies the same bounds during live
+  operation and durable replay.
+
 ## [0.54.0] - 2026-06-28
 
 ### Added
