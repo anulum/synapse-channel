@@ -57,6 +57,7 @@ def test_main_version_prints_update_notice(
     cache.write_text(json.dumps({"checked_at": 9_999_999_999.0, "latest": "9.9.9"}))
     with (
         _env_var("XDG_CACHE_HOME", str(tmp_path)),
+        _env_var("SYNAPSE_UPDATE_CHECK", "1"),
         _env_var("SYNAPSE_NO_UPDATE_CHECK", None),
         pytest.raises(SystemExit),
     ):
@@ -64,6 +65,24 @@ def test_main_version_prints_update_notice(
     captured = capsys.readouterr()
     assert "synapse-channel" in captured.out
     assert "9.9.9 is available" in captured.err  # the notice goes to stderr
+
+
+def test_main_version_skips_update_notice_by_default(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cache = tmp_path / "synapse-channel" / "update-check.json"
+    cache.parent.mkdir()
+    cache.write_text(json.dumps({"checked_at": 9_999_999_999.0, "latest": "9.9.9"}))
+    with (
+        _env_var("XDG_CACHE_HOME", str(tmp_path)),
+        _env_var("SYNAPSE_UPDATE_CHECK", None),
+        _env_var("SYNAPSE_NO_UPDATE_CHECK", None),
+        pytest.raises(SystemExit),
+    ):
+        cli.main(["--version"])
+    captured = capsys.readouterr()
+    assert "synapse-channel" in captured.out
+    assert captured.err == ""
 
 
 # --- token parsing across commands -------------------------------------------

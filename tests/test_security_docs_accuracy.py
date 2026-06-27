@@ -45,6 +45,22 @@ def test_metrics_token_docs_keep_query_tokens_opt_in() -> None:
     assert "query token" in combined
 
 
+def test_update_check_docs_keep_network_access_opt_in() -> None:
+    combined = _single_spaced(
+        "\n".join(
+            [
+                _read_repo_text("README.md"),
+                _read_repo_text("docs/installation.md"),
+                _read_repo_text("docs/faq.md"),
+            ]
+        )
+    )
+
+    assert "`synapse --version` is network-silent by default" in combined
+    assert "SYNAPSE_UPDATE_CHECK=1" in combined
+    assert "disabled unless `SYNAPSE_UPDATE_CHECK=1` is present" in combined
+
+
 def test_benchmark_docs_describe_heap_expiry_not_stale_linear_sweeper() -> None:
     benchmarks = _read_repo_text("docs/benchmarks.md")
 

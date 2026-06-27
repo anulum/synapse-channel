@@ -49,17 +49,24 @@ synapse --version
 
 ## Staying up to date
 
-`synapse --version` checks PyPI at most once a day and appends a one-line notice
+`synapse --version` is network-silent by default. If you want it to check PyPI
+for newer releases, opt in explicitly:
+
+```bash
+SYNAPSE_UPDATE_CHECK=1 synapse --version
+```
+
+The opt-in check queries PyPI at most once a day and appends a one-line notice
 when a newer release is available:
 
 ```text
 synapse-channel 0.31.0
   → 0.32.0 is available (you have 0.31.0): pipx upgrade synapse-channel
-    (set SYNAPSE_NO_UPDATE_CHECK=1 to silence)
+    (unset SYNAPSE_UPDATE_CHECK or set SYNAPSE_NO_UPDATE_CHECK=1 to silence)
 ```
 
 The check is best-effort: it never blocks the command, is silent when offline, and
-is disabled entirely by `SYNAPSE_NO_UPDATE_CHECK=1`. Each release is also published
-on the [GitHub releases](https://github.com/anulum/synapse-channel/releases) page
-with notes from the changelog — watch the repository (**Watch → Custom → Releases**)
-to be notified of every update.
+is disabled unless `SYNAPSE_UPDATE_CHECK=1` is present. Each release is also
+published on the [GitHub releases](https://github.com/anulum/synapse-channel/releases)
+page with notes from the changelog — watch the repository (**Watch → Custom →
+Releases**) to be notified of every update.

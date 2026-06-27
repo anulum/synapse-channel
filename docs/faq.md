@@ -24,8 +24,9 @@ with any of them can claim work and share presence over SYNAPSE. See the
 ## Does it need a cloud account or a hosted service?
 
 No. It runs entirely on the local machine over one WebSocket hub, with a single runtime
-dependency (`websockets`). There is nothing to sign up for and no telemetry; `synapse
---version` does a once-a-day PyPI check that you can silence with `SYNAPSE_NO_UPDATE_CHECK=1`.
+dependency (`websockets`). There is nothing to sign up for and no telemetry;
+`synapse --version` is network-silent by default. Set `SYNAPSE_UPDATE_CHECK=1`
+only if you want an opt-in, once-a-day PyPI newer-release check.
 
 ## Can a human use it, or is it only for agents?
 

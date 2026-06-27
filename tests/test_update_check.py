@@ -170,25 +170,45 @@ def test_latest_known_no_cache_fetch_fails(tmp_path: Path) -> None:
 
 def test_update_notice_suppressed() -> None:
     assert (
-        uc.update_notice("0.30.0", env={"SYNAPSE_NO_UPDATE_CHECK": "1"}, fetch=lambda: "0.99.0")
+        uc.update_notice(
+            "0.30.0",
+            env={"SYNAPSE_UPDATE_CHECK": "1", "SYNAPSE_NO_UPDATE_CHECK": "1"},
+            fetch=lambda: "0.99.0",
+        )
         is None
     )
 
 
+def test_update_notice_disabled_by_default_skips_fetch(tmp_path: Path) -> None:
+    def fail() -> str | None:
+        raise AssertionError("default version output must not contact the network")
+
+    assert uc.update_notice("0.30.0", env={}, cache_path=tmp_path / "c.json", fetch=fail) is None
+
+
 def test_update_notice_newer(tmp_path: Path) -> None:
     notice = uc.update_notice(
-        "0.30.0", env={}, now=1.0, cache_path=tmp_path / "c.json", fetch=lambda: "0.31.0"
+        "0.30.0",
+        env={"SYNAPSE_UPDATE_CHECK": "1"},
+        now=1.0,
+        cache_path=tmp_path / "c.json",
+        fetch=lambda: "0.31.0",
     )
     assert notice is not None
     assert "0.31.0" in notice
     assert "pipx upgrade synapse-channel" in notice
     assert uc.SUPPRESS_ENV in notice
+    assert uc.ENABLE_ENV in notice
 
 
 def test_update_notice_up_to_date(tmp_path: Path) -> None:
     assert (
         uc.update_notice(
-            "0.31.0", env={}, now=1.0, cache_path=tmp_path / "c.json", fetch=lambda: "0.31.0"
+            "0.31.0",
+            env={"SYNAPSE_UPDATE_CHECK": "1"},
+            now=1.0,
+            cache_path=tmp_path / "c.json",
+            fetch=lambda: "0.31.0",
         )
         is None
     )
@@ -197,7 +217,11 @@ def test_update_notice_up_to_date(tmp_path: Path) -> None:
 def test_update_notice_offline(tmp_path: Path) -> None:
     assert (
         uc.update_notice(
-            "0.30.0", env={}, now=1.0, cache_path=tmp_path / "c.json", fetch=lambda: None
+            "0.30.0",
+            env={"SYNAPSE_UPDATE_CHECK": "1"},
+            now=1.0,
+            cache_path=tmp_path / "c.json",
+            fetch=lambda: None,
         )
         is None
     )
@@ -208,5 +232,9 @@ def test_update_notice_uses_defaults(tmp_path: Path) -> None:
     # a fresh default cache is served before the fetch callable is consulted.
     cache_path = uc._cache_path({"XDG_CACHE_HOME": str(tmp_path)})
     uc._write_cache(cache_path, time.time(), "0.30.0")
-    with _env_var("XDG_CACHE_HOME", str(tmp_path)), _env_var(uc.SUPPRESS_ENV, None):
+    with (
+        _env_var("XDG_CACHE_HOME", str(tmp_path)),
+        _env_var(uc.ENABLE_ENV, "1"),
+        _env_var(uc.SUPPRESS_ENV, None),
+    ):
         assert uc.update_notice("0.30.0") is None
