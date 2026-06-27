@@ -33,6 +33,16 @@ The owner moves the task through a typed lifecycle
 illegal transition. The owner can save a **checkpoint** — an opaque resume token
 that survives lease expiry.
 
+When the owner manually releases a claim as the closeout record, the release can
+carry a receipt with evidence, artifacts, changed files, generated artifacts,
+approvals, known failures, confidence, and evidence freshness. The hub echoes the
+receipt and records it as a board assessment note when evidence is present. The
+receipt's `epistemic_status` is advisory metadata derived from those fields, not
+proof that the release is safe to merge: `supported` requires positive evidence
+and fresh evidence age, `needs_freshness` means freshness was not supplied,
+`stale` means the evidence is older than one hour, `degraded` means known
+failures were declared, and `unsupported` means no positive evidence was attached.
+
 ## 4. Hand off and recover
 
 - **Atomic handoff** transfers a held task to another *online* agent in one step,

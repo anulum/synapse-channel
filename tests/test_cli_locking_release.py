@@ -118,6 +118,8 @@ async def test_release_prints_machine_readable_receipt(capsys: pytest.CaptureFix
         "changed_files": ["src/synapse_channel/cli_locking.py"],
         "confidence": "medium",
         "evidence": ["pytest tests/test_cli_locking_release.py -q"],
+        "epistemic_reasons": ["known failures declared", "positive evidence present"],
+        "epistemic_status": "degraded",
         "freshness_seconds": 30.0,
         "generated_artifacts": ["docs/_generated/capability_manifest.json"],
         "known_failures": ["mkdocs pending on unrelated branch"],
@@ -135,7 +137,9 @@ async def test_release_prints_machine_readable_receipt(capsys: pytest.CaptureFix
             "artifacts=coverage.xml; known_failures=mkdocs pending on unrelated branch; "
             "changed_files=src/synapse_channel/cli_locking.py; "
             "generated_artifacts=docs/_generated/capability_manifest.json; "
-            "approvals=reviewed-by=owner; confidence=medium; freshness_seconds=30.0"
+            "approvals=reviewed-by=owner; confidence=medium; freshness_seconds=30.0; "
+            "epistemic_status=degraded; "
+            "epistemic_reasons=known failures declared, positive evidence present"
         ),
     }
 

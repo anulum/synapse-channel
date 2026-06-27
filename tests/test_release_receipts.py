@@ -8,7 +8,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from synapse_channel.core.receipts import (
+    DEFAULT_RELEASE_EVIDENCE_FRESHNESS_SECONDS,
     MAX_RELEASE_RECEIPT_ITEM_CHARS,
     MAX_RELEASE_RECEIPT_ITEMS,
     build_release_receipt,
@@ -49,6 +52,8 @@ def test_build_release_receipt_normalises_optional_fields() -> None:
         "changed_files": ["src/a.py"],
         "confidence": "medium",
         "evidence": ["pytest -q"],
+        "epistemic_reasons": ["positive evidence present", "fresh evidence present"],
+        "epistemic_status": "supported",
         "freshness_seconds": 0.0,
         "generated_artifacts": ["docs/_generated/capability_manifest.json"],
         "known_failures": [],
@@ -61,7 +66,9 @@ def test_build_release_receipt_normalises_optional_fields() -> None:
         "release receipt: evidence=pytest -q; artifacts=coverage.xml; "
         "changed_files=src/a.py; "
         "generated_artifacts=docs/_generated/capability_manifest.json; "
-        "approvals=reviewed-by=owner; confidence=medium; freshness_seconds=0.0"
+        "approvals=reviewed-by=owner; confidence=medium; freshness_seconds=0.0; "
+        "epistemic_status=supported; "
+        "epistemic_reasons=positive evidence present, fresh evidence present"
     )
 
 
@@ -69,7 +76,15 @@ def test_release_receipt_without_evidence_has_no_board_note_content() -> None:
     receipt = build_release_receipt(task_id="T1", owner="ALPHA")
 
     assert not release_receipt_has_evidence(receipt)
-    assert format_release_receipt_note(receipt) == "release receipt: "
+    assert receipt["epistemic_status"] == "unsupported"
+    assert receipt["epistemic_reasons"] == [
+        "no positive evidence, artifact, changed file, generated artifact, or approval"
+    ]
+    assert format_release_receipt_note(receipt) == (
+        "release receipt: epistemic_status=unsupported; "
+        "epistemic_reasons=no positive evidence, artifact, changed file, generated artifact, "
+        "or approval"
+    )
 
 
 def test_invalid_freshness_is_ignored() -> None:
@@ -92,5 +107,53 @@ def test_known_failure_only_receipt_formats_note() -> None:
     assert release_receipt_has_evidence(receipt)
     assert (
         format_release_receipt_note(receipt)
-        == "release receipt: known_failures=mkdocs pending on unrelated branch"
+        == "release receipt: known_failures=mkdocs pending on unrelated branch; "
+        "epistemic_status=degraded; "
+        "epistemic_reasons=known failures declared, "
+        "no positive evidence, artifact, changed file, generated artifact, or approval"
     )
+
+
+def test_stale_positive_evidence_is_reported_as_stale() -> None:
+    receipt = build_release_receipt(
+        task_id="T1",
+        owner="ALPHA",
+        evidence=["pytest tests/test_release_receipts.py -q"],
+        freshness_seconds=DEFAULT_RELEASE_EVIDENCE_FRESHNESS_SECONDS + 1.0,
+    )
+
+    assert receipt["epistemic_status"] == "stale"
+    assert receipt["epistemic_reasons"] == [
+        "positive evidence present",
+        "evidence age exceeds 3600 seconds",
+    ]
+
+
+def test_positive_evidence_without_freshness_is_advisory() -> None:
+    receipt = build_release_receipt(
+        task_id="T1",
+        owner="ALPHA",
+        evidence=["pytest tests/test_release_receipts.py -q"],
+    )
+
+    assert receipt["epistemic_status"] == "needs_freshness"
+    assert receipt["epistemic_reasons"] == [
+        "positive evidence present",
+        "freshness_seconds missing",
+    ]
+
+
+def test_release_receipt_docs_describe_advisory_epistemic_status() -> None:
+    root = Path(__file__).resolve().parents[1]
+    combined = "\n".join(
+        [
+            (root / "README.md").read_text(encoding="utf-8"),
+            (root / "docs" / "cli.md").read_text(encoding="utf-8"),
+            (root / "docs" / "coordination-model.md").read_text(encoding="utf-8"),
+        ]
+    )
+
+    assert "epistemic_status" in combined
+    assert "epistemic_reasons" in combined
+    assert "advisory" in combined
+    assert "does not certify" in combined

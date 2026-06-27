@@ -17,6 +17,12 @@ MAX_RELEASE_RECEIPT_ITEMS = 50
 MAX_RELEASE_RECEIPT_ITEM_CHARS = 500
 """Maximum characters retained for one receipt field value."""
 
+DEFAULT_RELEASE_EVIDENCE_FRESHNESS_SECONDS = 3600.0
+"""Default age limit for evidence to be treated as fresh in receipt metadata."""
+
+EpistemicStatus = str
+"""Advisory evidence-status label stored on a release receipt."""
+
 
 class _ReleaseReceiptRequired(TypedDict):
     task_id: str
@@ -28,6 +34,8 @@ class _ReleaseReceiptRequired(TypedDict):
     changed_files: list[str]
     generated_artifacts: list[str]
     approvals: list[str]
+    epistemic_status: EpistemicStatus
+    epistemic_reasons: list[str]
 
 
 class _ReleaseReceiptOptional(TypedDict, total=False):
@@ -101,16 +109,33 @@ def build_release_receipt(
     ReleaseReceipt
         A JSON-serialisable release receipt with bounded repeated fields.
     """
+    evidence_items = clean_receipt_items(evidence)
+    artifact_items = clean_receipt_items(artifacts)
+    known_failure_items = clean_receipt_items(known_failures)
+    changed_file_items = clean_receipt_items(changed_files)
+    generated_artifact_items = clean_receipt_items(generated_artifacts)
+    approval_items = clean_receipt_items(approvals)
+    epistemic_status, epistemic_reasons = _assess_release_evidence(
+        evidence=evidence_items,
+        artifacts=artifact_items,
+        known_failures=known_failure_items,
+        changed_files=changed_file_items,
+        generated_artifacts=generated_artifact_items,
+        approvals=approval_items,
+        freshness_seconds=freshness_seconds,
+    )
     receipt: ReleaseReceipt = {
         "task_id": task_id.strip(),
         "owner": owner.strip(),
         "released": True,
-        "evidence": clean_receipt_items(evidence),
-        "artifacts": clean_receipt_items(artifacts),
-        "known_failures": clean_receipt_items(known_failures),
-        "changed_files": clean_receipt_items(changed_files),
-        "generated_artifacts": clean_receipt_items(generated_artifacts),
-        "approvals": clean_receipt_items(approvals),
+        "evidence": evidence_items,
+        "artifacts": artifact_items,
+        "known_failures": known_failure_items,
+        "changed_files": changed_file_items,
+        "generated_artifacts": generated_artifact_items,
+        "approvals": approval_items,
+        "epistemic_status": epistemic_status,
+        "epistemic_reasons": epistemic_reasons,
     }
     confidence_text = str(confidence).strip()
     if confidence_text:
@@ -121,6 +146,49 @@ def build_release_receipt(
         except (TypeError, ValueError):
             pass
     return receipt
+
+
+def _assess_release_evidence(
+    *,
+    evidence: list[str],
+    artifacts: list[str],
+    known_failures: list[str],
+    changed_files: list[str],
+    generated_artifacts: list[str],
+    approvals: list[str],
+    freshness_seconds: object,
+) -> tuple[EpistemicStatus, list[str]]:
+    """Return the advisory evidence status for a release receipt."""
+    reasons: list[str] = []
+    has_positive_evidence = (
+        bool(evidence)
+        or bool(artifacts)
+        or bool(changed_files)
+        or bool(generated_artifacts)
+        or bool(approvals)
+    )
+    if has_positive_evidence:
+        reasons.append("positive evidence present")
+    else:
+        reasons.append(
+            "no positive evidence, artifact, changed file, generated artifact, or approval"
+        )
+
+    if known_failures:
+        reasons.insert(0, "known failures declared")
+        return "degraded", reasons
+    if not has_positive_evidence:
+        return "unsupported", reasons
+    try:
+        age = float(str(freshness_seconds))
+    except (TypeError, ValueError):
+        reasons.append("freshness_seconds missing")
+        return "needs_freshness", reasons
+    if age > DEFAULT_RELEASE_EVIDENCE_FRESHNESS_SECONDS:
+        reasons.append("evidence age exceeds 3600 seconds")
+        return "stale", reasons
+    reasons.append("fresh evidence present")
+    return "supported", reasons
 
 
 def release_receipt_has_evidence(receipt: ReleaseReceipt) -> bool:
@@ -156,4 +224,6 @@ def format_release_receipt_note(receipt: ReleaseReceipt) -> str:
         sections.append(f"confidence={receipt['confidence']}")
     if "freshness_seconds" in receipt:
         sections.append(f"freshness_seconds={receipt['freshness_seconds']}")
+    sections.append(f"epistemic_status={receipt['epistemic_status']}")
+    sections.append(f"epistemic_reasons={', '.join(receipt['epistemic_reasons'])}")
     return "release receipt: " + "; ".join(sections)
