@@ -100,6 +100,8 @@ DEFAULT_TAKEOVER_COOLDOWN = 2.0
 """Seconds a name is protected from a second takeover, to blunt an eviction storm."""
 DEFAULT_AUTH_TIMEOUT = 10.0
 """Seconds a secured hub waits for an authenticated first frame before closing a socket."""
+DEFAULT_SHUTDOWN_CLOSE_TIMEOUT = 5.0
+"""Seconds allowed for WebSocket close handshakes during hub shutdown."""
 MAX_LOG_PAYLOAD = 120
 """Characters of a message payload logged at INFO before it is truncated."""
 DEFAULT_COMPACT_HINT_THRESHOLD = 100_000
@@ -203,6 +205,12 @@ class SynapseHub:
         distinct from the total ``max_clients`` ceiling and the frame-rate
         ``host_rate_limiter``; it counts open sockets, including sockets still in
         their authentication window. ``None`` disables the per-host connection cap.
+    shutdown_close_timeout : float, optional
+        Seconds allowed for active WebSocket close handshakes after ``SIGTERM`` or
+        ``SIGINT`` asks the hub to stop. The timeout is passed to the WebSocket
+        server so shutdown stops accepting new sockets and bounds how long active
+        close handshakes may delay process exit. Defaults to
+        :data:`DEFAULT_SHUTDOWN_CLOSE_TIMEOUT`.
     metrics_token : str or None, optional
         When set (and ``enable_metrics`` is on), ``GET /metrics`` and ``GET
         /health`` require this token — presented as ``Authorization: Bearer
@@ -243,6 +251,7 @@ class SynapseHub:
         max_offers_per_agent: int = MAX_OFFERS_PER_AGENT,
         max_paths_per_claim: int = MAX_DECLARED_PATHS,
         takeover_cooldown: float = DEFAULT_TAKEOVER_COOLDOWN,
+        shutdown_close_timeout: float = DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
         enable_metrics: bool = False,
         auth_timeout: float = DEFAULT_AUTH_TIMEOUT,
         metrics_token: str | None = None,
@@ -273,6 +282,7 @@ class SynapseHub:
         self.max_unauth_clients = self.clients.max_unauth_clients
         self.max_connections_per_host = self.clients.max_connections_per_host
         self.takeover_cooldown = self.clients.takeover_cooldown
+        self.shutdown_close_timeout = max(float(shutdown_close_timeout), 0.1)
         self.max_history = max(int(max_history), 1)
         self.compact_hint_threshold = max(1, int(compact_hint_threshold))
         self.relay_log = Path(relay_log) if relay_log else None
@@ -879,6 +889,7 @@ class SynapseHub:
             max_queue=DEFAULT_MAX_QUEUE,
             ping_interval=DEFAULT_PING_INTERVAL,
             ping_timeout=DEFAULT_PING_TIMEOUT,
+            close_timeout=self.shutdown_close_timeout,
             process_request=self._process_request if self.enable_metrics else None,
         ):
             logger.info("Synapse Hub running on ws://%s:%d", host, port)

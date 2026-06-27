@@ -160,6 +160,7 @@ recipients, and the command exits non-zero when none match `--target`.
 synapse hub --port 8876
 synapse hub --port 8876 --db ./synapse.db            # crash-safe: resumes leases + history on restart
 synapse hub --port 8876 --relay-log ./feed.ndjson    # mirror the channel to a compact file for observers
+synapse hub --shutdown-close-timeout 5               # bound active socket close handshakes on stop
 synapse worker --name FAST --provider ollama --model gemma3:4b
 synapse worker --name OFFLINE --provider rule        # no network, canned replies
 synapse worker --name TIER --provider tiered --model small --heavy-model big  # route trivial→rule, hard→heavy
@@ -505,7 +506,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 92 |
 | Wire message types | 53 |
 | CLI subcommands | 44 |
-| Test functions | 1505 |
+| Test functions | 1509 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |
@@ -535,6 +536,10 @@ This snapshot is a static inventory generated from the source tree. Performance 
   cryptographic identity system — no key exchange, signatures, or per-message
   authentication. Do not expose the hub on an untrusted network and rely on the
   token alone.
+- **Graceful shutdown is bounded, not transactional.** `SIGTERM`/`SIGINT` stop
+  accepting new sockets, close active WebSocket sessions within
+  `--shutdown-close-timeout`, and rely on per-mutation persistence for durable
+  state already accepted by the hub.
 - **Agents are trusted.** The bus coordinates agents; it does not sandbox them.
   An agent is trusted to the extent the operator trusts the process it runs in.
 - **Task-class routing is heuristic.** The classifier sorts a request by length

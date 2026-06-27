@@ -12,15 +12,26 @@ import asyncio
 import json
 import signal
 from collections.abc import Callable
+from pathlib import Path
+from typing import Any
 
 import pytest
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
-from hub_e2e_helpers import http_get, read_json, read_until_type, running_hub
+from hub_e2e_helpers import (
+    _await_listening,
+    _free_port,
+    http_get,
+    read_json,
+    read_until_type,
+    running_hub,
+    send_json,
+)
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import InsecureBindError, SynapseHub
 from synapse_channel.core.hub_clients import HubClientRegistry
+from synapse_channel.core.persistence import EventStore
 
 # --- Sprint A: caps, capacity gate, takeover cooldown, signal handlers -------
 
@@ -144,6 +155,84 @@ def test_install_signal_handlers_suppresses_unsupported() -> None:
         hub._install_signal_handlers(loop, asyncio.Event())
     finally:
         loop.close()
+
+
+class StopControlledHub(SynapseHub):
+    """Hub variant that exposes the installed stop event to the test."""
+
+    stop_event: asyncio.Event | None
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.stop_event = None
+
+    def _install_signal_handlers(
+        self, loop: asyncio.AbstractEventLoop, stop: asyncio.Event
+    ) -> None:
+        self.stop_event = stop
+
+
+async def test_serve_stop_event_closes_active_socket_and_unregisters() -> None:
+    hub = StopControlledHub(shutdown_close_timeout=0.2)
+    port = _free_port()
+    task = asyncio.create_task(hub.serve("localhost", port))
+    try:
+        await _await_listening(port)
+        async with connect(f"ws://localhost:{port}") as websocket:
+            await read_until_type(websocket, "welcome")
+            await send_json(websocket, sender="A", type="heartbeat")
+            await read_until_type(websocket, "presence_update")
+            assert "A" in hub.agent_sockets
+            assert hub.stop_event is not None
+            hub.stop_event.set()
+            with pytest.raises(ConnectionClosed):
+                await read_json(websocket, timeout=2.0)
+        await asyncio.wait_for(task, timeout=2.0)
+        assert hub.connected_clients == set()
+        assert hub.agent_sockets == {}
+    finally:
+        if not task.done():
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+
+async def test_claim_before_shutdown_replays_from_journal(tmp_path: Path) -> None:
+    db = tmp_path / "events.db"
+    store = EventStore(db)
+    hub = StopControlledHub(
+        default_ttl_seconds=3600.0,
+        journal=store,
+        hub_id="syn-test",
+        shutdown_close_timeout=0.2,
+    )
+    port = _free_port()
+    task = asyncio.create_task(hub.serve("localhost", port))
+    try:
+        await _await_listening(port)
+        async with connect(f"ws://localhost:{port}") as websocket:
+            await read_until_type(websocket, "welcome")
+            await send_json(websocket, sender="A", type="heartbeat")
+            await read_until_type(websocket, "presence_update")
+            await send_json(websocket, sender="A", type="claim", task_id="T1", paths=["src"])
+            await read_until_type(websocket, "claim_granted")
+            assert hub.stop_event is not None
+            hub.stop_event.set()
+            with pytest.raises(ConnectionClosed):
+                await read_json(websocket, timeout=2.0)
+        await asyncio.wait_for(task, timeout=2.0)
+    finally:
+        if not task.done():
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        store.close()
+
+    replay_store = EventStore(db)
+    replayed = SynapseHub(default_ttl_seconds=3600.0, journal=replay_store)
+    replay_store.close()
+    assert replayed.state.claims["T1"].owner == "A"
+    assert replayed.state.claims["T1"].paths == ("src",)
 
 
 # --- HTTP /metrics and /health endpoints -------------------------------------

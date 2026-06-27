@@ -271,6 +271,7 @@ synapse hub --port 8876 --rate 5 --burst 20        # per-agent rate limiting
 synapse hub --port 8876 --relay-log ./feed.ndjson  # mirror the channel to a file
 synapse hub --max-clients 32 --max-msg-kb 256      # cap connections and frame size
 synapse hub --max-connections-per-host 4           # cap simultaneous sockets from one host
+synapse hub --shutdown-close-timeout 5             # bound active socket close handshakes
 synapse hub --host 0.0.0.0 --token-file ./tok      # token from a file, not argv (ps-safe)
 synapse hub --host 0.0.0.0 --insecure-off-loopback # bind off-loopback WITHOUT a token (refused otherwise)
 ```
@@ -284,7 +285,9 @@ that host. Supply the token with `--token-file` or the `SYNAPSE_TOKEN`
 environment variable rather than `--token`, which is visible in `ps`. The hub
 drains on `SIGTERM`/`SIGINT`, so a container stop shuts it down cleanly. `synapse
 health` is a liveness probe — exit `0` when the hub answers, `1` otherwise —
-wired as the Docker `HEALTHCHECK`:
+wired as the Docker `HEALTHCHECK`. `--shutdown-close-timeout` bounds the
+WebSocket close handshake during stop; accepted mutations are durable at append
+time when `--db` is enabled, not deferred to process exit:
 
 ```bash
 synapse health                       # exit 0 if the local hub is reachable

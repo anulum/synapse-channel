@@ -15,6 +15,7 @@ from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.client.llm_worker import DEFAULT_OLLAMA_BASE_URL
 from synapse_channel.core.hub import (
     DEFAULT_COMPACT_HINT_THRESHOLD,
+    DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
     DEFAULT_TAKEOVER_COOLDOWN,
 )
 from synapse_channel.core.logging_setup import DEFAULT_LOG_FORMAT, DEFAULT_LOG_LEVEL
@@ -43,6 +44,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "max_offers_per_agent": 64,
         "max_paths_per_claim": MAX_DECLARED_PATHS,
         "compact_hint_threshold": DEFAULT_COMPACT_HINT_THRESHOLD,
+        "shutdown_close_timeout": DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
         "takeover_cooldown": DEFAULT_TAKEOVER_COOLDOWN,
         "log_format": DEFAULT_LOG_FORMAT,
         "log_level": DEFAULT_LOG_LEVEL,

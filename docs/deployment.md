@@ -191,6 +191,13 @@ client side a waiter on 0.28.1+ **exits with code 3 when its socket drops** inst
 of hanging on a dead connection, so a hub restart makes every waiter exit and re-arm
 rather than go dark.
 
+On `SIGTERM` or `SIGINT`, the hub stops accepting new sockets, closes active
+WebSocket sessions through the server close path, and bounds the close handshake
+with `--shutdown-close-timeout` (default 5 seconds). Authoritative mutations are
+appended when the hub accepts them; shutdown does not batch unflushed claims for
+later. If `--db` is enabled, a claim accepted before the stop event replays from
+the event log on the next start.
+
 When a waiter re-arms right after its process was killed, its old name can still
 linger on the hub for a few seconds (until the keepalive reaps it). A 0.29.0+ client
 re-arms with **takeover**: the hub evicts the stale holder (closing it with code

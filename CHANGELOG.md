@@ -17,6 +17,8 @@ All notable changes to this project are documented here.
 - `synapse --version` no longer performs the PyPI newer-release check by default.
   Set `SYNAPSE_UPDATE_CHECK=1` to opt in; `SYNAPSE_NO_UPDATE_CHECK=1` still
   suppresses the check.
+- `synapse hub` now exposes `--shutdown-close-timeout` so `SIGTERM`/`SIGINT`
+  shutdown has an explicit bound for active WebSocket close handshakes.
 
 ## [0.47.0] - 2026-06-27
 

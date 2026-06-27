@@ -27,6 +27,7 @@ from synapse_channel.core.hub import (
     DEFAULT_MAX_MSG_BYTES,
     DEFAULT_PORT,
     DEFAULT_RELAY_MAX_LINES,
+    DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
     DEFAULT_TAKEOVER_COOLDOWN,
 )
 from synapse_channel.core.logging_setup import (
@@ -156,6 +157,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=float,
         default=DEFAULT_TAKEOVER_COOLDOWN,
         help="Seconds a name is protected from a second takeover, to blunt an eviction storm.",
+    )
+    hub.add_argument(
+        "--shutdown-close-timeout",
+        type=float,
+        default=DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
+        help="Seconds active WebSocket close handshakes may delay hub shutdown.",
     )
     hub.add_argument(
         "--token",

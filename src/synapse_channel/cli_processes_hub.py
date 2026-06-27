@@ -63,6 +63,7 @@ def _cmd_hub(
         max_paths_per_claim=args.max_paths_per_claim,
         compact_hint_threshold=args.compact_hint_threshold,
         takeover_cooldown=args.takeover_cooldown,
+        shutdown_close_timeout=args.shutdown_close_timeout,
         enable_metrics=args.metrics,
         auth_timeout=args.auth_timeout,
         metrics_token=args.metrics_token,
