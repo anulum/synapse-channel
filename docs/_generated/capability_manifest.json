@@ -3,11 +3,11 @@
     "benchmark_harnesses": 4,
     "classes": 131,
     "cli_subcommands": 53,
-    "documentation_pages": 23,
+    "documentation_pages": 24,
     "optional_dependency_groups": 4,
     "package_modules": 144,
     "public_api_exports": 61,
-    "tests": 1833,
+    "tests": 1837,
     "version": "0.54.0",
     "wire_message_types": 53,
     "workflows": 10

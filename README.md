@@ -523,6 +523,12 @@ state files, bounded retention, durable event logs, release receipts, and clear
 gaps for encryption, signed events, identity, ACLs, private channels, and exposed
 deployment review.
 
+The planned [at-rest encryption](docs/at-rest-encryption.md) profile scopes
+optional protection for SQLite event stores, relay logs, A2A state, cursor files,
+archive reports, temporary files, and backups, with key storage, key derivation,
+rotation, backup recovery, and lost-key recovery boundaries documented before
+any encryption flag ships.
+
 `synapse git-init` bundles the hook install with a short `.synapse/git-claims.md`
 onboarding guide (branch convention + worktree workflow). `synapse state` shows
 each claim's branch; installed git hooks release a claim
@@ -757,9 +763,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 131 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1833 |
+| Test functions | 1837 |
 | Benchmark harnesses | 4 |
-| Documentation pages | 23 |
+| Documentation pages | 24 |
 | GitHub Actions workflows | 10 |
 | Optional-dependency groups | 4 |
 

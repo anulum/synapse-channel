@@ -94,6 +94,11 @@ implemented as a CLI flag yet, and it does not change the current security
 boundary: encryption, signed events, per-agent identity, ACLs, private channels,
 and exposed deployment threat modelling remain explicit future work.
 
+The planned [at-rest encryption](docs/at-rest-encryption.md) profile scopes
+optional protection for local SQLite event stores, relay logs, A2A state, cursor
+files, archive reports, temporary files, and backups. It is not implemented yet
+and does not encrypt existing databases or replace host filesystem permissions.
+
 ## Out of scope / known limitations
 
 - The connect token is a proportionate shared secret, **not** a cryptographic

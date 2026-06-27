@@ -155,6 +155,14 @@ owner-only state files, bounded retention, durable event logs, release receipts,
 and gaps such as encryption, signed events, per-agent identity, ACLs, private
 channels, and exposed deployment threat modelling.
 
+### At-rest encryption
+
+Design target for optional encryption of local storage surfaces such as SQLite
+event stores, WAL and SHM sidecars, relay logs, A2A state files, cursor files,
+archive reports, temporary files, and backups. The design covers key storage,
+key derivation, key rotation, backup recovery, and lost-key recovery boundaries;
+it is not implemented yet.
+
 ### Reliability memory
 
 Evidence-only owner summaries over the **event log** using
