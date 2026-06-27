@@ -377,6 +377,8 @@ synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --bearer-auth --a2a-token
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --task-timeout 300 --subscribe-timeout 1
 synapse relay ./feed.ndjson --cursor ./feed.cursor
 synapse compact ./synapse.db --all --max-checkpoints-per-task 3 --archive-report ./compact-report.html
+synapse event-query ./synapse.db "task TASK-1 timeline"
+synapse event-query ./synapse.db "conflicts at seq 120" --json
 ```
 
 `synapse compact` is an offline maintenance command for the SQLite event store
@@ -387,6 +389,13 @@ from the pre-compaction event snapshot, then records the actual checkpoint and
 finding removal counts from the compaction run. The report includes event-kind
 counts, board tasks, release receipt notes, and a bounded coordination timeline;
 `--archive-report-limit N` controls the row cap for bounded sections.
+
+`synapse event-query` is a temporal event-log query command for the same SQLite
+event store. It supports `task <id> timeline`, `task <id> at seq <n>`,
+`task <id> at time <seconds>`, `path <path> between <start> <end>`, and
+`conflicts at seq|time <n>`. It is read-only forensic evidence: it reconstructs
+what the event log said at a sequence or timestamp, but it does not contact the
+live hub or certify that a merge is safe.
 
 ## Agent2Agent bridge
 

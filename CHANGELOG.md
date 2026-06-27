@@ -14,6 +14,9 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added `synapse event-query` for read-only temporal event-log queries over the
+  hub SQLite store, covering task timelines, point-in-time task state,
+  path-touch windows, and historical claim conflicts.
 - Added `tools/import_merge_risk.py` to combine changed paths or local branch
   diffs with claimed paths, Python import neighbours, CODEOWNERS, and mapped test
   owners for advisory pre-merge risk checks.

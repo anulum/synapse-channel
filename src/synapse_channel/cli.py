@@ -22,6 +22,7 @@ The ``synapse`` command exposes these subcommands:
 * ``relay`` — decode and print a lite relay log a hub mirrored to a file;
 * ``ingest`` — stream durable events from a hub event store since a sequence cursor (read-side);
 * ``compact`` — bound the durable log: keep latest-N checkpoints per task, age out old findings;
+* ``event-query`` — query event-log state at a sequence or timestamp;
 * ``board`` — print the hub's shared task/progress blackboard;
 * ``supervisor`` — run an LLM-free supervisor that re-offers stalled tasks;
 * ``manifest`` — print the capability manifest of advertised agents;
@@ -67,6 +68,7 @@ from synapse_channel.cli_arm import add_parser as add_arm_parser
 from synapse_channel.cli_codex_tmux import add_parsers as add_codex_tmux_parsers
 from synapse_channel.cli_demo import add_parsers as add_demo_parsers
 from synapse_channel.cli_doctor import add_parsers as add_doctor_parsers
+from synapse_channel.cli_event_query import add_parsers as add_event_query_parsers
 from synapse_channel.cli_git import add_parsers as add_git_parsers
 from synapse_channel.cli_locking import add_parsers as add_locking_parsers
 from synapse_channel.cli_mcp import add_parsers as add_mcp_parsers
@@ -148,6 +150,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_locking_parsers(sub)
 
     add_stream_parsers(sub)
+
+    add_event_query_parsers(sub)
 
     add_task_parsers(sub)
 
