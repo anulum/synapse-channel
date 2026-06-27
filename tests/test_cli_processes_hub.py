@@ -246,6 +246,22 @@ def test_cmd_hub_threads_takeover_cooldown() -> None:
     assert captured["takeover_cooldown"] == 5.5
 
 
+def test_cmd_hub_threads_shutdown_close_timeout() -> None:
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(shutdown_close_timeout=2.5), runner=_close_runner, hub_factory=build_hub
+        )
+        == 0
+    )
+    assert captured["shutdown_close_timeout"] == 2.5
+
+
 def test_cmd_hub_configures_logging() -> None:
     captured: dict[str, Any] = {}
     assert (

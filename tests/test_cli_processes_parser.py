@@ -11,6 +11,7 @@ from __future__ import annotations
 from synapse_channel import cli, cli_processes
 from synapse_channel.core.hub import (
     DEFAULT_COMPACT_HINT_THRESHOLD,
+    DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
     DEFAULT_TAKEOVER_COOLDOWN,
 )
 from synapse_channel.core.logging_setup import DEFAULT_LOG_FORMAT, DEFAULT_LOG_LEVEL
@@ -94,6 +95,13 @@ def test_parser_hub_takeover_cooldown() -> None:
     assert default == DEFAULT_TAKEOVER_COOLDOWN
     args = cli.build_parser().parse_args(["hub", "--takeover-cooldown", "5.5"])
     assert args.takeover_cooldown == 5.5
+
+
+def test_parser_hub_shutdown_close_timeout() -> None:
+    default = cli.build_parser().parse_args(["hub"]).shutdown_close_timeout
+    assert default == DEFAULT_SHUTDOWN_CLOSE_TIMEOUT
+    args = cli.build_parser().parse_args(["hub", "--shutdown-close-timeout", "2.5"])
+    assert args.shutdown_close_timeout == 2.5
 
 
 def test_parser_hub_logging_options() -> None:
