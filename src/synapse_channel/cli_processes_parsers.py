@@ -29,12 +29,18 @@ from synapse_channel.core.hub import (
     DEFAULT_COMPACT_HINT_THRESHOLD,
     DEFAULT_HOST,
     DEFAULT_MAX_CLIENTS,
+    DEFAULT_MAX_FINDINGS_PER_AGENT,
     DEFAULT_MAX_HISTORY,
     DEFAULT_MAX_MSG_BYTES,
     DEFAULT_PORT,
     DEFAULT_RELAY_MAX_LINES,
     DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
     DEFAULT_TAKEOVER_COOLDOWN,
+)
+from synapse_channel.core.ledger import (
+    DEFAULT_MAX_PROGRESS,
+    DEFAULT_MAX_PROGRESS_PER_AUTHOR,
+    DEFAULT_MAX_PROGRESS_PER_TASK,
 )
 from synapse_channel.core.logging_setup import (
     DEFAULT_LOG_FORMAT,
@@ -96,6 +102,30 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=int,
         default=DEFAULT_MAX_HISTORY,
         help="Maximum chat messages retained in memory.",
+    )
+    hub.add_argument(
+        "--max-progress",
+        type=int,
+        default=DEFAULT_MAX_PROGRESS,
+        help="Maximum blackboard progress notes retained in memory.",
+    )
+    hub.add_argument(
+        "--max-progress-per-author",
+        type=int,
+        default=DEFAULT_MAX_PROGRESS_PER_AUTHOR,
+        help="Maximum blackboard progress notes retained per author.",
+    )
+    hub.add_argument(
+        "--max-progress-per-task",
+        type=int,
+        default=DEFAULT_MAX_PROGRESS_PER_TASK,
+        help="Maximum blackboard progress notes retained per task id.",
+    )
+    hub.add_argument(
+        "--max-findings-per-agent",
+        type=int,
+        default=DEFAULT_MAX_FINDINGS_PER_AGENT,
+        help="Maximum durable findings one agent may admit before private rejection.",
     )
     hub.add_argument(
         "--relay-log",

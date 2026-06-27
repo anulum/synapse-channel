@@ -129,6 +129,32 @@ def test_cmd_hub_threads_per_agent_quotas() -> None:
     assert captured["max_paths_per_claim"] == 9
 
 
+def test_cmd_hub_threads_blackboard_and_memory_quotas() -> None:
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(
+                max_progress=99,
+                max_progress_per_author=7,
+                max_progress_per_task=8,
+                max_findings_per_agent=9,
+            ),
+            runner=_close_runner,
+            hub_factory=build_hub,
+        )
+        == 0
+    )
+    assert captured["max_progress"] == 99
+    assert captured["max_progress_per_author"] == 7
+    assert captured["max_progress_per_task"] == 8
+    assert captured["max_findings_per_agent"] == 9
+
+
 def test_cmd_hub_threads_metrics_query_token_ok() -> None:
     captured: dict[str, Any] = {}
 

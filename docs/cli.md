@@ -343,6 +343,8 @@ synapse hub --port 8876 --rate 5 --burst 20        # per-agent rate limiting
 synapse hub --port 8876 --relay-log ./feed.ndjson  # mirror the channel to a file
 synapse hub --max-clients 32 --max-msg-kb 256      # cap connections and frame size
 synapse hub --max-connections-per-host 4           # cap simultaneous sockets from one host
+synapse hub --max-progress-per-task 500            # cap retained board progress per task id
+synapse hub --max-findings-per-agent 200           # cap durable findings admitted per agent
 synapse hub --shutdown-close-timeout 5             # bound active socket close handshakes
 synapse hub --tls-certfile ./hub.crt --tls-keyfile ./hub.key  # native wss://
 synapse hub --host 0.0.0.0 --token-file ./tok      # token from a file, not argv (ps-safe)
@@ -589,6 +591,14 @@ synapse task update BUILD --status done        # TEST now unblocks
 synapse task progress TEST "started" --kind note
 syn ack TEST --evidence "pytest tests/test_feature.py -q" --artifact coverage.xml
 ```
+
+The hub bounds the in-memory blackboard and memory-admission surfaces with
+operator-set limits: `--max-progress` for the total retained progress notes,
+`--max-progress-per-author` for one author, `--max-progress-per-task` for one
+task id, and `--max-findings-per-agent` for durable findings admitted by one
+agent. These limits apply on live writes and on `--db` replay; the append-only
+event log still retains accepted events until `synapse compact` removes safe
+history.
 
 `syn ack <task>` is the ergonomic closeout path for a completed board task. It
 requires at least one `--evidence` or `--artifact` value, writes those values as an

@@ -58,7 +58,8 @@ restart.
 ### Blackboard
 
 The shared task plan: declared **task**s, their **status**, dependencies, the set that is
-**ready** (unblocked), and recent progress notes. Printed by `synapse board`.
+**ready** (unblocked), and recent progress notes. The hub bounds retained
+progress globally, per author, and per task id. Printed by `synapse board`.
 
 ### Task
 
@@ -119,8 +120,9 @@ Streaming durable events from the **hub**'s **event log** since a sequence curso
 ### Event log
 
 The durable, append-only SQLite-WAL record of everything authoritative (claims, releases, plan
-writes, findings), enabled with `synapse hub --db …`. It is replayed on restart to resume state
-and is the spine for **ingest**.
+writes, findings), enabled with `synapse hub --db …`. It is replayed on restart to resume state,
+applies the same blackboard retention and finding-quota counters, and is the spine for
+**ingest**.
 
 ### Temporal event-log query
 

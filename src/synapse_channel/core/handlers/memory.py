@@ -126,6 +126,17 @@ async def handle_finding(
         by=sender, at=time.time(), project_fallback=sender.split("/", 1)[0]
     )
     record = attested.as_dict()
+    quota_ok, quota_message = hub.reserve_finding_slot(sender)
+    if not quota_ok:
+        denied = hub._system(
+            quota_message,
+            msg_type=MessageType.FINDING_REJECTED,
+            target=sender,
+            reasons=[quota_message],
+        )
+        hub._remember(data, denied)
+        await hub._send_json(websocket, denied)
+        return
     if hub.journal is not None:
         record_finding(hub.journal, record)
     recorded = hub._system(
