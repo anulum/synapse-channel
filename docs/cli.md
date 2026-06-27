@@ -19,6 +19,8 @@ The `synapse` command exposes the following subcommands.
 | `synapse wait` | Block until a message addressed to you arrives, then exit (a wake trigger). |
 | `synapse listen` | Connect and stream channel messages until interrupted. |
 | `synapse relay` | Decode and print a lite relay log a hub mirrored to a file. |
+| `synapse ingest` | Stream durable event-store records since a sequence cursor. |
+| `synapse compact` | Apply event-store retention and optionally write an HTML archive report. |
 | `synapse board` | Print the shared task/progress blackboard. |
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
 | `synapse manifest` | Print the capability manifest of advertised agents. |
@@ -369,7 +371,17 @@ synapse a2a-serve --endpoint-url http://127.0.0.1:8877
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --bearer-auth --a2a-token "$A2A_TOKEN" --state-file ./a2a-state.json
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --task-timeout 300 --subscribe-timeout 1
 synapse relay ./feed.ndjson --cursor ./feed.cursor
+synapse compact ./synapse.db --all --max-checkpoints-per-task 3 --archive-report ./compact-report.html
 ```
+
+`synapse compact` is an offline maintenance command for the SQLite event store
+created by `synapse hub --db`. It needs either `--floor-seq <seq>` (the lowest
+sequence every read-side consumer has ingested) or `--all` (only when the whole
+log is settled). `--archive-report PATH` writes an owner-only static HTML report
+from the pre-compaction event snapshot, then records the actual checkpoint and
+finding removal counts from the compaction run. The report includes event-kind
+counts, board tasks, release receipt notes, and a bounded coordination timeline;
+`--archive-report-limit N` controls the row cap for bounded sections.
 
 ## Agent2Agent bridge
 

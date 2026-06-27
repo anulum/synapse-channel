@@ -188,6 +188,7 @@ synapse worker --name OFFLINE --provider rule        # no network, canned replie
 synapse worker --name TIER --provider tiered --model small --heavy-model big  # route trivial→rule, hard→heavy
 synapse relay ./feed.ndjson                          # decode and print that file as readable lines
 synapse ingest ./synapse.db --memory --cursor ./mem.cursor  # stream durable memory events since a seq cursor (NDJSON)
+synapse compact ./synapse.db --all --max-checkpoints-per-task 3 --archive-report ./compact-report.html
 synapse board                                        # print the shared task/progress blackboard
 synapse task declare BUILD --title "compile"         # declare/update the shared plan from the CLI
 synapse task update BUILD --status done              # mark a plan task done so dependents unblock
@@ -357,6 +358,21 @@ commits at `synchronous=FULL` (durable across an OS crash); the high-volume
 chat/history path commits at `synchronous=NORMAL` (durable across an application
 crash, may lose the last commit on power loss).
 
+Use `synapse compact` to bound the durable memory spine after every read-side
+consumer has advanced past a floor sequence. Add `--archive-report` when the
+maintenance run should leave an operator-readable HTML record of the
+pre-compaction event snapshot:
+
+```bash
+synapse compact ./synapse.db --all --max-checkpoints-per-task 3 \
+  --archive-report ./compact-report.html
+```
+
+The report is written owner-only and includes event counts, the compaction floor,
+checkpoint/finding removal counts, board tasks, release receipt notes, and a
+bounded coordination timeline. It is an audit aid for a local event store; it
+does not certify that release evidence is sufficient.
+
 ### Token-thrifty observation
 
 `--relay-log` mirrors every broadcast to a newline-delimited file in a compact
@@ -514,6 +530,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | `deadlock` | Wait-for cycle detection so circular hold-and-wait claims are refused. |
 | `protocol` | The on-wire message envelope and message-type constants. |
 | `relay` | Lite/heavy codec (`encode_lite`/`decode_lite`) and append-only NDJSON log helpers for file-based observers. |
+| `archive_report` | Static HTML archive reports for compacted event-store history and release receipt notes. |
 | `hub` | The routing core: connections, names, history, broadcast. |
 | `client` | The reusable async agent connection and coordination helpers. |
 | `persistence` | Append-only SQLite event store (WAL) giving the hub a crash-durable spine. |
@@ -542,11 +559,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.50.0 |
 | Public API exports | 59 |
-| Package modules | 119 |
-| Classes | 95 |
+| Package modules | 120 |
+| Classes | 96 |
 | Wire message types | 53 |
 | CLI subcommands | 44 |
-| Test functions | 1549 |
+| Test functions | 1557 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

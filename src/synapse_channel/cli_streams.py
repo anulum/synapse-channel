@@ -21,8 +21,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from typing import Any
 
+from synapse_channel.core.archive_report import (
+    ArchiveReportOptions,
+    render_archive_report,
+    write_archive_report,
+)
 from synapse_channel.core.compaction import RetentionPolicy, compact
 from synapse_channel.core.journal import MEMORY_KINDS
 from synapse_channel.core.persistence import EventStore
@@ -148,17 +154,31 @@ def _cmd_compact(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
+        archive_events = store.read_all() if args.archive_report else []
         result = compact(store, policy, floor_seq=floor)
         if args.vacuum:
             store.vacuum()
     finally:
         store.close()
+    if args.archive_report:
+        report = render_archive_report(
+            archive_events,
+            result=result,
+            options=ArchiveReportOptions(
+                source_path=str(args.db),
+                generated_at=time.time(),
+                max_items=int(args.archive_report_limit),
+            ),
+        )
+        write_archive_report(args.archive_report, report)
     vacuum_note = " (vacuumed)" if args.vacuum else ""
     print(
         f"compacted below seq {result.floor_seq}: removed "
         f"{result.checkpoints_removed} checkpoint(s), "
         f"{result.findings_removed} finding(s){vacuum_note}"
     )
+    if args.archive_report:
+        print(f"archive report: {args.archive_report}")
     return 0
 
 
@@ -254,5 +274,18 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--vacuum",
         action="store_true",
         help="Reclaim freed disk pages after compaction (rewrites the database file).",
+    )
+    compact_parser.add_argument(
+        "--archive-report",
+        default=None,
+        metavar="PATH",
+        help="Write a static HTML report from the pre-compaction event snapshot.",
+    )
+    compact_parser.add_argument(
+        "--archive-report-limit",
+        type=int,
+        default=200,
+        metavar="N",
+        help="Maximum rows shown in each bounded archive-report section.",
     )
     compact_parser.set_defaults(func=_cmd_compact)
