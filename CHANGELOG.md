@@ -13,6 +13,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+- Refreshed the public comparison page with concrete, locally verifiable
+  differences for file-scope claims, Git hooks, durability, metrics, MCP, A2A,
+  receipts, and local-first operation.
+
 ## [0.52.0] - 2026-06-27
 
 ### Added
