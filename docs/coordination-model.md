@@ -48,6 +48,13 @@ source files to likely owning tests. The map uses AST imports and a conservative
 test-filename fallback, so it is useful evidence for picking focused tests and
 receipt `changed_file` entries without pretending to be an approval system.
 
+For generated artefacts, `python tools/generated_dependency_claims.py --claim-args
+--source <path>` maps source paths to generated outputs that can go stale, such as
+the README capability inventory and `docs/_generated/capability_manifest.json`.
+Use those generated paths in the same file-scope claim and receipt. This
+generated-output dependency map is a coordination aid; freshness still comes from
+the owning generator's check command.
+
 ## 4. Hand off and recover
 
 - **Atomic handoff** transfers a held task to another *online* agent in one step,

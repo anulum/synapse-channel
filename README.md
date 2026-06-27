@@ -493,6 +493,19 @@ python tools/test_ownership_map.py --check \
 It is a deterministic local aid for choosing focused tests; it does not replace
 review, coverage, or the release receipt evidence itself.
 
+When a source change can stale generated outputs, ask the generated-output
+dependency map which generated paths should be included in the same claim:
+
+```bash
+python tools/generated_dependency_claims.py --claim-args \
+  --source src/synapse_channel/core/receipts.py
+```
+
+The command prints `--paths ...` arguments for `synapse git-claim` and can also
+emit JSON for release tooling. It is a deterministic coordination aid; the
+owning generator, such as `python tools/capability_manifest.py --check`, remains
+the freshness check for the generated artefact itself.
+
 ## Coordination model
 
 1. Claim before you work: an agent leases a task by id; a live lease blocks other
@@ -588,7 +601,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 96 |
 | Wire message types | 53 |
 | CLI subcommands | 44 |
-| Test functions | 1592 |
+| Test functions | 1603 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

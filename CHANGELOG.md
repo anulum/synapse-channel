@@ -13,6 +13,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Added `tools/generated_dependency_claims.py` to map source paths to generated
+  outputs that should share the same file-scope claim and release receipt, with
+  JSON, `--claim-args`, and integrity-check output.
+
 ## [0.51.0] - 2026-06-27
 
 ### Added
