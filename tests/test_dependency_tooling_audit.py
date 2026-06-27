@@ -8,15 +8,20 @@
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
-from tools import audit_dependency_tooling as audit
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CHECKER = REPO_ROOT / "tools" / "audit_dependency_tooling.py"
+_SPEC = importlib.util.spec_from_file_location("audit_dependency_tooling", CHECKER)
+assert _SPEC is not None and _SPEC.loader is not None
+audit = importlib.util.module_from_spec(_SPEC)
+sys.modules[_SPEC.name] = audit
+_SPEC.loader.exec_module(audit)
 
 
 def _run_checker(*args: str) -> subprocess.CompletedProcess[str]:
