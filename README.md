@@ -200,7 +200,7 @@ synapse board                                        # print the shared task/pro
 synapse task declare BUILD --title "compile"         # declare/update the shared plan from the CLI
 synapse task update BUILD --status done              # mark a plan task done so dependents unblock
 syn ack BUILD --evidence "pytest -q"                 # post evidence and mark a board task done
-synapse supervisor --idle-seconds 300                # LLM-free: re-offer tasks that stall
+synapse supervisor --idle-seconds 300 --history-multiplier 3  # re-offer stalled plan tasks
 synapse manifest                                     # print the capability cards agents advertised
 synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1  # emit A2A Agent Card JSON
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877             # run the HTTP+JSON A2A bridge
@@ -576,6 +576,13 @@ supervisor can read to spot stalls. A declared `LedgerTask` is the *plan*; a
 claim is the *lease* on doing it — the two share a task id but stay independent,
 so the simple claim flow keeps working. View it with `synapse board`.
 
+`synapse supervisor` remains deterministic and LLM-free. It re-offers
+`in_progress` tasks after the fixed `--idle-seconds` ceiling, and, by default,
+can lower that ceiling when completed-task progress cadence in the same board
+shows a faster local pattern. Use `--no-predictive-stall` to disable the
+historical-cadence supplement; it is an advisory local board heuristic, not a
+guarantee that work is actually abandoned.
+
 See [`TEAM_PROTOCOL.md`](TEAM_PROTOCOL.md) for the working agreement and message
 reference.
 
@@ -619,6 +626,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | `chat_backends` | Pluggable reply backends (OpenAI-compatible HTTP, rule-based). |
 | `routing` | Classify a request into a task class and route it to a tiered backend. |
 | `llm_worker` | An on-channel agent that answers addressed messages via a backend. |
+| `stall` | Deterministic fixed-threshold and historical-cadence stall policy. |
 | `supervisor` | LLM-free watcher that spots stalled plan tasks and re-offers them. |
 | `capability` | Agent capability cards (A2A-shaped) and the hub-aggregated manifest. |
 | `launcher` | One-command local hub + worker startup. |
@@ -637,12 +645,12 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Surface | Current inventory |
 |---|---:|
 | Package version | 0.51.0 |
-| Public API exports | 59 |
-| Package modules | 122 |
-| Classes | 99 |
+| Public API exports | 60 |
+| Package modules | 123 |
+| Classes | 101 |
 | Wire message types | 53 |
 | CLI subcommands | 45 |
-| Test functions | 1654 |
+| Test functions | 1668 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |

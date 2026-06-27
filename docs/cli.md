@@ -379,7 +379,16 @@ synapse relay ./feed.ndjson --cursor ./feed.cursor
 synapse compact ./synapse.db --all --max-checkpoints-per-task 3 --archive-report ./compact-report.html
 synapse event-query ./synapse.db "task TASK-1 timeline"
 synapse event-query ./synapse.db "conflicts at seq 120" --json
+synapse supervisor --idle-seconds 300 --history-multiplier 3
 ```
+
+`synapse supervisor` watches the shared board and re-offers stalled plan tasks.
+The fixed `--idle-seconds` threshold remains the operator ceiling. By default the
+supervisor can lower the effective threshold when completed tasks on the board
+show enough faster progress cadence; `--history-multiplier`,
+`--min-history-samples`, and `--min-predictive-idle-seconds` tune that heuristic,
+and `--no-predictive-stall` disables it. This is local board evidence, not a
+claim that a worker process has failed.
 
 `synapse compact` is an offline maintenance command for the SQLite event store
 created by `synapse hub --db`. It needs either `--floor-seq <seq>` (the lowest

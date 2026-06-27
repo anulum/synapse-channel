@@ -17,7 +17,13 @@ from synapse_channel.cli_processes_team import _cmd_team
 from synapse_channel.cli_processes_worker import _cmd_worker
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.client.llm_worker import DEFAULT_OLLAMA_BASE_URL
-from synapse_channel.client.supervisor import DEFAULT_IDLE_SECONDS, DEFAULT_INTERVAL_SECONDS
+from synapse_channel.client.supervisor import (
+    DEFAULT_HISTORY_MULTIPLIER,
+    DEFAULT_IDLE_SECONDS,
+    DEFAULT_INTERVAL_SECONDS,
+    DEFAULT_MIN_HISTORY_SAMPLES,
+    DEFAULT_MIN_PREDICTIVE_IDLE_SECONDS,
+)
 from synapse_channel.core.hub import (
     DEFAULT_AUTH_TIMEOUT,
     DEFAULT_COMPACT_HINT_THRESHOLD,
@@ -251,6 +257,30 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     supervisor.add_argument("--uri", default=DEFAULT_HUB_URI)
     supervisor.add_argument("--name", default="SUPERVISOR")
     supervisor.add_argument("--idle-seconds", type=float, default=DEFAULT_IDLE_SECONDS)
+    supervisor.add_argument(
+        "--no-predictive-stall",
+        action="store_false",
+        dest="predictive_stall",
+        help="Disable completed-task history when deciding whether in-progress work stalled.",
+    )
+    supervisor.add_argument(
+        "--history-multiplier",
+        type=float,
+        default=DEFAULT_HISTORY_MULTIPLIER,
+        help="Multiplier applied to the median historical activity gap.",
+    )
+    supervisor.add_argument(
+        "--min-history-samples",
+        type=int,
+        default=DEFAULT_MIN_HISTORY_SAMPLES,
+        help="Minimum historical activity gaps required before predictive stall detection is used.",
+    )
+    supervisor.add_argument(
+        "--min-predictive-idle-seconds",
+        type=float,
+        default=DEFAULT_MIN_PREDICTIVE_IDLE_SECONDS,
+        help="Floor below which predictive stall detection never re-offers a task.",
+    )
     supervisor.add_argument("--interval", type=float, default=DEFAULT_INTERVAL_SECONDS)
     supervisor.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     supervisor.add_argument(

@@ -30,7 +30,12 @@ from synapse_channel.client.chat_backends import (
 from synapse_channel.client.launcher import plan_team, run_team
 from synapse_channel.client.llm_worker import SynapseLLMWorker, is_service_message
 from synapse_channel.client.routing import TaskClass, TieredChatClient, classify
-from synapse_channel.client.supervisor import Intervention, SupervisorWorker, detect_stalls
+from synapse_channel.client.supervisor import (
+    Intervention,
+    StallPolicy,
+    SupervisorWorker,
+    detect_stalls,
+)
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityCard, CapabilityRegistry
 from synapse_channel.core.compaction import (
@@ -99,6 +104,7 @@ __all__ = [
     "RetentionPolicy",
     "RuleBasedClient",
     "Subkind",
+    "StallPolicy",
     "SupervisorWorker",
     "SynapseAgent",
     "SynapseHub",
