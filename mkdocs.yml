@@ -69,6 +69,7 @@ nav:
   - Quick start: quickstart.md
   - Use cases: use-cases.md
   - How it compares: comparison.md
+  - Integration demos: integration-demos.md
   - Coordination model: coordination-model.md
   - Wire protocol: protocol.md
   - CLI reference: cli.md

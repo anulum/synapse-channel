@@ -226,6 +226,8 @@ Its MCP and A2A adapters are interop surfaces: they let Claude Code, Claude
 Desktop, Cursor, Codex, Copilot-style hosts, Aider, orchestration frameworks,
 and other agent tools participate in one local coordination bus while those
 tools still own prompting, model choice, tool use, and editor/runtime behavior.
+The [integration demo matrix](docs/integration-demos.md) lists three narrow,
+repeatable paths and the unsupported behavior that remains outside each demo.
 
 - **Claude Code / Claude Desktop / Cursor (MCP):** point the host at the MCP server
   and every coordination verb shows up as a tool — no Synapse-specific code.
@@ -664,7 +666,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | CLI subcommands | 45 |
 | Test functions | 1681 |
 | Benchmark harnesses | 4 |
-| Documentation pages | 20 |
+| Documentation pages | 21 |
 | GitHub Actions workflows | 10 |
 | Optional-dependency groups | 4 |
 

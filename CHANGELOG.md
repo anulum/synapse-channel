@@ -14,6 +14,8 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Changed
+- Added a public integration demo matrix with bounded CLI, MCP, and local A2A
+  walkthroughs that list supported behavior and keep external validation open.
 - Refreshed the public comparison page with concrete, locally verifiable
   differences for file-scope claims, Git hooks, durability, metrics, MCP, A2A,
   receipts, and local-first operation.
