@@ -9,10 +9,46 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from hub_e2e_helpers import close_agents, running_hub
 from mcp_server_helpers import seed_claim, seed_task, start_bridge, start_manifest_agent
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.mcp.server import SynapseHubBridge
+
+
+def _seed_observation_store(path: Path) -> None:
+    """Write one successful observed capability signal."""
+    store = EventStore(path)
+    store.append(
+        EventKind.LEDGER_TASK,
+        {
+            "task_id": "DONE",
+            "title": "Chat routing task",
+            "description": "Fast chat dispatch.",
+            "depends_on": [],
+            "status": "done",
+            "suggested_owner": "",
+            "created_by": "planner",
+            "created_at": 1.0,
+            "updated_at": 2.0,
+        },
+        ts=1.0,
+        durable=True,
+    )
+    store.append(
+        EventKind.LEDGER_PROGRESS,
+        {
+            "task_id": "DONE",
+            "author": "FAST",
+            "kind": "assessment",
+            "text": "release receipt: evidence=pytest -q; epistemic_status=supported",
+            "posted_at": 3.0,
+        },
+        ts=3.0,
+    )
+    store.close()
 
 
 async def test_board_returns_json() -> None:
@@ -96,6 +132,25 @@ async def test_route_task_returns_json() -> None:
     assert recommendation["task_id"] == "T1"
     assert recommendation["candidates"][0]["agent"] == "FAST"
     assert recommendation["candidates"][0]["reasons"][0] == "task_class:chat"
+
+
+async def test_route_task_returns_observed_evidence_json(tmp_path: Path) -> None:
+    db = tmp_path / "events.db"
+    _seed_observation_store(db)
+    async with running_hub() as (_, uri):
+        await seed_task(uri, "T1", "Chat routing task")
+        advertiser = await start_manifest_agent(uri)
+        handle = await start_bridge(uri)
+        try:
+            out = await handle.bridge.route_task("T1", event_store=str(db))
+        finally:
+            await handle.close()
+            await close_agents(advertiser)
+    recommendation = json.loads(out)
+    assert "observed:chat" in recommendation["candidates"][0]["reasons"]
+    assert recommendation["candidates"][0]["observed_evidence"] == [
+        {"seq": 2, "task_id": "DONE", "tokens": ["chat", "routing", "task"]}
+    ]
 
 
 async def test_manifest_timeout() -> None:

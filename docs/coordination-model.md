@@ -121,8 +121,11 @@ For board work, `synapse route-task <task-id>` and the MCP
 `synapse_route_task` tool provide the same read-only recommendation payload.
 They join the board task with live capability cards and score structured
 task-class matches, skill tags, card description overlap, and contract evidence
-locally. The result is a routing hint only: it does not claim the task, mutate
-the board, reserve capacity, or certify an agent.
+locally. An optional event-store path adds observed evidence from positive
+release-receipt assessment notes, preserving source task ids and durable event
+sequences so a human or policy layer can audit why the hint exists. The result
+is a routing hint only: it does not claim the task, mutate the board, reserve
+capacity, grade an agent, or certify an agent.
 
 ## Durability and reconnection
 

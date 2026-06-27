@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from synapse_channel.core.capability_directory import CapabilityDirectory, CapabilityDirectoryEntry
+from synapse_channel.core.capability_observations import ObservedCapabilityIndex
 
 ROUTING_TRUST_BOUNDARY = (
     "Semantic routing recommendations are advisory only; they do not claim tasks, "
@@ -41,6 +42,9 @@ DESCRIPTION_TOKEN_SCORE = 3
 
 CONTRACT_EVIDENCE_SCORE = 6
 """Score added for a matching card that carries at least one contract."""
+
+OBSERVED_TOKEN_SCORE = 6
+"""Score added for each matching observed capability token."""
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _STOPWORDS = frozenset(
@@ -91,6 +95,8 @@ class RoutingCandidate:
         Number of declarative contracts attached to the card.
     description, model : str
         Human-readable card details retained for inspection.
+    observed_evidence : tuple[dict[str, object], ...]
+        Provenance snippets for observed capability matches.
     """
 
     agent: str
@@ -101,6 +107,7 @@ class RoutingCandidate:
     contracts: int = 0
     description: str = ""
     model: str = ""
+    observed_evidence: tuple[dict[str, object], ...] = ()
     trust: str = "advisory-only"
 
     def as_dict(self) -> dict[str, Any]:
@@ -114,6 +121,7 @@ class RoutingCandidate:
             "contracts": self.contracts,
             "description": self.description,
             "model": self.model,
+            "observed_evidence": [copy.deepcopy(item) for item in self.observed_evidence],
             "trust": self.trust,
         }
 
@@ -171,7 +179,33 @@ def _query(task: JsonMap) -> str:
     return " ".join(part for part in (title, description) if part)
 
 
-def _score_entry(entry: CapabilityDirectoryEntry, task_tokens: frozenset[str]) -> RoutingCandidate:
+def _observed_matches(
+    entry: CapabilityDirectoryEntry,
+    task_tokens: frozenset[str],
+    observations: ObservedCapabilityIndex | None,
+) -> tuple[int, list[str], tuple[dict[str, object], ...]]:
+    """Return observed-evidence score, reasons, and provenance for ``entry``."""
+    if observations is None:
+        return 0, [], ()
+    matches = sorted(observations.tokens_for_agent(entry.agent).intersection(task_tokens))
+    if not matches:
+        return 0, [], ()
+    reasons = [f"observed:{token}" for token in matches]
+    snippets: list[dict[str, object]] = []
+    for evidence in observations.evidence_for_agent(entry.agent):
+        matched = [token for token in evidence.tokens if token in matches]
+        if not matched:
+            continue
+        reasons.append(f"observed_task:{evidence.task_id}@{evidence.seq}")
+        snippets.append({"task_id": evidence.task_id, "seq": evidence.seq, "tokens": matched})
+    return len(matches) * OBSERVED_TOKEN_SCORE, reasons, tuple(snippets)
+
+
+def _score_entry(
+    entry: CapabilityDirectoryEntry,
+    task_tokens: frozenset[str],
+    observations: ObservedCapabilityIndex | None,
+) -> RoutingCandidate:
     """Score one agent directory entry against ``task_tokens``."""
     score = 0
     reasons: list[str] = []
@@ -195,6 +229,14 @@ def _score_entry(entry: CapabilityDirectoryEntry, task_tokens: frozenset[str]) -
         score += CONTRACT_EVIDENCE_SCORE
         reasons.append("contract:evidence")
 
+    observed_score, observed_reasons, observed_evidence = _observed_matches(
+        entry,
+        task_tokens,
+        observations,
+    )
+    score += observed_score
+    reasons.extend(observed_reasons)
+
     if not reasons:
         reasons.append("no local signal match")
 
@@ -207,6 +249,7 @@ def _score_entry(entry: CapabilityDirectoryEntry, task_tokens: frozenset[str]) -
         contracts=entry.contracts,
         description=entry.description,
         model=entry.model,
+        observed_evidence=observed_evidence,
     )
 
 
@@ -241,6 +284,7 @@ def recommend_agents_for_task(
     *,
     limit: int = 5,
     include_zero: bool = False,
+    observations: ObservedCapabilityIndex | None = None,
 ) -> RoutingRecommendation:
     """Rank advertised agents for a board task using local deterministic signals.
 
@@ -256,6 +300,8 @@ def recommend_agents_for_task(
     include_zero : bool, optional
         Include agent cards that have no matching local signal. Defaults to
         ``False``.
+    observations : ObservedCapabilityIndex or None, optional
+        Optional observed release-receipt evidence from a durable event store.
 
     Returns
     -------
@@ -275,7 +321,7 @@ def recommend_agents_for_task(
             task={str(key): copy.deepcopy(value) for key, value in task.items()},
         )
 
-    candidates = [_score_entry(entry, task_tokens) for entry in agent_entries]
+    candidates = [_score_entry(entry, task_tokens, observations) for entry in agent_entries]
     if not include_zero:
         candidates = [candidate for candidate in candidates if candidate.score > 0]
     candidates.sort(key=lambda candidate: (-candidate.score, candidate.agent))

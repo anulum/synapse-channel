@@ -73,7 +73,10 @@ async def test_every_tool_and_resource_wrapper_dispatches() -> None:
             state = await server.call_tool("synapse_state", {})
             manifest = await server.call_tool("synapse_manifest", {})
             directory = await server.call_tool("synapse_directory", {})
-            route = await server.call_tool("synapse_route_task", {"task_id": "T"})
+            route = await server.call_tool(
+                "synapse_route_task",
+                {"task_id": "T", "limit": 3, "include_zero": True, "event_store": None},
+            )
             board_resource = await server.read_resource("synapse://board")
             state_resource = await server.read_resource("synapse://state")
             manifest_resource = await server.read_resource("synapse://manifest")

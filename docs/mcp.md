@@ -81,7 +81,7 @@ tools wait for the hub's grant or denial; query tools return JSON.
 | `synapse_state()` | Return the live claims and checkpoints as JSON. |
 | `synapse_manifest()` | Return the capability manifest of advertised agents as JSON. |
 | `synapse_directory()` | Return the discovery-only capability directory as JSON. |
-| `synapse_route_task(task_id, limit?, include_zero?)` | Return advisory route recommendations for a board task as JSON. |
+| `synapse_route_task(task_id, limit?, include_zero?, event_store?)` | Return advisory route recommendations for a board task as JSON. |
 
 When the hub does not answer within the request window the tool returns a clear
 "no response from the hub" line rather than hanging.
@@ -103,8 +103,10 @@ marketplace. Its entries can help an agent host choose a likely worker or tool,
 but they do not reserve capacity, authorize execution, or certify trust.
 `synapse_route_task` uses the directory plus the shared board to rank likely
 agents with deterministic local signals. It returns the reasons behind each
-candidate and keeps the same boundary: no claim, assignment, capacity
-reservation, permission grant, or trust certification happens through the route.
+candidate. When `event_store` points at a local hub database, the tool also adds
+positive release-receipt evidence with source task ids and event sequences. The
+boundary stays the same: no claim, assignment, capacity reservation, permission
+grant, agent grade, or trust certification happens through the route.
 
 ## Surface audit
 
