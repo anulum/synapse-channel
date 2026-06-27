@@ -62,6 +62,13 @@ file-scope paths that `synapse git-claim` already understands. This keeps the hu
 simple while letting agents coordinate over meaning before submitting path
 claims and release receipt fields.
 
+`python tools/import_merge_risk.py --changed <path> --claimed <path> --check` is
+the import graph merge-risk radar for pre-merge and handoff checks. It combines
+explicit changed paths or `--base main --head HEAD` branch diffs with claimed
+paths, package-local Python import edges, CODEOWNERS, and the test ownership map.
+It is advisory: a non-zero `--check` result means review the overlap before
+merge, not that the hub has rejected anything.
+
 ## 4. Hand off and recover
 
 - **Atomic handoff** transfers a held task to another *online* agent in one step,

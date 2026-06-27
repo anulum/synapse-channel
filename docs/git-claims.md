@@ -128,6 +128,19 @@ merge feature/x` proceeds only on a clean, successfully checked result.
 The prediction is computed entirely on the client from the ordinary state
 snapshot; the hub runs no git.
 
+For semantic merge-risk beyond direct path overlap, run the import graph
+merge-risk radar against changed files or a branch diff:
+
+```bash
+python tools/import_merge_risk.py --changed src/auth.py --claimed src/session.py --check
+python tools/import_merge_risk.py --base main --head HEAD --claims-json claims.json --json
+```
+
+The radar combines package-local Python import edges, CODEOWNERS, and mapped test
+owners with the changed and claimed paths. It is advisory and client-side only;
+use it to decide whether to coordinate, expand tests, or include more evidence in
+the release receipt.
+
 ## What stays out of the hub
 
 A git-scoped claim is an ordinary claim with one extra field. The hub deserialises
