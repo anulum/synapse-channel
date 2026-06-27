@@ -177,4 +177,19 @@ def build_mcp_server(
         """Live discovery-only capability directory."""
         return await bridge.directory()
 
+    @server.resource("synapse://task/{task_id}")
+    async def task_resource(task_id: str) -> str:
+        """Read-only board task resource by task id."""
+        return await bridge.task_resource(task_id)
+
+    @server.resource("synapse://agent/{agent}")
+    async def agent_resource(agent: str) -> str:
+        """Read-only agent card and resource-offer resource by identity."""
+        return await bridge.agent_resource(agent)
+
+    @server.resource("synapse://resource-kind/{kind}")
+    async def resource_kind_resource(kind: str) -> str:
+        """Read-only resource-offer resource by resource kind."""
+        return await bridge.resource_kind_resource(kind)
+
     return server

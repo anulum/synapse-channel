@@ -134,6 +134,13 @@ capacity, score, and reason codes so humans or policy layers can inspect why an
 offer ranked. The result is advisory only: it does not reserve capacity,
 authorize execution, mutate the board, or certify provider trust.
 
+MCP resource templates provide narrower read-only context retrieval for hosts
+that support them: `synapse://task/{task_id}` for one board task,
+`synapse://agent/{agent}` for one agent's card and resources, and
+`synapse://resource-kind/{kind}` for matching resource offers. These templates
+read the same hub snapshots as the static resources; they do not stream updates,
+chain tools, reserve resources, assign work, or change the hub protocol.
+
 For local durable memory, `synapse memory-recall <db> <query>` and the MCP
 `synapse_memory_recall` tool project findings, checkpoints, and handoffs from
 the SQLite event store into deterministic token matches. Recall hits keep the
