@@ -14,6 +14,9 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added `tools/import_merge_risk.py` to combine changed paths or local branch
+  diffs with claimed paths, Python import neighbours, CODEOWNERS, and mapped test
+  owners for advisory pre-merge risk checks.
 - Added `tools/generated_dependency_claims.py` to map source paths to generated
   outputs that should share the same file-scope claim and release receipt, with
   JSON, `--claim-args`, and integrity-check output.

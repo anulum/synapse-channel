@@ -520,6 +520,20 @@ generated outputs that should share the same file-scope claim. It keeps the hub
 path-scope and local-first while giving agents a deterministic semantic planning
 step before they call `synapse git-claim`.
 
+Before merge or handoff, the import graph merge-risk radar compares changed
+files with claimed paths, package-local Python import neighbours, CODEOWNERS,
+and mapped test owners:
+
+```bash
+python tools/import_merge_risk.py --changed src/synapse_channel/core/receipts.py \
+  --claimed src/synapse_channel/core/state.py --check
+```
+
+Use `--base main --head HEAD` instead of `--changed` to read a local branch diff,
+or `--claims-json claims.json` to feed paths from an external claim snapshot.
+The radar is an advisory local planning check; it predicts likely contention but
+does not replace tests, review, or release receipt evidence.
+
 ## Coordination model
 
 1. Claim before you work: an agent leases a task by id; a live lease blocks other
@@ -615,7 +629,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 96 |
 | Wire message types | 53 |
 | CLI subcommands | 44 |
-| Test functions | 1617 |
+| Test functions | 1630 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 20 |
 | GitHub Actions workflows | 10 |
