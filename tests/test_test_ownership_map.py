@@ -8,16 +8,22 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
-from tools import test_ownership_map as ownership
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TOOL = REPO_ROOT / "tools" / "test_ownership_map.py"
+_OWNERSHIP_SPEC = importlib.util.spec_from_file_location("test_ownership_map", TOOL)
+assert _OWNERSHIP_SPEC is not None
+assert _OWNERSHIP_SPEC.loader is not None
+ownership = importlib.util.module_from_spec(_OWNERSHIP_SPEC)
+sys.modules[_OWNERSHIP_SPEC.name] = ownership
+_OWNERSHIP_SPEC.loader.exec_module(ownership)
 
 
 def _write(path: Path, text: str) -> None:

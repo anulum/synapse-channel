@@ -8,15 +8,21 @@
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
-from tools import check_dev_dependency_drift as drift
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CHECKER = REPO_ROOT / "tools" / "check_dev_dependency_drift.py"
+_DRIFT_SPEC = importlib.util.spec_from_file_location("check_dev_dependency_drift", CHECKER)
+assert _DRIFT_SPEC is not None
+assert _DRIFT_SPEC.loader is not None
+drift = importlib.util.module_from_spec(_DRIFT_SPEC)
+sys.modules[_DRIFT_SPEC.name] = drift
+_DRIFT_SPEC.loader.exec_module(drift)
 
 
 def _run_checker(*args: str) -> subprocess.CompletedProcess[str]:
