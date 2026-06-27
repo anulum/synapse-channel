@@ -42,7 +42,8 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help=(
             "Query string: 'task T timeline', 'task T at seq N', "
             "'task T at time SECONDS', 'path PATH between START END', or "
-            "'conflicts at seq N'."
+            "'conflicts at seq N'. Prototype aliases include 'timeline(\"T\").' "
+            "and 'MATCH (task:TASK {id:\"T\"}) RETURN timeline'."
         ),
     )
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")

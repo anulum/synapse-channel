@@ -159,6 +159,105 @@ def test_conflicts_at_sequence_uses_temporal_live_claims(tmp_path: Path) -> None
     assert after_release.conflicts == []
 
 
+def test_cypher_like_aliases_parse_to_existing_query_shapes() -> None:
+    assert event_query.parse_query(
+        'MATCH (task:TASK {id:"T1"}) RETURN timeline'
+    ) == event_query.EventQuery(
+        kind="task_timeline",
+        task_id="T1",
+        raw='MATCH (task:TASK {id:"T1"}) RETURN timeline',
+    )
+    assert event_query.parse_query(
+        'MATCH (task:TASK {id:"T1"}) AT seq 3 RETURN state'
+    ) == event_query.EventQuery(
+        kind="task_state",
+        task_id="T1",
+        cutoff_kind="seq",
+        cutoff=3.0,
+        raw='MATCH (task:TASK {id:"T1"}) AT seq 3 RETURN state',
+    )
+    assert event_query.parse_query(
+        'MATCH (path:PATH {value:"src/auth.py"}) BETWEEN 0 35 RETURN events'
+    ) == event_query.EventQuery(
+        kind="path_touched",
+        path="src/auth.py",
+        lower=0.0,
+        upper=35.0,
+        raw='MATCH (path:PATH {value:"src/auth.py"}) BETWEEN 0 35 RETURN events',
+    )
+    assert event_query.parse_query(
+        "MATCH (conflicts) AT seq 3 RETURN pairs"
+    ) == event_query.EventQuery(
+        kind="conflicts",
+        cutoff_kind="seq",
+        cutoff=3.0,
+        raw="MATCH (conflicts) AT seq 3 RETURN pairs",
+    )
+
+
+def test_datalog_like_aliases_parse_to_existing_query_shapes() -> None:
+    assert event_query.parse_query('timeline("T1").') == event_query.EventQuery(
+        kind="task_timeline",
+        task_id="T1",
+        raw='timeline("T1").',
+    )
+    assert event_query.parse_query('state("T1", seq, 3).') == event_query.EventQuery(
+        kind="task_state",
+        task_id="T1",
+        cutoff_kind="seq",
+        cutoff=3.0,
+        raw='state("T1", seq, 3).',
+    )
+    assert event_query.parse_query('touches("src/auth.py", 0, 35).') == event_query.EventQuery(
+        kind="path_touched",
+        path="src/auth.py",
+        lower=0.0,
+        upper=35.0,
+        raw='touches("src/auth.py", 0, 35).',
+    )
+    assert event_query.parse_query("conflicts(seq, 3).") == event_query.EventQuery(
+        kind="conflicts",
+        cutoff_kind="seq",
+        cutoff=3.0,
+        raw="conflicts(seq, 3).",
+    )
+    assert event_query.parse_query("timeline(T1)") == event_query.EventQuery(
+        kind="task_timeline",
+        task_id="T1",
+        raw="timeline(T1)",
+    )
+
+
+def test_alias_queries_execute_with_existing_temporal_semantics(tmp_path: Path) -> None:
+    db = tmp_path / "events.db"
+    _seed_store(db)
+
+    timeline = event_query.run_query(db, 'MATCH (task:TASK {id:"T1"}) RETURN timeline')
+    state = event_query.run_query(db, 'state("T1", seq, 3).')
+    touched = event_query.run_query(db, 'touches("src/auth.py", 0, 35).')
+    conflicts = event_query.run_query(db, "MATCH (conflicts) AT seq 3 RETURN pairs")
+
+    assert [record.event.kind for record in timeline.records] == [
+        "claim",
+        "task_update",
+        "task_update",
+    ]
+    assert state.state is not None
+    assert state.state["status"] == "in_progress"
+    assert [record.task_id for record in touched.records] == ["T1", "T2", "T1"]
+    assert conflicts.conflicts is not None
+    assert conflicts.conflicts[0]["left_task"] == "T1"
+
+
+def test_task_timeline_alias_human_renderer_uses_task_label(tmp_path: Path) -> None:
+    db = tmp_path / "events.db"
+    _seed_store(db)
+
+    result = event_query.run_query(db, 'MATCH (task:TASK {id:"T1"}) RETURN timeline')
+
+    assert "task T1 timeline: 3 event(s)" in event_query.render_human(result)
+
+
 def test_task_state_at_timestamp_uses_last_event_at_or_before_time(tmp_path: Path) -> None:
     db = tmp_path / "events.db"
     _seed_store(db)
@@ -209,6 +308,16 @@ def test_human_renderers_cover_state_path_conflicts_and_fallback(tmp_path: Path)
     assert event_query.render_human(missing) == "task state: not found"
     assert "path touched: 3 event(s)" in event_query.render_human(touched)
     assert "conflicts: 1 pair(s)" in event_query.render_human(conflicts)
+    assert (
+        event_query.render_human(
+            event_query.QueryResult(kind="task_timeline", query="legacy LABEL")
+        )
+        == "task LABEL timeline: 0 event(s)"
+    )
+    assert (
+        event_query.render_human(event_query.QueryResult(kind="task_timeline", query="legacy"))
+        == "task ? timeline: 0 event(s)"
+    )
     assert "paths=*" in event_query.render_human(
         event_query.QueryResult(
             kind="conflicts",
@@ -370,6 +479,13 @@ def test_query_parser_rejects_invalid_queries(tmp_path: Path) -> None:
         event_query.run_query(db, "task T1 at time now")
     with pytest.raises(ValueError, match="invalid lower timestamp"):
         event_query.run_query(db, "path src/auth.py between then 30")
+    with pytest.raises(ValueError, match="invalid sequence"):
+        event_query.run_query(db, 'state("T1", seq, not-a-number).')
+    with pytest.raises(ValueError, match="invalid lower timestamp"):
+        event_query.run_query(
+            db,
+            'MATCH (path:PATH {value:"src/auth.py"}) BETWEEN then 30 RETURN events',
+        )
 
 
 def test_execute_query_rejects_unknown_query_kind() -> None:

@@ -600,6 +600,8 @@ synapse event-query ./synapse.db "task TASK-1 timeline"
 synapse event-query ./synapse.db "task TASK-1 at seq 120" --json
 synapse event-query ./synapse.db "path src/auth.py between 0 9999999999"
 synapse event-query ./synapse.db "conflicts at seq 120"
+synapse event-query ./synapse.db 'timeline("TASK-1").'
+synapse event-query ./synapse.db 'MATCH (task:TASK {id:"TASK-1"}) RETURN timeline'
 synapse postmortem ./synapse.db TASK-1
 synapse reliability ./synapse.db
 synapse ttl-advice ./synapse.db
@@ -608,6 +610,8 @@ synapse ttl-advice ./synapse.db
 This temporal event-log query path is read-only. It reconstructs task timelines,
 task state at a sequence or timestamp, path-touch windows, and historical
 file-scope conflicts from the SQLite event store created by `synapse hub --db`.
+The Datalog-like and Cypher-like examples are prototype aliases for the same
+small query model, not a separate graph database or mutable policy engine.
 
 Use `synapse postmortem ./synapse.db TASK-1` when a task needs a replayable
 postmortem for a handover or incident note. The report includes the durable task
@@ -740,7 +744,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 131 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1820 |
+| Test functions | 1825 |
 | Benchmark harnesses | 4 |
 | Documentation pages | 21 |
 | GitHub Actions workflows | 10 |

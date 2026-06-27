@@ -411,6 +411,8 @@ synapse relay ./feed.ndjson --cursor ./feed.cursor
 synapse compact ./synapse.db --all --max-checkpoints-per-task 3 --archive-report ./compact-report.html
 synapse event-query ./synapse.db "task TASK-1 timeline"
 synapse event-query ./synapse.db "conflicts at seq 120" --json
+synapse event-query ./synapse.db 'timeline("TASK-1").'
+synapse event-query ./synapse.db 'MATCH (task:TASK {id:"TASK-1"}) RETURN timeline'
 synapse postmortem ./synapse.db TASK-1
 synapse reliability ./synapse.db
 synapse ttl-advice ./synapse.db
@@ -481,9 +483,13 @@ counts, board tasks, release receipt notes, and a bounded coordination timeline;
 `synapse event-query` is a temporal event-log query command for the same SQLite
 event store. It supports `task <id> timeline`, `task <id> at seq <n>`,
 `task <id> at time <seconds>`, `path <path> between <start> <end>`, and
-`conflicts at seq|time <n>`. It is read-only forensic evidence: it reconstructs
-what the event log said at a sequence or timestamp, but it does not contact the
-live hub or certify that a merge is safe.
+`conflicts at seq|time <n>`. It also accepts prototype aliases over the same
+model: Datalog-like `timeline("TASK").`, `state("TASK", seq, 120).`,
+`touches("src/auth.py", 0, 9999999999).`, `conflicts(seq, 120).`, plus
+Cypher-like `MATCH (task:TASK {id:"TASK"}) RETURN timeline` and related
+`AT`/`BETWEEN` forms. It is read-only forensic evidence: it reconstructs what
+the event log said at a sequence or timestamp, but it does not contact the live
+hub or certify that a merge is safe.
 
 `synapse postmortem ./synapse.db TASK-1` builds a replayable postmortem from the
 same event store. The Markdown or `--json` report lists the task timeline,

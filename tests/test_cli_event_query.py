@@ -59,6 +59,23 @@ def test_cli_event_query_json_output(tmp_path: Path, capsys: pytest.CaptureFixtu
     assert payload["records"][0]["task_id"] == "DOCS"
 
 
+def test_cli_event_query_accepts_datalog_alias(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "events.db"
+    store = EventStore(db)
+    record_claim(store, _claim())
+    store.close()
+
+    exit_code = cli.main(["event-query", str(db), 'timeline("DOCS").', "--json"])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["kind"] == "task_timeline"
+    assert payload["records"][0]["task_id"] == "DOCS"
+
+
 def test_cli_event_query_human_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     db = tmp_path / "events.db"
     store = EventStore(db)

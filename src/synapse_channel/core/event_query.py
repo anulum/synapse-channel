@@ -14,6 +14,7 @@ state at a requested sequence or timestamp without contacting a live hub.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +37,49 @@ CLAIM_SNAPSHOT_KINDS = frozenset(
     {EventKind.CLAIM, EventKind.TASK_UPDATE, EventKind.CHECKPOINT, EventKind.HANDOFF}
 )
 """Event kinds whose payload is a full task-claim snapshot."""
+
+_ATOM_VALUE = r"(?P<{name}>\"[^\"]+\"|'[^']+'|[^,\s)]+)"
+_CYPHER_TASK_TIMELINE_RE = re.compile(
+    r"^MATCH\s+\(task:TASK\s+\{id:(?P<quote>[\"'])(?P<task>[^\"']+)(?P=quote)\}\)"
+    r"\s+RETURN\s+timeline$",
+    re.IGNORECASE,
+)
+_CYPHER_TASK_STATE_RE = re.compile(
+    r"^MATCH\s+\(task:TASK\s+\{id:(?P<quote>[\"'])(?P<task>[^\"']+)(?P=quote)\}\)"
+    r"\s+AT\s+(?P<cutoff_kind>seq|time)\s+(?P<cutoff>\S+)"
+    r"\s+RETURN\s+state$",
+    re.IGNORECASE,
+)
+_CYPHER_PATH_TOUCHED_RE = re.compile(
+    r"^MATCH\s+\(path:PATH\s+\{value:(?P<quote>[\"'])(?P<path>[^\"']+)(?P=quote)\}\)"
+    r"\s+BETWEEN\s+(?P<lower>\S+)\s+(?P<upper>\S+)"
+    r"\s+RETURN\s+events$",
+    re.IGNORECASE,
+)
+_CYPHER_CONFLICTS_RE = re.compile(
+    r"^MATCH\s+\(conflicts\)\s+AT\s+(?P<cutoff_kind>seq|time)\s+"
+    r"(?P<cutoff>\S+)\s+RETURN\s+pairs$",
+    re.IGNORECASE,
+)
+_DATALOG_TASK_TIMELINE_RE = re.compile(
+    rf"^timeline\(\s*{_ATOM_VALUE.format(name='task')}\s*\)\.?$",
+    re.IGNORECASE,
+)
+_DATALOG_TASK_STATE_RE = re.compile(
+    rf"^state\(\s*{_ATOM_VALUE.format(name='task')}\s*,\s*"
+    r"(?P<cutoff_kind>seq|time)\s*,\s*(?P<cutoff>[^,\s)]+)\s*\)\.?$",
+    re.IGNORECASE,
+)
+_DATALOG_PATH_TOUCHED_RE = re.compile(
+    rf"^touches\(\s*{_ATOM_VALUE.format(name='path')}\s*,\s*"
+    r"(?P<lower>[^,\s)]+)\s*,\s*(?P<upper>[^,\s)]+)\s*\)\.?$",
+    re.IGNORECASE,
+)
+_DATALOG_CONFLICTS_RE = re.compile(
+    r"^conflicts\(\s*(?P<cutoff_kind>seq|time)\s*,\s*"
+    r"(?P<cutoff>[^,\s)]+)\s*\)\.?$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -102,9 +146,12 @@ def parse_query(query: str) -> EventQuery:
     Parameters
     ----------
     query : str
-        Query text. Supported forms are ``task <id> timeline``,
+        Query text. Supported canonical forms are ``task <id> timeline``,
         ``task <id> at seq <n>``, ``task <id> at time <seconds>``,
         ``path <path> between <start> <end>``, and ``conflicts at seq|time <n>``.
+        The parser also accepts tiny Datalog-like aliases such as
+        ``timeline("TASK").`` and Cypher-like aliases such as
+        ``MATCH (task:TASK {id:"TASK"}) RETURN timeline``.
 
     Returns
     -------
@@ -145,6 +192,12 @@ def parse_query(query: str) -> EventQuery:
             cutoff=_parse_cutoff_value(cutoff_kind, tokens[3]),
             raw=query,
         )
+    parsed_alias = _parse_cypher_like_query(query)
+    if parsed_alias is not None:
+        return parsed_alias
+    parsed_alias = _parse_datalog_like_query(query)
+    if parsed_alias is not None:
+        return parsed_alias
     msg = f"unsupported event query: {query}"
     raise ValueError(msg)
 
@@ -244,8 +297,9 @@ def render_human(result: QueryResult) -> str:
 
 def _parse_cutoff_kind(value: str) -> str:
     """Validate a point-in-time cutoff kind."""
-    if value in {"seq", "time"}:
-        return value
+    normalized = value.lower()
+    if normalized in {"seq", "time"}:
+        return normalized
     msg = f"invalid cutoff kind: {value}"
     raise ValueError(msg)
 
@@ -259,6 +313,99 @@ def _parse_cutoff_value(kind: str, value: str) -> float:
             msg = f"invalid sequence: {value}"
             raise ValueError(msg) from exc
     return _parse_float(value, "invalid timestamp")
+
+
+def _parse_cypher_like_query(query: str) -> EventQuery | None:
+    """Parse supported Cypher-like aliases into the existing query model."""
+    task_timeline = _CYPHER_TASK_TIMELINE_RE.match(query)
+    if task_timeline is not None:
+        return EventQuery(
+            kind="task_timeline",
+            task_id=task_timeline.group("task"),
+            raw=query,
+        )
+
+    task_state = _CYPHER_TASK_STATE_RE.match(query)
+    if task_state is not None:
+        cutoff_kind = _parse_cutoff_kind(task_state.group("cutoff_kind"))
+        return EventQuery(
+            kind="task_state",
+            task_id=task_state.group("task"),
+            cutoff_kind=cutoff_kind,
+            cutoff=_parse_cutoff_value(cutoff_kind, task_state.group("cutoff")),
+            raw=query,
+        )
+
+    path_touched = _CYPHER_PATH_TOUCHED_RE.match(query)
+    if path_touched is not None:
+        return EventQuery(
+            kind="path_touched",
+            path=path_touched.group("path"),
+            lower=_parse_float(path_touched.group("lower"), "invalid lower timestamp"),
+            upper=_parse_float(path_touched.group("upper"), "invalid upper timestamp"),
+            raw=query,
+        )
+
+    conflicts = _CYPHER_CONFLICTS_RE.match(query)
+    if conflicts is not None:
+        cutoff_kind = _parse_cutoff_kind(conflicts.group("cutoff_kind"))
+        return EventQuery(
+            kind="conflicts",
+            cutoff_kind=cutoff_kind,
+            cutoff=_parse_cutoff_value(cutoff_kind, conflicts.group("cutoff")),
+            raw=query,
+        )
+    return None
+
+
+def _parse_datalog_like_query(query: str) -> EventQuery | None:
+    """Parse supported Datalog-like aliases into the existing query model."""
+    task_timeline = _DATALOG_TASK_TIMELINE_RE.match(query)
+    if task_timeline is not None:
+        return EventQuery(
+            kind="task_timeline",
+            task_id=_unquote_atom(task_timeline.group("task")),
+            raw=query,
+        )
+
+    task_state = _DATALOG_TASK_STATE_RE.match(query)
+    if task_state is not None:
+        cutoff_kind = _parse_cutoff_kind(task_state.group("cutoff_kind"))
+        return EventQuery(
+            kind="task_state",
+            task_id=_unquote_atom(task_state.group("task")),
+            cutoff_kind=cutoff_kind,
+            cutoff=_parse_cutoff_value(cutoff_kind, task_state.group("cutoff")),
+            raw=query,
+        )
+
+    path_touched = _DATALOG_PATH_TOUCHED_RE.match(query)
+    if path_touched is not None:
+        return EventQuery(
+            kind="path_touched",
+            path=_unquote_atom(path_touched.group("path")),
+            lower=_parse_float(path_touched.group("lower"), "invalid lower timestamp"),
+            upper=_parse_float(path_touched.group("upper"), "invalid upper timestamp"),
+            raw=query,
+        )
+
+    conflicts = _DATALOG_CONFLICTS_RE.match(query)
+    if conflicts is not None:
+        cutoff_kind = _parse_cutoff_kind(conflicts.group("cutoff_kind"))
+        return EventQuery(
+            kind="conflicts",
+            cutoff_kind=cutoff_kind,
+            cutoff=_parse_cutoff_value(cutoff_kind, conflicts.group("cutoff")),
+            raw=query,
+        )
+    return None
+
+
+def _unquote_atom(value: str) -> str:
+    """Remove optional single or double quotes from a Datalog-style atom."""
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
 
 
 def _parse_float(value: str, message: str) -> float:
@@ -441,5 +588,11 @@ def _format_conflict(item: dict[str, object]) -> str:
 
 def _query_task_label(query: str) -> str:
     """Return the task label from a supported task query string."""
+    try:
+        parsed = parse_query(query)
+    except ValueError:
+        parsed = None
+    if parsed is not None and parsed.task_id:
+        return parsed.task_id
     tokens = query.split()
     return tokens[1] if len(tokens) >= 2 else "?"
