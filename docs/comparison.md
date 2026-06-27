@@ -44,6 +44,23 @@ agent, SYNAPSE keeps a fleet of them off each other's work.
 | Runtime dependencies | many | one (`websockets`); the rest is the standard library |
 | Runs fully local, no cloud account | varies | yes, by design |
 
+## Concrete differences you can verify
+
+These are the practical differences the project claims today. Each row points to
+a local command or committed surface you can inspect instead of relying on a
+comparison slogan.
+
+| Difference | What SYNAPSE does | Local verification surface |
+| --- | --- | --- |
+| File-scope claims | Refuses overlapping task claims before two agents edit the same declared files. | `synapse lock TASK --paths src/example.py -- ...` or the claim conflict tests in `tests/test_hub_core_claims.py`. |
+| Claim-aware Git hooks | Installs client-side hooks that release branch-scoped claims after commit or merge. | `synapse git-init --name AGENT`, then `synapse git-hook test`. |
+| Durable event log | Replays accepted coordination mutations from a SQLite WAL-backed store after hub restart. | `synapse hub --db ./synapse.db`, plus the journal and persistence tests. |
+| Metrics and health endpoints | Exposes opt-in operational metrics and health JSON without enabling HTTP by default. | `synapse hub --metrics --metrics-token TOKEN`, then query `/metrics` or `/health`. |
+| MCP server face | Runs a separate stdio adapter that maps MCP tools/resources to ordinary hub messages. | `synapse mcp --uri ws://localhost:8876` and the audited list in `docs/mcp.md`. |
+| A2A bridge | Runs a local HTTP+JSON edge that projects SYNAPSE tasks and capability cards into A2A-shaped operations. | `synapse a2a-card --endpoint-url ...` and `synapse a2a-serve --endpoint-url ...`; external conformance remains a separate validation task. |
+| Release receipts | Attaches evidence, artifacts, changed files, generated artifacts, approvals, known failures, freshness, and advisory epistemic status to manual releases. | `synapse release TASK --name AGENT --evidence ... --receipt-json`. |
+| Local-first operation | Runs the hub, demos, claims, waits, and adapters on loopback with no cloud account or hosted control plane. | `synapse demo`, `synapse doctor`, and the `synapse hub` default bind. |
+
 ## When to pick which
 
 - **Building one agent or a crew with branching tool-use logic?** Reach for an orchestration

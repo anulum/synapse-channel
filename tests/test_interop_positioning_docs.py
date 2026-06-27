@@ -76,3 +76,22 @@ def test_adapter_docs_position_mcp_and_a2a_as_edges() -> None:
     assert "separate adapter process, not a hub change" in mcp_doc
     assert "bridge and keeps A2A at the edge of the system" in cli_doc
     assert "adapters are interop surfaces" in readme
+
+
+def test_comparison_doc_lists_verifiable_differences() -> None:
+    """Comparison docs must anchor each differentiator to a real local surface."""
+    text = _collapse_whitespace(_read(COMPARISON_DOC))
+
+    expected_pairs = {
+        "File-scope claims": "synapse lock",
+        "Claim-aware Git hooks": "synapse git-init",
+        "Durable event log": "synapse hub --db",
+        "Metrics and health endpoints": "synapse hub --metrics",
+        "MCP server face": "synapse mcp",
+        "A2A bridge": "synapse a2a-card",
+        "Release receipts": "synapse release",
+        "Local-first operation": "synapse demo",
+    }
+    for label, command in expected_pairs.items():
+        assert label in text
+        assert command in text
