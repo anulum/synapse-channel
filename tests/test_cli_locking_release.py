@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 
 import pytest
 
@@ -23,6 +24,44 @@ def test_parser_release() -> None:
     assert args.task_id == "studio-panel-enrich"
     assert args.name == "USER"
     assert args.func is cli_locking._cmd_release
+
+
+def test_parser_release_accepts_receipt_fields() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "release",
+            "studio-panel-enrich",
+            "--name",
+            "USER",
+            "--evidence",
+            "pytest tests/test_cli_locking_release.py -q",
+            "--artifact",
+            "coverage.xml",
+            "--known-failure",
+            "mkdocs pending on unrelated branch",
+            "--changed-file",
+            "src/synapse_channel/cli_locking.py",
+            "--generated-artifact",
+            "docs/_generated/capability_manifest.json",
+            "--approval",
+            "reviewed-by=owner",
+            "--confidence",
+            "medium",
+            "--freshness-seconds",
+            "30",
+            "--receipt-json",
+        ]
+    )
+
+    assert args.evidence == ["pytest tests/test_cli_locking_release.py -q"]
+    assert args.artifacts == ["coverage.xml"]
+    assert args.known_failures == ["mkdocs pending on unrelated branch"]
+    assert args.changed_files == ["src/synapse_channel/cli_locking.py"]
+    assert args.generated_artifacts == ["docs/_generated/capability_manifest.json"]
+    assert args.approvals == ["reviewed-by=owner"]
+    assert args.confidence == "medium"
+    assert args.freshness_seconds == 30.0
+    assert args.receipt_json is True
 
 
 async def _claim(uri: str, owner: str, task_id: str) -> AgentHandle:
@@ -49,6 +88,56 @@ async def test_release_granted(capsys: pytest.CaptureFixture[str]) -> None:
     assert code == 0
     assert "studio-panel-enrich" not in hub.state.claims
     assert "released 'studio-panel-enrich'" in capsys.readouterr().out
+
+
+async def test_release_prints_machine_readable_receipt(capsys: pytest.CaptureFixture[str]) -> None:
+    async with running_hub(SynapseHub()) as (hub, uri):
+        holder = await _claim(uri, "USER", "studio-panel-enrich")
+        await close_agents(holder)
+        code = await cli_locking._release(
+            uri=uri,
+            name="USER",
+            task_id="studio-panel-enrich",
+            evidence=["pytest tests/test_cli_locking_release.py -q"],
+            artifacts=["coverage.xml"],
+            known_failures=["mkdocs pending on unrelated branch"],
+            changed_files=["src/synapse_channel/cli_locking.py"],
+            generated_artifacts=["docs/_generated/capability_manifest.json"],
+            approvals=["reviewed-by=owner"],
+            confidence="medium",
+            freshness_seconds=30.0,
+            receipt_json=True,
+        )
+
+    assert code == 0
+    assert "studio-panel-enrich" not in hub.state.claims
+    receipt = json.loads(capsys.readouterr().out)
+    assert receipt == {
+        "artifacts": ["coverage.xml"],
+        "approvals": ["reviewed-by=owner"],
+        "changed_files": ["src/synapse_channel/cli_locking.py"],
+        "confidence": "medium",
+        "evidence": ["pytest tests/test_cli_locking_release.py -q"],
+        "freshness_seconds": 30.0,
+        "generated_artifacts": ["docs/_generated/capability_manifest.json"],
+        "known_failures": ["mkdocs pending on unrelated branch"],
+        "owner": "USER",
+        "released": True,
+        "task_id": "studio-panel-enrich",
+    }
+    assert hub.blackboard.progress[-1].as_dict() == {
+        "author": "USER",
+        "kind": "assessment",
+        "posted_at": hub.blackboard.progress[-1].posted_at,
+        "task_id": "studio-panel-enrich",
+        "text": (
+            "release receipt: evidence=pytest tests/test_cli_locking_release.py -q; "
+            "artifacts=coverage.xml; known_failures=mkdocs pending on unrelated branch; "
+            "changed_files=src/synapse_channel/cli_locking.py; "
+            "generated_artifacts=docs/_generated/capability_manifest.json; "
+            "approvals=reviewed-by=owner; confidence=medium; freshness_seconds=30.0"
+        ),
+    }
 
 
 async def test_release_denied_for_non_owner(capsys: pytest.CaptureFixture[str]) -> None:
@@ -121,6 +210,15 @@ def test_cmd_release_dispatches_real_command(capsys: pytest.CaptureFixture[str])
         task_id="t",
         token=None,
         ready_timeout=0.1,
+        evidence=[],
+        artifacts=[],
+        known_failures=[],
+        changed_files=[],
+        generated_artifacts=[],
+        approvals=[],
+        confidence="",
+        freshness_seconds=None,
+        receipt_json=False,
     )
     assert cli_locking._cmd_release(ns) == 1
     assert "Could not reach hub" in capsys.readouterr().out

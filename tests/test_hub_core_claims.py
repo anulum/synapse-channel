@@ -75,6 +75,60 @@ async def test_release_granted_and_denied_end_to_end() -> None:
             await close_agents(alpha)
 
 
+async def test_release_granted_carries_receipt_and_records_progress_end_to_end() -> None:
+    async with running_hub() as (hub, uri):
+        alpha = await connect_agent("ALPHA", uri)
+        beta = await connect_agent("BETA", uri)
+        try:
+            await alpha.agent.claim("T1")
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            await alpha.agent.release(
+                "T1",
+                evidence=["pytest tests/test_hub_core_claims.py -q"],
+                artifacts=["coverage.xml"],
+                known_failures=["mkdocs pending on unrelated branch"],
+                changed_files=["src/synapse_channel/core/handlers/leasing.py"],
+                generated_artifacts=["docs/_generated/capability_manifest.json"],
+                approvals=["reviewed-by=owner"],
+                confidence="medium",
+                freshness_seconds=30.0,
+            )
+            granted = await beta.recorder.wait_for(
+                lambda m: m.get("type") == "release_granted" and m.get("task_id") == "T1"
+            )
+            progress = await beta.recorder.wait_for(
+                lambda m: (
+                    m.get("type") == "ledger_progress_posted"
+                    and m.get("note", {}).get("task_id") == "T1"
+                )
+            )
+        finally:
+            await close_agents(alpha, beta)
+
+    assert granted["receipt"] == {
+        "artifacts": ["coverage.xml"],
+        "approvals": ["reviewed-by=owner"],
+        "changed_files": ["src/synapse_channel/core/handlers/leasing.py"],
+        "confidence": "medium",
+        "evidence": ["pytest tests/test_hub_core_claims.py -q"],
+        "freshness_seconds": 30.0,
+        "generated_artifacts": ["docs/_generated/capability_manifest.json"],
+        "known_failures": ["mkdocs pending on unrelated branch"],
+        "owner": "ALPHA",
+        "released": True,
+        "task_id": "T1",
+    }
+    assert progress["note"]["kind"] == "assessment"
+    assert progress["note"]["text"] == (
+        "release receipt: evidence=pytest tests/test_hub_core_claims.py -q; "
+        "artifacts=coverage.xml; known_failures=mkdocs pending on unrelated branch; "
+        "changed_files=src/synapse_channel/core/handlers/leasing.py; "
+        "generated_artifacts=docs/_generated/capability_manifest.json; "
+        "approvals=reviewed-by=owner; confidence=medium; freshness_seconds=30.0"
+    )
+    assert hub.blackboard.progress[-1].text == progress["note"]["text"]
+
+
 async def test_task_update_success_is_broadcast_end_to_end() -> None:
     async with running_hub() as (_, uri):
         alpha = await connect_agent("ALPHA", uri)

@@ -40,6 +40,22 @@ The envelope builders and the message-type constants live in
 `synapse_channel.core.protocol`; the working agreement is in the repository's
 `TEAM_PROTOCOL.md`.
 
+## Release receipts
+
+A successful `release` may carry closeout evidence. The hub echoes a
+machine-readable `receipt` object on `release_granted` with these fields:
+
+- `task_id`, `owner`, and `released`.
+- Repeated evidence lists: `evidence`, `artifacts`, `known_failures`,
+  `changed_files`, `generated_artifacts`, and `approvals`.
+- Optional `confidence` and `freshness_seconds`.
+
+When any evidence field is present, the hub also records a compact
+`ledger_progress_posted` assessment note for the same task, so `synapse board`
+shows the release closeout alongside the task plan. The hub records the submitted
+evidence; policy decisions about whether that evidence is sufficient remain
+outside the wire protocol.
+
 ## Decoder hardening
 
 Inbound hub and A2A JSON frames use `loads_bounded()` from

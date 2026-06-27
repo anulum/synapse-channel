@@ -157,6 +157,28 @@ for the wrapped command and dropped when it exits. A claim that no commit or mer
 will auto-release — a `git-claim --auto-release-on manual` — is dropped by its owner
 with `synapse release <task> --name <owner>`.
 
+Add receipt fields when the release is also the closeout record. The hub echoes
+the receipt on `release_granted`; if any evidence field is present, it records the
+same receipt as an `assessment` progress note on the board. Use `--receipt-json`
+when another tool should consume the hub-confirmed receipt:
+
+```bash
+synapse release BUILD --name api-dev \
+  --evidence "pytest tests/test_feature.py -q: passed" \
+  --evidence "mypy src/synapse_channel/feature.py: passed" \
+  --changed-file src/synapse_channel/feature.py \
+  --generated-artifact docs/_generated/capability_manifest.json \
+  --artifact coverage.xml \
+  --approval "reviewed-by=owner" \
+  --known-failure "none" \
+  --confidence medium \
+  --freshness-seconds 60 \
+  --receipt-json
+```
+
+The receipt records the releasing owner's submitted evidence; it does not certify
+that the evidence is complete or sufficient.
+
 `synapse git-claim` accepts the task id either positionally (`synapse git-claim
 TASK-1 --paths src`) or as a named field (`synapse git-claim --task-id TASK-1
 --paths src`) for generated argv. Use one form, not both. `synapse git-release`
@@ -450,6 +472,6 @@ syn ack TEST \
 ```
 
 For a secured hub, pass `--token SECRET` to `worker`, `send`, `listen`, `board`,
-`manifest`, `a2a-card`, `a2a-serve`, and `task`.
+`manifest`, `release`, `a2a-card`, `a2a-serve`, and `task`.
 
 Run any command with `--help` for its full set of options.

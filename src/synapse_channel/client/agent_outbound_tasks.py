@@ -13,6 +13,7 @@ from typing import Any
 
 from synapse_channel.client.agent_outbound_types import _OutboundAgent
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.receipts import build_release_receipt
 
 __all__ = ["AgentTaskMutationMixin"]
 
@@ -53,13 +54,47 @@ class AgentTaskMutationMixin:
         *,
         epoch: int | None = None,
         idem_key: str | None = None,
+        evidence: tuple[str, ...] | list[str] = (),
+        artifacts: tuple[str, ...] | list[str] = (),
+        known_failures: tuple[str, ...] | list[str] = (),
+        changed_files: tuple[str, ...] | list[str] = (),
+        generated_artifacts: tuple[str, ...] | list[str] = (),
+        approvals: tuple[str, ...] | list[str] = (),
+        confidence: str = "",
+        freshness_seconds: float | None = None,
     ) -> None:
-        """Release a task lease."""
+        """Release a task lease, optionally attaching closeout evidence."""
         extra: dict[str, Any] = {"task_id": task_id.strip()}
         if epoch is not None:
             extra["epoch"] = int(epoch)
         if idem_key:
             extra["idem_key"] = idem_key
+        receipt = build_release_receipt(
+            task_id=task_id,
+            owner=self.name,
+            evidence=evidence,
+            artifacts=artifacts,
+            known_failures=known_failures,
+            changed_files=changed_files,
+            generated_artifacts=generated_artifacts,
+            approvals=approvals,
+            confidence=confidence,
+            freshness_seconds=freshness_seconds,
+        )
+        for key in (
+            "evidence",
+            "artifacts",
+            "known_failures",
+            "changed_files",
+            "generated_artifacts",
+            "approvals",
+        ):
+            if receipt[key]:
+                extra[key] = receipt[key]
+        if receipt.get("confidence"):
+            extra["confidence"] = receipt["confidence"]
+        if "freshness_seconds" in receipt:
+            extra["freshness_seconds"] = receipt["freshness_seconds"]
         await self.send_message(
             MessageType.RELEASE, target="System", payload=task_id.strip(), **extra
         )
