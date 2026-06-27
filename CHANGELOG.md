@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-06-27
+
 ### Added
 - Added historical-cadence stall detection to the LLM-free supervisor, with
   operator controls for disabling or tuning the predictive supplement.
