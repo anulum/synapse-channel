@@ -25,6 +25,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse ingest` | Stream durable event-store records since a sequence cursor. |
 | `synapse compact` | Apply event-store retention and optionally write an HTML archive report. |
 | `synapse postmortem` | Build a replayable task postmortem from a hub SQLite event store. |
+| `synapse reliability` | Build evidence-only reliability memory from a hub SQLite event store. |
 | `synapse board` | Print the shared task/progress blackboard. |
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
 | `synapse manifest` | Print the capability manifest of advertised agents. |
@@ -390,6 +391,7 @@ synapse compact ./synapse.db --all --max-checkpoints-per-task 3 --archive-report
 synapse event-query ./synapse.db "task TASK-1 timeline"
 synapse event-query ./synapse.db "conflicts at seq 120" --json
 synapse postmortem ./synapse.db TASK-1
+synapse reliability ./synapse.db
 synapse supervisor --idle-seconds 300 --history-multiplier 3
 ```
 
@@ -424,6 +426,12 @@ conflicts, and candidate unanswered messages that mention the task id. Candidate
 unanswered messages are an audit signal only: the log proves the directed chat
 and the absence of a later matching chat reply, not intent or off-channel
 communication.
+
+`synapse reliability ./synapse.db` builds evidence-only reliability memory from
+the same event store. It counts stale claims, declared failed-check evidence,
+broken handoff candidates, and reconstructed conflict pairs per owner. The
+output is audit signals, not scores: it does not rank agents, assign trust
+grades, or prove intent.
 
 ## Agent2Agent bridge
 

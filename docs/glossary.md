@@ -135,6 +135,13 @@ Read-only Markdown or JSON reconstruction over the **event log** using
 release events, assessment evidence, reconstructed path-overlap conflicts, and
 candidate unanswered messages that mention the task id.
 
+### Reliability memory
+
+Evidence-only owner summaries over the **event log** using
+`synapse reliability ./synapse.db`. The report counts stale claims, declared
+failed-check evidence, broken handoff candidates, and conflict pairs as audit
+signals, not scores.
+
 ### Predictive stall detection
 
 The local `synapse supervisor` policy that combines a fixed idle ceiling with
