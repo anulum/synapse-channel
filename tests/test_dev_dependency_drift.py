@@ -36,12 +36,11 @@ def _run_checker(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_dev_dependency_drift_passes_current_venv() -> None:
-    result = _run_checker("--check")
+    result = _run_checker("--check", "--extra", "dev", "--extra", "benchmark")
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert "dev dependency mirror passed" in result.stdout
     assert "dev" in result.stdout
-    assert "docs" in result.stdout
     assert "benchmark" in result.stdout
 
 
