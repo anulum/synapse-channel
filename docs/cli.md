@@ -20,6 +20,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse codex-tmux` | Wake an existing Codex tmux session with a fixed safe prompt. |
 | `synapse dashboard` | Serve a loopback-only read-only HTML/JSON dashboard for live hub snapshots. |
 | `synapse route-task` | Recommend agents for a board task using local capability signals. |
+| `synapse resource-bids` | Rank live resource offers for a board task without reserving capacity. |
 | `synapse memory-recall` | Recall matching durable memory records from a local event store. |
 | `synapse send` | Connect, send one message, optionally await replies, and exit. |
 | `synapse wait` | Block until a message addressed to you arrives, then exit (a wake trigger). |
@@ -398,6 +399,7 @@ synapse board
 synapse manifest
 synapse directory --task-class chat --json
 synapse route-task TASK-1 --limit 3 --event-store ./synapse.db --json
+synapse resource-bids TASK-1 --resource-kind gpu --json
 synapse memory-recall ./synapse.db "transport handoff" --json
 synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877
@@ -436,6 +438,16 @@ durable log, preserving the source task id and event sequence for review.
 `--include-zero` shows unmatched agents for diagnostics; no route recommendation
 claims the task, changes `suggested_owner`, reserves capacity, grades an agent,
 or certifies trust.
+
+`synapse resource-bids TASK-1` fetches the same board, manifest, and state
+snapshots, then ranks live resource offers for the board task. The scorer is
+local and deterministic: requested resource kind, capacity, provider task-class
+matches, skill tags, provider description overlap, resource kind/name overlap,
+and matching metadata all appear as reason codes in the output. `--resource-kind`
+filters offers before scoring, `--include-zero` keeps diagnostic candidates, and
+`--json` prints the stable report. A resource bid is a marketplace-style
+directory hint only: it does not reserve capacity, authorize execution, mutate
+the board, or certify provider trust.
 
 `synapse memory-recall DB QUERY` reads the same local SQLite event store and
 returns deterministic recall hits over durable memory records. The projection

@@ -134,6 +134,28 @@ async def test_route_task_returns_json() -> None:
     assert recommendation["candidates"][0]["reasons"][0] == "task_class:chat"
 
 
+async def test_resource_bids_returns_json() -> None:
+    async with running_hub() as (_, uri):
+        await seed_task(uri, "T1", "Chat routing task")
+        advertiser = await start_manifest_agent(uri)
+        await advertiser.agent.send_message("resource", kind="llm", name="chat-model", capacity=2)
+        await advertiser.recorder.wait_for(
+            lambda message: (
+                message.get("type") == "resource_offered" and message.get("agent") == "FAST"
+            )
+        )
+        handle = await start_bridge(uri)
+        try:
+            out = await handle.bridge.resource_bids("T1", resource_kind="llm")
+        finally:
+            await handle.close()
+            await close_agents(advertiser)
+    report = json.loads(out)
+    assert report["task_id"] == "T1"
+    assert report["candidates"][0]["resource_id"] == "resource:FAST:llm:chat-model"
+    assert report["candidates"][0]["reasons"][0] == "resource_kind:llm"
+
+
 async def test_route_task_returns_observed_evidence_json(tmp_path: Path) -> None:
     db = tmp_path / "events.db"
     _seed_observation_store(db)
@@ -169,3 +191,9 @@ async def test_route_task_timeout() -> None:
     bridge = SynapseHubBridge(request_timeout=0.05)
     out = await bridge.route_task("T1")
     assert "did not return semantic routing snapshots" in out
+
+
+async def test_resource_bids_timeout() -> None:
+    bridge = SynapseHubBridge(request_timeout=0.05)
+    out = await bridge.resource_bids("T1")
+    assert "did not return resource bidding snapshots" in out

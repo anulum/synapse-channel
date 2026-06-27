@@ -54,6 +54,7 @@ async def test_build_registers_tools_and_resources() -> None:
         "synapse_directory",
         "synapse_route_task",
         "synapse_memory_recall",
+        "synapse_resource_bids",
     } <= tool_names
     resource_uris = {str(resource.uri) for resource in await server.list_resources()}
     assert any("board" in uri for uri in resource_uris)
@@ -88,6 +89,10 @@ async def test_every_tool_and_resource_wrapper_dispatches(tmp_path: Path) -> Non
                 "synapse_memory_recall",
                 {"event_store": str(tmp_path / "events.db"), "query": "memory", "limit": 3},
             )
+            bids = await server.call_tool(
+                "synapse_resource_bids",
+                {"task_id": "T", "limit": 3, "include_zero": True},
+            )
             board_resource = await server.read_resource("synapse://board")
             state_resource = await server.read_resource("synapse://state")
             manifest_resource = await server.read_resource("synapse://manifest")
@@ -100,6 +105,7 @@ async def test_every_tool_and_resource_wrapper_dispatches(tmp_path: Path) -> Non
     assert "trust_boundary" in str(directory)
     assert "task_id" in str(route)
     assert "trust_boundary" in str(memory)
+    assert "trust_boundary" in str(bids)
     assert "T" in str(board_resource)
     assert "active_claims" in str(state_resource)
     assert "[]" in str(manifest_resource)

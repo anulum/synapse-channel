@@ -127,6 +127,13 @@ sequences so a human or policy layer can audit why the hint exists. The result
 is a routing hint only: it does not claim the task, mutate the board, reserve
 capacity, grade an agent, or certify an agent.
 
+For resource selection, `synapse resource-bids <task-id>` and the MCP
+`synapse_resource_bids` tool rank live resource offers from the same directory
+against a board task. The output keeps resource id, provider, kind, name,
+capacity, score, and reason codes so humans or policy layers can inspect why an
+offer ranked. The result is advisory only: it does not reserve capacity,
+authorize execution, mutate the board, or certify provider trust.
+
 For local durable memory, `synapse memory-recall <db> <query>` and the MCP
 `synapse_memory_recall` tool project findings, checkpoints, and handoffs from
 the SQLite event store into deterministic token matches. Recall hits keep the

@@ -138,6 +138,16 @@ def build_mcp_server(
         return await bridge.route_task(task_id, limit, include_zero, event_store)
 
     @server.tool()
+    async def synapse_resource_bids(
+        task_id: str,
+        resource_kind: str | None = None,
+        limit: int = 5,
+        include_zero: bool = False,
+    ) -> str:
+        """Return advisory resource bids for a board task as JSON."""
+        return await bridge.resource_bids(task_id, resource_kind, limit, include_zero)
+
+    @server.tool()
     async def synapse_memory_recall(
         event_store: str,
         query: str,

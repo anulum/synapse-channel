@@ -32,6 +32,9 @@ All notable changes to this project are documented here.
 - Added `synapse memory-recall` and MCP `synapse_memory_recall` for
   deterministic local recall over durable findings, checkpoints, and handoffs
   with matched-token and source-sequence provenance.
+- Added `synapse resource-bids` and MCP `synapse_resource_bids` for
+  deterministic read-only ranking of live resource offers against board tasks
+  without reserving capacity or authorizing execution.
 
 ## [0.53.0] - 2026-06-27
 

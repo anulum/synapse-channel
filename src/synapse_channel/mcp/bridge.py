@@ -24,6 +24,10 @@ from synapse_channel.core.memory_projection import (
     read_memory_recall,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.resource_bidding import (
+    recommend_resource_bids,
+    resource_bid_report_to_json,
+)
 from synapse_channel.core.semantic_routing import (
     find_task,
     recommend_agents_for_task,
@@ -460,6 +464,70 @@ class SynapseHubBridge:
             observations=observations,
         )
         return recommendation_to_json(recommendation)
+
+    async def resource_bids(
+        self,
+        task_id: str,
+        resource_kind: str | None = None,
+        limit: int = 5,
+        include_zero: bool = False,
+    ) -> str:
+        """Return advisory resource bids for a board task as JSON.
+
+        Parameters
+        ----------
+        task_id : str
+            Board task id to evaluate.
+        resource_kind : str or None, optional
+            Optional exact resource-kind filter.
+        limit : int, optional
+            Maximum number of candidates. Defaults to ``5``.
+        include_zero : bool, optional
+            Include zero-score resource offers for diagnostics.
+
+        Returns
+        -------
+        str
+            Resource bid JSON, or a no-response/missing-task line.
+        """
+        board_reply = await self._await_reply(
+            lambda data: data.get("type") == MessageType.BOARD_SNAPSHOT,
+            self.agent.request_board,
+        )
+        if board_reply is None:
+            return "the hub did not return resource bidding snapshots"
+        manifest_reply = await self._await_reply(
+            lambda data: data.get("type") == MessageType.MANIFEST_SNAPSHOT,
+            self.agent.request_manifest,
+        )
+        if manifest_reply is None:
+            return "the hub did not return resource bidding snapshots"
+        state_reply = await self._await_reply(
+            lambda data: data.get("type") == MessageType.STATE_SNAPSHOT,
+            self.agent.request_state,
+        )
+        if state_reply is None:
+            return "the hub did not return resource bidding snapshots"
+
+        board = board_reply.get("board", {})
+        task = find_task(board if isinstance(board, dict) else {}, task_id)
+        if task is None:
+            return f"task '{task_id}' is not on the board"
+        manifest = manifest_reply.get("manifest", [])
+        snapshot = state_reply.get("snapshot", {})
+        resources = snapshot.get("resources", []) if isinstance(snapshot, dict) else []
+        directory = build_capability_directory(
+            manifest=manifest if isinstance(manifest, list) else [],
+            resources=resources if isinstance(resources, list) else [],
+        )
+        report = recommend_resource_bids(
+            task,
+            directory,
+            resource_kind=resource_kind,
+            limit=limit,
+            include_zero=include_zero,
+        )
+        return resource_bid_report_to_json(report)
 
     async def memory_recall(
         self,
