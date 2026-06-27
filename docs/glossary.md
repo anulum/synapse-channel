@@ -146,6 +146,15 @@ owner approval, evidence freshness, generated artifact parity, and
 no-merge-without-receipt. The design is advisory by default and does not merge
 code.
 
+### Paranoid mode
+
+Design target for one future operator switch that enables strict local settings
+and reports missing hardening hooks. It is not implemented as a CLI flag yet; it
+defines token-required access, loopback-first binds, metrics/A2A auth,
+owner-only state files, bounded retention, durable event logs, release receipts,
+and gaps such as encryption, signed events, per-agent identity, ACLs, private
+channels, and exposed deployment threat modelling.
+
 ### Reliability memory
 
 Evidence-only owner summaries over the **event log** using

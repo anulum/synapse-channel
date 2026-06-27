@@ -26,6 +26,9 @@ All notable changes to this project are documented here.
 - Added the public policy-engine design, covering advisory local release rules
   for required tests, type checks, owner approval, evidence freshness, generated
   artifact parity, and no-merge-without-receipt.
+- Added the public paranoid-mode design for one future operator switch that
+  enables strict local settings and reports missing hardening hooks without
+  claiming encryption, identity, ACL, or exposed-deployment guarantees.
 
 ## [0.54.0] - 2026-06-28
 

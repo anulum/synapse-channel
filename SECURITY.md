@@ -88,6 +88,12 @@ worth stating plainly:
   for a newer release; it sends nothing beyond the request itself. Silence it with
   `SYNAPSE_NO_UPDATE_CHECK=1`.
 
+The planned [`--paranoid` mode](docs/paranoid-mode.md) is a design target for one
+operator switch that tightens local settings and reports missing hooks. It is not
+implemented as a CLI flag yet, and it does not change the current security
+boundary: encryption, signed events, per-agent identity, ACLs, private channels,
+and exposed deployment threat modelling remain explicit future work.
+
 ## Out of scope / known limitations
 
 - The connect token is a proportionate shared secret, **not** a cryptographic
