@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.49.0] - 2026-06-27
+
 ### Added
 - `synapse release` can attach evidence-backed release receipts with repeated
   evidence, artifact, changed-file, generated-artifact, approval, known-failure,
