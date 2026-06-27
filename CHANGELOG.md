@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-06-27
+
 ### Changed
 - Added explicit scalability benchmark indexing-decision metadata and refreshed
   the committed scan evidence for when to keep or revisit the linear
