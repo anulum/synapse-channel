@@ -29,6 +29,9 @@ All notable changes to this project are documented here.
 - Added the public paranoid-mode design for one future operator switch that
   enables strict local settings and reports missing hardening hooks without
   claiming encryption, identity, ACL, or exposed-deployment guarantees.
+- Added the public at-rest encryption design for optional local storage
+  encryption scope, key lifecycle, rotation, backup recovery, and local-first
+  tradeoffs before any encryption flag ships.
 
 ## [0.54.0] - 2026-06-28
 

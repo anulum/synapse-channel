@@ -53,7 +53,9 @@ The checklist should explicitly report these missing or future hooks instead of
 pretending they are solved:
 
 - **At-rest encryption** for SQLite databases, relay logs, A2A state files, and
-  generated reports.
+  generated reports. See the [at-rest encryption design](at-rest-encryption.md)
+  for storage scope, key storage, rotation, backup recovery, and local-first
+  tradeoffs.
 - **Signed events** for durable event-log authenticity and tamper evidence.
 - **Per-message authentication** after WebSocket connect authentication,
   including replay protection and key rotation.

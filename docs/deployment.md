@@ -133,6 +133,9 @@ the design as a manual checklist for token-required access, loopback-first binds
 metrics/A2A auth, owner-only state files, bounded retention, durable event logs,
 release receipts, and explicit missing hooks for encryption, signed events,
 identity, ACLs, private channels, and exposed deployment threat modelling.
+The planned [at-rest encryption profile](at-rest-encryption.md) is the storage
+hook behind that checklist; it defines key storage, rotation, backup recovery,
+and local-first tradeoffs before any encrypted store migration ships.
 
 The hook does not infer the project from the current git checkout by default.
 Unassigned terminals join `SYNAPSE_DEFAULT_PROJECT`, or the neutral `user` lane
