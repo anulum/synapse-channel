@@ -128,6 +128,13 @@ Read-only reconstruction over the **event log** using `synapse event-query`: tas
 timelines, task state at a sequence or timestamp, path-touch windows, and
 historical claim conflicts.
 
+### Replayable postmortem
+
+Read-only Markdown or JSON reconstruction over the **event log** using
+`synapse postmortem ./synapse.db TASK-1`. It lists the task timeline, owners,
+release events, assessment evidence, reconstructed path-overlap conflicts, and
+candidate unanswered messages that mention the task id.
+
 ### Predictive stall detection
 
 The local `synapse supervisor` policy that combines a fixed idle ceiling with

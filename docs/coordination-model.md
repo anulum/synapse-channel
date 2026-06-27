@@ -75,6 +75,14 @@ store directly and can show a task timeline, task state at a sequence or
 timestamp, path touches between timestamps, or historical claim conflicts. The
 query is read-only and does not change hub state.
 
+`synapse postmortem ./synapse.db TASK-1` turns those same durable events into a
+replayable postmortem. It reconstructs who claimed the task, release points,
+assessment evidence that existed in the board progress stream, path-overlap
+conflicts involving the task, and candidate unanswered messages. The unanswered
+message section is deliberately conservative: it reports directed chats that
+mention the task id and have no later matching chat reply in the log; it does
+not prove intent or off-channel response.
+
 ## 4. Hand off and recover
 
 - **Atomic handoff** transfers a held task to another *online* agent in one step,
