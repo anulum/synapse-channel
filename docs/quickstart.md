@@ -46,6 +46,28 @@ That generated workspace succeeds when it prints:
 success: coding fleet demo completed
 ```
 
+## Fastest safe trial path
+
+Use this order when moving from the self-contained demos into a real checkout:
+
+```bash
+python -m pip install synapse-channel
+synapse doctor
+synapse demo
+synapse quickstart-coding
+synapse git-init --name trial-agent
+synapse a2a-card --endpoint-url http://127.0.0.1:8877
+synapse a2a-serve --endpoint-url http://127.0.0.1:8877
+```
+
+Run this in a disposable or already-versioned repository. `synapse doctor` checks
+the local machine before you install hooks or start bridges. `synapse git-init
+--name trial-agent` installs claim-aware git hooks and writes the `.synapse/`
+conventions guide before any coding agent edits files. The A2A bridge step is
+optional and local-only; it exposes an Agent Card and HTTP+JSON bridge for local
+interop experiments, not an external conformance claim. Do not bind it
+off-loopback without bearer auth.
+
 A complete session — declare a plan with a dependency, complete a task, and watch the
 dependent task unblock:
 

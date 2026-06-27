@@ -74,6 +74,26 @@ python run_demo.py
 
 The generated demo succeeds when it prints `success: coding fleet demo completed`.
 
+## Fastest safe trial path
+
+Use this order when moving from install validation into a real repository:
+
+```bash
+python -m pip install synapse-channel
+synapse doctor
+synapse demo
+synapse quickstart-coding
+synapse git-init --name trial-agent
+synapse a2a-card --endpoint-url http://127.0.0.1:8877
+synapse a2a-serve --endpoint-url http://127.0.0.1:8877
+```
+
+Run this in a disposable or already-versioned repository. `synapse git-init
+--name trial-agent` installs hooks and writes the local `.synapse/` conventions
+guide before agents edit files. The A2A bridge step is optional and local-only:
+it validates the HTTP+JSON bridge shape for local tools, but it is not an
+external conformance claim. Do not bind it off-loopback without bearer auth.
+
 ## Recovery: picking up after a restart
 
 Nothing is lost when a terminal or session goes down — the feed, the plan, and the

@@ -45,7 +45,25 @@ pip install -e ".[dev,benchmark]"
 
 ```bash
 synapse --version
+synapse doctor
 ```
+
+## Fastest safe trial path
+
+After installation, validate the CLI and then opt into repo wiring deliberately:
+
+```bash
+python -m pip install synapse-channel
+synapse doctor
+synapse demo
+synapse quickstart-coding
+synapse git-init --name trial-agent
+synapse a2a-card --endpoint-url http://127.0.0.1:8877
+synapse a2a-serve --endpoint-url http://127.0.0.1:8877
+```
+
+Run this in a disposable or already-versioned repository. The A2A bridge command
+above binds to localhost; add bearer auth before any non-loopback exposure.
 
 ## Staying up to date
 
