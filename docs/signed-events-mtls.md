@@ -143,9 +143,10 @@ Signed events and mTLS sit beside the other security designs:
 - [Per-message authentication](per-message-authentication.md) can reject bad
   frames before hub admission; signed events verify selected records after
   admission, storage, relay export, and postmortem reconstruction.
-- Per-agent identity and ACLs remain separate designs. Signatures can carry an
-  asserted key id, but policy still needs identity-bound permissions before the
-  hub can enforce who may perform each action.
+- [Per-agent identity and ACLs](identity-and-acl.md) remain a separate design.
+  Signatures can carry an asserted key id, but policy still needs
+  identity-bound permissions before the hub can enforce who may perform each
+  action.
 
 ## Boundaries
 

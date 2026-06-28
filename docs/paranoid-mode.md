@@ -63,9 +63,10 @@ pretending they are solved:
   including canonical frames, sender binding, replay protection, and key
   rotation. See the
   [per-message authentication design](per-message-authentication.md).
-- **Per-agent identity** beyond the current shared-token and caller-name model.
-- **ACL enforcement** for verbs, namespaces, metrics, dashboard, A2A, and
-  release actions.
+- **Per-agent identity and ACL enforcement** beyond the current shared-token and
+  caller-name model, including identity-bound credentials, verbs, namespaces,
+  metrics, dashboard, A2A, and release actions. See the
+  [identity and ACL design](identity-and-acl.md).
 - **Private channels** for project-local or worktree-local payloads that the hub
   should not broadcast to every trusted participant. See the
   [private channels design](private-channels.md) for channel ids, membership

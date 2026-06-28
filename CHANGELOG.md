@@ -45,6 +45,10 @@ All notable changes to this project are documented here.
   canonical frames, sender binding, replay cache bounds, key rotation,
   revocation, and verification-result boundaries after WebSocket connect
   authentication.
+- Added the public identity and ACL design for per-agent identity,
+  identity-bound credentials, project namespace permissions, allowed verbs,
+  target patterns, metrics/A2A/dashboard/release privileges, deny-by-default
+  authorization, credential rotation, revocation, and shared-token migration.
 
 ## [0.54.0] - 2026-06-28
 

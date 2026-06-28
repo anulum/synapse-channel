@@ -553,6 +553,12 @@ ids, sender binding, nonces, sequence binding, timestamp windows, replay cache
 bounds, key rotation, revocation, and verification results without claiming
 payload encryption or identity enforcement.
 
+The planned [identity and ACL](docs/identity-and-acl.md) profile scopes
+per-agent identity, identity-bound credentials, project namespaces, allowed
+verbs, target patterns, metrics/A2A/dashboard/release privileges,
+deny-by-default authorization, credential rotation, revocation, and migration
+from shared-token mode without claiming runtime enforcement today.
+
 `synapse git-init` bundles the hook install with a short `.synapse/git-claims.md`
 onboarding guide (branch convention + worktree workflow). `synapse state` shows
 each claim's branch; installed git hooks release a claim
@@ -787,9 +793,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 131 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1849 |
+| Test functions | 1853 |
 | Benchmark harnesses | 4 |
-| Documentation pages | 28 |
+| Documentation pages | 29 |
 | GitHub Actions workflows | 10 |
 | Optional-dependency groups | 4 |
 

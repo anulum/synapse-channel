@@ -146,6 +146,14 @@ owner approval, evidence freshness, generated artifact parity, and
 no-merge-without-receipt. The design is advisory by default and does not merge
 code.
 
+### Identity and ACL
+
+Design target for per-agent identity, identity-bound credentials, project
+namespaces, allowed verbs, target patterns, deny-by-default authorization,
+metrics permission, A2A permission, dashboard permission, release permission,
+credential rotation, revocation, and migration from shared-token mode. It is not
+implemented yet and does not replace per-message authentication or signed events.
+
 ### Paranoid mode
 
 Design target for one future operator switch that enables strict local settings

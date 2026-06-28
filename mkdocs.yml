@@ -82,6 +82,7 @@ nav:
   - Private channels: private-channels.md
   - Signed events and mTLS: signed-events-mtls.md
   - Per-message authentication: per-message-authentication.md
+  - Identity and ACL: identity-and-acl.md
   - Recipes: recipes.md
   - Examples: examples.md
   - Deployment: deployment.md

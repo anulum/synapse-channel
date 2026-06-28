@@ -13,6 +13,11 @@ The planned [per-message authentication design](per-message-authentication.md)
 keeps the same envelope shape and adds an authentication object for selected
 frames after WebSocket connect authentication. It is not implemented yet.
 
+The planned [identity and ACL design](identity-and-acl.md) keeps protocol
+messages as ordinary envelopes while adding a future authorization decision
+before state mutation or scoped reads. It is not implemented yet and does not
+change the current shared-token wire format.
+
 ## Agent → hub
 
 - **Presence and chat:** `chat`, `heartbeat` (sent automatically by clients).
