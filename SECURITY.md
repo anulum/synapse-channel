@@ -117,6 +117,12 @@ exact for the operator, and does not encrypt payloads, replace private channels,
 replace end-to-end encrypted channels, anonymize raw logs, or authorize board
 writes.
 
+The planned [agent trust graph](docs/agent-trust-graph.md) profile scopes
+evidence-linked routing review over reliability signals, release receipts,
+capability observations, handoff outcomes, and conflict history. It is not
+implemented yet and does not rank agents, assign trust grades, authorize
+execution, replace code review, or replace identity and ACL.
+
 The planned [signed events and mTLS](docs/signed-events-mtls.md) profile scopes
 event signatures, key rotation, replay protection, verification results, trust
 bundles, certificate pinning, and trusted multi-host peers. It is not

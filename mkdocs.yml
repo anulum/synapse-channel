@@ -76,6 +76,7 @@ nav:
   - MCP server: mcp.md
   - Git-native claims: git-claims.md
   - Policy engine: policy-engine.md
+  - Agent trust graph: agent-trust-graph.md
   - Paranoid mode: paranoid-mode.md
   - At-rest encryption: at-rest-encryption.md
   - Encrypted channels: end-to-end-encrypted-channels.md

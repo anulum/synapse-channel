@@ -14,6 +14,10 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the public agent trust graph design for evidence-linked routing review
+  over reliability signals, release receipts, capability observations, handoff
+  outcomes, conflict history, provenance references, decay windows, policy
+  inputs, and explicit non-scoring boundaries before any graph runtime ships.
 - Added the public differential-privacy blackboard design for redacted and noisy
   multi-organisation board projections, privacy budgets, cohort thresholds,
   privacy-ledger audit evidence, and explicit raw-log/encryption/authorization

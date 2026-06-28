@@ -48,7 +48,7 @@ state, and every agent connects to it.
 ## Next steps
 
 - [Installation](installation.md) · [Quick start](quickstart.md)
-- [Coordination model](coordination-model.md) · [Policy engine](policy-engine.md) · [Identity and ACL](identity-and-acl.md) · [Differential privacy blackboard](differential-privacy-blackboard.md)
+- [Coordination model](coordination-model.md) · [Policy engine](policy-engine.md) · [Agent trust graph](agent-trust-graph.md) · [Identity and ACL](identity-and-acl.md)
 - [Wire protocol](protocol.md) · [CLI reference](cli.md) · [Recipes](recipes.md) · [Examples](examples.md)
 - [Deployment](deployment.md)
 

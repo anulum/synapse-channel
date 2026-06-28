@@ -29,6 +29,11 @@ keeps `ledger_task`, `ledger_progress`, and `board_request` as ordinary local
 messages while defining future redacted or noisy projections for shared reports.
 It is not implemented yet and does not anonymize raw event logs.
 
+The planned [agent trust graph design](agent-trust-graph.md) keeps the wire
+protocol unchanged. It would read existing event-log records and release
+receipts as graph evidence for routing review; it is not implemented yet and
+does not add agent grades to protocol envelopes.
+
 ## Agent → hub
 
 - **Presence and chat:** `chat`, `heartbeat` (sent automatically by clients).
