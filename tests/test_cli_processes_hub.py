@@ -369,6 +369,50 @@ def test_cmd_hub_rejects_malformed_message_auth_key(capsys: pytest.CaptureFixtur
     assert "--message-auth-key must use KEY_ID:SECRET:SENDER[,SENDER...]" in capsys.readouterr().err
 
 
+def test_cmd_hub_threads_acl_policy(tmp_path: Path) -> None:
+    policy = tmp_path / "acl.json"
+    policy.write_text(
+        '{"rules": [{"permission": "claim", "target_kind": "path", "target_pattern": "src/*"}]}',
+        encoding="utf-8",
+    )
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(token="t", acl_policy=str(policy), require_acl=True),
+            runner=_close_runner,
+            hub_factory=build_hub,
+        )
+        == 0
+    )
+    assert captured["require_acl"] is True
+    assert captured["acl_policy"] is not None
+    assert len(captured["acl_policy"].rules) == 1
+
+
+def test_cmd_hub_rejects_malformed_acl_policy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy = tmp_path / "acl.json"
+    policy.write_text("{}", encoding="utf-8")
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(acl_policy=str(policy), require_acl=True), runner=_close_runner
+        )
+        == 2
+    )
+    assert "rules" in capsys.readouterr().err
+
+
+def test_cmd_hub_warns_on_require_acl_without_token(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli_processes._cmd_hub(_hub_ns(token=None, require_acl=True), runner=_close_runner) == 0
+    assert "WARNING --require-acl without --token" in capsys.readouterr().err
+
+
 def test_cmd_hub_threads_tls_context_to_serve() -> None:
     served: dict[str, Any] = {}
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

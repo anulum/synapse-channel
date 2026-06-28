@@ -22,10 +22,11 @@ evaluate whether that identity may perform a requested action before the hub
 mutates state or exposes scoped data. This does not replace per-message
 authentication, does not replace signed events, and does not sandbox agents.
 
-## Implemented (shadow mode)
+## Implemented (shadow mode and opt-in enforcement)
 
-The observe-only precursor to enforcement is implemented in
-:mod:`synapse_channel.core.identity` and :mod:`synapse_channel.core.acl`:
+The ACL model and its evaluation are implemented in
+:mod:`synapse_channel.core.identity`, :mod:`synapse_channel.core.acl`, and
+:mod:`synapse_channel.core.acl_enforcement`:
 
 - `synapse identity audit --identities <file>` loads a declared identity
   inventory and reports the ambiguities that would block an enforcement rollout:
@@ -37,11 +38,20 @@ The observe-only precursor to enforcement is implemented in
   without ever blocking a frame. Target patterns are structured (a kind plus a
   glob value), scoped to a project namespace, across the permission vocabulary
   below.
+- `synapse hub --acl-policy <file> --require-acl` turns the same deny-by-default
+  evaluation into runtime enforcement: a mutating frame (chat, claim, release,
+  task update, handoff, checkpoint, board, finding) is mapped to the structured
+  accesses it needs and refused with an error before routing if the authenticated
+  sender's identity is not allowed. Authentication stays the per-message
+  authentication layer; this is the authorisation layer. Enforcement is opt-in
+  and off by default, ungated verbs and read surfaces still pass, and a missing
+  policy or shared-token local hub is unchanged.
 
-Shadow mode changes nothing about how the hub admits a connection; it produces
-the evidence an operator reviews before turning on enforcement. Identity-bound
-credentials, in-hub evaluation, and the enforcement path below remain design
-targets and are not implemented yet.
+The identity namespace is taken from the resolved sender (`project/agent`). The
+first credential format, in-hub credential resolution, credential rotation,
+revocation, owner recovery, durable audit-event journaling, and read-surface ACLs
+(metrics, dashboard, event-query) remain design targets and are not implemented
+yet.
 
 ## Identity model
 

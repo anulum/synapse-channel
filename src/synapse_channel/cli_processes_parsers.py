@@ -272,6 +272,21 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Maximum in-memory nonce entries retained for replay detection.",
     )
     hub.add_argument(
+        "--acl-policy",
+        default="",
+        metavar="FILE",
+        help="Deny-by-default ACL policy JSON to authorise mutating frames. "
+        "Loaded but not enforced unless --require-acl is set.",
+    )
+    hub.add_argument(
+        "--require-acl",
+        action="store_true",
+        help="Reject mutating frames the sender's identity is not allowed to send by "
+        "--acl-policy. Off by default; read/query verbs and a missing policy still pass. "
+        "Namespace authorisation is only as strong as the sender binding, so pair this "
+        "with --token and --require-message-auth on an exposed hub.",
+    )
+    hub.add_argument(
         "--insecure-off-loopback",
         action="store_true",
         help="Bind a non-loopback host even without a token (and metrics token); by "

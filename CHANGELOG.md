@@ -13,7 +13,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+- Added opt-in identity/ACL runtime enforcement. `synapse hub --acl-policy
+  <file> --require-acl` maps each mutating frame (chat, claim, release, task
+  update, handoff, checkpoint, board, finding) to the structured ACL accesses it
+  needs and refuses it with an error before routing when the authenticated
+  sender's identity is not allowed by the deny-by-default policy — the same
+  evaluation `synapse acl shadow` reports. The identity namespace is the resolved
+  `project/agent` sender; authentication remains the per-message-authentication
+  layer and this is the authorisation layer. Off by default; ungated verbs, read
+  surfaces, a missing policy, and shared-token local hubs are unchanged.
+  Identity-bound credentials, rotation/revocation, durable audit-event journaling,
+  and read-surface ACLs remain design targets in `docs/identity-and-acl`.
 
 ## [0.62.0] - 2026-06-28
 
