@@ -34,6 +34,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse compact` | Apply event-store retention and optionally write an HTML archive report. |
 | `synapse postmortem` | Build a replayable task postmortem from a hub SQLite event store. |
 | `synapse reliability` | Build evidence-only reliability memory from a hub SQLite event store. |
+| `synapse accounting` | Record and report opt-in model cost/token usage from a hub SQLite event store. |
 | `synapse ttl-advice` | Build read-only lease TTL advice from a hub SQLite event store. |
 | `synapse board` | Print the shared task/progress blackboard. |
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
@@ -509,6 +510,8 @@ synapse event-query ./synapse.db 'timeline("TASK-1").'
 synapse event-query ./synapse.db 'MATCH (task:TASK {id:"TASK-1"}) RETURN timeline'
 synapse postmortem ./synapse.db TASK-1
 synapse reliability ./synapse.db
+synapse accounting record --name alpha --task TASK-1 --model claude-opus-4-8 --input-tokens 1200 --output-tokens 300
+synapse accounting report ./synapse.db --pricing pricing.json --budget budget.json
 synapse ttl-advice ./synapse.db
 synapse supervisor --idle-seconds 300 --history-multiplier 3
 ```
@@ -598,6 +601,18 @@ the same event store. It counts stale claims, declared failed-check evidence,
 broken handoff candidates, and reconstructed conflict pairs per owner. The
 output is audit signals, not scores: it does not rank agents, assign trust
 grades, or prove intent.
+
+`synapse accounting` records and reports opt-in model cost/token usage. Synapse
+never calls a model provider and collects no telemetry, so token and cost figures
+exist only when an agent or operator records them: `synapse accounting record`
+posts one usage note (a `usage`-kind progress note carrying a canonical
+`key=value` body) onto the shared ledger, and `synapse accounting report
+./synapse.db` reads those notes back into per-agent and per-model totals. Pass
+`--pricing pricing.json` (model → `{input_per_1k, output_per_1k}`) to estimate
+cost from tokens, and `--budget budget.json` (agent → ceiling) for budget
+evidence. Budgets are evidence, not an enforcement gate: the report states spend
+against a ceiling, it does not block work. Non-Python clients can record usage by
+posting the identical note body.
 
 `synapse ttl-advice ./synapse.db` builds read-only adaptive lease TTL advice from
 the same event store. It derives completed-task duration samples, active

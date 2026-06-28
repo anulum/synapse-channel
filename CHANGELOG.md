@@ -19,6 +19,14 @@ All notable changes to this project are documented here.
   --decrypt-key-file` decrypts locally, and `synapse channel key-check`
   validates payload key files while keeping key discovery and rotation out of
   scope.
+- Added opt-in model cost/token accounting. `synapse accounting record` posts a
+  `usage`-kind progress note carrying a canonical token/cost body, and `synapse
+  accounting report` aggregates those notes from a hub SQLite event store into
+  per-agent and per-model totals with optional `--pricing` cost estimates and
+  `--budget` evidence. Synapse calls no model provider and collects no telemetry,
+  so usage exists only when recorded; budgets are evidence, not an enforcement
+  gate. The canonical note format is documented so non-Python clients can record
+  the identical body.
 
 ## [0.65.0] - 2026-06-29
 
