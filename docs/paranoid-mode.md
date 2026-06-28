@@ -60,7 +60,9 @@ pretending they are solved:
   evidence, trusted peers, trust bundles, key rotation, revocation, and replay
   protection. See the [signed events and mTLS design](signed-events-mtls.md).
 - **Per-message authentication** after WebSocket connect authentication,
-  including replay protection and key rotation.
+  including canonical frames, sender binding, replay protection, and key
+  rotation. See the
+  [per-message authentication design](per-message-authentication.md).
 - **Per-agent identity** beyond the current shared-token and caller-name model.
 - **ACL enforcement** for verbs, namespaces, metrics, dashboard, A2A, and
   release actions.

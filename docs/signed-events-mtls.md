@@ -140,6 +140,9 @@ Signed events and mTLS sit beside the other security designs:
   envelopes without decrypting them.
 - [Private channels](private-channels.md) scope the intended audience; signed
   events can bind channel ids and membership changes into the event signature.
+- [Per-message authentication](per-message-authentication.md) can reject bad
+  frames before hub admission; signed events verify selected records after
+  admission, storage, relay export, and postmortem reconstruction.
 - Per-agent identity and ACLs remain separate designs. Signatures can carry an
   asserted key id, but policy still needs identity-bound permissions before the
   hub can enforce who may perform each action.

@@ -187,6 +187,14 @@ key id, sequence binding, timestamp window, replay protection, and verification
 result. Mutual TLS uses operator-managed trust bundles, certificate pinning, key
 rotation, revocation, and trusted peer definitions; it is not implemented yet.
 
+### Per-message authentication
+
+Design target for authenticating selected WebSocket frames after connect
+authentication. The profile defines authenticated frames, canonical frames,
+message authentication codes, signatures, key ids, sender binding, nonces,
+sequence binding, timestamp windows, replay cache bounds, key rotation,
+revocation, and verification results; it is not implemented yet.
+
 ### Reliability memory
 
 Evidence-only owner summaries over the **event log** using

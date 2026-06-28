@@ -116,6 +116,12 @@ bundles, certificate pinning, and trusted multi-host peers. It is not
 implemented yet, does not encrypt payloads, does not replace per-agent identity,
 and does not certify federation.
 
+The planned [per-message authentication](docs/per-message-authentication.md)
+profile scopes keyed message authentication codes or signatures over selected
+WebSocket frames after connect authentication. It is not implemented yet, does
+not encrypt payloads, does not replace TLS, and does not replace per-agent
+identity or ACL enforcement.
+
 ## Out of scope / known limitations
 
 - The connect token is a proportionate shared secret, **not** a cryptographic
