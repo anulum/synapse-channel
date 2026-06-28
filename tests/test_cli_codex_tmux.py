@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — tests for tmux-backed Codex wake CLI
+# SYNAPSE_CHANNEL — Codex-named alias of the generic agent-tmux wake CLI
 
 from __future__ import annotations
 
@@ -12,11 +12,11 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from synapse_channel import cli, cli_codex_tmux
-from synapse_channel.codex_tmux import CodexTmuxConfig, CodexTmuxStatus, CodexTmuxWakeResult
+from synapse_channel import cli, cli_agent_tmux, cli_codex_tmux
+from synapse_channel.agent_tmux import AgentTmuxConfig, AgentTmuxWakeResult
 
 
-def test_parser_registers_codex_tmux_start() -> None:
+def test_codex_tmux_command_is_registered_with_codex_flag() -> None:
     args = cli.build_parser().parse_args(
         [
             "codex-tmux",
@@ -25,20 +25,19 @@ def test_parser_registers_codex_tmux_start() -> None:
             "SYNAPSE-CHANNEL/codex-main",
             "--session",
             "synapse-codex-main",
-            "--cwd",
-            "/repo",
+            "--codex-command",
+            "codex --sandbox never",
         ]
     )
 
-    assert args.func is cli_codex_tmux._cmd_codex_tmux
-    assert args.codex_tmux_command == "start"
-    assert args.identity == "SYNAPSE-CHANNEL/codex-main"
-    assert args.session == "synapse-codex-main"
-    assert args.cwd == Path("/repo")
-    assert args.codex_command == "codex"
+    # The Codex alias dispatches the same generic handler and resolves the
+    # --codex-command flag into the shared agent_command destination.
+    assert args.func is cli_agent_tmux._cmd_agent_tmux
+    assert args.agent_tmux_command == "start"
+    assert args.agent_command == "codex --sandbox never"
 
 
-def test_parser_registers_wait_resilience_options() -> None:
+def test_codex_tmux_default_command_is_codex() -> None:
     args = cli.build_parser().parse_args(
         [
             "codex-tmux",
@@ -47,109 +46,34 @@ def test_parser_registers_wait_resilience_options() -> None:
             "SYNAPSE-CHANNEL/codex-main",
             "--session",
             "synapse-codex-main",
-            "--submit-delay",
-            "0.7",
-            "--max-wait-failures",
-            "4",
         ]
     )
 
-    assert args.codex_tmux_command == "wait"
-    assert args.submit_delay == 0.7
-    assert args.max_wait_failures == 4
-    assert args.max_wakes is None
+    assert args.agent_command == "codex"
+    assert args.max_wait_failures is None
 
 
-def test_cmd_start_dispatches(capsys: Any, tmp_path: Path) -> None:
-    captured: dict[str, CodexTmuxConfig] = {}
+def test_codex_tmux_dispatch_splits_command(capsys: Any, tmp_path: Path) -> None:
+    captured: dict[str, AgentTmuxConfig] = {}
 
-    def starter(config: CodexTmuxConfig) -> CodexTmuxWakeResult:
+    def starter(config: AgentTmuxConfig) -> AgentTmuxWakeResult:
         captured["config"] = config
-        return CodexTmuxWakeResult(injected=False, started=True, returncode=0, detail="started")
+        return AgentTmuxWakeResult(injected=False, started=True, returncode=0, detail="started")
 
     ns = argparse.Namespace(
-        codex_tmux_command="start",
+        agent_tmux_command="start",
         identity="SYNAPSE-CHANNEL/codex-main",
         session="synapse-codex-main",
         cwd=tmp_path,
-        codex_command="codex --sandbox danger-full-access",
+        agent_command="codex --sandbox danger-full-access",
         tmux_bin="tmux",
         synapse_bin="synapse",
         uri="ws://localhost:8876",
         submit_delay=0.4,
-        wake_jitter=0.0,
         max_wakes=1,
         token=None,
     )
 
-    assert cli_codex_tmux._cmd_codex_tmux(ns, starter=starter) == 0
-    assert captured["config"].identity == "SYNAPSE-CHANNEL/codex-main"
-    assert captured["config"].codex_command == ("codex", "--sandbox", "danger-full-access")
+    assert cli_codex_tmux._cmd_agent_tmux(ns, starter=starter) == 0
+    assert captured["config"].agent_command == ("codex", "--sandbox", "danger-full-access")
     assert "started" in capsys.readouterr().out
-
-
-def test_cmd_status_dispatches(capsys: Any, tmp_path: Path) -> None:
-    def status_runner(config: CodexTmuxConfig) -> CodexTmuxStatus:
-        assert config.session == "synapse-codex-main"
-        return CodexTmuxStatus(
-            identity=config.identity,
-            session=config.session,
-            session_exists=True,
-            pane_command="codex",
-            pane_start_command="codex",
-            codex_active=True,
-        )
-
-    ns = argparse.Namespace(
-        codex_tmux_command="status",
-        identity="SYNAPSE-CHANNEL/codex-main",
-        session="synapse-codex-main",
-        cwd=tmp_path,
-        codex_command="codex",
-        tmux_bin="tmux",
-        synapse_bin="synapse",
-        uri="ws://localhost:8876",
-        submit_delay=0.4,
-        wake_jitter=0.0,
-        max_wakes=1,
-        token=None,
-    )
-
-    assert cli_codex_tmux._cmd_codex_tmux(ns, status_runner=status_runner) == 0
-    out = capsys.readouterr().out
-    assert "tmux session: online" in out
-    assert "Codex pane: active" in out
-
-
-def test_cmd_wait_dispatches(tmp_path: Path) -> None:
-    captured: dict[str, Any] = {}
-
-    def waiter(
-        config: CodexTmuxConfig, *, max_wakes: int | None, max_wait_failures: int | None
-    ) -> int:
-        captured["config"] = config
-        captured["max_wakes"] = max_wakes
-        captured["max_wait_failures"] = max_wait_failures
-        return 0
-
-    ns = argparse.Namespace(
-        codex_tmux_command="wait",
-        identity="SYNAPSE-CHANNEL/codex-main",
-        session="synapse-codex-main",
-        cwd=tmp_path,
-        codex_command="codex",
-        tmux_bin="tmux",
-        synapse_bin="synapse",
-        uri="ws://localhost:8876",
-        submit_delay=0.4,
-        wake_jitter=0.0,
-        max_wakes=3,
-        max_wait_failures=5,
-        token=None,
-    )
-
-    assert cli_codex_tmux._cmd_codex_tmux(ns, waiter=waiter) == 0
-    assert captured["config"].identity == "SYNAPSE-CHANNEL/codex-main"
-    assert captured["config"].submit_delay == 0.4
-    assert captured["max_wakes"] == 3
-    assert captured["max_wait_failures"] == 5

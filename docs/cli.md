@@ -17,7 +17,8 @@ see the [Integration demos](integration-demos.md).
 | `synapse mcp` | Serve the hub to MCP-compatible agents over stdio (see [MCP server](mcp.md)). |
 | `synapse a2a-card` | Print an Agent2Agent Agent Card projected from the live capability manifest. |
 | `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge. |
-| `synapse codex-tmux` | Wake an existing Codex tmux session with a fixed safe prompt. |
+| `synapse agent-tmux` | Wake an existing terminal-agent tmux session (Codex, Kimi, …) with a fixed safe prompt. |
+| `synapse codex-tmux` | Codex-defaulted alias of `agent-tmux`. |
 | `synapse dashboard` | Serve a loopback-only read-only HTML/JSON dashboard for live hub snapshots. |
 | `synapse route-task` | Recommend agents for a board task using local capability signals. |
 | `synapse resource-bids` | Rank live resource offers for a board task without reserving capacity. |
@@ -280,19 +281,31 @@ wake bridge alive. The user still types the provider command normally, for
 example `codex` or `claude`; the provider process starts with `SYN_PROJECT` and
 `SYN_IDENTITY` already set.
 
-Use `synapse codex-tmux` as the manual diagnostic/admin surface for that tmux
-wake path. It starts or targets a named tmux session and injects only a fixed
-instruction; the Synapse message body stays in the inbox and the provider reads
-it itself.
+Use `synapse agent-tmux` as the manual diagnostic/admin surface for that tmux
+wake path. It works for any terminal coding agent — Codex, Kimi K2, Claude Code —
+selected with `--agent-command`. It starts or targets a named tmux session and
+injects only a fixed instruction; the Synapse message body stays in the inbox and
+the agent reads it itself. `synapse codex-tmux` is a Codex-defaulted alias kept
+for backward compatibility (`--codex-command` instead of `--agent-command`).
 
 ```bash
-synapse codex-tmux start --identity api-dev/codex-main --session api-dev-codex --cwd "$PWD"
+# Generic form — choose the agent with --agent-command (defaults to codex):
+synapse agent-tmux start  --identity api-dev/kimi --session api-dev-kimi --agent-command kimi --cwd "$PWD"
+synapse agent-tmux wait   --identity api-dev/kimi --session api-dev-kimi --agent-command kimi --cwd "$PWD"
+synapse agent-tmux status --identity api-dev/kimi --session api-dev-kimi --agent-command kimi --cwd "$PWD"
+
+# Codex alias (equivalent to --agent-command codex):
 synapse codex-tmux wait --identity api-dev/codex-main --session api-dev-codex --cwd "$PWD"
-synapse codex-tmux status --identity api-dev/codex-main --session api-dev-codex --cwd "$PWD"
 ```
 
+A terminal agent does not wake its own idle pane on a Synapse message: its
+`synapse wait` is a foreground tool call whose turn ends, so the message lands in
+the inbox but the pane never re-engages. `agent-tmux wait` is the external bridge
+that closes that gap — it blocks on `synapse wait` for the identity and, on each
+directed message, types the wake prompt into the pane and presses Enter.
+
 `wait` types the fixed prompt and presses Enter as two steps separated by
-`--submit-delay` seconds, because the Codex UI ignores a submit key that arrives
+`--submit-delay` seconds, because the agent UI ignores a submit key that arrives
 in the same keystroke batch as the pasted line. It retries a failed
 `synapse wait` with backoff instead of exiting, giving up only after
 `--max-wait-failures` consecutive failures (unbounded by default), so a hub

@@ -376,7 +376,7 @@ pathlib.Path({str(provider_record)!r}).write_text("direct provider ran", encodin
     assert tmux_calls[-1] == ["attach-session", "-t", "synapse-repo_codex-main"]
     assert synapse_calls == [
         [
-            "codex-tmux",
+            "agent-tmux",
             "wait",
             "--identity",
             "repo/codex-main",
@@ -384,7 +384,7 @@ pathlib.Path({str(provider_record)!r}).write_text("direct provider ran", encodin
             "synapse-repo_codex-main",
             "--cwd",
             str(Path.cwd()),
-            "--codex-command",
+            "--agent-command",
             f"{str(provider)} --sandbox danger-full-access",
         ]
     ]
@@ -488,7 +488,7 @@ def test_worker_session_tmux_restarts_stale_waiter_pid(
     )
 
     assert _read_json_when_ready(synapse_record)[0][:2] == [
-        "codex-tmux",
+        "agent-tmux",
         "wait",
     ]
 
