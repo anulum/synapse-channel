@@ -35,6 +35,9 @@ All notable changes to this project are documented here.
 - Added the public end-to-end encrypted channels design for selected encrypted
   payloads, per-project/per-worktree keys, recipient sets, key rotation, member
   removal, and hub-visible metadata boundaries.
+- Added the public private-channels design for project, worktree, task, and
+  direct channel namespaces, membership lifecycle, history visibility, retention
+  boundaries, relay filtering, and event-query filtering.
 
 ## [0.54.0] - 2026-06-28
 

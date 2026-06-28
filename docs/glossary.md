@@ -171,6 +171,14 @@ are candidate encrypted bodies; routing metadata remains visible so the hub can
 deliver, retain, and audit coordination events. The feature is not implemented
 yet.
 
+### Private channels
+
+Design target for routing selected coordination messages to a scoped audience,
+such as a project channel, worktree channel, task channel, or direct channel.
+Private channels define channel ids, membership lists, history visibility,
+retention boundaries, relay log filtering, and event-query filtering, but they
+do not encrypt payloads.
+
 ### Reliability memory
 
 Evidence-only owner summaries over the **event log** using
