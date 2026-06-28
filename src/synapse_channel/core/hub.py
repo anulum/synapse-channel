@@ -40,6 +40,7 @@ from websockets.http11 import Request, Response
 
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
+from synapse_channel.core.channels import ChannelRegistry
 from synapse_channel.core.handlers import DISPATCH
 from synapse_channel.core.hub_clients import HubClientRegistry
 from synapse_channel.core.hub_exposure import (
@@ -331,6 +332,7 @@ class SynapseHub:
             window_seconds=per_message_auth_window_seconds,
             max_entries=per_message_auth_replay_capacity,
         )
+        self.channels = ChannelRegistry()
         self.max_msg_bytes = max(int(max_msg_bytes), 1)
         self._clock = clock or time.monotonic
         self._started = self._clock()

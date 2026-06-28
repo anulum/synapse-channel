@@ -47,6 +47,7 @@ async def _send(
     target: str,
     message: str,
     wait_seconds: float,
+    channel: str = "",
     priority: bool = False,
     require_recipient: bool = False,
     receipt_timeout: float = 2.0,
@@ -109,6 +110,8 @@ async def _send(
             extra["priority"] = True
         if require_recipient:
             extra["receipt_requested"] = True
+        if channel:
+            extra["channel"] = channel
         await agent.send_message(MessageType.CHAT, target=target, payload=message, **extra)
         if require_recipient:
             receipt = await _wait_for_delivery_receipt(receipts, timeout=receipt_timeout)
@@ -152,6 +155,7 @@ def _cmd_send(args: argparse.Namespace) -> int:
             target=args.target,
             message=args.message,
             wait_seconds=args.wait_seconds,
+            channel=getattr(args, "channel", ""),
             priority=args.priority,
             require_recipient=getattr(args, "require_recipient", False),
             receipt_timeout=getattr(args, "receipt_timeout", 2.0),

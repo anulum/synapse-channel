@@ -17,6 +17,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse mcp` | Serve the hub to MCP-compatible agents over stdio (see [MCP server](mcp.md)). |
 | `synapse a2a-card` | Print an Agent2Agent Agent Card projected from the live capability manifest. |
 | `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge. |
+| `synapse channel` | Manage private-channel membership (create/join/leave/list); pair with `synapse send --channel`. |
 | `synapse agent-tmux` | Wake an existing terminal-agent tmux session (Codex, Kimi, …) with a fixed safe prompt. |
 | `synapse codex-tmux` | Codex-defaulted alias of `agent-tmux`. |
 | `synapse dashboard` | Serve a loopback-only read-only HTML/JSON dashboard for live hub snapshots. |

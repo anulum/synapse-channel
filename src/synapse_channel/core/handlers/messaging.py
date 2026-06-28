@@ -28,11 +28,20 @@ if TYPE_CHECKING:
 
 
 async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
-    """Stamp, retain, journal, and broadcast a chat message to every socket."""
+    """Stamp, retain, journal, and broadcast a chat message to every socket.
+
+    A message carrying a ``channel`` is audience-scoped instead: it is delivered
+    only to that channel's online members and never broadcast, retained in the
+    public history, or mirrored to the relay log.
+    """
     data["timestamp"] = float(data.get("timestamp") or time.time())
     data["type"] = MessageType.CHAT
     data["hub_id"] = hub.hub_id
     data["msg_id"] = hub._next_msg_id()
+    channel = str(data.get("channel") or "").strip()
+    if channel:
+        await _route_channel_chat(hub, sender, data, websocket, channel)
+        return
     target = str(data.get("target") or "all")
     recipients = _matching_online_recipients(target, sender, hub.online_agents())
     hub.chat_history.append(data.copy())
@@ -47,6 +56,44 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
             websocket,
             sender=sender,
             target=target,
+            msg_id=int(data["msg_id"]),
+            recipients=recipients,
+        )
+
+
+async def _route_channel_chat(
+    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any, channel: str
+) -> None:
+    """Deliver a channel-scoped chat to online members only, never broadcast.
+
+    Non-members are refused privately. The body is not retained in the public
+    chat history, journalled, or mirrored to the relay log in this tranche;
+    durable per-channel history and event-query filtering are deferred design
+    work (see ``docs/private-channels``).
+    """
+    if not hub.channels.is_member(channel, sender):
+        await hub._send_json(
+            websocket,
+            hub._system(
+                f"not a member of channel '{channel}'",
+                msg_type=MessageType.ERROR,
+                target=sender,
+                channel=channel,
+            ),
+        )
+        return
+    online = set(hub.online_agents())
+    recipients = sorted(
+        member for member in hub.channels.members(channel) if member != sender and member in online
+    )
+    for member in recipients:
+        await hub._send_to_agent(member, data)
+    if bool(data.get("receipt_requested")):
+        await _send_delivery_receipt(
+            hub,
+            websocket,
+            sender=sender,
+            target=channel,
             msg_id=int(data["msg_id"]),
             recipients=recipients,
         )

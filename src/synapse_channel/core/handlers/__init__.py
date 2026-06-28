@@ -21,6 +21,12 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.handlers.channels import (
+    handle_channel_create,
+    handle_channel_join,
+    handle_channel_leave,
+    handle_channel_list_request,
+)
 from synapse_channel.core.handlers.leasing import (
     handle_checkpoint,
     handle_claim,
@@ -74,6 +80,10 @@ DISPATCH: dict[str, Handler] = {
     MessageType.MANIFEST_REQUEST: handle_manifest_request,
     MessageType.RECALL_LOG: handle_recall_log,
     MessageType.FINDING: handle_finding,
+    MessageType.CHANNEL_CREATE: handle_channel_create,
+    MessageType.CHANNEL_JOIN: handle_channel_join,
+    MessageType.CHANNEL_LEAVE: handle_channel_leave,
+    MessageType.CHANNEL_LIST_REQUEST: handle_channel_list_request,
     **{alias: handle_resource for alias in RESOURCE_TYPE_ALIASES},
 }
 

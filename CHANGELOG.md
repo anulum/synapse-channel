@@ -13,7 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+- Added a first tranche of private channels: audience-scoped recipient sets that
+  deliver a chat only to a channel's online members instead of broadcasting it.
+  `synapse channel create/join/leave/list` manages membership and
+  `synapse send --channel <id>` (or `SynapseAgent.chat(..., channel=<id>)`)
+  routes to members only — a non-member sender is refused and a non-member never
+  receives the body, which is also kept out of the public chat history and relay
+  log. Join is open in this tranche (audience scoping, not a security boundary);
+  per-channel history, retention, and channel-filtered queries remain design
+  targets in `docs/private-channels`.
 
 ## [0.59.0] - 2026-06-28
 
