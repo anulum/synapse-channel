@@ -14,9 +14,12 @@ import json
 from typing import Any
 
 import pytest
+from websockets.exceptions import ConnectionClosedError
+from websockets.frames import Close
 
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel.client.agent import DEFAULT_HUB_URI, MINIMUM_HEARTBEAT_INTERVAL, SynapseAgent
+from synapse_channel.client.agent_lifecycle import _received_close
 
 
 def test_defaults_and_heartbeat_clamp() -> None:
@@ -25,6 +28,25 @@ def test_defaults_and_heartbeat_clamp() -> None:
     assert agent.heartbeat_interval == 20.0
     agent_fast = SynapseAgent("B", heartbeat_interval=1.0)
     assert agent_fast.heartbeat_interval == MINIMUM_HEARTBEAT_INTERVAL
+
+
+def test_agent_starts_with_no_recorded_close() -> None:
+    agent = SynapseAgent("A")
+    assert agent.last_close_code is None
+    assert agent.last_close_reason == ""
+
+
+def test_received_close_reads_the_hub_close_frame() -> None:
+    exc = ConnectionClosedError(Close(4013, "hub at capacity"), None)
+
+    assert _received_close(exc) == (4013, "hub at capacity")
+
+
+def test_received_close_is_empty_when_this_side_closed() -> None:
+    # No received Close frame (rcvd is None) means there is no hub-supplied code.
+    exc = ConnectionClosedError(None, Close(1000, "bye"))
+
+    assert _received_close(exc) == (None, "")
 
 
 def test_ping_keepalive_defaults() -> None:

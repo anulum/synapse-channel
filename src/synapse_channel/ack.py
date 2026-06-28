@@ -26,6 +26,7 @@ from collections.abc import Callable, Sequence
 from typing import Any, Protocol
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.connect_failures import describe_connect_failure
 from synapse_channel.core.protocol import MessageType
 
 ACK_PROGRESS_KIND = "assessment"
@@ -67,6 +68,8 @@ class AckAgent(Protocol):
     """
 
     running: bool
+    last_close_code: int | None
+    last_close_reason: str
 
     async def connect(self) -> None:
         """Connect to the hub and process inbound messages."""
@@ -238,7 +241,14 @@ async def ack_task(
     connection_task = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
-            print(f"[{identity.identity}] Could not reach hub at {uri}.")
+            print(
+                describe_connect_failure(
+                    identity.identity,
+                    uri,
+                    close_code=agent.last_close_code,
+                    close_reason=agent.last_close_reason,
+                )
+            )
             return 1
 
         await agent.post_progress(task, progress_text, kind=ACK_PROGRESS_KIND)

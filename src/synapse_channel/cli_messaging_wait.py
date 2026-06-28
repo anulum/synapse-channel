@@ -16,6 +16,7 @@ from typing import Any
 
 from synapse_channel.cli_messaging_types import AgentFactory, JitterFunction
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.connect_failures import describe_connect_failure
 from synapse_channel.core.protocol import MessageType, wakes
 
 
@@ -101,7 +102,14 @@ async def _wait(
     conn_task = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
-            print(f"[{name}] Could not reach hub at {uri}.")
+            print(
+                describe_connect_failure(
+                    name,
+                    uri,
+                    close_code=agent.last_close_code,
+                    close_reason=agent.last_close_reason,
+                )
+            )
             return 1
         loop = asyncio.get_event_loop()
         deadline = loop.time() + timeout

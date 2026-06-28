@@ -13,7 +13,25 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-No unreleased changes.
+### Fixed
+- The Codex tmux wake transport now types the wake prompt and presses Enter as
+  two separate `tmux send-keys` calls with a configurable `--submit-delay`
+  pause. A single combined call left the prompt unsent in the Codex input
+  buffer, so injected wakes were silently dropped until a human pressed Enter.
+- `synapse codex-tmux wait` no longer exits on the first failed `synapse wait`.
+  It retries with capped exponential backoff and only gives up after
+  `--max-wait-failures` consecutive failures (unbounded by default), so a brief
+  hub restart or eviction no longer kills the waker permanently.
+- Connection failures from the command-line verbs now distinguish a hub that is
+  full, in a takeover cooldown, or rejecting a duplicate name from a hub that is
+  simply absent. A full hub previously printed the same `Could not reach hub`
+  line as an offline one, masking a capacity ceiling as an outage.
+
+### Changed
+- Raised the default hub connection ceiling (`--max-clients`) from 64 to 256 so
+  a multi-project fleet, where each terminal holds a command socket and a
+  persistent waiter, does not exhaust the table and reject new connections with
+  close code 4013.
 
 ## [0.56.0] - 2026-06-28
 

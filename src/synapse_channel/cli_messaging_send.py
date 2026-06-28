@@ -16,6 +16,7 @@ from typing import Any
 
 from synapse_channel.cli_messaging_types import AgentFactory
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.connect_failures import describe_connect_failure
 from synapse_channel.core.protocol import MessageType
 
 
@@ -94,7 +95,14 @@ async def _send(
     conn_task = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
-            print(f"[{sender_name}] Could not reach hub at {uri}.")
+            print(
+                describe_connect_failure(
+                    sender_name,
+                    uri,
+                    close_code=agent.last_close_code,
+                    close_reason=agent.last_close_reason,
+                )
+            )
             return 1
         extra: dict[str, Any] = {}
         if priority:

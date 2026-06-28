@@ -15,6 +15,22 @@ The client could not open a WebSocket to the hub. In order of likelihood:
   (`synapse hub --port 8899`) and point clients at it.
 - **It is a secured hub and you sent no token** — see [authentication](#a-secured-hub-refuses-me) below.
 
+## `[NAME] hub at capacity: too many connections … (code 4013)`
+
+The hub is up and serving every already-connected agent, but its connection
+table is full, so it closed your new socket with code `4013`. This is **not** an
+outage — the clients already online keep working. It happens when many terminals
+accumulate: each holds a command socket and a persistent `-rx` waiter, and
+presence daemons add more, so a large fleet can reach the ceiling.
+
+- **Free a slot.** Reap stale waiters you no longer need (`syn-reap` removes this
+  identity's own waiter sidecar) and stop terminals that have exited but left
+  daemons behind.
+- **Raise the ceiling.** Restart the hub with a higher budget —
+  `synapse hub --max-clients 512` (the default is 256). Restarting drops every
+  socket momentarily; live agents reconnect on their own.
+- **Retry.** The cap is transient under churn; a moment later a slot usually frees.
+
 ## A waiter exits at once, or seems to loop re-arming
 
 `synapse wait` is a *one-shot* wake primitive — it is meant to exit and be re-armed:

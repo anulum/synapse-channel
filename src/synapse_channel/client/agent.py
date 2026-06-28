@@ -96,6 +96,8 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         self.heartbeat_interval = max(float(heartbeat_interval), MINIMUM_HEARTBEAT_INTERVAL)
         self._heartbeat_task: asyncio.Task[None] | None = None
         self.ready_event = asyncio.Event()
+        self.last_close_code: int | None = None
+        self.last_close_reason: str = ""
         self.hub_id = "unknown"
         self.verbose = bool(verbose)
         self.token = token

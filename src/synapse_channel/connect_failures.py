@@ -1,0 +1,90 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE_CHANNEL — human-readable classification of hub connection failures
+"""Turn a hub close code into an actionable command-line failure message.
+
+When a client cannot complete its registration the command-line verbs used to
+print a single generic line — ``Could not reach hub at <uri>`` — regardless of
+why. That conflated a genuinely absent hub with one that accepted the socket and
+then closed it on purpose: at capacity, during a takeover cooldown, or on a name
+conflict. The capacity case in particular read as a total outage even though the
+hub was healthy and serving every already-connected agent, which sent operators
+hunting for a dead process instead of raising ``--max-clients`` or retrying.
+
+:func:`describe_connect_failure` maps the close code the client recorded onto a
+specific, actionable sentence while preserving the original generic line for the
+"no socket at all" case.
+"""
+
+from __future__ import annotations
+
+CAPACITY_CLOSE_CODE = 4013
+"""Hub close code emitted when the total connection table is full."""
+
+NAME_CONFLICT_CLOSE_CODE = 4009
+"""Hub close code emitted when the requested name is already online."""
+
+SUPERSEDED_CLOSE_CODE = 4010
+"""Hub close code emitted to a socket evicted by another session's takeover."""
+
+TAKEOVER_COOLDOWN_CLOSE_CODE = 4014
+"""Hub close code emitted when a takeover is refused during its cooldown."""
+
+_CLOSE_GUIDANCE: dict[int, str] = {
+    CAPACITY_CLOSE_CODE: (
+        "hub at capacity: too many connections are open. Retry shortly, reap "
+        "stale waiters, or restart the hub with a higher --max-clients"
+    ),
+    NAME_CONFLICT_CLOSE_CODE: (
+        "name already online from another session. Reconnect with a unique --name"
+    ),
+    SUPERSEDED_CLOSE_CODE: (
+        "connection superseded by a takeover from another session holding this name"
+    ),
+    TAKEOVER_COOLDOWN_CLOSE_CODE: (
+        "takeover refused during the cooldown window. Wait for the cooldown, then retry"
+    ),
+}
+
+
+def describe_connect_failure(
+    name: str,
+    uri: str,
+    *,
+    close_code: int | None = None,
+    close_reason: str = "",
+) -> str:
+    """Return a command-line message explaining why a hub connection failed.
+
+    Parameters
+    ----------
+    name : str
+        Client identity used as the bracketed message prefix.
+    uri : str
+        Hub URI shown when the failure is an absent or unreachable hub.
+    close_code : int or None, optional
+        WebSocket close code the client recorded for the most recent connection,
+        or ``None`` when the socket never connected (a refused or absent hub).
+    close_reason : str, optional
+        Close reason text the hub supplied, appended verbatim when it adds detail
+        beyond the recognised guidance.
+
+    Returns
+    -------
+    str
+        A specific, actionable line for a recognised deliberate close, otherwise
+        the generic ``Could not reach hub`` line for an absent or silent hub.
+    """
+    if close_code is None:
+        return f"[{name}] Could not reach hub at {uri}."
+    guidance = _CLOSE_GUIDANCE.get(close_code)
+    if guidance is None:
+        detail = f": {close_reason}" if close_reason else ""
+        return f"[{name}] Hub closed the connection (code {close_code}){detail}."
+    reason = close_reason.strip()
+    suffix = f" (hub said: {reason})" if reason and reason not in guidance else ""
+    return f"[{name}] {guidance} (code {close_code}){suffix}."

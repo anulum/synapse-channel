@@ -15,6 +15,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.connect_failures import describe_connect_failure
 
 AgentFactory = Callable[..., SynapseAgent]
 
@@ -86,7 +87,14 @@ async def _query_hub(
     conn_task = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
-            print(f"[{name}] Could not reach hub at {uri}.")
+            print(
+                describe_connect_failure(
+                    name,
+                    uri,
+                    close_code=agent.last_close_code,
+                    close_reason=agent.last_close_reason,
+                )
+            )
             return 1
         await request(agent)
         for _ in range(attempts):

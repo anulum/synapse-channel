@@ -17,6 +17,7 @@ from typing import Protocol
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.codex_tmux import (
+    DEFAULT_SUBMIT_DELAY,
     CodexTmuxConfig,
     CodexTmuxStatus,
     CodexTmuxWakeResult,
@@ -34,7 +35,13 @@ StatusRunner = Callable[[CodexTmuxConfig], CodexTmuxStatus]
 class Waiter(Protocol):
     """Callable compatible with the wait-and-wake runner."""
 
-    def __call__(self, config: CodexTmuxConfig, *, max_wakes: int | None) -> int:
+    def __call__(
+        self,
+        config: CodexTmuxConfig,
+        *,
+        max_wakes: int | None,
+        max_wait_failures: int | None,
+    ) -> int:
         """Run the wait loop for ``config``."""
 
 
@@ -49,6 +56,7 @@ def _config_from_args(args: argparse.Namespace) -> CodexTmuxConfig:
         synapse_bin=args.synapse_bin,
         uri=args.uri,
         token=args.token,
+        submit_delay=args.submit_delay,
     )
 
 
@@ -89,7 +97,7 @@ def _cmd_codex_tmux(
         _print_status(snapshot)
         return 0 if snapshot.session_exists and snapshot.codex_active else 1
     if args.codex_tmux_command == "wait":
-        return waiter(config, max_wakes=args.max_wakes)
+        return waiter(config, max_wakes=args.max_wakes, max_wait_failures=args.max_wait_failures)
     print("codex-tmux requires a subcommand")
     return 2
 
@@ -108,6 +116,15 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--synapse-bin", default="synapse", help="synapse executable.")
     parser.add_argument("--uri", default=DEFAULT_HUB_URI, help="Synapse hub URI.")
     parser.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    parser.add_argument(
+        "--submit-delay",
+        type=float,
+        default=DEFAULT_SUBMIT_DELAY,
+        help=(
+            "Seconds to pause between typing the wake prompt and pressing Enter "
+            "so the Codex UI commits the line before it is submitted."
+        ),
+    )
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -137,5 +154,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=int,
         default=None,
         help="Stop after N wakes; omit to run until interrupted.",
+    )
+    wait.add_argument(
+        "--max-wait-failures",
+        type=int,
+        default=None,
+        help=(
+            "Give up after N consecutive failed waits; omit to retry the hub "
+            "indefinitely with backoff (the counter resets on every wake)."
+        ),
     )
     wait.set_defaults(func=_cmd_codex_tmux)
