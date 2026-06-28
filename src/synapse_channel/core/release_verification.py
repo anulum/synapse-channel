@@ -17,6 +17,15 @@ from typing import NamedTuple, TypedDict, cast
 
 from synapse_channel.core.receipts import ReleaseReceipt, build_release_receipt
 
+DEFAULT_COMMAND_TIMEOUT_SECONDS = 1800.0
+"""Default per-command verification timeout; a hung command is recorded as failed."""
+
+GIT_TIMEOUT_SECONDS = 60.0
+"""Timeout for each Git query, so a stuck Git invocation cannot hang the run."""
+
+_HASH_CHUNK_BYTES = 1 << 20
+"""Streaming hash chunk size, bounding artifact-hash memory to a fixed window."""
+
 
 class GitState(NamedTuple):
     """Git state captured for a verified release receipt.
@@ -76,14 +85,38 @@ def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _run_command(argv: list[str], *, cwd: Path | None) -> CommandEvidence:
-    """Run one command and return digest-only observed evidence."""
-    result = subprocess.run(  # nosec B603
-        argv,
-        cwd=str(cwd) if cwd is not None else None,
-        check=False,
-        capture_output=True,
-    )
+def _command_failure(argv: list[str], detail: bytes) -> CommandEvidence:
+    """Return failure evidence for a command that could not run to completion."""
+    return {
+        "argv": list(argv),
+        "exit_code": -1,
+        "stdout_sha256": _sha256_bytes(b""),
+        "stderr_sha256": _sha256_bytes(detail),
+    }
+
+
+def _run_command(argv: list[str], *, cwd: Path | None, timeout_seconds: float) -> CommandEvidence:
+    """Run one command and return digest-only observed evidence.
+
+    A command that is empty, cannot launch, or exceeds ``timeout_seconds`` is
+    itself evidence: it is recorded as a failure (``exit_code`` ``-1``) instead of
+    aborting the whole run, so one bad command never discards the evidence already
+    gathered.
+    """
+    if not argv:
+        return _command_failure(argv, b"empty verification command")
+    try:
+        result = subprocess.run(  # nosec B603
+            argv,
+            cwd=str(cwd) if cwd is not None else None,
+            check=False,
+            capture_output=True,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        return _command_failure(argv, f"timed out after {timeout_seconds:.0f}s".encode())
+    except OSError as exc:
+        return _command_failure(argv, f"could not launch: {exc}".encode())
     return {
         "argv": list(argv),
         "exit_code": int(result.returncode),
@@ -93,26 +126,38 @@ def _run_command(argv: list[str], *, cwd: Path | None) -> CommandEvidence:
 
 
 def _hash_artifact(path: Path) -> ArtifactEvidence | None:
-    """Return hash evidence for ``path``, or ``None`` when it does not exist."""
-    if not path.is_file():
+    """Return streamed hash evidence for ``path``, or ``None`` when unreadable.
+
+    The file is hashed in fixed-size chunks so a multi-gigabyte artifact never
+    needs to be fully resident. A missing path, a directory, or a file that
+    disappears between the check and the read all return ``None`` rather than
+    crashing the run.
+    """
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with path.open("rb") as handle:
+            while chunk := handle.read(_HASH_CHUNK_BYTES):
+                digest.update(chunk)
+                size += len(chunk)
+    except OSError:
         return None
-    payload = path.read_bytes()
-    return {
-        "path": str(path),
-        "sha256": _sha256_bytes(payload),
-        "size_bytes": len(payload),
-    }
+    return {"path": str(path), "sha256": digest.hexdigest(), "size_bytes": size}
 
 
 def _git_stdout(root: Path, args: list[str]) -> str:
     """Return stripped stdout from one Git command, or an empty string on failure."""
-    result = subprocess.run(  # nosec B603,B607
-        ["git", *args],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(  # nosec B603,B607
+            ["git", *args],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
     if result.returncode != 0:
         return ""
     return result.stdout.strip()
@@ -157,6 +202,7 @@ def build_verified_release_receipt(
     timestamp: float | None = None,
     signature: str = "",
     cwd: str | Path | None = None,
+    command_timeout_seconds: float = DEFAULT_COMMAND_TIMEOUT_SECONDS,
 ) -> VerifiedReleaseReceipt:
     """Run declared checks and build a JSON-serialisable release receipt.
 
@@ -186,7 +232,10 @@ def build_verified_release_receipt(
         Release receipt carrying observed command, artifact, and Git evidence.
     """
     command_cwd = Path(cwd) if cwd is not None else None
-    command_results = [_run_command(command, cwd=command_cwd) for command in commands]
+    command_results = [
+        _run_command(command, cwd=command_cwd, timeout_seconds=command_timeout_seconds)
+        for command in commands
+    ]
     artifact_results: list[ArtifactEvidence] = []
     known_failures: list[str] = []
     for command in command_results:
@@ -209,6 +258,15 @@ def build_verified_release_receipt(
         + f"stderr_sha256={command['stderr_sha256']}"
         for command in command_results
     ]
+    if changed_files:
+        # git_tree is HEAD's tree, but uncommitted changes were present, so the
+        # commands ran against content that hash does not represent. Surface the
+        # drift as visible (non-failing) evidence rather than letting git_tree
+        # read as clean provenance — verify-release commonly runs pre-commit.
+        evidence.append(
+            f"note: working tree had {len(changed_files)} uncommitted change(s); "
+            f"git_tree {git_tree or '(none)'} is HEAD, not the verified working-tree content"
+        )
     artifact_lines = [
         f"{artifact['path']} sha256={artifact['sha256']} size={artifact['size_bytes']}"
         for artifact in artifact_results
