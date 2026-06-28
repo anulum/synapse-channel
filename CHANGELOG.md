@@ -13,7 +13,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+- Added an identity/ACL shadow-mode tranche (observe-only, non-blocking).
+  `synapse identity audit --identities <file>` inventories declared agent
+  identities and flags rollout blockers (duplicate audit subjects, missing
+  credentials, shared seats). `synapse acl shadow --policy <file> --requests
+  <file>` evaluates candidate accesses against a deny-by-default ACL with
+  structured target patterns (kind plus glob, scoped to a project namespace) and
+  records the would-allow/would-deny decision each would receive — with the
+  matching rule and reason — without ever blocking a frame. Identity-bound
+  credentials and in-hub enforcement remain design targets in
+  `docs/identity-and-acl`.
 
 ## [0.61.0] - 2026-06-28
 
