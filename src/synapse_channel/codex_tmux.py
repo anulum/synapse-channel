@@ -429,9 +429,7 @@ def wait_and_wake(
             sleeper(_backoff_delay(consecutive_failures, base=retry_base, cap=retry_cap))
             continue
         consecutive_failures = 0
-        wake = inject_wake(
-            config, runner=runner, sleeper=sleeper, unsafe_payload=wait_proc.stdout
-        )
+        wake = inject_wake(config, runner=runner, sleeper=sleeper, unsafe_payload=wait_proc.stdout)
         if wake.returncode != 0:
             return wake.returncode
         wakes += 1
