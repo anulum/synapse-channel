@@ -49,6 +49,7 @@ The ``synapse`` command exposes these subcommands:
 * ``release`` — manually drop a claim you own (e.g. an ``--auto-release-on manual`` claim);
 * ``task`` — declare and update the shared task plan from the command line;
 * ``mcp`` — run a Model Context Protocol server over stdio, bridged to the hub;
+* ``mcp-tools`` / ``mcp-call`` — list and call allowlisted external MCP tools (outbound);
 * ``a2a-card`` — emit an Agent2Agent Agent Card projected from the live manifest;
 * ``init`` — print or install local user services for hub, presence, and wake arming;
 * ``worker-session`` — launch a provider command with identity env and a wake sidecar.
@@ -95,6 +96,7 @@ from synapse_channel.cli_git import add_parsers as add_git_parsers
 from synapse_channel.cli_identity import add_parsers as add_identity_parsers
 from synapse_channel.cli_locking import add_parsers as add_locking_parsers
 from synapse_channel.cli_mcp import add_parsers as add_mcp_parsers
+from synapse_channel.cli_mcp_call import add_parsers as add_mcp_call_parsers
 from synapse_channel.cli_memory_projection import add_parsers as add_memory_projection_parsers
 from synapse_channel.cli_messaging import add_parsers as add_messaging_parsers
 from synapse_channel.cli_new import add_parsers as add_new_parsers
@@ -185,6 +187,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_shell_parsers(sub)
 
     add_mcp_parsers(sub)
+
+    add_mcp_call_parsers(sub)
 
     add_a2a_parsers(sub)
 

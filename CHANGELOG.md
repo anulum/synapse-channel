@@ -13,7 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+- Added an outbound MCP client so a Synapse operator can call tools on an
+  external MCP server, the independent counterpart to the inbound `synapse mcp`
+  server. `synapse mcp-tools <server> --config <file>` lists and `synapse mcp-call
+  <server> <tool> --config <file> --arg k=v` invokes tools named in a
+  deny-by-default JSON allowlist — a server or tool that is not allowlisted is
+  refused before the server is contacted. Uses the optional `synapse-channel[mcp]`
+  extra, imported only when a call is made. Per-agent ACLs over outbound MCP
+  remain a later tranche.
 
 ## [0.64.0] - 2026-06-28
 
