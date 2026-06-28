@@ -13,6 +13,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.58.0] - 2026-06-28
+
 ### Added
 - Generalised the tmux wake transport to any terminal coding agent — Codex,
   Kimi K2, Claude Code — through `synapse agent-tmux {start,wake,status,wait}`
