@@ -101,6 +101,7 @@ The trusted local hub remains the coordination authority. It can still see
 channel ids, sender names, recipient names, task ids, timestamps, delivery
 metadata, and retention metadata. Treat private channels as audience-scoping
 inside trusted local coordination until per-agent identity, ACL enforcement, and
-the [signed events and mTLS design](signed-events-mtls.md) exist. Signed events
-can later bind channel ids and membership changes, but they do not encrypt
-payloads.
+the [signed events and mTLS design](signed-events-mtls.md) exist. The
+[identity and ACL design](identity-and-acl.md) is the future layer for join,
+leave, publish, and history-read authorization. Signed events can later bind
+channel ids and membership changes, but they do not encrypt payloads.

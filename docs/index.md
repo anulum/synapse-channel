@@ -48,8 +48,8 @@ state, and every agent connects to it.
 ## Next steps
 
 - [Installation](installation.md) · [Quick start](quickstart.md)
-- [Coordination model](coordination-model.md) · [Policy engine](policy-engine.md) · [Wire protocol](protocol.md)
-- [CLI reference](cli.md) · [Recipes](recipes.md) · [Examples](examples.md)
+- [Coordination model](coordination-model.md) · [Policy engine](policy-engine.md) · [Identity and ACL](identity-and-acl.md)
+- [Wire protocol](protocol.md) · [CLI reference](cli.md) · [Recipes](recipes.md) · [Examples](examples.md)
 - [Deployment](deployment.md)
 
 SYNAPSE CHANNEL is AGPL-3.0-or-later with a commercial licence available. See the

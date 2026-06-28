@@ -20,7 +20,8 @@ The goal is to authenticate selected hub frames after admission while preserving
 the simple local workflow. The first design should support either a keyed
 message authentication code or a signature over each authenticated frame. It
 does not encrypt payloads, does not replace TLS, does not replace signed events,
-and does not replace per-agent identity.
+and does not replace the
+[per-agent identity and ACL design](identity-and-acl.md).
 
 ## Frame authentication profile
 
@@ -116,6 +117,11 @@ not encrypt payloads, does not replace TLS, does not replace signed events,
 does not replace per-agent identity, does not replace ACL enforcement, does not
 sandbox connected agents, and does not make a shared-token hub safe on an
 untrusted network by itself.
+
+Per-message authentication can prove that a selected frame came from a key
+holder. The [identity and ACL design](identity-and-acl.md) remains the future
+layer that maps that key holder to an audit subject and decides whether the
+requested verb and target are allowed.
 
 The local-first tradeoff is key-management complexity. Loopback-only single
 operator use should remain simple. Exposed deployments need explicit keys,

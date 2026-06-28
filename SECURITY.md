@@ -122,6 +122,13 @@ WebSocket frames after connect authentication. It is not implemented yet, does
 not encrypt payloads, does not replace TLS, and does not replace per-agent
 identity or ACL enforcement.
 
+The planned [identity and ACL](docs/identity-and-acl.md) profile scopes
+per-agent identity, identity-bound credentials, project namespaces, allowed
+verbs, target patterns, metrics/A2A/dashboard/release privileges,
+deny-by-default authorization, credential rotation, revocation, and migration
+from shared-token mode. It is not implemented yet and does not replace
+per-message authentication, signed events, TLS, or host process isolation.
+
 ## Out of scope / known limitations
 
 - The connect token is a proportionate shared secret, **not** a cryptographic
