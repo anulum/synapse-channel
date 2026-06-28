@@ -26,12 +26,15 @@ from __future__ import annotations
 
 import json
 import os
+
+# Jitter spreads fleet-wide retry timing; it is not used for any security purpose.
+import random  # nosec B311
 import shlex
 
 # Tmux and synapse subprocesses are this module's controlled process boundary.
 import subprocess  # nosec B404
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import gettempdir
@@ -64,6 +67,15 @@ DEFAULT_WAIT_RETRY_BASE = 1.0
 
 DEFAULT_WAIT_RETRY_CAP = 30.0
 """Maximum backoff, in seconds, between failed ``synapse wait`` attempts."""
+
+DEFAULT_WAIT_RETRY_JITTER = 0.25
+"""Fraction of the backoff added as random jitter, in ``[0, jitter]``.
+
+A fleet of wakers that all lose the hub at the same instant — a hub restart — and
+retry on the same exponential schedule would reconnect in a synchronised burst.
+Spreading each delay by a random fraction de-correlates them so the hub does not
+face a thundering herd on recovery.
+"""
 
 
 class Sleeper(Protocol):
@@ -476,11 +488,39 @@ def _wait_command(config: AgentTmuxConfig) -> list[str]:
     return command
 
 
-def _backoff_delay(failures: int, *, base: float, cap: float) -> float:
-    """Return the capped exponential backoff for the ``failures``-th attempt."""
+def _backoff_delay(
+    failures: int,
+    *,
+    base: float,
+    cap: float,
+    jitter: float = 0.0,
+    rng: Callable[[], float] = random.random,
+) -> float:
+    """Return the capped exponential backoff for the ``failures``-th attempt.
+
+    Parameters
+    ----------
+    failures : int
+        Number of consecutive failures so far (``1`` for the first retry).
+    base, cap : float
+        Base delay and ceiling, in seconds, for the exponential schedule.
+    jitter : float, optional
+        Fraction of the capped delay added as random spread in ``[0, jitter]``.
+    rng : Callable[[], float], optional
+        Returns a float in ``[0, 1)``; injectable so tests stay deterministic.
+
+    Returns
+    -------
+    float
+        ``0.0`` for ``failures <= 0``; otherwise the capped exponential delay
+        plus up to ``jitter`` of itself.
+    """
     if failures <= 0:
         return 0.0
-    return min(base * (2.0 ** (failures - 1)), cap)
+    capped = min(base * (2.0 ** (failures - 1)), cap)
+    if jitter <= 0.0:
+        return capped
+    return capped * (1.0 + jitter * rng())
 
 
 def wait_and_wake(
@@ -492,6 +532,8 @@ def wait_and_wake(
     max_wait_failures: int | None = None,
     retry_base: float = DEFAULT_WAIT_RETRY_BASE,
     retry_cap: float = DEFAULT_WAIT_RETRY_CAP,
+    retry_jitter: float = DEFAULT_WAIT_RETRY_JITTER,
+    rng: Callable[[], float] = random.random,
 ) -> int:
     """Run the wait loop and inject the fixed prompt after successful wakes.
 
@@ -518,6 +560,11 @@ def wait_and_wake(
     retry_base, retry_cap : float, optional
         Base and ceiling, in seconds, for the exponential backoff between
         consecutive failed waits.
+    retry_jitter : float, optional
+        Fraction of each backoff added as random spread so a fleet of wakers does
+        not reconnect in a synchronised burst after a shared hub outage.
+    rng : Callable[[], float], optional
+        Returns a float in ``[0, 1)`` for the jitter; injectable for tests.
 
     Returns
     -------
@@ -534,7 +581,15 @@ def wait_and_wake(
             consecutive_failures += 1
             if max_wait_failures is not None and consecutive_failures >= max_wait_failures:
                 return wait_proc.returncode
-            sleeper(_backoff_delay(consecutive_failures, base=retry_base, cap=retry_cap))
+            sleeper(
+                _backoff_delay(
+                    consecutive_failures,
+                    base=retry_base,
+                    cap=retry_cap,
+                    jitter=retry_jitter,
+                    rng=rng,
+                )
+            )
             continue
         consecutive_failures = 0
         wake = inject_wake(config, runner=runner, sleeper=sleeper, unsafe_payload=wait_proc.stdout)
