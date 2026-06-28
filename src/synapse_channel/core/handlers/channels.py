@@ -32,7 +32,19 @@ async def _reply(
     ok: bool,
     message: str,
 ) -> None:
-    """Send a private channel-operation result to the requester."""
+    """Send a private channel-operation result to the requester.
+
+    The member roster is disclosed only when the operation succeeded *and* the
+    requester is a current member afterwards, so a failed create/leave never
+    leaks the membership of a channel the requester does not belong to (otherwise
+    a non-member could probe arbitrary ids and harvest rosters — an enumeration
+    oracle).
+    """
+    members = (
+        sorted(hub.channels.members(channel))
+        if ok and hub.channels.is_member(channel, sender)
+        else []
+    )
     await hub._send_json(
         websocket,
         hub._system(
@@ -41,7 +53,7 @@ async def _reply(
             target=sender,
             channel=channel,
             ok=ok,
-            members=sorted(hub.channels.members(channel)),
+            members=members,
         ),
     )
 

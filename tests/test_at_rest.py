@@ -89,6 +89,14 @@ def test_passphrase_cipher_round_trips() -> None:
     assert twin.decrypt(cipher.encrypt(b"hi")) == b"hi"
 
 
+def test_passphrase_derivation_works_with_secure_default_parameters() -> None:
+    # The default scrypt profile (n=2**15) must not blow OpenSSL's maxmem; this
+    # exercises the default path that the n=2**10 overrides above skip.
+    salt = b"s" * 16
+    cipher = AtRestCipher.from_passphrase("pw", salt)
+    assert cipher.decrypt(cipher.encrypt(b"default-profile")) == b"default-profile"
+
+
 def test_generate_key_file_writes_owner_only_and_refuses_overwrite(tmp_path: Path) -> None:
     key_path = tmp_path / "store.key"
     generate_key_file(key_path)
@@ -141,6 +149,44 @@ def test_encrypt_file_is_atomic_and_round_trips(tmp_path: Path) -> None:
     assert not (tmp_path / "nested" / "relay.enc.tmp").exists()
     assert is_envelope(target.read_bytes())
     assert decrypt_file(target, cipher) == b"durable"
+
+
+def test_check_key_file_rejects_a_symlink(tmp_path: Path) -> None:
+    real = tmp_path / "real.key"
+    generate_key_file(real)
+    link = tmp_path / "link.key"
+    link.symlink_to(real)
+    ok, reason = check_key_file(link)
+    assert ok is False
+    assert "not a regular file" in reason
+
+
+def test_from_key_file_reports_a_missing_key(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="does not exist"):
+        AtRestCipher.from_key_file(tmp_path / "absent.key")
+
+
+def test_from_key_file_refuses_a_symlink(tmp_path: Path) -> None:
+    real = tmp_path / "real.key"
+    generate_key_file(real)
+    link = tmp_path / "link.key"
+    link.symlink_to(real)
+    with pytest.raises(ValueError, match="must not be a symlink"):
+        AtRestCipher.from_key_file(link)
+
+
+def test_encrypt_file_leaves_no_temp_when_encryption_fails(tmp_path: Path) -> None:
+    class _Boom:
+        def encrypt(self, plaintext: bytes) -> bytes:
+            raise RuntimeError("no cryptography")
+
+    from synapse_channel.core import at_rest
+
+    target = tmp_path / "out.enc"
+    with pytest.raises(RuntimeError):
+        at_rest.encrypt_file(target, b"x", _Boom())  # type: ignore[arg-type]
+    assert not target.exists()
+    assert list(tmp_path.glob("*.tmp")) == []
 
 
 def test_check_key_file_rejects_a_foreign_owner(

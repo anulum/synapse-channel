@@ -8,8 +8,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
+import pytest
 from websockets.asyncio.client import connect
 
 from hub_e2e_helpers import collect_available, read_until_type, running_hub, send_json
@@ -70,6 +72,67 @@ async def test_channel_chat_refuses_a_non_member_sender() -> None:
                 message.get("type") == "chat" and message.get("channel") == "c"
                 for message in alpha_messages
             )
+
+
+async def test_channel_chat_body_is_not_written_to_the_hub_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        async with connect(uri) as alpha, connect(uri) as beta:
+            await _bind(alpha, "ALPHA")
+            await _bind(beta, "BETA")
+            await send_json(alpha, sender="ALPHA", type="channel_create", channel="c")
+            await read_until_type(alpha, "channel_result")
+            await send_json(beta, sender="BETA", type="channel_join", channel="c")
+            await read_until_type(beta, "channel_result")
+
+            with caplog.at_level(logging.INFO, logger="synapse.hub"):
+                await send_json(
+                    alpha, sender="ALPHA", type="chat", channel="c", payload="topsecretbody"
+                )
+                await read_until_type(beta, "chat")
+
+            assert "topsecretbody" not in caplog.text
+            assert "body redacted" in caplog.text
+
+
+async def test_failed_channel_ops_do_not_leak_the_member_roster() -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        async with connect(uri) as alpha, connect(uri) as gamma:
+            await _bind(alpha, "ALPHA")
+            await _bind(gamma, "GAMMA")
+            await send_json(alpha, sender="ALPHA", type="channel_create", channel="c")
+            await read_until_type(alpha, "channel_result")
+
+            # GAMMA, a non-member, probes the channel: a create-collision and a
+            # leave must both fail WITHOUT disclosing ALPHA's membership.
+            await send_json(gamma, sender="GAMMA", type="channel_create", channel="c")
+            collision = await read_until_type(gamma, "channel_result")
+            assert collision["ok"] is False
+            assert collision["members"] == []
+
+            await send_json(gamma, sender="GAMMA", type="channel_leave", channel="c")
+            leave = await read_until_type(gamma, "channel_result")
+            assert leave["ok"] is False
+            assert leave["members"] == []
+
+
+async def test_leaving_a_channel_does_not_echo_the_remaining_roster() -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        async with connect(uri) as alpha, connect(uri) as beta:
+            await _bind(alpha, "ALPHA")
+            await _bind(beta, "BETA")
+            await send_json(alpha, sender="ALPHA", type="channel_create", channel="c")
+            await read_until_type(alpha, "channel_result")
+            await send_json(beta, sender="BETA", type="channel_join", channel="c")
+            await read_until_type(beta, "channel_result")
+
+            # BETA leaves: the op succeeds but BETA is no longer a member, so the
+            # reply must not echo the remaining roster (just ALPHA).
+            await send_json(beta, sender="BETA", type="channel_leave", channel="c")
+            left = await read_until_type(beta, "channel_result")
+            assert left["ok"] is True
+            assert left["members"] == []
 
 
 async def test_channel_create_join_leave_and_list_lifecycle() -> None:
