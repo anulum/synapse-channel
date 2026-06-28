@@ -22,6 +22,27 @@ evaluate whether that identity may perform a requested action before the hub
 mutates state or exposes scoped data. This does not replace per-message
 authentication, does not replace signed events, and does not sandbox agents.
 
+## Implemented (shadow mode)
+
+The observe-only precursor to enforcement is implemented in
+:mod:`synapse_channel.core.identity` and :mod:`synapse_channel.core.acl`:
+
+- `synapse identity audit --identities <file>` loads a declared identity
+  inventory and reports the ambiguities that would block an enforcement rollout:
+  duplicate audit subjects, missing credentials, and seats that run more than one
+  agent id.
+- `synapse acl shadow --policy <file> --requests <file>` evaluates candidate
+  accesses against a deny-by-default ACL policy and records the would-allow /
+  would-deny decision each would receive — with the matching rule and reason —
+  without ever blocking a frame. Target patterns are structured (a kind plus a
+  glob value), scoped to a project namespace, across the permission vocabulary
+  below.
+
+Shadow mode changes nothing about how the hub admits a connection; it produces
+the evidence an operator reviews before turning on enforcement. Identity-bound
+credentials, in-hub evaluation, and the enforcement path below remain design
+targets and are not implemented yet.
+
 ## Identity model
 
 An identity record should separate the stable actor from the terminal, process,

@@ -43,6 +43,8 @@ The ``synapse`` command exposes these subcommands:
 * ``health`` — probe the hub and report reachability as the exit code;
 * ``verify-release`` — run declared checks and write an observed release receipt;
 * ``policy-check`` — evaluate a release receipt against a policy file (advisory);
+* ``identity`` — inventory and audit declared agent identities;
+* ``acl`` — shadow-mode (non-blocking) ACL evaluation of candidate accesses;
 * ``lock`` — hold a lease while running a command, to serialise it across agents;
 * ``release`` — manually drop a claim you own (e.g. an ``--auto-release-on manual`` claim);
 * ``task`` — declare and update the shared task plan from the command line;
@@ -77,6 +79,7 @@ from typing import Any
 
 from synapse_channel import __version__
 from synapse_channel.cli_a2a import add_parsers as add_a2a_parsers
+from synapse_channel.cli_acl_shadow import add_parsers as add_acl_shadow_parsers
 from synapse_channel.cli_adaptive_ttl import add_parsers as add_ttl_advice_parsers
 from synapse_channel.cli_agent_tmux import add_parsers as add_agent_tmux_parsers
 from synapse_channel.cli_arm import add_parser as add_arm_parser
@@ -89,6 +92,7 @@ from synapse_channel.cli_doctor import add_parsers as add_doctor_parsers
 from synapse_channel.cli_encrypt_key import add_parsers as add_encrypt_key_parsers
 from synapse_channel.cli_event_query import add_parsers as add_event_query_parsers
 from synapse_channel.cli_git import add_parsers as add_git_parsers
+from synapse_channel.cli_identity import add_parsers as add_identity_parsers
 from synapse_channel.cli_locking import add_parsers as add_locking_parsers
 from synapse_channel.cli_mcp import add_parsers as add_mcp_parsers
 from synapse_channel.cli_memory_projection import add_parsers as add_memory_projection_parsers
@@ -189,6 +193,10 @@ def build_parser() -> argparse.ArgumentParser:
     add_verify_release_parsers(sub)
 
     add_policy_check_parsers(sub)
+
+    add_identity_parsers(sub)
+
+    add_acl_shadow_parsers(sub)
 
     add_locking_parsers(sub)
 
