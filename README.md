@@ -546,6 +546,13 @@ bundles, certificate pinning, and trusted multi-host peers. It is not
 implemented yet, does not encrypt payloads, does not replace per-agent identity,
 and does not certify external federation.
 
+The planned [per-message authentication](docs/per-message-authentication.md)
+profile scopes keyed message authentication codes or signatures over selected
+WebSocket frames after connect authentication. It defines canonical frames, key
+ids, sender binding, nonces, sequence binding, timestamp windows, replay cache
+bounds, key rotation, revocation, and verification results without claiming
+payload encryption or identity enforcement.
+
 `synapse git-init` bundles the hook install with a short `.synapse/git-claims.md`
 onboarding guide (branch convention + worktree workflow). `synapse state` shows
 each claim's branch; installed git hooks release a claim
@@ -780,9 +787,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 131 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1845 |
+| Test functions | 1849 |
 | Benchmark harnesses | 4 |
-| Documentation pages | 27 |
+| Documentation pages | 28 |
 | GitHub Actions workflows | 10 |
 | Optional-dependency groups | 4 |
 
@@ -807,9 +814,9 @@ This snapshot is a static inventory generated from the source tree. Performance 
   hub restart resumes from the durable log, but it is not a high-availability
   cluster.
 - **Connect authentication is a proportionate shared secret**, not a
-  cryptographic identity system — no key exchange, signatures, or per-message
-  authentication. Do not expose the hub on an untrusted network and rely on the
-  token alone.
+  cryptographic identity system — no implemented key exchange, signatures, or
+  per-message authentication. Do not expose the hub on an untrusted network and
+  rely on the token alone.
 - **Graceful shutdown is bounded, not transactional.** `SIGTERM`/`SIGINT` stop
   accepting new sockets, close active WebSocket sessions within
   `--shutdown-close-timeout`, and rely on per-mutation persistence for durable

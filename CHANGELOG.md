@@ -41,6 +41,10 @@ All notable changes to this project are documented here.
 - Added the public signed-events and mTLS design for selected event signatures,
   key rotation, replay protection, verification results, trust bundles,
   certificate pinning, and trusted multi-host peer boundaries.
+- Added the public per-message authentication design for authenticated frames,
+  canonical frames, sender binding, replay cache bounds, key rotation,
+  revocation, and verification-result boundaries after WebSocket connect
+  authentication.
 
 ## [0.54.0] - 2026-06-28
 
