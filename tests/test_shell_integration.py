@@ -59,6 +59,64 @@ def test_render_shell_hook_auto_arms_and_wraps_default_providers() -> None:
     assert "PROMPT_COMMAND" in hook
 
 
+def test_bash_auto_arm_skips_arming_when_a_provider_tmux_waker_is_live(tmp_path: Path) -> None:
+    # Real bash execution: with a live worker-session tmux waker recorded in the
+    # provider-tmux pidfile, __synapse_auto_arm must yield and record no arm.
+    bindir = _write_fake_synapse(tmp_path)
+    run_dir = tmp_path / "run"
+    record = tmp_path / "record"
+    hook_path = tmp_path / "hook.sh"
+    hook_path.write_text(render_shell_hook(shell="bash", provider_commands=()), encoding="utf-8")
+    identity = "user/terminal-fixed"
+    key = "user_terminal-fixed"
+    provider_dir = run_dir / "synapse-provider-tmux"
+    provider_dir.mkdir(parents=True)
+
+    script = (
+        f"export PATH={shlex.quote(str(bindir))}:$PATH\n"
+        f"export XDG_RUNTIME_DIR={shlex.quote(str(run_dir))}\n"
+        f"export SYNAPSE_RECORD={shlex.quote(str(record))}\n"
+        f"export SYN_PROJECT=user SYN_IDENTITY={identity}\n"
+        "sleep 30 &\n"
+        f"printf '%s' \"$!\" > {shlex.quote(str(provider_dir / (key + '.pid')))}\n"
+        f"source {shlex.quote(str(hook_path))}\n"
+        "__synapse_auto_arm\n"
+    )
+    proc = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-c", script],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    # The waker is live, so no passive arm was recorded and no shell pidfile written.
+    assert not record.exists() or record.read_text(encoding="utf-8").strip() == ""
+    assert not (run_dir / "synapse-shell" / f"{key}.pid").exists()
+
+
+def test_bash_hook_yields_to_an_active_provider_tmux_waker() -> None:
+    # The prompt auto-arm must not arm a passive waiter on <identity>-rx when a
+    # worker-session tmux waker already owns it, or the injecting waker is locked out.
+    hook = render_shell_hook(shell="bash")
+    assert "synapse-provider-tmux/$key.pid" in hook
+    assert "__synapse_release_waiter() {" in hook
+    # The provider wrapper releases the passive waiter before worker-session.
+    release_index = hook.index("__synapse_release_waiter || true")
+    worker_index = hook.index('synapse worker-session --project "$SYN_PROJECT"')
+    assert release_index < worker_index
+
+
+def test_fish_hook_yields_to_an_active_provider_tmux_waker() -> None:
+    hook = render_shell_hook(shell="fish", provider_commands=("kimi",))
+    assert "synapse-provider-tmux" in hook
+    assert "function __synapse_release_waiter" in hook
+    assert "__synapse_release_waiter >/dev/null 2>&1; or true" in hook
+    release_index = hook.index("__synapse_release_waiter >/dev/null 2>&1; or true")
+    worker_index = hook.index('synapse worker-session --project "$SYN_PROJECT"')
+    assert release_index < worker_index
+
+
 def test_render_shell_hook_zsh_uses_precmd_hook() -> None:
     hook = render_shell_hook(shell="zsh", provider_commands=("codex",))
     assert "add-zsh-hook precmd __synapse_auto_arm" in hook

@@ -87,6 +87,7 @@ def _provider_function(command: str) -> str:
         f"{name}() {{\n"
         "  __synapse_auto_arm || true\n"
         f"  if command -v synapse >/dev/null 2>&1; then\n"
+        "    __synapse_release_waiter || true\n"
         '    synapse worker-session --project "$SYN_PROJECT" '
         f'--identity "$SYN_IDENTITY" -- {quoted} "$@"\n'
         "  else\n"
@@ -104,6 +105,7 @@ def _fish_provider_function(command: str) -> str:
         f"function {name} --wraps {quoted}\n"
         "  __synapse_auto_arm >/dev/null 2>&1; or true\n"
         "  if command -q synapse\n"
+        "    __synapse_release_waiter >/dev/null 2>&1; or true\n"
         '    synapse worker-session --project "$SYN_PROJECT" '
         f'--identity "$SYN_IDENTITY" -- {quoted} $argv\n'
         "  else\n"
@@ -216,10 +218,43 @@ function __synapse_auto_arm --on-event fish_prompt
       return 0
     end
   end
+  # Yield to an active worker-session tmux waker: it owns "$identity-rx" and can
+  # actually wake the agent's pane, so a second passive waiter on the same name
+  # would only collide and lock the injecting waker out.
+  set -l provider_runtime "$XDG_RUNTIME_DIR/synapse-provider-tmux"
+  if test -z "$XDG_RUNTIME_DIR"
+    set provider_runtime "/tmp/synapse-provider-tmux"
+  end
+  set -l provider_pidfile "$provider_runtime/$key.pid"
+  if test -r "$provider_pidfile"
+    set -l ppid (cat "$provider_pidfile" 2>/dev/null)
+    if test -n "$ppid"; and kill -0 "$ppid" 2>/dev/null
+      return 0
+    end
+  end
   nohup synapse arm --name "$identity-rx" --for "$project" --directed-only \
     >"$logfile" 2>&1 &
   echo $last_pid >"$pidfile"
   disown $last_pid 2>/dev/null
+end
+
+function __synapse_release_waiter
+  # Stop the passive prompt-armed waiter (by its pidfile) so an interactive
+  # provider's own tmux waker can own "$identity-rx" without a name collision.
+  # The waiter is killed, not merely superseded, so it does not re-arm and fight.
+  test -n "$SYN_IDENTITY"; or return 0
+  set -l runtime "$XDG_RUNTIME_DIR/synapse-shell"
+  if test -z "$XDG_RUNTIME_DIR"
+    set runtime "/tmp/synapse-shell"
+  end
+  set -l key (__synapse_safe_key "$SYN_IDENTITY")
+  set -l pidfile "$runtime/$key.pid"
+  test -r "$pidfile"; or return 0
+  set -l pid (cat "$pidfile" 2>/dev/null)
+  if test -n "$pid"
+    kill "$pid" 2>/dev/null
+  end
+  rm -f "$pidfile" 2>/dev/null
 end
 
 function __synapse_run_provider
@@ -227,6 +262,7 @@ function __synapse_run_provider
   set -e argv[1]
   __synapse_auto_arm >/dev/null 2>&1; or true
   if command -q synapse
+    __synapse_release_waiter >/dev/null 2>&1; or true
     synapse worker-session --project "$SYN_PROJECT" --identity "$SYN_IDENTITY" -- \
       "$command_name" $argv
   else
@@ -313,7 +349,7 @@ __synapse_safe_key() {{
 __synapse_auto_arm() {{
   [ "${{SYNAPSE_AUTO_CONNECT:-1}}" = "0" ] && return 0
   command -v synapse >/dev/null 2>&1 || return 0
-  local project identity terminal_id runtime key pidfile logfile pid
+  local project identity terminal_id runtime key pidfile logfile pid provider_pidfile
 
   if [ -n "${{SYN_PROJECT:-}}" ] && [ "${{__SYNAPSE_AUTO_PROJECT:-}}" != "$SYN_PROJECT" ]; then
     project="$SYN_PROJECT"
@@ -344,9 +380,35 @@ __synapse_auto_arm() {{
       return 0
     fi
   fi
+  # Yield to an active worker-session tmux waker: it owns "$identity-rx" and can
+  # actually wake the agent's pane, so a second passive waiter on the same name
+  # would only collide and lock the injecting waker out.
+  provider_pidfile="${{XDG_RUNTIME_DIR:-/tmp}}/synapse-provider-tmux/$key.pid"
+  if [ -r "$provider_pidfile" ]; then
+    pid="$(cat "$provider_pidfile" 2>/dev/null || true)"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      return 0
+    fi
+  fi
   nohup synapse arm --name "$identity-rx" --for "$project" --directed-only \
     >"$logfile" 2>&1 &
   printf '%s\n' "$!" >"$pidfile"
+}}
+
+__synapse_release_waiter() {{
+  # Stop the passive prompt-armed waiter (by its pidfile) so an interactive
+  # provider's own tmux waker can own "$identity-rx" without a name collision.
+  # The waiter is killed, not merely superseded, so it does not re-arm and fight.
+  local runtime key pidfile pid
+  [ -n "${{SYN_IDENTITY:-}}" ] || return 0
+  runtime="${{XDG_RUNTIME_DIR:-/tmp}}/synapse-shell"
+  key="$(__synapse_safe_key "$SYN_IDENTITY")"
+  pidfile="$runtime/$key.pid"
+  [ -r "$pidfile" ] || return 0
+  pid="$(cat "$pidfile" 2>/dev/null || true)"
+  [ -n "$pid" ] && kill "$pid" 2>/dev/null
+  rm -f "$pidfile" 2>/dev/null
+  return 0
 }}
 
 __synapse_run_provider() {{
@@ -354,6 +416,7 @@ __synapse_run_provider() {{
   shift
   __synapse_auto_arm || true
   if command -v synapse >/dev/null 2>&1; then
+    __synapse_release_waiter || true
     synapse worker-session --project "$SYN_PROJECT" --identity "$SYN_IDENTITY" -- \
       "$command_name" "$@"
   else
