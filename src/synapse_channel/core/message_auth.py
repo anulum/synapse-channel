@@ -16,7 +16,7 @@ import time
 from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum
 from hashlib import sha256
 from typing import Any
 
@@ -46,8 +46,13 @@ DEFAULT_SIGNED_MESSAGE_TYPES = (
 """Inbound frame types covered by the first per-message-authentication tranche."""
 
 
-class VerificationResult(StrEnum):
-    """Stable per-message authentication verification result strings."""
+class VerificationResult(str, Enum):
+    """Stable per-message authentication verification result strings.
+
+    Subclasses ``(str, Enum)`` rather than ``enum.StrEnum`` so the module imports
+    on Python 3.10, where ``StrEnum`` does not exist; members remain ``str`` and
+    their ``.value`` is the stable wire string.
+    """
 
     OK = "ok"
     MISSING = "missing"
