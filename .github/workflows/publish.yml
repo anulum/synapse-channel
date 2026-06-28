@@ -4,12 +4,20 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — publish to PyPI on a GitHub Release
+# SYNAPSE CHANNEL — publish to PyPI when a release tag is pushed
 name: publish
 
+# Trigger on the tag push itself, not on `release: published`. release.yml
+# creates the GitHub Release with the default GITHUB_TOKEN, and GitHub does not
+# run workflows from events a GITHUB_TOKEN created (its loop guard), so a
+# `release: published` trigger never fired and every release had to be published
+# to PyPI by hand. The tag push is a real event that fires both release.yml and
+# this workflow in parallel. Trusted publishing is bound to (repository, this
+# workflow file, the `pypi` environment), not to the trigger, so OIDC still
+# authenticates.
 on:
-  release:
-    types: [published]
+  push:
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
