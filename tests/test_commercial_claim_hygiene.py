@@ -8,16 +8,21 @@
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
-from tools import check_commercial_claim_hygiene as checker
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CHECKER = REPO_ROOT / "tools" / "check_commercial_claim_hygiene.py"
 COMMERCIAL_DOC = REPO_ROOT / "docs" / "commercial.md"
+_SPEC = importlib.util.spec_from_file_location("check_commercial_claim_hygiene", CHECKER)
+assert _SPEC is not None and _SPEC.loader is not None
+checker = importlib.util.module_from_spec(_SPEC)
+sys.modules[_SPEC.name] = checker
+_SPEC.loader.exec_module(checker)
 
 
 def _run_checker(*args: str) -> subprocess.CompletedProcess[str]:
