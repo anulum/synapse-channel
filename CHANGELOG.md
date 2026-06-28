@@ -14,6 +14,10 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added fleet visibility to `synapse dashboard` and `/snapshot.json`, including
+  live agents, `-rx` waiters, missing waiters, active and stale claims, ready
+  and blocked tasks, release receipt notes, and optional persisted A2A task
+  counts via `--a2a-state-file`.
 - Added the public agent trust graph design for evidence-linked routing review
   over reliability signals, release receipts, capability observations, handoff
   outcomes, conflict history, provenance references, decay windows, policy

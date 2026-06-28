@@ -218,3 +218,5 @@ def test_dashboard_public_docs_describe_local_readonly_surface() -> None:
     assert "loopback" in cli_docs
     assert "/snapshot.json" in cli_docs
     assert "--allow-non-loopback" in cli_docs
+    assert "fleet" in cli_docs
+    assert "--a2a-state-file" in cli_docs
