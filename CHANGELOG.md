@@ -14,6 +14,8 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added branch-conflict candidates to the dashboard fleet view, derived from
+  active git-scoped claim metadata without running git from the dashboard.
 - Added fleet visibility to `synapse dashboard` and `/snapshot.json`, including
   live agents, `-rx` waiters, missing waiters, active and stale claims, ready
   and blocked tasks, release receipt notes, and optional persisted A2A task

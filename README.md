@@ -264,10 +264,12 @@ repeatable paths and the unsupported behavior that remains outside each demo.
 
 - **Inspect the live board:** `synapse dashboard --port 8765` opens a
   loopback-only read-only HTML view of roster, claims, board tasks, progress,
-  fleet visibility, release receipts, and advertised capabilities, with the
-  same snapshot available at `/snapshot.json` for local tooling. Pass
-  `--a2a-state-file <path>` to add persisted A2A task and push-config counts to
-  the fleet section.
+  fleet visibility, branch-conflict candidates, release receipts, and advertised
+  capabilities, with the same snapshot available at `/snapshot.json` for local
+  tooling. Pass `--a2a-state-file <path>` to add persisted A2A task and
+  push-config counts to the fleet section. The dashboard uses live claim
+  metadata for branch conflicts; run `synapse conflicts --check-diff` when you
+  need client-side git-diff refinement.
 
 - **Verify a release redeploy:** `synapse doctor --redeploy-checklist` prints
   package, service, roster, durable-state, and git-hook checks for a post-release
