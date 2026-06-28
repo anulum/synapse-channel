@@ -1,9 +1,19 @@
-# End-to-end encrypted channels design
+# End-to-end encrypted channels
 
-End-to-end encrypted channels are a design target for routing selected payloads
-through the hub while the hub cannot read plaintext. They are not implemented
-yet. The current hub still processes ordinary JSON payloads and should not be
-described as encrypted beyond transport security and local file permissions.
+End-to-end encrypted channels now have an implemented runtime tranche for
+selected chat payloads. `synapse send --encrypt-key-file` encrypts the message
+body before it reaches the hub, `synapse listen --decrypt-key-file` decrypts it
+locally for a recipient with the same key, and the hub routes ciphertext while
+keeping routing metadata visible. This first tranche uses AES-256-GCM envelopes
+with route-bound authenticated associated data. It does not manage key discovery,
+does not rotate keys, does not remove old member access, and does not protect
+compromised endpoints.
+
+The broader encrypted-channel profile remains a design target for routing
+selected payload classes through the hub while the hub cannot read plaintext.
+The current hub still processes ordinary JSON metadata and should not be
+described as hiding routing metadata beyond transport security and local file
+permissions.
 
 The goal is narrow: let trusted participants hide sensitive content from the
 coordination hub while preserving enough metadata for routing, delivery,
@@ -107,18 +117,18 @@ not encrypt payloads.
 
 ## Boundaries
 
-This is a design target, not implemented yet. End-to-end encrypted channels do
-not replace at-rest encryption; ciphertext can still live in local SQLite files,
-relay logs, and backups. Put another way, the feature does not replace at-rest
-encryption. It does not hide routing metadata. It does not protect compromised
-endpoints, malicious recipients, terminal scrollback, copied plaintext, or
-model-worker egress after a participant decrypts content.
+This runtime tranche does not replace at-rest encryption; ciphertext can still
+live in local SQLite files, relay logs, and backups. Put another way, the
+feature does not replace at-rest encryption. It does not hide routing metadata.
+It does not protect compromised endpoints, malicious recipients, terminal
+scrollback, copied plaintext, or model-worker egress after a participant
+decrypts content.
 
 The local-first tradeoff is operational complexity: key discovery, key
 rotation, member removal, device loss, and recovery phrase handling must be
-documented before the feature ships. Until signed events, per-agent identity,
-and ACLs exist, encrypted channels should remain opt-in and explicit rather
-than becoming the default coordination path. The
+implemented before encrypted channels become a default coordination path. Until
+signed events, per-agent identity, and ACLs exist, encrypted channels remain
+opt-in and explicit. The
 [signed events and mTLS design](signed-events-mtls.md) can authenticate visible
 envelopes and trusted peers later, but it does not encrypt payloads. For
 advertisement tamper evidence, see the

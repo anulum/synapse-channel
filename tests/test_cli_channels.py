@@ -8,12 +8,15 @@
 
 from __future__ import annotations
 
+import argparse
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
 from hub_e2e_helpers import running_hub
 from synapse_channel import cli, cli_channels
+from synapse_channel.core.at_rest import generate_key_file
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.protocol import MessageType
 
@@ -27,6 +30,14 @@ def test_parser_registers_channel_subcommands() -> None:
     assert create.label == "Ops"
     listing = parser.parse_args(["channel", "list", "--name", "A"])
     assert listing.channel_command == "list"
+
+
+def test_parser_registers_channel_key_check() -> None:
+    args = cli.build_parser().parse_args(["channel", "key-check", "payload.key"])
+
+    assert args.channel_command == "key-check"
+    assert args.key_file == "payload.key"
+    assert args.func is cli_channels._cmd_channel_key_check
 
 
 def test_send_parser_accepts_channel_flag() -> None:
@@ -205,3 +216,19 @@ async def test_channel_cli_reports_unreachable_hub(capsys: pytest.CaptureFixture
     )
     assert code == 1
     assert "Could not reach hub" in capsys.readouterr().out
+
+
+def test_channel_key_check_validates_payload_key_file(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    key_path = generate_key_file(tmp_path / "payload.key")
+
+    code = cli_channels._cmd_channel_key_check(
+        argparse.Namespace(channel_command="key-check", key_file=str(key_path))
+    )
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "payload key ok" in out
+    assert "fingerprint=" in out

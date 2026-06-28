@@ -10,12 +10,13 @@
 A private channel is a named recipient set: a message addressed to a channel is
 delivered only to that channel's joined, online members instead of broadcast to
 every connected socket. This is audience scoping inside a trusted local hub, not
-cryptographic secrecy — the hub still sees channel ids, members, and metadata,
-and any member can copy plaintext. Payload hiding from the hub is the separate
-end-to-end-encrypted-channel concern; who-may-join authorization is the future
-identity/ACL concern. This first tranche keeps join open (any agent may join a
-channel by id) so teams can route operational chatter cleanly; membership is
-explicit, so a non-member never receives a channel message.
+cryptographic secrecy by itself — the hub still sees channel ids, members, and
+metadata, and any member can copy plaintext. Client-side encrypted payload
+envelopes in :mod:`synapse_channel.core.payload_crypto` can hide selected bodies
+from the hub while preserving this routing metadata. Who-may-join authorization
+is the future identity/ACL concern. This first tranche keeps join open (any
+agent may join a channel by id) so teams can route operational chatter cleanly;
+membership is explicit, so a non-member never receives a channel message.
 
 See :doc:`../../docs/private-channels` for the full design and the deferred
 projection work (per-channel history policy, retention boundaries, event-query

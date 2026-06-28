@@ -190,6 +190,22 @@ socket connected. Add `--require-recipient` for directed sends that must not
 silently miss: the hub returns a private receipt naming the matched online
 recipients, and the command exits non-zero when none match `--target`.
 
+For selected sensitive payloads, encrypt the body before it reaches the hub and
+decrypt it only on the recipient side:
+
+```bash
+synapse send --target FAST \
+  --encrypt-key-file ./payload.key \
+  --encrypt-key-id project-main-v1 \
+  --encrypt-recipient FAST \
+  "private handoff note"
+synapse listen --name FAST --for FAST --decrypt-key-file ./payload.key
+```
+
+The hub still sees sender, target, channel id, key id, recipient names, nonce,
+ciphertext, and delivery metadata. This does not manage key discovery or
+rotation.
+
 ### Running pieces individually
 
 ```bash
@@ -555,10 +571,11 @@ archive reports, temporary files, and backups, with key storage, key derivation,
 rotation, backup recovery, and lost-key recovery boundaries documented before
 any encryption flag ships.
 
-The planned [end-to-end encrypted channels](docs/end-to-end-encrypted-channels.md)
-profile scopes selected payload encryption for direct messages, private progress
-notes, handoff checkpoints, and A2A artifacts while keeping routing metadata
-visible so the hub can still deliver, retain, and audit coordination events.
+The [end-to-end encrypted channels](docs/end-to-end-encrypted-channels.md)
+runtime encrypts selected chat payloads with `synapse send --encrypt-key-file`
+and decrypts them locally with `synapse listen --decrypt-key-file`, while the
+broader profile for private progress notes, handoff checkpoints, A2A artifacts,
+key discovery, and rotation remains explicit follow-on work.
 
 The planned [private channels](docs/private-channels.md) profile scopes
 audience control for project, worktree, task, and direct channels. It defines
@@ -864,11 +881,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.65.0 |
 | Public API exports | 61 |
-| Package modules | 171 |
-| Classes | 184 |
+| Package modules | 172 |
+| Classes | 187 |
 | Wire message types | 59 |
-| CLI subcommands | 69 |
-| Test functions | 2146 |
+| CLI subcommands | 70 |
+| Test functions | 2161 |
 | Benchmark harnesses | 5 |
 | Documentation pages | 34 |
 | GitHub Actions workflows | 11 |

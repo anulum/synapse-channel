@@ -13,7 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+- Added endpoint-side encrypted chat payloads: `synapse send --encrypt-key-file`
+  writes an AES-256-GCM payload envelope with route-bound AAD, `synapse listen
+  --decrypt-key-file` decrypts locally, and `synapse channel key-check`
+  validates payload key files while keeping key discovery and rotation out of
+  scope.
 
 ## [0.65.0] - 2026-06-29
 

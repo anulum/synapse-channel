@@ -23,6 +23,11 @@ from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.connect_failures import describe_connect_failure
+from synapse_channel.core.payload_crypto import (
+    PayloadCryptoError,
+    load_payload_key,
+    payload_key_fingerprint,
+)
 from synapse_channel.core.protocol import MessageType
 
 AgentFactory = Callable[..., SynapseAgent]
@@ -142,6 +147,17 @@ def _cmd_channel(args: argparse.Namespace) -> int:
     )
 
 
+def _cmd_channel_key_check(args: argparse.Namespace) -> int:
+    """Validate a payload key file for encrypted channel payloads."""
+    try:
+        key = load_payload_key(args.key_file)
+    except (OSError, PayloadCryptoError) as exc:
+        print(f"payload key invalid: {exc}")
+        return 1
+    print(f"payload key ok: fingerprint={payload_key_fingerprint(key)}")
+    return 0
+
+
 def _add_common(parser: argparse.ArgumentParser) -> None:
     """Add shared connection options to a channel subcommand."""
     parser.add_argument("--name", required=True, help="Requesting agent identity.")
@@ -175,3 +191,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     listing = nested.add_parser("list", help="List the channels you belong to.")
     _add_common(listing)
     listing.set_defaults(func=_cmd_channel)
+
+    key_check = nested.add_parser(
+        "key-check",
+        help="Validate a local payload key file for encrypted channel messages.",
+    )
+    key_check.add_argument("key_file", help="32-byte owner-only payload key file.")
+    key_check.set_defaults(func=_cmd_channel_key_check)

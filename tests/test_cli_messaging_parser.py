@@ -53,6 +53,33 @@ def test_parser_send_require_recipient() -> None:
     assert args.receipt_timeout == 2.0
 
 
+def test_parser_send_encrypts_payload_with_key_file() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "send",
+            "secret",
+            "--target",
+            "B",
+            "--encrypt-key-file",
+            "payload.key",
+            "--encrypt-key-id",
+            "direct:v1",
+            "--encrypt-recipient",
+            "B",
+        ]
+    )
+
+    assert args.encrypt_key_file == "payload.key"
+    assert args.encrypt_key_id == "direct:v1"
+    assert args.encrypt_recipients == ["B"]
+
+
+def test_parser_listen_decrypts_payload_with_key_file() -> None:
+    args = cli.build_parser().parse_args(["listen", "--name", "B", "--decrypt-key-file", "k"])
+
+    assert args.decrypt_key_file == "k"
+
+
 def test_parser_wait_wake_jitter() -> None:
     args = cli.build_parser().parse_args(["wait", "--for", "B", "--wake-jitter", "3"])
     assert args.wake_jitter == 3.0

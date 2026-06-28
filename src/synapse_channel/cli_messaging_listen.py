@@ -16,6 +16,12 @@ from typing import Any
 from synapse_channel.cli_messaging_types import AgentFactory, AsyncRunner, ListenRunner
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.connect_failures import describe_connect_failure
+from synapse_channel.core.payload_crypto import (
+    PayloadContext,
+    PayloadCryptoError,
+    decrypt_payload,
+    load_payload_key,
+)
 from synapse_channel.core.protocol import MessageType, is_recipient
 
 
@@ -28,6 +34,7 @@ async def _listen(
     for_name: str | None = None,
     ready_timeout: float = 5.0,
     max_messages: int | None = None,
+    decrypt_key_file: str | None = None,
 ) -> int:
     """Stream chat and presence updates to stdout until the connection ends.
 
@@ -45,12 +52,19 @@ async def _listen(
     max_messages : int or None, optional
         Stop after printing this many messages; ``None`` listens until the
         connection ends.
+    decrypt_key_file : str or None, optional
+        Local 32-byte payload key used to decrypt encrypted chat envelopes.
 
     Returns
     -------
     int
         ``0`` once the connection closes, ``1`` when the hub was unreachable.
     """
+    try:
+        decrypt_key = load_payload_key(decrypt_key_file) if decrypt_key_file else None
+    except (OSError, PayloadCryptoError) as exc:
+        print(f"decryption key failed: {exc}")
+        return 1
     printed = 0
 
     async def show(data: dict[str, Any]) -> None:
@@ -60,7 +74,7 @@ async def _listen(
         if msg_type == MessageType.CHAT:
             if for_name and not is_recipient(str(data.get("target", "all")), for_name):
                 return
-            print(f"{data.get('sender')}: {data.get('payload')}")
+            print(f"{data.get('sender')}: {_render_chat_payload(data, decrypt_key)}")
             did_print = True
         elif msg_type == MessageType.PRESENCE_UPDATE and not for_name:
             online = ", ".join(data.get("online_agents", []))
@@ -110,8 +124,32 @@ def _cmd_listen(
                 token=args.token,
                 for_name=args.for_name,
                 ready_timeout=args.ready_timeout,
+                decrypt_key_file=getattr(args, "decrypt_key_file", None),
             )
         )
     except KeyboardInterrupt:
         print(f"\n[{args.name}] stopped listening.")
         return 0
+
+
+def _render_chat_payload(data: dict[str, Any], decrypt_key: bytes | None) -> str:
+    """Return plaintext, decrypted plaintext, or an encrypted placeholder."""
+    encrypted = data.get("encrypted")
+    if not isinstance(encrypted, dict):
+        return str(data.get("payload") or "")
+    if decrypt_key is None:
+        return str(data.get("payload") or "<encrypted payload>")
+    try:
+        return decrypt_payload(
+            encrypted,
+            decrypt_key,
+            context=PayloadContext(
+                message_type=str(data.get("type") or MessageType.CHAT),
+                sender=str(data.get("sender") or ""),
+                target=str(data.get("target") or "all"),
+                channel=str(data.get("channel") or ""),
+                task_id=str(data.get("task_id") or ""),
+            ),
+        )
+    except PayloadCryptoError as exc:
+        return f"<encrypted payload: {exc}>"

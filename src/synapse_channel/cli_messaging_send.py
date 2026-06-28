@@ -17,6 +17,14 @@ from typing import Any
 from synapse_channel.cli_messaging_types import AgentFactory
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.connect_failures import describe_connect_failure
+from synapse_channel.core.payload_crypto import (
+    PAYLOAD_PLACEHOLDER,
+    PayloadContext,
+    PayloadCryptoError,
+    encrypt_payload,
+    load_payload_key,
+    payload_key_fingerprint,
+)
 from synapse_channel.core.protocol import MessageType
 
 
@@ -51,6 +59,9 @@ async def _send(
     priority: bool = False,
     require_recipient: bool = False,
     receipt_timeout: float = 2.0,
+    encrypt_key_file: str | None = None,
+    encrypt_key_id: str = "",
+    encrypt_recipients: list[str] | None = None,
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
     ready_timeout: float = 5.0,
@@ -70,6 +81,12 @@ async def _send(
         matches ``target``.
     receipt_timeout : float, optional
         Seconds to wait for the delivery receipt when ``require_recipient`` is set.
+    encrypt_key_file : str or None, optional
+        Local 32-byte payload key file used to encrypt ``message`` before send.
+    encrypt_key_id : str, optional
+        Visible key id carried in the encrypted payload envelope.
+    encrypt_recipients : list[str] or None, optional
+        Intended recipient identities bound into encrypted payload AAD.
     agent_factory : AgentFactory, optional
         Factory for the client agent; injectable for testing.
     token : str or None, optional
@@ -112,7 +129,29 @@ async def _send(
             extra["receipt_requested"] = True
         if channel:
             extra["channel"] = channel
-        await agent.send_message(MessageType.CHAT, target=target, payload=message, **extra)
+        outbound_payload = message
+        if encrypt_key_file:
+            try:
+                key = load_payload_key(encrypt_key_file)
+                recipients = encrypt_recipients or ([] if target == "all" else [target])
+                key_id = encrypt_key_id or f"payload:{payload_key_fingerprint(key)}"
+                extra["encrypted"] = encrypt_payload(
+                    message,
+                    key,
+                    key_id=key_id,
+                    recipients=recipients,
+                    context=PayloadContext(
+                        message_type=MessageType.CHAT,
+                        sender=sender_name,
+                        target=target,
+                        channel=channel,
+                    ),
+                )
+                outbound_payload = PAYLOAD_PLACEHOLDER
+            except (OSError, PayloadCryptoError, RuntimeError) as exc:
+                print(f"encryption failed: {exc}")
+                return 1
+        await agent.send_message(MessageType.CHAT, target=target, payload=outbound_payload, **extra)
         if require_recipient:
             receipt = await _wait_for_delivery_receipt(receipts, timeout=receipt_timeout)
             if receipt is None:
@@ -159,6 +198,9 @@ def _cmd_send(args: argparse.Namespace) -> int:
             priority=args.priority,
             require_recipient=getattr(args, "require_recipient", False),
             receipt_timeout=getattr(args, "receipt_timeout", 2.0),
+            encrypt_key_file=getattr(args, "encrypt_key_file", None),
+            encrypt_key_id=getattr(args, "encrypt_key_id", ""),
+            encrypt_recipients=getattr(args, "encrypt_recipients", None),
             token=args.token,
             ready_timeout=args.ready_timeout,
         )
