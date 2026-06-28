@@ -51,6 +51,24 @@ _select_records = _impl._select_records
 _source_by_filename = _impl._source_by_filename
 _source_by_module = _impl._source_by_module
 
+__all__ = [
+    "CliArgs",
+    "ImportedModule",
+    "OwnershipRecord",
+    "PendingOwner",
+    "SourceModule",
+    "TestOwner",
+    "build_ownership_map",
+    "defined_symbols",
+    "discover_sources",
+    "discover_tests",
+    "imported_modules",
+    "main",
+    "parse_args",
+    "records_to_json",
+    "render_human",
+]
+
 
 def main(argv: list[str] | None = None) -> int:
     """Run the packaged ownership mapper from the checkout tool path."""
