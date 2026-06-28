@@ -11,13 +11,34 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shlex
+import tempfile
 from pathlib import Path
 
 from synapse_channel.core.release_verification import (
     build_verified_release_receipt,
     collect_git_state,
 )
+
+
+def _write_receipt_file(output: Path, payload: str) -> None:
+    """Atomically write the receipt with owner-only permissions.
+
+    The receipt records verification command argv and output digests; an argv can
+    carry a secret, so the file is created ``0600`` via ``mkstemp`` and renamed
+    into place, so a reader never observes a partial or world-readable receipt.
+    """
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(dir=output.parent, prefix=f".{output.name}.", suffix=".tmp")
+    temp = Path(temp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload + "\n")
+        os.replace(temp, output)
+    except BaseException:
+        temp.unlink(missing_ok=True)
+        raise
 
 
 def _cmd_verify_release(args: argparse.Namespace) -> int:
@@ -38,8 +59,7 @@ def _cmd_verify_release(args: argparse.Namespace) -> int:
     payload = json.dumps(receipt, sort_keys=True)
     if args.output:
         output = Path(args.output)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(payload + "\n", encoding="utf-8")
+        _write_receipt_file(output, payload)
         print(f"verified release receipt: {output}")
     else:
         print(payload)
