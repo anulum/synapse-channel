@@ -188,6 +188,12 @@ def test_parser_hub_insecure_off_loopback() -> None:
     assert opted.insecure_off_loopback is True
 
 
+def test_parser_hub_paranoid() -> None:
+    assert cli.build_parser().parse_args(["hub"]).paranoid is False
+    opted = cli.build_parser().parse_args(["hub", "--paranoid"])
+    assert opted.paranoid is True
+
+
 def test_parser_hub_tls_certificate_chain() -> None:
     args = cli.build_parser().parse_args(
         ["hub", "--tls-certfile", "cert.pem", "--tls-keyfile", "key.pem"]

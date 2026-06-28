@@ -14,6 +14,10 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added `synapse hub --paranoid` as a fail-closed local hub profile that
+  requires token-protected access, a durable event log, metrics bearer-token auth
+  when metrics are enabled, disables relaxed metrics/off-loopback switches, and
+  prints the missing hardening hooks it does not implement.
 - Added the official read-only Go client for ops and CI tools to fetch dashboard
   JSON snapshots without implementing WebSocket mutation flows.
 - Added a committed five-agent coding fleet benchmark that measures local claim

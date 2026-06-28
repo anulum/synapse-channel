@@ -112,6 +112,12 @@ guide before agents edit files. The A2A bridge step is optional and local-only:
 it validates the HTTP+JSON bridge shape for local tools, but it is not an
 external conformance claim. Do not bind it off-loopback without bearer auth.
 
+For a stricter local hub profile, use `synapse hub --paranoid --db <path>
+--token-file <path>`. Paranoid hub mode requires a shared-secret token, durable
+event log, and metrics bearer token when metrics are enabled; it disables metrics
+query tokens and the insecure off-loopback override while printing the hardening
+hooks that are still missing.
+
 ## Recovery: picking up after a restart
 
 Nothing is lost when a terminal or session goes down — the feed, the plan, and the

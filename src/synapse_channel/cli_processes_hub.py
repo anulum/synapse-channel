@@ -19,6 +19,7 @@ from synapse_channel.cli_processes_runtime import _run
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import InsecureBindError, SynapseHub
 from synapse_channel.core.logging_setup import configure_logging
+from synapse_channel.core.paranoid import ParanoidModeError, apply_paranoid_hub_profile
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
 from synapse_channel.core.tls import HubTLSConfigError, build_server_ssl_context
@@ -39,6 +40,14 @@ def _cmd_hub(
     resumes from it on restart; without it the hub is purely in-memory.
     """
     logging_configurator(log_format=args.log_format, level=args.log_level)
+    try:
+        paranoid_report = apply_paranoid_hub_profile(args)
+    except ParanoidModeError as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        return 2
+    if paranoid_report is not None:
+        for line in paranoid_report.stderr_lines():
+            print(f"synapse hub: {line}", file=sys.stderr)
     try:
         ssl_context = tls_context_factory(certfile=args.tls_certfile, keyfile=args.tls_keyfile)
     except HubTLSConfigError as exc:
