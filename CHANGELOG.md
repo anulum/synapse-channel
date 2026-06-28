@@ -13,6 +13,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.65.0] - 2026-06-29
+
 ### Added
 - Added an outbound MCP client so a Synapse operator can call tools on an
   external MCP server, the independent counterpart to the inbound `synapse mcp`
