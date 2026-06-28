@@ -468,6 +468,15 @@ they do not grant executable trust or certify that a remote peer conforms.
 a discovery-only capability directory for agents and tools. Directory entries
 are routing hints and review evidence only; they do not reserve capacity,
 authorize execution, or certify agent/tool trust.
+
+### Official Go client
+
+`clients/go/synapse` provides the official Go client for read-only ops and CI
+tools. It fetches HTTP JSON surfaces such as `synapse dashboard` `/snapshot.json`
+through `DashboardSnapshot` or `GetJSON`, with optional bearer authentication.
+It does not implement the WebSocket mutation protocol for claims, chat, board
+writes, release receipts, or presence. See the [Go client guide](docs/go-client.md).
+
 `synapse route-task TASK-1` uses that live directory plus the shared board to
 rank candidate agents with deterministic local signals. With
 `--event-store ./synapse.db`, it also uses positive release-receipt assessment
@@ -817,9 +826,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 136 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1873 |
+| Test functions | 1879 |
 | Benchmark harnesses | 5 |
-| Documentation pages | 32 |
+| Documentation pages | 33 |
 | GitHub Actions workflows | 10 |
 | Optional-dependency groups | 4 |
 
