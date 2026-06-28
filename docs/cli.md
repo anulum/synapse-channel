@@ -133,14 +133,15 @@ than restarting.
 board, and manifest snapshots from the live hub. It serves `/` for the browser
 view and `/snapshot.json` for local tooling. The snapshot also includes a derived
 `fleet` section for live agents, `-rx` waiters, missing waiters, active and stale
-claims, branch-conflict candidates from live git-scoped claims, ready and blocked
-board tasks, release receipt notes, and optional A2A task counts. Pass
-`--a2a-state-file <path>` to summarise a persisted
-`synapse a2a-serve --state-file <path>` store in that section. Dashboard branch
-conflicts use the same declared-claim metadata as `synapse conflicts`; they do
-not run git or apply `--check-diff` refinement. Use `--allow-non-loopback` only
-behind trusted local network controls because the page exposes agent names,
-claim scopes, branch names, and task text.
+claims, a task-dependency graph from blackboard task edges, branch-conflict candidates
+from live git-scoped claims, ready and blocked board tasks, release receipt
+notes, and optional A2A task counts. Pass `--a2a-state-file <path>` to
+summarise a persisted `synapse a2a-serve --state-file <path>` store in that
+section. The task-dependency graph is read-only and does not mutate the
+blackboard. Dashboard branch conflicts use the same declared-claim metadata as
+`synapse conflicts`; they do not run git or apply `--check-diff` refinement. Use
+`--allow-non-loopback` only behind trusted local network controls because the
+page exposes agent names, claim scopes, branch names, and task text.
 
 ## Identities and groups
 
