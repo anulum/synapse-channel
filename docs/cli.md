@@ -46,6 +46,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse git-release` | Release the claims whose paths a commit or merge just touched. |
 | `synapse conflicts` | Predict cross-branch merge conflicts between overlapping claims; exit non-zero on a hit. |
 | `synapse verify-release` | Run declared verification commands and write an observed release receipt JSON. |
+| `synapse policy-check` | Evaluate a release receipt against a policy file; advisory by default, `--enforce` to gate. |
 | `synapse lock` | Hold a lease while running a command, to serialise it across agents. |
 | `synapse release` | Manually drop a claim you own (e.g. an `--auto-release-on manual` claim). |
 | `synapse task` | Declare and update the shared task plan. |

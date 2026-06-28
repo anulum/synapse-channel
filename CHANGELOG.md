@@ -17,6 +17,14 @@ All notable changes to this project are documented here.
 - Added `synapse verify-release`, which runs declared verification commands,
   records observed stdout/stderr digests, artifact hashes, Git state, and writes
   receipt JSON for `synapse release --receipt`.
+- Added an advisory policy engine and `synapse policy-check TASK --policy
+  <file> --receipt-json <file>`, which evaluates a release receipt against a
+  small JSON/TOML policy and prints deterministic pass/warn/fail/not_applicable
+  decisions (required tests, strict typing evidence, owner approval, evidence
+  freshness, receipt presence, known-failure acknowledgement, generated-artifact
+  parity), each with the evidence it used and a next action. Advisory by default;
+  `--enforce` exits non-zero only when an enforcement-mode policy has a failing
+  rule. Pairs with `verify-release` receipts.
 
 ## [0.60.0] - 2026-06-28
 
