@@ -40,6 +40,16 @@ Start the read-only dashboard beside a hub:
 synapse dashboard --port 8765
 ```
 
+For an intentionally exposed dashboard bind, require dashboard-local bearer
+authentication:
+
+```bash
+synapse dashboard \
+  --host 0.0.0.0 \
+  --allow-non-loopback \
+  --dashboard-token "$DASHBOARD_TOKEN"
+```
+
 Then read `/snapshot.json`:
 
 ```go
@@ -80,12 +90,14 @@ Pass `WithBearerToken` when the HTTP surface requires a bearer token:
 ```go
 client, err := synapse.NewClient(
 	"http://127.0.0.1:8765",
-	synapse.WithBearerToken(os.Getenv("SYNAPSE_TOKEN")),
+	synapse.WithBearerToken(os.Getenv("DASHBOARD_TOKEN")),
 )
 ```
 
-The client sends `Authorization: Bearer <token>` and returns a `StatusError`
-when the endpoint rejects the request.
+The dashboard requires this header when started with `--dashboard-token` or when
+Synapse generates a startup token for a non-loopback bind. The client sends
+`Authorization: Bearer <token>` and returns a `StatusError` when the endpoint
+rejects the request.
 
 ## Boundary
 
