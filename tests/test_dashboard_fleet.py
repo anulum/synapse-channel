@@ -66,12 +66,33 @@ def test_fleet_visibility_derives_snapshot_counts(tmp_path: Path) -> None:
                     "owner": "SYNAPSE-CHANNEL/codex-main",
                     "lease_expires_at": 250.0,
                     "paths": ["src/synapse_channel/dashboard.py"],
+                    "git": {
+                        "branch": "feature/fleet-a",
+                        "base": "main",
+                        "auto_release_on": "merge",
+                    },
+                },
+                {
+                    "task_id": "ACTIVE-2",
+                    "owner": "SYNAPSE-CHANNEL/reviewer",
+                    "lease_expires_at": 260.0,
+                    "paths": ["src/synapse_channel/dashboard.py"],
+                    "git": {
+                        "branch": "feature/fleet-b",
+                        "base": "main",
+                        "auto_release_on": "merge",
+                    },
                 },
                 {
                     "task_id": "STALE",
                     "owner": "SYNAPSE-CHANNEL/reviewer",
                     "lease_expires_at": 120.0,
                     "paths": ["tests/test_dashboard_fleet.py"],
+                    "git": {
+                        "branch": "feature/stale",
+                        "base": "main",
+                        "auto_release_on": "merge",
+                    },
                 },
             ]
         },
@@ -107,8 +128,24 @@ def test_fleet_visibility_derives_snapshot_counts(tmp_path: Path) -> None:
     ]
     assert fleet["agents"]["waiters"] == ["SYNAPSE-CHANNEL/codex-main-rx"]
     assert fleet["agents"]["missing_waiters"] == ["SYNAPSE-CHANNEL/reviewer-rx"]
-    assert fleet["claims"]["active"] == 1
+    assert fleet["claims"]["active"] == 2
     assert fleet["claims"]["stale"] == 1
+    assert fleet["branch_conflicts"] == [
+        {
+            "owner_a": "SYNAPSE-CHANNEL/codex-main",
+            "branch_a": "feature/fleet-a",
+            "base_a": "main",
+            "owner_b": "SYNAPSE-CHANNEL/reviewer",
+            "branch_b": "feature/fleet-b",
+            "base_b": "main",
+            "paths": ["src/synapse_channel/dashboard.py"],
+            "description": (
+                "SYNAPSE-CHANNEL/codex-main@feature/fleet-a vs "
+                "SYNAPSE-CHANNEL/reviewer@feature/fleet-b "
+                "(both -> main): src/synapse_channel/dashboard.py"
+            ),
+        }
+    ]
     assert fleet["tasks"]["ready"] == ["READY"]
     assert fleet["tasks"]["blocked"] == [{"task_id": "BLOCKED", "blocked_by": ["READY"]}]
     assert fleet["receipts"][0]["task_id"] == "ACTIVE"
@@ -146,6 +183,7 @@ def test_fleet_visibility_renders_in_dashboard_html(tmp_path: Path) -> None:
     assert "Fleet visibility" in html
     assert "Missing waiters" in html
     assert "A2A tasks" in html
+    assert "Branch conflicts" in html
     assert "Release receipts" in html
     assert "TASK_STATE_FAILED" in html
 
@@ -164,6 +202,7 @@ async def test_dashboard_http_json_includes_fleet_visibility(tmp_path: Path) -> 
     async with running_hub(SynapseHub()) as (_hub, uri):
         worker = await connect_agent("SYNAPSE-CHANNEL/worker", uri)
         waiter = await connect_agent("SYNAPSE-CHANNEL/worker-rx", uri)
+        reviewer = await connect_agent("SYNAPSE-CHANNEL/reviewer", uri)
         try:
             await worker.agent.post_task("READY", title="Ready task")
             await worker.recorder.wait_for(
@@ -181,6 +220,36 @@ async def test_dashboard_http_json_includes_fleet_visibility(tmp_path: Path) -> 
                 lambda message: (
                     message.get("type") == "ledger_progress_posted"
                     and message.get("note", {}).get("task_id") == "READY"
+                )
+            )
+            await worker.agent.claim(
+                "CLAIM-A",
+                paths=["src/synapse_channel/dashboard_fleet.py"],
+                worktree="feature-a",
+                git={
+                    "branch": "feature/dashboard-a",
+                    "base": "main",
+                    "auto_release_on": "merge",
+                },
+            )
+            await worker.recorder.wait_for(
+                lambda message: (
+                    message.get("type") == "claim_granted" and message.get("task_id") == "CLAIM-A"
+                )
+            )
+            await reviewer.agent.claim(
+                "CLAIM-B",
+                paths=["src/synapse_channel/dashboard_fleet.py"],
+                worktree="feature-b",
+                git={
+                    "branch": "feature/dashboard-b",
+                    "base": "main",
+                    "auto_release_on": "merge",
+                },
+            )
+            await reviewer.recorder.wait_for(
+                lambda message: (
+                    message.get("type") == "claim_granted" and message.get("task_id") == "CLAIM-B"
                 )
             )
             server = start_dashboard_server(
@@ -202,7 +271,7 @@ async def test_dashboard_http_json_includes_fleet_visibility(tmp_path: Path) -> 
             finally:
                 server.close()
         finally:
-            await close_agents(worker, waiter)
+            await close_agents(worker, waiter, reviewer)
 
     payload = json.loads(body)
     assert status == 200
@@ -210,5 +279,9 @@ async def test_dashboard_http_json_includes_fleet_visibility(tmp_path: Path) -> 
     assert "SYNAPSE-CHANNEL/worker" in payload["fleet"]["agents"]["live"]
     assert payload["fleet"]["agents"]["waiters"] == ["SYNAPSE-CHANNEL/worker-rx"]
     assert payload["fleet"]["tasks"]["ready"] == ["READY"]
+    assert payload["fleet"]["branch_conflicts"][0]["paths"] == [
+        "src/synapse_channel/dashboard_fleet.py"
+    ]
+    assert payload["fleet"]["branch_conflicts"][0]["branch_a"] == "feature/dashboard-a"
     assert payload["fleet"]["receipts"][0]["task_id"] == "READY"
     assert payload["fleet"]["a2a"]["total"] == 2

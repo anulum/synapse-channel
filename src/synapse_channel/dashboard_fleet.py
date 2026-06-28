@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 from synapse_channel.a2a_store import A2ATaskStore
 from synapse_channel.core.ledger import TERMINAL_LEDGER_STATUSES
+from synapse_channel.git.gitconflict import find_conflicts
 
 if TYPE_CHECKING:
     from synapse_channel.dashboard import DashboardSnapshot
@@ -157,6 +158,8 @@ class FleetVisibility:
         Ready and blocked blackboard task summary.
     receipts : list[dict[str, Any]]
         Release receipt progress notes from the blackboard snapshot.
+    branch_conflicts : list[dict[str, Any]]
+        Advisory cross-branch conflict candidates derived from active claims.
     a2a : FleetA2A
         Optional persisted A2A task summary.
     generated_at : float
@@ -167,6 +170,7 @@ class FleetVisibility:
     claims: FleetClaims
     tasks: FleetTasks
     receipts: list[JsonDict]
+    branch_conflicts: list[JsonDict]
     a2a: FleetA2A
     generated_at: float
 
@@ -177,6 +181,7 @@ class FleetVisibility:
             "claims": self.claims.to_dict(),
             "tasks": self.tasks.to_dict(),
             "receipts": self.receipts,
+            "branch_conflicts": self.branch_conflicts,
             "a2a": self.a2a.to_dict(),
             "generated_at": self.generated_at,
         }
@@ -223,13 +228,21 @@ def _float_or_none(value: object) -> float | None:
 def _claim_record(claim: Mapping[str, object], *, stale: bool) -> JsonDict:
     """Return a bounded claim record for fleet JSON."""
     paths = claim.get("paths")
-    return {
+    record: JsonDict = {
         "task_id": str(claim.get("task_id", "")),
         "owner": str(claim.get("owner", "")),
         "lease_expires_at": claim.get("lease_expires_at"),
         "paths": _as_strings(paths),
         "stale": stale,
     }
+    git = claim.get("git")
+    if isinstance(git, Mapping):
+        record["git"] = {
+            "branch": str(git.get("branch", "")),
+            "base": str(git.get("base") or "main"),
+            "auto_release_on": str(git.get("auto_release_on", "")),
+        }
+    return record
 
 
 def _fleet_claims(state: Mapping[str, object], *, now: float) -> FleetClaims:
@@ -252,6 +265,24 @@ def _fleet_claims(state: Mapping[str, object], *, now: float) -> FleetClaims:
         active_claims=active,
         stale_claims=stale,
     )
+
+
+def _branch_conflicts(claims: FleetClaims) -> list[JsonDict]:
+    """Return advisory branch-conflict candidates from active claim records."""
+    raw_conflicts = find_conflicts(claims.active_claims)
+    return [
+        {
+            "owner_a": conflict.owner_a,
+            "branch_a": conflict.branch_a,
+            "base_a": conflict.base_a,
+            "owner_b": conflict.owner_b,
+            "branch_b": conflict.branch_b,
+            "base_b": conflict.base_b,
+            "paths": list(conflict.paths),
+            "description": conflict.describe(),
+        }
+        for conflict in raw_conflicts
+    ]
 
 
 def _task_index(tasks: list[Mapping[str, object]]) -> dict[str, Mapping[str, object]]:
@@ -359,11 +390,13 @@ def build_fleet_visibility(
     """
     timestamp = time.time() if now is None else float(now)
     path = Path(a2a_state_file) if a2a_state_file is not None else None
+    claims = _fleet_claims(snapshot.state, now=timestamp)
     return FleetVisibility(
         agents=_fleet_agents(snapshot.online_agents),
-        claims=_fleet_claims(snapshot.state, now=timestamp),
+        claims=claims,
         tasks=_fleet_tasks(snapshot.board),
         receipts=_release_receipts(snapshot.board),
+        branch_conflicts=_branch_conflicts(claims),
         a2a=_a2a_summary(path),
         generated_at=timestamp,
     )
@@ -441,6 +474,10 @@ def render_fleet_visibility_html(
     <section>
       <h2>Blocked tasks</h2>
       <ul>{_render_record_list(fleet.tasks.blocked, empty="No blocked tasks")}</ul>
+    </section>
+    <section>
+      <h2>Branch conflicts</h2>
+      <ul>{_render_record_list(fleet.branch_conflicts, empty="No branch conflicts")}</ul>
     </section>
     <section>
       <h2>Release receipts</h2>
