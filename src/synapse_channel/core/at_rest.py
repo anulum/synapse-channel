@@ -28,6 +28,7 @@ import hashlib
 import os
 import secrets
 import stat
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
@@ -102,15 +103,24 @@ def derive_key(passphrase: str, salt: bytes, *, n: int, r: int, p: int) -> bytes
     -------
     bytes
         A 32-byte AES-256-GCM key.
+
+    Notes
+    -----
+    ``maxmem`` is set from the parameters rather than left at OpenSSL's 32 MiB
+    default: scrypt needs ``128 * n * r`` bytes, which the secure default
+    ``n = 2**15`` already meets, so ``maxmem=0`` would make the default profile
+    raise ``ValueError: memory limit exceeded``.
     """
+    n_i, r_i = int(n), int(r)
+    maxmem = 2 * 128 * n_i * r_i
     return hashlib.scrypt(
         passphrase.encode("utf-8"),
         salt=salt,
-        n=int(n),
-        r=int(r),
+        n=n_i,
+        r=r_i,
         p=int(p),
         dklen=KEY_BYTES,
-        maxmem=0,
+        maxmem=maxmem,
     )
 
 
@@ -161,10 +171,20 @@ class AtRestCipher:
         ValueError
             When the key file fails its ownership/mode check or has a wrong size.
         """
-        ok, reason = check_key_file(path)
-        if not ok:
-            raise ValueError(reason)
-        return cls(Path(path).read_bytes())
+        target = Path(path)
+        try:
+            fd = os.open(target, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        except FileNotFoundError as exc:
+            raise ValueError(f"key file does not exist: {target}") from exc
+        except OSError as exc:  # O_NOFOLLOW raises (ELOOP) when the path is a symlink.
+            raise ValueError(f"key file must not be a symlink: {target}") from exc
+        try:
+            ok, reason = _validate_key_stat(os.fstat(fd), target)
+            if not ok:
+                raise ValueError(reason)
+            return cls(os.read(fd, KEY_BYTES))
+        finally:
+            os.close(fd)
 
     def encrypt(self, plaintext: bytes) -> bytes:
         """Return the AES-GCM envelope for ``plaintext`` with a fresh nonce."""
@@ -223,8 +243,24 @@ def generate_key_file(path: str | Path) -> Path:
     return target
 
 
+def _validate_key_stat(info: os.stat_result, target: Path) -> tuple[bool, str]:
+    """Validate a key file's stat result for regularity, mode, owner, and size."""
+    if not stat.S_ISREG(info.st_mode):
+        return False, f"key file is not a regular file: {target}"
+    if info.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+        return False, f"key file must be owner-only (chmod 600): {target}"
+    if hasattr(os, "geteuid") and info.st_uid != os.geteuid():
+        return False, f"key file must be owned by the current user: {target}"
+    if info.st_size != KEY_BYTES:
+        return False, f"key file must hold exactly {KEY_BYTES} bytes: {target}"
+    return True, "ok"
+
+
 def check_key_file(path: str | Path) -> tuple[bool, str]:
     """Verify a key file exists, is owner-only, and holds a full-length key.
+
+    Uses :func:`os.lstat`, so a symlink at the key path is reported as a
+    non-regular file rather than silently validated against its target.
 
     Parameters
     ----------
@@ -238,33 +274,32 @@ def check_key_file(path: str | Path) -> tuple[bool, str]:
     """
     target = Path(path)
     try:
-        info = target.stat()
+        info = os.lstat(target)
     except FileNotFoundError:
         return False, f"key file does not exist: {target}"
-    if not stat.S_ISREG(info.st_mode):
-        return False, f"key file is not a regular file: {target}"
-    if info.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-        return False, f"key file must be owner-only (chmod 600): {target}"
-    if hasattr(os, "geteuid") and info.st_uid != os.geteuid():
-        return False, f"key file must be owned by the current user: {target}"
-    if info.st_size != KEY_BYTES:
-        return False, f"key file must hold exactly {KEY_BYTES} bytes: {target}"
-    return True, "ok"
+    return _validate_key_stat(info, target)
 
 
 def encrypt_file(path: str | Path, plaintext: bytes, cipher: AtRestCipher) -> None:
     """Atomically write an encrypted envelope of ``plaintext`` to ``path``.
 
-    The ciphertext is written to a sibling temporary file and renamed into place,
-    so a reader never observes a half-written envelope.
+    The ciphertext is written to a fresh ``mkstemp`` sibling — a random,
+    ``O_EXCL``, ``0o600`` file that cannot be a pre-planted symlink — and renamed
+    into place, so a reader never observes a half-written envelope and an attacker
+    with directory write access cannot redirect the write. The temporary file is
+    unlinked if anything fails before the rename.
     """
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    temp = target.with_suffix(target.suffix + ".tmp")
-    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "wb") as handle:
-        handle.write(cipher.encrypt(plaintext))
-    os.replace(temp, target)
+    fd, temp_name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
+    temp = Path(temp_name)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(cipher.encrypt(plaintext))
+        os.replace(temp, target)
+    except BaseException:
+        temp.unlink(missing_ok=True)
+        raise
 
 
 def decrypt_file(path: str | Path, cipher: AtRestCipher) -> bytes:

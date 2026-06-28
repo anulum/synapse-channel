@@ -756,7 +756,15 @@ class SynapseHub:
         is_new_agent = self.clients.set_agent_socket(sender, websocket)
         if is_new_agent:
             await self._broadcast_presence("joined", sender)
-        logger.info("[%s -> %s] (%s): %s", sender, target, msg_type, self._redact_payload(payload))
+        # A channel-scoped frame is audience-restricted, so its body must not land
+        # in the hub log either — log the channel id and length, never the content.
+        channel_id = str(data.get("channel") or "").strip()
+        logged_payload = (
+            f"<channel {channel_id!r} body redacted, {len(payload)} chars>"
+            if channel_id
+            else self._redact_payload(payload)
+        )
+        logger.info("[%s -> %s] (%s): %s", sender, target, msg_type, logged_payload)
 
         if (
             msg_type != MessageType.HEARTBEAT
