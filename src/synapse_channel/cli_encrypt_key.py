@@ -18,7 +18,20 @@ from __future__ import annotations
 
 import argparse
 
-from synapse_channel.core.at_rest import check_key_file, generate_key_file
+from synapse_channel.core.at_rest import (
+    AtRestCipher,
+    AtRestProfileReport,
+    AtRestSurface,
+    backup_profile,
+    check_key_file,
+    full_profile_surfaces,
+    generate_key_file,
+    inspect_profile,
+    migrate_profile,
+    rekey_profile,
+    require_encrypted_profile,
+    restore_profile_backup,
+)
 
 
 def _cmd_generate(args: argparse.Namespace) -> int:
@@ -39,6 +52,131 @@ def _cmd_check(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def _surfaces(args: argparse.Namespace) -> tuple[AtRestSurface, ...]:
+    """Build at-rest profile surfaces from shared CLI flags."""
+    return full_profile_surfaces(
+        sqlite_event_stores=args.sqlite_db,
+        relay_logs=args.relay_log,
+        a2a_state_files=args.a2a_state_file,
+        cursor_files=args.cursor,
+        archive_outputs=args.archive_report,
+    )
+
+
+def _print_report(report: AtRestProfileReport) -> None:
+    """Print a compact at-rest profile inspection report."""
+    print(f"surfaces: {report.total}")
+    print(f"existing: {report.existing}")
+    print(f"missing: {report.missing}")
+    print(f"encrypted: {report.encrypted}")
+    print(f"plaintext: {report.plaintext}")
+    for status in report.statuses:
+        if not status.exists:
+            print(f"missing {status.surface.role}: {status.surface.path}")
+        elif not status.encrypted or not status.decryptable:
+            print(f"problem {status.surface.role}: {status.surface.path} ({status.reason})")
+
+
+def _cmd_profile(args: argparse.Namespace) -> int:
+    """Inspect the configured at-rest profile and optionally require encryption."""
+    try:
+        cipher = AtRestCipher.from_key_file(args.key)
+        surfaces = _surfaces(args)
+        report = (
+            require_encrypted_profile(surfaces, cipher)
+            if args.require_encrypted
+            else inspect_profile(surfaces, cipher)
+        )
+    except ValueError as exc:
+        print(f"at-rest profile problem: {exc}")
+        return 1
+    _print_report(report)
+    return 0
+
+
+def _cmd_migrate(args: argparse.Namespace) -> int:
+    """Encrypt existing plaintext profile surfaces with the configured key."""
+    try:
+        cipher = AtRestCipher.from_key_file(args.key)
+        result = migrate_profile(_surfaces(args), cipher, backup_dir=args.backup_dir)
+    except ValueError as exc:
+        print(f"at-rest migration problem: {exc}")
+        return 1
+    print(f"encrypted {result.changed} file(s); skipped {result.skipped} file(s)")
+    return 0
+
+
+def _cmd_rekey(args: argparse.Namespace) -> int:
+    """Rotate encrypted profile surfaces from one key file to another."""
+    try:
+        old_cipher = AtRestCipher.from_key_file(args.old_key)
+        new_cipher = AtRestCipher.from_key_file(args.new_key)
+        result = rekey_profile(
+            _surfaces(args),
+            old_cipher,
+            new_cipher,
+            backup_dir=args.backup_dir,
+        )
+    except ValueError as exc:
+        print(f"at-rest rekey problem: {exc}")
+        return 1
+    print(f"re-encrypted {result.changed} file(s); skipped {result.skipped} file(s)")
+    return 0
+
+
+def _cmd_backup(args: argparse.Namespace) -> int:
+    """Write a recovery bundle manifest for encrypted profile surfaces."""
+    try:
+        cipher = AtRestCipher.from_key_file(args.key)
+        manifest = backup_profile(_surfaces(args), args.backup_dir, cipher)
+    except ValueError as exc:
+        print(f"at-rest backup problem: {exc}")
+        return 1
+    print(f"backup manifest: {manifest}")
+    return 0
+
+
+def _cmd_restore(args: argparse.Namespace) -> int:
+    """Restore encrypted profile surfaces from a recovery bundle manifest."""
+    try:
+        cipher = AtRestCipher.from_key_file(args.key)
+        result = restore_profile_backup(args.manifest, cipher)
+    except ValueError as exc:
+        print(f"at-rest restore problem: {exc}")
+        return 1
+    print(f"restored {result.changed} file(s)")
+    return 0
+
+
+def _add_surface_args(parser: argparse.ArgumentParser) -> None:
+    """Register the shared at-rest profile surface selectors."""
+    parser.add_argument(
+        "--sqlite-db",
+        action="append",
+        default=[],
+        help="SQLite event-store path; includes -wal and -shm sidecars.",
+    )
+    parser.add_argument("--relay-log", action="append", default=[], help="Relay NDJSON log path.")
+    parser.add_argument(
+        "--a2a-state-file",
+        action="append",
+        default=[],
+        help="Agent2Agent bridge state-file path.",
+    )
+    parser.add_argument(
+        "--cursor",
+        action="append",
+        default=[],
+        help="Relay or ingest cursor path.",
+    )
+    parser.add_argument(
+        "--archive-report",
+        action="append",
+        default=[],
+        help="Compaction/archive/postmortem report output path.",
+    )
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``encrypt-key`` subparser group."""
     encrypt_key = subparsers.add_parser(
@@ -53,3 +191,55 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     check = nested.add_parser("check", help="Verify a key file's ownership, mode, and length.")
     check.add_argument("path", help="Key-file path to check.")
     check.set_defaults(func=_cmd_check)
+
+    profile = nested.add_parser(
+        "profile",
+        help="Inspect encrypted runtime surfaces and fail closed when requested.",
+    )
+    profile.add_argument("--key", required=True, help="Owner-only raw key file.")
+    profile.add_argument(
+        "--require-encrypted",
+        action="store_true",
+        help="Return non-zero if any existing selected surface is plaintext or unreadable.",
+    )
+    _add_surface_args(profile)
+    profile.set_defaults(func=_cmd_profile)
+
+    migrate = nested.add_parser(
+        "migrate",
+        help="Encrypt existing plaintext runtime surfaces with an owner-only key file.",
+    )
+    migrate.add_argument("--key", required=True, help="Owner-only raw key file.")
+    migrate.add_argument("--backup-dir", help="Optional owner-only backup directory for originals.")
+    _add_surface_args(migrate)
+    migrate.set_defaults(func=_cmd_migrate)
+
+    rekey = nested.add_parser(
+        "rekey",
+        help="Rotate encrypted runtime surfaces from one key file to another.",
+    )
+    rekey.add_argument("--old-key", required=True, help="Current owner-only raw key file.")
+    rekey.add_argument("--new-key", required=True, help="Replacement owner-only raw key file.")
+    rekey.add_argument(
+        "--backup-dir",
+        help="Optional owner-only backup directory for old envelopes.",
+    )
+    _add_surface_args(rekey)
+    rekey.set_defaults(func=_cmd_rekey)
+
+    backup = nested.add_parser(
+        "backup",
+        help="Copy encrypted runtime surfaces into a recovery bundle manifest.",
+    )
+    backup.add_argument("--key", required=True, help="Owner-only raw key file.")
+    backup.add_argument("--backup-dir", required=True, help="Owner-only backup bundle directory.")
+    _add_surface_args(backup)
+    backup.set_defaults(func=_cmd_backup)
+
+    restore = nested.add_parser(
+        "restore",
+        help="Restore encrypted runtime surfaces from a recovery bundle manifest.",
+    )
+    restore.add_argument("--key", required=True, help="Owner-only raw key file.")
+    restore.add_argument("--manifest", required=True, help="Backup manifest written by backup.")
+    restore.set_defaults(func=_cmd_restore)

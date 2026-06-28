@@ -9,9 +9,9 @@ opt-in profile that protects data when files are copied, backed up, or read
 offline. It does not protect data while the hub is running, does not replace
 filesystem permissions, and does not solve multi-tenant isolation.
 
-## Implemented (foundation tranche)
+## Implemented runtime profile
 
-The encryption primitive and key-file management are implemented in
+The encryption primitive, key-file management, and operator runtime profile are implemented in
 :mod:`synapse_channel.core.at_rest`:
 
 - `AtRestCipher` is an AES-256-GCM envelope over a 32-byte key, with a versioned
@@ -21,15 +21,33 @@ The encryption primitive and key-file management are implemented in
 - `synapse encrypt-key generate <path>` writes a fresh owner-only 32-byte key;
   `synapse encrypt-key check <path>` verifies a key file's ownership, mode, and
   length before an encrypted workflow trusts it.
+- `synapse encrypt-key profile --key <path> ... --require-encrypted` inspects
+  the selected runtime surfaces and fails closed if any existing file is
+  plaintext, unreadable, or cannot be authenticated with the key.
+- `synapse encrypt-key migrate --key <path> ...` encrypts existing plaintext
+  profile files in place. It covers SQLite event-store files plus `-wal` and
+  `-shm` sidecars, relay logs, A2A state files, cursor files, and archive
+  outputs. Optional `--backup-dir` copies owner-only plaintext originals before
+  replacement.
+- `synapse encrypt-key rekey --old-key <path> --new-key <path> ...` rotates
+  already encrypted profile files and refuses missed plaintext files so rotation
+  cannot hide an incomplete migration.
+- `synapse encrypt-key backup --key <path> --backup-dir <dir> ...` writes an
+  owner-only recovery bundle manifest that copies encrypted bytes exactly as
+  stored. Key material is deliberately excluded.
+- `synapse encrypt-key restore --key <path> --manifest <manifest.json>` restores
+  a bundle after authenticating every encrypted file with the supplied key.
 - The AES-GCM primitive comes from the optional `cryptography` dependency
   (`pip install synapse-channel[encryption]`); the package still imports without
   it, and an encryption attempt without it raises a clear install hint.
 
-Storage-surface wiring (encrypting the relay log, A2A state files, archive
-reports, and cursor files with this primitive) and live SQLite event-store
-encryption are **not yet implemented** and remain described below as the next
-tranches. The SQLite event store is live-queried and needs SQLCipher-class
-transparent encryption, so it stays separate from the whole-file surfaces.
+The implemented profile is whole-file operator encryption. It is intended for
+cold migration, rekey, backup, restore, and fail-safe startup checks around the
+real files Synapse already writes. Transparent live database opening through
+SQLCipher-class SQLite encryption is not implemented in the standard
+`sqlite3` event store, so an encrypted SQLite envelope cannot be opened directly
+by `synapse hub --db` until it is restored/decrypted by an operator-controlled
+runbook.
 
 ## Storage scope
 
@@ -71,30 +89,93 @@ verify key-file ownership and mode before an encrypted hub starts.
 
 Key rotation should create a new encrypted copy, verify it, then swap atomically:
 
-1. Open the old store with the old key.
-2. Create a new encrypted store with a new key id.
-3. Copy all events and sidecar-relevant state through SQLite APIs or an audited
-   export/import path.
-4. Verify event counts, last sequence, checksums, and replay success.
-5. Move the old store into an owner-only backup location until the operator
-   confirms recovery.
+1. Verify the old key file with `synapse encrypt-key check`.
+2. Generate and verify the new key with `synapse encrypt-key generate` and
+   `synapse encrypt-key check`.
+3. Stop writers for whole-file surfaces before migration or rotation. For
+   SQLite stores, include the main database plus any `-wal` and `-shm` sidecars.
+4. Run `synapse encrypt-key profile --key OLD --require-encrypted ...` to prove
+   the selected existing files are encrypted before rotation.
+5. Run `synapse encrypt-key rekey --old-key OLD --new-key NEW --backup-dir
+   ./rekey-backup ...`. The command authenticates old envelopes, writes new
+   envelopes atomically, and keeps owner-only old-envelope copies when
+   `--backup-dir` is provided.
+6. Run `synapse encrypt-key profile --key NEW --require-encrypted ...` before
+   restarting the runtime.
 
-Metadata should record encryption version, KDF parameters, key id, creation
-time, rotation source, and checksum algorithm without storing the raw key.
+The current backup manifest records the manifest schema, storage role, original
+source path, and copied encrypted file path without storing raw key material.
+Future platform-keyring profiles can add key ids and KDF metadata without
+changing the envelope bytes.
 
 ## Backup recovery
 
 Backup recovery must be boring and documented:
 
-- A backup bundle includes encrypted store files, metadata, and recovery notes.
-- The key material is backed up separately from the encrypted data.
-- Restores verify file permissions before opening recovered files.
-- Recovery replay checks the last event sequence and hub state reconstruction.
+- A backup bundle includes encrypted store files and `manifest.json`.
+- The key material is backed up separately from the encrypted data; the manifest
+  never contains the raw key.
+- `synapse encrypt-key restore --key KEY --manifest manifest.json` authenticates
+  every encrypted file before replacing the recorded source path.
+- Restored files are written owner-only.
+- For SQLite event stores, recovery replay should be checked after restore by
+  opening the event store with the normal `synapse hub --db` or read-side CLI
+  after the operator has restored/decrypted the cold envelope into the expected
+  runtime file.
 - Lost-key recovery is impossible by design unless the operator has an escrowed
   passphrase, key-file backup, or platform-keyring recovery path.
 
 The command-line UX should state that lost-key recovery cannot decrypt the data.
 It can help identify which key id is needed, but it must not imply a bypass.
+
+## Runtime examples
+
+Generate and verify a file key:
+
+```bash
+synapse encrypt-key generate ~/.config/synapse/at-rest.key
+synapse encrypt-key check ~/.config/synapse/at-rest.key
+```
+
+Encrypt the full local profile after stopping writers:
+
+```bash
+synapse encrypt-key migrate \
+  --key ~/.config/synapse/at-rest.key \
+  --sqlite-db ~/synapse/hub.db \
+  --relay-log ~/synapse/feed.ndjson \
+  --a2a-state-file ~/synapse/a2a-state.json \
+  --cursor ~/synapse/feed.cursor \
+  --archive-report ~/synapse/compact-report.html \
+  --backup-dir ~/synapse/at-rest-migration-backup
+```
+
+Fail closed before startup:
+
+```bash
+synapse encrypt-key profile \
+  --key ~/.config/synapse/at-rest.key \
+  --sqlite-db ~/synapse/hub.db \
+  --relay-log ~/synapse/feed.ndjson \
+  --a2a-state-file ~/synapse/a2a-state.json \
+  --cursor ~/synapse/feed.cursor \
+  --archive-report ~/synapse/compact-report.html \
+  --require-encrypted
+```
+
+Create and restore a recovery bundle:
+
+```bash
+synapse encrypt-key backup \
+  --key ~/.config/synapse/at-rest.key \
+  --backup-dir ~/synapse/at-rest-backup \
+  --sqlite-db ~/synapse/hub.db \
+  --relay-log ~/synapse/feed.ndjson
+
+synapse encrypt-key restore \
+  --key ~/.config/synapse/at-rest.key \
+  --manifest ~/synapse/at-rest-backup/manifest.json
+```
 
 ## Local-first tradeoff
 
@@ -111,11 +192,13 @@ rather than ship a custom cipher or home-grown key schedule.
 
 ## Boundaries
 
-This design does not encrypt current event stores. It does not protect data
-while the hub is running and has decrypted state in memory. It does not replace
-filesystem permissions, process isolation, or host-disk encryption. It does not
-solve multi-tenant isolation, per-agent secrecy, signed events, or network
-transport security.
+This profile can encrypt current event-store files as cold whole-file envelopes,
+including WAL and SHM sidecars when they exist. It does not provide transparent
+SQLCipher-style live encryption for the standard `sqlite3` event store. It does
+not protect data while the hub is running and has decrypted state in memory. It
+does not replace filesystem permissions, process isolation, or host-disk
+encryption. It does not solve multi-tenant isolation, per-agent secrecy, signed
+events, or network transport security.
 
 At-rest encryption should integrate with paranoid mode as one reported hook:
 paranoid mode can require encrypted storage only after the encryption feature

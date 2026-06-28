@@ -70,16 +70,16 @@ def test_at_rest_encryption_design_covers_key_lifecycle() -> None:
 def test_at_rest_encryption_design_keeps_boundaries_clear() -> None:
     """The doc must mark the implemented foundation and keep boundaries honest.
 
-    The encryption primitive and key-file management ship as the foundation
-    tranche, so the doc names them as implemented; the storage-surface wiring and
-    live SQLite event-store encryption are still deferred and must be marked
-    not-yet-implemented, and the perpetual security boundaries must remain stated.
+    The encryption primitive, key-file management, and whole-file runtime
+    profile ship now, so the doc names them as implemented. The transparent live
+    SQLite boundary and the perpetual security boundaries must remain stated.
     """
     text = _collapsed(ENCRYPTION_DOC)
 
     required_boundaries = (
-        "implemented",
-        "not yet implemented",
+        "implemented runtime profile",
+        "transparent live database opening",
+        "is not implemented",
         "does not protect data while the hub is running",
         "does not replace filesystem permissions",
         "does not solve multi-tenant isolation",
