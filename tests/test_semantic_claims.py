@@ -374,4 +374,6 @@ def test_docs_wire_semantic_claim_resolver_command() -> None:
     )
 
     assert "tools/semantic_claims.py --selector" in combined
+    assert "synapse git-claim` accepts the same selector kinds" in combined
+    assert "--semantic-evidence-json" in combined
     assert "semantic claim resolver" in combined

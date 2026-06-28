@@ -35,6 +35,17 @@ from synapse_channel.service_setup import install_user_services, service_suggest
 AsyncGitCommand = Callable[..., Coroutine[Any, Any, int]]
 """Async git command callable used by the CLI dispatchers."""
 
+SEMANTIC_SELECTOR_FIELDS = (
+    ("module", "module"),
+    ("symbol", "symbol"),
+    ("api", "api"),
+    ("source", "source"),
+    ("test", "test"),
+    ("generated", "generated"),
+    ("migration", "migration"),
+)
+"""``git-claim`` argparse fields that map directly to semantic selectors."""
+
 
 def _resolve_git_claim_task_id(args: argparse.Namespace) -> str | None:
     """Return the git-claim task id or print a focused usage error.
@@ -62,6 +73,20 @@ def _resolve_git_claim_task_id(args: argparse.Namespace) -> str | None:
     return task_id
 
 
+def _semantic_selectors_from_args(args: argparse.Namespace) -> tuple[str, ...]:
+    """Return ``kind:value`` semantic selectors from git-claim argparse fields.
+
+    The hub remains file-scope only. These selectors are resolved client-side by
+    :func:`synapse_channel.git.gitclaim.run_git_claim` after the local git root is
+    known, then sent as ordinary ``paths``.
+    """
+    selectors: list[str] = []
+    for field, kind in SEMANTIC_SELECTOR_FIELDS:
+        for value in getattr(args, field, None) or ():
+            selectors.append(f"{kind}:{value}")
+    return tuple(selectors)
+
+
 def _cmd_git_claim(
     args: argparse.Namespace,
     *,
@@ -85,6 +110,8 @@ def _cmd_git_claim(
             base=args.base,
             auto_release_on=args.auto_release_on,
             token=args.token,
+            semantic_selectors=_semantic_selectors_from_args(args),
+            semantic_evidence_json=args.semantic_evidence_json,
         )
     )
 
@@ -271,6 +298,56 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         action="append",
         default=None,
         help="File-scope path the claim intends to touch (repeatable).",
+    )
+    git_claim.add_argument(
+        "--module",
+        action="append",
+        default=None,
+        help="Resolve an importable module to ordinary claim paths before claiming.",
+    )
+    git_claim.add_argument(
+        "--symbol",
+        action="append",
+        default=None,
+        help="Resolve a fully qualified public symbol to ordinary claim paths.",
+    )
+    git_claim.add_argument(
+        "--api",
+        action="append",
+        default=None,
+        help="Resolve a fully qualified public API object to ordinary claim paths.",
+    )
+    git_claim.add_argument(
+        "--source",
+        action="append",
+        default=None,
+        help="Resolve a source path to its source, owning tests, and generated outputs.",
+    )
+    git_claim.add_argument(
+        "--test",
+        action="append",
+        default=None,
+        help="Resolve a test path to the source paths it likely owns.",
+    )
+    git_claim.add_argument(
+        "--generated",
+        action="append",
+        default=None,
+        help="Resolve a generated output path into a generated-output claim path.",
+    )
+    git_claim.add_argument(
+        "--migration",
+        action="append",
+        default=None,
+        help="Resolve a migration path into a migration claim path.",
+    )
+    git_claim.add_argument(
+        "--semantic-evidence-json",
+        default=None,
+        help=(
+            "Write receipt-ready semantic selector evidence JSON after resolving "
+            "semantic claim flags. Relative paths are written under the git root."
+        ),
     )
     git_claim.add_argument(
         "--base", default="main", help="Branch the work merges back into (default: main)."

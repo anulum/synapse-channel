@@ -659,6 +659,18 @@ generated outputs that should share the same file-scope claim. It keeps the hub
 path-scope and local-first while giving agents a deterministic semantic planning
 step before they call `synapse git-claim`.
 
+For daily claims, `synapse git-claim` can resolve the same selectors directly:
+
+```bash
+synapse git-claim TASK-RECEIPTS \
+  --symbol synapse_channel.core.receipts.build_release_receipt \
+  --semantic-evidence-json semantic-evidence.json
+```
+
+The command resolves the current git root locally, expands the selector into
+ordinary claim paths, and writes receipt-ready selector evidence when requested.
+The hub still receives only file-scope paths.
+
 Before merge or handoff, the import graph merge-risk radar compares changed
 files with claimed paths, package-local Python import neighbours, CODEOWNERS,
 and mapped test owners:
@@ -826,11 +838,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.55.0 |
 | Public API exports | 61 |
-| Package modules | 147 |
-| Classes | 141 |
+| Package modules | 150 |
+| Classes | 153 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1900 |
+| Test functions | 1902 |
 | Benchmark harnesses | 5 |
 | Documentation pages | 33 |
 | GitHub Actions workflows | 10 |

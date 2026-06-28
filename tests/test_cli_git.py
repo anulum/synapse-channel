@@ -38,6 +38,40 @@ def test_parser_git_claim_accepts_task_id_flag() -> None:
     assert args.paths == ["src"]
 
 
+def test_parser_git_claim_accepts_semantic_selector_flags() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "git-claim",
+            "T1",
+            "--module",
+            "synapse_channel.core.receipts",
+            "--symbol",
+            "synapse_channel.core.receipts.build_release_receipt",
+            "--api",
+            "synapse_channel.core.receipts.ReleaseReceipt",
+            "--source",
+            "src/synapse_channel/core/receipts.py",
+            "--test",
+            "tests/test_release_receipts.py",
+            "--generated",
+            "docs/_generated/capability_manifest.json",
+            "--migration",
+            "migrations/001_initial.sql",
+            "--semantic-evidence-json",
+            "semantic-evidence.json",
+        ]
+    )
+
+    assert args.module == ["synapse_channel.core.receipts"]
+    assert args.symbol == ["synapse_channel.core.receipts.build_release_receipt"]
+    assert args.api == ["synapse_channel.core.receipts.ReleaseReceipt"]
+    assert args.source == ["src/synapse_channel/core/receipts.py"]
+    assert args.test == ["tests/test_release_receipts.py"]
+    assert args.generated == ["docs/_generated/capability_manifest.json"]
+    assert args.migration == ["migrations/001_initial.sql"]
+    assert args.semantic_evidence_json == "semantic-evidence.json"
+
+
 def test_cmd_git_claim_dispatches() -> None:
     captured: dict[str, Any] = {}
 
@@ -54,10 +88,20 @@ def test_cmd_git_claim_dispatches() -> None:
         base="main",
         auto_release_on="merge",
         token=None,
+        module=None,
+        symbol=None,
+        api=None,
+        source=None,
+        test=None,
+        generated=None,
+        migration=None,
+        semantic_evidence_json=None,
     )
     assert cli_git._cmd_git_claim(ns, claim_runner=run_claim) == 0
     assert captured["task_id"] == "T1"
     assert captured["paths"] == ["src"]
+    assert captured["semantic_selectors"] == ()
+    assert captured["semantic_evidence_json"] is None
 
 
 def test_cmd_git_claim_dispatches_task_id_flag() -> None:
@@ -76,9 +120,52 @@ def test_cmd_git_claim_dispatches_task_id_flag() -> None:
         base="main",
         auto_release_on="merge",
         token=None,
+        module=None,
+        symbol=None,
+        api=None,
+        source=None,
+        test=None,
+        generated=None,
+        migration=None,
+        semantic_evidence_json=None,
     )
     assert cli_git._cmd_git_claim(ns, claim_runner=run_claim) == 0
     assert captured["task_id"] == "T1"
+
+
+def test_cmd_git_claim_dispatches_semantic_selectors() -> None:
+    captured: dict[str, Any] = {}
+
+    async def run_claim(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 0
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="U",
+        task_id="T1",
+        task_id_flag=None,
+        paths=["docs/manual.md"],
+        base="main",
+        auto_release_on="merge",
+        token=None,
+        module=["synapse_channel.core.receipts"],
+        symbol=["synapse_channel.core.receipts.build_release_receipt"],
+        api=None,
+        source=None,
+        test=None,
+        generated=["docs/_generated/capability_manifest.json"],
+        migration=None,
+        semantic_evidence_json="semantic-evidence.json",
+    )
+
+    assert cli_git._cmd_git_claim(ns, claim_runner=run_claim) == 0
+    assert captured["semantic_selectors"] == (
+        "module:synapse_channel.core.receipts",
+        "symbol:synapse_channel.core.receipts.build_release_receipt",
+        "generated:docs/_generated/capability_manifest.json",
+    )
+    assert captured["semantic_evidence_json"] == "semantic-evidence.json"
 
 
 def test_cmd_git_claim_rejects_positional_and_flag(
@@ -96,6 +183,14 @@ def test_cmd_git_claim_rejects_positional_and_flag(
         base="main",
         auto_release_on="merge",
         token=None,
+        module=None,
+        symbol=None,
+        api=None,
+        source=None,
+        test=None,
+        generated=None,
+        migration=None,
+        semantic_evidence_json=None,
     )
     assert cli_git._cmd_git_claim(ns, claim_runner=run_claim) == 2
     assert "use either TASK_ID or --task-id" in capsys.readouterr().err
@@ -114,6 +209,14 @@ def test_cmd_git_claim_requires_a_task_id(capsys: pytest.CaptureFixture[str]) ->
         base="main",
         auto_release_on="merge",
         token=None,
+        module=None,
+        symbol=None,
+        api=None,
+        source=None,
+        test=None,
+        generated=None,
+        migration=None,
+        semantic_evidence_json=None,
     )
     assert cli_git._cmd_git_claim(ns, claim_runner=run_claim) == 2
     assert "git-claim needs TASK_ID or --task-id" in capsys.readouterr().err
@@ -128,6 +231,9 @@ def test_git_claim_argument_docs_are_aligned() -> None:
     assert "synapse git-claim --task-id AUTH" in readme
     assert "synapse git-claim --task-id TASK-1" in cli_doc
     assert "Use either the positional `TASK-1` form or `--task-id TASK-1`" in git_claims
+    assert "--symbol synapse_channel.core.receipts.build_release_receipt" in readme
+    assert "`--module`, `--symbol`, `--api`" in cli_doc
+    assert "--semantic-evidence-json semantic-evidence.json" in git_claims
 
 
 # --- git-hook ----------------------------------------------------------------

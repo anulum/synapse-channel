@@ -42,6 +42,8 @@ Active claims (1):
 | Option | Meaning |
 |---|---|
 | `--paths` | File-scope path the claim intends to touch (repeatable). |
+| `--module`, `--symbol`, `--api`, `--source`, `--test`, `--generated`, `--migration` | Resolve semantic selectors locally and merge their derived source/test/generated/migration paths into the ordinary claim paths sent to the hub. |
+| `--semantic-evidence-json` | Write receipt-ready semantic selector evidence JSON under the git root, or to an absolute path. |
 | `--base` | The branch the work merges back into (default: `main`). |
 | `--auto-release-on` | The release trigger recorded on the claim: `manual`, `commit`, or `merge` (default `merge`). |
 
@@ -59,6 +61,25 @@ form exists for scripts and agent adapters that assemble command arguments from
 structured fields. `synapse git-release` is reserved for the installed hooks and
 auto-detects releasable claims from the git diff; for a manual release, use
 `synapse release <task> --name <owner>`.
+
+## Claim a semantic selector
+
+Use the semantic flags when the work is naturally described by a module, symbol,
+API object, source path, owning test, generated artefact, or migration:
+
+```bash
+synapse git-claim TASK-RECEIPTS \
+  --symbol synapse_channel.core.receipts.build_release_receipt \
+  --semantic-evidence-json semantic-evidence.json
+```
+
+The command resolves the current git root first, runs the same deterministic
+resolver as `python tools/semantic_claims.py`, and expands the selector into the
+source file, likely owning tests, and generated outputs that should share one
+claim. Those derived paths are merged with any explicit `--paths` and sent to the
+hub as ordinary file-scope paths. The selector text and derived paths stay local
+unless you choose `--semantic-evidence-json` and later attach that JSON to a
+release receipt.
 
 ## Auto-release on commit or merge
 
