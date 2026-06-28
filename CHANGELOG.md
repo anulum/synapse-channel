@@ -32,6 +32,9 @@ All notable changes to this project are documented here.
 - Added the public at-rest encryption design for optional local storage
   encryption scope, key lifecycle, rotation, backup recovery, and local-first
   tradeoffs before any encryption flag ships.
+- Added the public end-to-end encrypted channels design for selected encrypted
+  payloads, per-project/per-worktree keys, recipient sets, key rotation, member
+  removal, and hub-visible metadata boundaries.
 
 ## [0.54.0] - 2026-06-28
 

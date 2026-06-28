@@ -529,6 +529,11 @@ archive reports, temporary files, and backups, with key storage, key derivation,
 rotation, backup recovery, and lost-key recovery boundaries documented before
 any encryption flag ships.
 
+The planned [end-to-end encrypted channels](docs/end-to-end-encrypted-channels.md)
+profile scopes selected payload encryption for direct messages, private progress
+notes, handoff checkpoints, and A2A artifacts while keeping routing metadata
+visible so the hub can still deliver, retain, and audit coordination events.
+
 `synapse git-init` bundles the hook install with a short `.synapse/git-claims.md`
 onboarding guide (branch convention + worktree workflow). `synapse state` shows
 each claim's branch; installed git hooks release a claim
@@ -763,9 +768,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 131 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1837 |
+| Test functions | 1841 |
 | Benchmark harnesses | 4 |
-| Documentation pages | 24 |
+| Documentation pages | 25 |
 | GitHub Actions workflows | 10 |
 | Optional-dependency groups | 4 |
 

@@ -78,6 +78,7 @@ nav:
   - Policy engine: policy-engine.md
   - Paranoid mode: paranoid-mode.md
   - At-rest encryption: at-rest-encryption.md
+  - Encrypted channels: end-to-end-encrypted-channels.md
   - Recipes: recipes.md
   - Examples: examples.md
   - Deployment: deployment.md

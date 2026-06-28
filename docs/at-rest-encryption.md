@@ -98,4 +98,7 @@ transport security.
 
 At-rest encryption should integrate with paranoid mode as one reported hook:
 paranoid mode can require encrypted storage only after the encryption feature
-exists, has migration tests, and has recovery documentation.
+exists, has migration tests, and has recovery documentation. It remains separate
+from [end-to-end encrypted channels](end-to-end-encrypted-channels.md), which
+hide selected payload bodies from the hub while preserving visible routing
+metadata.
