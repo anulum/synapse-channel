@@ -1,14 +1,33 @@
-# Policy engine design
+# Policy engine
 
-The policy engine is the planned decision layer that reads existing Synapse
-evidence and answers one narrow question: is a task or branch ready to proceed
-under the operator's declared rules?
+The policy engine is the decision layer that reads existing Synapse evidence and
+answers one narrow question: is a task or branch ready to proceed under the
+operator's declared rules?
 
-The first implementation should be advisory by default. It reports pass, warn,
-or fail decisions with exact evidence references, but it does not merge code,
-does not replace code review, and does not call external policy services. A
-future enforcement mode can wire the same decisions into git hooks or CI after
-operators have reviewed the rule set on their own repositories.
+It is advisory by default. It reports pass, warn, or fail decisions with exact
+evidence references, but it does not merge code, does not replace code review,
+and does not call external policy services. A future enforcement mode can wire
+the same decisions into git hooks or CI after operators have reviewed the rule
+set on their own repositories.
+
+## Implemented (first tranche)
+
+The advisory decision layer is implemented in
+:mod:`synapse_channel.core.policy_engine` and
+:mod:`synapse_channel.core.policy_rules`:
+
+- `synapse policy-check TASK --policy <file> --receipt-json <file> [--json]`
+  evaluates a release receipt against a small JSON (or TOML on Python 3.11+ /
+  with `tomli`) policy and prints deterministic pass / warn / fail /
+  not_applicable decisions, each with the evidence it used and a next action.
+- The rule families evaluated from receipt evidence are required tests, strict
+  type checking, owner approval, evidence freshness, no-merge-without-receipt,
+  known-failure acknowledgement, and generated artifact parity.
+- It is advisory by default and exits `0`; `--enforce` exits non-zero only when
+  an enforcement-mode policy has a failing rule.
+
+CODEOWNERS-sourced approval mapping, event-store-backed claim coverage, and git-
+hook enforcement remain design targets described below.
 
 ## Goals
 

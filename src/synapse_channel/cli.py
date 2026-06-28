@@ -42,6 +42,7 @@ The ``synapse`` command exposes these subcommands:
 * ``conflicts`` — predict merge conflicts between branch-scoped claims on different branches;
 * ``health`` — probe the hub and report reachability as the exit code;
 * ``verify-release`` — run declared checks and write an observed release receipt;
+* ``policy-check`` — evaluate a release receipt against a policy file (advisory);
 * ``lock`` — hold a lease while running a command, to serialise it across agents;
 * ``release`` — manually drop a claim you own (e.g. an ``--auto-release-on manual`` claim);
 * ``task`` — declare and update the shared task plan from the command line;
@@ -93,6 +94,7 @@ from synapse_channel.cli_mcp import add_parsers as add_mcp_parsers
 from synapse_channel.cli_memory_projection import add_parsers as add_memory_projection_parsers
 from synapse_channel.cli_messaging import add_parsers as add_messaging_parsers
 from synapse_channel.cli_new import add_parsers as add_new_parsers
+from synapse_channel.cli_policy_check import add_parsers as add_policy_check_parsers
 from synapse_channel.cli_postmortem import add_parsers as add_postmortem_parsers
 from synapse_channel.cli_processes import add_parsers as add_process_parsers
 from synapse_channel.cli_queries import add_parsers as add_query_parsers
@@ -185,6 +187,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_git_parsers(sub)
 
     add_verify_release_parsers(sub)
+
+    add_policy_check_parsers(sub)
 
     add_locking_parsers(sub)
 
