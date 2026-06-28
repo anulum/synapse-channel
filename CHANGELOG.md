@@ -14,6 +14,10 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added first-class semantic selector ergonomics to `synapse git-claim`:
+  `--module`, `--symbol`, `--api`, `--source`, `--test`, `--generated`, and
+  `--migration` resolve locally into ordinary claim paths, while
+  `--semantic-evidence-json` writes receipt-ready selector evidence.
 - Added dashboard-local bearer authentication for `synapse dashboard`: loopback
   dashboards remain unauthenticated by default, explicit `--dashboard-token`
   protects browser and JSON requests, and non-loopback dashboard binds receive

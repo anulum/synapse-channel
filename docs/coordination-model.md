@@ -73,6 +73,13 @@ file-scope paths that `synapse git-claim` already understands. This keeps the hu
 simple while letting agents coordinate over meaning before submitting path
 claims and release receipt fields.
 
+For day-to-day claims, `synapse git-claim` accepts the same selector kinds as
+first-class flags (`--module`, `--symbol`, `--api`, `--source`, `--test`,
+`--generated`, and `--migration`). It resolves them after discovering the local
+git root, merges the derived paths with explicit `--paths`, and can write the
+selector evidence with `--semantic-evidence-json`. The hub still stores only
+ordinary paths and branch metadata.
+
 `python tools/import_merge_risk.py --changed <path> --claimed <path> --check` is
 the import graph merge-risk radar for pre-merge and handoff checks. It combines
 explicit changed paths or `--base main --head HEAD` branch diffs with claimed

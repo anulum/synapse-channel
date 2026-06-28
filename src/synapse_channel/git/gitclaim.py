@@ -21,13 +21,21 @@ without a real repository.
 from __future__ import annotations
 
 import asyncio
-import subprocess
+import json
+import shutil
+import subprocess  # nosec B404
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.state import GitContext
+from synapse_channel.git.semantic_claims import (
+    SemanticClaimRecord,
+    records_to_json,
+    resolve_selectors,
+)
 
 GitRunner = Callable[[list[str]], str]
 """Runs a git subcommand (argv after ``git``) and returns its stripped stdout."""
@@ -38,6 +46,11 @@ AgentFactory = Callable[..., SynapseAgent]
 
 class GitError(RuntimeError):
     """A git command failed, or git is not available on the host."""
+
+
+def _unique_ordered(values: list[str]) -> list[str]:
+    """Return values without duplicates while preserving first-seen order."""
+    return list(dict.fromkeys(values))
 
 
 def _default_git_runner(args: list[str]) -> str:
@@ -58,8 +71,17 @@ def _default_git_runner(args: list[str]) -> str:
     GitError
         When git is not installed or the command exits non-zero.
     """
+    git = shutil.which("git")
+    if git is None:
+        raise GitError("git is not installed or not on PATH")
     try:
-        result = subprocess.run(["git", *args], capture_output=True, text=True, check=True)
+        # Fixed git binary, no shell, bounded argv from internal git operations.
+        result = subprocess.run(  # nosec B603
+            [git, *args],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
     except FileNotFoundError as exc:
         raise GitError("git is not installed or not on PATH") from exc
     except subprocess.CalledProcessError as exc:
@@ -142,6 +164,74 @@ def _warn_if_auto_release_unbacked(
     )
 
 
+def _write_semantic_evidence(
+    records: tuple[SemanticClaimRecord, ...],
+    repo_root: Path,
+    evidence_json: str,
+) -> None:
+    """Write receipt-ready semantic selector evidence below ``repo_root``.
+
+    Parameters
+    ----------
+    records : tuple[SemanticClaimRecord, ...]
+        Resolved selector records to serialise.
+    repo_root : Path
+        Local git root used to resolve relative evidence paths.
+    evidence_json : str
+        Destination path. Relative paths are interpreted under ``repo_root``.
+    """
+    destination = Path(evidence_json)
+    if not destination.is_absolute():
+        destination = repo_root / destination
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(records_to_json(records), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _semantic_claim_paths(
+    *,
+    repo_root: Path,
+    selectors: tuple[str, ...],
+    evidence_json: str | None,
+) -> list[str]:
+    """Resolve semantic selectors into ordinary claim paths.
+
+    Parameters
+    ----------
+    repo_root : Path
+        Local git repository root.
+    selectors : tuple[str, ...]
+        Semantic ``kind:value`` selectors passed by the CLI.
+    evidence_json : str or None
+        Optional path where receipt-ready selector evidence should be written.
+
+    Returns
+    -------
+    list[str]
+        Unique claim paths derived from the semantic selector records.
+
+    Raises
+    ------
+    ValueError
+        When a selector cannot be resolved.
+    OSError
+        When selector evidence cannot be written.
+    """
+    if not selectors:
+        return []
+    records = resolve_selectors(repo_root, selectors)
+    if evidence_json:
+        _write_semantic_evidence(records, repo_root, evidence_json)
+    paths = [path for record in records for path in record.claim_paths]
+    print(
+        "semantic selectors resolved: "
+        f"{len(records)} selector(s), {len(_unique_ordered(paths))} claim path(s)"
+    )
+    return _unique_ordered(paths)
+
+
 async def run_git_claim(
     *,
     uri: str,
@@ -151,6 +241,8 @@ async def run_git_claim(
     base: str = "main",
     auto_release_on: str = "merge",
     token: str | None = None,
+    semantic_selectors: tuple[str, ...] = (),
+    semantic_evidence_json: str | None = None,
     agent_factory: AgentFactory = SynapseAgent,
     runner: GitRunner = _default_git_runner,
     ready_timeout: float = 5.0,
@@ -180,6 +272,13 @@ async def run_git_claim(
         git hook will later enact. Defaults to ``merge``.
     token : str or None, optional
         Shared-secret token for a secured hub.
+    semantic_selectors : tuple[str, ...], optional
+        Client-side semantic selectors in ``kind:value`` form. They are resolved
+        against the local git root into ordinary ``paths`` before the claim is
+        sent; the hub never receives semantic selectors.
+    semantic_evidence_json : str or None, optional
+        Optional destination for receipt-ready selector evidence JSON. Relative
+        paths are written below the resolved git root.
     agent_factory : AgentFactory, optional
         Factory for the hub client; injectable for testing.
     runner : GitRunner, optional
@@ -203,6 +302,20 @@ async def run_git_claim(
     except GitError as exc:
         print(f"git error: {exc}")
         return 1
+    repo_root = Path(repo)
+    try:
+        semantic_paths = _semantic_claim_paths(
+            repo_root=repo_root,
+            selectors=semantic_selectors,
+            evidence_json=semantic_evidence_json,
+        )
+    except ValueError as exc:
+        print(f"semantic claim error: {exc}")
+        return 1
+    except OSError as exc:
+        print(f"semantic claim evidence error: {exc}")
+        return 1
+    claim_paths = _unique_ordered([*paths, *semantic_paths])
     context = GitContext(branch=branch, base=base, auto_release_on=auto_release_on)
 
     outcome: dict[str, Any] = {}
@@ -221,7 +334,7 @@ async def run_git_claim(
         if not await agent.wait_until_ready(timeout=ready_timeout):
             print(f"[{name}] Could not reach hub at {uri}.")
             return 1
-        await agent.claim(task_id, worktree=repo, paths=paths, git=context.as_dict())
+        await agent.claim(task_id, worktree=repo, paths=claim_paths, git=context.as_dict())
         for _ in range(attempts):
             if outcome:
                 break

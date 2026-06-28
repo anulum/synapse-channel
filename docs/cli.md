@@ -232,6 +232,14 @@ TASK-1 --paths src`) or as a named field (`synapse git-claim --task-id TASK-1
 is hook-invoked and does not take a task id; when a manual drop is needed, use
 `synapse release <task> --name <owner>`.
 
+`synapse git-claim` also accepts semantic selector flags for the same local
+resolver exposed by `tools/semantic_claims.py`: `--module`, `--symbol`, `--api`,
+`--source`, `--test`, `--generated`, and `--migration`. The command resolves the
+selectors against the local git root, merges the derived source/test/generated
+paths with any explicit `--paths`, and sends only ordinary file-scope paths to
+the hub. Add `--semantic-evidence-json semantic-evidence.json` to write
+receipt-ready selector evidence under the git root.
+
 Claim paths are coordination scopes, not filesystem reads. Normal relative paths
 such as `src/auth.py` stay narrow. Absolute paths and any path containing `..`
 are treated as traversal-like declarations and widen to the whole worktree, so a
