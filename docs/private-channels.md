@@ -1,14 +1,36 @@
-# Private channels design
+# Private channels
 
-Private channels are a design target for routing selected coordination messages
-to a smaller namespace than the default public channel. They are not implemented
-yet. Today, the hub is a trusted local hub: participants can use direct messages
-and task scopes, but the hub does not enforce private channel membership.
+Private channels route selected coordination messages to a smaller namespace
+than the default public channel.
 
 Private channels solve audience control, not cryptographic secrecy. The feature
 does not encrypt payloads, does not replace end-to-end encrypted channels, and
 does not create cryptographic identity. The hub can still see metadata, route
 events, enforce retention, and write durable logs.
+
+## Implemented (first tranche)
+
+The membership-and-routing core is implemented. The hub keeps a
+:class:`~synapse_channel.core.channels.ChannelRegistry`, and:
+
+- `synapse channel create <id>` makes a channel whose creator is its first
+  member; `synapse channel join <id>` / `leave <id>` change membership;
+  `synapse channel list` shows the channels an agent belongs to. The client
+  exposes `channel_create` / `channel_join` / `channel_leave` /
+  `request_channels`.
+- `synapse send --channel <id>` (and `SynapseAgent.chat(..., channel=<id>)`)
+  delivers a chat **only to that channel's online members**. A non-member sender
+  is refused; a non-member never receives the body. Channel chat is not
+  broadcast, not retained in the public chat history, and not mirrored to the
+  relay log.
+
+Join is open in this tranche (any agent may join a channel by id) so teams can
+route operational chatter cleanly; who-may-join authorization is the future
+identity/ACL layer. Membership is in-memory and lives for the hub process.
+
+The following design targets are **not yet implemented** and remain described
+below: per-channel history visibility policies, retention boundaries, durable
+channel history, channel-filtered relay export, and channel-aware `event-query`.
 
 ## Namespace model
 

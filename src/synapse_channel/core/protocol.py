@@ -141,6 +141,10 @@ class MessageType:
     MANIFEST_REQUEST = "manifest_request"
     RECALL_LOG = "recall_log"
     FINDING = "finding"
+    CHANNEL_CREATE = "channel_create"
+    CHANNEL_JOIN = "channel_join"
+    CHANNEL_LEAVE = "channel_leave"
+    CHANNEL_LIST_REQUEST = "channel_list_request"
 
     # Hub -> agent.
     SYSTEM = "system"
@@ -171,6 +175,8 @@ class MessageType:
     FINDING_RECORDED = "finding_recorded"
     FINDING_REJECTED = "finding_rejected"
     MANIFEST_SNAPSHOT = "manifest_snapshot"
+    CHANNEL_RESULT = "channel_result"
+    CHANNEL_LIST = "channel_list"
     ERROR = "error"
     NAME_CONFLICT = "name_conflict"
     AUTH_DENIED = "auth_denied"

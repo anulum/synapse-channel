@@ -23,6 +23,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     send.add_argument("--uri", default=DEFAULT_HUB_URI)
     send.add_argument("--name", default="USER")
     send.add_argument("--target", default="all")
+    send.add_argument(
+        "--channel",
+        default="",
+        help="Deliver only to this private channel's online members (you must be a member).",
+    )
     send.add_argument("--wait-seconds", type=float, default=2.0)
     send.add_argument(
         "--priority",

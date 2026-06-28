@@ -65,8 +65,9 @@ class AgentSendMixin:
         target: str = "all",
         priority: bool = False,
         memory_tag: str = "",
+        channel: str = "",
     ) -> None:
-        """Send a chat message to the room or a single agent.
+        """Send a chat message to the room, a single agent, or a private channel.
 
         Parameters
         ----------
@@ -78,10 +79,32 @@ class AgentSendMixin:
             Mark the message as priority so it wakes directed-only waiters.
         memory_tag : str, optional
             Opaque tag marking the message memory-worthy.
+        channel : str, optional
+            Private channel id. When set, the hub delivers the message only to
+            that channel's online members instead of broadcasting it, and refuses
+            it if this agent is not a member.
         """
         extra: dict[str, Any] = {}
         if priority:
             extra["priority"] = True
         if memory_tag:
             extra["memory_tag"] = memory_tag
+        if channel:
+            extra["channel"] = channel
         await self.send_message(MessageType.CHAT, target=target, payload=payload, **extra)
+
+    async def channel_create(self: _OutboundAgent, channel: str, *, label: str = "") -> None:
+        """Create a private channel owned by this agent (its first member)."""
+        await self.send_message(MessageType.CHANNEL_CREATE, channel=channel, label=label)
+
+    async def channel_join(self: _OutboundAgent, channel: str) -> None:
+        """Join this agent to a private channel."""
+        await self.send_message(MessageType.CHANNEL_JOIN, channel=channel)
+
+    async def channel_leave(self: _OutboundAgent, channel: str) -> None:
+        """Remove this agent from a private channel."""
+        await self.send_message(MessageType.CHANNEL_LEAVE, channel=channel)
+
+    async def request_channels(self: _OutboundAgent) -> None:
+        """Request the list of channels this agent is a member of."""
+        await self.send_message(MessageType.CHANNEL_LIST_REQUEST)
