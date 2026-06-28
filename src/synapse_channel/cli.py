@@ -49,6 +49,7 @@ The ``synapse`` command exposes these subcommands:
 * ``init`` — print or install local user services for hub, presence, and wake arming;
 * ``worker-session`` — launch a provider command with identity env and a wake sidecar.
 * ``channel`` — manage private-channel membership (create/join/leave/list);
+* ``encrypt-key`` — generate and check at-rest encryption key files;
 * ``agent-tmux`` — wake an existing terminal-agent tmux session from Synapse messages;
 * ``codex-tmux`` — Codex-named alias of ``agent-tmux``;
 * ``shell-hook`` / ``install-shell-hook`` — auto-arm fresh terminals and provider CLIs.
@@ -83,6 +84,7 @@ from synapse_channel.cli_dashboard import add_parsers as add_dashboard_parsers
 from synapse_channel.cli_demo import add_parsers as add_demo_parsers
 from synapse_channel.cli_directory import add_parsers as add_directory_parsers
 from synapse_channel.cli_doctor import add_parsers as add_doctor_parsers
+from synapse_channel.cli_encrypt_key import add_parsers as add_encrypt_key_parsers
 from synapse_channel.cli_event_query import add_parsers as add_event_query_parsers
 from synapse_channel.cli_git import add_parsers as add_git_parsers
 from synapse_channel.cli_locking import add_parsers as add_locking_parsers
@@ -169,6 +171,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_agent_tmux_parsers(sub)
     add_channel_parsers(sub)
+    add_encrypt_key_parsers(sub)
     add_codex_tmux_parsers(sub)
 
     add_shell_parsers(sub)

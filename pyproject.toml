@@ -50,12 +50,16 @@ dev = [
   "reuse>=6.0",
   "tomli>=2.4.1; python_version < '3.11'",
   "mcp>=1.28.0",
+  "cryptography>=42.0",
 ]
 benchmark = [
   "tiktoken>=0.7",
 ]
 mcp = [
   "mcp>=1.28.0",
+]
+encryption = [
+  "cryptography>=42.0",
 ]
 docs = [
   "mkdocs-material>=9.5",
