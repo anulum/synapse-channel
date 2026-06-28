@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.connect_failures import describe_connect_failure, explain_silent_outcome
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.state import GitContext
 from synapse_channel.git.semantic_claims import (
@@ -332,11 +333,18 @@ async def run_git_claim(
     conn_task = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
-            print(f"[{name}] Could not reach hub at {uri}.")
+            print(
+                describe_connect_failure(
+                    name,
+                    uri,
+                    close_code=agent.last_close_code,
+                    close_reason=agent.last_close_reason,
+                )
+            )
             return 1
         await agent.claim(task_id, worktree=repo, paths=claim_paths, git=context.as_dict())
         for _ in range(attempts):
-            if outcome:
+            if outcome or conn_task.done():
                 break
             await asyncio.sleep(poll_interval)
         if outcome.get("granted"):
@@ -346,7 +354,19 @@ async def run_git_claim(
             )
             _warn_if_auto_release_unbacked(auto_release_on, task_id, name, runner=runner)
             return 0
-        print(f"claim denied for '{task_id}': {outcome.get('denied', 'no response from hub')}")
+        denied = outcome.get("denied")
+        if denied:
+            print(f"claim denied for '{task_id}': {denied}")
+        else:
+            print(
+                explain_silent_outcome(
+                    name,
+                    uri,
+                    close_code=agent.last_close_code,
+                    close_reason=agent.last_close_reason,
+                    fallback=f"claim denied for '{task_id}': no response from hub",
+                )
+            )
         return 1
     finally:
         agent.running = False

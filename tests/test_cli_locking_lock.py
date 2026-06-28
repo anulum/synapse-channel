@@ -57,6 +57,34 @@ async def test_lock_runs_command_holding_lease() -> None:
     assert "g" not in hub.state.claims
 
 
+async def test_lock_surfaces_name_conflict_instead_of_timing_out(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def never_runs(command: list[str]) -> int:
+        raise AssertionError("command must not run when the lock is never held")
+
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        holder = await connect_agent("X", uri)
+        try:
+            code = await cli_locking._lock(
+                uri=uri,
+                name="X",
+                task_id="g:git",
+                command=["echo", "hi"],
+                paths=[],
+                wait_timeout=0.0,
+                runner=never_runs,
+            )
+        finally:
+            await close_agents(holder)
+
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "already online" in out
+    assert "code 4009" in out
+    assert "timed out" not in out
+
+
 async def test_lock_keyless_namespaces_worktree_to_task_id() -> None:
     async with running_hub(SynapseHub()) as (hub, uri):
 

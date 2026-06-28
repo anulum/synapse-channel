@@ -14,6 +14,7 @@ from synapse_channel.connect_failures import (
     SUPERSEDED_CLOSE_CODE,
     TAKEOVER_COOLDOWN_CLOSE_CODE,
     describe_connect_failure,
+    explain_silent_outcome,
 )
 
 
@@ -76,3 +77,25 @@ def test_recognised_code_appends_a_distinct_hub_reason() -> None:
     )
 
     assert "hub said: evicted: maintenance window" in message
+
+
+def test_silent_outcome_keeps_the_fallback_when_socket_stayed_open() -> None:
+    message = explain_silent_outcome(
+        "A", "ws://h", close_code=None, close_reason="", fallback="no response from hub"
+    )
+
+    assert message == "no response from hub"
+
+
+def test_silent_outcome_surfaces_the_close_code_when_present() -> None:
+    message = explain_silent_outcome(
+        "A",
+        "ws://h",
+        close_code=NAME_CONFLICT_CLOSE_CODE,
+        close_reason="name conflict",
+        fallback="no response from hub",
+    )
+
+    assert "already online" in message
+    assert "code 4009" in message
+    assert message != "no response from hub"
