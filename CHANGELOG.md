@@ -13,7 +13,14 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+- Added an official typed TypeScript/JavaScript WebSocket client in `clients/js`
+  (npm `@anulum/synapse-channel`). Unlike the read-only Go client it speaks the
+  mutation protocol — chat, claims, releases, board reads, presence, and receipts
+  — with typed envelopes, a connect/welcome handshake, keepalive heartbeats, and
+  inbound dispatch by message type. It runs unchanged in the browser and in
+  Node 20+ with no runtime dependencies, is verified by a dedicated CI job, and
+  is a separate package that does not ship inside the Python distribution.
 
 ## [0.63.0] - 2026-06-28
 

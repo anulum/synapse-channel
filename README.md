@@ -482,6 +482,14 @@ for dashboard tokens on exposed HTTP surfaces.
 It does not implement the WebSocket mutation protocol for claims, chat, board
 writes, release receipts, or presence. See the [Go client guide](docs/go-client.md).
 
+### Official TypeScript/JavaScript client
+
+`clients/js` provides the official typed WebSocket client, published to npm as
+`@anulum/synapse-channel`. Unlike the read-only Go client it speaks the mutation
+protocol — chat, claims, releases, board reads, presence, and receipts — and runs
+unchanged in the browser and in Node 20+ with no runtime dependencies. See the
+[TypeScript/JavaScript client guide](docs/js-client.md).
+
 `synapse route-task TASK-1` uses that live directory plus the shared board to
 rank candidate agents with deterministic local signals. With
 `--event-store ./synapse.db`, it also uses positive release-receipt assessment
@@ -854,7 +862,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 
 | Surface | Current inventory |
 |---|---:|
-| Package version | 0.63.0 |
+| Package version | 0.64.0 |
 | Public API exports | 61 |
 | Package modules | 169 |
 | Classes | 178 |
@@ -961,7 +969,7 @@ If you use SYNAPSE CHANNEL in your work, please cite it. Metadata is in
   title   = {SYNAPSE CHANNEL: Local-first multi-agent coordination bus},
   url      = {https://github.com/anulum/synapse-channel},
   doi      = {10.5281/zenodo.20801559},
-  version = {0.63.0},
+  version = {0.64.0},
   year     = {2026}
 }
 ```
