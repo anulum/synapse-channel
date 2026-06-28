@@ -158,3 +158,35 @@ The adapter holds all MCP knowledge; the hub holds none. The MCP SDK is never a
 core dependency, the hub protocol is unchanged, and the bridge translates each
 MCP call into an ordinary hub message and correlates the reply. That keeps the
 single-transport-dependency guarantee — and the local-first model — intact.
+
+## Outbound: calling external MCP tools
+
+The directions are independent. `synapse mcp` serves the hub *to* MCP clients;
+`synapse mcp-tools` and `synapse mcp-call` let a Synapse operator *call* tools on
+an external MCP server, with a deny-by-default trust boundary.
+
+A JSON config names the allowed servers and, per server, the tools that may run
+(`"*"` opts the whole server in). A server or tool that is not allowlisted is
+refused before the server is contacted:
+
+```json
+{
+  "servers": [
+    {
+      "name": "fs",
+      "command": "mcp-server-filesystem",
+      "args": ["--root", "/data"],
+      "allowed_tools": ["read_file", "list_directory"]
+    }
+  ]
+}
+```
+
+```bash
+synapse mcp-tools fs --config mcp-allow.json
+synapse mcp-call fs read_file --config mcp-allow.json --arg path="/data/notes.txt"
+```
+
+The `mcp` SDK is the optional `synapse-channel[mcp]` extra; the commands import it
+only when a call is made. Per-agent ACLs over which identity may invoke outbound
+MCP remain a later tranche — this tranche's boundary is the config allowlist.

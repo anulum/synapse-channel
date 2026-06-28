@@ -15,6 +15,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse worker` | Run a model worker that answers on the channel. |
 | `synapse team` | Launch a hub plus one or two local workers in one shot. |
 | `synapse mcp` | Serve the hub to MCP-compatible agents over stdio (see [MCP server](mcp.md)). |
+| `synapse mcp-tools` / `synapse mcp-call` | List and call allowlisted tools on an external MCP server (outbound). |
 | `synapse a2a-card` | Print an Agent2Agent Agent Card projected from the live capability manifest. |
 | `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge. |
 | `synapse channel` | Manage private-channel membership (create/join/leave/list); pair with `synapse send --channel`. |
