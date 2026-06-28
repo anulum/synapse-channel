@@ -148,6 +148,19 @@ def test_fleet_visibility_derives_snapshot_counts(tmp_path: Path) -> None:
     ]
     assert fleet["tasks"]["ready"] == ["READY"]
     assert fleet["tasks"]["blocked"] == [{"task_id": "BLOCKED", "blocked_by": ["READY"]}]
+    assert fleet["task_graph"]["nodes"] == [
+        {"task_id": "BLOCKED", "title": "Blocked", "status": "blocked", "ready": False},
+        {"task_id": "READY", "title": "Ready", "status": "open", "ready": True},
+    ]
+    assert fleet["task_graph"]["edges"] == [
+        {
+            "from": "READY",
+            "to": "BLOCKED",
+            "satisfied": False,
+            "missing": False,
+            "from_status": "open",
+        }
+    ]
     assert fleet["receipts"][0]["task_id"] == "ACTIVE"
     assert fleet["a2a"]["total"] == 2
     assert fleet["a2a"]["states"] == {
@@ -184,6 +197,8 @@ def test_fleet_visibility_renders_in_dashboard_html(tmp_path: Path) -> None:
     assert "Missing waiters" in html
     assert "A2A tasks" in html
     assert "Branch conflicts" in html
+    assert "Task dependency graph" in html
+    assert "Task dependency edges" in html
     assert "Release receipts" in html
     assert "TASK_STATE_FAILED" in html
 
@@ -220,6 +235,13 @@ async def test_dashboard_http_json_includes_fleet_visibility(tmp_path: Path) -> 
                 lambda message: (
                     message.get("type") == "ledger_progress_posted"
                     and message.get("note", {}).get("task_id") == "READY"
+                )
+            )
+            await worker.agent.post_task("BLOCKED", title="Blocked task", depends_on=["READY"])
+            await worker.recorder.wait_for(
+                lambda message: (
+                    message.get("type") == "ledger_task_posted"
+                    and message.get("task", {}).get("task_id") == "BLOCKED"
                 )
             )
             await worker.agent.claim(
@@ -279,6 +301,15 @@ async def test_dashboard_http_json_includes_fleet_visibility(tmp_path: Path) -> 
     assert "SYNAPSE-CHANNEL/worker" in payload["fleet"]["agents"]["live"]
     assert payload["fleet"]["agents"]["waiters"] == ["SYNAPSE-CHANNEL/worker-rx"]
     assert payload["fleet"]["tasks"]["ready"] == ["READY"]
+    assert payload["fleet"]["task_graph"]["edges"] == [
+        {
+            "from": "READY",
+            "to": "BLOCKED",
+            "from_status": "open",
+            "missing": False,
+            "satisfied": False,
+        }
+    ]
     assert payload["fleet"]["branch_conflicts"][0]["paths"] == [
         "src/synapse_channel/dashboard_fleet.py"
     ]

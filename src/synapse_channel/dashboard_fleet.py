@@ -20,6 +20,11 @@ from typing import TYPE_CHECKING, Any
 
 from synapse_channel.a2a_store import A2ATaskStore
 from synapse_channel.core.ledger import TERMINAL_LEDGER_STATUSES
+from synapse_channel.dashboard_task_graph import (
+    TaskDependencyGraph,
+    build_task_dependency_graph,
+    render_task_dependency_graph_html,
+)
 from synapse_channel.git.gitconflict import find_conflicts
 
 if TYPE_CHECKING:
@@ -156,6 +161,8 @@ class FleetVisibility:
         Lease summary split by freshness.
     tasks : FleetTasks
         Ready and blocked blackboard task summary.
+    task_graph : TaskDependencyGraph
+        Read-only dependency graph derived from blackboard task edges.
     receipts : list[dict[str, Any]]
         Release receipt progress notes from the blackboard snapshot.
     branch_conflicts : list[dict[str, Any]]
@@ -169,6 +176,7 @@ class FleetVisibility:
     agents: FleetAgents
     claims: FleetClaims
     tasks: FleetTasks
+    task_graph: TaskDependencyGraph
     receipts: list[JsonDict]
     branch_conflicts: list[JsonDict]
     a2a: FleetA2A
@@ -180,6 +188,7 @@ class FleetVisibility:
             "agents": self.agents.to_dict(),
             "claims": self.claims.to_dict(),
             "tasks": self.tasks.to_dict(),
+            "task_graph": self.task_graph.to_dict(),
             "receipts": self.receipts,
             "branch_conflicts": self.branch_conflicts,
             "a2a": self.a2a.to_dict(),
@@ -395,6 +404,7 @@ def build_fleet_visibility(
         agents=_fleet_agents(snapshot.online_agents),
         claims=claims,
         tasks=_fleet_tasks(snapshot.board),
+        task_graph=build_task_dependency_graph(snapshot.board),
         receipts=_release_receipts(snapshot.board),
         branch_conflicts=_branch_conflicts(claims),
         a2a=_a2a_summary(path),
@@ -475,6 +485,7 @@ def render_fleet_visibility_html(
       <h2>Blocked tasks</h2>
       <ul>{_render_record_list(fleet.tasks.blocked, empty="No blocked tasks")}</ul>
     </section>
+    {render_task_dependency_graph_html(snapshot.board)}
     <section>
       <h2>Branch conflicts</h2>
       <ul>{_render_record_list(fleet.branch_conflicts, empty="No branch conflicts")}</ul>
