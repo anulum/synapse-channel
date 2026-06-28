@@ -4,8 +4,8 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — per-message authentication design documentation tests
-"""Guard the per-message authentication design boundaries."""
+# SYNAPSE CHANNEL — per-message authentication runtime documentation tests
+"""Guard the per-message authentication runtime boundaries."""
 
 from __future__ import annotations
 
@@ -25,8 +25,8 @@ def _collapsed(path: Path) -> str:
     return " ".join(_read(path).lower().split())
 
 
-def test_per_message_authentication_design_is_publicly_discoverable() -> None:
-    """The authentication design must be linked from public protocol docs."""
+def test_per_message_authentication_runtime_is_publicly_discoverable() -> None:
+    """The authentication runtime must be linked from public protocol docs."""
     nav = _read(ROOT / "mkdocs.yml")
     readme = _read(ROOT / "README.md")
     security = _read(ROOT / "SECURITY.md")
@@ -40,8 +40,8 @@ def test_per_message_authentication_design_is_publicly_discoverable() -> None:
     assert "per-message-authentication.md" in protocol
 
 
-def test_per_message_authentication_design_defines_frame_authentication() -> None:
-    """The design must define frame-level authentication material."""
+def test_per_message_authentication_runtime_defines_frame_authentication() -> None:
+    """The runtime documentation must define frame-level authentication material."""
     text = _collapsed(AUTH_DOC)
 
     required_controls = (
@@ -49,6 +49,7 @@ def test_per_message_authentication_design_defines_frame_authentication() -> Non
         "websocket connect authentication",
         "authenticated frame",
         "canonical frame",
+        "hmac-sha256",
         "message authentication code",
         "signature",
         "key id",
@@ -58,15 +59,17 @@ def test_per_message_authentication_design_defines_frame_authentication() -> Non
         assert control in text
 
 
-def test_per_message_authentication_design_covers_replay_and_rotation() -> None:
-    """The design must cover replay controls and key lifecycle."""
+def test_per_message_authentication_runtime_covers_replay_and_rotation() -> None:
+    """The runtime documentation must cover replay controls and key lifecycle."""
     text = _collapsed(AUTH_DOC)
 
     required_controls = (
         "nonce",
-        "sequence binding",
+        "signed sequence metadata",
         "timestamp window",
         "replay cache",
+        "in-memory only",
+        "hub restart",
         "idempotency key",
         "key rotation",
         "revocation",
@@ -76,13 +79,14 @@ def test_per_message_authentication_design_covers_replay_and_rotation() -> None:
         assert control in text
 
 
-def test_per_message_authentication_design_keeps_boundaries_clear() -> None:
-    """The design must not claim transport security before implementation."""
+def test_per_message_authentication_runtime_keeps_boundaries_clear() -> None:
+    """The runtime documentation must not overclaim security coverage."""
     text = _collapsed(AUTH_DOC)
 
     required_boundaries = (
-        "design target",
-        "not implemented yet",
+        "implemented runtime",
+        "default remains off",
+        "signature support remains a design target",
         "does not encrypt payloads",
         "does not replace tls",
         "does not replace signed events",

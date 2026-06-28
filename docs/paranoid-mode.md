@@ -28,6 +28,10 @@ The hub switch maps to these concrete settings:
   the secret is not visible in process listings.
 - **Durable event log required** through `--db`, so accepted mutations can be
   replayed after restart.
+- **Per-message authentication required** for selected mutating frames. Provide
+  at least one `--message-auth-key KEY_ID:SECRET:SENDER[,SENDER...]` and set
+  `--require-message-auth`, so HMAC verification runs after WebSocket connect
+  authentication.
 - **Metrics token required** whenever `--metrics` is enabled.
 - **Metrics query tokens disabled** even if `--metrics-query-token-ok` is passed;
   `Authorization: Bearer` remains the only token presentation in paranoid mode.
@@ -67,10 +71,11 @@ pretending they are solved:
 - **Signed events and mTLS** for durable event-log authenticity, tamper
   evidence, trusted peers, trust bundles, key rotation, revocation, and replay
   protection. See the [signed events and mTLS design](signed-events-mtls.md).
-- **Per-message authentication** after WebSocket connect authentication,
-  including canonical frames, sender binding, replay protection, and key
-  rotation. See the
-  [per-message authentication design](per-message-authentication.md).
+- **Per-message key rotation and revocation operator workflow** beyond the
+  runtime's explicit HMAC key list. The hub can enforce selected signed
+  mutating frames, but there is no managed key store, no key file lifecycle, and
+  no automatic rotation workflow. See the
+  [per-message authentication runtime](per-message-authentication.md).
 - **Per-agent identity and ACL enforcement** beyond the current shared-token and
   caller-name model, including identity-bound credentials, verbs, namespaces,
   metrics, dashboard, A2A, and release actions. See the

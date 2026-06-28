@@ -55,7 +55,7 @@ def test_paranoid_mode_design_reports_missing_hooks() -> None:
     required_hooks = (
         "at-rest encryption",
         "signed events",
-        "per-message authentication",
+        "per-message key rotation",
         "per-agent identity",
         "acl enforcement",
         "private channels",

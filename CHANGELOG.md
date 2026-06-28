@@ -13,7 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+- Added opt-in HMAC-SHA256 per-message authentication for selected mutating hub
+  frames after WebSocket connect authentication. `synapse hub --message-auth-key
+  KEY_ID:SECRET:SENDER[,SENDER...] --require-message-auth` now enforces signed
+  claims, releases, task updates, handoffs, checkpoints, and resource offers
+  with canonical-frame verification, fail-closed sender binding, timestamp
+  windows, bounded in-memory nonce replay detection, and explicit
+  verification-result errors.
+- `synapse hub --paranoid` now requires per-message authentication enforcement
+  in addition to token-protected access and durable event-log replay.
 
 ## [0.58.1] - 2026-06-28
 

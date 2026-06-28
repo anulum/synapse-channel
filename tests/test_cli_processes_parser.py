@@ -170,6 +170,31 @@ def test_parser_hub_metrics_query_token_ok() -> None:
     assert opted.metrics_query_token_ok is True
 
 
+def test_parser_hub_message_authentication_options() -> None:
+    defaults = cli.build_parser().parse_args(["hub"])
+    assert defaults.message_auth_key == []
+    assert defaults.require_message_auth is False
+    assert defaults.message_auth_window_seconds == 10.0
+    assert defaults.message_auth_replay_capacity == 4096
+
+    args = cli.build_parser().parse_args(
+        [
+            "hub",
+            "--message-auth-key",
+            "main:shared-secret:ALPHA",
+            "--require-message-auth",
+            "--message-auth-window-seconds",
+            "12.5",
+            "--message-auth-replay-capacity",
+            "99",
+        ]
+    )
+    assert args.message_auth_key == ["main:shared-secret:ALPHA"]
+    assert args.require_message_auth is True
+    assert args.message_auth_window_seconds == 12.5
+    assert args.message_auth_replay_capacity == 99
+
+
 def test_parser_hub_max_unauth_clients() -> None:
     assert cli.build_parser().parse_args(["hub"]).max_unauth_clients is None
     args = cli.build_parser().parse_args(["hub", "--max-unauth-clients", "8"])

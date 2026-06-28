@@ -40,6 +40,7 @@ async def wait_for_recorded_count(
 @asynccontextmanager
 async def connected_recording_agent(
     name: str,
+    **agent_kwargs: Any,
 ) -> AsyncIterator[tuple[SynapseAgent, list[dict[str, Any]]]]:
     """Run a real localhost WebSocket endpoint and connect one client to it."""
     messages: list[dict[str, Any]] = []
@@ -60,6 +61,7 @@ async def connected_recording_agent(
         uri=f"ws://localhost:{port}",
         heartbeat_interval=60.0,
         verbose=False,
+        **agent_kwargs,
     )
     task = asyncio.create_task(agent.connect())
     try:

@@ -13,6 +13,8 @@ from typing import Any, Protocol
 
 from websockets.asyncio.client import ClientConnection
 
+from synapse_channel.core.message_auth import MessageAuthKey
+
 __all__ = ["_OutboundAgent"]
 
 
@@ -21,6 +23,8 @@ class _OutboundAgent(Protocol):
 
     connection: ClientConnection | None
     name: str
+    _message_auth_key: MessageAuthKey | None
+    _message_auth_sequence: int
 
     async def send_message(
         self,

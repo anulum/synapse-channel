@@ -48,6 +48,7 @@ from synapse_channel.core.logging_setup import (
     LOG_FORMATS,
     LOG_LEVELS,
 )
+from synapse_channel.core.message_auth import DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 from synapse_channel.core.state import MAX_CLAIMS_PER_AGENT, MAX_OFFERS_PER_AGENT
 
@@ -243,6 +244,32 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         action="store_true",
         help="Also accept the metrics token as a ?token= query parameter (off by "
         "default; a query token can leak into logs, history, and proxy records).",
+    )
+    hub.add_argument(
+        "--message-auth-key",
+        action="append",
+        default=[],
+        metavar="KEY_ID:SECRET:SENDER[,SENDER...]",
+        help="Enable a sender-bound per-message HMAC key for signed mutating frames; "
+        "repeat for rotation. Off by default.",
+    )
+    hub.add_argument(
+        "--require-message-auth",
+        action="store_true",
+        help="Require signed per-message authentication on mutating frames when "
+        "--message-auth-key is configured. Off by default for compatibility.",
+    )
+    hub.add_argument(
+        "--message-auth-window-seconds",
+        type=float,
+        default=DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
+        help="Timestamp window accepted for per-message authentication frames.",
+    )
+    hub.add_argument(
+        "--message-auth-replay-capacity",
+        type=int,
+        default=4096,
+        help="Maximum in-memory nonce entries retained for replay detection.",
     )
     hub.add_argument(
         "--insecure-off-loopback",

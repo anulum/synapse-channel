@@ -88,11 +88,12 @@ worth stating plainly:
   for a newer release; it sends nothing beyond the request itself. Silence it with
   `SYNAPSE_NO_UPDATE_CHECK=1`.
 
-The planned [`--paranoid` mode](docs/paranoid-mode.md) is a design target for one
-operator switch that tightens local settings and reports missing hooks. It is not
-implemented as a CLI flag yet, and it does not change the current security
-boundary: encryption, signed events, per-agent identity, ACLs, private channels,
-and exposed deployment threat modelling remain explicit future work.
+[`synapse hub --paranoid`](docs/paranoid-mode.md) is implemented for the hub
+runtime. It requires a token, durable event-log replay, per-message
+authentication on selected mutating frames, and metrics bearer-token auth when
+metrics are enabled, while still reporting missing hooks. Encryption, signed
+events, per-agent identity, ACLs, private channels, and exposed deployment
+threat modelling remain explicit future work.
 
 The planned [at-rest encryption](docs/at-rest-encryption.md) profile scopes
 optional protection for local SQLite event stores, relay logs, A2A state, cursor
@@ -129,11 +130,13 @@ bundles, certificate pinning, and trusted multi-host peers. It is not
 implemented yet, does not encrypt payloads, does not replace per-agent identity,
 and does not certify federation.
 
-The planned [per-message authentication](docs/per-message-authentication.md)
-profile scopes keyed message authentication codes or signatures over selected
-WebSocket frames after connect authentication. It is not implemented yet, does
-not encrypt payloads, does not replace TLS, and does not replace per-agent
-identity or ACL enforcement.
+The [per-message authentication](docs/per-message-authentication.md) runtime
+enforces opt-in HMAC-SHA256 authentication for selected mutating WebSocket
+frames after connect authentication. It uses canonical frames, key ids, sender
+binding, nonces, signed sequence metadata, timestamp windows, and a bounded
+in-memory replay cache. It does not encrypt payloads, does not replace TLS,
+does not add public-key signatures or signed durable events, and does not
+replace per-agent identity or ACL enforcement.
 
 The planned [identity and ACL](docs/identity-and-acl.md) profile scopes
 per-agent identity, identity-bound credentials, project namespaces, allowed
@@ -152,9 +155,10 @@ agents.
 ## Out of scope / known limitations
 
 - The connect token is a proportionate shared secret, **not** a cryptographic
-  identity system: there is no implemented key exchange, signatures,
-  per-message authentication, or mTLS trust bundle. Do not expose the hub on an
-  untrusted network and rely on the token alone.
+  identity system: there is no implemented key exchange, public-key signatures,
+  per-agent identity, ACL enforcement, or mTLS trust bundle. Per-message HMAC
+  authentication is opt-in and protects selected mutating frames only. Do not
+  expose the hub on an untrusted network and rely on the token alone.
 - The bus does not sandbox the agents that connect to it. An agent is trusted to
   the extent the operator trusts the process it runs in. Never run untrusted agent
   code against a hub.

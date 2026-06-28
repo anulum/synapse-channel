@@ -79,6 +79,8 @@ def test_cmd_hub_paranoid_applies_strict_runtime_settings(
                 db="hub.db",
                 metrics=True,
                 metrics_token="metrics",
+                message_auth_key=["main:shared-secret:ALPHA"],
+                require_message_auth=True,
                 metrics_query_token_ok=True,
                 insecure_off_loopback=True,
             ),
@@ -91,5 +93,6 @@ def test_cmd_hub_paranoid_applies_strict_runtime_settings(
     assert captured["authenticator"] is not None
     assert captured["metrics_token"] == "metrics"
     assert captured["metrics_query_token_ok"] is False
+    assert captured["require_per_message_auth"] is True
     assert captured["insecure_off_loopback"] is False
     assert "paranoid mode missing hooks:" in capsys.readouterr().err
