@@ -13,7 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-No unreleased changes.
+### Fixed
+- The shell hook no longer collides with a worker-session tmux waker on the
+  `<identity>-rx` name. The prompt auto-arm and the interactive provider's own
+  tmux waker both tried to own that waiter; the passive one won the name while
+  the injecting one was locked out, so a terminal agent (Codex, Kimi K2) never
+  auto-woke on a directed message. The prompt auto-arm now yields when a live
+  worker-session tmux waker is present, and the provider wrapper releases the
+  passive waiter before launching the provider, so the injecting waker owns the
+  name. Re-run `synapse install-shell-hook` to pick up the change.
 
 ## [0.58.0] - 2026-06-28
 
