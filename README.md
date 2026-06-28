@@ -540,6 +540,12 @@ channel ids, membership lists, join/leave policy, history visibility, retention,
 relay filtering, and event-query filtering without claiming cryptographic
 secrecy.
 
+The planned [signed events and mTLS](docs/signed-events-mtls.md) profile scopes
+event signatures, key rotation, replay protection, verification results, trust
+bundles, certificate pinning, and trusted multi-host peers. It is not
+implemented yet, does not encrypt payloads, does not replace per-agent identity,
+and does not certify external federation.
+
 `synapse git-init` bundles the hook install with a short `.synapse/git-claims.md`
 onboarding guide (branch convention + worktree workflow). `synapse state` shows
 each claim's branch; installed git hooks release a claim
@@ -776,7 +782,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | CLI subcommands | 53 |
 | Test functions | 1845 |
 | Benchmark harnesses | 4 |
-| Documentation pages | 26 |
+| Documentation pages | 27 |
 | GitHub Actions workflows | 10 |
 | Optional-dependency groups | 4 |
 

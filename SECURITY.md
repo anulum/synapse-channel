@@ -110,12 +110,18 @@ control for project, worktree, task, and direct channels. It is not implemented
 yet, does not encrypt payloads, and does not create cryptographic identity or ACL
 enforcement by itself.
 
+The planned [signed events and mTLS](docs/signed-events-mtls.md) profile scopes
+event signatures, key rotation, replay protection, verification results, trust
+bundles, certificate pinning, and trusted multi-host peers. It is not
+implemented yet, does not encrypt payloads, does not replace per-agent identity,
+and does not certify federation.
+
 ## Out of scope / known limitations
 
 - The connect token is a proportionate shared secret, **not** a cryptographic
-  identity system: there is no key exchange, signatures, or per-message
-  authentication. Do not expose the hub on an untrusted network and rely on the
-  token alone.
+  identity system: there is no implemented key exchange, signatures,
+  per-message authentication, or mTLS trust bundle. Do not expose the hub on an
+  untrusted network and rely on the token alone.
 - The bus does not sandbox the agents that connect to it. An agent is trusted to
   the extent the operator trusts the process it runs in. Never run untrusted agent
   code against a hub.

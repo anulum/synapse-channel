@@ -38,6 +38,9 @@ All notable changes to this project are documented here.
 - Added the public private-channels design for project, worktree, task, and
   direct channel namespaces, membership lifecycle, history visibility, retention
   boundaries, relay filtering, and event-query filtering.
+- Added the public signed-events and mTLS design for selected event signatures,
+  key rotation, replay protection, verification results, trust bundles,
+  certificate pinning, and trusted multi-host peer boundaries.
 
 ## [0.54.0] - 2026-06-28
 

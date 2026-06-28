@@ -179,6 +179,14 @@ Private channels define channel ids, membership lists, history visibility,
 retention boundaries, relay log filtering, and event-query filtering, but they
 do not encrypt payloads.
 
+### Signed events and mTLS
+
+Design target for authenticating selected coordination events and trusted
+multi-host peers. Signed events use an event signature over a canonical payload,
+key id, sequence binding, timestamp window, replay protection, and verification
+result. Mutual TLS uses operator-managed trust bundles, certificate pinning, key
+rotation, revocation, and trusted peer definitions; it is not implemented yet.
+
 ### Reliability memory
 
 Evidence-only owner summaries over the **event log** using

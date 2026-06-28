@@ -100,5 +100,7 @@ compromised member from copying plaintext.
 The trusted local hub remains the coordination authority. It can still see
 channel ids, sender names, recipient names, task ids, timestamps, delivery
 metadata, and retention metadata. Treat private channels as audience-scoping
-inside trusted local coordination until per-agent identity, signed events, and
-ACL enforcement exist.
+inside trusted local coordination until per-agent identity, ACL enforcement, and
+the [signed events and mTLS design](signed-events-mtls.md) exist. Signed events
+can later bind channel ids and membership changes, but they do not encrypt
+payloads.
