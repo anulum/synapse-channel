@@ -14,6 +14,8 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the official read-only Go client for ops and CI tools to fetch dashboard
+  JSON snapshots without implementing WebSocket mutation flows.
 - Added a committed five-agent coding fleet benchmark that measures local claim
   conflict rate, claim latency, release cleanup, and replay recovery evidence.
 - Added branch-conflict candidates to the dashboard fleet view, derived from
