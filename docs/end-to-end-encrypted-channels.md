@@ -111,4 +111,5 @@ The local-first tradeoff is operational complexity: key discovery, key
 rotation, member removal, device loss, and recovery phrase handling must be
 documented before the feature ships. Until signed events, per-agent identity,
 and ACLs exist, encrypted channels should remain opt-in and explicit rather
-than becoming the default coordination path.
+than becoming the default coordination path. For audience scoping without body
+encryption, see the [private channels design](private-channels.md).

@@ -63,7 +63,10 @@ pretending they are solved:
 - **ACL enforcement** for verbs, namespaces, metrics, dashboard, A2A, and
   release actions.
 - **Private channels** for project-local or worktree-local payloads that the hub
-  should not broadcast to every trusted participant.
+  should not broadcast to every trusted participant. See the
+  [private channels design](private-channels.md) for channel ids, membership
+  lists, history visibility, retention boundaries, relay log filtering, and
+  event-query filtering.
 - **End-to-end encrypted channels** for selected payloads that the hub should
   route without reading plaintext. See the
   [encrypted channels design](end-to-end-encrypted-channels.md) for recipient

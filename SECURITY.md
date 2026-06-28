@@ -105,6 +105,11 @@ visible. It is not implemented yet, does not replace at-rest encryption, and
 does not protect compromised endpoints or plaintext after a participant decrypts
 content.
 
+The planned [private channels](docs/private-channels.md) profile scopes audience
+control for project, worktree, task, and direct channels. It is not implemented
+yet, does not encrypt payloads, and does not create cryptographic identity or ACL
+enforcement by itself.
+
 ## Out of scope / known limitations
 
 - The connect token is a proportionate shared secret, **not** a cryptographic

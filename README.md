@@ -534,6 +534,12 @@ profile scopes selected payload encryption for direct messages, private progress
 notes, handoff checkpoints, and A2A artifacts while keeping routing metadata
 visible so the hub can still deliver, retain, and audit coordination events.
 
+The planned [private channels](docs/private-channels.md) profile scopes
+audience control for project, worktree, task, and direct channels. It defines
+channel ids, membership lists, join/leave policy, history visibility, retention,
+relay filtering, and event-query filtering without claiming cryptographic
+secrecy.
+
 `synapse git-init` bundles the hook install with a short `.synapse/git-claims.md`
 onboarding guide (branch convention + worktree workflow). `synapse state` shows
 each claim's branch; installed git hooks release a claim
@@ -768,9 +774,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 131 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1841 |
+| Test functions | 1845 |
 | Benchmark harnesses | 4 |
-| Documentation pages | 25 |
+| Documentation pages | 26 |
 | GitHub Actions workflows | 10 |
 | Optional-dependency groups | 4 |
 
