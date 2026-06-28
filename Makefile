@@ -68,6 +68,8 @@ bench: ## Run the committed benchmark harnesses
 	$(PY) benchmarks/relay_token_benchmark.py
 	$(PY) benchmarks/routing_benchmark.py
 	$(PY) benchmarks/scalability_benchmark.py
+	$(PY) benchmarks/a2a_bridge_benchmark.py
+	$(PY) benchmarks/coding_fleet_benchmark.py
 
 clean: ## Remove build artefacts and caches
 	rm -rf build dist *.egg-info src/*.egg-info .pytest_cache .ruff_cache \
