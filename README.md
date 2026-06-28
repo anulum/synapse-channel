@@ -739,6 +739,7 @@ synapse event-query ./synapse.db 'timeline("TASK-1").'
 synapse event-query ./synapse.db 'MATCH (task:TASK {id:"TASK-1"}) RETURN timeline'
 synapse postmortem ./synapse.db TASK-1
 synapse reliability ./synapse.db
+synapse accounting report ./synapse.db --pricing pricing.json --budget budget.json
 synapse ttl-advice ./synapse.db
 ```
 
@@ -759,6 +760,13 @@ Use `synapse reliability ./synapse.db` for evidence-only reliability memory. It
 tracks stale claims, declared failed-check evidence, broken handoff candidates,
 and merge-conflict frequency as audit signals, not scores. It does not rank
 agents, assign trust grades, or replace review of the underlying event rows.
+
+Use `synapse accounting` for opt-in model cost/token usage. Synapse never calls a
+model provider and collects no telemetry, so usage exists only when you record
+it: `synapse accounting record` posts a `usage`-kind progress note, and `synapse
+accounting report ./synapse.db` aggregates those notes into per-agent and
+per-model totals, with optional `--pricing` for cost estimates and `--budget` for
+budget evidence. Budgets are evidence, not an enforcement gate.
 
 The planned [agent trust graph](docs/agent-trust-graph.md) profile connects
 those reliability signals, release receipts, capability observations, handoff
@@ -882,10 +890,10 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Package version | 0.65.0 |
 | Public API exports | 61 |
 | Package modules | 172 |
-| Classes | 187 |
+| Classes | 197 |
 | Wire message types | 59 |
-| CLI subcommands | 70 |
-| Test functions | 2161 |
+| CLI subcommands | 75 |
+| Test functions | 2187 |
 | Benchmark harnesses | 5 |
 | Documentation pages | 34 |
 | GitHub Actions workflows | 11 |

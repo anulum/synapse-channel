@@ -41,8 +41,12 @@ LEDGER_TASK_STATUSES = frozenset({"open", "in_progress", "blocked", "done", "can
 DEFAULT_LEDGER_TASK_STATUS = "open"
 """Status a freshly declared task starts in."""
 
-PROGRESS_KINDS = frozenset({"note", "blocked", "assessment"})
-"""Allowed kinds for a :class:`ProgressNote`."""
+PROGRESS_KINDS = frozenset({"note", "blocked", "assessment", "usage"})
+"""Allowed kinds for a :class:`ProgressNote`.
+
+``usage`` marks an opt-in model cost/token record whose text body follows the
+canonical accounting format (see :mod:`synapse_channel.core.accounting`).
+"""
 
 DEFAULT_MAX_PROGRESS = 5000
 """Default cap on retained progress notes before the oldest are dropped."""
