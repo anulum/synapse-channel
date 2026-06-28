@@ -27,11 +27,13 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any, ClassVar, Final
 from urllib.parse import urlsplit
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.dashboard_fleet import build_fleet_visibility, render_fleet_visibility_html
 
 SnapshotMapping = dict[str, Any]
 """Mutable mapping shape used for hub snapshot payloads."""
@@ -68,9 +70,18 @@ class DashboardSnapshot:
     board: SnapshotMapping
     manifest: ManifestCards
 
-    def to_dict(self) -> dict[str, Any]:
-        """Return a JSON-serialisable dictionary for HTTP responses."""
-        return asdict(self)
+    def to_dict(self, *, a2a_state_file: str | Path | None = None) -> dict[str, Any]:
+        """Return a JSON-serialisable dictionary for HTTP responses.
+
+        Parameters
+        ----------
+        a2a_state_file : str, pathlib.Path, or None, optional
+            Optional persisted A2A bridge state file used to populate the
+            derived ``fleet.a2a`` summary.
+        """
+        payload = asdict(self)
+        payload["fleet"] = build_fleet_visibility(self, a2a_state_file=a2a_state_file).to_dict()
+        return payload
 
 
 @dataclass(frozen=True)
@@ -324,7 +335,12 @@ def _render_manifest(manifest: ManifestCards) -> str:
     return "".join(rows)
 
 
-def render_dashboard_html(snapshot: DashboardSnapshot, *, refresh_seconds: int = 5) -> str:
+def render_dashboard_html(
+    snapshot: DashboardSnapshot,
+    *,
+    refresh_seconds: int = 5,
+    a2a_state_file: str | Path | None = None,
+) -> str:
     """Render a complete read-only HTML dashboard page.
 
     Parameters
@@ -333,6 +349,9 @@ def render_dashboard_html(snapshot: DashboardSnapshot, *, refresh_seconds: int =
         Read-side snapshot fetched from the hub.
     refresh_seconds : int, optional
         Browser refresh interval. Values below one are coerced to one second.
+    a2a_state_file : str, pathlib.Path, or None, optional
+        Optional persisted A2A bridge state file used to populate the fleet
+        visibility section.
 
     Returns
     -------
@@ -342,6 +361,7 @@ def render_dashboard_html(snapshot: DashboardSnapshot, *, refresh_seconds: int =
     refresh = max(1, int(refresh_seconds))
     ready = snapshot.board.get("ready", [])
     ready_items = [str(item) for item in ready] if isinstance(ready, list) else []
+    fleet_html = render_fleet_visibility_html(snapshot, a2a_state_file=a2a_state_file)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -386,6 +406,7 @@ def render_dashboard_html(snapshot: DashboardSnapshot, *, refresh_seconds: int =
     <section><h2>Board tasks</h2><ul>{_render_tasks(snapshot.board)}</ul></section>
     <section><h2>Recent progress</h2><ul>{_render_progress(snapshot.board)}</ul></section>
     <section><h2>Capability manifest</h2><ul>{_render_manifest(snapshot.manifest)}</ul></section>
+    {fleet_html}
   </div>
 </main>
 </body>
@@ -393,9 +414,13 @@ def render_dashboard_html(snapshot: DashboardSnapshot, *, refresh_seconds: int =
 """
 
 
-def _json_bytes(snapshot: DashboardSnapshot) -> bytes:
+def _json_bytes(snapshot: DashboardSnapshot, *, a2a_state_file: str | Path | None) -> bytes:
     """Return stable UTF-8 JSON bytes for ``snapshot``."""
-    return json.dumps(snapshot.to_dict(), ensure_ascii=False, sort_keys=True).encode("utf-8")
+    return json.dumps(
+        snapshot.to_dict(a2a_state_file=a2a_state_file),
+        ensure_ascii=False,
+        sort_keys=True,
+    ).encode("utf-8")
 
 
 class _DashboardHandler(BaseHTTPRequestHandler):
@@ -407,6 +432,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     ready_timeout: ClassVar[float]
     response_timeout: ClassVar[float]
     refresh_seconds: ClassVar[int]
+    a2a_state_file: ClassVar[Path | None]
 
     def do_GET(self) -> None:
         """Serve the dashboard HTML page, JSON snapshot, or a 404 response."""
@@ -429,11 +455,17 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._write(HTTPStatus.SERVICE_UNAVAILABLE, body, content_type="text/plain")
             return
         if path == "/snapshot.json":
-            self._write(HTTPStatus.OK, _json_bytes(snapshot), content_type="application/json")
+            self._write(
+                HTTPStatus.OK,
+                _json_bytes(snapshot, a2a_state_file=self.a2a_state_file),
+                content_type="application/json",
+            )
             return
-        html_body = render_dashboard_html(snapshot, refresh_seconds=self.refresh_seconds).encode(
-            "utf-8"
-        )
+        html_body = render_dashboard_html(
+            snapshot,
+            refresh_seconds=self.refresh_seconds,
+            a2a_state_file=self.a2a_state_file,
+        ).encode("utf-8")
         self._write(HTTPStatus.OK, html_body, content_type="text/html")
 
     def log_message(self, _format: str, *_args: object) -> None:
@@ -458,6 +490,7 @@ def _handler_class(
     ready_timeout: float,
     response_timeout: float,
     refresh_seconds: int,
+    a2a_state_file: Path | None,
 ) -> type[_DashboardHandler]:
     """Create an isolated handler class for one dashboard server."""
     bound_uri = uri
@@ -466,6 +499,7 @@ def _handler_class(
     bound_ready_timeout = ready_timeout
     bound_response_timeout = response_timeout
     bound_refresh_seconds = refresh_seconds
+    bound_a2a_state_file = a2a_state_file
 
     class BoundDashboardHandler(_DashboardHandler):
         """Dashboard handler bound to one hub URI and dashboard identity."""
@@ -476,6 +510,7 @@ def _handler_class(
         ready_timeout = bound_ready_timeout
         response_timeout = bound_response_timeout
         refresh_seconds = bound_refresh_seconds
+        a2a_state_file = bound_a2a_state_file
 
     return BoundDashboardHandler
 
@@ -491,6 +526,7 @@ def start_dashboard_server(
     response_timeout: float,
     refresh_seconds: int,
     allow_non_loopback: bool,
+    a2a_state_file: str | Path | None = None,
 ) -> DashboardServer:
     """Start a background read-only dashboard HTTP server.
 
@@ -508,6 +544,9 @@ def start_dashboard_server(
         HTML browser refresh interval.
     allow_non_loopback : bool
         Whether to permit non-loopback HTTP binds.
+    a2a_state_file : str, pathlib.Path, or None, optional
+        Optional persisted A2A bridge state file to summarise in the dashboard
+        fleet section.
 
     Returns
     -------
@@ -522,6 +561,7 @@ def start_dashboard_server(
         ready_timeout=ready_timeout,
         response_timeout=response_timeout,
         refresh_seconds=max(1, int(refresh_seconds)),
+        a2a_state_file=Path(a2a_state_file) if a2a_state_file is not None else None,
     )
     server = ThreadingHTTPServer((host, int(port)), handler)
     thread = threading.Thread(target=server.serve_forever, name="synapse-dashboard", daemon=True)

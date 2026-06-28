@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import time
+from pathlib import Path
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.dashboard import start_dashboard_server
@@ -29,6 +30,7 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
             response_timeout=args.response_timeout,
             refresh_seconds=args.refresh_seconds,
             allow_non_loopback=args.allow_non_loopback,
+            a2a_state_file=args.a2a_state_file,
         )
     except ValueError as exc:
         print(str(exc))
@@ -75,4 +77,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
     )
     dashboard.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    dashboard.add_argument(
+        "--a2a-state-file",
+        type=Path,
+        default=None,
+        help="Optional persisted A2A bridge state file summarised in the dashboard.",
+    )
     dashboard.set_defaults(func=_cmd_dashboard)
