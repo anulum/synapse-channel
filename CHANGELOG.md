@@ -13,7 +13,14 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+- Generalised the tmux wake transport to any terminal coding agent — Codex,
+  Kimi K2, Claude Code — through `synapse agent-tmux {start,wake,status,wait}`
+  with `--agent-command`. The pane-activity probe now derives the agent binary
+  from the launch command instead of hard-coding Codex, so a non-Codex agent
+  running under a shell is detected correctly. `synapse codex-tmux` remains as a
+  Codex-defaulted alias (`--codex-command`); `codex_tmux` stays importable as a
+  compatibility surface over the new `agent_tmux` module.
 
 ## [0.57.1] - 2026-06-28
 

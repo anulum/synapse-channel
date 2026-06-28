@@ -19,8 +19,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from tempfile import gettempdir
 
+from synapse_channel.agent_tmux import AgentTmuxConfig, start_session
 from synapse_channel.client.agent import DEFAULT_HUB_URI
-from synapse_channel.codex_tmux import CodexTmuxConfig, start_session
 
 SIDECAR_SHUTDOWN_TIMEOUT_SECONDS = 5.0
 """Seconds to wait for a wake sidecar to exit after graceful termination."""
@@ -126,7 +126,7 @@ def _start_tmux_waiter(
 
     wait_command = [
         synapse_bin,
-        "codex-tmux",
+        "agent-tmux",
         "wait",
         "--identity",
         identity,
@@ -134,7 +134,7 @@ def _start_tmux_waiter(
         session,
         "--cwd",
         str(cwd),
-        "--codex-command",
+        "--agent-command",
         shlex.join(command),
     ]
     if token:
@@ -181,11 +181,11 @@ def _run_terminal_tmux_session(
 ) -> int:
     """Run an interactive provider through a persistent tmux-backed terminal."""
     resolved_session = session or _default_tmux_session(identity)
-    config = CodexTmuxConfig(
+    config = AgentTmuxConfig(
         identity=identity,
         session=resolved_session,
         cwd=cwd,
-        codex_command=tuple(command),
+        agent_command=tuple(command),
         tmux_bin=tmux_bin,
         synapse_bin=synapse_bin,
         uri=uri,
