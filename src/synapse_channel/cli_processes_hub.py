@@ -16,6 +16,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from synapse_channel.cli_processes_runtime import _run
+from synapse_channel.core.acl import AclError, load_acl_policy
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import InsecureBindError, SynapseHub
 from synapse_channel.core.logging_setup import configure_logging
@@ -82,6 +83,19 @@ def _cmd_hub(
     except ValueError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
+    try:
+        acl_policy = load_acl_policy(args.acl_policy) if args.acl_policy else None
+    except AclError as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        return 2
+    if args.require_acl and authenticator is None:
+        print(
+            "synapse hub: WARNING --require-acl without --token authorises a self-reported "
+            "sender; namespace ACL rules give no protection on an unauthenticated hub. "
+            "Pair --require-acl with --token, and with --require-message-auth so the sender "
+            "is cryptographically bound, before relying on enforcement.",
+            file=sys.stderr,
+        )
     hub = hub_factory(
         journal=journal,
         rate_limiter=limiter,
@@ -114,6 +128,8 @@ def _cmd_hub(
         require_per_message_auth=args.require_message_auth,
         per_message_auth_window_seconds=args.message_auth_window_seconds,
         per_message_auth_replay_capacity=args.message_auth_replay_capacity,
+        acl_policy=acl_policy,
+        require_acl=args.require_acl,
         insecure_off_loopback=args.insecure_off_loopback,
     )
     try:

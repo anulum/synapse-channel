@@ -38,6 +38,8 @@ import websockets
 from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request, Response
 
+from synapse_channel.core.acl import AclPolicy
+from synapse_channel.core.acl_enforcement import authorise_frame
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.channels import ChannelRegistry
@@ -313,6 +315,8 @@ class SynapseHub:
         require_per_message_auth: bool = False,
         per_message_auth_window_seconds: float = DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
         per_message_auth_replay_capacity: int = 4096,
+        acl_policy: AclPolicy | None = None,
+        require_acl: bool = False,
     ) -> None:
         self.journal = journal
         self.enable_metrics = bool(enable_metrics)
@@ -332,6 +336,8 @@ class SynapseHub:
             window_seconds=per_message_auth_window_seconds,
             max_entries=per_message_auth_replay_capacity,
         )
+        self.acl_policy = acl_policy
+        self.require_acl = bool(require_acl)
         self.channels = ChannelRegistry()
         self.max_msg_bytes = max(int(max_msg_bytes), 1)
         self._clock = clock or time.monotonic
@@ -780,7 +786,46 @@ class SynapseHub:
         if not await self._verify_per_message_auth(sender, msg_type, data, websocket):
             return
 
+        if not await self._authorise_acl(sender, msg_type, data, websocket):
+            return
+
         await self._route(sender, msg_type, data, websocket)
+
+    async def _authorise_acl(
+        self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
+    ) -> bool:
+        """Authorise a mutating frame against the ACL when enforcement is on.
+
+        Returns ``True`` when enforcement is off, no policy is configured, or the
+        frame is allowed (including ungated verbs). A denied frame is refused with
+        an error naming the rule reason and is not routed.
+        """
+        if not self.require_acl or self.acl_policy is None:
+            return True
+        denial = authorise_frame(
+            sender=sender, msg_type=msg_type, data=data, policy=self.acl_policy
+        )
+        if denial is None:
+            return True
+        logger.warning(
+            "ACL denied %s for %s on %s:%s (%s)",
+            msg_type,
+            sender,
+            denial.target.kind,
+            denial.target.value,
+            denial.reason,
+        )
+        await self._send_json(
+            websocket,
+            self._system(
+                f"access denied: {denial.permission} on {denial.target.kind}:{denial.target.value}",
+                msg_type=MessageType.ERROR,
+                target=sender,
+                acl_decision=denial.decision,
+                acl_reason=denial.reason,
+            ),
+        )
+        return False
 
     async def _verify_per_message_auth(
         self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
