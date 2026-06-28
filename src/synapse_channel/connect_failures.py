@@ -88,3 +88,42 @@ def describe_connect_failure(
     reason = close_reason.strip()
     suffix = f" (hub said: {reason})" if reason and reason not in guidance else ""
     return f"[{name}] {guidance} (code {close_code}){suffix}."
+
+
+def explain_silent_outcome(
+    name: str,
+    uri: str,
+    *,
+    close_code: int | None,
+    close_reason: str,
+    fallback: str,
+) -> str:
+    """Explain a request that produced no application reply.
+
+    A claim or lock waits for a granted/denied reply and otherwise reports a flat
+    "no response"/"timed out". When the hub closed the socket — because the name
+    was already online, the hub was full, or a takeover superseded it — that
+    close code is the real reason the reply never came. Surface it instead of the
+    generic fallback so the caller sees the actionable cause.
+
+    Parameters
+    ----------
+    name, uri : str
+        Client identity and hub URI, forwarded to :func:`describe_connect_failure`.
+    close_code : int or None
+        Close code the client recorded, or ``None`` when the socket stayed open
+        (a genuine no-reply that the fallback already describes).
+    close_reason : str
+        Close reason text the hub supplied.
+    fallback : str
+        Message to return when no close code was recorded.
+
+    Returns
+    -------
+    str
+        The classified connection-close message, or ``fallback`` when the socket
+        was never closed with a code.
+    """
+    if close_code is None:
+        return fallback
+    return describe_connect_failure(name, uri, close_code=close_code, close_reason=close_reason)

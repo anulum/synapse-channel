@@ -26,6 +26,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.connect_failures import describe_connect_failure, explain_silent_outcome
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.receipts import build_release_receipt
 
@@ -111,7 +112,14 @@ async def _lock(
     conn_task = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
-            print(f"[{name}] Could not reach hub at {uri}.")
+            print(
+                describe_connect_failure(
+                    name,
+                    uri,
+                    close_code=agent.last_close_code,
+                    close_reason=agent.last_close_reason,
+                )
+            )
             return 1
         loop = asyncio.get_event_loop()
         deadline = loop.time() + wait_timeout
@@ -126,13 +134,35 @@ async def _lock(
             outcome.clear()
             await agent.claim(task_id, worktree=lock_worktree, paths=paths)
             for _ in range(attempts):
-                if outcome:
+                if outcome or conn_task.done():
                     break
                 await asyncio.sleep(poll_interval)
             if outcome.get("granted"):
                 break
+            if conn_task.done() and not outcome:
+                print(
+                    explain_silent_outcome(
+                        name,
+                        uri,
+                        close_code=agent.last_close_code,
+                        close_reason=agent.last_close_reason,
+                        fallback=f"Could not acquire lock '{task_id}': hub connection closed",
+                    )
+                )
+                return 1
             if wait_timeout <= 0 or loop.time() >= deadline:
-                print(f"Could not acquire lock '{task_id}': {outcome.get('denied', 'timed out')}")
+                print(
+                    explain_silent_outcome(
+                        name,
+                        uri,
+                        close_code=agent.last_close_code,
+                        close_reason=agent.last_close_reason,
+                        fallback=(
+                            f"Could not acquire lock '{task_id}': "
+                            f"{outcome.get('denied', 'timed out')}"
+                        ),
+                    )
+                )
                 return 1
             await asyncio.sleep(retry_interval)
         return await runner(command)
@@ -237,7 +267,14 @@ async def _release(
     conn_task = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
-            print(f"[{name}] Could not reach hub at {uri}.")
+            print(
+                describe_connect_failure(
+                    name,
+                    uri,
+                    close_code=agent.last_close_code,
+                    close_reason=agent.last_close_reason,
+                )
+            )
             return 1
         await agent.release(
             task_id,
@@ -251,7 +288,7 @@ async def _release(
             freshness_seconds=freshness_seconds,
         )
         for _ in range(attempts):
-            if outcome:
+            if outcome or conn_task.done():
                 break
             await asyncio.sleep(poll_interval)
         if outcome.get("released"):
@@ -263,7 +300,19 @@ async def _release(
             else:
                 print(f"released '{task_id}'")
             return 0
-        print(f"release refused for '{task_id}': {outcome.get('denied', 'no response from hub')}")
+        denied = outcome.get("denied")
+        if denied:
+            print(f"release refused for '{task_id}': {denied}")
+        else:
+            print(
+                explain_silent_outcome(
+                    name,
+                    uri,
+                    close_code=agent.last_close_code,
+                    close_reason=agent.last_close_reason,
+                    fallback=f"release refused for '{task_id}': no response from hub",
+                )
+            )
         return 1
     finally:
         agent.running = False

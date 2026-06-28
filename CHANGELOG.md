@@ -26,6 +26,13 @@ All notable changes to this project are documented here.
   full, in a takeover cooldown, or rejecting a duplicate name from a hub that is
   simply absent. A full hub previously printed the same `Could not reach hub`
   line as an offline one, masking a capacity ceiling as an outage.
+- `synapse git-claim`, `synapse lock`, and `synapse release` now name the real
+  reason a request got no reply instead of printing `no response from hub` or
+  `timed out`. Claiming or locking under a name another live session already
+  holds — a common slip when reusing a waiter's identity — now reports the name
+  conflict (close 4009), and a full hub reports its capacity (close 4013). They
+  also stop waiting as soon as the hub closes the socket rather than polling out
+  the full window.
 
 ### Changed
 - Raised the default hub connection ceiling (`--max-clients`) from 64 to 256 so

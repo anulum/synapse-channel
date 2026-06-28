@@ -70,6 +70,54 @@ async def test_run_git_claim_granted_sends_git_context() -> None:
     }
 
 
+async def test_run_git_claim_surfaces_name_conflict_close(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Claiming under a name another live session already holds (a common slip:
+    # reusing your own waiter's identity) must name the real cause, not time out
+    # with a misleading "no response from hub".
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        holder = await connect_agent("busy-name", uri)
+        try:
+            rc = await run_git_claim(
+                uri=uri,
+                name="busy-name",
+                task_id="T1",
+                paths=["src/a.py"],
+                runner=_branch_then_repo("feature/x", "/repo"),
+            )
+        finally:
+            await close_agents(holder)
+
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "already online" in out
+    assert "code 4009" in out
+    assert "no response from hub" not in out
+
+
+async def test_run_git_claim_surfaces_hub_at_capacity_close(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async with running_hub(SynapseHub(max_clients=1)) as (_hub, uri):
+        filler = await connect_agent("filler", uri)
+        try:
+            rc = await run_git_claim(
+                uri=uri,
+                name="me",
+                task_id="T1",
+                paths=["src/a.py"],
+                runner=_branch_then_repo("feature/x", "/repo"),
+            )
+        finally:
+            await close_agents(filler)
+
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "hub at capacity" in out
+    assert "code 4013" in out
+
+
 async def test_run_git_claim_uses_token() -> None:
     token = "s3cret"
     async with running_hub(SynapseHub(authenticator=TokenAuthenticator([token]))) as (hub, uri):
