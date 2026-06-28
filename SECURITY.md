@@ -105,11 +105,12 @@ optional protection for local SQLite event stores, relay logs, A2A state, cursor
 files, archive reports, temporary files, and backups. It is not implemented yet
 and does not encrypt existing databases or replace host filesystem permissions.
 
-The planned [end-to-end encrypted channels](docs/end-to-end-encrypted-channels.md)
-profile scopes selected payload encryption while keeping routing metadata
-visible. It is not implemented yet, does not replace at-rest encryption, and
-does not protect compromised endpoints or plaintext after a participant decrypts
-content.
+The [end-to-end encrypted channels](docs/end-to-end-encrypted-channels.md)
+runtime encrypts selected chat payloads on the sending endpoint and decrypts
+them on the listening endpoint with a local key file. The hub still sees routing
+metadata, key ids, recipient names, nonce, and ciphertext. It does not replace
+at-rest encryption, does not manage key discovery or rotation, and does not
+protect compromised endpoints or plaintext after a participant decrypts content.
 
 The planned [private channels](docs/private-channels.md) profile scopes audience
 control for project, worktree, task, and direct channels. It is not implemented

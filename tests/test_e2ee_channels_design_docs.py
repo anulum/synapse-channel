@@ -71,8 +71,8 @@ def test_e2ee_channels_design_keeps_hub_blind_boundaries_clear() -> None:
     text = _collapsed(E2EE_DOC)
 
     required_boundaries = (
-        "design target",
-        "not implemented yet",
+        "broader encrypted-channel profile remains a design target",
+        "runtime tranche does not replace at-rest encryption",
         "hub cannot read plaintext",
         "does not hide routing metadata",
         "does not replace at-rest encryption",
@@ -81,3 +81,20 @@ def test_e2ee_channels_design_keeps_hub_blind_boundaries_clear() -> None:
     )
     for boundary in required_boundaries:
         assert boundary in text
+
+
+def test_e2ee_channels_doc_tracks_runtime_tranche() -> None:
+    """The public E2EE doc must distinguish shipped runtime from remaining gaps."""
+    text = _collapsed(E2EE_DOC)
+
+    required_runtime_terms = (
+        "implemented runtime tranche",
+        "synapse send --encrypt-key-file",
+        "synapse listen --decrypt-key-file",
+        "aes-256-gcm",
+        "hub routes ciphertext",
+        "does not manage key discovery",
+        "does not rotate keys",
+    )
+    for term in required_runtime_terms:
+        assert term in text

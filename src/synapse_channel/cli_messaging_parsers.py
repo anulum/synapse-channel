@@ -45,6 +45,23 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=2.0,
         help="Seconds to wait for a delivery receipt when --require-recipient is used.",
     )
+    send.add_argument(
+        "--encrypt-key-file",
+        default=None,
+        help="Encrypt the message payload with this 32-byte local key file before sending.",
+    )
+    send.add_argument(
+        "--encrypt-key-id",
+        default="",
+        help="Visible key id to carry in the encrypted payload envelope.",
+    )
+    send.add_argument(
+        "--encrypt-recipient",
+        dest="encrypt_recipients",
+        action="append",
+        default=None,
+        help="Recipient identity bound into encrypted payload AAD; repeatable.",
+    )
     send.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     send.add_argument(
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
@@ -97,5 +114,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=None,
         help="Show only chats addressed to this name (or broadcast) and suppress "
         "presence updates — a focused per-agent inbox.",
+    )
+    listen.add_argument(
+        "--decrypt-key-file",
+        default=None,
+        help="Decrypt encrypted chat payloads with this 32-byte local key file.",
     )
     listen.set_defaults(func=_cmd_listen)

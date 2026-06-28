@@ -394,6 +394,25 @@ when at least one online recipient matches `--target`; it prints `delivery
 failed: no online recipient matched ...` and exits `1` when the message would
 otherwise be only a silent durable-feed entry.
 
+For selected sensitive bodies, `synapse send --encrypt-key-file` replaces the
+plain payload with an AES-256-GCM envelope whose authenticated data binds the
+visible sender, target, channel, task id, and recipient set. The hub routes the
+ciphertext and metadata; it does not receive the plaintext:
+
+```bash
+synapse send --target SCPN-CONTROL \
+  --encrypt-key-file ./payload.key \
+  --encrypt-key-id project-main-v1 \
+  --encrypt-recipient SCPN-CONTROL \
+  "private handoff note"
+synapse listen --name SCPN-CONTROL --for SCPN-CONTROL \
+  --decrypt-key-file ./payload.key
+synapse channel key-check ./payload.key
+```
+
+The key file is a local 32-byte owner-only file. This first runtime tranche does
+not discover, rotate, revoke, or escrow keys.
+
 For the common question workflow, use `syn ask <target> <message>`. It resolves
 the same identity as `syn say`, dispatches to `synapse send` with
 `--wait-seconds 30 --require-recipient`, and prints replies during that wait
