@@ -68,9 +68,11 @@ pretending they are solved:
   generated reports. See the [at-rest encryption design](at-rest-encryption.md)
   for storage scope, key storage, rotation, backup recovery, and local-first
   tradeoffs.
-- **Signed events and mTLS** for durable event-log authenticity, tamper
-  evidence, trusted peers, trust bundles, key rotation, revocation, and replay
-  protection. See the [signed events and mTLS design](signed-events-mtls.md).
+- **Signed events and mTLS operator workflow** beyond the runtime primitives.
+  Embedded hubs can enforce Ed25519 signed-event trust bundles and mTLS peer
+  certificate pins, but the CLI has no trust-bundle import/export, key
+  rotation, peer inventory, or incident-response workflow yet. See
+  [signed events and mTLS](signed-events-mtls.md).
 - **Per-message key rotation and revocation operator workflow** beyond the
   runtime's explicit HMAC key list. The hub can enforce selected signed
   mutating frames, but there is no managed key store, no key file lifecycle, and

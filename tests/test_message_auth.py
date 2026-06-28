@@ -9,12 +9,20 @@
 
 from __future__ import annotations
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 from synapse_channel.core.message_auth import (
+    EventSignatureKey,
+    EventSignatureTrustBundle,
     MessageAuthKey,
     MessageReplayCache,
+    SignedEventVerificationResult,
     VerificationResult,
+    canonical_event_frame,
     canonical_frame,
+    sign_event_frame,
     sign_frame,
+    verify_event_signature,
     verify_frame,
 )
 from synapse_channel.core.protocol import build_envelope
@@ -276,3 +284,228 @@ def test_replay_cache_evicts_by_window_and_rejects_capacity_pressure() -> None:
     resized.max_entries = 1
     assert resized.remember("main", "A", "d", 4, timestamp=100.0, now=100.0) is False
     assert resized.remember("main", "A", "a", 5, timestamp=100.0, now=100.0) is False
+
+
+def test_sign_and_verify_ed25519_event_signature_with_replay_surface() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    key = EventSignatureKey.from_private_key(
+        key_id="SYNAPSE-CHANNEL:main:2026-06",
+        private_key=private_key,
+        senders=frozenset({"ALPHA"}),
+        projects=frozenset({"SYNAPSE-CHANNEL"}),
+    )
+    trust = EventSignatureTrustBundle(
+        keys={key.key_id: key},
+        replay_cache=MessageReplayCache(window_seconds=30.0, max_entries=16),
+    )
+    frame = build_envelope(
+        "ALPHA",
+        "claim",
+        target="System",
+        task_id="T1",
+        project="SYNAPSE-CHANNEL",
+        now=12.0,
+    )
+
+    signed = sign_event_frame(
+        frame,
+        key_id=key.key_id,
+        private_key=private_key,
+        nonce="event-nonce-1",
+        sequence=1,
+        signed_at=100.0,
+    )
+
+    assert signed["signature"]["algorithm"] == "ed25519"
+    assert (
+        verify_event_signature(
+            signed,
+            trust_bundle=trust,
+            now=100.0,
+            required_sender="ALPHA",
+            required_project="SYNAPSE-CHANNEL",
+        )
+        == SignedEventVerificationResult.VALID
+    )
+    assert (
+        verify_event_signature(
+            signed,
+            trust_bundle=trust,
+            now=100.0,
+            required_sender="ALPHA",
+            required_project="SYNAPSE-CHANNEL",
+        )
+        == SignedEventVerificationResult.REPLAYED
+    )
+
+
+def test_event_signature_reports_bad_signature_scope_and_revocation_failures() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    key = EventSignatureKey.from_private_key(
+        key_id="SYNAPSE-CHANNEL:main:2026-06",
+        private_key=private_key,
+        senders=frozenset({"ALPHA"}),
+        projects=frozenset({"SYNAPSE-CHANNEL"}),
+    )
+    signed = sign_event_frame(
+        build_envelope(
+            "ALPHA",
+            "claim",
+            target="System",
+            task_id="T1",
+            project="SYNAPSE-CHANNEL",
+            now=12.0,
+        ),
+        key_id=key.key_id,
+        private_key=private_key,
+        nonce="event-nonce-1",
+        sequence=1,
+        signed_at=100.0,
+    )
+
+    def fresh_trust(*, revoked: bool = False) -> EventSignatureTrustBundle:
+        return EventSignatureTrustBundle(
+            keys={key.key_id: key.with_revoked(revoked)},
+            replay_cache=MessageReplayCache(window_seconds=30.0, max_entries=16),
+        )
+
+    assert (
+        verify_event_signature(
+            signed | {"task_id": "T2"},
+            trust_bundle=fresh_trust(),
+            now=100.0,
+            required_sender="ALPHA",
+            required_project="SYNAPSE-CHANNEL",
+        )
+        == SignedEventVerificationResult.BAD_SIGNATURE
+    )
+    assert (
+        verify_event_signature(
+            signed,
+            trust_bundle=fresh_trust(),
+            now=100.0,
+            required_sender="BETA",
+            required_project="SYNAPSE-CHANNEL",
+        )
+        == SignedEventVerificationResult.SENDER_MISMATCH
+    )
+    assert (
+        verify_event_signature(
+            signed,
+            trust_bundle=fresh_trust(),
+            now=100.0,
+            required_sender="ALPHA",
+            required_project="OTHER",
+        )
+        == SignedEventVerificationResult.PROJECT_SCOPE_MISMATCH
+    )
+    assert (
+        verify_event_signature(
+            signed,
+            trust_bundle=fresh_trust(revoked=True),
+            now=100.0,
+            required_sender="ALPHA",
+            required_project="SYNAPSE-CHANNEL",
+        )
+        == SignedEventVerificationResult.REVOKED_KEY
+    )
+
+
+def test_event_signature_reports_missing_unknown_expired_and_malformed_metadata() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    key = EventSignatureKey.from_private_key(
+        key_id="SYNAPSE-CHANNEL:main:2026-06",
+        private_key=private_key,
+        senders=frozenset({"ALPHA"}),
+        projects=frozenset({"SYNAPSE-CHANNEL"}),
+        expires_at=99.0,
+    )
+    signed = sign_event_frame(
+        build_envelope(
+            "ALPHA",
+            "claim",
+            target="System",
+            task_id="T1",
+            project="SYNAPSE-CHANNEL",
+            now=12.0,
+        ),
+        key_id=key.key_id,
+        private_key=private_key,
+        nonce="event-nonce-1",
+        sequence=1,
+        signed_at=100.0,
+    )
+    trust = EventSignatureTrustBundle(
+        keys={key.key_id: key},
+        replay_cache=MessageReplayCache(window_seconds=30.0, max_entries=16),
+    )
+
+    assert b'"signature":"opaque"' in canonical_event_frame(signed | {"signature": "opaque"})
+    assert (
+        verify_event_signature(
+            build_envelope("ALPHA", "claim", target="System", task_id="T1", now=12.0),
+            trust_bundle=trust,
+            now=100.0,
+            required_sender="ALPHA",
+            required_project="SYNAPSE-CHANNEL",
+        )
+        == SignedEventVerificationResult.MISSING_SIGNATURE
+    )
+    assert (
+        verify_event_signature(
+            signed | {"signature": signed["signature"] | {"key_id": "missing"}},
+            trust_bundle=trust,
+            now=100.0,
+            required_sender="ALPHA",
+            required_project="SYNAPSE-CHANNEL",
+        )
+        == SignedEventVerificationResult.UNKNOWN_KEY
+    )
+    assert (
+        verify_event_signature(
+            signed,
+            trust_bundle=trust,
+            now=100.0,
+            required_sender="ALPHA",
+            required_project="SYNAPSE-CHANNEL",
+        )
+        == SignedEventVerificationResult.EXPIRED
+    )
+
+    valid_key = EventSignatureKey(
+        key_id=key.key_id,
+        public_key=key.public_key,
+        senders=key.senders,
+        projects=key.projects,
+    )
+    valid_trust = EventSignatureTrustBundle(
+        keys={valid_key.key_id: valid_key},
+        replay_cache=MessageReplayCache(window_seconds=30.0, max_entries=16),
+    )
+    malformed_frames = (
+        signed | {"signature": signed["signature"] | {"algorithm": "rsa"}},
+        signed | {"signature": signed["signature"] | {"signed_at": "bad"}},
+        signed | {"signature": signed["signature"] | {"sequence": 0}},
+        signed | {"signature": signed["signature"] | {"signed_at": 10.0}},
+        signed | {"signature": signed["signature"] | {"nonce": ""}},
+        signed | {"signature": signed["signature"] | {"value": "not-base64!!"}},
+    )
+    expected = (
+        SignedEventVerificationResult.BAD_SIGNATURE,
+        SignedEventVerificationResult.BAD_SIGNATURE,
+        SignedEventVerificationResult.SEQUENCE_MISMATCH,
+        SignedEventVerificationResult.EXPIRED,
+        SignedEventVerificationResult.BAD_SIGNATURE,
+        SignedEventVerificationResult.BAD_SIGNATURE,
+    )
+    for frame, result in zip(malformed_frames, expected, strict=True):
+        assert (
+            verify_event_signature(
+                frame,
+                trust_bundle=valid_trust,
+                now=100.0,
+                required_sender="ALPHA",
+                required_project="SYNAPSE-CHANNEL",
+            )
+            == result
+        )

@@ -70,9 +70,12 @@ from synapse_channel.core.ledger import (
 from synapse_channel.core.message_auth import (
     DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
     DEFAULT_SIGNED_MESSAGE_TYPES,
+    EventSignatureTrustBundle,
     MessageAuthKey,
     MessageReplayCache,
+    SignedEventVerificationResult,
     VerificationResult,
+    verify_event_signature,
     verify_frame,
 )
 from synapse_channel.core.persistence import EventStore
@@ -277,6 +280,10 @@ class SynapseHub:
     per_message_auth_replay_capacity : int, optional
         Maximum in-memory nonce entries retained for replay detection.
         Defaults to ``4096``.
+    signed_event_trust_bundle : EventSignatureTrustBundle or None, optional
+        Ed25519 trust bundle accepted as an alternative signed-event
+        verification path when ``require_per_message_auth`` is enabled.
+        ``None`` leaves HMAC frame authentication as the only enforcing path.
     """
 
     def __init__(
@@ -315,6 +322,7 @@ class SynapseHub:
         require_per_message_auth: bool = False,
         per_message_auth_window_seconds: float = DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
         per_message_auth_replay_capacity: int = 4096,
+        signed_event_trust_bundle: EventSignatureTrustBundle | None = None,
         acl_policy: AclPolicy | None = None,
         require_acl: bool = False,
     ) -> None:
@@ -336,6 +344,7 @@ class SynapseHub:
             window_seconds=per_message_auth_window_seconds,
             max_entries=per_message_auth_replay_capacity,
         )
+        self.signed_event_trust_bundle = signed_event_trust_bundle
         self.acl_policy = acl_policy
         self.require_acl = bool(require_acl)
         self.channels = ChannelRegistry()
@@ -833,15 +842,29 @@ class SynapseHub:
         """Verify required per-message authentication before mutating state."""
         if not self.require_per_message_auth or msg_type not in DEFAULT_SIGNED_MESSAGE_TYPES:
             return True
-        result = verify_frame(
-            data,
-            keys=self.per_message_auth_keys,
-            replay_cache=self._message_replay,
-            now=time.time(),
-            required_sender=sender,
-        )
-        if result is VerificationResult.OK:
-            return True
+        now = time.time()
+        if "auth" in data:
+            result: VerificationResult | SignedEventVerificationResult = verify_frame(
+                data,
+                keys=self.per_message_auth_keys,
+                replay_cache=self._message_replay,
+                now=now,
+                required_sender=sender,
+            )
+            if result is VerificationResult.OK:
+                return True
+        elif "signature" in data and self.signed_event_trust_bundle is not None:
+            result = verify_event_signature(
+                data,
+                trust_bundle=self.signed_event_trust_bundle,
+                now=now,
+                required_sender=sender,
+                required_project=str(data.get("project") or ""),
+            )
+            if result is SignedEventVerificationResult.VALID:
+                return True
+        else:
+            result = VerificationResult.MISSING
         await self._send_json(
             websocket,
             self._system(

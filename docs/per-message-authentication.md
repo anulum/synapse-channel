@@ -31,11 +31,11 @@ Clients can sign mutating frames by constructing `SynapseAgent` with
 heartbeat frames remain ordinary envelopes; the first runtime tranche protects
 state-changing coordination frames.
 
-This runtime does not encrypt payloads, does not replace TLS, does not replace
-signed events, does not create per-agent identity, and does not enforce ACLs.
-**Signature support remains a design target** for the
-[signed events and mTLS](signed-events-mtls.md) trust model rather than a
-partially implemented frame mode.
+This runtime does not encrypt payloads, does not replace TLS, does not create
+per-agent identity, and does not enforce ACLs. The
+[signed events and mTLS](signed-events-mtls.md) runtime adds an Ed25519
+signed-event verification path for selected mutating frames, but the HMAC path
+described here remains the stable CLI-facing frame-authentication mode.
 
 ## Frame authentication profile
 
@@ -133,18 +133,20 @@ Per-message authentication and signed events solve different problems:
 - Signed events make selected durable event-log records tamper-evident after
   admission, storage, replay, relay export, or postmortem reconstruction.
 
-An exposed deployment may need both. This runtime authenticates selected
-incoming frames; it does not sign durable event-log records or certify
-federation.
+An exposed deployment may need both. The hub gate can now accept either a valid
+HMAC `auth` envelope or a valid Ed25519 `signature` envelope when an embedded
+runtime provides a signed-event trust bundle. CLI trust-bundle loading remains
+future work, so command-line operators still use `--message-auth-key` for this
+runtime.
 
 ## Boundaries
 
 The implemented runtime proves that a selected mutating frame was signed by a
 configured HMAC key holder inside the accepted timestamp window. It does not
-encrypt payloads, does not replace TLS, does not replace signed events, does
-not replace per-agent identity, does not replace ACL enforcement, does not
-sandbox connected agents, and does not make a shared-token hub safe on an
-untrusted network by itself.
+encrypt payloads, does not replace TLS, does not replace the signed-event trust
+bundle for multi-host tamper evidence, does not replace per-agent identity,
+does not replace ACL enforcement, does not sandbox connected agents, and does
+not make a shared-token hub safe on an untrusted network by itself.
 
 The first runtime tranche gates only claims, releases, task updates, handoffs,
 checkpoints, and resource offers. It runs after WebSocket admission and hub
