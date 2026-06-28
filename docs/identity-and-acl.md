@@ -117,6 +117,9 @@ postmortem can explain what changed during migration.
   update, project, or revoke those cards.
 - [Private channels](private-channels.md) scope the intended audience. Identity
   and ACLs decide who may join, leave, read history, or publish to that channel.
+- [Differential-privacy blackboard](differential-privacy-blackboard.md)
+  projections can redact or perturb shared board reports. Identity and ACLs
+  decide who may create board data or request those projections.
 - [Policy engine](policy-engine.md) can later consume identity decisions,
   release receipts, and event-log evidence, but it should not be the first layer
   that authenticates a caller.

@@ -23,6 +23,12 @@ The planned [signed capability cards design](signed-capability-cards.md) keeps
 future card-signature profile for tamper evidence. It is not implemented yet and
 does not turn capability cards into authorization or executable trust.
 
+The planned
+[differential-privacy blackboard design](differential-privacy-blackboard.md)
+keeps `ledger_task`, `ledger_progress`, and `board_request` as ordinary local
+messages while defining future redacted or noisy projections for shared reports.
+It is not implemented yet and does not anonymize raw event logs.
+
 ## Agent → hub
 
 - **Presence and chat:** `chat`, `heartbeat` (sent automatically by clients).

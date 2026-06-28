@@ -540,6 +540,13 @@ channel ids, membership lists, join/leave policy, history visibility, retention,
 relay filtering, and event-query filtering without claiming cryptographic
 secrecy.
 
+The planned [differential-privacy blackboard](docs/differential-privacy-blackboard.md)
+profile scopes redacted and noisy shared blackboard projections for
+multi-organisation views. It is not implemented yet, keeps raw local board data
+exact for the operator, and does not encrypt payloads, replace private channels,
+replace end-to-end encrypted channels, anonymize raw logs, or authorize board
+writes.
+
 The planned [signed events and mTLS](docs/signed-events-mtls.md) profile scopes
 event signatures, key rotation, replay protection, verification results, trust
 bundles, certificate pinning, and trusted multi-host peers. It is not
@@ -800,9 +807,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 131 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1861 |
+| Test functions | 1865 |
 | Benchmark harnesses | 4 |
-| Documentation pages | 30 |
+| Documentation pages | 31 |
 | GitHub Actions workflows | 10 |
 | Optional-dependency groups | 4 |
 

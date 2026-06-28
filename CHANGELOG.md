@@ -14,6 +14,10 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the public differential-privacy blackboard design for redacted and noisy
+  multi-organisation board projections, privacy budgets, cohort thresholds,
+  privacy-ledger audit evidence, and explicit raw-log/encryption/authorization
+  boundaries before any privacy runtime ships.
 - Added the public signed capability cards design for tamper-evident capability
   advertisements, manifest/card digests, verification results, replay controls,
   credential rotation, revocation, trust bundles, and advisory-discovery
