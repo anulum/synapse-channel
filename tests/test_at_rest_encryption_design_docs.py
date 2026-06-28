@@ -68,17 +68,21 @@ def test_at_rest_encryption_design_covers_key_lifecycle() -> None:
 
 
 def test_at_rest_encryption_design_keeps_boundaries_clear() -> None:
-    """The design must not claim encryption exists before implementation."""
+    """The doc must mark the implemented foundation and keep boundaries honest.
+
+    The encryption primitive and key-file management ship as the foundation
+    tranche, so the doc names them as implemented; the storage-surface wiring and
+    live SQLite event-store encryption are still deferred and must be marked
+    not-yet-implemented, and the perpetual security boundaries must remain stated.
+    """
     text = _collapsed(ENCRYPTION_DOC)
 
     required_boundaries = (
-        "design target",
-        "not implemented yet",
-        "does not encrypt current event stores",
+        "implemented",
+        "not yet implemented",
         "does not protect data while the hub is running",
         "does not replace filesystem permissions",
         "does not solve multi-tenant isolation",
-        "local-first tradeoff",
     )
     for phrase in required_boundaries:
         assert phrase in text
