@@ -13,6 +13,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.55.0] - 2026-06-28
+
 ### Added
 - Added `synapse hub` blackboard retention controls:
   `--max-progress`, `--max-progress-per-author`, `--max-progress-per-task`, and
