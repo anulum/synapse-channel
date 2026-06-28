@@ -530,12 +530,11 @@ strict type checking, owner approval, evidence freshness, generated artifact
 parity, and no-merge-without-receipt rules before turning any advisory output
 into a local hook or CI gate.
 
-The planned [`--paranoid` mode](docs/paranoid-mode.md) defines one future
-operator switch for strict local settings and an explicit missing-hook checklist:
-token-required hub access, loopback-first binds, metrics/A2A auth, owner-only
-state files, bounded retention, durable event logs, release receipts, and clear
-gaps for encryption, signed events, identity, ACLs, private channels, and exposed
-deployment review.
+[`synapse hub --paranoid`](docs/paranoid-mode.md) enforces a strict local hub
+profile and prints an explicit missing-hook checklist: token-required hub access,
+durable event logs, metrics bearer-token auth, disabled metrics query tokens, and
+clear gaps for encryption, signed events, identity, ACLs, private channels, A2A
+profiles, and exposed deployment review.
 
 The planned [at-rest encryption](docs/at-rest-encryption.md) profile scopes
 optional protection for SQLite event stores, relay logs, A2A state, cursor files,
@@ -823,11 +822,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.55.0 |
 | Public API exports | 61 |
-| Package modules | 146 |
-| Classes | 139 |
+| Package modules | 147 |
+| Classes | 141 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1879 |
+| Test functions | 1884 |
 | Benchmark harnesses | 5 |
 | Documentation pages | 33 |
 | GitHub Actions workflows | 10 |

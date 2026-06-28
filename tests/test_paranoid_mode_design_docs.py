@@ -37,14 +37,12 @@ def test_paranoid_mode_design_names_strict_local_settings() -> None:
 
     required_settings = (
         "token required",
+        "durable event log required",
         "loopback-only by default",
         "metrics token required",
         "metrics query tokens disabled",
+        "insecure off-loopback override disabled",
         "a2a bearer auth required",
-        "owner-only state files",
-        "bounded retention",
-        "durable event log required",
-        "release receipt required",
     )
     for setting in required_settings:
         assert setting in text
@@ -68,12 +66,11 @@ def test_paranoid_mode_design_reports_missing_hooks() -> None:
 
 
 def test_paranoid_mode_design_keeps_boundary_claims_clear() -> None:
-    """The design must stay advisory until implementation adds the switch."""
+    """The runtime switch must keep unsupported hardening claims clear."""
     text = _collapsed(PARANOID_DOC)
 
     required_boundaries = (
-        "design target",
-        "not implemented as a cli flag yet",
+        "implemented for the hub runtime only",
         "does not encrypt existing databases",
         "does not create cryptographic identity",
         "does not certify exposed deployments",

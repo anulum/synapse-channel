@@ -60,6 +60,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "insecure_off_loopback": False,
         "tls_certfile": None,
         "tls_keyfile": None,
+        "paranoid": False,
     }
     base.update(overrides)
     return argparse.Namespace(**base)

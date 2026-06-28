@@ -211,6 +211,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="PEM private key for native WSS; requires --tls-certfile.",
     )
     hub.add_argument(
+        "--paranoid",
+        action="store_true",
+        help="Require a strict local hub profile and print missing hardening hooks.",
+    )
+    hub.add_argument(
         "--token",
         default=None,
         help="Require this shared-secret token from connecting agents (off by default).",
