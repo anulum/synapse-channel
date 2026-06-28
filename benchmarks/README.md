@@ -120,3 +120,32 @@ python benchmarks/a2a_bridge_benchmark.py
 | Task listing | 250 tasks |
 | Push delivery callbacks | 250 deliveries |
 | Subscriber fanout | 32 terminal events |
+
+## `coding_fleet_benchmark.py`
+
+Measures a deterministic five-agent coding fleet over the real in-memory claim,
+scope-conflict, release, and journal replay code. The scenario performs seven
+claim attempts: five disjoint edits are granted and two deliberate overlapping
+file-scope attempts are refused. The output records the conflict rate, claim
+latency, release cleanup, replay recovery, attempt details, and the benchmark
+limitations.
+
+This is a local functional benchmark. It does not measure model latency, editor
+integration latency, external services, or comparative performance against
+remote coding-agent products.
+
+### Run
+
+```bash
+python benchmarks/coding_fleet_benchmark.py
+```
+
+### Committed result (five agents, seven claim attempts)
+
+| Metric | Result |
+| --- | ---: |
+| Granted claims | 5 |
+| Refused overlaps | 2 |
+| Conflict rate | 28.57% |
+| Replay events | 10 |
+| Post-release claims | 0 |

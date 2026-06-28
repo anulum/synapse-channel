@@ -14,6 +14,8 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added a committed five-agent coding fleet benchmark that measures local claim
+  conflict rate, claim latency, release cleanup, and replay recovery evidence.
 - Added branch-conflict candidates to the dashboard fleet view, derived from
   active git-scoped claim metadata without running git from the dashboard.
 - Added fleet visibility to `synapse dashboard` and `/snapshot.json`, including

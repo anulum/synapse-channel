@@ -1,0 +1,116 @@
+{
+  "agents": 5,
+  "attempt_details": [
+    {
+      "agent": "planner",
+      "branch": "bench/planner",
+      "granted": true,
+      "latency_microseconds": 79.613,
+      "message": "Task 'PLAN' claimed by planner.",
+      "paths": [
+        "docs/plan.md"
+      ],
+      "task_id": "PLAN"
+    },
+    {
+      "agent": "api-dev",
+      "branch": "bench/api",
+      "granted": true,
+      "latency_microseconds": 49.674,
+      "message": "Task 'API' claimed by api-dev.",
+      "paths": [
+        "src/app/api.py"
+      ],
+      "task_id": "API"
+    },
+    {
+      "agent": "test-dev",
+      "branch": "bench/tests",
+      "granted": true,
+      "latency_microseconds": 28.973,
+      "message": "Task 'TEST' claimed by test-dev.",
+      "paths": [
+        "tests/test_api.py"
+      ],
+      "task_id": "TEST"
+    },
+    {
+      "agent": "docs-dev",
+      "branch": "bench/docs",
+      "granted": true,
+      "latency_microseconds": 23.792,
+      "message": "Task 'DOCS' claimed by docs-dev.",
+      "paths": [
+        "docs/usage.md"
+      ],
+      "task_id": "DOCS"
+    },
+    {
+      "agent": "reviewer",
+      "branch": "bench/review",
+      "granted": false,
+      "latency_microseconds": 19.954,
+      "message": "Task 'REVIEW' file scope conflicts with 'API' held by api-dev.",
+      "paths": [
+        "src/app/api.py"
+      ],
+      "task_id": "REVIEW"
+    },
+    {
+      "agent": "api-dev",
+      "branch": "bench/api",
+      "granted": true,
+      "latency_microseconds": 25.456,
+      "message": "Task 'API-CLIENT' claimed by api-dev.",
+      "paths": [
+        "src/app/client.py"
+      ],
+      "task_id": "API-CLIENT"
+    },
+    {
+      "agent": "planner",
+      "branch": "bench/planner",
+      "granted": false,
+      "latency_microseconds": 17.55,
+      "message": "Task 'PLAN-DOCS' file scope conflicts with 'DOCS' held by docs-dev.",
+      "paths": [
+        "docs/usage.md"
+      ],
+      "task_id": "PLAN-DOCS"
+    }
+  ],
+  "attempts": 7,
+  "claim_latency": {
+    "max_microseconds": 79.613,
+    "mean_microseconds": 35.002
+  },
+  "conflict_rate": 0.2857142857142857,
+  "evidence_class": "local_functional_benchmark",
+  "granted": 5,
+  "host": {
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
+    "platform": "Linux-6.17.0-35-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3"
+  },
+  "limitations": [
+    "single-process in-memory state benchmark",
+    "does not measure model latency or editor integration latency",
+    "does not compare against external coding-agent services"
+  ],
+  "refusal_reasons": [
+    "Task 'REVIEW' file scope conflicts with 'API' held by api-dev.",
+    "Task 'PLAN-DOCS' file scope conflicts with 'DOCS' held by docs-dev."
+  ],
+  "refused": 2,
+  "release_recovery": {
+    "released": 5,
+    "remaining_claims": 0
+  },
+  "replay_recovery": {
+    "events": 10,
+    "post_release_claims": 0,
+    "replayed_claims": 5,
+    "replayed_conflicting_claims": 0
+  },
+  "scenario": "five_agent_parallel_edit"
+}

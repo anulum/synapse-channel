@@ -103,3 +103,27 @@ On the committed reference run (250 tasks, 32 subscribers, Python 3.12):
 local regressions and sizing the single-process edge. They do not measure remote
 HTTP server throughput, real webhook receiver latency, TLS, DNS, third-party A2A
 conformance, or multi-replica behavior.
+
+## Coding fleet benchmark
+
+`coding_fleet_benchmark.py` measures a deterministic five-agent parallel-edit
+session over the real `SynapseState` claim, scope-conflict, release, and journal
+replay code. The committed scenario runs seven claim attempts: five disjoint
+edits are granted and two deliberate overlapping file-scope attempts are refused.
+
+On the committed reference run:
+
+| Metric | Result |
+| --- | ---: |
+| Agents | 5 |
+| Claim attempts | 7 |
+| Granted claims | 5 |
+| Refused overlaps | 2 |
+| Conflict rate | 28.57% |
+| Replay events | 10 |
+| Post-release claims | 0 |
+
+**Reading it honestly.** This is a local functional benchmark for claim
+coordination evidence: conflict rate, claim latency, release cleanup, and replay
+recovery. It does not measure model latency, editor integration latency, remote
+coding-agent services, GitHub PR throughput, or external A2A/MCP conformance.
