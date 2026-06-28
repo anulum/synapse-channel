@@ -71,6 +71,7 @@ nav:
   - How it compares: comparison.md
   - Integration demos: integration-demos.md
   - Go client: go-client.md
+  - TypeScript/JavaScript client: js-client.md
   - Coordination model: coordination-model.md
   - Wire protocol: protocol.md
   - CLI reference: cli.md

@@ -55,3 +55,6 @@ docs/internal/
 *.db
 *.db-wal
 *.db-shm
+
+# JS/TS client dependencies
+node_modules/
