@@ -13,6 +13,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.58.1] - 2026-06-28
+
 ### Fixed
 - The shell hook no longer collides with a worker-session tmux waker on the
   `<identity>-rx` name. The prompt auto-arm and the interactive provider's own
