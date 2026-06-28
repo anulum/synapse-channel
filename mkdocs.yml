@@ -80,6 +80,7 @@ nav:
   - At-rest encryption: at-rest-encryption.md
   - Encrypted channels: end-to-end-encrypted-channels.md
   - Private channels: private-channels.md
+  - Signed events and mTLS: signed-events-mtls.md
   - Recipes: recipes.md
   - Examples: examples.md
   - Deployment: deployment.md

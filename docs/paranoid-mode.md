@@ -56,7 +56,9 @@ pretending they are solved:
   generated reports. See the [at-rest encryption design](at-rest-encryption.md)
   for storage scope, key storage, rotation, backup recovery, and local-first
   tradeoffs.
-- **Signed events** for durable event-log authenticity and tamper evidence.
+- **Signed events and mTLS** for durable event-log authenticity, tamper
+  evidence, trusted peers, trust bundles, key rotation, revocation, and replay
+  protection. See the [signed events and mTLS design](signed-events-mtls.md).
 - **Per-message authentication** after WebSocket connect authentication,
   including replay protection and key rotation.
 - **Per-agent identity** beyond the current shared-token and caller-name model.
