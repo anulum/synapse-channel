@@ -13,6 +13,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.57.1] - 2026-06-28
+
 ### Repository hygiene
 - The PyPI publish workflow now triggers on the release tag push instead of
   `release: published`. A GitHub Release created by `GITHUB_TOKEN` does not fire
