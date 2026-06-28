@@ -64,6 +64,10 @@ pretending they are solved:
   release actions.
 - **Private channels** for project-local or worktree-local payloads that the hub
   should not broadcast to every trusted participant.
+- **End-to-end encrypted channels** for selected payloads that the hub should
+  route without reading plaintext. See the
+  [encrypted channels design](end-to-end-encrypted-channels.md) for recipient
+  sets, per-project keys, per-worktree keys, and operational key management.
 - **Deployment threat model** evidence for exposed bridges, reverse proxies,
   TLS termination, logging, retention, DNS rebinding, and operator procedures.
 

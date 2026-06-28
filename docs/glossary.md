@@ -163,6 +163,14 @@ archive reports, temporary files, and backups. The design covers key storage,
 key derivation, key rotation, backup recovery, and lost-key recovery boundaries;
 it is not implemented yet.
 
+### End-to-end encrypted channels
+
+Design target for routing selected payloads while the hub cannot read plaintext.
+Direct messages, private progress notes, handoff checkpoints, and A2A artifacts
+are candidate encrypted bodies; routing metadata remains visible so the hub can
+deliver, retain, and audit coordination events. The feature is not implemented
+yet.
+
 ### Reliability memory
 
 Evidence-only owner summaries over the **event log** using

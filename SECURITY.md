@@ -99,6 +99,12 @@ optional protection for local SQLite event stores, relay logs, A2A state, cursor
 files, archive reports, temporary files, and backups. It is not implemented yet
 and does not encrypt existing databases or replace host filesystem permissions.
 
+The planned [end-to-end encrypted channels](docs/end-to-end-encrypted-channels.md)
+profile scopes selected payload encryption while keeping routing metadata
+visible. It is not implemented yet, does not replace at-rest encryption, and
+does not protect compromised endpoints or plaintext after a participant decrypts
+content.
+
 ## Out of scope / known limitations
 
 - The connect token is a proportionate shared secret, **not** a cryptographic
