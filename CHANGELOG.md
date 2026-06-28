@@ -13,6 +13,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.63.0] - 2026-06-28
+
 ### Added
 - Added opt-in identity/ACL runtime enforcement. `synapse hub --acl-policy
   <file> --require-acl` maps each mutating frame (chat, claim, release, task
