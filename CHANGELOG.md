@@ -23,6 +23,14 @@ All notable changes to this project are documented here.
   log. Join is open in this tranche (audience scoping, not a security boundary);
   per-channel history, retention, and channel-filtered queries remain design
   targets in `docs/private-channels`.
+- Added a foundation tranche of at-rest encryption: an AES-256-GCM envelope with
+  scrypt passphrase derivation, owner-only key files, and atomic encrypted-file
+  helpers in `synapse_channel.core.at_rest`, plus `synapse encrypt-key
+  generate/check` to manage key files. The AES-GCM primitive uses the optional
+  `cryptography` dependency (`pip install synapse-channel[encryption]`); the
+  package still imports without it. Storage-surface wiring (relay log, A2A state,
+  archives) and live SQLite event-store encryption remain design targets in
+  `docs/at-rest-encryption`.
 
 ## [0.59.0] - 2026-06-28
 

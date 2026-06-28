@@ -1,14 +1,35 @@
-# At-rest encryption design
+# At-rest encryption
 
-At-rest encryption is a design target for optional protection of local Synapse
-storage when an operator's disk, backup target, or support workflow requires a
-stronger confidentiality boundary than file permissions alone. It is not
-implemented yet and does not encrypt current event stores.
+At-rest encryption optionally protects local Synapse storage when an operator's
+disk, backup target, or support workflow requires a stronger confidentiality
+boundary than file permissions alone.
 
-The default product remains local-first and low-dependency. Encryption should be
-an opt-in profile that protects data when files are copied, backed up, or read
+The default product remains local-first and low-dependency. Encryption is an
+opt-in profile that protects data when files are copied, backed up, or read
 offline. It does not protect data while the hub is running, does not replace
 filesystem permissions, and does not solve multi-tenant isolation.
+
+## Implemented (foundation tranche)
+
+The encryption primitive and key-file management are implemented in
+:mod:`synapse_channel.core.at_rest`:
+
+- `AtRestCipher` is an AES-256-GCM envelope over a 32-byte key, with a versioned
+  header bound as additional authenticated data, fresh per-message nonces, and
+  atomic `encrypt_file` / `decrypt_file` helpers. Keys come from a raw key file
+  or from a passphrase via the memory-hard scrypt KDF.
+- `synapse encrypt-key generate <path>` writes a fresh owner-only 32-byte key;
+  `synapse encrypt-key check <path>` verifies a key file's ownership, mode, and
+  length before an encrypted workflow trusts it.
+- The AES-GCM primitive comes from the optional `cryptography` dependency
+  (`pip install synapse-channel[encryption]`); the package still imports without
+  it, and an encryption attempt without it raises a clear install hint.
+
+Storage-surface wiring (encrypting the relay log, A2A state files, archive
+reports, and cursor files with this primitive) and live SQLite event-store
+encryption are **not yet implemented** and remain described below as the next
+tranches. The SQLite event store is live-queried and needs SQLCipher-class
+transparent encryption, so it stays separate from the whole-file surfaces.
 
 ## Storage scope
 

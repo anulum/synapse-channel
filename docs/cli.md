@@ -18,6 +18,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse a2a-card` | Print an Agent2Agent Agent Card projected from the live capability manifest. |
 | `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge. |
 | `synapse channel` | Manage private-channel membership (create/join/leave/list); pair with `synapse send --channel`. |
+| `synapse encrypt-key` | Generate and check at-rest encryption key files (needs the `encryption` extra to encrypt). |
 | `synapse agent-tmux` | Wake an existing terminal-agent tmux session (Codex, Kimi, …) with a fixed safe prompt. |
 | `synapse codex-tmux` | Codex-defaulted alias of `agent-tmux`. |
 | `synapse dashboard` | Serve a loopback-only read-only HTML/JSON dashboard for live hub snapshots. |
