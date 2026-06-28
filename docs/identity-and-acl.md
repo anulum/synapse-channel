@@ -112,6 +112,9 @@ postmortem can explain what changed during migration.
 - [Signed events and mTLS](signed-events-mtls.md) make selected durable records
   tamper-evident and authenticate configured peers. Identity and ACLs decide who
   is authorized before those records are created or relayed.
+- [Signed capability cards](signed-capability-cards.md) make route-relevant
+  advertisements tamper-evident. Identity and ACLs decide who may advertise,
+  update, project, or revoke those cards.
 - [Private channels](private-channels.md) scope the intended audience. Identity
   and ACLs decide who may join, leave, read history, or publish to that channel.
 - [Policy engine](policy-engine.md) can later consume identity decisions,

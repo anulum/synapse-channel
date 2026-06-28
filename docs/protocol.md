@@ -18,6 +18,11 @@ messages as ordinary envelopes while adding a future authorization decision
 before state mutation or scoped reads. It is not implemented yet and does not
 change the current shared-token wire format.
 
+The planned [signed capability cards design](signed-capability-cards.md) keeps
+`advertise` and `manifest_request` as ordinary discovery messages while adding a
+future card-signature profile for tamper evidence. It is not implemented yet and
+does not turn capability cards into authorization or executable trust.
+
 ## Agent → hub
 
 - **Presence and chat:** `chat`, `heartbeat` (sent automatically by clients).
@@ -42,7 +47,9 @@ the manifest shape:
 Malformed contract entries are ignored rather than rejecting the advertisement.
 Capability contracts are discovery metadata for routing, dashboards, A2A Agent
 Card metadata, and human review; they do not execute checks, authorize callers,
-or certify external conformance.
+or certify external conformance. The signed capability cards design defines a
+future tamper-evidence profile for these advertisements without changing the
+current wire format.
 
 ## Hub → agent
 

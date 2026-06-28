@@ -559,6 +559,13 @@ verbs, target patterns, metrics/A2A/dashboard/release privileges,
 deny-by-default authorization, credential rotation, revocation, and migration
 from shared-token mode without claiming runtime enforcement today.
 
+The planned [signed capability cards](docs/signed-capability-cards.md) profile
+scopes tamper-evident capability advertisements for manifests, directories,
+dashboards, MCP resources, and A2A Agent Card projections. It is not implemented
+yet, keeps unsigned local cards as advisory discovery, and does not authorize
+tools, replace per-message authentication, replace signed events, or sandbox
+agents.
+
 `synapse git-init` bundles the hook install with a short `.synapse/git-claims.md`
 onboarding guide (branch convention + worktree workflow). `synapse state` shows
 each claim's branch; installed git hooks release a claim
@@ -793,9 +800,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 131 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1857 |
+| Test functions | 1861 |
 | Benchmark harnesses | 4 |
-| Documentation pages | 29 |
+| Documentation pages | 30 |
 | GitHub Actions workflows | 10 |
 | Optional-dependency groups | 4 |
 
