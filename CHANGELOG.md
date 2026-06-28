@@ -13,6 +13,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.60.0] - 2026-06-28
+
 ### Added
 - Added a first tranche of private channels: audience-scoped recipient sets that
   deliver a chat only to a channel's online members instead of broadcasting it.
