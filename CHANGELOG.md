@@ -22,7 +22,17 @@ All notable changes to this project are documented here.
   Codex-defaulted alias (`--codex-command`); `codex_tmux` stays importable as a
   compatibility surface over the new `agent_tmux` module.
 
-## [0.57.1] - 2026-06-28
+### Fixed
+- The connection-failure classifier now disambiguates the close codes the hub
+  reuses. Code `4010` is emitted for both a takeover (`superseded`) and an
+  authentication refusal (`auth denied`/`auth required`), and `4014` for both a
+  takeover cooldown and the unauthenticated-socket cap; the classifier keyed on
+  the code alone, so a bad token was reported as a takeover. It now reads the
+  reason text, and recognises the auth-timeout (`4012`) and per-host-cap (`4015`)
+  closes as well.
+- The agent wake loop's retry backoff now adds bounded random jitter so a fleet
+  of wakers that all lose the hub at once — a hub restart — does not reconnect in
+  one synchronised burst.
 
 ### Repository hygiene
 - The PyPI publish workflow now triggers on the release tag push instead of

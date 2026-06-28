@@ -9,8 +9,10 @@
 from __future__ import annotations
 
 from synapse_channel.connect_failures import (
+    AUTH_TIMEOUT_CLOSE_CODE,
     CAPACITY_CLOSE_CODE,
     NAME_CONFLICT_CLOSE_CODE,
+    PER_HOST_CAP_CLOSE_CODE,
     SUPERSEDED_CLOSE_CODE,
     TAKEOVER_COOLDOWN_CLOSE_CODE,
     describe_connect_failure,
@@ -46,11 +48,52 @@ def test_name_conflict_close_directs_to_a_unique_name() -> None:
 
 
 def test_superseded_and_cooldown_codes_are_recognised() -> None:
-    superseded = describe_connect_failure("A", "ws://h", close_code=SUPERSEDED_CLOSE_CODE)
-    cooldown = describe_connect_failure("A", "ws://h", close_code=TAKEOVER_COOLDOWN_CLOSE_CODE)
+    superseded = describe_connect_failure(
+        "A", "ws://h", close_code=SUPERSEDED_CLOSE_CODE, close_reason="superseded"
+    )
+    cooldown = describe_connect_failure(
+        "A", "ws://h", close_code=TAKEOVER_COOLDOWN_CLOSE_CODE, close_reason="takeover cooldown"
+    )
 
     assert "superseded" in superseded
     assert "cooldown" in cooldown
+
+
+def test_4010_auth_reason_is_not_reported_as_superseded() -> None:
+    # The hub reuses 4010 for both a takeover and an authentication refusal.
+    auth = describe_connect_failure(
+        "A", "ws://h", close_code=SUPERSEDED_CLOSE_CODE, close_reason="auth denied"
+    )
+
+    assert "authentication" in auth.lower()
+    assert "--token" in auth
+    assert "superseded" not in auth
+
+
+def test_4014_unauth_cap_is_not_reported_as_cooldown() -> None:
+    # The hub reuses 4014 for both a takeover cooldown and the unauth-socket cap.
+    unauth = describe_connect_failure(
+        "A",
+        "ws://h",
+        close_code=TAKEOVER_COOLDOWN_CLOSE_CODE,
+        close_reason="too many unauthenticated connections",
+    )
+
+    assert "unauthenticated" in unauth
+    assert "cooldown" not in unauth
+
+
+def test_auth_timeout_and_per_host_cap_codes_are_recognised() -> None:
+    timeout = describe_connect_failure(
+        "A", "ws://h", close_code=AUTH_TIMEOUT_CLOSE_CODE, close_reason="auth timeout"
+    )
+    per_host = describe_connect_failure(
+        "A", "ws://h", close_code=PER_HOST_CAP_CLOSE_CODE, close_reason="too many connections"
+    )
+
+    assert "authentication timed out" in timeout.lower()
+    assert "per-host" in per_host
+    assert "--max-connections-per-host" in per_host
 
 
 def test_unknown_close_code_reports_code_and_reason() -> None:

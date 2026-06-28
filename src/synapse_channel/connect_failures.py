@@ -29,26 +29,78 @@ NAME_CONFLICT_CLOSE_CODE = 4009
 """Hub close code emitted when the requested name is already online."""
 
 SUPERSEDED_CLOSE_CODE = 4010
-"""Hub close code emitted to a socket evicted by another session's takeover."""
+"""Hub close code for a superseded socket — also used for authentication refusal.
+
+The hub overloads ``4010``: a socket is closed with it both when a takeover
+supersedes it (``reason="superseded"``) and when a secured hub rejects
+authentication (``reason="auth denied"`` / ``"auth required"``). Disambiguate on
+the reason text, not the code alone.
+"""
+
+AUTH_TIMEOUT_CLOSE_CODE = 4012
+"""Hub close code emitted when a secured hub's authentication window expires."""
 
 TAKEOVER_COOLDOWN_CLOSE_CODE = 4014
-"""Hub close code emitted when a takeover is refused during its cooldown."""
+"""Hub close code for a takeover cooldown — also used for the unauth-socket cap.
 
-_CLOSE_GUIDANCE: dict[int, str] = {
-    CAPACITY_CLOSE_CODE: (
-        "hub at capacity: too many connections are open. Retry shortly, reap "
-        "stale waiters, or restart the hub with a higher --max-clients"
-    ),
-    NAME_CONFLICT_CLOSE_CODE: (
-        "name already online from another session. Reconnect with a unique --name"
-    ),
-    SUPERSEDED_CLOSE_CODE: (
-        "connection superseded by a takeover from another session holding this name"
-    ),
-    TAKEOVER_COOLDOWN_CLOSE_CODE: (
-        "takeover refused during the cooldown window. Wait for the cooldown, then retry"
-    ),
-}
+The hub overloads ``4014``: a takeover refused during its cooldown
+(``reason="takeover cooldown"``) and too many unauthenticated sockets from one
+host (``reason="too many unauthenticated connections"``). Disambiguate on reason.
+"""
+
+PER_HOST_CAP_CLOSE_CODE = 4015
+"""Hub close code emitted when a host exceeds its per-host connection cap."""
+
+
+def _guidance_for(code: int, reason: str) -> str | None:
+    """Return actionable guidance for a hub close, disambiguating reused codes.
+
+    Parameters
+    ----------
+    code : int
+        The WebSocket close code the hub sent.
+    reason : str
+        The hub-supplied reason text, used to split the overloaded ``4010`` and
+        ``4014`` codes into their distinct authentication and takeover meanings.
+
+    Returns
+    -------
+    str or None
+        Guidance for a recognised deliberate close, or ``None`` for an
+        unrecognised code.
+    """
+    reason_l = reason.lower()
+    if code == NAME_CONFLICT_CLOSE_CODE:
+        return "name already online from another session. Reconnect with a unique --name"
+    if code == CAPACITY_CLOSE_CODE:
+        return (
+            "hub at capacity: too many connections are open. Retry shortly, reap "
+            "stale waiters, or restart the hub with a higher --max-clients"
+        )
+    if code == SUPERSEDED_CLOSE_CODE:
+        if "auth" in reason_l:
+            return (
+                "authentication rejected by the secured hub. Pass a valid --token (or --token-file)"
+            )
+        return "connection superseded by a takeover from another session holding this name"
+    if code == AUTH_TIMEOUT_CLOSE_CODE:
+        return (
+            "authentication timed out: the secured hub closed the socket before a "
+            "valid token arrived. Authenticate sooner"
+        )
+    if code == TAKEOVER_COOLDOWN_CLOSE_CODE:
+        if "unauth" in reason_l or "too many" in reason_l:
+            return (
+                "too many unauthenticated connections from this host. Authenticate "
+                "sooner or retry once earlier sockets clear"
+            )
+        return "takeover refused during the cooldown window. Wait for the cooldown, then retry"
+    if code == PER_HOST_CAP_CLOSE_CODE:
+        return (
+            "per-host connection cap reached. Close other sockets from this host or "
+            "raise --max-connections-per-host"
+        )
+    return None
 
 
 def describe_connect_failure(
@@ -81,7 +133,7 @@ def describe_connect_failure(
     """
     if close_code is None:
         return f"[{name}] Could not reach hub at {uri}."
-    guidance = _CLOSE_GUIDANCE.get(close_code)
+    guidance = _guidance_for(close_code, close_reason)
     if guidance is None:
         detail = f": {close_reason}" if close_reason else ""
         return f"[{name}] Hub closed the connection (code {close_code}){detail}."

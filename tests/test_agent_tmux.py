@@ -299,7 +299,13 @@ def test_wait_and_wake_retries_failed_wait_with_backoff_then_wakes(tmp_path: Pat
     sleeper = RecordingSleeper()
 
     result = wait_and_wake(
-        config, runner=runner, max_wakes=1, sleeper=sleeper, retry_base=1.0, retry_cap=30.0
+        config,
+        runner=runner,
+        max_wakes=1,
+        sleeper=sleeper,
+        retry_base=1.0,
+        retry_cap=30.0,
+        rng=lambda: 0.0,
     )
 
     assert result == 0
@@ -324,7 +330,7 @@ def test_wait_and_wake_resets_failure_counter_after_a_wake(tmp_path: Path) -> No
     )
     sleeper = RecordingSleeper()
 
-    result = wait_and_wake(config, runner=runner, max_wakes=2, sleeper=sleeper)
+    result = wait_and_wake(config, runner=runner, max_wakes=2, sleeper=sleeper, rng=lambda: 0.0)
 
     assert result == 0
     assert sleeper.delays == [1.0, config.submit_delay, 1.0, config.submit_delay]
@@ -336,3 +342,33 @@ def test_backoff_delay_grows_and_caps() -> None:
     assert _backoff_delay(2, base=1.0, cap=30.0) == 2.0
     assert _backoff_delay(3, base=1.0, cap=30.0) == 4.0
     assert _backoff_delay(10, base=1.0, cap=30.0) == 30.0
+
+
+def test_backoff_delay_adds_bounded_jitter() -> None:
+    # rng at its extremes spans exactly [delay, delay * (1 + jitter)].
+    assert _backoff_delay(2, base=1.0, cap=30.0, jitter=0.25, rng=lambda: 0.0) == 2.0
+    assert _backoff_delay(2, base=1.0, cap=30.0, jitter=0.25, rng=lambda: 1.0) == 2.5
+    midpoint = _backoff_delay(2, base=1.0, cap=30.0, jitter=0.25, rng=lambda: 0.5)
+    assert midpoint == 2.25
+
+
+def test_wait_and_wake_jitters_the_default_backoff(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    runner = RecordingRunner(
+        [
+            _result(["synapse", "wait"], 2),
+            _result(["synapse", "wait"], 0, "sender: wake\n"),
+            _result(["tmux", "send-keys"], 0),
+            _result(["tmux", "send-keys"], 0),
+        ]
+    )
+    sleeper = RecordingSleeper()
+
+    # The default retry_jitter is non-zero; a full-jitter rng inflates the
+    # one backoff delay above the bare base, while the submit delay is unchanged.
+    result = wait_and_wake(config, runner=runner, max_wakes=1, sleeper=sleeper, rng=lambda: 1.0)
+
+    assert result == 0
+    backoff, submit = sleeper.delays
+    assert backoff > 1.0
+    assert submit == config.submit_delay
