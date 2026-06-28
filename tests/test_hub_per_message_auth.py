@@ -12,11 +12,19 @@ from __future__ import annotations
 import json
 import time
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from websockets.asyncio.client import connect
 
 from hub_e2e_helpers import read_until_type, running_hub, send_json
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.message_auth import MessageAuthKey, sign_frame
+from synapse_channel.core.message_auth import (
+    EventSignatureKey,
+    EventSignatureTrustBundle,
+    MessageAuthKey,
+    MessageReplayCache,
+    sign_event_frame,
+    sign_frame,
+)
 from synapse_channel.core.protocol import build_envelope
 
 
@@ -165,3 +173,65 @@ async def test_open_hub_keeps_per_message_authentication_off_by_default() -> Non
             granted = await read_until_type(websocket, "claim_granted")
 
     assert granted["task_id"] == "T1"
+
+
+async def test_hub_accepts_signed_event_mutation_and_reports_failures() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    key = EventSignatureKey.from_private_key(
+        key_id="SYNAPSE-CHANNEL:main:2026-06",
+        private_key=private_key,
+        senders=frozenset({"ALPHA"}),
+        projects=frozenset({"SYNAPSE-CHANNEL"}),
+    )
+    timestamp = time.time()
+    signed = sign_event_frame(
+        build_envelope(
+            "ALPHA",
+            "claim",
+            target="System",
+            task_id="T1",
+            project="SYNAPSE-CHANNEL",
+            now=1.0,
+        ),
+        key_id=key.key_id,
+        private_key=private_key,
+        nonce="event-n1",
+        sequence=1,
+        signed_at=timestamp,
+    )
+    hub = SynapseHub(
+        hub_id="syn-test",
+        require_per_message_auth=True,
+        signed_event_trust_bundle=EventSignatureTrustBundle(
+            keys={key.key_id: key},
+            replay_cache=MessageReplayCache(window_seconds=30.0, max_entries=16),
+        ),
+    )
+    async with running_hub(hub) as (_, uri):
+        async with connect(uri) as websocket:
+            await read_until_type(websocket, "welcome")
+            await websocket.send(json.dumps(signed))
+            granted = await read_until_type(websocket, "claim_granted")
+            await websocket.send(json.dumps(signed | {"task_id": "T2"}))
+            bad = await read_until_type(websocket, "error")
+            replay = sign_event_frame(
+                build_envelope(
+                    "ALPHA",
+                    "claim",
+                    target="System",
+                    task_id="T3",
+                    project="SYNAPSE-CHANNEL",
+                    now=1.0,
+                ),
+                key_id=key.key_id,
+                private_key=private_key,
+                nonce="event-n1",
+                sequence=2,
+                signed_at=timestamp,
+            )
+            await websocket.send(json.dumps(replay))
+            replayed = await read_until_type(websocket, "error")
+
+    assert granted["task_id"] == "T1"
+    assert bad["verification_result"] == "bad_signature"
+    assert replayed["verification_result"] == "replayed"

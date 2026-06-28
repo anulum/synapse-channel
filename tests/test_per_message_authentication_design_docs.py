@@ -86,10 +86,12 @@ def test_per_message_authentication_runtime_keeps_boundaries_clear() -> None:
     required_boundaries = (
         "implemented runtime",
         "default remains off",
-        "signature support remains a design target",
+        "signed events and mtls",
+        "hmac path",
+        "cli trust-bundle loading remains future work",
         "does not encrypt payloads",
         "does not replace tls",
-        "does not replace signed events",
+        "does not replace the signed-event trust bundle",
         "does not replace per-agent identity",
         "local-first tradeoff",
     )

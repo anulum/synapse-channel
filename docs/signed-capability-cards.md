@@ -134,7 +134,9 @@ clear diagnostics before signed cards become an enforced runtime requirement.
 - [Signed events and mTLS](signed-events-mtls.md) verify selected durable
   coordination records and trusted peers. Signed capability cards have a
   separate profile because advertisements have expiry, downgrade, and manifest
-  projection concerns.
+  projection concerns. Card-update events can be carried through the signed
+  event runtime, but card-content signing and downgrade policy remain this
+  separate profile.
 - [End-to-end encrypted channels](end-to-end-encrypted-channels.md) may later
   use signed capability cards for public encryption-key discovery. Cards do not
   encrypt payloads or protect decrypted plaintext.

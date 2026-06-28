@@ -44,6 +44,9 @@ def test_signed_events_mtls_design_covers_signing_and_replay() -> None:
 
     required_controls = (
         "signed events",
+        "runtime status",
+        "eventsignaturetrustbundle",
+        "synapsehub(..., require_per_message_auth=true, signed_event_trust_bundle=...)",
         "event signature",
         "canonical payload",
         "key id",
@@ -64,6 +67,7 @@ def test_signed_events_mtls_design_covers_trusted_federation() -> None:
         "mutual tls",
         "certificate pinning",
         "trusted peer",
+        "mtlspeertrustbundle",
         "key rotation",
         "revocation",
         "multi-host",
@@ -74,18 +78,18 @@ def test_signed_events_mtls_design_covers_trusted_federation() -> None:
         assert control in text
 
 
-def test_signed_events_mtls_design_keeps_boundaries_clear() -> None:
-    """The design must not claim federation security before implementation."""
+def test_signed_events_mtls_runtime_keeps_boundaries_clear() -> None:
+    """The runtime must not claim broad federation security."""
     text = _collapsed(SIGNED_EVENTS_DOC)
 
     required_boundaries = (
-        "design target",
-        "not implemented yet",
+        "operator-managed",
+        "no cli trust-bundle import command yet",
         "does not encrypt payloads",
         "does not replace per-agent identity",
         "does not certify federation",
         "local-first tradeoff",
-        "operator-managed trust",
+        "command-line trust-bundle import/export",
     )
     for boundary in required_boundaries:
         assert boundary in text

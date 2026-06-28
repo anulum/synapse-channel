@@ -10,17 +10,44 @@ SYNAPSE CHANNEL — signed events and mTLS design
 
 # Signed events and mTLS design
 
-Signed events and mutual TLS are a design target for selected coordination
-events and trusted multi-host deployments. They are not implemented yet. The
-current local-first hub still relies on loopback binding, optional shared
-tokens, file permissions, and operator trust rather than cryptographic event
-authenticity.
+Signed events and mutual TLS now have a first runtime enforcement layer for
+selected coordination events and trusted multi-host deployments. The runtime is
+still local-first and operator-managed: loopback binding, optional shared
+tokens, file permissions, and operator trust remain the default posture, while
+embedded hubs can opt into Ed25519 event signatures and mTLS peer trust bundles
+for stricter deployments.
 
 The goal is narrow: make selected durable events tamper-evident and let
 operator-managed peers authenticate each other when a deployment intentionally
 spans more than one host. This design does not encrypt payloads, does not
 replace per-agent identity, and does not certify federation for untrusted
 organisations.
+
+## Runtime status
+
+The implemented runtime covers these enforceable primitives:
+
+- `EventSignatureKey` records an Ed25519 public verification key, allowed
+  senders, allowed project namespaces, optional expiry, and revocation state.
+- `EventSignatureTrustBundle` groups accepted event-signing keys with a bounded
+  replay cache.
+- `sign_event_frame(...)` attaches an Ed25519 `signature` envelope to a stable
+  Synapse frame.
+- `verify_event_signature(...)` verifies the signature, key id, sender binding,
+  project scope, timestamp window, sequence shape, nonce replay, expiry, and
+  revocation.
+- `SynapseHub(..., require_per_message_auth=True,
+  signed_event_trust_bundle=...)` accepts a valid signed event as an alternative
+  to the existing HMAC `auth` envelope for selected mutating frames. HMAC
+  remains supported and unchanged.
+- `build_mutual_tls_server_ssl_context(...)` creates a native WSS server context
+  that requires client certificates.
+- `MTLSPeerTrustBundle` verifies trusted peer certificate pins, project scope,
+  signing key scope, and peer revocation.
+
+There is no CLI trust-bundle import command yet. Operators embedding the hub can
+enforce these primitives today; packaged command-line workflow for trust-bundle
+loading, rotation, import/export, and incident response remains future work.
 
 ## Event signature profile
 
@@ -34,7 +61,7 @@ would change coordination truth:
   [signed capability cards](signed-capability-cards.md) provide their own card
   signing profile.
 
-Every signed event should carry an **event signature** envelope with these
+Every signed event carries an **event signature** envelope with these
 fields:
 
 ```json
@@ -43,7 +70,9 @@ fields:
     "version": 1,
     "key_id": "project:main:2026-06",
     "algorithm": "ed25519",
-    "signed_at": "2026-06-28T12:00:00Z",
+    "signed_at": 1782648000.0,
+    "nonce": "base64-url-nonce",
+    "sequence": 1,
     "value": "base64..."
   }
 }
@@ -67,10 +96,12 @@ should bind:
 - Timestamp window for admission, with a small operator-tunable skew allowance.
 - Idempotency key where the event is a mutating retry.
 
-Verification should produce an explicit **verification result** for operators,
-policy checks, and postmortems: `valid`, `missing`, `expired`, `unknown_key`,
-`revoked_key`, `bad_signature`, `sequence_mismatch`, or `replayed`. A failed
-verification result should never be hidden behind a normal release receipt.
+Verification produces an explicit **verification result** for operators, policy
+checks, and postmortems: `valid`, `missing_signature`, `expired`,
+`unknown_key`, `revoked_key`, `bad_signature`, `sender_mismatch`,
+`project_scope_mismatch`, `sequence_mismatch`, or `replayed`. A failed
+verification result is surfaced on the hub `error` frame when signed-event
+verification is used as the required mutating-frame authentication path.
 
 ## Key lifecycle
 
@@ -88,8 +119,9 @@ Keys must be ordinary operator-managed trust data:
   report missing trust material but should not mint replacement identity.
 
 Trust bundles should live beside existing local configuration, with owner-only
-file permissions and clear export/import commands before any multi-host feature
-ships.
+file permissions and clear export/import commands before command-line
+multi-host workflows ship. Embedded deployments can construct the runtime trust
+bundle directly from their local configuration.
 
 ## Mutual TLS for trusted peers
 
@@ -108,6 +140,10 @@ bridges, or future relays. It should be opt-in and explicit:
 mTLS authenticates the transport peer. Event signatures authenticate selected
 events across storage, relay logs, postmortems, and policy checks. They are
 related, but neither replaces the other.
+
+The runtime peer verifier reports explicit failure modes: `valid`,
+`missing_certificate`, `unknown_peer`, `revoked_peer`, `bad_certificate_pin`,
+`project_scope_mismatch`, and `unknown_signing_key`.
 
 ## Cross-project and multi-host boundaries
 
@@ -155,12 +191,13 @@ Signed events and mTLS sit beside the other security designs:
 
 ## Boundaries
 
-This is a design target, not implemented yet. Signed events do not encrypt
-payloads, do not replace per-agent identity, do not replace ACL enforcement, do
-not sandbox connected agents, do not make shared-token mode safe on untrusted
-networks, and do not certify federation with arbitrary external systems.
+Signed events do not encrypt payloads, do not replace per-agent identity, do not
+replace ACL enforcement, do not sandbox connected agents, do not make
+shared-token mode safe on untrusted networks, and do not certify federation with
+arbitrary external systems.
 
 Mutual TLS authenticates configured peers only when the operator manages the
 trust bundle, certificate pinning, key rotation, revocation, and deployment
-procedures. Until those hooks exist, the supported security posture remains the
-current trusted local hub with explicit warnings for exposed deployments.
+procedures. Until command-line trust-bundle import/export, rotation, and
+incident-response workflows exist, the supported default security posture
+remains the trusted local hub with explicit warnings for exposed deployments.
