@@ -85,6 +85,8 @@ Private channels and end-to-end encrypted channels solve different problems:
 
 - Private channels decide who should receive or review a payload.
 - End-to-end encrypted channels hide selected payload bodies from the hub.
+- The [differential-privacy blackboard design](differential-privacy-blackboard.md)
+  shapes aggregate or redacted shared board views after data exists.
 
 The first private-channel implementation should work without encryption so teams
 can route operational chatter cleanly. Later, an encrypted private channel can

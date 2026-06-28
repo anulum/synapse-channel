@@ -80,6 +80,7 @@ nav:
   - At-rest encryption: at-rest-encryption.md
   - Encrypted channels: end-to-end-encrypted-channels.md
   - Private channels: private-channels.md
+  - Differential privacy blackboard: differential-privacy-blackboard.md
   - Signed events and mTLS: signed-events-mtls.md
   - Per-message authentication: per-message-authentication.md
   - Identity and ACL: identity-and-acl.md

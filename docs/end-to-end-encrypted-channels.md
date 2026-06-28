@@ -99,6 +99,12 @@ signals, or include it in plain postmortems. Reports should show encrypted
 payload metadata, key id, recipient set, and ciphertext presence without
 pretending to understand the hidden content.
 
+For shared board reports that should expose aggregate progress without raw
+notes, the
+[differential-privacy blackboard design](differential-privacy-blackboard.md)
+defines a separate redaction, aggregation, and noise profile. That profile does
+not encrypt payloads.
+
 ## Boundaries
 
 This is a design target, not implemented yet. End-to-end encrypted channels do

@@ -196,6 +196,15 @@ Private channels define channel ids, membership lists, history visibility,
 retention boundaries, relay log filtering, and event-query filtering, but they
 do not encrypt payloads.
 
+### Differential privacy blackboard
+
+Design target for redacted and noisy shared blackboard projections in
+multi-organisation collaboration. It defines sensitive progress note handling,
+redaction policy, aggregation boundary, cohort threshold, field minimisation,
+role-based view, differential privacy parameters epsilon and delta, privacy
+budget, privacy ledger, and audit trail. It is not implemented yet and does not
+anonymize raw logs.
+
 ### Signed events and mTLS
 
 Design target for authenticating selected coordination events and trusted

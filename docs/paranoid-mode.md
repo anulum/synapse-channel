@@ -72,6 +72,11 @@ pretending they are solved:
   [private channels design](private-channels.md) for channel ids, membership
   lists, history visibility, retention boundaries, relay log filtering, and
   event-query filtering.
+- **Differential-privacy blackboard projections** for multi-organisation views
+  that should share aggregate progress without raw notes. See the
+  [differential-privacy blackboard design](differential-privacy-blackboard.md)
+  for redaction policy, aggregation boundary, cohort thresholds, privacy budget,
+  and audit-trail requirements.
 - **End-to-end encrypted channels** for selected payloads that the hub should
   route without reading plaintext. See the
   [encrypted channels design](end-to-end-encrypted-channels.md) for recipient

@@ -14,6 +14,12 @@ task id. These caps are live hub settings and are also applied when replaying a
 durable event log, so a restart does not resurrect an unbounded in-memory board
 view.
 
+The planned
+[differential-privacy blackboard design](differential-privacy-blackboard.md)
+defines future redacted and noisy projections for multi-organisation board
+views. It is not implemented yet; the current local board remains exact for the
+operator.
+
 A declared task is the **plan**; a claim is the **lease** on doing it. The two
 share a task id but stay independent, so the simple claim flow keeps working with
 no plan entry at all.
