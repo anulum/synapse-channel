@@ -13,6 +13,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.62.0] - 2026-06-28
+
 ### Added
 - Added an identity/ACL shadow-mode tranche (observe-only, non-blocking).
   `synapse identity audit --identities <file>` inventories declared agent
