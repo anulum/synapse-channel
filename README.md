@@ -688,6 +688,12 @@ tracks stale claims, declared failed-check evidence, broken handoff candidates,
 and merge-conflict frequency as audit signals, not scores. It does not rank
 agents, assign trust grades, or replace review of the underlying event rows.
 
+The planned [agent trust graph](docs/agent-trust-graph.md) profile connects
+those reliability signals, release receipts, capability observations, handoff
+outcomes, and conflict history into an inspectable evidence graph for routing
+review. It is not implemented yet and does not rank agents, assign trust grades,
+authorize execution, replace code review, or replace identity and ACL.
+
 Use `synapse ttl-advice ./synapse.db` for read-only adaptive lease TTL advice.
 It derives completed-task duration samples, active live-claim counts, and stale
 claim counts from the event log, then prints an advisory default. It never
@@ -807,9 +813,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 131 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1865 |
+| Test functions | 1869 |
 | Benchmark harnesses | 4 |
-| Documentation pages | 31 |
+| Documentation pages | 32 |
 | GitHub Actions workflows | 10 |
 | Optional-dependency groups | 4 |
 

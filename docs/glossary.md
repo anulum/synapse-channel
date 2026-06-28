@@ -228,6 +228,14 @@ Evidence-only owner summaries over the **event log** using
 failed-check evidence, broken handoff candidates, and conflict pairs as audit
 signals, not scores.
 
+### Agent trust graph
+
+Design target for an inspectable evidence graph over reliability signals,
+release receipts, capability observations, handoff outcomes, conflict history,
+evidence nodes, evidence edges, provenance references, event sequences, decay
+windows, and owner review notes. It is not implemented yet and does not rank
+agents or assign trust grades.
+
 ### TTL advice
 
 Read-only adaptive lease TTL advice over the **event log** using

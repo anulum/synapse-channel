@@ -120,6 +120,8 @@ postmortem can explain what changed during migration.
 - [Differential-privacy blackboard](differential-privacy-blackboard.md)
   projections can redact or perturb shared board reports. Identity and ACLs
   decide who may create board data or request those projections.
+- [Agent trust graph](agent-trust-graph.md) evidence can explain routing and
+  policy inputs. Identity and ACLs still decide who may act on that evidence.
 - [Policy engine](policy-engine.md) can later consume identity decisions,
   release receipts, and event-log evidence, but it should not be the first layer
   that authenticates a caller.

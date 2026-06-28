@@ -103,6 +103,11 @@ broken handoff candidates, and merge-conflict frequency as audit signals, not
 scores. The report is suitable for handovers and routing review, but it does not
 rank agents or assign trust grades.
 
+The planned [agent trust graph](agent-trust-graph.md) connects those audit
+signals with release receipts, capability observations, handoff outcomes, and
+conflict history as traceable graph evidence. It is not implemented yet and
+stays advisory: it does not rank agents, authorize execution, or replace review.
+
 The planned [policy engine](policy-engine.md) builds on those same release
 receipts and event-log projections. Its first mode is advisory: required tests,
 strict type checking, owner approval, evidence freshness, generated artifact
