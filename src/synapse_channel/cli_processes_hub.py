@@ -19,10 +19,28 @@ from synapse_channel.cli_processes_runtime import _run
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import InsecureBindError, SynapseHub
 from synapse_channel.core.logging_setup import configure_logging
+from synapse_channel.core.message_auth import MessageAuthKey
 from synapse_channel.core.paranoid import ParanoidModeError, apply_paranoid_hub_profile
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
 from synapse_channel.core.tls import HubTLSConfigError, build_server_ssl_context
+
+
+def _parse_message_auth_keys(values: list[str]) -> list[MessageAuthKey]:
+    """Parse ``KEY_ID:SECRET:SENDER[,SENDER...]`` CLI values."""
+    keys: list[MessageAuthKey] = []
+    for value in values:
+        parts = value.split(":", 2)
+        if len(parts) != 3:
+            raise ValueError("--message-auth-key must use KEY_ID:SECRET:SENDER[,SENDER...]")
+        key_id, secret, sender_csv = (part.strip() for part in parts)
+        senders = frozenset(sender.strip() for sender in sender_csv.split(",") if sender.strip())
+        if not key_id or not secret or not senders:
+            raise ValueError("--message-auth-key must use KEY_ID:SECRET:SENDER[,SENDER...]")
+        keys.append(
+            MessageAuthKey(key_id=key_id, secret=secret.encode("utf-8"), senders=senders)
+        )
+    return keys
 
 
 def _cmd_hub(
@@ -61,6 +79,11 @@ def _cmd_hub(
         else None
     )
     authenticator = TokenAuthenticator([args.token]) if args.token else None
+    try:
+        message_auth_keys = _parse_message_auth_keys(args.message_auth_key)
+    except ValueError as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        return 2
     hub = hub_factory(
         journal=journal,
         rate_limiter=limiter,
@@ -89,6 +112,10 @@ def _cmd_hub(
         auth_timeout=args.auth_timeout,
         metrics_token=args.metrics_token,
         metrics_query_token_ok=args.metrics_query_token_ok,
+        per_message_auth_keys=message_auth_keys,
+        require_per_message_auth=args.require_message_auth,
+        per_message_auth_window_seconds=args.message_auth_window_seconds,
+        per_message_auth_replay_capacity=args.message_auth_replay_capacity,
         insecure_off_loopback=args.insecure_off_loopback,
     )
     try:

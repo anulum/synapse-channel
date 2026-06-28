@@ -15,11 +15,11 @@ from dataclasses import dataclass
 MISSING_PARANOID_HOOKS: tuple[str, ...] = (
     "at-rest encryption",
     "signed events and mTLS enforcement",
-    "per-message authentication",
     "per-agent identity and ACL enforcement",
     "private channels",
     "end-to-end encrypted channels",
     "differential-privacy blackboard projections",
+    "per-message key rotation and revocation operator workflow",
     "deployment threat-model evidence for exposed bridges",
 )
 """Runtime hooks that paranoid mode must report as unavailable today."""
@@ -83,12 +83,17 @@ def apply_paranoid_hub_profile(args: argparse.Namespace) -> ParanoidHubReport | 
     metrics_enabled = bool(getattr(args, "metrics", False))
     if metrics_enabled and not getattr(args, "metrics_token", None):
         raise ParanoidModeError("paranoid mode requires --metrics-token when --metrics is enabled")
+    if not getattr(args, "message_auth_key", None):
+        raise ParanoidModeError("paranoid mode requires --message-auth-key")
+    if not bool(getattr(args, "require_message_auth", False)):
+        raise ParanoidModeError("paranoid mode requires --require-message-auth")
 
     args.metrics_query_token_ok = False
     args.insecure_off_loopback = False
     enforced = [
         "hub token required",
         "durable event log required",
+        "per-message authentication required",
         "metrics query tokens disabled",
         "insecure off-loopback override disabled",
     ]

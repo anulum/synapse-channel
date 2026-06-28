@@ -10,9 +10,11 @@
 from __future__ import annotations
 
 import json
+import secrets
 from typing import Any
 
 from synapse_channel.client.agent_outbound_types import _OutboundAgent
+from synapse_channel.core.message_auth import DEFAULT_SIGNED_MESSAGE_TYPES, sign_frame
 from synapse_channel.core.protocol import MessageType, build_envelope
 
 __all__ = ["AgentSendMixin"]
@@ -45,6 +47,15 @@ class AgentSendMixin:
         if self.connection is None:
             return
         msg = build_envelope(self.name, msg_type, target=target, payload=payload, **extra)
+        if self._message_auth_key is not None and msg_type in DEFAULT_SIGNED_MESSAGE_TYPES:
+            msg.setdefault("idem_key", secrets.token_urlsafe(18))
+            self._message_auth_sequence += 1
+            msg = sign_frame(
+                msg,
+                key=self._message_auth_key,
+                nonce=secrets.token_urlsafe(18),
+                sequence=self._message_auth_sequence,
+            )
         await self.connection.send(json.dumps(msg))
 
     async def chat(

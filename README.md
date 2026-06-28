@@ -536,9 +536,10 @@ into a local hook or CI gate.
 
 [`synapse hub --paranoid`](docs/paranoid-mode.md) enforces a strict local hub
 profile and prints an explicit missing-hook checklist: token-required hub access,
-durable event logs, metrics bearer-token auth, disabled metrics query tokens, and
-clear gaps for encryption, signed events, identity, ACLs, private channels, A2A
-profiles, and exposed deployment review.
+durable event logs, per-message authentication for selected mutating frames,
+metrics bearer-token auth, disabled metrics query tokens, and clear gaps for
+encryption, signed events, identity, ACLs, private channels, A2A profiles, and
+exposed deployment review.
 
 The planned [at-rest encryption](docs/at-rest-encryption.md) profile scopes
 optional protection for SQLite event stores, relay logs, A2A state, cursor files,
@@ -570,12 +571,13 @@ bundles, certificate pinning, and trusted multi-host peers. It is not
 implemented yet, does not encrypt payloads, does not replace per-agent identity,
 and does not certify external federation.
 
-The planned [per-message authentication](docs/per-message-authentication.md)
-profile scopes keyed message authentication codes or signatures over selected
-WebSocket frames after connect authentication. It defines canonical frames, key
-ids, sender binding, nonces, sequence binding, timestamp windows, replay cache
-bounds, key rotation, revocation, and verification results without claiming
-payload encryption or identity enforcement.
+The [per-message authentication](docs/per-message-authentication.md) runtime
+enforces opt-in HMAC-SHA256 authentication for selected mutating WebSocket
+frames after connect authentication. It defines canonical frames, key ids,
+sender-bound CLI keys, nonces, signed sequence metadata, timestamp windows,
+bounded in-memory replay cache behavior, key rotation, revocation results, and
+verification results without claiming payload encryption, public-key signatures,
+signed events, or identity enforcement.
 
 The planned [identity and ACL](docs/identity-and-acl.md) profile scopes
 per-agent identity, identity-bound credentials, project namespaces, allowed
@@ -838,11 +840,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.58.1 |
 | Public API exports | 61 |
-| Package modules | 153 |
-| Classes | 154 |
+| Package modules | 154 |
+| Classes | 157 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1943 |
+| Test functions | 1961 |
 | Benchmark harnesses | 5 |
 | Documentation pages | 33 |
 | GitHub Actions workflows | 10 |
@@ -869,9 +871,11 @@ This snapshot is a static inventory generated from the source tree. Performance 
   hub restart resumes from the durable log, but it is not a high-availability
   cluster.
 - **Connect authentication is a proportionate shared secret**, not a
-  cryptographic identity system — no implemented key exchange, signatures, or
-  per-message authentication. Do not expose the hub on an untrusted network and
-  rely on the token alone.
+  cryptographic identity system. Opt-in per-message HMAC authentication protects
+  selected mutating frames, but there is no implemented key exchange,
+  public-key signature trust, per-agent identity, ACL enforcement, or mTLS trust
+  bundle. Do not expose the hub on an untrusted network and rely on the token
+  alone.
 - **Graceful shutdown is bounded, not transactional.** `SIGTERM`/`SIGINT` stop
   accepting new sockets, close active WebSocket sessions within
   `--shutdown-close-timeout`, and rely on per-mutation persistence for durable

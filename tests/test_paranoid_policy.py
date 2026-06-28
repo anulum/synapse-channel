@@ -27,6 +27,8 @@ def _args(**overrides: object) -> argparse.Namespace:
         "db": "hub.db",
         "metrics": False,
         "metrics_token": None,
+        "message_auth_key": ["main:shared-secret:ALPHA"],
+        "require_message_auth": True,
         "metrics_query_token_ok": True,
         "insecure_off_loopback": True,
     }
@@ -54,7 +56,9 @@ def test_paranoid_policy_reports_enforced_and_missing_hooks() -> None:
     assert args.insecure_off_loopback is False
     assert "hub token required" in report.enforced
     assert "metrics bearer-token auth required" in report.enforced
+    assert "per-message authentication required" in report.enforced
     assert "private channels" in report.missing_hooks
+    assert "per-message authentication" not in report.missing_hooks
     assert report.missing_hooks == MISSING_PARANOID_HOOKS
     assert "paranoid mode missing hooks:" in report.stderr_lines()[1]
 
@@ -73,6 +77,8 @@ def test_paranoid_policy_omits_metrics_auth_when_metrics_disabled() -> None:
         ({"token": None}, "requires --token"),
         ({"db": None}, "requires --db"),
         ({"metrics": True, "metrics_token": None}, "requires --metrics-token"),
+        ({"message_auth_key": []}, "requires --message-auth-key"),
+        ({"require_message_auth": False}, "requires --require-message-auth"),
     ],
 )
 def test_paranoid_policy_rejects_missing_required_settings(

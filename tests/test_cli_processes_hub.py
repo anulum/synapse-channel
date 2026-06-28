@@ -329,6 +329,46 @@ def test_cmd_hub_without_token_has_no_authenticator() -> None:
     assert captured["authenticator"] is None
 
 
+def test_cmd_hub_threads_message_authentication_options() -> None:
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(
+                message_auth_key=["main:shared-secret:ALPHA,BETA"],
+                require_message_auth=True,
+                message_auth_window_seconds=12.5,
+                message_auth_replay_capacity=99,
+            ),
+            runner=_close_runner,
+            hub_factory=build_hub,
+        )
+        == 0
+    )
+    assert captured["require_per_message_auth"] is True
+    assert captured["per_message_auth_window_seconds"] == 12.5
+    assert captured["per_message_auth_replay_capacity"] == 99
+    assert captured["per_message_auth_keys"][0].key_id == "main"
+    assert captured["per_message_auth_keys"][0].secret == b"shared-secret"
+    assert captured["per_message_auth_keys"][0].senders == frozenset({"ALPHA", "BETA"})
+
+
+def test_cmd_hub_rejects_malformed_message_auth_key(capsys: pytest.CaptureFixture[str]) -> None:
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(message_auth_key=["missing-separator"]),
+            runner=_close_runner,
+        )
+        == 2
+    )
+
+    assert "--message-auth-key must use KEY_ID:SECRET:SENDER[,SENDER...]" in capsys.readouterr().err
+
+
 def test_cmd_hub_threads_tls_context_to_serve() -> None:
     served: dict[str, Any] = {}
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

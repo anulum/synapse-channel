@@ -158,7 +158,7 @@ implemented yet and does not replace per-message authentication or signed events
 
 Design target for tamper-evident capability advertisements. A signed capability
 card binds a canonical card, card signature, key id, agent binding, manifest
-digest, sequence binding, timestamp window, expiry, replay protection,
+digest, signed sequence metadata, timestamp window, expiry, replay protection,
 credential rotation, revocation, trust bundle, capability downgrade diagnostics,
 and verification result. It is not implemented yet; unsigned cards remain
 advisory discovery.
@@ -209,7 +209,7 @@ anonymize raw logs.
 
 Design target for authenticating selected coordination events and trusted
 multi-host peers. Signed events use an event signature over a canonical payload,
-key id, sequence binding, timestamp window, replay protection, and verification
+key id, signed sequence metadata, timestamp window, replay protection, and verification
 result. Mutual TLS uses operator-managed trust bundles, certificate pinning, key
 rotation, revocation, and trusted peer definitions; it is not implemented yet.
 
@@ -218,7 +218,7 @@ rotation, revocation, and trusted peer definitions; it is not implemented yet.
 Design target for authenticating selected WebSocket frames after connect
 authentication. The profile defines authenticated frames, canonical frames,
 message authentication codes, signatures, key ids, sender binding, nonces,
-sequence binding, timestamp windows, replay cache bounds, key rotation,
+signed sequence metadata, timestamp windows, replay cache bounds, key rotation,
 revocation, and verification results; it is not implemented yet.
 
 ### Reliability memory

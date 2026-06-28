@@ -9,9 +9,11 @@ A state-mutating message may carry an `idem_key` so a retry after a reconnect is
 applied once. On a secured hub, the first message of a connection must carry a
 `token`.
 
-The planned [per-message authentication design](per-message-authentication.md)
-keeps the same envelope shape and adds an authentication object for selected
-frames after WebSocket connect authentication. It is not implemented yet.
+The [per-message authentication runtime](per-message-authentication.md) keeps
+the same envelope shape and adds an `auth` object for selected mutating frames
+after WebSocket connect authentication. It is opt-in: `--message-auth-key`
+configures sender-bound HMAC keys, and `--require-message-auth` enforces signed
+claims, releases, task updates, handoffs, checkpoints, and resource offers.
 
 The planned [identity and ACL design](identity-and-acl.md) keeps protocol
 messages as ordinary envelopes while adding a future authorization decision

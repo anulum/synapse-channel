@@ -30,7 +30,7 @@ import signal
 import ssl
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +63,14 @@ from synapse_channel.core.ledger import (
     DEFAULT_MAX_PROGRESS_PER_AUTHOR,
     DEFAULT_MAX_PROGRESS_PER_TASK,
     Blackboard,
+)
+from synapse_channel.core.message_auth import (
+    DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
+    DEFAULT_SIGNED_MESSAGE_TYPES,
+    MessageAuthKey,
+    MessageReplayCache,
+    VerificationResult,
+    verify_frame,
 )
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import (
@@ -253,6 +261,19 @@ class SynapseHub:
         :class:`InsecureBindError` rather than only warning — so a bus is never
         accidentally exposed to the network without a token (and, with metrics on,
         a metrics token); set this to downgrade the refusal to a warning.
+    per_message_auth_keys : Mapping[str, MessageAuthKey] or list[MessageAuthKey] or None, optional
+        HMAC keys accepted for opt-in per-message authentication. ``None`` leaves
+        the verifier with no configured keys.
+    require_per_message_auth : bool, optional
+        When ``True``, selected mutating frames must carry valid per-message
+        authentication before they can mutate hub state. Defaults to ``False``.
+    per_message_auth_window_seconds : float, optional
+        Timestamp window used for signed-frame freshness and replay-cache
+        eviction. Defaults to
+        :data:`~synapse_channel.core.message_auth.DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS`.
+    per_message_auth_replay_capacity : int, optional
+        Maximum in-memory nonce entries retained for replay detection.
+        Defaults to ``4096``.
     """
 
     def __init__(
@@ -287,6 +308,10 @@ class SynapseHub:
         metrics_query_token_ok: bool = False,
         insecure_off_loopback: bool = False,
         clock: Callable[[], float] | None = None,
+        per_message_auth_keys: Mapping[str, MessageAuthKey] | list[MessageAuthKey] | None = None,
+        require_per_message_auth: bool = False,
+        per_message_auth_window_seconds: float = DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
+        per_message_auth_replay_capacity: int = 4096,
     ) -> None:
         self.journal = journal
         self.enable_metrics = bool(enable_metrics)
@@ -297,6 +322,17 @@ class SynapseHub:
         self.rate_limiter = rate_limiter
         self.host_rate_limiter = host_rate_limiter
         self.authenticator = authenticator
+        if isinstance(per_message_auth_keys, Mapping):
+            self.per_message_auth_keys = dict(per_message_auth_keys)
+        else:
+            self.per_message_auth_keys = {
+                key.key_id: key for key in (per_message_auth_keys or [])
+            }
+        self.require_per_message_auth = bool(require_per_message_auth)
+        self._message_replay = MessageReplayCache(
+            window_seconds=per_message_auth_window_seconds,
+            max_entries=per_message_auth_replay_capacity,
+        )
         self.max_msg_bytes = max(int(max_msg_bytes), 1)
         self._clock = clock or time.monotonic
         self._started = self._clock()
@@ -733,7 +769,36 @@ class SynapseHub:
             )
             return
 
+        if not await self._verify_per_message_auth(sender, msg_type, data, websocket):
+            return
+
         await self._route(sender, msg_type, data, websocket)
+
+    async def _verify_per_message_auth(
+        self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
+    ) -> bool:
+        """Verify required per-message authentication before mutating state."""
+        if not self.require_per_message_auth or msg_type not in DEFAULT_SIGNED_MESSAGE_TYPES:
+            return True
+        result = verify_frame(
+            data,
+            keys=self.per_message_auth_keys,
+            replay_cache=self._message_replay,
+            now=time.time(),
+            required_sender=sender,
+        )
+        if result is VerificationResult.OK:
+            return True
+        await self._send_json(
+            websocket,
+            self._system(
+                f"per-message authentication failed: {result.value}",
+                msg_type=MessageType.ERROR,
+                target=sender,
+                verification_result=result.value,
+            ),
+        )
+        return False
 
     async def _route(
         self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any

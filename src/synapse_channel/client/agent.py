@@ -31,6 +31,7 @@ from synapse_channel.client.agent_lifecycle import (
 )
 from synapse_channel.client.agent_outbound import AgentOutboundMixin
 from synapse_channel.client.agent_queries import AgentQueryMixin
+from synapse_channel.core.message_auth import MessageAuthKey
 
 logging.basicConfig(level=logging.ERROR)
 
@@ -64,6 +65,12 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         Shared-secret token presented on the registration message when the hub
         requires authentication. ``None`` sends no token (the default for an
         open, loopback hub).
+    per_message_auth_key_id : str or None, optional
+        Key id used to sign mutating frames with per-message authentication.
+        ``None`` leaves frame signing off.
+    per_message_auth_secret : str or bytes or None, optional
+        HMAC secret paired with ``per_message_auth_key_id``. Both fields must be
+        set to sign frames.
     ping_interval : float, optional
         Seconds between client keepalive pings, so a half-open connection — a hub
         that was killed, an ungraceful restart, or an eviction whose close frame
@@ -85,6 +92,8 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         verbose: bool = True,
         token: str | None = None,
         takeover: bool = False,
+        per_message_auth_key_id: str | None = None,
+        per_message_auth_secret: str | bytes | None = None,
         ping_interval: float = 20.0,
         ping_timeout: float = 20.0,
     ) -> None:
@@ -102,5 +111,16 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         self.verbose = bool(verbose)
         self.token = token
         self.takeover = bool(takeover)
+        self._message_auth_key: MessageAuthKey | None = None
+        if per_message_auth_key_id is not None and per_message_auth_secret is not None:
+            secret = (
+                per_message_auth_secret
+                if isinstance(per_message_auth_secret, bytes)
+                else per_message_auth_secret.encode("utf-8")
+            )
+            self._message_auth_key = MessageAuthKey(
+                key_id=str(per_message_auth_key_id), secret=secret, senders=frozenset({name})
+            )
+        self._message_auth_sequence = 0
         self.ping_interval = float(ping_interval)
         self.ping_timeout = float(ping_timeout)
