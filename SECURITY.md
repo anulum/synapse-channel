@@ -87,6 +87,11 @@ worth stating plainly:
 - **Update check.** `synapse --version` makes one request a day to PyPI to check
   for a newer release; it sends nothing beyond the request itself. Silence it with
   `SYNAPSE_NO_UPDATE_CHECK=1`.
+- **Verified release receipts.** `synapse verify-release` executes commands
+  supplied by the local caller and records digest-only stdout/stderr evidence,
+  artifact hashes, and Git state for `synapse release --receipt`. It does not
+  sandbox untrusted commands, review whether commands are sufficient, or turn a
+  `supported` receipt into independent proof of correctness.
 
 [`synapse hub --paranoid`](docs/paranoid-mode.md) is implemented for the hub
 runtime. It requires a token, durable event-log replay, per-message

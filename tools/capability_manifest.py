@@ -78,8 +78,40 @@ def _count_all_exports(init_path: Path) -> int:
     return 0
 
 
+def _git_tracked_py_files(root: Path) -> list[Path]:
+    """Return Git-tracked Python files under ``root``, or an empty list."""
+    try:
+        top_level = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )  # nosec B603,B607
+    except OSError:
+        return []
+    if top_level.returncode != 0:
+        return []
+    git_root = Path(top_level.stdout.strip())
+    try:
+        relative_root = root.resolve().relative_to(git_root.resolve())
+    except ValueError:
+        return []
+    result = subprocess.run(
+        ["git", "-C", str(git_root), "ls-files", str(relative_root)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )  # nosec B603,B607
+    if result.returncode != 0:
+        return []
+    return [git_root / line for line in result.stdout.splitlines() if line.endswith(".py") and line]
+
+
 def _iter_py_files(root: Path) -> list[Path]:
-    """Return the package's Python modules, excluding caches and egg-info."""
+    """Return package Python modules, preferring Git-tracked/staged files."""
+    tracked = _git_tracked_py_files(root)
+    if tracked:
+        return tracked
     return [
         path
         for path in sorted(root.rglob("*.py"))
@@ -124,7 +156,9 @@ def _count_cli_subcommands(package_root: Path) -> int:
     package is scanned rather than the entry point alone.
     """
     total = 0
-    for path in sorted(package_root.glob("cli*.py")):
+    for path in sorted(_iter_py_files(package_root)):
+        if not path.name.startswith("cli"):
+            continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         total += sum(
             1

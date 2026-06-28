@@ -23,6 +23,7 @@ import asyncio
 import contextlib
 import json
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
@@ -32,6 +33,57 @@ from synapse_channel.core.receipts import build_release_receipt
 
 AgentFactory = Callable[..., SynapseAgent]
 LockRunner = Callable[[list[str]], Awaitable[int]]
+
+
+def _load_release_receipt(path: str | Path) -> dict[str, Any]:
+    """Load and validate a release receipt JSON object from ``path``."""
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("receipt must be a JSON object")
+    return payload
+
+
+def _receipt_list(
+    payload: dict[str, Any],
+    key: str,
+    fallback: list[str] | None,
+) -> list[str]:
+    """Merge a repeated receipt field with explicit CLI values."""
+    items: list[str] = []
+    raw = payload.get(key)
+    if raw is not None:
+        if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+            raise ValueError(f"receipt field '{key}' must be a list of strings")
+        items.extend(raw)
+    items.extend(fallback or [])
+    return items
+
+
+def _receipt_freshness(payload: dict[str, Any], fallback: float | None) -> float | None:
+    """Return explicit freshness when supplied, otherwise receipt freshness."""
+    if fallback is not None:
+        return fallback
+    raw = payload.get("freshness_seconds")
+    if raw is None:
+        return None
+    if not isinstance(raw, int | float):
+        raise ValueError("receipt field 'freshness_seconds' must be a number")
+    return float(raw)
+
+
+def _validate_release_receipt_identity(
+    payload: dict[str, Any],
+    *,
+    task_id: str,
+    name: str,
+) -> None:
+    """Reject receipts whose task or owner would release the wrong claim."""
+    receipt_task = payload.get("task_id")
+    receipt_owner = payload.get("owner")
+    if receipt_task is not None and receipt_task != task_id:
+        raise ValueError(f"receipt task_id {receipt_task!r} does not match {task_id!r}")
+    if receipt_owner is not None and receipt_owner != name:
+        raise ValueError(f"receipt owner {receipt_owner!r} does not match {name!r}")
 
 
 async def _run_subprocess(command: list[str]) -> int:
@@ -202,6 +254,7 @@ async def _release(
     approvals: list[str] | None = None,
     confidence: str = "",
     freshness_seconds: float | None = None,
+    receipt: str | Path | None = None,
     receipt_json: bool = False,
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
@@ -232,6 +285,8 @@ async def _release(
         Optional caller-supplied confidence label.
     freshness_seconds : float or None, optional
         Age, in seconds, of the newest evidence.
+    receipt : str or pathlib.Path or None, optional
+        Verified release receipt JSON to seed the repeated release receipt fields.
     receipt_json : bool, optional
         Print the release receipt as JSON instead of the legacy one-line text.
     agent_factory : AgentFactory, optional
@@ -251,6 +306,29 @@ async def _release(
         ``0`` when the hub confirms the release; ``1`` when the hub is unreachable,
         denies the release (not the owner, or no such claim), or stays silent.
     """
+    try:
+        receipt_payload = _load_release_receipt(receipt) if receipt is not None else {}
+        _validate_release_receipt_identity(receipt_payload, task_id=task_id, name=name)
+        release_evidence = _receipt_list(receipt_payload, "evidence", evidence)
+        release_artifacts = _receipt_list(receipt_payload, "artifacts", artifacts)
+        release_known_failures = _receipt_list(
+            receipt_payload,
+            "known_failures",
+            known_failures,
+        )
+        release_changed_files = _receipt_list(receipt_payload, "changed_files", changed_files)
+        release_generated_artifacts = _receipt_list(
+            receipt_payload,
+            "generated_artifacts",
+            generated_artifacts,
+        )
+        release_approvals = _receipt_list(receipt_payload, "approvals", approvals)
+        release_confidence = confidence or str(receipt_payload.get("confidence") or "")
+        release_freshness_seconds = _receipt_freshness(receipt_payload, freshness_seconds)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(f"invalid release receipt for '{task_id}': {exc}")
+        return 1
+
     outcome: dict[str, Any] = {}
 
     async def collect(data: dict[str, Any]) -> None:
@@ -278,14 +356,14 @@ async def _release(
             return 1
         await agent.release(
             task_id,
-            evidence=evidence or [],
-            artifacts=artifacts or [],
-            known_failures=known_failures or [],
-            changed_files=changed_files or [],
-            generated_artifacts=generated_artifacts or [],
-            approvals=approvals or [],
-            confidence=confidence,
-            freshness_seconds=freshness_seconds,
+            evidence=release_evidence,
+            artifacts=release_artifacts,
+            known_failures=release_known_failures,
+            changed_files=release_changed_files,
+            generated_artifacts=release_generated_artifacts,
+            approvals=release_approvals,
+            confidence=release_confidence,
+            freshness_seconds=release_freshness_seconds,
         )
         for _ in range(attempts):
             if outcome or conn_task.done():
@@ -293,10 +371,10 @@ async def _release(
             await asyncio.sleep(poll_interval)
         if outcome.get("released"):
             if receipt_json:
-                receipt = outcome.get("receipt")
-                if not isinstance(receipt, dict):
-                    receipt = build_release_receipt(task_id=task_id, owner=name)
-                print(json.dumps(receipt, sort_keys=True))
+                receipt_output = outcome.get("receipt")
+                if not isinstance(receipt_output, dict):
+                    receipt_output = build_release_receipt(task_id=task_id, owner=name)
+                print(json.dumps(receipt_output, sort_keys=True))
             else:
                 print(f"released '{task_id}'")
             return 0
@@ -334,6 +412,7 @@ def _cmd_release(args: argparse.Namespace) -> int:
             approvals=args.approvals,
             confidence=args.confidence,
             freshness_seconds=args.freshness_seconds,
+            receipt=args.receipt,
             receipt_json=args.receipt_json,
             token=args.token,
             ready_timeout=args.ready_timeout,
@@ -427,6 +506,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=float,
         default=None,
         help="Age in seconds of the newest evidence attached to the receipt.",
+    )
+    release.add_argument(
+        "--receipt",
+        default=None,
+        help="Verified release receipt JSON produced by 'synapse verify-release'.",
     )
     release.add_argument(
         "--receipt-json",

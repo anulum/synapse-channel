@@ -41,6 +41,7 @@ The ``synapse`` command exposes these subcommands:
 * ``git-release`` — release branch-scoped claims whose paths were committed/merged (hook-invoked);
 * ``conflicts`` — predict merge conflicts between branch-scoped claims on different branches;
 * ``health`` — probe the hub and report reachability as the exit code;
+* ``verify-release`` — run declared checks and write an observed release receipt;
 * ``lock`` — hold a lease while running a command, to serialise it across agents;
 * ``release`` — manually drop a claim you own (e.g. an ``--auto-release-on manual`` claim);
 * ``task`` — declare and update the shared task plan from the command line;
@@ -103,6 +104,7 @@ from synapse_channel.cli_services import add_parsers as add_service_parsers
 from synapse_channel.cli_shell import add_parsers as add_shell_parsers
 from synapse_channel.cli_streams import add_parsers as add_stream_parsers
 from synapse_channel.cli_tasks import add_parsers as add_task_parsers
+from synapse_channel.cli_verify_release import add_parsers as add_verify_release_parsers
 from synapse_channel.update_check import update_notice
 
 
@@ -181,6 +183,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_a2a_parsers(sub)
 
     add_git_parsers(sub)
+
+    add_verify_release_parsers(sub)
 
     add_locking_parsers(sub)
 

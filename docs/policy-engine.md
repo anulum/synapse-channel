@@ -37,6 +37,9 @@ adding new protocol fields:
 - `synapse release` release receipt payloads: changed files, generated
   artifacts, evidence entries, known failures, approvals, confidence, freshness,
   and epistemic status.
+- `synapse verify-release` observed receipt payloads: declared command argv,
+  exit codes, stdout/stderr SHA-256 digests, artifact hashes, Git `HEAD` and
+  tree ids, changed files, timestamp, and optional signature reference.
 - `synapse event-query` snapshots for task timelines, task state at a sequence,
   path-touch windows, and reconstructed conflicts.
 - `synapse postmortem` reports for replayable task context when a release needs
@@ -68,6 +71,8 @@ cloud service:
   changes.
 - **No-merge-without-receipt**: merges can require a release receipt that names
   changed files, generated artifacts, known failures, and verification evidence.
+  A `supported` receipt status means current submitted evidence exists; it does
+  not independently certify correctness, command choice, or artifact sufficiency.
 - **Claim coverage**: changed files should be covered by an active or recently
   released file-scope claim for the same task.
 - **Generated artifact parity**: configured generated outputs must be updated or
