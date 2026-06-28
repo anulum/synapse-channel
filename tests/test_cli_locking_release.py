@@ -290,6 +290,7 @@ def test_cmd_release_dispatches_real_command(capsys: pytest.CaptureFixture[str])
         approvals=[],
         confidence="",
         freshness_seconds=None,
+        receipt=None,
         receipt_json=False,
     )
     assert cli_locking._cmd_release(ns) == 1

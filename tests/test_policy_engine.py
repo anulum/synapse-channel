@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -27,10 +27,9 @@ from synapse_channel.core.policy_engine import (
     overall_status,
 )
 from synapse_channel.core.policy_rules import evaluate_policy
-from synapse_channel.core.receipts import ReleaseReceipt
 
 
-def _receipt(**overrides: Any) -> ReleaseReceipt:
+def _receipt(**overrides: Any) -> Any:
     base: dict[str, Any] = {
         "task_id": "T1",
         "owner": "alice",
@@ -44,7 +43,7 @@ def _receipt(**overrides: Any) -> ReleaseReceipt:
         "epistemic_reasons": [],
     }
     base.update(overrides)
-    return cast(ReleaseReceipt, base)
+    return base
 
 
 # --- configuration loading -------------------------------------------------
