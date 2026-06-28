@@ -84,9 +84,9 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: "3.12"
-      - run: python -m pip install -e "." pip-audit
+      - run: python -m pip install --require-hashes -r .github/requirements/pip-audit.txt
       - name: Audit dependencies for known vulnerabilities
-        run: pip-audit --skip-editable --desc
+        run: python -m pip_audit . --desc --progress-spinner=off
 
   git-hooks:
     runs-on: ubuntu-latest
@@ -95,20 +95,28 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: "3.12"
-      - run: python -m pip install -e "."
       - name: Auto-release hooks install and self-test
         run: |
           set -euo pipefail
+          export PYTHONPATH="$GITHUB_WORKSPACE/src"
+          synapse_bin="$RUNNER_TEMP/synapse-dev"
+          cat > "$synapse_bin" <<'PY'
+          #!/usr/bin/env python
+          from synapse_channel.cli import main
+
+          raise SystemExit(main())
+          PY
+          chmod +x "$synapse_bin"
           scratch="$(mktemp -d)"
           git -C "$scratch" init -q
           # A fresh repo has no auto-release hooks: `git-hook test` must fail (non-zero),
           # so a broken or no-op install is caught instead of silently passing.
-          if (cd "$scratch" && synapse git-hook test); then
+          if (cd "$scratch" && "$synapse_bin" git-hook test); then
             echo "::error::git-hook test passed on a repo with no auto-release hooks installed"
             exit 1
           fi
           # After `git-init`, both hooks are installed and their baked-in synapse path
           # resolves, so `git-hook test` must pass (exit 0).
-          (cd "$scratch" && synapse git-init --name ci)
-          (cd "$scratch" && synapse git-hook test)
+          (cd "$scratch" && "$synapse_bin" git-init --name ci --synapse-bin "$synapse_bin")
+          (cd "$scratch" && "$synapse_bin" git-hook test)
           rm -rf "$scratch"

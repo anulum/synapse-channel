@@ -13,6 +13,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.56.0] - 2026-06-28
+
 ### Added
 - Added first-class semantic selector ergonomics to `synapse git-claim`:
   `--module`, `--symbol`, `--api`, `--source`, `--test`, `--generated`, and
