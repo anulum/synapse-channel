@@ -130,9 +130,7 @@ def test_start_session_does_not_duplicate_existing_session(tmp_path: Path) -> No
 
 def test_inject_wake_types_then_submits_as_two_calls(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    runner = RecordingRunner(
-        [_result(["tmux", "send-keys"], 0), _result(["tmux", "send-keys"], 0)]
-    )
+    runner = RecordingRunner([_result(["tmux", "send-keys"], 0), _result(["tmux", "send-keys"], 0)])
     sleeper = RecordingSleeper()
 
     result = inject_wake(
@@ -266,9 +264,7 @@ def test_wait_and_wake_stops_after_bounded_consecutive_failures(tmp_path: Path) 
     runner = RecordingRunner([_result(["synapse", "wait"], 2)])
     sleeper = RecordingSleeper()
 
-    result = wait_and_wake(
-        config, runner=runner, max_wakes=1, sleeper=sleeper, max_wait_failures=1
-    )
+    result = wait_and_wake(config, runner=runner, max_wakes=1, sleeper=sleeper, max_wait_failures=1)
 
     assert result == 2
     assert len(runner.calls) == 1
