@@ -50,6 +50,8 @@ class ScriptedAgent:
         self.verbose = verbose
         self.token = token
         self.running = True
+        self.last_close_code: int | None = None
+        self.last_close_reason = ""
 
     async def connect(self) -> None:
         """Stay alive until the acknowledgement flow cancels the connection."""
