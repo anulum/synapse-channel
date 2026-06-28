@@ -31,12 +31,18 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
             refresh_seconds=args.refresh_seconds,
             allow_non_loopback=args.allow_non_loopback,
             a2a_state_file=args.a2a_state_file,
+            dashboard_token=args.dashboard_token,
         )
     except ValueError as exc:
         print(str(exc))
         return 2
     print(f"dashboard: {server.url('/')}")
     print("snapshot JSON: " + server.url("/snapshot.json"))
+    if server.dashboard_token_generated and server.dashboard_token is not None:
+        print("dashboard token: " + server.dashboard_token)
+        print("dashboard auth: Authorization: Bearer <dashboard token>")
+    elif server.dashboard_token is not None:
+        print("dashboard auth: Authorization: Bearer <dashboard token>")
     try:
         while True:
             time.sleep(3600)
@@ -77,6 +83,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
     )
     dashboard.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    dashboard.add_argument(
+        "--dashboard-token",
+        default=None,
+        help=(
+            "Bearer token required by dashboard HTTP requests; generated automatically "
+            "for non-loopback binds when omitted."
+        ),
+    )
     dashboard.add_argument(
         "--a2a-state-file",
         type=Path,

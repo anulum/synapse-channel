@@ -270,7 +270,10 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   to add persisted A2A task and push-config counts to the fleet section. The
   dashboard derives task dependencies from the blackboard snapshot and uses live
   claim metadata for branch conflicts; run `synapse conflicts --check-diff` when
-  you need client-side git-diff refinement.
+  you need client-side git-diff refinement. If you deliberately expose the
+  dashboard with `--allow-non-loopback`, pass `--dashboard-token <token>` and
+  require clients to send `Authorization: Bearer <token>`; when omitted on an
+  exposed bind, Synapse generates and prints a startup token.
 
 - **Verify a release redeploy:** `synapse doctor --redeploy-checklist` prints
   package, service, roster, durable-state, and git-hook checks for a post-release
@@ -474,7 +477,8 @@ authorize execution, or certify agent/tool trust.
 
 `clients/go/synapse` provides the official Go client for read-only ops and CI
 tools. It fetches HTTP JSON surfaces such as `synapse dashboard` `/snapshot.json`
-through `DashboardSnapshot` or `GetJSON`, with optional bearer authentication.
+through `DashboardSnapshot` or `GetJSON`, with optional bearer authentication
+for dashboard tokens on exposed HTTP surfaces.
 It does not implement the WebSocket mutation protocol for claims, chat, board
 writes, release receipts, or presence. See the [Go client guide](docs/go-client.md).
 
@@ -826,7 +830,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 141 |
 | Wire message types | 53 |
 | CLI subcommands | 53 |
-| Test functions | 1884 |
+| Test functions | 1900 |
 | Benchmark harnesses | 5 |
 | Documentation pages | 33 |
 | GitHub Actions workflows | 10 |

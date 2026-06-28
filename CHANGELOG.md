@@ -14,6 +14,10 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added dashboard-local bearer authentication for `synapse dashboard`: loopback
+  dashboards remain unauthenticated by default, explicit `--dashboard-token`
+  protects browser and JSON requests, and non-loopback dashboard binds receive
+  a generated startup token when the operator does not provide one.
 - Added `synapse hub --paranoid` as a fail-closed local hub profile that
   requires token-protected access, a durable event log, metrics bearer-token auth
   when metrics are enabled, disables relaxed metrics/off-loopback switches, and

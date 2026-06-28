@@ -147,7 +147,10 @@ section. The task-dependency graph is read-only and does not mutate the
 blackboard. Dashboard branch conflicts use the same declared-claim metadata as
 `synapse conflicts`; they do not run git or apply `--check-diff` refinement. Use
 `--allow-non-loopback` only behind trusted local network controls because the
-page exposes agent names, claim scopes, branch names, and task text.
+page exposes agent names, claim scopes, branch names, and task text. Pass
+`--dashboard-token <token>` to require `Authorization: Bearer <token>` on `/`
+and `/snapshot.json`; when `--allow-non-loopback` exposes the dashboard and no
+token is supplied, Synapse generates and prints a startup token.
 
 ## Identities and groups
 
