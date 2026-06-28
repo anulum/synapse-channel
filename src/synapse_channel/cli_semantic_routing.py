@@ -17,6 +17,7 @@ from typing import Any
 
 from synapse_channel.cli_query_transport import AgentFactory
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.connect_failures import describe_connect_failure
 from synapse_channel.core.capability_directory import (
     CapabilityDirectory,
     build_capability_directory,
@@ -101,7 +102,14 @@ async def _fetch_routing_inputs(
     conn_task = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
-            print(f"[{name}] Could not reach hub at {uri}.")
+            print(
+                describe_connect_failure(
+                    name,
+                    uri,
+                    close_code=agent.last_close_code,
+                    close_reason=agent.last_close_reason,
+                )
+            )
             return None
         await agent.request_board()
         await agent.request_manifest()

@@ -38,6 +38,28 @@ def test_parser_registers_codex_tmux_start() -> None:
     assert args.codex_command == "codex"
 
 
+def test_parser_registers_wait_resilience_options() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "codex-tmux",
+            "wait",
+            "--identity",
+            "SYNAPSE-CHANNEL/codex-main",
+            "--session",
+            "synapse-codex-main",
+            "--submit-delay",
+            "0.7",
+            "--max-wait-failures",
+            "4",
+        ]
+    )
+
+    assert args.codex_tmux_command == "wait"
+    assert args.submit_delay == 0.7
+    assert args.max_wait_failures == 4
+    assert args.max_wakes is None
+
+
 def test_cmd_start_dispatches(capsys: Any, tmp_path: Path) -> None:
     captured: dict[str, CodexTmuxConfig] = {}
 
@@ -54,6 +76,7 @@ def test_cmd_start_dispatches(capsys: Any, tmp_path: Path) -> None:
         tmux_bin="tmux",
         synapse_bin="synapse",
         uri="ws://localhost:8876",
+        submit_delay=0.4,
         wake_jitter=0.0,
         max_wakes=1,
         token=None,
@@ -86,6 +109,7 @@ def test_cmd_status_dispatches(capsys: Any, tmp_path: Path) -> None:
         tmux_bin="tmux",
         synapse_bin="synapse",
         uri="ws://localhost:8876",
+        submit_delay=0.4,
         wake_jitter=0.0,
         max_wakes=1,
         token=None,
@@ -100,9 +124,12 @@ def test_cmd_status_dispatches(capsys: Any, tmp_path: Path) -> None:
 def test_cmd_wait_dispatches(tmp_path: Path) -> None:
     captured: dict[str, Any] = {}
 
-    def waiter(config: CodexTmuxConfig, *, max_wakes: int | None) -> int:
+    def waiter(
+        config: CodexTmuxConfig, *, max_wakes: int | None, max_wait_failures: int | None
+    ) -> int:
         captured["config"] = config
         captured["max_wakes"] = max_wakes
+        captured["max_wait_failures"] = max_wait_failures
         return 0
 
     ns = argparse.Namespace(
@@ -114,11 +141,15 @@ def test_cmd_wait_dispatches(tmp_path: Path) -> None:
         tmux_bin="tmux",
         synapse_bin="synapse",
         uri="ws://localhost:8876",
+        submit_delay=0.4,
         wake_jitter=0.0,
         max_wakes=3,
+        max_wait_failures=5,
         token=None,
     )
 
     assert cli_codex_tmux._cmd_codex_tmux(ns, waiter=waiter) == 0
     assert captured["config"].identity == "SYNAPSE-CHANNEL/codex-main"
+    assert captured["config"].submit_delay == 0.4
     assert captured["max_wakes"] == 3
+    assert captured["max_wait_failures"] == 5

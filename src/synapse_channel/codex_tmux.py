@@ -27,6 +27,29 @@ from synapse_channel.client.agent import DEFAULT_HUB_URI
 CODEX_PANE_COMMANDS = frozenset({"codex", "node"})
 """Pane command names that indicate a live Codex terminal stack."""
 
+DEFAULT_SUBMIT_DELAY = 0.4
+"""Seconds to wait between typing the wake prompt and pressing Enter.
+
+The Codex terminal UI ignores a submit key that arrives in the same
+``tmux send-keys`` invocation as the prompt text: the Enter is processed before
+the pasted line is committed to the input buffer, so the prompt is left sitting
+unsent. Typing the text and pressing Enter as two calls separated by this delay
+lets the UI settle and submit. See :func:`inject_wake`.
+"""
+
+DEFAULT_WAIT_RETRY_BASE = 1.0
+"""Initial backoff, in seconds, after a failed ``synapse wait`` attempt."""
+
+DEFAULT_WAIT_RETRY_CAP = 30.0
+"""Maximum backoff, in seconds, between failed ``synapse wait`` attempts."""
+
+
+class Sleeper(Protocol):
+    """Callable compatible with :func:`time.sleep` for injectable tests."""
+
+    def __call__(self, seconds: float, /) -> object:
+        """Sleep for ``seconds``."""
+
 
 class CommandRunner(Protocol):
     """Callable compatible with :func:`subprocess.run` for injectable tests."""
@@ -55,6 +78,7 @@ class CodexTmuxConfig:
     uri: str = DEFAULT_HUB_URI
     token: str | None = None
     registry_dir: Path | None = None
+    submit_delay: float = DEFAULT_SUBMIT_DELAY
 
 
 @dataclass(frozen=True)
@@ -209,29 +233,72 @@ def inject_wake(
     config: CodexTmuxConfig,
     *,
     runner: CommandRunner = subprocess.run,
+    sleeper: Sleeper = time.sleep,
     unsafe_payload: str | None = None,
 ) -> CodexTmuxWakeResult:
-    """Inject the fixed wake prompt into the configured tmux pane."""
+    """Inject the fixed wake prompt into the configured tmux pane.
+
+    The prompt text and the submit key are sent as two separate
+    ``tmux send-keys`` invocations with a :attr:`CodexTmuxConfig.submit_delay`
+    pause between them. A single invocation that appends the Enter key leaves the
+    prompt unsent in the Codex input buffer, because the terminal UI commits the
+    pasted line only after the Enter has already been consumed. The prompt is
+    typed literally (``-l``) so no word in it is mistaken for a tmux key name.
+
+    Parameters
+    ----------
+    config : CodexTmuxConfig
+        Wake target whose ``submit_delay`` paces the two-step send.
+    runner : CommandRunner, optional
+        Subprocess runner; injectable for testing.
+    sleeper : Sleeper, optional
+        Sleep callable used for the submit delay; injectable for testing.
+    unsafe_payload : str or None, optional
+        Ignored. Present so callers may pass the raw wait output without it ever
+        reaching the terminal, keeping a remote sender from injecting keystrokes.
+
+    Returns
+    -------
+    CodexTmuxWakeResult
+        ``injected`` is true only when both the type and submit calls succeed.
+    """
     del unsafe_payload
-    proc = runner(
+    type_proc = runner(
         [
             config.tmux_bin,
             "send-keys",
             "-t",
             config.session,
+            "-l",
             build_wake_prompt(config.identity),
-            "C-m",
         ],
         capture_output=True,
         text=True,
         check=False,
     )
-    _write_registry(config, last_inject_returncode=proc.returncode)
+    if type_proc.returncode != 0:
+        _write_registry(config, last_inject_returncode=type_proc.returncode)
+        return CodexTmuxWakeResult(
+            injected=False,
+            started=False,
+            returncode=type_proc.returncode,
+            detail=(type_proc.stderr or type_proc.stdout).strip() or "type failed",
+        )
+    sleeper(max(config.submit_delay, 0.0))
+    submit_proc = runner(
+        [config.tmux_bin, "send-keys", "-t", config.session, "Enter"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    _write_registry(config, last_inject_returncode=submit_proc.returncode)
     return CodexTmuxWakeResult(
-        injected=proc.returncode == 0,
+        injected=submit_proc.returncode == 0,
         started=False,
-        returncode=proc.returncode,
-        detail="injected" if proc.returncode == 0 else (proc.stderr or proc.stdout).strip(),
+        returncode=submit_proc.returncode,
+        detail="injected"
+        if submit_proc.returncode == 0
+        else (submit_proc.stderr or submit_proc.stdout).strip() or "submit failed",
     )
 
 
@@ -301,19 +368,70 @@ def _wait_command(config: CodexTmuxConfig) -> list[str]:
     return command
 
 
+def _backoff_delay(failures: int, *, base: float, cap: float) -> float:
+    """Return the capped exponential backoff for the ``failures``-th attempt."""
+    if failures <= 0:
+        return 0.0
+    return min(base * (2.0 ** (failures - 1)), cap)
+
+
 def wait_and_wake(
     config: CodexTmuxConfig,
     *,
     runner: CommandRunner = subprocess.run,
     max_wakes: int | None = None,
+    sleeper: Sleeper = time.sleep,
+    max_wait_failures: int | None = None,
+    retry_base: float = DEFAULT_WAIT_RETRY_BASE,
+    retry_cap: float = DEFAULT_WAIT_RETRY_CAP,
 ) -> int:
-    """Run the wait loop and inject the fixed prompt after successful wakes."""
+    """Run the wait loop and inject the fixed prompt after successful wakes.
+
+    A failed ``synapse wait`` no longer ends the loop. The hub being briefly
+    unreachable — a restart, a capacity eviction, a transient network drop — used
+    to kill the waker permanently, leaving the Codex pane unwoken until a human
+    relaunched it. Instead each failure is retried with capped exponential
+    backoff so the waker reattaches on its own once the hub returns.
+
+    Parameters
+    ----------
+    config : CodexTmuxConfig
+        Wake target driving the ``synapse wait`` command and tmux injection.
+    runner : CommandRunner, optional
+        Subprocess runner; injectable for testing.
+    max_wakes : int or None, optional
+        Stop after this many successful wakes; ``None`` runs until interrupted.
+    sleeper : Sleeper, optional
+        Sleep callable used for backoff and the submit delay; injectable for tests.
+    max_wait_failures : int or None, optional
+        Give up and return the wait return code after this many *consecutive*
+        failures. ``None`` (the default) retries indefinitely, which is what a
+        supervised daemon wants; the counter resets on every successful wait.
+    retry_base, retry_cap : float, optional
+        Base and ceiling, in seconds, for the exponential backoff between
+        consecutive failed waits.
+
+    Returns
+    -------
+    int
+        ``0`` on completing ``max_wakes``, the failing wait return code once
+        ``max_wait_failures`` consecutive failures are reached, or the failing
+        inject return code when a tmux send fails.
+    """
     wakes = 0
+    consecutive_failures = 0
     while max_wakes is None or wakes < max_wakes:
         wait_proc = runner(_wait_command(config), capture_output=True, text=True, check=False)
         if wait_proc.returncode != 0:
-            return wait_proc.returncode
-        wake = inject_wake(config, runner=runner, unsafe_payload=wait_proc.stdout)
+            consecutive_failures += 1
+            if max_wait_failures is not None and consecutive_failures >= max_wait_failures:
+                return wait_proc.returncode
+            sleeper(_backoff_delay(consecutive_failures, base=retry_base, cap=retry_cap))
+            continue
+        consecutive_failures = 0
+        wake = inject_wake(
+            config, runner=runner, sleeper=sleeper, unsafe_payload=wait_proc.stdout
+        )
         if wake.returncode != 0:
             return wake.returncode
         wakes += 1

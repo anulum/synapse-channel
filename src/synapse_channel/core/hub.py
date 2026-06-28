@@ -100,8 +100,17 @@ DEFAULT_PING_INTERVAL = 15.0
 """Seconds between server keepalive pings, so a dead socket is detected promptly."""
 DEFAULT_PING_TIMEOUT = 15.0
 """Seconds to wait for a ping reply before dropping the connection and freeing its name."""
-DEFAULT_MAX_CLIENTS = 64
-"""Maximum simultaneous connections; a further connect is closed with code 4013."""
+DEFAULT_MAX_CLIENTS = 256
+"""Maximum simultaneous connections; a further connect is closed with code 4013.
+
+Sized for a real multi-project fleet rather than a single demo. Each terminal
+holds two sockets — its command connection and its persistent ``-rx`` waiter —
+and presence daemons add more, so a few dozen active terminals quickly exceed a
+low ceiling. When the older default of 64 was hit, every new connection was
+rejected with 4013 while already-connected agents kept working, which read as a
+silent hub outage to anyone trying to join. Operators on constrained hosts can
+still lower this with ``--max-clients``.
+"""
 DEFAULT_MAX_MSG_BYTES = 1024 * 1024
 """Largest accepted inbound frame (bytes); a larger one is rejected by the transport."""
 DEFAULT_TAKEOVER_COOLDOWN = 2.0

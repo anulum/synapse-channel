@@ -291,6 +291,13 @@ synapse codex-tmux wait --identity api-dev/codex-main --session api-dev-codex --
 synapse codex-tmux status --identity api-dev/codex-main --session api-dev-codex --cwd "$PWD"
 ```
 
+`wait` types the fixed prompt and presses Enter as two steps separated by
+`--submit-delay` seconds, because the Codex UI ignores a submit key that arrives
+in the same keystroke batch as the pasted line. It retries a failed
+`synapse wait` with backoff instead of exiting, giving up only after
+`--max-wait-failures` consecutive failures (unbounded by default), so a hub
+restart does not permanently stop the waker.
+
 When a broadcast (`--target all`, or a `--priority`/`CEO` message that reaches a
 `--directed-only` waiter) wakes *every* terminal at the same instant, their agents
 all re-invoke and call the model provider at once. That synchronised burst trips the

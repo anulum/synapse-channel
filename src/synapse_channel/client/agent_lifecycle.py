@@ -35,11 +35,28 @@ def _is_connection_refused(exc: OSError) -> bool:
     return "Connect call failed" in text and f"[Errno {errno.ECONNREFUSED}]" in text
 
 
+def _received_close(exc: ConnectionClosedError) -> tuple[int | None, str]:
+    """Return the close code and reason the hub sent, if any.
+
+    Reads the received Close frame (``exc.rcvd``) rather than the deprecated
+    ``exc.code``/``exc.reason`` shortcuts. ``exc.rcvd`` is ``None`` when this side
+    initiated the close, in which case there is no hub-supplied code to report.
+    """
+    received = getattr(exc, "rcvd", None)
+    if received is None:
+        return None, ""
+    code = getattr(received, "code", None)
+    reason = str(getattr(received, "reason", "") or "")
+    return code, reason
+
+
 class _LifecycleAgent(Protocol):
     """Attributes and helper methods required by the lifecycle mixin."""
 
     connection: ClientConnection | None
     heartbeat_interval: float
+    last_close_code: int | None
+    last_close_reason: str
     name: str
     ping_interval: float
     ping_timeout: float
@@ -123,6 +140,7 @@ class AgentLifecycleMixin:
             elif self.verbose:
                 print(f"[{self.name}] Connection lost: {exc}")
         except ConnectionClosedError as exc:
+            self.last_close_code, self.last_close_reason = _received_close(exc)
             if self.verbose:
                 print(f"[{self.name}] Connection lost: {exc}")
         finally:

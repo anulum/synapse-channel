@@ -107,6 +107,31 @@ async def test_send_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) 
     assert "Could not reach hub" in capsys.readouterr().out
 
 
+async def test_send_reports_hub_at_capacity_distinctly(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # A real hub that is up but full must read as capacity, not as an absent hub.
+    async with running_hub(SynapseHub(max_clients=1)) as (_hub, uri):
+        filler = await connect_agent("FILLER", uri)
+        try:
+            code = await cli_messaging._send(
+                uri=uri,
+                name="USER",
+                target="all",
+                message="ping",
+                wait_seconds=0.0,
+                ready_timeout=2.0,
+            )
+        finally:
+            await close_agents(filler)
+
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "hub at capacity" in out
+    assert "code 4013" in out
+    assert "Could not reach hub" not in out
+
+
 def test_cmd_send_dispatches_real_command(capsys: pytest.CaptureFixture[str]) -> None:
     ns = argparse.Namespace(
         uri=f"ws://127.0.0.1:{_free_port()}",
