@@ -325,9 +325,7 @@ class SynapseHub:
         if isinstance(per_message_auth_keys, Mapping):
             self.per_message_auth_keys = dict(per_message_auth_keys)
         else:
-            self.per_message_auth_keys = {
-                key.key_id: key for key in (per_message_auth_keys or [])
-            }
+            self.per_message_auth_keys = {key.key_id: key for key in (per_message_auth_keys or [])}
         self.require_per_message_auth = bool(require_per_message_auth)
         self._message_replay = MessageReplayCache(
             window_seconds=per_message_auth_window_seconds,

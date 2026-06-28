@@ -35,10 +35,13 @@ async def test_configured_client_signs_mutating_envelopes_only() -> None:
     assert claim["auth"]["alg"] == "hmac-sha256"
     assert isinstance(claim["idem_key"], str)
     assert claim["idem_key"]
-    assert verify_frame(
-        claim,
-        keys={key.key_id: key},
-        replay_cache=MessageReplayCache(window_seconds=30.0, max_entries=16),
-        now=claim["auth"]["timestamp"],
-        required_sender="ALPHA",
-    ) == VerificationResult.OK
+    assert (
+        verify_frame(
+            claim,
+            keys={key.key_id: key},
+            replay_cache=MessageReplayCache(window_seconds=30.0, max_entries=16),
+            now=claim["auth"]["timestamp"],
+            required_sender="ALPHA",
+        )
+        == VerificationResult.OK
+    )

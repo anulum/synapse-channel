@@ -13,6 +13,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.59.0] - 2026-06-28
+
 ### Added
 - Added opt-in HMAC-SHA256 per-message authentication for selected mutating hub
   frames after WebSocket connect authentication. `synapse hub --message-auth-key
