@@ -37,9 +37,7 @@ def _parse_message_auth_keys(values: list[str]) -> list[MessageAuthKey]:
         senders = frozenset(sender.strip() for sender in sender_csv.split(",") if sender.strip())
         if not key_id or not secret or not senders:
             raise ValueError("--message-auth-key must use KEY_ID:SECRET:SENDER[,SENDER...]")
-        keys.append(
-            MessageAuthKey(key_id=key_id, secret=secret.encode("utf-8"), senders=senders)
-        )
+        keys.append(MessageAuthKey(key_id=key_id, secret=secret.encode("utf-8"), senders=senders))
     return keys
 
 

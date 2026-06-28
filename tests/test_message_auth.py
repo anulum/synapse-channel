@@ -61,20 +61,26 @@ def test_sign_and_verify_hmac_frame_records_replay_once() -> None:
         timestamp=100.0,
     )
 
-    assert verify_frame(
-        signed,
-        keys={key.key_id: key},
-        replay_cache=replay,
-        now=100.0,
-        required_sender="ALPHA",
-    ) == VerificationResult.OK
-    assert verify_frame(
-        signed,
-        keys={key.key_id: key},
-        replay_cache=replay,
-        now=100.0,
-        required_sender="ALPHA",
-    ) == VerificationResult.REPLAYED
+    assert (
+        verify_frame(
+            signed,
+            keys={key.key_id: key},
+            replay_cache=replay,
+            now=100.0,
+            required_sender="ALPHA",
+        )
+        == VerificationResult.OK
+    )
+    assert (
+        verify_frame(
+            signed,
+            keys={key.key_id: key},
+            replay_cache=replay,
+            now=100.0,
+            required_sender="ALPHA",
+        )
+        == VerificationResult.REPLAYED
+    )
 
 
 def test_verify_frame_reports_sender_sequence_key_and_timestamp_failures() -> None:
@@ -157,20 +163,26 @@ def test_verify_frame_allows_same_sequence_when_nonce_is_new() -> None:
         timestamp=100.0,
     )
 
-    assert verify_frame(
-        first,
-        keys={key.key_id: key},
-        replay_cache=replay,
-        now=100.0,
-        required_sender="ALPHA",
-    ) == VerificationResult.OK
-    assert verify_frame(
-        second,
-        keys={key.key_id: key},
-        replay_cache=replay,
-        now=100.0,
-        required_sender="ALPHA",
-    ) == VerificationResult.OK
+    assert (
+        verify_frame(
+            first,
+            keys={key.key_id: key},
+            replay_cache=replay,
+            now=100.0,
+            required_sender="ALPHA",
+        )
+        == VerificationResult.OK
+    )
+    assert (
+        verify_frame(
+            second,
+            keys={key.key_id: key},
+            replay_cache=replay,
+            now=100.0,
+            required_sender="ALPHA",
+        )
+        == VerificationResult.OK
+    )
 
 
 def test_verify_frame_rejects_future_timestamp_beyond_skew() -> None:
