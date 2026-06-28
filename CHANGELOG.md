@@ -13,6 +13,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.64.0] - 2026-06-28
+
 ### Added
 - Added an official typed TypeScript/JavaScript WebSocket client in `clients/js`
   (npm `@anulum/synapse-channel`). Unlike the read-only Go client it speaks the

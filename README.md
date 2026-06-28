@@ -870,8 +870,8 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | CLI subcommands | 67 |
 | Test functions | 2119 |
 | Benchmark harnesses | 5 |
-| Documentation pages | 33 |
-| GitHub Actions workflows | 10 |
+| Documentation pages | 34 |
+| GitHub Actions workflows | 11 |
 | Optional-dependency groups | 5 |
 
 This snapshot is a static inventory generated from the source tree. Performance and coverage claims have their own committed evidence — see `VALIDATION.md` and `benchmarks/`.
