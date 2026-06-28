@@ -66,8 +66,9 @@ The first design should support both broad and narrow collaboration scopes:
 
 Key discovery should be explicit. Capability cards or a future identity layer
 can advertise public encryption keys, but the hub must treat those keys as data
-until signed capability cards or per-agent identity exist. Operators need a
-manual trust-on-first-use path and a way to pin expected key fingerprints.
+until [signed capability cards](signed-capability-cards.md) or per-agent
+identity exist. Operators need a manual trust-on-first-use path and a way to pin
+expected key fingerprints.
 
 ## Membership operations
 
@@ -114,5 +115,6 @@ and ACLs exist, encrypted channels should remain opt-in and explicit rather
 than becoming the default coordination path. The
 [signed events and mTLS design](signed-events-mtls.md) can authenticate visible
 envelopes and trusted peers later, but it does not encrypt payloads. For
-audience scoping without body encryption, see the
-[private channels design](private-channels.md).
+advertisement tamper evidence, see the
+[signed capability cards design](signed-capability-cards.md). For audience
+scoping without body encryption, see the [private channels design](private-channels.md).

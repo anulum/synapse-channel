@@ -13,7 +13,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+- Added the public signed capability cards design for tamper-evident capability
+  advertisements, manifest/card digests, verification results, replay controls,
+  credential rotation, revocation, trust bundles, and advisory-discovery
+  boundaries before any signing runtime ships.
 
 ## [0.55.0] - 2026-06-28
 

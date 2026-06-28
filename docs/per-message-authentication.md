@@ -60,6 +60,12 @@ The hub should reject an authenticated frame whose sender does not match the
 key scope. This **sender binding** prevents one admitted participant from
 reusing another participant's key id.
 
+If an authenticated frame carries a capability advertisement, the future
+[signed capability cards design](signed-capability-cards.md) verifies the card
+content separately. Frame authentication proves transport authorship for that
+message; a card signature provides tamper evidence for the advertised discovery
+metadata after projection into manifests, directories, dashboards, or bridges.
+
 ## Replay controls
 
 Per-message authentication must include replay protection:

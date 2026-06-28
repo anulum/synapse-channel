@@ -129,6 +129,13 @@ deny-by-default authorization, credential rotation, revocation, and migration
 from shared-token mode. It is not implemented yet and does not replace
 per-message authentication, signed events, TLS, or host process isolation.
 
+The planned [signed capability cards](docs/signed-capability-cards.md) profile
+scopes tamper-evident capability advertisements for manifests, directories,
+dashboards, MCP resources, and A2A Agent Card projections. It is not implemented
+yet, leaves unsigned local cards as advisory discovery, and does not authorize
+tools, replace per-message authentication, replace signed events, or sandbox
+agents.
+
 ## Out of scope / known limitations
 
 - The connect token is a proportionate shared secret, **not** a cryptographic

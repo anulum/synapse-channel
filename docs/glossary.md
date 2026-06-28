@@ -154,6 +154,15 @@ metrics permission, A2A permission, dashboard permission, release permission,
 credential rotation, revocation, and migration from shared-token mode. It is not
 implemented yet and does not replace per-message authentication or signed events.
 
+### Signed capability cards
+
+Design target for tamper-evident capability advertisements. A signed capability
+card binds a canonical card, card signature, key id, agent binding, manifest
+digest, sequence binding, timestamp window, expiry, replay protection,
+credential rotation, revocation, trust bundle, capability downgrade diagnostics,
+and verification result. It is not implemented yet; unsigned cards remain
+advisory discovery.
+
 ### Paranoid mode
 
 Design target for one future operator switch that enables strict local settings

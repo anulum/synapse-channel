@@ -30,8 +30,9 @@ would change coordination truth:
 - Claim, release, renew, and checkpoint events.
 - Task declarations, dependency edits, status changes, and evidence updates.
 - Handoffs, release receipts, and owner approvals.
-- Capability card updates and route-relevant capability evidence, once signed
-  capability cards have their own profile.
+- Capability card update events and route-relevant capability evidence, once
+  [signed capability cards](signed-capability-cards.md) provide their own card
+  signing profile.
 
 Every signed event should carry an **event signature** envelope with these
 fields:
@@ -147,6 +148,10 @@ Signed events and mTLS sit beside the other security designs:
   Signatures can carry an asserted key id, but policy still needs
   identity-bound permissions before the hub can enforce who may perform each
   action.
+- [Signed capability cards](signed-capability-cards.md) remain a separate
+  profile for discovery advertisements, manifest digests, expiry, and capability
+  downgrade diagnostics. Signed events verify durable records around those
+  advertisements after admission.
 
 ## Boundaries
 
