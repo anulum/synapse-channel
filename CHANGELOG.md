@@ -13,6 +13,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.57.0] - 2026-06-28
+
 ### Fixed
 - The Codex tmux wake transport now types the wake prompt and presses Enter as
   two separate `tmux send-keys` calls with a configurable `--submit-delay`
