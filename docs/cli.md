@@ -45,6 +45,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse git-hook` | Install post-commit/post-merge hooks that auto-release a commit's claims. |
 | `synapse git-release` | Release the claims whose paths a commit or merge just touched. |
 | `synapse conflicts` | Predict cross-branch merge conflicts between overlapping claims; exit non-zero on a hit. |
+| `synapse verify-release` | Run declared verification commands and write an observed release receipt JSON. |
 | `synapse lock` | Hold a lease while running a command, to serialise it across agents. |
 | `synapse release` | Manually drop a claim you own (e.g. an `--auto-release-on manual` claim). |
 | `synapse task` | Declare and update the shared task plan. |
@@ -228,6 +229,29 @@ evidence, known failures, and `--freshness-seconds`: fresh positive evidence is
 `supported`, positive evidence without freshness is `needs_freshness`, old
 positive evidence is `stale`, declared known failures are `degraded`, and no
 positive evidence is `unsupported`.
+
+Use `synapse verify-release` when the closeout record must include observed
+command execution instead of hand-written evidence. The command runs each
+declared `--run` argv, records exit codes plus stdout/stderr SHA-256 digests,
+hashes named `--artifact` files, captures Git `HEAD`, tree, and changed files,
+and writes receipt JSON consumable by `synapse release --receipt`:
+
+```bash
+synapse verify-release BUILD --name api-dev \
+  --run ".venv/bin/python -m pytest tests/test_feature.py -q" \
+  --run ".venv/bin/python -m mypy --strict src/synapse_channel/feature.py" \
+  --artifact coverage.xml \
+  --output verified-release.json
+
+synapse release BUILD --name api-dev \
+  --receipt verified-release.json \
+  --receipt-json
+```
+
+The generated receipt is still advisory coordination evidence. A `supported`
+status means the submitted checks produced fresh positive evidence; it does not
+mean Synapse independently verified correctness, reviewed the commands, or
+proved the artifacts sufficient.
 
 `synapse git-claim` accepts the task id either positionally (`synapse git-claim
 TASK-1 --paths src`) or as a named field (`synapse git-claim --task-id TASK-1

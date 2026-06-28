@@ -13,7 +13,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+- Added `synapse verify-release`, which runs declared verification commands,
+  records observed stdout/stderr digests, artifact hashes, Git state, and writes
+  receipt JSON for `synapse release --receipt`.
 
 ## [0.60.0] - 2026-06-28
 

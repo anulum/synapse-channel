@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
 import pytest
 
@@ -62,6 +63,21 @@ def test_parser_release_accepts_receipt_fields() -> None:
     assert args.confidence == "medium"
     assert args.freshness_seconds == 30.0
     assert args.receipt_json is True
+
+
+def test_parser_release_accepts_verified_receipt_file() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "release",
+            "studio-panel-enrich",
+            "--name",
+            "USER",
+            "--receipt",
+            "verified-receipt.json",
+        ]
+    )
+
+    assert args.receipt == "verified-receipt.json"
 
 
 async def _claim(uri: str, owner: str, task_id: str) -> AgentHandle:
@@ -142,6 +158,58 @@ async def test_release_prints_machine_readable_receipt(capsys: pytest.CaptureFix
             "epistemic_reasons=known failures declared, positive evidence present"
         ),
     }
+
+
+async def test_release_ingests_verified_receipt_file(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    receipt_path = tmp_path / "verified-receipt.json"
+    receipt_path.write_text(
+        json.dumps(
+            {
+                "task_id": "studio-panel-enrich",
+                "owner": "USER",
+                "released": True,
+                "evidence": ["command: pytest tests/test_cli_locking_release.py -q exit=0"],
+                "artifacts": ["coverage.xml sha256=abc size=4"],
+                "known_failures": [],
+                "changed_files": ["src/synapse_channel/cli_locking.py"],
+                "generated_artifacts": ["docs/_generated/capability_manifest.json"],
+                "approvals": ["reviewed-by=owner"],
+                "confidence": "observed",
+                "freshness_seconds": 0.0,
+                "verification": {
+                    "commands": [],
+                    "artifacts": [],
+                    "changed_files": ["src/synapse_channel/cli_locking.py"],
+                    "git_head": "abc",
+                    "git_tree": "def",
+                    "timestamp": 123.0,
+                },
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    async with running_hub(SynapseHub()) as (hub, uri):
+        holder = await _claim(uri, "USER", "studio-panel-enrich")
+        await close_agents(holder)
+        code = await cli_locking._release(
+            uri=uri,
+            name="USER",
+            task_id="studio-panel-enrich",
+            receipt=receipt_path,
+            receipt_json=True,
+        )
+
+    assert code == 0
+    assert "studio-panel-enrich" not in hub.state.claims
+    receipt = json.loads(capsys.readouterr().out)
+    assert receipt["evidence"] == ["command: pytest tests/test_cli_locking_release.py -q exit=0"]
+    assert receipt["artifacts"] == ["coverage.xml sha256=abc size=4"]
+    assert receipt["changed_files"] == ["src/synapse_channel/cli_locking.py"]
+    assert receipt["confidence"] == "observed"
 
 
 async def test_release_denied_for_non_owner(capsys: pytest.CaptureFixture[str]) -> None:

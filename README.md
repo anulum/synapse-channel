@@ -621,6 +621,22 @@ synapse release BUILD --name api-dev \
   --receipt-json
 ```
 
+When closeout evidence should be observed rather than hand-entered,
+`synapse verify-release` runs declared commands, records exit codes and
+stdout/stderr SHA-256 digests, hashes named artifacts, captures Git `HEAD`,
+tree, and changed files, then writes receipt JSON for `synapse release --receipt`:
+
+```bash
+synapse verify-release BUILD --name api-dev \
+  --run ".venv/bin/python -m pytest tests/test_feature.py -q" \
+  --artifact coverage.xml \
+  --output verified-release.json
+synapse release BUILD --name api-dev --receipt verified-release.json --receipt-json
+```
+
+The resulting `supported` status remains advisory: it describes fresh submitted
+evidence, not independent proof that the checks or artifacts are sufficient.
+
 For safer task selection and release receipts, the local test ownership map
 connects source files to likely owning tests using AST imports plus a
 conservative filename fallback:
@@ -840,11 +856,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.60.0 |
 | Public API exports | 61 |
-| Package modules | 159 |
-| Classes | 161 |
+| Package modules | 161 |
+| Classes | 166 |
 | Wire message types | 59 |
-| CLI subcommands | 61 |
-| Test functions | 2007 |
+| CLI subcommands | 62 |
+| Test functions | 2018 |
 | Benchmark harnesses | 5 |
 | Documentation pages | 33 |
 | GitHub Actions workflows | 10 |
