@@ -34,6 +34,16 @@ All notable changes to this project are documented here.
   renderable snapshot. 100% line+branch.
 
 ### Changed
+- Extracted the hub's idempotency cache, durable-finding quota, and message-id counter
+  into `core/hub_ledger_guard.py` (`HubLedgerGuard`): the at-most-once replay guard, the
+  per-agent finding quota, and the strictly increasing message id now live in one class
+  the hub seeds from a durable-log replay, with `_next_msg_id` / `_remember` /
+  `reserve_finding_slot` / `_maybe_replay_duplicate` left as thin delegating wrappers
+  (the handler call surface is unchanged) and `_idempotency` / `_message_seq` still
+  readable off the hub. No behaviour change; the restart-survival of the at-most-once and
+  quota guarantees is identical. Final slice of the bounded hub decomposition, which took
+  `core/hub.py` from 1127 to 1009 lines and left it as the connection and message-routing
+  coordination core. 100% line+branch on the new module.
 - Removed four dead HTTP wrapper methods from the hub (`_http_ok`, `_http_unauthorized`,
   `_request_metrics_token`, `_metrics_authorised`) — superseded by the free functions in
   `core/hub_http.py` and with no remaining callers — and collapsed the redundant
