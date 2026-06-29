@@ -117,6 +117,7 @@ from synapse_channel.cli_shell import add_parsers as add_shell_parsers
 from synapse_channel.cli_streams import add_parsers as add_stream_parsers
 from synapse_channel.cli_tasks import add_parsers as add_task_parsers
 from synapse_channel.cli_verify_release import add_parsers as add_verify_release_parsers
+from synapse_channel.cli_workflow import add_parsers as add_workflow_parsers
 from synapse_channel.update_check import update_notice
 
 
@@ -223,6 +224,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_ttl_advice_parsers(sub)
 
     add_task_parsers(sub)
+
+    add_workflow_parsers(sub)
 
     add_doctor_parsers(sub)
 

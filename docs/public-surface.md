@@ -57,7 +57,7 @@ transport layer.
 Newer or advisory surfaces still settling; shape may change before 1.0. Use them,
 but pin to a version if you depend on their exact behaviour.
 
-`memory-recall`  `resource-bids`  `route-task`  `ttl-advice`
+`memory-recall`  `resource-bids`  `route-task`  `ttl-advice`  `workflow`
 
 ## Design-preview documentation
 

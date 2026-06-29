@@ -13,6 +13,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Added a declarative workflow layer (`core/workflow.py`, [docs](docs/workflows.md)):
+  a workflow is a plain JSON artifact (a name and steps with `depends_on` edges)
+  that compiles to ordinary blackboard tasks, so the board's existing ready/blocked
+  derivation executes it — no new runtime, no new dependency. Validation rejects
+  duplicate ids, dangling deps, self-dependencies, and cycles before anything is
+  posted; compilation namespaces task ids by workflow and emits them in dependency
+  order. New `synapse workflow validate` and `synapse workflow compile [--json]`
+  offline authoring commands. This is the first slice of the declarative
+  orchestration layer; a workflow driver follows.
+
 ## [0.67.0] - 2026-06-29
 
 ### Added
