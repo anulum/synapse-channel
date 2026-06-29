@@ -13,6 +13,20 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Added the federated trust **policy bundle** ([docs](docs/federated-trust-model.md)),
+  the first slice of the federated trust model. `core/federation.py` extends the
+  single-host trusted-peer notion to trusted peer *domains*: a `FederationPeer` records,
+  per remote domain, the local namespaces it may address, the accepted certificate pins
+  and event-signing key ids, the bounded local scope (`ScopeGrant`) its subjects map to,
+  and an expiry plus revocation. `FederationBundle.authorise` returns a deny-by-default
+  decision (unknown domain → revoked → expired → namespace → key → pin, in order), and
+  `compose_cross_domain` joins it with the external mutual TLS, signature, and ACL
+  results so a frame any layer rejects is rejected. Pure and crypto-free — it composes
+  the existing primitives and adds no trust root. 100% line+branch. The federation
+  runtime (bundle exchange, remote identity resolution, frame-path wiring) remains
+  research.
+
 ## [0.70.0] - 2026-06-29
 
 ### Added
