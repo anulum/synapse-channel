@@ -13,7 +13,19 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.66.0] - 2026-06-29
+
 ### Added
+- Added signed-event trust bundles and mutual-TLS enforcement for multi-host hub
+  deployments: operator trust bundles verify event signatures, certificate pins,
+  project scope, replay windows, and signing-key ids, with explicit
+  verification-result strings.
+- Completed the at-rest encryption runtime to the full local storage profile:
+  SQLite event stores and WAL/SHM sidecars, relay logs, A2A state files, archive
+  outputs, key-file permission checks, and a migration/rekey flow with backup,
+  recovery, and failure-safe startup notes.
 - Added the private-channel runtime completion tranche: `synapse channel
   history` returns bounded member-only live history, channel chat is journalled
   and relay-mirrored with explicit channel ids, `synapse relay --channel` /
@@ -47,6 +59,17 @@ All notable changes to this project are documented here.
   panel, a live progress stream, release receipts, and the capability manifest.
   It stays loopback-only and read-only, ships its CSS/JS as package data with no
   runtime dependencies, and keeps a server-rendered `<noscript>` fallback.
+
+### Changed
+- Event-signing and mutual-TLS modules import `cryptography` lazily, so the base
+  client, hub, and CLI install and import with only the `websockets` runtime
+  dependency; signing, mTLS, at-rest, and payload encryption pull the optional
+  `encryption` extra only when those features are used.
+
+### Security
+- Updated the JS client dev toolchain (vitest 3.x, vite 7.x, esbuild 0.28.x) to
+  clear five npm advisories in `clients/js`, including a critical vitest UI
+  arbitrary-file read/execute and a high vite `server.fs.deny` bypass on Windows.
 
 ## [0.65.0] - 2026-06-29
 
