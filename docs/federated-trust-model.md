@@ -98,12 +98,13 @@ Federation needs verification keys and certificate pins to move between domains,
 but Synapse is not a certificate authority and must not become one. Bundle
 exchange is therefore **out-of-band and operator-confirmed**: operators exchange
 domain bundles through their existing trusted channel (signed file, ticket,
-key-signing exchange) and import them explicitly. A future
-`synapse federation import` would record the bundle with its provenance — who
-provided it, when, and which operator confirmed it — so every federated trust
+key-signing exchange) and import them explicitly. `synapse federation import`
+(shipped) records the bundle with its provenance — who provided it, when, and which
+operator confirmed it (a required `--confirmed-by`) — so every federated trust
 relationship is auditable back to a human decision, not auto-discovered from the
-network. There is no automatic trust-on-first-use and no network-driven trust
-root.
+network; `synapse federation list` shows the imported peerings and `synapse federation
+revoke` retires one while keeping its audit record. There is no automatic
+trust-on-first-use and no network-driven trust root.
 
 ## Scoped cross-domain authorisation
 

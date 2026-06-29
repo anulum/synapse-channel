@@ -14,6 +14,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added `synapse federation import/list/revoke` ([docs](docs/federated-trust-model.md)):
+  the operator-facing layer over the federation policy bundle. `import` reads an
+  out-of-band peer-domain bundle, requires a `--confirmed-by` operator, records the
+  provenance (source, time, confirmer), and persists the peering; `list` shows the
+  imported peerings with their provenance; `revoke` marks a peering revoked so it fails
+  authorisation while keeping its audit record. No auto-discovery and no
+  trust-on-first-use — every peering is auditable to a human decision. Serialisation and
+  the store live in `core/federation_store.py` (pure; deny-by-default on omissions),
+  with a thin CLI shell. Classified `governance` in the surface taxonomy; 100%
+  line+branch on both modules.
 - Added the federated trust **policy bundle** ([docs](docs/federated-trust-model.md)),
   the first slice of the federated trust model. `core/federation.py` extends the
   single-host trusted-peer notion to trusted peer *domains*: a `FederationPeer` records,
