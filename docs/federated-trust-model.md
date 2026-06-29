@@ -41,9 +41,20 @@ federation layer would compose — it would add no new trust root of its own:
 - **Signed capability cards** (design) — a planned card-signing profile, see
   [signed capability cards](signed-capability-cards.md).
 
-There is no federation runtime: no cross-domain bundle exchange, no remote
-identity resolution, no cross-domain ACL evaluation, and no trust-root
-distribution. This document is the boundary specification for that future work.
+The first slice — the deny-by-default **policy bundle** — has shipped in
+`core/federation.py`: a `FederationPeer` records, per remote domain, the local
+namespaces it may address, the accepted certificate pins and event-signing key ids,
+the bounded local scope (`ScopeGrant` verb/namespace pairs) its subjects map to, and an
+expiry plus revocation; `FederationBundle.authorise` returns a deny-by-default decision
+(unknown domain, revoked, expired, namespace not granted, key not accepted, pin not
+accepted, in that order), and `compose_cross_domain` joins it with the external mutual
+TLS, signature, and ACL results so a frame any layer rejects is rejected. It owns no
+crypto and adds no trust root.
+
+The rest of the federation runtime is **not implemented**: no cross-domain bundle
+exchange, no remote identity resolution, no runtime wiring of the policy into the live
+frame path, and no trust-root distribution. This document is the boundary specification
+for that future work.
 
 ## Trust domains
 
