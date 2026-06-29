@@ -1,0 +1,51 @@
+{
+  "compaction_read_impact": [
+    {
+      "after_seconds": 0.2935851869988255,
+      "before_seconds": 0.39171894994797185,
+      "count": 50000,
+      "removed": 25000
+    }
+  ],
+  "host": {
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
+    "platform": "Linux-6.17.0-35-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3"
+  },
+  "read_since": [
+    {
+      "count": 1000,
+      "seconds": 0.006867029995191842
+    },
+    {
+      "count": 10000,
+      "seconds": 0.05892396502895281
+    },
+    {
+      "count": 50000,
+      "seconds": 0.39025232603307813
+    }
+  ],
+  "write_latency": [
+    {
+      "count": 50000,
+      "durable": false,
+      "max_us": 125389.59295488894,
+      "mean_us": 111.69271511607803,
+      "p50_us": 30.9899915009737,
+      "p95_us": 74.0140094421804,
+      "p99_us": 528.6289961077273,
+      "throughput_eps": 8910.510935105784
+    },
+    {
+      "count": 2000,
+      "durable": true,
+      "max_us": 73649.19799147174,
+      "mean_us": 2600.598892488051,
+      "p50_us": 1471.1779658682644,
+      "p95_us": 7693.696999922395,
+      "p99_us": 13882.127008400857,
+      "throughput_eps": 384.2068376125699
+    }
+  ]
+}
