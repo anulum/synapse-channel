@@ -14,6 +14,14 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the multi-hub observed-state fold ([docs](docs/multi-hub-sync.md)): the second
+  CRDT slice. `core/multihub_fold.py` folds a merged multi-hub log into the mergeable
+  view — the board (last-writer-wins per task), the grow-only progress ledger, and the
+  **observed claim** view. The claim view is the safety-critical part: it records the
+  latest claim each peer reports, tagged with the authoring hub and marked observed
+  (advisory), and **never grants a claim** — a release clears it, and a follower routes a
+  real claim request to the namespace's owning hub. Pure and deterministic; 100%
+  line+branch. The network follower is the remaining slice.
 - Added the multi-hub event-log union ([docs](docs/multi-hub-sync.md)), the first
   CRDT-shaped slice of multi-hub sync: `core/multihub_merge.py` tags each durable
   event with its authoring hub (`HubEvent`), merges several hubs' logs into a grow-only
