@@ -51,11 +51,79 @@ three slices:
   `seq` cursor, fetches a peer's events past it through an injected transport
   (`store_fetcher` reads a peer `EventStore` over its `read_since` seam), folds the union,
   and returns the observed view. Observe-only by construction: it grants no claim and,
-  losing a peer, simply stops advancing that peer's cursor — the fail-closed posture.
+  losing a peer, simply stops advancing that peer's cursor — the fail-closed posture. It
+  is exposed to operators as `synapse multihub observe` (the walkthrough below).
 
 What remains is the cross-host transport (the same follower behind an mTLS peer
 connection rather than a local store) and the namespace-ownership protocol that routes a
 real claim to its owning hub.
+
+## Observing a peer — a two-hub walkthrough
+
+The read-side layer above lets one operator *observe* another hub's coordination with no
+cross-hub service running. On a single machine — or any shared filesystem — run two hubs
+with separate event stores, do some work on each, and read the other's state.
+
+### 1. Run two hubs
+
+Each hub owns its own durable event store (`--db`):
+
+```bash
+synapse hub --port 8876 --db ./east.db &
+synapse hub --port 8877 --db ./west.db &
+```
+
+### 2. Coordinate on each
+
+Declare a task on each hub, and claim a file scope on one:
+
+```bash
+synapse task declare build --title "Build the wheel" --uri ws://localhost:8876
+synapse git-claim build --paths src/ --uri ws://localhost:8876
+
+synapse task declare docs --title "Write the docs" --uri ws://localhost:8877
+```
+
+### 3. Observe the peer
+
+East's operator reads west's coordination, read-only, straight from its event store:
+
+```bash
+synapse multihub observe --peer-db ./west.db --peer-id west
+```
+
+```text
+observing peer 'west' — 1 tasks, 0 progress notes, 0 observed claims
+board:
+  [open] docs — Write the docs
+```
+
+And west's operator observes east — including east's claim, which appears as an
+*observed* claim, never granted locally:
+
+```bash
+synapse multihub observe --peer-db ./east.db --peer-id east
+```
+
+```text
+observing peer 'east' — 1 tasks, 0 progress notes, 1 observed claims
+board:
+  [open] build — Build the wheel
+observed claims (advisory — not granted):
+  build -> <agent> @ east
+```
+
+`observe` reads the peer's event store through the same `read_since` seam the follower
+uses — SQLite WAL lets it read alongside the live peer hub — and prints the folded state.
+It grants nothing: a peer's claim is advisory here, and a real claim is still made on the
+owning hub. Add `--json` for a machine-readable `ObservedState`.
+
+### Where this stops
+
+This works because both event stores are reachable as files (same machine or a shared
+filesystem). Observing a hub on another host *without* file access — over an
+authenticated mTLS connection, with claims routed to the namespace's owning hub — is the
+remaining network-transport slice (see [Boundaries](#boundaries)).
 
 ## State, split by what merges
 
