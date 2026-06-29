@@ -205,6 +205,7 @@ class _FakeAgent:
         self._board_payload = board_payload
         self.posts: list[tuple[str, str, str, tuple[str, ...]]] = []
         self.assigns: list[tuple[str, str]] = []
+        self.cancels: list[tuple[str, str]] = []
 
     async def post_task(
         self,
@@ -220,8 +221,13 @@ class _FakeAgent:
         if self._board_payload is not None:
             self._boards.append(self._board_payload)
 
-    async def update_ledger_task(self, task_id: str, *, suggested_owner: str) -> None:
-        self.assigns.append((task_id, suggested_owner))
+    async def update_ledger_task(
+        self, task_id: str, *, suggested_owner: str | None = None, status: str | None = None
+    ) -> None:
+        if suggested_owner is not None:
+            self.assigns.append((task_id, suggested_owner))
+        if status is not None:
+            self.cancels.append((task_id, status))
 
 
 async def test_gateway_posts_reads_and_assigns() -> None:
@@ -241,6 +247,9 @@ async def test_gateway_posts_reads_and_assigns() -> None:
     await gateway.assign("w/a", "alpha")
     assert agent.assigns == [("w/a", "alpha")]
 
+    await gateway.cancel("w/a")
+    assert agent.cancels == [("w/a", "cancelled")]
+
 
 async def test_gateway_read_board_returns_empty_when_no_snapshot_arrives() -> None:
     boards: list[Any] = []
@@ -255,23 +264,33 @@ def _empty_state() -> WorkflowState:
     return WorkflowState(done=(), in_flight=(), ready=(), blocked=())
 
 
-def test_render_run_human_lists_assignments(capsys: pytest.CaptureFixture[str]) -> None:
+def test_render_run_human_lists_assignments_and_retirements(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     result = RunResult(
         complete=True,
         timed_out=False,
         polls=2,
         assignments=(("w/a", "alpha"),),
+        cancellations=("w/rollback",),
         state=_empty_state(),
     )
     _render_run(result, json_out=False)
     out = capsys.readouterr().out
     assert "workflow complete after 2 board reads" in out
     assert "w/a -> alpha" in out
+    assert "retired (branch not taken):" in out
+    assert "w/rollback" in out
 
 
 def test_render_run_human_reports_no_assignments(capsys: pytest.CaptureFixture[str]) -> None:
     result = RunResult(
-        complete=False, timed_out=True, polls=5, assignments=(), state=_empty_state()
+        complete=False,
+        timed_out=True,
+        polls=5,
+        assignments=(),
+        cancellations=(),
+        state=_empty_state(),
     )
     _render_run(result, json_out=False)
     out = capsys.readouterr().out
@@ -281,7 +300,12 @@ def test_render_run_human_reports_no_assignments(capsys: pytest.CaptureFixture[s
 
 def test_render_run_json(capsys: pytest.CaptureFixture[str]) -> None:
     result = RunResult(
-        complete=True, timed_out=False, polls=1, assignments=(), state=_empty_state()
+        complete=True,
+        timed_out=False,
+        polls=1,
+        assignments=(),
+        cancellations=(),
+        state=_empty_state(),
     )
     _render_run(result, json_out=True)
     assert json.loads(capsys.readouterr().out)["complete"] is True

@@ -20,6 +20,14 @@ unique and non-empty, every ``depends_on`` must reference a declared step, no st
 may depend on itself, and the dependency graph must be acyclic — a workflow with a
 cycle can never make progress, so it is rejected at authoring time rather than
 deadlocking the board.
+
+A dependency may be **conditional**: instead of waiting for a step to merely
+*finish*, a dependent can wait for a specific terminal outcome — ``done`` or
+``cancelled``. That lets a workflow branch on result (run one step on success,
+another on failure) rather than only gating on completion. The condition is carried
+through compilation but enforced by the driver, not the board: the board still sees
+plain dependency edges (so it gates on terminal-ness), while the driver decides
+whether the recorded outcome actually satisfies each conditional edge.
 """
 
 from __future__ import annotations
@@ -30,9 +38,32 @@ from typing import Any
 TASK_ID_SEPARATOR = "/"
 """Separator joining the workflow name and a step id into a board task id."""
 
+ANY_TERMINAL = ""
+"""Dependency condition meaning any terminal status satisfies the edge."""
+
+TERMINAL_CONDITIONS = frozenset({"done", "cancelled"})
+"""The terminal statuses a conditional dependency may require."""
+
 
 class WorkflowError(ValueError):
     """Raised when a workflow is malformed: bad fields, dangling deps, or a cycle."""
+
+
+@dataclass(frozen=True)
+class StepDependency:
+    """A dependency edge from one step to another, optionally conditioned on outcome.
+
+    Attributes
+    ----------
+    step : str
+        The step id this edge waits on.
+    on : str
+        The terminal status that satisfies the edge: ``"done"`` or ``"cancelled"``,
+        or :data:`ANY_TERMINAL` (``""``) when any terminal status will do.
+    """
+
+    step: str
+    on: str = ANY_TERMINAL
 
 
 @dataclass(frozen=True)
@@ -50,15 +81,16 @@ class WorkflowStep:
         and carried through compilation; the blackboard itself does not store it.
     description : str
         Optional longer description or acceptance notes.
-    depends_on : tuple[str, ...]
-        Step ids that must finish before this step is ready.
+    depends_on : tuple[StepDependency, ...]
+        The edges that must be satisfied before this step is ready, each optionally
+        conditioned on the dependency's terminal outcome.
     """
 
     step_id: str
     title: str
     task_class: str = ""
     description: str = ""
-    depends_on: tuple[str, ...] = ()
+    depends_on: tuple[StepDependency, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -93,6 +125,11 @@ class CompiledTask:
         Namespaced board task ids this task waits on.
     task_class : str
         Routing hint carried from the step for a driver to route on.
+    conditions : tuple[tuple[str, str], ...]
+        ``(namespaced_dep_id, required_terminal_status)`` pairs for the conditional
+        edges only. An edge absent here is unconditional — any terminal status of
+        the dependency satisfies it. Carried as driver metadata; the board never
+        sees the condition, only the plain ``depends_on`` edge.
     """
 
     task_id: str
@@ -100,6 +137,7 @@ class CompiledTask:
     description: str
     depends_on: tuple[str, ...]
     task_class: str
+    conditions: tuple[tuple[str, str], ...] = ()
 
     def declaration(self) -> dict[str, Any]:
         """Return the board-declaration kwargs (``task_class`` is driver metadata)."""
@@ -109,6 +147,13 @@ class CompiledTask:
             "description": self.description,
             "depends_on": list(self.depends_on),
         }
+
+    def required_status(self, dep_id: str) -> str:
+        """Return the terminal status ``dep_id`` must reach, or ``""`` if unconditional."""
+        for dependency, status in self.conditions:
+            if dependency == dep_id:
+                return status
+        return ANY_TERMINAL
 
 
 def _require_text(value: object, label: str) -> str:
@@ -124,6 +169,31 @@ def _require_text(value: object, label: str) -> str:
     return text
 
 
+def _parse_dependency(raw: object, step_id: str) -> StepDependency | None:
+    """Build one :class:`StepDependency` from a raw edge, or ``None`` if it is blank.
+
+    An edge is either a bare step id (``"build"`` — unconditional) or a mapping
+    (``{"step": "build", "on": "done"}``) carrying a terminal-outcome condition. The
+    ``on`` value, when present, must be a terminal status in
+    :data:`TERMINAL_CONDITIONS`.
+    """
+    if isinstance(raw, dict):
+        step = str(raw.get("step") or raw.get("id") or "").strip()
+        on = str(raw.get("on", ANY_TERMINAL)).strip()
+    else:
+        step = str(raw).strip()
+        on = ANY_TERMINAL
+    if not step:
+        return None
+    if on and on not in TERMINAL_CONDITIONS:
+        msg = (
+            f"step {step_id!r} dependency on {step!r} has invalid condition {on!r}; "
+            f"expected one of {sorted(TERMINAL_CONDITIONS)}"
+        )
+        raise WorkflowError(msg)
+    return StepDependency(step=step, on=on)
+
+
 def _parse_step(raw: object, index: int) -> WorkflowStep:
     """Build one :class:`WorkflowStep` from a raw mapping."""
     if not isinstance(raw, dict):
@@ -135,13 +205,17 @@ def _parse_step(raw: object, index: int) -> WorkflowStep:
     if not isinstance(depends_raw, (list, tuple)):
         msg = f"step {step_id!r} depends_on must be a list"
         raise WorkflowError(msg)
-    depends_on = tuple(dict.fromkeys(str(dep).strip() for dep in depends_raw if str(dep).strip()))
+    seen: dict[str, StepDependency] = {}
+    for edge in depends_raw:
+        dependency = _parse_dependency(edge, step_id)
+        if dependency is not None:
+            seen.setdefault(dependency.step, dependency)
     return WorkflowStep(
         step_id=step_id,
         title=title,
         task_class=str(raw.get("task_class", "")).strip(),
         description=str(raw.get("description", "")).strip(),
-        depends_on=depends_on,
+        depends_on=tuple(seen.values()),
     )
 
 
@@ -200,18 +274,18 @@ def validate_workflow(workflow: Workflow) -> None:
         ids.add(step.step_id)
     for step in workflow.steps:
         for dep in step.depends_on:
-            if dep == step.step_id:
+            if dep.step == step.step_id:
                 msg = f"step {step.step_id!r} depends on itself"
                 raise WorkflowError(msg)
-            if dep not in ids:
-                msg = f"step {step.step_id!r} depends on unknown step {dep!r}"
+            if dep.step not in ids:
+                msg = f"step {step.step_id!r} depends on unknown step {dep.step!r}"
                 raise WorkflowError(msg)
     _reject_cycle(workflow)
 
 
 def _reject_cycle(workflow: Workflow) -> None:
     """Raise :class:`WorkflowError` naming a step on a dependency cycle, if any."""
-    edges = {step.step_id: step.depends_on for step in workflow.steps}
+    edges = {step.step_id: tuple(dep.step for dep in step.depends_on) for step in workflow.steps}
     # 0 = unvisited, 1 = on the current DFS path, 2 = fully explored
     state: dict[str, int] = dict.fromkeys(edges, 0)
 
@@ -263,7 +337,7 @@ def compile_to_tasks(workflow: Workflow) -> tuple[CompiledTask, ...]:
         if step_id in placed:
             return
         for dep in by_id[step_id].depends_on:
-            place(dep)
+            place(dep.step)
         placed.add(step_id)
         ordered.append(step_id)
 
@@ -275,8 +349,11 @@ def compile_to_tasks(workflow: Workflow) -> tuple[CompiledTask, ...]:
             task_id=task_id(step_id),
             title=by_id[step_id].title,
             description=by_id[step_id].description,
-            depends_on=tuple(task_id(dep) for dep in by_id[step_id].depends_on),
+            depends_on=tuple(task_id(dep.step) for dep in by_id[step_id].depends_on),
             task_class=by_id[step_id].task_class,
+            conditions=tuple(
+                (task_id(dep.step), dep.on) for dep in by_id[step_id].depends_on if dep.on
+            ),
         )
         for step_id in ordered
     )

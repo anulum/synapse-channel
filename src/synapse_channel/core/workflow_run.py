@@ -67,6 +67,9 @@ class WorkflowGateway(Protocol):
     async def assign(self, task_id: str, agent: str) -> None:
         """Advise ``agent`` as the owner of ``task_id`` on the board."""
 
+    async def cancel(self, task_id: str) -> None:
+        """Retire ``task_id`` on the board (a conditional branch that was not taken)."""
+
 
 @dataclass(frozen=True)
 class RunResult:
@@ -83,6 +86,8 @@ class RunResult:
         How many board readings the loop took.
     assignments : tuple[tuple[str, str], ...]
         Every ``(task_id, agent)`` the loop wrote, in order, across all polls.
+    cancellations : tuple[str, ...]
+        Every task id the loop retired (a conditional branch not taken), in order.
     state : WorkflowState
         The phase buckets derived from the final board reading.
     """
@@ -91,6 +96,7 @@ class RunResult:
     timed_out: bool
     polls: int
     assignments: tuple[tuple[str, str], ...]
+    cancellations: tuple[str, ...]
     state: WorkflowState
 
     def to_dict(self) -> dict[str, object]:
@@ -100,6 +106,7 @@ class RunResult:
             "timed_out": self.timed_out,
             "polls": self.polls,
             "assignments": [{"task_id": tid, "agent": agent} for tid, agent in self.assignments],
+            "cancellations": list(self.cancellations),
             "state": self.state.to_dict(),
         }
 
@@ -149,6 +156,7 @@ async def run_workflow(
     """
     await gateway.post_tasks(tasks)
     written: list[tuple[str, str]] = []
+    retired: list[str] = []
     polls = 0
     while True:
         snapshot = await gateway.read_board()
@@ -160,8 +168,12 @@ async def run_workflow(
                 timed_out=False,
                 polls=polls,
                 assignments=tuple(written),
+                cancellations=tuple(retired),
                 state=state,
             )
+        for task_id in state.skipped:
+            await gateway.cancel(task_id)
+            retired.append(task_id)
         for assignment in plan_assignments(
             tasks, snapshot.status, agents, max_in_flight=max_in_flight
         ):
@@ -175,6 +187,7 @@ async def run_workflow(
                 timed_out=True,
                 polls=polls,
                 assignments=tuple(written),
+                cancellations=tuple(retired),
                 state=state,
             )
         await sleep(poll_interval)

@@ -105,12 +105,23 @@ def _cmd_compile(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 2
     if args.json:
-        payload = [{**task.declaration(), "task_class": task.task_class} for task in tasks]
+        payload = [
+            {
+                **task.declaration(),
+                "task_class": task.task_class,
+                "conditions": [{"dep": dep, "on": on} for dep, on in task.conditions],
+            }
+            for task in tasks
+        ]
         print(json.dumps(payload, indent=2))
         return 0
     print(f"{len(tasks)} blackboard tasks:")
     for task in tasks:
-        deps = ", ".join(task.depends_on) if task.depends_on else "(none)"
+        edges = [
+            f"{dep}:{task.required_status(dep)}" if task.required_status(dep) else dep
+            for dep in task.depends_on
+        ]
+        deps = ", ".join(edges) if edges else "(none)"
         task_class = f" [{task.task_class}]" if task.task_class else ""
         print(f"  {task.task_id}{task_class} <- {deps}")
     return 0
@@ -207,6 +218,10 @@ class _AgentGateway:
         """Advise ``agent`` as the owner of ``task_id`` on the board."""
         await self._agent.update_ledger_task(task_id, suggested_owner=agent)
 
+    async def cancel(self, task_id: str) -> None:
+        """Retire ``task_id`` on the board (a conditional branch that was not taken)."""
+        await self._agent.update_ledger_task(task_id, status="cancelled")
+
 
 def _render_run(result: RunResult, *, json_out: bool) -> None:
     """Print a driver run outcome, as JSON or readable lines."""
@@ -215,12 +230,16 @@ def _render_run(result: RunResult, *, json_out: bool) -> None:
         return
     outcome = "complete" if result.complete else "incomplete (deadline reached)"
     print(f"workflow {outcome} after {result.polls} board reads")
-    if not result.assignments:
+    if result.assignments:
+        print("assignments made:")
+        for task_id, agent in result.assignments:
+            print(f"  {task_id} -> {agent}")
+    else:
         print("no assignments made")
-        return
-    print("assignments made:")
-    for task_id, agent in result.assignments:
-        print(f"  {task_id} -> {agent}")
+    if result.cancellations:
+        print("retired (branch not taken):")
+        for task_id in result.cancellations:
+            print(f"  {task_id}")
 
 
 async def _drive_run(
