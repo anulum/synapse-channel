@@ -54,9 +54,9 @@ from synapse_channel.core.hub_exposure import (
     is_loopback_host,
 )
 from synapse_channel.core.hub_http import http_endpoint_response
+from synapse_channel.core.hub_ledger_guard import HubLedgerGuard
 from synapse_channel.core.hub_relay import RelayMirror
-from synapse_channel.core.idempotency import IdempotencyCache
-from synapse_channel.core.journal import record_idempotency, replay
+from synapse_channel.core.journal import replay
 from synapse_channel.core.ledger import (
     DEFAULT_MAX_PROGRESS,
     DEFAULT_MAX_PROGRESS_PER_AUTHOR,
@@ -76,7 +76,6 @@ from synapse_channel.core.message_auth import (
 )
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import (
-    RESOURCE_TYPE_ALIASES,
     MessageType,
     loads_bounded,
     system_message,
@@ -143,21 +142,6 @@ The durable log grows append-only and is never auto-compacted — pruning is saf
 below a sequence the read-side has already consumed, which the hub cannot know. So
 instead of silently growing or unsafely trimming, a hub started on a log larger than
 this emits a single startup hint to run :class:`compact` manually."""
-
-
-_MUTATING_TYPES = (
-    frozenset(
-        {
-            MessageType.CLAIM,
-            MessageType.RELEASE,
-            MessageType.TASK_UPDATE,
-            MessageType.HANDOFF,
-            MessageType.CHECKPOINT,
-        }
-    )
-    | RESOURCE_TYPE_ALIASES
-)
-"""Inbound message types eligible for idempotent replay protection."""
 
 
 class SynapseHub:
@@ -390,10 +374,14 @@ class SynapseHub:
         self.unauth_clients = self.clients.unauth_clients
         self.agent_sockets = self.clients.agent_sockets
         self.socket_agent = self.clients.socket_agent
-        self._idempotency = IdempotencyCache()
         self._waits: dict[str, str] = {}
-        self._findings_by_agent: dict[str, int] = {}
         self.capabilities = CapabilityRegistry()
+        # Ledger-guard seed (message id, idempotency cache, finding quota), resumed
+        # from a durable-log replay so the at-most-once and quota guarantees survive a
+        # restart, or empty for a purely in-memory hub.
+        message_seq = 0
+        finding_counts: Mapping[str, int] = {}
+        idempotency_seed: tuple[tuple[str, dict[str, Any]], ...] = ()
         if journal is not None:
             replayed = replay(
                 journal,
@@ -407,14 +395,12 @@ class SynapseHub:
             )
             self.state = replayed.state
             self.chat_history = replayed.chat_history[-self.max_history :]
-            self._message_seq = replayed.message_seq
             self.blackboard = replayed.blackboard
-            self._findings_by_agent = dict(replayed.finding_counts_by_actor)
-            # Rebuild the at-most-once guard so a retry after a restart replays the
-            # original response instead of re-applying the mutation. Seeded oldest
-            # first, the bounded cache keeps the most-recent keys.
-            for idem_key, idem_response in replayed.idempotency:
-                self._idempotency.put(idem_key, idem_response)
+            message_seq = replayed.message_seq
+            finding_counts = replayed.finding_counts_by_actor
+            # Seeded oldest first, the bounded cache keeps the most-recent keys, so a
+            # retry after a restart replays the original response instead of re-applying.
+            idempotency_seed = tuple(replayed.idempotency)
             # The durable log is append-only and never auto-compacted (pruning is safe
             # only below a sequence the read-side has consumed, which the hub cannot
             # know); a hub started on an oversized log emits one hint to compact manually.
@@ -435,95 +421,53 @@ class SynapseHub:
                 max_paths_per_claim=max_paths_per_claim,
             )
             self.chat_history = []
-            self._message_seq = 0
             self.blackboard = Blackboard(
                 max_progress=max_progress,
                 max_progress_per_author=max_progress_per_author,
                 max_progress_per_task=max_progress_per_task,
             )
+        self._ledger = HubLedgerGuard(
+            max_findings_per_agent=self.max_findings_per_agent,
+            journal=self.journal,
+            message_seq=message_seq,
+            finding_counts=finding_counts,
+            idempotency_seed=idempotency_seed,
+        )
+        # Aliased so existing callers and tests can read the live cache off the hub.
+        self._idempotency = self._ledger.idempotency
 
     # -- helpers --------------------------------------------------------------
 
+    @property
+    def _message_seq(self) -> int:
+        """Current per-hub message-id high-water mark (owned by the ledger guard)."""
+        return self._ledger.message_seq
+
     def _next_msg_id(self) -> int:
         """Return a strictly increasing per-hub message sequence number."""
-        self._message_seq += 1
-        return self._message_seq
-
-    @staticmethod
-    def _idempotency_key(data: dict[str, Any]) -> str:
-        """Return the client-supplied idempotency key, or an empty string."""
-        return str(data.get("idem_key") or "")
+        return self._ledger.next_msg_id()
 
     def _remember(self, data: dict[str, Any], response: dict[str, Any]) -> None:
         """Cache the response of an applied mutation under its idempotency key.
 
-        The cache is also journalled when a durable log is attached, so the
-        at-most-once guarantee survives a hub restart (a retried mutation replays
-        the original response rather than re-applying).
+        Thin wrapper over :class:`HubLedgerGuard`, kept because the leasing and
+        memory handlers call ``hub._remember`` directly.
         """
-        key = self._idempotency_key(data)
-        if key:
-            self._idempotency.put(key, response)
-            if self.journal is not None:
-                record_idempotency(self.journal, key, response)
+        self._ledger.remember(data, response)
 
     def reserve_finding_slot(self, agent: str) -> tuple[bool, str]:
-        """Reserve one durable-finding quota slot for ``agent``.
-
-        Parameters
-        ----------
-        agent : str
-            Hub-authenticated agent name that authored the finding.
-
-        Returns
-        -------
-        tuple[bool, str]
-            ``(True, message)`` when the slot was reserved, otherwise
-            ``(False, reason)`` when the agent already reached
-            :attr:`max_findings_per_agent`.
-        """
-        owner = agent.strip()
-        admitted = self._findings_by_agent.get(owner, 0)
-        if admitted >= self.max_findings_per_agent:
-            return (
-                False,
-                f"Agent '{owner}' has reached the {self.max_findings_per_agent} "
-                "durable-finding quota.",
-            )
-        self._findings_by_agent[owner] = admitted + 1
-        return True, f"Agent '{owner}' finding admitted."
+        """Reserve one durable-finding quota slot for ``agent`` (handler surface)."""
+        return self._ledger.reserve_finding_slot(agent)
 
     async def _maybe_replay_duplicate(
         self, msg_type: str, data: dict[str, Any], websocket: Any
     ) -> bool:
         """Replay the cached response for a duplicate mutation, if any.
 
-        Parameters
-        ----------
-        msg_type : str
-            The inbound message type.
-        data : dict[str, Any]
-            The decoded message.
-        websocket : Any
-            The sender's socket.
-
-        Returns
-        -------
-        bool
-            ``True`` when the message was a recognised duplicate of an already
-            applied mutation and its original response was re-sent to the sender;
-            ``False`` when the message should be processed normally.
+        Thin wrapper over :class:`HubLedgerGuard`, injecting the hub's per-socket
+        send so the guard re-sends the original response to the duplicate's sender.
         """
-        if msg_type not in _MUTATING_TYPES:
-            return False
-        key = self._idempotency_key(data)
-        if not key:
-            return False
-        cached = self._idempotency.get(key)
-        if cached is None:
-            return False
-        await self._send_json(websocket, cached)
-        return True
+        return await self._ledger.maybe_replay_duplicate(msg_type, data, websocket, self._send_json)
 
     def _system(self, payload: str, **extra: Any) -> dict[str, Any]:
         """Build a hub system message stamped with this hub's id."""
