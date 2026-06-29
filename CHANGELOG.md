@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Added the A2A bridge [validation receipts](docs/a2a-validation-receipts.md) template:
+  the community A2A validation track is now a set of reproducible receipts that survive
+  the bridge boundary — discovery, task lifecycle, webhook, proxy/TLS, replay, and
+  threat-model — rather than a single pass/fail, separating protocol compatibility from
+  operational safety. Adopted from a community contribution by Armorer Labs.
+
 ## [0.70.0] - 2026-06-29
 
 ### Added

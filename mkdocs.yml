@@ -101,6 +101,7 @@ nav:
   - Recipes: recipes.md
   - Examples: examples.md
   - Deployment: deployment.md
+  - A2A validation receipts: a2a-validation-receipts.md
   - Benchmarks: benchmarks.md
   - API reference: api.md
   - Troubleshooting: troubleshooting.md
