@@ -41,11 +41,14 @@ LEDGER_TASK_STATUSES = frozenset({"open", "in_progress", "blocked", "done", "can
 DEFAULT_LEDGER_TASK_STATUS = "open"
 """Status a freshly declared task starts in."""
 
-PROGRESS_KINDS = frozenset({"note", "blocked", "assessment", "usage"})
+PROGRESS_KINDS = frozenset({"note", "blocked", "assessment", "usage", "approval"})
 """Allowed kinds for a :class:`ProgressNote`.
 
 ``usage`` marks an opt-in model cost/token record whose text body follows the
 canonical accounting format (see :mod:`synapse_channel.core.accounting`).
+``approval`` marks a human-in-the-loop approval request or decision whose text
+body follows the canonical approval format (see
+:mod:`synapse_channel.core.approvals`).
 """
 
 DEFAULT_MAX_PROGRESS = 5000

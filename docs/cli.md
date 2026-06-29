@@ -18,7 +18,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse mcp-tools` / `synapse mcp-call` | List and call allowlisted tools on an external MCP server (outbound). |
 | `synapse a2a-card` | Print an Agent2Agent Agent Card projected from the live capability manifest. |
 | `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge. |
-| `synapse channel` | Manage private-channel membership (create/join/leave/list); pair with `synapse send --channel`. |
+| `synapse channel` | Manage private-channel membership and member-visible history; pair with `synapse send --channel`. |
 | `synapse encrypt-key` | Generate and check at-rest encryption key files (needs the `encryption` extra to encrypt). |
 | `synapse agent-tmux` | Wake an existing terminal-agent tmux session (Codex, Kimi, …) with a fixed safe prompt. |
 | `synapse codex-tmux` | Codex-defaulted alias of `agent-tmux`. |
@@ -35,6 +35,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse postmortem` | Build a replayable task postmortem from a hub SQLite event store. |
 | `synapse reliability` | Build evidence-only reliability memory from a hub SQLite event store. |
 | `synapse accounting` | Record and report opt-in model cost/token usage from a hub SQLite event store. |
+| `synapse approval` | Request, decide, and replay human-in-the-loop approval gates from a hub SQLite event store. |
 | `synapse ttl-advice` | Build read-only lease TTL advice from a hub SQLite event store. |
 | `synapse board` | Print the shared task/progress blackboard. |
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
@@ -414,6 +415,24 @@ synapse channel key-check ./payload.key
 The key file is a local 32-byte owner-only file. This first runtime tranche does
 not discover, rotate, revoke, or escrow keys.
 
+Private channels scope delivery without encrypting payloads:
+
+```bash
+synapse channel create ops --name alice
+synapse channel join ops --name bob
+synapse send --name alice --channel ops "operator note"
+synapse channel history ops --name bob --limit 20
+synapse relay ./feed.ndjson --channel ops
+synapse relay ./feed.ndjson --public-only
+synapse relay ./feed.ndjson --channel ops --channel-metadata
+synapse event-query ./synapse.db "channel ops between seq 1 999999"
+```
+
+The hub retains a bounded live history per channel for current members and
+journals channel chat with a visible channel id. Relay filtering can select one
+private channel or the default public lane. Event-query channel results expose
+metadata and payload byte length, not private payload bodies.
+
 For the common question workflow, use `syn ask <target> <message>`. It resolves
 the same identity as `syn say`, dispatches to `synapse send` with
 `--wait-seconds 30 --require-recipient`, and prints replies during that wait
@@ -506,12 +525,16 @@ synapse relay ./feed.ndjson --cursor ./feed.cursor
 synapse compact ./synapse.db --all --max-checkpoints-per-task 3 --archive-report ./compact-report.html
 synapse event-query ./synapse.db "task TASK-1 timeline"
 synapse event-query ./synapse.db "conflicts at seq 120" --json
+synapse event-query ./synapse.db "channel ops between seq 1 999999"
 synapse event-query ./synapse.db 'timeline("TASK-1").'
 synapse event-query ./synapse.db 'MATCH (task:TASK {id:"TASK-1"}) RETURN timeline'
 synapse postmortem ./synapse.db TASK-1
 synapse reliability ./synapse.db
 synapse accounting record --name alpha --task TASK-1 --model claude-opus-4-8 --input-tokens 1200 --output-tokens 300
 synapse accounting report ./synapse.db --pricing pricing.json --budget budget.json
+synapse approval request --name dev --subject TASK-1 --reason "needs human sign-off"
+synapse approval decide --name ceo --subject TASK-1 --approve --reason "ship it"
+synapse approval status ./synapse.db --pending
 synapse ttl-advice ./synapse.db
 synapse supervisor --idle-seconds 300 --history-multiplier 3
 ```
@@ -579,10 +602,13 @@ counts, board tasks, release receipt notes, and a bounded coordination timeline;
 
 `synapse event-query` is a temporal event-log query command for the same SQLite
 event store. It supports `task <id> timeline`, `task <id> at seq <n>`,
-`task <id> at time <seconds>`, `path <path> between <start> <end>`, and
-`conflicts at seq|time <n>`. It also accepts prototype aliases over the same
+`task <id> at time <seconds>`, `path <path> between <start> <end>`,
+`channel <id> between seq|time <start> <end>`, and `conflicts at seq|time <n>`.
+Channel queries return metadata-only records so private-channel bodies are not
+printed by this forensic path. It also accepts prototype aliases over the same
 model: Datalog-like `timeline("TASK").`, `state("TASK", seq, 120).`,
-`touches("src/auth.py", 0, 9999999999).`, `conflicts(seq, 120).`, plus
+`touches("src/auth.py", 0, 9999999999).`, `channel("ops", seq, 1, 99).`,
+`conflicts(seq, 120).`, plus
 Cypher-like `MATCH (task:TASK {id:"TASK"}) RETURN timeline` and related
 `AT`/`BETWEEN` forms. It is read-only forensic evidence: it reconstructs what
 the event log said at a sequence or timestamp, but it does not contact the live
@@ -613,6 +639,17 @@ cost from tokens, and `--budget budget.json` (agent → ceiling) for budget
 evidence. Budgets are evidence, not an enforcement gate: the report states spend
 against a ceiling, it does not block work. Non-Python clients can record usage by
 posting the identical note body.
+
+`synapse approval` runs a human-in-the-loop approval gate over the same ledger.
+`synapse approval request --name <actor> --subject <id>` posts an
+`approval`-kind note that puts the subject in `awaiting_approval`; `synapse
+approval decide --subject <id> --approve|--reject [--reason ...]` records the
+decision; and `synapse approval status ./synapse.db [--subject <id>] [--pending]
+[--json]` replays the notes into the current decision state per subject (the
+latest event wins, so a fresh request after a decision re-opens the gate). It is
+advisory evidence and an audit trail, not a hard runtime gate — nothing blocks a
+hub mutation. An approved subject can be cited in a release receipt via `synapse
+release --approval "<id>: approved by <actor>"`.
 
 `synapse ttl-advice ./synapse.db` builds read-only adaptive lease TTL advice from
 the same event store. It derives completed-task duration samples, active

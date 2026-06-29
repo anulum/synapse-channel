@@ -14,6 +14,12 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the private-channel runtime completion tranche: `synapse channel
+  history` returns bounded member-only live history, channel chat is journalled
+  and relay-mirrored with explicit channel ids, `synapse relay --channel` /
+  `--public-only` / `--channel-metadata` filter projections, and
+  `synapse event-query "channel <id> between seq <start> <end>"` returns
+  metadata-only channel evidence.
 - Added endpoint-side encrypted chat payloads: `synapse send --encrypt-key-file`
   writes an AES-256-GCM payload envelope with route-bound AAD, `synapse listen
   --decrypt-key-file` decrypts locally, and `synapse channel key-check`
@@ -27,6 +33,13 @@ All notable changes to this project are documented here.
   so usage exists only when recorded; budgets are evidence, not an enforcement
   gate. The canonical note format is documented so non-Python clients can record
   the identical body.
+- Added human-in-the-loop approval gates. `synapse approval request` puts a
+  subject (a held task or policy-gated release) in `awaiting_approval`, `synapse
+  approval decide --approve|--reject` records a decision, and `synapse approval
+  status` replays the `approval`-kind ledger notes into the current decision
+  state per subject (latest event wins, so a re-request re-opens the gate). It is
+  advisory evidence and an audit trail, not a hard runtime gate; an approved
+  subject can be cited in a release receipt via `synapse release --approval`.
 
 ## [0.65.0] - 2026-06-29
 
