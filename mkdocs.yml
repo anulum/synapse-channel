@@ -95,6 +95,7 @@ nav:
   - Sandboxed tools and marketplace: sandboxed-tools-and-marketplace.md
   - Federated trust model: federated-trust-model.md
   - Multi-hub sync (CRDT) research: multi-hub-sync.md
+  - Managed GitHub App (design): managed-github-app.md
   - Recipes: recipes.md
   - Examples: examples.md
   - Deployment: deployment.md
