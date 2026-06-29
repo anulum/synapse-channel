@@ -13,6 +13,19 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Added `synapse adapters list/install/uninstall` ([docs](docs/cross-agent-adapter-kits.md)),
+  the cross-agent adapter installer: it detects the coding tools on a machine (Claude
+  Code, Codex, Cursor, Aider, Copilot, Windsurf, Gemini CLI) and writes a thin
+  claim-aware adapter — "claim before edit, release on commit, reach the hub" — into
+  each tool's native config. Two write shapes follow each tool's convention: a
+  dedicated file Synapse owns, or a marker-wrapped block appended to a shared file;
+  installs are idempotent (re-install replaces, never duplicates) and `uninstall`
+  removes exactly what was added, leaving the tool's other config intact. Persona- and
+  framework-neutral; adds no new coordination primitive — it only routes existing
+  tools to the claims, releases, and presence that already exist. Pure catalogue +
+  planning in `adapters.py`, thin I/O shell in `cli_adapters.py`, 100% line+branch.
+
 ## [0.69.0] - 2026-06-29
 
 ### Fixed

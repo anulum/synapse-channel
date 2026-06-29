@@ -39,9 +39,11 @@ adds no new coordination primitive:
 - Typed **[Go](go-client.md)** and **[TypeScript/JavaScript](js-client.md)**
   clients speak the wire protocol directly.
 
-What is missing is a single `synapse adapters` step that detects the coding tools
-installed on a machine and writes a thin claim-aware adapter into each tool's
-native configuration location.
+The single `synapse adapters` step that detects the coding tools installed on a
+machine and writes a thin claim-aware adapter into each tool's native configuration
+location is **now shipped** for editor and CLI agents (`synapse_channel.adapters`
+plus `cli_adapters`). The Python-framework client shims remain the documented
+thin-client pattern over the existing client.
 
 ## The adapter contract
 
@@ -91,17 +93,30 @@ Tools fall into two shapes, and the kit needs both:
 
 ## `synapse adapters` surface
 
-The planned command set is read-first and reversible:
+The command set is read-first and reversible:
 
-- `synapse adapters list` — detect installed tools and print, for each, whether an
-  adapter is installed and where it would be written. Detection only; writes
-  nothing.
-- `synapse adapters install [TOOL ...] [--path ...] [--dry-run]` — write the
-  claim-aware adapter for detected (or named) tools; `--dry-run` prints the planned
-  writes. Each write is idempotent and clearly attributed so `uninstall` can
-  remove exactly what was added.
+- `synapse adapters list [TOOL ...]` — detect installed tools and print, for each,
+  whether an adapter is installed and where it would be written. Detection only;
+  writes nothing.
+- `synapse adapters install [TOOL ...] [--identity ID] [--uri URI] [--dry-run]` —
+  write the claim-aware adapter for detected (or named) tools; `--dry-run` prints the
+  planned writes. Each write is idempotent and marker-wrapped so `uninstall` removes
+  exactly what was added; re-installing replaces rather than duplicates.
 - `synapse adapters uninstall [TOOL ...]` — remove only Synapse-written adapter
-  content, leaving the tool's other configuration untouched.
+  content (delete a dedicated adapter file, or strip the marked block from a shared
+  one), leaving the tool's other configuration untouched.
+
+```bash
+synapse adapters list                       # who is installed and where
+synapse adapters install --identity proj/me # wire every detected tool
+synapse adapters uninstall cursor           # remove just one
+```
+
+Two write shapes follow each tool's convention: a **dedicated file** Synapse owns
+(Claude Code, Codex, Cursor, Copilot, Gemini CLI — uninstall deletes it) or a
+**marked block appended** to a file the tool also uses (Aider `CONVENTIONS.md`,
+Windsurf `.windsurfrules` — uninstall strips only the block). `--home`/`--project`
+override the roots; tool detection is a binary on `PATH` or a config directory.
 
 ## Prior art
 
@@ -115,8 +130,9 @@ coordination glue, not a roster.
 
 ## Boundaries
 
-Cross-agent adapter kits are **not implemented** as a single installer yet, and
-the design is deliberately narrow.
+The editor and CLI installer is **shipped**; the Python-framework client shims are
+not, and stay the documented thin-client pattern rather than a wrapper. The design is
+deliberately narrow.
 
 - Adapters are **thin and claim-aware only**: they carry "claim before edit,
   release on commit, reach the hub" into a tool's own conventions. They do not

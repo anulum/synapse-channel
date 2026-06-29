@@ -59,6 +59,6 @@ def test_cross_agent_adapter_kits_credits_prior_art_and_stays_neutral() -> None:
     assert "agency-agents" in text  # MIT prior art attribution
     assert "mit" in text
     assert "persona-neutral" in text
-    assert "not implemented" in text
+    assert "shipped" in text  # the editor/CLI installer is now implemented
     assert "reversible" in text
     assert "no new coordination primitive" in text
