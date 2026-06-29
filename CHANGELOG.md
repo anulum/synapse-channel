@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.68.0] - 2026-06-29
+
 ### Added
 - Added workflow fan-out / map-join ([docs](docs/workflows.md)): a step with a
   `for_each` list compiles to one parallel task per item (`<workflow>/<step>#<item>`),
