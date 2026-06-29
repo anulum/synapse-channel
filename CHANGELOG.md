@@ -19,6 +19,12 @@ All notable changes to this project are documented here.
   deny-by-default bundle exchange composing identity, signed events, mutual TLS,
   ACLs, and receipts across a domain boundary. It is a design boundary only: not
   implemented, not a certificate authority, and unchanged local-first default.
+- Added the [Agent Air Traffic Control architecture](docs/agent-air-traffic-control.md)
+  document that names how the shipped parts compose into one control loop —
+  separation (claims), merge-risk radar (conflicts), evidence-gated completion
+  (receipts, policy-check, approval), post-incident replay (postmortem,
+  reliability), and memory (the ingest seam). It is an architecture, not a
+  scheduler: only claims gate a mutation, everything else is read-only or advisory.
 
 ### Changed
 - `synapse event-query` now reads selectively instead of loading the whole event
