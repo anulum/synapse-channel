@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.67.0] - 2026-06-29
+
 ### Added
 - Added the [managed GitHub App design](docs/managed-github-app.md) for hosted
   cross-PR file-scope conflict prediction. It pins the boundary: the prediction
