@@ -37,8 +37,11 @@ from synapse_channel.core.sandbox_receipt import (
     EXIT_ERROR,
     EXIT_OK,
     EXIT_OUT_OF_FUEL,
+    PreflightReport,
     RunReceipt,
+    build_preflight_report,
     build_run_receipt,
+    digest_bytes,
 )
 
 WASM_EXTRA_HINT = "the WASM sandbox needs the optional extra: pip install 'synapse-channel[wasm]'"
@@ -59,6 +62,7 @@ class WasmRuntime(Protocol):
     WasiConfig: Any
     DirPerms: Any
     FilePerms: Any
+    FuncType: Any
     Trap: Any
     WasmtimeError: Any
     TrapCode: Any
@@ -158,6 +162,58 @@ def _execute(
         return EXIT_ERROR, b"", f"entrypoint '{entrypoint}' is not exported", config.fuel
     finally:
         timer.cancel()
+
+
+def _inspect_module(wasm: WasmRuntime, wasm_bytes: bytes) -> tuple[bool, tuple[str, ...], str]:
+    """Compile a module without instantiating it; return ``(valid, exported funcs, error)``.
+
+    Compiling validates the module's structure and is cheap — it neither instantiates the
+    module nor runs any of its code, so no fuel is spent and nothing the tool would do
+    happens. Only the names of its exported *functions* are returned (memory, table, and
+    global exports are not entrypoints). A malformed module yields ``(False, (), message)``.
+    """
+    engine = wasm.Engine(wasm.Config())
+    try:
+        module = wasm.Module(engine, wasm_bytes)
+    except wasm.WasmtimeError as err:
+        return False, (), str(err).splitlines()[0]
+    names = tuple(
+        sorted(
+            str(export.name) for export in module.exports if isinstance(export.type, wasm.FuncType)
+        )
+    )
+    return True, names, ""
+
+
+def preflight_sandboxed(
+    manifest: CapabilityManifest,
+    wasm_bytes: bytes,
+    *,
+    entrypoint: str = DEFAULT_ENTRYPOINT,
+    runtime: WasmRuntime | None = None,
+) -> PreflightReport:
+    """Pre-flight a tool against its manifest without running it — a cheap gate before a run.
+
+    Loads ``wasm_bytes`` as a WebAssembly module (validating its structure) and reads its
+    exported functions, but never instantiates or calls it: no fuel is spent and none of the
+    tool's behaviour happens. The returned :class:`PreflightReport` says whether the module
+    is well-formed, whether ``entrypoint`` is an exported function, whether the module
+    matches its manifest digest, and what it would be granted — so an operator can confirm a
+    tool is runnable (and is the module the manifest authorises) before ``run --approve``.
+
+    The runtime is resolved lazily through the optional ``[wasm]`` extra; override
+    ``runtime`` to inject a stand-in in tests.
+    """
+    wasm = runtime or _require_wasm()
+    module_valid, exported_functions, compile_error = _inspect_module(wasm, wasm_bytes)
+    return build_preflight_report(
+        manifest=manifest,
+        content_digest=digest_bytes(wasm_bytes),
+        module_valid=module_valid,
+        exported_functions=exported_functions,
+        entrypoint=entrypoint,
+        compile_error=compile_error,
+    )
 
 
 def run_sandboxed(

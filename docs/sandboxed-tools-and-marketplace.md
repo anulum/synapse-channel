@@ -40,6 +40,26 @@ operator approves. The surrounding trust and discovery scaffolding it builds on:
 The marketplace that would distribute sandboxed tools is not yet built; the rest of this
 document is its boundary specification.
 
+### Operator verbs
+
+The `synapse sandbox` CLI exposes three verbs, ordered as an operator works up to a run:
+
+- **`validate <manifest>`** — load a capability manifest and report the normalised,
+  deny-by-default grants it declares. A check of the policy, before any tool is involved.
+- **`test <tool.wasm> --manifest <manifest>`** — pre-flight the tool *without running it*:
+  compile the module, confirm the `--entrypoint` (default `run`) is an exported function,
+  and confirm the module matches its manifest digest. No fuel is spent and none of the
+  tool's behaviour happens — a runaway tool still pre-flights instantly. It exits `0` when
+  the tool is ready, `1` when the pre-flight ran but the tool is not ready (invalid module,
+  missing entrypoint, or digest mismatch), and `2` when it could not pre-flight at all, so
+  `sandbox test … && sandbox run … --approve` is a safe gate.
+- **`run <tool.wasm> --manifest <manifest> --approve`** — execute the tool under its
+  manifest, bound to the exact module by content digest, and print the bounded run receipt.
+  The explicit `--approve` keeps a capability-bearing run an operator decision.
+
+`test` and `run` need the optional `[wasm]` extra (`pip install 'synapse-channel[wasm]'`)
+and report that hint when it is absent rather than failing obscurely.
+
 ## The sandbox: capability-limited execution
 
 The isolation primitive is a WebAssembly runtime where an untrusted tool gets

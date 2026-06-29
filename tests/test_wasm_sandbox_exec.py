@@ -24,7 +24,7 @@ from synapse_channel.core.sandbox_receipt import (
     EXIT_OUT_OF_FUEL,
     digest_bytes,
 )
-from synapse_channel.core.wasm_sandbox import run_sandboxed
+from synapse_channel.core.wasm_sandbox import preflight_sandboxed, run_sandboxed
 
 wasmtime = pytest.importorskip("wasmtime")
 
@@ -32,6 +32,7 @@ _DIGEST = "sha256:" + "a" * 64
 _RUN_42 = wasmtime.wat2wasm('(module (func (export "run") (result i32) i32.const 42))')
 _SPIN = wasmtime.wat2wasm('(module (func (export "run") (result i32) (loop $l br $l) i32.const 0))')
 _UNREACHABLE = wasmtime.wat2wasm('(module (func (export "run") (result i32) unreachable))')
+_NO_RUN = wasmtime.wat2wasm('(module (func (export "other") (result i32) i32.const 1))')
 
 
 def _manifest(*, fuel: int = 1_000_000, wall_clock_ms: int = 2_000) -> CapabilityManifest:
@@ -79,6 +80,68 @@ def test_a_missing_entrypoint_is_an_error() -> None:
 def test_a_non_module_is_an_error() -> None:
     receipt = run_sandboxed(_manifest(), b"this is not a wasm module", b"")
     assert receipt["exit"] == EXIT_ERROR
+
+
+def _matching_manifest(wasm_bytes: bytes) -> CapabilityManifest:
+    """A manifest whose digest matches ``wasm_bytes``, so only the entrypoint check varies."""
+    return CapabilityManifest(
+        tool_id="calc",
+        content_digest=digest_bytes(wasm_bytes),
+        resources=ResourceGrant(memory_bytes=1 << 20, fuel=1_000_000, wall_clock_ms=2_000),
+    )
+
+
+def test_preflight_passes_a_runnable_tool() -> None:
+    report = preflight_sandboxed(_matching_manifest(_RUN_42), _RUN_42)
+    assert report["ok"] is True
+    assert report["module_valid"] is True
+    assert report["entrypoint_exported"] is True
+    assert report["digest_matches"] is True
+    assert "run" in report["exported_functions"]
+    assert report["reason"] == ""
+
+
+def test_preflight_does_not_execute_the_tool() -> None:
+    # _SPIN loops forever if run; a preflight only compiles and inspects exports, so it
+    # returns immediately and reports the tool ready — proof that nothing was executed.
+    report = preflight_sandboxed(_matching_manifest(_SPIN), _SPIN)
+    assert report["ok"] is True
+    assert report["entrypoint_exported"] is True
+
+
+def test_preflight_reports_a_missing_entrypoint() -> None:
+    report = preflight_sandboxed(_matching_manifest(_NO_RUN), _NO_RUN)
+    assert report["ok"] is False
+    assert report["module_valid"] is True
+    assert report["entrypoint_exported"] is False
+    assert report["exported_functions"] == ["other"]
+    assert report["reason"] == "entrypoint 'run' is not an exported function"
+
+
+def test_preflight_honours_a_custom_entrypoint() -> None:
+    report = preflight_sandboxed(_matching_manifest(_NO_RUN), _NO_RUN, entrypoint="other")
+    assert report["ok"] is True
+    assert report["entrypoint_exported"] is True
+
+
+def test_preflight_reports_a_malformed_module() -> None:
+    bad = b"this is not a wasm module"
+    report = preflight_sandboxed(_matching_manifest(bad), bad)
+    assert report["ok"] is False
+    assert report["module_valid"] is False
+    assert report["exported_functions"] == []
+    assert report["reason"].startswith("module is not valid WebAssembly:")
+
+
+def test_preflight_flags_a_module_that_does_not_match_its_manifest() -> None:
+    # a valid, runnable module, but the manifest was written for a different one
+    mismatched = CapabilityManifest(tool_id="calc", content_digest=_DIGEST)
+    report = preflight_sandboxed(mismatched, _RUN_42)
+    assert report["ok"] is False
+    assert report["module_valid"] is True
+    assert report["entrypoint_exported"] is True
+    assert report["digest_matches"] is False
+    assert "does not match the manifest" in report["reason"]
 
 
 def test_filesystem_grants_are_preopened(tmp_path: Path) -> None:
