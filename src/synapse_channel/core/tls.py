@@ -15,9 +15,6 @@ from enum import Enum
 from hashlib import sha256
 from pathlib import Path
 
-from cryptography import x509
-from cryptography.hazmat.primitives import serialization
-
 
 class HubTLSConfigError(ValueError):
     """Raised when the hub TLS certificate configuration is incomplete or invalid."""
@@ -118,6 +115,9 @@ class MTLSPeerTrustBundle:
 
 def _load_certificate_der(certfile: str | Path) -> bytes:
     """Load a PEM or DER certificate file and return DER bytes."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
+
     path = Path(certfile)
     try:
         data = path.read_bytes()

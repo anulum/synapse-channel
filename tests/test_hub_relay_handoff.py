@@ -39,7 +39,7 @@ async def test_relay_log_mirrors_broadcasts_in_compact_form(tmp_path: Path) -> N
             await read_until_type(ws, "chat")
 
     events, _ = read_jsonl_since(log, 0)
-    assert all(set(e) <= {"v", "i", "ty", "s", "to", "p", "t", "h"} for e in events)
+    assert all(set(e) <= {"v", "i", "ty", "s", "to", "p", "t", "h", "c"} for e in events)
     decoded = [decode_lite(e) for e in events]
     chats = [d for d in decoded if d["type"] == "chat"]
     assert chats[-1]["payload"] == "hello"

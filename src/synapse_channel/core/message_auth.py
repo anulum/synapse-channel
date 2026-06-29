@@ -19,13 +19,15 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from hashlib import sha256
-from typing import Any
-
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.protocol import RESOURCE_TYPE_ALIASES, MessageType
+
+if TYPE_CHECKING:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+        Ed25519PrivateKey,
+        Ed25519PublicKey,
+    )
 
 AUTH_ALGORITHM = "hmac-sha256"
 """Authentication algorithm value carried in signed frame metadata."""
@@ -172,6 +174,8 @@ class EventSignatureKey:
         EventSignatureKey
             Trust-bundle verification entry.
         """
+        from cryptography.hazmat.primitives import serialization
+
         return cls(
             key_id=key_id,
             public_key=private_key.public_key().public_bytes(
@@ -186,6 +190,8 @@ class EventSignatureKey:
 
     def verifier(self) -> Ed25519PublicKey:
         """Return the Ed25519 public key object for this trust entry."""
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
         return Ed25519PublicKey.from_public_bytes(self.public_key)
 
     def with_revoked(self, revoked: bool) -> EventSignatureKey:
@@ -518,6 +524,8 @@ def verify_event_signature(
     supplied = str(signature.get("value") or "")
     if not nonce or not supplied:
         return SignedEventVerificationResult.BAD_SIGNATURE
+    from cryptography.exceptions import InvalidSignature
+
     try:
         decoded_signature = base64.b64decode(supplied, validate=True)
         key.verifier().verify(decoded_signature, canonical_event_frame(frame))

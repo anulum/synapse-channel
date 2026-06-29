@@ -148,9 +148,12 @@ def test_rekey_backup_and_restore_round_trip_from_cli(
     new_key = tmp_path / "new.key"
     parser = cli.build_parser()
     for key in (old_key, new_key):
-        assert parser.parse_args(["encrypt-key", "generate", str(key)]).func(
-            parser.parse_args(["encrypt-key", "generate", str(key)])
-        ) == 0
+        assert (
+            parser.parse_args(["encrypt-key", "generate", str(key)]).func(
+                parser.parse_args(["encrypt-key", "generate", str(key)])
+            )
+            == 0
+        )
     capsys.readouterr()
     relay = tmp_path / "feed.ndjson"
     relay.write_bytes(b'{"ty":"chat"}\n')
@@ -207,9 +210,12 @@ def test_profile_reports_missing_and_plaintext_surfaces(
 ) -> None:
     key_path = tmp_path / "store.key"
     parser = cli.build_parser()
-    assert parser.parse_args(["encrypt-key", "generate", str(key_path)]).func(
-        parser.parse_args(["encrypt-key", "generate", str(key_path)])
-    ) == 0
+    assert (
+        parser.parse_args(["encrypt-key", "generate", str(key_path)]).func(
+            parser.parse_args(["encrypt-key", "generate", str(key_path)])
+        )
+        == 0
+    )
     capsys.readouterr()
     relay = tmp_path / "feed.ndjson"
     relay.write_text('{"ty":"chat"}\n', encoding="utf-8")
@@ -284,9 +290,12 @@ def test_runtime_commands_report_key_or_manifest_failures(
     assert "at-rest backup problem" in capsys.readouterr().out
 
     key_path = tmp_path / "store.key"
-    assert parser.parse_args(["encrypt-key", "generate", str(key_path)]).func(
-        parser.parse_args(["encrypt-key", "generate", str(key_path)])
-    ) == 0
+    assert (
+        parser.parse_args(["encrypt-key", "generate", str(key_path)]).func(
+            parser.parse_args(["encrypt-key", "generate", str(key_path)])
+        )
+        == 0
+    )
     bad_manifest = tmp_path / "bad-manifest.json"
     bad_manifest.write_text("{}", encoding="utf-8")
     capsys.readouterr()
