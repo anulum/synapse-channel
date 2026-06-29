@@ -13,7 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-No unreleased changes.
+### Changed
+- `synapse event-query` now reads selectively instead of loading the whole event
+  store for every query: each query pushes its sequence/time window and required
+  event kinds into SQLite (`EventStore.read_window`), so memory is bounded by the
+  query window rather than the log size. Results are unchanged — the loaded
+  window is always a superset of the events a query keeps. Added `--limit N` to
+  cap printed output to the most recent N records and conflict pairs.
 
 ## [0.66.0] - 2026-06-29
 

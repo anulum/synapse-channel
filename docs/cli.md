@@ -614,6 +614,17 @@ Cypher-like `MATCH (task:TASK {id:"TASK"}) RETURN timeline` and related
 the event log said at a sequence or timestamp, but it does not contact the live
 hub or certify that a merge is safe.
 
+Queries read selectively rather than loading the whole store. Each query pushes
+its sequence/time window and the event kinds it needs into SQLite, so a query
+deserialises only candidate rows even as a dogfood event log grows large — the
+result is identical to a full scan because the loaded window always contains
+every event the query keeps. Memory is bounded by the query window, not the log
+size: a point-in-time query (`at seq|time`) never loads events after its cutoff,
+and a range query (`between`) loads only its window. `--limit N` additionally
+caps the printed output to the most recent `N` records (and conflict pairs); it
+bounds output, not the reconstruction, so task-state and conflict results stay
+correct.
+
 `synapse postmortem ./synapse.db TASK-1` builds a replayable postmortem from the
 same event store. The Markdown or `--json` report lists the task timeline,
 observed owners, release events, assessment evidence, reconstructed path-overlap
