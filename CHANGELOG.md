@@ -14,6 +14,13 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added a public-surface taxonomy (`surface_taxonomy.py`, [docs](docs/public-surface.md)):
+  every CLI subcommand is classified into a stability tier — stable core, adapters,
+  read-only analysis, advisory governance, or experimental — and design-preview
+  documentation pages are tracked separately. A regression test asserts the
+  taxonomy and the live parser agree, so a new subcommand cannot ship unclassified
+  and a removed one cannot linger. Makes the daily-safe surface obvious while
+  keeping the pre-1.0 honesty.
 - Added an operator risk view to the dashboard (`dashboard_risk.py`): the
   `snapshot.json` now carries a `risk` section, and the cockpit shows a Risk panel
   with a red/amber/green verdict, a priority-ordered signal list (stale leases and
