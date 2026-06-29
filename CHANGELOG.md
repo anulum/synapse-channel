@@ -14,6 +14,14 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the multi-hub event-log union ([docs](docs/multi-hub-sync.md)), the first
+  CRDT-shaped slice of multi-hub sync: `core/multihub_merge.py` tags each durable
+  event with its authoring hub (`HubEvent`), merges several hubs' logs into a grow-only
+  set keyed by `(hub_id, seq)` — duplicates collapse, a conflicting reused id keeps the
+  first — replays them in the deterministic `(ts, hub_id, seq)` total order, and reports
+  the per-hub high-water cursor a follower resumes from. Pure and I/O-free; it folds no
+  state and grants no claims (claims are mutual exclusion, never merged). 100%
+  line+branch. The state fold and the network follower are the remaining slices.
 - Added the Studio design system (A0) and its reference page ([docs](docs/studio.md)):
   the dashboard begins growing from a read-only cockpit into an operator Studio. A new
   dependency-free `dashboard_assets/studio.css` carries the instrument-panel language —
