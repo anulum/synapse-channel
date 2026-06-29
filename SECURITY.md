@@ -130,6 +130,13 @@ capability observations, handoff outcomes, and conflict history. It is not
 implemented yet and does not rank agents, assign trust grades, authorize
 execution, replace code review, or replace identity and ACL.
 
+The planned [federated trust model](docs/federated-trust-model.md) profile scopes
+how independent operator-managed domains could peer: out-of-band, deny-by-default
+bundle exchange that composes identity, signed events, mutual TLS, ACLs, and
+receipts across a domain boundary. It is not implemented yet, is not a
+certificate authority, does not authorize untrusted organisations, does not
+weaken any single check it composes, and does not change the local-first default.
+
 The planned [signed events and mTLS](docs/signed-events-mtls.md) profile scopes
 event signatures, key rotation, replay protection, verification results, trust
 bundles, certificate pinning, and trusted multi-host peers. It is not

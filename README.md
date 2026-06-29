@@ -785,6 +785,12 @@ outcomes, and conflict history into an inspectable evidence graph for routing
 review. It is not implemented yet and does not rank agents, assign trust grades,
 authorize execution, replace code review, or replace identity and ACL.
 
+The planned [federated trust model](docs/federated-trust-model.md) profile
+designs how independent operator-managed domains could peer — out-of-band,
+deny-by-default bundle exchange composing identity, signed events, mutual TLS,
+ACLs, and receipts across a domain boundary. It is not implemented yet, is not a
+certificate authority, and does not change the local-first default.
+
 Use `synapse ttl-advice ./synapse.db` for read-only adaptive lease TTL advice.
 It derives completed-task duration samples, active live-claim counts, and stale
 claim counts from the event log, then prints an advisory default. It never
@@ -904,9 +910,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 206 |
 | Wire message types | 61 |
 | CLI subcommands | 83 |
-| Test functions | 2274 |
+| Test functions | 2278 |
 | Benchmark harnesses | 5 |
-| Documentation pages | 34 |
+| Documentation pages | 35 |
 | GitHub Actions workflows | 11 |
 | Optional-dependency groups | 5 |
 
