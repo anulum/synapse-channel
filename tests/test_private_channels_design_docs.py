@@ -57,6 +57,7 @@ def test_private_channels_design_covers_membership_and_retention() -> None:
         "leave policy",
         "invitation",
         "membership audit",
+        "bounded member-only channel history",
         "history visibility",
         "retention boundary",
         "relay log filtering",
@@ -72,7 +73,7 @@ def test_private_channels_design_keeps_boundaries_clear() -> None:
 
     required_boundaries = (
         "design target",
-        "not implemented yet",
+        "metadata-only",
         "does not encrypt payloads",
         "does not replace end-to-end encrypted channels",
         "does not create cryptographic identity",

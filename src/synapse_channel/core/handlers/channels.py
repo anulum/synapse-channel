@@ -100,3 +100,35 @@ async def handle_channel_list_request(
             channels=hub.channels.channels_for(sender),
         ),
     )
+
+
+async def handle_channel_history_request(
+    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+) -> None:
+    """Return retained channel history visible to the requester."""
+    channel = str(data.get("channel") or "").strip()
+    try:
+        limit = max(0, int(data.get("limit", 20)))
+    except (TypeError, ValueError):
+        limit = 20
+    if not hub.channels.is_member(channel, sender):
+        await _reply(
+            hub,
+            websocket,
+            sender=sender,
+            channel=channel,
+            ok=False,
+            message=f"not a member of channel '{channel}'",
+        )
+        return
+    await hub._send_json(
+        websocket,
+        hub._system(
+            "channel history",
+            msg_type=MessageType.CHANNEL_HISTORY,
+            target=sender,
+            channel=channel,
+            messages=hub.channels.history_for(channel, sender, limit=limit),
+            retention={"max_messages": hub.max_history},
+        ),
+    )

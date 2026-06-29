@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.handlers.channels import (
     handle_channel_create,
+    handle_channel_history_request,
     handle_channel_join,
     handle_channel_leave,
     handle_channel_list_request,
@@ -84,6 +85,7 @@ DISPATCH: dict[str, Handler] = {
     MessageType.CHANNEL_JOIN: handle_channel_join,
     MessageType.CHANNEL_LEAVE: handle_channel_leave,
     MessageType.CHANNEL_LIST_REQUEST: handle_channel_list_request,
+    MessageType.CHANNEL_HISTORY_REQUEST: handle_channel_history_request,
     **{alias: handle_resource for alias in RESOURCE_TYPE_ALIASES},
 }
 

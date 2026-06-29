@@ -112,3 +112,48 @@ def test_snapshot_is_sorted_and_json_friendly() -> None:
     assert snapshot[0]["members"] == ["bob", "carol"]
     assert snapshot[1]["label"] == "Bee"
     assert snapshot[1]["owner"] == "alice"
+
+
+def test_channel_history_is_member_visible_and_bounded() -> None:
+    registry = ChannelRegistry()
+    registry.create("ops", owner="alice")
+    registry.join("ops", "bob")
+
+    for msg_id in range(1, 4):
+        registry.retain_message(
+            "ops",
+            {
+                "type": "chat",
+                "sender": "alice",
+                "payload": f"note-{msg_id}",
+                "msg_id": msg_id,
+                "channel": "ops",
+            },
+            max_messages=2,
+        )
+
+    assert [item["payload"] for item in registry.history_for("ops", "bob")] == [
+        "note-2",
+        "note-3",
+    ]
+    assert registry.history_for("ops", "carol") == []
+    assert registry.history_for("ops", "alice", limit=1)[0]["payload"] == "note-3"
+
+
+def test_channel_history_returns_copies() -> None:
+    registry = ChannelRegistry()
+    registry.create("ops", owner="alice")
+    registry.retain_message("ops", {"payload": "original", "channel": "ops"}, max_messages=20)
+
+    visible = registry.history_for("ops", "alice")
+    visible[0]["payload"] = "mutated"
+
+    assert registry.history_for("ops", "alice")[0]["payload"] == "original"
+
+
+def test_retain_message_ignores_unknown_channel() -> None:
+    registry = ChannelRegistry()
+
+    registry.retain_message("missing", {"payload": "ignored"}, max_messages=20)
+
+    assert registry.history_for("missing", "alice") == []

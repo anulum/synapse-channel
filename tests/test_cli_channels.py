@@ -30,6 +30,10 @@ def test_parser_registers_channel_subcommands() -> None:
     assert create.label == "Ops"
     listing = parser.parse_args(["channel", "list", "--name", "A"])
     assert listing.channel_command == "list"
+    history = parser.parse_args(["channel", "history", "ops", "--name", "A", "--limit", "7"])
+    assert history.channel_command == "history"
+    assert history.channel == "ops"
+    assert history.limit == 7
 
 
 def test_parser_registers_channel_key_check() -> None:
@@ -61,6 +65,24 @@ def test_print_reply_renders_results_and_lists(capsys: pytest.CaptureFixture[str
     assert "(none)" in capsys.readouterr().out
 
 
+def test_print_reply_renders_channel_history_with_non_dict_rows(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = cli_channels._print_reply(
+        {
+            "type": MessageType.CHANNEL_HISTORY,
+            "channel": "ops",
+            "messages": [{"sender": "alice", "payload": "one"}, "legacy"],
+        }
+    )
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "history ops: 2 message(s)" in out
+    assert "alice: one" in out
+    assert "legacy" not in out
+
+
 async def test_channel_cli_create_then_list_against_real_hub(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -90,6 +112,21 @@ async def test_channel_cli_create_then_list_against_real_hub(
         )
         assert listed == 0
         assert "release" in capsys.readouterr().out
+
+
+async def test_send_channel_op_dispatches_history_request() -> None:
+    class _Agent:
+        def __init__(self) -> None:
+            self.requested: tuple[str, int] | None = None
+
+        async def request_channel_history(self, channel: str, *, limit: int = 20) -> None:
+            self.requested = (channel, limit)
+
+    agent = _Agent()
+
+    await cli_channels._send_channel_op(cast(Any, agent), "history", "ops", "")
+
+    assert agent.requested == ("ops", 20)
 
 
 def test_print_reply_ok_without_members(capsys: pytest.CaptureFixture[str]) -> None:
@@ -232,3 +269,17 @@ def test_channel_key_check_validates_payload_key_file(
     out = capsys.readouterr().out
     assert "payload key ok" in out
     assert "fingerprint=" in out
+
+
+def test_channel_key_check_reports_invalid_payload_key_file(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    missing = tmp_path / "missing.key"
+
+    code = cli_channels._cmd_channel_key_check(
+        argparse.Namespace(channel_command="key-check", key_file=str(missing))
+    )
+
+    assert code == 1
+    assert "payload key invalid" in capsys.readouterr().out

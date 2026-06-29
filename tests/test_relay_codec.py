@@ -27,12 +27,13 @@ def test_encode_lite_uses_short_keys() -> None:
         "hub_id": "syn-abc",
     }
     packed = encode_lite(raw)
-    assert set(packed.keys()) == {"v", "i", "ty", "s", "to", "p", "t", "h"}
+    assert set(packed.keys()) == {"v", "i", "ty", "s", "to", "p", "t", "h", "c"}
     assert packed["v"] == LITE_VERSION
     assert packed["i"] == 42
     assert packed["p"] == "hello"
     assert packed["t"] == int(1700000000.123 * 1000.0)
     assert packed["h"] == "syn-abc"
+    assert packed["c"] == ""
 
 
 def test_encode_lite_short_keys_match_the_shared_schema() -> None:
@@ -81,6 +82,25 @@ def test_decode_lite_inverts_encode_to_millisecond_precision() -> None:
         "msg_id": 7,
         "hub_id": "syn-xyz",
     }
+
+
+def test_decode_lite_preserves_channel_id() -> None:
+    restored = decode_lite(
+        encode_lite(
+            {
+                "msg_id": 8,
+                "type": "chat",
+                "sender": "alice",
+                "target": "all",
+                "payload": "private",
+                "timestamp": 1700000000.125,
+                "hub_id": "syn-xyz",
+                "channel": "ops",
+            }
+        )
+    )
+
+    assert restored["channel"] == "ops"
 
 
 def test_decode_lite_uses_defaults_for_missing_and_malformed_keys() -> None:

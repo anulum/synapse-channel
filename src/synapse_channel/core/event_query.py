@@ -80,6 +80,12 @@ _DATALOG_CONFLICTS_RE = re.compile(
     r"(?P<cutoff>[^,\s)]+)\s*\)\.?$",
     re.IGNORECASE,
 )
+_DATALOG_CHANNEL_RE = re.compile(
+    rf"^channel\(\s*{_ATOM_VALUE.format(name='channel')}\s*,\s*"
+    r"(?P<cutoff_kind>seq|time)\s*,\s*(?P<lower>[^,\s)]+)\s*,\s*"
+    r"(?P<upper>[^,\s)]+)\s*\)\.?$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -89,12 +95,14 @@ class EventQuery:
     Attributes
     ----------
     kind : str
-        Query kind: ``task_timeline``, ``task_state``, ``path_touched``, or
-        ``conflicts``.
+        Query kind: ``task_timeline``, ``task_state``, ``path_touched``,
+        ``channel_events``, or ``conflicts``.
     task_id : str
         Task id for task-scoped queries.
     path : str
         Path for path-touch queries.
+    channel_id : str
+        Private-channel id for channel-event queries.
     lower : float
         Inclusive lower timestamp for path-touch queries.
     upper : float
@@ -110,6 +118,7 @@ class EventQuery:
     kind: str
     task_id: str = ""
     path: str = ""
+    channel_id: str = ""
     lower: float = 0.0
     upper: float = 0.0
     cutoff_kind: str = ""
@@ -148,7 +157,9 @@ def parse_query(query: str) -> EventQuery:
     query : str
         Query text. Supported canonical forms are ``task <id> timeline``,
         ``task <id> at seq <n>``, ``task <id> at time <seconds>``,
-        ``path <path> between <start> <end>``, and ``conflicts at seq|time <n>``.
+        ``path <path> between <start> <end>``,
+        ``channel <id> between seq|time <start> <end>``, and
+        ``conflicts at seq|time <n>``.
         The parser also accepts tiny Datalog-like aliases such as
         ``timeline("TASK").`` and Cypher-like aliases such as
         ``MATCH (task:TASK {id:"TASK"}) RETURN timeline``.
@@ -182,6 +193,16 @@ def parse_query(query: str) -> EventQuery:
             path=tokens[1],
             lower=_parse_float(tokens[3], "invalid lower timestamp"),
             upper=_parse_float(tokens[4], "invalid upper timestamp"),
+            raw=query,
+        )
+    if len(tokens) == 6 and tokens[0] == "channel" and tokens[2] == "between":
+        cutoff_kind = _parse_cutoff_kind(tokens[3])
+        return EventQuery(
+            kind="channel_events",
+            channel_id=tokens[1],
+            cutoff_kind=cutoff_kind,
+            lower=_parse_cutoff_value(cutoff_kind, tokens[4]),
+            upper=_parse_cutoff_value(cutoff_kind, tokens[5]),
             raw=query,
         )
     if len(tokens) == 4 and tokens[0] == "conflicts" and tokens[1] == "at":
@@ -253,6 +274,18 @@ def execute_query(events: Sequence[StoredEvent], query: EventQuery) -> QueryResu
             query=query.raw,
             conflicts=_conflicts_at(events, query.cutoff_kind, query.cutoff),
         )
+    if query.kind == "channel_events":
+        return QueryResult(
+            kind=query.kind,
+            query=query.raw,
+            records=tuple(
+                _record_from_event(event)
+                for event in events
+                if event.kind == EventKind.CHAT
+                and str(event.payload.get("channel") or "") == query.channel_id
+                and _event_is_in_range(event, query.cutoff_kind, query.lower, query.upper)
+            ),
+        )
     msg = f"unsupported event query kind: {query.kind}"
     raise ValueError(msg)
 
@@ -261,7 +294,11 @@ def result_to_json(result: QueryResult) -> dict[str, object]:
     """Convert a query result into a stable JSON-compatible object."""
     payload: dict[str, object] = {"kind": result.kind, "query": result.query}
     if result.records:
-        payload["records"] = [_record_to_json(record) for record in result.records]
+        payload["records"] = (
+            [_channel_record_to_json(record) for record in result.records]
+            if result.kind == "channel_events"
+            else [_record_to_json(record) for record in result.records]
+        )
     if result.state is not None:
         payload["state"] = result.state
     if result.conflicts is not None:
@@ -291,6 +328,11 @@ def render_human(result: QueryResult) -> str:
         conflicts = [] if result.conflicts is None else result.conflicts
         lines = [f"conflicts: {len(conflicts)} pair(s)"]
         lines.extend(_format_conflict(item) for item in conflicts)
+        return "\n".join(lines)
+    if result.kind == "channel_events":
+        channel = _query_channel_label(result.query)
+        lines = [f"channel {channel}: {len(result.records)} event(s)"]
+        lines.extend(_format_channel_record(record) for record in result.records)
         return "\n".join(lines)
     return f"{result.kind}: no renderer"
 
@@ -396,6 +438,17 @@ def _parse_datalog_like_query(query: str) -> EventQuery | None:
             kind="conflicts",
             cutoff_kind=cutoff_kind,
             cutoff=_parse_cutoff_value(cutoff_kind, conflicts.group("cutoff")),
+            raw=query,
+        )
+    channel = _DATALOG_CHANNEL_RE.match(query)
+    if channel is not None:
+        cutoff_kind = _parse_cutoff_kind(channel.group("cutoff_kind"))
+        return EventQuery(
+            kind="channel_events",
+            channel_id=_unquote_atom(channel.group("channel")),
+            cutoff_kind=cutoff_kind,
+            lower=_parse_cutoff_value(cutoff_kind, channel.group("lower")),
+            upper=_parse_cutoff_value(cutoff_kind, channel.group("upper")),
             raw=query,
         )
     return None
@@ -518,6 +571,12 @@ def _event_is_at_or_before(event: StoredEvent, cutoff_kind: str, cutoff: float) 
     return event.ts <= cutoff
 
 
+def _event_is_in_range(event: StoredEvent, cutoff_kind: str, lower: float, upper: float) -> bool:
+    """Return whether an event falls inside an inclusive sequence or time range."""
+    value = float(event.seq) if cutoff_kind == "seq" else event.ts
+    return lower <= value <= upper
+
+
 def _paths_overlap(path: str, scopes: Sequence[str]) -> bool:
     """Return whether ``path`` overlaps any declared path scope."""
     if not scopes:
@@ -565,11 +624,36 @@ def _record_to_json(record: QueryRecord) -> dict[str, object]:
     }
 
 
+def _channel_record_to_json(record: QueryRecord) -> dict[str, object]:
+    """Convert a channel chat event into metadata-only JSON fields."""
+    payload = record.event.payload
+    body = str(payload.get("payload") or "")
+    return {
+        "seq": record.event.seq,
+        "ts": record.event.ts,
+        "kind": record.event.kind,
+        "channel": str(payload.get("channel") or ""),
+        "sender": str(payload.get("sender") or ""),
+        "target": str(payload.get("target") or "all"),
+        "msg_id": int(payload.get("msg_id", 0)),
+        "payload_bytes": len(body.encode("utf-8")),
+    }
+
+
 def _format_record(record: QueryRecord) -> str:
     """Render one selected event record."""
     return (
         f"- seq={record.event.seq} ts={record.event.ts:.3f} kind={record.event.kind} "
         f"task={record.task_id} owner={record.owner} status={record.status}"
+    )
+
+
+def _format_channel_record(record: QueryRecord) -> str:
+    """Render one channel event without its payload body."""
+    payload = record.event.payload
+    return (
+        f"- seq={record.event.seq} {record.event.kind} "
+        f"{payload.get('sender', '?')} channel={payload.get('channel', '')}"
     )
 
 
@@ -594,5 +678,17 @@ def _query_task_label(query: str) -> str:
         parsed = None
     if parsed is not None and parsed.task_id:
         return parsed.task_id
+    tokens = query.split()
+    return tokens[1] if len(tokens) >= 2 else "?"
+
+
+def _query_channel_label(query: str) -> str:
+    """Return the channel label from a supported channel query string."""
+    try:
+        parsed = parse_query(query)
+    except ValueError:
+        parsed = None
+    if parsed is not None and parsed.channel_id:
+        return parsed.channel_id
     tokens = query.split()
     return tokens[1] if len(tokens) >= 2 else "?"

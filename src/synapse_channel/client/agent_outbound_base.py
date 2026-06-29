@@ -108,3 +108,9 @@ class AgentSendMixin:
     async def request_channels(self: _OutboundAgent) -> None:
         """Request the list of channels this agent is a member of."""
         await self.send_message(MessageType.CHANNEL_LIST_REQUEST)
+
+    async def request_channel_history(
+        self: _OutboundAgent, channel: str, *, limit: int = 20
+    ) -> None:
+        """Request retained live history for a private channel this agent belongs to."""
+        await self.send_message(MessageType.CHANNEL_HISTORY_REQUEST, channel=channel, limit=limit)

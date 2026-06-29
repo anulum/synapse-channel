@@ -47,6 +47,7 @@ LITE_KEYS: dict[str, str] = {
     "payload": "p",
     "timestamp": "t",
     "hub_id": "h",
+    "channel": "c",
 }
 """Heavy envelope field → compact relay key.
 
@@ -86,7 +87,7 @@ def encode_lite(message: dict[str, Any]) -> dict[str, Any]:
     except (TypeError, ValueError):
         msg_id_val = 0
 
-    return {
+    lite: dict[str, Any] = {
         "v": LITE_VERSION,
         "i": msg_id_val,
         "ty": str(message.get("type", "chat")),
@@ -95,7 +96,12 @@ def encode_lite(message: dict[str, Any]) -> dict[str, Any]:
         "p": str(message.get("payload", "")),
         "t": int(ts_val * 1000.0),
         "h": str(message.get("hub_id", "")),
+        "c": "",
     }
+    channel = str(message.get("channel") or "").strip()
+    if channel:
+        lite["c"] = channel
+    return lite
 
 
 def decode_lite(lite: dict[str, Any]) -> dict[str, Any]:
@@ -127,7 +133,7 @@ def decode_lite(lite: dict[str, Any]) -> dict[str, Any]:
     except (TypeError, ValueError):
         msg_id_val = 0
 
-    return {
+    message = {
         "sender": str(lite.get("s", "?")),
         "target": str(lite.get("to", "all")),
         "type": str(lite.get("ty", "chat")),
@@ -136,6 +142,10 @@ def decode_lite(lite: dict[str, Any]) -> dict[str, Any]:
         "msg_id": msg_id_val,
         "hub_id": str(lite.get("h", "")),
     }
+    channel = str(lite.get("c") or "").strip()
+    if channel:
+        message["channel"] = channel
+    return message
 
 
 def append_jsonl(path: str | Path, payload: dict[str, Any]) -> None:

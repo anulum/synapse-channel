@@ -294,6 +294,81 @@ def test_json_renderer_includes_state_and_conflicts(tmp_path: Path) -> None:
     assert event_query.result_to_json(conflicts)["conflicts"] == conflicts.conflicts
 
 
+def test_channel_between_sequence_query_returns_channel_metadata_only() -> None:
+    events = (
+        StoredEvent(
+            seq=1,
+            ts=1.0,
+            kind=EventKind.CHAT,
+            payload={
+                "sender": "alice",
+                "target": "all",
+                "payload": "public",
+                "msg_id": 1,
+            },
+        ),
+        StoredEvent(
+            seq=2,
+            ts=2.0,
+            kind=EventKind.CHAT,
+            payload={
+                "sender": "alice",
+                "target": "all",
+                "payload": "private body",
+                "channel": "ops",
+                "msg_id": 2,
+            },
+        ),
+    )
+
+    result = event_query.execute_query(
+        events,
+        event_query.parse_query("channel ops between seq 1 3"),
+    )
+
+    assert result.kind == "channel_events"
+    assert (
+        event_query.render_human(result)
+        == "channel ops: 1 event(s)\n- seq=2 chat alice channel=ops"
+    )
+    payload = event_query.result_to_json(result)
+    assert payload["records"] == [
+        {
+            "seq": 2,
+            "ts": 2.0,
+            "kind": "chat",
+            "channel": "ops",
+            "sender": "alice",
+            "target": "all",
+            "msg_id": 2,
+            "payload_bytes": 12,
+        }
+    ]
+    assert "private body" not in str(payload)
+
+
+def test_channel_query_aliases_parse() -> None:
+    assert event_query.parse_query('channel("ops", seq, 1, 3).') == event_query.EventQuery(
+        kind="channel_events",
+        channel_id="ops",
+        cutoff_kind="seq",
+        lower=1.0,
+        upper=3.0,
+        raw='channel("ops", seq, 1, 3).',
+    )
+
+
+def test_channel_human_renderer_falls_back_for_legacy_labels() -> None:
+    assert (
+        event_query.render_human(event_query.QueryResult(kind="channel_events", query="legacy ops"))
+        == "channel ops: 0 event(s)"
+    )
+    assert (
+        event_query.render_human(event_query.QueryResult(kind="channel_events", query="legacy"))
+        == "channel ?: 0 event(s)"
+    )
+
+
 def test_human_renderers_cover_state_path_conflicts_and_fallback(tmp_path: Path) -> None:
     db = tmp_path / "events.db"
     _seed_store(db)

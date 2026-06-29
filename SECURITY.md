@@ -112,10 +112,10 @@ metadata, key ids, recipient names, nonce, and ciphertext. It does not replace
 at-rest encryption, does not manage key discovery or rotation, and does not
 protect compromised endpoints or plaintext after a participant decrypts content.
 
-The planned [private channels](docs/private-channels.md) profile scopes audience
-control for project, worktree, task, and direct channels. It is not implemented
-yet, does not encrypt payloads, and does not create cryptographic identity or ACL
-enforcement by itself.
+The [private channels](docs/private-channels.md) runtime scopes chat delivery to
+explicit channel members and exposes bounded member-only history plus filtered
+relay/event-query projections. It does not encrypt payloads and does not create
+cryptographic identity or ACL enforcement by itself.
 
 The planned [differential-privacy blackboard](docs/differential-privacy-blackboard.md)
 profile scopes redacted and noisy shared blackboard projections for

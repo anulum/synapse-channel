@@ -145,6 +145,7 @@ class MessageType:
     CHANNEL_JOIN = "channel_join"
     CHANNEL_LEAVE = "channel_leave"
     CHANNEL_LIST_REQUEST = "channel_list_request"
+    CHANNEL_HISTORY_REQUEST = "channel_history_request"
 
     # Hub -> agent.
     SYSTEM = "system"
@@ -177,6 +178,7 @@ class MessageType:
     MANIFEST_SNAPSHOT = "manifest_snapshot"
     CHANNEL_RESULT = "channel_result"
     CHANNEL_LIST = "channel_list"
+    CHANNEL_HISTORY = "channel_history"
     ERROR = "error"
     NAME_CONFLICT = "name_conflict"
     AUTH_DENIED = "auth_denied"
