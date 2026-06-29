@@ -812,6 +812,14 @@ conflict-free, but claims are mutual exclusion and **not** a CRDT — they are
 routed by single-owner-per-namespace and fail closed on a partition. Not
 implemented; it adds no cross-hub service to the local core.
 
+The [sandboxed tools and marketplace research](docs/sandboxed-tools-and-marketplace.md)
+asks what it would take to run untrusted tool code safely — a capability-limited
+WebAssembly sandbox (deny-by-default filesystem, network, and resources) — and
+only then a marketplace built on signed capability cards, an explicit permission
+manifest, and run receipts. No untrusted code runs without the sandbox, and no
+executable marketplace ships before all the preconditions exist. Not implemented;
+local-first and deny-by-default throughout.
+
 Use `synapse ttl-advice ./synapse.db` for read-only adaptive lease TTL advice.
 It derives completed-task duration samples, active live-claim counts, and stale
 claim counts from the event log, then prints an advisory default. It never
@@ -931,9 +939,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 206 |
 | Wire message types | 61 |
 | CLI subcommands | 83 |
-| Test functions | 2290 |
+| Test functions | 2294 |
 | Benchmark harnesses | 5 |
-| Documentation pages | 38 |
+| Documentation pages | 39 |
 | GitHub Actions workflows | 11 |
 | Optional-dependency groups | 5 |
 
