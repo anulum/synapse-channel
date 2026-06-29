@@ -88,6 +88,7 @@ nav:
   - Per-message authentication: per-message-authentication.md
   - Identity and ACL: identity-and-acl.md
   - Signed capability cards: signed-capability-cards.md
+  - Federated trust model: federated-trust-model.md
   - Recipes: recipes.md
   - Examples: examples.md
   - Deployment: deployment.md

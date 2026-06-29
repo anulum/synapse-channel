@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Added a [federated trust model](docs/federated-trust-model.md) design that pins
+  how independent operator-managed domains could peer — out-of-band,
+  deny-by-default bundle exchange composing identity, signed events, mutual TLS,
+  ACLs, and receipts across a domain boundary. It is a design boundary only: not
+  implemented, not a certificate authority, and unchanged local-first default.
+
 ### Changed
 - `synapse event-query` now reads selectively instead of loading the whole event
   store for every query: each query pushes its sequence/time window and required
