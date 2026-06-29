@@ -14,6 +14,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the WebAssembly sandbox runtime (`core/wasm_sandbox.py` + `core/sandbox_receipt.py`)
+  behind the optional `[wasm]` extra — a real capability-limited execution sandbox.
+  `run_sandboxed` executes an untrusted `.wasm` tool under exactly the manifest's grants:
+  a memory cap, a fuel (instruction) budget, a wall-clock epoch backstop, WASI-preopened
+  filesystem paths, and no network (WASI preview1 exposes no sockets, so a tool reaches the
+  network only through a host import that is never linked). It returns a bounded
+  `RunReceipt` — exit status, fuel used, input/output digests, and granted capabilities. A
+  fuel bomb traps `out_of_fuel`; a wall-clock runaway is interrupted (`epoch_deadline`). The
+  runtime is `wasmtime`, imported only behind the extra so the single-dependency core stays
+  import-clean; the manifest→config derivation is pure. 100% line+branch.
 - Added the sandbox capability-manifest policy core (`core/sandbox_policy.py`), the first
   slice of the capability-limited WebAssembly sandbox ([design](docs/sandboxed-tools-and-marketplace.md)):
   deny-by-default `FilesystemGrant`/`NetworkGrant`/`ResourceGrant` bundled in a

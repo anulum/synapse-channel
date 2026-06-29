@@ -51,9 +51,13 @@ dev = [
   "tomli>=2.4.1; python_version < '3.11'",
   "mcp>=1.28.0",
   "cryptography>=42.0",
+  "wasmtime>=14.0.0",
 ]
 benchmark = [
   "tiktoken>=0.7",
+]
+wasm = [
+  "wasmtime>=14.0.0",
 ]
 mcp = [
   "mcp>=1.28.0",
@@ -124,7 +128,7 @@ warn_unused_configs = true
 warn_return_any = true
 
 [[tool.mypy.overrides]]
-module = ["websockets.*", "tiktoken", "tomli"]
+module = ["websockets.*", "tiktoken", "tomli", "wasmtime", "wasmtime.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
