@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 from synapse_channel.core.workflow import (
+    StepDependency,
     Workflow,
     WorkflowError,
     WorkflowStep,
@@ -46,7 +47,7 @@ def test_parse_dedupes_and_strips_depends_on() -> None:
             {"id": "b", "title": "B", "depends_on": [" a ", "a", ""]},
         )
     )
-    assert wf.steps[1].depends_on == ("a",)
+    assert wf.steps[1].depends_on == (StepDependency("a"),)
 
 
 @pytest.mark.parametrize(
@@ -76,12 +77,16 @@ def test_validate_rejects_duplicate_ids() -> None:
 
 def test_validate_rejects_self_dependency() -> None:
     with pytest.raises(WorkflowError, match="depends on itself"):
-        validate_workflow(Workflow("w", (WorkflowStep("a", "A", depends_on=("a",)),)))
+        validate_workflow(
+            Workflow("w", (WorkflowStep("a", "A", depends_on=(StepDependency("a"),)),))
+        )
 
 
 def test_validate_rejects_dangling_dependency() -> None:
     with pytest.raises(WorkflowError, match="unknown step 'missing'"):
-        validate_workflow(Workflow("w", (WorkflowStep("a", "A", depends_on=("missing",)),)))
+        validate_workflow(
+            Workflow("w", (WorkflowStep("a", "A", depends_on=(StepDependency("missing"),)),))
+        )
 
 
 def test_validate_rejects_a_cycle() -> None:
@@ -150,3 +155,73 @@ def test_compiled_task_declaration_excludes_task_class() -> None:
         "depends_on": [],
     }
     assert "task_class" not in decl
+
+
+# ---------- conditional dependencies ----------
+
+
+def test_parse_accepts_a_conditional_dependency_object() -> None:
+    wf = parse_workflow(
+        _wf(
+            {"id": "test"},
+            {"id": "deploy", "depends_on": [{"step": "test", "on": "done"}]},
+        )
+    )
+    assert wf.steps[1].depends_on == (StepDependency("test", "done"),)
+
+
+def test_parse_dependency_object_uses_id_alias() -> None:
+    wf = parse_workflow(
+        _wf(
+            {"id": "test"},
+            {"id": "deploy", "depends_on": [{"id": "test", "on": "cancelled"}]},
+        )
+    )
+    assert wf.steps[1].depends_on == (StepDependency("test", "cancelled"),)
+
+
+def test_parse_drops_a_dependency_object_without_a_step() -> None:
+    wf = parse_workflow(
+        _wf(
+            {"id": "a"},
+            {"id": "b", "depends_on": [{"on": "done"}, "a"]},
+        )
+    )
+    assert wf.steps[1].depends_on == (StepDependency("a"),)
+
+
+def test_parse_rejects_an_invalid_dependency_condition() -> None:
+    with pytest.raises(WorkflowError, match="invalid condition 'maybe'"):
+        parse_workflow(
+            _wf(
+                {"id": "a"},
+                {"id": "b", "depends_on": [{"step": "a", "on": "maybe"}]},
+            )
+        )
+
+
+def test_compile_carries_conditions_and_required_status() -> None:
+    wf = parse_workflow(
+        _wf(
+            {"id": "test"},
+            {"id": "deploy", "depends_on": [{"step": "test", "on": "done"}]},
+            {"id": "rollback", "depends_on": [{"step": "test", "on": "cancelled"}, "test"]},
+            name="release",
+        )
+    )
+    _test, deploy, rollback = compile_to_tasks(wf)
+    assert deploy.depends_on == ("release/test",)
+    assert deploy.conditions == (("release/test", "done"),)
+    assert deploy.required_status("release/test") == "done"
+    # a dep id absent from the conditions is unconditional even when others are set
+    assert deploy.required_status("release/other") == ""
+    # an unconditional duplicate edge to the same step is deduped to the first (conditional)
+    assert rollback.conditions == (("release/test", "cancelled"),)
+    assert rollback.required_status("release/test") == "cancelled"
+
+
+def test_required_status_is_empty_for_an_unconditional_edge() -> None:
+    wf = parse_workflow(_wf({"id": "a"}, {"id": "b", "depends_on": ["a"]}))
+    _a, b = compile_to_tasks(wf)
+    assert b.conditions == ()
+    assert b.required_status("release/a") == ""

@@ -14,6 +14,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added conditional (branching) workflow edges ([docs](docs/workflows.md)): a
+  dependency may now be written as `{"step": "test", "on": "done"}` to wait for a
+  specific terminal outcome (`done` or `cancelled`) rather than mere completion, so
+  a workflow can branch on result (run one step on success, another on failure). The
+  condition is enforced by the driver, not the board — the board still sees a plain
+  `depends_on` edge; the driver classifies a task whose conditional edge can never be
+  met as `skipped` and retires it on the board (cancels it), keeping the graph
+  moving. `derive_state` gains a `skipped` bucket and the run loop cancels skipped
+  branches. Unconditional edges keep their meaning (any terminal status satisfies).
+  100% line+branch covered.
 - Added `synapse workflow run` ([docs](docs/workflows.md)), the autonomous live
   loop around the planner: it connects to the hub, posts a compiled workflow's
   tasks once, then on every board reading re-derives the state and routes the ready

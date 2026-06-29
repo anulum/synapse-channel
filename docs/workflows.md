@@ -69,11 +69,46 @@ it cannot make progress:
 - a **cycle** in the dependency graph (a workflow with a cycle would deadlock the
   board, so it is refused, naming a step on the cycle).
 
+## Conditional edges — branching on outcome
+
+A plain dependency waits for a step to *finish*: a task is ready once every
+dependency reaches a terminal status (`done` **or** `cancelled`). A **conditional**
+edge waits for a specific outcome instead, so a workflow can branch on result. Write
+a dependency as an object with an `on` (`done` or `cancelled`) rather than a bare id:
+
+```json
+{
+  "name": "release",
+  "steps": [
+    { "id": "test", "title": "Run the suite" },
+    { "id": "deploy", "title": "Deploy", "depends_on": [{ "step": "test", "on": "done" }] },
+    { "id": "rollback", "title": "Roll back", "depends_on": [{ "step": "test", "on": "cancelled" }] }
+  ]
+}
+```
+
+Here `deploy` runs only if `test` finishes `done`, and `rollback` only if `test` is
+`cancelled` — the two are mutually exclusive branches. `compile` shows the condition
+on the edge:
+
+```text
+release/deploy <- release/test:done
+release/rollback <- release/test:cancelled
+```
+
+The condition is **enforced by the driver, not the board**: the board still sees a
+plain `depends_on` edge (so it gates on terminal-ness), while the driver checks
+whether the recorded outcome actually matches. When a branch can never fire — `test`
+finished `done`, so `rollback`'s `on: cancelled` is unreachable — the driver retires
+that step by cancelling it on the board, which keeps the graph moving and lets any
+downstream steps resolve. An unconditional edge keeps its original meaning: any
+terminal status of the dependency satisfies it.
+
 ## Driving a workflow
 
 Given a board snapshot, `synapse workflow plan` works out what to do next: which
-tasks are done, in flight, ready, or blocked, and which ready tasks to hand to
-which agents.
+tasks are done, in flight, ready, blocked, or skipped (a branch not taken), and
+which ready tasks to hand to which agents.
 
 ```bash
 synapse workflow plan release.json \

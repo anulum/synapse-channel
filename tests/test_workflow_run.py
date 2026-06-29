@@ -38,6 +38,7 @@ class _FakeGateway:
         self._complete_assigned = complete_assigned
         self.posted: list[str] = []
         self.assigned: list[tuple[str, str]] = []
+        self.cancelled: list[str] = []
 
     async def post_tasks(self, tasks: Sequence[CompiledTask]) -> None:
         self.posted = [task.task_id for task in tasks]
@@ -54,6 +55,10 @@ class _FakeGateway:
     async def assign(self, task_id: str, agent: str) -> None:
         self.owner[task_id] = agent
         self.assigned.append((task_id, agent))
+
+    async def cancel(self, task_id: str) -> None:
+        self.status[task_id] = "cancelled"
+        self.cancelled.append(task_id)
 
 
 class _Clock:
@@ -112,7 +117,8 @@ async def test_run_completes_immediately_for_an_empty_workflow() -> None:
         "timed_out": False,
         "polls": 1,
         "assignments": [],
-        "state": {"done": [], "in_flight": [], "ready": [], "blocked": []},
+        "cancellations": [],
+        "state": {"done": [], "in_flight": [], "ready": [], "blocked": [], "skipped": []},
     }
 
 
@@ -137,6 +143,46 @@ async def test_run_does_not_reassign_a_task_that_already_advises_the_owner() -> 
     assert result.timed_out is True
     assert gateway.assigned == []  # build skipped (already owned), test still blocked
     assert "w/build" in result.state.ready
+
+
+_GATE = CompiledTask(task_id="w/gate", title="Gate", description="", depends_on=(), task_class="")
+_DEPLOY = CompiledTask(
+    task_id="w/deploy",
+    title="Deploy",
+    description="",
+    depends_on=("w/gate",),
+    task_class="",
+    conditions=(("w/gate", "done"),),
+)
+_ROLLBACK = CompiledTask(
+    task_id="w/rollback",
+    title="Rollback",
+    description="",
+    depends_on=("w/gate",),
+    task_class="",
+    conditions=(("w/gate", "cancelled"),),
+)
+
+
+async def test_run_retires_the_branch_not_taken() -> None:
+    # gate succeeds -> deploy runs, rollback can never fire and is cancelled on the board
+    gateway = _FakeGateway(["w/gate", "w/deploy", "w/rollback"])
+    clock = _Clock()
+    result = await run_workflow(
+        [_GATE, _DEPLOY, _ROLLBACK],
+        {"a1": frozenset[str]()},
+        gateway,
+        max_in_flight=4,
+        deadline=100.0,
+        clock=clock.time,
+        sleep=clock.sleep,
+        poll_interval=1.0,
+    )
+    assert result.complete is True
+    assert result.cancellations == ("w/rollback",)
+    assert gateway.cancelled == ["w/rollback"]
+    assert ("w/deploy", "a1") in result.assignments
+    assert "w/rollback" not in [task_id for task_id, _ in result.assignments]
 
 
 async def test_run_times_out_when_no_agent_can_take_the_ready_work() -> None:

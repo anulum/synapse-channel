@@ -26,13 +26,31 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from synapse_channel.core.ledger import TERMINAL_LEDGER_STATUSES
-from synapse_channel.core.workflow import CompiledTask
+from synapse_channel.core.workflow import ANY_TERMINAL, CompiledTask
 
 IN_PROGRESS_STATUS = "in_progress"
 """Board status marking a task a worker has actively started."""
 
 DEFAULT_STATUS = "open"
 """Assumed status for a compiled task the board has not reported yet."""
+
+
+def _edge_satisfied(dep_id: str, required: str, status: Mapping[str, str]) -> str:
+    """Classify one dependency edge: ``satisfied``, ``unreachable``, or ``pending``.
+
+    An unconditional edge (``required`` is :data:`ANY_TERMINAL`) is satisfied by any
+    terminal status of the dependency. A conditional edge is satisfied only by its
+    required terminal status; if the dependency has reached a *different* terminal
+    status the edge can never be met (``unreachable``), and otherwise it is still
+    ``pending``.
+    """
+    dep_status = status.get(dep_id, DEFAULT_STATUS)
+    dep_terminal = dep_status in TERMINAL_LEDGER_STATUSES
+    if required == ANY_TERMINAL:
+        return "satisfied" if dep_terminal else "pending"
+    if dep_status == required:
+        return "satisfied"
+    return "unreachable" if dep_terminal else "pending"
 
 
 @dataclass(frozen=True)
@@ -46,28 +64,34 @@ class WorkflowState:
     in_flight : tuple[str, ...]
         Task ids a worker has started (in progress).
     ready : tuple[str, ...]
-        Not-started task ids whose dependencies are all terminal.
+        Not-started task ids whose dependency edges are all satisfied.
     blocked : tuple[str, ...]
-        Not-started task ids still waiting on a dependency.
+        Not-started task ids still waiting on a dependency that may yet be met.
+    skipped : tuple[str, ...]
+        Not-started task ids with a conditional edge that can never be met (the
+        dependency reached a terminal status other than the one required) — a branch
+        not taken. The driver retires these by cancelling them on the board.
     """
 
     done: tuple[str, ...]
     in_flight: tuple[str, ...]
     ready: tuple[str, ...]
     blocked: tuple[str, ...]
+    skipped: tuple[str, ...] = ()
 
     @property
     def complete(self) -> bool:
-        """Return whether every task is terminal (nothing left to run)."""
-        return not (self.in_flight or self.ready or self.blocked)
+        """Return whether nothing is left to run, route, or retire."""
+        return not (self.in_flight or self.ready or self.blocked or self.skipped)
 
     def to_dict(self) -> dict[str, list[str]]:
-        """Return a JSON-compatible mapping of the four phase buckets."""
+        """Return a JSON-compatible mapping of the phase buckets."""
         return {
             "done": list(self.done),
             "in_flight": list(self.in_flight),
             "ready": list(self.ready),
             "blocked": list(self.blocked),
+            "skipped": list(self.skipped),
         }
 
 
@@ -85,28 +109,40 @@ def derive_state(tasks: Sequence[CompiledTask], status: Mapping[str, str]) -> Wo
     Returns
     -------
     WorkflowState
-        The tasks bucketed into done, in-flight, ready, and blocked. Readiness is
-        recomputed from dependencies, so a task counts as ready only when every
-        dependency is terminal, regardless of its stored status.
+        The tasks bucketed into done, in-flight, ready, blocked, and skipped.
+        Readiness is recomputed from the dependency edges, honouring each edge's
+        condition: a task is ready only when every edge is satisfied, skipped when an
+        edge can never be met (a conditional branch not taken), and otherwise
+        blocked.
     """
     done: list[str] = []
     in_flight: list[str] = []
     ready: list[str] = []
     blocked: list[str] = []
-    done_set: set[str] = set()
+    skipped: list[str] = []
     for task in tasks:
         state = status.get(task.task_id, DEFAULT_STATUS)
         if state in TERMINAL_LEDGER_STATUSES:
             done.append(task.task_id)
-            done_set.add(task.task_id)
         elif state == IN_PROGRESS_STATUS:
             in_flight.append(task.task_id)
-        elif all(dep in done_set for dep in task.depends_on):
-            ready.append(task.task_id)
         else:
-            blocked.append(task.task_id)
+            outcomes = [
+                _edge_satisfied(dep_id, task.required_status(dep_id), status)
+                for dep_id in task.depends_on
+            ]
+            if "unreachable" in outcomes:
+                skipped.append(task.task_id)
+            elif all(outcome == "satisfied" for outcome in outcomes):
+                ready.append(task.task_id)
+            else:
+                blocked.append(task.task_id)
     return WorkflowState(
-        done=tuple(done), in_flight=tuple(in_flight), ready=tuple(ready), blocked=tuple(blocked)
+        done=tuple(done),
+        in_flight=tuple(in_flight),
+        ready=tuple(ready),
+        blocked=tuple(blocked),
+        skipped=tuple(skipped),
     )
 
 

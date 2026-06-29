@@ -16,13 +16,20 @@ from synapse_channel.core.workflow_driver import (
 )
 
 
-def _task(task_id: str, *, depends_on: tuple[str, ...] = (), task_class: str = "") -> CompiledTask:
+def _task(
+    task_id: str,
+    *,
+    depends_on: tuple[str, ...] = (),
+    task_class: str = "",
+    conditions: tuple[tuple[str, str], ...] = (),
+) -> CompiledTask:
     return CompiledTask(
         task_id=task_id,
         title=task_id,
         description="",
         depends_on=depends_on,
         task_class=task_class,
+        conditions=conditions,
     )
 
 
@@ -62,9 +69,54 @@ def test_complete_is_true_only_when_all_terminal() -> None:
     assert derive_state(_CHAIN, {"w/a": "done"}).complete is False
 
 
+# ---------- conditional edges ----------
+
+# deploy runs only if test is done; rollback only if test is cancelled.
+_BRANCH = (
+    _task("w/test"),
+    _task("w/deploy", depends_on=("w/test",), conditions=(("w/test", "done"),)),
+    _task("w/rollback", depends_on=("w/test",), conditions=(("w/test", "cancelled"),)),
+)
+
+
+def test_conditional_edge_ready_on_matching_outcome() -> None:
+    state = derive_state(_BRANCH, {"w/test": "done"})
+    assert state.ready == ("w/deploy",)  # the success branch is ready
+    assert state.skipped == ("w/rollback",)  # the failure branch can never fire
+
+
+def test_conditional_edge_takes_the_failure_branch_when_cancelled() -> None:
+    state = derive_state(_BRANCH, {"w/test": "cancelled"})
+    assert state.ready == ("w/rollback",)
+    assert state.skipped == ("w/deploy",)
+
+
+def test_conditional_edge_is_blocked_while_the_dependency_is_pending() -> None:
+    state = derive_state(_BRANCH, {"w/test": "in_progress"})
+    assert state.ready == ()
+    assert state.skipped == ()
+    assert state.blocked == ("w/deploy", "w/rollback")
+
+
+def test_skipped_tasks_keep_the_workflow_incomplete_until_retired() -> None:
+    # test done -> rollback is skipped (not yet terminal on the board) -> not complete
+    state = derive_state(_BRANCH, {"w/test": "done", "w/deploy": "done"})
+    assert state.skipped == ("w/rollback",)
+    assert state.complete is False
+    # once the skipped branch is cancelled on the board, the workflow completes
+    done = derive_state(_BRANCH, {"w/test": "done", "w/deploy": "done", "w/rollback": "cancelled"})
+    assert done.complete is True
+
+
 def test_state_to_dict_round_trips() -> None:
     payload = derive_state(_CHAIN, {"w/a": "done"}).to_dict()
-    assert payload == {"done": ["w/a"], "in_flight": [], "ready": ["w/b"], "blocked": ["w/c"]}
+    assert payload == {
+        "done": ["w/a"],
+        "in_flight": [],
+        "ready": ["w/b"],
+        "blocked": ["w/c"],
+        "skipped": [],
+    }
 
 
 # ---------- plan_assignments ----------
