@@ -14,6 +14,11 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added a VS Code / Cursor extension stub (`clients/vscode/`, separate from the
+  core Python package): a status bar with hub health and own-claim count,
+  claim/release-current-file commands, a board tree view, and overview-ruler marks
+  for claimed files. The editor-agnostic logic (`fleetModel.ts`) is Vitest-tested;
+  `extension.ts` is the thin editor glue. CI builds, type-checks, and tests it.
 - Added a public-surface taxonomy (`surface_taxonomy.py`, [docs](docs/public-surface.md)):
   every CLI subcommand is classified into a stability tier — stable core, adapters,
   read-only analysis, advisory governance, or experimental — and design-preview

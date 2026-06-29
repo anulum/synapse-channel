@@ -35,6 +35,7 @@ venv/
 *.egg-info/
 build/
 dist/
+out/
 .eggs/
 .mypy_cache/
 .ruff_cache/

@@ -1,0 +1,54 @@
+{
+  "name": "synapse-channel-vscode",
+  "private": true,
+  "displayName": "SYNAPSE CHANNEL",
+  "description": "Claim files, release them, watch the board, and see hub health from inside VS Code or Cursor.",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-or-later",
+  "publisher": "anulum",
+  "type": "module",
+  "engines": {
+    "vscode": "^1.90.0",
+    "node": ">=20"
+  },
+  "categories": ["SCM Providers", "Other"],
+  "main": "./out/extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [
+      { "command": "synapse.claimFile", "title": "SYNAPSE: Claim current file" },
+      { "command": "synapse.releaseFile", "title": "SYNAPSE: Release current file" },
+      { "command": "synapse.showBoard", "title": "SYNAPSE: Show board" },
+      { "command": "synapse.refreshHealth", "title": "SYNAPSE: Refresh hub health" }
+    ],
+    "views": {
+      "explorer": [{ "id": "synapseBoard", "name": "SYNAPSE board" }]
+    },
+    "configuration": {
+      "title": "SYNAPSE CHANNEL",
+      "properties": {
+        "synapse.hubUri": {
+          "type": "string",
+          "default": "ws://127.0.0.1:8876",
+          "description": "WebSocket URI of the local SYNAPSE hub."
+        },
+        "synapse.identity": {
+          "type": "string",
+          "default": "",
+          "description": "Agent identity to register as; empty derives one from the workspace."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.6"
+  }
+}
