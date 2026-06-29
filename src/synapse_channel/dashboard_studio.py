@@ -75,7 +75,7 @@ def render_studio_reference_html() -> str:
     </section>
     <section class="syn-panel">
       <div class="syn-label">verdict scale</div>
-      <div style="display:flex;flex-direction:column;gap:var(--syn-sp-2);margin-top:var(--syn-sp-3)">
+      <div class="syn-stack" style="margin-top:var(--syn-sp-3)">
         {_verdict("green", "Green")}{_verdict("amber", "Amber")}{_verdict("red", "Red")}
       </div>
       <div class="syn-card" style="margin-top:var(--syn-sp-4)">
