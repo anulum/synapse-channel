@@ -791,6 +791,13 @@ deny-by-default bundle exchange composing identity, signed events, mutual TLS,
 ACLs, and receipts across a domain boundary. It is not implemented yet, is not a
 certificate authority, and does not change the local-first default.
 
+The [Agent Air Traffic Control architecture](docs/agent-air-traffic-control.md)
+names how the shipped parts compose into one control loop — separation (claims),
+merge-risk radar (conflicts), evidence-gated completion (receipts, policy-check,
+approval), post-incident replay (postmortem, reliability), and memory (the ingest
+seam). It is an architecture, not a scheduler: only claims gate a mutation, and
+everything else is read-only or advisory.
+
 Use `synapse ttl-advice ./synapse.db` for read-only adaptive lease TTL advice.
 It derives completed-task duration samples, active live-claim counts, and stale
 claim counts from the event log, then prints an advisory default. It never
@@ -910,9 +917,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 206 |
 | Wire message types | 61 |
 | CLI subcommands | 83 |
-| Test functions | 2278 |
+| Test functions | 2282 |
 | Benchmark harnesses | 5 |
-| Documentation pages | 35 |
+| Documentation pages | 36 |
 | GitHub Actions workflows | 11 |
 | Optional-dependency groups | 5 |
 

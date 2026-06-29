@@ -73,6 +73,7 @@ nav:
   - Go client: go-client.md
   - TypeScript/JavaScript client: js-client.md
   - Coordination model: coordination-model.md
+  - Agent Air Traffic Control: agent-air-traffic-control.md
   - Wire protocol: protocol.md
   - CLI reference: cli.md
   - MCP server: mcp.md
