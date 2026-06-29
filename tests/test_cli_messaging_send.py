@@ -132,6 +132,32 @@ async def test_send_reports_hub_at_capacity_distinctly(
     assert "Could not reach hub" not in out
 
 
+async def test_send_reports_name_conflict_instead_of_dropping_silently(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # A name conflict (4009) is only reported after the welcome handshake, so a
+    # "ready" connection can already be doomed. The send must surface it instead of
+    # writing the message into a dying socket and losing it silently — the failure
+    # that read as "messages between terminals never arrive".
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        holder = await connect_agent("DUP", uri)
+        try:
+            code = await cli_messaging._send(
+                uri=uri,
+                name="DUP",
+                target="all",
+                message="lost?",
+                wait_seconds=0.0,
+                ready_timeout=2.0,
+            )
+        finally:
+            await close_agents(holder)
+
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "code 4009" in out or "name conflict" in out
+
+
 def test_cmd_send_dispatches_real_command(capsys: pytest.CaptureFixture[str]) -> None:
     ns = argparse.Namespace(
         uri=f"ws://127.0.0.1:{_free_port()}",
