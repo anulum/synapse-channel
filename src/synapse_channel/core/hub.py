@@ -129,6 +129,12 @@ DEFAULT_MAX_MSG_BYTES = 1024 * 1024
 """Largest accepted inbound frame (bytes); a larger one is rejected by the transport."""
 DEFAULT_TAKEOVER_COOLDOWN = 2.0
 """Seconds a name is protected from a second takeover, to blunt an eviction storm."""
+DEFAULT_TAKEOVER_OSCILLATION_WINDOW = 30.0
+"""Seconds over which repeated takeovers of one name are counted as an oscillation."""
+DEFAULT_TAKEOVER_OSCILLATION_THRESHOLD = 5
+"""Takeovers of one name within the window that trip quarantine (two waiters at war)."""
+DEFAULT_TAKEOVER_QUARANTINE = 60.0
+"""Seconds a thrashing name is pinned to its current owner, refusing all takeovers."""
 DEFAULT_AUTH_TIMEOUT = 10.0
 """Seconds a secured hub waits for an authenticated first frame before closing a socket."""
 DEFAULT_SHUTDOWN_CLOSE_TIMEOUT = 5.0
@@ -311,6 +317,9 @@ class SynapseHub:
         max_offers_per_agent: int = MAX_OFFERS_PER_AGENT,
         max_paths_per_claim: int = MAX_DECLARED_PATHS,
         takeover_cooldown: float = DEFAULT_TAKEOVER_COOLDOWN,
+        takeover_oscillation_window: float = DEFAULT_TAKEOVER_OSCILLATION_WINDOW,
+        takeover_oscillation_threshold: int = DEFAULT_TAKEOVER_OSCILLATION_THRESHOLD,
+        takeover_quarantine: float = DEFAULT_TAKEOVER_QUARANTINE,
         shutdown_close_timeout: float = DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
         enable_metrics: bool = False,
         auth_timeout: float = DEFAULT_AUTH_TIMEOUT,
@@ -357,11 +366,17 @@ class SynapseHub:
             max_connections_per_host=max_connections_per_host,
             takeover_cooldown=takeover_cooldown,
             clock=self._clock,
+            takeover_oscillation_window=takeover_oscillation_window,
+            takeover_oscillation_threshold=takeover_oscillation_threshold,
+            takeover_quarantine=takeover_quarantine,
         )
         self.max_clients = self.clients.max_clients
         self.max_unauth_clients = self.clients.max_unauth_clients
         self.max_connections_per_host = self.clients.max_connections_per_host
         self.takeover_cooldown = self.clients.takeover_cooldown
+        self.takeover_oscillation_window = self.clients.takeover_oscillation_window
+        self.takeover_oscillation_threshold = self.clients.takeover_oscillation_threshold
+        self.takeover_quarantine = self.clients.takeover_quarantine
         self.shutdown_close_timeout = max(float(shutdown_close_timeout), 0.1)
         self.max_history = max(int(max_history), 1)
         self.max_findings_per_agent = max(int(max_findings_per_agent), 1)

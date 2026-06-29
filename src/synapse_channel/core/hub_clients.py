@@ -27,6 +27,9 @@ class HubClientRegistry:
         max_connections_per_host: int | None,
         takeover_cooldown: float,
         clock: Callable[[], float],
+        takeover_oscillation_window: float = 30.0,
+        takeover_oscillation_threshold: int = 5,
+        takeover_quarantine: float = 60.0,
     ) -> None:
         self.max_clients = max(int(max_clients), 1)
         self.max_unauth_clients = (
@@ -36,8 +39,13 @@ class HubClientRegistry:
             None if max_connections_per_host is None else max(int(max_connections_per_host), 1)
         )
         self.takeover_cooldown = max(float(takeover_cooldown), 0.0)
+        self.takeover_oscillation_window = max(float(takeover_oscillation_window), 0.0)
+        self.takeover_oscillation_threshold = max(int(takeover_oscillation_threshold), 2)
+        self.takeover_quarantine = max(float(takeover_quarantine), 0.0)
         self._clock = clock
         self._last_takeover: dict[str, float] = {}
+        self._takeover_times: dict[str, list[float]] = {}
+        self._quarantine_until: dict[str, float] = {}
         self.connected_clients: set[Any] = set()
         self.unauth_clients: set[Any] = set()
         self.agent_sockets: dict[str, Any] = {}
@@ -106,6 +114,41 @@ class HubClientRegistry:
         self.agent_sockets[sender] = websocket
         return is_new_agent
 
+    def _classify_takeover(self, sender: str, now: float) -> str:
+        """Decide a takeover request: ``accept``, ``cooldown``, or quarantine.
+
+        Beyond the short per-name cooldown that merely spaces evictions apart, this
+        detects an *oscillation* — two waiters that both claim the same name with
+        takeover and so evict each other indefinitely, one per cooldown. Once a name
+        is taken over more than ``takeover_oscillation_threshold`` times within
+        ``takeover_oscillation_window`` seconds, the name is quarantined for
+        ``takeover_quarantine`` seconds: its current owner is pinned and every further
+        takeover is refused, which ends the eviction war instead of merely rate-limiting
+        it. Returns ``"quarantine_enter"`` the moment quarantine begins (logged once),
+        ``"quarantine_active"`` for subsequent refusals while it holds, ``"cooldown"``
+        for a too-soon retry, and ``"accept"`` otherwise. Bookkeeping happens here so
+        the caller only acts on the verdict.
+        """
+        until = self._quarantine_until.get(sender)
+        if until is not None:
+            if now < until:
+                return "quarantine_active"
+            # quarantine lapsed: forget the history so the name starts fresh
+            self._quarantine_until.pop(sender, None)
+            self._takeover_times.pop(sender, None)
+        last = self._last_takeover.get(sender)
+        if last is not None and now - last < self.takeover_cooldown:
+            return "cooldown"
+        cutoff = now - self.takeover_oscillation_window
+        recent = [stamp for stamp in self._takeover_times.get(sender, []) if stamp >= cutoff]
+        recent.append(now)
+        if len(recent) >= self.takeover_oscillation_threshold:
+            self._quarantine_until[sender] = now + self.takeover_quarantine
+            self._takeover_times.pop(sender, None)
+            return "quarantine_enter"
+        self._takeover_times[sender] = recent
+        return "accept"
+
     async def resolve_sender(
         self,
         sender: str,
@@ -122,8 +165,21 @@ class HubClientRegistry:
             if owner_ws is not None and owner_ws != websocket:
                 if takeover:
                     now = self._clock()
-                    last = self._last_takeover.get(sender)
-                    if last is not None and now - last < self.takeover_cooldown:
+                    verdict = self._classify_takeover(sender, now)
+                    if verdict == "quarantine_enter":
+                        logger.warning(
+                            "takeover quarantine sender=%s requester_host=%s "
+                            "reason=oscillation; pinning current owner for %.0fs",
+                            sender,
+                            self.remote_host(websocket),
+                            self.takeover_quarantine,
+                        )
+                        await self.close_socket(websocket, code=4014, reason="takeover quarantine")
+                        return None
+                    if verdict == "quarantine_active":
+                        await self.close_socket(websocket, code=4014, reason="takeover quarantine")
+                        return None
+                    if verdict == "cooldown":
                         logger.info(
                             "takeover refused sender=%s requester_host=%s reason=takeover cooldown",
                             sender,
