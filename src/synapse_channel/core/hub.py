@@ -44,6 +44,7 @@ from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.channels import ChannelRegistry
 from synapse_channel.core.handlers import DISPATCH
+from synapse_channel.core.hub_broadcast import HubBroadcaster
 from synapse_channel.core.hub_clients import HubClientRegistry
 from synapse_channel.core.hub_exposure import (
     LOOPBACK_HOSTS,
@@ -384,6 +385,12 @@ class SynapseHub:
         self.relay_log = Path(relay_log) if relay_log else None
         self.relay_max_lines = max(int(relay_max_lines), 1)
         self._relay = RelayMirror(self.relay_log, self.relay_max_lines)
+        self._broadcaster = HubBroadcaster(
+            self.clients,
+            self._relay,
+            system=self._system,
+            online_agents=self.online_agents,
+        )
         self.hub_id = hub_id or f"syn-{uuid.uuid4().hex[:8]}"
         self.connected_clients = self.clients.connected_clients
         self.unauth_clients = self.clients.unauth_clients
@@ -549,8 +556,8 @@ class SynapseHub:
         return max(0.0, self._clock() - self._started)
 
     async def _send_json(self, websocket: Any, data: dict[str, Any]) -> None:
-        """Serialise and send one message to a single socket."""
-        await websocket.send(json.dumps(data))
+        """Serialise and send one message to a single socket (handler surface)."""
+        await self._broadcaster.send_json(websocket, data)
 
     def _mirror_to_relay(self, data: dict[str, Any]) -> None:
         """Mirror one broadcast to the lite relay log via :class:`RelayMirror`.
@@ -563,37 +570,15 @@ class SynapseHub:
 
     async def _broadcast(self, data: dict[str, Any]) -> None:
         """Send one message to every connected socket, ignoring failures."""
-        self._mirror_to_relay(data)
-        if not self.connected_clients:
-            return
-        raw = json.dumps(data)
-        await asyncio.gather(
-            *(client.send(raw) for client in self.connected_clients),
-            return_exceptions=True,
-        )
+        await self._broadcaster.broadcast(data)
 
     async def _broadcast_presence(self, event: str, agent: str | None = None) -> None:
         """Broadcast a presence update naming who joined or left."""
-        await self._broadcast(
-            self._system(
-                "Presence update",
-                msg_type=MessageType.PRESENCE_UPDATE,
-                online_agents=self.online_agents(),
-                event=event,
-                agent=agent,
-            )
-        )
+        await self._broadcaster.broadcast_presence(event, agent)
 
     async def _send_to_agent(self, agent: str, data: dict[str, Any]) -> bool:
         """Send to a named agent's socket; return whether the send succeeded."""
-        websocket = self.agent_sockets.get(agent)
-        if websocket is None:  # pragma: no cover - public routing binds senders before use.
-            return False
-        try:
-            await self._send_json(websocket, data)
-            return True
-        except Exception:  # pragma: no cover - defensive half-closed socket guard.
-            return False
+        return await self._broadcaster.send_to_agent(agent, data)
 
     @staticmethod
     def _optional_int(data: dict[str, Any], key: str) -> int | None:
