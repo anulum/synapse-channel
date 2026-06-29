@@ -14,6 +14,13 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added a [cross-agent adapter kits](docs/cross-agent-adapter-kits.md) design: a
+  planned `synapse adapters` step that detects installed coding tools (Claude
+  Code, Codex, Cursor, Aider, Copilot) and writes a thin claim-aware adapter into
+  each tool's native config, plus thin client shims for Python frameworks.
+  Adapters carry only "claim before edit, release on commit, reach the hub";
+  Synapse stays persona-neutral and adds no new coordination primitive. Not
+  implemented yet.
 - Added a [federated trust model](docs/federated-trust-model.md) design that pins
   how independent operator-managed domains could peer — out-of-band,
   deny-by-default bundle exchange composing identity, signed events, mutual TLS,

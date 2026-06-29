@@ -72,6 +72,7 @@ nav:
   - Integration demos: integration-demos.md
   - Go client: go-client.md
   - TypeScript/JavaScript client: js-client.md
+  - Cross-agent adapter kits: cross-agent-adapter-kits.md
   - Coordination model: coordination-model.md
   - Agent Air Traffic Control: agent-air-traffic-control.md
   - Wire protocol: protocol.md
