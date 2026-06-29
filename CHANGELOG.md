@@ -14,6 +14,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added `synapse sandbox test` — a dry-run pre-flight that loads a `.wasm` tool and verifies
+  it against its manifest *without running it*: `core/wasm_sandbox.py` compiles the module
+  (validating its structure) and reads its exported functions but never instantiates or
+  calls it, so no fuel is spent and a runaway tool still pre-flights instantly. The bounded
+  `PreflightReport` (`core/sandbox_receipt.py`) records whether the module is well-formed,
+  whether the `--entrypoint` (default `run`) is an exported function, whether the module
+  matches its manifest digest, and what it would be granted, with a single `ok` verdict the
+  CLI maps to exit `0` (ready), `1` (pre-flight ran, tool not ready), or `2` (could not
+  pre-flight). A cheap gate before `sandbox run --approve`. Behind the optional `[wasm]`
+  extra; 100% line+branch on the new code. (KIMI v0.71.0 gap closed.)
 - Added the live Studio command centre `/studio/command` (Studio Stage B): the operator
   view that reads `/studio.json` and renders it in the instrument-panel design system. Its
   signature instrument is the **Coordination Clock** — a radial gauge where every claim is a

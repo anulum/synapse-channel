@@ -5,14 +5,17 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — bounded run receipt for a sandboxed tool execution
-"""A bounded, audit-grade receipt for one sandboxed tool run.
+"""Bounded, audit-grade evidence for one sandboxed tool: a run receipt and a preflight report.
 
 Every sandboxed execution produces a :class:`RunReceipt` — the same kind of bounded
 evidence a release receipt carries: what tool ran (id + content digest), the digest of
 the input it was given, the capabilities it was granted, how it exited, the digest of its
-output, and the fuel it burned. Receipts are pure data built with :mod:`hashlib`; this
-module names no runtime and does no execution. The runtime that produces a receipt lives
-in :mod:`synapse_channel.core.wasm_sandbox`.
+output, and the fuel it burned. A :class:`PreflightReport` is the cheaper sibling: it
+records whether a tool *could* run — its module is well-formed, its entrypoint is exported,
+and it matches its manifest digest — without ever executing it, so an operator can gate a
+``run --approve`` on a real pre-flight. Both are pure data built with :mod:`hashlib`; this
+module names no runtime and does no execution. The runtime that produces them lives in
+:mod:`synapse_channel.core.wasm_sandbox`.
 """
 
 from __future__ import annotations
@@ -83,5 +86,68 @@ def build_run_receipt(
         exit=exit,
         output_digest=digest_bytes(output),
         fuel_used=fuel_used,
+        reason=reason,
+    )
+
+
+class PreflightReport(TypedDict):
+    """The bounded evidence of a dry-run pre-flight, produced without executing the tool.
+
+    Records whether the presented module is well-formed WebAssembly (``module_valid``),
+    whether its ``entrypoint`` is an exported function (``entrypoint_exported``), whether
+    its content digest matches the manifest the operator would run it under
+    (``digest_matches``), the capabilities it *would* be granted, and a single ``ok`` verdict
+    that is true only when a subsequent ``run --approve`` would at least start.
+    """
+
+    tool_id: str
+    content_digest: str
+    digest_matches: bool
+    module_valid: bool
+    entrypoint: str
+    entrypoint_exported: bool
+    exported_functions: list[str]
+    granted_capabilities: list[str]
+    ok: bool
+    reason: str
+
+
+def build_preflight_report(
+    *,
+    manifest: CapabilityManifest,
+    content_digest: str,
+    module_valid: bool,
+    exported_functions: tuple[str, ...],
+    entrypoint: str,
+    compile_error: str = "",
+) -> PreflightReport:
+    """Assemble a :class:`PreflightReport` from a tool's compile result and its manifest.
+
+    The presented module's ``content_digest`` is compared with the manifest's, the
+    ``entrypoint`` is checked against the module's exported functions, and the first failing
+    condition (in order: invalid module, missing entrypoint, digest mismatch) is recorded as
+    the ``reason``. ``ok`` is true only when all three pass — the faithful gate a
+    ``run --approve`` would clear.
+    """
+    digest_matches = content_digest == manifest.content_digest
+    entrypoint_exported = module_valid and entrypoint in exported_functions
+    if not module_valid:
+        reason = f"module is not valid WebAssembly: {compile_error}"
+    elif not entrypoint_exported:
+        reason = f"entrypoint '{entrypoint}' is not an exported function"
+    elif not digest_matches:
+        reason = "module digest does not match the manifest (a swapped or rebuilt module)"
+    else:
+        reason = ""
+    return PreflightReport(
+        tool_id=manifest.tool_id,
+        content_digest=content_digest,
+        digest_matches=digest_matches,
+        module_valid=module_valid,
+        entrypoint=entrypoint,
+        entrypoint_exported=entrypoint_exported,
+        exported_functions=list(exported_functions),
+        granted_capabilities=granted_capabilities(manifest),
+        ok=module_valid and entrypoint_exported and digest_matches,
         reason=reason,
     )

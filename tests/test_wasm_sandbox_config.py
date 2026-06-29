@@ -18,6 +18,7 @@ from synapse_channel.core.sandbox_policy import (
 )
 from synapse_channel.core.sandbox_receipt import (
     EXIT_OK,
+    build_preflight_report,
     build_run_receipt,
     digest_bytes,
     granted_capabilities,
@@ -27,6 +28,7 @@ from synapse_channel.core.wasm_sandbox import (
     SandboxRuntimeConfig,
     _require_wasm,
     derive_runtime_config,
+    preflight_sandboxed,
 )
 
 _MANIFEST = CapabilityManifest(
@@ -92,3 +94,129 @@ def test_build_run_receipt_carries_digests_and_outcome() -> None:
     assert receipt["exit"] == EXIT_OK and receipt["fuel_used"] == 17
     assert receipt["reason"] == ""
     assert receipt["granted_capabilities"] == granted_capabilities(_MANIFEST)
+
+
+def test_build_preflight_report_passes_when_everything_lines_up() -> None:
+    report = build_preflight_report(
+        manifest=_MANIFEST,
+        content_digest=_MANIFEST.content_digest,
+        module_valid=True,
+        exported_functions=("run", "other"),
+        entrypoint="run",
+    )
+    assert report["ok"] is True
+    assert report["reason"] == ""
+    assert report["module_valid"] is True
+    assert report["entrypoint_exported"] is True
+    assert report["digest_matches"] is True
+    assert report["exported_functions"] == ["run", "other"]
+    assert report["granted_capabilities"] == granted_capabilities(_MANIFEST)
+
+
+def test_build_preflight_report_flags_an_invalid_module_first() -> None:
+    report = build_preflight_report(
+        manifest=_MANIFEST,
+        content_digest="sha256:" + "0" * 64,  # also mismatched, but module-invalid wins
+        module_valid=False,
+        exported_functions=(),
+        entrypoint="run",
+        compile_error="expected a wasm header",
+    )
+    assert report["ok"] is False
+    assert report["entrypoint_exported"] is False
+    assert report["reason"] == "module is not valid WebAssembly: expected a wasm header"
+
+
+def test_build_preflight_report_flags_a_missing_entrypoint() -> None:
+    report = build_preflight_report(
+        manifest=_MANIFEST,
+        content_digest=_MANIFEST.content_digest,
+        module_valid=True,
+        exported_functions=("other",),
+        entrypoint="run",
+    )
+    assert report["ok"] is False
+    assert report["entrypoint_exported"] is False
+    assert report["reason"] == "entrypoint 'run' is not an exported function"
+
+
+def test_build_preflight_report_flags_a_digest_mismatch_last() -> None:
+    report = build_preflight_report(
+        manifest=_MANIFEST,
+        content_digest="sha256:" + "0" * 64,
+        module_valid=True,
+        exported_functions=("run",),
+        entrypoint="run",
+    )
+    assert report["ok"] is False
+    assert report["digest_matches"] is False
+    assert "does not match the manifest" in report["reason"]
+
+
+class _FakeFuncType:
+    """Stand-in for ``wasmtime.FuncType`` — marks an export as a callable function."""
+
+
+class _FakeMemoryType:
+    """Stand-in for a non-function export (memory/table/global), never an entrypoint."""
+
+
+class _FakeWasmtimeError(Exception):
+    """Stand-in for ``wasmtime.WasmtimeError`` raised on a malformed module."""
+
+
+class _FakeExport:
+    def __init__(self, name: str, export_type: object) -> None:
+        self.name = name
+        self.type = export_type
+
+
+class _FakeModule:
+    def __init__(self, exports: list[_FakeExport]) -> None:
+        self.exports = exports
+
+
+class _FakeRuntime:
+    """A minimal ``WasmRuntime`` stand-in that compiles to a fixed export set (or fails)."""
+
+    FuncType = _FakeFuncType
+    WasmtimeError = _FakeWasmtimeError
+
+    def __init__(self, *, exports: list[_FakeExport] | None = None, fail: str = "") -> None:
+        self._exports = exports or []
+        self._fail = fail
+
+    def Config(self) -> object:
+        return object()
+
+    def Engine(self, _config: object) -> object:
+        return object()
+
+    def Module(self, _engine: object, _wasm_bytes: bytes) -> _FakeModule:
+        if self._fail:
+            raise self.WasmtimeError(f"{self._fail}\ntrailing detail line")
+        return _FakeModule(self._exports)
+
+
+def test_preflight_sandboxed_reads_function_exports_only() -> None:
+    runtime = _FakeRuntime(
+        exports=[
+            _FakeExport("run", _FakeFuncType()),
+            _FakeExport("helper", _FakeFuncType()),
+            _FakeExport("memory", _FakeMemoryType()),
+        ]
+    )
+    report = preflight_sandboxed(_MANIFEST, b"wasm-bytes", runtime=runtime)  # type: ignore[arg-type]
+    # memory is not a function export, so it is not listed; names come back sorted
+    assert report["exported_functions"] == ["helper", "run"]
+    assert report["entrypoint_exported"] is True
+    assert report["content_digest"] == digest_bytes(b"wasm-bytes")
+
+
+def test_preflight_sandboxed_reports_a_malformed_module() -> None:
+    runtime = _FakeRuntime(fail="bad magic number")
+    report = preflight_sandboxed(_MANIFEST, b"not-wasm", runtime=runtime)  # type: ignore[arg-type]
+    assert report["module_valid"] is False
+    assert report["exported_functions"] == []
+    # only the first line of the runtime error is kept
+    assert report["reason"] == "module is not valid WebAssembly: bad magic number"

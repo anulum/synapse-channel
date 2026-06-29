@@ -14,8 +14,13 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel.cli_sandbox import _cmd_run, add_parsers
-from synapse_channel.core.sandbox_receipt import EXIT_OK, RunReceipt, digest_bytes
+from synapse_channel.cli_sandbox import _cmd_run, _cmd_test, add_parsers
+from synapse_channel.core.sandbox_receipt import (
+    EXIT_OK,
+    PreflightReport,
+    RunReceipt,
+    digest_bytes,
+)
 
 _WASM = b"\x00asm\x01\x00\x00\x00fake-module-bytes"
 
@@ -71,6 +76,40 @@ def _run(args: argparse.Namespace, **received: object) -> int:
         return _receipt()
 
     return _cmd_run(args, runner=_runner)
+
+
+def _preflight_report(**fields: object) -> PreflightReport:
+    base: PreflightReport = {
+        "tool_id": "calc",
+        "content_digest": digest_bytes(_WASM),
+        "digest_matches": True,
+        "module_valid": True,
+        "entrypoint": "run",
+        "entrypoint_exported": True,
+        "exported_functions": ["run"],
+        "granted_capabilities": ["resource:mem=1048576,fuel=100000,wall=2000ms"],
+        "ok": True,
+        "reason": "",
+    }
+    base.update(fields)  # type: ignore[typeddict-item]
+    return base
+
+
+def _test(
+    args: argparse.Namespace,
+    *,
+    report: PreflightReport | None = None,
+    received: dict[str, object] | None = None,
+) -> int:
+    """Invoke ``_cmd_test`` with a fake preflighter returning ``report`` (default: ready)."""
+    chosen = report if report is not None else _preflight_report()
+
+    def _preflighter(manifest: object, wasm: bytes, *, entrypoint: str) -> PreflightReport:
+        if received is not None:
+            received.update(wasm=wasm, entrypoint=entrypoint)
+        return chosen
+
+    return _cmd_test(args, preflight=_preflighter)
 
 
 def test_validate_reports_a_valid_manifest(
@@ -216,3 +255,95 @@ def test_run_prints_a_failure_reason(tmp_path: Path, capsys: pytest.CaptureFixtu
     assert _cmd_run(args, runner=_runner) == 0
     out = capsys.readouterr().out
     assert "exit error" in out and "reason: entrypoint 'run' is not exported" in out
+
+
+def test_test_reports_a_ready_tool(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    args = _args("test", str(_tool(tmp_path)), "--manifest", str(_manifest_file(tmp_path)))
+    received: dict[str, object] = {}
+    assert _test(args, received=received) == 0
+    out = capsys.readouterr().out
+    assert "preflight for 'calc': ready to run" in out
+    assert "module valid: yes" in out
+    assert "entrypoint 'run' exported: yes" in out
+    # the tool bytes and the default entrypoint reached the preflighter
+    assert received["wasm"] == _WASM
+    assert received["entrypoint"] == "run"
+
+
+def test_test_reports_a_not_ready_tool(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    args = _args("test", str(_tool(tmp_path)), "--manifest", str(_manifest_file(tmp_path)))
+    report = _preflight_report(
+        ok=False,
+        entrypoint_exported=False,
+        exported_functions=["other"],
+        reason="entrypoint 'run' is not an exported function",
+    )
+    assert _test(args, report=report) == 1
+    out = capsys.readouterr().out
+    assert "preflight for 'calc': NOT ready" in out
+    assert "entrypoint 'run' exported: no" in out
+    assert "exported functions: other" in out
+    assert "reason: entrypoint 'run' is not an exported function" in out
+
+
+def test_test_emits_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    args = _args(
+        "test", str(_tool(tmp_path)), "--manifest", str(_manifest_file(tmp_path)), "--json"
+    )
+    assert _test(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    assert payload["exported_functions"] == ["run"]
+
+
+def test_test_passes_a_custom_entrypoint(tmp_path: Path) -> None:
+    args = _args(
+        "test",
+        str(_tool(tmp_path)),
+        "--manifest",
+        str(_manifest_file(tmp_path)),
+        "--entrypoint",
+        "main",
+    )
+    received: dict[str, object] = {}
+    assert _test(args, received=received) == 0
+    assert received["entrypoint"] == "main"
+
+
+def test_test_reports_missing_files(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    missing_tool = _args(
+        "test", str(tmp_path / "nope.wasm"), "--manifest", str(_manifest_file(tmp_path))
+    )
+    assert _test(missing_tool) == 2
+    assert "could not read tool module" in capsys.readouterr().err
+
+    bad_manifest = _args("test", str(_tool(tmp_path)), "--manifest", str(tmp_path / "no.json"))
+    assert _test(bad_manifest) == 2
+    assert "could not read manifest" in capsys.readouterr().err
+
+
+def test_test_reports_a_missing_wasm_extra(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def _no_runtime(*_args: object, **_kwargs: object) -> PreflightReport:
+        raise RuntimeError(
+            "the WASM sandbox needs the optional extra: pip install 'synapse-channel[wasm]'"
+        )
+
+    args = _args("test", str(_tool(tmp_path)), "--manifest", str(_manifest_file(tmp_path)))
+    assert _cmd_test(args, preflight=_no_runtime) == 2
+    assert "synapse-channel[wasm]" in capsys.readouterr().err
+
+
+def test_test_runs_end_to_end_against_the_real_runtime(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    wasmtime = pytest.importorskip("wasmtime")
+    wasm = wasmtime.wat2wasm('(module (func (export "run") (result i32) i32.const 7))')
+    tool = tmp_path / "real.wasm"
+    tool.write_bytes(wasm)
+    manifest = _manifest_file(tmp_path, content_digest=digest_bytes(wasm))
+    # the default preflighter (no injection) wires the CLI to the real wasmtime runtime
+    args = _args("test", str(tool), "--manifest", str(manifest))
+    assert args.func(args) == 0
+    assert "ready to run" in capsys.readouterr().out
