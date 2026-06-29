@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.70.0] - 2026-06-29
+
 ### Added
 - Added the read-only multi-hub follower ([docs](docs/multi-hub-sync.md)): the third
   CRDT slice. `core/multihub_follower.py`'s `MultiHubFollower` tracks a per-peer `seq`
