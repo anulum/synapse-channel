@@ -190,8 +190,6 @@ def test_encrypt_file_leaves_no_temp_when_encryption_fails(tmp_path: Path) -> No
         def encrypt(self, plaintext: bytes) -> bytes:
             raise RuntimeError("no cryptography")
 
-    from synapse_channel.core import at_rest
-
     target = tmp_path / "out.enc"
     with pytest.raises(RuntimeError):
         at_rest.encrypt_file(target, b"x", _Boom())  # type: ignore[arg-type]
@@ -440,14 +438,14 @@ def test_backup_profile_cleans_manifest_temp_when_replace_fails(
     cipher = _cipher()
     relay = tmp_path / "feed.ndjson"
     relay.write_bytes(cipher.encrypt(b"relay"))
-    real_replace = at_rest.os.replace
+    real_replace = os.replace
 
     def fail_manifest_replace(src: str | Path, dst: str | Path) -> None:
         if Path(dst).name == "manifest.json":
             raise RuntimeError("replace failed")
         real_replace(src, dst)
 
-    monkeypatch.setattr(at_rest.os, "replace", fail_manifest_replace)
+    monkeypatch.setattr("synapse_channel.core.at_rest.os.replace", fail_manifest_replace)
 
     with pytest.raises(RuntimeError, match="replace failed"):
         backup_profile((AtRestSurface("relay-log", relay),), tmp_path / "bundle", cipher)
