@@ -33,6 +33,14 @@ All notable changes to this project are documented here.
   cannot drift apart), and a partial payload from a degraded hub still projects to a
   renderable snapshot. 100% line+branch.
 
+### Changed
+- Extracted the relay-log mirroring out of the hub into `core/hub_relay.py`
+  (`RelayMirror`): the append, lite encoding, and self-trimming that bound the file
+  now live in a single-responsibility class the hub holds, leaving `_mirror_to_relay`
+  a thin delegating wrapper. No behaviour change — the relay log, its trimming, and the
+  no-log no-op are identical. First slice of the bounded hub decomposition. 100%
+  line+branch on the new module.
+
 ## [0.71.0] - 2026-06-29
 
 ### Added
