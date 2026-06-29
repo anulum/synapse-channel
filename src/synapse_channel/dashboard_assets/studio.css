@@ -76,6 +76,13 @@
   padding: var(--syn-sp-3);
 }
 
+/* vertical stack utility (gapped column) */
+.syn-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--syn-sp-2);
+}
+
 .syn-label {
   font-family: var(--syn-font-display);
   font-size: var(--syn-fs-label);
