@@ -26,6 +26,7 @@ The ``synapse`` command exposes these subcommands:
 * ``postmortem`` — build a replayable task postmortem from the event log;
 * ``reliability`` — build evidence-only reliability memory from the event log;
 * ``accounting`` — record and report opt-in model cost/token usage from the event log;
+* ``approval`` — request, decide, and replay human-in-the-loop approval gates;
 * ``ttl-advice`` — build read-only adaptive lease TTL advice from the event log;
 * ``dashboard`` — serve a local read-only web dashboard for hub snapshots;
 * ``directory`` — print a read-only capability/resource discovery directory;
@@ -85,6 +86,7 @@ from synapse_channel.cli_accounting import add_parsers as add_accounting_parsers
 from synapse_channel.cli_acl_shadow import add_parsers as add_acl_shadow_parsers
 from synapse_channel.cli_adaptive_ttl import add_parsers as add_ttl_advice_parsers
 from synapse_channel.cli_agent_tmux import add_parsers as add_agent_tmux_parsers
+from synapse_channel.cli_approvals import add_parsers as add_approval_parsers
 from synapse_channel.cli_arm import add_parser as add_arm_parser
 from synapse_channel.cli_channels import add_parsers as add_channel_parsers
 from synapse_channel.cli_codex_tmux import add_parsers as add_codex_tmux_parsers
@@ -215,6 +217,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_reliability_parsers(sub)
 
     add_accounting_parsers(sub)
+
+    add_approval_parsers(sub)
 
     add_ttl_advice_parsers(sub)
 
