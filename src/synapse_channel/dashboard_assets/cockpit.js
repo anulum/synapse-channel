@@ -294,6 +294,39 @@
       .join("");
   }
 
+  function renderRisk(snap) {
+    const risk = snap.risk || {};
+    const level = risk.level || "green";
+    const verdict = $("risk-verdict");
+    verdict.textContent = level.toUpperCase();
+    verdict.className = "risk__verdict risk__verdict--" + level;
+    const signals = risk.signals || [];
+    const safe = risk.safe_next_work || [];
+    const parts = [];
+    parts.push(
+      signals
+        .map(
+          (s) =>
+            `<div class="row risk__signal risk__signal--${esc(s.level)}">` +
+            `<div class="row__main"><div class="row__title">${esc(s.subject)} ` +
+            `<span class="tag">${esc(s.category)}</span></div>` +
+            `<div class="row__sub">${esc(s.detail)}</div></div></div>`,
+        )
+        .join(""),
+    );
+    if (safe.length) {
+      parts.push(
+        '<div class="risk__safe"><div class="risk__safe-head">Safe next work</div>' +
+          safe.map((t) => `<span class="chip">${esc(t)}</span>`).join(" ") +
+          "</div>",
+      );
+    }
+    if (!signals.length && !safe.length) {
+      parts.push('<div class="empty">All clear — no risks, no ready work waiting.</div>');
+    }
+    $("risk").innerHTML = parts.join("");
+  }
+
   // ---------- beacon / loop ----------
   function setBeacon(state, label) {
     const beacon = $("beacon");
@@ -313,6 +346,7 @@
       const snap = await fetchSnapshot();
       renderHud(snap);
       renderFleet(snap);
+      renderRisk(snap);
       renderFeed(snap);
       renderReceipts(snap);
       renderBoard(snap);

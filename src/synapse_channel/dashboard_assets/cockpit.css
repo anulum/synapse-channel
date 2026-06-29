@@ -645,3 +645,54 @@ a {
     animation: none;
   }
 }
+
+/* ---------- risk panel ---------- */
+.risk__verdict {
+  font: 700 11px/1 var(--mono);
+  letter-spacing: 0.12em;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--void);
+}
+.risk__verdict--green {
+  background: var(--synapse);
+}
+.risk__verdict--amber {
+  background: var(--signal);
+}
+.risk__verdict--red {
+  background: var(--alert);
+}
+.risk__signal {
+  border-left: 3px solid var(--line);
+  padding-left: 9px;
+}
+.risk__signal--red {
+  border-left-color: var(--alert);
+}
+.risk__signal--amber {
+  border-left-color: var(--signal);
+}
+.risk__safe {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.risk__safe-head {
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.chip {
+  display: inline-block;
+  font: 600 11px/1 var(--mono);
+  color: var(--synapse);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin: 0 4px 4px 0;
+}

@@ -96,6 +96,11 @@ def render_cockpit_html(*, refresh_seconds: int, fallback_html: str) -> str:
         '<span class="panel__count" id="board-count">0</span></div>'
         '<div class="lanes" id="lanes"></div></section>'
     )
+    risk_panel = (
+        '<section class="panel risk" id="risk-panel"><div class="panel__head"><h2>Risk</h2>'
+        '<span class="risk__verdict risk__verdict--green" id="risk-verdict">—</span></div>'
+        '<div class="panel__body" id="risk"></div></section>'
+    )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -120,6 +125,7 @@ def render_cockpit_html(*, refresh_seconds: int, fallback_html: str) -> str:
       {_panel("Capability manifest", "manifest", count_id="manifest-count")}
     </div>
     <div class="col">
+      {risk_panel}
       {_panel("Signal stream", "feed", scroll=True)}
       {_panel("Release receipts", "receipts", count_id="receipts-count", scroll=True)}
     </div>

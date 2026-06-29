@@ -41,6 +41,7 @@ from synapse_channel.dashboard_cockpit import (
     render_cockpit_html,
 )
 from synapse_channel.dashboard_fleet import build_fleet_visibility, render_fleet_visibility_html
+from synapse_channel.dashboard_risk import build_risk_view
 
 SnapshotMapping = dict[str, Any]
 """Mutable mapping shape used for hub snapshot payloads."""
@@ -87,7 +88,9 @@ class DashboardSnapshot:
             derived ``fleet.a2a`` summary.
         """
         payload = asdict(self)
-        payload["fleet"] = build_fleet_visibility(self, a2a_state_file=a2a_state_file).to_dict()
+        fleet = build_fleet_visibility(self, a2a_state_file=a2a_state_file)
+        payload["fleet"] = fleet.to_dict()
+        payload["risk"] = build_risk_view(fleet).to_dict()
         return payload
 
 
