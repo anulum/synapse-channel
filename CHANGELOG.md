@@ -14,6 +14,13 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the workflow driver's planning core (`core/workflow_driver.py`) and a
+  `synapse workflow plan` command: given a compiled workflow and a board snapshot,
+  it buckets tasks into done/in-flight/ready/blocked (readiness recomputed from
+  dependencies) and plans which ready tasks to hand to which capable agents,
+  bounded by `--max-in-flight` and one task per agent per round. A pure,
+  deterministic function over the workflow and the board — the autonomous live
+  loop wraps it. 100% covered.
 - Added a declarative workflow layer (`core/workflow.py`, [docs](docs/workflows.md)):
   a workflow is a plain JSON artifact (a name and steps with `depends_on` edges)
   that compiles to ordinary blackboard tasks, so the board's existing ready/blocked
