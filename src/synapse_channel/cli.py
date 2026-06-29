@@ -83,8 +83,8 @@ from typing import Any
 from synapse_channel import __version__
 from synapse_channel.cli_a2a import add_parsers as add_a2a_parsers
 from synapse_channel.cli_accounting import add_parsers as add_accounting_parsers
-from synapse_channel.cli_adapters import add_parsers as add_adapters_parsers
 from synapse_channel.cli_acl_shadow import add_parsers as add_acl_shadow_parsers
+from synapse_channel.cli_adapters import add_parsers as add_adapters_parsers
 from synapse_channel.cli_adaptive_ttl import add_parsers as add_ttl_advice_parsers
 from synapse_channel.cli_agent_tmux import add_parsers as add_agent_tmux_parsers
 from synapse_channel.cli_approvals import add_parsers as add_approval_parsers
