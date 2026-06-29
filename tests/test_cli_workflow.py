@@ -99,3 +99,69 @@ def test_compile_reports_a_malformed_workflow(
     args = parser.parse_args(["workflow", "compile", _write(tmp_path, {"name": "w"})])
     assert args.func(args) == 2
     assert "steps" in capsys.readouterr().err
+
+
+def _write_named(tmp_path: Path, name: str, data: object) -> str:
+    path = tmp_path / name
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return str(path)
+
+
+def test_plan_routes_ready_tasks(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    wf = _write(tmp_path, _GOOD)
+    status = _write_named(tmp_path, "status.json", {"release/build": "done"})
+    agents = _write_named(tmp_path, "agents.json", {"alpha": ["ci"]})
+    parser = _parser()
+    args = parser.parse_args(["workflow", "plan", wf, "--status", status, "--agents", agents])
+    assert args.func(args) == 0
+    out = capsys.readouterr().out
+    assert "1 done" in out
+    assert "release/test -> alpha" in out
+
+
+def test_plan_json_with_no_files_uses_defaults(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    parser = _parser()
+    args = parser.parse_args(["workflow", "plan", _write(tmp_path, _GOOD), "--json"])
+    assert args.func(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["state"]["ready"] == ["release/build"]
+    assert payload["plan"] == []  # no agents available
+
+
+def test_plan_reports_no_assignments(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    parser = _parser()
+    args = parser.parse_args(["workflow", "plan", _write(tmp_path, _GOOD)])
+    assert args.func(args) == 0
+    assert "no assignments" in capsys.readouterr().out
+
+
+def test_plan_rejects_a_non_object_status_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    status = _write_named(tmp_path, "status.json", [1, 2])
+    parser = _parser()
+    args = parser.parse_args(["workflow", "plan", _write(tmp_path, _GOOD), "--status", status])
+    assert args.func(args) == 2
+    assert "status file must be a JSON object" in capsys.readouterr().err
+
+
+def test_plan_rejects_a_non_object_agents_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    agents = _write_named(tmp_path, "agents.json", "nope")
+    parser = _parser()
+    args = parser.parse_args(["workflow", "plan", _write(tmp_path, _GOOD), "--agents", agents])
+    assert args.func(args) == 2
+    assert "agents file must be a JSON object" in capsys.readouterr().err
+
+
+def test_plan_rejects_agent_without_a_class_list(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    agents = _write_named(tmp_path, "agents.json", {"alpha": "ci"})
+    parser = _parser()
+    args = parser.parse_args(["workflow", "plan", _write(tmp_path, _GOOD), "--agents", agents])
+    assert args.func(args) == 2
+    assert "list of task classes" in capsys.readouterr().err

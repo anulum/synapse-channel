@@ -69,12 +69,39 @@ it cannot make progress:
 - a **cycle** in the dependency graph (a workflow with a cycle would deadlock the
   board, so it is refused, naming a step on the cycle).
 
+## Driving a workflow
+
+Given a board snapshot, `synapse workflow plan` works out what to do next: which
+tasks are done, in flight, ready, or blocked, and which ready tasks to hand to
+which agents.
+
+```bash
+synapse workflow plan release.json \
+  --status status.json \    # {"release/build": "done"} — board task statuses
+  --agents agents.json \    # {"alice": ["ci"], "bob": []} — agents and the classes they handle
+  --max-in-flight 4
+```
+
+```text
+state: 1 done, 0 in flight, 1 ready, 0 blocked
+assignments:
+  release/test -> alice
+```
+
+The planner recomputes readiness from dependencies (a task is ready only when all
+of its dependencies are terminal), routes each ready task to a free agent that
+advertises its `task_class` (an unclassified task can go to anyone), and never
+exceeds the in-flight budget. It is a pure function over the compiled workflow and
+the board snapshot, so it is deterministic and replayable. An autonomous loop that
+posts a workflow and applies the plan against the live hub on every board change
+wraps this same planner.
+
 ## Boundaries
 
 - **The blackboard is the executor.** A workflow compiles to ordinary tasks with
-  `depends_on` edges; it adds no scheduler and no new transport.
+  `depends_on` edges; the planner only decides assignments. It adds no scheduler
+  and no new transport.
 - **Single-dependency, local-first.** The artifact is plain JSON parsed with the
   standard library; nothing new is pulled into the core.
-- **Authoring only, today.** `validate` and `compile` are offline tools. Driving a
-  compiled workflow — posting it and routing each ready task to a capable agent —
-  is the workflow driver, a separate step in this lane.
+- **Bounded routing.** The planner hands out at most `--max-in-flight` tasks and
+  one task per agent per round — work-handing, never a flood.
