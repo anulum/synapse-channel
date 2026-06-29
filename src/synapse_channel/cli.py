@@ -105,6 +105,7 @@ from synapse_channel.cli_mcp import add_parsers as add_mcp_parsers
 from synapse_channel.cli_mcp_call import add_parsers as add_mcp_call_parsers
 from synapse_channel.cli_memory_projection import add_parsers as add_memory_projection_parsers
 from synapse_channel.cli_messaging import add_parsers as add_messaging_parsers
+from synapse_channel.cli_multihub import add_parsers as add_multihub_parsers
 from synapse_channel.cli_new import add_parsers as add_new_parsers
 from synapse_channel.cli_policy_check import add_parsers as add_policy_check_parsers
 from synapse_channel.cli_postmortem import add_parsers as add_postmortem_parsers
@@ -169,6 +170,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_new_parsers(sub)
 
     add_messaging_parsers(sub)
+    add_multihub_parsers(sub)
 
     add_arm_parser(sub)
 
