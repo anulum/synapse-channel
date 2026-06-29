@@ -46,6 +46,10 @@ from synapse_channel.dashboard_studio import (
     STUDIO_REFERENCE_PATH,
     render_studio_reference_html,
 )
+from synapse_channel.dashboard_studio_command import (
+    STUDIO_COMMAND_PATH,
+    render_studio_command_html,
+)
 from synapse_channel.studio_snapshot import STUDIO_SNAPSHOT_PATH, build_studio_snapshot
 
 SnapshotMapping = dict[str, Any]
@@ -484,6 +488,16 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._write(
                 HTTPStatus.OK,
                 render_studio_reference_html().encode("utf-8"),
+                content_type="text/html",
+            )
+            return
+        if path == STUDIO_COMMAND_PATH:
+            # The command-centre shell is hub-independent: it serves without reaching the
+            # hub and fetches the live /studio.json projection from the browser, so the
+            # page loads (and shows an offline state) even when the hub is down.
+            self._write(
+                HTTPStatus.OK,
+                render_studio_command_html(poll_seconds=self.refresh_seconds).encode("utf-8"),
                 content_type="text/html",
             )
             return

@@ -64,10 +64,29 @@ synapse dashboard --uri ws://127.0.0.1:8765
 # then GET http://127.0.0.1:8765/studio.json
 ```
 
+## The command centre — `/studio/command`
+
+The live operator view, served at `/studio/command`, reads `/studio.json` and answers at a
+glance what the fleet is doing and what is at risk. Its signature instrument is the
+**Coordination Clock** — a radial gauge where every claim is a segment around the dial,
+coloured by lease health (green fresh, amber ageing, red stale), with conflicts marked on
+the rim and a slow radar sweep; the dial centre carries the verdict and the live claim
+count. Around it sit the verdict pill, the headline counters, and the agents, claims,
+tasks, and risk panels.
+
+The page shell is hub-independent: it loads with no hub running, shows an offline state,
+and fills in live as it polls. It honours `prefers-reduced-motion` — the sweep stills and a
+claims table pairs the dial so the same information is legible without animation. Vanilla
+HTML, the `studio.css` tokens, and dependency-free ES — no build step, no external request.
+
+```bash
+synapse dashboard --port 8765
+# then open http://127.0.0.1:8765/studio/command
+```
+
 ## What comes next
 
-The command centre wires the live `/studio.json` read model into these components — the
-risk verdict, the fleet, the safe-next-work queue, and the signature Coordination Clock
-over leases and claims — followed by the workflow, trace, policy, routing, and channel
-surfaces. The core read-only Studio stays free; an organisation-level workbench (saved
-views, exports, multi-project, managed) is planned as a separate layer.
+Beyond the command centre come the workflow, trace, policy, routing, and channel surfaces,
+each reading the same kind of projection. The core read-only Studio stays free; an
+organisation-level workbench (saved views, exports, multi-project, managed) is planned as a
+separate layer.
