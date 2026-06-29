@@ -14,6 +14,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the Studio design system (A0) and its reference page ([docs](docs/studio.md)):
+  the dashboard begins growing from a read-only cockpit into an operator Studio. A new
+  dependency-free `dashboard_assets/studio.css` carries the instrument-panel language —
+  an ink-navy base, an indigo-violet brand hue, and red/amber/green reserved for
+  verdicts — as CSS custom properties plus a component kit (panels, cards, status dots,
+  verdict pills, mono data rows, the nav rail, an indigo focus ring; motion stilled
+  under `prefers-reduced-motion`). It is served at `/studio.css`, and `/studio` renders
+  a self-contained reference page exercising every component with no live data, so it
+  works with the hub offline and is the visual reference the live command centre builds
+  on. 100% covered; no new dependency.
 - Added `synapse adapters list/install/uninstall` ([docs](docs/cross-agent-adapter-kits.md)),
   the cross-agent adapter installer: it detects the coding tools on a machine (Claude
   Code, Codex, Cursor, Aider, Copilot, Windsurf, Gemini CLI) and writes a thin

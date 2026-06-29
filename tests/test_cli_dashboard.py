@@ -279,6 +279,39 @@ async def test_dashboard_http_server_serves_real_html_and_json() -> None:
     assert payload["manifest"][0]["contracts"][0]["task_class"] == "chat"
 
 
+async def test_dashboard_http_server_serves_the_studio_reference_and_css() -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        handle = await _prepare_dashboard_hub(uri)
+        server = start_dashboard_server(
+            host="127.0.0.1",
+            port=0,
+            uri=uri,
+            name="SYNAPSE-CHANNEL/dashboard",
+            token=None,
+            ready_timeout=1.0,
+            response_timeout=1.0,
+            refresh_seconds=5,
+            allow_non_loopback=False,
+        )
+        try:
+            studio_status, studio_type, studio_body = await asyncio.to_thread(
+                _http_get, server.url("/studio")
+            )
+            css_status, css_type, css_body = await asyncio.to_thread(
+                _http_get, server.url("/studio.css")
+            )
+        finally:
+            server.close()
+            await close_agents(handle)
+
+    assert studio_status == 200
+    assert studio_type == "text/html"
+    assert "syn-verdict" in studio_body
+    assert css_status == 200
+    assert css_type == "text/css"
+    assert "--syn-brand" in css_body
+
+
 async def test_dashboard_http_server_requires_dashboard_bearer_token() -> None:
     async with running_hub(SynapseHub()) as (_hub, uri):
         handle = await _prepare_dashboard_hub(uri)
