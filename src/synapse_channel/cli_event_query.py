@@ -19,7 +19,7 @@ from synapse_channel.core.event_query import render_human, result_to_json, run_q
 def _cmd_event_query(args: argparse.Namespace) -> int:
     """Run one temporal event-log query and print the result."""
     try:
-        result = run_query(args.db, args.query)
+        result = run_query(args.db, args.query, limit=args.limit)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -47,4 +47,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         ),
     )
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Cap output to the most recent N records (and conflict pairs).",
+    )
     parser.set_defaults(func=_cmd_event_query)

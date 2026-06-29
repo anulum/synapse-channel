@@ -18,6 +18,7 @@ import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore, StoredEvent
@@ -223,8 +224,35 @@ def parse_query(query: str) -> EventQuery:
     raise ValueError(msg)
 
 
-def run_query(db_path: str | Path, query: str) -> QueryResult:
-    """Run one temporal event-log query against an existing SQLite store."""
+def run_query(db_path: str | Path, query: str, *, limit: int | None = None) -> QueryResult:
+    """Run one temporal event-log query against an existing SQLite store.
+
+    The store is read selectively: only the sequence/time window and event kinds
+    a query needs are loaded from SQLite, so a growing event log does not force a
+    full scan for every query. The result is identical to scanning the whole
+    store because the loaded window is always a superset of the events the query
+    keeps.
+
+    Parameters
+    ----------
+    db_path : str or pathlib.Path
+        Path to a hub event-store database.
+    query : str
+        Query text (see :func:`parse_query`).
+    limit : int or None, optional
+        When given, cap the result to its most recent ``limit`` records (and
+        conflict pairs); ``None`` returns every match.
+
+    Returns
+    -------
+    QueryResult
+        The query result, optionally capped to ``limit`` records.
+
+    Raises
+    ------
+    ValueError
+        If the event store does not exist or the query is unsupported.
+    """
     path = Path(db_path)
     if not path.exists():
         msg = f"missing event store: {path}"
@@ -232,10 +260,70 @@ def run_query(db_path: str | Path, query: str) -> QueryResult:
     parsed = parse_query(query)
     store = EventStore(path)
     try:
-        events = tuple(store.read_all())
+        events = tuple(store.read_window(**_selective_read_args(parsed)))
     finally:
         store.close()
-    return execute_query(events, parsed)
+    result = execute_query(events, parsed)
+    if limit is not None:
+        result = _cap_result(result, limit)
+    return result
+
+
+def _selective_read_args(query: EventQuery) -> dict[str, Any]:
+    """Return :meth:`EventStore.read_window` bounds that load a sufficient subset.
+
+    The window is a guaranteed superset of the events :func:`execute_query` keeps
+    for ``query``, so a selective read yields results identical to a full scan.
+
+    Raises
+    ------
+    ValueError
+        If the query kind has no selective-read mapping.
+    """
+    if query.kind == "task_timeline":
+        return {"kinds": TASK_EVENT_KINDS}
+    if query.kind in {"task_state", "conflicts"}:
+        return _cutoff_window(query.cutoff_kind, query.cutoff)
+    if query.kind == "path_touched":
+        return {"since_ts": query.lower, "until_ts": query.upper, "kinds": CLAIM_SNAPSHOT_KINDS}
+    if query.kind == "channel_events":
+        return {
+            **_range_window(query.cutoff_kind, query.lower, query.upper),
+            "kinds": (EventKind.CHAT,),
+        }
+    msg = f"unsupported event query kind: {query.kind}"
+    raise ValueError(msg)
+
+
+def _cutoff_window(cutoff_kind: str, cutoff: float) -> dict[str, Any]:
+    """Return an upper-bounded window for an at-or-before cutoff."""
+    if cutoff_kind == "seq":
+        return {"max_seq": int(cutoff)}
+    return {"until_ts": cutoff}
+
+
+def _range_window(cutoff_kind: str, lower: float, upper: float) -> dict[str, Any]:
+    """Return an inclusive window for a sequence or time range."""
+    if cutoff_kind == "seq":
+        return {"min_seq": int(lower), "max_seq": int(upper)}
+    return {"since_ts": lower, "until_ts": upper}
+
+
+def _cap_result(result: QueryResult, limit: int) -> QueryResult:
+    """Return ``result`` with records and conflicts capped to the last ``limit``."""
+    keep = max(0, int(limit))
+    records = tuple(result.records[-keep:]) if keep else ()
+    if result.conflicts is None:
+        conflicts = None
+    else:
+        conflicts = list(result.conflicts[-keep:]) if keep else []
+    return QueryResult(
+        kind=result.kind,
+        query=result.query,
+        records=records,
+        state=result.state,
+        conflicts=conflicts,
+    )
 
 
 def execute_query(events: Sequence[StoredEvent], query: EventQuery) -> QueryResult:

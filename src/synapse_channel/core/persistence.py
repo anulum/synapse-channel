@@ -207,6 +207,72 @@ class EventStore:
             for seq, ts, kind, payload in rows
         ]
 
+    def read_window(
+        self,
+        *,
+        min_seq: int | None = None,
+        max_seq: int | None = None,
+        since_ts: float | None = None,
+        until_ts: float | None = None,
+        kinds: Iterable[str] | None = None,
+        limit: int | None = None,
+    ) -> list[StoredEvent]:
+        """Return events inside an inclusive sequence/time window, in order.
+
+        This is the selective-read seam the event-query layer uses to avoid
+        loading an unbounded event store for every point-in-time or windowed
+        query: the bounds are pushed into SQLite so only candidate rows are
+        deserialised. Every bound is optional and inclusive; omitting all of them
+        is equivalent to :meth:`read_all`.
+
+        Parameters
+        ----------
+        min_seq, max_seq : int or None, optional
+            Inclusive lower and upper sequence bounds (``seq >= min_seq`` /
+            ``seq <= max_seq``).
+        since_ts, until_ts : float or None, optional
+            Inclusive lower and upper timestamp bounds (``ts >= since_ts`` /
+            ``ts <= until_ts``).
+        kinds : Iterable[str] or None, optional
+            Restrict to these event kinds; an empty iterable returns nothing.
+        limit : int or None, optional
+            Cap the number of rows returned after ordering (floored at ``0``).
+
+        Returns
+        -------
+        list[StoredEvent]
+            Matching events ordered by ascending sequence number.
+        """
+        sql = "SELECT seq, ts, kind, payload FROM events WHERE 1 = 1"
+        params: list[Any] = []
+        if min_seq is not None:
+            sql += " AND seq >= ?"
+            params.append(int(min_seq))
+        if max_seq is not None:
+            sql += " AND seq <= ?"
+            params.append(int(max_seq))
+        if since_ts is not None:
+            sql += " AND ts >= ?"
+            params.append(float(since_ts))
+        if until_ts is not None:
+            sql += " AND ts <= ?"
+            params.append(float(until_ts))
+        if kinds is not None:
+            kind_list = [str(k) for k in kinds]
+            if not kind_list:
+                return []
+            sql += f" AND kind IN ({','.join('?' for _ in kind_list)})"
+            params.extend(kind_list)
+        sql += " ORDER BY seq"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(max(0, int(limit)))
+        rows = self._conn.execute(sql, params).fetchall()
+        return [
+            StoredEvent(seq=int(seq), ts=float(ts), kind=str(kind), payload=json.loads(payload))
+            for seq, ts, kind, payload in rows
+        ]
+
     def count(self) -> int:
         """Return the number of events currently stored."""
         row = self._conn.execute("SELECT COUNT(*) FROM events").fetchone()
