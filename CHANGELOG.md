@@ -14,6 +14,15 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added `synapse workflow run` ([docs](docs/workflows.md)), the autonomous live
+  loop around the planner: it connects to the hub, posts a compiled workflow's
+  tasks once, then on every board reading re-derives the state and routes the ready
+  steps by writing each task's `suggested_owner`. Routing is advisory (workers stay
+  free to choose), idempotent (a task already advising the chosen agent is not
+  re-written), resumable (it routes from the live board, so a restarted driver
+  continues), and bounded by both `--max-in-flight` and `--deadline`. The decision
+  logic is the pure planner; `run` adds only the connect-post-read-assign shell
+  (`core/workflow_run.py`). 100% covered.
 - Added the workflow driver's planning core (`core/workflow_driver.py`) and a
   `synapse workflow plan` command: given a compiled workflow and a board snapshot,
   it buckets tasks into done/in-flight/ready/blocked (readiness recomputed from
