@@ -14,6 +14,14 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added `synapse multihub observe` ([docs](docs/multi-hub-sync.md)): the operator-facing
+  read of the multi-hub follower. It opens a peer hub's event store, folds its log through
+  `MultiHubFollower`, and prints the *observed* board, progress count, and claim view
+  (advisory — claims are never granted across hubs), or `--json`. Read-only by
+  construction — it reads the peer store through the same `read_since` seam (SQLite WAL
+  allows a concurrent reader beside the live peer hub) and exits. Classified `analysis` in
+  the surface taxonomy; 100% line+branch. (KIMI v0.70.0 surfaced this as a gap — the
+  follower was library-only.)
 - Added `synapse federation import/list/revoke` ([docs](docs/federated-trust-model.md)):
   the operator-facing layer over the federation policy bundle. `import` reads an
   out-of-band peer-domain bundle, requires a `--confirmed-by` operator, records the
