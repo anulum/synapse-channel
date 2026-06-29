@@ -13,6 +13,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Added a bounded streaming-response path (`core/streaming.py`) for incremental
+  worker replies and long-running progress: an `open`/`chunk`…/`done` (or `abort`)
+  frame sequence carried over the existing WebSocket chat path, tagged with one
+  stream id. A `StreamBounds` ceiling (chunk count, per-chunk and total bytes,
+  TTL) is enforced by both the producer (`StreamProducer`, `agent.stream_reply`)
+  and the consumer (`StreamConsumer`), so a runaway stream is refused at the
+  source and a malformed or oversized one is rejected on receipt. Streams are
+  transient, not durable task state; the retention boundary is documented. See
+  [docs/streaming.md](docs/streaming.md).
+
 ### Fixed
 - `synapse send` (and `syn say`), `synapse accounting record`, and `synapse
   approval request`/`decide` no longer silently drop their message when the sender
