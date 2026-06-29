@@ -59,6 +59,7 @@ from synapse_channel.core.hub_http import (
     metrics_authorised,
     request_metrics_token,
 )
+from synapse_channel.core.hub_relay import RelayMirror
 from synapse_channel.core.idempotency import IdempotencyCache
 from synapse_channel.core.journal import record_idempotency, replay
 from synapse_channel.core.ledger import (
@@ -92,7 +93,6 @@ from synapse_channel.core.state import (
     MAX_OFFERS_PER_AGENT,
     SynapseState,
 )
-from synapse_channel.relay import append_jsonl, encode_lite, trim_jsonl_tail
 
 logger = logging.getLogger("synapse.hub")
 
@@ -383,7 +383,7 @@ class SynapseHub:
         self.compact_hint_threshold = max(1, int(compact_hint_threshold))
         self.relay_log = Path(relay_log) if relay_log else None
         self.relay_max_lines = max(int(relay_max_lines), 1)
-        self._relay_appends = 0
+        self._relay = RelayMirror(self.relay_log, self.relay_max_lines)
         self.hub_id = hub_id or f"syn-{uuid.uuid4().hex[:8]}"
         self.connected_clients = self.clients.connected_clients
         self.unauth_clients = self.clients.unauth_clients
@@ -553,20 +553,13 @@ class SynapseHub:
         await websocket.send(json.dumps(data))
 
     def _mirror_to_relay(self, data: dict[str, Any]) -> None:
-        """Append one broadcast message to the lite relay log, if configured.
+        """Mirror one broadcast to the lite relay log via :class:`RelayMirror`.
 
-        The log is written even when no socket is connected — its whole point is
-        to let an observer catch up from the file later. It is trimmed back to
-        :attr:`relay_max_lines` once that many lines have been appended since the
-        last trim, bounding the file to roughly twice that many lines.
+        Kept as a thin wrapper because :mod:`synapse_channel.core.messaging` calls
+        ``hub._mirror_to_relay`` directly; the append, lite encoding, and bounded
+        trimming live in :class:`~synapse_channel.core.hub_relay.RelayMirror`.
         """
-        if self.relay_log is None:
-            return
-        append_jsonl(self.relay_log, encode_lite(data))
-        self._relay_appends += 1
-        if self._relay_appends >= self.relay_max_lines:
-            trim_jsonl_tail(self.relay_log, self.relay_max_lines)
-            self._relay_appends = 0
+        self._relay.mirror(data)
 
     async def _broadcast(self, data: dict[str, Any]) -> None:
         """Send one message to every connected socket, ignoring failures."""
