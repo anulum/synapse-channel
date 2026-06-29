@@ -53,13 +53,7 @@ from synapse_channel.core.hub_exposure import (
     guard_exposure,
     is_loopback_host,
 )
-from synapse_channel.core.hub_http import (
-    http_endpoint_response,
-    http_ok,
-    http_unauthorized,
-    metrics_authorised,
-    request_metrics_token,
-)
+from synapse_channel.core.hub_http import http_endpoint_response
 from synapse_channel.core.hub_relay import RelayMirror
 from synapse_channel.core.idempotency import IdempotencyCache
 from synapse_channel.core.journal import record_idempotency, replay
@@ -1014,54 +1008,18 @@ class SynapseHub:
             with contextlib.suppress(NotImplementedError):
                 loop.add_signal_handler(sig, stop.set)
 
-    @staticmethod
-    def _http_ok(body: bytes, content_type: str) -> Response:
-        """Build a ``200 OK`` HTTP response with a body and content type."""
-        return http_ok(body, content_type)
-
-    @staticmethod
-    def _http_unauthorized() -> Response:
-        """Build a ``401`` response for a metrics request missing a valid token."""
-        return http_unauthorized()
-
-    def _request_metrics_token(self, request: Request) -> str:
-        """Extract the metrics token from the request.
-
-        An ``Authorization: Bearer <token>`` header is always honoured. The
-        ``?token=<token>`` query form is read only when
-        :attr:`metrics_query_token_ok` is set, because a query token can leak into
-        access logs, shell history, browser history, and proxy records.
-        """
-        return request_metrics_token(request, query_token_ok=self.metrics_query_token_ok)
-
-    def _metrics_authorised(self, request: Request) -> bool:
-        """Return whether a metrics request carries the configured token (if any)."""
-        return metrics_authorised(
-            request,
-            metrics_token=self.metrics_token,
-            query_token_ok=self.metrics_query_token_ok,
-        )
-
-    def _http_endpoint_response(self, request: Request) -> Response | None:
-        """Return the HTTP response for a probe path, or ``None`` to fall through to WS.
-
-        ``/metrics`` renders the Prometheus exposition and ``/health`` a JSON
-        liveness document; any other path returns ``None`` so a normal client
-        proceeds to the WebSocket handshake. When a :attr:`metrics_token` is set,
-        both paths require it and answer ``401`` without it. A query string is
-        ignored for routing (but read for the token).
-        """
-        return http_endpoint_response(self, request)
-
     def _process_request(self, _connection: Any, request: Request) -> Response | None:
         """``websockets`` request hook serving ``/metrics`` and ``/health`` over HTTP.
 
-        Returning a :class:`~websockets.http11.Response` short-circuits the
-        WebSocket handshake and sends that HTTP response; returning ``None`` lets
-        the connection upgrade to WebSocket as usual. Installed only when
-        :attr:`enable_metrics` is set.
+        Delegates to :func:`~synapse_channel.core.hub_http.http_endpoint_response`,
+        which renders the Prometheus exposition for ``/metrics`` and a JSON liveness
+        document for ``/health`` (enforcing :attr:`metrics_token` on both), and returns
+        ``None`` for any other path so the connection upgrades to WebSocket as usual.
+        Returning a :class:`~websockets.http11.Response` short-circuits the handshake
+        and sends that HTTP response instead. Installed only when :attr:`enable_metrics`
+        is set.
         """
-        return self._http_endpoint_response(request)
+        return http_endpoint_response(self, request)
 
     async def serve(
         self,

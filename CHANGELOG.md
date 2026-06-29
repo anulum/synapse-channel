@@ -34,6 +34,13 @@ All notable changes to this project are documented here.
   renderable snapshot. 100% line+branch.
 
 ### Changed
+- Removed four dead HTTP wrapper methods from the hub (`_http_ok`, `_http_unauthorized`,
+  `_request_metrics_token`, `_metrics_authorised`) — superseded by the free functions in
+  `core/hub_http.py` and with no remaining callers — and collapsed the redundant
+  `_http_endpoint_response` indirection into the `_process_request` websockets hook, which
+  now calls `http_endpoint_response` directly. No behaviour change; the `/metrics` and
+  `/health` endpoints and their token enforcement are unchanged. Third slice of the bounded
+  hub decomposition.
 - Extracted the hub's outbound messaging into `core/hub_broadcast.py`
   (`HubBroadcaster`): sending one frame to a socket, fanning a broadcast out to every
   client (mirroring to the relay first), addressing a named agent, and composing a
