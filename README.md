@@ -820,6 +820,12 @@ manifest, and run receipts. No untrusted code runs without the sandbox, and no
 executable marketplace ships before all the preconditions exist. Not implemented;
 local-first and deny-by-default throughout.
 
+The [managed GitHub App design](docs/managed-github-app.md) pins the boundary for
+hosted cross-PR conflict prediction: the prediction itself reuses the existing
+local-core conflict finder, while everything that makes it managed — webhooks,
+GitHub auth, checks API, hosting — stays out of the local core. Advisory only,
+not implemented, and gated on a local adoption signal.
+
 Use `synapse ttl-advice ./synapse.db` for read-only adaptive lease TTL advice.
 It derives completed-task duration samples, active live-claim counts, and stale
 claim counts from the event log, then prints an advisory default. It never
@@ -939,9 +945,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 215 |
 | Wire message types | 61 |
 | CLI subcommands | 83 |
-| Test functions | 2343 |
+| Test functions | 2346 |
 | Benchmark harnesses | 5 |
-| Documentation pages | 41 |
+| Documentation pages | 42 |
 | GitHub Actions workflows | 12 |
 | Optional-dependency groups | 5 |
 

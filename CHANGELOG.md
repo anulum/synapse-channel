@@ -14,6 +14,11 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the [managed GitHub App design](docs/managed-github-app.md) for hosted
+  cross-PR file-scope conflict prediction. It pins the boundary: the prediction
+  reuses the existing local-core conflict finder, while webhooks, GitHub auth, the
+  checks API, and hosting stay out of the local core as a separate managed layer.
+  Advisory only, not implemented, and gated on a local adoption signal.
 - Added a VS Code / Cursor extension stub (`clients/vscode/`, separate from the
   core Python package): a status bar with hub health and own-claim count,
   claim/release-current-file commands, a board tree view, and overview-ruler marks

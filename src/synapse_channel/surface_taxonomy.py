@@ -121,6 +121,7 @@ DESIGN_PREVIEW_DOCS = frozenset(
         "agent-air-traffic-control.md",
         "cross-agent-adapter-kits.md",
         "federated-trust-model.md",
+        "managed-github-app.md",
         "multi-hub-sync.md",
         "sandboxed-tools-and-marketplace.md",
     }
