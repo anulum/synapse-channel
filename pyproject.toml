@@ -92,7 +92,7 @@ Funding = "https://www.anulum.li/licensing"
 where = ["src"]
 
 [tool.setuptools.package-data]
-synapse_channel = ["py.typed"]
+synapse_channel = ["py.typed", "dashboard_assets/*.css", "dashboard_assets/*.js"]
 
 [tool.ruff]
 line-length = 100

@@ -204,7 +204,7 @@ def test_dashboard_html_escapes_snapshot_content() -> None:
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
     assert "src/&lt;bad&gt;.py" in html
     assert "contracts: 1" in html
-    assert 'http-equiv="refresh"' in html
+    assert "refreshSeconds: 5" in html  # live JS polling replaces the full-page meta refresh
 
 
 def test_dashboard_html_renders_empty_and_malformed_sections() -> None:
@@ -221,7 +221,7 @@ def test_dashboard_html_renders_empty_and_malformed_sections() -> None:
 
     html = render_dashboard_html(snapshot, refresh_seconds=0)
 
-    assert '<meta http-equiv="refresh" content="1">' in html
+    assert "refreshSeconds: 1" in html  # zero coerced to a one-second live poll
     assert "No board tasks" in html
     assert "No progress notes" in html
     assert "No active claims" in html

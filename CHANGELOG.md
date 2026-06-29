@@ -40,6 +40,13 @@ All notable changes to this project are documented here.
   state per subject (latest event wins, so a re-request re-opens the gate). It is
   advisory evidence and an audit trail, not a hard runtime gate; an approved
   subject can be cited in a release receipt via `synapse release --approval`.
+- Rebuilt `synapse dashboard` as a live fleet nerve-center cockpit. The page now
+  polls `/snapshot.json` and updates in place instead of reloading on a full-page
+  meta refresh: a heads-up vitals bar, a fleet graph that clusters online agents
+  by project and colours each by waiter health, board lanes, an active-claims
+  panel, a live progress stream, release receipts, and the capability manifest.
+  It stays loopback-only and read-only, ships its CSS/JS as package data with no
+  runtime dependencies, and keeps a server-rendered `<noscript>` fallback.
 
 ## [0.65.0] - 2026-06-29
 
