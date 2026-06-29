@@ -104,6 +104,39 @@ that step by cancelling it on the board, which keeps the graph moving and lets a
 downstream steps resolve. An unconditional edge keeps its original meaning: any
 terminal status of the dependency satisfies it.
 
+## Fan-out and join — mapping over a list
+
+A step that carries a `for_each` list expands at compile time into one parallel task
+per item, and any dependency on that step expands to a dependency on *every*
+expanded task. That gives you a map (the parallel tasks) and a join (a downstream
+step that waits for all of them) out of the plain dependency primitive:
+
+```json
+{
+  "name": "ingest",
+  "steps": [
+    { "id": "shard", "title": "Ingest shard", "for_each": ["us", "eu", "apac"] },
+    { "id": "merge", "title": "Merge shards", "depends_on": ["shard"] }
+  ]
+}
+```
+
+```text
+4 blackboard tasks:
+  ingest/shard#us <- (none)
+  ingest/shard#eu <- (none)
+  ingest/shard#apac <- (none)
+  ingest/merge <- ingest/shard#us, ingest/shard#eu, ingest/shard#apac
+```
+
+Each item becomes a task `ingest/shard#<item>` titled `Ingest shard [<item>]`, and
+`merge` joins all three. Fan-out **composes** with everything else: the parallel
+tasks route to capable agents like any other task (the planner hands them out up to
+`--max-in-flight`), and a conditional join (`{"step": "shard", "on": "done"}`) carries
+its condition onto every expanded edge. The expansion is bounded — a single step may
+fan out to at most 64 tasks — and is purely an authoring-time rewrite: the board and
+the driver only ever see the expanded graph of ordinary tasks and edges.
+
 ## Driving a workflow
 
 Given a board snapshot, `synapse workflow plan` works out what to do next: which

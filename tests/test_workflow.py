@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 from synapse_channel.core.workflow import (
+    FANOUT_MAX_WIDTH,
     StepDependency,
     Workflow,
     WorkflowError,
@@ -225,3 +226,66 @@ def test_required_status_is_empty_for_an_unconditional_edge() -> None:
     _a, b = compile_to_tasks(wf)
     assert b.conditions == ()
     assert b.required_status("release/a") == ""
+
+
+# ---------- fan-out / map-join ----------
+
+
+def test_parse_reads_and_dedupes_for_each() -> None:
+    wf = parse_workflow(_wf({"id": "shard", "for_each": [" a ", "a", "b", ""]}))
+    assert wf.steps[0].for_each == ("a", "b")
+
+
+def test_parse_rejects_a_non_list_for_each() -> None:
+    with pytest.raises(WorkflowError, match="for_each must be a list"):
+        parse_workflow(_wf({"id": "shard", "for_each": "a"}))
+
+
+def test_parse_rejects_an_empty_for_each() -> None:
+    with pytest.raises(WorkflowError, match="at least one non-empty item"):
+        parse_workflow(_wf({"id": "shard", "for_each": ["", "  "]}))
+
+
+def test_compile_fans_a_step_out_into_one_task_per_item() -> None:
+    wf = parse_workflow(
+        _wf({"id": "shard", "title": "Shard", "for_each": ["us", "eu"]}, name="ingest")
+    )
+    tasks = compile_to_tasks(wf)
+    assert [task.task_id for task in tasks] == ["ingest/shard#us", "ingest/shard#eu"]
+    assert [task.title for task in tasks] == ["Shard [us]", "Shard [eu]"]
+
+
+def test_compile_joins_a_dependent_over_every_fanned_task() -> None:
+    wf = parse_workflow(
+        _wf(
+            {"id": "shard", "for_each": ["us", "eu"]},
+            {"id": "merge", "title": "Merge", "depends_on": ["shard"]},
+            name="ingest",
+        )
+    )
+    merge = compile_to_tasks(wf)[-1]
+    assert merge.task_id == "ingest/merge"
+    assert merge.depends_on == ("ingest/shard#us", "ingest/shard#eu")
+
+
+def test_compile_carries_a_condition_onto_every_fanned_join_edge() -> None:
+    wf = parse_workflow(
+        _wf(
+            {"id": "shard", "for_each": ["us", "eu"]},
+            {"id": "merge", "depends_on": [{"step": "shard", "on": "done"}]},
+            name="ingest",
+        )
+    )
+    merge = compile_to_tasks(wf)[-1]
+    assert merge.conditions == (("ingest/shard#us", "done"), ("ingest/shard#eu", "done"))
+
+
+def test_validate_rejects_a_fan_out_wider_than_the_limit() -> None:
+    items = [f"i{n}" for n in range(FANOUT_MAX_WIDTH + 1)]
+    with pytest.raises(WorkflowError, match="the limit is"):
+        parse_workflow(_wf({"id": "shard", "for_each": items}))
+
+
+def test_validate_rejects_a_fan_out_that_collides_with_a_step_id() -> None:
+    with pytest.raises(WorkflowError, match="duplicate task id 'a#x'"):
+        parse_workflow(_wf({"id": "a", "for_each": ["x"]}, {"id": "a#x"}))
