@@ -14,6 +14,13 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added a sustained-write benchmark (`benchmarks/sustained_write_benchmark.py`):
+  profiles the durable event store under sustained write load on a real on-disk WAL
+  database — write-latency distribution and throughput for the `synchronous=NORMAL`
+  commit and the `durable=True` fsync path, the `read_since(0)` replay cost as the log
+  grows, and how compaction lowers read cost. Committed results, `make bench` wiring, a
+  README section, and focused tests. (KIMI v0.70.0 surfaced this gap — the existing
+  harnesses measure coordination/replay, not sustained durable-write latency.)
 - Added a two-hub "observe a peer" walkthrough to the
   [multi-hub docs](docs/multi-hub-sync.md): run two hubs with separate event stores,
   coordinate on each, and read the other's observed board and claims with

@@ -956,8 +956,8 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 239 |
 | Wire message types | 61 |
 | CLI subcommands | 98 |
-| Test functions | 2510 |
-| Benchmark harnesses | 5 |
+| Test functions | 2518 |
+| Benchmark harnesses | 6 |
 | Documentation pages | 45 |
 | GitHub Actions workflows | 12 |
 | Optional-dependency groups | 5 |

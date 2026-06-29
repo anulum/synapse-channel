@@ -149,3 +149,25 @@ python benchmarks/coding_fleet_benchmark.py
 | Conflict rate | 28.57% |
 | Replay events | 10 |
 | Post-release claims | 0 |
+
+## `sustained_write_benchmark.py`
+
+Profiles the durable event store itself under sustained write load on a real on-disk
+WAL database: write-latency distribution (mean / p50 / p95 / p99 / max) and throughput
+for the default `synchronous=NORMAL` commit and the `durable=True` `synchronous=FULL`
+fsync path; the `read_since(0)` replay cost as the retained log grows (an `O(events)`
+scan); and how deleting the oldest half of the log (compaction) lowers read cost.
+
+The reproducible finding is the *shape* — a stable per-event write latency, a much
+higher fsync-bound durable latency, a linear read scan, and a read cost that falls with
+compaction — not the host-specific absolute times, which are recorded with the host CPU
+and Python version.
+
+### Run
+
+```bash
+python benchmarks/sustained_write_benchmark.py
+# tune the run: --sustained-count --durable-count --read-counts --compaction-count
+```
+
+Output is written to `results/sustained_write_benchmark.json` with a one-line summary.
