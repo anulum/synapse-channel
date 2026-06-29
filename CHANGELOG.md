@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.71.0] - 2026-06-29
+
 ### Added
 - Added the `synapse sandbox` CLI (experimental) — the operator face of the WebAssembly
   sandbox. `sandbox validate <manifest>` checks a capability manifest and prints its
