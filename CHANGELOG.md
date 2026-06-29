@@ -14,6 +14,12 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added an operator risk view to the dashboard (`dashboard_risk.py`): the
+  `snapshot.json` now carries a `risk` section, and the cockpit shows a Risk panel
+  with a red/amber/green verdict, a priority-ordered signal list (stale leases and
+  advisory branch conflicts as red, blocked tasks as amber), and a safe-next-work
+  queue drawn from the ready set. It is derived strictly from the existing fleet
+  snapshot — it invents no new signal — and stays read-only and local-first.
 - Added a bounded streaming-response path (`core/streaming.py`) for incremental
   worker replies and long-running progress: an `open`/`chunk`…/`done` (or `abort`)
   frame sequence carried over the existing WebSocket chat path, tagged with one

@@ -31,6 +31,11 @@ def test_load_cockpit_asset_returns_content() -> None:
     assert "SYNAPSE" in load_cockpit_asset("cockpit.js")
 
 
+def test_cockpit_assets_render_the_risk_view() -> None:
+    assert "renderRisk" in load_cockpit_asset("cockpit.js")
+    assert ".risk__verdict" in load_cockpit_asset("cockpit.css")
+
+
 def test_load_cockpit_asset_rejects_unknown() -> None:
     with pytest.raises(KeyError):
         load_cockpit_asset("../secrets.css")
@@ -46,6 +51,8 @@ def test_render_cockpit_html_embeds_shell_and_fallback() -> None:
         'id="vitals"',
         'id="beacon"',
         'id="lanes"',
+        'id="risk"',
+        'id="risk-verdict"',
         'href="cockpit.css"',
         'src="cockpit.js"',
         "refreshSeconds: 5",
