@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Added the Studio snapshot endpoint `/studio.json` (Studio Stage A): `studio_snapshot.py`
+  projects the read-only dashboard payload into the command-centre shape — a single risk
+  **verdict** (the reserved red/amber/green signal), a row of headline counters, and the
+  agents, claims, tasks, conflicts, and risk behind them. It is a pure dict-to-dict reshape
+  of the existing `/snapshot.json` read model, so Studio adds no new hub call; every
+  headline count is derived from the list it summarises (so the instrument and its rows
+  cannot drift apart), and a partial payload from a degraded hub still projects to a
+  renderable snapshot. 100% line+branch.
+
 ## [0.71.0] - 2026-06-29
 
 ### Added

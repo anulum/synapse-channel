@@ -290,6 +290,9 @@ async def test_dashboard_http_json_includes_fleet_visibility(tmp_path: Path) -> 
                 status, content_type, body = await asyncio.to_thread(
                     _http_get, server.url("/snapshot.json")
                 )
+                studio_status, studio_type, studio_body = await asyncio.to_thread(
+                    _http_get, server.url("/studio.json")
+                )
             finally:
                 server.close()
         finally:
@@ -316,3 +319,12 @@ async def test_dashboard_http_json_includes_fleet_visibility(tmp_path: Path) -> 
     assert payload["fleet"]["branch_conflicts"][0]["branch_a"] == "feature/dashboard-a"
     assert payload["fleet"]["receipts"][0]["task_id"] == "READY"
     assert payload["fleet"]["a2a"]["total"] == 2
+
+    # the Studio projection serves the same live state in the command-centre shape
+    studio = json.loads(studio_body)
+    assert studio_status == 200
+    assert studio_type == "application/json"
+    assert "SYNAPSE-CHANNEL/worker" in studio["agents"]["live"]
+    assert studio["headline"]["agents_live"] == len(studio["agents"]["live"])
+    assert studio["verdict"] == studio["risk"]["level"]
+    assert studio["headline"]["branch_conflicts"] == len(studio["conflicts"]) >= 1

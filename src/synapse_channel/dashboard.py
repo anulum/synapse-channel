@@ -46,6 +46,7 @@ from synapse_channel.dashboard_studio import (
     STUDIO_REFERENCE_PATH,
     render_studio_reference_html,
 )
+from synapse_channel.studio_snapshot import STUDIO_SNAPSHOT_PATH, build_studio_snapshot
 
 SnapshotMapping = dict[str, Any]
 """Mutable mapping shape used for hub snapshot payloads."""
@@ -486,7 +487,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 content_type="text/html",
             )
             return
-        if path not in {"/", "/index.html", "/snapshot.json"}:
+        if path not in {"/", "/index.html", "/snapshot.json", STUDIO_SNAPSHOT_PATH}:
             self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
             return
         try:
@@ -507,6 +508,14 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._write(
                 HTTPStatus.OK,
                 _json_bytes(snapshot, a2a_state_file=self.a2a_state_file),
+                content_type="application/json",
+            )
+            return
+        if path == STUDIO_SNAPSHOT_PATH:
+            studio = build_studio_snapshot(snapshot.to_dict(a2a_state_file=self.a2a_state_file))
+            self._write(
+                HTTPStatus.OK,
+                json.dumps(studio, ensure_ascii=False, sort_keys=True).encode("utf-8"),
                 content_type="application/json",
             )
             return
