@@ -798,6 +798,13 @@ approval), post-incident replay (postmortem, reliability), and memory (the inges
 seam). It is an architecture, not a scheduler: only claims gate a mutation, and
 everything else is read-only or advisory.
 
+The planned [cross-agent adapter kits](docs/cross-agent-adapter-kits.md) design
+specifies a `synapse adapters` step that detects installed coding tools (Claude
+Code, Codex, Cursor, Aider, Copilot) and writes a thin claim-aware adapter into
+each tool's native config, plus thin client shims for Python frameworks. Adapters
+carry only "claim before edit, release on commit, reach the hub" — Synapse stays
+persona-neutral and adds no new coordination primitive.
+
 Use `synapse ttl-advice ./synapse.db` for read-only adaptive lease TTL advice.
 It derives completed-task duration samples, active live-claim counts, and stale
 claim counts from the event log, then prints an advisory default. It never
@@ -917,9 +924,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 206 |
 | Wire message types | 61 |
 | CLI subcommands | 83 |
-| Test functions | 2282 |
+| Test functions | 2286 |
 | Benchmark harnesses | 5 |
-| Documentation pages | 36 |
+| Documentation pages | 37 |
 | GitHub Actions workflows | 11 |
 | Optional-dependency groups | 5 |
 
