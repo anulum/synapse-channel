@@ -97,6 +97,7 @@ from synapse_channel.cli_directory import add_parsers as add_directory_parsers
 from synapse_channel.cli_doctor import add_parsers as add_doctor_parsers
 from synapse_channel.cli_encrypt_key import add_parsers as add_encrypt_key_parsers
 from synapse_channel.cli_event_query import add_parsers as add_event_query_parsers
+from synapse_channel.cli_federation import add_parsers as add_federation_parsers
 from synapse_channel.cli_git import add_parsers as add_git_parsers
 from synapse_channel.cli_identity import add_parsers as add_identity_parsers
 from synapse_channel.cli_locking import add_parsers as add_locking_parsers
@@ -214,6 +215,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_stream_parsers(sub)
 
     add_event_query_parsers(sub)
+    add_federation_parsers(sub)
 
     add_postmortem_parsers(sub)
 
