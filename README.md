@@ -69,6 +69,12 @@ same files; the plan, handoffs, checkpoints, and a stall supervisor keep the wor
 moving; and the durable event log means a hub restart resumes live leases rather
 than losing them.
 
+> **Coming: Studio** — the dashboard is growing into an operator **[Studio](docs/studio.md)**:
+> a control plane that answers, at a glance, what is happening, what is at risk, and
+> what is safe to do next. The instrument-panel design system and the `/studio`
+> reference have shipped; the live command centre is next. Local-first and read-only by
+> default — an organisation-level workbench is planned as a separate layer.
+
 ## Install
 
 ```bash
