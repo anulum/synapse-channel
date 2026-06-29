@@ -7,34 +7,38 @@ ORCID: 0009-0009-3560-0851
 Contact: www.anulum.li | protoscience@anulum.li
 -->
 
-# Sandboxed tools and marketplace research
+# Sandboxed tools and marketplace
 
-Synapse coordinates agents; it does not run untrusted code. This research lane
-asks what it would take to do so safely — to let an untrusted tool or plugin run
-under a capability-limited sandbox, and only then to consider distributing such
-tools through a marketplace. The two are one design with one rule: **no executable
-marketplace before the sandbox, the permissions, the signing, and the evidence
-all exist.** The sandbox is the precondition; the marketplace is what it unlocks.
+Synapse coordinates agents, and now also runs untrusted tool code safely: a tool or
+plugin executes under a capability-limited sandbox with no authority beyond what an
+operator grants. Distributing such tools through a marketplace is the gated next step.
+The two are one design with one rule: **no executable marketplace before the sandbox,
+the permissions, the signing, and the evidence all exist.** The sandbox is the
+precondition — it now ships; the marketplace is what it unlocks.
 
 ## Runtime status
 
-Synapse today runs no third-party code and has no execution sandbox. What exists
-is the trust and discovery scaffolding a sandboxed-tool layer would build on, not
-the isolation itself:
+Synapse ships a capability-limited **WebAssembly** sandbox behind the optional `[wasm]`
+extra (`synapse sandbox`). A tool runs only inside it, under a permission manifest an
+operator approves. The surrounding trust and discovery scaffolding it builds on:
 
-- **Capability cards and routing** advertise what an agent can do and recommend
-  who should take a task — discovery without execution.
+- **Capability cards and routing** advertise what an agent can do and recommend who
+  should take a task — discovery without execution.
+- **The permission manifest and policy core** (`core/sandbox_policy.py`) model a tool's
+  filesystem, network, and resource grants deny-by-default and compile them to ACL
+  scopes, so a tool's capabilities are evaluated the same way as any other access.
+- **The WASM runtime** (`core/wasm_sandbox.py`) enforces a granted manifest: memory and
+  fuel caps, a wall-clock backstop, WASI preopened paths, and no sockets. Each run emits
+  a bounded run receipt.
 - **Signed capability cards** (design, see [signed capability cards](signed-capability-cards.md))
-  would give a card verifiable provenance and a key id.
+  would give a card verifiable provenance and a key id — a marketplace precondition.
 - **Identity and ACLs** (see [identity and ACL](identity-and-acl.md)) provide
-  deny-by-default, scoped permissions.
-- **Release receipts** carry bounded evidence about a run.
-- The **outbound MCP client** already calls external MCP tools behind a
-  deny-by-default allowlist — the closest shipped analogue to a permissioned tool
-  call, but it trusts the remote server rather than sandboxing it.
+  deny-by-default, scoped permissions; the sandbox reuses them.
+- The **outbound MCP client** calls external MCP tools behind a deny-by-default
+  allowlist, but it trusts the remote server rather than sandboxing it.
 
-There is no WebAssembly runtime, no filesystem/network capability gate, and no
-marketplace. This document is the boundary specification for that work.
+The marketplace that would distribute sandboxed tools is not yet built; the rest of this
+document is its boundary specification.
 
 ## The sandbox: capability-limited execution
 
@@ -45,12 +49,12 @@ each scoped and revocable:
 
 - **Filesystem** — only specific preopened paths, read or write, never the host
   root; a tool sees a virtual root, not the machine.
-- **Network** — denied by default; a grant is a specific host/port allowlist, not
-  raw sockets.
-- **Resources** — bounded memory, fuel/instruction limits, and wall-clock so a
-  tool cannot hang or exhaust the host.
+- **Network** — denied by default, and denied by construction: WASI preview1 exposes no
+  sockets, so a tool reaches the network only through a host import that is never linked.
+- **Resources** — bounded memory, a fuel/instruction budget, and a wall-clock backstop,
+  so a tool cannot hang or exhaust the host; a fuel bomb or a runaway loop is trapped.
 - **Interface** — the tool speaks a narrow, typed host interface (WASI-style
-  preopens plus a Synapse capability ABI), not arbitrary syscalls.
+  preopens plus a minimal Synapse capability ABI), not arbitrary syscalls.
 
 The sandbox composes with the existing authorisation path: a tool's grants are an
 ACL scope, evaluated the same way as any other permission, so there is one
@@ -89,15 +93,16 @@ trust root is introduced.
 
 ## Boundaries
 
-Sandboxed tools and a marketplace are **not implemented**. The design is a
-boundary specification, deliberately gated.
+The **marketplace** is **not implemented**. The sandbox it builds on now ships; the
+marketplace remains a boundary specification, deliberately gated.
 
-- **No untrusted code runs without the sandbox.** Until a capability-limited WASM
-  runtime exists, Synapse runs no third-party tool code; the outbound MCP client
-  trusts a remote server and is not a sandbox.
+- **Untrusted code runs only inside the sandbox.** A tool executes only through
+  `synapse sandbox run`, under an operator-approved manifest, bound to one module by
+  content digest; the outbound MCP client trusts a remote server and is not a sandbox.
 - **No marketplace before the preconditions.** No executable marketplace ships
   before signed cards, the permission model, the sandbox, and run receipts all
-  exist and compose.
+  exist and compose. The permission model, the sandbox, and run receipts now exist;
+  signed capability cards and the distribution layer remain.
 - **Deny-by-default, always.** A sandboxed tool has no ambient authority; every
   filesystem, network, and resource grant is explicit, operator-approved,
   recorded, and revocable.

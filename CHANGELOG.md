@@ -14,6 +14,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the `synapse sandbox` CLI (experimental) — the operator face of the WebAssembly
+  sandbox. `sandbox validate <manifest>` checks a capability manifest and prints its
+  normalised, deny-by-default grants; `sandbox run <tool.wasm> --manifest <m> [--input
+  <f>] --approve` binds the manifest to the exact module by content digest (a swapped
+  module is refused), requires an explicit `--approve` so a capability-bearing run is
+  always an operator decision, executes the tool capability-limited, and prints the bounded
+  run receipt. Without the `[wasm]` extra it reports the install hint. With this the
+  capability-limited WebAssembly sandbox is usable end-to-end; the design doc is updated to
+  reflect the shipped sandbox, with the marketplace remaining the gated next step. 100%
+  line+branch.
 - Added the WebAssembly sandbox runtime (`core/wasm_sandbox.py` + `core/sandbox_receipt.py`)
   behind the optional `[wasm]` extra — a real capability-limited execution sandbox.
   `run_sandboxed` executes an untrusted `.wasm` tool under exactly the manifest's grants:

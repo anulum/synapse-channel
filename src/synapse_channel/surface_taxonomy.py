@@ -115,6 +115,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "memory-recall": EXPERIMENTAL,
     "resource-bids": EXPERIMENTAL,
     "route-task": EXPERIMENTAL,
+    "sandbox": EXPERIMENTAL,
     "ttl-advice": EXPERIMENTAL,
     "workflow": EXPERIMENTAL,
 }

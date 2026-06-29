@@ -114,6 +114,7 @@ from synapse_channel.cli_queries import add_parsers as add_query_parsers
 from synapse_channel.cli_quickstart_coding import add_parsers as add_quickstart_coding_parsers
 from synapse_channel.cli_reliability import add_parsers as add_reliability_parsers
 from synapse_channel.cli_resource_bidding import add_parsers as add_resource_bidding_parsers
+from synapse_channel.cli_sandbox import add_parsers as add_sandbox_parsers
 from synapse_channel.cli_semantic_routing import add_parsers as add_semantic_routing_parsers
 from synapse_channel.cli_services import add_parsers as add_service_parsers
 from synapse_channel.cli_shell import add_parsers as add_shell_parsers
@@ -183,6 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_semantic_routing_parsers(sub)
 
     add_resource_bidding_parsers(sub)
+    add_sandbox_parsers(sub)
 
     add_memory_projection_parsers(sub)
 
