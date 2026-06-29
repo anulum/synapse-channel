@@ -34,13 +34,17 @@ What exists is single-hub plus operator-managed peering, not state sync:
 - The **relay log** and **`synapse ingest`** export the event stream read-side,
   which is the seam a downstream consumer (or a peer) could replay.
 
-There is no hub-to-hub state replication and no cross-hub claim protocol. The first
-slice of the CRDT layer has shipped, though: `core/multihub_merge.py` is the
-conflict-free event-log union — it tags each event with its authoring hub, merges
-several hubs' logs into a grow-only set keyed by `(hub_id, seq)`, replays them in the
-deterministic `(ts, hub_id, seq)` order, and reports the per-hub resume cursor. It
-folds no state and grants no claims; the state fold and the network follower are the
-remaining slices. This document is the research boundary for that work.
+There is no hub-to-hub state replication and no cross-hub claim protocol. Two slices of
+the CRDT layer have shipped, though. `core/multihub_merge.py` is the conflict-free
+event-log union — it tags each event with its authoring hub, merges several hubs' logs
+into a grow-only set keyed by `(hub_id, seq)`, replays them in the deterministic
+`(ts, hub_id, seq)` order, and reports the per-hub resume cursor. `core/multihub_fold.py`
+folds that merged order into the observed mergeable view: the board (last-writer-wins per
+task), the grow-only progress ledger, and the **observed claim** view — which records the
+latest claim a peer reports, tagged with its hub and marked advisory, and **never grants a
+claim**. The remaining slice is the network follower (read a peer's log over the
+ingest/relay seam, apply the fold, route real claims to the owning hub). This document is
+the research boundary for that work.
 
 ## State, split by what merges
 
