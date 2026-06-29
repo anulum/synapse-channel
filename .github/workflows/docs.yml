@@ -20,6 +20,14 @@ on:
 permissions:
   contents: read
 
+# Serialise Pages deployments: rapid successive pushes used to collide on the
+# deploy-pages step ("Deployment request failed … due to in progress deployment"),
+# failing the run. One docs run deploys at a time; a newer one queues rather than
+# racing. cancel-in-progress is false so an in-flight deployment is never interrupted.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
