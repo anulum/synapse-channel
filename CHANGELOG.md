@@ -14,6 +14,13 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the [sandboxed tools and marketplace research](docs/sandboxed-tools-and-marketplace.md)
+  design: a capability-limited WebAssembly sandbox (no ambient authority;
+  deny-by-default filesystem, network, and resource grants as ACL scopes) as the
+  precondition for any tool marketplace, which would gate on signed capability
+  cards, a declared permission manifest, and run receipts. Not implemented; no
+  untrusted code runs without the sandbox, and no executable marketplace ships
+  before all preconditions exist.
 - Added the [multi-hub sync (CRDT) research](docs/multi-hub-sync.md) design that
   asks whether several hubs could synchronise state while keeping claim safety and
   local-first. Its honest core: the append-only event log, presence, and progress

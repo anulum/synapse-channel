@@ -90,6 +90,7 @@ nav:
   - Per-message authentication: per-message-authentication.md
   - Identity and ACL: identity-and-acl.md
   - Signed capability cards: signed-capability-cards.md
+  - Sandboxed tools and marketplace: sandboxed-tools-and-marketplace.md
   - Federated trust model: federated-trust-model.md
   - Multi-hub sync (CRDT) research: multi-hub-sync.md
   - Recipes: recipes.md
