@@ -14,6 +14,11 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added a two-hub "observe a peer" walkthrough to the
+  [multi-hub docs](docs/multi-hub-sync.md): run two hubs with separate event stores,
+  coordinate on each, and read the other's observed board and claims with
+  `synapse multihub observe` — including how a peer's claim shows as advisory and where
+  cross-host (network-transport) observation stops.
 - Added `synapse multihub observe` ([docs](docs/multi-hub-sync.md)): the operator-facing
   read of the multi-hub follower. It opens a peer hub's event store, folds its log through
   `MultiHubFollower`, and prints the *observed* board, progress count, and claim view
