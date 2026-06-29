@@ -27,6 +27,7 @@ _ASSETS_DIR: Final = Path(__file__).parent / "dashboard_assets"
 COCKPIT_ASSETS: Final[dict[str, str]] = {
     "cockpit.css": "text/css",
     "cockpit.js": "text/javascript",
+    "studio.css": "text/css",
 }
 """Servable cockpit asset file names mapped to their content types."""
 

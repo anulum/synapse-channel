@@ -23,7 +23,11 @@ from synapse_channel.dashboard_cockpit import (
 
 
 def test_cockpit_assets_mapping() -> None:
-    assert COCKPIT_ASSETS == {"cockpit.css": "text/css", "cockpit.js": "text/javascript"}
+    assert COCKPIT_ASSETS == {
+        "cockpit.css": "text/css",
+        "cockpit.js": "text/javascript",
+        "studio.css": "text/css",
+    }
 
 
 def test_load_cockpit_asset_returns_content() -> None:

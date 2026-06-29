@@ -286,7 +286,9 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   to add persisted A2A task and push-config counts to the fleet section. The
   dashboard derives task dependencies from the blackboard snapshot and uses live
   claim metadata for branch conflicts; run `synapse conflicts --check-diff` when
-  you need client-side git-diff refinement. If you deliberately expose the
+  you need client-side git-diff refinement. The dashboard is growing into an
+  operator [Studio](docs/studio.md) — open `/studio` for the design-system reference.
+  If you deliberately expose the
   dashboard with `--allow-non-loopback`, pass `--dashboard-token <token>` and
   require clients to send `Authorization: Bearer <token>`; when omitted on an
   exposed bind, Synapse generates and prints a startup token.
@@ -945,9 +947,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 227 |
 | Wire message types | 61 |
 | CLI subcommands | 92 |
-| Test functions | 2449 |
+| Test functions | 2456 |
 | Benchmark harnesses | 5 |
-| Documentation pages | 43 |
+| Documentation pages | 44 |
 | GitHub Actions workflows | 12 |
 | Optional-dependency groups | 5 |
 

@@ -42,6 +42,10 @@ from synapse_channel.dashboard_cockpit import (
 )
 from synapse_channel.dashboard_fleet import build_fleet_visibility, render_fleet_visibility_html
 from synapse_channel.dashboard_risk import build_risk_view
+from synapse_channel.dashboard_studio import (
+    STUDIO_REFERENCE_PATH,
+    render_studio_reference_html,
+)
 
 SnapshotMapping = dict[str, Any]
 """Mutable mapping shape used for hub snapshot payloads."""
@@ -471,6 +475,15 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 HTTPStatus.OK,
                 load_cockpit_asset(asset_name).encode("utf-8"),
                 content_type=COCKPIT_ASSETS[asset_name],
+            )
+            return
+        if path == STUDIO_REFERENCE_PATH:
+            # The Studio design-system reference renders no live data, so it serves
+            # without reaching the hub — a stable visual reference even when offline.
+            self._write(
+                HTTPStatus.OK,
+                render_studio_reference_html().encode("utf-8"),
+                content_type="text/html",
             )
             return
         if path not in {"/", "/index.html", "/snapshot.json"}:

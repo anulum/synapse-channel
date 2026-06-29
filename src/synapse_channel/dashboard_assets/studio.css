@@ -1,0 +1,223 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * Commercial license available
+ * © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+ * © Code 2020–2026 Miroslav Šotek. All rights reserved.
+ * ORCID: 0009-0009-3560-0851
+ * Contact: www.anulum.li | protoscience@anulum.li
+ * SYNAPSE Studio — design-system tokens and component kit (A0).
+ *
+ * Instrument-panel language: a deep ink base, one indigo-violet brand hue, and
+ * red/amber/green reserved exclusively for verdicts so risk reads at a glance. Pure
+ * CSS custom properties + a small component kit; no build step, no external request.
+ * Fonts use a system-stack fallback now; self-hosted woff2 (Space Grotesk / Inter /
+ * JetBrains Mono) drop in behind the same role variables without touching components.
+ */
+
+:root {
+  /* — palette: instrument, not neon — */
+  --syn-base: #0e1320; /* ink-navy page (never pure black) */
+  --syn-surface: #161d2e; /* panels, rails */
+  --syn-raised: #1f2940; /* hover, popovers, active row */
+  --syn-hairline: #2a3550; /* 1px dividers — never pure-white rules */
+  --syn-text: #e6eaf2; /* primary ink */
+  --syn-muted: #8a93a8; /* labels, meta */
+  --syn-brand: #7c6cf0; /* indigo-violet: links, focus, live pulse, active nav */
+  --syn-brand-dim: #4a4490; /* inactive brand */
+  /* verdicts — the only saturated colours */
+  --syn-green: #3fb68b; /* ok / ready / done */
+  --syn-amber: #e0a140; /* watch / blocked / ageing */
+  --syn-red: #e5564e; /* stale / conflict / failed */
+
+  /* — type: three roles — */
+  --syn-font-display: "Space Grotesk", "Segoe UI Variable Display", system-ui, sans-serif;
+  --syn-font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --syn-font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", "Menlo", monospace;
+  --syn-fs-data: 12px;
+  --syn-fs-label: 11px;
+  --syn-fs-body: 13px;
+  --syn-fs-title: 16px;
+  --syn-fs-num: 32px;
+  --syn-fs-num-lg: 44px;
+
+  /* — spacing (4px base), radius, elevation — */
+  --syn-sp-1: 4px;
+  --syn-sp-2: 8px;
+  --syn-sp-3: 12px;
+  --syn-sp-4: 16px;
+  --syn-sp-5: 24px;
+  --syn-radius: 8px;
+  --syn-radius-sm: 5px;
+  --syn-row-h: 30px;
+  --syn-pulse: 2s; /* live heartbeat period */
+}
+
+.syn {
+  background: var(--syn-base);
+  color: var(--syn-text);
+  font-family: var(--syn-font-body);
+  font-size: var(--syn-fs-body);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* — structure: panels and cards (elevation by tint + hairline, never shadows) — */
+.syn-panel {
+  background: var(--syn-surface);
+  border: 1px solid var(--syn-hairline);
+  border-radius: var(--syn-radius);
+  padding: var(--syn-sp-4);
+}
+
+.syn-card {
+  background: var(--syn-raised);
+  border: 1px solid var(--syn-hairline);
+  border-radius: var(--syn-radius-sm);
+  padding: var(--syn-sp-3);
+}
+
+.syn-label {
+  font-family: var(--syn-font-display);
+  font-size: var(--syn-fs-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--syn-muted);
+}
+
+.syn-num {
+  font-family: var(--syn-font-display);
+  font-size: var(--syn-fs-num);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.syn-num--lg {
+  font-size: var(--syn-fs-num-lg);
+}
+
+/* — data rows: mono is a first-class face here — */
+.syn-row {
+  display: flex;
+  align-items: center;
+  gap: var(--syn-sp-2);
+  min-height: var(--syn-row-h);
+  padding: 0 var(--syn-sp-2);
+  font-family: var(--syn-font-mono);
+  font-size: var(--syn-fs-data);
+  border-bottom: 1px solid var(--syn-hairline);
+}
+
+.syn-row:last-child {
+  border-bottom: 0;
+}
+
+.syn-row:hover {
+  background: var(--syn-raised);
+}
+
+/* — status dot: live pulse only on the ok/active state — */
+.syn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--syn-muted);
+}
+
+.syn-dot--ok {
+  background: var(--syn-green);
+  animation: syn-pulse var(--syn-pulse) ease-in-out infinite;
+}
+
+.syn-dot--warn {
+  background: var(--syn-amber);
+}
+
+.syn-dot--bad {
+  background: var(--syn-red);
+}
+
+.syn-dot--dark {
+  background: transparent;
+  border: 1px solid var(--syn-muted);
+}
+
+@keyframes syn-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* — verdict pill: the red/amber/green operator call — */
+.syn-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--syn-sp-2);
+  padding: var(--syn-sp-1) var(--syn-sp-3);
+  border-radius: 999px;
+  font-family: var(--syn-font-display);
+  font-size: var(--syn-fs-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+}
+
+.syn-verdict--green {
+  color: var(--syn-green);
+}
+
+.syn-verdict--amber {
+  color: var(--syn-amber);
+}
+
+.syn-verdict--red {
+  color: var(--syn-red);
+}
+
+/* — navigation rail — */
+.syn-nav {
+  display: flex;
+  gap: var(--syn-sp-4);
+  font-family: var(--syn-font-display);
+  font-size: var(--syn-fs-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.syn-nav a {
+  color: var(--syn-muted);
+  text-decoration: none;
+  padding-bottom: var(--syn-sp-1);
+  border-bottom: 2px solid transparent;
+}
+
+.syn-nav a:hover {
+  color: var(--syn-text);
+}
+
+.syn-nav a[aria-current="page"] {
+  color: var(--syn-text);
+  border-bottom-color: var(--syn-brand);
+}
+
+/* — links and focus (indigo) — */
+.syn a {
+  color: var(--syn-brand);
+}
+
+.syn :focus-visible {
+  outline: 2px solid var(--syn-brand);
+  outline-offset: 2px;
+}
+
+/* — accessibility floor: stillness when motion is unwanted — */
+@media (prefers-reduced-motion: reduce) {
+  .syn-dot--ok {
+    animation: none;
+  }
+}
