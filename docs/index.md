@@ -45,6 +45,13 @@ state, and every agent connects to it.
 - A **command line** for the whole flow (`synapse hub/worker/team/send/listen/
   relay/board/supervisor/manifest/task`) and **runnable examples**.
 
+## Coming: Studio
+
+The read-only dashboard is growing into an operator **[Studio](studio.md)** — a
+control plane that answers, at a glance, what is happening, what is at risk, and what
+is safe to do next. The instrument-panel design system and the `/studio` reference
+have shipped; the live command centre is next. Local-first and read-only by default.
+
 ## Next steps
 
 - [Installation](installation.md) · [Quick start](quickstart.md)
