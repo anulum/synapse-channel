@@ -15,6 +15,7 @@ from synapse_channel.connect_failures import (
     PER_HOST_CAP_CLOSE_CODE,
     SUPERSEDED_CLOSE_CODE,
     TAKEOVER_COOLDOWN_CLOSE_CODE,
+    closed_after_ready,
     describe_connect_failure,
     explain_silent_outcome,
 )
@@ -142,3 +143,21 @@ def test_silent_outcome_surfaces_the_close_code_when_present() -> None:
     assert "already online" in message
     assert "code 4009" in message
     assert message != "no response from hub"
+
+
+class _FakeConn:
+    """Minimal stand-in exposing the surface ``closed_after_ready`` observes."""
+
+    def __init__(self, *, running: bool = True, close: int | None = None) -> None:
+        self.running = running
+        self.last_close_code = close
+
+
+async def test_closed_after_ready_detects_a_post_welcome_close() -> None:
+    # a name conflict sets last_close_code; a dropped socket clears running
+    assert await closed_after_ready(_FakeConn(close=NAME_CONFLICT_CLOSE_CODE), grace_seconds=0.1)
+    assert await closed_after_ready(_FakeConn(running=False), grace_seconds=0.1)
+
+
+async def test_closed_after_ready_returns_false_for_a_healthy_socket() -> None:
+    assert await closed_after_ready(_FakeConn(), grace_seconds=0.05) is False

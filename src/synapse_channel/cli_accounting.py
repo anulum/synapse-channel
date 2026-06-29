@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
-from synapse_channel.connect_failures import describe_connect_failure
+from synapse_channel.connect_failures import closed_after_ready, describe_connect_failure
 from synapse_channel.core.accounting import (
     USAGE_NOTE_KIND,
     ModelPrice,
@@ -150,6 +150,17 @@ async def _emit_usage(
     conn_task = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
+            print(
+                describe_connect_failure(
+                    sender,
+                    uri,
+                    close_code=agent.last_close_code,
+                    close_reason=agent.last_close_reason,
+                ),
+                file=sys.stderr,
+            )
+            return 1
+        if await closed_after_ready(agent):
             print(
                 describe_connect_failure(
                     sender,

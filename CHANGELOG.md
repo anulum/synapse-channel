@@ -14,13 +14,17 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Fixed
-- `synapse send` (and `syn say`) no longer silently drop a message when the sender
+- `synapse send` (and `syn say`), `synapse accounting record`, and `synapse
+  approval request`/`decide` no longer silently drop their message when the sender
   name conflicts with a live identity. The hub accepts the welcome handshake and
   only then closes a name-conflicting socket (close code 4009), so a "ready"
   connection could already be doomed and the message was written into a dying
   socket and lost with no error — which read as "messages between terminals never
-  arrive". The send now detects the post-welcome close and reports the conflict
-  with an actionable message instead of failing silently.
+  arrive". A shared `connect_failures.closed_after_ready` now detects the
+  post-welcome close so every one-shot send and emit reports the conflict with an
+  actionable message instead of failing silently. (Operator note: a waiter must
+  arm as `<identity>-rx`, never the bare `<identity>`, or an agent's own sends
+  conflict with its own presence.)
 
 ### Added
 - Added the [sandboxed tools and marketplace research](docs/sandboxed-tools-and-marketplace.md)

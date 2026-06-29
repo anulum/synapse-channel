@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from hub_e2e_helpers import running_hub
+from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel.cli_accounting import (
     _emit_usage,
     _load_budgets,
@@ -219,3 +219,22 @@ async def test_record_emits_usage_persisted_and_reported(tmp_path: Path) -> None
     assert record.agent == "alpha"  # the "-rx" waiter suffix is stripped on send
     assert record.model == "opus"
     assert record.total_tokens == 1200
+
+
+async def test_record_reports_name_conflict_instead_of_dropping(tmp_path: Path) -> None:
+    # An emit whose name conflicts with a live identity must report it, not write
+    # into a dying socket and lose the usage note silently.
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        holder = await connect_agent("dup", uri)
+        try:
+            rc = await _emit_usage(
+                uri=uri,
+                name="dup",
+                task_id="T",
+                note=format_usage_note(model="opus"),
+                token=None,
+                ready_timeout=2.0,
+            )
+        finally:
+            await close_agents(holder)
+    assert rc == 1
