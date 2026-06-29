@@ -14,6 +14,15 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the sandbox capability-manifest policy core (`core/sandbox_policy.py`), the first
+  slice of the capability-limited WebAssembly sandbox ([design](docs/sandboxed-tools-and-marketplace.md)):
+  deny-by-default `FilesystemGrant`/`NetworkGrant`/`ResourceGrant` bundled in a
+  `CapabilityManifest` bound to a `.wasm` content digest; `authorise(manifest, request)`
+  returns the first failing reason or the granted manifest; `to_acl_rules()` expresses a
+  tool's filesystem/network grants as ACL rules so they flow through the same
+  deny-by-default `evaluate_access` — one authorisation model, not a parallel one (added
+  the `sandbox` permission verb). Pure and I/O-free; the WASM runtime that enforces a
+  manifest follows behind the optional `[wasm]` extra. 100% line+branch.
 - Added a sustained-write benchmark (`benchmarks/sustained_write_benchmark.py`):
   profiles the durable event store under sustained write load on a real on-disk WAL
   database — write-latency distribution and throughput for the `synchronous=NORMAL`

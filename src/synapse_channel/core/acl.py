@@ -35,9 +35,17 @@ METRICS = "metrics"
 DASHBOARD = "dashboard"
 A2A = "a2a"
 NAMESPACE = "namespace"
+SANDBOX = "sandbox"
 
-PERMISSIONS = frozenset({MESSAGE, CLAIM, RELEASE, BOARD, METRICS, DASHBOARD, A2A, NAMESPACE})
-"""The auditable permission vocabulary an ACL rule may grant."""
+PERMISSIONS = frozenset(
+    {MESSAGE, CLAIM, RELEASE, BOARD, METRICS, DASHBOARD, A2A, NAMESPACE, SANDBOX}
+)
+"""The auditable permission vocabulary an ACL rule may grant.
+
+``SANDBOX`` grants a sandboxed tool one capability — a filesystem or network target — so
+a tool's grants are evaluated through the same deny-by-default path as any other access,
+not a parallel one. See :mod:`synapse_channel.core.sandbox_policy`.
+"""
 
 WOULD_ALLOW = "would_allow"
 WOULD_DENY = "would_deny"
