@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.69.0] - 2026-06-29
+
 ### Fixed
 - The hub now damps a **takeover oscillation**: two waiters launched for the same
   identity each take the name back from the other about once per cooldown, an
