@@ -56,6 +56,15 @@ If this repeats, inspect the hub log. Accepted takeovers, takeover cooldown
 refusals, name conflicts, and name-switch denials are logged with the sender
 name, remote host, and close reason, without chat or task payloads.
 
+If one name is taken over again and again — two waiters launched for the same
+identity will each take the name back from the other, about once per cooldown —
+the hub stops the war rather than logging it forever: after a few takeovers of one
+name within a short window it **quarantines** the name, pinning whichever socket
+holds it and refusing further takeovers for a minute (one `takeover quarantine …
+reason=oscillation` warning, not a per-second stream). The fix for the underlying
+churn is to run a single waiter per identity; the quarantine just keeps a duplicate
+from disrupting the live owner.
+
 ## I wake on messages that are not addressed to me
 
 A `--directed-only` waiter wakes on a message addressed to **you**, to a **group glob**

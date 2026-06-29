@@ -8,7 +8,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+import pytest
 
 from synapse_channel.core.hub_clients import HubClientRegistry
 
@@ -186,3 +189,151 @@ def test_remote_host_normalises_supported_address_shapes() -> None:
     assert HubClientRegistry.remote_host(_Socket("unix-socket")) == "unix-socket"
     assert HubClientRegistry.remote_host(_Socket(None)) == "unknown"
     assert HubClientRegistry.remote_host(object()) == "unknown"
+
+
+# ---------- takeover oscillation / quarantine ----------
+
+
+class _Clock:
+    """A mutable clock for driving takeover timing."""
+
+    def __init__(self, start: float = 100.0) -> None:
+        self.now = start
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def _osc_registry(clock: _Clock) -> HubClientRegistry:
+    return HubClientRegistry(
+        max_clients=100,
+        max_unauth_clients=None,
+        max_connections_per_host=None,
+        takeover_cooldown=1.0,
+        clock=clock,
+        takeover_oscillation_window=30.0,
+        takeover_oscillation_threshold=3,
+        takeover_quarantine=20.0,
+    )
+
+
+async def _noop_send(_ws: Any, _msg: dict[str, Any]) -> None:
+    return None
+
+
+def _system(payload: str, *, msg_type: str, target: str) -> dict[str, Any]:
+    return {"payload": payload, "target": target, "type": msg_type}
+
+
+async def _drive_takeover(
+    registry: HubClientRegistry, name: str, at: float, clock: _Clock
+) -> tuple[_Socket, _Socket, str | None]:
+    """Set ``name``'s current owner, then attempt a takeover by a fresh challenger."""
+    clock.now = at
+    owner = _Socket()
+    challenger = _Socket()
+    registry.agent_sockets[name] = owner
+    registry.socket_agent[owner] = name
+    result = await registry.resolve_sender(
+        name, challenger, takeover=True, send_json=_noop_send, system=_system
+    )
+    return owner, challenger, result
+
+
+def test_classify_takeover_trips_quarantine_then_lapses() -> None:
+    registry = _osc_registry(_Clock())
+    # threshold is 3 within a 30s window; the first two are accepted
+    assert registry._classify_takeover("w/rx", 100.0) == "accept"
+    assert registry._classify_takeover("w/rx", 102.0) == "accept"
+    # the third trip-wires the oscillation guard and pins the owner
+    assert registry._classify_takeover("w/rx", 104.0) == "quarantine_enter"
+    # further attempts during the 20s quarantine are refused without eviction
+    assert registry._classify_takeover("w/rx", 104.5) == "quarantine_active"
+    assert registry._classify_takeover("w/rx", 123.9) == "quarantine_active"
+    # once quarantine lapses the history resets and takeovers are accepted again
+    assert registry._classify_takeover("w/rx", 124.0) == "accept"
+
+
+async def test_resolve_sender_pins_owner_when_takeover_oscillates(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    clock = _Clock()
+    registry = _osc_registry(clock)
+    name = "user/terminal-x-rx"
+
+    owner1, chal1, r1 = await _drive_takeover(registry, name, 100.0, clock)
+    owner2, chal2, r2 = await _drive_takeover(registry, name, 102.0, clock)
+    # first two takeovers are accepted: each evicts the prior owner (4010 superseded)
+    assert r1 == name and owner1.close_calls == [(4010, "superseded")]
+    assert r2 == name and owner2.close_calls == [(4010, "superseded")]
+
+    with caplog.at_level(logging.WARNING, logger="synapse.hub"):
+        owner3, chal3, r3 = await _drive_takeover(registry, name, 104.0, clock)
+    # the third trips quarantine: the challenger is refused, the OWNER is left in place
+    assert r3 is None
+    assert chal3.close_calls == [(4014, "takeover quarantine")]
+    assert owner3.close_calls == []  # owner pinned, not evicted — the war ends here
+    assert sum("quarantine" in rec.message for rec in caplog.records) == 1
+
+    # a subsequent attempt during quarantine is refused the same way, owner still pinned
+    owner4, chal4, r4 = await _drive_takeover(registry, name, 105.0, clock)
+    assert r4 is None
+    assert chal4.close_calls == [(4014, "takeover quarantine")]
+    assert owner4.close_calls == []
+
+
+async def test_resolve_sender_still_enforces_the_short_cooldown() -> None:
+    clock = _Clock()
+    registry = _osc_registry(clock)
+    name = "w/rx"
+
+    _owner1, _chal1, r1 = await _drive_takeover(registry, name, 100.0, clock)
+    assert r1 == name
+    # a second takeover within the 1s cooldown is refused as cooldown, not quarantine
+    owner2, chal2, r2 = await _drive_takeover(registry, name, 100.5, clock)
+    assert r2 is None
+    assert chal2.close_calls == [(4014, "takeover cooldown")]
+    assert owner2.close_calls == []
+
+
+async def test_resolve_sender_reports_name_conflict_without_takeover() -> None:
+    registry = _osc_registry(_Clock())
+    name = "w/rx"
+    owner = _Socket()
+    challenger = _Socket()
+    registry.agent_sockets[name] = owner
+    registry.socket_agent[owner] = name
+    sent: list[dict[str, Any]] = []
+
+    async def send_json(_ws: Any, message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    result = await registry.resolve_sender(
+        name, challenger, takeover=False, send_json=send_json, system=_system
+    )
+    assert result is None
+    assert challenger.close_calls == [(4009, "name conflict")]
+    assert owner.close_calls == []  # the live owner is never disturbed
+    assert sent and sent[0]["type"] == "name_conflict"
+
+
+async def test_resolve_sender_returns_the_same_name_for_an_already_bound_socket() -> None:
+    registry = _osc_registry(_Clock())
+    socket = _Socket()
+    registry.socket_agent[socket] = "w/rx"
+    result = await registry.resolve_sender(
+        "w/rx", socket, takeover=False, send_json=_noop_send, system=_system
+    )
+    assert result == "w/rx"
+    assert socket.close_calls == []
+
+
+async def test_resolve_sender_binds_a_free_name_for_a_new_socket() -> None:
+    registry = _osc_registry(_Clock())
+    socket = _Socket()
+    result = await registry.resolve_sender(
+        "w/rx", socket, takeover=False, send_json=_noop_send, system=_system
+    )
+    assert result == "w/rx"
+    assert registry.socket_agent[socket] == "w/rx"
+    assert socket.close_calls == []

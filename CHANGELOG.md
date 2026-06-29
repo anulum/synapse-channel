@@ -13,6 +13,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- The hub now damps a **takeover oscillation**: two waiters launched for the same
+  identity each take the name back from the other about once per cooldown, an
+  eviction war the short cooldown only rate-limited rather than ended. When one name
+  is taken over more than `takeover_oscillation_threshold` times within
+  `takeover_oscillation_window` seconds, the hub quarantines it — pinning the current
+  owner and refusing further takeovers for `takeover_quarantine` seconds, logged once
+  as `takeover quarantine … reason=oscillation` instead of a per-second stream. The
+  live owner stays connected (messages keep arriving) instead of being evicted ~1 Hz.
+  New `SynapseHub` knobs default to 5 takeovers / 30 s → 60 s quarantine; see
+  [troubleshooting](docs/troubleshooting.md). 100% line+branch on `hub_clients`.
+
 ## [0.68.0] - 2026-06-29
 
 ### Added
