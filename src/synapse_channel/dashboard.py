@@ -35,6 +35,11 @@ from urllib.parse import urlsplit
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.dashboard_cockpit import (
+    COCKPIT_ASSETS,
+    load_cockpit_asset,
+    render_cockpit_html,
+)
 from synapse_channel.dashboard_fleet import build_fleet_visibility, render_fleet_visibility_html
 
 SnapshotMapping = dict[str, Any]
@@ -409,40 +414,7 @@ def render_dashboard_html(
     ready = snapshot.board.get("ready", [])
     ready_items = [str(item) for item in ready] if isinstance(ready, list) else []
     fleet_html = render_fleet_visibility_html(snapshot, a2a_state_file=a2a_state_file)
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="refresh" content="{refresh}">
-  <title>SYNAPSE CHANNEL dashboard</title>
-  <style>
-    :root {{ color-scheme: light dark; font-family: system-ui, sans-serif; }}
-    body {{ margin: 0; background: #f7f7f4; color: #1d1d1b; }}
-    main {{ max-width: 1120px; margin: 0 auto; padding: 24px; }}
-    h1 {{ font-size: 1.5rem; margin: 0 0 16px; }}
-    h2 {{ font-size: 1rem; margin: 0 0 10px; }}
-    section {{ border: 1px solid #d8d4c8; border-radius: 8px; padding: 16px; background: #ffffff; }}
-    .grid {{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 16px;
-    }}
-    ul {{ list-style: none; margin: 0; padding: 0; }}
-    li {{ border-top: 1px solid #ece8dd; padding: 8px 0; }}
-    li:first-child {{ border-top: 0; }}
-    small, .muted {{ color: #5f6468; }}
-    @media (prefers-color-scheme: dark) {{
-      body {{ background: #191a1a; color: #f2f0e8; }}
-      section {{ background: #222424; border-color: #3a3d3d; }}
-      li {{ border-color: #343838; }}
-      small, .muted {{ color: #b4b8ba; }}
-    }}
-  </style>
-</head>
-<body>
-<main>
-  <h1>SYNAPSE CHANNEL dashboard</h1>
+    fallback_html = f"""<h1>SYNAPSE CHANNEL dashboard</h1>
   <div class="grid">
     <section>
       <h2>Online agents ({len(snapshot.online_agents)})</h2>
@@ -454,11 +426,8 @@ def render_dashboard_html(
     <section><h2>Recent progress</h2><ul>{_render_progress(snapshot.board)}</ul></section>
     <section><h2>Capability manifest</h2><ul>{_render_manifest(snapshot.manifest)}</ul></section>
     {fleet_html}
-  </div>
-</main>
-</body>
-</html>
-"""
+  </div>"""
+    return render_cockpit_html(refresh_seconds=refresh, fallback_html=fallback_html)
 
 
 def _json_bytes(snapshot: DashboardSnapshot, *, a2a_state_file: str | Path | None) -> bytes:
@@ -493,6 +462,14 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             )
             return
         path = urlsplit(self.path).path
+        asset_name = path.lstrip("/")
+        if asset_name in COCKPIT_ASSETS:
+            self._write(
+                HTTPStatus.OK,
+                load_cockpit_asset(asset_name).encode("utf-8"),
+                content_type=COCKPIT_ASSETS[asset_name],
+            )
+            return
         if path not in {"/", "/index.html", "/snapshot.json"}:
             self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
             return
