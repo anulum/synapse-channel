@@ -42,7 +42,7 @@ async def test_stream_reply_delivers_a_reassemblable_bounded_stream() -> None:
         receiver = await connect_agent("RX", uri)
         sender = await connect_agent("TX", uri)
         try:
-            stream_id = await sender.agent.stream_reply(["hel", "lo "], target="RX")
+            stream_id = await sender.agent.stream_reply(["foo", "bar "], target="RX")
             await receiver.recorder.wait_for(
                 lambda message: (
                     message.get("kind") == "stream" and message.get("frame_type") == "done"
@@ -52,7 +52,7 @@ async def test_stream_reply_delivers_a_reassemblable_bounded_stream() -> None:
             await close_agents(sender, receiver)
 
     consumer = _reassemble(receiver.recorder.messages, stream_id)
-    assert consumer.text == "hello "
+    assert consumer.text == "foobar "
     assert consumer.closed is True
     assert consumer.aborted is False
 

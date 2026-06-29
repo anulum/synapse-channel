@@ -143,9 +143,9 @@ def test_producer_stream_helper_builds_full_sequence() -> None:
 def test_consumer_reassembles_a_full_stream() -> None:
     producer = StreamProducer("S1")
     consumer = StreamConsumer("S1")
-    types = [consumer.accept(frame) for frame in producer.stream(["hel", "lo"])]
+    types = [consumer.accept(frame) for frame in producer.stream(["foo", "bar"])]
     assert types == [OPEN, CHUNK, CHUNK, DONE]
-    assert consumer.text == "hello"
+    assert consumer.text == "foobar"
     assert consumer.closed is True
     assert consumer.aborted is False
 
