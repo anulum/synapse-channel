@@ -28,6 +28,13 @@ another on failure) rather than only gating on completion. The condition is carr
 through compilation but enforced by the driver, not the board: the board still sees
 plain dependency edges (so it gates on terminal-ness), while the driver decides
 whether the recorded outcome actually satisfies each conditional edge.
+
+A step may also **fan out** over a list of items: a step with a ``for_each`` list
+compiles to one parallel task per item, and any dependency on that step expands to a
+dependency on *every* expanded task — a map (the parallel tasks) and a join (a
+downstream step that waits for all of them). The expansion is purely an
+authoring-time rewrite into ordinary blackboard tasks and edges; the board and the
+driver see only the expanded graph.
 """
 
 from __future__ import annotations
@@ -37,6 +44,12 @@ from typing import Any
 
 TASK_ID_SEPARATOR = "/"
 """Separator joining the workflow name and a step id into a board task id."""
+
+FANOUT_SEPARATOR = "#"
+"""Separator joining a fan-out step id and one of its items into a concrete step id."""
+
+FANOUT_MAX_WIDTH = 64
+"""Most tasks a single fan-out step may expand to — a bound on accidental blow-up."""
 
 ANY_TERMINAL = ""
 """Dependency condition meaning any terminal status satisfies the edge."""
@@ -84,6 +97,10 @@ class WorkflowStep:
     depends_on : tuple[StepDependency, ...]
         The edges that must be satisfied before this step is ready, each optionally
         conditioned on the dependency's terminal outcome.
+    for_each : tuple[str, ...]
+        Fan-out items. When non-empty, the step expands at compile time into one
+        parallel task per item; a dependency on this step then expands to a join over
+        all of them. Empty for an ordinary single-task step.
     """
 
     step_id: str
@@ -91,6 +108,19 @@ class WorkflowStep:
     task_class: str = ""
     description: str = ""
     depends_on: tuple[StepDependency, ...] = ()
+    for_each: tuple[str, ...] = ()
+
+
+def _expand_step(step: WorkflowStep) -> tuple[tuple[str, str], ...]:
+    """Return the ``(concrete_step_id, item)`` pairs a step expands to.
+
+    A fan-out step (non-empty ``for_each``) expands to one pair per item, with the
+    concrete id ``"<step>#<item>"``; an ordinary step expands to a single pair with
+    its own id and an empty item.
+    """
+    if step.for_each:
+        return tuple((f"{step.step_id}{FANOUT_SEPARATOR}{item}", item) for item in step.for_each)
+    return ((step.step_id, ""),)
 
 
 @dataclass(frozen=True)
@@ -210,12 +240,23 @@ def _parse_step(raw: object, index: int) -> WorkflowStep:
         dependency = _parse_dependency(edge, step_id)
         if dependency is not None:
             seen.setdefault(dependency.step, dependency)
+    for_each: tuple[str, ...] = ()
+    if "for_each" in raw:
+        fan_raw = raw["for_each"]
+        if not isinstance(fan_raw, (list, tuple)):
+            msg = f"step {step_id!r} for_each must be a list"
+            raise WorkflowError(msg)
+        for_each = tuple(dict.fromkeys(str(item).strip() for item in fan_raw if str(item).strip()))
+        if not for_each:
+            msg = f"step {step_id!r} for_each must list at least one non-empty item"
+            raise WorkflowError(msg)
     return WorkflowStep(
         step_id=step_id,
         title=title,
         task_class=str(raw.get("task_class", "")).strip(),
         description=str(raw.get("description", "")).strip(),
         depends_on=tuple(seen.values()),
+        for_each=for_each,
     )
 
 
@@ -280,7 +321,25 @@ def validate_workflow(workflow: Workflow) -> None:
             if dep.step not in ids:
                 msg = f"step {step.step_id!r} depends on unknown step {dep.step!r}"
                 raise WorkflowError(msg)
+    _validate_fan_out(workflow)
     _reject_cycle(workflow)
+
+
+def _validate_fan_out(workflow: Workflow) -> None:
+    """Bound each fan-out width and reject expansions that collide on a task id."""
+    concrete: dict[str, str] = {}
+    for step in workflow.steps:
+        if len(step.for_each) > FANOUT_MAX_WIDTH:
+            msg = (
+                f"step {step.step_id!r} fans out to {len(step.for_each)} tasks; "
+                f"the limit is {FANOUT_MAX_WIDTH}"
+            )
+            raise WorkflowError(msg)
+        for concrete_id, _item in _expand_step(step):
+            if concrete_id in concrete:
+                msg = f"fan-out produces a duplicate task id {concrete_id!r}"
+                raise WorkflowError(msg)
+            concrete[concrete_id] = step.step_id
 
 
 def _reject_cycle(workflow: Workflow) -> None:
@@ -307,11 +366,14 @@ def _reject_cycle(workflow: Workflow) -> None:
 def compile_to_tasks(workflow: Workflow) -> tuple[CompiledTask, ...]:
     """Compile a validated workflow into ordered blackboard task declarations.
 
-    Each step becomes one task whose id is namespaced by the workflow name
+    Each step becomes a task whose id is namespaced by the workflow name
     (``"<workflow>/<step>"``), with its ``depends_on`` remapped to the namespaced
-    ids. Tasks are returned in dependency order (every task appears after the tasks
-    it depends on), so posting them in order keeps the board consistent even before
-    its own ready/blocked derivation runs.
+    ids. A fan-out step (``for_each``) expands to one task per item
+    (``"<workflow>/<step>#<item>"``), and a dependency on any step expands to edges
+    to every task that step produced — so a dependency on a fan-out step joins all of
+    its parallel tasks. Tasks are returned in dependency order (every task appears
+    after the tasks it depends on), so posting them in order keeps the board
+    consistent even before its own ready/blocked derivation runs.
 
     Parameters
     ----------
@@ -326,10 +388,11 @@ def compile_to_tasks(workflow: Workflow) -> tuple[CompiledTask, ...]:
     """
     validate_workflow(workflow)
 
-    def task_id(step_id: str) -> str:
-        return f"{workflow.name}{TASK_ID_SEPARATOR}{step_id}"
+    def task_id(concrete_step_id: str) -> str:
+        return f"{workflow.name}{TASK_ID_SEPARATOR}{concrete_step_id}"
 
     by_id = {step.step_id: step for step in workflow.steps}
+    expansion = {step.step_id: _expand_step(step) for step in workflow.steps}
     ordered: list[str] = []
     placed: set[str] = set()
 
@@ -344,16 +407,23 @@ def compile_to_tasks(workflow: Workflow) -> tuple[CompiledTask, ...]:
     for step in workflow.steps:
         place(step.step_id)
 
-    return tuple(
-        CompiledTask(
-            task_id=task_id(step_id),
-            title=by_id[step_id].title,
-            description=by_id[step_id].description,
-            depends_on=tuple(task_id(dep.step) for dep in by_id[step_id].depends_on),
-            task_class=by_id[step_id].task_class,
-            conditions=tuple(
-                (task_id(dep.step), dep.on) for dep in by_id[step_id].depends_on if dep.on
-            ),
-        )
-        for step_id in ordered
-    )
+    tasks: list[CompiledTask] = []
+    for step_id in ordered:
+        step = by_id[step_id]
+        dep_ids = [
+            (task_id(dep_concrete), dep.on)
+            for dep in step.depends_on
+            for dep_concrete, _item in expansion[dep.step]
+        ]
+        for concrete_id, item in expansion[step_id]:
+            tasks.append(
+                CompiledTask(
+                    task_id=task_id(concrete_id),
+                    title=f"{step.title} [{item}]" if item else step.title,
+                    description=step.description,
+                    depends_on=tuple(dep_task for dep_task, _on in dep_ids),
+                    task_class=step.task_class,
+                    conditions=tuple((dep_task, on) for dep_task, on in dep_ids if on),
+                )
+            )
+    return tuple(tasks)

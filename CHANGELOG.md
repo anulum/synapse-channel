@@ -14,6 +14,14 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added workflow fan-out / map-join ([docs](docs/workflows.md)): a step with a
+  `for_each` list compiles to one parallel task per item (`<workflow>/<step>#<item>`),
+  and any dependency on that step expands to a join over every expanded task — a map
+  (the parallel tasks) and a join (a downstream step waiting on all of them) out of
+  the plain dependency primitive. Fan-out composes with conditional edges (the
+  condition carries onto every join edge) and with capability routing; expansion is
+  bounded to 64 tasks per step and is a pure authoring-time rewrite, so the board and
+  driver see only the expanded graph of ordinary tasks. 100% line+branch covered.
 - Added conditional (branching) workflow edges ([docs](docs/workflows.md)): a
   dependency may now be written as `{"step": "test", "on": "done"}` to wait for a
   specific terminal outcome (`done` or `cancelled`) rather than mere completion, so
