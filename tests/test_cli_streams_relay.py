@@ -25,6 +25,9 @@ def _relay_ns(**overrides: Any) -> argparse.Namespace:
         "cursor": None,
         "for_name": None,
         "project": None,
+        "channel": None,
+        "public_only": False,
+        "channel_metadata": False,
     }
     base.update(overrides)
     return argparse.Namespace(**base)
@@ -47,9 +50,12 @@ def _lite_line(log: Path, payload: str, msg_id: int) -> None:
 
 
 def test_parser_relay() -> None:
-    args = cli.build_parser().parse_args(["relay", "feed.ndjson", "--since", "10"])
+    args = cli.build_parser().parse_args(
+        ["relay", "feed.ndjson", "--since", "10", "--channel", "ops"]
+    )
     assert args.relay_log == "feed.ndjson"
     assert args.since == 10
+    assert args.channel == "ops"
     assert args.cursor is None
     assert args.func is cli_streams._cmd_relay
 
@@ -154,3 +160,68 @@ def test_cmd_relay_filters_by_project(tmp_path: Path, capsys: pytest.CaptureFixt
     assert "to instance" in out
     assert "to team" in out
     assert "elsewhere" not in out
+
+
+def test_cmd_relay_filters_by_channel_and_public_default(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    log = tmp_path / "feed.ndjson"
+    for channel, payload, mid in (
+        ("", "public", 1),
+        ("ops", "private ops", 2),
+        ("qa", "private qa", 3),
+    ):
+        message = {
+            "sender": "A",
+            "target": "all",
+            "type": "chat",
+            "payload": payload,
+            "timestamp": 2.0,
+            "msg_id": mid,
+        }
+        if channel:
+            message["channel"] = channel
+        append_jsonl(log, encode_lite(message))
+
+    assert cli_streams._cmd_relay(_relay_ns(relay_log=str(log), channel="ops")) == 0
+    channel_out = capsys.readouterr().out
+    assert "private ops" in channel_out
+    assert "private qa" not in channel_out
+    assert "public" not in channel_out
+
+    assert cli_streams._cmd_relay(_relay_ns(relay_log=str(log), public_only=True)) == 0
+    public_out = capsys.readouterr().out
+    assert "public" in public_out
+    assert "private ops" not in public_out
+
+
+def test_cmd_relay_channel_metadata_hides_body(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    log = tmp_path / "feed.ndjson"
+    append_jsonl(
+        log,
+        encode_lite(
+            {
+                "sender": "A",
+                "target": "all",
+                "type": "chat",
+                "payload": "operator body",
+                "timestamp": 2.0,
+                "msg_id": 1,
+                "channel": "ops",
+            }
+        ),
+    )
+
+    assert (
+        cli_streams._cmd_relay(_relay_ns(relay_log=str(log), channel="ops", channel_metadata=True))
+        == 0
+    )
+
+    out = capsys.readouterr().out
+    assert "channel=ops" in out
+    assert "operator body" not in out
+    assert "<private channel body hidden>" in out

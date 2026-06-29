@@ -26,6 +26,7 @@ and relay filtering).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 MAX_CHANNEL_ID_LENGTH = 200
 """Largest accepted channel id, bounding registry keys."""
@@ -48,12 +49,15 @@ class Channel:
         Human-readable display label.
     members : set[str]
         Agent names currently joined to the channel.
+    history : list[dict[str, Any]]
+        Bounded live chat history visible only to current members.
     """
 
     channel_id: str
     owner: str
     label: str
     members: set[str] = field(default_factory=set)
+    history: list[dict[str, Any]] = field(default_factory=list)
 
 
 class ChannelRegistry:
@@ -166,6 +170,61 @@ class ChannelRegistry:
             cid for cid, channel in self._channels.items() if member_name in channel.members
         )
 
+    def retain_message(
+        self,
+        channel_id: str,
+        message: dict[str, Any],
+        *,
+        max_messages: int,
+    ) -> None:
+        """Retain one live channel message behind the membership boundary.
+
+        Parameters
+        ----------
+        channel_id : str
+            Channel whose live history receives the message.
+        message : dict[str, Any]
+            Hub-stamped chat envelope to copy into the channel history.
+        max_messages : int
+            Maximum messages retained for this channel. Values below ``1`` keep
+            the latest message only.
+        """
+        channel = self._channels.get(self._normalise_id(channel_id))
+        if channel is None:
+            return
+        channel.history.append(dict(message))
+        keep = max(int(max_messages), 1)
+        if len(channel.history) > keep:
+            del channel.history[: len(channel.history) - keep]
+
+    def history_for(
+        self, channel_id: str, member: str, *, limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Return bounded channel history visible to ``member``.
+
+        Parameters
+        ----------
+        channel_id : str
+            Channel id to read.
+        member : str
+            Requesting agent name; must be a current member.
+        limit : int or None, optional
+            Maximum number of most-recent messages to return. ``None`` returns
+            the whole retained window.
+
+        Returns
+        -------
+        list[dict[str, Any]]
+            Copies of visible messages, or an empty list for non-members and
+            unknown channels.
+        """
+        channel = self._channels.get(self._normalise_id(channel_id))
+        if channel is None or str(member or "").strip() not in channel.members:
+            return []
+        keep = len(channel.history) if limit is None else max(int(limit), 0)
+        selected = channel.history[-keep:] if keep else []
+        return [dict(message) for message in selected]
+
     def snapshot(self) -> list[dict[str, object]]:
         """Return a JSON-friendly snapshot of channels and member counts."""
         return [
@@ -174,6 +233,7 @@ class ChannelRegistry:
                 "label": channel.label,
                 "owner": channel.owner,
                 "members": sorted(channel.members),
+                "history_size": len(channel.history),
             }
             for channel in sorted(self._channels.values(), key=lambda c: c.channel_id)
         ]

@@ -36,13 +36,20 @@ from synapse_channel.core.protocol import MessageType, addresses_project, is_rec
 from synapse_channel.relay import decode_lite, load_offset, read_jsonl_since, save_offset
 
 
-def _format_relay_line(message: dict[str, Any]) -> str:
+def _format_relay_line(message: dict[str, Any], *, hide_channel_body: bool = False) -> str:
     """Render one decoded relay event as a single human-readable line."""
     timestamp = message.get("timestamp", 0.0)
+    channel = str(message.get("channel") or "")
+    channel_note = f" channel={channel}" if channel else ""
+    payload = (
+        "<private channel body hidden>"
+        if hide_channel_body and channel
+        else str(message.get("payload", ""))
+    )
     return (
         f"[{float(timestamp):.3f}] "
         f"{message.get('sender', '?')} -> {message.get('target', 'all')} "
-        f"({message.get('type', 'chat')}): {message.get('payload', '')}"
+        f"({message.get('type', 'chat')}{channel_note}): {payload}"
     )
 
 
@@ -58,6 +65,11 @@ def _cmd_relay(args: argparse.Namespace) -> int:
     events, cursor = read_jsonl_since(args.relay_log, start)
     for lite in events:
         message = decode_lite(lite)
+        channel = str(message.get("channel") or "")
+        if args.channel is not None and channel != str(args.channel):
+            continue
+        if args.public_only and channel:
+            continue
         if args.for_name or args.project:
             is_chat = message.get("type") == MessageType.CHAT
             target = str(message.get("target", "all"))
@@ -67,7 +79,7 @@ def _cmd_relay(args: argparse.Namespace) -> int:
                 keep = is_chat and is_recipient(target, args.for_name)
             if not keep:
                 continue
-        print(_format_relay_line(message))
+        print(_format_relay_line(message, hide_channel_body=bool(args.channel_metadata)))
     if args.cursor:
         save_offset(args.cursor, cursor)
     return 0
@@ -204,6 +216,22 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=None,
         help="Show chats addressing any agent in this project (the name, 'project/...', "
         "or a broadcast) — a project-stable inbox that survives changing instance ids.",
+    )
+    channel_group = relay.add_mutually_exclusive_group()
+    channel_group.add_argument(
+        "--channel",
+        default=None,
+        help="Show only private-channel events for this channel id.",
+    )
+    channel_group.add_argument(
+        "--public-only",
+        action="store_true",
+        help="Show only events without a private-channel id.",
+    )
+    relay.add_argument(
+        "--channel-metadata",
+        action="store_true",
+        help="Hide private-channel payload bodies while showing sender, target, and channel id.",
     )
     relay.set_defaults(func=_cmd_relay)
 

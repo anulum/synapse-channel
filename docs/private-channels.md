@@ -8,29 +8,38 @@ does not encrypt payloads, does not replace end-to-end encrypted channels, and
 does not create cryptographic identity. The hub can still see metadata, route
 events, enforce retention, and write durable logs.
 
-## Implemented (first tranche)
+## Implemented runtime
 
-The membership-and-routing core is implemented. The hub keeps a
+The private-channel runtime is implemented for local coordination. The hub keeps a
 :class:`~synapse_channel.core.channels.ChannelRegistry`, and:
 
 - `synapse channel create <id>` makes a channel whose creator is its first
   member; `synapse channel join <id>` / `leave <id>` change membership;
-  `synapse channel list` shows the channels an agent belongs to. The client
-  exposes `channel_create` / `channel_join` / `channel_leave` /
-  `request_channels`.
+  `synapse channel list` shows the channels an agent belongs to; and
+  `synapse channel history <id>` returns the retained live history only to a
+  current member. The client exposes `channel_create` / `channel_join` /
+  `channel_leave` / `request_channels` / `request_channel_history`.
 - `synapse send --channel <id>` (and `SynapseAgent.chat(..., channel=<id>)`)
   delivers a chat **only to that channel's online members**. A non-member sender
   is refused; a non-member never receives the body. Channel chat is not
-  broadcast, not retained in the public chat history, and not mirrored to the
-  relay log.
+  broadcast and is not retained in the public chat history.
+- Channel chat is retained in the channel's bounded member-only channel history,
+  journalled as `chat` events with an explicit `channel` id, and mirrored to the
+  relay log with that same channel id. `synapse relay --channel <id>` selects one channel,
+  `synapse relay --public-only` selects the default public lane, and
+  `synapse relay --channel-metadata` hides private-channel bodies while showing
+  sender, target, timestamp, type, and channel id.
+- `synapse event-query <db> "channel <id> between seq <start> <end>"` filters
+  channel chat by channel id and sequence range. Its channel result is
+  metadata-only: sequence, timestamp, kind, sender, target, channel id, message
+  id, and payload byte length, not the private payload body.
 
-Join is open in this tranche (any agent may join a channel by id) so teams can
+Join is open in this runtime (any agent may join a channel by id) so teams can
 route operational chatter cleanly; who-may-join authorization is the future
 identity/ACL layer. Membership is in-memory and lives for the hub process.
-
-The following design targets are **not yet implemented** and remain described
-below: per-channel history visibility policies, retention boundaries, durable
-channel history, channel-filtered relay export, and channel-aware `event-query`.
+The live history retention boundary is the hub's `max_history` window per
+channel. Durable event-store channel records are available for forensic
+filtering, but channel membership itself is not durable across hub restarts.
 
 ## Namespace model
 
@@ -80,20 +89,23 @@ Private-channel routing should preserve the existing hub properties:
 - Postmortems can list private-channel metadata and explain that body visibility
   depends on membership.
 
-History visibility should be defined per channel. A new member may see no
-history, bounded recent history, or all retained history, depending on the join
-policy. The hub should record which policy applied.
+History visibility is currently member-only and bounded recent history: a
+current member can request the retained channel window, and a non-member gets a
+private refusal without message bodies. The broader policy matrix — no-history,
+invite-time snapshots, all retained history, and owner-managed history reads —
+remains a design target for the identity/ACL layer.
 
 ## Retention and projections
 
-Private channels need clear retention rules:
+Private channels have these runtime retention and projection rules:
 
-- A **retention boundary** limits chat history, progress notes, artifacts, and
-  replay windows per channel.
-- Relay log filtering should let operators export only channel metadata, one
-  named channel, or the default public channel.
-- Event-query filtering should support channel id, task id, and sequence ranges
-  without requiring the query engine to read private payload bodies.
+- A **retention boundary** limits live chat history per channel to the hub's
+  bounded history window. Progress notes, artifacts, and replay windows remain
+  outside this tranche.
+- Relay log filtering can export one named channel, the default public channel,
+  or channel metadata without private-channel bodies.
+- Event-query filtering supports channel id and sequence/time ranges without
+  rendering private payload bodies.
 - Compaction and archive reports should include channel counts and retention
   decisions without leaking bodies to non-members.
 
@@ -110,14 +122,14 @@ Private channels and end-to-end encrypted channels solve different problems:
 - The [differential-privacy blackboard design](differential-privacy-blackboard.md)
   shapes aggregate or redacted shared board views after data exists.
 
-The first private-channel implementation should work without encryption so teams
-can route operational chatter cleanly. Later, an encrypted private channel can
-combine membership with encrypted bodies, but routing metadata remains visible.
+The private-channel runtime works without encryption so teams can route
+operational chatter cleanly. An encrypted private channel can combine membership
+with encrypted bodies, but routing metadata remains visible.
 
 ## Boundaries
 
-This is a design target, not implemented yet. Private channels do not encrypt
-payloads, do not replace end-to-end encrypted channels, do not create
+Private channels do not encrypt payloads, do not replace end-to-end encrypted
+channels, do not create
 cryptographic identity, do not sandbox agents, and do not prevent a malicious or
 compromised member from copying plaintext.
 

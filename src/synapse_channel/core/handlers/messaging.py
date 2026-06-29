@@ -67,9 +67,9 @@ async def _route_channel_chat(
     """Deliver a channel-scoped chat to online members only, never broadcast.
 
     Non-members are refused privately. The body is not retained in the public
-    chat history, journalled, or mirrored to the relay log in this tranche;
-    durable per-channel history and event-query filtering are deferred design
-    work (see ``docs/private-channels``).
+    chat history, but it is retained in the channel's bounded live history and
+    mirrored/journalled with explicit channel metadata so relay and event-query
+    can filter it.
     """
     if not hub.channels.is_member(channel, sender):
         await hub._send_json(
@@ -86,6 +86,10 @@ async def _route_channel_chat(
     recipients = sorted(
         member for member in hub.channels.members(channel) if member != sender and member in online
     )
+    hub.channels.retain_message(channel, data, max_messages=hub.max_history)
+    if hub.journal is not None:
+        record_chat(hub.journal, data)
+    hub._mirror_to_relay(data)
     for member in recipients:
         await hub._send_to_agent(member, data)
     if bool(data.get("receipt_requested")):

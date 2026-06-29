@@ -32,7 +32,11 @@ from synapse_channel.core.protocol import MessageType
 
 AgentFactory = Callable[..., SynapseAgent]
 
-_RESULT_TYPES = {MessageType.CHANNEL_RESULT, MessageType.CHANNEL_LIST}
+_RESULT_TYPES = {
+    MessageType.CHANNEL_RESULT,
+    MessageType.CHANNEL_LIST,
+    MessageType.CHANNEL_HISTORY,
+}
 
 
 async def _send_channel_op(agent: SynapseAgent, command: str, channel: str, label: str) -> None:
@@ -43,6 +47,8 @@ async def _send_channel_op(agent: SynapseAgent, command: str, channel: str, labe
         await agent.channel_join(channel)
     elif command == "leave":
         await agent.channel_leave(channel)
+    elif command == "history":
+        await agent.request_channel_history(channel, limit=20)
     else:
         await agent.request_channels()
 
@@ -57,6 +63,7 @@ async def _run_channel_command(
     label: str,
     ready_timeout: float,
     response_timeout: float,
+    limit: int = 20,
     agent_factory: AgentFactory = SynapseAgent,
 ) -> int:
     """Connect, run one channel operation, print the hub reply, and return a code.
@@ -100,7 +107,10 @@ async def _run_channel_command(
                 )
             )
             return 1
-        await _send_channel_op(agent, command, channel, label)
+        if command == "history":
+            await agent.request_channel_history(channel, limit=limit)
+        else:
+            await _send_channel_op(agent, command, channel, label)
         deadline = asyncio.get_running_loop().time() + max(0.0, response_timeout)
         while not reply and asyncio.get_running_loop().time() < deadline:
             await asyncio.sleep(0.025)
@@ -121,6 +131,15 @@ def _print_reply(reply: dict[str, Any]) -> int:
         channels = reply.get("channels", [])
         names = channels if isinstance(channels, list) else []
         print("channels: " + (", ".join(str(c) for c in names) if names else "(none)"))
+        return 0
+    if str(reply.get("type", "")) == MessageType.CHANNEL_HISTORY:
+        channel = str(reply.get("channel") or "")
+        messages = reply.get("messages", [])
+        rows = messages if isinstance(messages, list) else []
+        print(f"history {channel}: {len(rows)} message(s)")
+        for item in rows:
+            if isinstance(item, dict):
+                print(f"{item.get('sender', '?')}: {item.get('payload', '')}")
         return 0
     ok = bool(reply.get("ok"))
     print(str(reply.get("payload") or ("ok" if ok else "failed")))
@@ -143,6 +162,7 @@ def _cmd_channel(args: argparse.Namespace) -> int:
             label=getattr(args, "label", ""),
             ready_timeout=args.ready_timeout,
             response_timeout=args.response_timeout,
+            limit=getattr(args, "limit", 20),
         )
     )
 
@@ -191,6 +211,17 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     listing = nested.add_parser("list", help="List the channels you belong to.")
     _add_common(listing)
     listing.set_defaults(func=_cmd_channel)
+
+    history = nested.add_parser("history", help="Print retained history for a channel.")
+    history.add_argument("channel", help="Channel id.")
+    history.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Maximum retained channel messages to request.",
+    )
+    _add_common(history)
+    history.set_defaults(func=_cmd_channel)
 
     key_check = nested.add_parser(
         "key-check",
