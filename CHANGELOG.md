@@ -14,6 +14,12 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the [multi-hub sync (CRDT) research](docs/multi-hub-sync.md) design that
+  asks whether several hubs could synchronise state while keeping claim safety and
+  local-first. Its honest core: the append-only event log, presence, and progress
+  merge conflict-free, but claims are mutual exclusion and not a CRDT — they are
+  routed by single-owner-per-namespace and fail closed on a partition. Not
+  implemented; adds no cross-hub service to the local core.
 - Added a [cross-agent adapter kits](docs/cross-agent-adapter-kits.md) design: a
   planned `synapse adapters` step that detects installed coding tools (Claude
   Code, Codex, Cursor, Aider, Copilot) and writes a thin claim-aware adapter into

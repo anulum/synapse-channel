@@ -805,6 +805,13 @@ each tool's native config, plus thin client shims for Python frameworks. Adapter
 carry only "claim before edit, release on commit, reach the hub" — Synapse stays
 persona-neutral and adds no new coordination primitive.
 
+The [multi-hub sync (CRDT) research](docs/multi-hub-sync.md) asks whether several
+hubs could synchronise state while keeping claim safety and local-first. Its
+honest core: most state (the append-only event log, presence, progress) merges
+conflict-free, but claims are mutual exclusion and **not** a CRDT — they are
+routed by single-owner-per-namespace and fail closed on a partition. Not
+implemented; it adds no cross-hub service to the local core.
+
 Use `synapse ttl-advice ./synapse.db` for read-only adaptive lease TTL advice.
 It derives completed-task duration samples, active live-claim counts, and stale
 claim counts from the event log, then prints an advisory default. It never
@@ -924,9 +931,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 206 |
 | Wire message types | 61 |
 | CLI subcommands | 83 |
-| Test functions | 2286 |
+| Test functions | 2290 |
 | Benchmark harnesses | 5 |
-| Documentation pages | 37 |
+| Documentation pages | 38 |
 | GitHub Actions workflows | 11 |
 | Optional-dependency groups | 5 |
 
