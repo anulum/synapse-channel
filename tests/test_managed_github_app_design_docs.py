@@ -21,9 +21,9 @@ def _collapsed() -> str:
 
 
 def test_design_is_in_the_nav() -> None:
-    assert "Managed GitHub App (design): managed-github-app.md" in (
-        ROOT / "mkdocs.yml"
-    ).read_text(encoding="utf-8")
+    assert "Managed GitHub App (design): managed-github-app.md" in (ROOT / "mkdocs.yml").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_design_states_it_is_not_implemented_and_gated() -> None:
