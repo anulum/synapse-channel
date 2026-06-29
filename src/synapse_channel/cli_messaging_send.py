@@ -16,7 +16,7 @@ from typing import Any
 
 from synapse_channel.cli_messaging_types import AgentFactory
 from synapse_channel.client.agent import SynapseAgent
-from synapse_channel.connect_failures import describe_connect_failure
+from synapse_channel.connect_failures import closed_after_ready, describe_connect_failure
 from synapse_channel.core.payload_crypto import (
     PAYLOAD_PLACEHOLDER,
     PayloadContext,
@@ -26,36 +26,6 @@ from synapse_channel.core.payload_crypto import (
     payload_key_fingerprint,
 )
 from synapse_channel.core.protocol import MessageType
-
-
-async def _closed_after_ready(agent: SynapseAgent, *, grace_seconds: float = 0.25) -> bool:
-    """Return whether a just-ready connection was closed by the hub.
-
-    A name conflict (close code 4009) is reported only after the welcome
-    handshake, so a successful ``wait_until_ready`` can already be doomed. This
-    waits briefly for such a close so a one-shot send can report a delivery
-    failure instead of writing into a dead socket and losing the message silently.
-
-    Parameters
-    ----------
-    agent : SynapseAgent
-        The just-connected client to observe.
-    grace_seconds : float, optional
-        How long to wait for a post-welcome close before assuming the connection
-        is healthy.
-
-    Returns
-    -------
-    bool
-        ``True`` if the connection was closed within the grace window.
-    """
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + max(0.0, grace_seconds)
-    while loop.time() < deadline:
-        if not agent.running or agent.last_close_code is not None:
-            return True
-        await asyncio.sleep(0.02)
-    return False
 
 
 def _one_shot_sender_name(name: str) -> str:
@@ -157,7 +127,7 @@ async def _send(
         # can already be doomed. Detect that close before sending, otherwise the
         # message is written into a dying socket and silently lost — which reads as
         # "messages between terminals don't arrive".
-        if await _closed_after_ready(agent):
+        if await closed_after_ready(agent):
             print(
                 describe_connect_failure(
                     sender_name,

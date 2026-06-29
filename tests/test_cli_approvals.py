@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from hub_e2e_helpers import running_hub
-from synapse_channel.cli_approvals import add_parsers
+from hub_e2e_helpers import close_agents, connect_agent, running_hub
+from synapse_channel.cli_approvals import _emit_approval, add_parsers
 from synapse_channel.core.approvals import (
     APPROVAL_NOTE_KIND,
     format_approval_note,
@@ -190,3 +190,23 @@ async def test_request_then_decide_e2e(tmp_path: Path) -> None:
     assert status.requested_by == "dev"  # "-rx" stripped on send
     assert status.decided_by == "ceo"
     assert status.decision_reason == "ship it"
+
+
+async def test_emit_approval_reports_name_conflict_instead_of_dropping(tmp_path: Path) -> None:
+    # An approval emit whose name conflicts with a live identity must report it,
+    # not write into a dying socket and lose the decision silently.
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        holder = await connect_agent("dup", uri)
+        try:
+            rc = await _emit_approval(
+                uri=uri,
+                name="dup",
+                subject="T1",
+                state="requested",
+                reason="",
+                token=None,
+                ready_timeout=2.0,
+            )
+        finally:
+            await close_agents(holder)
+    assert rc == 1

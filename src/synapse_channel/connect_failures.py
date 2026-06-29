@@ -22,11 +22,54 @@ specific, actionable sentence while preserving the original generic line for the
 
 from __future__ import annotations
 
+import asyncio
+from typing import Protocol
+
 CAPACITY_CLOSE_CODE = 4013
 """Hub close code emitted when the total connection table is full."""
 
 NAME_CONFLICT_CLOSE_CODE = 4009
 """Hub close code emitted when the requested name is already online."""
+
+
+class _ObservableConnection(Protocol):
+    """The minimal client surface :func:`closed_after_ready` observes."""
+
+    running: bool
+    last_close_code: int | None
+
+
+async def closed_after_ready(agent: _ObservableConnection, *, grace_seconds: float = 0.25) -> bool:
+    """Return whether a just-ready connection was closed by the hub.
+
+    Several refusals — a name conflict (4009) above all — are reported only after
+    the welcome handshake, so a successful ``wait_until_ready`` can already be
+    doomed. A one-shot send or emit must wait briefly for such a close, otherwise
+    it writes its message into a dying socket and loses it with no error. This is
+    that wait.
+
+    Parameters
+    ----------
+    agent : _ObservableConnection
+        The just-connected client to observe (its ``running`` flag and recorded
+        ``last_close_code``).
+    grace_seconds : float, optional
+        How long to wait for a post-welcome close before assuming the connection
+        is healthy.
+
+    Returns
+    -------
+    bool
+        ``True`` if the connection was closed within the grace window.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + max(0.0, grace_seconds)
+    while loop.time() < deadline:
+        if not agent.running or agent.last_close_code is not None:
+            return True
+        await asyncio.sleep(0.02)
+    return False
+
 
 SUPERSEDED_CLOSE_CODE = 4010
 """Hub close code for a superseded socket — also used for authentication refusal.
