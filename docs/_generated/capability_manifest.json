@@ -5,12 +5,12 @@
     "cli_subcommands": 83,
     "documentation_pages": 41,
     "optional_dependency_groups": 5,
-    "package_modules": 180,
+    "package_modules": 181,
     "public_api_exports": 61,
     "tests": 2343,
     "version": "0.66.0",
     "wire_message_types": 61,
-    "workflows": 11
+    "workflows": 12
   },
   "project": "SYNAPSE CHANNEL",
   "schema_version": "capability-manifest.v1"
