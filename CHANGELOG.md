@@ -34,6 +34,15 @@ All notable changes to this project are documented here.
   renderable snapshot. 100% line+branch.
 
 ### Changed
+- Extracted the hub's outbound messaging into `core/hub_broadcast.py`
+  (`HubBroadcaster`): sending one frame to a socket, fanning a broadcast out to every
+  client (mirroring to the relay first), addressing a named agent, and composing a
+  presence update now live in one class the hub holds, with `_send_json` / `_broadcast`
+  / `_broadcast_presence` / `_send_to_agent` left as thin delegating wrappers (the
+  handler call surface is unchanged). It reads the live socket registry and takes the
+  hub's system-message factory and online-agents roster as injected callbacks, so it
+  carries no back-reference to the hub. No behaviour change. Second slice of the bounded
+  hub decomposition. 100% line+branch on the new module.
 - Extracted the relay-log mirroring out of the hub into `core/hub_relay.py`
   (`RelayMirror`): the append, lite encoding, and self-trimming that bound the file
   now live in a single-responsibility class the hub holds, leaving `_mirror_to_relay`
