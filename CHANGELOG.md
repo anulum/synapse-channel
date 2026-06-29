@@ -14,6 +14,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the live Studio command centre `/studio/command` (Studio Stage B): the operator
+  view that reads `/studio.json` and renders it in the instrument-panel design system. Its
+  signature instrument is the **Coordination Clock** — a radial gauge where every claim is a
+  segment around the dial, coloured by lease health (green fresh, amber ageing, red stale),
+  conflicts marked on the rim, a slow radar sweep, and the verdict and live claim count at
+  the centre — surrounded by the verdict pill, headline counters, and agents/claims/tasks/
+  risk panels. The shell is hub-independent (it loads and shows an offline state with no hub,
+  then fills in as it polls) and honours `prefers-reduced-motion` (the sweep stills and a
+  claims-table fallback appears). Vanilla HTML + the `studio.css` tokens + dependency-free
+  ES — no build step, no external request. 100% line+branch.
 - Added the Studio snapshot endpoint `/studio.json` (Studio Stage A): `studio_snapshot.py`
   projects the read-only dashboard payload into the command-centre shape — a single risk
   **verdict** (the reserved red/amber/green signal), a row of headline counters, and the

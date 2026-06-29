@@ -300,6 +300,9 @@ async def test_dashboard_http_server_serves_the_studio_reference_and_css() -> No
             css_status, css_type, css_body = await asyncio.to_thread(
                 _http_get, server.url("/studio.css")
             )
+            command_status, command_type, command_body = await asyncio.to_thread(
+                _http_get, server.url("/studio/command")
+            )
         finally:
             server.close()
             await close_agents(handle)
@@ -310,6 +313,12 @@ async def test_dashboard_http_server_serves_the_studio_reference_and_css() -> No
     assert css_status == 200
     assert css_type == "text/css"
     assert "--syn-brand" in css_body
+    # the live command centre serves its hub-independent shell, wired to /studio.json
+    assert command_status == 200
+    assert command_type == "text/html"
+    assert "Coordination clock" in command_body
+    assert "/studio.json" in command_body
+    assert 'href="/studio.css"' in command_body  # absolute, so it resolves from the subpath
 
 
 async def test_dashboard_http_server_requires_dashboard_bearer_token() -> None:
