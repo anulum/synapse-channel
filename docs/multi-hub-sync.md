@@ -34,17 +34,28 @@ What exists is single-hub plus operator-managed peering, not state sync:
 - The **relay log** and **`synapse ingest`** export the event stream read-side,
   which is the seam a downstream consumer (or a peer) could replay.
 
-There is no hub-to-hub state replication and no cross-hub claim protocol. Two slices of
-the CRDT layer have shipped, though. `core/multihub_merge.py` is the conflict-free
-event-log union — it tags each event with its authoring hub, merges several hubs' logs
-into a grow-only set keyed by `(hub_id, seq)`, replays them in the deterministic
-`(ts, hub_id, seq)` order, and reports the per-hub resume cursor. `core/multihub_fold.py`
-folds that merged order into the observed mergeable view: the board (last-writer-wins per
-task), the grow-only progress ledger, and the **observed claim** view — which records the
-latest claim a peer reports, tagged with its hub and marked advisory, and **never grants a
-claim**. The remaining slice is the network follower (read a peer's log over the
-ingest/relay seam, apply the fold, route real claims to the owning hub). This document is
-the research boundary for that work.
+The full multi-host sync — a cross-host network transport over mTLS plus the
+namespace-ownership claim protocol — is **not implemented**; it stays the research
+boundary below. The read-side CRDT layer that sync rests on, however, has shipped in
+three slices:
+
+- `core/multihub_merge.py` — the conflict-free event-log union: it tags each event with
+  its authoring hub, merges several hubs' logs into a grow-only set keyed by
+  `(hub_id, seq)`, replays them in the deterministic `(ts, hub_id, seq)` order, and
+  reports the per-hub resume cursor.
+- `core/multihub_fold.py` — folds that merged order into the observed mergeable view: the
+  board (last-writer-wins per task), the grow-only progress ledger, and the **observed
+  claim** view — the latest claim each peer reports, tagged with its hub, marked advisory,
+  cleared on release, and **never granted**.
+- `core/multihub_follower.py` — a read-only `MultiHubFollower` that tracks a per-peer
+  `seq` cursor, fetches a peer's events past it through an injected transport
+  (`store_fetcher` reads a peer `EventStore` over its `read_since` seam), folds the union,
+  and returns the observed view. Observe-only by construction: it grants no claim and,
+  losing a peer, simply stops advancing that peer's cursor — the fail-closed posture.
+
+What remains is the cross-host transport (the same follower behind an mTLS peer
+connection rather than a local store) and the namespace-ownership protocol that routes a
+real claim to its owning hub.
 
 ## State, split by what merges
 

@@ -14,6 +14,15 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the read-only multi-hub follower ([docs](docs/multi-hub-sync.md)): the third
+  CRDT slice. `core/multihub_follower.py`'s `MultiHubFollower` tracks a per-peer `seq`
+  cursor, fetches a peer's events past it through an injected transport (`store_fetcher`
+  reads a peer `EventStore` over the `read_since` ingest seam — a network transport slots
+  in the same way), folds the accumulated union, and returns the observed view. Polling is
+  incremental and idempotent. Observe-only by construction: it grants no claim, and on
+  losing a peer it simply stops advancing that cursor — the fail-closed posture. With the
+  merge and fold slices this completes the read-side CRDT layer; the cross-host mTLS
+  transport and the namespace-ownership claim protocol remain research. 100% line+branch.
 - Added the multi-hub observed-state fold ([docs](docs/multi-hub-sync.md)): the second
   CRDT slice. `core/multihub_fold.py` folds a merged multi-hub log into the mergeable
   view — the board (last-writer-wins per task), the grow-only progress ledger, and the
