@@ -48,10 +48,26 @@ synapse dashboard --port 8765
 # then open http://127.0.0.1:8765/studio
 ```
 
+## The Studio snapshot — `/studio.json`
+
+The command centre reads one JSON contract, served live at `/studio.json`: a single risk
+**verdict** (the reserved red/amber/green signal), a row of headline counters, and the
+agents, claims, tasks, conflicts, and risk behind them. It is a pure projection of the
+same read model the dashboard already exposes — `studio_snapshot.py` reshaping
+`/snapshot.json` — so Studio adds no new hub call, only a curated command-centre view.
+Every headline count is derived from the list it summarises, so the instrument and the
+rows beneath it can never disagree. A partial payload from a degraded hub still projects
+to a renderable snapshot rather than failing.
+
+```bash
+synapse dashboard --uri ws://127.0.0.1:8765
+# then GET http://127.0.0.1:8765/studio.json
+```
+
 ## What comes next
 
-The command centre wires the live `/snapshot.json` read model into these components —
-the risk verdict, the fleet, the safe-next-work queue, and a coordination view of
-leases and claims — followed by the workflow, trace, policy, routing, and channel
+The command centre wires the live `/studio.json` read model into these components — the
+risk verdict, the fleet, the safe-next-work queue, and the signature Coordination Clock
+over leases and claims — followed by the workflow, trace, policy, routing, and channel
 surfaces. The core read-only Studio stays free; an organisation-level workbench (saved
 views, exports, multi-project, managed) is planned as a separate layer.

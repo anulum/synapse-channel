@@ -5,10 +5,10 @@
     "cli_subcommands": 101,
     "documentation_pages": 45,
     "optional_dependency_groups": 6,
-    "package_modules": 199,
+    "package_modules": 200,
     "public_api_exports": 61,
-    "tests": 2557,
-    "version": "0.70.0",
+    "tests": 2563,
+    "version": "0.71.0",
     "wire_message_types": 61,
     "workflows": 12
   },
