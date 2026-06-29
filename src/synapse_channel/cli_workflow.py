@@ -17,12 +17,31 @@ authoring tools over :mod:`synapse_channel.core.workflow`.
 from __future__ import annotations
 
 import argparse
+import asyncio
+import contextlib
 import json
 import sys
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
-from synapse_channel.core.workflow import WorkflowError, compile_to_tasks, parse_workflow
-from synapse_channel.core.workflow_driver import derive_state, plan_assignments
+from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.connect_failures import closed_after_ready, describe_connect_failure
+from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.workflow import (
+    CompiledTask,
+    WorkflowError,
+    compile_to_tasks,
+    parse_workflow,
+)
+from synapse_channel.core.workflow_driver import DEFAULT_STATUS, derive_state, plan_assignments
+from synapse_channel.core.workflow_run import BoardSnapshot, RunResult, run_workflow
+
+AgentFactory = Callable[..., SynapseAgent]
+"""Factory for the client agent; injectable so the driver is testable."""
+
+_READY_TIMEOUT = 5.0
+"""Seconds to wait for the hub welcome before treating the hub as unreachable."""
 
 
 def _load_workflow_file(path: str) -> object:
@@ -126,6 +145,145 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _snapshot_from_board(board: Mapping[str, Any]) -> BoardSnapshot:
+    """Reduce a hub board snapshot to the status and owner maps the driver routes on."""
+    status: dict[str, str] = {}
+    suggested_owner: dict[str, str] = {}
+    for task in board.get("tasks", []):
+        task_id = str(task.get("task_id", "")).strip()
+        if not task_id:
+            continue
+        status[task_id] = str(task.get("status") or DEFAULT_STATUS)
+        owner = str(task.get("suggested_owner") or "")
+        if owner:
+            suggested_owner[task_id] = owner
+    return BoardSnapshot(status=status, suggested_owner=suggested_owner)
+
+
+class _AgentGateway:
+    """A :class:`~synapse_channel.core.workflow_run.WorkflowGateway` over a live hub client.
+
+    Wraps one connected :class:`SynapseAgent`: ``post_tasks`` declares each compiled
+    task, ``read_board`` requests and awaits a fresh board snapshot, and ``assign``
+    advises an owner. Board snapshots arrive on the agent's message callback and are
+    appended to a shared ``boards`` buffer that ``read_board`` drains.
+    """
+
+    def __init__(
+        self,
+        agent: SynapseAgent,
+        boards: list[Mapping[str, Any]],
+        *,
+        attempts: int = 80,
+        poll: float = 0.05,
+    ) -> None:
+        self._agent = agent
+        self._boards = boards
+        self._attempts = attempts
+        self._poll = poll
+
+    async def post_tasks(self, tasks: Sequence[CompiledTask]) -> None:
+        """Declare every compiled task on the board, in dependency order."""
+        for task in tasks:
+            await self._agent.post_task(
+                task.task_id,
+                title=task.title,
+                description=task.description,
+                depends_on=task.depends_on,
+            )
+
+    async def read_board(self) -> BoardSnapshot:
+        """Request a board snapshot and return the latest reading (empty if none arrives)."""
+        self._boards.clear()
+        await self._agent.request_board()
+        for _ in range(self._attempts):
+            if self._boards:
+                break
+            await asyncio.sleep(self._poll)
+        board = self._boards[-1] if self._boards else {}
+        return _snapshot_from_board(board)
+
+    async def assign(self, task_id: str, agent: str) -> None:
+        """Advise ``agent`` as the owner of ``task_id`` on the board."""
+        await self._agent.update_ledger_task(task_id, suggested_owner=agent)
+
+
+def _render_run(result: RunResult, *, json_out: bool) -> None:
+    """Print a driver run outcome, as JSON or readable lines."""
+    if json_out:
+        print(json.dumps(result.to_dict(), indent=2))
+        return
+    outcome = "complete" if result.complete else "incomplete (deadline reached)"
+    print(f"workflow {outcome} after {result.polls} board reads")
+    if not result.assignments:
+        print("no assignments made")
+        return
+    print("assignments made:")
+    for task_id, agent in result.assignments:
+        print(f"  {task_id} -> {agent}")
+
+
+async def _drive_run(
+    args: argparse.Namespace,
+    tasks: Sequence[CompiledTask],
+    agents: Mapping[str, frozenset[str]],
+    *,
+    agent_factory: AgentFactory = SynapseAgent,
+) -> int:
+    """Connect, drive the compiled workflow against the live board, and render the outcome."""
+    boards: list[Mapping[str, Any]] = []
+
+    async def collect(data: dict[str, Any]) -> None:
+        if data.get("type") == MessageType.BOARD_SNAPSHOT:
+            boards.append(data.get("board", {}))
+
+    agent = agent_factory(args.name, collect, uri=args.uri, verbose=False, token=args.token)
+    conn_task = asyncio.create_task(agent.connect())
+    try:
+        if not await agent.wait_until_ready(timeout=_READY_TIMEOUT) or await closed_after_ready(
+            agent
+        ):
+            print(
+                describe_connect_failure(
+                    args.name,
+                    args.uri,
+                    close_code=agent.last_close_code,
+                    close_reason=agent.last_close_reason,
+                )
+            )
+            return 1
+        gateway = _AgentGateway(agent, boards)
+        loop = asyncio.get_event_loop()
+        result = await run_workflow(
+            tasks,
+            agents,
+            gateway,
+            max_in_flight=args.max_in_flight,
+            deadline=loop.time() + args.deadline,
+            clock=loop.time,
+            sleep=asyncio.sleep,
+            poll_interval=args.poll_interval,
+        )
+        _render_run(result, json_out=args.json)
+        return 0
+    finally:
+        agent.running = False
+        conn_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await conn_task
+
+
+def _cmd_run(args: argparse.Namespace, *, agent_factory: AgentFactory = SynapseAgent) -> int:
+    """Run a declarative workflow live against the hub until complete or past deadline."""
+    try:
+        tasks = compile_to_tasks(parse_workflow(_load_workflow_file(args.file)))
+        agents = _load_agents(args.agents)
+    except WorkflowError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    return asyncio.run(_drive_run(args, tasks, agents, agent_factory=agent_factory))
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``workflow`` command group."""
     parser = subparsers.add_parser(
@@ -162,3 +320,32 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     plan.add_argument("--json", action="store_true", help="Emit machine-readable state and plan.")
     plan.set_defaults(func=_cmd_plan)
+
+    run = group.add_parser(
+        "run",
+        help="Drive a workflow live against the hub: post tasks, then route ready steps.",
+    )
+    run.add_argument("file", help="Path to the workflow JSON file.")
+    run.add_argument("--uri", default=DEFAULT_HUB_URI, help="Hub URI to drive against.")
+    run.add_argument("--name", default="WORKFLOW", help="Driver's display name on the hub.")
+    run.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    run.add_argument(
+        "--agents", default=None, help="JSON file mapping agent -> [task classes] it handles."
+    )
+    run.add_argument(
+        "--max-in-flight", type=int, default=4, help="Most tasks allowed in progress at once."
+    )
+    run.add_argument(
+        "--deadline",
+        type=float,
+        default=120.0,
+        help="Seconds to keep driving before stopping if not yet complete.",
+    )
+    run.add_argument(
+        "--poll-interval",
+        type=float,
+        default=1.0,
+        help="Seconds between board readings.",
+    )
+    run.add_argument("--json", action="store_true", help="Emit a machine-readable run summary.")
+    run.set_defaults(func=_cmd_run)

@@ -92,9 +92,38 @@ The planner recomputes readiness from dependencies (a task is ready only when al
 of its dependencies are terminal), routes each ready task to a free agent that
 advertises its `task_class` (an unclassified task can go to anyone), and never
 exceeds the in-flight budget. It is a pure function over the compiled workflow and
-the board snapshot, so it is deterministic and replayable. An autonomous loop that
-posts a workflow and applies the plan against the live hub on every board change
-wraps this same planner.
+the board snapshot, so it is deterministic and replayable.
+
+## Running a workflow live
+
+`synapse workflow run` is the autonomous loop around that planner. It connects to
+the hub, posts the compiled tasks once, then on every board reading re-derives the
+state and routes the ready steps by writing each task's `suggested_owner` — an
+*advice*, never a forced assignment. It stops as soon as every task is terminal, or
+once the deadline passes.
+
+```bash
+synapse workflow run release.json \
+  --agents agents.json \      # {"alice": ["ci"], "bob": []} — the candidate worker pool
+  --max-in-flight 4 \
+  --poll-interval 1.0 \       # seconds between board readings
+  --deadline 120              # seconds to keep driving before giving up
+```
+
+```text
+workflow complete after 3 board reads
+assignments made:
+  release/build -> alice
+  release/test -> alice
+```
+
+The loop is **advisory and idempotent**: it only suggests owners, so workers stay
+free to pick up whatever they choose, and a task already advising the chosen agent
+is never re-written. It is **resumable** — it routes from whatever the board
+currently reports, so a driver restarted mid-run simply continues from the live
+state. And it is **bounded** twice over: by `--max-in-flight` (how much work it will
+advise at once) and by `--deadline` (how long it will run). The decision logic is
+the pure planner above; `run` adds only the connect-post-read-assign shell.
 
 ## Boundaries
 

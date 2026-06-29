@@ -9,12 +9,26 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from synapse_channel.cli_workflow import add_parsers
+from hub_e2e_helpers import close_agents, connect_agent, running_hub
+from synapse_channel.cli_workflow import (
+    _AgentGateway,
+    _cmd_run,
+    _drive_run,
+    _render_run,
+    _snapshot_from_board,
+    add_parsers,
+)
+from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.workflow import compile_to_tasks, parse_workflow
+from synapse_channel.core.workflow_driver import WorkflowState
+from synapse_channel.core.workflow_run import RunResult
 
 _GOOD = {
     "name": "release",
@@ -165,3 +179,214 @@ def test_plan_rejects_agent_without_a_class_list(
     args = parser.parse_args(["workflow", "plan", _write(tmp_path, _GOOD), "--agents", agents])
     assert args.func(args) == 2
     assert "list of task classes" in capsys.readouterr().err
+
+
+# --- workflow run: gateway, rendering, and the live loop ---------------------
+
+
+def test_snapshot_from_board_keeps_status_and_owner_and_skips_blank_ids() -> None:
+    board = {
+        "tasks": [
+            {"task_id": "w/a", "status": "done", "suggested_owner": "alpha"},
+            {"task_id": "w/b", "status": "open"},
+            {"task_id": "  ", "status": "open"},
+        ]
+    }
+    snapshot = _snapshot_from_board(board)
+    assert snapshot.status == {"w/a": "done", "w/b": "open"}
+    assert snapshot.suggested_owner == {"w/a": "alpha"}
+
+
+class _FakeAgent:
+    """A minimal stand-in exercising the gateway without a hub."""
+
+    def __init__(self, boards: list[Any], *, board_payload: dict[str, Any] | None) -> None:
+        self._boards = boards
+        self._board_payload = board_payload
+        self.posts: list[tuple[str, str, str, tuple[str, ...]]] = []
+        self.assigns: list[tuple[str, str]] = []
+
+    async def post_task(
+        self,
+        task_id: str,
+        *,
+        title: str,
+        description: str,
+        depends_on: tuple[str, ...],
+    ) -> None:
+        self.posts.append((task_id, title, description, tuple(depends_on)))
+
+    async def request_board(self) -> None:
+        if self._board_payload is not None:
+            self._boards.append(self._board_payload)
+
+    async def update_ledger_task(self, task_id: str, *, suggested_owner: str) -> None:
+        self.assigns.append((task_id, suggested_owner))
+
+
+async def test_gateway_posts_reads_and_assigns() -> None:
+    boards: list[Any] = []
+    payload = {"tasks": [{"task_id": "w/a", "status": "open", "suggested_owner": ""}]}
+    agent = _FakeAgent(boards, board_payload=payload)
+    gateway = _AgentGateway(agent, boards)  # type: ignore[arg-type]
+
+    tasks = compile_to_tasks(parse_workflow(_GOOD))
+    await gateway.post_tasks(tasks)
+    assert agent.posts[0][0] == "release/build"
+    assert agent.posts[1][3] == ("release/build",)
+
+    snapshot = await gateway.read_board()
+    assert snapshot.status == {"w/a": "open"}
+
+    await gateway.assign("w/a", "alpha")
+    assert agent.assigns == [("w/a", "alpha")]
+
+
+async def test_gateway_read_board_returns_empty_when_no_snapshot_arrives() -> None:
+    boards: list[Any] = []
+    agent = _FakeAgent(boards, board_payload=None)
+    gateway = _AgentGateway(agent, boards, attempts=2, poll=0.0)  # type: ignore[arg-type]
+    snapshot = await gateway.read_board()
+    assert snapshot.status == {}
+    assert snapshot.suggested_owner == {}
+
+
+def _empty_state() -> WorkflowState:
+    return WorkflowState(done=(), in_flight=(), ready=(), blocked=())
+
+
+def test_render_run_human_lists_assignments(capsys: pytest.CaptureFixture[str]) -> None:
+    result = RunResult(
+        complete=True,
+        timed_out=False,
+        polls=2,
+        assignments=(("w/a", "alpha"),),
+        state=_empty_state(),
+    )
+    _render_run(result, json_out=False)
+    out = capsys.readouterr().out
+    assert "workflow complete after 2 board reads" in out
+    assert "w/a -> alpha" in out
+
+
+def test_render_run_human_reports_no_assignments(capsys: pytest.CaptureFixture[str]) -> None:
+    result = RunResult(
+        complete=False, timed_out=True, polls=5, assignments=(), state=_empty_state()
+    )
+    _render_run(result, json_out=False)
+    out = capsys.readouterr().out
+    assert "incomplete (deadline reached)" in out
+    assert "no assignments made" in out
+
+
+def test_render_run_json(capsys: pytest.CaptureFixture[str]) -> None:
+    result = RunResult(
+        complete=True, timed_out=False, polls=1, assignments=(), state=_empty_state()
+    )
+    _render_run(result, json_out=True)
+    assert json.loads(capsys.readouterr().out)["complete"] is True
+
+
+class _NotReadyAgent:
+    """An agent whose welcome never arrives — models an unreachable hub."""
+
+    def __init__(self, name: str, callback: Any, *, uri: str, verbose: bool, token: Any) -> None:
+        del name, callback, uri, verbose, token
+        self.running = True
+        self.last_close_code: int | None = None
+        self.last_close_reason: str | None = None
+
+    async def connect(self) -> None:
+        while True:
+            await asyncio.sleep(0.05)
+
+    async def wait_until_ready(self, timeout: float) -> bool:
+        del timeout
+        return False
+
+
+def test_run_command_reports_a_malformed_workflow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    parser = _parser()
+    args = parser.parse_args(["workflow", "run", _write(tmp_path, {"name": "w"})])
+    assert _cmd_run(args) == 2
+    assert "steps" in capsys.readouterr().err
+
+
+def test_run_command_reports_an_unreachable_hub(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    parser = _parser()
+    args = parser.parse_args(["workflow", "run", _write(tmp_path, _GOOD)])
+    assert _cmd_run(args, agent_factory=_NotReadyAgent) == 1  # type: ignore[arg-type]
+    assert "WORKFLOW" in capsys.readouterr().out
+
+
+async def _complete_owned_tasks(handle: Any, *, rounds: int = 60) -> None:
+    """A worker that marks any advised task done, until every task is terminal."""
+    agent = handle.agent
+    terminal = {"done", "cancelled"}
+    for _ in range(rounds):
+        handle.recorder.messages.clear()
+        await agent.request_board()
+        message = await handle.recorder.wait_for(lambda m: m.get("type") == "board_snapshot")
+        tasks = message.get("board", {}).get("tasks", [])
+        if tasks and all(task.get("status") in terminal for task in tasks):
+            return
+        for task in tasks:
+            if task.get("suggested_owner") and task.get("status") not in terminal:
+                await agent.update_ledger_task(task["task_id"], status="done")
+        await asyncio.sleep(0.05)
+
+
+async def test_drive_run_completes_against_a_live_hub(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        worker = await connect_agent("WORKER", uri)
+        parser = _parser()
+        args = parser.parse_args(
+            [
+                "workflow",
+                "run",
+                "ignored.json",
+                "--uri",
+                uri,
+                "--name",
+                "DRIVER",
+                "--poll-interval",
+                "0.05",
+                "--deadline",
+                "10",
+            ]
+        )
+        tasks = compile_to_tasks(parse_workflow(_GOOD))
+        agents = {"alpha": frozenset({"ci"}), "beta": frozenset[str]()}
+        try:
+            code, _ = await asyncio.gather(
+                _drive_run(args, tasks, agents),
+                _complete_owned_tasks(worker),
+            )
+        finally:
+            await close_agents(worker)
+    assert code == 0
+    assert "workflow complete" in capsys.readouterr().out
+
+
+async def test_drive_run_reports_a_name_conflict(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        blocker = await connect_agent("DRIVER", uri)
+        parser = _parser()
+        args = parser.parse_args(
+            ["workflow", "run", "ignored.json", "--uri", uri, "--name", "DRIVER"]
+        )
+        tasks = compile_to_tasks(parse_workflow(_GOOD))
+        try:
+            code = await _drive_run(args, tasks, {})
+        finally:
+            await close_agents(blocker)
+    assert code == 1
+    assert "DRIVER" in capsys.readouterr().out
