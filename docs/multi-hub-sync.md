@@ -34,10 +34,11 @@ What exists is single-hub plus operator-managed peering, not state sync:
 - The **relay log** and **`synapse ingest`** export the event stream read-side,
   which is the seam a downstream consumer (or a peer) could replay.
 
-The full multi-host sync — a cross-host network transport over mTLS plus the
-namespace-ownership claim protocol — is **not implemented**; it stays the research
-boundary below. The read-side CRDT layer that sync rests on, however, has shipped in
-three slices:
+The full multi-host sync still has an unbuilt core — the namespace-ownership claim
+protocol, and enforcing the federation/mTLS gate on the **serving** hub from the live
+connection — and is **not implemented** as a whole; that stays the research boundary
+below. The read-side CRDT layer, and now the cross-host event-log pull that lets one hub
+*observe* another over a real connection, have shipped:
 
 - `core/multihub_merge.py` — the conflict-free event-log union: it tags each event with
   its authoring hub, merges several hubs' logs into a grow-only set keyed by
@@ -53,10 +54,16 @@ three slices:
   and returns the observed view. Observe-only by construction: it grants no claim and,
   losing a peer, simply stops advancing that peer's cursor — the fail-closed posture. It
   is exposed to operators as `synapse multihub observe` (the walkthrough below).
+- `core/multihub_wire.py`, `core/handlers/multihub.py`, and `core/multihub_transport.py` —
+  the cross-host pull: a request/snapshot message pair on the hub server lets a peer ask for
+  the events past a cursor, and `network_fetcher` drops a network reader into the same
+  follower in place of `store_fetcher`. `core/multihub_federation.py` gates the pull
+  deny-by-default (federation policy composed with mTLS peer verification), so a follower only
+  pulls from a granted, cert-pinned peer. Exposed as `synapse multihub follow`.
 
-What remains is the cross-host transport (the same follower behind an mTLS peer
-connection rather than a local store) and the namespace-ownership protocol that routes a
-real claim to its owning hub.
+What remains is the namespace-ownership protocol that routes a real claim to its owning hub,
+and enforcing the same deny-by-default gate on the serving hub from the live mTLS connection
+(it is enforced today on the following side).
 
 ## Observing a peer — a two-hub walkthrough
 
@@ -118,12 +125,36 @@ uses — SQLite WAL lets it read alongside the live peer hub — and prints the 
 It grants nothing: a peer's claim is advisory here, and a real claim is still made on the
 owning hub. Add `--json` for a machine-readable `ObservedState`.
 
+### 4. Follow a peer over the network
+
+When the peer is on another host with no shared filesystem, `follow` pulls its event log
+over a real connection instead of reading a file. It asks the peer for the events past a
+cursor and folds the same observed view:
+
+```bash
+synapse multihub follow --peer-uri wss://west.example:8876/ --peer-id west
+```
+
+```text
+observing peer 'west' — 1 tasks, 0 progress notes, 0 observed claims
+board:
+  [open] docs — Write the docs
+```
+
+`follow` is the network counterpart of `observe`: it drops a network fetcher into the same
+follower, so it grants nothing either and a peer's claim stays advisory. Pass `--token` for
+a secured peer hub, `--limit` to bound the batch, and `--json` for the machine-readable
+`ObservedState`. Whether a follower may pull from a peer at all is gated deny-by-default by
+the federation/mTLS policy (see [Boundaries](#boundaries)); the library API
+`peer_authoriser` composes it and the fetcher fails closed for an ungranted peer.
+
 ### Where this stops
 
-This works because both event stores are reachable as files (same machine or a shared
-filesystem). Observing a hub on another host *without* file access — over an
-authenticated mTLS connection, with claims routed to the namespace's owning hub — is the
-remaining network-transport slice (see [Boundaries](#boundaries)).
+The cross-host event-log pull above now ships, so a hub can *observe* another over a real
+connection. What is still not built is the rest of *sync*: routing a real claim to its
+namespace's owning hub, and enforcing the federation/mTLS gate on the **serving** hub from
+the live connection (the gate is enforced today on the following side; see
+[Boundaries](#boundaries)).
 
 ## State, split by what merges
 
@@ -183,19 +214,22 @@ own.
 
 ## Boundaries
 
-Multi-hub sync is **not implemented**. It is a research boundary, and the design is
-deliberately conservative.
+The read-side (merge, fold, follower) and the cross-host event-log pull (`observe` and
+`follow`, gated deny-by-default on the following side) are implemented. Multi-hub **sync**
+as a whole — routing real claims by namespace ownership, and enforcing the federation/mTLS
+gate on the serving hub from the live connection — is **not implemented**. It is a research
+boundary, and the design is deliberately conservative.
 
 - **Claims are not a CRDT.** Mutual exclusion is not conflict-free; the design uses
   single-owner-per-namespace, not claim merging, and fails closed on an ownership
-  partition.
-- It does **not** add a new wire protocol surface casually — sync reuses the event
-  log, relay/ingest seam, and mTLS peer bundles; it adds no always-on cross-hub
-  service to the local core.
+  partition. Claim routing across hubs is the unbuilt part.
+- It does **not** add a new always-on wire surface casually — the pull is a request/snapshot
+  message pair on the existing hub server, reusing the event log, `read_since` seam, and
+  mTLS peer bundles; it adds no always-on cross-hub service to the local core.
 - It does **not** weaken local-first: a hub never depends on a peer to grant its
   own claims or run its own work.
 - It does **not** introduce a global consensus cluster. There is no single global
   leader; authority is partitioned by namespace, each hub local-authoritative for
   its own.
-- It makes **no multi-host safety guarantee today** and changes nothing in the
-  shipped single-hub runtime.
+- It makes **no multi-host claim-safety guarantee today** and changes nothing in the
+  shipped single-hub runtime: the cross-host pull is observe-only.

@@ -14,6 +14,13 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added `synapse multihub follow`, the network counterpart of `synapse multihub observe`. Where
+  `observe` reads a peer hub's event-store file, `follow` pulls the peer's log over a real
+  connection (`--peer-uri ws://… | wss://…`), folds it through the same read-only follower, and
+  prints the observed board, progress, and advisory claims (or `--json`). It grants nothing, like
+  `observe`, and accepts `--token`, `--limit`, and `--timeout`; deny-by-default federation/mTLS
+  gating remains available in the library. This makes the cross-host transport usable from the
+  command line for a peer reachable over the network rather than a shared filesystem.
 - Added deny-by-default authorisation for a multi-hub pull, so a follower only pulls from a peer
   an operator has explicitly granted. A single decision composes the federation policy with
   mutual-TLS peer verification through the existing composition law — a pull is permitted only

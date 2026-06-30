@@ -10,13 +10,16 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import pytest
 
-from synapse_channel.cli_multihub import _cmd_observe, add_parsers
+from synapse_channel.cli_multihub import _cmd_follow, _cmd_observe, add_parsers
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.multihub_follower import EventFetcher
+from synapse_channel.core.multihub_transport import MultiHubFetchError
+from synapse_channel.core.persistence import EventStore, StoredEvent
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -140,3 +143,85 @@ def test_observe_handles_a_read_failure_after_opening(
 def test_peer_id_defaults_to_the_db_stem() -> None:
     args = _args("observe", "--peer-db", "/some/path/peer-west.db")
     assert args.peer_id is None  # the command fills the default from the stem
+
+
+# --- follow (network pull) ---------------------------------------------------------------
+
+
+def _peer_events() -> list[StoredEvent]:
+    """The same coordination log as the observe fixture, as a fetched event batch."""
+    return [
+        StoredEvent(
+            1, 1.0, EventKind.LEDGER_TASK, {"task_id": "T1", "title": "build", "status": "open"}
+        ),
+        StoredEvent(
+            2, 2.0, EventKind.LEDGER_TASK, {"task_id": "T2", "title": "test", "status": "done"}
+        ),
+        StoredEvent(3, 3.0, EventKind.CLAIM, {"task_id": "T1", "owner": "alpha"}),
+        StoredEvent(4, 4.0, EventKind.LEDGER_PROGRESS, {"task_id": "T1", "text": "started"}),
+    ]
+
+
+def _fetcher_factory(
+    *,
+    events: Sequence[StoredEvent] = (),
+    error: Exception | None = None,
+    captured: dict[str, object] | None = None,
+) -> Callable[..., EventFetcher]:
+    """Return an injectable fetcher factory that records its kwargs and replays events."""
+
+    def factory(uri: str, **kwargs: object) -> EventFetcher:
+        if captured is not None:
+            captured.update(uri=uri, **kwargs)
+
+        async def fetch(_after_seq: int) -> Sequence[StoredEvent]:
+            if error is not None:
+                raise error
+            return events
+
+        return fetch
+
+    return factory
+
+
+def test_follow_prints_board_claims_and_progress(capsys: pytest.CaptureFixture[str]) -> None:
+    captured: dict[str, object] = {}
+    args = _args("follow", "--peer-uri", "wss://east.example:8876/", "--limit", "50")
+    factory = _fetcher_factory(events=_peer_events(), captured=captured)
+    assert _cmd_follow(args, fetcher_factory=factory) == 0
+    out = capsys.readouterr().out
+    assert "observing peer 'east.example:8876'" in out
+    assert "2 tasks, 1 progress notes, 1 observed claims" in out
+    assert "T1 -> alpha @ east.example:8876" in out
+    # the connection knobs are forwarded to the transport
+    assert captured["uri"] == "wss://east.example:8876/"
+    assert captured["local_id"] == "multihub-follower"
+    assert captured["limit"] == 50
+    assert captured["timeout"] == 10.0
+    assert captured["token"] is None
+
+
+def test_follow_json_with_peer_id_and_token(capsys: pytest.CaptureFixture[str]) -> None:
+    captured: dict[str, object] = {}
+    args = _args(
+        "follow", "--peer-uri", "wss://h/", "--peer-id", "east", "--token", "s3cret", "--json"
+    )
+    factory = _fetcher_factory(events=_peer_events(), captured=captured)
+    assert _cmd_follow(args, fetcher_factory=factory) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["peer_id"] == "east"
+    assert payload["board"]["T2"]["status"] == "done"
+    assert payload["observed_claims"]["T1"]["hub_id"] == "east"
+    assert captured["token"] == "s3cret"
+
+
+def test_follow_reports_a_failed_pull(capsys: pytest.CaptureFixture[str]) -> None:
+    args = _args("follow", "--peer-uri", "wss://down/")
+    factory = _fetcher_factory(error=MultiHubFetchError("connection refused"))
+    assert _cmd_follow(args, fetcher_factory=factory) == 2
+    assert "could not follow peer hub: connection refused" in capsys.readouterr().err
+
+
+def test_follow_peer_id_defaults_to_the_host() -> None:
+    args = _args("follow", "--peer-uri", "wss://east.example:8876/path")
+    assert args.peer_id is None  # the command fills the default from the URI host
