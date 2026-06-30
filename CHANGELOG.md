@@ -25,6 +25,15 @@ All notable changes to this project are documented here.
   hub core remains a no-telemetry substrate: the snapshots ride the existing progress-ledger
   channel, introduce no new wire message or stored-event kind, and are descriptive evidence,
   not an enforcement gate.
+- Added a routed, telemetered deliberation loop (`orchestrate_session`) that brings the
+  Participant Fabric's Phase 5 pieces together at run time. It generalises a fixed-order
+  conversation: each round the router picks which provider should answer now, the loop drives
+  that participant, folds the result into the running session metrics, and reads the advisor's
+  verdict. A turn's reported rate-limit utilisation is fed back before the next routing
+  decision, so load steers away from a provider nearing its limit. The advisor stays advisory
+  with one bounding exception that mirrors the existing budget guard — an over-budget signal
+  halts the run — and, when a poster is supplied, each round persists a durable `session_metric`
+  snapshot. The hub core is untouched.
 
 ## [0.72.0] - 2026-06-30
 

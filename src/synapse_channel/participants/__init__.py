@@ -104,6 +104,12 @@ from synapse_channel.participants.modes import (
 )
 from synapse_channel.participants.ollama_api_output import parse_ollama_api_response
 from synapse_channel.participants.ollama_output import parse_ollama_output
+from synapse_channel.participants.orchestration import (
+    OrchestrationRound,
+    OrchestrationSeat,
+    OrchestrationTranscript,
+    orchestrate_session,
+)
 from synapse_channel.participants.participant import (
     Participant,
     ParticipantChannel,
@@ -183,6 +189,9 @@ __all__ = [
     "HeadlessClaudeParticipant",
     "OllamaApiParticipant",
     "OllamaParticipant",
+    "OrchestrationRound",
+    "OrchestrationSeat",
+    "OrchestrationTranscript",
     "Participant",
     "ParticipantChannel",
     "ParticipantHealth",
@@ -227,6 +236,7 @@ __all__ = [
     "frame_peer_contribution",
     "frame_peer_panel",
     "no_wake",
+    "orchestrate_session",
     "parse_claude_stream",
     "parse_codex_stream",
     "parse_grok_stream",
