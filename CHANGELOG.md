@@ -106,6 +106,16 @@ All notable changes to this project are documented here.
   result rather than a raised exception. The turn request now has a symmetric wire envelope
   (`turn_request_to_payload` / `turn_request_from_payload`) beside the existing turn result.
   No new dependency; 100% line+branch.
+- Added the peer-side turn responder, the other half of the bus-mediated relay. A
+  `TurnResponder` wraps a local participant and connects one bus identity; for each turn
+  request addressed to it, it runs the participant and publishes a typed `turn_result` back to
+  the requester, re-stamped with the responder's own identity and channel so the envelope
+  records who answered on the bus rather than the inner driver. This is the structured side of
+  the relay's hybrid correlation — a peer running the responder returns a full typed result,
+  while a peer without one still answers through the relay's degraded free-text fallback. Turns
+  are served one at a time, and a payload that is not a turn request, or that carries no usable
+  sender, takes no turn; an unready hub ends serving without answering. No new dependency;
+  100% line+branch.
 - Added the WASM sandbox getting-started guide (`docs/wasm-sandbox-getting-started.md`):
   an operator walkthrough from a tool's source to a capability-limited run — compile a Rust
   tool to `wasm32-unknown-unknown`, compute its digest and write a deny-by-default manifest,
