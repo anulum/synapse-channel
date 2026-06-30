@@ -14,6 +14,15 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Wired the federated trust policy into the live authorisation of agent frames, opt-in and
+  deny-closed. A hub configured with a federation bundle now recognises a frame from a peered
+  remote domain — identified only from its verified signing key and the live certificate pin,
+  never a self-declared field — and authorises it against that peering's bounded scope, composed
+  with mutual TLS, the event signature, and the mapped scope. A frame any layer refuses is
+  refused with the reason named; a cross-domain frame on a hub that does not require per-message
+  authentication is refused, since its authority cannot be bound. An allowed cross-domain frame
+  is routed without the local access policy, which a remote subject has no identity in. A hub with
+  no federation bundle is unchanged: every frame takes the local path exactly as before.
 - Added a scope check that authorises a remote subject's frame against a peering's bounded
   scope, evaluated exactly as a local subject's frame is against the local access policy. Each
   access the frame requires is mapped to a verb in the remote subject's namespace, and every one
