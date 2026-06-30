@@ -111,7 +111,9 @@ class _Harness:
         name: str,
         on_message_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         **kwargs: Any,
-    ) -> _FakeAgent:
+    ) -> Any:
+        # Returns Any so the fake satisfies the AgentFactory (-> SynapseAgent) signature,
+        # matching how the other bus-bound participant tests inject a fake client.
         self.agent = _FakeAgent(name, on_message_callback, ready=self._ready, **kwargs)
         return self.agent
 
