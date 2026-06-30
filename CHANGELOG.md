@@ -14,6 +14,15 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the forwarding half of cross-hub claim routing: a network client that asks a namespace's
+  owning hub to grant a claim and returns its authoritative verdict. It opens an on-demand
+  connection to the owning hub, sends the forwarded claim, and decodes the result the owning
+  hub's handler replies with — holding no standing outbound connection between claims. Every
+  transport failure (a refused or dropped connection, an error frame, a malformed or absent
+  result, or a timeout) fails closed as a single error, so a caller relays a real verdict or,
+  on failure, falls back to refusing the claim and naming the owner — an unreachable owner or a
+  split never lets a claim be believed granted. Wiring this into the non-owning hub's claim gate,
+  so a remote-owned claim is forwarded automatically, is the remaining slice.
 - Added the serving half of cross-hub claim forwarding: an owning hub now grants a claim
   forwarded from another hub and relays the authoritative verdict back. When a non-owning hub
   forwards a claim, the owning hub applies it through the same authoritative grant path a direct
