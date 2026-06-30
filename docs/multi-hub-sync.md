@@ -34,14 +34,16 @@ What exists is single-hub plus operator-managed peering, not state sync:
 - The **relay log** and **`synapse ingest`** export the event stream read-side,
   which is the seam a downstream consumer (or a peer) could replay.
 
-The full multi-host sync now routes a real claim to its owning hub. What is **not
-implemented** is wiring live *observed assertions* into runtime partition detection — the
-resolution refuses a contested namespace when passed the peers asserting it, but the live
-feed of those assertions is not yet built; that stays the research boundary below. The
+The full multi-host sync now routes a real claim to its owning hub and detects an ownership
+partition at runtime when fed the peers observed asserting a namespace. What is **not
+implemented** is the hub *auto-populating* that feed from a built-in follower loop — today an
+operator wires the observed assertions in (`asserting_owners` over a follower's view), rather
+than the hub maintaining its own standing follower; that stays the research boundary below. The
 read-side CRDT layer, the cross-host event-log pull that lets one hub *observe* another over
 a real connection, the **serving-side** gate that lets a hub refuse to serve its log to an
-untrusted peer from the live connection, and now the **claim-forwarding** path that routes a
-claim to its owning hub and relays the verdict, have shipped:
+untrusted peer from the live connection, the **claim-forwarding** path that routes a claim to
+its owning hub and relays the verdict, and **runtime partition detection** that refuses a
+contested namespace, have shipped:
 
 - `core/multihub_merge.py` — the conflict-free event-log union: it tags each event with
   its authoring hub, merges several hubs' logs into a grow-only set keyed by
@@ -70,7 +72,7 @@ claim to its owning hub and relays the verdict, have shipped:
   answered with an empty snapshot — the same shape as "no new events", so the refusal leaks
   nothing. A hub with no policy serves as before, so the gate is strictly opt-in.
 
-What remains is wiring live observed assertions into runtime partition detection.
+What remains is the hub auto-populating the observed-assertions feed from a built-in follower.
 
 ## Observing a peer — a two-hub walkthrough
 
@@ -214,10 +216,11 @@ a single hub does today. The networked half now ships too, opt-in: a hub configu
 through `core/multihub_claim_transport.py`, the owner grants it on the serving side
 (`core/handlers/multihub_claim.py`), and the verdict is relayed to the claimant — a grant
 carrying the owner's authentic lease. An unreachable owner falls back to the refusal that
-names the owner, fail-closed. What is **not** yet built is feeding the owners *observed
-asserting authority* into the resolution at runtime so a live partition is detected as it
-forms; the resolution already refuses a contested namespace when passed those assertions,
-but the feed is not wired.
+names the owner, fail-closed. Runtime partition detection ships too, opt-in: a hub wired with
+an `observed_asserting_hubs` feed resolves a namespace a peer is observed contesting to
+*partitioned* and refuses the claim, even on its own local grant path; `asserting_owners`
+builds that feed from a follower's observed claims. What is **not** yet built is the hub
+auto-populating that feed from a standing follower of its own — today the operator wires it.
 
 ## Sync transport
 
@@ -242,18 +245,20 @@ The read-side (merge, fold, follower), the cross-host event-log pull (`observe` 
 `follow`), the deny-by-default federation/mTLS gate on **both** the following and the
 serving side (`MultiHubServingPolicy` reads the peer's live certificate), the
 namespace-ownership resolution with its local grant-path enforcement
-(`NamespaceOwnership`), and the cross-hub claim forwarding that routes a remote-owned claim
-to its owning hub and relays the verdict (`claim_peers` + `forward_claim` +
-`handle_multihub_claim_request`) are implemented. What remains of multi-hub **sync** —
-feeding the owners' observed asserting authority into the resolution so a runtime partition
-is detected as it forms — is **not implemented**. It is a research boundary, and the design
-is deliberately conservative.
+(`NamespaceOwnership`), the cross-hub claim forwarding that routes a remote-owned claim to its
+owning hub and relays the verdict (`claim_peers` + `forward_claim` +
+`handle_multihub_claim_request`), and runtime partition detection that refuses a contested
+namespace when fed observed assertions (`observed_asserting_hubs` + `asserting_owners`) are
+implemented. What remains of multi-hub **sync** — the hub auto-populating that assertions feed
+from a standing follower of its own, rather than an operator wiring it — is **not implemented**.
+It is a research boundary, and the design is deliberately conservative.
 
 - **Claims are not a CRDT.** Mutual exclusion is not conflict-free; the design uses
   single-owner-per-namespace, not claim merging, and fails closed on an ownership
-  partition. The ownership resolution, the local refusal of an unowned namespace, and the
-  forwarding of a remote-owned claim to its owner all ship; feeding live observed
-  assertions into runtime partition detection is the unbuilt part.
+  partition. The ownership resolution, the local refusal of an unowned namespace, the
+  forwarding of a remote-owned claim to its owner, and refusing a contested namespace when fed
+  observed assertions all ship; the hub auto-populating that feed from its own follower is the
+  unbuilt part.
 - It does **not** add a new always-on wire surface casually — the pull is a request/snapshot
   message pair on the existing hub server, reusing the event log, `read_since` seam, and
   mTLS peer bundles; it adds no always-on cross-hub service to the local core.

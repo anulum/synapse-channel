@@ -14,6 +14,14 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added runtime partition detection to claim routing. The ownership gate now consults an optional
+  feed of the hubs observed asserting authority over a namespace, so a partition — a peer seen
+  holding a claim in a namespace this hub also believes it owns — refuses every grant until
+  ownership is re-established, even on the hub's own local grant path. `multihub_fold`'s
+  `asserting_owners` derives that feed from a follower's observed claims (the hub id that holds a
+  claim is observed owning the claim's namespace), and a hub wired with it through the opt-in
+  `observed_asserting_hubs` source refuses a contested claim as `partitioned`. With no feed
+  configured, ownership resolves from the static map alone, exactly as before.
 - Closed the cross-hub claim-routing loop: a non-owning hub now forwards a claim for a namespace
   it does not own to the hub that does and relays the verdict to the claimant. A hub configured
   with `claim_peers` — a route to each owning hub — forwards a remote-owned claim automatically;

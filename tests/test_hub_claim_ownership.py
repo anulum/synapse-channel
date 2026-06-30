@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
@@ -21,6 +23,17 @@ def _hub(owners: dict[str, str]) -> SynapseHub:
     return SynapseHub(
         hub_id=_LOCAL_HUB,
         namespace_ownership=NamespaceOwnership(owners=owners, local_hub_id=_LOCAL_HUB),
+    )
+
+
+def _hub_with_assertions(
+    owners: dict[str, str], asserting: Mapping[str, Sequence[str]]
+) -> SynapseHub:
+    """Return a hub whose ownership resolution sees a runtime feed of asserting peers."""
+    return SynapseHub(
+        hub_id=_LOCAL_HUB,
+        namespace_ownership=NamespaceOwnership(owners=owners, local_hub_id=_LOCAL_HUB),
+        observed_asserting_hubs=lambda namespace: asserting.get(namespace, ()),
     )
 
 
@@ -58,6 +71,36 @@ async def test_a_claim_in_an_ungoverned_namespace_is_refused() -> None:
             denied = await agent.recorder.wait_for(lambda m: m.get("type") == "claim_denied")
             assert denied["ownership"] == "ungoverned"
             assert denied["owner_hub_id"] is None
+        finally:
+            await close_agents(agent)
+
+
+async def test_a_peer_asserting_an_owned_namespace_partitions_and_refuses() -> None:
+    # A peer observed holding a claim in a namespace this hub also owns is a partition: the
+    # hub refuses every grant until ownership is re-established, even though its static map
+    # says it owns the namespace.
+    hub = _hub_with_assertions({_NS: _LOCAL_HUB}, {_NS: (_PEER_HUB,)})
+    async with running_hub(hub) as (_, uri):
+        agent = await connect_agent(_AGENT, uri)
+        try:
+            await agent.agent.claim("T1", paths=["src"])
+            denied = await agent.recorder.wait_for(lambda m: m.get("type") == "claim_denied")
+            assert denied["ownership"] == "partitioned"
+            assert denied["task_id"] == "T1"
+        finally:
+            await close_agents(agent)
+
+
+async def test_observed_assertions_without_a_contender_still_grant() -> None:
+    # The feed is consulted but reports no contesting peer for the namespace, so the local
+    # owner still grants — the runtime signal only refuses an actual partition.
+    hub = _hub_with_assertions({_NS: _LOCAL_HUB}, {"OTHER-NS": (_PEER_HUB,)})
+    async with running_hub(hub) as (_, uri):
+        agent = await connect_agent(_AGENT, uri)
+        try:
+            await agent.agent.claim("T1", paths=["src"])
+            granted = await agent.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            assert granted["task_id"] == "T1"
         finally:
             await close_agents(agent)
 
