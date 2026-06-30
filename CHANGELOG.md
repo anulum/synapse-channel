@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.77.0] - 2026-07-01
+
 ### Added
 - `synapse debug ./hub.db --fork-at SEQ` forks a task's reconstructed state at a sequence
   point: it folds the durable log back into the exact claim state the task held there — owner,
