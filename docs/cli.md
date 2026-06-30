@@ -35,6 +35,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse postmortem` | Build a replayable task postmortem from a hub SQLite event store. |
 | `synapse debug` | Fork a task's reconstructed state at a sequence point (read-only what-if). |
 | `synapse reproduce` | Fingerprint a task's authoritative history into a deterministic digest. |
+| `synapse causality` | Trace coordination causes, effects, or counterfactuals over the event log. |
 | `synapse reliability` | Build evidence-only reliability memory from a hub SQLite event store. |
 | `synapse accounting` | Record and report opt-in model cost/token usage from a hub SQLite event store. |
 | `synapse approval` | Request, decide, and replay human-in-the-loop approval gates from a hub SQLite event store. |
@@ -535,6 +536,9 @@ synapse debug ./synapse.db --fork-at 142
 synapse debug ./synapse.db --task TASK-1 --fork-at 142 --set status=blocked --json
 synapse reproduce ./synapse.db TASK-1
 synapse reproduce ./synapse.db TASK-1 --expect 9f2c… --json
+synapse causality causes ./synapse.db 142
+synapse causality effects ./synapse.db 118 --json
+synapse causality counterfactual ./synapse.db 96
 synapse reliability ./synapse.db
 synapse accounting record --name alpha --task TASK-1 --model claude-opus-4-8 --input-tokens 1200 --output-tokens 300
 synapse accounting report ./synapse.db --pricing pricing.json --budget budget.json
@@ -659,6 +663,21 @@ command canonicalises that slice and hashes it into a stable SHA-256 digest, so
 two operators — or two federated hubs — holding the same history derive the same
 digest. `--expect DIGEST` gates on a known-good value (exit `1` on mismatch, like
 a release-receipt check); a task with no authoritative events exits `2`.
+
+`synapse causality causes ./synapse.db 142` traces coordination causality over
+the event log. It folds the durable log into a directed acyclic graph of three
+recorded relations — a task's own lifecycle (claim before update before release),
+a declared `depends_on` satisfied by the dependency's completion, and a release
+that let a later, path-overlapping claim proceed — then answers against an event
+sequence: `causes` returns the events upstream of it, `effects` the events it
+enabled downstream, and `counterfactual` the downstream events whose recorded
+cause traces back through it and so would lose all support if it were removed.
+This is coordination causality inferred from recorded scheduling semantics, not
+statistical causal discovery and not program-trace causality; every edge is
+backed by a concrete event, and the counterfactual is a structural what-if over
+the inferred graph, not a claim that the work would never have happened another
+way. Exit status is `0` when the sequence names a coordination event, `1` when it
+does not, and `2` on an unknown direction or a missing store.
 
 `synapse reliability ./synapse.db` builds evidence-only reliability memory from
 the same event store. It counts stale claims, declared failed-check evidence,

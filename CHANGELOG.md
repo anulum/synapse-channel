@@ -25,6 +25,14 @@ All notable changes to this project are documented here.
   SHA-256 digest of its claim snapshots and releases, so the same history yields the same digest
   on every machine. `--expect DIGEST` gates on a known-good value and exits non-zero on any
   divergence, the way a release receipt is verified.
+- `synapse causality causes|effects|counterfactual ./hub.db SEQ` traces coordination causality
+  over the event log. It folds the durable events into a directed acyclic graph of three recorded
+  relations — a task's own lifecycle, a declared `depends_on` satisfied by the dependency's
+  completion, and a release that let a later, path-overlapping claim proceed — and answers against
+  an event sequence: the events upstream of it, the events it enabled downstream, or the downstream
+  events whose recorded cause traces back through it. Every edge is backed by a concrete event;
+  the counterfactual is a structural what-if over the inferred graph, not statistical causal
+  discovery. It is read-only and contacts no live hub.
 
 ## [0.76.0] - 2026-06-30
 
