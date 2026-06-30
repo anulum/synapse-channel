@@ -8,17 +8,17 @@
 """Choose the most robust channel available for driving one provider.
 
 Each provider can be reached through more than one channel, and they are not equally reliable:
-an in-session MCP tool call is the most dependable, a bus-owned headless invocation with
-structured output is the robust default, and a tmux pane is the last resort. The selection order
-is therefore ``MCP > HEADLESS > PTY`` — the ranking already declared on
-:class:`~synapse_channel.participants.participant.ParticipantChannel`.
+an in-session MCP tool call is the most dependable, a direct HTTP call to a model server's API is
+next, a bus-owned headless invocation with structured output is the robust default, and a tmux pane
+is the last resort. The selection order is therefore ``MCP > API > HEADLESS > PTY`` — the ranking
+already declared on :class:`~synapse_channel.participants.participant.ParticipantChannel`.
 
 :func:`select_channel` makes that choice from a small :class:`ProviderCapabilities` descriptor:
-whether the peer is reachable over MCP, the name of its headless binary (if any), and whether a
-tmux session is configured for it. The headless rung is real only when its binary actually
-resolves on ``PATH``; the resolver is injected so the decision is deterministic in tests. When no
-channel is available the function returns ``None``, so a caller can report a provider as
-undrivable rather than guess.
+whether the peer is reachable over MCP, whether a model API endpoint is reachable, the name of its
+headless binary (if any), and whether a tmux session is configured for it. The headless rung is
+real only when its binary actually resolves on ``PATH``; the resolver is injected so the decision
+is deterministic in tests. When no channel is available the function returns ``None``, so a caller
+can report a provider as undrivable rather than guess.
 """
 
 from __future__ import annotations
@@ -42,6 +42,9 @@ class ProviderCapabilities:
     mcp_reachable : bool
         Whether the peer runs with the Synapse MCP tools and is already listening on the bus, so
         it can answer a relayed turn with no external nudge.
+    api_reachable : bool
+        Whether the provider exposes a reachable model API endpoint (e.g. a local Ollama server),
+        which can be driven over HTTP without a subprocess.
     headless_binary : str
         Name (or path) of the provider's headless CLI, e.g. ``"claude"`` or ``"ollama"``; empty
         when the provider has no headless driver. The headless channel counts only when this
@@ -51,6 +54,7 @@ class ProviderCapabilities:
     """
 
     mcp_reachable: bool = False
+    api_reachable: bool = False
     headless_binary: str = ""
     pty_session: bool = False
 
@@ -62,9 +66,9 @@ def select_channel(
 ) -> ParticipantChannel | None:
     """Return the most robust available channel for a provider, or ``None``.
 
-    The channels are tried in the ``MCP > HEADLESS > PTY`` order: an MCP-reachable peer wins; else
-    a headless binary that resolves on ``PATH``; else a configured tmux session. When none apply
-    the provider cannot be driven and ``None`` is returned.
+    The channels are tried in the ``MCP > API > HEADLESS > PTY`` order: an MCP-reachable peer wins;
+    else a reachable model API endpoint; else a headless binary that resolves on ``PATH``; else a
+    configured tmux session. When none apply the provider cannot be driven and ``None`` is returned.
 
     Parameters
     ----------
@@ -81,6 +85,8 @@ def select_channel(
     """
     if capabilities.mcp_reachable:
         return ParticipantChannel.MCP
+    if capabilities.api_reachable:
+        return ParticipantChannel.API
     if capabilities.headless_binary and which(capabilities.headless_binary) is not None:
         return ParticipantChannel.HEADLESS
     if capabilities.pty_session:

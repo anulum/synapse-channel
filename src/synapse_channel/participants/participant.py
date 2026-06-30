@@ -34,13 +34,15 @@ if TYPE_CHECKING:
 class ParticipantChannel(str, Enum):
     """How a participant's provider session is driven, ranked by robustness.
 
-    The selection policy is ``MCP > HEADLESS > PTY``: an in-session tool call is the most
-    reliable, a bus-owned headless invocation with structured output is the robust default,
-    and a terminal pane is the last resort. The value is a stable lowercase string so it
-    survives a round trip through a JSON bus envelope.
+    The selection policy is ``MCP > API > HEADLESS > PTY``: an in-session tool call is the most
+    reliable; a direct HTTP call to a model server's API is next, structured and free of any
+    subprocess or ``PATH`` fragility; a bus-owned headless invocation with structured output is the
+    robust default; and a terminal pane is the last resort. The value is a stable lowercase string
+    so it survives a round trip through a JSON bus envelope.
     """
 
     MCP = "mcp"
+    API = "api"
     HEADLESS = "headless"
     PTY = "pty"
 
