@@ -14,6 +14,15 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Closed the cross-hub claim-routing loop: a non-owning hub now forwards a claim for a namespace
+  it does not own to the hub that does and relays the verdict to the claimant. A hub configured
+  with `claim_peers` — a route to each owning hub — forwards a remote-owned claim automatically;
+  the claimant sees the owner's authentic `claim_granted` (with the real lease) or its denial,
+  just as for a local claim. The route is opt-in and fails closed: a hub with no route for the
+  owner, or one whose owner is unreachable, ungoverned, or contested, refuses the claim and names
+  the owner, exactly as before, so an unreachable owner never lets a claim be believed granted.
+  Two hubs that each own their own namespaces can now coordinate claims across a connection
+  without a shared filesystem or a global leader.
 - Added the forwarding half of cross-hub claim routing: a network client that asks a namespace's
   owning hub to grant a claim and returns its authoritative verdict. It opens an on-demand
   connection to the owning hub, sends the forwarded claim, and decodes the result the owning
