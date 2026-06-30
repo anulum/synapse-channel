@@ -166,6 +166,19 @@ All notable changes to this project are documented here.
   ranks free), then channel robustness. It returns the winning candidate with its channel and the
   cost it was ranked on, or nothing when the task is unroutable. The router is pure and selects but
   never constructs a participant, leaving that to the caller. 100% line+branch.
+- Added session telemetry and an operational advisor. A running `SessionMetrics` total folds each
+  finished turn — its tokens, cost, latency, error and abstention counts, the highest rate-limit
+  utilisation seen, and the current context size (the last turn's input tokens, since the
+  cumulative figure overcounts a re-sent history). From those metrics and a small set of
+  thresholds, `assess_session` reports advisory operational signals: compact a filling context, log
+  on a turn cadence, stop against a budget, ease off a provider near its rate limit, or investigate
+  a high error rate. The advice is descriptive evidence, not an action and not a gate — the
+  function never logs, compacts, or stops a run; it returns recommendations with reasons for a
+  human or a higher layer to act on. The fold is pure (the caller measures latency and passes it
+  in) and the assessment is pure over the metrics, so both are deterministic and tested without a
+  clock. The token figures are the driven participants' pressure, the honest signal this layer can
+  see; the orchestrator's own remaining context is a harness metric it does not observe. 100%
+  line+branch.
 - Added the WASM sandbox getting-started guide (`docs/wasm-sandbox-getting-started.md`):
   an operator walkthrough from a tool's source to a capability-limited run — compile a Rust
   tool to `wasm32-unknown-unknown`, compute its digest and write a deny-by-default manifest,
