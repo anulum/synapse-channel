@@ -21,7 +21,8 @@ from collections.abc import Sequence
 from typing import Any
 
 from synapse_channel.core.protocol import MessageType
-from synapse_channel.participants.bus_relay import BusExchange
+from synapse_channel.participants.bus_relay import BusConversation, BusExchange
+from synapse_channel.participants.conversation import STOPPED_COMPLETED
 from synapse_channel.participants.envelope import turn_result_from_payload
 from synapse_channel.participants.headless_claude import HeadlessClaudeParticipant
 
@@ -152,6 +153,58 @@ async def test_run_tears_down_the_connection() -> None:
     )
 
     await exchange.run("q", topic_id="t")
+
+    agent = captured[0]
+    assert agent.running is False
+    assert agent.connect_cancelled is True
+
+
+async def test_conversation_publishes_one_result_per_round() -> None:
+    captured: list[_FakeAgent] = []
+    conversation = BusConversation(
+        "SC/relay",
+        [_seat("SC/a", "from-a"), _seat("SC/b", "from-b")],
+        target="team",
+        agent_factory=_factory(captured),
+    )
+
+    transcript = await conversation.run("q", rounds=3, topic_id="topic-9")
+
+    assert transcript is not None
+    assert transcript.stopped == STOPPED_COMPLETED
+    agent = captured[0]
+    assert len(agent.sends) == 3
+    for send in agent.sends:
+        assert send["type"] == MessageType.CHAT
+        assert send["target"] == "team"
+        assert send["extra"]["topic"] == "topic-9"
+    answers = [turn_result_from_payload(s["payload"]) for s in agent.sends]
+    assert [a["answer"] for a in answers if a is not None] == ["from-a", "from-b", "from-a"]
+
+
+async def test_conversation_returns_none_when_not_ready() -> None:
+    captured: list[_FakeAgent] = []
+    conversation = BusConversation(
+        "SC/relay",
+        [_seat("SC/a", "x")],
+        agent_factory=_factory(captured, ready=False),
+    )
+
+    result = await conversation.run("q", rounds=2, topic_id="t")
+
+    assert result is None
+    assert captured[0].sends == []
+
+
+async def test_conversation_tears_down_the_connection() -> None:
+    captured: list[_FakeAgent] = []
+    conversation = BusConversation(
+        "SC/relay",
+        [_seat("SC/a", "x")],
+        agent_factory=_factory(captured),
+    )
+
+    await conversation.run("q", rounds=1, topic_id="t")
 
     agent = captured[0]
     assert agent.running is False

@@ -20,6 +20,7 @@ import shutil
 
 import pytest
 
+from synapse_channel.participants.continuity import ContinuitySeat
 from synapse_channel.participants.envelope import TurnRequest
 from synapse_channel.participants.headless_claude import HeadlessClaudeParticipant
 
@@ -52,3 +53,34 @@ async def test_real_headless_turn_returns_an_answer() -> None:
     assert result["answer"] != ""
     assert "pong" in result["answer"].lower()
     assert result["session"] != ""
+
+
+async def test_real_continuity_recalls_across_turns() -> None:
+    # Prove --resume actually carries memory: a fact set in turn one is recalled in turn two.
+    inner = HeadlessClaudeParticipant(
+        "SC/claude-smoke",
+        model="claude-haiku-4-5-20251001",
+        timeout=120.0,
+        persist_session=True,
+    )
+    seat = ContinuitySeat(inner)
+
+    first = await seat.take_turn(
+        TurnRequest(
+            topic_id="smoke-mem",
+            prompt="Remember this codeword for later: BANANA. Reply only: ok",
+            context="You are a terse test participant with memory across turns.",
+        )
+    )
+    assert first["is_error"] is False, first["reason"]
+    assert seat.session != ""
+
+    second = await seat.take_turn(
+        TurnRequest(
+            topic_id="smoke-mem",
+            prompt="What was the codeword I gave you? Reply with just the word.",
+            context="You are a terse test participant with memory across turns.",
+        )
+    )
+    assert second["is_error"] is False, second["reason"]
+    assert "banana" in second["answer"].lower()

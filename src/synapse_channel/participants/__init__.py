@@ -16,14 +16,21 @@ loop (one participant answers, a second reacts to its result as fenced data); an
 participant always passes through :func:`frame_peer_contribution`, the cross-agent
 prompt-injection boundary.
 
-This Phase 1 surface covers the ``HEADLESS`` channel via :class:`HeadlessClaudeParticipant`.
-Additional providers, session continuity, and the moderated multi-party conversation layer
-build on these same pieces.
+The headless channel is covered via :class:`HeadlessClaudeParticipant`. Session continuity
+across turns is added by wrapping a participant in a :class:`ContinuitySeat`;
+:func:`conduct_conversation` runs a bounded multi-round deliberation, and :class:`BusConversation`
+publishes it to a live hub. Additional providers and the moderated multi-party conversation
+layer build on these same pieces.
 """
 
 from __future__ import annotations
 
-from synapse_channel.participants.bus_relay import BusExchange
+from synapse_channel.participants.bus_relay import BusConversation, BusExchange
+from synapse_channel.participants.continuity import ContinuitySeat
+from synapse_channel.participants.conversation import (
+    ConversationTranscript,
+    conduct_conversation,
+)
 from synapse_channel.participants.envelope import (
     ENVELOPE_KIND,
     TurnRequest,
@@ -51,7 +58,10 @@ from synapse_channel.participants.stream_json import StreamOutcome, parse_claude
 
 __all__ = [
     "ENVELOPE_KIND",
+    "BusConversation",
     "BusExchange",
+    "ContinuitySeat",
+    "ConversationTranscript",
     "ExchangeTranscript",
     "HeadlessClaudeParticipant",
     "Participant",
@@ -62,6 +72,7 @@ __all__ = [
     "TurnResult",
     "build_claude_argv",
     "build_turn_result",
+    "conduct_conversation",
     "conduct_exchange",
     "error_turn_result",
     "frame_peer_contribution",
