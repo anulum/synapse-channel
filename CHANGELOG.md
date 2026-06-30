@@ -34,6 +34,11 @@ All notable changes to this project are documented here.
   with one bounding exception that mirrors the existing budget guard — an over-budget signal
   halts the run — and, when a poster is supplied, each round persists a durable `session_metric`
   snapshot. The hub core is untouched.
+- Bound the routed deliberation loop onto a live hub with `BusOrchestration`, the orchestration
+  counterpart to `BusConversation` and `BusConvocation`. A connected bus identity publishes every
+  routed turn to the room as a topic-stamped chat message; with `emit_metrics` enabled it also
+  persists a durable `session_metric` snapshot to the hub after each round. Both emissions stay
+  opt-in and default off, so the bus binding honours the no-telemetry stance.
 
 ## [0.72.0] - 2026-06-30
 

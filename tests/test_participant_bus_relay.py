@@ -26,11 +26,22 @@ from synapse_channel.participants.bus_relay import (
     BusConversation,
     BusConvocation,
     BusExchange,
+    BusOrchestration,
 )
+from synapse_channel.participants.channel_select import ProviderCapabilities
 from synapse_channel.participants.conversation import STOPPED_COMPLETED
 from synapse_channel.participants.envelope import turn_result_from_payload
 from synapse_channel.participants.headless_claude import HeadlessClaudeParticipant
 from synapse_channel.participants.modes import ConversationMode
+from synapse_channel.participants.orchestration import (
+    STOPPED_COMPLETED as ORCHESTRATION_COMPLETED,
+)
+from synapse_channel.participants.orchestration import (
+    OrchestrationSeat,
+)
+from synapse_channel.participants.provider_route import ModelCandidate, TaskProfile
+from synapse_channel.participants.session_advisor import AdvisorThresholds
+from synapse_channel.participants.session_metric_note import SESSION_METRIC_NOTE_KIND
 
 
 def _stream(answer: str) -> str:
@@ -311,3 +322,99 @@ async def test_convocation_returns_none_when_not_ready() -> None:
 
     assert result is None
     assert captured[0].sends == []
+
+
+def _orch_seat(name: str, answer: str, *, model: str = "claude-opus-4-8") -> OrchestrationSeat:
+    """Pair a scripted headless participant with an MCP-reachable routing candidate."""
+    return OrchestrationSeat(
+        participant=_seat(name, answer, model=model),
+        candidate=ModelCandidate(
+            name=name,
+            model=model,
+            capabilities=ProviderCapabilities(mcp_reachable=True),
+        ),
+    )
+
+
+async def test_orchestration_publishes_one_chat_per_round() -> None:
+    captured: list[_FakeAgent] = []
+    orchestration = BusOrchestration(
+        "SC/relay",
+        [_orch_seat("SC/a", "from-a"), _orch_seat("SC/b", "from-b")],
+        task=TaskProfile(),
+        thresholds=AdvisorThresholds(),
+        target="team",
+        agent_factory=_factory(captured),
+    )
+
+    transcript = await orchestration.run("q", rounds=3, topic_id="topic-o")
+
+    assert transcript is not None
+    assert transcript.stopped == ORCHESTRATION_COMPLETED
+    assert len(transcript.rounds) == 3
+    agent = captured[0]
+    assert len(agent.sends) == 3
+    for send in agent.sends:
+        assert send["type"] == MessageType.CHAT
+        assert send["target"] == "team"
+        assert send["extra"]["topic"] == "topic-o"
+        envelope = turn_result_from_payload(send["payload"])
+        assert envelope is not None
+        assert envelope["topic_id"] == "topic-o"
+    # Durable telemetry is opt-in; the no-metrics default posts nothing to the ledger.
+    assert agent.progress == []
+
+
+async def test_orchestration_persists_a_durable_snapshot_per_round_when_enabled() -> None:
+    captured: list[_FakeAgent] = []
+    orchestration = BusOrchestration(
+        "SC/relay",
+        [_orch_seat("SC/a", "from-a")],
+        task=TaskProfile(),
+        thresholds=AdvisorThresholds(),
+        agent_factory=_factory(captured),
+        emit_metrics=True,
+    )
+
+    transcript = await orchestration.run("q", rounds=2, topic_id="topic-m")
+
+    assert transcript is not None
+    notes = captured[0].progress
+    assert len(notes) == 2
+    for note in notes:
+        assert note["kind"] == SESSION_METRIC_NOTE_KIND
+        assert note["task_id"] == "topic-m"
+
+
+async def test_orchestration_returns_none_when_not_ready() -> None:
+    captured: list[_FakeAgent] = []
+    orchestration = BusOrchestration(
+        "SC/relay",
+        [_orch_seat("SC/a", "x")],
+        task=TaskProfile(),
+        thresholds=AdvisorThresholds(),
+        agent_factory=_factory(captured, ready=False),
+    )
+
+    result = await orchestration.run("q", rounds=2, topic_id="t")
+
+    assert result is None
+    assert captured[0].sends == []
+    assert captured[0].progress == []
+
+
+async def test_orchestration_tears_down_the_connection() -> None:
+    captured: list[_FakeAgent] = []
+    orchestration = BusOrchestration(
+        "SC/relay",
+        [_orch_seat("SC/a", "x")],
+        task=TaskProfile(),
+        thresholds=AdvisorThresholds(),
+        agent_factory=_factory(captured),
+    )
+
+    await orchestration.run("q", rounds=1, topic_id="t")
+
+    agent = captured[0]
+    assert agent.running is False
+    assert agent.connect_cancelled is True
