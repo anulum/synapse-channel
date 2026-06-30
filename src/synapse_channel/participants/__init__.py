@@ -33,6 +33,7 @@ from synapse_channel.participants.bus_relay import (
     BusConversation,
     BusConvocation,
     BusExchange,
+    BusOrchestration,
 )
 from synapse_channel.participants.channel_select import (
     ProviderCapabilities,
@@ -175,6 +176,7 @@ __all__ = [
     "BusConversation",
     "BusConvocation",
     "BusExchange",
+    "BusOrchestration",
     "CodexParticipant",
     "ContinuitySeat",
     "ConversationMode",

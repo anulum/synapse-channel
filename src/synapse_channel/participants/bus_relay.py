@@ -39,7 +39,15 @@ from synapse_channel.participants.conversation import (
 from synapse_channel.participants.envelope import TurnResult, turn_result_to_payload
 from synapse_channel.participants.exchange import ExchangeTranscript, conduct_exchange
 from synapse_channel.participants.modes import ConversationMode
+from synapse_channel.participants.orchestration import (
+    OrchestrationSeat,
+    OrchestrationTranscript,
+    orchestrate_session,
+)
 from synapse_channel.participants.participant import Participant
+from synapse_channel.participants.provider_route import TaskProfile
+from synapse_channel.participants.session_advisor import AdvisorThresholds
+from synapse_channel.participants.session_metric_emit import ProgressPoster
 from synapse_channel.participants.usage_emit import emit_usage
 
 ResultSink = Callable[[TurnResult], Awaitable[None]]
@@ -91,14 +99,17 @@ class _BusPublisher:
         self._emit_usage = emit_usage
 
     @contextlib.asynccontextmanager
-    async def session(self) -> AsyncIterator[ResultSink | None]:
-        """Yield a result sink for a live connection, or ``None`` when the hub is unreachable.
+    async def _connected(self) -> AsyncIterator[SynapseAgent | None]:
+        """Open a bus session, yielding the ready agent or ``None`` when it never connects.
+
+        Owns the connect/publish/teardown lifecycle so every public session helper shares one
+        place for connection handling.
 
         Yields
         ------
-        ResultSink or None
-            A coroutine that publishes a result as a topic-stamped chat message, or ``None``
-            when the connection did not become ready before ``ready_timeout``.
+        SynapseAgent or None
+            The connected client, or ``None`` when readiness was not reached before
+            ``ready_timeout``.
         """
         agent = self._agent_factory(
             self._identity, None, uri=self._uri, verbose=False, token=self._token
@@ -108,23 +119,61 @@ class _BusPublisher:
             if not await agent.wait_until_ready(timeout=self._ready_timeout):
                 yield None
                 return
-
-            async def post(result: TurnResult) -> None:
-                await agent.send_message(
-                    MessageType.CHAT,
-                    target=self._target,
-                    payload=turn_result_to_payload(result),
-                    topic=result["topic_id"],
-                )
-                if self._emit_usage:
-                    await emit_usage(result, post_progress=agent.post_progress)
-
-            yield post
+            yield agent
         finally:
             agent.running = False
             conn_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await conn_task
+
+    def _make_post(self, agent: SynapseAgent) -> ResultSink:
+        """Build the topic-stamping result sink that publishes each turn over ``agent``."""
+
+        async def post(result: TurnResult) -> None:
+            await agent.send_message(
+                MessageType.CHAT,
+                target=self._target,
+                payload=turn_result_to_payload(result),
+                topic=result["topic_id"],
+            )
+            if self._emit_usage:
+                await emit_usage(result, post_progress=agent.post_progress)
+
+        return post
+
+    @contextlib.asynccontextmanager
+    async def session(self) -> AsyncIterator[ResultSink | None]:
+        """Yield a result sink for a live connection, or ``None`` when the hub is unreachable.
+
+        Yields
+        ------
+        ResultSink or None
+            A coroutine that publishes a result as a topic-stamped chat message, or ``None``
+            when the connection did not become ready before ``ready_timeout``.
+        """
+        async with self._connected() as agent:
+            yield None if agent is None else self._make_post(agent)
+
+    @contextlib.asynccontextmanager
+    async def progress_session(
+        self,
+    ) -> AsyncIterator[tuple[ResultSink, ProgressPoster] | None]:
+        """Yield a result sink paired with the agent's progress poster, or ``None`` if unreachable.
+
+        The orchestration loop needs both seams: ``post`` publishes each turn to the room, and the
+        progress poster lets it persist an opt-in durable ``session_metric`` snapshot per round.
+
+        Yields
+        ------
+        tuple[ResultSink, ProgressPoster] or None
+            The result sink and the bus client's progress poster, or ``None`` when the connection
+            did not become ready before ``ready_timeout``.
+        """
+        async with self._connected() as agent:
+            if agent is None:
+                yield None
+            else:
+                yield self._make_post(agent), agent.post_progress
 
 
 class BusExchange:
@@ -397,4 +446,114 @@ class BusConvocation:
                 shared_context=shared_context,
                 moderator=self._moderator,
                 budget_usd=budget_usd,
+            )
+
+
+class BusOrchestration:
+    """Run a routed, telemetered deliberation and publish each turn to a Synapse hub.
+
+    Wraps :func:`~synapse_channel.participants.orchestration.orchestrate_session` the way
+    :class:`BusConversation` wraps its loop: a connected bus identity publishes every turn to the
+    room as a topic-stamped chat message. Unlike a fixed rotation, each round is routed by
+    :func:`~synapse_channel.participants.provider_route.select_provider`, and the loop steers away
+    from a provider nearing its rate limit on its own. With ``emit_metrics`` the loop also persists
+    a durable ``session_metric`` snapshot to the hub after each round.
+
+    Parameters
+    ----------
+    identity : str
+        Bus identity the deliberation publishes under.
+    roster : Sequence[OrchestrationSeat]
+        The routable participants; candidate names must be unique.
+    task : TaskProfile
+        The task's required capabilities and expected token sizes, used to route every round.
+    thresholds : AdvisorThresholds
+        The advisor's thresholds; an ``over-budget`` signal also bounds the run.
+    uri : str, optional
+        Hub WebSocket URI.
+    target : str, optional
+        Recipient for the published results; ``"all"`` broadcasts to the room.
+    token : str or None, optional
+        Shared-secret token for a secured hub.
+    agent_factory : AgentFactory, optional
+        Factory for the bus client; injectable so tests record sends without a hub.
+    ready_timeout : float, optional
+        Seconds to wait for the hub connection to become ready.
+    emit_usage : bool, optional
+        When true, post an opt-in model-usage note alongside each published result so the core
+        accounting report sees the spend. Off by default, honouring the no-telemetry stance.
+    emit_metrics : bool, optional
+        When true, persist an opt-in durable ``session_metric`` snapshot to the hub after each
+        round, feeding the session-metric report. Off by default, honouring the no-telemetry stance.
+    """
+
+    def __init__(
+        self,
+        identity: str,
+        roster: Sequence[OrchestrationSeat],
+        *,
+        task: TaskProfile,
+        thresholds: AdvisorThresholds,
+        uri: str = DEFAULT_HUB_URI,
+        target: str = "all",
+        token: str | None = None,
+        agent_factory: AgentFactory = SynapseAgent,
+        ready_timeout: float = 5.0,
+        emit_usage: bool = False,
+        emit_metrics: bool = False,
+    ) -> None:
+        self._roster = roster
+        self._task = task
+        self._thresholds = thresholds
+        self._emit_metrics = emit_metrics
+        self._publisher = _BusPublisher(
+            identity,
+            uri=uri,
+            target=target,
+            token=token,
+            agent_factory=agent_factory,
+            ready_timeout=ready_timeout,
+            emit_usage=emit_usage,
+        )
+
+    async def run(
+        self,
+        question: str,
+        *,
+        rounds: int,
+        topic_id: str,
+        shared_context: str = "",
+    ) -> OrchestrationTranscript | None:
+        """Connect, run the routed deliberation publishing each turn, then disconnect.
+
+        Parameters
+        ----------
+        question : str
+            The prompt put to every routed turn.
+        rounds : int
+            Maximum number of turns to run.
+        topic_id : str
+            Correlation id stamped on every turn, published payload, and durable snapshot.
+        shared_context : str, optional
+            Common framing prepended to every turn's context.
+
+        Returns
+        -------
+        OrchestrationTranscript or None
+            The deliberation transcript, or ``None`` when the hub could not be reached.
+        """
+        async with self._publisher.progress_session() as opened:
+            if opened is None:
+                return None
+            post, post_progress = opened
+            return await orchestrate_session(
+                question,
+                self._roster,
+                rounds=rounds,
+                topic_id=topic_id,
+                task=self._task,
+                thresholds=self._thresholds,
+                post=post,
+                shared_context=shared_context,
+                post_progress=post_progress if self._emit_metrics else None,
             )
