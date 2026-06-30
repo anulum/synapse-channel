@@ -109,6 +109,10 @@ from synapse_channel.participants.turn_relay import (
     no_wake,
     relay_turn,
 )
+from synapse_channel.participants.turn_responder import (
+    ResponderSettings,
+    TurnResponder,
+)
 
 __all__ = [
     "DEGRADED_FREETEXT_STOP",
@@ -133,8 +137,10 @@ __all__ = [
     "ParticipantChannel",
     "ParticipantHealth",
     "RelaySettings",
+    "ResponderSettings",
     "StreamOutcome",
     "TurnRequest",
+    "TurnResponder",
     "TurnResult",
     "build_claude_argv",
     "build_codex_argv",
