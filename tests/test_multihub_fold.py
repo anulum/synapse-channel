@@ -11,12 +11,21 @@ from __future__ import annotations
 from typing import Any
 
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.multihub_fold import ObservedState, fold_observed_state
+from synapse_channel.core.multihub_fold import (
+    ObservedState,
+    asserting_owners,
+    fold_observed_state,
+)
 from synapse_channel.core.multihub_merge import HubEvent, merge_event_logs
 
 
 def _ev(hub: str, seq: int, ts: float, kind: str, **payload: Any) -> HubEvent:
     return HubEvent(hub_id=hub, seq=seq, ts=ts, kind=kind, payload=payload)
+
+
+def _project_of(agent: str) -> str:
+    """Mimic the ownership gate's namespace derivation: the prefix before the first slash."""
+    return agent.split("/", 1)[0] if "/" in agent else ""
 
 
 def test_board_is_last_writer_wins_per_task() -> None:
@@ -96,3 +105,37 @@ def test_empty_fold_and_to_dict_round_trip() -> None:
     assert payload["board"]["T"]["title"] == "t"
     assert payload["progress"][0]["text"] == "p"
     assert payload["observed_claims"]["T"]["observed"] is True
+
+
+# --- asserting_owners: the runtime partition feed --------------------------------------------
+
+
+def test_asserting_owners_maps_a_namespace_to_the_hub_that_claimed_in_it() -> None:
+    events = [_ev("hub-a", 1, 1.0, EventKind.CLAIM, task_id="T", owner="OWNED/alice")]
+    owners = asserting_owners(fold_observed_state(events), project_of=_project_of)
+    assert owners == {"OWNED": frozenset({"hub-a"})}
+
+
+def test_asserting_owners_collects_every_hub_seen_in_a_namespace() -> None:
+    events = [
+        _ev("hub-a", 1, 1.0, EventKind.CLAIM, task_id="T1", owner="OWNED/alice"),
+        _ev("hub-b", 1, 2.0, EventKind.CLAIM, task_id="T2", owner="OWNED/bob"),
+    ]
+    owners = asserting_owners(fold_observed_state(events), project_of=_project_of)
+    assert owners == {"OWNED": frozenset({"hub-a", "hub-b"})}
+
+
+def test_asserting_owners_skips_a_claim_without_an_owner() -> None:
+    events = [_ev("hub-a", 1, 1.0, EventKind.CLAIM, task_id="T")]
+    owners = asserting_owners(fold_observed_state(events), project_of=_project_of)
+    assert owners == {}
+
+
+def test_asserting_owners_skips_an_owner_with_no_namespace() -> None:
+    events = [_ev("hub-a", 1, 1.0, EventKind.CLAIM, task_id="T", owner="bare-agent")]
+    owners = asserting_owners(fold_observed_state(events), project_of=_project_of)
+    assert owners == {}
+
+
+def test_asserting_owners_of_an_empty_view_is_empty() -> None:
+    assert asserting_owners(ObservedState(), project_of=_project_of) == {}

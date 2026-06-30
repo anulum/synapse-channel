@@ -24,7 +24,7 @@ same merged log always folds to the same view.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -91,6 +91,48 @@ class ObservedState:
                 task_id: claim.to_dict() for task_id, claim in self.observed_claims.items()
             },
         }
+
+
+def asserting_owners(
+    state: ObservedState, *, project_of: Callable[[str], str]
+) -> dict[str, frozenset[str]]:
+    """Derive which hubs are *observed* asserting authority over each namespace.
+
+    A hub that granted a claim is observed acting as the owner of the claim's namespace. This
+    folds the observed claim view into that signal: per namespace, the set of hub ids seen
+    holding a claim in it. It is the runtime feed
+    :meth:`synapse_channel.core.namespace_ownership.NamespaceOwnership.resolve` consumes as
+    ``asserting_hubs`` to detect a partition — two hubs both believing they own a namespace —
+    and refuse to grant until ownership is re-established.
+
+    The namespace of an observed claim is derived from the claimant exactly as the ownership
+    gate derives it, by passing the claim's ``owner`` through ``project_of``; a claim with no
+    owner, or one whose owner maps to no namespace, contributes nothing.
+
+    Parameters
+    ----------
+    state : ObservedState
+        The folded multi-hub view whose observed claims are read.
+    project_of : Callable[[str], str]
+        Maps an agent identity to its namespace, the same derivation the ACL and the ownership
+        gate use; injected so this fold stays free of the enforcement layer.
+
+    Returns
+    -------
+    dict[str, frozenset[str]]
+        Namespace to the set of hub ids observed asserting authority over it. A namespace no
+        observed claim touches is absent.
+    """
+    owners: dict[str, set[str]] = {}
+    for observed in state.observed_claims.values():
+        owner = str(observed.claim.get("owner", "")).strip()
+        if not owner:
+            continue
+        namespace = project_of(owner)
+        if not namespace:
+            continue
+        owners.setdefault(namespace, set()).add(observed.hub_id)
+    return {namespace: frozenset(hubs) for namespace, hubs in owners.items()}
 
 
 def _task_id_of(event: HubEvent) -> str:

@@ -30,7 +30,7 @@ import signal
 import ssl
 import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -295,6 +295,13 @@ class SynapseHub:
     claim_forwarder : ClaimForwarder, optional
         The seam that forwards a claim to an owning hub; defaults to the network
         :func:`~synapse_channel.core.multihub_claim_transport.forward_claim`. Injected in tests.
+    observed_asserting_hubs : Callable[[str], Iterable[str]] or None, optional
+        A runtime feed of the hub ids observed asserting authority over a namespace, consulted
+        when resolving ownership so a partition — a peer seen owning a namespace this hub also
+        believes it owns — refuses every grant until it is re-established. ``None`` (the default)
+        supplies no assertions, so ownership resolves from the static map alone. Build it from a
+        follower's observed claims with
+        :func:`~synapse_channel.core.multihub_fold.asserting_owners`.
     """
 
     def __init__(
@@ -343,6 +350,7 @@ class SynapseHub:
         namespace_ownership: NamespaceOwnership | None = None,
         claim_peers: Mapping[str, ClaimForwardPeer] | None = None,
         claim_forwarder: ClaimForwarder = forward_claim,
+        observed_asserting_hubs: Callable[[str], Iterable[str]] | None = None,
     ) -> None:
         self.journal = journal
         self.enable_metrics = bool(enable_metrics)
@@ -369,6 +377,7 @@ class SynapseHub:
         self.namespace_ownership = namespace_ownership
         self.claim_peers = dict(claim_peers) if claim_peers else None
         self.claim_forwarder = claim_forwarder
+        self.observed_asserting_hubs = observed_asserting_hubs
         self.channels = ChannelRegistry()
         self.max_msg_bytes = max(int(max_msg_bytes), 1)
         self._clock = clock or time.monotonic
@@ -830,7 +839,9 @@ class SynapseHub:
         if self.namespace_ownership is None or msg_type != MessageType.CLAIM:
             return True
         namespace = project_of(sender)
-        decision = self.namespace_ownership.resolve(namespace)
+        decision = self.namespace_ownership.resolve(
+            namespace, asserting_hubs=self._observed_asserting_hubs(namespace)
+        )
         if decision.grants_locally:
             return True
         task_id = str(data.get("task_id") or data.get("payload") or "").strip()
@@ -859,6 +870,16 @@ class SynapseHub:
             ),
         )
         return False
+
+    def _observed_asserting_hubs(self, namespace: str) -> tuple[str, ...]:
+        """Return the hub ids observed asserting authority over ``namespace``, or empty.
+
+        Reads the optional runtime feed configured on the hub; with none configured the
+        ownership resolution sees no assertions and decides from its static map alone.
+        """
+        if self.observed_asserting_hubs is None:
+            return ()
+        return tuple(self.observed_asserting_hubs(namespace))
 
     async def _forward_remote_claim(
         self,
