@@ -14,6 +14,15 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the wire codec for forwarding a claim to the hub that owns its namespace. It names the
+  two shapes that exchange uses — a request carrying the namespace, the claimant the grant is made
+  under, the task id, and the original claim body the owning hub re-applies, and a result carrying
+  whether the owner granted, the owning hub's id, a human-readable detail, and the authentic grant
+  fields the forwarding hub relays back to its client. The codec is pure, with no network, clock,
+  or hub dependency, and decoding is defensive: a malformed request or result raises rather than
+  yielding a half-built shape, so a forwarding hub that catches it refuses the claim and relays no
+  grant it cannot trust. This is the first step toward granting a routed claim on the owning hub
+  rather than only telling the caller where to route it.
 - Added namespace-ownership resolution and its local enforcement on the claim grant path, the
   first half of routing claims across hubs without merging them. A claim is mutual exclusion, not
   a mergeable value, so claims are routed by namespace ownership: each namespace has exactly one
