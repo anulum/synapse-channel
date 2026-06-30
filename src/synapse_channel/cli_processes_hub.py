@@ -18,6 +18,8 @@ from typing import Any
 from synapse_channel.cli_processes_runtime import _run
 from synapse_channel.core.acl import AclError, load_acl_policy
 from synapse_channel.core.auth import TokenAuthenticator
+from synapse_channel.core.federation import FederationBundle
+from synapse_channel.core.federation_store import FederationStoreError, bundle_from_store
 from synapse_channel.core.hub import InsecureBindError, SynapseHub
 from synapse_channel.core.logging_setup import configure_logging
 from synapse_channel.core.message_auth import MessageAuthKey
@@ -96,6 +98,21 @@ def _cmd_hub(
             "is cryptographically bound, before relying on enforcement.",
             file=sys.stderr,
         )
+    federation_bundle: FederationBundle | None = None
+    if args.federation_store:
+        try:
+            federation_bundle = bundle_from_store(args.federation_store)
+        except FederationStoreError as exc:
+            print(f"synapse hub: {exc}", file=sys.stderr)
+            return 2
+        if not args.require_message_auth:
+            print(
+                "synapse hub: WARNING --federation-store without --require-message-auth "
+                "authorises no cross-domain frame; a peered domain's frame can only be "
+                "honoured when per-message authentication binds its signing key. Pair "
+                "--federation-store with --require-message-auth to enforce federation.",
+                file=sys.stderr,
+            )
     hub = hub_factory(
         journal=journal,
         rate_limiter=limiter,
@@ -130,6 +147,7 @@ def _cmd_hub(
         per_message_auth_replay_capacity=args.message_auth_replay_capacity,
         acl_policy=acl_policy,
         require_acl=args.require_acl,
+        federation_bundle=federation_bundle,
         insecure_off_loopback=args.insecure_off_loopback,
     )
     try:

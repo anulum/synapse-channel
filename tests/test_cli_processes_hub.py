@@ -444,3 +444,88 @@ def test_cmd_hub_rejects_incomplete_tls_config(capsys: pytest.CaptureFixture[str
     assert cli_processes._cmd_hub(_hub_ns(tls_certfile="cert.pem"), runner=_close_runner) == 2
 
     assert "requires both --tls-certfile and --tls-keyfile" in capsys.readouterr().err
+
+
+def _federation_store(tmp_path: Path) -> str:
+    """Write a federation store with one peer and return its path."""
+    from synapse_channel.core.federation import FederationPeer, ScopeGrant
+    from synapse_channel.core.federation_store import (
+        FederationRecord,
+        PeerProvenance,
+        save_store,
+    )
+
+    peer = FederationPeer(
+        domain_id="domain-b",
+        namespaces=frozenset({"SYNAPSE-CHANNEL"}),
+        certificate_pins=frozenset({"sha256:aa"}),
+        signing_key_ids=frozenset({"domain-b:main"}),
+        scope_grants=(ScopeGrant("message", "SYNAPSE-CHANNEL"),),
+    )
+    store = tmp_path / "federation.json"
+    save_store(store, [FederationRecord(peer, PeerProvenance("bundle", 1.0, "ops"))])
+    return str(store)
+
+
+def test_cmd_hub_composes_federation_store_into_the_bundle(tmp_path: Path) -> None:
+    from synapse_channel.core.federation import FederationBundle
+
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(federation_store=_federation_store(tmp_path), require_message_auth=True),
+            runner=_close_runner,
+            hub_factory=build_hub,
+        )
+        == 0
+    )
+    bundle = captured["federation_bundle"]
+    assert isinstance(bundle, FederationBundle)
+    assert bundle.domains() == ("domain-b",)
+
+
+def test_cmd_hub_warns_federation_store_without_message_auth(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(federation_store=_federation_store(tmp_path), require_message_auth=False),
+            runner=_close_runner,
+            hub_factory=build_hub,
+        )
+        == 0
+    )
+    # the bundle is still composed, but a warning flags that it authorises nothing
+    assert captured["federation_bundle"] is not None
+    assert "--federation-store without --require-message-auth" in capsys.readouterr().err
+
+
+def test_cmd_hub_leaves_federation_off_by_default() -> None:
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert cli_processes._cmd_hub(_hub_ns(), runner=_close_runner, hub_factory=build_hub) == 0
+    assert captured["federation_bundle"] is None
+
+
+def test_cmd_hub_rejects_malformed_federation_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = tmp_path / "bad.json"
+    store.write_text("{not json", encoding="utf-8")
+    assert cli_processes._cmd_hub(_hub_ns(federation_store=str(store)), runner=_close_runner) == 2
+    assert "federation store is not valid JSON" in capsys.readouterr().err

@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.core.federation import FederationPeer, ScopeGrant
+from synapse_channel.core.federation import FederationBundle, FederationPeer, ScopeGrant
 
 STORE_VERSION = 1
 """On-disk schema version of the federation store file."""
@@ -178,6 +178,30 @@ def load_store(path: str | Path) -> dict[str, FederationRecord]:
             ),
         )
     return records
+
+
+def bundle_from_store(path: str | Path) -> FederationBundle:
+    """Build a :class:`FederationBundle` from the operator-confirmed peerings at ``path``.
+
+    The bundle is the policy a hub composes into its live frame authorisation; this turns
+    the persisted, audited peerings (imported with ``synapse federation import``) into that
+    runtime policy. An absent store yields an empty bundle that peers nothing, so federation
+    stays a no-op until a peering is imported. Every record is loaded, including revoked or
+    expired ones: revocation and expiry are honoured at authorisation time and re-sampled
+    per frame, so a revoked or expired peering is present but authorises nothing.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path
+        The federation store file, as written by :func:`save_store`.
+
+    Returns
+    -------
+    FederationBundle
+        The deny-by-default policy over the stored peer domains.
+    """
+    records = load_store(path)
+    return FederationBundle(record.peer for record in records.values())
 
 
 def save_store(path: str | Path, records: Iterable[FederationRecord]) -> None:

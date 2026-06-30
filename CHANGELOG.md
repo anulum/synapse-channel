@@ -14,6 +14,13 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- A hub can now load its federation policy from an imported store at startup with
+  `synapse hub --federation-store FILE`, so a peering imported with `synapse federation
+  import` takes effect on the next start. The store's peerings — including revoked or expired
+  ones, which authorise nothing — are composed into the live frame authorisation. Federation
+  binds authority only alongside `--require-message-auth`; a store without it logs a warning
+  that no cross-domain frame will be honoured, and a malformed store is reported and refused.
+  With no store the live path is unchanged.
 - Wired the federated trust policy into the live authorisation of agent frames, opt-in and
   deny-closed. A hub configured with a federation bundle now recognises a frame from a peered
   remote domain — identified only from its verified signing key and the live certificate pin,
