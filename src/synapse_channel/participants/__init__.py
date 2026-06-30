@@ -53,6 +53,10 @@ from synapse_channel.participants.exchange import (
     ExchangeTranscript,
     conduct_exchange,
 )
+from synapse_channel.participants.grok_stream import (
+    GROK_SCHEMA_VERIFIED,
+    parse_grok_stream,
+)
 from synapse_channel.participants.headless_claude import (
     HeadlessClaudeParticipant,
     build_claude_argv,
@@ -61,6 +65,10 @@ from synapse_channel.participants.headless_codex import (
     CodexParticipant,
     build_codex_argv,
     compose_codex_prompt,
+)
+from synapse_channel.participants.headless_grok import (
+    GrokParticipant,
+    build_grok_argv,
 )
 from synapse_channel.participants.headless_kimi import (
     KimiParticipant,
@@ -95,6 +103,7 @@ from synapse_channel.participants.stream_json import StreamOutcome, parse_claude
 
 __all__ = [
     "ENVELOPE_KIND",
+    "GROK_SCHEMA_VERIFIED",
     "BusConversation",
     "BusConvocation",
     "BusExchange",
@@ -104,6 +113,7 @@ __all__ = [
     "ConversationTranscript",
     "ConvocationTranscript",
     "ExchangeTranscript",
+    "GrokParticipant",
     "KimiParticipant",
     "ModePolicy",
     "HeadlessClaudeParticipant",
@@ -116,6 +126,7 @@ __all__ = [
     "TurnResult",
     "build_claude_argv",
     "build_codex_argv",
+    "build_grok_argv",
     "build_kimi_argv",
     "build_ollama_argv",
     "build_turn_result",
@@ -131,6 +142,7 @@ __all__ = [
     "frame_peer_panel",
     "parse_claude_stream",
     "parse_codex_stream",
+    "parse_grok_stream",
     "parse_kimi_stream",
     "parse_ollama_output",
     "select_mode",

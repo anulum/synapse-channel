@@ -85,6 +85,16 @@ All notable changes to this project are documented here.
   rather than provider-side memory; a thinking-capable model's reasoning is suppressed so it
   cannot pollute the reply. A model name is required, as `ollama run` always names one. 100%
   line+branch; the local turn is covered by a gated real smoke test.
+- Added a fifth Participant Fabric provider: a headless Grok driver, built for completeness but
+  not run here. `GrokParticipant` builds `grok --single <prompt> --output-format streaming-json
+  --permission-mode plan`, routing shared context through Grok's `--rules` system-prompt append
+  and resuming a session via `--resume`. The argv is verified against `grok --help` (Grok
+  0.2.64); the *stream schema* is not, because the Grok CLI is heavy and unreliable on this
+  machine and its output was not captured at source. The parser therefore targets the assumed
+  Claude-Code-family streaming-json convention (it delegates to the Claude parser) and is
+  flagged as such by `GROK_SCHEMA_VERIFIED = False`; the real smoke is triple-gated and stays
+  skipped until the schema can be verified against a usable Grok. 100% line+branch on both new
+  modules under that assumption.
 - Added the WASM sandbox getting-started guide (`docs/wasm-sandbox-getting-started.md`):
   an operator walkthrough from a tool's source to a capability-limited run — compile a Rust
   tool to `wasm32-unknown-unknown`, compute its digest and write a deny-by-default manifest,
