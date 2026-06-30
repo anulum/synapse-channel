@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from synapse_channel.core.acl import BOARD, CLAIM, MESSAGE, RELEASE, Target
 from synapse_channel.core.federation import (
     AUTHORISED,
     FederationBundle,
@@ -16,6 +17,7 @@ from synapse_channel.core.federation import (
     ScopeGrant,
     compose_cross_domain,
     resolve_domain,
+    scope_authorises,
 )
 
 
@@ -179,3 +181,62 @@ def test_resolve_domain_is_deny_closed_on_ambiguity() -> None:
     # two peerings accept the same key_id+pin -> a misconfiguration, refused not guessed.
     bundle = FederationBundle([_peer(), _peer(domain_id="globex")])
     assert resolve_domain(bundle, key_id="key-1", certificate_pin="sha256:aa") is None
+
+
+_GRANTS = (ScopeGrant(MESSAGE, "acme/shared"), ScopeGrant(CLAIM, "acme/shared"))
+
+
+def test_scope_authorises_allows_every_access_within_scope() -> None:
+    # a single mapped access whose verb+namespace is granted
+    assert (
+        scope_authorises(
+            [(MESSAGE, Target("channel", "general"))],
+            scope=_GRANTS,
+            namespace="acme/shared",
+        )
+        is True
+    )
+    # several accesses, each granted (a claim with its task-id and a path access)
+    accesses = [(CLAIM, Target("claim", "T-1")), (CLAIM, Target("path", "src/"))]
+    assert scope_authorises(accesses, scope=_GRANTS, namespace="acme/shared") is True
+
+
+def test_scope_authorises_denies_a_verb_outside_scope() -> None:
+    # RELEASE is not granted by _GRANTS
+    assert (
+        scope_authorises(
+            [(RELEASE, Target("claim", "T-1"))],
+            scope=_GRANTS,
+            namespace="acme/shared",
+        )
+        is False
+    )
+    # one granted access plus one ungranted -> all must hold, so denied
+    mixed = [(MESSAGE, Target("channel", "general")), (BOARD, Target("board", "*"))]
+    assert scope_authorises(mixed, scope=_GRANTS, namespace="acme/shared") is False
+
+
+def test_scope_authorises_denies_a_granted_verb_in_another_namespace() -> None:
+    # the verb is granted, but only in acme/shared; the frame acts in acme/other
+    assert (
+        scope_authorises(
+            [(MESSAGE, Target("channel", "general"))],
+            scope=_GRANTS,
+            namespace="acme/other",
+        )
+        is False
+    )
+
+
+def test_scope_authorises_is_deny_closed_on_empty_scope_or_accesses() -> None:
+    # a remote subject inherits no local default: empty scope authorises nothing
+    assert (
+        scope_authorises(
+            [(MESSAGE, Target("channel", "general"))],
+            scope=(),
+            namespace="acme/shared",
+        )
+        is False
+    )
+    # a frame mapping to no access (a read, or an unmapped mutation) is denied, not allowed
+    assert scope_authorises([], scope=_GRANTS, namespace="acme/shared") is False
