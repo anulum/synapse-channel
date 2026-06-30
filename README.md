@@ -749,6 +749,8 @@ synapse event-query ./synapse.db "conflicts at seq 120"
 synapse event-query ./synapse.db 'timeline("TASK-1").'
 synapse event-query ./synapse.db 'MATCH (task:TASK {id:"TASK-1"}) RETURN timeline'
 synapse postmortem ./synapse.db TASK-1
+synapse debug ./synapse.db --fork-at 142 --set status=blocked
+synapse reproduce ./synapse.db TASK-1 --expect 9f2c…
 synapse reliability ./synapse.db
 synapse accounting report ./synapse.db --pricing pricing.json --budget budget.json
 synapse approval request --name dev --subject TASK-1 --reason "needs sign-off"
@@ -768,6 +770,20 @@ timeline, owners, releases, assessment evidence, reconstructed path-overlap
 conflicts, and candidate unanswered messages. Candidate unanswered messages mean
 the log contains a directed chat mentioning the task id and no later matching
 chat reply; it is an audit signal, not proof of intent.
+
+Use `synapse debug ./synapse.db --fork-at 142` to rewind a task in the log and
+inspect a what-if. It reconstructs the exact claim state — owner, status, paths,
+and the saved resume checkpoint — that the task held at that sequence, then prints
+the resume manifest an agent would pick up from there (with `--set FIELD=VALUE`
+overriding a resume field) next to the events that really followed. The hub runs
+no task, so this is read-only inspection, not re-execution; it exits `1` when the
+task held no live claim at that point.
+
+Use `synapse reproduce ./synapse.db TASK-1` to fingerprint a task's authoritative
+history into a portable SHA-256 digest. Hub state is a pure fold of an append-only
+log, so the same claim snapshots and releases replay to the same digest on every
+machine; `--expect DIGEST` turns it into a gate that fails on any divergence, the
+way a release receipt is verified.
 
 Use `synapse reliability ./synapse.db` for evidence-only reliability memory. It
 tracks stale claims, declared failed-check evidence, broken handoff candidates,
@@ -955,11 +971,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.76.0 |
 | Public API exports | 61 |
-| Package modules | 248 |
-| Classes | 333 |
+| Package modules | 251 |
+| Classes | 337 |
 | Wire message types | 65 |
-| CLI subcommands | 103 |
-| Test functions | 3121 |
+| CLI subcommands | 105 |
+| Test functions | 3174 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 46 |
 | GitHub Actions workflows | 12 |

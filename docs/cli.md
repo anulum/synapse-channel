@@ -33,6 +33,8 @@ see the [Integration demos](integration-demos.md).
 | `synapse ingest` | Stream durable event-store records since a sequence cursor. |
 | `synapse compact` | Apply event-store retention and optionally write an HTML archive report. |
 | `synapse postmortem` | Build a replayable task postmortem from a hub SQLite event store. |
+| `synapse debug` | Fork a task's reconstructed state at a sequence point (read-only what-if). |
+| `synapse reproduce` | Fingerprint a task's authoritative history into a deterministic digest. |
 | `synapse reliability` | Build evidence-only reliability memory from a hub SQLite event store. |
 | `synapse accounting` | Record and report opt-in model cost/token usage from a hub SQLite event store. |
 | `synapse approval` | Request, decide, and replay human-in-the-loop approval gates from a hub SQLite event store. |
@@ -529,6 +531,10 @@ synapse event-query ./synapse.db "channel ops between seq 1 999999"
 synapse event-query ./synapse.db 'timeline("TASK-1").'
 synapse event-query ./synapse.db 'MATCH (task:TASK {id:"TASK-1"}) RETURN timeline'
 synapse postmortem ./synapse.db TASK-1
+synapse debug ./synapse.db --fork-at 142
+synapse debug ./synapse.db --task TASK-1 --fork-at 142 --set status=blocked --json
+synapse reproduce ./synapse.db TASK-1
+synapse reproduce ./synapse.db TASK-1 --expect 9f2c… --json
 synapse reliability ./synapse.db
 synapse accounting record --name alpha --task TASK-1 --model claude-opus-4-8 --input-tokens 1200 --output-tokens 300
 synapse accounting report ./synapse.db --pricing pricing.json --budget budget.json
@@ -632,6 +638,27 @@ conflicts, and candidate unanswered messages that mention the task id. Candidate
 unanswered messages are an audit signal only: the log proves the directed chat
 and the absence of a later matching chat reply, not intent or off-channel
 communication.
+
+`synapse debug ./synapse.db --fork-at 142` forks a task's reconstructed state at
+a sequence point. It folds the durable log back into the exact claim state the
+task held as of that sequence — owner, status, declared paths, and the saved
+resume checkpoint — then prints the resume manifest an agent would pick up if the
+task were rewound there, alongside the events that really happened after the fork
+point. The task is inferred from the snapshot at the sequence, or named with
+`--task`; `--set FIELD=VALUE` overrides a resume field (`owner`, `note`,
+`status`, `data_ref`, `worktree`, `checkpoint`) on the manifest only. It is a
+read-only what-if: the hub runs no task, so nothing is executed or changed. Exit
+status is `0` when the task held a live claim at the fork point, `1` when it did
+not (released or never claimed — nothing to fork), and `2` on a bad argument or a
+missing store.
+
+`synapse reproduce ./synapse.db TASK-1` fingerprints a task's authoritative
+history. Because hub state is a pure fold of an append-only log, a task's claim
+snapshots and releases must replay to the same state on every machine; this
+command canonicalises that slice and hashes it into a stable SHA-256 digest, so
+two operators — or two federated hubs — holding the same history derive the same
+digest. `--expect DIGEST` gates on a known-good value (exit `1` on mismatch, like
+a release-receipt check); a task with no authoritative events exits `2`.
 
 `synapse reliability ./synapse.db` builds evidence-only reliability memory from
 the same event store. It counts stale claims, declared failed-check evidence,
