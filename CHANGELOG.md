@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.73.0] - 2026-06-30
+
 ### Added
 - Made the Participant Fabric's session telemetry durable. A session's running operational
   metrics (turns, errors, abstentions, cumulative tokens, spend, latency, and the highest
