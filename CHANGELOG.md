@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Added a resolver that identifies which peered domain a frame belongs to from verified
+  credentials alone. Given the Ed25519 signing-key id taken from a frame's verified signature and
+  the certificate pin read off the live connection, it returns the single peered domain that
+  accepts both, or nothing when no peering accepts both or more than one does. A key accepted by
+  one domain presented over another domain's connection resolves to neither, and an ambiguous
+  configuration is refused rather than guessed, so a frame's issuing domain is never taken from
+  self-declared content. This is a pure building block; the live frame path is unchanged until it
+  is wired in.
+
 ## [0.75.0] - 2026-06-30
 
 ### Added
