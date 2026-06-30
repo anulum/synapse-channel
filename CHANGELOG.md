@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.72.0] - 2026-06-30
+
 ### Added
 - Added the Participant Fabric (`synapse_channel.participants`) — an optional layer, on top
   of the bus and never in core, that drives a provider CLI session as a uniform bus
