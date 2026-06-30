@@ -29,6 +29,14 @@ from synapse_channel.participants.api_ollama import (
     OllamaApiParticipant,
     build_ollama_api_body,
 )
+from synapse_channel.participants.auto_action import (
+    ActionHandler,
+    AutoAction,
+    AutoActionContext,
+    AutoActionDispatch,
+    AutoActionPolicy,
+    react_to_advice,
+)
 from synapse_channel.participants.bus_relay import (
     BusConversation,
     BusConvocation,
@@ -172,7 +180,12 @@ __all__ = [
     "GROK_SCHEMA_VERIFIED",
     "REQUEST_KIND",
     "SESSION_METRIC_NOTE_KIND",
+    "ActionHandler",
     "AdvisorThresholds",
+    "AutoAction",
+    "AutoActionContext",
+    "AutoActionDispatch",
+    "AutoActionPolicy",
     "BusConversation",
     "BusConvocation",
     "BusExchange",
@@ -246,6 +259,7 @@ __all__ = [
     "parse_ollama_api_response",
     "parse_ollama_output",
     "parse_session_metric_note",
+    "react_to_advice",
     "relay_turn",
     "render_session_metric_report",
     "run_session_metric_report",

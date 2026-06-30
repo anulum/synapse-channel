@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Added an opt-in step that turns the deliberation advisor's per-round signals into automatic
+  actions. The advisor stays purely advisory; this separate reactor lets an orchestrator arm a
+  chosen subset of signals (`compact-soon`, `log-now`, `high-error-rate`) to trigger a compact,
+  log, or handover via caller-supplied handlers. Every axis is opt-in — an action fires only when
+  its signal is present, the action is armed, and a handler is supplied — so the default does
+  nothing and the concrete side effects stay the operator's. The routed deliberation loop and its
+  bus binding both accept this dispatch and record the actions taken per round.
+
 ## [0.73.0] - 2026-06-30
 
 ### Added

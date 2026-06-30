@@ -22,6 +22,12 @@ from typing import Any
 
 from synapse_channel.core.accounting import USAGE_NOTE_KIND, parse_usage_note
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.participants.auto_action import (
+    AutoAction,
+    AutoActionContext,
+    AutoActionDispatch,
+    AutoActionPolicy,
+)
 from synapse_channel.participants.bus_relay import (
     BusConversation,
     BusConvocation,
@@ -401,6 +407,37 @@ async def test_orchestration_returns_none_when_not_ready() -> None:
     assert result is None
     assert captured[0].sends == []
     assert captured[0].progress == []
+
+
+async def test_orchestration_threads_auto_action_to_the_loop() -> None:
+    captured: list[_FakeAgent] = []
+    fired: list[AutoActionContext] = []
+
+    async def _log(context: AutoActionContext) -> None:
+        fired.append(context)
+
+    dispatch = AutoActionDispatch(
+        policy=AutoActionPolicy(armed=frozenset({AutoAction.LOG})),
+        handlers={AutoAction.LOG: _log},
+    )
+    orchestration = BusOrchestration(
+        "SC/relay",
+        [_orch_seat("SC/a", "from-a")],
+        task=TaskProfile(),
+        thresholds=AdvisorThresholds(log_every_turns=1),
+        agent_factory=_factory(captured),
+        auto_action=dispatch,
+    )
+
+    transcript = await orchestration.run("q", rounds=2, topic_id="topic-aa")
+
+    assert transcript is not None
+    assert [r.fired_actions for r in transcript.rounds] == [
+        (AutoAction.LOG,),
+        (AutoAction.LOG,),
+    ]
+    assert len(fired) == 2
+    assert all(c.action is AutoAction.LOG and c.session_id == "topic-aa" for c in fired)
 
 
 async def test_orchestration_tears_down_the_connection() -> None:
