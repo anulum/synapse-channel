@@ -751,6 +751,7 @@ synapse event-query ./synapse.db 'MATCH (task:TASK {id:"TASK-1"}) RETURN timelin
 synapse postmortem ./synapse.db TASK-1
 synapse debug ./synapse.db --fork-at 142 --set status=blocked
 synapse reproduce ./synapse.db TASK-1 --expect 9f2c…
+synapse causality causes ./synapse.db 142
 synapse reliability ./synapse.db
 synapse accounting report ./synapse.db --pricing pricing.json --budget budget.json
 synapse approval request --name dev --subject TASK-1 --reason "needs sign-off"
@@ -784,6 +785,17 @@ history into a portable SHA-256 digest. Hub state is a pure fold of an append-on
 log, so the same claim snapshots and releases replay to the same digest on every
 machine; `--expect DIGEST` turns it into a gate that fails on any divergence, the
 way a release receipt is verified.
+
+Use `synapse causality causes ./synapse.db 142` to trace coordination causality
+over the log. It folds the durable events into a directed acyclic graph of three
+recorded relations — a task's own lifecycle, a declared `depends_on` satisfied by
+the dependency's completion, and a release that let a later, path-overlapping
+claim proceed — and answers against an event sequence: `causes` for what preceded
+it, `effects` for what it enabled, and `counterfactual` for the downstream events
+that would lose their recorded cause without it. This is coordination causality
+inferred from recorded scheduling semantics, not statistical causal discovery;
+every edge is backed by a concrete event, and the counterfactual is a structural
+what-if over the inferred graph.
 
 Use `synapse reliability ./synapse.db` for evidence-only reliability memory. It
 tracks stale claims, declared failed-check evidence, broken handoff candidates,
@@ -971,11 +983,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.76.0 |
 | Public API exports | 61 |
-| Package modules | 251 |
-| Classes | 337 |
+| Package modules | 253 |
+| Classes | 342 |
 | Wire message types | 65 |
-| CLI subcommands | 105 |
-| Test functions | 3174 |
+| CLI subcommands | 106 |
+| Test functions | 3217 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 46 |
 | GitHub Actions workflows | 12 |

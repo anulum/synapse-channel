@@ -26,6 +26,7 @@ The ``synapse`` command exposes these subcommands:
 * ``postmortem`` — build a replayable task postmortem from the event log;
 * ``debug`` — fork a task's reconstructed state at a sequence point (read-only what-if);
 * ``reproduce`` — fingerprint a task's authoritative history into a deterministic digest;
+* ``causality`` — trace coordination causes, effects, or counterfactuals over the event log;
 * ``reliability`` — build evidence-only reliability memory from the event log;
 * ``accounting`` — record and report opt-in model cost/token usage from the event log;
 * ``approval`` — request, decide, and replay human-in-the-loop approval gates;
@@ -91,6 +92,7 @@ from synapse_channel.cli_adaptive_ttl import add_parsers as add_ttl_advice_parse
 from synapse_channel.cli_agent_tmux import add_parsers as add_agent_tmux_parsers
 from synapse_channel.cli_approvals import add_parsers as add_approval_parsers
 from synapse_channel.cli_arm import add_parser as add_arm_parser
+from synapse_channel.cli_causality import add_parsers as add_causality_parsers
 from synapse_channel.cli_channels import add_parsers as add_channel_parsers
 from synapse_channel.cli_codex_tmux import add_parsers as add_codex_tmux_parsers
 from synapse_channel.cli_dashboard import add_parsers as add_dashboard_parsers
@@ -227,6 +229,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_postmortem_parsers(sub)
 
     add_replay_parsers(sub)
+
+    add_causality_parsers(sub)
 
     add_reliability_parsers(sub)
 
