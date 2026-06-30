@@ -95,6 +95,68 @@ class MTLSPeerTrustBundle:
         MTLSVerificationResult
             Stable result describing success or the refusal reason.
         """
+        resolved = self._resolve_peer(peer_id, project=project, signing_key_id=signing_key_id)
+        if isinstance(resolved, MTLSVerificationResult):
+            return resolved
+        try:
+            pin = certificate_sha256_pin(certfile)
+        except HubTLSConfigError:
+            return MTLSVerificationResult.MISSING_CERTIFICATE
+        if pin not in resolved.certificate_pins:
+            return MTLSVerificationResult.BAD_CERTIFICATE_PIN
+        return MTLSVerificationResult.VALID
+
+    def verify_peer_pin(
+        self,
+        peer_id: str,
+        *,
+        pin: str,
+        project: str,
+        signing_key_id: str,
+    ) -> MTLSVerificationResult:
+        """Verify an already-computed certificate pin, project scope, and signing key.
+
+        The pin counterpart of :meth:`verify_peer_certificate` for a peer whose certificate
+        arrives as live bytes rather than an operator-pinned file — the serving side of a
+        multi-hub pull hashes the peer's certificate off the live mutual-TLS socket and checks
+        it here, while the file-based method serves the following side. The peer, revocation,
+        project-scope, and signing-key checks run in the same deny-by-default order; only the
+        final pin comparison differs in where the pin came from.
+
+        Parameters
+        ----------
+        peer_id : str
+            Peer id expected in the trust bundle.
+        pin : str
+            Certificate SHA-256 pin in ``sha256:<hex>`` form, computed from the presented
+            certificate (for example by :func:`certificate_sha256_pin_from_der`).
+        project : str
+            Local project namespace for the connection or event.
+        signing_key_id : str
+            Event-signing key id associated with this peer.
+
+        Returns
+        -------
+        MTLSVerificationResult
+            Stable result describing success or the refusal reason.
+        """
+        resolved = self._resolve_peer(peer_id, project=project, signing_key_id=signing_key_id)
+        if isinstance(resolved, MTLSVerificationResult):
+            return resolved
+        if pin not in resolved.certificate_pins:
+            return MTLSVerificationResult.BAD_CERTIFICATE_PIN
+        return MTLSVerificationResult.VALID
+
+    def _resolve_peer(
+        self, peer_id: str, *, project: str, signing_key_id: str
+    ) -> MTLSTrustedPeer | MTLSVerificationResult:
+        """Resolve the trusted peer and run the checks that precede the pin comparison.
+
+        Returns the :class:`MTLSTrustedPeer` when the peer is known, active, scoped to the
+        project, and accepts the signing key; otherwise the first refusing
+        :class:`MTLSVerificationResult`. Shared by :meth:`verify_peer_certificate` and
+        :meth:`verify_peer_pin` so both keep the same deny-by-default order.
+        """
         peer = self.peers.get(peer_id)
         if peer is None:
             return MTLSVerificationResult.UNKNOWN_PEER
@@ -104,25 +166,19 @@ class MTLSPeerTrustBundle:
             return MTLSVerificationResult.PROJECT_SCOPE_MISMATCH
         if signing_key_id not in peer.signing_key_ids:
             return MTLSVerificationResult.UNKNOWN_SIGNING_KEY
-        try:
-            pin = certificate_sha256_pin(certfile)
-        except HubTLSConfigError:
-            return MTLSVerificationResult.MISSING_CERTIFICATE
-        if pin not in peer.certificate_pins:
-            return MTLSVerificationResult.BAD_CERTIFICATE_PIN
-        return MTLSVerificationResult.VALID
+        return peer
 
 
-def _load_certificate_der(certfile: str | Path) -> bytes:
-    """Load a PEM or DER certificate file and return DER bytes."""
+def _canonical_der(data: bytes) -> bytes:
+    """Parse PEM or DER certificate bytes and return their canonical DER encoding.
+
+    Re-encoding through ``cryptography`` normalises the bytes so a PEM file, a DER file, and
+    the live socket's ``getpeercert(binary_form=True)`` of the same certificate all hash to the
+    same pin.
+    """
     from cryptography import x509
     from cryptography.hazmat.primitives import serialization
 
-    path = Path(certfile)
-    try:
-        data = path.read_bytes()
-    except OSError as exc:
-        raise HubTLSConfigError(f"could not load peer certificate: {exc}") from exc
     try:
         certificate = x509.load_pem_x509_certificate(data)
     except ValueError:
@@ -131,6 +187,16 @@ def _load_certificate_der(certfile: str | Path) -> bytes:
         except ValueError as exc:
             raise HubTLSConfigError("could not parse peer certificate") from exc
     return certificate.public_bytes(serialization.Encoding.DER)
+
+
+def _load_certificate_der(certfile: str | Path) -> bytes:
+    """Load a PEM or DER certificate file and return canonical DER bytes."""
+    path = Path(certfile)
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        raise HubTLSConfigError(f"could not load peer certificate: {exc}") from exc
+    return _canonical_der(data)
 
 
 def certificate_sha256_pin(certfile: str | Path) -> str:
@@ -147,6 +213,34 @@ def certificate_sha256_pin(certfile: str | Path) -> str:
         Pin formatted as ``sha256:<hex>``.
     """
     return "sha256:" + sha256(_load_certificate_der(certfile)).hexdigest()
+
+
+def certificate_sha256_pin_from_der(der: bytes) -> str:
+    """Return the SHA-256 certificate pin for a certificate's raw DER bytes.
+
+    The counterpart of :func:`certificate_sha256_pin` for a certificate read off a live socket
+    (``ssl.SSLObject.getpeercert(binary_form=True)``) rather than a file. The bytes are
+    canonicalised the same way, so a peer pinned by an operator's certificate file and the same
+    peer presenting that certificate on a live mutual-TLS connection hash to the identical pin.
+
+    Parameters
+    ----------
+    der : bytes
+        DER-encoded certificate bytes, as presented by the peer on the live connection.
+
+    Returns
+    -------
+    str
+        Pin formatted as ``sha256:<hex>``.
+
+    Raises
+    ------
+    HubTLSConfigError
+        If the bytes are empty or cannot be parsed as a certificate.
+    """
+    if not der:
+        raise HubTLSConfigError("no peer certificate presented")
+    return "sha256:" + sha256(_canonical_der(der)).hexdigest()
 
 
 def build_server_ssl_context(

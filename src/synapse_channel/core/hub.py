@@ -74,6 +74,7 @@ from synapse_channel.core.message_auth import (
     verify_event_signature,
     verify_frame,
 )
+from synapse_channel.core.multihub_serving import MultiHubServingPolicy
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import (
     MessageType,
@@ -269,6 +270,10 @@ class SynapseHub:
         Ed25519 trust bundle accepted as an alternative signed-event
         verification path when ``require_per_message_auth`` is enabled.
         ``None`` leaves HMAC frame authentication as the only enforcing path.
+    multihub_serving_policy : MultiHubServingPolicy or None, optional
+        Deny-by-default gate for serving the event log to peer hubs over a multi-hub pull.
+        ``None`` (the default) serves every peer; a policy refuses a peer whose live
+        certificate it does not trust, mirroring the following side's pull gate.
     """
 
     def __init__(
@@ -313,6 +318,7 @@ class SynapseHub:
         signed_event_trust_bundle: EventSignatureTrustBundle | None = None,
         acl_policy: AclPolicy | None = None,
         require_acl: bool = False,
+        multihub_serving_policy: MultiHubServingPolicy | None = None,
     ) -> None:
         self.journal = journal
         self.enable_metrics = bool(enable_metrics)
@@ -335,6 +341,7 @@ class SynapseHub:
         self.signed_event_trust_bundle = signed_event_trust_bundle
         self.acl_policy = acl_policy
         self.require_acl = bool(require_acl)
+        self.multihub_serving_policy = multihub_serving_policy
         self.channels = ChannelRegistry()
         self.max_msg_bytes = max(int(max_msg_bytes), 1)
         self._clock = clock or time.monotonic

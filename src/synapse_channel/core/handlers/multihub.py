@@ -28,6 +28,7 @@ serve and answers with an empty snapshot anchored at the requested cursor.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.multihub_wire import (
@@ -42,11 +43,20 @@ from synapse_channel.core.protocol import MessageType
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
 
+logger = logging.getLogger(__name__)
+
 
 async def handle_multihub_log_request(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Answer a peer hub's request for events past a cursor with one log snapshot.
+
+    When the hub is configured with a
+    :class:`~synapse_channel.core.multihub_serving.MultiHubServingPolicy`, the request is
+    authorised against the peer's live certificate first; a refused peer is answered with an
+    empty snapshot anchored at its requested cursor — the same shape as "no new events", so the
+    refusal leaks neither the log nor whether the peer or its grant exists. With no policy the
+    hub serves as before.
 
     Parameters
     ----------
@@ -63,8 +73,12 @@ async def handle_multihub_log_request(
         The requesting socket the snapshot is sent back on.
     """
     try:
-        request = decode_log_request(data)
+        request: LogRequest | None = decode_log_request(data)
     except MultiHubWireError:
+        request = None
+    if not _serving_authorised(hub, sender, websocket):
+        snapshot = LogSnapshot(events=(), next_cursor=request.after_seq if request else 0)
+    elif request is None:
         snapshot = LogSnapshot(events=(), next_cursor=0)
     else:
         snapshot = _read_snapshot(hub, request)
@@ -77,6 +91,23 @@ async def handle_multihub_log_request(
             **encode_log_snapshot(snapshot),
         ),
     )
+
+
+def _serving_authorised(hub: SynapseHub, sender: str, websocket: Any) -> bool:
+    """Return whether the hub's serving policy permits ``sender`` to pull the log.
+
+    A hub with no :class:`~synapse_channel.core.multihub_serving.MultiHubServingPolicy` serves
+    every peer (the gate is opt-in). When a policy is configured, the decision is taken from the
+    peer's live certificate; a refusal is logged once so an operator sees a peer being turned
+    away without the refusal reaching the peer.
+    """
+    policy = hub.multihub_serving_policy
+    if policy is None:
+        return True
+    decision = policy.authorise(sender=sender, websocket=websocket)
+    if not decision.allowed:
+        logger.warning("Refused multi-hub log to peer %r: %s", sender, decision.reason)
+    return decision.allowed
 
 
 def _read_snapshot(hub: SynapseHub, request: LogRequest) -> LogSnapshot:

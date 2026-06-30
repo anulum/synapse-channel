@@ -35,10 +35,11 @@ What exists is single-hub plus operator-managed peering, not state sync:
   which is the seam a downstream consumer (or a peer) could replay.
 
 The full multi-host sync still has an unbuilt core — the namespace-ownership claim
-protocol, and enforcing the federation/mTLS gate on the **serving** hub from the live
-connection — and is **not implemented** as a whole; that stays the research boundary
-below. The read-side CRDT layer, and now the cross-host event-log pull that lets one hub
-*observe* another over a real connection, have shipped:
+protocol that routes a real claim to its owning hub — and is **not implemented** as a
+whole; that stays the research boundary below. The read-side CRDT layer, the cross-host
+event-log pull that lets one hub *observe* another over a real connection, and now the
+**serving-side** gate that lets a hub refuse to serve its log to an untrusted peer from the
+live connection, have shipped:
 
 - `core/multihub_merge.py` — the conflict-free event-log union: it tags each event with
   its authoring hub, merges several hubs' logs into a grow-only set keyed by
@@ -60,10 +61,14 @@ below. The read-side CRDT layer, and now the cross-host event-log pull that lets
   follower in place of `store_fetcher`. `core/multihub_federation.py` gates the pull
   deny-by-default (federation policy composed with mTLS peer verification), so a follower only
   pulls from a granted, cert-pinned peer. Exposed as `synapse multihub follow`.
+- `core/multihub_serving.py` — the serving-side mirror of that gate. A hub configured with a
+  `MultiHubServingPolicy` reads the certificate the peer presents on the **live** mutual-TLS
+  connection and runs the same `authorise_multihub_peer` composition the following side
+  enforces; a peer with no operator grant, no client certificate, or an untrusted pin is
+  answered with an empty snapshot — the same shape as "no new events", so the refusal leaks
+  nothing. A hub with no policy serves as before, so the gate is strictly opt-in.
 
-What remains is the namespace-ownership protocol that routes a real claim to its owning hub,
-and enforcing the same deny-by-default gate on the serving hub from the live mTLS connection
-(it is enforced today on the following side).
+What remains is the namespace-ownership protocol that routes a real claim to its owning hub.
 
 ## Observing a peer — a two-hub walkthrough
 
@@ -151,10 +156,10 @@ the federation/mTLS policy (see [Boundaries](#boundaries)); the library API
 ### Where this stops
 
 The cross-host event-log pull above now ships, so a hub can *observe* another over a real
-connection. What is still not built is the rest of *sync*: routing a real claim to its
-namespace's owning hub, and enforcing the federation/mTLS gate on the **serving** hub from
-the live connection (the gate is enforced today on the following side; see
-[Boundaries](#boundaries)).
+connection, and the federation/mTLS gate is now enforced on **both** sides — the following
+side before it pulls, and the serving side before it serves (`MultiHubServingPolicy`, see
+[Boundaries](#boundaries)). What is still not built is the rest of *sync*: routing a real
+claim to its namespace's owning hub.
 
 ## State, split by what merges
 
@@ -214,11 +219,11 @@ own.
 
 ## Boundaries
 
-The read-side (merge, fold, follower) and the cross-host event-log pull (`observe` and
-`follow`, gated deny-by-default on the following side) are implemented. Multi-hub **sync**
-as a whole — routing real claims by namespace ownership, and enforcing the federation/mTLS
-gate on the serving hub from the live connection — is **not implemented**. It is a research
-boundary, and the design is deliberately conservative.
+The read-side (merge, fold, follower), the cross-host event-log pull (`observe` and
+`follow`), and the deny-by-default federation/mTLS gate on **both** the following and the
+serving side (`MultiHubServingPolicy` reads the peer's live certificate) are implemented.
+Multi-hub **sync** as a whole — routing real claims by namespace ownership — is **not
+implemented**. It is a research boundary, and the design is deliberately conservative.
 
 - **Claims are not a CRDT.** Mutual exclusion is not conflict-free; the design uses
   single-owner-per-namespace, not claim merging, and fails closed on an ownership
