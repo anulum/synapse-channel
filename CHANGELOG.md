@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.75.0] - 2026-06-30
+
 ### Added
 - Added runtime partition detection to claim routing. The ownership gate now consults an optional
   feed of the hubs observed asserting authority over a namespace, so a partition — a peer seen
