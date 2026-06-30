@@ -28,6 +28,15 @@ All notable changes to this project are documented here.
   data and forbids obeying instructions inside it. A provider failure becomes an error result,
   never a raised exception. The layer adds no new dependency and is not imported by the bus
   core; it drives the external `claude` binary at runtime. 100% line+branch on the new modules.
+- Added session continuity and multi-round conversations to the Participant Fabric. A
+  `ContinuitySeat` wraps any participant and gives it memory across turns by threading the
+  provider session resume token, so a later turn resumes the earlier one; an errored or
+  session-less turn never overwrites a good thread. `conduct_conversation` runs a bounded
+  multi-round deliberation that cycles through participants — each round reacting to the
+  previous turn's result through the injection boundary, each participant remembering its own
+  earlier turns — under a hard round cap and an optional cumulative cost budget that halts the
+  run early and records that it did (a bounded run never reads as a completed one).
+  `BusConversation` publishes such a conversation to a live hub. 100% line+branch.
 - Added the WASM sandbox getting-started guide (`docs/wasm-sandbox-getting-started.md`):
   an operator walkthrough from a tool's source to a capability-limited run — compile a Rust
   tool to `wasm32-unknown-unknown`, compute its digest and write a deny-by-default manifest,
