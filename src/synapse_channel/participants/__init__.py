@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE_CHANNEL — Participant Fabric: drive provider sessions as uniform bus peers
+"""Participant Fabric — drive heterogeneous provider sessions as uniform bus peers.
+
+An **optional layer on top of the bus** (never folded into the single-dependency, no-LLM
+core) that presents each provider CLI — Claude Code first — as a uniform
+:class:`Participant`. A participant answers a :class:`TurnRequest` with a typed
+:class:`TurnResult`; an :func:`conduct_exchange` runs the smallest multiplied-reasoning
+loop (one participant answers, a second reacts to its result as fenced data); and
+:class:`BusExchange` publishes each result to a live hub. Peer output crossing into another
+participant always passes through :func:`frame_peer_contribution`, the cross-agent
+prompt-injection boundary.
+
+This Phase 1 surface covers the ``HEADLESS`` channel via :class:`HeadlessClaudeParticipant`.
+Additional providers, session continuity, and the moderated multi-party conversation layer
+build on these same pieces.
+"""
+
+from __future__ import annotations
+
+from synapse_channel.participants.bus_relay import BusExchange
+from synapse_channel.participants.envelope import (
+    ENVELOPE_KIND,
+    TurnRequest,
+    TurnResult,
+    build_turn_result,
+    error_turn_result,
+    turn_result_from_payload,
+    turn_result_to_payload,
+)
+from synapse_channel.participants.exchange import (
+    ExchangeTranscript,
+    conduct_exchange,
+)
+from synapse_channel.participants.headless_claude import (
+    HeadlessClaudeParticipant,
+    build_claude_argv,
+)
+from synapse_channel.participants.participant import (
+    Participant,
+    ParticipantChannel,
+    ParticipantHealth,
+)
+from synapse_channel.participants.peer_boundary import frame_peer_contribution
+from synapse_channel.participants.stream_json import StreamOutcome, parse_claude_stream
+
+__all__ = [
+    "ENVELOPE_KIND",
+    "BusExchange",
+    "ExchangeTranscript",
+    "HeadlessClaudeParticipant",
+    "Participant",
+    "ParticipantChannel",
+    "ParticipantHealth",
+    "StreamOutcome",
+    "TurnRequest",
+    "TurnResult",
+    "build_claude_argv",
+    "build_turn_result",
+    "conduct_exchange",
+    "error_turn_result",
+    "frame_peer_contribution",
+    "parse_claude_stream",
+    "turn_result_from_payload",
+    "turn_result_to_payload",
+]

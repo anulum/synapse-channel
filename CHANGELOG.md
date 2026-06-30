@@ -14,6 +14,20 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the Participant Fabric (`synapse_channel.participants`) — an optional layer, on top
+  of the bus and never in core, that drives a provider CLI session as a uniform bus
+  participant. A `Participant` answers a typed `TurnRequest` with a typed `TurnResult`
+  (answer, disclosed rationale, abstain/error state, provider resume token, metered cost),
+  so a multi-hop conversation exchanges structure rather than re-summarised prose. This first
+  release covers the headless channel: `HeadlessClaudeParticipant` runs
+  `claude -p … --output-format stream-json` and parses its event stream, injecting shared
+  context through `--append-system-prompt` so peer text never arrives as the user prompt.
+  `conduct_exchange` runs a two-participant loop — one answers, a second reacts to the first's
+  result — and `BusExchange` publishes each result to a live hub. Every participant output
+  that becomes another's input passes through a prompt-injection boundary that fences it as
+  data and forbids obeying instructions inside it. A provider failure becomes an error result,
+  never a raised exception. The layer adds no new dependency and is not imported by the bus
+  core; it drives the external `claude` binary at runtime. 100% line+branch on the new modules.
 - Added the WASM sandbox getting-started guide (`docs/wasm-sandbox-getting-started.md`):
   an operator walkthrough from a tool's source to a capability-limited run — compile a Rust
   tool to `wasm32-unknown-unknown`, compute its digest and write a deny-by-default manifest,
