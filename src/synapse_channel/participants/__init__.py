@@ -30,6 +30,10 @@ from synapse_channel.participants.bus_relay import (
     BusConvocation,
     BusExchange,
 )
+from synapse_channel.participants.channel_select import (
+    ProviderCapabilities,
+    select_channel,
+)
 from synapse_channel.participants.codex_stream import parse_codex_stream
 from synapse_channel.participants.continuity import ContinuitySeat
 from synapse_channel.participants.convene import (
@@ -87,6 +91,7 @@ from synapse_channel.participants.kimi_stream import (
     extract_kimi_session,
     parse_kimi_stream,
 )
+from synapse_channel.participants.mcp_participant import McpParticipant
 from synapse_channel.participants.modes import (
     ConversationMode,
     ModePolicy,
@@ -102,6 +107,7 @@ from synapse_channel.participants.peer_boundary import (
     frame_peer_contribution,
     frame_peer_panel,
 )
+from synapse_channel.participants.pty_participant import PtyParticipant
 from synapse_channel.participants.stream_json import StreamOutcome, parse_claude_stream
 from synapse_channel.participants.turn_relay import (
     DEGRADED_FREETEXT_STOP,
@@ -130,12 +136,15 @@ __all__ = [
     "ExchangeTranscript",
     "GrokParticipant",
     "KimiParticipant",
+    "McpParticipant",
     "ModePolicy",
     "HeadlessClaudeParticipant",
     "OllamaParticipant",
     "Participant",
     "ParticipantChannel",
     "ParticipantHealth",
+    "ProviderCapabilities",
+    "PtyParticipant",
     "RelaySettings",
     "ResponderSettings",
     "StreamOutcome",
@@ -165,6 +174,7 @@ __all__ = [
     "parse_kimi_stream",
     "parse_ollama_output",
     "relay_turn",
+    "select_channel",
     "select_mode",
     "turn_request_from_payload",
     "turn_request_to_payload",
