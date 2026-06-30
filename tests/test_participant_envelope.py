@@ -13,9 +13,12 @@ import json
 
 from synapse_channel.participants.envelope import (
     ENVELOPE_KIND,
+    REQUEST_KIND,
     TurnRequest,
     build_turn_result,
     error_turn_result,
+    turn_request_from_payload,
+    turn_request_to_payload,
     turn_result_from_payload,
     turn_result_to_payload,
 )
@@ -178,3 +181,43 @@ def test_from_payload_defaults_unparsable_cost_to_zero() -> None:
     restored = turn_result_from_payload(json.dumps(raw))
     assert restored is not None
     assert restored["cost_usd"] == 0.0
+
+
+# --- turn request serialisation -------------------------------------------------------
+
+
+def test_turn_request_round_trip_preserves_every_field() -> None:
+    request = TurnRequest(
+        topic_id="t-1", prompt="answer this", context="role: tester", resume_session="sess-9"
+    )
+    restored = turn_request_from_payload(turn_request_to_payload(request))
+    assert restored == request
+
+
+def test_turn_request_payload_is_sorted_json_with_discriminator() -> None:
+    payload = turn_request_to_payload(TurnRequest(topic_id="t", prompt="p"))
+    parsed = json.loads(payload)
+    assert parsed["kind"] == REQUEST_KIND
+    assert list(parsed.keys()) == sorted(parsed.keys())
+
+
+def test_turn_request_from_payload_rejects_non_json() -> None:
+    assert turn_request_from_payload("not json") is None
+
+
+def test_turn_request_from_payload_rejects_non_object() -> None:
+    assert turn_request_from_payload(json.dumps([1, 2, 3])) is None
+
+
+def test_turn_request_from_payload_rejects_foreign_kind() -> None:
+    assert turn_request_from_payload(json.dumps({"kind": "chat", "prompt": "x"})) is None
+
+
+def test_turn_request_from_payload_coerces_field_types_defensively() -> None:
+    raw = {"kind": REQUEST_KIND, "topic_id": 7, "prompt": None, "context": 3.5}
+    restored = turn_request_from_payload(json.dumps(raw))
+    assert restored is not None
+    assert restored.topic_id == "7"
+    assert restored.prompt == "None"
+    assert restored.context == "3.5"
+    assert restored.resume_session == ""

@@ -95,6 +95,17 @@ All notable changes to this project are documented here.
   flagged as such by `GROK_SCHEMA_VERIFIED = False`; the real smoke is triple-gated and stays
   skipped until the schema can be verified against a usable Grok. 100% line+branch on both new
   modules under that assumption.
+- Added the bus-mediated turn relay, the foundation for the Participant Fabric's PTY and MCP
+  channels. Where a headless participant spawns a fresh process and reads its stdout, a
+  long-lived peer instead receives the turn over the bus and answers over the bus; `relay_turn`
+  publishes a turn request to the peer, runs an injected wake hook to nudge it, and awaits the
+  reply. Reply correlation is a hybrid: it prefers a typed `turn_result` matched by topic id
+  (what a peer running the forthcoming responder returns) and falls back, after a short grace,
+  to wrapping a plain-text reply as a degraded answer, so a peer without the responder still
+  participates. A hub that never becomes ready, or a turn with no reply, becomes an error
+  result rather than a raised exception. The turn request now has a symmetric wire envelope
+  (`turn_request_to_payload` / `turn_request_from_payload`) beside the existing turn result.
+  No new dependency; 100% line+branch.
 - Added the WASM sandbox getting-started guide (`docs/wasm-sandbox-getting-started.md`):
   an operator walkthrough from a tool's source to a capability-limited run — compile a Rust
   tool to `wasm32-unknown-unknown`, compute its digest and write a deny-by-default manifest,

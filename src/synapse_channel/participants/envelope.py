@@ -39,6 +39,14 @@ checks this marker before trusting the other fields, so a foreign or malformed m
 is rejected rather than coerced into a turn result.
 """
 
+REQUEST_KIND = "participant.turn_request"
+"""Discriminator stored on every serialised :class:`TurnRequest` payload.
+
+A bus-mediated channel (PTY or MCP) publishes a turn request to a peer over the bus; the
+peer-side responder checks this marker before treating a payload as a turn to answer, so a
+foreign or malformed message is rejected rather than acted upon.
+"""
+
 
 @dataclass(frozen=True)
 class TurnRequest:
@@ -88,6 +96,68 @@ class TurnResult(TypedDict):
     session: str
     cost_usd: float
     stop_reason: str
+
+
+def turn_request_to_payload(request: TurnRequest) -> str:
+    """Serialise a turn request to a compact JSON bus payload.
+
+    Used by a bus-mediated channel to publish a turn to a peer. The payload carries the
+    :data:`REQUEST_KIND` discriminator so the peer-side responder can reject anything that is
+    not a turn request.
+
+    Parameters
+    ----------
+    request : TurnRequest
+        The turn to serialise.
+
+    Returns
+    -------
+    str
+        Deterministic JSON (sorted keys) suitable for a chat payload.
+    """
+    return json.dumps(
+        {
+            "kind": REQUEST_KIND,
+            "topic_id": request.topic_id,
+            "prompt": request.prompt,
+            "context": request.context,
+            "resume_session": request.resume_session,
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+
+
+def turn_request_from_payload(payload: str) -> TurnRequest | None:
+    """Parse a bus payload back into a turn request, or ``None`` when it is not one.
+
+    The bus carries many payload shapes and untrusted content; this validates the
+    discriminator and coerces each field to its declared type rather than trusting the
+    incoming JSON, so a foreign or tampered payload is rejected instead of acted upon.
+
+    Parameters
+    ----------
+    payload : str
+        The raw chat payload.
+
+    Returns
+    -------
+    TurnRequest or None
+        The validated request, or ``None`` when the payload is not JSON, is not an object,
+        or does not carry the turn-request discriminator.
+    """
+    try:
+        raw: Any = json.loads(payload)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(raw, dict) or raw.get("kind") != REQUEST_KIND:
+        return None
+    return TurnRequest(
+        topic_id=str(raw.get("topic_id", "")),
+        prompt=str(raw.get("prompt", "")),
+        context=str(raw.get("context", "")),
+        resume_session=str(raw.get("resume_session", "")),
+    )
 
 
 def build_turn_result(
