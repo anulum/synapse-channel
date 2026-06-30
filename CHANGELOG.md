@@ -37,6 +37,18 @@ All notable changes to this project are documented here.
   earlier turns — under a hard round cap and an optional cumulative cost budget that halts the
   run early and records that it did (a bounded run never reads as a completed one).
   `BusConversation` publishes such a conversation to a live hub. 100% line+branch.
+- Added a second Participant Fabric provider: a headless Codex driver. `CodexParticipant`
+  runs `codex exec --json` (and `codex exec resume <id>` for continuity) under a read-only
+  sandbox by default, and parses its JSONL event stream into the same typed `TurnResult` the
+  Claude driver produces — so the two compose as uniform peers with no provider-specific code
+  in the orchestration. Two contract differences are handled and documented: Codex has no
+  system-prompt channel, so the shared context (including any fenced peer contribution) is
+  prepended to the prompt under a separator; and Codex reports token usage but no monetary
+  cost, so its turns carry `cost_usd` of 0 and a conversation's cost budget cannot bound them
+  (only the round cap can). A `ContinuitySeat` gives a Codex session memory across turns the
+  same way it does a Claude one. 100% line+branch; the headless turn, real `--resume`
+  continuity, and a cross-provider exchange (a Claude turn and a Codex turn in one
+  conversation) are each covered by gated real smoke tests.
 - Added the WASM sandbox getting-started guide (`docs/wasm-sandbox-getting-started.md`):
   an operator walkthrough from a tool's source to a capability-limited run — compile a Rust
   tool to `wasm32-unknown-unknown`, compute its digest and write a deny-by-default manifest,
