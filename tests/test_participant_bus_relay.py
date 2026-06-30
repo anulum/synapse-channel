@@ -85,6 +85,11 @@ class _FakeAgent:
             raise
 
     async def wait_until_ready(self, timeout: float = 5.0) -> bool:
+        # Yield once so the scheduled connect() task starts and suspends at its await,
+        # matching a real client whose readiness check awaits the connection. Without this
+        # the connect task may be cancelled before it ever runs, making the teardown
+        # assertions race-dependent.
+        await asyncio.sleep(0)
         return self._ready
 
     async def send_message(

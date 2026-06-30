@@ -173,7 +173,7 @@ def test_from_payload_coerces_field_types_defensively() -> None:
     assert restored["cost_usd"] == 1.5
 
 
-def test_from_payload_defaults_unparseable_cost_to_zero() -> None:
+def test_from_payload_defaults_unparsable_cost_to_zero() -> None:
     raw = {"kind": ENVELOPE_KIND, "cost_usd": "not-a-number"}
     restored = turn_result_from_payload(json.dumps(raw))
     assert restored is not None
