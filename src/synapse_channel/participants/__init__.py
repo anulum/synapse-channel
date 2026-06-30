@@ -42,10 +42,13 @@ from synapse_channel.participants.conversation import (
 )
 from synapse_channel.participants.envelope import (
     ENVELOPE_KIND,
+    REQUEST_KIND,
     TurnRequest,
     TurnResult,
     build_turn_result,
     error_turn_result,
+    turn_request_from_payload,
+    turn_request_to_payload,
     turn_result_from_payload,
     turn_result_to_payload,
 )
@@ -100,10 +103,18 @@ from synapse_channel.participants.peer_boundary import (
     frame_peer_panel,
 )
 from synapse_channel.participants.stream_json import StreamOutcome, parse_claude_stream
+from synapse_channel.participants.turn_relay import (
+    DEGRADED_FREETEXT_STOP,
+    RelaySettings,
+    no_wake,
+    relay_turn,
+)
 
 __all__ = [
+    "DEGRADED_FREETEXT_STOP",
     "ENVELOPE_KIND",
     "GROK_SCHEMA_VERIFIED",
+    "REQUEST_KIND",
     "BusConversation",
     "BusConvocation",
     "BusExchange",
@@ -121,6 +132,7 @@ __all__ = [
     "Participant",
     "ParticipantChannel",
     "ParticipantHealth",
+    "RelaySettings",
     "StreamOutcome",
     "TurnRequest",
     "TurnResult",
@@ -140,12 +152,16 @@ __all__ = [
     "extract_kimi_session",
     "frame_peer_contribution",
     "frame_peer_panel",
+    "no_wake",
     "parse_claude_stream",
     "parse_codex_stream",
     "parse_grok_stream",
     "parse_kimi_stream",
     "parse_ollama_output",
+    "relay_turn",
     "select_mode",
+    "turn_request_from_payload",
+    "turn_request_to_payload",
     "turn_result_from_payload",
     "turn_result_to_payload",
 ]
