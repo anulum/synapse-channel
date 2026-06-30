@@ -14,6 +14,14 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the WASM sandbox getting-started guide (`docs/wasm-sandbox-getting-started.md`):
+  an operator walkthrough from a tool's source to a capability-limited run — compile a Rust
+  tool to `wasm32-unknown-unknown`, compute its digest and write a deny-by-default manifest,
+  `validate` the manifest, `test` (pre-flight) the tool, and `run --approve` it for an audit
+  receipt. Every command and its output were captured from a real end-to-end run; the guide
+  uses a digest placeholder (each build differs) rather than a fixed digest. Linked from the
+  nav and README, with a doc test that keeps its commands parseable by the live CLI and its
+  documented verbs in sync. (KIMI v0.71.0 gap closed.)
 - Added `synapse sandbox test` — a dry-run pre-flight that loads a `.wasm` tool and verifies
   it against its manifest *without running it*: `core/wasm_sandbox.py` compiles the module
   (validating its structure) and reads its exported functions but never instantiates or
