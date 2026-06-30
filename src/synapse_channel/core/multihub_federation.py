@@ -137,18 +137,79 @@ def authorise_multihub_pull(
             allowed=False, reason=MTLSVerificationResult.MISSING_CERTIFICATE.value
         )
 
-    decision = federation.authorise(
-        credential.domain_id,
+    return authorise_multihub_peer(
+        federation=federation,
+        mtls=mtls,
+        certificate_pin=pin,
+        domain_id=credential.domain_id,
         namespace=credential.namespace,
         signing_key_id=credential.signing_key_id,
-        certificate_pin=pin,
+        now=now,
+        signature_ok=signature_ok,
+        acl_ok=acl_ok,
+    )
+
+
+def authorise_multihub_peer(
+    *,
+    federation: FederationBundle,
+    mtls: MTLSPeerTrustBundle,
+    certificate_pin: str,
+    domain_id: str,
+    namespace: str,
+    signing_key_id: str,
+    now: float,
+    signature_ok: bool = True,
+    acl_ok: bool = True,
+) -> MultiHubAuthorisation:
+    """Compose every trust layer for a multi-hub peer whose certificate pin is already known.
+
+    The pin-based core of :func:`authorise_multihub_pull`. The following side computes the pin
+    from an operator-pinned certificate file; the serving side computes it from the certificate
+    the peer presents on the live mutual-TLS socket. Both then share this composition: the
+    federation policy and mutual-TLS pin verification run, and
+    :func:`~synapse_channel.core.federation.compose_cross_domain` permits the pull only when
+    both — and the optional event-signature and ACL checks — allow it. The reason on a deny is
+    the first refusing layer's, in federation-then-mTLS-then-signature-then-ACL order.
+
+    Parameters
+    ----------
+    federation : FederationBundle
+        The operator's peered-domain policy.
+    mtls : MTLSPeerTrustBundle
+        The operator's mutual-TLS peer trust bundle.
+    certificate_pin : str
+        The peer certificate's SHA-256 pin in ``sha256:<hex>`` form.
+    domain_id : str
+        The peer's trust-domain id, looked up in both bundles.
+    namespace : str
+        The local namespace the pull concerns; the peering must grant it.
+    signing_key_id : str
+        The peer's event-signing key id, which both bundles must accept.
+    now : float
+        The current monotonic time, used to evaluate peering expiry.
+    signature_ok : bool, optional
+        Whether an event-signature check is satisfied. Defaults to ``True``.
+    acl_ok : bool, optional
+        Whether the local ACL permits the mapped scope. Defaults to ``True``.
+
+    Returns
+    -------
+    MultiHubAuthorisation
+        The composed decision; ``allowed`` is ``True`` only when every layer permits the pull.
+    """
+    decision = federation.authorise(
+        domain_id,
+        namespace=namespace,
+        signing_key_id=signing_key_id,
+        certificate_pin=certificate_pin,
         now=now,
     )
-    mtls_result = mtls.verify_peer_certificate(
-        credential.domain_id,
-        certfile=credential.certfile,
-        project=credential.namespace,
-        signing_key_id=credential.signing_key_id,
+    mtls_result = mtls.verify_peer_pin(
+        domain_id,
+        pin=certificate_pin,
+        project=namespace,
+        signing_key_id=signing_key_id,
     )
     mtls_ok = mtls_result == MTLSVerificationResult.VALID
     allowed = compose_cross_domain(

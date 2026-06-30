@@ -13,6 +13,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Added serving-side enforcement of the deny-by-default multi-hub pull gate, the counterpart of
+  the gating the following side already applies. A hub configured with a `MultiHubServingPolicy`
+  reads the certificate the peer presents on the live mutual-TLS connection and runs the same
+  federation-and-mutual-TLS composition before serving its event log: a peer with no operator
+  grant, a connection presenting no client certificate, or a certificate whose pin the policy
+  does not accept is answered with an empty snapshot — the same shape as "no new events", so the
+  refusal discloses neither the log nor whether the peer or its grant exists. The gate is
+  opt-in: a hub with no policy serves every peer as before, so no existing deployment changes.
+  The federation/mTLS pull gate is now enforced on both sides of a cross-host pull.
+
 ## [0.74.0] - 2026-06-30
 
 ### Added

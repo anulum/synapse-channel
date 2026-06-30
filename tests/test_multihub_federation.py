@@ -21,6 +21,7 @@ from synapse_channel.core.multihub_federation import (
     ACL_DENIED,
     SIGNATURE_UNVERIFIED,
     MultiHubPeerCredential,
+    authorise_multihub_peer,
     authorise_multihub_pull,
     peer_authoriser,
 )
@@ -182,6 +183,43 @@ def test_acl_gate_can_refuse(tmp_path: Path) -> None:
     )
     assert not decision.allowed
     assert decision.reason == ACL_DENIED
+
+
+# --- authorise_multihub_peer -------------------------------------------------------------
+
+
+def test_authorise_peer_accepts_a_pin_directly(tmp_path: Path) -> None:
+    certfile = _write_cert(tmp_path)
+    pin = certificate_sha256_pin(certfile)
+    decision = authorise_multihub_peer(
+        federation=_federation(pin),
+        mtls=_mtls(pin),
+        certificate_pin=pin,
+        domain_id=_DOMAIN,
+        namespace=_NAMESPACE,
+        signing_key_id=_KEY,
+        now=0.0,
+    )
+    assert decision.allowed
+    assert decision.reason == AUTHORISED
+    assert decision.scope == _SCOPE
+
+
+def test_authorise_peer_reports_mtls_pin_mismatch(tmp_path: Path) -> None:
+    certfile = _write_cert(tmp_path)
+    pin = certificate_sha256_pin(certfile)
+    wrong_pin = "sha256:" + ("0" * 64)
+    decision = authorise_multihub_peer(
+        federation=_federation(pin),
+        mtls=_mtls(pin, certificate_pins=frozenset({wrong_pin})),
+        certificate_pin=pin,
+        domain_id=_DOMAIN,
+        namespace=_NAMESPACE,
+        signing_key_id=_KEY,
+        now=0.0,
+    )
+    assert not decision.allowed
+    assert decision.reason == MTLSVerificationResult.BAD_CERTIFICATE_PIN.value
 
 
 # --- peer_authoriser ---------------------------------------------------------------------

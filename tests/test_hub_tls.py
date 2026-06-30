@@ -28,6 +28,7 @@ from synapse_channel.core.tls import (
     build_mutual_tls_server_ssl_context,
     build_server_ssl_context,
     certificate_sha256_pin,
+    certificate_sha256_pin_from_der,
 )
 
 
@@ -246,6 +247,71 @@ def test_certificate_pin_supports_der_and_reports_parse_errors(tmp_path: Path) -
     assert certificate_sha256_pin(derfile) == certificate_sha256_pin(certfile)
     with pytest.raises(HubTLSConfigError, match="could not parse peer certificate"):
         certificate_sha256_pin(badfile)
+
+
+def test_certificate_pin_from_der_matches_the_file_pin(tmp_path: Path) -> None:
+    certfile, _ = _write_self_signed_cert(tmp_path)
+    cert = x509.load_pem_x509_certificate(certfile.read_bytes())
+    der = cert.public_bytes(serialization.Encoding.DER)
+
+    assert certificate_sha256_pin_from_der(der) == certificate_sha256_pin(certfile)
+
+
+def test_certificate_pin_from_der_rejects_empty_and_unparsable_bytes() -> None:
+    with pytest.raises(HubTLSConfigError, match="no peer certificate presented"):
+        certificate_sha256_pin_from_der(b"")
+    with pytest.raises(HubTLSConfigError, match="could not parse peer certificate"):
+        certificate_sha256_pin_from_der(b"not a certificate")
+
+
+def test_verify_peer_pin_mirrors_certificate_verification(tmp_path: Path) -> None:
+    certfile, _ = _write_self_signed_cert(tmp_path)
+    pin = certificate_sha256_pin(certfile)
+    bundle = MTLSPeerTrustBundle(
+        peers={
+            "peer-a": MTLSTrustedPeer(
+                peer_id="peer-a",
+                certificate_pins=frozenset({pin}),
+                signing_key_ids=frozenset({"key-a"}),
+                projects=frozenset({"SYNAPSE-CHANNEL"}),
+            ),
+            "peer-b": MTLSTrustedPeer(
+                peer_id="peer-b",
+                certificate_pins=frozenset({pin}),
+                signing_key_ids=frozenset({"key-a"}),
+                projects=frozenset({"SYNAPSE-CHANNEL"}),
+                revoked=True,
+            ),
+        }
+    )
+
+    def verify(peer_id: str, *, pin: str, project: str, key: str) -> MTLSVerificationResult:
+        return bundle.verify_peer_pin(peer_id, pin=pin, project=project, signing_key_id=key)
+
+    assert (
+        verify("peer-a", pin=pin, project="SYNAPSE-CHANNEL", key="key-a")
+        == MTLSVerificationResult.VALID
+    )
+    assert (
+        verify("missing", pin=pin, project="SYNAPSE-CHANNEL", key="key-a")
+        == MTLSVerificationResult.UNKNOWN_PEER
+    )
+    assert (
+        verify("peer-b", pin=pin, project="SYNAPSE-CHANNEL", key="key-a")
+        == MTLSVerificationResult.REVOKED_PEER
+    )
+    assert (
+        verify("peer-a", pin=pin, project="OTHER", key="key-a")
+        == MTLSVerificationResult.PROJECT_SCOPE_MISMATCH
+    )
+    assert (
+        verify("peer-a", pin=pin, project="SYNAPSE-CHANNEL", key="missing")
+        == MTLSVerificationResult.UNKNOWN_SIGNING_KEY
+    )
+    assert (
+        verify("peer-a", pin="sha256:" + ("0" * 64), project="SYNAPSE-CHANNEL", key="key-a")
+        == MTLSVerificationResult.BAD_CERTIFICATE_PIN
+    )
 
 
 def test_trust_bundle_reports_missing_peer_certificate(tmp_path: Path) -> None:
