@@ -63,6 +63,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "message_auth_replay_capacity": 4096,
         "acl_policy": "",
         "require_acl": False,
+        "federation_store": "",
         "insecure_off_loopback": False,
         "tls_certfile": None,
         "tls_keyfile": None,

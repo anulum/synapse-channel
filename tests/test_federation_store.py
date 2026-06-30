@@ -17,6 +17,7 @@ from synapse_channel.core.federation_store import (
     FederationRecord,
     FederationStoreError,
     PeerProvenance,
+    bundle_from_store,
     load_store,
     merge_record,
     peer_from_dict,
@@ -130,3 +131,33 @@ def test_record_and_provenance_to_dict() -> None:
         "imported_at": 100.0,
         "confirmed_by": "ops@local",
     }
+
+
+def test_bundle_from_store_is_empty_when_absent(tmp_path: Path) -> None:
+    bundle = bundle_from_store(tmp_path / "missing.json")
+    assert bundle.domains() == ()
+
+
+def test_bundle_from_store_builds_policy_over_stored_peers(tmp_path: Path) -> None:
+    store = tmp_path / "federation.json"
+    revoked = FederationPeer(domain_id="globex", revoked=True)
+    save_store(store, [FederationRecord(_PEER, _PROV), FederationRecord(revoked, _PROV)])
+    bundle = bundle_from_store(store)
+    # every record loads, including the revoked peering (refused at authorisation time)
+    assert bundle.domains() == ("acme", "globex")
+    allowed = bundle.authorise(
+        "acme",
+        namespace="acme/shared",
+        signing_key_id="key-1",
+        certificate_pin="sha256:aa",
+        now=1000.0,
+    )
+    assert allowed.allowed is True
+    refused = bundle.authorise(
+        "globex",
+        namespace="globex/shared",
+        signing_key_id="key-1",
+        certificate_pin="sha256:aa",
+        now=1000.0,
+    )
+    assert refused.allowed is False

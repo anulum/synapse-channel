@@ -41,20 +41,34 @@ federation layer would compose — it would add no new trust root of its own:
 - **Signed capability cards** (design) — a planned card-signing profile, see
   [signed capability cards](signed-capability-cards.md).
 
-The first slice — the deny-by-default **policy bundle** — has shipped in
-`core/federation.py`: a `FederationPeer` records, per remote domain, the local
-namespaces it may address, the accepted certificate pins and event-signing key ids,
-the bounded local scope (`ScopeGrant` verb/namespace pairs) its subjects map to, and an
-expiry plus revocation; `FederationBundle.authorise` returns a deny-by-default decision
-(unknown domain, revoked, expired, namespace not granted, key not accepted, pin not
-accepted, in that order), and `compose_cross_domain` joins it with the external mutual
-TLS, signature, and ACL results so a frame any layer rejects is rejected. It owns no
-crypto and adds no trust root.
+The deny-by-default **policy bundle** has shipped in `core/federation.py`: a
+`FederationPeer` records, per remote domain, the local namespaces it may address, the
+accepted certificate pins and event-signing key ids, the bounded local scope
+(`ScopeGrant` verb/namespace pairs) its subjects map to, and an expiry plus revocation;
+`FederationBundle.authorise` returns a deny-by-default decision (unknown domain, revoked,
+expired, namespace not granted, key not accepted, pin not accepted, in that order), and
+`compose_cross_domain` joins it with the external mutual TLS, signature, and ACL results
+so a frame any layer rejects is rejected. It owns no crypto and adds no trust root.
 
-The rest of the federation runtime is **not implemented**: no cross-domain bundle
-exchange, no remote identity resolution, no runtime wiring of the policy into the live
-frame path, and no trust-root distribution. This document is the boundary specification
-for that future work.
+That policy is now **composed into the live runtime**, on both surfaces, deny-closed and
+opt-in:
+
+- **Hub-to-hub** — the multi-hub event-log pull and cross-hub claim forwarding gate one
+  hub serving or forwarding to another against the peering and the live certificate pin
+  (`MultiHubServingPolicy`, `authorise_multihub_pull`).
+- **Agent frames** — a hub started with `synapse hub --federation-store FILE` composes the
+  imported peerings into its per-frame authorisation: a frame whose verified Ed25519
+  signing key and live certificate pin resolve to one peered domain (`resolve_domain`) is
+  authorised against that peering's bounded scope (`scope_authorises`), composed with
+  mutual TLS, the event signature, and the mapped scope, instead of the local ACL. A frame
+  resolving to no peer stays local. Federation only binds authority on a hub that also runs
+  `--require-message-auth`; without it a cross-domain frame is refused, since its signing
+  key is not verified. With no store the live path is unchanged.
+
+What remains **not implemented** is cross-domain bundle *exchange over the network* and
+trust-root distribution: a peering still moves between domains out-of-band and is imported
+explicitly (`synapse federation import`), and the hub does not auto-discover or negotiate
+trust. This document is the boundary specification for that out-of-band step.
 
 ## Trust domains
 
@@ -151,8 +165,10 @@ replace any of them, and it adds no trust root they do not already define.
 
 ## Boundaries
 
-This federated trust model is **not implemented**. It is a design boundary for
-future work and makes no security guarantee today.
+The deny-by-default policy and its composition into the live hub-to-hub and agent-frame
+paths have shipped (see Runtime status); cross-domain bundle exchange over the network is
+**not implemented** and stays out-of-band. These boundaries hold regardless and are never
+relaxed by what ships:
 
 - It is **not a certificate authority or PKI**: it distributes no keys, issues no
   certificates, and performs no automatic trust discovery. Trust roots are

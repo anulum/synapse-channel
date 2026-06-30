@@ -287,6 +287,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "with --token and --require-message-auth on an exposed hub.",
     )
     hub.add_argument(
+        "--federation-store",
+        default="",
+        metavar="FILE",
+        help="Compose operator-confirmed peer domains from this federation store "
+        "(written by `synapse federation import`) into the live frame authorisation. "
+        "Off by default; a cross-domain frame is honoured only with --require-message-auth, "
+        "which binds its authority.",
+    )
+    hub.add_argument(
         "--insecure-off-loopback",
         action="store_true",
         help="Bind a non-loopback host even without a token (and metrics token); by "
