@@ -151,6 +151,12 @@ All notable changes to this project are documented here.
   endpoint is stateless (continuity rides the conversation's fenced context), and a local turn has
   no cost; a transport failure or malformed body becomes an error result. 100% line+branch, with a
   gated real smoke against a running local server.
+- Captured the rate-limit signal the Claude parser had been discarding. A turn outcome and result
+  now carry the provider's last reported rate-limit utilisation (or none when unreported), read
+  from the `rate_limit_event` the parser previously ignored, with the latest event winning and a
+  malformed one dropped rather than coerced. The signal travels on the turn result so a router can
+  read a provider's headroom and deprioritise one close to its limit, instead of the awareness
+  being thrown away. 100% line+branch.
 - Added the WASM sandbox getting-started guide (`docs/wasm-sandbox-getting-started.md`):
   an operator walkthrough from a tool's source to a capability-limited run — compile a Rust
   tool to `wasm32-unknown-unknown`, compute its digest and write a deny-by-default manifest,

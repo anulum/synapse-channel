@@ -259,3 +259,36 @@ def test_no_result_event_yields_zero_tokens() -> None:
     assert outcome.is_error is True
     assert outcome.input_tokens == 0
     assert outcome.output_tokens == 0
+
+
+def test_rate_limit_utilisation_captured_from_event() -> None:
+    # The rate_limit_event is no longer discarded; its utilisation rides the outcome.
+    outcome = parse_claude_stream([_init(), _rate_limit(), _assistant_text("pong"), _result()])
+    assert outcome.rate_limit_utilisation == 0.5
+
+
+def test_latest_rate_limit_event_wins() -> None:
+    later = json.dumps({"type": "rate_limit_event", "rate_limit_info": {"utilization": 0.9}})
+    outcome = parse_claude_stream([_init(), _rate_limit(), later, _result()])
+    assert outcome.rate_limit_utilisation == 0.9
+
+
+def test_absent_rate_limit_is_none() -> None:
+    outcome = parse_claude_stream([_init(), _result()])
+    assert outcome.rate_limit_utilisation is None
+
+
+def test_malformed_rate_limit_event_is_ignored() -> None:
+    no_info = json.dumps({"type": "rate_limit_event"})
+    bad_info = json.dumps({"type": "rate_limit_event", "rate_limit_info": "nope"})
+    bad_value = json.dumps({"type": "rate_limit_event", "rate_limit_info": {"utilization": "high"}})
+    bool_value = json.dumps({"type": "rate_limit_event", "rate_limit_info": {"utilization": True}})
+    for event in (no_info, bad_info, bad_value, bool_value):
+        outcome = parse_claude_stream([_init(), event, _result()])
+        assert outcome.rate_limit_utilisation is None
+
+
+def test_rate_limit_carried_on_a_truncated_stream() -> None:
+    outcome = parse_claude_stream([_init(), _rate_limit(), _assistant_text("partial")])
+    assert outcome.is_error is True
+    assert outcome.rate_limit_utilisation == 0.5

@@ -38,6 +38,7 @@ def _outcome(
     stop_reason: str = "end_turn",
     input_tokens: int = 0,
     output_tokens: int = 0,
+    rate_limit_utilisation: float | None = None,
 ) -> StreamOutcome:
     return StreamOutcome(
         answer=answer,
@@ -50,6 +51,7 @@ def _outcome(
         stop_reason=stop_reason,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
+        rate_limit_utilisation=rate_limit_utilisation,
     )
 
 
@@ -75,6 +77,36 @@ def test_build_turn_result_echoes_model_and_carries_tokens() -> None:
     assert result["model"] == "claude-opus-4-8"
     assert result["input_tokens"] == 120
     assert result["output_tokens"] == 34
+
+
+def test_build_turn_result_carries_rate_limit_utilisation() -> None:
+    result = build_turn_result(
+        participant="SC/claude-a",
+        channel=ParticipantChannel.HEADLESS,
+        request=_request(),
+        outcome=_outcome(rate_limit_utilisation=0.7),
+    )
+    assert result["rate_limit_utilisation"] == 0.7
+    # An error result has no rate-limit signal.
+    error = error_turn_result(
+        participant="p", channel=ParticipantChannel.MCP, request=_request(), reason="x"
+    )
+    assert error["rate_limit_utilisation"] is None
+
+
+def test_from_payload_coerces_rate_limit_utilisation() -> None:
+    parsed = turn_result_from_payload(
+        json.dumps({"kind": ENVELOPE_KIND, "topic_id": "t", "rate_limit_utilisation": "0.42"})
+    )
+    assert parsed is not None
+    assert parsed["rate_limit_utilisation"] == 0.42
+    # Absent, boolean, and unparsable values all become None, not zero.
+    for bad in (None, True, "high"):
+        restored = turn_result_from_payload(
+            json.dumps({"kind": ENVELOPE_KIND, "topic_id": "t", "rate_limit_utilisation": bad})
+        )
+        assert restored is not None
+        assert restored["rate_limit_utilisation"] is None
 
 
 def test_error_turn_result_echoes_model_with_zero_tokens() -> None:
