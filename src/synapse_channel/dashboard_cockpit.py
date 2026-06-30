@@ -31,6 +31,17 @@ COCKPIT_ASSETS: Final[dict[str, str]] = {
 }
 """Servable cockpit asset file names mapped to their content types."""
 
+_COCKPIT_ASSET_PATHS: Final[dict[str, Path]] = {
+    asset_name: _ASSETS_DIR / asset_name for asset_name in COCKPIT_ASSETS
+}
+"""Each allowlisted asset name mapped to its fixed package path.
+
+The paths are built once, at import, from the constant allowlist. A request never
+constructs a path from the caller-supplied name; it only *looks one up* by name, so no
+untrusted value can ever reach the filesystem path — a request can address one of these
+fixed files or nothing at all.
+"""
+
 
 @lru_cache(maxsize=len(COCKPIT_ASSETS))
 def load_cockpit_asset(name: str) -> str:
@@ -49,18 +60,12 @@ def load_cockpit_asset(name: str) -> str:
     Raises
     ------
     KeyError
-        If ``name`` is not an allowlisted cockpit asset, or resolves outside the
-        bundled assets directory.
+        If ``name`` is not an allowlisted cockpit asset.
     """
-    if name not in COCKPIT_ASSETS:
-        raise KeyError(name)
-    # Defence in depth: the allowlist already constrains ``name`` to a fixed set of
-    # bare file names, but confirm the resolved path stays inside the assets directory
-    # so no traversal can ever reach the filesystem, even if the allowlist is later
-    # widened.
-    asset_path = (_ASSETS_DIR / name).resolve()
-    if asset_path.parent != _ASSETS_DIR.resolve():
-        raise KeyError(name)
+    try:
+        asset_path = _COCKPIT_ASSET_PATHS[name]
+    except KeyError:
+        raise KeyError(name) from None
     return asset_path.read_text(encoding="utf-8")
 
 
