@@ -39,6 +39,7 @@ from synapse_channel.core.handlers.leasing import (
 from synapse_channel.core.handlers.memory import handle_finding, handle_recall_log
 from synapse_channel.core.handlers.messaging import handle_chat, handle_heartbeat
 from synapse_channel.core.handlers.multihub import handle_multihub_log_request
+from synapse_channel.core.handlers.multihub_claim import handle_multihub_claim_request
 from synapse_channel.core.handlers.offerings import handle_advertise, handle_resource
 from synapse_channel.core.handlers.planning import (
     handle_ledger_progress,
@@ -88,6 +89,7 @@ DISPATCH: dict[str, Handler] = {
     MessageType.CHANNEL_LIST_REQUEST: handle_channel_list_request,
     MessageType.CHANNEL_HISTORY_REQUEST: handle_channel_history_request,
     MessageType.MULTIHUB_LOG_REQUEST: handle_multihub_log_request,
+    MessageType.MULTIHUB_CLAIM_REQUEST: handle_multihub_claim_request,
     **{alias: handle_resource for alias in RESOURCE_TYPE_ALIASES},
 }
 
