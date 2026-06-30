@@ -23,6 +23,7 @@ rule, and fencing the untrusted span so instructions inside it are unmistakably 
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -59,6 +60,27 @@ def frame_peer_contribution(result: TurnResult) -> str:
     )
     body = _body(result)
     return f"{header}\n{PEER_FENCE}\n{body}\n{PEER_FENCE_END}"
+
+
+def frame_peer_panel(results: Sequence[TurnResult]) -> str:
+    """Frame a panel of peer contributions as fenced, non-authoritative data.
+
+    Used by the multi-party modes to hand every participant the panel's other answers for a
+    cross-critique or synthesis round. Each contribution carries the same data-not-instructions
+    framing as :func:`frame_peer_contribution`, so an instruction inside any one answer is
+    presented as quoted material.
+
+    Parameters
+    ----------
+    results : Sequence[TurnResult]
+        The panel's results to expose.
+
+    Returns
+    -------
+    str
+        The framed contributions joined in order. Empty when there are no results.
+    """
+    return "\n\n".join(frame_peer_contribution(result) for result in results)
 
 
 def _body(result: TurnResult) -> str:

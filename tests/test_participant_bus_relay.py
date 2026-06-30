@@ -21,10 +21,15 @@ from collections.abc import Sequence
 from typing import Any
 
 from synapse_channel.core.protocol import MessageType
-from synapse_channel.participants.bus_relay import BusConversation, BusExchange
+from synapse_channel.participants.bus_relay import (
+    BusConversation,
+    BusConvocation,
+    BusExchange,
+)
 from synapse_channel.participants.conversation import STOPPED_COMPLETED
 from synapse_channel.participants.envelope import turn_result_from_payload
 from synapse_channel.participants.headless_claude import HeadlessClaudeParticipant
+from synapse_channel.participants.modes import ConversationMode
 
 
 def _stream(answer: str) -> str:
@@ -209,3 +214,56 @@ async def test_conversation_tears_down_the_connection() -> None:
     agent = captured[0]
     assert agent.running is False
     assert agent.connect_cancelled is True
+
+
+async def test_convocation_publishes_each_round_in_a_mode() -> None:
+    captured: list[_FakeAgent] = []
+    convocation = BusConvocation(
+        "SC/relay",
+        [_seat("SC/a", "from-a"), _seat("SC/b", "from-b")],
+        target="team",
+        agent_factory=_factory(captured),
+    )
+
+    transcript = await convocation.run("q", mode=ConversationMode.ROUNDTABLE, topic_id="topic-c")
+
+    assert transcript is not None
+    assert transcript.mode is ConversationMode.ROUNDTABLE
+    agent = captured[0]
+    # Roundtable: opening + one critique round, two participants each = four sends.
+    assert len(agent.sends) == 4
+    for send in agent.sends:
+        assert send["type"] == MessageType.CHAT
+        assert send["target"] == "team"
+        assert send["extra"]["topic"] == "topic-c"
+
+
+async def test_convocation_with_moderator_publishes_synthesis() -> None:
+    captured: list[_FakeAgent] = []
+    convocation = BusConvocation(
+        "SC/relay",
+        [_seat("SC/a", "a"), _seat("SC/b", "b")],
+        moderator=_seat("SC/chair", "synthesis"),
+        agent_factory=_factory(captured),
+    )
+
+    transcript = await convocation.run("q", mode=ConversationMode.SYMPOSIUM, topic_id="t")
+
+    assert transcript is not None
+    assert transcript.synthesis is not None
+    # Opening + one critique (2 each) + one synthesis = five sends.
+    assert len(captured[0].sends) == 5
+
+
+async def test_convocation_returns_none_when_not_ready() -> None:
+    captured: list[_FakeAgent] = []
+    convocation = BusConvocation(
+        "SC/relay",
+        [_seat("SC/a", "x")],
+        agent_factory=_factory(captured, ready=False),
+    )
+
+    result = await convocation.run("q", mode=ConversationMode.COLLOQUY, topic_id="t")
+
+    assert result is None
+    assert captured[0].sends == []
