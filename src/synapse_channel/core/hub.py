@@ -31,6 +31,7 @@ import ssl
 import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -39,10 +40,20 @@ from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request, Response
 
 from synapse_channel.core.acl import AclPolicy
-from synapse_channel.core.acl_enforcement import authorise_frame, project_of
+from synapse_channel.core.acl_enforcement import (
+    authorise_frame,
+    project_of,
+    required_accesses,
+)
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.channels import ChannelRegistry
+from synapse_channel.core.federation import (
+    FederationBundle,
+    compose_cross_domain,
+    resolve_domain,
+    scope_authorises,
+)
 from synapse_channel.core.handlers import DISPATCH
 from synapse_channel.core.hub_broadcast import HubBroadcaster
 from synapse_channel.core.hub_clients import HubClientRegistry
@@ -81,7 +92,11 @@ from synapse_channel.core.multihub_claim_transport import (
     forward_claim,
 )
 from synapse_channel.core.multihub_claim_wire import ClaimForwardRequest
-from synapse_channel.core.multihub_serving import MultiHubServingPolicy
+from synapse_channel.core.multihub_serving import (
+    MultiHubServingPolicy,
+    PeerCertificateSource,
+    live_peer_certificate_der,
+)
 from synapse_channel.core.namespace_ownership import NamespaceOwnership, OwnershipOutcome
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import (
@@ -96,6 +111,7 @@ from synapse_channel.core.state import (
     MAX_OFFERS_PER_AGENT,
     SynapseState,
 )
+from synapse_channel.core.tls import certificate_sha256_pin_from_der
 
 logger = logging.getLogger("synapse.hub")
 
@@ -151,6 +167,21 @@ The durable log grows append-only and is never auto-compacted — pruning is saf
 below a sequence the read-side has already consumed, which the hub cannot know. So
 instead of silently growing or unsafely trimming, a hub started on a log larger than
 this emits a single startup hint to run :class:`compact` manually."""
+
+
+class FrameDisposition(Enum):
+    """How the federation gate classifies an inbound frame.
+
+    ``LOCAL`` — no federation bundle, or the frame resolves to no peered domain, so it
+    takes the ordinary local authorisation path unchanged. ``ALLOW_CROSS_DOMAIN`` — the
+    frame is a peered remote domain's, authorised by the federation policy and its mapped
+    scope, and is routed without the local ACL (a remote subject has no local identity).
+    ``DENY`` — the frame is cross-domain and some layer refused it; it is not routed.
+    """
+
+    LOCAL = "local"
+    ALLOW_CROSS_DOMAIN = "allow_cross_domain"
+    DENY = "deny"
 
 
 class SynapseHub:
@@ -302,6 +333,17 @@ class SynapseHub:
         supplies no assertions, so ownership resolves from the static map alone. Build it from a
         follower's observed claims with
         :func:`~synapse_channel.core.multihub_fold.asserting_owners`.
+    federation_bundle : FederationBundle or None, optional
+        Deny-by-default policy composing a peered remote domain's coordination frames into the
+        live authorisation path. ``None`` (the default) leaves the frame path byte-for-byte
+        unchanged — every frame is local. With a bundle, a frame whose verified signing key and
+        live certificate pin resolve to a peered domain is authorised against that peering's
+        bounded scope (composed with mutual TLS, the event signature, and the mapped scope,
+        deny-closed) instead of the local ACL; a frame resolving to no peer stays local.
+    federation_cert_source : PeerCertificateSource, optional
+        Reads the peer's live certificate for the federation gate; defaults to
+        :func:`~synapse_channel.core.multihub_serving.live_peer_certificate_der`. Injected in
+        tests to exercise the decision without a mutual-TLS handshake.
     """
 
     def __init__(
@@ -351,6 +393,8 @@ class SynapseHub:
         claim_peers: Mapping[str, ClaimForwardPeer] | None = None,
         claim_forwarder: ClaimForwarder = forward_claim,
         observed_asserting_hubs: Callable[[str], Iterable[str]] | None = None,
+        federation_bundle: FederationBundle | None = None,
+        federation_cert_source: PeerCertificateSource = live_peer_certificate_der,
     ) -> None:
         self.journal = journal
         self.enable_metrics = bool(enable_metrics)
@@ -378,6 +422,8 @@ class SynapseHub:
         self.claim_peers = dict(claim_peers) if claim_peers else None
         self.claim_forwarder = claim_forwarder
         self.observed_asserting_hubs = observed_asserting_hubs
+        self.federation_bundle = federation_bundle
+        self.federation_cert_source = federation_cert_source
         self.channels = ChannelRegistry()
         self.max_msg_bytes = max(int(max_msg_bytes), 1)
         self._clock = clock or time.monotonic
@@ -769,6 +815,13 @@ class SynapseHub:
         if not await self._verify_per_message_auth(sender, msg_type, data, websocket):
             return
 
+        disposition = await self._authorise_federation(sender, msg_type, data, websocket)
+        if disposition is FrameDisposition.DENY:
+            return
+        if disposition is FrameDisposition.ALLOW_CROSS_DOMAIN:
+            await self._route(sender, msg_type, data, websocket)
+            return
+
         if not await self._authorise_acl(sender, msg_type, data, websocket):
             return
 
@@ -776,6 +829,86 @@ class SynapseHub:
             return
 
         await self._route(sender, msg_type, data, websocket)
+
+    async def _authorise_federation(
+        self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
+    ) -> FrameDisposition:
+        """Classify a frame as local or cross-domain and authorise the cross-domain case.
+
+        With no :class:`~synapse_channel.core.federation.FederationBundle` configured the
+        gate is a no-op and every frame is :attr:`FrameDisposition.LOCAL`. Otherwise a frame
+        is cross-domain only when its Ed25519 ``signature.key_id`` and the **live** peer
+        certificate pin read off the socket resolve, together, to a single peered domain
+        (:func:`~synapse_channel.core.federation.resolve_domain`); the key and pin must
+        belong to the same peer, and neither is ever taken from a self-declared field. A
+        frame that resolves to no peered domain — unsigned, HMAC-authenticated, presented on
+        a plaintext socket, or signed with a local key — is :attr:`FrameDisposition.LOCAL`
+        and takes the ordinary path unchanged.
+
+        A cross-domain frame is authorised deny-closed by composing the peering policy
+        (peered, active, namespace granted, key and pin accepted), the live mutual-TLS pin,
+        the event signature (which must have been *required* and verified — a cross-domain
+        frame on a hub without per-message authentication cannot bind authority and is
+        refused), and the peering's bounded scope evaluated against the frame's required
+        accesses. When every layer allows it the frame is
+        :attr:`FrameDisposition.ALLOW_CROSS_DOMAIN` and is routed without the local ACL — a
+        remote subject has no local ACL identity. Any layer refusing yields
+        :attr:`FrameDisposition.DENY`, an error naming the reason is returned, and the frame
+        is not routed.
+        """
+        if self.federation_bundle is None:
+            return FrameDisposition.LOCAL
+        signature = data.get("signature")
+        key_id = str(signature.get("key_id") or "").strip() if isinstance(signature, dict) else ""
+        if not key_id:
+            return FrameDisposition.LOCAL
+        der = self.federation_cert_source(websocket)
+        if der is None:
+            return FrameDisposition.LOCAL
+        pin = certificate_sha256_pin_from_der(der)
+        domain_id = resolve_domain(self.federation_bundle, key_id=key_id, certificate_pin=pin)
+        if domain_id is None:
+            return FrameDisposition.LOCAL
+        namespace = project_of(sender)
+        decision = self.federation_bundle.authorise(
+            domain_id,
+            namespace=namespace,
+            signing_key_id=key_id,
+            certificate_pin=pin,
+            now=time.time(),
+        )
+        signature_ok = (
+            self.require_per_message_auth
+            and msg_type in DEFAULT_SIGNED_MESSAGE_TYPES
+            and "auth" not in data
+            and self.signed_event_trust_bundle is not None
+        )
+        acl_ok = scope_authorises(
+            required_accesses(msg_type, data), scope=decision.scope, namespace=namespace
+        )
+        if compose_cross_domain(decision, mtls_ok=True, signature_ok=signature_ok, acl_ok=acl_ok):
+            logger.info("Federation allowed %s from %s as domain %s", msg_type, sender, domain_id)
+            return FrameDisposition.ALLOW_CROSS_DOMAIN
+        if not decision.allowed:
+            reason = decision.reason
+        elif not signature_ok:
+            reason = "signature_not_verified"
+        else:
+            reason = "out_of_scope"
+        logger.warning(
+            "Federation denied %s for %s (domain %s): %s", msg_type, sender, domain_id, reason
+        )
+        await self._send_json(
+            websocket,
+            self._system(
+                f"federation denied: {reason}",
+                msg_type=MessageType.ERROR,
+                target=sender,
+                federation_domain=domain_id,
+                federation_reason=reason,
+            ),
+        )
+        return FrameDisposition.DENY
 
     async def _authorise_acl(
         self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
