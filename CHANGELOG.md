@@ -62,6 +62,19 @@ All notable changes to this project are documented here.
   records that it did. A peer's answer reaches another participant only through the injection
   boundary, so the multiplication layer has no injection hole. `BusConvocation` publishes a
   convocation to a live hub. 100% line+branch.
+- Added a third Participant Fabric provider: a headless Kimi driver. `KimiParticipant` runs
+  `kimi --print --output-format stream-json` (adding `-r <id>` for continuity) and parses its
+  JSONL message stream into the same typed `TurnResult` the other drivers produce, so all
+  three compose as uniform peers with no provider-specific code in the orchestration. Three
+  contract differences are handled and documented: Kimi has no system-prompt channel, so the
+  shared context (including any fenced peer contribution) is prepended to the prompt under a
+  separator; its print mode auto-approves tool calls, so a reasoning participant runs in
+  read-only plan mode by default and cannot modify the workspace; and it reports no monetary
+  cost, so its turns carry `cost_usd` of 0 and a conversation's cost budget cannot bound them
+  (only the round cap can). The resume token is read from the provider's stderr, where Kimi
+  reports it, and a `ContinuitySeat` gives a Kimi session memory across turns the same way it
+  does the others. 100% line+branch; the headless turn and real session resume are covered by
+  gated real smoke tests.
 - Added the WASM sandbox getting-started guide (`docs/wasm-sandbox-getting-started.md`):
   an operator walkthrough from a tool's source to a capability-limited run — compile a Rust
   tool to `wasm32-unknown-unknown`, compute its digest and write a deny-by-default manifest,

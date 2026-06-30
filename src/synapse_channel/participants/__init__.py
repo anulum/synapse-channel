@@ -62,6 +62,15 @@ from synapse_channel.participants.headless_codex import (
     build_codex_argv,
     compose_codex_prompt,
 )
+from synapse_channel.participants.headless_kimi import (
+    KimiParticipant,
+    build_kimi_argv,
+    compose_kimi_prompt,
+)
+from synapse_channel.participants.kimi_stream import (
+    extract_kimi_session,
+    parse_kimi_stream,
+)
 from synapse_channel.participants.modes import (
     ConversationMode,
     ModePolicy,
@@ -89,6 +98,7 @@ __all__ = [
     "ConversationTranscript",
     "ConvocationTranscript",
     "ExchangeTranscript",
+    "KimiParticipant",
     "ModePolicy",
     "HeadlessClaudeParticipant",
     "Participant",
@@ -99,16 +109,20 @@ __all__ = [
     "TurnResult",
     "build_claude_argv",
     "build_codex_argv",
+    "build_kimi_argv",
     "build_turn_result",
     "compose_codex_prompt",
+    "compose_kimi_prompt",
     "conduct_conversation",
     "conduct_exchange",
     "convene",
     "error_turn_result",
+    "extract_kimi_session",
     "frame_peer_contribution",
     "frame_peer_panel",
     "parse_claude_stream",
     "parse_codex_stream",
+    "parse_kimi_stream",
     "select_mode",
     "turn_result_from_payload",
     "turn_result_to_payload",
