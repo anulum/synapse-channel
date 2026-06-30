@@ -25,9 +25,17 @@ layer build on these same pieces.
 
 from __future__ import annotations
 
-from synapse_channel.participants.bus_relay import BusConversation, BusExchange
+from synapse_channel.participants.bus_relay import (
+    BusConversation,
+    BusConvocation,
+    BusExchange,
+)
 from synapse_channel.participants.codex_stream import parse_codex_stream
 from synapse_channel.participants.continuity import ContinuitySeat
+from synapse_channel.participants.convene import (
+    ConvocationTranscript,
+    convene,
+)
 from synapse_channel.participants.conversation import (
     ConversationTranscript,
     conduct_conversation,
@@ -54,22 +62,34 @@ from synapse_channel.participants.headless_codex import (
     build_codex_argv,
     compose_codex_prompt,
 )
+from synapse_channel.participants.modes import (
+    ConversationMode,
+    ModePolicy,
+    select_mode,
+)
 from synapse_channel.participants.participant import (
     Participant,
     ParticipantChannel,
     ParticipantHealth,
 )
-from synapse_channel.participants.peer_boundary import frame_peer_contribution
+from synapse_channel.participants.peer_boundary import (
+    frame_peer_contribution,
+    frame_peer_panel,
+)
 from synapse_channel.participants.stream_json import StreamOutcome, parse_claude_stream
 
 __all__ = [
     "ENVELOPE_KIND",
     "BusConversation",
+    "BusConvocation",
     "BusExchange",
     "CodexParticipant",
     "ContinuitySeat",
+    "ConversationMode",
     "ConversationTranscript",
+    "ConvocationTranscript",
     "ExchangeTranscript",
+    "ModePolicy",
     "HeadlessClaudeParticipant",
     "Participant",
     "ParticipantChannel",
@@ -83,10 +103,13 @@ __all__ = [
     "compose_codex_prompt",
     "conduct_conversation",
     "conduct_exchange",
+    "convene",
     "error_turn_result",
     "frame_peer_contribution",
+    "frame_peer_panel",
     "parse_claude_stream",
     "parse_codex_stream",
+    "select_mode",
     "turn_result_from_payload",
     "turn_result_to_payload",
 ]

@@ -49,6 +49,19 @@ All notable changes to this project are documented here.
   same way it does a Claude one. 100% line+branch; the headless turn, real `--resume`
   continuity, and a cross-provider exchange (a Claude turn and a Codex turn in one
   conversation) are each covered by gated real smoke tests.
+- Added the multi-party conversation layer to the Participant Fabric — the part that
+  multiplies reasoning rather than relaying it. A conversation is run in one of three modes,
+  selected for the session: a `Colloquy` (a small, deep exchange), a `Roundtable` (equal
+  participants, one broad refinement pass), or a `Symposium` (a larger gathering whose
+  moderator synthesises a final answer). `convene` runs any mode through one shape: an opening
+  fan-out where every participant answers concurrently, then the mode's cross-critique rounds
+  where each refines having seen the whole panel's answers as fenced data, then a moderator
+  synthesis when the mode uses one. `select_mode` picks the mode from the panel size and
+  whether a moderator is available. Every paid turn is bounded — a capped number of critique
+  rounds and an optional cumulative cost budget that halts the convocation between rounds and
+  records that it did. A peer's answer reaches another participant only through the injection
+  boundary, so the multiplication layer has no injection hole. `BusConvocation` publishes a
+  convocation to a live hub. 100% line+branch.
 - Added the WASM sandbox getting-started guide (`docs/wasm-sandbox-getting-started.md`):
   an operator walkthrough from a tool's source to a capability-limited run — compile a Rust
   tool to `wasm32-unknown-unknown`, compute its digest and write a deny-by-default manifest,

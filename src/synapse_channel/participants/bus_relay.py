@@ -31,12 +31,14 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from synapse_channel.cli_messaging_types import AgentFactory
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.participants.convene import ConvocationTranscript, convene
 from synapse_channel.participants.conversation import (
     ConversationTranscript,
     conduct_conversation,
 )
 from synapse_channel.participants.envelope import TurnResult, turn_result_to_payload
 from synapse_channel.participants.exchange import ExchangeTranscript, conduct_exchange
+from synapse_channel.participants.modes import ConversationMode
 from synapse_channel.participants.participant import Participant
 
 ResultSink = Callable[[TurnResult], Awaitable[None]]
@@ -281,5 +283,95 @@ class BusConversation:
                 topic_id=topic_id,
                 post=post,
                 shared_context=shared_context,
+                budget_usd=budget_usd,
+            )
+
+
+class BusConvocation:
+    """Convene a multi-party conversation in a mode and publish each result to a Synapse hub.
+
+    Parameters
+    ----------
+    identity : str
+        Bus identity the convocation publishes under.
+    participants : Sequence[Participant]
+        The panel that answers each round.
+    moderator : Participant or None, optional
+        Synthesises the final answer; required for a mode that uses one.
+    uri : str, optional
+        Hub WebSocket URI.
+    target : str, optional
+        Recipient for the published results; ``"all"`` broadcasts to the room.
+    token : str or None, optional
+        Shared-secret token for a secured hub.
+    agent_factory : AgentFactory, optional
+        Factory for the bus client; injectable so tests record sends without a hub.
+    ready_timeout : float, optional
+        Seconds to wait for the hub connection to become ready.
+    """
+
+    def __init__(
+        self,
+        identity: str,
+        participants: Sequence[Participant],
+        *,
+        moderator: Participant | None = None,
+        uri: str = DEFAULT_HUB_URI,
+        target: str = "all",
+        token: str | None = None,
+        agent_factory: AgentFactory = SynapseAgent,
+        ready_timeout: float = 5.0,
+    ) -> None:
+        self._participants = participants
+        self._moderator = moderator
+        self._publisher = _BusPublisher(
+            identity,
+            uri=uri,
+            target=target,
+            token=token,
+            agent_factory=agent_factory,
+            ready_timeout=ready_timeout,
+        )
+
+    async def run(
+        self,
+        question: str,
+        *,
+        mode: ConversationMode,
+        topic_id: str,
+        shared_context: str = "",
+        budget_usd: float | None = None,
+    ) -> ConvocationTranscript | None:
+        """Connect, convene the conversation publishing each turn, then disconnect.
+
+        Parameters
+        ----------
+        question : str
+            The question put to the panel.
+        mode : ConversationMode
+            The conversation mode to run.
+        topic_id : str
+            Correlation id stamped on every turn and bus payload.
+        shared_context : str, optional
+            Common framing prepended to every turn's context.
+        budget_usd : float or None, optional
+            Cumulative cost ceiling that halts the convocation early.
+
+        Returns
+        -------
+        ConvocationTranscript or None
+            The transcript, or ``None`` when the hub could not be reached.
+        """
+        async with self._publisher.session() as post:
+            if post is None:
+                return None
+            return await convene(
+                question,
+                self._participants,
+                mode=mode,
+                topic_id=topic_id,
+                post=post,
+                shared_context=shared_context,
+                moderator=self._moderator,
                 budget_usd=budget_usd,
             )

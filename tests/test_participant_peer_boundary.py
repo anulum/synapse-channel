@@ -15,6 +15,7 @@ from synapse_channel.participants.peer_boundary import (
     PEER_FENCE,
     PEER_FENCE_END,
     frame_peer_contribution,
+    frame_peer_panel,
 )
 
 
@@ -80,3 +81,16 @@ def test_error_peer_without_reason_has_a_default() -> None:
 def test_abstained_peer_is_framed_as_no_answer() -> None:
     framed = frame_peer_contribution(_result(answer="", abstained=True))
     assert "the peer abstained" in framed
+
+
+def test_frame_peer_panel_frames_each_contribution() -> None:
+    panel = [_result(answer="first answer"), _result(answer="second answer")]
+    framed = frame_peer_panel(panel)
+    assert "first answer" in framed
+    assert "second answer" in framed
+    # Each contribution is fenced, so two opening fences appear.
+    assert framed.count(PEER_FENCE) == 2
+
+
+def test_frame_peer_panel_is_empty_for_no_results() -> None:
+    assert frame_peer_panel([]) == ""
