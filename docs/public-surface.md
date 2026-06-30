@@ -42,7 +42,7 @@ optional extras and none belongs to the single-dependency local core.
 Read-only inspection and reporting with no coordination side effects. Safe to run
 at any time; they observe state and never mutate the plan or leases.
 
-`accounting`  `conflicts`  `dashboard`  `directory`  `doctor`  `event-query`  `health`  `identity`  `manifest`  `multihub`  `relay`  `reliability`  `state`
+`accounting`  `conflicts`  `dashboard`  `debug`  `directory`  `doctor`  `event-query`  `health`  `identity`  `manifest`  `multihub`  `relay`  `reliability`  `state`
 
 ### Advisory governance — `governance`
 
@@ -50,7 +50,7 @@ Advisory governance: policy, approvals, access control, and release integrity.
 These express and check intent; they advise and record rather than enforce at the
 transport layer.
 
-`acl`  `approval`  `compact`  `encrypt-key`  `federation`  `policy-check`  `postmortem`  `release`  `supervisor`  `verify-release`
+`acl`  `approval`  `compact`  `encrypt-key`  `federation`  `policy-check`  `postmortem`  `release`  `reproduce`  `supervisor`  `verify-release`
 
 ### Experimental — `experimental`
 

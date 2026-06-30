@@ -13,6 +13,19 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse debug ./hub.db --fork-at SEQ` forks a task's reconstructed state at a sequence
+  point: it folds the durable log back into the exact claim state the task held there — owner,
+  status, declared paths, and the saved resume checkpoint — and prints the resume manifest an
+  agent would pick up if the task were rewound to that point, beside the events that really
+  happened next. The task is inferred from the snapshot at the sequence or named with `--task`,
+  and `--set FIELD=VALUE` overrides a resume field on the manifest only. It is read-only
+  inspection over the log: the hub runs no task, so nothing is executed or changed.
+- `synapse reproduce ./hub.db TASK` fingerprints a task's authoritative history into a stable
+  SHA-256 digest of its claim snapshots and releases, so the same history yields the same digest
+  on every machine. `--expect DIGEST` gates on a known-good value and exits non-zero on any
+  divergence, the way a release receipt is verified.
+
 ## [0.76.0] - 2026-06-30
 
 ### Added
