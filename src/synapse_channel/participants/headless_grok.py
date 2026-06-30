@@ -9,13 +9,14 @@
 
 .. warning::
 
-   **Built for completeness; not run here.** The Grok CLI is RAM-hungry and unreliable on this
-   machine, so its model path is not exercised and its output schema was not captured at source
-   (see :mod:`~synapse_channel.participants.grok_stream` and
+   **Ready, but not recommended until xAI ships a stable Grok CLI.** The driver is built and
+   unit-tested, so the integration is ready to enable — but its model path is not exercised and
+   its output schema was not captured at source, because the Grok CLI is not yet stable (xAI has
+   not released a stable version) (see :mod:`~synapse_channel.participants.grok_stream` and
    :data:`~synapse_channel.participants.grok_stream.GROK_SCHEMA_VERIFIED`). The argv this driver
    builds is verified against ``grok --help`` (Grok 0.2.64), but the parsed event shape is the
-   assumed Claude-Code-family convention and must be re-verified before the gated smoke is
-   trusted. The smoke is triple-gated and is not run.
+   assumed Claude-Code-family convention and must be re-verified against a stable Grok CLI before
+   the gated smoke is trusted. The smoke is triple-gated and is not run.
 
 A fifth concrete :class:`~synapse_channel.participants.participant.Participant`, on the
 ``HEADLESS`` channel: the bus owns the invocation, spawning ``grok --single <prompt>

@@ -7,14 +7,14 @@
 # SYNAPSE_CHANNEL — gated real smoke test for the headless Grok participant
 """A gated end-to-end smoke test that would drive a real headless Grok turn.
 
-**Triple-gated and not run here on purpose.** The Grok CLI is RAM-hungry and unreliable on this
-machine, and its output schema is unverified
+**Triple-gated and not run here on purpose.** Grok support is ready, but not recommended until
+xAI ships a stable Grok CLI: the CLI is not yet stable, so its output schema is unverified
 (:data:`~synapse_channel.participants.grok_stream.GROK_SCHEMA_VERIFIED` is ``False``). On top of
 the usual two gates — the ``grok`` binary on ``PATH`` and ``SYNAPSE_PARTICIPANT_REAL_SMOKE=1`` —
 this smoke also requires ``SYNAPSE_GROK_SMOKE=1`` so it stays skipped even in the environment
-that runs the other providers' real smokes. Run it, and use what it prints, only once Grok is
-usable and the stream schema has been captured and verified at source; until then it is the
-test that confirms the Grok schema is still unverified.
+that runs the other providers' real smokes. Run it, and use what it prints, only once a stable
+Grok CLI is available and the stream schema has been captured and verified at source; until then
+it is the test that confirms the Grok schema is still unverified.
 """
 
 from __future__ import annotations
@@ -34,9 +34,9 @@ _REAL_SMOKE_ENABLED = (
 )
 
 _SKIP_REASON = (
-    "Grok is built but not run here: set SYNAPSE_GROK_SMOKE=1 *and* "
-    "SYNAPSE_PARTICIPANT_REAL_SMOKE=1 with a usable grok CLI, and verify the stream schema "
-    "at source, before trusting this smoke"
+    "Grok is ready but not recommended until xAI ships a stable Grok CLI: set "
+    "SYNAPSE_GROK_SMOKE=1 *and* SYNAPSE_PARTICIPANT_REAL_SMOKE=1 with a stable grok CLI, and "
+    "verify the stream schema at source, before trusting this smoke"
 )
 
 pytestmark = pytest.mark.skipif(not _REAL_SMOKE_ENABLED, reason=_SKIP_REASON)
