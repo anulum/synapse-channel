@@ -828,8 +828,11 @@ asks what it would take to run untrusted tool code safely — a capability-limit
 WebAssembly sandbox (deny-by-default filesystem, network, and resources) — and
 only then a marketplace built on signed capability cards, an explicit permission
 manifest, and run receipts. No untrusted code runs without the sandbox, and no
-executable marketplace ships before all the preconditions exist. Not implemented;
-local-first and deny-by-default throughout.
+executable marketplace ships before all the preconditions exist. The sandbox itself
+ships today behind the optional `[wasm]` extra; the
+[WASM sandbox getting-started guide](docs/wasm-sandbox-getting-started.md) walks an
+operator from a tool's source through `validate`, `test`, and `run`. The marketplace
+remains a boundary specification — local-first and deny-by-default throughout.
 
 The [managed GitHub App design](docs/managed-github-app.md) pins the boundary for
 hosted cross-PR conflict prediction: the prediction itself reuses the existing
@@ -956,9 +959,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 254 |
 | Wire message types | 61 |
 | CLI subcommands | 102 |
-| Test functions | 2606 |
+| Test functions | 2612 |
 | Benchmark harnesses | 6 |
-| Documentation pages | 45 |
+| Documentation pages | 46 |
 | GitHub Actions workflows | 12 |
 | Optional-dependency groups | 6 |
 
