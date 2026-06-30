@@ -26,6 +26,7 @@ layer build on these same pieces.
 from __future__ import annotations
 
 from synapse_channel.participants.bus_relay import BusConversation, BusExchange
+from synapse_channel.participants.codex_stream import parse_codex_stream
 from synapse_channel.participants.continuity import ContinuitySeat
 from synapse_channel.participants.conversation import (
     ConversationTranscript,
@@ -48,6 +49,11 @@ from synapse_channel.participants.headless_claude import (
     HeadlessClaudeParticipant,
     build_claude_argv,
 )
+from synapse_channel.participants.headless_codex import (
+    CodexParticipant,
+    build_codex_argv,
+    compose_codex_prompt,
+)
 from synapse_channel.participants.participant import (
     Participant,
     ParticipantChannel,
@@ -60,6 +66,7 @@ __all__ = [
     "ENVELOPE_KIND",
     "BusConversation",
     "BusExchange",
+    "CodexParticipant",
     "ContinuitySeat",
     "ConversationTranscript",
     "ExchangeTranscript",
@@ -71,12 +78,15 @@ __all__ = [
     "TurnRequest",
     "TurnResult",
     "build_claude_argv",
+    "build_codex_argv",
     "build_turn_result",
+    "compose_codex_prompt",
     "conduct_conversation",
     "conduct_exchange",
     "error_turn_result",
     "frame_peer_contribution",
     "parse_claude_stream",
+    "parse_codex_stream",
     "turn_result_from_payload",
     "turn_result_to_payload",
 ]
