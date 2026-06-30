@@ -13,6 +13,19 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Made the Participant Fabric's session telemetry durable. A session's running operational
+  metrics (turns, errors, abstentions, cumulative tokens, spend, latency, and the highest
+  rate-limit utilisation) can now be recorded to the progress ledger as an opt-in
+  `session_metric` note and read back across processes and sessions. `emit_session_metric`
+  mirrors the usage-note bridge — it is opt-in, default off, skips an empty session, and never
+  raises into the turn it observes — and `run_session_metric_report` /
+  `build_session_metric_report` reduce those notes to the latest cumulative snapshot per
+  session and total across sessions, rendering both human text and a stable JSON shape. The
+  hub core remains a no-telemetry substrate: the snapshots ride the existing progress-ledger
+  channel, introduce no new wire message or stored-event kind, and are descriptive evidence,
+  not an enforcement gate.
+
 ## [0.72.0] - 2026-06-30
 
 ### Added
