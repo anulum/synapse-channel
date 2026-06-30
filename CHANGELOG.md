@@ -22,6 +22,14 @@ All notable changes to this project are documented here.
   malformed body raises rather than yielding a half-built batch, so the fetching follower can
   fail the poll and leave the peer's cursor unadvanced. This is the first step toward following a
   peer hub over a real connection rather than only over a shared filesystem.
+- Added the serving half of the multi-hub event-log pull: a hub now answers a peer's
+  `multihub_log_request` (an `after_seq` cursor and optional `limit`) with a private
+  `multihub_log_snapshot` carrying the events past the cursor and a `next_cursor` to resume from,
+  read through the durable event log's existing cursor. The handler is read-only — it mutates
+  nothing and the access layer leaves it ungated like the other read snapshots — and forgiving of
+  a malformed request (it answers with an empty snapshot rather than an error); a hub running
+  without persistence serves an empty snapshot anchored at the requested cursor. This is the
+  network counterpart of the follower's shared-filesystem reader.
 - Added an opt-in step that turns the deliberation advisor's per-round signals into automatic
   actions. The advisor stays purely advisory; this separate reactor lets an orchestrator arm a
   chosen subset of signals (`compact-soon`, `log-now`, `high-error-rate`) to trigger a compact,

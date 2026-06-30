@@ -146,6 +146,7 @@ class MessageType:
     CHANNEL_LEAVE = "channel_leave"
     CHANNEL_LIST_REQUEST = "channel_list_request"
     CHANNEL_HISTORY_REQUEST = "channel_history_request"
+    MULTIHUB_LOG_REQUEST = "multihub_log_request"
 
     # Hub -> agent.
     SYSTEM = "system"
@@ -179,6 +180,7 @@ class MessageType:
     CHANNEL_RESULT = "channel_result"
     CHANNEL_LIST = "channel_list"
     CHANNEL_HISTORY = "channel_history"
+    MULTIHUB_LOG_SNAPSHOT = "multihub_log_snapshot"
     ERROR = "error"
     NAME_CONFLICT = "name_conflict"
     AUTH_DENIED = "auth_denied"
