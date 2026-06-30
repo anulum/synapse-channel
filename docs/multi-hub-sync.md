@@ -200,6 +200,17 @@ This keeps the strong invariant local: each hub grants claims authoritatively fo
 its own namespaces with no network round-trip, and only the *observed* view of
 other namespaces is eventually consistent.
 
+The resolution behind this rule ships in `core/namespace_ownership.py`: a
+`NamespaceOwnership` map records the single owning hub per namespace and resolves a
+namespace to *local* (grant here), *remote* (a named peer owns it), *ungoverned*, or
+*partitioned*, the last two failing closed. A hub configured with such a map enforces
+it on the grant path — a claim whose namespace (derived from the agent identity, as the
+ACL derives it) the hub does not own is refused with a `claim_denied` naming the owning
+hub, so the caller knows where to route it; a hub with no map grants every namespace, as
+a single hub does today. What is **not** yet built is the networked half: forwarding the
+refused claim to the owning hub over a connection and relaying the grant back. Today the
+caller is told the owner and must reconnect to it.
+
 ## Sync transport
 
 Sync rides the existing seams rather than inventing a new protocol surface: a peer
@@ -220,14 +231,17 @@ own.
 ## Boundaries
 
 The read-side (merge, fold, follower), the cross-host event-log pull (`observe` and
-`follow`), and the deny-by-default federation/mTLS gate on **both** the following and the
-serving side (`MultiHubServingPolicy` reads the peer's live certificate) are implemented.
-Multi-hub **sync** as a whole — routing real claims by namespace ownership — is **not
+`follow`), the deny-by-default federation/mTLS gate on **both** the following and the
+serving side (`MultiHubServingPolicy` reads the peer's live certificate), and the
+namespace-ownership resolution with its local grant-path enforcement
+(`NamespaceOwnership`) are implemented. What remains of multi-hub **sync** — forwarding a
+real claim to its owning hub over a connection and relaying the grant back — is **not
 implemented**. It is a research boundary, and the design is deliberately conservative.
 
 - **Claims are not a CRDT.** Mutual exclusion is not conflict-free; the design uses
   single-owner-per-namespace, not claim merging, and fails closed on an ownership
-  partition. Claim routing across hubs is the unbuilt part.
+  partition. The ownership resolution and the local refusal of an unowned namespace ship;
+  the cross-hub forwarding of the claim to the owner is the unbuilt part.
 - It does **not** add a new always-on wire surface casually — the pull is a request/snapshot
   message pair on the existing hub server, reusing the event log, `read_since` seam, and
   mTLS peer bundles; it adds no always-on cross-hub service to the local core.

@@ -39,7 +39,7 @@ from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request, Response
 
 from synapse_channel.core.acl import AclPolicy
-from synapse_channel.core.acl_enforcement import authorise_frame
+from synapse_channel.core.acl_enforcement import authorise_frame, project_of
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.channels import ChannelRegistry
@@ -75,6 +75,7 @@ from synapse_channel.core.message_auth import (
     verify_frame,
 )
 from synapse_channel.core.multihub_serving import MultiHubServingPolicy
+from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import (
     MessageType,
@@ -274,6 +275,10 @@ class SynapseHub:
         Deny-by-default gate for serving the event log to peer hubs over a multi-hub pull.
         ``None`` (the default) serves every peer; a policy refuses a peer whose live
         certificate it does not trust, mirroring the following side's pull gate.
+    namespace_ownership : NamespaceOwnership or None, optional
+        Single-authoritative-hub map that routes claims by namespace ownership. ``None`` (the
+        default) lets the hub grant claims in every namespace, preserving single-hub behaviour;
+        a map refuses a claim whose namespace this hub does not own, fail-closed.
     """
 
     def __init__(
@@ -319,6 +324,7 @@ class SynapseHub:
         acl_policy: AclPolicy | None = None,
         require_acl: bool = False,
         multihub_serving_policy: MultiHubServingPolicy | None = None,
+        namespace_ownership: NamespaceOwnership | None = None,
     ) -> None:
         self.journal = journal
         self.enable_metrics = bool(enable_metrics)
@@ -342,6 +348,7 @@ class SynapseHub:
         self.acl_policy = acl_policy
         self.require_acl = bool(require_acl)
         self.multihub_serving_policy = multihub_serving_policy
+        self.namespace_ownership = namespace_ownership
         self.channels = ChannelRegistry()
         self.max_msg_bytes = max(int(max_msg_bytes), 1)
         self._clock = clock or time.monotonic
@@ -736,6 +743,9 @@ class SynapseHub:
         if not await self._authorise_acl(sender, msg_type, data, websocket):
             return
 
+        if not await self._authorise_claim_ownership(sender, msg_type, data, websocket):
+            return
+
         await self._route(sender, msg_type, data, websocket)
 
     async def _authorise_acl(
@@ -770,6 +780,55 @@ class SynapseHub:
                 target=sender,
                 acl_decision=denial.decision,
                 acl_reason=denial.reason,
+            ),
+        )
+        return False
+
+    async def _authorise_claim_ownership(
+        self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
+    ) -> bool:
+        """Refuse a claim grant for a namespace this hub does not authoritatively own.
+
+        Claims are mutual exclusion and are routed by namespace ownership, never merged: a hub
+        grants claims only for the namespaces it owns, so two hubs never grant the same scope.
+        When a :class:`~synapse_channel.core.namespace_ownership.NamespaceOwnership` map is
+        configured, a claim whose namespace — derived from the sender identity exactly as the
+        ACL derives it — this hub does not own is refused fail-closed. Remote-owned, ungoverned,
+        and contested namespaces all decline; the refusal names the owning hub, so the caller
+        can route the claim there. With no map configured the hub owns every namespace it is
+        asked about, preserving single-hub behaviour.
+
+        Returns
+        -------
+        bool
+            ``True`` when the claim may be routed to the local grant path; ``False`` when it was
+            refused (a :data:`~synapse_channel.core.protocol.MessageType.CLAIM_DENIED` was sent).
+        """
+        if self.namespace_ownership is None or msg_type != MessageType.CLAIM:
+            return True
+        namespace = project_of(sender)
+        decision = self.namespace_ownership.resolve(namespace)
+        if decision.grants_locally:
+            return True
+        task_id = str(data.get("task_id") or data.get("payload") or "").strip()
+        logger.warning(
+            "Claim refused for %s: namespace %r is %s (owner %s)",
+            sender,
+            namespace,
+            decision.outcome.value,
+            decision.owner_hub_id,
+        )
+        await self._send_json(
+            websocket,
+            self._system(
+                f"claim refused: this hub does not own namespace {namespace!r} "
+                f"({decision.outcome.value})",
+                msg_type=MessageType.CLAIM_DENIED,
+                target=sender,
+                task_id=task_id,
+                namespace=namespace,
+                ownership=decision.outcome.value,
+                owner_hub_id=decision.owner_hub_id,
             ),
         )
         return False
