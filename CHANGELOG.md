@@ -116,6 +116,22 @@ All notable changes to this project are documented here.
   are served one at a time, and a payload that is not a turn request, or that carries no usable
   sender, takes no turn; an unready hub ends serving without answering. No new dependency;
   100% line+branch.
+- Added the two bus-mediated participant channels on top of the relay. A `PtyParticipant` fronts
+  a terminal agent reading from a tmux pane: it relays the turn over the bus and supplies the
+  relay's wake hook by injecting the fixed, payload-free wake prompt into the pane, so the task
+  travels as bus data and only the routing nudge touches the terminal. An `McpParticipant` fronts
+  a peer already listening on the bus through its own waker and the Synapse MCP tools, so it
+  relays with no wake at all. Both front exactly one peer — the seat's identity is that peer's bus
+  identity, which the relay addresses and matches the reply by, while the relay connects under a
+  separate sender identity. A peer running the responder answers with a typed result; a peer
+  without one still answers through the degraded free-text fallback. No new dependency;
+  100% line+branch.
+- Added a channel selector that chooses how to drive a provider. `select_channel` reads a small
+  capabilities descriptor — whether the peer is reachable over MCP, the name of its headless
+  binary, whether a tmux session is configured — and returns the most robust available channel in
+  the `MCP > HEADLESS > PTY` order, with the headless rung counting only when its binary resolves
+  on `PATH`. A provider that exposes no usable channel selects nothing, so a caller reports it as
+  undrivable rather than guessing. 100% line+branch.
 - Added the WASM sandbox getting-started guide (`docs/wasm-sandbox-getting-started.md`):
   an operator walkthrough from a tool's source to a capability-limited run — compile a Rust
   tool to `wasm32-unknown-unknown`, compute its digest and write a deny-by-default manifest,
