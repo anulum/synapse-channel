@@ -89,7 +89,8 @@ class TurnResult(TypedDict):
     ``cost_usd`` the metered spend, which the conversation layer sums against a budget.
     ``model`` is the model the turn was attributed to and ``input_tokens`` / ``output_tokens``
     the provider-reported token split — carried so the Fabric can feed the opt-in usage
-    accounting rather than discard the counts.
+    accounting rather than discard the counts. ``rate_limit_utilisation`` is the provider's last
+    reported rate-limit fraction (or ``None``), carried so a router can read a provider's headroom.
     """
 
     kind: str
@@ -107,6 +108,7 @@ class TurnResult(TypedDict):
     model: str
     input_tokens: int
     output_tokens: int
+    rate_limit_utilisation: float | None
 
 
 def turn_request_to_payload(request: TurnRequest) -> str:
@@ -220,6 +222,7 @@ def build_turn_result(
         model=request.model,
         input_tokens=outcome.input_tokens,
         output_tokens=outcome.output_tokens,
+        rate_limit_utilisation=outcome.rate_limit_utilisation,
     )
 
 
@@ -264,6 +267,7 @@ def error_turn_result(
         model=request.model,
         input_tokens=0,
         output_tokens=0,
+        rate_limit_utilisation=None,
     )
 
 
@@ -351,6 +355,7 @@ def turn_result_from_payload(payload: str) -> TurnResult | None:
         model=str(raw.get("model", "")),
         input_tokens=_as_int(raw.get("input_tokens", 0)),
         output_tokens=_as_int(raw.get("output_tokens", 0)),
+        rate_limit_utilisation=_as_optional_float(raw.get("rate_limit_utilisation")),
     )
 
 
@@ -375,3 +380,17 @@ def _as_int(value: Any) -> int:
     except (TypeError, ValueError):
         return 0
     return max(0, parsed)
+
+
+def _as_optional_float(value: Any) -> float | None:
+    """Return ``value`` as a float, or ``None`` when it is absent or non-numeric.
+
+    Used for an optional signal (rate-limit utilisation) where a missing value is meaningful, so
+    ``None`` is preserved rather than coerced to zero; a boolean is rejected.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

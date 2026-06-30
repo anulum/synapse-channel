@@ -59,6 +59,7 @@ class _PanelParticipant:
             model="",
             input_tokens=0,
             output_tokens=0,
+            rate_limit_utilisation=None,
         )
 
     def health(self) -> ParticipantHealth:  # pragma: no cover - unused here

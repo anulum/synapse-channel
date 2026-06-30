@@ -65,6 +65,10 @@ class StreamOutcome:
         Captured so the Fabric can feed the opt-in usage accounting rather than discard it.
     output_tokens : int
         Completion/output tokens the provider reported for this turn (``0`` when none reported).
+    rate_limit_utilisation : float or None
+        The provider's last reported rate-limit utilisation for this turn, in ``[0, 1]``, or
+        ``None`` when none was reported. Captured so a router can deprioritise a provider that is
+        close to its limit rather than discarding the signal.
     """
 
     answer: str
@@ -77,6 +81,7 @@ class StreamOutcome:
     stop_reason: str
     input_tokens: int = 0
     output_tokens: int = 0
+    rate_limit_utilisation: float | None = None
 
 
 def parse_claude_stream(lines: Iterable[str]) -> StreamOutcome:
@@ -99,6 +104,7 @@ def parse_claude_stream(lines: Iterable[str]) -> StreamOutcome:
     rationale_parts: list[str] = []
     streamed_text_parts: list[str] = []
     session_id = ""
+    rate_limit_utilisation: float | None = None
     result_event: dict[str, Any] | None = None
 
     for line in lines:
@@ -112,6 +118,10 @@ def parse_claude_stream(lines: Iterable[str]) -> StreamOutcome:
             _collect_assistant_blocks(event, rationale_parts, streamed_text_parts)
         elif event_type == "result":
             result_event = event
+        elif event_type == "rate_limit_event":
+            utilisation = _rate_limit_utilisation(event)
+            if utilisation is not None:
+                rate_limit_utilisation = utilisation
 
     if result_event is None:
         return StreamOutcome(
@@ -123,6 +133,7 @@ def parse_claude_stream(lines: Iterable[str]) -> StreamOutcome:
             cost_usd=0.0,
             num_turns=0,
             stop_reason="",
+            rate_limit_utilisation=rate_limit_utilisation,
         )
 
     answer = result_event.get("result")
@@ -138,6 +149,7 @@ def parse_claude_stream(lines: Iterable[str]) -> StreamOutcome:
         stop_reason=_str_or(result_event.get("stop_reason"), ""),
         input_tokens=input_tokens,
         output_tokens=output_tokens,
+        rate_limit_utilisation=rate_limit_utilisation,
     )
 
 
@@ -172,6 +184,22 @@ def _collect_assistant_blocks(
             rationale_parts.append(block["thinking"])
         elif block.get("type") == "text" and isinstance(block.get("text"), str):
             streamed_text_parts.append(block["text"])
+
+
+def _rate_limit_utilisation(event: dict[str, Any]) -> float | None:
+    """Return the utilisation from a ``rate_limit_event``, or ``None`` when absent.
+
+    The captured shape carries ``rate_limit_info.utilization`` (a fraction). A missing or
+    non-numeric value yields ``None`` so an absent signal is never invented; a boolean is rejected
+    because ``bool`` is a subclass of ``int``.
+    """
+    info = event.get("rate_limit_info")
+    if not isinstance(info, dict):
+        return None
+    utilisation = info.get("utilization")
+    if isinstance(utilisation, bool) or not isinstance(utilisation, (int, float)):
+        return None
+    return float(utilisation)
 
 
 def _usage_tokens(usage: Any) -> tuple[int, int]:
