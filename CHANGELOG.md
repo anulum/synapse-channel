@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.76.0] - 2026-06-30
+
 ### Added
 - A hub can now load its federation policy from an imported store at startup with
   `synapse hub --federation-store FILE`, so a peering imported with `synapse federation
