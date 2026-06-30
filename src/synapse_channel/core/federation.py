@@ -189,6 +189,48 @@ class FederationBundle:
         return FederationDecision(allowed=False, domain_id=domain_id, reason=reason)
 
 
+def resolve_domain(
+    bundle: FederationBundle,
+    *,
+    key_id: str,
+    certificate_pin: str,
+) -> str | None:
+    """Resolve the peered domain a frame belongs to, from verified credentials only.
+
+    A cross-domain frame is identified, and its issuing domain resolved, from material
+    the hub has already verified — never a self-declared field. The caller supplies the
+    Ed25519 ``key_id`` taken from the *verified* ``signature.key_id`` and the
+    ``certificate_pin`` read off the *live* mutual-TLS socket. A peering owns the frame
+    only when it accepts **both**: the same domain must enumerate the signing key and the
+    certificate pin, so a real key presented over a different domain's connection resolves
+    to neither (fail-closed).
+
+    Parameters
+    ----------
+    bundle : FederationBundle
+        The operator-confirmed peerings to resolve against.
+    key_id : str
+        The verified Ed25519 signing-key id the frame was signed with.
+    certificate_pin : str
+        The ``sha256:<hex>`` pin of the live peer certificate.
+
+    Returns
+    -------
+    str or None
+        The single peered ``domain_id`` that accepts both the key id and the pin; ``None``
+        when no peering accepts both (a local or unpeered frame) or when more than one does
+        (a misconfiguration, refused deny-closed rather than guessed).
+    """
+    matches = [
+        peer.domain_id
+        for peer in bundle._peers.values()
+        if key_id in peer.signing_key_ids and certificate_pin in peer.certificate_pins
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
 def compose_cross_domain(
     decision: FederationDecision,
     *,

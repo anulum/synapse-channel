@@ -15,6 +15,7 @@ from synapse_channel.core.federation import (
     FederationPeer,
     ScopeGrant,
     compose_cross_domain,
+    resolve_domain,
 )
 
 
@@ -138,3 +139,43 @@ def test_compose_requires_every_layer_to_allow() -> None:
     assert compose_cross_domain(allowed, mtls_ok=True, signature_ok=True, acl_ok=False) is False
     # a denied federation policy cannot be rescued by passing external checks
     assert compose_cross_domain(denied, mtls_ok=True, signature_ok=True, acl_ok=True) is False
+
+
+def test_resolve_domain_matches_a_single_peer_on_key_and_pin() -> None:
+    bundle = FederationBundle([_peer()])
+    assert resolve_domain(bundle, key_id="key-1", certificate_pin="sha256:aa") == "acme"
+
+
+def test_resolve_domain_requires_the_same_peer_to_accept_both() -> None:
+    # acme accepts key-1/sha256:aa; globex accepts key-2/sha256:bb. A key from one
+    # presented over the other's connection resolves to neither (fail-closed).
+    bundle = FederationBundle(
+        [
+            _peer(),
+            _peer(
+                domain_id="globex",
+                signing_key_ids=frozenset({"key-2"}),
+                certificate_pins=frozenset({"sha256:bb"}),
+            ),
+        ]
+    )
+    assert resolve_domain(bundle, key_id="key-1", certificate_pin="sha256:bb") is None
+    assert resolve_domain(bundle, key_id="key-2", certificate_pin="sha256:aa") is None
+    # each peer still resolves on its own matched pair
+    assert resolve_domain(bundle, key_id="key-1", certificate_pin="sha256:aa") == "acme"
+    assert resolve_domain(bundle, key_id="key-2", certificate_pin="sha256:bb") == "globex"
+
+
+def test_resolve_domain_returns_none_when_unpeered() -> None:
+    bundle = FederationBundle([_peer()])
+    # a key/pin no peering enumerates -> not cross-domain (a local frame)
+    assert resolve_domain(bundle, key_id="local-key", certificate_pin="sha256:aa") is None
+    assert resolve_domain(bundle, key_id="key-1", certificate_pin="sha256:zz") is None
+    # an empty bundle peers nothing
+    assert resolve_domain(FederationBundle(), key_id="key-1", certificate_pin="sha256:aa") is None
+
+
+def test_resolve_domain_is_deny_closed_on_ambiguity() -> None:
+    # two peerings accept the same key_id+pin -> a misconfiguration, refused not guessed.
+    bundle = FederationBundle([_peer(), _peer(domain_id="globex")])
+    assert resolve_domain(bundle, key_id="key-1", certificate_pin="sha256:aa") is None
