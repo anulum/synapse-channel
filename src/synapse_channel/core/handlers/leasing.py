@@ -20,6 +20,8 @@ never acted upon.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.deadlock import would_create_cycle
@@ -42,19 +44,70 @@ from synapse_channel.core.state import GitContext
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
+    from synapse_channel.core.state_models import TaskClaim
 
 
-async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
-    """Apply a scoped claim request and broadcast the grant, or deny the sender."""
-    task_id = str(data.get("task_id") or data.get("payload") or "").strip()
-    note = str(data.get("note") or "")
-    ttl_seconds = data.get("ttl_seconds")
-    worktree = str(data.get("worktree") or "")
-    raw_paths = data.get("paths")
+@dataclass(frozen=True)
+class ClaimApplication:
+    """The outcome of applying a claim to the hub's authoritative lease state.
+
+    Attributes
+    ----------
+    ok : bool
+        Whether the lease was acquired or renewed.
+    message : str
+        The human-readable grant or denial message from the state mutation.
+    task_id : str
+        The claimed task id as parsed from the request body (stripped); always present so
+        a denial can still address the right task.
+    claim : TaskClaim or None
+        The granted lease on success, or ``None`` when the claim was refused.
+    """
+
+    ok: bool
+    message: str
+    task_id: str
+    claim: TaskClaim | None
+
+
+def apply_claim(hub: SynapseHub, claimant: str, body: Mapping[str, Any]) -> ClaimApplication:
+    """Apply a scoped claim to the hub's state on a claimant's behalf, journalling a grant.
+
+    This is the authoritative grant core, shared by a direct claim and a claim forwarded
+    from another hub. It reads the claim parameters from ``body`` exactly as a direct
+    request does, applies the lease through
+    :meth:`~synapse_channel.core.state.SynapseState.claim`, and on success clears the
+    claimant's wait and journals the claim. It deliberately does **not** broadcast or relay
+    the outcome: the caller decides whether a grant is announced locally
+    (:func:`handle_claim`) or returned to a forwarding peer
+    (:func:`synapse_channel.core.handlers.multihub_claim.handle_multihub_claim_request`), so
+    the one place a claim is granted stays the one place its lease is mutated.
+
+    Parameters
+    ----------
+    hub : SynapseHub
+        The hub whose state and journal the claim is applied to.
+    claimant : str
+        The agent the lease is granted under — the direct sender, or the original claimant
+        on whose behalf another hub forwards the request.
+    body : dict[str, Any]
+        The claim body: ``task_id`` (or ``payload``), and the optional ``note``,
+        ``ttl_seconds``, ``worktree``, ``paths``, and ``git`` scope.
+
+    Returns
+    -------
+    ClaimApplication
+        The outcome; :attr:`ClaimApplication.claim` is set only when the lease was granted.
+    """
+    task_id = str(body.get("task_id") or body.get("payload") or "").strip()
+    note = str(body.get("note") or "")
+    ttl_seconds = body.get("ttl_seconds")
+    worktree = str(body.get("worktree") or "")
+    raw_paths = body.get("paths")
     paths = [str(p) for p in raw_paths] if isinstance(raw_paths, list) else []
     # The git context is opaque to the hub: deserialise it for storage and
     # display, but never act on it (the hub runs no git, reads no filesystem).
-    raw_git = data.get("git")
+    raw_git = body.get("git")
     git = GitContext.from_dict(raw_git) if isinstance(raw_git, dict) else None
 
     ttl_val: float | None
@@ -67,7 +120,7 @@ async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], webso
             ttl_val = None
 
     ok, message = hub.state.claim(
-        sender,
+        claimant,
         task_id,
         note=note,
         ttl_seconds=ttl_val,
@@ -77,23 +130,54 @@ async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], webso
     )
     if ok:
         claim = hub.state.claims[task_id]
-        hub._waits.pop(sender, None)  # a successful claim means no longer blocked
+        hub._waits.pop(claimant, None)  # a successful claim means no longer blocked
         if hub.journal is not None:
             record_claim(hub.journal, claim)
+        return ClaimApplication(ok=True, message=message, task_id=task_id, claim=claim)
+    return ClaimApplication(ok=False, message=message, task_id=task_id, claim=None)
+
+
+def claim_grant_fields(claim: TaskClaim) -> dict[str, Any]:
+    """Return the ``CLAIM_GRANTED`` message fields for a granted claim.
+
+    Shared by every path that announces a grant — a direct claim broadcast and a forwarded
+    claim relayed back to its originating hub — so the grant a client sees is identical
+    however the claim was routed.
+
+    Parameters
+    ----------
+    claim : TaskClaim
+        The granted lease.
+
+    Returns
+    -------
+    dict[str, Any]
+        The grant fields: task id, owner, note, lease expiry, status, worktree, paths,
+        epoch, version, checkpoint, and the opaque git context (``None`` when unset).
+    """
+    return {
+        "task_id": claim.task_id,
+        "owner": claim.owner,
+        "note": claim.note,
+        "lease_expires_at": claim.lease_expires_at,
+        "status": claim.status,
+        "worktree": claim.worktree,
+        "paths": list(claim.paths),
+        "epoch": claim.epoch,
+        "version": claim.version,
+        "checkpoint": claim.checkpoint,
+        "git": claim.git.as_dict() if claim.git is not None else None,
+    }
+
+
+async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
+    """Apply a scoped claim request and broadcast the grant, or deny the sender."""
+    application = apply_claim(hub, sender, data)
+    if application.claim is not None:
         grant = hub._system(
-            message,
+            application.message,
             msg_type=MessageType.CLAIM_GRANTED,
-            task_id=task_id,
-            owner=claim.owner,
-            note=claim.note,
-            lease_expires_at=claim.lease_expires_at,
-            status=claim.status,
-            worktree=claim.worktree,
-            paths=list(claim.paths),
-            epoch=claim.epoch,
-            version=claim.version,
-            checkpoint=claim.checkpoint,
-            git=claim.git.as_dict() if claim.git is not None else None,
+            **claim_grant_fields(application.claim),
         )
         hub._remember(data, grant)
         await hub._broadcast(grant)
@@ -101,10 +185,10 @@ async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], webso
     await hub._send_json(
         websocket,
         hub._system(
-            message,
+            application.message,
             msg_type=MessageType.CLAIM_DENIED,
             target=sender,
-            task_id=task_id,
+            task_id=application.task_id,
         ),
     )
 

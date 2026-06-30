@@ -14,6 +14,17 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the serving half of cross-hub claim forwarding: an owning hub now grants a claim
+  forwarded from another hub and relays the authoritative verdict back. When a non-owning hub
+  forwards a claim, the owning hub applies it through the same authoritative grant path a direct
+  claim uses — so the lease it produces is identical however the claim was routed — and answers
+  with whether it granted, the owning hub's id, and the grant fields the forwarding hub relays to
+  its client. Because a forwarded claim mutates lease state on a remote agent's behalf, the gate
+  fails closed at every step: the peer must be authorised by the hub's serving policy (a hub with
+  no policy accepts no forwarded claim at all), this hub must authoritatively and uncontestedly
+  own the namespace, and a malformed request grants nothing. Reaching out to the owning hub from
+  the non-owning side is the remaining slice; until then a non-owner still refuses and names the
+  owner.
 - Added the wire codec for forwarding a claim to the hub that owns its namespace. It names the
   two shapes that exchange uses — a request carrying the namespace, the claimant the grant is made
   under, the task id, and the original claim body the owning hub re-applies, and a result carrying
