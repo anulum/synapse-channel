@@ -157,6 +157,15 @@ All notable changes to this project are documented here.
   malformed one dropped rather than coerced. The signal travels on the turn result so a router can
   read a provider's headroom and deprioritise one close to its limit, instead of the awareness
   being thrown away. 100% line+branch.
+- Added a provider/model router that chooses which model should answer a task. Where the channel
+  selector answers how to drive one provider, `select_provider` answers which to drive: from a task
+  profile (required capability tags, expected token sizes) and a set of candidate models, it keeps
+  the candidates that are drivable and carry every required capability, then ranks the survivors by
+  rate-limit headroom (a candidate at or over its limit is dropped, so the captured rate-limit
+  signal steers load away from a throttling provider), then estimated cost (a local unpriced model
+  ranks free), then channel robustness. It returns the winning candidate with its channel and the
+  cost it was ranked on, or nothing when the task is unroutable. The router is pure and selects but
+  never constructs a participant, leaving that to the caller. 100% line+branch.
 - Added the WASM sandbox getting-started guide (`docs/wasm-sandbox-getting-started.md`):
   an operator walkthrough from a tool's source to a capability-limited run — compile a Rust
   tool to `wasm32-unknown-unknown`, compute its digest and write a deny-by-default manifest,
