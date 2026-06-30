@@ -51,6 +51,7 @@ from synapse_channel.participants.envelope import (
     TurnResult,
     build_turn_result,
     error_turn_result,
+    stamp_model,
     turn_request_from_payload,
     turn_request_to_payload,
     turn_result_from_payload,
@@ -119,6 +120,7 @@ from synapse_channel.participants.turn_responder import (
     ResponderSettings,
     TurnResponder,
 )
+from synapse_channel.participants.usage_emit import emit_usage
 
 __all__ = [
     "DEGRADED_FREETEXT_STOP",
@@ -163,6 +165,7 @@ __all__ = [
     "conduct_conversation",
     "conduct_exchange",
     "convene",
+    "emit_usage",
     "error_turn_result",
     "extract_kimi_session",
     "frame_peer_contribution",
@@ -176,6 +179,7 @@ __all__ = [
     "relay_turn",
     "select_channel",
     "select_mode",
+    "stamp_model",
     "turn_request_from_payload",
     "turn_request_to_payload",
     "turn_result_from_payload",

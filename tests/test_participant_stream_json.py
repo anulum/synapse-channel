@@ -65,19 +65,21 @@ def _result(
     cost: float = 0.0238,
     num_turns: int = 1,
     stop_reason: str = "end_turn",
+    usage: object | None = None,
 ) -> str:
-    return json.dumps(
-        {
-            "type": "result",
-            "subtype": subtype,
-            "is_error": is_error,
-            "result": answer,
-            "session_id": session_id,
-            "total_cost_usd": cost,
-            "num_turns": num_turns,
-            "stop_reason": stop_reason,
-        }
-    )
+    event: dict[str, object] = {
+        "type": "result",
+        "subtype": subtype,
+        "is_error": is_error,
+        "result": answer,
+        "session_id": session_id,
+        "total_cost_usd": cost,
+        "num_turns": num_turns,
+        "stop_reason": stop_reason,
+    }
+    if usage is not None:
+        event["usage"] = usage
+    return json.dumps(event)
 
 
 def test_parses_full_stream_from_terminal_result() -> None:
@@ -226,3 +228,34 @@ def test_unknown_block_types_are_skipped_without_affecting_answer() -> None:
     outcome = parse_claude_stream(lines)
     assert outcome.answer == "done"
     assert outcome.rationale == ""
+
+
+def test_usage_tokens_captured_from_result_event() -> None:
+    # The captured shape (Claude Code 2.1.x) reports input/output at the top of `usage`,
+    # alongside cache and tool counters that are not summed into the two recorded fields.
+    usage = {
+        "input_tokens": 3040,
+        "cache_creation_input_tokens": 12132,
+        "cache_read_input_tokens": 14844,
+        "output_tokens": 4,
+        "service_tier": "standard",
+    }
+    outcome = parse_claude_stream([_init(), _assistant_text("pong"), _result(usage=usage)])
+    assert outcome.input_tokens == 3040
+    assert outcome.output_tokens == 4
+
+
+def test_usage_absent_or_non_dict_yields_zero_tokens() -> None:
+    absent = parse_claude_stream([_init(), _result()])
+    assert absent.input_tokens == 0
+    assert absent.output_tokens == 0
+    non_dict = parse_claude_stream([_init(), _result(usage="lots")])
+    assert non_dict.input_tokens == 0
+    assert non_dict.output_tokens == 0
+
+
+def test_no_result_event_yields_zero_tokens() -> None:
+    outcome = parse_claude_stream([_init(), _assistant_text("partial")])
+    assert outcome.is_error is True
+    assert outcome.input_tokens == 0
+    assert outcome.output_tokens == 0

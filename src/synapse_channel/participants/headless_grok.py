@@ -48,6 +48,7 @@ from synapse_channel.participants.envelope import (
     TurnResult,
     build_turn_result,
     error_turn_result,
+    stamp_model,
 )
 from synapse_channel.participants.grok_stream import parse_grok_stream
 from synapse_channel.participants.participant import (
@@ -279,4 +280,5 @@ class GrokParticipant:
             The same result :meth:`run_turn` produces, computed in a worker thread so the
             blocking subprocess never stalls the bus event loop.
         """
-        return await asyncio.to_thread(self.run_turn, request)
+        result = await asyncio.to_thread(self.run_turn, request)
+        return stamp_model(result, self._model)

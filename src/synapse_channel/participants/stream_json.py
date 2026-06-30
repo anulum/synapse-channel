@@ -60,6 +60,11 @@ class StreamOutcome:
         Provider-internal turn count from the result event.
     stop_reason : str
         Why generation stopped (e.g. ``"end_turn"``).
+    input_tokens : int
+        Prompt/input tokens the provider reported for this turn (``0`` when none reported).
+        Captured so the Fabric can feed the opt-in usage accounting rather than discard it.
+    output_tokens : int
+        Completion/output tokens the provider reported for this turn (``0`` when none reported).
     """
 
     answer: str
@@ -70,6 +75,8 @@ class StreamOutcome:
     cost_usd: float
     num_turns: int
     stop_reason: str
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 def parse_claude_stream(lines: Iterable[str]) -> StreamOutcome:
@@ -119,6 +126,7 @@ def parse_claude_stream(lines: Iterable[str]) -> StreamOutcome:
         )
 
     answer = result_event.get("result")
+    input_tokens, output_tokens = _usage_tokens(result_event.get("usage"))
     return StreamOutcome(
         answer=answer if isinstance(answer, str) else "".join(streamed_text_parts),
         rationale="\n".join(rationale_parts),
@@ -128,6 +136,8 @@ def parse_claude_stream(lines: Iterable[str]) -> StreamOutcome:
         cost_usd=_float_or(result_event.get("total_cost_usd"), 0.0),
         num_turns=_int_or(result_event.get("num_turns"), 0),
         stop_reason=_str_or(result_event.get("stop_reason"), ""),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
     )
 
 
@@ -162,6 +172,18 @@ def _collect_assistant_blocks(
             rationale_parts.append(block["thinking"])
         elif block.get("type") == "text" and isinstance(block.get("text"), str):
             streamed_text_parts.append(block["text"])
+
+
+def _usage_tokens(usage: Any) -> tuple[int, int]:
+    """Return ``(input_tokens, output_tokens)`` from a result event's ``usage`` block.
+
+    The captured schema (Claude Code 2.1.x) places ``input_tokens`` and ``output_tokens`` at the
+    top level of ``usage`` (alongside cache and tool counters, which are not summed here). A
+    missing or malformed block yields ``(0, 0)`` so an absent counter is never invented.
+    """
+    if not isinstance(usage, dict):
+        return 0, 0
+    return _int_or(usage.get("input_tokens"), 0), _int_or(usage.get("output_tokens"), 0)
 
 
 def _str_or(value: Any, fallback: str) -> str:

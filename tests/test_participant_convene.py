@@ -56,6 +56,9 @@ class _PanelParticipant:
             session="",
             cost_usd=self._cost,
             stop_reason="end_turn",
+            model="",
+            input_tokens=0,
+            output_tokens=0,
         )
 
     def health(self) -> ParticipantHealth:  # pragma: no cover - unused here

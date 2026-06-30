@@ -20,6 +20,7 @@ import subprocess
 from collections.abc import Sequence
 from typing import Any
 
+from synapse_channel.core.accounting import USAGE_NOTE_KIND, parse_usage_note
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.participants.bus_relay import (
     BusConversation,
@@ -49,11 +50,11 @@ def _stream(answer: str) -> str:
     return f"{init}\n{result}\n"
 
 
-def _seat(identity: str, answer: str) -> HeadlessClaudeParticipant:
+def _seat(identity: str, answer: str, *, model: str = "") -> HeadlessClaudeParticipant:
     def runner(args: Sequence[str], **_: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(list(args), 0, stdout=_stream(answer), stderr="")
 
-    return HeadlessClaudeParticipant(identity, runner=runner)
+    return HeadlessClaudeParticipant(identity, model=model, runner=runner)
 
 
 class _FakeAgent:
@@ -75,6 +76,7 @@ class _FakeAgent:
         self.running = True
         self._ready = ready
         self.sends: list[dict[str, Any]] = []
+        self.progress: list[dict[str, str]] = []
         self.connect_cancelled = False
 
     async def connect(self) -> None:
@@ -96,6 +98,9 @@ class _FakeAgent:
         self, msg_type: str, *, target: str = "all", payload: str = "", **extra: Any
     ) -> None:
         self.sends.append({"type": msg_type, "target": target, "payload": payload, "extra": extra})
+
+    async def post_progress(self, task_id: str, text: str, *, kind: str = "note") -> None:
+        self.progress.append({"task_id": task_id, "text": text, "kind": kind})
 
 
 def _factory(captured: list[_FakeAgent], *, ready: bool = True) -> Any:
@@ -136,6 +141,40 @@ async def test_run_publishes_both_results_as_chat_with_topic() -> None:
     reactor_envelope = turn_result_from_payload(agent.sends[1]["payload"])
     assert opener_envelope is not None and opener_envelope["answer"] == "opener"
     assert reactor_envelope is not None and reactor_envelope["answer"] == "reactor"
+
+
+async def test_no_usage_notes_posted_by_default() -> None:
+    captured: list[_FakeAgent] = []
+    exchange = BusExchange(
+        "SC/relay",
+        _seat("SC/claude-a", "opener", model="claude-opus-4-8"),
+        _seat("SC/codex-b", "reactor", model="claude-opus-4-8"),
+        agent_factory=_factory(captured),
+    )
+    await exchange.run("q", topic_id="t")
+    # Emission is opt-in; the no-telemetry default posts nothing to the ledger.
+    assert captured[0].progress == []
+
+
+async def test_emit_usage_posts_one_accounting_note_per_turn() -> None:
+    captured: list[_FakeAgent] = []
+    exchange = BusExchange(
+        "SC/relay",
+        _seat("SC/claude-a", "opener", model="claude-opus-4-8"),
+        _seat("SC/codex-b", "reactor", model="claude-opus-4-8"),
+        agent_factory=_factory(captured),
+        emit_usage=True,
+    )
+    await exchange.run("q", topic_id="topic-7")
+    notes = captured[0].progress
+    assert len(notes) == 2
+    for note in notes:
+        assert note["kind"] == USAGE_NOTE_KIND
+        assert note["task_id"] == "topic-7"
+        parsed = parse_usage_note(note["text"])
+        assert parsed is not None
+        assert parsed["model"] == "claude-opus-4-8"
+        assert parsed["calls"] == 1
 
 
 async def test_run_returns_none_and_publishes_nothing_when_not_ready() -> None:

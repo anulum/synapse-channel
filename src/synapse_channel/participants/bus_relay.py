@@ -40,6 +40,7 @@ from synapse_channel.participants.envelope import TurnResult, turn_result_to_pay
 from synapse_channel.participants.exchange import ExchangeTranscript, conduct_exchange
 from synapse_channel.participants.modes import ConversationMode
 from synapse_channel.participants.participant import Participant
+from synapse_channel.participants.usage_emit import emit_usage
 
 ResultSink = Callable[[TurnResult], Awaitable[None]]
 """Coroutine that publishes one turn result to the bus."""
@@ -65,6 +66,9 @@ class _BusPublisher:
         Factory for the bus client; injectable so tests record sends without a hub.
     ready_timeout : float
         Seconds to wait for the hub connection to become ready.
+    emit_usage : bool
+        When true, post an opt-in model-usage note alongside each published result, feeding the
+        core accounting report. Off by default, honouring the core's no-telemetry stance.
     """
 
     def __init__(
@@ -76,6 +80,7 @@ class _BusPublisher:
         token: str | None,
         agent_factory: AgentFactory,
         ready_timeout: float,
+        emit_usage: bool = False,
     ) -> None:
         self._identity = identity
         self._uri = uri
@@ -83,6 +88,7 @@ class _BusPublisher:
         self._token = token
         self._agent_factory = agent_factory
         self._ready_timeout = ready_timeout
+        self._emit_usage = emit_usage
 
     @contextlib.asynccontextmanager
     async def session(self) -> AsyncIterator[ResultSink | None]:
@@ -110,6 +116,8 @@ class _BusPublisher:
                     payload=turn_result_to_payload(result),
                     topic=result["topic_id"],
                 )
+                if self._emit_usage:
+                    await emit_usage(result, post_progress=agent.post_progress)
 
             yield post
         finally:
@@ -140,6 +148,9 @@ class BusExchange:
         Factory for the bus client; injectable so tests record sends without a hub.
     ready_timeout : float, optional
         Seconds to wait for the hub connection to become ready.
+    emit_usage : bool, optional
+        When true, post an opt-in model-usage note alongside each published result so the core
+        accounting report sees the spend. Off by default, honouring the no-telemetry stance.
     """
 
     def __init__(
@@ -153,6 +164,7 @@ class BusExchange:
         token: str | None = None,
         agent_factory: AgentFactory = SynapseAgent,
         ready_timeout: float = 5.0,
+        emit_usage: bool = False,
     ) -> None:
         self._opener = opener
         self._reactor = reactor
@@ -163,6 +175,7 @@ class BusExchange:
             token=token,
             agent_factory=agent_factory,
             ready_timeout=ready_timeout,
+            emit_usage=emit_usage,
         )
 
     async def run(
@@ -221,6 +234,9 @@ class BusConversation:
         Factory for the bus client; injectable so tests record sends without a hub.
     ready_timeout : float, optional
         Seconds to wait for the hub connection to become ready.
+    emit_usage : bool, optional
+        When true, post an opt-in model-usage note alongside each published result so the core
+        accounting report sees the spend. Off by default, honouring the no-telemetry stance.
     """
 
     def __init__(
@@ -233,6 +249,7 @@ class BusConversation:
         token: str | None = None,
         agent_factory: AgentFactory = SynapseAgent,
         ready_timeout: float = 5.0,
+        emit_usage: bool = False,
     ) -> None:
         self._participants = participants
         self._publisher = _BusPublisher(
@@ -242,6 +259,7 @@ class BusConversation:
             token=token,
             agent_factory=agent_factory,
             ready_timeout=ready_timeout,
+            emit_usage=emit_usage,
         )
 
     async def run(
@@ -308,6 +326,9 @@ class BusConvocation:
         Factory for the bus client; injectable so tests record sends without a hub.
     ready_timeout : float, optional
         Seconds to wait for the hub connection to become ready.
+    emit_usage : bool, optional
+        When true, post an opt-in model-usage note alongside each published result so the core
+        accounting report sees the spend. Off by default, honouring the no-telemetry stance.
     """
 
     def __init__(
@@ -321,6 +342,7 @@ class BusConvocation:
         token: str | None = None,
         agent_factory: AgentFactory = SynapseAgent,
         ready_timeout: float = 5.0,
+        emit_usage: bool = False,
     ) -> None:
         self._participants = participants
         self._moderator = moderator
@@ -331,6 +353,7 @@ class BusConvocation:
             token=token,
             agent_factory=agent_factory,
             ready_timeout=ready_timeout,
+            emit_usage=emit_usage,
         )
 
     async def run(
