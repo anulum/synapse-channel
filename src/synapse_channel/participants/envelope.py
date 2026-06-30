@@ -66,12 +66,17 @@ class TurnRequest:
     resume_session : str, optional
         Provider session token from a previous turn. When set, the driver resumes that
         session so the participant keeps memory across bus turns; empty starts fresh.
+    model : str, optional
+        Model the operator wants this turn answered by, recorded so opt-in usage accounting can
+        attribute tokens and cost to a model. Empty leaves the choice to the participant's own
+        configured model; the result echoes whichever applied.
     """
 
     topic_id: str
     prompt: str
     context: str = ""
     resume_session: str = ""
+    model: str = ""
 
 
 class TurnResult(TypedDict):
@@ -82,6 +87,9 @@ class TurnResult(TypedDict):
     and ``is_error`` separate "declined / produced nothing" from "the turn failed", each
     explained by ``reason``. ``session`` is the provider resume token for continuity and
     ``cost_usd`` the metered spend, which the conversation layer sums against a budget.
+    ``model`` is the model the turn was attributed to and ``input_tokens`` / ``output_tokens``
+    the provider-reported token split — carried so the Fabric can feed the opt-in usage
+    accounting rather than discard the counts.
     """
 
     kind: str
@@ -96,6 +104,9 @@ class TurnResult(TypedDict):
     session: str
     cost_usd: float
     stop_reason: str
+    model: str
+    input_tokens: int
+    output_tokens: int
 
 
 def turn_request_to_payload(request: TurnRequest) -> str:
@@ -122,6 +133,7 @@ def turn_request_to_payload(request: TurnRequest) -> str:
             "prompt": request.prompt,
             "context": request.context,
             "resume_session": request.resume_session,
+            "model": request.model,
         },
         sort_keys=True,
         ensure_ascii=False,
@@ -157,6 +169,7 @@ def turn_request_from_payload(payload: str) -> TurnRequest | None:
         prompt=str(raw.get("prompt", "")),
         context=str(raw.get("context", "")),
         resume_session=str(raw.get("resume_session", "")),
+        model=str(raw.get("model", "")),
     )
 
 
@@ -176,7 +189,7 @@ def build_turn_result(
     channel : ParticipantChannel
         Channel the participant was driven through.
     request : TurnRequest
-        The turn this result answers; supplies ``topic_id``.
+        The turn this result answers; supplies ``topic_id`` and the operator-declared ``model``.
     outcome : StreamOutcome
         Parsed provider output (answer, rationale, session, cost, error state).
 
@@ -184,7 +197,9 @@ def build_turn_result(
     -------
     TurnResult
         A turn declares ``abstained`` when it did not error yet produced no answer —
-        a real "I have nothing to add", distinct from a failed turn.
+        a real "I have nothing to add", distinct from a failed turn. The recorded ``model`` is the
+        request's; a driver that knows the model it actually used restamps it with
+        :func:`stamp_model`.
     """
     answer = outcome.answer.strip()
     abstained = not outcome.is_error and answer == ""
@@ -202,6 +217,9 @@ def build_turn_result(
         session=outcome.session_id,
         cost_usd=outcome.cost_usd,
         stop_reason=outcome.stop_reason,
+        model=request.model,
+        input_tokens=outcome.input_tokens,
+        output_tokens=outcome.output_tokens,
     )
 
 
@@ -227,7 +245,8 @@ def error_turn_result(
     Returns
     -------
     TurnResult
-        An envelope with ``is_error`` set and empty answer/rationale.
+        An envelope with ``is_error`` set and empty answer/rationale. The model is the request's;
+        a driver restamps it with :func:`stamp_model`.
     """
     return TurnResult(
         kind=ENVELOPE_KIND,
@@ -242,7 +261,38 @@ def error_turn_result(
         session="",
         cost_usd=0.0,
         stop_reason="error",
+        model=request.model,
+        input_tokens=0,
+        output_tokens=0,
     )
+
+
+def stamp_model(result: TurnResult, model: str) -> TurnResult:
+    """Return ``result`` with its model set to the driver's, when it knows one.
+
+    A driver that knows the model it actually ran (e.g. a headless participant configured with a
+    model) restamps its result so the recorded model is the true one rather than only the
+    operator-declared request model. An empty ``model``, or a result that already carries one,
+    is left unchanged, so the operator's declaration is never overwritten by a blank.
+
+    Parameters
+    ----------
+    result : TurnResult
+        The result to attribute.
+    model : str
+        The model the driver used; ignored when empty.
+
+    Returns
+    -------
+    TurnResult
+        ``result`` unchanged when it already names a model or ``model`` is empty; otherwise a copy
+        carrying ``model``.
+    """
+    if result["model"] or not model:
+        return result
+    stamped = result.copy()
+    stamped["model"] = model
+    return stamped
 
 
 def turn_result_to_payload(result: TurnResult) -> str:
@@ -298,6 +348,9 @@ def turn_result_from_payload(payload: str) -> TurnResult | None:
         session=str(raw.get("session", "")),
         cost_usd=_as_float(raw.get("cost_usd", 0.0)),
         stop_reason=str(raw.get("stop_reason", "")),
+        model=str(raw.get("model", "")),
+        input_tokens=_as_int(raw.get("input_tokens", 0)),
+        output_tokens=_as_int(raw.get("output_tokens", 0)),
     )
 
 
@@ -307,3 +360,18 @@ def _as_float(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _as_int(value: Any) -> int:
+    """Return ``value`` as a non-negative int, defaulting to ``0`` on a bad input.
+
+    A token count off the wire is coerced and clamped at zero so a foreign or negative value
+    cannot later make a usage note malformed.
+    """
+    if isinstance(value, bool):
+        return 0
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, parsed)

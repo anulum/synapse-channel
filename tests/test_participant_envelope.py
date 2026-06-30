@@ -17,6 +17,7 @@ from synapse_channel.participants.envelope import (
     TurnRequest,
     build_turn_result,
     error_turn_result,
+    stamp_model,
     turn_request_from_payload,
     turn_request_to_payload,
     turn_result_from_payload,
@@ -35,6 +36,8 @@ def _outcome(
     subtype: str = "success",
     cost_usd: float = 0.5,
     stop_reason: str = "end_turn",
+    input_tokens: int = 0,
+    output_tokens: int = 0,
 ) -> StreamOutcome:
     return StreamOutcome(
         answer=answer,
@@ -45,6 +48,8 @@ def _outcome(
         cost_usd=cost_usd,
         num_turns=1,
         stop_reason=stop_reason,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
     )
 
 
@@ -56,6 +61,105 @@ def test_turn_request_defaults_are_empty() -> None:
     request = TurnRequest(topic_id="t", prompt="p")
     assert request.context == ""
     assert request.resume_session == ""
+    assert request.model == ""
+
+
+def test_build_turn_result_echoes_model_and_carries_tokens() -> None:
+    request = TurnRequest(topic_id="topic-9", prompt="ask", model="claude-opus-4-8")
+    result = build_turn_result(
+        participant="SC/claude-a",
+        channel=ParticipantChannel.HEADLESS,
+        request=request,
+        outcome=_outcome(input_tokens=120, output_tokens=34),
+    )
+    assert result["model"] == "claude-opus-4-8"
+    assert result["input_tokens"] == 120
+    assert result["output_tokens"] == 34
+
+
+def test_error_turn_result_echoes_model_with_zero_tokens() -> None:
+    request = TurnRequest(topic_id="t", prompt="p", model="gpt-x")
+    result = error_turn_result(
+        participant="p",
+        channel=ParticipantChannel.MCP,
+        request=request,
+        reason="boom",
+    )
+    assert result["model"] == "gpt-x"
+    assert result["input_tokens"] == 0
+    assert result["output_tokens"] == 0
+
+
+def test_stamp_model_sets_model_when_result_has_none() -> None:
+    result = build_turn_result(
+        participant="SC/ollama",
+        channel=ParticipantChannel.HEADLESS,
+        request=TurnRequest(topic_id="t", prompt="p"),
+        outcome=_outcome(),
+    )
+    assert result["model"] == ""
+    stamped = stamp_model(result, "gemma3:1b")
+    assert stamped["model"] == "gemma3:1b"
+    # The original is untouched (a copy was returned).
+    assert result["model"] == ""
+
+
+def test_stamp_model_does_not_overwrite_an_existing_model() -> None:
+    result = build_turn_result(
+        participant="SC/claude",
+        channel=ParticipantChannel.HEADLESS,
+        request=TurnRequest(topic_id="t", prompt="p", model="operator-named"),
+        outcome=_outcome(),
+    )
+    stamped = stamp_model(result, "driver-model")
+    # The operator's declared model is not overwritten by the driver's.
+    assert stamped is result
+    assert stamped["model"] == "operator-named"
+
+
+def test_stamp_model_ignores_an_empty_driver_model() -> None:
+    result = build_turn_result(
+        participant="SC/claude",
+        channel=ParticipantChannel.HEADLESS,
+        request=TurnRequest(topic_id="t", prompt="p"),
+        outcome=_outcome(),
+    )
+    stamped = stamp_model(result, "")
+    assert stamped is result
+    assert stamped["model"] == ""
+
+
+def test_turn_request_model_round_trips() -> None:
+    request = TurnRequest(
+        topic_id="t", prompt="p", context="c", resume_session="s", model="kimi-k2"
+    )
+    restored = turn_request_from_payload(turn_request_to_payload(request))
+    assert restored is not None
+    assert restored.model == "kimi-k2"
+
+
+def test_from_payload_coerces_token_counts_defensively() -> None:
+    raw = {
+        "kind": ENVELOPE_KIND,
+        "topic_id": "t",
+        "model": 99,
+        "input_tokens": True,
+        "output_tokens": "five",
+    }
+    restored = turn_result_from_payload(json.dumps(raw))
+    assert restored is not None
+    # bool and unparsable string both clamp to zero; the model is coerced to text.
+    assert restored["model"] == "99"
+    assert restored["input_tokens"] == 0
+    assert restored["output_tokens"] == 0
+
+
+def test_from_payload_clamps_negative_token_counts_to_zero() -> None:
+    raw = {"kind": ENVELOPE_KIND, "topic_id": "t", "input_tokens": -10, "output_tokens": 7}
+    restored = turn_result_from_payload(json.dumps(raw))
+    assert restored is not None
+    assert restored["input_tokens"] == 0
+    assert restored["output_tokens"] == 7
 
 
 def test_build_turn_result_carries_answer_and_strips_whitespace() -> None:

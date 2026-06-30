@@ -132,6 +132,15 @@ All notable changes to this project are documented here.
   the `MCP > HEADLESS > PTY` order, with the headless rung counting only when its binary resolves
   on `PATH`. A provider that exposes no usable channel selects nothing, so a caller reports it as
   undrivable rather than guessing. 100% line+branch.
+- Captured the model token usage the Participant Fabric had been discarding, and added an opt-in
+  bridge to the existing usage accounting. A turn outcome now carries the provider-reported input
+  and output token counts (read from the Claude result `usage` block and the Codex `turn.completed`
+  usage), and a turn request and result carry the model the turn is attributed to — the operator's
+  declared model on the request, restamped by a driver that knows the model it actually ran. A new
+  opt-in helper formats these into the canonical `usage` accounting note and posts it to the
+  progress ledger, so a bus-bound exchange or conversation run with usage emission enabled becomes
+  visible in the existing cost/token report; emission is off by default, keeping the no-telemetry
+  default. The hub core is unchanged and no dependency is added. 100% line+branch.
 - Added the WASM sandbox getting-started guide (`docs/wasm-sandbox-getting-started.md`):
   an operator walkthrough from a tool's source to a capability-limited run — compile a Rust
   tool to `wasm32-unknown-unknown`, compute its digest and write a deny-by-default manifest,

@@ -141,3 +141,22 @@ def test_thread_started_without_id_leaves_session_empty() -> None:
     outcome = parse_codex_stream(lines)
     assert outcome.session_id == ""
     assert outcome.answer == "ok"
+
+
+def test_usage_tokens_are_captured_from_turn_completed() -> None:
+    # The terminal usage block must be recorded so the Fabric can account for it.
+    outcome = parse_codex_stream([_thread(), _agent_message("x"), _turn_completed()])
+    assert outcome.input_tokens == 20
+    assert outcome.output_tokens == 4
+
+
+def test_usage_missing_or_malformed_yields_zero_tokens() -> None:
+    no_usage = json.dumps({"type": "turn.completed"})
+    non_dict = json.dumps({"type": "turn.completed", "usage": "lots"})
+    bad_counts = json.dumps(
+        {"type": "turn.completed", "usage": {"input_tokens": -5, "output_tokens": True}}
+    )
+    for completed in (no_usage, non_dict, bad_counts):
+        outcome = parse_codex_stream([_thread(), _agent_message("x"), completed])
+        assert outcome.input_tokens == 0
+        assert outcome.output_tokens == 0

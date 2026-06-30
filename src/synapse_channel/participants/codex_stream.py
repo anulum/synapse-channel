@@ -59,6 +59,8 @@ def parse_codex_stream(lines: Iterable[str]) -> StreamOutcome:
     rationale_parts: list[str] = []
     saw_completed = False
     error_subtype = ""
+    input_tokens = 0
+    output_tokens = 0
 
     for line in lines:
         event = _decode(line)
@@ -73,6 +75,7 @@ def parse_codex_stream(lines: Iterable[str]) -> StreamOutcome:
             _collect_item(event.get("item"), answers, rationale_parts)
         elif event_type == "turn.completed":
             saw_completed = True
+            input_tokens, output_tokens = _usage_tokens(event.get("usage"))
         elif _is_failure(event_type):
             error_subtype = event_type if isinstance(event_type, str) else "error"
 
@@ -88,6 +91,8 @@ def parse_codex_stream(lines: Iterable[str]) -> StreamOutcome:
         cost_usd=0.0,
         num_turns=0,
         stop_reason="completed" if saw_completed else "",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
     )
 
 
@@ -115,6 +120,25 @@ def _collect_item(item: Any, answers: list[str], rationale_parts: list[str]) -> 
         answers.append(text)
     elif item_type == "reasoning":
         rationale_parts.append(text)
+
+
+def _usage_tokens(usage: Any) -> tuple[int, int]:
+    """Return ``(input_tokens, output_tokens)`` from a ``turn.completed`` usage block.
+
+    The captured schema (Codex CLI 0.142.4) reports ``input_tokens`` and ``output_tokens`` on the
+    terminal event's ``usage`` object. A missing or malformed block yields ``(0, 0)`` so an absent
+    counter is never invented.
+    """
+    if not isinstance(usage, dict):
+        return 0, 0
+    return _as_int(usage.get("input_tokens")), _as_int(usage.get("output_tokens"))
+
+
+def _as_int(value: Any) -> int:
+    """Return a non-negative int from ``value``, or ``0`` when it is not a usable count."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return 0
+    return value
 
 
 def _is_failure(event_type: Any) -> bool:

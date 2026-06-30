@@ -57,6 +57,9 @@ class _ScriptedParticipant:
             session="",
             cost_usd=0.0,
             stop_reason="end_turn",
+            model="",
+            input_tokens=0,
+            output_tokens=0,
         )
 
     def health(self) -> ParticipantHealth:
