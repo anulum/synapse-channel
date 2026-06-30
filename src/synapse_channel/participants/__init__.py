@@ -67,6 +67,11 @@ from synapse_channel.participants.headless_kimi import (
     build_kimi_argv,
     compose_kimi_prompt,
 )
+from synapse_channel.participants.headless_ollama import (
+    OllamaParticipant,
+    build_ollama_argv,
+    compose_ollama_prompt,
+)
 from synapse_channel.participants.kimi_stream import (
     extract_kimi_session,
     parse_kimi_stream,
@@ -76,6 +81,7 @@ from synapse_channel.participants.modes import (
     ModePolicy,
     select_mode,
 )
+from synapse_channel.participants.ollama_output import parse_ollama_output
 from synapse_channel.participants.participant import (
     Participant,
     ParticipantChannel,
@@ -101,6 +107,7 @@ __all__ = [
     "KimiParticipant",
     "ModePolicy",
     "HeadlessClaudeParticipant",
+    "OllamaParticipant",
     "Participant",
     "ParticipantChannel",
     "ParticipantHealth",
@@ -110,9 +117,11 @@ __all__ = [
     "build_claude_argv",
     "build_codex_argv",
     "build_kimi_argv",
+    "build_ollama_argv",
     "build_turn_result",
     "compose_codex_prompt",
     "compose_kimi_prompt",
+    "compose_ollama_prompt",
     "conduct_conversation",
     "conduct_exchange",
     "convene",
@@ -123,6 +132,7 @@ __all__ = [
     "parse_claude_stream",
     "parse_codex_stream",
     "parse_kimi_stream",
+    "parse_ollama_output",
     "select_mode",
     "turn_result_from_payload",
     "turn_result_to_payload",
