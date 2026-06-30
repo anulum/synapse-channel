@@ -49,11 +49,19 @@ def load_cockpit_asset(name: str) -> str:
     Raises
     ------
     KeyError
-        If ``name`` is not an allowlisted cockpit asset.
+        If ``name`` is not an allowlisted cockpit asset, or resolves outside the
+        bundled assets directory.
     """
     if name not in COCKPIT_ASSETS:
         raise KeyError(name)
-    return (_ASSETS_DIR / name).read_text(encoding="utf-8")
+    # Defence in depth: the allowlist already constrains ``name`` to a fixed set of
+    # bare file names, but confirm the resolved path stays inside the assets directory
+    # so no traversal can ever reach the filesystem, even if the allowlist is later
+    # widened.
+    asset_path = (_ASSETS_DIR / name).resolve()
+    if asset_path.parent != _ASSETS_DIR.resolve():
+        raise KeyError(name)
+    return asset_path.read_text(encoding="utf-8")
 
 
 def _panel(title: str, body_id: str, *, count_id: str | None = None, scroll: bool = False) -> str:
