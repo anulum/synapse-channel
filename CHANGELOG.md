@@ -75,6 +75,16 @@ All notable changes to this project are documented here.
   reports it, and a `ContinuitySeat` gives a Kimi session memory across turns the same way it
   does the others. 100% line+branch; the headless turn and real session resume are covered by
   gated real smoke tests.
+- Added a fourth Participant Fabric provider: a headless Ollama driver — the one provider that
+  runs entirely locally, so it is free, offline, and has no account or terms-of-service gate.
+  `OllamaParticipant` runs `ollama run <model>` and distils the model's plain-text reply into
+  the same typed `TurnResult` the other drivers produce, so all four compose as uniform peers
+  with no provider-specific code in the orchestration. Unlike the others, Ollama's `run` mode
+  emits no JSON event stream, no session token, and no cost, so a local turn carries an empty
+  session and `cost_usd` of 0, and its continuity comes from the conversation's fenced context
+  rather than provider-side memory; a thinking-capable model's reasoning is suppressed so it
+  cannot pollute the reply. A model name is required, as `ollama run` always names one. 100%
+  line+branch; the local turn is covered by a gated real smoke test.
 - Added the WASM sandbox getting-started guide (`docs/wasm-sandbox-getting-started.md`):
   an operator walkthrough from a tool's source to a capability-limited run — compile a Rust
   tool to `wasm32-unknown-unknown`, compute its digest and write a deny-by-default manifest,
