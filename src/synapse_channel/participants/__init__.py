@@ -120,6 +120,17 @@ from synapse_channel.participants.provider_route import (
     select_provider,
 )
 from synapse_channel.participants.pty_participant import PtyParticipant
+from synapse_channel.participants.session_advisor import (
+    AdvisorThresholds,
+    Recommendation,
+    SessionAdvice,
+    SessionSignal,
+    assess_session,
+)
+from synapse_channel.participants.session_telemetry import (
+    SessionMetrics,
+    accumulate,
+)
 from synapse_channel.participants.stream_json import StreamOutcome, parse_claude_stream
 from synapse_channel.participants.turn_relay import (
     DEGRADED_FREETEXT_STOP,
@@ -138,6 +149,7 @@ __all__ = [
     "ENVELOPE_KIND",
     "GROK_SCHEMA_VERIFIED",
     "REQUEST_KIND",
+    "AdvisorThresholds",
     "BusConversation",
     "BusConvocation",
     "BusExchange",
@@ -160,14 +172,20 @@ __all__ = [
     "ParticipantHealth",
     "ProviderCapabilities",
     "PtyParticipant",
+    "Recommendation",
     "RelaySettings",
     "ResponderSettings",
     "RoutingChoice",
+    "SessionAdvice",
+    "SessionMetrics",
+    "SessionSignal",
     "StreamOutcome",
     "TaskProfile",
     "TurnRequest",
     "TurnResponder",
     "TurnResult",
+    "accumulate",
+    "assess_session",
     "build_claude_argv",
     "build_codex_argv",
     "build_grok_argv",
