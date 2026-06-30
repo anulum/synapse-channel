@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.74.0] - 2026-06-30
+
 ### Added
 - Added `synapse multihub follow`, the network counterpart of `synapse multihub observe`. Where
   `observe` reads a peer hub's event-store file, `follow` pulls the peer's log over a real
