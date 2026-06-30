@@ -30,6 +30,14 @@ All notable changes to this project are documented here.
   a malformed request (it answers with an empty snapshot rather than an error); a hub running
   without persistence serves an empty snapshot anchored at the requested cursor. This is the
   network counterpart of the follower's shared-filesystem reader.
+- Added the fetching half of the multi-hub event-log pull, so a hub can follow a peer over a real
+  connection rather than only over a shared filesystem. `network_fetcher` returns a follower
+  `EventFetcher` that opens a connection to a peer hub, requests the events past a cursor, and
+  decodes the snapshot reply — dropping into the existing follower with no change to its seam.
+  Each fetch uses a fresh connection and holds no state between polls, and every failure mode (a
+  refused or dropped connection, a hub error frame, a malformed or absent snapshot, or a timeout)
+  is raised as a single error type, so the follower advances a peer's cursor only on a clean fetch
+  and leaves it unadvanced otherwise — the fail-closed posture extended across the network.
 - Added an opt-in step that turns the deliberation advisor's per-round signals into automatic
   actions. The advisor stays purely advisory; this separate reactor lets an orchestrator arm a
   chosen subset of signals (`compact-soon`, `log-now`, `high-error-rate`) to trigger a compact,
