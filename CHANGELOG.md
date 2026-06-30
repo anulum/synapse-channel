@@ -14,6 +14,14 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added the wire codec for a cross-host multi-hub event-log pull. It names the two shapes one
+  hub uses to ask another for the events past a cursor — a request carrying an exclusive
+  `after_seq` and an optional batch `limit`, and a snapshot carrying the batch of events plus a
+  `next_cursor` to resume from — and converts them to and from the JSON-object wire bodies. The
+  codec is pure, with no network, clock, or hub dependency, and decoding is defensive: a
+  malformed body raises rather than yielding a half-built batch, so the fetching follower can
+  fail the poll and leave the peer's cursor unadvanced. This is the first step toward following a
+  peer hub over a real connection rather than only over a shared filesystem.
 - Added an opt-in step that turns the deliberation advisor's per-round signals into automatic
   actions. The advisor stays purely advisory; this separate reactor lets an orchestrator arm a
   chosen subset of signals (`compact-soon`, `log-now`, `high-error-rate`) to trigger a compact,
