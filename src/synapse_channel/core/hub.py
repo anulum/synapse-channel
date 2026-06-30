@@ -74,8 +74,15 @@ from synapse_channel.core.message_auth import (
     verify_event_signature,
     verify_frame,
 )
+from synapse_channel.core.multihub_claim_transport import (
+    ClaimForwarder,
+    ClaimForwardError,
+    ClaimForwardPeer,
+    forward_claim,
+)
+from synapse_channel.core.multihub_claim_wire import ClaimForwardRequest
 from synapse_channel.core.multihub_serving import MultiHubServingPolicy
-from synapse_channel.core.namespace_ownership import NamespaceOwnership
+from synapse_channel.core.namespace_ownership import NamespaceOwnership, OwnershipOutcome
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import (
     MessageType,
@@ -279,6 +286,15 @@ class SynapseHub:
         Single-authoritative-hub map that routes claims by namespace ownership. ``None`` (the
         default) lets the hub grant claims in every namespace, preserving single-hub behaviour;
         a map refuses a claim whose namespace this hub does not own, fail-closed.
+    claim_peers : Mapping[str, ClaimForwardPeer] or None, optional
+        How to reach each owning hub to forward a claim it owns, keyed by owning hub id. ``None``
+        (the default) forwards nothing: a claim this hub does not own is refused with the owner
+        named, as before. With an entry for the resolved owner, a remote-owned claim is forwarded
+        to that hub and its verdict relayed to the claimant; an unreachable owner falls back to
+        the same refusal, fail-closed.
+    claim_forwarder : ClaimForwarder, optional
+        The seam that forwards a claim to an owning hub; defaults to the network
+        :func:`~synapse_channel.core.multihub_claim_transport.forward_claim`. Injected in tests.
     """
 
     def __init__(
@@ -325,6 +341,8 @@ class SynapseHub:
         require_acl: bool = False,
         multihub_serving_policy: MultiHubServingPolicy | None = None,
         namespace_ownership: NamespaceOwnership | None = None,
+        claim_peers: Mapping[str, ClaimForwardPeer] | None = None,
+        claim_forwarder: ClaimForwarder = forward_claim,
     ) -> None:
         self.journal = journal
         self.enable_metrics = bool(enable_metrics)
@@ -349,6 +367,8 @@ class SynapseHub:
         self.require_acl = bool(require_acl)
         self.multihub_serving_policy = multihub_serving_policy
         self.namespace_ownership = namespace_ownership
+        self.claim_peers = dict(claim_peers) if claim_peers else None
+        self.claim_forwarder = claim_forwarder
         self.channels = ChannelRegistry()
         self.max_msg_bytes = max(int(max_msg_bytes), 1)
         self._clock = clock or time.monotonic
@@ -787,22 +807,25 @@ class SynapseHub:
     async def _authorise_claim_ownership(
         self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
     ) -> bool:
-        """Refuse a claim grant for a namespace this hub does not authoritatively own.
+        """Route a claim by namespace ownership: grant locally, forward to the owner, or refuse.
 
         Claims are mutual exclusion and are routed by namespace ownership, never merged: a hub
         grants claims only for the namespaces it owns, so two hubs never grant the same scope.
         When a :class:`~synapse_channel.core.namespace_ownership.NamespaceOwnership` map is
         configured, a claim whose namespace — derived from the sender identity exactly as the
-        ACL derives it — this hub does not own is refused fail-closed. Remote-owned, ungoverned,
-        and contested namespaces all decline; the refusal names the owning hub, so the caller
-        can route the claim there. With no map configured the hub owns every namespace it is
-        asked about, preserving single-hub behaviour.
+        ACL derives it — this hub owns runs the local grant path. A namespace a named peer owns is
+        forwarded to that peer when a ``ClaimForwardPeer`` route is configured, and the peer's
+        verdict is relayed to the claimant; without a route, or when the owner is unreachable,
+        ungoverned, or contested, the claim is refused fail-closed with the owning hub named so
+        the caller can route it itself. With no map
+        configured the hub owns every namespace it is asked about, preserving single-hub behaviour.
 
         Returns
         -------
         bool
             ``True`` when the claim may be routed to the local grant path; ``False`` when it was
-            refused (a :data:`~synapse_channel.core.protocol.MessageType.CLAIM_DENIED` was sent).
+            handled here — forwarded and its verdict relayed, or refused (a
+            :data:`~synapse_channel.core.protocol.MessageType.CLAIM_DENIED` was sent).
         """
         if self.namespace_ownership is None or msg_type != MessageType.CLAIM:
             return True
@@ -811,6 +834,10 @@ class SynapseHub:
         if decision.grants_locally:
             return True
         task_id = str(data.get("task_id") or data.get("payload") or "").strip()
+        if decision.outcome is OwnershipOutcome.REMOTE and await self._forward_remote_claim(
+            sender, namespace, task_id, data, decision.owner_hub_id or "", websocket
+        ):
+            return False
         logger.warning(
             "Claim refused for %s: namespace %r is %s (owner %s)",
             sender,
@@ -832,6 +859,68 @@ class SynapseHub:
             ),
         )
         return False
+
+    async def _forward_remote_claim(
+        self,
+        sender: str,
+        namespace: str,
+        task_id: str,
+        data: dict[str, Any],
+        owner_hub_id: str,
+        websocket: Any,
+    ) -> bool:
+        """Forward a remote-owned claim to its owning hub and relay the verdict to the claimant.
+
+        The owning hub applies the claim authoritatively and answers with a grant or a denial,
+        which is relayed privately to the claimant — a grant carries the authentic lease fields,
+        so the client sees the same ``CLAIM_GRANTED`` it would for a local claim.
+
+        Returns
+        -------
+        bool
+            ``True`` when the claim was forwarded and a verdict relayed, so the local grant path
+            must not also run. ``False`` when no route is configured for the owner, the task
+            carries no id to forward, or the forward failed — leaving the caller to refuse the
+            claim and name the owner, fail-closed.
+        """
+        peer = self.claim_peers.get(owner_hub_id) if self.claim_peers else None
+        if peer is None or not task_id:
+            return False
+        request = ClaimForwardRequest(
+            namespace=namespace, claimant=sender, task_id=task_id, claim=data
+        )
+        try:
+            result = await self.claim_forwarder(
+                request, uri=peer.uri, local_id=self.hub_id, token=peer.token
+            )
+        except ClaimForwardError:
+            logger.warning(
+                "Forwarding claim %r for %s to owner %s failed", task_id, sender, owner_hub_id
+            )
+            return False
+        if result.granted and result.grant is not None:
+            await self._send_json(
+                websocket,
+                self._system(
+                    result.detail or f"claim granted by {owner_hub_id}",
+                    msg_type=MessageType.CLAIM_GRANTED,
+                    target=sender,
+                    **result.grant,
+                ),
+            )
+        else:
+            await self._send_json(
+                websocket,
+                self._system(
+                    result.detail or "claim refused by the owning hub",
+                    msg_type=MessageType.CLAIM_DENIED,
+                    target=sender,
+                    task_id=task_id,
+                    namespace=namespace,
+                    owner_hub_id=owner_hub_id,
+                ),
+            )
+        return True
 
     async def _verify_per_message_auth(
         self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any

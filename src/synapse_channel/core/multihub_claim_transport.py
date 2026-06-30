@@ -30,6 +30,7 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
 from websockets.asyncio.client import connect
@@ -58,6 +59,46 @@ class ClaimForwardError(RuntimeError):
     type, so the non-owning hub's claim gate catches a single error and falls back to refusing
     the claim and naming the owner rather than relaying a result it never received.
     """
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimForwardPeer:
+    """How a non-owning hub reaches an owning hub to forward a claim to it.
+
+    A non-owning hub maps an owning hub's id to one of these so a claim it does not own is
+    routed to the hub that does. The map is opt-in: a hub with no entry for an owner refuses
+    such a claim and names the owner, exactly as before, so no existing deployment changes.
+
+    Attributes
+    ----------
+    uri : str
+        The owning hub's websocket URI (``ws://`` or, with TLS, ``wss://``).
+    token : str or None
+        An authentication token carried on the forwarded request where the owner gates the
+        first frame; ``None`` for an open or mutual-TLS-only owner.
+    """
+
+    uri: str
+    token: str | None = None
+
+
+class ClaimForwarder(Protocol):
+    """Forwards a claim to an owning hub and returns its verdict.
+
+    The seam the non-owning hub calls; :func:`forward_claim` is the shipped implementation, and
+    a test injects a stand-in so the hub wiring is exercised without a real owner connection.
+    """
+
+    async def __call__(
+        self,
+        request: ClaimForwardRequest,
+        *,
+        uri: str,
+        local_id: str,
+        token: str | None = None,
+    ) -> ClaimForwardResult:  # pragma: no cover
+        """Forward ``request`` to the owner at ``uri`` and return the result."""
+        ...
 
 
 class _Socket(Protocol):
