@@ -113,6 +113,12 @@ from synapse_channel.participants.peer_boundary import (
     frame_peer_contribution,
     frame_peer_panel,
 )
+from synapse_channel.participants.provider_route import (
+    ModelCandidate,
+    RoutingChoice,
+    TaskProfile,
+    select_provider,
+)
 from synapse_channel.participants.pty_participant import PtyParticipant
 from synapse_channel.participants.stream_json import StreamOutcome, parse_claude_stream
 from synapse_channel.participants.turn_relay import (
@@ -144,6 +150,7 @@ __all__ = [
     "GrokParticipant",
     "KimiParticipant",
     "McpParticipant",
+    "ModelCandidate",
     "ModePolicy",
     "HeadlessClaudeParticipant",
     "OllamaApiParticipant",
@@ -155,7 +162,9 @@ __all__ = [
     "PtyParticipant",
     "RelaySettings",
     "ResponderSettings",
+    "RoutingChoice",
     "StreamOutcome",
+    "TaskProfile",
     "TurnRequest",
     "TurnResponder",
     "TurnResult",
@@ -187,6 +196,7 @@ __all__ = [
     "relay_turn",
     "select_channel",
     "select_mode",
+    "select_provider",
     "stamp_model",
     "turn_request_from_payload",
     "turn_request_to_payload",
