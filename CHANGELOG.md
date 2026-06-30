@@ -14,6 +14,15 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added namespace-ownership resolution and its local enforcement on the claim grant path, the
+  first half of routing claims across hubs without merging them. A claim is mutual exclusion, not
+  a mergeable value, so claims are routed by namespace ownership: each namespace has exactly one
+  authoritative owning hub. `NamespaceOwnership` resolves a namespace to local, remote, ungoverned,
+  or partitioned (the last two fail closed); a hub configured with such a map refuses a claim whose
+  namespace — derived from the agent identity, as the ACL derives it — it does not own, naming the
+  owning hub in the `claim_denied` so the caller can route the claim there. The gate is opt-in: a
+  hub with no map grants every namespace, exactly as a single hub does today. Forwarding the refused
+  claim to the owning hub over a connection is not yet built; the caller is told the owner.
 - Added serving-side enforcement of the deny-by-default multi-hub pull gate, the counterpart of
   the gating the following side already applies. A hub configured with a `MultiHubServingPolicy`
   reads the certificate the peer presents on the live mutual-TLS connection and runs the same
