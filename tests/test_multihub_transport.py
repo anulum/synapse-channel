@@ -18,6 +18,7 @@ import pytest
 from websockets.exceptions import ConnectionClosed
 
 from hub_e2e_helpers import read_until_type, running_hub, send_json
+from synapse_channel.core.multihub_federation import MultiHubAuthorisation
 from synapse_channel.core.multihub_follower import MultiHubFollower
 from synapse_channel.core.multihub_transport import (
     MultiHubFetchError,
@@ -195,6 +196,36 @@ async def test_fetch_times_out_when_no_snapshot_arrives() -> None:
     )
     with pytest.raises(MultiHubFetchError, match="failed"):
         await fetch(0)
+
+
+# --- deny-by-default authorisation gate --------------------------------------------------
+
+
+async def test_fetch_proceeds_when_the_authoriser_allows() -> None:
+    socket = _FakeSocket([_snapshot_frame([_event(1)], 1)])
+    fetch = network_fetcher(
+        "ws://peer/",
+        local_id="f",
+        authoriser=lambda: MultiHubAuthorisation(allowed=True, reason="authorised"),
+        connector=_connector(socket),
+    )
+    events = await fetch(0)
+    assert [event.seq for event in events] == [1]
+
+
+async def test_fetch_fails_closed_without_connecting_when_unauthorised() -> None:
+    opened: list[str] = []
+    socket = _FakeSocket([_snapshot_frame([_event(1)], 1)])
+    fetch = network_fetcher(
+        "ws://peer/",
+        local_id="f",
+        authoriser=lambda: MultiHubAuthorisation(allowed=False, reason="unknown_domain"),
+        connector=_connector(socket, opened=opened),
+    )
+    with pytest.raises(MultiHubFetchError, match="not authorised.*unknown_domain"):
+        await fetch(0)
+    assert opened == []
+    assert socket.sent == []
 
 
 # --- real-socket integration against the serving half ------------------------------------
