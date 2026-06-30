@@ -39,6 +39,7 @@ from typing import Any, Protocol, cast
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
+from synapse_channel.core.multihub_federation import MultiHubAuthoriser
 from synapse_channel.core.multihub_follower import EventFetcher
 from synapse_channel.core.multihub_wire import (
     LogRequest,
@@ -100,6 +101,7 @@ def network_fetcher(
     token: str | None = None,
     limit: int | None = None,
     timeout: float = DEFAULT_FETCH_TIMEOUT,
+    authoriser: MultiHubAuthoriser | None = None,
     connector: _Connector = _default_connector,
 ) -> EventFetcher:
     """Return an :data:`~synapse_channel.core.multihub_follower.EventFetcher` over a connection.
@@ -118,6 +120,12 @@ def network_fetcher(
         the follower walk a large backlog forward one bounded batch per poll.
     timeout : float, optional
         Seconds a fetch waits for the snapshot before failing closed.
+    authoriser : MultiHubAuthoriser or None, optional
+        A deny-by-default gate consulted before each fetch connects (see
+        :func:`~synapse_channel.core.multihub_federation.peer_authoriser`). When supplied and the
+        peer is not authorised, the fetch fails closed without connecting and the follower's
+        cursor is left unadvanced. ``None`` (the default) does not gate the pull, for an open or
+        already-trusted peer.
     connector : _Connector, optional
         Opens the peer connection; injected for testing. Defaults to a real websocket client.
 
@@ -129,6 +137,11 @@ def network_fetcher(
     """
 
     async def fetch(after_seq: int) -> Sequence[StoredEvent]:
+        if authoriser is not None:
+            decision = authoriser()
+            if not decision.allowed:
+                msg = f"peer {uri!r} not authorised for a multi-hub pull: {decision.reason}"
+                raise MultiHubFetchError(msg)
         fields: dict[str, Any] = dict(
             encode_log_request(LogRequest(after_seq=after_seq, limit=limit))
         )
@@ -145,7 +158,7 @@ def network_fetcher(
         except (
             OSError,
             ConnectionClosed,
-            TimeoutError,
+            asyncio.TimeoutError,
             MultiHubWireError,
             json.JSONDecodeError,
         ) as exc:

@@ -14,6 +14,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added deny-by-default authorisation for a multi-hub pull, so a follower only pulls from a peer
+  an operator has explicitly granted. A single decision composes the federation policy with
+  mutual-TLS peer verification through the existing composition law — a pull is permitted only
+  when every layer permits it, and federation never widens a check. It is fail-closed: an
+  unknown, revoked, or expired peering, a namespace the peering does not grant, an unaccepted
+  certificate pin, or a certificate file that cannot even be loaded all refuse the pull, and the
+  gate re-evaluates a peering's expiry and revocation on every poll. The network fetcher accepts
+  this gate and consults it before each fetch connects, failing closed without connecting when
+  the peer is not authorised. (Wiring the same decision into the serving hub from the live mTLS
+  connection is a deployment follow-up.)
 - Added the wire codec for a cross-host multi-hub event-log pull. It names the two shapes one
   hub uses to ask another for the events past a cursor — a request carrying an exclusive
   `after_seq` and an optional batch `limit`, and a snapshot carrying the batch of events plus a
@@ -45,6 +55,11 @@ All notable changes to this project are documented here.
   its signal is present, the action is armed, and a handler is supplied — so the default does
   nothing and the concrete side effects stay the operator's. The routed deliberation loop and its
   bus binding both accept this dispatch and record the actions taken per round.
+
+### Fixed
+- Fixed the multi-hub network fetcher not catching a fetch timeout on Python 3.10, where the
+  timeout error is a distinct type from the built-in. A timed-out fetch now fails closed
+  uniformly across supported Python versions.
 
 ## [0.73.0] - 2026-06-30
 
