@@ -30,6 +30,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from synapse_channel.core.acl import Target
 
 
 class FederationDenyReason:
@@ -229,6 +233,46 @@ def resolve_domain(
     if len(matches) == 1:
         return matches[0]
     return None
+
+
+def scope_authorises(
+    accesses: list[tuple[str, Target]],
+    *,
+    scope: tuple[ScopeGrant, ...],
+    namespace: str,
+) -> bool:
+    """Return whether a peering's bounded scope authorises every access a frame needs.
+
+    A remote subject is evaluated against the peering's mapped scope exactly as a local
+    subject is evaluated against the local ACL: the frame's required accesses
+    (:func:`~synapse_channel.core.acl_enforcement.required_accesses`, one
+    ``(permission, target)`` each) are mapped to ``(verb, namespace)`` — the verb is the
+    ACL permission constant the peering's :class:`ScopeGrant` reuses, and the namespace is
+    the single remote namespace the frame acts in — and **every** one must match a grant in
+    ``scope``. A remote subject inherits no local default, so an empty ``scope`` authorises
+    nothing, and a frame that maps to no access (a read, or an unmapped mutation) is denied
+    rather than silently allowed — the same fail-closed posture as
+    :func:`~synapse_channel.core.acl_enforcement.authorise_frame`.
+
+    Parameters
+    ----------
+    accesses : list[tuple[str, Target]]
+        The frame's required accesses, as ``required_accesses`` returns them.
+    scope : tuple[ScopeGrant, ...]
+        The bounded scope the peering maps the remote subject to.
+    namespace : str
+        The local namespace the remote subject is acting in (``project_of(sender)``).
+
+    Returns
+    -------
+    bool
+        ``True`` only when ``accesses`` is non-empty and every access's permission is
+        granted in ``namespace`` by ``scope``; ``False`` otherwise (deny-closed).
+    """
+    if not accesses:
+        return False
+    granted = {(grant.verb, grant.namespace) for grant in scope}
+    return all((permission, namespace) in granted for permission, _target in accesses)
 
 
 def compose_cross_domain(

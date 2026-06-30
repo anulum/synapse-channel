@@ -14,6 +14,13 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added a scope check that authorises a remote subject's frame against a peering's bounded
+  scope, evaluated exactly as a local subject's frame is against the local access policy. Each
+  access the frame requires is mapped to a verb in the remote subject's namespace, and every one
+  must be granted by the peering's scope; a subject inherits no local default, so a frame with no
+  granted verb, an empty scope, or no mapped access at all is denied rather than allowed. This
+  keeps one authorisation vocabulary across local and cross-domain frames — only the policy they
+  are evaluated against differs. Pure building block; not yet wired into the live frame path.
 - Added a resolver that identifies which peered domain a frame belongs to from verified
   credentials alone. Given the Ed25519 signing-key id taken from a frame's verified signature and
   the certificate pin read off the live connection, it returns the single peered domain that
