@@ -141,6 +141,16 @@ All notable changes to this project are documented here.
   progress ledger, so a bus-bound exchange or conversation run with usage emission enabled becomes
   visible in the existing cost/token report; emission is off by default, keeping the no-telemetry
   default. The hub core is unchanged and no dependency is added. 100% line+branch.
+- Added an API channel and a first participant for it: an Ollama REST driver. Instead of spawning
+  a CLI, `OllamaApiParticipant` POSTs to a model server's `/api/generate` endpoint and reads the
+  JSON reply, capturing the API-reported token counts straight into the usage accounting. The
+  transport is the Python standard library, so no dependency is added, and the request is made
+  through an injectable poster so the path is tested without the network. A new `api` channel value
+  joins the selection order as `MCP > API > HEADLESS > PTY` — a direct HTTP call is more robust than
+  spawning a subprocess — and the channel selector gains an API rung. A model name is required, the
+  endpoint is stateless (continuity rides the conversation's fenced context), and a local turn has
+  no cost; a transport failure or malformed body becomes an error result. 100% line+branch, with a
+  gated real smoke against a running local server.
 - Added the WASM sandbox getting-started guide (`docs/wasm-sandbox-getting-started.md`):
   an operator walkthrough from a tool's source to a capability-limited run — compile a Rust
   tool to `wasm32-unknown-unknown`, compute its digest and write a deny-by-default manifest,

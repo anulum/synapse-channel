@@ -25,6 +25,10 @@ layer build on these same pieces.
 
 from __future__ import annotations
 
+from synapse_channel.participants.api_ollama import (
+    OllamaApiParticipant,
+    build_ollama_api_body,
+)
 from synapse_channel.participants.bus_relay import (
     BusConversation,
     BusConvocation,
@@ -98,6 +102,7 @@ from synapse_channel.participants.modes import (
     ModePolicy,
     select_mode,
 )
+from synapse_channel.participants.ollama_api_output import parse_ollama_api_response
 from synapse_channel.participants.ollama_output import parse_ollama_output
 from synapse_channel.participants.participant import (
     Participant,
@@ -141,6 +146,7 @@ __all__ = [
     "McpParticipant",
     "ModePolicy",
     "HeadlessClaudeParticipant",
+    "OllamaApiParticipant",
     "OllamaParticipant",
     "Participant",
     "ParticipantChannel",
@@ -157,6 +163,7 @@ __all__ = [
     "build_codex_argv",
     "build_grok_argv",
     "build_kimi_argv",
+    "build_ollama_api_body",
     "build_ollama_argv",
     "build_turn_result",
     "compose_codex_prompt",
@@ -175,6 +182,7 @@ __all__ = [
     "parse_codex_stream",
     "parse_grok_stream",
     "parse_kimi_stream",
+    "parse_ollama_api_response",
     "parse_ollama_output",
     "relay_turn",
     "select_channel",

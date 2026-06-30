@@ -30,11 +30,18 @@ def _absent(name: str) -> str | None:
 
 
 def test_mcp_wins_over_every_other_channel() -> None:
-    caps = ProviderCapabilities(mcp_reachable=True, headless_binary="claude", pty_session=True)
+    caps = ProviderCapabilities(
+        mcp_reachable=True, api_reachable=True, headless_binary="claude", pty_session=True
+    )
     assert select_channel(caps, which=_present) is ParticipantChannel.MCP
 
 
-def test_headless_chosen_when_binary_resolves_and_no_mcp() -> None:
+def test_api_wins_over_headless_and_pty_without_mcp() -> None:
+    caps = ProviderCapabilities(api_reachable=True, headless_binary="ollama", pty_session=True)
+    assert select_channel(caps, which=_present) is ParticipantChannel.API
+
+
+def test_headless_chosen_when_binary_resolves_and_no_mcp_or_api() -> None:
     caps = ProviderCapabilities(headless_binary="ollama", pty_session=True)
     assert select_channel(caps, which=_present) is ParticipantChannel.HEADLESS
 
