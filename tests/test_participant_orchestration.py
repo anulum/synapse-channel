@@ -16,6 +16,12 @@ on an unroutable round, an over-budget signal, an empty roster, or a non-positiv
 from __future__ import annotations
 
 from synapse_channel.core.accounting import ModelPrice
+from synapse_channel.participants.auto_action import (
+    AutoAction,
+    AutoActionContext,
+    AutoActionDispatch,
+    AutoActionPolicy,
+)
 from synapse_channel.participants.channel_select import ProviderCapabilities
 from synapse_channel.participants.envelope import TurnRequest, TurnResult
 from synapse_channel.participants.exchange import REACTION_DIRECTIVE
@@ -238,6 +244,51 @@ async def test_over_budget_signal_halts_the_run() -> None:
     assert transcript.stopped == STOPPED_BUDGET
     assert len(transcript.rounds) == 1
     assert SessionSignal.OVER_BUDGET in transcript.rounds[0].advice.signals
+
+
+async def test_auto_action_fires_armed_action_each_round() -> None:
+    fired_contexts: list[AutoActionContext] = []
+
+    async def _log(context: AutoActionContext) -> None:
+        fired_contexts.append(context)
+
+    dispatch = AutoActionDispatch(
+        policy=AutoActionPolicy(armed=frozenset({AutoAction.LOG})),
+        handlers={AutoAction.LOG: _log},
+    )
+    seat = _seat("a", [_result(), _result()])
+    transcript = await orchestrate_session(
+        "q",
+        [seat],
+        rounds=2,
+        topic_id="topic-aa",
+        task=TaskProfile(),
+        thresholds=AdvisorThresholds(log_every_turns=1),
+        auto_action=dispatch,
+    )
+    assert transcript.stopped == STOPPED_COMPLETED
+    # log-now fires every turn under log_every_turns=1, so the armed LOG action fires each round.
+    assert [r.fired_actions for r in transcript.rounds] == [
+        (AutoAction.LOG,),
+        (AutoAction.LOG,),
+    ]
+    assert len(fired_contexts) == 2
+    assert all(c.action is AutoAction.LOG and c.session_id == "topic-aa" for c in fired_contexts)
+
+
+async def test_no_dispatch_leaves_fired_actions_empty_even_when_advice_fires() -> None:
+    seat = _seat("a", [_result()])
+    transcript = await orchestrate_session(
+        "q",
+        [seat],
+        rounds=1,
+        topic_id="t",
+        task=TaskProfile(),
+        thresholds=AdvisorThresholds(log_every_turns=1),
+    )
+    # The advice still raises log-now, but with no dispatch nothing is acted on.
+    assert SessionSignal.LOG_NOW in transcript.rounds[0].advice.signals
+    assert transcript.rounds[0].fired_actions == ()
 
 
 async def test_empty_shared_context_threads_only_the_reaction_and_peer() -> None:

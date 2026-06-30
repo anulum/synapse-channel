@@ -31,6 +31,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from synapse_channel.cli_messaging_types import AgentFactory
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.participants.auto_action import AutoActionDispatch
 from synapse_channel.participants.convene import ConvocationTranscript, convene
 from synapse_channel.participants.conversation import (
     ConversationTranscript,
@@ -485,6 +486,9 @@ class BusOrchestration:
     emit_metrics : bool, optional
         When true, persist an opt-in durable ``session_metric`` snapshot to the hub after each
         round, feeding the session-metric report. Off by default, honouring the no-telemetry stance.
+    auto_action : AutoActionDispatch or None, optional
+        When supplied, each round's advice is reacted to with the dispatch's armed, handled actions
+        (opt-in; ``None`` reacts to nothing, leaving the advisor purely advisory).
     """
 
     def __init__(
@@ -501,11 +505,13 @@ class BusOrchestration:
         ready_timeout: float = 5.0,
         emit_usage: bool = False,
         emit_metrics: bool = False,
+        auto_action: AutoActionDispatch | None = None,
     ) -> None:
         self._roster = roster
         self._task = task
         self._thresholds = thresholds
         self._emit_metrics = emit_metrics
+        self._auto_action = auto_action
         self._publisher = _BusPublisher(
             identity,
             uri=uri,
@@ -556,4 +562,5 @@ class BusOrchestration:
                 post=post,
                 shared_context=shared_context,
                 post_progress=post_progress if self._emit_metrics else None,
+                auto_action=self._auto_action,
             )

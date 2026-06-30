@@ -32,8 +32,13 @@ from __future__ import annotations
 
 import time
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
+from synapse_channel.participants.auto_action import (
+    AutoAction,
+    AutoActionDispatch,
+    react_to_advice,
+)
 from synapse_channel.participants.channel_select import PathResolver
 from synapse_channel.participants.envelope import TurnRequest, TurnResult
 from synapse_channel.participants.exchange import REACTION_DIRECTIVE
@@ -111,6 +116,9 @@ class OrchestrationRound:
         The running session metrics *after* this turn was folded in.
     advice : SessionAdvice
         The advisory signals the telemetry raised after this turn.
+    fired_actions : tuple[AutoAction, ...]
+        The automatic actions taken in response to this round's advice; empty unless an opt-in
+        :class:`~synapse_channel.participants.auto_action.AutoActionDispatch` was supplied.
     """
 
     index: int
@@ -119,6 +127,7 @@ class OrchestrationRound:
     latency_seconds: float
     metrics: SessionMetrics
     advice: SessionAdvice
+    fired_actions: tuple[AutoAction, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -160,6 +169,7 @@ async def orchestrate_session(
     clock: Clock = time.monotonic,
     which: PathResolver | None = None,
     post_progress: ProgressPoster | None = None,
+    auto_action: AutoActionDispatch | None = None,
 ) -> OrchestrationTranscript:
     """Run up to ``rounds`` routed turns over ``roster``, reacting to telemetry each round.
 
@@ -195,6 +205,9 @@ async def orchestrate_session(
     post_progress : ProgressPoster or None, optional
         When supplied, a durable ``session_metric`` snapshot is emitted after each turn (opt-in;
         ``None`` emits nothing, keeping the run telemetry-free).
+    auto_action : AutoActionDispatch or None, optional
+        When supplied, each round's advice is reacted to with the dispatch's armed, handled actions
+        (opt-in; ``None`` reacts to nothing, leaving the advisor purely advisory).
 
     Returns
     -------
@@ -250,6 +263,16 @@ async def orchestrate_session(
         if post_progress is not None:
             await emit_session_metric(metrics, post_progress=post_progress, session_id=topic_id)
 
+        fired_actions: tuple[AutoAction, ...] = ()
+        if auto_action is not None:
+            fired_actions = await react_to_advice(
+                advice,
+                auto_action,
+                session_id=topic_id,
+                round_index=index,
+                metrics=metrics,
+            )
+
         records.append(
             OrchestrationRound(
                 index=index,
@@ -258,6 +281,7 @@ async def orchestrate_session(
                 latency_seconds=latency,
                 metrics=metrics,
                 advice=advice,
+                fired_actions=fired_actions,
             )
         )
         previous = result
