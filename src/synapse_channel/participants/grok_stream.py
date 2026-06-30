@@ -9,13 +9,15 @@
 
 .. warning::
 
-   **The Grok stream schema is UNVERIFIED.** Every other provider parser in this package was
-   written against output captured from a real invocation (the verified-at-source rule). Grok
-   could not be captured the same way: the Grok CLI is RAM-hungry and unreliable on this
-   machine and is not run here. This parser is therefore written to the **documented
-   convention** rather than a captured trace, and must be re-verified against a real
-   ``grok --single --output-format streaming-json`` run before its gated smoke is trusted.
-   :data:`GROK_SCHEMA_VERIFIED` records this state.
+   **Grok support is ready, but not recommended until xAI ships a stable Grok CLI.** The driver
+   and this parser are built and unit-tested, so the integration is ready to enable. But every
+   other provider parser in this package was written against output captured from a real
+   invocation (the verified-at-source rule), and Grok could not be: its CLI is not yet stable —
+   xAI has not released a stable version — so its ``streaming-json`` output was not captured at
+   source. This parser is therefore written to the **documented convention** rather than a
+   captured trace, and the schema stays UNVERIFIED. Re-verify it against a real
+   ``grok --single --output-format streaming-json`` run once xAI ships a stable Grok CLI, before
+   trusting the gated smoke. :data:`GROK_SCHEMA_VERIFIED` records this state.
 
 Grok is a Claude-Code-family CLI — its ``--help`` maps its own flags onto Claude Code's
 (``--allow`` ↔ ``--allowedTools``, ``--system-prompt-override`` ↔ ``--system-prompt``) — so its
@@ -37,9 +39,10 @@ from synapse_channel.participants.stream_json import StreamOutcome, parse_claude
 GROK_SCHEMA_VERIFIED = False
 """Whether the Grok stream schema has been captured from a real run. Currently ``False``.
 
-The Grok driver is built for completeness but its output schema is assumed, not captured,
-because the CLI is not run on this machine. Flip this to ``True`` only after a real
-``grok --single --output-format streaming-json`` trace confirms the event shape.
+The Grok driver is built and ready, but its output schema is assumed, not captured, because the
+Grok CLI is not yet stable — xAI has not released a stable version. Flip this to ``True`` only
+after a real ``grok --single --output-format streaming-json`` trace, against a stable Grok CLI,
+confirms the event shape.
 """
 
 

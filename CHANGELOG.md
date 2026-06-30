@@ -63,6 +63,13 @@ All notable changes to this project are documented here.
   nothing and the concrete side effects stay the operator's. The routed deliberation loop and its
   bus binding both accept this dispatch and record the actions taken per round.
 
+### Changed
+- Clarified the Grok participant's support status: the driver is built and unit-tested, so the
+  integration is ready to enable, but it is not recommended until xAI ships a stable Grok CLI.
+  The CLI is not yet stable, so its streaming-json output schema could not be captured at source
+  and stays unverified; the schema must be re-verified against a stable Grok CLI before the
+  gated real smoke is trusted.
+
 ### Fixed
 - Fixed the multi-hub network fetcher not catching a fetch timeout on Python 3.10, where the
   timeout error is a distinct type from the built-in. A timed-out fetch now fails closed
