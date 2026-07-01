@@ -95,10 +95,11 @@ def test_current_repo_symbol_selector_json_resolves_full_claim_surface() -> None
             "sources": ["src/synapse_channel/core/receipts.py"],
             "modules": ["synapse_channel.core.receipts"],
             "symbols": ["build_release_receipt"],
-            "tests": ["tests/test_release_receipts.py"],
+            "tests": ["tests/test_hub_core_claims.py", "tests/test_release_receipts.py"],
             "generated": ["README.md", "docs/_generated/capability_manifest.json"],
             "claim_paths": [
                 "src/synapse_channel/core/receipts.py",
+                "tests/test_hub_core_claims.py",
                 "tests/test_release_receipts.py",
                 "README.md",
                 "docs/_generated/capability_manifest.json",
@@ -117,6 +118,7 @@ def test_current_repo_claim_args_are_stable_for_api_selector() -> None:
     assert result.returncode == 0, result.stderr + result.stdout
     assert result.stdout.strip() == (
         "--paths src/synapse_channel/core/receipts.py "
+        "--paths tests/test_hub_core_claims.py "
         "--paths tests/test_release_receipts.py "
         "--paths README.md "
         "--paths docs/_generated/capability_manifest.json"
