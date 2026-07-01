@@ -446,8 +446,13 @@ def test_cmd_hub_rejects_incomplete_tls_config(capsys: pytest.CaptureFixture[str
     assert "requires both --tls-certfile and --tls-keyfile" in capsys.readouterr().err
 
 
-def _federation_store(tmp_path: Path) -> str:
-    """Write a federation store with one peer and return its path."""
+def _federation_store(tmp_path: Path, *, grant_scope: bool = True) -> str:
+    """Write a federation store with one peer and return its path.
+
+    With ``grant_scope`` the peering maps a scope grant inside its granted
+    namespace, so it could authorise a cross-domain frame under per-message
+    authentication; without it the peering is observe-only by construction.
+    """
     from synapse_channel.core.federation import FederationPeer, ScopeGrant
     from synapse_channel.core.federation_store import (
         FederationRecord,
@@ -460,7 +465,7 @@ def _federation_store(tmp_path: Path) -> str:
         namespaces=frozenset({"SYNAPSE-CHANNEL"}),
         certificate_pins=frozenset({"sha256:aa"}),
         signing_key_ids=frozenset({"domain-b:main"}),
-        scope_grants=(ScopeGrant("message", "SYNAPSE-CHANNEL"),),
+        scope_grants=(ScopeGrant("message", "SYNAPSE-CHANNEL"),) if grant_scope else (),
     )
     store = tmp_path / "federation.json"
     save_store(store, [FederationRecord(peer, PeerProvenance("bundle", 1.0, "ops"))])
@@ -489,13 +494,14 @@ def test_cmd_hub_composes_federation_store_into_the_bundle(tmp_path: Path) -> No
     assert bundle.domains() == ("domain-b",)
 
 
-def test_cmd_hub_warns_federation_store_without_message_auth(
+def test_cmd_hub_refuses_scope_granting_store_without_message_auth(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    captured: dict[str, Any] = {}
+    """A store granting cross-domain scope cannot be enforced without message auth."""
+    hub_calls: list[dict[str, Any]] = []
 
     def build_hub(**kwargs: Any) -> SynapseHub:
-        captured.update(kwargs)
+        hub_calls.append(kwargs)
         return SynapseHub(**kwargs)
 
     assert (
@@ -504,11 +510,97 @@ def test_cmd_hub_warns_federation_store_without_message_auth(
             runner=_close_runner,
             hub_factory=build_hub,
         )
+        == 2
+    )
+    # the hub never starts: the config claims scope it cannot honour
+    assert hub_calls == []
+    err = capsys.readouterr().err
+    assert "grants cross-domain scope" in err
+    assert "--federation-observe-only" in err
+
+
+def test_cmd_hub_observe_only_loads_scope_granting_store_without_message_auth(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The declared observe-only intent is the escape hatch from the fatal refusal."""
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(
+                federation_store=_federation_store(tmp_path),
+                require_message_auth=False,
+                federation_observe_only=True,
+            ),
+            runner=_close_runner,
+            hub_factory=build_hub,
+        )
+        == 0
+    )
+    assert captured["federation_bundle"] is not None
+    err = capsys.readouterr().err
+    assert "observe-only" in err
+    assert "refused deny-closed" in err
+
+
+def test_cmd_hub_keeps_warning_for_store_that_cannot_authorise(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A store whose peerings grant no scope is observe-only by construction."""
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(
+                federation_store=_federation_store(tmp_path, grant_scope=False),
+                require_message_auth=False,
+            ),
+            runner=_close_runner,
+            hub_factory=build_hub,
+        )
         == 0
     )
     # the bundle is still composed, but a warning flags that it authorises nothing
     assert captured["federation_bundle"] is not None
     assert "--federation-store without --require-message-auth" in capsys.readouterr().err
+
+
+def test_cmd_hub_rejects_observe_only_with_message_auth(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(
+                federation_store=_federation_store(tmp_path),
+                require_message_auth=True,
+                federation_observe_only=True,
+            ),
+            runner=_close_runner,
+        )
+        == 2
+    )
+    assert "contradicts --require-message-auth" in capsys.readouterr().err
+
+
+def test_cmd_hub_rejects_observe_only_without_store(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(federation_observe_only=True),
+            runner=_close_runner,
+        )
+        == 2
+    )
+    assert "requires --federation-store" in capsys.readouterr().err
 
 
 def test_cmd_hub_leaves_federation_off_by_default() -> None:

@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+- `synapse hub --federation-store` now refuses to start when the store's peerings grant
+  cross-domain scope but `--require-message-auth` is not set: without per-message
+  authentication no signing key is ever verified, so the granted scope could never be
+  enforced and every cross-domain frame would be silently refused. A store whose peerings
+  grant no enforceable scope still starts with the existing warning, and the new
+  `--federation-observe-only` flag declares the intent to load a scope-granting store for
+  diagnostics and deny-closed refusal only; combining it with `--require-message-auth`,
+  or passing it without a store, is refused as contradictory.
+
 ## [0.83.0] - 2026-07-01
 
 ### Added
