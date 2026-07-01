@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.80.0] - 2026-07-01
+
 ### Added
 - `synapse merkle verify --json` writes a `{"valid", "seq", "root"}` verdict to stdout (with a
   `reason` when the proof is rejected), giving offline proof verification the same machine-readable
