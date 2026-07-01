@@ -13,6 +13,7 @@ on:
     paths:
       - Dockerfile
       - .dockerignore
+      - docker-compose.yml
       - "src/**"
       - pyproject.toml
       - .github/workflows/docker.yml
@@ -20,8 +21,10 @@ on:
     paths:
       - Dockerfile
       - .dockerignore
+      - docker-compose.yml
       - "src/**"
       - pyproject.toml
+      - .github/workflows/docker.yml
   release:
     types: [published]
 
@@ -55,3 +58,24 @@ jobs:
           push: ${{ github.event_name == 'release' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  compose-smoke:
+    # Exercise the shipped docker-compose.yml exactly as an operator would: build
+    # the image, bring the hub up, and wait for its container HEALTHCHECK
+    # (`synapse health`) to pass. Proves the compose file and the image's default
+    # hub command still start a reachable hub, not only that the image builds.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Bring the hub up and wait for it to become healthy
+        run: docker compose up --detach --build --wait --wait-timeout 180
+      - name: Confirm the hub answers a health probe
+        run: docker compose exec -T hub synapse health
+      - name: Show hub logs on failure
+        if: failure()
+        run: docker compose logs hub
+      - name: Tear down
+        if: always()
+        run: docker compose down --volumes

@@ -12,20 +12,27 @@ services:
     image: ghcr.io/anulum/synapse-channel:latest
     container_name: synapse-hub
     restart: unless-stopped
-    # Loopback-only on the host by default. To reach the hub from other hosts,
-    # change to "8876:8876" AND set SYNAPSE_TOKEN below (never expose it open).
+    # Loopback-only on the host: the hub is reachable at 127.0.0.1:8876 on this
+    # machine and nowhere else. To reach it from other hosts, change to "8876:8876"
+    # AND set a token (uncomment the --token command below) — never expose it open.
     ports:
       - "127.0.0.1:8876:8876"
     volumes:
       - synapse-data:/data
-    # Uncomment to require a shared secret when the port is exposed:
-    # command:
-    #   - hub
-    #   - --host=0.0.0.0
-    #   - --port=8876
-    #   - --db=/data/hub.db
-    #   - --relay-log=/data/feed.ndjson
-    #   - --token=${SYNAPSE_TOKEN}
+    # The hub must bind 0.0.0.0 *inside* the container for the published port to
+    # reach it; --insecure-off-loopback accepts that bind. It is safe here only
+    # because the publish above is loopback-only, so the hub is not reachable off
+    # this host. The moment you expose the port beyond 127.0.0.1, drop
+    # --insecure-off-loopback and require a token instead (see the commented lines).
+    command:
+      - hub
+      - --host=0.0.0.0
+      - --port=8876
+      - --db=/data/hub.db
+      - --relay-log=/data/feed.ndjson
+      - --insecure-off-loopback
+      # Exposing the port beyond loopback? Replace --insecure-off-loopback with:
+      # - --token=${SYNAPSE_TOKEN}
 
 volumes:
   synapse-data:
