@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.84.0] - 2026-07-01
+
 ### Added
 - `synapse completions <shell>` prints a static tab-completion script for bash, zsh, or
   fish. The script is generated from the installed CLI's live argument parser — top-level
