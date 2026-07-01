@@ -337,3 +337,17 @@ async def test_resolve_sender_binds_a_free_name_for_a_new_socket() -> None:
     assert result == "w/rx"
     assert registry.socket_agent[socket] == "w/rx"
     assert socket.close_calls == []
+
+
+async def test_hub_close_socket_wrapper_delegates_to_the_registry() -> None:
+    """The hub's static close wrapper drives the registry's best-effort close."""
+    from synapse_channel.core.hub import SynapseHub
+
+    calls: list[tuple[int, str]] = []
+
+    class _Socket:
+        async def close(self, code: int, reason: str) -> None:
+            calls.append((code, reason))
+
+    await SynapseHub._close_socket(_Socket(), code=4000, reason="test close")
+    assert calls == [(4000, "test close")]

@@ -85,3 +85,11 @@ def test_gitcontext_from_dict_normalises_unknown_mode_and_empty_base() -> None:
 def test_gitcontext_from_dict_uses_field_defaults() -> None:
     ctx = GitContext.from_dict({"branch": "wip"})
     assert ctx == GitContext(branch="wip", base="main", auto_release_on="merge")
+
+
+def test_offers_by_counts_only_the_agents_live_offers() -> None:
+    state = SynapseState(default_ttl_seconds=60.0)
+    state.offer_resource("ALPHA", kind="gpu", name="card-a")
+    state.offer_resource("BETA", kind="gpu", name="card-b")
+    assert state._offers_by("ALPHA") == 1
+    assert state._offers_by("NOBODY") == 0

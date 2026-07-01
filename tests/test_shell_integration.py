@@ -347,3 +347,8 @@ def test_shell_hook_cli_emits_fish_that_parses() -> None:
         check=False,
     )
     assert syntax.returncode == 0, syntax.stderr
+
+
+def test_render_shell_hook_rejects_an_unsupported_shell() -> None:
+    with pytest.raises(ValueError, match="supports bash, fish, and zsh"):
+        render_shell_hook(shell="powershell")

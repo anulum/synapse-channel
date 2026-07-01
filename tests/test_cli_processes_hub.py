@@ -621,3 +621,13 @@ def test_cmd_hub_rejects_malformed_federation_store(
     store.write_text("{not json", encoding="utf-8")
     assert cli_processes._cmd_hub(_hub_ns(federation_store=str(store)), runner=_close_runner) == 2
     assert "federation store is not valid JSON" in capsys.readouterr().err
+
+
+def test_parse_message_auth_keys_rejects_empty_fields() -> None:
+    """A key with a blank id, secret, or sender list is refused with the format."""
+    from synapse_channel.cli_processes_hub import _parse_message_auth_keys
+
+    with pytest.raises(ValueError, match="KEY_ID:SECRET:SENDER"):
+        _parse_message_auth_keys([":secret:ALPHA"])
+    with pytest.raises(ValueError, match="KEY_ID:SECRET:SENDER"):
+        _parse_message_auth_keys(["main:secret:  ,  "])

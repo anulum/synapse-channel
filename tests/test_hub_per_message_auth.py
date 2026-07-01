@@ -235,3 +235,10 @@ async def test_hub_accepts_signed_event_mutation_and_reports_failures() -> None:
     assert granted["task_id"] == "T1"
     assert bad["verification_result"] == "bad_signature"
     assert replayed["verification_result"] == "replayed"
+
+
+def test_hub_accepts_auth_keys_as_a_prebuilt_mapping() -> None:
+    """A mapping of key_id to key is adopted as-is, not rebuilt from a list."""
+    key = MessageAuthKey(key_id="main", secret=b"shared-secret", senders=frozenset({"ALPHA"}))
+    hub = SynapseHub(hub_id="syn-test", per_message_auth_keys={"main": key})
+    assert hub.per_message_auth_keys == {"main": key}

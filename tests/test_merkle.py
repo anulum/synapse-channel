@@ -352,3 +352,10 @@ def test_run_root_streaming_honours_the_sequence_ceiling(tmp_path: Path) -> None
     assert limited.tree_size == 7
     assert limited.root == build_root(_events(12), through_seq=7).root
     assert limited.through_seq == 7
+
+
+def test_recursive_tree_hash_of_no_leaves_is_the_empty_root() -> None:
+    """The reference recursion agrees with RFC 6962 on the empty tree."""
+    from synapse_channel.core.merkle import _merkle_tree_hash
+
+    assert _merkle_tree_hash([]).hex() == EMPTY_ROOT

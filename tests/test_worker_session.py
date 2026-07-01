@@ -734,3 +734,18 @@ def test_cmd_init_installs_user_services(capsys: pytest.CaptureFixture[str]) -> 
         "start": False,
     }
     assert "synapse-arm@.service" in capsys.readouterr().out
+
+
+def test_provider_command_name_handles_an_empty_command() -> None:
+    from synapse_channel.worker_session import _provider_command_name
+
+    assert _provider_command_name([]) == ""
+    assert _provider_command_name(["/usr/bin/codex", "--flag"]) == "codex"
+
+
+def test_pid_is_alive_treats_an_empty_pidfile_as_dead(tmp_path: Path) -> None:
+    from synapse_channel.worker_session import _pid_is_alive
+
+    pidfile = tmp_path / "waker.pid"
+    pidfile.write_text("", encoding="utf-8")
+    assert _pid_is_alive(pidfile) is False
