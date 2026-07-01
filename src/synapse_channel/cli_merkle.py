@@ -73,8 +73,23 @@ def _cmd_prove(args: argparse.Namespace) -> int:
     return 0
 
 
+def _emit_verify_verdict(*, valid: bool, seq: int, root: str, reason: str) -> None:
+    """Print a machine-readable verify verdict to stdout, as ``root``/``prove`` do."""
+    verdict: dict[str, object] = {"valid": valid, "seq": seq, "root": root}
+    if reason:
+        verdict["reason"] = reason
+    print(json.dumps(verdict, indent=2, sort_keys=True))
+
+
 def _cmd_verify(args: argparse.Namespace) -> int:
-    """Verify an inclusion proof offline against its own and an expected root."""
+    """Verify an inclusion proof offline against its own and an expected root.
+
+    The exit code is the machine signal (0 valid / 1 bad-proof|mismatch /
+    2 unreadable-file). Without ``--json`` the human confirmation and gate
+    diagnostics go to stderr, matching ``root --expect``'s ``root matches`` line;
+    with ``--json`` a structured verdict is emitted to stdout, giving ``verify``
+    the same stdout payload that ``root`` and ``prove`` already carry.
+    """
     path = Path(args.proof)
     if not path.exists():
         print(f"missing proof file: {path}", file=sys.stderr)
@@ -86,15 +101,26 @@ def _cmd_verify(args: argparse.Namespace) -> int:
         print(f"unreadable proof: {exc}", file=sys.stderr)
         return 2
     if not verify_inclusion(proof):
-        print(f"proof does not reconstruct its root {proof.root}", file=sys.stderr)
+        reason = f"proof does not reconstruct its root {proof.root}"
+        if args.json:
+            _emit_verify_verdict(valid=False, seq=proof.seq, root=proof.root, reason=reason)
+        else:
+            print(reason, file=sys.stderr)
         return 1
     if args.expect and not verify_root(proof.root, args.expect):
+        reason = f"root mismatch: expected {args.expect.strip().lower()}, got {proof.root}"
+        if args.json:
+            _emit_verify_verdict(valid=False, seq=proof.seq, root=proof.root, reason=reason)
+        else:
+            print(reason, file=sys.stderr)
+        return 1
+    if args.json:
+        _emit_verify_verdict(valid=True, seq=proof.seq, root=proof.root, reason="")
+    else:
         print(
-            f"root mismatch: expected {args.expect.strip().lower()}, got {proof.root}",
+            f"proof valid: seq {proof.seq} is in the log under root {proof.root}",
             file=sys.stderr,
         )
-        return 1
-    print(f"proof valid: seq {proof.seq} is in the log under root {proof.root}", file=sys.stderr)
     return 0
 
 
@@ -144,5 +170,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default="",
         metavar="ROOT",
         help="Also require the proof's root to equal this trusted root.",
+    )
+    verify.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a machine-readable verdict to stdout instead of a stderr line.",
     )
     verify.set_defaults(func=_cmd_verify)

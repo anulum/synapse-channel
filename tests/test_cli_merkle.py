@@ -172,6 +172,54 @@ def test_cli_verify_malformed_file(tmp_path: Path, capsys: pytest.CaptureFixture
     assert "unreadable proof" in capsys.readouterr().err
 
 
+def test_cli_verify_json_valid_writes_verdict_to_stdout(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+    proof = run_proof(db, 3)
+    assert proof is not None
+    proof_file = _write_proof(tmp_path, db, 3)
+    assert cli.main(["merkle", "verify", str(proof_file), "--json"]) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    verdict = json.loads(captured.out)
+    assert verdict == {"valid": True, "seq": 3, "root": proof.root}
+
+
+def test_cli_verify_json_tampered_reports_invalid(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+    proof = run_proof(db, 3)
+    assert proof is not None
+    data = proof_to_json(proof)
+    data["leaf"] = "00" * 32
+    proof_file = tmp_path / "bad.json"
+    proof_file.write_text(json.dumps(data), encoding="utf-8")
+    assert cli.main(["merkle", "verify", str(proof_file), "--json"]) == 1
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    verdict = json.loads(captured.out)
+    assert verdict["valid"] is False
+    assert "does not reconstruct" in verdict["reason"]
+
+
+def test_cli_verify_json_root_mismatch_reports_invalid(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+    proof_file = _write_proof(tmp_path, db, 3)
+    assert cli.main(["merkle", "verify", str(proof_file), "--expect", "deadbeef", "--json"]) == 1
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    verdict = json.loads(captured.out)
+    assert verdict["valid"] is False
+    assert "root mismatch" in verdict["reason"]
+
+
 # --- documentation wiring ----------------------------------------------------
 
 

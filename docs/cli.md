@@ -561,6 +561,7 @@ synapse causality counterfactual ./synapse.db 96
 synapse merkle root ./synapse.db
 synapse merkle prove ./synapse.db 142 --json > proof.json
 synapse merkle verify proof.json --expect 9f2c…
+synapse merkle verify proof.json --json
 synapse reliability ./synapse.db
 synapse accounting record --name alpha --task TASK-1 --model claude-opus-4-8 --input-tokens 1200 --output-tokens 300
 synapse accounting report ./synapse.db --pricing pricing.json --budget budget.json
@@ -719,6 +720,10 @@ The commitment proves what the log contains — integrity and inclusion — not 
 semantic correctness of the coordination it records. `root`/`prove` exit `2` on a
 missing store and `prove` exits `1` when no event has that sequence; `verify`
 exits `0` valid, `1` on a bad proof or root mismatch, `2` on an unreadable file.
+`verify` reports through its exit code and a stderr line by default; pass `--json`
+to get a `{"valid", "seq", "root"}` verdict on stdout instead (with a `reason` when
+invalid), matching the `--json` stdout payload that `root` and `prove` already
+carry.
 
 `synapse reliability ./synapse.db` builds evidence-only reliability memory from
 the same event store. It counts stale claims, declared failed-check evidence,
