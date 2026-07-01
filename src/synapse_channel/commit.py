@@ -24,7 +24,7 @@ from pathlib import PurePosixPath
 from typing import Any, Protocol
 
 from synapse_channel.cli_locking import _lock
-from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.client.agent import DEFAULT_HUB_URI, default_hub_uri
 
 
 class IdentityLike(Protocol):
@@ -122,7 +122,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_WAIT_TIMEOUT,
         help="Seconds to wait for the git lease (default: 120).",
     )
-    parser.add_argument("--uri", default=DEFAULT_HUB_URI, help="Synapse hub WebSocket URI.")
+    parser.add_argument("--uri", default=default_hub_uri(), help="Synapse hub WebSocket URI.")
     parser.add_argument("--token", default=None, help="Hub shared-secret token.")
     return parser
 

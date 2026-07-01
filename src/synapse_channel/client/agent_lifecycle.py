@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import errno
+import os
 from typing import Any, Protocol
 
 from websockets.asyncio.client import ClientConnection, connect
@@ -21,8 +22,25 @@ from synapse_channel.core.protocol import MessageType
 DEFAULT_HUB_URI = "ws://localhost:8876"
 """Default hub URI; matches the hub's default bind port."""
 
+HUB_URI_ENV_VAR = "SYNAPSE_URI"
+"""Environment variable that overrides the default hub URI for the CLI."""
+
 MINIMUM_HEARTBEAT_INTERVAL = 5.0
 """Floor applied to the configured heartbeat interval, in seconds."""
+
+
+def default_hub_uri() -> str:
+    """Return the hub URI a command should use when ``--uri`` is not given.
+
+    Reads the ``SYNAPSE_URI`` environment variable so an operator can point the
+    whole CLI at a non-default hub — a remote coordinator, a second local hub on
+    another port — without repeating ``--uri`` on every command. A blank or unset
+    variable falls back to :data:`DEFAULT_HUB_URI`, the loopback hub. Resolved
+    each time a parser is built, so every fresh CLI process reads the current
+    environment; an explicit ``--uri`` on the command line still wins.
+    """
+    override = os.environ.get(HUB_URI_ENV_VAR, "").strip()
+    return override or DEFAULT_HUB_URI
 
 
 def _is_connection_refused(exc: OSError) -> bool:

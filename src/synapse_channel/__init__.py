@@ -18,9 +18,14 @@ command (see :mod:`synapse_channel.cli`) drives all of it.
 
 from __future__ import annotations
 
-__version__ = "0.78.0"
+__version__ = "0.79.0"
 
-from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.client.agent import (
+    DEFAULT_HUB_URI,
+    HUB_URI_ENV_VAR,
+    SynapseAgent,
+    default_hub_uri,
+)
 from synapse_channel.client.chat_backends import (
     ChatBackend,
     OpenAIChatClient,
@@ -81,6 +86,7 @@ from synapse_channel.relay import decode_lite, encode_lite
 
 __all__ = [
     "DEFAULT_HUB_URI",
+    "HUB_URI_ENV_VAR",
     "MEMORY_KINDS",
     "PRIORITY_SENDERS",
     "Blackboard",
@@ -126,6 +132,7 @@ __all__ = [
     "collect_hub_metrics",
     "compact",
     "decode_lite",
+    "default_hub_uri",
     "detect_stalls",
     "encode_lite",
     "health_snapshot",

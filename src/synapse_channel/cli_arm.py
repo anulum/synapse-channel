@@ -15,7 +15,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
 from synapse_channel.cli_messaging import AgentFactory, _wait
-from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 
 WaitRunner = Callable[..., Awaitable[int]]
 SleepRunner = Callable[[float], Awaitable[None]]
@@ -91,7 +91,7 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
         "arm",
         help="Keep a waiter armed and re-arm automatically after each wake or reconnect.",
     )
-    arm.add_argument("--uri", default=DEFAULT_HUB_URI)
+    arm.add_argument("--uri", default=default_hub_uri())
     arm.add_argument("--name", default="USER")
     arm.add_argument(
         "--for",

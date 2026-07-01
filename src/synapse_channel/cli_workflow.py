@@ -25,7 +25,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import closed_after_ready, describe_connect_failure
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.workflow import (
@@ -345,7 +345,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Drive a workflow live against the hub: post tasks, then route ready steps.",
     )
     run.add_argument("file", help="Path to the workflow JSON file.")
-    run.add_argument("--uri", default=DEFAULT_HUB_URI, help="Hub URI to drive against.")
+    run.add_argument("--uri", default=default_hub_uri(), help="Hub URI to drive against.")
     run.add_argument("--name", default="WORKFLOW", help="Driver's display name on the hub.")
     run.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     run.add_argument(

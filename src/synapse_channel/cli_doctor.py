@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from synapse_channel.cli_queries import AgentFactory, _query_hub
-from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.client.diagnostics import (
     Diagnosis,
     check_disk_space,
@@ -273,7 +273,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "doctor",
         help="Check for common coordination misconfigs (identity, exposure, hub, waiter).",
     )
-    doctor.add_argument("--uri", default=DEFAULT_HUB_URI)
+    doctor.add_argument("--uri", default=default_hub_uri())
     doctor.add_argument(
         "--project", default=None, help="Project identity (over $SYN_PROJECT and the CWD)."
     )

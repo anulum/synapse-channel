@@ -39,7 +39,7 @@ from synapse_channel.adapters import (
     resolve_target,
     tool_for,
 )
-from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.client.agent import default_hub_uri
 
 Which = Callable[[str], str | None]
 
@@ -181,7 +181,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     installer = group.add_parser("install", help="Write the claim-aware adapter into each tool.")
     _add_common(installer)
     installer.add_argument("--identity", default="your-agent", help="Identity to record.")
-    installer.add_argument("--uri", default=DEFAULT_HUB_URI, help="Hub URI to record.")
+    installer.add_argument("--uri", default=default_hub_uri(), help="Hub URI to record.")
     installer.add_argument("--dry-run", action="store_true", help="Print planned writes only.")
     installer.set_defaults(func=_cmd_install)
 

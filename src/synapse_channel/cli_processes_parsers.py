@@ -15,7 +15,7 @@ from synapse_channel.cli_processes_hub import _cmd_hub
 from synapse_channel.cli_processes_supervisor import _cmd_supervisor
 from synapse_channel.cli_processes_team import _cmd_team
 from synapse_channel.cli_processes_worker import _cmd_worker
-from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.client.llm_worker import DEFAULT_OLLAMA_BASE_URL
 from synapse_channel.client.supervisor import (
     DEFAULT_HISTORY_MULTIPLIER,
@@ -312,7 +312,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Namespace prepended to --name to form the worker's identity, e.g. "
         "'remanentia/' so the same role runs per project without a name clash.",
     )
-    worker.add_argument("--uri", default=DEFAULT_HUB_URI)
+    worker.add_argument("--uri", default=default_hub_uri())
     worker.add_argument(
         "--provider", choices=["openai", "ollama", "rule", "tiered"], default="ollama"
     )
@@ -350,7 +350,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     supervisor = subparsers.add_parser(
         "supervisor", help="Run an LLM-free supervisor that re-offers stalled tasks."
     )
-    supervisor.add_argument("--uri", default=DEFAULT_HUB_URI)
+    supervisor.add_argument("--uri", default=default_hub_uri())
     supervisor.add_argument("--name", default="SUPERVISOR")
     supervisor.add_argument("--idle-seconds", type=float, default=DEFAULT_IDLE_SECONDS)
     supervisor.add_argument(

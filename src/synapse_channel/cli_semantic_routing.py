@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from synapse_channel.cli_query_transport import AgentFactory
-from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import describe_connect_failure
 from synapse_channel.core.capability_directory import (
     CapabilityDirectory,
@@ -238,7 +238,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Recommend agents for a board task using local capability signals.",
     )
     route.add_argument("task_id", help="Board task id to route.")
-    route.add_argument("--uri", default=DEFAULT_HUB_URI)
+    route.add_argument("--uri", default=default_hub_uri())
     route.add_argument("--name", default="ROUTER")
     route.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     route.add_argument(

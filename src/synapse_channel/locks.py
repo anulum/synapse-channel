@@ -25,7 +25,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Protocol
 
 from synapse_channel.cli_query_transport import AgentFactory, _query_hub
-from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent, default_hub_uri
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.scoping import DEFAULT_WORKTREE
 
@@ -280,7 +280,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show leases owned by this identity or project namespace.",
     )
     parser.add_argument("--json", action="store_true", help="Emit a machine-readable JSON view.")
-    parser.add_argument("--uri", default=DEFAULT_HUB_URI)
+    parser.add_argument("--uri", default=default_hub_uri())
     parser.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     parser.add_argument(
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."

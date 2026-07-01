@@ -21,7 +21,7 @@ import contextlib
 from collections.abc import Callable
 from typing import Any
 
-from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import describe_connect_failure
 from synapse_channel.core.payload_crypto import (
     PayloadCryptoError,
@@ -181,7 +181,7 @@ def _cmd_channel_key_check(args: argparse.Namespace) -> int:
 def _add_common(parser: argparse.ArgumentParser) -> None:
     """Add shared connection options to a channel subcommand."""
     parser.add_argument("--name", required=True, help="Requesting agent identity.")
-    parser.add_argument("--uri", default=DEFAULT_HUB_URI, help="Synapse hub URI.")
+    parser.add_argument("--uri", default=default_hub_uri(), help="Synapse hub URI.")
     parser.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     parser.add_argument("--ready-timeout", type=float, default=5.0, help="Hub readiness timeout.")
     parser.add_argument("--response-timeout", type=float, default=3.0, help="Reply timeout.")
