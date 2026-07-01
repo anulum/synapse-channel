@@ -752,6 +752,7 @@ synapse postmortem ./synapse.db TASK-1
 synapse debug ./synapse.db --fork-at 142 --set status=blocked
 synapse reproduce ./synapse.db TASK-1 --expect 9f2c…
 synapse causality causes ./synapse.db 142
+synapse merkle root ./synapse.db
 synapse reliability ./synapse.db
 synapse accounting report ./synapse.db --pricing pricing.json --budget budget.json
 synapse approval request --name dev --subject TASK-1 --reason "needs sign-off"
@@ -796,6 +797,17 @@ that would lose their recorded cause without it. This is coordination causality
 inferred from recorded scheduling semantics, not statistical causal discovery;
 every edge is backed by a concrete event, and the counterfactual is a structural
 what-if over the inferred graph.
+
+Use `synapse merkle root ./synapse.db` to commit the durable log to a single
+Merkle root — a 32-byte fingerprint of every event, so two operators or two
+federated hubs holding the same log derive the same root and a mismatch proves
+they differ. `synapse merkle prove ./synapse.db 142` emits an `O(log n)`
+inclusion proof for one event, and `synapse merkle verify proof.json` checks that
+proof offline against a trusted root with no event store — the light-client
+verification a follower runs. The tree follows RFC 6962 (Certificate
+Transparency), so a leaf hash cannot be forged as an interior node. It commits
+what the log contains — integrity and inclusion — complementing `reproduce` (a
+per-task digest) with a log-wide, incrementally provable commitment.
 
 Use `synapse reliability ./synapse.db` for evidence-only reliability memory. It
 tracks stale claims, declared failed-check evidence, broken handoff candidates,
@@ -983,11 +995,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.77.0 |
 | Public API exports | 61 |
-| Package modules | 253 |
-| Classes | 342 |
+| Package modules | 255 |
+| Classes | 344 |
 | Wire message types | 65 |
-| CLI subcommands | 106 |
-| Test functions | 3217 |
+| CLI subcommands | 110 |
+| Test functions | 3263 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 46 |
 | GitHub Actions workflows | 12 |

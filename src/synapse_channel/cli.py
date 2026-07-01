@@ -27,6 +27,7 @@ The ``synapse`` command exposes these subcommands:
 * ``debug`` — fork a task's reconstructed state at a sequence point (read-only what-if);
 * ``reproduce`` — fingerprint a task's authoritative history into a deterministic digest;
 * ``causality`` — trace coordination causes, effects, or counterfactuals over the event log;
+* ``merkle`` — commit the event log to a Merkle root and prove event inclusion;
 * ``reliability`` — build evidence-only reliability memory from the event log;
 * ``accounting`` — record and report opt-in model cost/token usage from the event log;
 * ``approval`` — request, decide, and replay human-in-the-loop approval gates;
@@ -108,6 +109,7 @@ from synapse_channel.cli_locking import add_parsers as add_locking_parsers
 from synapse_channel.cli_mcp import add_parsers as add_mcp_parsers
 from synapse_channel.cli_mcp_call import add_parsers as add_mcp_call_parsers
 from synapse_channel.cli_memory_projection import add_parsers as add_memory_projection_parsers
+from synapse_channel.cli_merkle import add_parsers as add_merkle_parsers
 from synapse_channel.cli_messaging import add_parsers as add_messaging_parsers
 from synapse_channel.cli_multihub import add_parsers as add_multihub_parsers
 from synapse_channel.cli_new import add_parsers as add_new_parsers
@@ -231,6 +233,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_replay_parsers(sub)
 
     add_causality_parsers(sub)
+
+    add_merkle_parsers(sub)
 
     add_reliability_parsers(sub)
 

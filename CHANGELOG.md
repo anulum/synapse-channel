@@ -13,6 +13,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse merkle root|prove|verify ./hub.db` commits the durable event log to a Merkle root: a
+  single SHA-256 fingerprint of every event, so two operators — or two federated hubs — holding
+  the same log derive the same root and a mismatch proves the logs differ. `merkle prove SEQ`
+  emits an O(log n) inclusion proof for one event, and `merkle verify proof.json` checks that
+  proof offline against a trusted root with no event store, the light-client verification a
+  follower runs (`--expect ROOT` pins the root; `--through SEQ` commits only up to a sequence).
+  The tree follows RFC 6962 with distinct leaf and interior-node domain-separation prefixes, so a
+  leaf hash cannot be forged as an interior node. It commits what the log contains — integrity and
+  inclusion — complementing the per-task `reproduce` digest with a log-wide, incrementally
+  provable commitment. It is read-only and contacts no live hub.
+
 ## [0.77.0] - 2026-07-01
 
 ### Added

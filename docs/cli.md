@@ -36,6 +36,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse debug` | Fork a task's reconstructed state at a sequence point (read-only what-if). |
 | `synapse reproduce` | Fingerprint a task's authoritative history into a deterministic digest. |
 | `synapse causality` | Trace coordination causes, effects, or counterfactuals over the event log. |
+| `synapse merkle` | Commit the event log to a Merkle root and prove event inclusion. |
 | `synapse reliability` | Build evidence-only reliability memory from a hub SQLite event store. |
 | `synapse accounting` | Record and report opt-in model cost/token usage from a hub SQLite event store. |
 | `synapse approval` | Request, decide, and replay human-in-the-loop approval gates from a hub SQLite event store. |
@@ -539,6 +540,9 @@ synapse reproduce ./synapse.db TASK-1 --expect 9f2c… --json
 synapse causality causes ./synapse.db 142
 synapse causality effects ./synapse.db 118 --json
 synapse causality counterfactual ./synapse.db 96
+synapse merkle root ./synapse.db
+synapse merkle prove ./synapse.db 142 --json > proof.json
+synapse merkle verify proof.json --expect 9f2c…
 synapse reliability ./synapse.db
 synapse accounting record --name alpha --task TASK-1 --model claude-opus-4-8 --input-tokens 1200 --output-tokens 300
 synapse accounting report ./synapse.db --pricing pricing.json --budget budget.json
@@ -678,6 +682,22 @@ backed by a concrete event, and the counterfactual is a structural what-if over
 the inferred graph, not a claim that the work would never have happened another
 way. Exit status is `0` when the sequence names a coordination event, `1` when it
 does not, and `2` on an unknown direction or a missing store.
+
+`synapse merkle root ./synapse.db` commits the durable event log to a single
+Merkle root: a 32-byte fingerprint of every event, so two operators — or two
+federated hubs — holding the same log derive the same root and a mismatch proves
+the logs differ (`--expect ROOT` gates on a trusted value, `--through SEQ` commits
+only up to a sequence). `synapse merkle prove ./synapse.db 142` emits an `O(log
+n)` inclusion proof — the sibling hashes that reconstruct the root from one
+event's leaf — and `synapse merkle verify proof.json` checks such a proof offline
+with no event store, the light-client verification a follower runs against a
+trusted root (`--expect ROOT` also pins the root). The tree follows RFC 6962
+(Certificate Transparency): leaves and interior nodes carry distinct
+domain-separation prefixes, so a leaf hash cannot be forged as an interior node.
+The commitment proves what the log contains — integrity and inclusion — not the
+semantic correctness of the coordination it records. `root`/`prove` exit `2` on a
+missing store and `prove` exits `1` when no event has that sequence; `verify`
+exits `0` valid, `1` on a bad proof or root mismatch, `2` on an unreadable file.
 
 `synapse reliability ./synapse.db` builds evidence-only reliability memory from
 the same event store. It counts stale claims, declared failed-check evidence,
