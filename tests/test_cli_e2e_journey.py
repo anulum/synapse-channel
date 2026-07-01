@@ -27,6 +27,16 @@ def test_self_contained_demo_prints_success() -> None:
     assert "success: coordination demo completed" in result.stdout
 
 
+def test_commands_overview_groups_the_surface_by_tier() -> None:
+    """``synapse commands`` prints the whole surface grouped into its five tiers."""
+    result = run_cli("commands")
+    assert result.ok(), result.output
+    for tier in ("stable", "adapter", "analysis", "governance", "experimental"):
+        assert f"{tier} — " in result.stdout
+    # a representative command from the daily-safe core is present
+    assert "board" in result.stdout
+
+
 def test_read_side_queries_answer_a_fresh_hub(tmp_path: Path) -> None:
     """``who``/``state``/``board``/``manifest`` answer an empty isolated hub."""
     with isolated_hub(tmp_path) as hub:

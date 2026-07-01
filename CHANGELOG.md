@@ -13,6 +13,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse commands` prints every subcommand grouped by its stability tier (stable core, adapters,
+  read-only analysis, advisory governance, experimental) with a one-line summary of each tier, so the
+  surface can be scanned by responsibility instead of read as one flat `synapse --help` list.
+
 ### Fixed
 - The federation gate now degrades to the local frame path when reading the peer's live certificate
   raises, instead of letting the exception crash the connection's frame handler. A certificate read can

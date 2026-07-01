@@ -96,6 +96,7 @@ from synapse_channel.cli_arm import add_parser as add_arm_parser
 from synapse_channel.cli_causality import add_parsers as add_causality_parsers
 from synapse_channel.cli_channels import add_parsers as add_channel_parsers
 from synapse_channel.cli_codex_tmux import add_parsers as add_codex_tmux_parsers
+from synapse_channel.cli_commands_overview import add_parsers as add_commands_overview_parsers
 from synapse_channel.cli_dashboard import add_parsers as add_dashboard_parsers
 from synapse_channel.cli_demo import add_parsers as add_demo_parsers
 from synapse_channel.cli_directory import add_parsers as add_directory_parsers
@@ -172,6 +173,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_process_parsers(sub)
 
     add_demo_parsers(sub)
+
+    add_commands_overview_parsers(sub)
 
     add_quickstart_coding_parsers(sub)
 
