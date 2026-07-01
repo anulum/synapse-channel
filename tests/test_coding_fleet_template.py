@@ -100,3 +100,27 @@ def test_cmd_new_coding_fleet_refuses_an_existing_workspace(
     assert exit_code == 2
     assert "synapse new coding-fleet:" in capsys.readouterr().err
     assert (target / "keep.txt").read_text(encoding="utf-8") == "precious"
+
+
+async def test_coding_fleet_helpers_time_out_honestly() -> None:
+    """The fleet demo's waiters raise named timeouts instead of hanging."""
+    from synapse_channel import coding_fleet
+
+    inbox = coding_fleet.CodingFleetInbox()
+    with pytest.raises(TimeoutError, match="expected message did not arrive"):
+        await inbox.wait_for(lambda _m: False, timeout=0.05)
+    with pytest.raises(TimeoutError, match="did not start listening"):
+        await coding_fleet._await_listening(coding_fleet._free_port(), timeout=0.05)
+
+
+def test_coding_fleet_demo_refuses_an_empty_narration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A demo run that produced no narration is an error, not silent success."""
+    from synapse_channel import coding_fleet
+
+    monkeypatch.setattr(
+        "synapse_channel.coding_fleet.asyncio.run", lambda coro: (coro.close(), [])[1]
+    )
+    with pytest.raises(RuntimeError, match="produced no narration"):
+        coding_fleet.main()

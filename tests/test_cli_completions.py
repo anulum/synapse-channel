@@ -215,3 +215,10 @@ def test_completions_rejects_an_unknown_shell() -> None:
     with pytest.raises(SystemExit) as excinfo:
         parser.parse_args(["completions", "powershell"])
     assert excinfo.value.code == 2
+
+
+def test_zsh_script_renders_an_empty_command_tree() -> None:
+    """A tree with no subcommands still emits a valid describe block."""
+    script = zsh_script(CommandSpec(name="synapse", options=("--help",)))
+    assert "candidates=(" in script
+    assert "_describe -t commands 'synapse command' candidates" in script

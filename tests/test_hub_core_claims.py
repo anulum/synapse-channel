@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
+from synapse_channel.core.hub import SynapseHub
 
 
 async def test_claim_granted_is_broadcast_end_to_end() -> None:
@@ -157,3 +158,41 @@ async def test_task_update_failure_errors_sender_end_to_end() -> None:
             await alpha.recorder.wait_for(lambda m: m.get("type") == "error")
         finally:
             await close_agents(alpha)
+
+
+async def test_release_receipt_progress_is_not_broadcast_when_the_board_refuses() -> None:
+    """A refused progress append never turns into a broadcast note."""
+    from synapse_channel.core.handlers.leasing import _record_release_receipt_progress
+    from synapse_channel.core.receipts import build_release_receipt
+
+    hub = SynapseHub(hub_id="syn-test")
+    broadcasts: list[object] = []
+
+    async def record_broadcast(data: object) -> None:
+        broadcasts.append(data)
+
+    hub._broadcast = record_broadcast  # type: ignore[method-assign]
+    hub.blackboard.post_progress = (  # type: ignore[method-assign]
+        lambda **_kwargs: (False, "quota exhausted")
+    )
+    receipt = build_release_receipt(task_id="T1", owner="alice")
+    await _record_release_receipt_progress(hub, receipt)
+    assert broadcasts == []
+
+
+async def test_release_receipt_progress_broadcasts_without_a_journal() -> None:
+    """An in-memory hub records the note as a broadcast, skipping the log."""
+    from synapse_channel.core.handlers.leasing import _record_release_receipt_progress
+    from synapse_channel.core.receipts import build_release_receipt
+
+    hub = SynapseHub(hub_id="syn-test")  # journal is None by default
+    broadcasts: list[dict[str, object]] = []
+
+    async def record_broadcast(data: dict[str, object]) -> None:
+        broadcasts.append(data)
+
+    hub._broadcast = record_broadcast  # type: ignore[method-assign]
+    receipt = build_release_receipt(task_id="T1", owner="alice")
+    await _record_release_receipt_progress(hub, receipt)
+    assert len(broadcasts) == 1
+    assert broadcasts[0]["type"] == "ledger_progress_posted"

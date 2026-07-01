@@ -160,3 +160,32 @@ async def test_run_git_release_releases_whole_worktree_claim() -> None:
 
         assert rc == 0
         await _wait_until(lambda: "T1" not in hub.state.claims)
+
+
+class _SilentReleaseAgent:
+    """Connects and reports ready, but the state snapshot never arrives."""
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        self.running = True
+
+    async def connect(self) -> None:
+        while self.running:
+            await asyncio.sleep(0.01)
+
+    async def wait_until_ready(self, *, timeout: float) -> bool:
+        return True
+
+    async def request_state(self) -> None:
+        return None
+
+
+async def test_run_git_release_never_blocks_on_a_hub_that_answers_nothing() -> None:
+    """A ready hub whose snapshot never lands releases nothing and exits zero."""
+    rc = await run_git_release(
+        uri="ws://unused",
+        name="me",
+        trigger="commit",
+        runner=lambda _args: "src/a.py\n",
+        agent_factory=_SilentReleaseAgent,  # type: ignore[arg-type]
+    )
+    assert rc == 0

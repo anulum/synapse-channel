@@ -17,6 +17,7 @@ system and sidecar noise so it never answers itself or coordination chatter.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import time
 from collections import deque
@@ -327,6 +328,11 @@ class SynapseLLMWorker:
         )
         for task in pending:
             task.cancel()
+            # Await the cancellation so the survivor's cleanup runs before this
+            # coroutine returns — a merely-scheduled cancel would leak a pending
+            # task into event-loop shutdown.
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         for task in done:
             try:
                 task.result()

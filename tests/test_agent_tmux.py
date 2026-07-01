@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import subprocess
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 from synapse_channel.agent_tmux import (
@@ -372,3 +373,31 @@ def test_wait_and_wake_jitters_the_default_backoff(tmp_path: Path) -> None:
     backoff, submit = sleeper.delays
     assert backoff > 1.0
     assert submit == config.submit_delay
+
+
+def test_wait_command_threads_a_custom_uri_and_token(tmp_path: Path) -> None:
+    """A non-default hub and a token both ride on the one-shot wait command."""
+    from synapse_channel.agent_tmux import _wait_command
+
+    config = _config(tmp_path)
+    custom = replace(config, uri="ws://coordinator:9999", token="secret-token")
+    command = _wait_command(custom)
+    assert command[-4:] == ["--uri", "ws://coordinator:9999", "--token", "secret-token"]
+    # the default-hub command carries neither flag
+    assert "--uri" not in _wait_command(config)
+    assert "--token" not in _wait_command(config)
+
+
+def test_wait_and_wake_propagates_a_failed_injection(tmp_path: Path) -> None:
+    """A wake that cannot be injected stops the loop with the tmux exit code."""
+    config = _config(tmp_path)
+    runner = RecordingRunner(
+        [
+            _result(["synapse", "wait"], 0, "sender: wake\n"),
+            _result(["tmux", "send-keys"], 3),  # the injection fails
+        ]
+    )
+
+    result = wait_and_wake(config, runner=runner, max_wakes=2, sleeper=RecordingSleeper())
+
+    assert result == 3

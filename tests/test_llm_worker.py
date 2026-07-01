@@ -381,3 +381,26 @@ async def test_run_skips_advertise_on_handshake_timeout(
     worker = _worker(name="ALPHA", uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1)
     await worker.run()
     assert "handshake timeout" in capsys.readouterr().out
+
+
+async def test_run_cancels_the_worker_loop_when_the_connection_ends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The surviving task is cancelled the moment its sibling completes."""
+    worker = _worker(name="ALPHA", uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1)
+
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def endless_loop() -> None:
+        started.set()
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    monkeypatch.setattr(worker, "_worker_loop", endless_loop)
+    await worker.run()
+    assert started.is_set()
+    assert cancelled.is_set()

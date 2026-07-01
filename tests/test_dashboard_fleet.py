@@ -328,3 +328,34 @@ async def test_dashboard_http_json_includes_fleet_visibility(tmp_path: Path) -> 
     assert studio["headline"]["agents_live"] == len(studio["agents"]["live"])
     assert studio["verdict"] == studio["risk"]["level"]
     assert studio["headline"]["branch_conflicts"] == len(studio["conflicts"]) >= 1
+
+
+# --- A2A summary degradation shapes ---------------------------------------------
+
+
+def test_a2a_summary_reports_a_missing_state_file(tmp_path: Path) -> None:
+    from synapse_channel.dashboard_fleet import _a2a_summary
+
+    summary = _a2a_summary(tmp_path / "absent-state.json")
+    assert summary.source == "missing"
+    assert summary.total == 0
+    assert "error" not in summary.to_dict()
+
+
+def test_a2a_summary_reports_a_corrupt_state_file(tmp_path: Path) -> None:
+    from synapse_channel.dashboard_fleet import _a2a_summary
+
+    corrupt = tmp_path / "state.json"
+    corrupt.write_text("{not json", encoding="utf-8")
+    summary = _a2a_summary(corrupt)
+    assert summary.source == "error"
+    payload = summary.to_dict()
+    assert payload["error"]  # the error rides in the JSON payload
+
+
+def test_float_or_none_rejects_unparsable_text() -> None:
+    from synapse_channel.dashboard_fleet import _float_or_none
+
+    assert _float_or_none("not-a-number") is None
+    assert _float_or_none(None) is None
+    assert _float_or_none("2.5") == 2.5
