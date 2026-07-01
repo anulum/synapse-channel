@@ -349,3 +349,13 @@ async def test_e2e_local_signed_frame_is_unaffected() -> None:
             await websocket.send(_signed_claim(private_key, _LOCAL_KEY_ID, "T9", "n9"))
             granted = await read_until_type(websocket, "claim_granted")
     assert granted["task_id"] == "T9"
+
+
+def test_warn_unresolved_is_a_no_op_without_a_bundle(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A hub with no federation configured never logs an unresolved warning."""
+    hub = SynapseHub(hub_id="syn-test")
+    with caplog.at_level("WARNING"):
+        hub._warn_unresolved_federation("SENDER", "chat", "key-1", "sha256:aa")
+    assert "resolves to no peered domain" not in caplog.text

@@ -317,3 +317,22 @@ def test_send_waiter_identity_normalization_is_documented() -> None:
     assert "one-shot send accidentally uses a waiter name" in cli_docs
     assert "avoids the hub's duplicate-name refusal" in cli_docs
     assert "synapse send --require-recipient" in cli_docs
+
+
+async def test_send_reports_a_failed_encryption(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A key file of the wrong shape fails the send before anything leaves."""
+    bad_key = tmp_path / "payload.key"
+    bad_key.write_bytes(b"short")  # a valid file, but not a 32-byte key
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        code = await cli_messaging._send(
+            uri=uri,
+            name="USER",
+            target="FAST",
+            message="secret",
+            wait_seconds=0.0,
+            encrypt_key_file=str(bad_key),
+        )
+    assert code == 1
+    assert "encryption failed:" in capsys.readouterr().out

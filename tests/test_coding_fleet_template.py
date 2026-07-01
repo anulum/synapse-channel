@@ -85,3 +85,18 @@ async def test_packaged_coding_fleet_demo_prevents_collisions() -> None:
     assert any("disjoint scope, granted" in line for line in log)
     assert any("test-dev received:" in line for line in log)
     assert any("released" in line for line in log)
+
+
+def test_cmd_new_coding_fleet_refuses_an_existing_workspace(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Scaffolding into an existing non-empty target is refused, exit 2."""
+    target = tmp_path / "demo-fleet"
+    target.mkdir()
+    (target / "keep.txt").write_text("precious", encoding="utf-8")
+
+    exit_code = cli.main(["new", "coding-fleet", str(target)])
+
+    assert exit_code == 2
+    assert "synapse new coding-fleet:" in capsys.readouterr().err
+    assert (target / "keep.txt").read_text(encoding="utf-8") == "precious"

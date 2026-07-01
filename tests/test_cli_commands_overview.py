@@ -61,3 +61,17 @@ def test_cli_main_prints_the_overview(capsys: pytest.CaptureFixture[str]) -> Non
     assert "SYNAPSE CHANNEL" in out
     assert "stable — " in out
     assert "experimental — " in out
+
+
+def test_render_overview_skips_a_tier_with_no_commands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A tier that loses all commands disappears instead of rendering empty."""
+    from synapse_channel import cli_commands_overview
+
+    slim = {tier: [] for tier in cli_commands_overview.TIERS}
+    slim["stable"] = ["send"]
+    monkeypatch.setattr(cli_commands_overview, "taxonomy_by_tier", lambda: slim)
+    text = cli_commands_overview.render_overview()
+    assert "stable" in text
+    assert "experimental —" not in text

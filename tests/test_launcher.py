@@ -245,3 +245,31 @@ def test_run_team_handles_keyboard_interrupt() -> None:
     )
     assert result == 0
     assert all(proc.poll() is not None for proc in launched)
+
+
+def test_shutdown_escalates_to_kill_on_an_unexpected_terminate_error() -> None:
+    """An OS error from terminate is not swallowed silently — the child is killed."""
+
+    class ExplodingProc:
+        def __init__(self) -> None:
+            self.killed = False
+            self.waits = 0
+
+        def poll(self) -> None:
+            return None
+
+        def terminate(self) -> None:
+            msg = "terminate failed"
+            raise RuntimeError(msg)
+
+        def kill(self) -> None:
+            self.killed = True
+
+        def wait(self, timeout: float) -> int:
+            self.waits += 1
+            return 0
+
+    exploding = ExplodingProc()
+    _shutdown([("x", exploding)], timeout_seconds=0.05)  # type: ignore[list-item]
+    assert exploding.killed
+    assert exploding.waits == 1

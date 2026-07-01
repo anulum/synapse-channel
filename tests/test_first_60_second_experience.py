@@ -69,3 +69,17 @@ def test_public_docs_explain_the_60_second_install_doctor_demo_path() -> None:
     assert "synapse doctor" in combined
     assert "synapse demo" in combined
     assert "success: coordination demo completed" in combined
+
+
+async def test_demo_helpers_time_out_honestly(tmp_path: object) -> None:
+    """The demo's waiters raise a named TimeoutError instead of hanging."""
+    import pytest
+
+    from synapse_channel import demo as demo_module
+
+    inbox = demo_module.DemoInbox()
+    with pytest.raises(TimeoutError, match="expected message did not arrive"):
+        await inbox.wait_for(lambda _m: False, timeout=0.05)
+    dead_port = demo_module._free_port()
+    with pytest.raises(TimeoutError, match="did not start listening"):
+        await demo_module._await_listening(dead_port, timeout=0.05)
