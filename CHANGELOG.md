@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- The federation gate now degrades to the local frame path when reading the peer's live certificate
+  raises, instead of letting the exception crash the connection's frame handler. A certificate read can
+  fail on a socket that has closed or never completed its TLS handshake; such a frame is now handled
+  exactly as an absent certificate is.
+
 ## [0.81.0] - 2026-07-01
 
 ### Changed

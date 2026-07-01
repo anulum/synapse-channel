@@ -176,6 +176,24 @@ async def test_unpeered_key_is_local() -> None:
     assert disposition is FrameDisposition.LOCAL
 
 
+async def test_cert_read_that_raises_degrades_to_local() -> None:
+    # Reading the live certificate can raise on a socket that closed or never
+    # finished its handshake, and an injected cert source is arbitrary code. Such a
+    # failure must degrade the frame to the local path, never crash the frame loop.
+    def _raising_cert_source(_websocket: Any) -> bytes | None:
+        raise OSError("socket closed during certificate read")
+
+    hub = SynapseHub(
+        hub_id="syn-a",
+        require_per_message_auth=True,
+        signed_event_trust_bundle=_trust_bundle(),
+        federation_bundle=FederationBundle([_peer(scope=(ScopeGrant(CLAIM, _NAMESPACE),))]),
+        federation_cert_source=_raising_cert_source,
+    )
+    disposition = await hub._authorise_federation(_REMOTE, MessageType.CLAIM, _claim(), _Recorder())
+    assert disposition is FrameDisposition.LOCAL
+
+
 # --- cross-domain authorisation: allow within scope, deny every other way ---
 
 
