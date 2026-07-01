@@ -106,6 +106,7 @@ from synapse_channel.core.state import (
 logger = logging.getLogger("synapse.hub")
 
 __all__ = [
+    "FrameDisposition",
     "InsecureBindError",
     "LOOPBACK_HOSTS",
     "SynapseHub",
