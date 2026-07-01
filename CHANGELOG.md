@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.78.0] - 2026-07-01
+
 ### Added
 - `synapse merkle root|prove|verify ./hub.db` commits the durable event log to a Merkle root: a
   single SHA-256 fingerprint of every event, so two operators — or two federated hubs — holding
