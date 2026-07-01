@@ -70,6 +70,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "demo": STABLE,
     "quickstart-coding": STABLE,
     "commands": STABLE,
+    "completions": STABLE,
     # bridges to other ecosystems and tools
     "a2a-card": ADAPTER,
     "a2a-serve": ADAPTER,

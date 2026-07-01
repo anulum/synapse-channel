@@ -13,6 +13,14 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse completions <shell>` prints a static tab-completion script for bash, zsh, or
+  fish. The script is generated from the installed CLI's live argument parser — top-level
+  subcommands, nested subcommands, and long options — so it cannot drift from the surface
+  it completes, needs no extra dependency, and starts no process per keystroke. Install it
+  where the shell looks for completions (or evaluate it inline) and re-run the command
+  after an upgrade to refresh it.
+
 ### Changed
 - `synapse hub --federation-store` now refuses to start when the store's peerings grant
   cross-domain scope but `--require-message-auth` is not set: without per-message

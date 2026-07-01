@@ -9,6 +9,7 @@ see the [Integration demos](integration-demos.md).
 | --- | --- |
 | `synapse hub` | Run the coordination hub. |
 | `synapse commands` | List every subcommand grouped by stability tier — the quickest map of the surface. |
+| `synapse completions` | Print a static tab-completion script for bash, zsh, or fish, generated from the installed CLI. |
 | `synapse demo` | Run a self-contained local coordination demo and print a success marker. |
 | `synapse quickstart-coding` | Create a coding-fleet workspace, run the no-collision demo, and print a success marker. |
 | `synapse new coding-fleet` | Scaffold a runnable two-agent coding demo workspace. |
@@ -917,6 +918,8 @@ synapse init --project my-repo --install-user-services  # install them under sys
 synapse install-shell-hook                              # auto-arm Bash, Zsh, and Fish on new terminals
 synapse install-shell-hook --shell fish                 # only the Fish integration
 synapse shell-hook                                      # print the block instead of installing it
+synapse completions bash > ~/.local/share/bash-completion/completions/synapse   # tab completion
+synapse completions fish > ~/.config/fish/completions/synapse.fish              # (re-run after upgrades)
 synapse arm --name my-repo --for "my-repo,my-repo/*"    # keep a waiter armed, re-arming after each wake
 synapse worker-session --identity my-repo -- codex      # run a provider CLI with SYN_PROJECT/SYN_IDENTITY set
 synapse adapters list                                   # detect coding tools and report adapter status
