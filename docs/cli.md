@@ -31,6 +31,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse listen` | Connect and stream channel messages until interrupted. |
 | `synapse relay` | Decode and print a lite relay log a hub mirrored to a file. |
 | `synapse ingest` | Stream durable event-store records since a sequence cursor. |
+| `synapse multihub` | Observe or follow a peer hub's event log and print its board and claims (see [Multi-hub sync](multi-hub-sync.md)). |
 | `synapse compact` | Apply event-store retention and optionally write an HTML archive report. |
 | `synapse postmortem` | Build a replayable task postmortem from a hub SQLite event store. |
 | `synapse debug` | Fork a task's reconstructed state at a sequence point (read-only what-if). |
@@ -567,6 +568,9 @@ synapse approval request --name dev --subject TASK-1 --reason "needs human sign-
 synapse approval decide --name ceo --subject TASK-1 --approve --reason "ship it"
 synapse approval status ./synapse.db --pending
 synapse ttl-advice ./synapse.db
+synapse ingest ./synapse.db --cursor ./ingest.cursor    # drain new events as JSON lines, resumable
+synapse multihub observe --peer-db ./peer.db --json     # fold a peer hub's log offline
+synapse multihub follow --peer-uri ws://peer:8876       # pull a peer's board over a connection
 synapse supervisor --idle-seconds 300 --history-multiplier 3
 ```
 
@@ -750,6 +754,13 @@ the same event store. It derives completed-task duration samples, active
 live-claim counts, and stale-claim counts, then prints an advisory default and
 optional owner-specific rows when enough samples exist. The command does not
 change the hub default, and explicit manual TTL values remain the control path.
+
+`synapse multihub` reads a *peer* hub's event log rather than the local one.
+`multihub observe --peer-db ./peer.db` folds a peer's log file offline into its
+board and claims; `multihub follow --peer-uri ws://peer:8876` pulls the same
+snapshot from a live peer over a connection. Both are read-only observations
+tagged with a peer id and neither mutates the local hub. See
+[Multi-hub sync](multi-hub-sync.md) for the federation and trust model.
 
 ## Agent2Agent bridge
 
