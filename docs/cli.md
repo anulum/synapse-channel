@@ -13,9 +13,12 @@ see the [Integration demos](integration-demos.md).
 | `synapse new coding-fleet` | Scaffold a runnable two-agent coding demo workspace. |
 | `synapse health` | Probe the hub; exit `0` if reachable, `1` if not (wired as a container healthcheck). |
 | `synapse worker` | Run a model worker that answers on the channel. |
+| `synapse worker-session` | Run a provider command with `SYN_PROJECT`/`SYN_IDENTITY` set and a waiter armed around it. |
 | `synapse team` | Launch a hub plus one or two local workers in one shot. |
 | `synapse mcp` | Serve the hub to MCP-compatible agents over stdio (see [MCP server](mcp.md)). |
 | `synapse mcp-tools` / `synapse mcp-call` | List and call allowlisted tools on an external MCP server (outbound). |
+| `synapse sandbox` | Validate a capability manifest and pre-flight or run a `.wasm` tool against it (`validate`/`test`/`run`). |
+| `synapse adapters` | Detect coding tools and wire them to the hub with a claim-aware adapter (`list`/`install`/`uninstall`). |
 | `synapse a2a-card` | Print an Agent2Agent Agent Card projected from the live capability manifest. |
 | `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge. |
 | `synapse channel` | Manage private-channel membership and member-visible history; pair with `synapse send --channel`. |
@@ -29,9 +32,12 @@ see the [Integration demos](integration-demos.md).
 | `synapse send` | Connect, send one message, optionally await replies, and exit. |
 | `synapse wait` | Block until a message addressed to you arrives, then exit (a wake trigger). |
 | `synapse listen` | Connect and stream channel messages until interrupted. |
+| `synapse arm` | Keep a waiter armed, re-arming automatically after each wake so a terminal stays reachable. |
 | `synapse relay` | Decode and print a lite relay log a hub mirrored to a file. |
 | `synapse ingest` | Stream durable event-store records since a sequence cursor. |
+| `synapse event-query` | Query a hub SQLite event store for temporal task and coordination history. |
 | `synapse multihub` | Observe or follow a peer hub's event log and print its board and claims (see [Multi-hub sync](multi-hub-sync.md)). |
+| `synapse federation` | Import, list, and revoke out-of-band operator-signed peer-domain bundles (`import`/`list`/`revoke`). |
 | `synapse compact` | Apply event-store retention and optionally write an HTML archive report. |
 | `synapse postmortem` | Build a replayable task postmortem from a hub SQLite event store. |
 | `synapse debug` | Fork a task's reconstructed state at a sequence point (read-only what-if). |
@@ -45,9 +51,13 @@ see the [Integration demos](integration-demos.md).
 | `synapse board` | Print the shared task/progress blackboard. |
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
 | `synapse manifest` | Print the capability manifest of advertised agents. |
+| `synapse directory` | Print a read-only capability directory from live agent cards (discovery only). |
 | `synapse who` | List the agents currently online, optionally for one project or this identity with `--me`. |
 | `synapse state` | Print active claims and their checkpoints (a resume view). |
 | `synapse doctor` | Check for common coordination misconfigs (identity, exposure, hub, waiter); exit non-zero on a failure. |
+| `synapse init` | Print or install the local user services (hub, waiter, presence) as systemd units. |
+| `synapse install-shell-hook` | Install auto-arming shell integration into Bash, Zsh, and Fish (idempotent, guarded block). |
+| `synapse shell-hook` | Print the shell code that auto-arms terminals and wraps agent commands, for manual sourcing. |
 | `synapse git-init` | One-step claim-aware setup: install the hooks and write a `.synapse/` conventions guide. |
 | `synapse git-claim` | Claim work scoped to the current git branch (see [Git-native claims](git-claims.md)). |
 | `synapse git-hook` | Install post-commit/post-merge hooks that auto-release a commit's claims. |
@@ -60,6 +70,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse lock` | Hold a lease while running a command, to serialise it across agents. |
 | `synapse release` | Manually drop a claim you own (e.g. an `--auto-release-on manual` claim). |
 | `synapse task` | Declare and update the shared task plan. |
+| `synapse workflow` | Validate and compile a declarative workflow into blackboard tasks (`validate`/`compile`/`plan`/`run`). |
 
 ## First 60 seconds
 
@@ -875,6 +886,65 @@ syn ack TEST \
   --evidence "mypy src/synapse_channel/feature.py" \
   --artifact coverage.xml \
   --note "ready for release"
+```
+
+## Setup and terminal integration
+
+These commands wire a machine and its terminals into the bus once, so agents
+arm themselves and coding tools claim work without per-session setup. `init`
+prints or installs the local user services; `install-shell-hook` adds an
+auto-arming block to your shell rc (idempotent — re-running it replaces the
+guarded block rather than appending); `shell-hook` prints that block for manual
+sourcing; `arm` keeps a single waiter re-armed; and `adapters` wires detected
+coding tools to the claim-aware hooks.
+
+```bash
+synapse init --project my-repo                          # print the hub/waiter/presence user units
+synapse init --project my-repo --install-user-services  # install them under systemd --user
+synapse install-shell-hook                              # auto-arm Bash, Zsh, and Fish on new terminals
+synapse install-shell-hook --shell fish                 # only the Fish integration
+synapse shell-hook                                      # print the block instead of installing it
+synapse arm --name my-repo --for "my-repo,my-repo/*"    # keep a waiter armed, re-arming after each wake
+synapse worker-session --identity my-repo -- codex      # run a provider CLI with SYN_PROJECT/SYN_IDENTITY set
+synapse adapters list                                   # detect coding tools and report adapter status
+synapse adapters install --project my-repo              # write the claim-aware adapter into each tool
+```
+
+## Governance and integrity
+
+Governance commands are advisory by default — they report, they do not block —
+so a rollout can observe before it enforces. `identity audit` inventories
+declared identities for enforcement-rollout blockers; `acl shadow` evaluates
+candidate accesses deny-by-default without denying anything live; `policy-check`
+scores a release receipt against a policy (`--enforce` to gate); and `federation`
+manages out-of-band, operator-signed peer-domain bundles for cross-hub trust.
+
+```bash
+synapse identity audit --identities ./identities.json          # audit declared identities for blockers
+synapse identity audit --identities ./identities.json --json
+synapse acl shadow --policy ./acl.json --requests ./requests.json   # non-blocking deny-by-default evaluation
+synapse policy-check --policy ./policy.json --receipt-json ./receipt.json   # advisory; --enforce to gate
+synapse federation import ./peer-domain.json --confirmed-by ceo # trust an operator-signed peer bundle
+synapse federation list --store ./federation.json              # imported peer domains and their provenance
+synapse federation revoke example.org --store ./federation.json
+synapse encrypt-key generate ./synapse.key                     # write a fresh owner-only 32-byte key file
+synapse encrypt-key check ./synapse.key                        # verify its ownership, mode, and length
+```
+
+## Experimental surfaces
+
+Newer, advisory surfaces whose shape may still change before 1.0. `sandbox`
+validates a capability manifest and pre-flights or runs a `.wasm` tool against
+it (running needs the `wasm` extra); `workflow` validates a declarative workflow
+and compiles it into the blackboard tasks the board would execute.
+
+```bash
+synapse sandbox validate ./manifest.json                # validate a capability manifest
+synapse sandbox test ./tool.wasm --manifest ./manifest.json    # pre-flight without running
+synapse sandbox run ./tool.wasm --manifest ./manifest.json --input ./in.json
+synapse workflow validate ./workflow.json               # parse and validate
+synapse workflow compile ./workflow.json --json         # compile into blackboard tasks
+synapse workflow plan ./workflow.json                   # show the tasks and their dependency order
 ```
 
 For a secured hub, pass `--token SECRET` to `worker`, `send`, `listen`, `board`,
