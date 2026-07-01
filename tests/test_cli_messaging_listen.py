@@ -114,3 +114,61 @@ def test_cmd_listen_handles_keyboard_interrupt(capsys: pytest.CaptureFixture[str
     )
     assert cli_messaging._cmd_listen(ns, listen_runner=listen_once, async_runner=stop) == 0
     assert "[USER] stopped listening." in capsys.readouterr().out
+
+
+# --- decryption-key handling and encrypted-payload rendering --------------------
+
+
+async def test_listen_reports_an_unreadable_decryption_key(
+    tmp_path: object, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from pathlib import Path
+
+    missing = Path(str(tmp_path)) / "absent.key"
+    code = await cli_messaging._listen(
+        uri=f"ws://127.0.0.1:{_free_port()}",
+        name="LISTENER",
+        decrypt_key_file=str(missing),
+    )
+    assert code == 1
+    assert "decryption key failed:" in capsys.readouterr().out
+
+
+def test_render_chat_payload_marks_encrypted_without_a_key() -> None:
+    from synapse_channel.cli_messaging_listen import _render_chat_payload
+
+    data = {"payload": "", "encrypted": {"v": 1}}
+    assert _render_chat_payload(data, None) == "<encrypted payload>"
+    # a hub-provided placeholder payload wins over the generic marker
+    assert _render_chat_payload({"payload": "[enc]", "encrypted": {"v": 1}}, None) == "[enc]"
+    # plain chat renders its payload regardless of a configured key
+    assert _render_chat_payload({"payload": "hello"}, b"k" * 32) == "hello"
+
+
+def test_render_chat_payload_round_trips_and_reports_a_wrong_key() -> None:
+    from synapse_channel.cli_messaging_listen import _render_chat_payload
+    from synapse_channel.core.payload_crypto import PayloadContext, encrypt_payload
+
+    key = b"k" * 32
+    context = PayloadContext(
+        message_type="chat", sender="PEER", target="LISTENER", channel="", task_id=""
+    )
+    envelope = encrypt_payload(
+        "secret text",
+        key,
+        key_id="k1",
+        recipients=["LISTENER"],
+        context=context,
+    )
+    data = {
+        "type": "chat",
+        "payload": "<masked>",
+        "encrypted": dict(envelope),
+        "sender": "PEER",
+        "target": "LISTENER",
+        "channel": "",
+        "task_id": "",
+    }
+    assert _render_chat_payload(data, key) == "secret text"
+    wrong = _render_chat_payload(data, b"x" * 32)
+    assert wrong.startswith("<encrypted payload:")

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno
 import json
 from typing import Any
 
@@ -244,3 +245,89 @@ async def test_connect_refused_quiet(capsys: pytest.CaptureFixture[str]) -> None
     agent = SynapseAgent("A", uri=f"ws://localhost:{_free_port()}", verbose=False)
     await agent.connect()
     assert capsys.readouterr().out == ""
+
+
+# --- refused-connection classification and verbose failure paths ---------------
+
+
+def test_is_connection_refused_matches_each_refusal_shape() -> None:
+    from synapse_channel.client.agent_lifecycle import _is_connection_refused
+
+    assert _is_connection_refused(ConnectionRefusedError()) is True
+    assert _is_connection_refused(OSError(errno.ECONNREFUSED, "refused")) is True
+    multi = OSError(
+        f"Multiple exceptions: Connect call failed [Errno {errno.ECONNREFUSED}] 127.0.0.1"
+    )
+    assert _is_connection_refused(multi) is True
+    assert _is_connection_refused(OSError(errno.EHOSTUNREACH, "unreachable")) is False
+    assert _is_connection_refused(OSError("Connect call failed, plain text")) is False
+
+
+async def test_verbose_agent_reports_a_refused_connection(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A verbose agent prints the is-the-hub-running hint on a dead port."""
+    agent = SynapseAgent(
+        "LONELY", _noop_handler, uri=f"ws://127.0.0.1:{_free_port()}", verbose=True
+    )
+    await agent.connect()
+    out = capsys.readouterr().out
+    assert "could not connect. Is the hub running?" in out
+
+
+async def test_verbose_agent_reports_a_non_refusal_os_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An OSError that is not a refusal prints the connection-lost line."""
+
+    def unreachable(*_args: object, **_kwargs: object) -> object:
+        raise OSError(errno.EHOSTUNREACH, "No route to host")
+
+    monkeypatch.setattr("synapse_channel.client.agent_lifecycle.connect", unreachable)
+    agent = SynapseAgent("LONELY", _noop_handler, uri="ws://10.255.255.1:9", verbose=True)
+    await agent.connect()
+    assert "Connection lost:" in capsys.readouterr().out
+
+
+async def test_verbose_agent_reports_a_closed_connection(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A ConnectionClosedError records the close code and prints the loss."""
+
+    def closed(*_args: object, **_kwargs: object) -> object:
+        raise ConnectionClosedError(Close(4008, "policy"), None)
+
+    monkeypatch.setattr("synapse_channel.client.agent_lifecycle.connect", closed)
+    agent = SynapseAgent("LONELY", _noop_handler, uri="ws://unused", verbose=True)
+    await agent.connect()
+    assert agent.last_close_code == 4008
+    assert agent.last_close_reason == "policy"
+    assert "Connection lost:" in capsys.readouterr().out
+
+
+def test_start_reports_a_keyboard_interrupt(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The blocking entry point catches Ctrl-C and reports the shutdown."""
+    agent = SynapseAgent("SCRIPT", _noop_handler, uri="ws://unused", verbose=True)
+
+    def interrupt(_coro: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("synapse_channel.client.agent_lifecycle.asyncio.run", _closing(interrupt))
+    agent.start()
+    assert "Shutting down." in capsys.readouterr().out
+
+
+def _closing(runner: object) -> object:
+    """Wrap a fake asyncio.run so the un-awaited coroutine is closed first."""
+
+    def run(coro: object) -> None:
+        coro.close()  # type: ignore[attr-defined]
+        runner(coro)  # type: ignore[operator]
+
+    return run
+
+
+async def _noop_handler(_data: object) -> None:
+    return None
