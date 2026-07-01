@@ -12,9 +12,11 @@ from __future__ import annotations
 import hashlib
 import subprocess  # nosec B404
 import time
+from collections.abc import Mapping
 from pathlib import Path
-from typing import NamedTuple, TypedDict, cast
+from typing import Any, NamedTuple, TypedDict, cast
 
+from synapse_channel.core.merkle import MerkleRoot, root_to_json, run_root, verify_root
 from synapse_channel.core.receipts import ReleaseReceipt, build_release_receipt
 
 DEFAULT_COMMAND_TIMEOUT_SECONDS = 1800.0
@@ -72,6 +74,7 @@ class VerificationDetails(TypedDict, total=False):
     git_tree: str
     timestamp: float
     signature: str
+    merkle: dict[str, object]
 
 
 class VerifiedReleaseReceipt(ReleaseReceipt, total=False):
@@ -203,6 +206,7 @@ def build_verified_release_receipt(
     signature: str = "",
     cwd: str | Path | None = None,
     command_timeout_seconds: float = DEFAULT_COMMAND_TIMEOUT_SECONDS,
+    merkle: MerkleRoot | None = None,
 ) -> VerifiedReleaseReceipt:
     """Run declared checks and build a JSON-serialisable release receipt.
 
@@ -225,6 +229,12 @@ def build_verified_release_receipt(
         Optional caller-supplied signature reference.
     cwd : str or pathlib.Path or None, optional
         Working directory for verification commands.
+    merkle : MerkleRoot or None, optional
+        Coordination-log Merkle commitment captured at release time. When given
+        the receipt carries the root as evidence and machine-readable detail, so
+        the exact coordination history behind the release is tamper-evident:
+        :func:`check_receipt_merkle_commitment` later recomputes the same log
+        prefix and any rewrite of it changes the root.
 
     Returns
     -------
@@ -267,6 +277,11 @@ def build_verified_release_receipt(
             f"note: working tree had {len(changed_files)} uncommitted change(s); "
             f"git_tree {git_tree or '(none)'} is HEAD, not the verified working-tree content"
         )
+    if merkle is not None:
+        evidence.append(
+            f"merkle root: {merkle.root} over {merkle.tree_size} coordination-log "
+            f"event(s) (seq {merkle.first_seq}..{merkle.last_seq})"
+        )
     artifact_lines = [
         f"{artifact['path']} sha256={artifact['sha256']} size={artifact['size_bytes']}"
         for artifact in artifact_results
@@ -291,6 +306,105 @@ def build_verified_release_receipt(
     }
     if signature:
         verification["signature"] = signature
+    if merkle is not None:
+        verification["merkle"] = root_to_json(merkle)
     verified = cast(VerifiedReleaseReceipt, dict(receipt))
     verified["verification"] = verification
     return verified
+
+
+class MerkleCommitmentCheck(NamedTuple):
+    """The outcome of re-verifying a receipt's coordination-log commitment.
+
+    Attributes
+    ----------
+    status : str
+        ``"pass"`` when the recomputed log prefix matches the recorded root,
+        ``"fail"`` when it does not (or the recorded commitment is malformed),
+        ``"not_applicable"`` when the receipt carries no commitment.
+    reason : str
+        One line explaining the outcome.
+    recorded_root : str
+        The root the receipt recorded; empty when absent.
+    recomputed_root : str
+        The root recomputed from the log now; empty when not recomputed.
+    """
+
+    status: str
+    reason: str
+    recorded_root: str = ""
+    recomputed_root: str = ""
+
+
+def check_receipt_merkle_commitment(
+    receipt: Mapping[str, Any],
+    db_path: str | Path,
+) -> MerkleCommitmentCheck:
+    """Recompute a receipt's coordination-log commitment against the log today.
+
+    The receipt recorded the RFC 6962 root over the log through ``last_seq`` at
+    release time. Because the log is append-only, recomputing the same prefix
+    later must reproduce the same root: events appended after ``last_seq`` do not
+    disturb it, while any rewrite, removal, or renumbering inside the committed
+    prefix changes it. The comparison is constant-time.
+
+    Parameters
+    ----------
+    receipt : Mapping[str, Any]
+        A parsed release-receipt JSON document.
+    db_path : str or pathlib.Path
+        Path to the hub event store the receipt committed to.
+
+    Returns
+    -------
+    MerkleCommitmentCheck
+        Pass/fail with the recorded and recomputed roots.
+
+    Raises
+    ------
+    ValueError
+        If the event store does not exist.
+    """
+    verification = receipt.get("verification")
+    merkle = verification.get("merkle") if isinstance(verification, Mapping) else None
+    if not isinstance(merkle, Mapping):
+        return MerkleCommitmentCheck(
+            status="not_applicable",
+            reason="receipt carries no coordination-log commitment",
+        )
+    recorded_root = str(merkle.get("root") or "")
+    last_seq = merkle.get("last_seq")
+    tree_size = merkle.get("tree_size")
+    if not recorded_root or not isinstance(last_seq, int) or not isinstance(tree_size, int):
+        return MerkleCommitmentCheck(
+            status="fail",
+            reason="recorded commitment is malformed: needs root, last_seq, and tree_size",
+            recorded_root=recorded_root,
+        )
+    recomputed = run_root(db_path, through_seq=last_seq)
+    if recomputed.tree_size != tree_size:
+        return MerkleCommitmentCheck(
+            status="fail",
+            reason=(
+                f"log prefix through seq {last_seq} now holds {recomputed.tree_size} "
+                f"event(s); the receipt committed to {tree_size}"
+            ),
+            recorded_root=recorded_root,
+            recomputed_root=recomputed.root,
+        )
+    if not verify_root(recomputed.root, recorded_root):
+        return MerkleCommitmentCheck(
+            status="fail",
+            reason="commitment mismatch: the committed log prefix changed since the receipt",
+            recorded_root=recorded_root,
+            recomputed_root=recomputed.root,
+        )
+    return MerkleCommitmentCheck(
+        status="pass",
+        reason=(
+            f"coordination log through seq {last_seq} still matches the recorded "
+            f"root over {tree_size} event(s)"
+        ),
+        recorded_root=recorded_root,
+        recomputed_root=recomputed.root,
+    )

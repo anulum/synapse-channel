@@ -22,12 +22,14 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.policy_engine import (
+    PolicyDecision,
     PolicyError,
     gate_blocks,
     load_policy,
     overall_status,
 )
 from synapse_channel.core.policy_rules import evaluate_policy
+from synapse_channel.core.release_verification import check_receipt_merkle_commitment
 
 _STATUS_GLYPH = {"pass": "✓", "warn": "!", "fail": "✗", "not_applicable": "·"}
 
@@ -59,6 +61,35 @@ def _print_text_report(report: dict[str, Any]) -> None:
         print("BLOCKED: enforcement policy has at least one failing rule.")
 
 
+def _merkle_decision(receipt: dict[str, Any], db_path: str, subject: str) -> PolicyDecision:
+    """Re-verify the receipt's coordination-log commitment as a policy decision."""
+    check = check_receipt_merkle_commitment(receipt, db_path)
+    evidence = tuple(
+        f"{label}: {value}"
+        for label, value in (
+            ("recorded root", check.recorded_root),
+            ("recomputed root", check.recomputed_root),
+        )
+        if value
+    )
+    next_action = ""
+    if check.status == "fail":
+        next_action = (
+            "treat the coordination log (or the receipt) as tampered; audit it with "
+            "`synapse merkle root` and `synapse event-query` before trusting the release"
+        )
+    elif check.status == "not_applicable":
+        next_action = "create receipts with `synapse verify-release --merkle-db` to commit the log"
+    return PolicyDecision(
+        rule="merkle_commitment",
+        status=check.status,
+        subject=subject,
+        reason=check.reason,
+        evidence=evidence,
+        next_action=next_action,
+    )
+
+
 def _cmd_policy_check(args: argparse.Namespace) -> int:
     """Run ``synapse policy-check`` and return its exit code."""
     try:
@@ -68,6 +99,12 @@ def _cmd_policy_check(args: argparse.Namespace) -> int:
         print(f"policy-check error: {exc}")
         return 2
     decisions = evaluate_policy(receipt, config, subject=args.task)  # type: ignore[arg-type]
+    if args.merkle_db:
+        try:
+            decisions.append(_merkle_decision(receipt, args.merkle_db, args.task))
+        except ValueError as exc:
+            print(f"policy-check error: {exc}")
+            return 2
     blocked = bool(args.enforce) and gate_blocks(decisions, config)
     report = {
         "subject": args.task or str(receipt.get("task_id", "")) or "<unknown>",
@@ -103,5 +140,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--enforce",
         action="store_true",
         help="Exit non-zero when an enforcement-mode policy has a failing rule.",
+    )
+    parser.add_argument(
+        "--merkle-db",
+        default="",
+        metavar="FILE",
+        help="Hub event store to recompute the receipt's coordination-log commitment "
+        "against (written by `synapse verify-release --merkle-db`); adds a "
+        "merkle_commitment decision that fails when the committed log prefix changed.",
     )
     parser.set_defaults(func=_cmd_policy_check)

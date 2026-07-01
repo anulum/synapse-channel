@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Release receipts can commit the coordination log: `synapse verify-release --merkle-db`
+  embeds the log's RFC 6962 Merkle root (root, tree size, sequence range) into the receipt
+  as both machine detail and an evidence line, binding the release to the exact
+  coordination history behind it. `synapse policy-check --merkle-db` re-verifies the
+  commitment later — it recomputes the committed log prefix, which append-only growth
+  never disturbs, and adds a `merkle_commitment` decision that fails (and can gate with
+  `--enforce` under an enforcement policy) when the prefix was rewritten, truncated, or
+  renumbered since the receipt.
+
 ### Changed
 - Building the causality graph is now bounded-memory: `synapse causality` streams only the
   coordination event kinds off the store cursor — the kind filter runs inside SQLite, so
