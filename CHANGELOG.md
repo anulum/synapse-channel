@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.82.0] - 2026-07-01
+
 ### Added
 - `synapse commands` prints every subcommand grouped by its stability tier (stable core, adapters,
   read-only analysis, advisory governance, experimental) with a one-line summary of each tier, so the
