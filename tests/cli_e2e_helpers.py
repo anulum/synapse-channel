@@ -249,6 +249,39 @@ def isolated_a2a_serve(hub_uri: str, *, ready_timeout: float = 8.0) -> Iterator[
 
 
 @contextmanager
+def isolated_worker(
+    hub_uri: str,
+    *,
+    name: str = "BOT",
+    provider: str = "rule",
+    ready_timeout: float = 12.0,
+) -> Iterator[str]:
+    """Run ``synapse worker`` against ``hub_uri``; yield the worker's identity.
+
+    Blocks until the worker is registered on the hub (it appears in ``who``), so
+    a message the caller sends afterwards cannot race the worker's connection. The
+    ``rule`` provider is offline and deterministic — it acknowledges without
+    reaching any network — so the journey needs no model credentials.
+    """
+    proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
+        [*_CLI, "worker", "--provider", provider, "--name", name, "--uri", hub_uri],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + ready_timeout
+        while time.monotonic() < deadline:
+            who = run_cli("who", uri=hub_uri, timeout=5.0)
+            if name in who.stdout:
+                break
+            time.sleep(0.1)
+        yield name
+    finally:
+        _stop(proc)
+
+
+@contextmanager
 def isolated_dashboard(hub_uri: str, *, ready_timeout: float = 8.0) -> Iterator[str]:
     """Serve ``synapse dashboard`` against ``hub_uri``; yield its base HTTP URL.
 
