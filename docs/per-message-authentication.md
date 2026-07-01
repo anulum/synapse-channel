@@ -57,7 +57,10 @@ Enable `--require-message-auth` when that assumption no longer holds:
 - **You federate.** Cross-domain frames *require* per-message authentication to
   bind authority: a cross-domain frame on a hub without it is refused
   `signature_not_verified` (see [the federated trust model](federated-trust-model.md)),
-  so a federating hub always sets `--require-message-auth`.
+  so a federating hub always sets `--require-message-auth`. The hub enforces this
+  at start-up: `--federation-store` whose peerings grant cross-domain scope refuses
+  to start without `--require-message-auth`, unless `--federation-observe-only`
+  declares the store is loaded for diagnostics and deny-closed refusal only.
 
 The token still gates admission in every mode; per-message authentication adds a
 second, per-frame check on top of it for the mutating frames listed above. It is

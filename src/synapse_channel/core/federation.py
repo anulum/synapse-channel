@@ -376,3 +376,61 @@ def compose_cross_domain(
     all allow it. Any layer rejecting the frame rejects it.
     """
     return decision.allowed and mtls_ok and signature_ok and acl_ok
+
+
+def peering_can_authorise(peer: FederationPeer, *, now: float) -> bool:
+    """Return whether ``peer``, as configured, could authorise any cross-domain frame.
+
+    A peering can only ever compose to an allow when it is active at ``now``, accepts
+    at least one signing key and one certificate pin, and maps at least one scope grant
+    inside a namespace it also grants (:meth:`FederationPeer.grants_for` filters grants
+    by namespace, and :meth:`FederationBundle.authorise` checks the namespace before the
+    scope, so a grant outside ``peer.namespaces`` is unreachable). A peering failing any
+    of these conditions is observe-only by construction: every frame it resolves is
+    refused deny-closed whatever the rest of the hub configuration does.
+
+    Parameters
+    ----------
+    peer : FederationPeer
+        The operator-confirmed peering to inspect.
+    now : float
+        POSIX timestamp (``time.time()``) the activity window is evaluated at.
+
+    Returns
+    -------
+    bool
+        ``True`` when at least one cross-domain access could compose to an allow.
+    """
+    if not peer.is_active(now):
+        return False
+    if not peer.signing_key_ids or not peer.certificate_pins:
+        return False
+    return any(grant.namespace in peer.namespaces for grant in peer.scope_grants)
+
+
+def bundle_can_authorise(bundle: FederationBundle, *, now: float) -> bool:
+    """Return whether any peering in ``bundle`` could authorise a cross-domain frame.
+
+    The hub start-up gate uses this to distinguish a store whose peerings claim
+    enforceable cross-domain scope — which demands per-message authentication, since
+    without it no signing key is ever verified and the claimed scope is unenforceable —
+    from a store that is observe-only by construction (revoked, expired, credential-less,
+    or scope-less peerings) and safe to load for diagnostics alone.
+
+    Parameters
+    ----------
+    bundle : FederationBundle
+        The composed peer set to inspect.
+    now : float
+        POSIX timestamp (``time.time()``) the activity windows are evaluated at.
+
+    Returns
+    -------
+    bool
+        ``True`` when at least one peering satisfies :func:`peering_can_authorise`.
+    """
+    return any(
+        peering_can_authorise(peer, now=now)
+        for domain in bundle.domains()
+        if (peer := bundle.peer(domain)) is not None
+    )

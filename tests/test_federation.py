@@ -16,8 +16,10 @@ from synapse_channel.core.federation import (
     FederationDenyReason,
     FederationPeer,
     ScopeGrant,
+    bundle_can_authorise,
     compose_cross_domain,
     diagnose_unresolved_domain,
+    peering_can_authorise,
     resolve_domain,
     scope_authorises,
 )
@@ -309,3 +311,41 @@ def test_scope_authorises_is_deny_closed_on_empty_scope_or_accesses() -> None:
     )
     # a frame mapping to no access (a read, or an unmapped mutation) is denied, not allowed
     assert scope_authorises([], scope=_GRANTS, namespace="acme/shared") is False
+
+
+def test_peering_can_authorise_when_active_with_credentials_and_reachable_scope() -> None:
+    assert peering_can_authorise(_peer(), now=100.0) is True
+
+
+def test_peering_cannot_authorise_when_revoked_or_expired() -> None:
+    assert peering_can_authorise(_peer(revoked=True), now=100.0) is False
+    assert peering_can_authorise(_peer(expires_at=50.0), now=100.0) is False
+
+
+def test_peering_cannot_authorise_without_signing_keys_or_pins() -> None:
+    assert peering_can_authorise(_peer(signing_key_ids=frozenset()), now=100.0) is False
+    assert peering_can_authorise(_peer(certificate_pins=frozenset()), now=100.0) is False
+
+
+def test_peering_cannot_authorise_without_a_reachable_scope_grant() -> None:
+    # no scope at all: a remote subject inherits no local default
+    assert peering_can_authorise(_peer(scope_grants=()), now=100.0) is False
+    # a grant outside every granted namespace is unreachable: the namespace
+    # check in FederationBundle.authorise runs before the scope mapping
+    assert (
+        peering_can_authorise(
+            _peer(scope_grants=(ScopeGrant("read_board", "acme/other"),)),
+            now=100.0,
+        )
+        is False
+    )
+
+
+def test_bundle_can_authorise_when_any_peering_can() -> None:
+    observe_only = _peer(domain_id="observer", scope_grants=())
+    assert bundle_can_authorise(FederationBundle([observe_only]), now=100.0) is False
+    assert bundle_can_authorise(FederationBundle([observe_only, _peer()]), now=100.0) is True
+
+
+def test_bundle_can_authorise_is_false_on_an_empty_bundle() -> None:
+    assert bundle_can_authorise(FederationBundle(), now=100.0) is False

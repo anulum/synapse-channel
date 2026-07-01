@@ -160,6 +160,45 @@ def test_federation_list_is_empty_by_default() -> None:
     assert "no peer domains imported" in result.stdout
 
 
+def test_hub_refuses_a_scope_granting_federation_store_without_message_auth(
+    tmp_path: Path,
+) -> None:
+    """An imported peering granting scope the hub cannot enforce refuses to start.
+
+    The journey is the real operator path: ``federation import`` writes the store,
+    then ``synapse hub --federation-store`` without ``--require-message-auth`` must
+    exit fatally and name ``--federation-observe-only`` as the declared-intent
+    escape hatch, instead of running with silently unenforceable peerings.
+    """
+    bundle = _write_json(
+        tmp_path / "peer.json",
+        {
+            "domain_id": "domain-b",
+            "namespaces": ["SYNAPSE-CHANNEL"],
+            "certificate_pins": ["sha256:aa"],
+            "signing_key_ids": ["domain-b:main"],
+            "scope_grants": [{"verb": "message", "namespace": "SYNAPSE-CHANNEL"}],
+        },
+    )
+    store = tmp_path / "federation.json"
+    imported = run_cli(
+        "federation", "import", str(bundle), "--confirmed-by", "ops", "--store", str(store)
+    )
+    assert imported.ok(), imported.output
+
+    hub = run_cli("hub", "--federation-store", str(store))
+    assert hub.returncode == 2
+    assert "grants cross-domain scope" in hub.stderr
+    assert "--federation-observe-only" in hub.stderr
+
+
+def test_hub_refuses_observe_only_without_a_federation_store() -> None:
+    """A declared observe-only intent with no store to observe is a config error."""
+    hub = run_cli("hub", "--federation-observe-only")
+    assert hub.returncode == 2
+    assert "requires --federation-store" in hub.stderr
+
+
 def test_encrypt_key_generate_then_check(tmp_path: Path) -> None:
     """``encrypt-key generate <path>`` writes a key that ``check`` then accepts."""
     key_path = tmp_path / "at-rest.key"

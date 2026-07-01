@@ -63,7 +63,15 @@ opt-in:
   mutual TLS, the event signature, and the mapped scope, instead of the local ACL. A frame
   resolving to no peer stays local. Federation only binds authority on a hub that also runs
   `--require-message-auth`; without it a cross-domain frame is refused, since its signing
-  key is not verified. With no store the live path is unchanged.
+  key is not verified. The hub therefore refuses to *start* when the store's peerings grant
+  cross-domain scope but `--require-message-auth` is not set — the configuration claims an
+  authorisation it can never perform. Two configurations remain valid without it: a store
+  whose peerings grant no enforceable scope (revoked, expired, credential-less, or
+  scope-less — observe-only by construction, started with a warning), and a scope-granting
+  store started with `--federation-observe-only`, the operator's declared intent to load
+  the peerings for diagnostics and deny-closed refusal only. Declaring
+  `--federation-observe-only` alongside `--require-message-auth` is a contradiction and is
+  likewise refused. With no store the live path is unchanged.
 
 A frame that carries a signing key over a pinned connection yet resolves to no peering is
 handled locally — the fail-closed default. Because a stale or misconfigured peering fails the

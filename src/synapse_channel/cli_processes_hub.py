@@ -12,13 +12,14 @@ from __future__ import annotations
 import argparse
 import ssl
 import sys
+import time
 from collections.abc import Callable, Coroutine
 from typing import Any
 
 from synapse_channel.cli_processes_runtime import _run
 from synapse_channel.core.acl import AclError, load_acl_policy
 from synapse_channel.core.auth import TokenAuthenticator
-from synapse_channel.core.federation import FederationBundle
+from synapse_channel.core.federation import FederationBundle, bundle_can_authorise
 from synapse_channel.core.federation_store import FederationStoreError, bundle_from_store
 from synapse_channel.core.hub import InsecureBindError, SynapseHub
 from synapse_channel.core.logging_setup import configure_logging
@@ -99,6 +100,21 @@ def _cmd_hub(
             file=sys.stderr,
         )
     federation_bundle: FederationBundle | None = None
+    if args.federation_observe_only and not args.federation_store:
+        print(
+            "synapse hub: --federation-observe-only requires --federation-store; there "
+            "is no peering to observe.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.federation_observe_only and args.require_message_auth:
+        print(
+            "synapse hub: --federation-observe-only contradicts --require-message-auth; "
+            "per-message authentication would enforce the peerings this flag declares "
+            "unenforced. Drop one of the two.",
+            file=sys.stderr,
+        )
+        return 2
     if args.federation_store:
         try:
             federation_bundle = bundle_from_store(args.federation_store)
@@ -106,13 +122,31 @@ def _cmd_hub(
             print(f"synapse hub: {exc}", file=sys.stderr)
             return 2
         if not args.require_message_auth:
-            print(
-                "synapse hub: WARNING --federation-store without --require-message-auth "
-                "authorises no cross-domain frame; a peered domain's frame can only be "
-                "honoured when per-message authentication binds its signing key. Pair "
-                "--federation-store with --require-message-auth to enforce federation.",
-                file=sys.stderr,
-            )
+            if args.federation_observe_only:
+                print(
+                    "synapse hub: federation store loaded observe-only; every "
+                    "cross-domain frame is refused deny-closed.",
+                    file=sys.stderr,
+                )
+            elif bundle_can_authorise(federation_bundle, now=time.time()):
+                print(
+                    "synapse hub: --federation-store grants cross-domain scope but "
+                    "--require-message-auth is not set; no signing key is ever verified, "
+                    "so no cross-domain frame can be honoured and the granted scope is "
+                    "unenforceable. Start with --require-message-auth to enforce "
+                    "federation, or declare --federation-observe-only to load the store "
+                    "for diagnostics and deny-closed refusal only.",
+                    file=sys.stderr,
+                )
+                return 2
+            else:
+                print(
+                    "synapse hub: WARNING --federation-store without --require-message-auth "
+                    "authorises no cross-domain frame; a peered domain's frame can only be "
+                    "honoured when per-message authentication binds its signing key. Pair "
+                    "--federation-store with --require-message-auth to enforce federation.",
+                    file=sys.stderr,
+                )
     hub = hub_factory(
         journal=journal,
         rate_limiter=limiter,

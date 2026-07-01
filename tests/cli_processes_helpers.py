@@ -64,6 +64,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "acl_policy": "",
         "require_acl": False,
         "federation_store": "",
+        "federation_observe_only": False,
         "insecure_off_loopback": False,
         "tls_certfile": None,
         "tls_keyfile": None,

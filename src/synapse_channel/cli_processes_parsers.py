@@ -296,6 +296,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "which binds its authority.",
     )
     hub.add_argument(
+        "--federation-observe-only",
+        action="store_true",
+        help="Declare the federation store is loaded for diagnostics and deny-closed "
+        "refusal only, never to honour a cross-domain frame. Required to start when the "
+        "store grants cross-domain scope without --require-message-auth; contradicts "
+        "--require-message-auth.",
+    )
+    hub.add_argument(
         "--insecure-off-loopback",
         action="store_true",
         help="Bind a non-loopback host even without a token (and metrics token); by "
