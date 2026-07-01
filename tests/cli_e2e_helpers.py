@@ -19,6 +19,8 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -150,9 +152,52 @@ def isolated_hub(
         _await_listening(port, timeout=ready_timeout)
         yield IsolatedHub(uri=f"ws://localhost:{port}", port=port, db_path=db_path)
     finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait(timeout=5)
+        _stop(proc)
+
+
+def _stop(proc: subprocess.Popen[str]) -> None:
+    """Terminate a subprocess, escalating to kill if it does not stop."""
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=5)
+
+
+def http_get(url: str, timeout: float = 5.0) -> tuple[int, str]:
+    """GET ``url`` and return ``(status, body)``; status 0 means unreachable."""
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310 - fixed http scheme
+            return int(response.status), response.read().decode("utf-8")
+    except urllib.error.HTTPError as error:
+        return int(error.code), error.read().decode("utf-8")
+    except (urllib.error.URLError, OSError):
+        return 0, ""
+
+
+@contextmanager
+def isolated_dashboard(hub_uri: str, *, ready_timeout: float = 8.0) -> Iterator[str]:
+    """Serve ``synapse dashboard`` against ``hub_uri``; yield its base HTTP URL.
+
+    Blocks until ``/snapshot.json`` answers, so the caller can fetch the read-only
+    fleet snapshot the cockpit and other clients consume.
+    """
+    port = free_port()
+    proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
+        [*_CLI, "dashboard", "--port", str(port), "--host", "127.0.0.1", "--uri", hub_uri],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    base = f"http://127.0.0.1:{port}"
+    try:
+        deadline = time.monotonic() + ready_timeout
+        while time.monotonic() < deadline:
+            status, _ = http_get(f"{base}/snapshot.json", timeout=1.0)
+            if status == 200:
+                break
+            time.sleep(0.1)
+        yield base
+    finally:
+        _stop(proc)
