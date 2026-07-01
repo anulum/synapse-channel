@@ -126,6 +126,7 @@ from synapse_channel.cli_sandbox import add_parsers as add_sandbox_parsers
 from synapse_channel.cli_semantic_routing import add_parsers as add_semantic_routing_parsers
 from synapse_channel.cli_services import add_parsers as add_service_parsers
 from synapse_channel.cli_shell import add_parsers as add_shell_parsers
+from synapse_channel.cli_status import add_parsers as add_status_parsers
 from synapse_channel.cli_streams import add_parsers as add_stream_parsers
 from synapse_channel.cli_tasks import add_parsers as add_task_parsers
 from synapse_channel.cli_verify_release import add_parsers as add_verify_release_parsers
@@ -186,6 +187,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_arm_parser(sub)
 
     add_query_parsers(sub)
+
+    add_status_parsers(sub)
 
     add_dashboard_parsers(sub)
 

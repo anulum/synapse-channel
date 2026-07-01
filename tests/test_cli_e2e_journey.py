@@ -56,6 +56,26 @@ def test_read_side_queries_answer_a_fresh_hub(tmp_path: Path) -> None:
         assert "Online" in who.stdout
 
 
+def test_status_one_liner_reports_a_live_hub(tmp_path: Path) -> None:
+    """``status`` prints one glanceable line and exits zero against a live hub."""
+    with isolated_hub(tmp_path) as hub:
+        status = run_cli("status", uri=hub.uri)
+        assert status.ok(), status.output
+        line = status.stdout.strip()
+        assert line.startswith("synapse ● ")
+        assert "agents" in line and "claims" in line
+
+
+def test_status_one_liner_exits_nonzero_when_the_hub_is_down() -> None:
+    """``status`` prints the offline line and exits non-zero with no hub — a prompt signal."""
+    from cli_e2e_helpers import free_port
+
+    dead = f"ws://localhost:{free_port()}"
+    status = run_cli("status", "--ready-timeout", "1", uri=dead, timeout=15)
+    assert status.returncode == 1, status.output
+    assert status.stdout.strip() == "synapse ○ offline"
+
+
 def test_task_lifecycle_declare_then_complete(tmp_path: Path) -> None:
     """A task declared over the CLI appears on the board and completes."""
     with isolated_hub(tmp_path) as hub:

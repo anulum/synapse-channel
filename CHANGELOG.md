@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse status` prints a one-line hub summary — online agents and active claims (and live resource
+  offers when any exist) — sized for a shell prompt or a tmux status bar. It draws the roster from the
+  live connection set rather than the cumulative last-seen ledger, and its exit code doubles as a prompt
+  signal: zero when the hub answers, non-zero when it is down.
+
 ## [0.82.0] - 2026-07-01
 
 ### Added

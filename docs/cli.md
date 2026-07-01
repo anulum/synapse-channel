@@ -54,6 +54,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse manifest` | Print the capability manifest of advertised agents. |
 | `synapse directory` | Print a read-only capability directory from live agent cards (discovery only). |
 | `synapse who` | List the agents currently online, optionally for one project or this identity with `--me`. |
+| `synapse status` | Print a one-line hub summary (online agents, active claims) for shell prompts and tmux status bars; exit non-zero when the hub is down. |
 | `synapse state` | Print active claims and their checkpoints (a resume view). |
 | `synapse doctor` | Check for common coordination misconfigs (identity, exposure, hub, waiter); exit non-zero on a failure. |
 | `synapse init` | Print or install the local user services (hub, waiter, presence) as systemd units. |
