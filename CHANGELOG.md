@@ -13,6 +13,14 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.86.0] - 2026-07-02
+
+### Fixed
+- The on-channel model worker now awaits the survivor task it cancels on shutdown, so
+  stopping the worker no longer leaks a pending task into event-loop teardown.
+- A lock release that fails during waiter teardown is now logged at debug level instead
+  of being silently suppressed.
+
 ## [0.85.0] - 2026-07-01
 
 ### Added
