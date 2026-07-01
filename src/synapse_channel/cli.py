@@ -63,7 +63,8 @@ The ``synapse`` command exposes these subcommands:
 * ``encrypt-key`` — generate and check at-rest encryption key files;
 * ``agent-tmux`` — wake an existing terminal-agent tmux session from Synapse messages;
 * ``codex-tmux`` — Codex-named alias of ``agent-tmux``;
-* ``shell-hook`` / ``install-shell-hook`` — auto-arm fresh terminals and provider CLIs.
+* ``shell-hook`` / ``install-shell-hook`` — auto-arm fresh terminals and provider CLIs;
+* ``completions`` — print a static tab-completion script for bash, zsh, or fish.
 
 This module is the thin entry point: it builds the top-level parser
 (:func:`build_parser`), resolves the shared-secret token, and dispatches
@@ -97,6 +98,7 @@ from synapse_channel.cli_causality import add_parsers as add_causality_parsers
 from synapse_channel.cli_channels import add_parsers as add_channel_parsers
 from synapse_channel.cli_codex_tmux import add_parsers as add_codex_tmux_parsers
 from synapse_channel.cli_commands_overview import add_parsers as add_commands_overview_parsers
+from synapse_channel.cli_completions import add_parsers as add_completions_parsers
 from synapse_channel.cli_dashboard import add_parsers as add_dashboard_parsers
 from synapse_channel.cli_demo import add_parsers as add_demo_parsers
 from synapse_channel.cli_directory import add_parsers as add_directory_parsers
@@ -176,6 +178,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_demo_parsers(sub)
 
     add_commands_overview_parsers(sub)
+
+    add_completions_parsers(sub)
 
     add_quickstart_coding_parsers(sub)
 

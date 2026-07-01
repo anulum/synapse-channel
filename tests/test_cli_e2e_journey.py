@@ -15,6 +15,7 @@ the same event log a coordination journey writes.
 
 from __future__ import annotations
 
+import subprocess  # nosec B404 — syntax-checks generated completion scripts
 from pathlib import Path
 
 from cli_e2e_helpers import isolated_hub, run_cli
@@ -35,6 +36,33 @@ def test_commands_overview_groups_the_surface_by_tier() -> None:
         assert f"{tier} — " in result.stdout
     # a representative command from the daily-safe core is present
     assert "board" in result.stdout
+
+
+def test_completions_emit_sourceable_scripts_for_each_shell(tmp_path: Path) -> None:
+    """``synapse completions <shell>`` prints a script the target shell accepts.
+
+    Bash is always present on the CI runner, so its output is additionally parsed
+    with ``bash -n``; the zsh and fish dialects are asserted on their registration
+    markers, and each script must offer the ``completions`` command itself.
+    """
+    bash = run_cli("completions", "bash")
+    assert bash.ok(), bash.output
+    assert "complete -F _synapse synapse" in bash.stdout
+    assert "completions" in bash.stdout
+    script = tmp_path / "synapse.bash"
+    script.write_text(bash.stdout, encoding="utf-8")
+    checked = subprocess.run(  # nosec B603 B607 — fixed argv over a written temp file
+        ["bash", "-n", str(script)], capture_output=True, text=True
+    )
+    assert checked.returncode == 0, checked.stderr
+
+    zsh = run_cli("completions", "zsh")
+    assert zsh.ok(), zsh.output
+    assert zsh.stdout.startswith("#compdef synapse")
+
+    fish = run_cli("completions", "fish")
+    assert fish.ok(), fish.output
+    assert "complete -c synapse -f" in fish.stdout
 
 
 def test_read_side_queries_answer_a_fresh_hub(tmp_path: Path) -> None:
