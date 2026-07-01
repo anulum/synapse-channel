@@ -20,8 +20,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import contextlib
 import json
+import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -30,6 +30,8 @@ from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import describe_connect_failure, explain_silent_outcome
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.receipts import build_release_receipt
+
+logger = logging.getLogger("synapse.lock")
 
 AgentFactory = Callable[..., SynapseAgent]
 LockRunner = Callable[[list[str]], Awaitable[int]]
@@ -219,8 +221,13 @@ async def _lock(
             await asyncio.sleep(retry_interval)
         return await runner(command)
     finally:
-        with contextlib.suppress(Exception):
+        try:
             await agent.release(task_id)
+        except Exception:
+            # Teardown must not mask the held command's outcome, but a lease
+            # that could not be dropped stays visible until its TTL — leave a
+            # trace instead of losing the failure entirely.
+            logger.debug("best-effort release of %r failed on teardown", task_id, exc_info=True)
         agent.running = False
         conn_task.cancel()
 

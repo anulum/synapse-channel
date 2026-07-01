@@ -462,3 +462,99 @@ def test_dashboard_public_docs_describe_local_readonly_surface() -> None:
     assert "branch-conflict candidates" in cli_docs
     assert "not run git" in cli_docs
     assert "--a2a-state-file" in cli_docs
+
+
+# --- dispatcher ---------------------------------------------------------------
+
+
+class _FakeDashboardServer:
+    """A started-server stand-in recording the dispatcher's lifecycle calls."""
+
+    def __init__(self, *, token: str | None, generated: bool) -> None:
+        self.dashboard_token = token
+        self.dashboard_token_generated = generated
+        self.closed = False
+
+    def url(self, path: str) -> str:
+        return f"http://127.0.0.1:8765{path}"
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _dashboard_args(**overrides: object) -> object:
+    argv = ["dashboard"]
+    args = cli.build_parser().parse_args(argv)
+    for key, value in overrides.items():
+        setattr(args, key, value)
+    return args
+
+
+def _run_dispatcher(
+    monkeypatch: pytest.MonkeyPatch,
+    server: _FakeDashboardServer,
+) -> int:
+    from synapse_channel import cli_dashboard
+
+    monkeypatch.setattr(cli_dashboard, "start_dashboard_server", lambda **_: server)
+
+    def interrupt(_: float) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli_dashboard.time, "sleep", interrupt)
+    args = _dashboard_args()
+    handler = args.func  # type: ignore[attr-defined]
+    return int(handler(args))
+
+
+def test_cmd_dashboard_serves_until_interrupted_and_closes(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The dispatcher prints the URLs, blocks, and closes the server on Ctrl-C."""
+    server = _FakeDashboardServer(token=None, generated=False)
+    assert _run_dispatcher(monkeypatch, server) == 0
+    out = capsys.readouterr().out
+    assert "dashboard: http://127.0.0.1:8765/" in out
+    assert "snapshot JSON: http://127.0.0.1:8765/snapshot.json" in out
+    assert "dashboard auth" not in out  # no token configured, nothing to announce
+    assert server.closed
+
+
+def test_cmd_dashboard_announces_a_generated_token(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A token the server generated must be shown once — the user cannot know it."""
+    server = _FakeDashboardServer(token="generated-secret", generated=True)
+    assert _run_dispatcher(monkeypatch, server) == 0
+    out = capsys.readouterr().out
+    assert "dashboard token: generated-secret" in out
+    assert "Authorization: Bearer" in out
+    assert server.closed
+
+
+def test_cmd_dashboard_never_echoes_a_supplied_token(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An operator-supplied token is announced but not echoed back to the terminal."""
+    server = _FakeDashboardServer(token="operator-secret", generated=False)
+    assert _run_dispatcher(monkeypatch, server) == 0
+    out = capsys.readouterr().out
+    assert "operator-secret" not in out
+    assert "Authorization: Bearer" in out
+
+
+def test_cmd_dashboard_rejects_an_invalid_bind(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A bind the server refuses (ValueError) exits 2 with the reason printed."""
+    from synapse_channel import cli_dashboard
+
+    def refuse(**_: object) -> object:
+        msg = "refusing non-loopback bind"
+        raise ValueError(msg)
+
+    monkeypatch.setattr(cli_dashboard, "start_dashboard_server", refuse)
+    args = _dashboard_args()
+    handler = args.func  # type: ignore[attr-defined]
+    assert int(handler(args)) == 2
+    assert "refusing non-loopback bind" in capsys.readouterr().out

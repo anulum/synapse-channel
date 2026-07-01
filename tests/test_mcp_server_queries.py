@@ -197,3 +197,78 @@ async def test_resource_bids_timeout() -> None:
     bridge = SynapseHubBridge(request_timeout=0.05)
     out = await bridge.resource_bids("T1")
     assert "did not return resource bidding snapshots" in out
+
+
+# --- second-reply and local-input failure branches ----------------------------
+
+
+def _scripted_bridge(replies: list[dict[str, object] | None]) -> SynapseHubBridge:
+    """A bridge whose reply transport plays back a fixed sequence.
+
+    Each tool method issues its hub requests in a documented order (board,
+    manifest, state); scripting the sequence reaches the branches where a LATER
+    reply times out after an earlier one succeeded — a real half-answering hub.
+    """
+    bridge = SynapseHubBridge(request_timeout=0.05)
+    queue = list(replies)
+
+    async def playback(match: object, send: object) -> dict[str, object] | None:
+        return queue.pop(0)
+
+    bridge._await_reply = playback  # type: ignore[method-assign]
+    return bridge
+
+
+_BOARD_WITH_T1: dict[str, object] = {
+    "board": {"tasks": [{"task_id": "T1", "title": "Build", "status": "open"}]}
+}
+
+
+async def test_directory_reports_a_state_reply_that_never_arrives() -> None:
+    bridge = _scripted_bridge([{"manifest": []}, None])
+    assert "did not return the capability directory" in await bridge.directory()
+
+
+async def test_agent_resource_reports_a_state_reply_that_never_arrives() -> None:
+    bridge = _scripted_bridge([{"manifest": []}, None])
+    assert "did not return MCP agent resource snapshots" in await bridge.agent_resource("A")
+
+
+async def test_route_task_reports_each_missing_later_reply() -> None:
+    assert "did not return semantic routing snapshots" in await _scripted_bridge(
+        [_BOARD_WITH_T1, None]
+    ).route_task("T1")
+    assert "did not return semantic routing snapshots" in await _scripted_bridge(
+        [_BOARD_WITH_T1, {"manifest": []}, None]
+    ).route_task("T1")
+
+
+async def test_route_task_reports_a_task_absent_from_the_board() -> None:
+    bridge = _scripted_bridge([{"board": {"tasks": []}}, {"manifest": []}, {"snapshot": {}}])
+    assert "task 'T9' is not on the board" in await bridge.route_task("T9")
+
+
+async def test_route_task_reports_a_bad_observation_store(tmp_path: Path) -> None:
+    bridge = _scripted_bridge([_BOARD_WITH_T1, {"manifest": []}, {"snapshot": {}}])
+    out = await bridge.route_task("T1", event_store=str(tmp_path / "absent.db"))
+    assert "missing event store" in out
+
+
+async def test_resource_bids_reports_each_missing_later_reply() -> None:
+    assert "did not return resource bidding snapshots" in await _scripted_bridge(
+        [_BOARD_WITH_T1, None]
+    ).resource_bids("T1")
+    assert "did not return resource bidding snapshots" in await _scripted_bridge(
+        [_BOARD_WITH_T1, {"manifest": []}, None]
+    ).resource_bids("T1")
+
+
+async def test_resource_bids_reports_a_task_absent_from_the_board() -> None:
+    bridge = _scripted_bridge([{"board": {"tasks": []}}, {"manifest": []}, {"snapshot": {}}])
+    assert "task 'T9' is not on the board" in await bridge.resource_bids("T9")
+
+
+async def test_memory_recall_reports_a_missing_store(tmp_path: Path) -> None:
+    bridge = SynapseHubBridge(request_timeout=0.05)
+    out = await bridge.memory_recall(str(tmp_path / "absent.db"), "query")
+    assert "missing event store" in out

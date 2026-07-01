@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 
 import pytest
@@ -157,3 +158,75 @@ def test_cmd_resource_bids_dispatches_real_query() -> None:
     )
 
     assert cli_resource_bidding._cmd_resource_bids(ns) == 1
+
+
+# --- malformed-snapshot extractors and silent-hub branches ----------------------
+
+
+def test_extractors_drop_malformed_snapshot_shapes() -> None:
+    """A hub reply with wrong-typed sections degrades to empty, never crashes."""
+    assert cli_resource_bidding._cards({"manifest": "not-a-list"}) == []
+    assert cli_resource_bidding._cards({"manifest": [{"agent": "A"}, 7]}) == [{"agent": "A"}]
+    assert cli_resource_bidding._resources({"snapshot": "not-a-mapping"}) == []
+    assert cli_resource_bidding._resources({"snapshot": {"resources": "junk"}}) == []
+    assert cli_resource_bidding._resources({"snapshot": {"resources": [{"kind": "gpu"}, 3]}}) == [
+        {"kind": "gpu"}
+    ]
+    assert cli_resource_bidding._board({"board": "not-a-mapping"}) == {}
+
+
+def test_render_resource_bids_prints_the_fallback_reason(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from synapse_channel.core.resource_bidding import ResourceBidReport
+
+    report = ResourceBidReport(
+        task_id="T1",
+        query="gpu",
+        resource_kind="gpu",
+        candidates=(),
+        fallback_reason="no live resource offers are advertised",
+    )
+    cli_resource_bidding._render_resource_bids(report)
+    out = capsys.readouterr().out
+    assert "Fallback: no live resource offers are advertised" in out
+    assert "Advisory only:" in out
+
+
+class _SilentBiddingAgent:
+    """Connects and reports ready, but never delivers a single snapshot."""
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        self.running = True
+
+    async def connect(self) -> None:
+        while self.running:
+            await asyncio.sleep(0.01)
+
+    async def wait_until_ready(self, *, timeout: float) -> bool:
+        return True
+
+    async def request_board(self) -> None:
+        return None
+
+    async def request_manifest(self) -> None:
+        return None
+
+    async def request_state(self) -> None:
+        return None
+
+
+async def test_resource_bids_names_the_snapshots_that_never_arrived(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A ready hub that answers nothing yields the named missing snapshots."""
+    code = await cli_resource_bidding._resource_bids(
+        uri="ws://unused",
+        name="BIDDER",
+        task_id="T1",
+        agent_factory=_SilentBiddingAgent,  # type: ignore[arg-type]
+        response_timeout=0.1,
+    )
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "did not return resource bidding snapshots" in out

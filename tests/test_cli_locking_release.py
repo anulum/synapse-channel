@@ -295,3 +295,60 @@ def test_cmd_release_dispatches_real_command(capsys: pytest.CaptureFixture[str])
     )
     assert cli_locking._cmd_release(ns) == 1
     assert "Could not reach hub" in capsys.readouterr().out
+
+
+# --- receipt validation branches ----------------------------------------------
+
+
+def test_load_release_receipt_rejects_a_non_object(tmp_path: Path) -> None:
+    path = tmp_path / "receipt.json"
+    path.write_text(json.dumps(["not", "an", "object"]), encoding="utf-8")
+    with pytest.raises(ValueError, match="receipt must be a JSON object"):
+        cli_locking._load_release_receipt(path)
+
+
+def test_receipt_list_rejects_a_non_string_list() -> None:
+    with pytest.raises(ValueError, match="'evidence' must be a list of strings"):
+        cli_locking._receipt_list({"evidence": [1, 2]}, "evidence", None)
+    with pytest.raises(ValueError, match="'evidence' must be a list of strings"):
+        cli_locking._receipt_list({"evidence": "not-a-list"}, "evidence", None)
+
+
+def test_receipt_freshness_rejects_a_non_number() -> None:
+    with pytest.raises(ValueError, match="'freshness_seconds' must be a number"):
+        cli_locking._receipt_freshness({"freshness_seconds": "soon"}, None)
+    assert cli_locking._receipt_freshness({"freshness_seconds": 5}, None) == 5.0
+    assert cli_locking._receipt_freshness({}, 7.0) == 7.0
+    assert cli_locking._receipt_freshness({}, None) is None
+
+
+def test_validate_receipt_identity_rejects_mismatches() -> None:
+    with pytest.raises(ValueError, match="task_id 'OTHER' does not match 'T1'"):
+        cli_locking._validate_release_receipt_identity(
+            {"task_id": "OTHER"}, task_id="T1", name="alice"
+        )
+    with pytest.raises(ValueError, match="owner 'bob' does not match 'alice'"):
+        cli_locking._validate_release_receipt_identity(
+            {"task_id": "T1", "owner": "bob"}, task_id="T1", name="alice"
+        )
+    # matching or absent identity fields pass silently
+    cli_locking._validate_release_receipt_identity(
+        {"task_id": "T1", "owner": "alice"}, task_id="T1", name="alice"
+    )
+    cli_locking._validate_release_receipt_identity({}, task_id="T1", name="alice")
+
+
+async def test_release_rejects_a_malformed_receipt_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A receipt naming another task must refuse the release before connecting."""
+    receipt = tmp_path / "receipt.json"
+    receipt.write_text(json.dumps({"task_id": "OTHER"}), encoding="utf-8")
+    code = await cli_locking._release(
+        uri=f"ws://127.0.0.1:{_free_port()}",
+        name="alice",
+        task_id="T1",
+        receipt=str(receipt),
+    )
+    assert code == 1
+    assert "invalid release receipt for 'T1'" in capsys.readouterr().out

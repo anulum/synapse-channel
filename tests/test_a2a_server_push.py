@@ -8,8 +8,10 @@
 
 from __future__ import annotations
 
+import io
 import socket
 from http import HTTPStatus
+from http.client import HTTPMessage
 from typing import Any
 from urllib import request
 from urllib.error import URLError
@@ -216,8 +218,8 @@ def test_http_push_deliverer_blocks_hostname_resolving_to_loopback(
     def fail_urlopen(*_args: object, **_kwargs: object) -> object:
         raise AssertionError("unsafe webhook request reached urlopen")
 
-    monkeypatch.setattr(socket, "getaddrinfo", resolve_loopback)
-    monkeypatch.setattr(request, "urlopen", fail_urlopen)
+    monkeypatch.setattr("synapse_channel.a2a_push.socket.getaddrinfo", resolve_loopback)
+    monkeypatch.setattr("synapse_channel.a2a_push.request.urlopen", fail_urlopen)
 
     with pytest.raises(URLError, match="must not target local networks"):
         a2a_push.http_push_deliverer(
@@ -268,9 +270,13 @@ def test_http_push_deliverer_blocks_redirect_to_loopback(
     def fail_urlopen(*_args: object, **_kwargs: object) -> object:
         raise AssertionError("unsafe webhook request bypassed redirect validation")
 
-    monkeypatch.setattr(socket, "getaddrinfo", resolve_by_host)
-    monkeypatch.setattr(request, "build_opener", build_fake_opener)
-    monkeypatch.setattr(request, "urlopen", fail_urlopen)
+    # Patch through a2a_push's own module bindings: under a narrow coverage
+    # run the measured module can hold a different urllib.request/socket
+    # instance than this test's imports, and a globally-patched twin would
+    # let the deliverer open a real network connection.
+    monkeypatch.setattr("synapse_channel.a2a_push.socket.getaddrinfo", resolve_by_host)
+    monkeypatch.setattr("synapse_channel.a2a_push.request.build_opener", build_fake_opener)
+    monkeypatch.setattr("synapse_channel.a2a_push.request.urlopen", fail_urlopen)
 
     with pytest.raises(URLError, match="must not target local networks"):
         a2a_push.http_push_deliverer(
@@ -318,3 +324,113 @@ def test_push_notification_config_rejects_missing_webhook_host() -> None:
         assert str(exc) == "pushNotificationConfig.webhookUrl must include a host"
     else:
         raise AssertionError("hostless webhook URL was accepted")
+
+
+# --- SSRF-guard branches in the webhook target validator -----------------------
+
+
+def test_validate_webhook_target_rejects_each_unsafe_shape() -> None:
+    """Every rejection branch names its reason: scheme, host, localhost, port."""
+    with pytest.raises(URLError, match="must use http or https"):
+        a2a_push._validate_webhook_target("ftp://example.org/hook")
+    with pytest.raises(URLError, match="must include a host"):
+        a2a_push._validate_webhook_target("http:///hook")
+    with pytest.raises(URLError, match="local network"):
+        a2a_push._validate_webhook_target("http://LOCALHOST/hook")
+    with pytest.raises(URLError, match="invalid port"):
+        a2a_push._validate_webhook_target("http://example.org:99999/hook")
+
+
+def test_validate_webhook_target_blocks_dns_resolving_to_local(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A public-looking hostname whose DNS answer is private is refused."""
+
+    def resolve_private(*_args: object, **_kwargs: object) -> list[Any]:
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ()),  # empty sockaddr skipped
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 80)),
+        ]
+
+    monkeypatch.setattr("synapse_channel.a2a_push.socket.getaddrinfo", resolve_private)
+    with pytest.raises(URLError, match="local network"):
+        a2a_push._validate_webhook_target("http://public.example/hook")
+
+
+def test_is_local_network_address_tolerates_non_ip_text() -> None:
+    """A resolver answer that is not an IP literal is not treated as local."""
+    assert a2a_push._is_local_network_address("not-an-ip") is False
+    assert a2a_push._is_local_network_address("fe80::1%eth0") is True
+
+
+def test_redirect_handler_validates_the_new_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A redirect to a local address is refused before the request is rebuilt."""
+    handler = a2a_push._SafeWebhookRedirectHandler()
+    req = request.Request("http://public.example/hook")
+    with pytest.raises(URLError, match="local network"):
+        handler.redirect_request(
+            req, io.BytesIO(), 302, "Found", HTTPMessage(), "http://localhost/steal"
+        )
+
+
+def test_http_push_deliverer_reads_the_webhook_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A safe target is POSTed through the redirect-guarding opener and read."""
+    read_calls: list[str] = []
+
+    class _Response:
+        def __enter__(self) -> _Response:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            read_calls.append("read")
+            return b""
+
+    class _Opener:
+        def open(self, req: request.Request, timeout: float) -> _Response:
+            read_calls.append(req.full_url)
+            return _Response()
+
+    monkeypatch.setattr(a2a_push, "_validate_webhook_target", lambda url: None)
+    monkeypatch.setattr("synapse_channel.a2a_push.request.build_opener", lambda *h: _Opener())
+    a2a_push.http_push_deliverer(
+        {"url": "http://public.example/hook", "headers": {}, "payload": {"task": {}}}
+    )
+    assert read_calls == ["http://public.example/hook", "read"]
+
+
+def test_redirect_handler_follows_a_safe_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A redirect to a safe public target is rebuilt by the stdlib handler."""
+    monkeypatch.setattr(a2a_push, "_validate_webhook_target", lambda url: None)
+    handler = a2a_push._SafeWebhookRedirectHandler()
+    req = request.Request("http://public.example/hook")
+    rebuilt = handler.redirect_request(
+        req, io.BytesIO(), 302, "Found", HTTPMessage(), "http://public.example/moved"
+    )
+    assert rebuilt is not None
+    assert rebuilt.full_url == "http://public.example/moved"
+
+
+def test_build_push_delivery_skips_incomplete_authentication() -> None:
+    """An authentication block missing scheme or credentials adds no header."""
+    delivery = a2a_push.build_push_delivery(
+        task={"id": "T1"},
+        config={"webhookUrl": "http://public.example/hook", "authentication": {"scheme": "Bearer"}},
+    )
+    assert delivery["headers"] == {}
+    complete = a2a_push.build_push_delivery(
+        task={"id": "T1"},
+        config={
+            "webhookUrl": "http://public.example/hook",
+            "authentication": {"scheme": "Bearer", "credentials": "tok"},
+        },
+    )
+    assert complete["headers"] == {"Authorization": "Bearer tok"}
