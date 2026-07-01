@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.85.0] - 2026-07-01
+
 ### Added
 - Release receipts can commit the coordination log: `synapse verify-release --merkle-db`
   embeds the log's RFC 6962 Merkle root (root, tree size, sequence range) into the receipt
