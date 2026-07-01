@@ -8,13 +8,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 import pytest
 
 from synapse_channel.core.causality import (
     CONTENTION,
+    DEFAULT_MAX_GRAPH_NODES,
     DEPENDENCY,
+    GRAPH_KINDS,
     LIFECYCLE,
     CausalEdge,
     build_causal_graph,
@@ -432,3 +435,53 @@ def test_node_summary_includes_owner_and_status() -> None:
     assert "owner=bob" in text
     assert "status=blocked" in text
     assert "task=A" in text
+
+
+def test_run_causality_streams_only_coordination_kinds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The store read is the streaming kind-filtered cursor, never the whole log."""
+    db = tmp_path / "hub.db"
+    _seed(db, _chain_events())
+
+    def refuse_read_all(self: EventStore) -> list[StoredEvent]:
+        msg = "run_causality materialised the log"
+        raise AssertionError(msg)
+
+    seen_kinds: set[str] = set()
+    original = EventStore.iter_events
+
+    def spying_iter(
+        self: EventStore,
+        *,
+        through_seq: int | None = None,
+        kinds: Iterable[str] | None = None,
+    ) -> Iterator[StoredEvent]:
+        for event in original(self, through_seq=through_seq, kinds=kinds):
+            seen_kinds.add(event.kind)
+            yield event
+
+    monkeypatch.setattr(EventStore, "read_all", refuse_read_all)
+    monkeypatch.setattr(EventStore, "iter_events", spying_iter)
+    query = run_causality(db, "effects", 4)
+    assert query.present
+    assert seen_kinds  # the stream ran
+    assert seen_kinds <= GRAPH_KINDS  # nothing outside the graph kinds crossed over
+
+
+def test_run_causality_rejects_a_log_over_the_node_ceiling(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db, _chain_events())
+    with pytest.raises(ValueError, match="would exceed 3 coordination events"):
+        run_causality(db, "effects", 4, max_nodes=3)
+
+
+def test_run_causality_lifts_the_ceiling_on_zero_or_none(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db, _chain_events())
+    assert run_causality(db, "effects", 4, max_nodes=0).present
+    assert run_causality(db, "effects", 4, max_nodes=None).present
+
+
+def test_default_node_ceiling_is_generous() -> None:
+    assert DEFAULT_MAX_GRAPH_NODES >= 100_000

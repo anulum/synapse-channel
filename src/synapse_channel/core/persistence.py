@@ -149,29 +149,48 @@ class EventStore:
         """
         return list(self.iter_events())
 
-    def iter_events(self, *, through_seq: int | None = None) -> Iterator[StoredEvent]:
+    def iter_events(
+        self,
+        *,
+        through_seq: int | None = None,
+        kinds: Iterable[str] | None = None,
+    ) -> Iterator[StoredEvent]:
         """Yield events in ascending sequence order without materialising the log.
 
         This is the bounded-memory read seam for whole-log folds (the Merkle
         commitment, causality reconstruction): rows stream off the SQLite cursor
-        one at a time, so the peak footprint is one event, not the log.
+        one at a time, so the peak footprint is one event, not the log. A kind
+        filter is applied inside SQLite, so uninterested kinds (bulk chat on a
+        long-lived hub) never cross into Python at all.
 
         Parameters
         ----------
         through_seq : int or None, optional
             Inclusive sequence ceiling; events after it are not yielded. ``None``
             streams the whole log.
+        kinds : Iterable[str] or None, optional
+            When given, restrict the stream to these event kinds; an empty
+            iterable yields nothing. ``None`` streams every kind.
 
         Yields
         ------
         StoredEvent
-            Each persisted event at or below the ceiling, by ascending sequence.
+            Each matching event at or below the ceiling, by ascending sequence.
         """
         sql = "SELECT seq, ts, kind, payload FROM events"
-        params: tuple[object, ...] = ()
+        clauses: list[str] = []
+        params: list[Any] = []
         if through_seq is not None:
-            sql += " WHERE seq <= ?"
-            params = (through_seq,)
+            clauses.append("seq <= ?")
+            params.append(int(through_seq))
+        if kinds is not None:
+            kind_list = [str(k) for k in kinds]
+            if not kind_list:
+                return
+            clauses.append(f"kind IN ({','.join('?' for _ in kind_list)})")
+            params.extend(kind_list)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY seq"
         for seq, ts, kind, payload in self._conn.execute(sql, params):
             yield StoredEvent(

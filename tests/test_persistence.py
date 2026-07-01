@@ -294,3 +294,26 @@ def test_read_all_matches_iter_events(tmp_path: Path) -> None:
         store.append("chat", {"n": i}, ts=float(i))
     assert store.read_all() == list(store.iter_events())
     store.close()
+
+
+def test_iter_events_filters_kinds_inside_sqlite(tmp_path: Path) -> None:
+    """A kind filter keeps uninterested kinds out of the Python stream entirely."""
+    store = EventStore(tmp_path / "events.db")
+    store.append("chat", {"n": 1}, ts=1.0)
+    store.append("claim", {"task_id": "T1"}, ts=2.0)
+    store.append("chat", {"n": 2}, ts=3.0)
+    store.append("release", {"task_id": "T1"}, ts=4.0)
+    kinds = [event.kind for event in store.iter_events(kinds=("claim", "release"))]
+    assert kinds == ["claim", "release"]
+    assert list(store.iter_events(kinds=())) == []  # empty filter yields nothing
+    store.close()
+
+
+def test_iter_events_combines_kind_filter_with_the_ceiling(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    store.append("claim", {"task_id": "T1"}, ts=1.0)
+    store.append("chat", {"n": 1}, ts=2.0)
+    store.append("claim", {"task_id": "T2"}, ts=3.0)
+    events = list(store.iter_events(through_seq=2, kinds=("claim",)))
+    assert [(event.seq, event.kind) for event in events] == [(1, "claim")]
+    store.close()

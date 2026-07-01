@@ -20,6 +20,7 @@ import json
 import sys
 
 from synapse_channel.core.causality import (
+    DEFAULT_MAX_GRAPH_NODES,
     DIRECTIONS,
     causality_to_json,
     render_markdown,
@@ -30,7 +31,7 @@ from synapse_channel.core.causality import (
 def _cmd_causality(args: argparse.Namespace) -> int:
     """Answer a causality query against a sequence point and print it."""
     try:
-        query = run_causality(args.db, args.direction, args.seq)
+        query = run_causality(args.db, args.direction, args.seq, max_nodes=args.max_nodes)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -60,4 +61,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Event sequence to query.",
     )
     causality.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    causality.add_argument(
+        "--max-nodes",
+        type=int,
+        default=DEFAULT_MAX_GRAPH_NODES,
+        help="Fail-closed ceiling on coordination events folded into the graph "
+        "(0 lifts it); exceeding it errors instead of exhausting memory.",
+    )
     causality.set_defaults(func=_cmd_causality)

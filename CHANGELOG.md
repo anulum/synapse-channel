@@ -14,6 +14,11 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Changed
+- Building the causality graph is now bounded-memory: `synapse causality` streams only the
+  coordination event kinds off the store cursor — the kind filter runs inside SQLite, so
+  bulk chat on a long-lived hub never reaches Python — and folds them under a fail-closed
+  ceiling (default 250 000 coordination events; `--max-nodes` raises it, `0` lifts it) that
+  errors with a `synapse compact` remedy instead of exhausting memory.
 - Committing the event log to a Merkle root is now bounded-memory: `synapse merkle root`
   (and `run_root`) streams events off a new lazy event-store cursor (`iter_events`) into a
   running commitment that holds only the `O(log n)` subtree peaks, so a multi-year log

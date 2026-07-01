@@ -238,8 +238,28 @@ def counterfactual(graph: CausalGraph, seq: int) -> CausalQuery:
     return _query(graph, seq, "counterfactual")
 
 
-def run_causality(db_path: str | Path, direction: str, seq: int) -> CausalQuery:
+DEFAULT_MAX_GRAPH_NODES = 250_000
+"""Fail-closed ceiling on coordination events folded into one causality graph.
+
+Generous for any real deployment (a quarter-million claims, releases, and task
+updates), yet a hard bound against the pathological log that would otherwise
+exhaust memory. Raised or lifted per call when an operator genuinely needs more.
+"""
+
+
+def run_causality(
+    db_path: str | Path,
+    direction: str,
+    seq: int,
+    *,
+    max_nodes: int | None = DEFAULT_MAX_GRAPH_NODES,
+) -> CausalQuery:
     """Build a causality query from an existing SQLite event store.
+
+    Only coordination events (:data:`GRAPH_KINDS`) are read: the kind filter runs
+    inside SQLite and rows stream off the cursor, so the bulk of a long-lived
+    log — chat — never reaches Python, and the peak footprint is the coordination
+    nodes alone, bounded by ``max_nodes``.
 
     Parameters
     ----------
@@ -249,6 +269,10 @@ def run_causality(db_path: str | Path, direction: str, seq: int) -> CausalQuery:
         One of :data:`DIRECTIONS`.
     seq : int
         Event sequence to query.
+    max_nodes : int or None, optional
+        Fail-closed ceiling on coordination events folded into the graph;
+        exceeding it raises instead of exhausting memory. ``None`` or ``0``
+        lifts the ceiling. Defaults to :data:`DEFAULT_MAX_GRAPH_NODES`.
 
     Returns
     -------
@@ -258,7 +282,8 @@ def run_causality(db_path: str | Path, direction: str, seq: int) -> CausalQuery:
     Raises
     ------
     ValueError
-        If the event store does not exist or ``direction`` is unsupported.
+        If the event store does not exist, ``direction`` is unsupported, or the
+        log holds more coordination events than ``max_nodes``.
     """
     if direction not in DIRECTIONS:
         msg = f"unknown direction '{direction}'; expected one of {', '.join(DIRECTIONS)}"
@@ -269,7 +294,15 @@ def run_causality(db_path: str | Path, direction: str, seq: int) -> CausalQuery:
         raise ValueError(msg)
     store = EventStore(path)
     try:
-        events = tuple(store.read_all())
+        events: list[StoredEvent] = []
+        for event in store.iter_events(kinds=GRAPH_KINDS):
+            events.append(event)
+            if max_nodes and len(events) > max_nodes:
+                msg = (
+                    f"causality graph would exceed {max_nodes} coordination events; "
+                    f"bound the log with `synapse compact` or raise --max-nodes"
+                )
+                raise ValueError(msg)
     finally:
         store.close()
     graph = build_causal_graph(events)
