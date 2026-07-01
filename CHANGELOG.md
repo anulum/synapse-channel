@@ -22,6 +22,13 @@ All notable changes to this project are documented here.
   after an upgrade to refresh it.
 
 ### Changed
+- `synapse doctor --fix` now auto-repairs the safely repairable findings instead of only
+  printing setup commands: when the default local hub does not answer or the identity's
+  waiter is missing, it installs and starts the local hub, presence, and wake-arming user
+  services, then re-runs the checks so the exit code reports the post-repair state. The
+  repair is gated to the default loopback hub the generated services manage — a remote or
+  non-default hub is never touched; its findings keep printed guidance, as do identity,
+  exposure, and disk findings.
 - `synapse hub --federation-store` now refuses to start when the store's peerings grant
   cross-domain scope but `--require-message-auth` is not set: without per-message
   authentication no signing key is ever verified, so the granted scope could never be

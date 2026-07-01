@@ -46,8 +46,44 @@ from synapse_channel.service_setup import install_user_services, service_suggest
 RosterProbe = Callable[..., Awaitable[list[str] | None]]
 """Async callable that returns the live hub roster for doctor diagnostics."""
 
-DiagnoseRunner = Callable[..., Coroutine[Any, Any, tuple[int, list[str]]]]
+DiagnoseRunner = Callable[..., Coroutine[Any, Any, tuple[int, list[str], list[Diagnosis]]]]
 """Async callable used by the doctor CLI dispatcher."""
+
+_LOCAL_DEFAULT_URIS = frozenset({"ws://localhost:8876", "ws://127.0.0.1:8876"})
+"""The default local hub addresses the generated user services manage."""
+
+
+def service_repairable_checks(diagnoses: list[Diagnosis], *, uri: str) -> list[str]:
+    """Return the failed check names the local user services can actually repair.
+
+    Installing and starting the hub, presence, and wake-arming units repairs
+    exactly two findings: an unanswering hub and a missing ``-rx`` waiter — and
+    only when the diagnosed ``uri`` is the default loopback hub those units
+    manage. A remote or non-default hub cannot be repaired by writing local
+    systemd units, so against such a URI nothing is auto-repairable.
+
+    Parameters
+    ----------
+    diagnoses : list[Diagnosis]
+        The verdicts a doctor run produced.
+    uri : str
+        The hub URI the run diagnosed.
+
+    Returns
+    -------
+    list[str]
+        The repairable check names (``"hub"``, ``"waiter"``), in report order;
+        empty when nothing the service install fixes has failed.
+    """
+    if uri not in _LOCAL_DEFAULT_URIS:
+        return []
+    repairable: list[str] = []
+    for diagnosis in diagnoses:
+        if diagnosis.check == "hub" and diagnosis.status == "fail":
+            repairable.append("hub")
+        elif diagnosis.check == "waiter" and diagnosis.status in ("warn", "fail"):
+            repairable.append("waiter")
+    return repairable
 
 
 class DiskUsage(Protocol):
@@ -123,11 +159,13 @@ async def _diagnose(
     disk_warn_used_percent: float = 95.0,
     disk_warn_free_mib: int = 1024,
     disk_usage_probe: DiskUsageProbe = _disk_usage,
-) -> tuple[int, list[str]]:
-    """Resolve the identity, run every check, and return ``(exit_code, report_lines)``.
+) -> tuple[int, list[str], list[Diagnosis]]:
+    """Resolve the identity, run every check, and return the summarised verdicts.
 
     ``send_name`` checks a specific send identity for project-routable replies
     (the ``<project>-<suffix>`` footgun); it defaults to the resolved identity.
+    The structured diagnoses ride along with the exit code and report lines so
+    ``--fix`` can decide which findings the local service install repairs.
     """
     from synapse_channel.ergonomics import resolve_identity
 
@@ -166,56 +204,81 @@ async def _diagnose(
     )
     diagnoses.append(check_reachable(roster is not None, uri))
     diagnoses.append(check_waiter(roster, identity.waiter_name))
-    return summarise(diagnoses)
+    code, lines = summarise(diagnoses)
+    return code, lines, diagnoses
+
+
+def _resolve_service_identity(
+    args: argparse.Namespace,
+    *,
+    env: Mapping[str, str] | None,
+    cwd_basename: str | None,
+    home_basename: str | None,
+) -> tuple[str, str]:
+    """Resolve ``(project, service identity)`` the way the ``syn`` wrappers do."""
+    from synapse_channel.ergonomics import resolve_identity
+
+    env = os.environ if env is None else env
+    identity = resolve_identity(
+        project=args.project,
+        agent_id=args.id,
+        env=env,
+        cwd_basename=Path.cwd().name if cwd_basename is None else cwd_basename,
+        home_basename=(
+            Path(env.get("HOME", str(Path.home()))).name if home_basename is None else home_basename
+        ),
+    )
+    return identity.project, getattr(args, "identity", None) or identity.identity
 
 
 def _cmd_doctor(
     args: argparse.Namespace,
     *,
     diagnose_runner: DiagnoseRunner = _diagnose,
-    async_runner: Callable[[Coroutine[Any, Any, tuple[int, list[str]]]], tuple[int, list[str]]] = (
-        asyncio.run
-    ),
+    async_runner: Callable[
+        [Coroutine[Any, Any, tuple[int, list[str], list[Diagnosis]]]],
+        tuple[int, list[str], list[Diagnosis]],
+    ] = asyncio.run,
     service_installer: Callable[..., list[str]] = install_user_services,
     suggestion_builder: Callable[..., list[str]] = service_suggestions,
     env: Mapping[str, str] | None = None,
     cwd_basename: str | None = None,
     home_basename: str | None = None,
 ) -> int:
-    """Dispatch ``doctor``: print the report, exit non-zero when a check fails."""
-    code, lines = async_runner(
-        diagnose_runner(
-            uri=args.uri,
-            project=args.project,
-            agent_id=args.id,
-            token=args.token,
-            send_name=args.send_name,
-            disk_path=Path(getattr(args, "disk_path", os.path.abspath(os.sep))),
-            disk_warn_used_percent=getattr(args, "disk_warn_used_percent", 95.0),
-            disk_warn_free_mib=getattr(args, "disk_warn_free_mib", 1024),
+    """Dispatch ``doctor``: print the report, exit non-zero when a check fails.
+
+    With ``--fix`` the safely auto-repairable findings — an unanswering default
+    local hub or a missing waiter — are repaired by installing and starting the
+    local user services, and the checks are then re-run so the exit code reports
+    the state *after* the repair. Findings the services cannot repair (identity,
+    exposure, disk, or any non-default hub) are never touched; their remedy
+    stays printed guidance.
+    """
+
+    def diagnose() -> tuple[int, list[str], list[Diagnosis]]:
+        return async_runner(
+            diagnose_runner(
+                uri=args.uri,
+                project=args.project,
+                agent_id=args.id,
+                token=args.token,
+                send_name=args.send_name,
+                disk_path=Path(getattr(args, "disk_path", os.path.abspath(os.sep))),
+                disk_warn_used_percent=getattr(args, "disk_warn_used_percent", 95.0),
+                disk_warn_free_mib=getattr(args, "disk_warn_free_mib", 1024),
+            )
         )
-    )
+
+    code, lines, diagnoses = diagnose()
     for line in lines:
         print(line)
     if getattr(args, "redeploy_checklist", False):
-        from synapse_channel.ergonomics import resolve_identity
-
-        env = os.environ if env is None else env
-        identity = resolve_identity(
-            project=args.project,
-            agent_id=args.id,
-            env=env,
-            cwd_basename=Path.cwd().name if cwd_basename is None else cwd_basename,
-            home_basename=(
-                Path(env.get("HOME", str(Path.home()))).name
-                if home_basename is None
-                else home_basename
-            ),
+        project, service_identity = _resolve_service_identity(
+            args, env=env, cwd_basename=cwd_basename, home_basename=home_basename
         )
-        service_identity = getattr(args, "identity", None) or identity.identity
         for line in render_redeploy_checklist(
             build_redeploy_checklist(
-                project=identity.project,
+                project=project,
                 identity=service_identity,
                 hub_uri=args.uri,
                 db_path=getattr(args, "db_path", "~/synapse/hub.db"),
@@ -223,47 +286,61 @@ def _cmd_doctor(
             )
         ):
             print(line)
-    if (
-        getattr(args, "fix", False)
-        or getattr(args, "install_user_services", False)
-        or getattr(args, "start_user_services", False)
-    ):
-        from synapse_channel.ergonomics import resolve_identity
-
-        env = os.environ if env is None else env
-        identity = resolve_identity(
-            project=args.project,
-            agent_id=args.id,
-            env=env,
-            cwd_basename=Path.cwd().name if cwd_basename is None else cwd_basename,
-            home_basename=(
-                Path(env.get("HOME", str(Path.home()))).name
-                if home_basename is None
-                else home_basename
-            ),
+    install_requested = getattr(args, "install_user_services", False) or getattr(
+        args, "start_user_services", False
+    )
+    if install_requested:
+        project, service_identity = _resolve_service_identity(
+            args, env=env, cwd_basename=cwd_basename, home_basename=home_basename
         )
-        service_identity = getattr(args, "identity", None) or identity.identity
-        if getattr(args, "install_user_services", False) or getattr(
-            args, "start_user_services", False
+        for line in service_installer(
+            project=project,
+            identity=service_identity,
+            synapse_bin=getattr(args, "synapse_bin", None),
+            start=getattr(args, "start_user_services", False),
         ):
-            fix_lines = service_installer(
-                project=identity.project,
+            print(line)
+    elif getattr(args, "fix", False):
+        project, service_identity = _resolve_service_identity(
+            args, env=env, cwd_basename=cwd_basename, home_basename=home_basename
+        )
+        repairable = service_repairable_checks(diagnoses, uri=args.uri)
+        service_shaped = [
+            d.check
+            for d in diagnoses
+            if (d.check == "hub" and d.status == "fail")
+            or (d.check == "waiter" and d.status != "pass")
+        ]
+        if repairable:
+            print(
+                f"[fix] auto-repairing {', '.join(repairable)}: installing and starting "
+                "the local user services"
+            )
+            for line in service_installer(
+                project=project,
                 identity=service_identity,
                 synapse_bin=getattr(args, "synapse_bin", None),
-                start=getattr(args, "start_user_services", False),
+                start=True,
+            ):
+                print(line)
+            code, lines, _ = diagnose()
+            print("[fix] re-check:")
+            for line in lines:
+                print(line)
+        elif service_shaped:
+            print(
+                f"[fix] nothing auto-repaired: {args.uri} is not the default local hub "
+                "the generated user services manage — repair that hub where it runs. "
+                "Manual setup commands:"
             )
+            for line in suggestion_builder(
+                project=project,
+                identity=service_identity,
+                synapse_bin=getattr(args, "synapse_bin", None),
+            ):
+                print(line)
         else:
-            fix_lines = [
-                "[fix] exact local service setup commands:",
-                *suggestion_builder(
-                    project=identity.project,
-                    identity=service_identity,
-                    synapse_bin=getattr(args, "synapse_bin", None),
-                ),
-                f"[fix] immediate foreground waker: syn arm --project {identity.project}",
-            ]
-        for line in fix_lines:
-            print(line)
+            print("[fix] nothing to auto-repair — no hub or waiter finding")
     return code
 
 
@@ -305,7 +382,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     doctor.add_argument(
         "--fix",
         action="store_true",
-        help="Print exact commands to install/start local hub, presence, and wake services.",
+        help="Auto-repair the safely repairable findings: when the default local hub "
+        "does not answer or the waiter is missing, install and start the local hub, "
+        "presence, and wake services, then re-run the checks. Anything else (identity, "
+        "exposure, disk, a non-default hub) is reported, never touched.",
     )
     doctor.add_argument(
         "--install-user-services",
