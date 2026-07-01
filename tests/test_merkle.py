@@ -17,6 +17,7 @@ import pytest
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.merkle import (
     EMPTY_ROOT,
+    RunningRoot,
     build_proof,
     build_root,
     leaf_hash,
@@ -264,3 +265,90 @@ def test_render_proof_with_and_without_path() -> None:
     assert multi.count("  - ") >= 1
     single = render_proof_markdown(build_proof(_events(1), 1))  # type: ignore[arg-type]
     assert "single-event log" in single
+
+
+# --- RunningRoot streaming commitment ----------------------------------------
+
+
+@pytest.mark.parametrize("count", list(range(66)))
+def test_running_root_matches_the_recursive_tree_hash(count: int) -> None:
+    """The peak accumulator commits to the exact recursive RFC 6962 root.
+
+    Every size from the empty log through two levels past a power of two pins
+    the binary-counter merge + right-to-left fold to the reference recursion,
+    including the odd sizes where the split at the largest power of two below
+    the size is what distinguishes RFC 6962 from a padded tree.
+    """
+    events = _events(count)
+    running = RunningRoot()
+    for event in events:
+        running.add(event)
+    assert running.root_hex() == build_root(events).root
+    assert running.tree_size == count
+
+
+def test_running_root_commit_snapshot_keeps_streaming() -> None:
+    """``commit`` is a snapshot: the accumulator folds further events after it."""
+    events = _events(5)
+    running = RunningRoot()
+    for event in events[:3]:
+        running.add(event)
+    mid = running.commit()
+    assert mid.tree_size == 3
+    assert mid.root == build_root(events[:3]).root
+    for event in events[3:]:
+        running.add(event)
+    assert running.commit().root == build_root(events).root
+
+
+def test_running_root_commit_records_range_and_ceiling() -> None:
+    running = RunningRoot()
+    for event in (_event(4), _event(7), _event(9)):
+        running.add(event)
+    committed = running.commit(through_seq=9)
+    assert (committed.first_seq, committed.last_seq) == (4, 9)
+    assert committed.through_seq == 9
+    assert running.commit().through_seq == 0  # None records a whole-log commit
+
+
+def test_running_root_rejects_an_out_of_order_event() -> None:
+    """The commitment is over the log in log order; a regression is an error."""
+    running = RunningRoot()
+    running.add(_event(5))
+    with pytest.raises(ValueError, match="ascending sequence order"):
+        running.add(_event(5))  # equal is as wrong as smaller
+    with pytest.raises(ValueError, match="got seq 3 after 5"):
+        running.add(_event(3))
+
+
+def test_empty_running_root_is_the_empty_log_root() -> None:
+    running = RunningRoot()
+    assert running.root_hex() == EMPTY_ROOT
+    committed = running.commit()
+    assert (committed.tree_size, committed.first_seq, committed.last_seq) == (0, 0, 0)
+
+
+def test_run_root_streams_the_store_instead_of_materialising_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``run_root`` must consume the streaming cursor, never a loaded list."""
+    db = tmp_path / "hub.db"
+    _seed(db, _events(9))
+
+    def refuse_read_all(self: EventStore) -> list[StoredEvent]:
+        msg = "run_root materialised the log"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(EventStore, "read_all", refuse_read_all)
+    root = run_root(db)
+    assert root.tree_size == 9
+    assert root.root == build_root(_events(9)).root
+
+
+def test_run_root_streaming_honours_the_sequence_ceiling(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db, _events(12))
+    limited = run_root(db, through_seq=7)
+    assert limited.tree_size == 7
+    assert limited.root == build_root(_events(12), through_seq=7).root
+    assert limited.through_seq == 7

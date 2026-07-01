@@ -25,6 +25,12 @@ It complements :mod:`synapse_channel.core.reproduce` (a per-task full-slice
 digest) with a log-wide, incrementally provable commitment, and it is read-only
 and contacts no live hub. The commitment proves *what the log contains* — integrity
 and inclusion — not the semantic correctness of the coordination it records.
+
+Committing a root is bounded-memory: :func:`run_root` streams events off the
+store cursor into a :class:`RunningRoot`, which holds only the ``O(log n)``
+subtree peaks, so a multi-year log commits without loading into RAM. Building an
+*inclusion proof* (:func:`run_proof`) still materialises the committed leaves —
+an audit path needs subtree hashes across the whole tree.
 """
 
 from __future__ import annotations
@@ -102,6 +108,97 @@ class InclusionProof:
     root: str
 
 
+class RunningRoot:
+    """An incremental RFC 6962 Merkle root over an ascending event stream.
+
+    Events are folded in one at a time in sequence order, and the state held is
+    only the *peaks* — one perfect subtree hash per set bit of the current tree
+    size, exactly as an incrementing binary counter — so committing a log of any
+    length takes ``O(log n)`` memory instead of materialising every leaf. When two
+    peaks reach the same size they merge into their RFC 6962 interior node; the
+    final root folds the remaining peaks right to left, which reproduces the
+    recursive Merkle Tree Hash split at the largest power of two below the size.
+
+    The stream must be strictly ascending by sequence: the commitment is over the
+    log *in log order*, so an out-of-order event would silently commit to a
+    different tree and is rejected instead.
+    """
+
+    __slots__ = ("_first_seq", "_last_seq", "_peaks", "_size")
+
+    def __init__(self) -> None:
+        self._peaks: list[tuple[int, bytes]] = []
+        self._size = 0
+        self._first_seq = 0
+        self._last_seq = 0
+
+    @property
+    def tree_size(self) -> int:
+        """Number of events folded in so far."""
+        return self._size
+
+    def add(self, event: StoredEvent) -> None:
+        """Fold one event into the running commitment.
+
+        Parameters
+        ----------
+        event : StoredEvent
+            The next event in ascending sequence order.
+
+        Raises
+        ------
+        ValueError
+            If ``event.seq`` is not strictly greater than the last folded
+            sequence — the commitment is defined over the log in log order.
+        """
+        if self._size and event.seq <= self._last_seq:
+            msg = (
+                f"events must stream in ascending sequence order: "
+                f"got seq {event.seq} after {self._last_seq}"
+            )
+            raise ValueError(msg)
+        if not self._size:
+            self._first_seq = event.seq
+        self._last_seq = event.seq
+        self._size += 1
+        self._peaks.append((1, leaf_hash(event)))
+        while len(self._peaks) >= 2 and self._peaks[-1][0] == self._peaks[-2][0]:
+            size, right = self._peaks.pop()
+            _, left = self._peaks.pop()
+            self._peaks.append((size * 2, _node_hash(left, right)))
+
+    def root_hex(self) -> str:
+        """Return the current RFC 6962 root as hex, without disturbing the state."""
+        if not self._peaks:
+            return EMPTY_ROOT
+        acc = self._peaks[-1][1]
+        for _, peak in reversed(self._peaks[:-1]):
+            acc = _node_hash(peak, acc)
+        return acc.hex()
+
+    def commit(self, *, through_seq: int | None = None) -> MerkleRoot:
+        """Return the commitment over everything folded in so far.
+
+        Parameters
+        ----------
+        through_seq : int or None, optional
+            The inclusive sequence ceiling the *caller* filtered the stream by,
+            recorded on the commitment; ``None`` records a whole-log commit.
+
+        Returns
+        -------
+        MerkleRoot
+            The snapshot commitment; the accumulator itself keeps streaming.
+        """
+        return MerkleRoot(
+            root=self.root_hex(),
+            tree_size=self._size,
+            first_seq=self._first_seq,
+            last_seq=self._last_seq,
+            through_seq=through_seq or 0,
+        )
+
+
 def build_root(events: Sequence[StoredEvent], *, through_seq: int | None = None) -> MerkleRoot:
     """Commit the event log to a Merkle root.
 
@@ -118,15 +215,10 @@ def build_root(events: Sequence[StoredEvent], *, through_seq: int | None = None)
     MerkleRoot
         The commitment over the selected events.
     """
-    selected = _selected_events(events, through_seq)
-    leaves = [leaf_hash(event) for event in selected]
-    return MerkleRoot(
-        root=_merkle_tree_hash(leaves).hex(),
-        tree_size=len(selected),
-        first_seq=selected[0].seq if selected else 0,
-        last_seq=selected[-1].seq if selected else 0,
-        through_seq=through_seq or 0,
-    )
+    running = RunningRoot()
+    for event in _selected_events(events, through_seq):
+        running.add(event)
+    return running.commit(through_seq=through_seq)
 
 
 def build_proof(
@@ -200,6 +292,10 @@ def leaf_hash(event: StoredEvent) -> bytes:
 def run_root(db_path: str | Path, *, through_seq: int | None = None) -> MerkleRoot:
     """Build a Merkle root from an existing SQLite event store.
 
+    Events stream off the store cursor into a :class:`RunningRoot`, so committing
+    a multi-year log holds ``O(log n)`` state — one event and the peak hashes —
+    never the materialised log.
+
     Parameters
     ----------
     db_path : str or pathlib.Path
@@ -217,7 +313,18 @@ def run_root(db_path: str | Path, *, through_seq: int | None = None) -> MerkleRo
     ValueError
         If the event store does not exist.
     """
-    return build_root(_load_events(db_path), through_seq=through_seq)
+    path = Path(db_path)
+    if not path.exists():
+        msg = f"missing event store: {path}"
+        raise ValueError(msg)
+    store = EventStore(path)
+    try:
+        running = RunningRoot()
+        for event in store.iter_events(through_seq=through_seq):
+            running.add(event)
+        return running.commit(through_seq=through_seq)
+    finally:
+        store.close()
 
 
 def run_proof(

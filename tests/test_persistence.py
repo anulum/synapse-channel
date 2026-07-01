@@ -12,6 +12,7 @@ import os
 import sqlite3
 import stat
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -252,4 +253,44 @@ def test_vacuum_keeps_the_surviving_rows_intact(tmp_path: Path) -> None:
     # The connection is usable after the rewrite (writes still commit).
     store.append("chat", {"p": "after"})
     assert store.count() == 5
+    store.close()
+
+
+def test_iter_events_streams_in_sequence_order(tmp_path: Path) -> None:
+    """``iter_events`` is a lazy cursor: no list is built and order is by seq."""
+    store = EventStore(tmp_path / "events.db")
+    for i in range(1, 6):
+        store.append("chat", {"n": i}, ts=float(i))
+    iterator = store.iter_events()
+    assert isinstance(iterator, types.GeneratorType)
+    seqs = [event.seq for event in iterator]
+    assert seqs == sorted(seqs) and len(seqs) == 5
+    store.close()
+
+
+def test_iter_events_honours_the_inclusive_ceiling(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    for i in range(1, 8):
+        store.append("chat", {"n": i}, ts=float(i))
+    limited = list(store.iter_events(through_seq=4))
+    assert [event.seq for event in limited] == [1, 2, 3, 4]
+    assert list(store.iter_events(through_seq=0)) == []
+    store.close()
+
+
+def test_iter_events_round_trips_payload_fields(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    store.append("claim", {"task_id": "T1", "paths": ["a.py"]}, ts=12.5)
+    (event,) = list(store.iter_events())
+    assert (event.kind, event.ts) == ("claim", 12.5)
+    assert event.payload == {"task_id": "T1", "paths": ["a.py"]}
+    store.close()
+
+
+def test_read_all_matches_iter_events(tmp_path: Path) -> None:
+    """``read_all`` is now the materialised view of the same streaming read."""
+    store = EventStore(tmp_path / "events.db")
+    for i in range(1, 4):
+        store.append("chat", {"n": i}, ts=float(i))
+    assert store.read_all() == list(store.iter_events())
     store.close()
