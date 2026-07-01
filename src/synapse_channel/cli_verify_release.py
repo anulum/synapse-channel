@@ -13,9 +13,11 @@ import argparse
 import json
 import os
 import shlex
+import sys
 import tempfile
 from pathlib import Path
 
+from synapse_channel.core.merkle import MerkleRoot, run_root
 from synapse_channel.core.release_verification import (
     build_verified_release_receipt,
     collect_git_state,
@@ -45,6 +47,13 @@ def _cmd_verify_release(args: argparse.Namespace) -> int:
     """Run declared verification commands and write a receipt JSON document."""
     commands = [shlex.split(command) for command in args.run]
     git_state = collect_git_state(Path.cwd())
+    merkle: MerkleRoot | None = None
+    if args.merkle_db:
+        try:
+            merkle = run_root(args.merkle_db)
+        except ValueError as exc:
+            print(f"verify-release: {exc}", file=sys.stderr)
+            return 2
     receipt = build_verified_release_receipt(
         task_id=args.task_id,
         owner=args.name,
@@ -55,6 +64,7 @@ def _cmd_verify_release(args: argparse.Namespace) -> int:
         git_tree=git_state.tree,
         signature=args.signature,
         cwd=Path.cwd(),
+        merkle=merkle,
     )
     payload = json.dumps(receipt, sort_keys=True)
     if args.output:
@@ -93,5 +103,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--signature",
         default="",
         help="Optional signature or signature reference to carry in the receipt.",
+    )
+    parser.add_argument(
+        "--merkle-db",
+        default="",
+        metavar="FILE",
+        help="Hub event store whose Merkle root is committed into the receipt, "
+        "binding the release to the exact coordination history behind it; "
+        "`synapse policy-check --merkle-db` re-verifies it later.",
     )
     parser.set_defaults(func=_cmd_verify_release)

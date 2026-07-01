@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from synapse_channel import cli, cli_verify_release
+from synapse_channel.core.persistence import EventStore
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -64,6 +65,7 @@ def test_cmd_verify_release_writes_output_in_process(
         artifacts=[],
         output=str(output),
         signature="signed-by-owner",
+        merkle_db="",
     )
 
     assert cli_verify_release._cmd_verify_release(args) == 0
@@ -88,6 +90,7 @@ def test_cmd_verify_release_prints_json_failure_in_process(
         artifacts=[],
         output="",
         signature="",
+        merkle_db="",
     )
 
     assert cli_verify_release._cmd_verify_release(args) == 1
@@ -174,3 +177,43 @@ def test_verify_release_cli_returns_failure_when_observed_command_fails(tmp_path
     assert proc.returncode == 1
     receipt = json.loads(proc.stdout)
     assert receipt["known_failures"][0].endswith("exit=3")
+
+
+def _seeded_store(path: Path, count: int = 4) -> None:
+    store = EventStore(path)
+    for i in range(1, count + 1):
+        store.append("claim", {"task_id": f"T{i}"}, ts=float(i))
+    store.close()
+
+
+def test_verify_release_cli_commits_the_coordination_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--merkle-db binds the receipt to the exact coordination history."""
+    monkeypatch.chdir(tmp_path)
+    db = tmp_path / "hub.db"
+    _seeded_store(db)
+    output = tmp_path / "receipt.json"
+
+    exit_code = cli.main(
+        ["verify-release", "VERIFY", "--merkle-db", str(db), "--output", str(output)]
+    )
+
+    assert exit_code == 0
+    receipt = json.loads(output.read_text(encoding="utf-8"))
+    merkle = receipt["verification"]["merkle"]
+    assert merkle["tree_size"] == 4
+    assert merkle["last_seq"] == 4
+    assert len(merkle["root"]) == 64
+    assert any("merkle root: " in line for line in receipt["evidence"])
+
+
+def test_verify_release_cli_rejects_a_missing_merkle_store(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    exit_code = cli.main(["verify-release", "VERIFY", "--merkle-db", str(tmp_path / "absent.db")])
+    assert exit_code == 2
+    assert "missing event store" in capsys.readouterr().err

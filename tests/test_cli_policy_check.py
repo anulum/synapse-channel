@@ -16,6 +16,8 @@ from typing import Any
 import pytest
 
 from synapse_channel import cli_policy_check
+from synapse_channel.core.merkle import root_to_json, run_root
+from synapse_channel.core.persistence import EventStore
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -150,3 +152,147 @@ def test_non_object_receipt_errors(tmp_path: Path, capsys: pytest.CaptureFixture
     code = _run(["policy-check", "T1", "--policy", str(policy), "--receipt-json", str(arr)])
     assert code == 2
     assert "must be an object" in capsys.readouterr().out
+
+
+def _seeded_store(path: Path, count: int = 4) -> None:
+    store = EventStore(path)
+    for i in range(1, count + 1):
+        store.append("claim", {"task_id": f"T{i}"}, ts=float(i))
+    store.close()
+
+
+def _committed_receipt(tmp_path: Path, db: Path) -> Path:
+    return _receipt(
+        tmp_path,
+        evidence=["pytest -q passed"],
+        verification={"merkle": root_to_json(run_root(db))},
+    )
+
+
+def test_merkle_db_adds_a_passing_commitment_decision(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy = _policy(tmp_path, {"required_tests": {"commands": ["pytest"]}})
+    db = tmp_path / "hub.db"
+    _seeded_store(db)
+    receipt = _committed_receipt(tmp_path, db)
+    code = _run(
+        [
+            "policy-check",
+            "T1",
+            "--policy",
+            str(policy),
+            "--receipt-json",
+            str(receipt),
+            "--merkle-db",
+            str(db),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "merkle_commitment: coordination log through seq 4 still matches" in out
+
+
+def test_merkle_db_fails_the_decision_when_the_prefix_changed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy = _policy(tmp_path, {"required_tests": {"commands": ["pytest"]}})
+    db = tmp_path / "hub.db"
+    _seeded_store(db)
+    receipt = _committed_receipt(tmp_path, db)
+    tampered = tmp_path / "tampered.db"
+    store = EventStore(tampered)
+    for i in range(1, 5):
+        store.append("claim", {"task_id": f"X{i}"}, ts=float(i))
+    store.close()
+    code = _run(
+        [
+            "policy-check",
+            "T1",
+            "--policy",
+            str(policy),
+            "--receipt-json",
+            str(receipt),
+            "--merkle-db",
+            str(tampered),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0  # advisory mode reports, it does not gate
+    assert "✗ merkle_commitment: commitment mismatch" in out
+    assert "treat the coordination log (or the receipt) as tampered" in out
+
+
+def test_merkle_db_marks_a_receipt_without_a_commitment(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy = _policy(tmp_path, {"required_tests": {"commands": ["pytest"]}})
+    db = tmp_path / "hub.db"
+    _seeded_store(db)
+    receipt = _receipt(tmp_path, evidence=["pytest -q passed"])
+    code = _run(
+        [
+            "policy-check",
+            "T1",
+            "--policy",
+            str(policy),
+            "--receipt-json",
+            str(receipt),
+            "--merkle-db",
+            str(db),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "merkle_commitment: receipt carries no coordination-log commitment" in out
+
+
+def test_merkle_db_enforce_blocks_on_a_failed_commitment(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An enforcement policy gates the release on a tampered commitment."""
+    policy = _policy(tmp_path, {"required_tests": {"commands": ["pytest"]}}, mode="enforcement")
+    db = tmp_path / "hub.db"
+    _seeded_store(db)
+    receipt = _committed_receipt(tmp_path, db)
+    shorter = tmp_path / "shorter.db"
+    _seeded_store(shorter, count=2)
+    code = _run(
+        [
+            "policy-check",
+            "T1",
+            "--policy",
+            str(policy),
+            "--receipt-json",
+            str(receipt),
+            "--merkle-db",
+            str(shorter),
+            "--enforce",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "BLOCKED" in out
+
+
+def test_merkle_db_missing_store_is_a_policy_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy = _policy(tmp_path, {"required_tests": {"commands": ["pytest"]}})
+    db = tmp_path / "hub.db"
+    _seeded_store(db)
+    receipt = _committed_receipt(tmp_path, db)
+    code = _run(
+        [
+            "policy-check",
+            "T1",
+            "--policy",
+            str(policy),
+            "--receipt-json",
+            str(receipt),
+            "--merkle-db",
+            str(tmp_path / "absent.db"),
+        ]
+    )
+    assert code == 2
+    assert "missing event store" in capsys.readouterr().out

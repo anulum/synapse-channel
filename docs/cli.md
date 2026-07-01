@@ -66,7 +66,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse git-hook` | Install post-commit/post-merge hooks that auto-release a commit's claims. |
 | `synapse git-release` | Release the claims whose paths a commit or merge just touched. |
 | `synapse conflicts` | Predict cross-branch merge conflicts between overlapping claims; exit non-zero on a hit. |
-| `synapse verify-release` | Run declared verification commands and write an observed release receipt JSON. |
+| `synapse verify-release` | Run declared verification commands and write an observed release receipt JSON; `--merkle-db` commits the coordination log's Merkle root into it. |
 | `synapse policy-check` | Evaluate a release receipt against a policy file; advisory by default, `--enforce` to gate. |
 | `synapse identity` | Inventory and audit declared agent identities for enforcement-rollout blockers. |
 | `synapse acl` | Shadow-mode (non-blocking) deny-by-default ACL evaluation of candidate accesses. |
@@ -276,11 +276,25 @@ synapse verify-release BUILD --name api-dev \
   --run ".venv/bin/python -m pytest tests/test_feature.py -q" \
   --run ".venv/bin/python -m mypy --strict src/synapse_channel/feature.py" \
   --artifact coverage.xml \
+  --merkle-db ~/synapse/hub.db \
   --output verified-release.json
 
 synapse release BUILD --name api-dev \
   --receipt verified-release.json \
   --receipt-json
+```
+
+`--merkle-db` additionally commits the coordination log's RFC 6962 Merkle root
+into the receipt, binding the release to the exact coordination history behind
+it. Because the log is append-only, anyone can later re-verify the commitment —
+`synapse policy-check --merkle-db` recomputes the committed log prefix and adds
+a `merkle_commitment` decision that fails when that prefix was rewritten,
+truncated, or renumbered since the receipt (and passes as the log grows):
+
+```bash
+synapse policy-check BUILD --policy ./policy.json \
+  --receipt-json verified-release.json \
+  --merkle-db ~/synapse/hub.db          # re-verify the committed log prefix
 ```
 
 The generated receipt is still advisory coordination evidence. A `supported`

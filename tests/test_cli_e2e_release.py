@@ -89,3 +89,51 @@ def test_policy_check_evaluates_a_receipt(tmp_path: Path) -> None:
     )
     assert result.ok(), result.output
     assert "advisory" in result.stdout
+
+
+def test_merkle_committed_receipt_round_trips_through_policy_check(tmp_path: Path) -> None:
+    """The tamper-evidence loop: commit the log at release, re-verify it later.
+
+    A hub writes real coordination events; ``verify-release --merkle-db`` binds
+    the receipt to that exact log prefix; ``policy-check --merkle-db`` recomputes
+    the prefix and passes while the log has only grown append-only.
+    """
+    with isolated_hub(tmp_path) as hub:
+        run_cli("task", "declare", "BUILD", "--title", "build step", uri=hub.uri)
+        run_cli("lock", "BUILD", "--paths", "src/app.py", "--", "true", uri=hub.uri)
+
+        receipt = tmp_path / "receipt.json"
+        built = run_cli(
+            "verify-release",
+            "BUILD",
+            "--name",
+            "USER",
+            "--run",
+            "true",
+            "--merkle-db",
+            str(hub.db_path),
+            "--output",
+            str(receipt),
+        )
+        assert built.ok(), built.output
+        data = json.loads(receipt.read_text(encoding="utf-8"))
+        assert data["verification"]["merkle"]["tree_size"] > 0
+
+        # the log keeps growing append-only after the receipt
+        run_cli("task", "update", "BUILD", "--status", "done", uri=hub.uri)
+
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps({"version": 1, "mode": "advisory", "rules": {}}), encoding="utf-8")
+    checked = run_cli(
+        "policy-check",
+        "BUILD",
+        "--policy",
+        str(policy),
+        "--receipt-json",
+        str(receipt),
+        "--merkle-db",
+        str(hub.db_path),
+    )
+    assert checked.ok(), checked.output
+    assert "merkle_commitment" in checked.stdout
+    assert "still matches the recorded root" in checked.stdout
