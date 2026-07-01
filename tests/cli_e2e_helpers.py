@@ -282,6 +282,51 @@ def isolated_worker(
 
 
 @contextmanager
+def isolated_supervisor(
+    hub_uri: str,
+    *,
+    name: str = "SUPERVISOR",
+    idle_seconds: float = 1.0,
+    interval: float = 0.5,
+    ready_timeout: float = 12.0,
+) -> Iterator[str]:
+    """Run ``synapse supervisor`` against ``hub_uri``; yield its identity.
+
+    Predictive-stall history is disabled and the idle ceiling is tiny so a task
+    left in progress is re-offered within a second, keeping the journey fast and
+    deterministic. Blocks until the supervisor registers on the hub.
+    """
+    proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
+        [
+            *_CLI,
+            "supervisor",
+            "--name",
+            name,
+            "--idle-seconds",
+            str(idle_seconds),
+            "--interval",
+            str(interval),
+            "--no-predictive-stall",
+            "--uri",
+            hub_uri,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + ready_timeout
+        while time.monotonic() < deadline:
+            who = run_cli("who", uri=hub_uri, timeout=5.0)
+            if name in who.stdout:
+                break
+            time.sleep(0.1)
+        yield name
+    finally:
+        _stop(proc)
+
+
+@contextmanager
 def isolated_dashboard(hub_uri: str, *, ready_timeout: float = 8.0) -> Iterator[str]:
     """Serve ``synapse dashboard`` against ``hub_uri``; yield its base HTTP URL.
 
