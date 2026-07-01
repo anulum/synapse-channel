@@ -15,7 +15,9 @@ never the shared workstation hub on port 8876; every journey gets its own.
 
 from __future__ import annotations
 
+import contextlib
 import os
+import signal
 import socket
 import subprocess
 import sys
@@ -192,6 +194,27 @@ def _stop(proc: subprocess.Popen[str]) -> None:
         proc.wait(timeout=5)
 
 
+def _stop_group(proc: subprocess.Popen[str]) -> None:
+    """Terminate a whole process group, for launchers that fork child processes.
+
+    ``synapse team`` starts its hub (and any workers) as children in the session
+    it leads, so signalling only the parent would orphan them; this signals the
+    group so the hub's port is released before the next journey binds one.
+    """
+    try:
+        group = os.getpgid(proc.pid)
+    except ProcessLookupError:
+        return
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(group, sig)
+        try:
+            proc.wait(timeout=5)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+
+
 def http_get(url: str, timeout: float = 5.0) -> tuple[int, str]:
     """GET ``url`` and return ``(status, body)``; status 0 means unreachable."""
     try:
@@ -324,6 +347,34 @@ def isolated_supervisor(
         yield name
     finally:
         _stop(proc)
+
+
+@contextmanager
+def isolated_team(*, no_workers: bool = True, ready_timeout: float = 10.0) -> Iterator[str]:
+    """Launch ``synapse team`` on a free port; yield the hub URI it stands up.
+
+    ``team`` is a one-command launcher that starts its own hub (and, without
+    ``--no-workers``, a roster of workers). The journey uses ``--no-workers`` so
+    no model provider is needed — the worker reply path is covered separately —
+    and only asserts the launcher stands up a reachable, usable hub. The launcher
+    forks its hub as a child, so teardown signals the whole process group.
+    """
+    port = free_port()
+    argv = [*_CLI, "team", "--port", str(port)]
+    if no_workers:
+        argv.append("--no-workers")
+    proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
+        argv,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        _await_listening(port, timeout=ready_timeout)
+        yield f"ws://localhost:{port}"
+    finally:
+        _stop_group(proc)
 
 
 @contextmanager
