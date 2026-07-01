@@ -8,6 +8,7 @@ see the [Integration demos](integration-demos.md).
 | Command | What it does |
 | --- | --- |
 | `synapse hub` | Run the coordination hub. |
+| `synapse commands` | List every subcommand grouped by stability tier — the quickest map of the surface. |
 | `synapse demo` | Run a self-contained local coordination demo and print a success marker. |
 | `synapse quickstart-coding` | Create a coding-fleet workspace, run the no-collision demo, and print a success marker. |
 | `synapse new coding-fleet` | Scaffold a runnable two-agent coding demo workspace. |
@@ -78,10 +79,15 @@ The installed CLI has a source-checkout-free validation path:
 
 ```bash
 python -m pip install synapse-channel
+synapse commands   # a map of every subcommand, grouped by stability tier
 synapse doctor
 synapse demo
 synapse quickstart-coding
 ```
+
+`synapse commands` prints the whole surface grouped into its five stability tiers
+(stable core, adapters, read-only analysis, advisory governance, experimental), so
+you can find the daily-safe core without scrolling the flat `synapse --help` list.
 
 `synapse doctor` reports local wiring issues, including identity, hub exposure,
 root-filesystem pressure, hub reachability, and the current identity's waiter. On

@@ -27,7 +27,7 @@ out in the changelog.
 
 Daily-safe coordination core with a stable wire and CLI surface.
 
-`arm`  `board`  `channel`  `demo`  `hub`  `init`  `listen`  `lock`  `new`  `quickstart-coding`  `send`  `task`  `team`  `wait`  `who`
+`arm`  `board`  `channel`  `commands`  `demo`  `hub`  `init`  `listen`  `lock`  `new`  `quickstart-coding`  `send`  `task`  `team`  `wait`  `who`
 
 ### Adapters — `adapter`
 
