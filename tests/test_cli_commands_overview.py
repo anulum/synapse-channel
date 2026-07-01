@@ -69,7 +69,7 @@ def test_render_overview_skips_a_tier_with_no_commands(
     """A tier that loses all commands disappears instead of rendering empty."""
     from synapse_channel import cli_commands_overview
 
-    slim = {tier: [] for tier in cli_commands_overview.TIERS}
+    slim: dict[str, list[str]] = {tier: [] for tier in TIERS}
     slim["stable"] = ["send"]
     monkeypatch.setattr(cli_commands_overview, "taxonomy_by_tier", lambda: slim)
     text = cli_commands_overview.render_overview()
