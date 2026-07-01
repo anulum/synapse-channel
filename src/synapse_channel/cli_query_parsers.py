@@ -18,7 +18,7 @@ from synapse_channel.cli_query_commands import (
     _cmd_state,
     _cmd_who,
 )
-from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.client.agent import default_hub_uri
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -26,7 +26,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     who = subparsers.add_parser(
         "who", help="List the agents currently online (optionally one project's)."
     )
-    who.add_argument("--uri", default=DEFAULT_HUB_URI)
+    who.add_argument("--uri", default=default_hub_uri())
     who.add_argument("--name", default="USER")
     who.add_argument(
         "--project",
@@ -45,7 +45,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     who.set_defaults(func=_cmd_who)
 
     health = subparsers.add_parser("health", help="Probe the hub; exit 0 if reachable, 1 if not.")
-    health.add_argument("--uri", default=DEFAULT_HUB_URI)
+    health.add_argument("--uri", default=default_hub_uri())
     health.add_argument("--name", default="HEALTH")
     health.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     health.add_argument(
@@ -56,7 +56,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     state = subparsers.add_parser(
         "state", help="Print active claims and their checkpoints (a resume view)."
     )
-    state.add_argument("--uri", default=DEFAULT_HUB_URI)
+    state.add_argument("--uri", default=default_hub_uri())
     state.add_argument("--name", default="USER")
     state.add_argument(
         "--owner",
@@ -70,7 +70,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     state.set_defaults(func=_cmd_state)
 
     board = subparsers.add_parser("board", help="Print the hub's shared task/progress board.")
-    board.add_argument("--uri", default=DEFAULT_HUB_URI)
+    board.add_argument("--uri", default=default_hub_uri())
     board.add_argument("--name", default="USER")
     board.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     board.add_argument(
@@ -79,7 +79,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     board.set_defaults(func=_cmd_board)
 
     manifest = subparsers.add_parser("manifest", help="Print the capability manifest of agents.")
-    manifest.add_argument("--uri", default=DEFAULT_HUB_URI)
+    manifest.add_argument("--uri", default=default_hub_uri())
     manifest.add_argument("--name", default="USER")
     manifest.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     manifest.add_argument(

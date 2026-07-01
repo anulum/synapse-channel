@@ -25,7 +25,7 @@ import sys
 from collections.abc import Callable, Sequence
 from typing import Any, Protocol
 
-from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import describe_connect_failure
 from synapse_channel.core.protocol import MessageType
 
@@ -324,7 +324,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Evidence artifact path or URL (repeatable).",
     )
     parser.add_argument("--note", default="", help="Optional note appended to the evidence.")
-    parser.add_argument("--uri", default=DEFAULT_HUB_URI, help="Hub WebSocket URI.")
+    parser.add_argument("--uri", default=default_hub_uri(), help="Hub WebSocket URI.")
     parser.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     parser.add_argument(
         "--ready-timeout",

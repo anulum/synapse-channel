@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import closed_after_ready, describe_connect_failure
 from synapse_channel.core.accounting import (
     USAGE_NOTE_KIND,
@@ -243,7 +243,7 @@ def _add_record_parser(group: argparse._SubParsersAction[argparse.ArgumentParser
         "record",
         help="Post one opt-in usage note to the shared progress ledger.",
     )
-    record.add_argument("--uri", default=DEFAULT_HUB_URI, help="Hub URI.")
+    record.add_argument("--uri", default=default_hub_uri(), help="Hub URI.")
     record.add_argument("--name", required=True, help="Recording agent identity.")
     record.add_argument("--task", default="", help="Task id the usage is recorded against.")
     record.add_argument("--model", required=True, help="Model id the usage is attributed to.")

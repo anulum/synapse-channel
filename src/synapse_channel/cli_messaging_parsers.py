@@ -14,13 +14,13 @@ import argparse
 from synapse_channel.cli_messaging_listen import _cmd_listen
 from synapse_channel.cli_messaging_send import _cmd_send
 from synapse_channel.cli_messaging_wait import _cmd_wait
-from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.client.agent import default_hub_uri
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``send``, ``wait``, and ``listen`` subparsers."""
     send = subparsers.add_parser("send", help="Send one message and optionally await replies.")
-    send.add_argument("--uri", default=DEFAULT_HUB_URI)
+    send.add_argument("--uri", default=default_hub_uri())
     send.add_argument("--name", default="USER")
     send.add_argument("--target", default="all")
     send.add_argument(
@@ -72,7 +72,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     wait = subparsers.add_parser(
         "wait", help="Block until a message addressed to you arrives, then exit (a wake trigger)."
     )
-    wait.add_argument("--uri", default=DEFAULT_HUB_URI)
+    wait.add_argument("--uri", default=default_hub_uri())
     wait.add_argument("--name", default="USER")
     wait.add_argument(
         "--for",
@@ -102,7 +102,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     wait.set_defaults(func=_cmd_wait)
 
     listen = subparsers.add_parser("listen", help="Stream channel messages until interrupted.")
-    listen.add_argument("--uri", default=DEFAULT_HUB_URI)
+    listen.add_argument("--uri", default=default_hub_uri())
     listen.add_argument("--name", default="USER")
     listen.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     listen.add_argument(

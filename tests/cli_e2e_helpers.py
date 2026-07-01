@@ -15,13 +15,14 @@ never the shared workstation hub on port 8876; every journey gets its own.
 
 from __future__ import annotations
 
+import os
 import socket
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -93,6 +94,7 @@ def run_cli(
     timeout: float = 20.0,
     stdin: str | None = None,
     cwd: Path | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> CliResult:
     """Run ``synapse <args>`` as a subprocess and capture its result.
 
@@ -110,6 +112,9 @@ def run_cli(
     cwd : pathlib.Path or None, optional
         Working directory for the process; used by the git-aware commands that
         read the current repository.
+    env : Mapping[str, str] or None, optional
+        Extra environment variables layered over the inherited environment; used
+        to exercise ``SYNAPSE_URI`` hub selection without passing ``--uri``.
     """
     argv = [*args]
     if uri is not None:
@@ -121,6 +126,7 @@ def run_cli(
             argv = [*argv[:cut], "--uri", uri, *argv[cut:]]
         else:
             argv += ["--uri", uri]
+    child_env = {**os.environ, **env} if env is not None else None
     completed = subprocess.run(  # noqa: S603 - fixed interpreter, test-only
         [*_CLI, *argv],
         capture_output=True,
@@ -128,6 +134,7 @@ def run_cli(
         timeout=timeout,
         input=stdin,
         cwd=None if cwd is None else str(cwd),
+        env=child_env,
         check=False,
     )
     return CliResult(

@@ -30,7 +30,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from synapse_channel.cli_queries import _query_hub
-from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.core.protocol import MessageType
 
 AgentFactory = Callable[..., SynapseAgent]
@@ -181,7 +181,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     task_sub = task.add_subparsers(dest="task_command")
 
     def _add_task_common(parser_: argparse.ArgumentParser) -> None:
-        parser_.add_argument("--uri", default=DEFAULT_HUB_URI)
+        parser_.add_argument("--uri", default=default_hub_uri())
         parser_.add_argument("--name", default="USER")
         parser_.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
 

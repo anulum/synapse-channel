@@ -25,9 +25,11 @@ from websockets.asyncio.client import ClientConnection
 from synapse_channel.client.agent_dispatch import AgentDispatchMixin, MessageCallback
 from synapse_channel.client.agent_lifecycle import (
     DEFAULT_HUB_URI,
+    HUB_URI_ENV_VAR,
     MINIMUM_HEARTBEAT_INTERVAL,
     AgentLifecycleMixin,
     _is_connection_refused,
+    default_hub_uri,
 )
 from synapse_channel.client.agent_outbound import AgentOutboundMixin
 from synapse_channel.client.agent_queries import AgentQueryMixin
@@ -37,10 +39,12 @@ logging.basicConfig(level=logging.ERROR)
 
 __all__ = [
     "DEFAULT_HUB_URI",
+    "HUB_URI_ENV_VAR",
     "MINIMUM_HEARTBEAT_INTERVAL",
     "MessageCallback",
     "SynapseAgent",
     "_is_connection_refused",
+    "default_hub_uri",
 ]
 
 

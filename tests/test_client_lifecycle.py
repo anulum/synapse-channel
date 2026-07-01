@@ -18,7 +18,13 @@ from websockets.exceptions import ConnectionClosedError
 from websockets.frames import Close
 
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
-from synapse_channel.client.agent import DEFAULT_HUB_URI, MINIMUM_HEARTBEAT_INTERVAL, SynapseAgent
+from synapse_channel.client.agent import (
+    DEFAULT_HUB_URI,
+    HUB_URI_ENV_VAR,
+    MINIMUM_HEARTBEAT_INTERVAL,
+    SynapseAgent,
+    default_hub_uri,
+)
 from synapse_channel.client.agent_lifecycle import _received_close
 
 
@@ -28,6 +34,41 @@ def test_defaults_and_heartbeat_clamp() -> None:
     assert agent.heartbeat_interval == 20.0
     agent_fast = SynapseAgent("B", heartbeat_interval=1.0)
     assert agent_fast.heartbeat_interval == MINIMUM_HEARTBEAT_INTERVAL
+
+
+def test_default_hub_uri_falls_back_to_loopback_without_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # With SYNAPSE_URI unset the default resolves to the literal loopback constant.
+    monkeypatch.delenv(HUB_URI_ENV_VAR, raising=False)
+    assert default_hub_uri() == DEFAULT_HUB_URI
+
+
+def test_default_hub_uri_honours_the_environment_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A set SYNAPSE_URI redirects the whole CLI to a non-default hub.
+    monkeypatch.setenv(HUB_URI_ENV_VAR, "ws://coordinator.internal:9931")
+    assert default_hub_uri() == "ws://coordinator.internal:9931"
+
+
+def test_default_hub_uri_trims_and_ignores_a_blank_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Whitespace-only is treated as unset, so a stray blank never yields "".
+    monkeypatch.setenv(HUB_URI_ENV_VAR, "   ")
+    assert default_hub_uri() == DEFAULT_HUB_URI
+    monkeypatch.setenv(HUB_URI_ENV_VAR, "  ws://trimmed:8000  ")
+    assert default_hub_uri() == "ws://trimmed:8000"
+
+
+def test_default_hub_uri_leaves_the_literal_constant_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The override is a client-connection default only; the bind-port constant
+    # stays the fixed loopback literal so it can still describe where a hub binds.
+    monkeypatch.setenv(HUB_URI_ENV_VAR, "ws://elsewhere:1")
+    assert DEFAULT_HUB_URI == "ws://localhost:8876"
 
 
 def test_agent_starts_with_no_recorded_close() -> None:

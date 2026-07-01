@@ -13,7 +13,7 @@ import argparse
 import time
 from pathlib import Path
 
-from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.dashboard import start_dashboard_server
 
 
@@ -58,7 +58,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "dashboard",
         help="Serve a loopback-only read-only web dashboard for hub state.",
     )
-    dashboard.add_argument("--uri", default=DEFAULT_HUB_URI)
+    dashboard.add_argument("--uri", default=default_hub_uri())
     dashboard.add_argument("--name", default="DASHBOARD")
     dashboard.add_argument("--host", default="127.0.0.1", help="HTTP bind host.")
     dashboard.add_argument("--port", type=int, default=8765, help="HTTP bind port.")

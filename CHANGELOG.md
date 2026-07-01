@@ -13,6 +13,20 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.79.0] - 2026-07-01
+
+### Added
+- `SYNAPSE_URI` selects the hub for every CLI command. An operator working against a non-default
+  hub — a remote coordinator, or a second local hub on another port — now sets it once instead of
+  repeating `--uri` on each command. An explicit `--uri` still overrides it for a single call, and
+  a blank or unset variable falls back to the loopback default `ws://localhost:8876`.
+
+### Fixed
+- The "Coordinate from code" quickstart example started a hub in the same process and connected an
+  agent to it without waiting for the server to bind, so the agent could abandon a refused
+  connection and every following verb would act on a closed one. The example now connects to a
+  separately started hub and stops with a clear error when the hub is unreachable.
+
 ## [0.78.0] - 2026-07-01
 
 ### Added

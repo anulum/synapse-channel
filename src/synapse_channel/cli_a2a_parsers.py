@@ -13,7 +13,7 @@ import argparse
 
 from synapse_channel.cli_a2a_card import _cmd_a2a_card
 from synapse_channel.cli_a2a_serve import _cmd_a2a_serve
-from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.client.agent import default_hub_uri
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -22,7 +22,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "a2a-card",
         help="Print an A2A Agent Card projected from the live SYNAPSE capability manifest.",
     )
-    card.add_argument("--uri", default=DEFAULT_HUB_URI)
+    card.add_argument("--uri", default=default_hub_uri())
     card.add_argument("--name", default="A2A-BRIDGE")
     card.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     card.add_argument(
@@ -47,7 +47,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "a2a-serve",
         help="Run the stdlib HTTP+JSON A2A bridge for discovery, messages, and tasks.",
     )
-    serve.add_argument("--uri", default=DEFAULT_HUB_URI)
+    serve.add_argument("--uri", default=default_hub_uri())
     serve.add_argument("--name", default="A2A-BRIDGE")
     serve.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     serve.add_argument("--host", default="127.0.0.1")

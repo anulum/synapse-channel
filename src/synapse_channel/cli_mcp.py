@@ -20,7 +20,7 @@ import argparse
 import asyncio
 import sys
 
-from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.mcp.server import DEFAULT_BRIDGE_NAME, DEFAULT_REQUEST_TIMEOUT, serve_stdio
 
 
@@ -54,7 +54,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "mcp",
         help="Run an MCP server over stdio that bridges to the hub (needs the [mcp] extra).",
     )
-    mcp.add_argument("--uri", default=DEFAULT_HUB_URI)
+    mcp.add_argument("--uri", default=default_hub_uri())
     mcp.add_argument("--name", default=DEFAULT_BRIDGE_NAME)
     mcp.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     mcp.add_argument(

@@ -21,7 +21,7 @@ import json
 import sys
 from typing import Any
 
-from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import closed_after_ready, describe_connect_failure
 from synapse_channel.core.approvals import (
     APPROVAL_NOTE_KIND,
@@ -144,7 +144,7 @@ def _cmd_status(args: argparse.Namespace) -> int:
 
 def _add_emit_arguments(parser: argparse.ArgumentParser) -> None:
     """Add the shared hub-connection and identity arguments to an emit parser."""
-    parser.add_argument("--uri", default=DEFAULT_HUB_URI, help="Hub URI.")
+    parser.add_argument("--uri", default=default_hub_uri(), help="Hub URI.")
     parser.add_argument("--name", required=True, help="Acting agent identity.")
     parser.add_argument("--subject", required=True, help="Gated subject id (task or release/gate).")
     parser.add_argument("--reason", default="", help="Optional free-text reason.")

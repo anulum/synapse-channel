@@ -26,7 +26,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import describe_connect_failure, explain_silent_outcome
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.receipts import build_release_receipt
@@ -439,7 +439,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=30.0,
         help="Seconds to keep retrying while another agent holds the lease; 0 fails fast.",
     )
-    lock.add_argument("--uri", default=DEFAULT_HUB_URI)
+    lock.add_argument("--uri", default=default_hub_uri())
     lock.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     lock.add_argument(
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
@@ -453,7 +453,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     release.add_argument(
         "--name", default="USER", help="The releasing identity; must own the claim."
     )
-    release.add_argument("--uri", default=DEFAULT_HUB_URI)
+    release.add_argument("--uri", default=default_hub_uri())
     release.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     release.add_argument(
         "--evidence",

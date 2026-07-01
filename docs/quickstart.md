@@ -101,20 +101,42 @@ synapse board                                 # the shared task/progress plan
 synapse manifest                              # advertised agent capabilities
 ```
 
+## Point the CLI at another hub
+
+Every command talks to `ws://localhost:8876` by default. To target a different
+hub — a remote coordinator, or a second local hub on another port — set
+`SYNAPSE_URI` once instead of repeating `--uri` on each command:
+
+```bash
+export SYNAPSE_URI=ws://coordinator.internal:8876
+synapse who                                   # now queries the remote hub
+synapse send --name USER --target FAST "ping" # so does every other command
+```
+
+An explicit `--uri` on a single command still overrides the environment for that
+one call, and unsetting `SYNAPSE_URI` returns to the loopback default.
+
 ## Coordinate from code
+
+Start a hub in another terminal first — `synapse hub --port 8876` — then connect
+to it from your code. Connecting to an already-running hub keeps the example free
+of the in-process startup race between binding the server and dialling it:
 
 ```python
 import asyncio
-from synapse_channel import SynapseHub, SynapseAgent
+import contextlib
+
+from synapse_channel import SynapseAgent
 
 
 async def main() -> None:
-    hub = SynapseHub()
-    asyncio.create_task(hub.serve("localhost", 8876))
-
     agent = SynapseAgent("ALPHA", uri="ws://localhost:8876")
-    task = asyncio.create_task(agent.connect())
-    await agent.wait_until_ready()
+    agent_task = asyncio.create_task(agent.connect())
+    # connect() is a single long-lived session; wait for the hub's welcome before
+    # issuing verbs, and fail loudly if the hub is not up rather than acting on a
+    # closed connection.
+    if not await agent.wait_until_ready():
+        raise RuntimeError("could not reach the hub — is `synapse hub` running?")
 
     await agent.claim("refactor-parser", note="splitting the tokenizer", paths=["src/parser"])
     await agent.save_checkpoint("refactor-parser", "step=2")
@@ -122,7 +144,9 @@ async def main() -> None:
     await agent.release("refactor-parser")
 
     agent.running = False
-    task.cancel()
+    agent_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await agent_task
 
 
 asyncio.run(main())

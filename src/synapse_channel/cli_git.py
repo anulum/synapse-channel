@@ -25,7 +25,7 @@ from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.git.gitclaim import GitError, run_git_claim
 from synapse_channel.git.gitconflict import run_conflicts
 from synapse_channel.git.githook import check_hooks, install_hooks, run_git_release
@@ -358,7 +358,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default="merge",
         help="When a git hook should release the claim; enacted by 'synapse git-hook'.",
     )
-    git_claim.add_argument("--uri", default=DEFAULT_HUB_URI)
+    git_claim.add_argument("--uri", default=default_hub_uri())
     git_claim.add_argument("--name", default="USER")
     git_claim.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     git_claim.set_defaults(func=_cmd_git_claim)
@@ -367,7 +367,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "git-init",
         help="Set up claim-aware git in one step: install the hooks and write a .synapse/ guide.",
     )
-    git_init.add_argument("--uri", default=DEFAULT_HUB_URI)
+    git_init.add_argument("--uri", default=default_hub_uri())
     git_init.add_argument("--name", default="USER")
     git_init.add_argument(
         "--base",
@@ -412,7 +412,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         choices=["install", "test"],
         help="install the hooks, or test that they are installed and their binary resolves.",
     )
-    git_hook.add_argument("--uri", default=DEFAULT_HUB_URI)
+    git_hook.add_argument("--uri", default=default_hub_uri())
     git_hook.add_argument("--name", default="USER")
     git_hook.add_argument(
         "--synapse-bin",
@@ -440,7 +440,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=None,
         help="Which auto-release trigger fired (required for the hook-invoked release).",
     )
-    git_release.add_argument("--uri", default=DEFAULT_HUB_URI)
+    git_release.add_argument("--uri", default=default_hub_uri())
     git_release.add_argument("--name", default="USER")
     git_release.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     git_release.set_defaults(func=_cmd_git_release)
@@ -454,7 +454,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         action="store_true",
         help="Refine the prediction against each branch's actual 'git diff base...branch'.",
     )
-    conflicts.add_argument("--uri", default=DEFAULT_HUB_URI)
+    conflicts.add_argument("--uri", default=default_hub_uri())
     conflicts.add_argument("--name", default="USER")
     conflicts.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     conflicts.set_defaults(func=_cmd_conflicts)

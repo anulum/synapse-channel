@@ -13,7 +13,7 @@ import argparse
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.service_setup import install_user_services, service_suggestions
 from synapse_channel.worker_session import run_worker_session
 
@@ -123,7 +123,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     worker.add_argument(
         "--project", default=None, help="Project override; defaults to identity prefix."
     )
-    worker.add_argument("--uri", default=DEFAULT_HUB_URI)
+    worker.add_argument("--uri", default=default_hub_uri())
     worker.add_argument(
         "--syn-bin", default="syn", help="Syn ergonomic command used for the sidecar."
     )

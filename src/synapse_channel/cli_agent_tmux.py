@@ -32,7 +32,7 @@ from synapse_channel.agent_tmux import (
     status,
     wait_and_wake,
 )
-from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.client.agent import default_hub_uri
 
 Starter = Callable[[AgentTmuxConfig], AgentTmuxWakeResult]
 Injector = Callable[[AgentTmuxConfig], AgentTmuxWakeResult]
@@ -124,7 +124,7 @@ def _add_common_args(
     )
     parser.add_argument("--tmux-bin", default="tmux", help="tmux executable.")
     parser.add_argument("--synapse-bin", default="synapse", help="synapse executable.")
-    parser.add_argument("--uri", default=DEFAULT_HUB_URI, help="Synapse hub URI.")
+    parser.add_argument("--uri", default=default_hub_uri(), help="Synapse hub URI.")
     parser.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     parser.add_argument(
         "--submit-delay",
