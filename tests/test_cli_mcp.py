@@ -62,3 +62,30 @@ def test_cmd_mcp_preserves_distinct_name_in_unreachable_report(
 ) -> None:
     assert cli_mcp._cmd_mcp(_mcp_ns(name="adapter")) == 1
     assert "[adapter] could not reach hub" in capsys.readouterr().err
+
+
+def test_cmd_mcp_reports_a_missing_mcp_extra(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A RuntimeError from the server (e.g. missing extra) prints and exits 1."""
+
+    async def refuse(**_: object) -> int:
+        msg = "MCP support needs the optional extra: pip install 'synapse-channel[mcp]'"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(cli_mcp, "serve_stdio", refuse)
+    assert cli_mcp._cmd_mcp(_mcp_ns()) == 1
+    assert "pip install 'synapse-channel[mcp]'" in capsys.readouterr().err
+
+
+def test_cmd_mcp_stops_cleanly_on_interrupt(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Ctrl-C during the stdio server is a clean stop, not a traceback."""
+
+    async def interrupted(**_: object) -> int:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli_mcp, "serve_stdio", interrupted)
+    assert cli_mcp._cmd_mcp(_mcp_ns(name="bridge")) == 0
+    assert "[bridge] MCP server stopped." in capsys.readouterr().out

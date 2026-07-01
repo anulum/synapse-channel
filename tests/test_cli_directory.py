@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 
 import pytest
@@ -116,3 +117,51 @@ def test_cmd_directory_dispatches_real_query() -> None:
     )
 
     assert cli_directory._cmd_directory(ns) == 1
+
+
+# --- malformed-snapshot extractors and silent-hub branch ------------------------
+
+
+def test_extractors_drop_malformed_snapshot_shapes() -> None:
+    """A hub reply with wrong-typed sections degrades to empty, never crashes."""
+    assert cli_directory._cards({"manifest": "not-a-list"}) == []
+    assert cli_directory._cards({"manifest": [{"agent": "A"}, 7]}) == [{"agent": "A"}]
+    assert cli_directory._resources({"snapshot": "not-a-mapping"}) == []
+    assert cli_directory._resources({"snapshot": {"resources": "junk"}}) == []
+    assert cli_directory._resources({"snapshot": {"resources": [{"kind": "gpu"}, 3]}}) == [
+        {"kind": "gpu"}
+    ]
+
+
+class _SilentDirectoryAgent:
+    """Connects and reports ready, but never delivers a single snapshot."""
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        self.running = True
+
+    async def connect(self) -> None:
+        while self.running:
+            await asyncio.sleep(0.01)
+
+    async def wait_until_ready(self, *, timeout: float) -> bool:
+        return True
+
+    async def request_manifest(self) -> None:
+        return None
+
+    async def request_state(self) -> None:
+        return None
+
+
+async def test_directory_names_the_snapshots_that_never_arrived(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A ready hub that answers nothing yields the named missing snapshots."""
+    code = await cli_directory._directory(
+        uri="ws://unused",
+        name="DIR",
+        agent_factory=_SilentDirectoryAgent,  # type: ignore[arg-type]
+        response_timeout=0.1,
+    )
+    assert code == 1
+    assert "did not return capability directory snapshots" in capsys.readouterr().out
