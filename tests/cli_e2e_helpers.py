@@ -203,6 +203,51 @@ def http_get(url: str, timeout: float = 5.0) -> tuple[int, str]:
         return 0, ""
 
 
+A2A_AGENT_CARD_PATH = "/.well-known/agent-card.json"
+"""Well-known path the A2A bridge serves its Agent Card on."""
+
+
+@contextmanager
+def isolated_a2a_serve(hub_uri: str, *, ready_timeout: float = 8.0) -> Iterator[str]:
+    """Serve ``synapse a2a-serve`` against ``hub_uri``; yield its base HTTP URL.
+
+    Blocks until the Agent Card endpoint answers, so the caller can fetch the card
+    the bridge projects from the hub's live capability manifest. Bound to loopback
+    only; no bearer auth is set because it never leaves the test host.
+    """
+    port = free_port()
+    base = f"http://127.0.0.1:{port}"
+    proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
+        [
+            *_CLI,
+            "a2a-serve",
+            "--uri",
+            hub_uri,
+            "--name",
+            "BRIDGE",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--endpoint-url",
+            base,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + ready_timeout
+        while time.monotonic() < deadline:
+            status, _ = http_get(f"{base}{A2A_AGENT_CARD_PATH}", timeout=1.0)
+            if status == 200:
+                break
+            time.sleep(0.1)
+        yield base
+    finally:
+        _stop(proc)
+
+
 @contextmanager
 def isolated_dashboard(hub_uri: str, *, ready_timeout: float = 8.0) -> Iterator[str]:
     """Serve ``synapse dashboard`` against ``hub_uri``; yield its base HTTP URL.
