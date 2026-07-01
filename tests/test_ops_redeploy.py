@@ -86,8 +86,8 @@ def test_parser_doctor_redeploy_checklist_flag() -> None:
 
 
 def test_cmd_doctor_prints_redeploy_checklist(capsys: pytest.CaptureFixture[str]) -> None:
-    async def diagnose(**_: object) -> tuple[int, list[str]]:
-        return (0, ["synapse doctor: all clear"])
+    async def diagnose(**_: object) -> tuple[int, list[str], list[object]]:
+        return (0, ["synapse doctor: all clear"], [])
 
     args = cli.build_parser().parse_args(
         [

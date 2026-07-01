@@ -57,7 +57,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse who` | List the agents currently online, optionally for one project or this identity with `--me`. |
 | `synapse status` | Print a one-line hub summary (online agents, active claims) for shell prompts and tmux status bars; exit non-zero when the hub is down. |
 | `synapse state` | Print active claims and their checkpoints (a resume view). |
-| `synapse doctor` | Check for common coordination misconfigs (identity, exposure, hub, waiter); exit non-zero on a failure. |
+| `synapse doctor` | Check for common coordination misconfigs (identity, exposure, hub, waiter); exit non-zero on a failure. `--fix` auto-repairs a down default local hub or missing waiter by installing and starting the user services. |
 | `synapse init` | Print or install the local user services (hub, waiter, presence) as systemd units. |
 | `synapse install-shell-hook` | Install auto-arming shell integration into Bash, Zsh, and Fish (idempotent, guarded block). |
 | `synapse shell-hook` | Print the shell code that auto-arms terminals and wraps agent commands, for manual sourcing. |
@@ -94,7 +94,12 @@ you can find the daily-safe core without scrolling the flat `synapse --help` lis
 `synapse doctor` reports local wiring issues, including identity, hub exposure,
 root-filesystem pressure, hub reachability, and the current identity's waiter. On
 a fresh machine, a missing hub or waiter can be a warning before services are
-installed. `synapse demo` starts an ephemeral local hub, drives a planner/worker
+installed. `synapse doctor --fix` repairs the safely repairable findings: when the
+default local hub does not answer or the waiter is missing, it installs and starts
+the local hub, presence, and wake services, then re-runs the checks so the exit
+code reflects the repaired state. Findings the services cannot repair — identity,
+exposure, disk pressure, or any non-default hub — are reported with a remedy but
+never touched. `synapse demo` starts an ephemeral local hub, drives a planner/worker
 flow, and is successful when it prints:
 
 For post-release local fleet restarts, `synapse doctor --redeploy-checklist`

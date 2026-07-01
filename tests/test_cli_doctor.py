@@ -16,6 +16,7 @@ import pytest
 
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_doctor
+from synapse_channel.client.diagnostics import Diagnosis
 from synapse_channel.core.hub import SynapseHub
 
 # --- parser ------------------------------------------------------------------
@@ -51,7 +52,7 @@ async def test_diagnose_reachable_with_waiter_passes() -> None:
     async with running_hub(SynapseHub()) as (_, uri):
         waiter = await connect_agent("demorepo-rx", uri)
         try:
-            code, lines = await cli_doctor._diagnose(
+            code, lines, _ = await cli_doctor._diagnose(
                 uri=uri,
                 project="demorepo",
                 agent_id=None,
@@ -67,7 +68,7 @@ async def test_diagnose_reachable_with_waiter_passes() -> None:
 
 async def test_diagnose_reachable_without_waiter_warns() -> None:
     async with running_hub(SynapseHub()) as (_, uri):
-        code, lines = await cli_doctor._diagnose(
+        code, lines, _ = await cli_doctor._diagnose(
             uri=uri,
             project="demorepo",
             agent_id=None,
@@ -79,7 +80,7 @@ async def test_diagnose_reachable_without_waiter_warns() -> None:
 
 
 async def test_diagnose_unreachable_fails() -> None:
-    code, lines = await cli_doctor._diagnose(
+    code, lines, diagnoses = await cli_doctor._diagnose(
         uri=f"ws://127.0.0.1:{_free_port()}",
         project="demorepo",
         agent_id=None,
@@ -90,6 +91,7 @@ async def test_diagnose_unreachable_fails() -> None:
     assert "did not answer" in text
     assert "[warn] waiter:" in text  # unreachable also blocks the waiter check
     assert code == 1
+    assert [d.check for d in diagnoses if d.status == "fail"] == ["hub"]
 
 
 async def test_diagnose_flags_off_loopback_without_token_and_disk_pressure(
@@ -98,7 +100,7 @@ async def test_diagnose_flags_off_loopback_without_token_and_disk_pressure(
     async def no_roster(**_: Any) -> list[str] | None:
         return []
 
-    code, lines = await cli_doctor._diagnose(
+    code, lines, _ = await cli_doctor._diagnose(
         uri="ws://10.0.0.5:8876",
         project="demorepo",
         agent_id=None,
@@ -116,7 +118,7 @@ async def test_diagnose_flags_off_loopback_without_token_and_disk_pressure(
 
 async def test_diagnose_warns_on_hyphen_send_identity() -> None:
     async with running_hub(SynapseHub()) as (_, uri):
-        _, lines = await cli_doctor._diagnose(
+        _, lines, _ = await cli_doctor._diagnose(
             uri=uri,
             project="demorepo",
             agent_id=None,
@@ -129,56 +131,165 @@ async def test_diagnose_warns_on_hyphen_send_identity() -> None:
 # --- dispatch ----------------------------------------------------------------
 
 
+def _doctor_ns(**overrides: Any) -> argparse.Namespace:
+    base: dict[str, Any] = {
+        "uri": "ws://h",
+        "project": None,
+        "id": None,
+        "token": None,
+        "send_name": None,
+        "disk_path": "/",
+        "disk_warn_used_percent": 95.0,
+        "disk_warn_free_mib": 1024,
+        "fix": False,
+        "install_user_services": False,
+        "start_user_services": False,
+        "identity": None,
+        "synapse_bin": None,
+    }
+    base.update(overrides)
+    return argparse.Namespace(**base)
+
+
+def _fail(check: str) -> Diagnosis:
+    return Diagnosis(check=check, status="fail", detail="nope")
+
+
+def _warn(check: str) -> Diagnosis:
+    return Diagnosis(check=check, status="warn", detail="wobbly")
+
+
+def _pass(check: str) -> Diagnosis:
+    return Diagnosis(check=check, status="pass", detail="fine")
+
+
 def test_cmd_doctor_prints_lines_and_returns_code(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    async def diagnose(**_: Any) -> tuple[int, list[str]]:
-        return (1, ["[FAIL] hub: nope", "synapse doctor: FAILED"])
+    async def diagnose(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
+        return (1, ["[FAIL] hub: nope", "synapse doctor: FAILED"], [_fail("hub")])
 
-    ns = argparse.Namespace(
-        uri="ws://h",
-        project=None,
-        id=None,
-        token=None,
-        send_name=None,
-        disk_path="/",
-        disk_warn_used_percent=95.0,
-        disk_warn_free_mib=1024,
-        fix=False,
-        install_user_services=False,
-        start_user_services=False,
-        identity=None,
-        synapse_bin=None,
-    )
+    ns = _doctor_ns()
     assert cli_doctor._cmd_doctor(ns, diagnose_runner=diagnose) == 1
     assert "synapse doctor: FAILED" in capsys.readouterr().out
 
 
-def test_cmd_doctor_fix_prints_service_commands(
+# --- --fix auto-repair ---------------------------------------------------------
+
+
+def test_service_repairable_checks_selects_hub_fail_and_waiter_warn() -> None:
+    diagnoses = [_pass("identity"), _fail("hub"), _warn("waiter"), _warn("disk")]
+    assert cli_doctor.service_repairable_checks(diagnoses, uri="ws://localhost:8876") == [
+        "hub",
+        "waiter",
+    ]
+    assert cli_doctor.service_repairable_checks(diagnoses, uri="ws://127.0.0.1:8876") == [
+        "hub",
+        "waiter",
+    ]
+
+
+def test_service_repairable_checks_is_empty_off_the_default_local_hub() -> None:
+    diagnoses = [_fail("hub"), _warn("waiter")]
+    # local systemd units cannot repair a remote or non-default hub
+    assert cli_doctor.service_repairable_checks(diagnoses, uri="ws://10.0.0.5:8876") == []
+    assert cli_doctor.service_repairable_checks(diagnoses, uri="ws://localhost:9999") == []
+
+
+def test_service_repairable_checks_is_empty_when_everything_passes() -> None:
+    diagnoses = [_pass("hub"), _pass("waiter"), _warn("disk"), _fail("identity")]
+    assert cli_doctor.service_repairable_checks(diagnoses, uri="ws://localhost:8876") == []
+
+
+def test_cmd_doctor_fix_repairs_the_default_hub_and_rechecks(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    async def diagnose(**_: Any) -> tuple[int, list[str]]:
-        return (0, ["synapse doctor: all clear"])
+    """--fix installs+starts the services, re-runs the checks, and reports the new state."""
+    runs: list[int] = []
+    installed: dict[str, Any] = {}
 
-    ns = argparse.Namespace(
-        uri="ws://h",
-        project="repo",
-        id=None,
-        token=None,
-        send_name=None,
-        disk_path="/",
-        disk_warn_used_percent=95.0,
-        disk_warn_free_mib=1024,
-        fix=True,
-        install_user_services=False,
-        start_user_services=False,
-        identity="repo/ux",
-        synapse_bin="/bin/synapse",
+    async def diagnose(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
+        runs.append(1)
+        if len(runs) == 1:
+            return (1, ["[FAIL] hub: down", "synapse doctor: FAILED"], [_fail("hub")])
+        return (0, ["[ok] hub: answered", "synapse doctor: all clear"], [_pass("hub")])
+
+    def install_services(**kwargs: Any) -> list[str]:
+        installed.update(kwargs)
+        return ["ok: systemctl --user enable --now synapse-hub.service"]
+
+    ns = _doctor_ns(uri="ws://localhost:8876", project="repo", identity="repo/ux", fix=True)
+    assert (
+        cli_doctor._cmd_doctor(ns, diagnose_runner=diagnose, service_installer=install_services)
+        == 0
     )
-    assert cli_doctor._cmd_doctor(ns, diagnose_runner=diagnose) == 0
     out = capsys.readouterr().out
-    assert "synapse-arm@.service" in out
-    assert "syn arm --project repo" in out
+    assert "[fix] auto-repairing hub" in out
+    assert "[fix] re-check:" in out
+    assert "synapse doctor: all clear" in out
+    assert installed["start"] is True
+    assert installed["project"] == "repo"
+    assert installed["identity"] == "repo/ux"
+    assert len(runs) == 2  # the exit code comes from the post-repair run
+
+
+def test_cmd_doctor_fix_exit_code_reflects_a_repair_that_did_not_take(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def diagnose(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
+        return (1, ["[FAIL] hub: down"], [_fail("hub")])
+
+    ns = _doctor_ns(uri="ws://localhost:8876", project="repo", fix=True)
+    assert (
+        cli_doctor._cmd_doctor(ns, diagnose_runner=diagnose, service_installer=lambda **_: []) == 1
+    )
+    assert "[fix] re-check:" in capsys.readouterr().out
+
+
+def test_cmd_doctor_fix_never_touches_a_non_default_hub(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Against a remote hub --fix explains the gate and prints manual guidance only."""
+    installed: list[dict[str, Any]] = []
+
+    async def diagnose(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
+        return (1, ["[FAIL] hub: down"], [_fail("hub")])
+
+    def install_services(**kwargs: Any) -> list[str]:
+        installed.append(kwargs)
+        return []
+
+    ns = _doctor_ns(uri="ws://10.0.0.5:8876", project="repo", fix=True)
+    assert (
+        cli_doctor._cmd_doctor(ns, diagnose_runner=diagnose, service_installer=install_services)
+        == 1
+    )
+    out = capsys.readouterr().out
+    assert installed == []
+    assert "not the default local hub" in out
+    assert "synapse-arm@.service" in out  # manual setup commands still offered
+
+
+def test_cmd_doctor_fix_reports_nothing_to_repair_when_healthy(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    installed: list[dict[str, Any]] = []
+
+    async def diagnose(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
+        return (0, ["synapse doctor: all clear"], [_pass("hub"), _pass("waiter")])
+
+    def install_services(**kwargs: Any) -> list[str]:
+        installed.append(kwargs)
+        return []
+
+    ns = _doctor_ns(project="repo", identity="repo/ux", synapse_bin="/bin/synapse", fix=True)
+    assert (
+        cli_doctor._cmd_doctor(ns, diagnose_runner=diagnose, service_installer=install_services)
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert installed == []
+    assert "[fix] nothing to auto-repair" in out
 
 
 def test_cmd_doctor_installs_user_services(
@@ -186,23 +297,15 @@ def test_cmd_doctor_installs_user_services(
 ) -> None:
     captured: dict[str, Any] = {}
 
-    async def diagnose(**_: Any) -> tuple[int, list[str]]:
-        return (0, ["synapse doctor: all clear"])
+    async def diagnose(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
+        return (0, ["synapse doctor: all clear"], [])
 
     def install_services(**kwargs: Any) -> list[str]:
         captured.update(kwargs)
         return ["wrote synapse-hub.service", "ok: systemctl --user daemon-reload"]
 
-    ns = argparse.Namespace(
-        uri="ws://h",
+    ns = _doctor_ns(
         project="repo",
-        id=None,
-        token=None,
-        send_name=None,
-        disk_path="/",
-        disk_warn_used_percent=95.0,
-        disk_warn_free_mib=1024,
-        fix=False,
         install_user_services=True,
         start_user_services=True,
         identity="repo/ux",
