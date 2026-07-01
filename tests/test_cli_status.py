@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -197,3 +198,34 @@ def test_status_is_documented_and_classified_stable() -> None:
     assert CLI_TAXONOMY["status"] == STABLE
     assert "`status`" in _repo_text("docs/public-surface.md")
     assert "synapse status" in _repo_text("docs/cli.md")
+
+
+class _SilentStatusAgent:
+    """Connects and reports ready, but neither snapshot ever arrives."""
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        self.running = True
+
+    async def connect(self) -> None:
+        while self.running:
+            await asyncio.sleep(0.01)
+
+    async def wait_until_ready(self, *, timeout: float) -> bool:
+        return True
+
+    async def request_who(self) -> None:
+        return None
+
+    async def request_state(self) -> None:
+        return None
+
+
+async def test_query_status_tallies_zeros_when_snapshots_never_arrive() -> None:
+    """A ready hub that answers nothing still yields a reachable zero status."""
+    status = await query_status(
+        uri="ws://unused",
+        agent_factory=_SilentStatusAgent,  # type: ignore[arg-type]
+        attempts=2,
+    )
+    assert status.reachable is True
+    assert (status.online, status.claims, status.resources) == (0, 0, 0)

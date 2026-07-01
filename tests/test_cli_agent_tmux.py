@@ -151,3 +151,46 @@ def test_cmd_wait_dispatches(tmp_path: Path) -> None:
     assert captured["config"].agent_command == ("kimi",)
     assert captured["max_wakes"] == 3
     assert captured["max_wait_failures"] == 5
+
+
+def test_cmd_wake_dispatches(capsys: Any, tmp_path: Path) -> None:
+    """The wake subcommand injects into the live session and reports the result."""
+
+    def injector(config: AgentTmuxConfig) -> AgentTmuxWakeResult:
+        assert config.session == "synapse-user_terminal-1135378"
+        return AgentTmuxWakeResult(injected=True, started=False, returncode=0, detail="woken")
+
+    ns = argparse.Namespace(
+        agent_tmux_command="wake",
+        identity="user/terminal-1135378",
+        session="synapse-user_terminal-1135378",
+        cwd=tmp_path,
+        agent_command="kimi",
+        tmux_bin="tmux",
+        synapse_bin="synapse",
+        uri="ws://localhost:8876",
+        submit_delay=0.4,
+        max_wakes=1,
+        token=None,
+    )
+
+    assert cli_agent_tmux._cmd_agent_tmux(ns, injector=injector) == 0
+    assert "woken" in capsys.readouterr().out
+
+
+def test_cmd_without_a_subcommand_exits_two(capsys: Any, tmp_path: Path) -> None:
+    ns = argparse.Namespace(
+        agent_tmux_command=None,
+        identity="user/terminal-1135378",
+        session=None,
+        cwd=tmp_path,
+        agent_command="kimi",
+        tmux_bin="tmux",
+        synapse_bin="synapse",
+        uri="ws://localhost:8876",
+        submit_delay=0.4,
+        max_wakes=1,
+        token=None,
+    )
+    assert cli_agent_tmux._cmd_agent_tmux(ns) == 2
+    assert "requires a subcommand" in capsys.readouterr().out

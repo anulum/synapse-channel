@@ -120,3 +120,36 @@ async def test_run_git_claim_reports_semantic_selector_errors(
 
     assert rc == 1
     assert "semantic claim error: unknown module selector" in capsys.readouterr().out
+
+
+async def test_run_git_claim_reports_unwritable_semantic_evidence(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An evidence destination whose parent is a file fails as an OS error."""
+    _build_semantic_repo(tmp_path)
+    blocker = tmp_path / "blocker"
+    blocker.write_text("a file, not a directory", encoding="utf-8")
+
+    rc = await run_git_claim(
+        uri="ws://127.0.0.1:1",
+        name="me",
+        task_id="SEMANTIC",
+        paths=[],
+        semantic_selectors=("module:synapse_channel.core.receipts",),
+        semantic_evidence_json="blocker/evidence.json",
+        runner=_branch_then_repo("feature/semantic", tmp_path),
+    )
+
+    assert rc == 1
+    assert "semantic claim evidence error:" in capsys.readouterr().out
+
+
+def test_write_semantic_evidence_resolves_a_relative_destination(tmp_path: Path) -> None:
+    """A relative evidence path lands below the repository root."""
+    from synapse_channel.git.gitclaim import _write_semantic_evidence
+
+    _write_semantic_evidence((), tmp_path, "sub/evidence.json")
+    written = tmp_path / "sub" / "evidence.json"
+    assert written.exists()
+    assert written.read_text(encoding="utf-8").strip() in ("[]", "{}")

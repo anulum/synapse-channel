@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from typing import cast
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -501,7 +502,7 @@ def _run_dispatcher(
     def interrupt(_: float) -> None:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(cli_dashboard.time, "sleep", interrupt)
+    monkeypatch.setattr("synapse_channel.cli_dashboard.time.sleep", interrupt)
     args = _dashboard_args()
     handler = args.func  # type: ignore[attr-defined]
     return int(handler(args))
@@ -558,3 +559,34 @@ def test_cmd_dashboard_rejects_an_invalid_bind(
     handler = args.func  # type: ignore[attr-defined]
     assert int(handler(args)) == 2
     assert "refusing non-loopback bind" in capsys.readouterr().out
+
+
+def test_dashboard_url_brackets_an_ipv6_host() -> None:
+    """An IPv6 bind renders a bracketed URL that a browser accepts."""
+    server = _FakeDashboardServer(token=None, generated=False)
+    del server  # the URL shaping lives on the real DashboardServer
+    import types
+
+    from synapse_channel.dashboard import DashboardServer
+
+    shaped = cast("DashboardServer", types.SimpleNamespace(host="::1", port=8765))
+    assert DashboardServer.url(shaped, "/snapshot.json") == "http://[::1]:8765/snapshot.json"
+    plain = cast("DashboardServer", types.SimpleNamespace(host="127.0.0.1", port=8765))
+    assert DashboardServer.url(plain, "/") == "http://127.0.0.1:8765/"
+
+
+def test_dashboard_handler_authorizes_everything_without_a_token() -> None:
+    """With no configured bearer token the loopback surface stays open."""
+    import types
+
+    from synapse_channel.dashboard import _DashboardHandler
+
+    stub = cast("_DashboardHandler", types.SimpleNamespace(dashboard_token=None, headers={}))
+    assert _DashboardHandler._authorized(stub) is True
+    bearer = cast(
+        "_DashboardHandler",
+        types.SimpleNamespace(dashboard_token="secret", headers={"Authorization": "Bearer secret"}),
+    )
+    assert _DashboardHandler._authorized(bearer) is True
+    wrong = cast("_DashboardHandler", types.SimpleNamespace(dashboard_token="secret", headers={}))
+    assert _DashboardHandler._authorized(wrong) is False

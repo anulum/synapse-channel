@@ -555,3 +555,12 @@ def test_json_rpc_success_and_error_methods() -> None:
         ]
         == -32601
     )
+
+
+def test_non_negative_int_falls_back_on_unparsable_values() -> None:
+    from synapse_channel.a2a_http import non_negative_int
+
+    assert non_negative_int("not-a-number", default=7) == 7
+    assert non_negative_int(None, default=3) == 3
+    assert non_negative_int("-4") == 0  # clamped, not negative
+    assert non_negative_int("12") == 12

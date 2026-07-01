@@ -155,3 +155,48 @@ async def test_channel_create_join_leave_and_list_lifecycle() -> None:
             await send_json(alpha, sender="ALPHA", type="channel_list_request")
             after = await read_until_type(alpha, "channel_list")
             assert after["channels"] == []
+
+
+async def test_channel_chat_returns_a_delivery_receipt_when_requested() -> None:
+    """A member's channel chat with receipt_requested reports its recipients."""
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        async with connect(uri) as alpha, connect(uri) as beta:
+            await _bind(alpha, "ALPHA")
+            await _bind(beta, "BETA")
+            await send_json(alpha, sender="ALPHA", type="channel_create", channel="c", label="C")
+            await read_until_type(alpha, "channel_result")
+            await send_json(beta, sender="BETA", type="channel_join", channel="c")
+            await read_until_type(beta, "channel_result")
+
+            await send_json(
+                alpha,
+                sender="ALPHA",
+                type="chat",
+                channel="c",
+                payload="ping",
+                receipt_requested=True,
+            )
+            receipt = await read_until_type(alpha, "delivery_receipt")
+            assert receipt["message_target"] == "c"
+            assert receipt["delivered"] is True
+            assert "BETA" in receipt.get("recipients", [])
+
+
+async def test_channel_history_defaults_an_unparsable_limit() -> None:
+    """A limit the client mangled falls back to the default instead of failing."""
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        async with connect(uri) as alpha:
+            await _bind(alpha, "ALPHA")
+            await send_json(alpha, sender="ALPHA", type="channel_create", channel="c", label="C")
+            await read_until_type(alpha, "channel_result")
+            await send_json(alpha, sender="ALPHA", type="chat", channel="c", payload="one")
+            await send_json(
+                alpha,
+                sender="ALPHA",
+                type="channel_history_request",
+                channel="c",
+                limit="not-a-number",
+            )
+            history = await read_until_type(alpha, "channel_history")
+            assert [m.get("payload") for m in history.get("messages", [])] == ["one"]
+            assert history["retention"] == {"max_messages": _hub.max_history}
