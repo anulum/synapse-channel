@@ -493,6 +493,23 @@ synapse health                       # exit 0 if the local hub is reachable
 synapse health --uri ws://host:8876
 ```
 
+## Selecting the hub
+
+Every client command talks to `ws://localhost:8876` by default. To point the
+whole CLI at another hub — a remote coordinator, or a second local hub on another
+port — set `SYNAPSE_URI` once instead of passing `--uri` to each command:
+
+```bash
+export SYNAPSE_URI=ws://coordinator.internal:8876
+synapse who            # queries the hub named by SYNAPSE_URI
+synapse board          # so does every other command
+```
+
+An explicit `--uri` on a single command overrides the environment for that call,
+and unsetting `SYNAPSE_URI` (or leaving it blank) restores the loopback default.
+The companion `SYNAPSE_TOKEN` supplies the shared secret for a secured hub the
+same way.
+
 ## Worker options
 
 ```bash
