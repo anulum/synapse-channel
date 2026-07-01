@@ -31,7 +31,6 @@ import ssl
 import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping
-from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -40,22 +39,11 @@ from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request, Response
 
 from synapse_channel.core.acl import AclPolicy
-from synapse_channel.core.acl_enforcement import (
-    authorise_frame,
-    project_of,
-    required_accesses,
-)
+from synapse_channel.core.acl_enforcement import authorise_frame, project_of
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.channels import ChannelRegistry
-from synapse_channel.core.federation import (
-    DomainResolutionDiagnosis,
-    FederationBundle,
-    compose_cross_domain,
-    diagnose_unresolved_domain,
-    resolve_domain,
-    scope_authorises,
-)
+from synapse_channel.core.federation import FederationBundle
 from synapse_channel.core.handlers import DISPATCH
 from synapse_channel.core.hub_broadcast import HubBroadcaster
 from synapse_channel.core.hub_clients import HubClientRegistry
@@ -66,6 +54,7 @@ from synapse_channel.core.hub_exposure import (
     guard_exposure,
     is_loopback_host,
 )
+from synapse_channel.core.hub_federation_gate import FrameDisposition, HubFederationGate
 from synapse_channel.core.hub_http import http_endpoint_response
 from synapse_channel.core.hub_ledger_guard import HubLedgerGuard
 from synapse_channel.core.hub_relay import RelayMirror
@@ -113,7 +102,6 @@ from synapse_channel.core.state import (
     MAX_OFFERS_PER_AGENT,
     SynapseState,
 )
-from synapse_channel.core.tls import certificate_sha256_pin_from_der
 
 logger = logging.getLogger("synapse.hub")
 
@@ -169,21 +157,6 @@ The durable log grows append-only and is never auto-compacted — pruning is saf
 below a sequence the read-side has already consumed, which the hub cannot know. So
 instead of silently growing or unsafely trimming, a hub started on a log larger than
 this emits a single startup hint to run :class:`compact` manually."""
-
-
-class FrameDisposition(Enum):
-    """How the federation gate classifies an inbound frame.
-
-    ``LOCAL`` — no federation bundle, or the frame resolves to no peered domain, so it
-    takes the ordinary local authorisation path unchanged. ``ALLOW_CROSS_DOMAIN`` — the
-    frame is a peered remote domain's, authorised by the federation policy and its mapped
-    scope, and is routed without the local ACL (a remote subject has no local identity).
-    ``DENY`` — the frame is cross-domain and some layer refused it; it is not routed.
-    """
-
-    LOCAL = "local"
-    ALLOW_CROSS_DOMAIN = "allow_cross_domain"
-    DENY = "deny"
 
 
 class SynapseHub:
@@ -426,6 +399,14 @@ class SynapseHub:
         self.observed_asserting_hubs = observed_asserting_hubs
         self.federation_bundle = federation_bundle
         self.federation_cert_source = federation_cert_source
+        self._federation_gate = HubFederationGate(
+            federation_bundle,
+            cert_source=federation_cert_source,
+            require_per_message_auth=self.require_per_message_auth,
+            signed_event_trust=signed_event_trust_bundle is not None,
+            system=self._system,
+            send_json=self._send_json,
+        )
         self.channels = ChannelRegistry()
         self.max_msg_bytes = max(int(max_msg_bytes), 1)
         self._clock = clock or time.monotonic
@@ -837,126 +818,22 @@ class SynapseHub:
     ) -> FrameDisposition:
         """Classify a frame as local or cross-domain and authorise the cross-domain case.
 
-        With no :class:`~synapse_channel.core.federation.FederationBundle` configured the
-        gate is a no-op and every frame is :attr:`FrameDisposition.LOCAL`. Otherwise a frame
-        is cross-domain only when its Ed25519 ``signature.key_id`` and the **live** peer
-        certificate pin read off the socket resolve, together, to a single peered domain
-        (:func:`~synapse_channel.core.federation.resolve_domain`); the key and pin must
-        belong to the same peer, and neither is ever taken from a self-declared field. A
-        frame that resolves to no peered domain — unsigned, HMAC-authenticated, presented on
-        a plaintext socket, or signed with a local key — is :attr:`FrameDisposition.LOCAL`
-        and takes the ordinary path unchanged.
-
-        A cross-domain frame is authorised deny-closed by composing the peering policy
-        (peered, active, namespace granted, key and pin accepted), the live mutual-TLS pin,
-        the event signature (which must have been *required* and verified — a cross-domain
-        frame on a hub without per-message authentication cannot bind authority and is
-        refused), and the peering's bounded scope evaluated against the frame's required
-        accesses. When every layer allows it the frame is
-        :attr:`FrameDisposition.ALLOW_CROSS_DOMAIN` and is routed without the local ACL — a
-        remote subject has no local ACL identity. Any layer refusing yields
-        :attr:`FrameDisposition.DENY`, an error naming the reason is returned, and the frame
-        is not routed.
+        Kept as a thin wrapper so the frame handler and its tests keep one gate entry
+        point on the hub; the resolution, deny-closed composition, and denial reply live
+        in :class:`~synapse_channel.core.hub_federation_gate.HubFederationGate`.
         """
-        if self.federation_bundle is None:
-            return FrameDisposition.LOCAL
-        signature = data.get("signature")
-        key_id = str(signature.get("key_id") or "").strip() if isinstance(signature, dict) else ""
-        if not key_id:
-            return FrameDisposition.LOCAL
-        try:
-            der = self.federation_cert_source(websocket)
-        except Exception:
-            # A certificate read can raise on a socket that has closed or never
-            # finished its TLS handshake, and an injected source is arbitrary code.
-            # A cross-domain frame whose peer we cannot pin degrades to the local
-            # path — exactly as an absent certificate does — rather than crashing
-            # the frame handler for that connection.
-            logger.warning(
-                "Federation certificate read failed for %s (%s); handling frame as local",
-                sender,
-                msg_type,
-            )
-            return FrameDisposition.LOCAL
-        if der is None:
-            return FrameDisposition.LOCAL
-        pin = certificate_sha256_pin_from_der(der)
-        domain_id = resolve_domain(self.federation_bundle, key_id=key_id, certificate_pin=pin)
-        if domain_id is None:
-            self._warn_unresolved_federation(sender, msg_type, key_id, pin)
-            return FrameDisposition.LOCAL
-        namespace = project_of(sender)
-        decision = self.federation_bundle.authorise(
-            domain_id,
-            namespace=namespace,
-            signing_key_id=key_id,
-            certificate_pin=pin,
-            now=time.time(),
-        )
-        signature_ok = (
-            self.require_per_message_auth
-            and msg_type in DEFAULT_SIGNED_MESSAGE_TYPES
-            and "auth" not in data
-            and self.signed_event_trust_bundle is not None
-        )
-        acl_ok = scope_authorises(
-            required_accesses(msg_type, data), scope=decision.scope, namespace=namespace
-        )
-        if compose_cross_domain(decision, mtls_ok=True, signature_ok=signature_ok, acl_ok=acl_ok):
-            logger.info("Federation allowed %s from %s as domain %s", msg_type, sender, domain_id)
-            return FrameDisposition.ALLOW_CROSS_DOMAIN
-        if not decision.allowed:
-            reason = decision.reason
-        elif not signature_ok:
-            reason = "signature_not_verified"
-        else:
-            reason = "out_of_scope"
-        logger.warning(
-            "Federation denied %s for %s (domain %s): %s", msg_type, sender, domain_id, reason
-        )
-        await self._send_json(
-            websocket,
-            self._system(
-                f"federation denied: {reason}",
-                msg_type=MessageType.ERROR,
-                target=sender,
-                federation_domain=domain_id,
-                federation_reason=reason,
-            ),
-        )
-        return FrameDisposition.DENY
+        return await self._federation_gate.authorise(sender, msg_type, data, websocket)
 
     def _warn_unresolved_federation(
         self, sender: str, msg_type: str, key_id: str, pin: str
     ) -> None:
         """Log a misconfiguration signal when a signed, pinned frame resolves to no domain.
 
-        A cross-domain frame arrives signed and over a pinned connection, yet its key and
-        certificate resolve to no single peering. Most such frames are ordinary — a
-        locally signed frame is not cross-domain and rightly takes the local path — so the
-        common case stays silent. But a peering whose signing key or certificate pin is
-        missing, stale, or split across peerings otherwise leaves the operator no signal at
-        all: the frame is simply handled locally and, lacking a local identity, usually
-        denied downstream with no hint that a federation peering is misconfigured. When the
-        diagnosis is one of those misconfigurations this logs a warning naming the reason;
-        the frame's disposition is unchanged (still local).
+        Kept as a thin wrapper over
+        :meth:`~synapse_channel.core.hub_federation_gate.HubFederationGate.warn_unresolved`,
+        which owns the diagnosis and the operator-facing warning.
         """
-        if self.federation_bundle is None:
-            return
-        diagnosis = diagnose_unresolved_domain(
-            self.federation_bundle, key_id=key_id, certificate_pin=pin
-        )
-        if diagnosis in (DomainResolutionDiagnosis.UNRELATED, DomainResolutionDiagnosis.RESOLVED):
-            return
-        logger.warning(
-            "Federation frame from %s (%s) is signed with key %s over a pinned connection "
-            "but resolves to no peered domain (%s); handling it locally. Check the "
-            "peering's signing key id and certificate pin.",
-            sender,
-            msg_type,
-            key_id,
-            diagnosis,
-        )
+        self._federation_gate.warn_unresolved(sender, msg_type, key_id, pin)
 
     async def _authorise_acl(
         self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
