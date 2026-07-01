@@ -171,14 +171,24 @@ docker compose logs -f hub
 ```
 
 The compose file publishes the port on `127.0.0.1` only and stores the durable log
-in the `synapse-data` volume. Build and run the image directly if you prefer:
+in the `synapse-data` volume. A container has to bind `0.0.0.0` internally for the
+published port to reach it, and the hub refuses an off-loopback bind without a token;
+the compose command passes `--insecure-off-loopback` to accept that, which is safe
+only because the publish stays on loopback. To expose the hub beyond this host, change
+the publish and swap `--insecure-off-loopback` for `--token` (see the compose file).
+
+Build and run the image directly if you prefer — the same off-loopback opt-in applies:
 
 ```bash
 docker build -t synapse-channel .
-docker run -d --name synapse-hub -p 127.0.0.1:8876:8876 -v synapse-data:/data synapse-channel
+docker run -d --name synapse-hub -p 127.0.0.1:8876:8876 -v synapse-data:/data \
+  synapse-channel hub --host 0.0.0.0 --db /data/hub.db --relay-log /data/feed.ndjson \
+  --insecure-off-loopback
 ```
 
-On a release the `docker` workflow publishes `ghcr.io/anulum/synapse-channel`.
+On a release the `docker` workflow publishes `ghcr.io/anulum/synapse-channel`; on every
+change to the image or the compose file it also runs a compose smoke that waits for the
+container to report healthy.
 
 ## Exposure and security
 

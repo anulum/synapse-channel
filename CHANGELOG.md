@@ -27,6 +27,13 @@ All notable changes to this project are documented here.
   (multiple parties, attributable authorship, or federation, which requires it) in the per-message
   authentication guide.
 
+### Fixed
+- `docker compose up` now starts a working hub. A container must bind `0.0.0.0` for its published port to
+  reach it, which the hub refuses without a token, so the shipped compose command crash-looped on
+  "Refusing to bind". The command now passes `--insecure-off-loopback` — safe because the port is
+  published on loopback only — and a new CI compose smoke waits for the container to report healthy so the
+  default cannot regress unnoticed.
+
 ## [0.82.0] - 2026-07-01
 
 ### Added
