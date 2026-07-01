@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.83.0] - 2026-07-01
+
 ### Added
 - `synapse status` prints a one-line hub summary — online agents and active claims (and live resource
   offers when any exist) — sized for a shell prompt or a tmux status bar. It draws the roster from the
