@@ -505,6 +505,12 @@ synapse health                       # exit 0 if the local hub is reachable
 synapse health --uri ws://host:8876
 ```
 
+`synapse health` prints nothing by design — it reports only through its exit code,
+so an empty response is a pass, not a failure. Read `$?` (or rely on the container
+healthcheck) rather than the output. When you want a human-readable account of what
+is or is not wired — identity, hub exposure, waiters — run `synapse doctor` instead;
+`health` answers "is the hub up?", `doctor` answers "is my setup right?".
+
 ## Selecting the hub
 
 Every client command talks to `ws://localhost:8876` by default. To point the
