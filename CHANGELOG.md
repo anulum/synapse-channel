@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse merkle verify --json` writes a `{"valid", "seq", "root"}` verdict to stdout (with a
+  `reason` when the proof is rejected), giving offline proof verification the same machine-readable
+  stdout payload that `merkle root` and `merkle prove` already carry. Without the flag, verification
+  still reports through its exit code and a stderr line.
+
 ## [0.79.0] - 2026-07-01
 
 ### Added
