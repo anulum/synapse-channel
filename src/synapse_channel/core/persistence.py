@@ -28,7 +28,7 @@ import json
 import os
 import sqlite3
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from types import TracebackType
 from typing import Any, NamedTuple
@@ -147,13 +147,36 @@ class EventStore:
         list[StoredEvent]
             All persisted events, ordered by ascending sequence number.
         """
-        rows = self._conn.execute(
-            "SELECT seq, ts, kind, payload FROM events ORDER BY seq"
-        ).fetchall()
-        return [
-            StoredEvent(seq=int(seq), ts=float(ts), kind=str(kind), payload=json.loads(payload))
-            for seq, ts, kind, payload in rows
-        ]
+        return list(self.iter_events())
+
+    def iter_events(self, *, through_seq: int | None = None) -> Iterator[StoredEvent]:
+        """Yield events in ascending sequence order without materialising the log.
+
+        This is the bounded-memory read seam for whole-log folds (the Merkle
+        commitment, causality reconstruction): rows stream off the SQLite cursor
+        one at a time, so the peak footprint is one event, not the log.
+
+        Parameters
+        ----------
+        through_seq : int or None, optional
+            Inclusive sequence ceiling; events after it are not yielded. ``None``
+            streams the whole log.
+
+        Yields
+        ------
+        StoredEvent
+            Each persisted event at or below the ceiling, by ascending sequence.
+        """
+        sql = "SELECT seq, ts, kind, payload FROM events"
+        params: tuple[object, ...] = ()
+        if through_seq is not None:
+            sql += " WHERE seq <= ?"
+            params = (through_seq,)
+        sql += " ORDER BY seq"
+        for seq, ts, kind, payload in self._conn.execute(sql, params):
+            yield StoredEvent(
+                seq=int(seq), ts=float(ts), kind=str(kind), payload=json.loads(payload)
+            )
 
     def read_since(
         self,

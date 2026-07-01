@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+- Committing the event log to a Merkle root is now bounded-memory: `synapse merkle root`
+  (and `run_root`) streams events off a new lazy event-store cursor (`iter_events`) into a
+  running commitment that holds only the `O(log n)` subtree peaks, so a multi-year log
+  commits without loading into RAM. The root is bit-identical to the previous whole-log
+  computation; building an inclusion proof still materialises the committed leaves.
+
 ## [0.84.0] - 2026-07-01
 
 ### Added
