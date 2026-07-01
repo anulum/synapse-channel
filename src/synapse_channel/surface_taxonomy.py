@@ -59,6 +59,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "arm": STABLE,
     "listen": STABLE,
     "who": STABLE,
+    "status": STABLE,
     "board": STABLE,
     "task": STABLE,
     "lock": STABLE,
