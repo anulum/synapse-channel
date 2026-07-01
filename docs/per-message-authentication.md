@@ -37,6 +37,32 @@ per-agent identity, and does not enforce ACLs. The
 signed-event verification path for selected mutating frames, but the HMAC path
 described here remains the stable CLI-facing frame-authentication mode.
 
+## Trust model: connect-once versus per-frame
+
+By default a hub authenticates the **connection**, not each frame. `--token`
+gates admission at connect time; once a socket is admitted it is trusted for the
+life of that connection, and every frame it sends afterwards is accepted on the
+strength of that one check. On a loopback, single-operator hub this is
+proportionate — the only party that can open a socket is the operator — and it is
+why per-message authentication is off by default.
+
+Enable `--require-message-auth` when that assumption no longer holds:
+
+- **More than one party can reach the hub** — a shared workstation, a bound
+  non-loopback host, or any deployment where distinct agents connect. Per-frame
+  HMAC means a hijacked or reused socket cannot mint state-changing frames without
+  the key.
+- **Authorship must be attributable** — when a claim, release, or task update has
+  to be bound to a key rather than merely to whoever holds the connection.
+- **You federate.** Cross-domain frames *require* per-message authentication to
+  bind authority: a cross-domain frame on a hub without it is refused
+  `signature_not_verified` (see [the federated trust model](federated-trust-model.md)),
+  so a federating hub always sets `--require-message-auth`.
+
+The token still gates admission in every mode; per-message authentication adds a
+second, per-frame check on top of it for the mutating frames listed above. It is
+not a substitute for TLS on an untrusted network — see the boundaries below.
+
 ## Frame authentication profile
 
 An authenticated frame remains an ordinary protocol envelope with an `auth`

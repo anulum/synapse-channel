@@ -49,8 +49,10 @@ from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.channels import ChannelRegistry
 from synapse_channel.core.federation import (
+    DomainResolutionDiagnosis,
     FederationBundle,
     compose_cross_domain,
+    diagnose_unresolved_domain,
     resolve_domain,
     scope_authorises,
 )
@@ -881,6 +883,7 @@ class SynapseHub:
         pin = certificate_sha256_pin_from_der(der)
         domain_id = resolve_domain(self.federation_bundle, key_id=key_id, certificate_pin=pin)
         if domain_id is None:
+            self._warn_unresolved_federation(sender, msg_type, key_id, pin)
             return FrameDisposition.LOCAL
         namespace = project_of(sender)
         decision = self.federation_bundle.authorise(
@@ -922,6 +925,38 @@ class SynapseHub:
             ),
         )
         return FrameDisposition.DENY
+
+    def _warn_unresolved_federation(
+        self, sender: str, msg_type: str, key_id: str, pin: str
+    ) -> None:
+        """Log a misconfiguration signal when a signed, pinned frame resolves to no domain.
+
+        A cross-domain frame arrives signed and over a pinned connection, yet its key and
+        certificate resolve to no single peering. Most such frames are ordinary — a
+        locally signed frame is not cross-domain and rightly takes the local path — so the
+        common case stays silent. But a peering whose signing key or certificate pin is
+        missing, stale, or split across peerings otherwise leaves the operator no signal at
+        all: the frame is simply handled locally and, lacking a local identity, usually
+        denied downstream with no hint that a federation peering is misconfigured. When the
+        diagnosis is one of those misconfigurations this logs a warning naming the reason;
+        the frame's disposition is unchanged (still local).
+        """
+        if self.federation_bundle is None:
+            return
+        diagnosis = diagnose_unresolved_domain(
+            self.federation_bundle, key_id=key_id, certificate_pin=pin
+        )
+        if diagnosis in (DomainResolutionDiagnosis.UNRELATED, DomainResolutionDiagnosis.RESOLVED):
+            return
+        logger.warning(
+            "Federation frame from %s (%s) is signed with key %s over a pinned connection "
+            "but resolves to no peered domain (%s); handling it locally. Check the "
+            "peering's signing key id and certificate pin.",
+            sender,
+            msg_type,
+            key_id,
+            diagnosis,
+        )
 
     async def _authorise_acl(
         self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any

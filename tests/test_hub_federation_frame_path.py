@@ -25,6 +25,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -71,6 +72,7 @@ def _peer_der() -> bytes:
 
 _DER = _peer_der()
 _PIN = certificate_sha256_pin_from_der(_DER)
+_OTHER_DER = _peer_der()  # a second certificate whose pin no peering enrolls
 
 
 def _peer(*, scope: tuple[ScopeGrant, ...]) -> FederationPeer:
@@ -192,6 +194,31 @@ async def test_cert_read_that_raises_degrades_to_local() -> None:
     )
     disposition = await hub._authorise_federation(_REMOTE, MessageType.CLAIM, _claim(), _Recorder())
     assert disposition is FrameDisposition.LOCAL
+
+
+async def test_partial_credential_match_warns_the_operator(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # a peer's enrolled certificate pin, but a signing key no peering knows: the frame
+    # still takes the local path, and the operator now gets a misconfiguration signal.
+    with caplog.at_level("WARNING"):
+        disposition = await _hub()._authorise_federation(
+            _REMOTE, MessageType.CLAIM, _claim(key_id=_LOCAL_KEY_ID), _Recorder()
+        )
+    assert disposition is FrameDisposition.LOCAL
+    assert "resolves to no peered domain" in caplog.text
+    assert "certificate_pin_enrolled_but_signing_key_unknown" in caplog.text
+
+
+async def test_wholly_unrelated_frame_stays_silent(caplog: pytest.LogCaptureFixture) -> None:
+    # neither the key nor the certificate pin is enrolled: an ordinary local frame that
+    # happens to be signed, so it must not raise a federation misconfiguration warning.
+    with caplog.at_level("WARNING"):
+        disposition = await _hub(cert=_OTHER_DER)._authorise_federation(
+            _REMOTE, MessageType.CLAIM, _claim(key_id=_LOCAL_KEY_ID), _Recorder()
+        )
+    assert disposition is FrameDisposition.LOCAL
+    assert "resolves to no peered domain" not in caplog.text
 
 
 # --- cross-domain authorisation: allow within scope, deny every other way ---

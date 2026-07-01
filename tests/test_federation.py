@@ -11,11 +11,13 @@ from __future__ import annotations
 from synapse_channel.core.acl import BOARD, CLAIM, MESSAGE, RELEASE, Target
 from synapse_channel.core.federation import (
     AUTHORISED,
+    DomainResolutionDiagnosis,
     FederationBundle,
     FederationDenyReason,
     FederationPeer,
     ScopeGrant,
     compose_cross_domain,
+    diagnose_unresolved_domain,
     resolve_domain,
     scope_authorises,
 )
@@ -181,6 +183,73 @@ def test_resolve_domain_is_deny_closed_on_ambiguity() -> None:
     # two peerings accept the same key_id+pin -> a misconfiguration, refused not guessed.
     bundle = FederationBundle([_peer(), _peer(domain_id="globex")])
     assert resolve_domain(bundle, key_id="key-1", certificate_pin="sha256:aa") is None
+
+
+def test_diagnose_resolved_when_a_single_peering_owns_the_pair() -> None:
+    # the total classification names the resolvable case (never emitted by the hub path)
+    bundle = FederationBundle([_peer()])
+    assert (
+        diagnose_unresolved_domain(bundle, key_id="key-1", certificate_pin="sha256:aa")
+        == DomainResolutionDiagnosis.RESOLVED
+    )
+
+
+def test_diagnose_unrelated_when_neither_credential_is_enrolled() -> None:
+    # a local frame: neither the key nor the pin appears in any peering -> silent, ordinary
+    bundle = FederationBundle([_peer()])
+    assert (
+        diagnose_unresolved_domain(bundle, key_id="local-key", certificate_pin="sha256:zz")
+        == DomainResolutionDiagnosis.UNRELATED
+    )
+    assert (
+        diagnose_unresolved_domain(FederationBundle(), key_id="key-1", certificate_pin="sha256:aa")
+        == DomainResolutionDiagnosis.UNRELATED
+    )
+
+
+def test_diagnose_key_without_pin_flags_a_stale_or_missing_certificate() -> None:
+    # the signing key is enrolled but the presented pin is enrolled nowhere
+    bundle = FederationBundle([_peer()])
+    assert (
+        diagnose_unresolved_domain(bundle, key_id="key-1", certificate_pin="sha256:zz")
+        == DomainResolutionDiagnosis.KEY_WITHOUT_PIN
+    )
+
+
+def test_diagnose_pin_without_key_flags_a_stale_or_missing_signing_key() -> None:
+    # the certificate pin is enrolled but the presented signing key is enrolled nowhere
+    bundle = FederationBundle([_peer()])
+    assert (
+        diagnose_unresolved_domain(bundle, key_id="unknown-key", certificate_pin="sha256:aa")
+        == DomainResolutionDiagnosis.PIN_WITHOUT_KEY
+    )
+
+
+def test_diagnose_split_across_peerings_flags_credentials_in_different_peers() -> None:
+    # key-1 lives in acme, sha256:bb lives in globex; no single peering owns both
+    bundle = FederationBundle(
+        [
+            _peer(),
+            _peer(
+                domain_id="globex",
+                signing_key_ids=frozenset({"key-2"}),
+                certificate_pins=frozenset({"sha256:bb"}),
+            ),
+        ]
+    )
+    assert (
+        diagnose_unresolved_domain(bundle, key_id="key-1", certificate_pin="sha256:bb")
+        == DomainResolutionDiagnosis.SPLIT_ACROSS_PEERINGS
+    )
+
+
+def test_diagnose_ambiguous_when_two_peerings_own_the_same_pair() -> None:
+    # two peerings each enrol the same key+pin -> overlapping peerings, deny-closed
+    bundle = FederationBundle([_peer(), _peer(domain_id="globex")])
+    assert (
+        diagnose_unresolved_domain(bundle, key_id="key-1", certificate_pin="sha256:aa")
+        == DomainResolutionDiagnosis.AMBIGUOUS
+    )
 
 
 _GRANTS = (ScopeGrant(MESSAGE, "acme/shared"), ScopeGrant(CLAIM, "acme/shared"))
