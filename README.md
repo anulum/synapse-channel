@@ -46,6 +46,15 @@ machine. Model workers reply on-channel through any OpenAI-compatible endpoint,
 including a local Ollama server, with a deterministic rule-based fallback for
 offline use.
 
+**Your existing agents plug in without new code.** Any Model Context Protocol
+host — Claude Code, Claude Desktop, Cursor — reaches the bus through the bundled
+`synapse mcp` server, which exposes the coordination verbs (claim, release, hand
+off, send, task) as MCP tools and the board, agents, and resources as read-only
+MCP resources. Agents that speak A2A connect through the Agent Card face instead.
+The hub itself stays protocol-agnostic and the core install keeps its single
+dependency — the MCP and A2A adapters are optional extras (`pip install
+'synapse-channel[mcp]'`). See the [MCP guide](docs/mcp.md).
+
 ## At a glance
 
 <p align="center">
@@ -999,7 +1008,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 345 |
 | Wire message types | 65 |
 | CLI subcommands | 112 |
-| Test functions | 3364 |
+| Test functions | 3365 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 46 |
 | GitHub Actions workflows | 12 |

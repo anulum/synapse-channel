@@ -78,6 +78,21 @@ def test_adapter_docs_position_mcp_and_a2a_as_edges() -> None:
     assert "adapters are interop surfaces" in readme
 
 
+def test_readme_surfaces_mcp_in_the_lead_not_only_deep_in_the_body() -> None:
+    """MCP must be a headline feature: named in the lead, above the fold.
+
+    Discoverability guard — the review found MCP support real but buried. The
+    ``## At a glance`` heading marks the end of the lead, so the plug-in story
+    (``Model Context Protocol`` + ``synapse mcp``) has to appear before it, not
+    only in the deep ``### MCP server face`` section far down the page.
+    """
+    readme = _read(ROOT / "README.md")
+    lead, _, _ = readme.partition("## At a glance")
+    assert "## At a glance" in readme  # the fold marker exists
+    assert "Model Context Protocol" in lead
+    assert "synapse mcp" in lead
+
+
 def test_comparison_doc_lists_verifiable_differences() -> None:
     """Comparison docs must anchor each differentiator to a real local surface."""
     text = _collapse_whitespace(_read(COMPARISON_DOC))
