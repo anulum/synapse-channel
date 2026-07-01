@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from synapse_channel import cli
+from synapse_channel.core.causality import DEFAULT_MAX_GRAPH_NODES
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
 
@@ -146,3 +147,33 @@ def test_docs_wire_causality_command() -> None:
 
     assert "synapse causality" in combined
     assert "counterfactual" in combined
+
+
+def test_parser_defaults_the_node_ceiling() -> None:
+    args = cli.build_parser().parse_args(["causality", "effects", "hub.db", "6"])
+    assert args.max_nodes == DEFAULT_MAX_GRAPH_NODES
+
+
+def test_cli_causality_over_the_node_ceiling_exits_two(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An over-ceiling log errors with the compact remedy instead of loading."""
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    exit_code = cli.main(["causality", "effects", str(db), "6", "--max-nodes", "1"])
+
+    assert exit_code == 2
+    err = capsys.readouterr().err
+    assert "would exceed 1 coordination events" in err
+    assert "synapse compact" in err
+
+
+def test_cli_causality_zero_lifts_the_node_ceiling(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    assert cli.main(["causality", "effects", str(db), "6", "--max-nodes", "0"]) == 0
+    assert "# Causality (effects): seq 6" in capsys.readouterr().out
