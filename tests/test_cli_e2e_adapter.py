@@ -17,31 +17,9 @@ hub.
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 
-from cli_e2e_helpers import isolated_hub, run_cli
-
-
-def _git(root: Path, *args: str) -> None:
-    """Run a git command inside ``root``, raising on failure."""
-    subprocess.run(  # noqa: S603, S607 - fixed git args, test-only
-        ["git", *args], cwd=root, check=True, capture_output=True, text=True
-    )
-
-
-def _git_repo(root: Path) -> Path:
-    """Create a minimal committed git repository and return its path."""
-    root.mkdir(parents=True, exist_ok=True)
-    _git(root, "init", "-q")
-    _git(root, "config", "user.email", "e2e@example.test")
-    _git(root, "config", "user.name", "e2e")
-    _git(root, "config", "commit.gpgsign", "false")
-    (root / "README.md").write_text("e2e\n", encoding="utf-8")
-    _git(root, "add", "-A")
-    _git(root, "commit", "-q", "-m", "seed")
-    return root
-
+from cli_e2e_helpers import git_repo, git_run, isolated_hub, run_cli
 
 # --- editor adapters and shell integration ----------------------------------
 
@@ -78,7 +56,7 @@ def test_a2a_card_emits_valid_agent_card_json() -> None:
 
 def test_git_init_installs_hooks_and_conventions(tmp_path: Path) -> None:
     """``git-init`` installs release hooks and writes the claim conventions guide."""
-    repo = _git_repo(tmp_path / "repo")
+    repo = git_repo(tmp_path / "repo")
     with isolated_hub(tmp_path) as hub:
         result = run_cli("git-init", "--name", "trial-agent", uri=hub.uri, cwd=repo)
         assert result.ok(), result.output
@@ -89,8 +67,8 @@ def test_git_init_installs_hooks_and_conventions(tmp_path: Path) -> None:
 
 def test_git_claim_then_release_over_a_branch(tmp_path: Path) -> None:
     """A branch claim registers on the hub and the matching release clears it."""
-    repo = _git_repo(tmp_path / "repo")
-    _git(repo, "checkout", "-q", "-b", "feature/x")
+    repo = git_repo(tmp_path / "repo")
+    git_run(repo, "checkout", "-q", "-b", "feature/x")
     with isolated_hub(tmp_path) as hub:
         run_cli("git-init", "--name", "trial-agent", uri=hub.uri, cwd=repo)
         claimed = run_cli(

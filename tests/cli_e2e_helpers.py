@@ -36,6 +36,26 @@ def free_port() -> int:
         return int(sock.getsockname()[1])
 
 
+def git_run(repo: Path, *args: str) -> None:
+    """Run a git command inside ``repo``, raising on failure."""
+    subprocess.run(  # noqa: S603, S607 - fixed git args, test-only
+        ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+    )
+
+
+def git_repo(root: Path) -> Path:
+    """Create a minimal committed git repository at ``root`` and return it."""
+    root.mkdir(parents=True, exist_ok=True)
+    git_run(root, "init", "-q")
+    git_run(root, "config", "user.email", "e2e@example.test")
+    git_run(root, "config", "user.name", "e2e")
+    git_run(root, "config", "commit.gpgsign", "false")
+    (root / "README.md").write_text("e2e\n", encoding="utf-8")
+    git_run(root, "add", "-A")
+    git_run(root, "commit", "-q", "-m", "seed")
+    return root
+
+
 def _await_listening(port: int, timeout: float = 8.0) -> None:
     """Block until ``port`` accepts a connection, or raise ``TimeoutError``."""
     deadline = time.monotonic() + timeout
