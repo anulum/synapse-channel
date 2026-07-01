@@ -149,6 +149,9 @@ def test_bash_shell_hook_uses_neutral_project_without_marker(tmp_path: Path) -> 
             "--noprofile",
             "--norc",
             "-c",
+            # a developer terminal already inside the shell hook exports these;
+            # a pinned SYN_IDENTITY would override the marker/neutral resolution
+            "unset SYN_PROJECT SYN_IDENTITY __SYNAPSE_AUTO_PROJECT __SYNAPSE_AUTO_IDENTITY; "
             "export PATH="
             + shlex.quote(str(bindir))
             + ":$PATH; export XDG_RUNTIME_DIR="
@@ -192,6 +195,9 @@ def test_bash_shell_hook_uses_marker_project_when_opted_in(tmp_path: Path) -> No
             "--noprofile",
             "--norc",
             "-c",
+            # a developer terminal already inside the shell hook exports these;
+            # a pinned SYN_IDENTITY would override the marker/neutral resolution
+            "unset SYN_PROJECT SYN_IDENTITY __SYNAPSE_AUTO_PROJECT __SYNAPSE_AUTO_IDENTITY; "
             "export PATH="
             + shlex.quote(str(bindir))
             + ":$PATH; export XDG_RUNTIME_DIR="
