@@ -862,7 +862,20 @@ class SynapseHub:
         key_id = str(signature.get("key_id") or "").strip() if isinstance(signature, dict) else ""
         if not key_id:
             return FrameDisposition.LOCAL
-        der = self.federation_cert_source(websocket)
+        try:
+            der = self.federation_cert_source(websocket)
+        except Exception:
+            # A certificate read can raise on a socket that has closed or never
+            # finished its TLS handshake, and an injected source is arbitrary code.
+            # A cross-domain frame whose peer we cannot pin degrades to the local
+            # path — exactly as an absent certificate does — rather than crashing
+            # the frame handler for that connection.
+            logger.warning(
+                "Federation certificate read failed for %s (%s); handling frame as local",
+                sender,
+                msg_type,
+            )
+            return FrameDisposition.LOCAL
         if der is None:
             return FrameDisposition.LOCAL
         pin = certificate_sha256_pin_from_der(der)
