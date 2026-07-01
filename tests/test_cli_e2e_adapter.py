@@ -43,12 +43,15 @@ def test_shell_hook_emits_a_script_per_shell() -> None:
 # --- A2A Agent Card ----------------------------------------------------------
 
 
-def test_a2a_card_emits_valid_agent_card_json() -> None:
-    """``a2a-card`` prints a JSON Agent Card with a capabilities block."""
-    result = run_cli("a2a-card", "--endpoint-url", "http://127.0.0.1:8877", "--name", "TRIAL")
-    assert result.ok(), result.output
-    card = json.loads(result.stdout)
-    assert "capabilities" in card
+def test_a2a_card_emits_valid_agent_card_json(tmp_path: Path) -> None:
+    """``a2a-card`` prints a JSON Agent Card; it reads capabilities from the hub."""
+    with isolated_hub(tmp_path) as hub:
+        result = run_cli(
+            "a2a-card", "--endpoint-url", "http://127.0.0.1:8877", "--name", "TRIAL", uri=hub.uri
+        )
+        assert result.ok(), result.output
+        card = json.loads(result.stdout)
+        assert "capabilities" in card
 
 
 # --- git claim hooks ---------------------------------------------------------
