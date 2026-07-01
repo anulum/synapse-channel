@@ -45,8 +45,12 @@ def test_write_latency_reports_distribution_and_throughput() -> None:
 
 
 def test_read_since_grows_with_the_log() -> None:
-    small = bench.measure_read_since_seconds(50)
-    large = bench.measure_read_since_seconds(500)
+    # Single-shot timings at this scale are microseconds, where one scheduler
+    # hiccup can invert the comparison; the minimum over repeats is the robust
+    # cost estimator (noise only ever adds time), so the O(events) ordering pin
+    # holds on a loaded machine.
+    small = min(bench.measure_read_since_seconds(50) for _ in range(3))
+    large = min(bench.measure_read_since_seconds(500) for _ in range(3))
     assert small > 0 and large > 0
     assert large > small  # an O(events) replay scales with the retained log
 
