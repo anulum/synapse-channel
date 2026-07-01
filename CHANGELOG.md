@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+- The CLI reference now lists every subcommand in its command table and adds worked examples for the
+  setup and integration commands (`init`, `install-shell-hook`, `shell-hook`, `arm`, `adapters`,
+  `worker-session`), the advisory governance commands (`identity audit`, `acl shadow`, `policy-check`,
+  `federation`, `encrypt-key`), and the experimental `sandbox` and `workflow` surfaces.
+
 ## [0.80.0] - 2026-07-01
 
 ### Added
