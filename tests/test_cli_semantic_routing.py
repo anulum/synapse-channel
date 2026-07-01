@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 from pathlib import Path
 
@@ -205,3 +206,94 @@ def test_cmd_route_task_dispatches_real_query() -> None:
     )
 
     assert cli_semantic_routing._cmd_route_task(ns) == 1
+
+
+# --- malformed-snapshot extractors and render fallback -------------------------
+
+
+def test_extractors_drop_malformed_snapshot_shapes() -> None:
+    """A hub reply with wrong-typed sections degrades to empty, never crashes."""
+    assert cli_semantic_routing._cards({"manifest": "not-a-list"}) == []
+    assert cli_semantic_routing._cards({"manifest": [{"agent": "A"}, "junk"]}) == [{"agent": "A"}]
+    assert cli_semantic_routing._resources({"snapshot": "not-a-mapping"}) == []
+    assert cli_semantic_routing._resources({"snapshot": {"resources": "junk"}}) == []
+    assert cli_semantic_routing._resources({"snapshot": {"resources": [{"kind": "gpu"}, 3]}}) == [
+        {"kind": "gpu"}
+    ]
+    assert cli_semantic_routing._board({"board": "not-a-mapping"}) == {}
+
+
+def test_render_recommendation_prints_the_fallback_reason(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from synapse_channel.core.semantic_routing import RoutingRecommendation
+
+    recommendation = RoutingRecommendation(
+        task_id="T1",
+        query="build",
+        candidates=(),
+        fallback_reason="no agent capability cards are available",
+    )
+    cli_semantic_routing._render_recommendation(recommendation)
+    out = capsys.readouterr().out
+    assert "Fallback: no agent capability cards are available" in out
+    assert "Advisory only:" in out
+
+
+async def test_route_task_reports_a_bad_observation_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """All snapshots answer, the task exists, but the observation store is absent."""
+    async with running_hub(SynapseHub()) as (_, uri):
+        handle = await _seed_routing_hub(uri)
+        try:
+            code = await cli_semantic_routing._route_task(
+                uri=uri,
+                name="ROUTER",
+                task_id="ROUTE-1",
+                event_store=str(tmp_path / "absent.db"),
+            )
+        finally:
+            await close_agents(handle)
+    assert code == 1
+    assert "missing event store" in capsys.readouterr().out
+
+
+class _SilentRoutingAgent:
+    """Connects and reports ready, but never delivers a single snapshot."""
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        self.running = True
+
+    async def connect(self) -> None:
+        while self.running:
+            await asyncio.sleep(0.01)
+
+    async def wait_until_ready(self, *, timeout: float) -> bool:
+        return True
+
+    async def request_board(self) -> None:
+        return None
+
+    async def request_manifest(self) -> None:
+        return None
+
+    async def request_state(self) -> None:
+        return None
+
+
+async def test_route_task_names_the_snapshots_that_never_arrived(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A ready hub that answers nothing yields the named missing snapshots."""
+    code = await cli_semantic_routing._route_task(
+        uri="ws://unused",
+        name="ROUTER",
+        task_id="T1",
+        agent_factory=_SilentRoutingAgent,  # type: ignore[arg-type]
+        response_timeout=0.1,
+    )
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "did not return semantic routing snapshots" in out
+    assert "board_snapshot" in out and "state_snapshot" in out
