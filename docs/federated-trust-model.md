@@ -65,6 +65,15 @@ opt-in:
   `--require-message-auth`; without it a cross-domain frame is refused, since its signing
   key is not verified. With no store the live path is unchanged.
 
+A frame that carries a signing key over a pinned connection yet resolves to no peering is
+handled locally — the fail-closed default. Because a stale or mis-entered peering fails the
+same way, the hub distinguishes an ordinary local frame from a misconfiguration and logs a
+warning only for the latter (`diagnose_unresolved_domain`): the certificate pin enrolled
+without the signing key, the signing key without the pin, the two split across different
+peerings, or an ambiguous pair two peerings both claim. The frame's disposition is unchanged;
+the warning is a signal so a mis-entered pin or key id does not go silent. An ordinary local
+frame — neither credential enrolled — stays quiet.
+
 What remains **not implemented** is cross-domain bundle *exchange over the network* and
 trust-root distribution: a peering still moves between domains out-of-band and is imported
 explicitly (`synapse federation import`), and the hub does not auto-discover or negotiate

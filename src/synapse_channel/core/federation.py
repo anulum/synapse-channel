@@ -235,6 +235,92 @@ def resolve_domain(
     return None
 
 
+class DomainResolutionDiagnosis:
+    """Why a ``(key_id, certificate_pin)`` pair resolved to no single peered domain.
+
+    :func:`resolve_domain` fails closed and returns ``None`` for several distinct
+    situations that read identically to a caller. Most are ordinary — a frame signed
+    with a local key over a peer's connection is not cross-domain and is meant to take
+    the local path. But some are operator misconfigurations that otherwise leave no
+    signal: a peer whose certificate pin was never enrolled, whose signing key was
+    never enrolled, whose key and pin were enrolled under *different* peerings, or a
+    pair that two peerings both claim. This vocabulary lets the caller warn on the
+    misconfigurations and stay silent on the ordinary local frame.
+    """
+
+    RESOLVED = "resolved"
+    """A single peering accepts both — :func:`resolve_domain` would return a domain
+    (never produced for an unresolved pair; present so the classification is total)."""
+
+    UNRELATED = "unrelated"
+    """Neither the key nor the pin is enrolled in any peering — an ordinary local or
+    foreign frame, not a misconfiguration. Callers stay silent on this."""
+
+    AMBIGUOUS = "ambiguous_multiple_peerings"
+    """Two or more peerings each enrol both the key and the pin — overlapping peerings."""
+
+    KEY_WITHOUT_PIN = "signing_key_enrolled_but_certificate_pin_unknown"
+    """The signing key is enrolled somewhere, but the certificate pin is enrolled nowhere
+    — the peer's certificate pin is missing or stale in the bundle."""
+
+    PIN_WITHOUT_KEY = "certificate_pin_enrolled_but_signing_key_unknown"
+    """The certificate pin is enrolled somewhere, but the signing key is enrolled nowhere
+    — the peer's signing key id is missing or stale in the bundle."""
+
+    SPLIT_ACROSS_PEERINGS = "signing_key_and_certificate_pin_in_different_peerings"
+    """Both the key and the pin are enrolled, but never together in one peering — the
+    peer's credentials are split across two peerings and neither alone owns the frame."""
+
+
+def diagnose_unresolved_domain(
+    bundle: FederationBundle,
+    *,
+    key_id: str,
+    certificate_pin: str,
+) -> str:
+    """Classify *why* ``(key_id, certificate_pin)`` resolved to no single peered domain.
+
+    Companion to :func:`resolve_domain` for observability: it turns a fail-closed
+    ``None`` into an operator-actionable reason so a misconfigured peering does not go
+    silent, while an ordinary local frame stays quiet. The classification is total, so a
+    caller can log the misconfiguration reasons and skip
+    :attr:`~DomainResolutionDiagnosis.UNRELATED` (and the never-produced
+    :attr:`~DomainResolutionDiagnosis.RESOLVED`).
+
+    Parameters
+    ----------
+    bundle : FederationBundle
+        The operator-confirmed peerings the pair failed to resolve against.
+    key_id : str
+        The verified Ed25519 signing-key id the frame was signed with.
+    certificate_pin : str
+        The ``sha256:<hex>`` pin of the live peer certificate.
+
+    Returns
+    -------
+    str
+        A :class:`DomainResolutionDiagnosis` value naming the reason.
+    """
+    both = [
+        peer.domain_id
+        for peer in bundle._peers.values()
+        if key_id in peer.signing_key_ids and certificate_pin in peer.certificate_pins
+    ]
+    if len(both) >= 2:
+        return DomainResolutionDiagnosis.AMBIGUOUS
+    if len(both) == 1:
+        return DomainResolutionDiagnosis.RESOLVED
+    key_known = any(key_id in peer.signing_key_ids for peer in bundle._peers.values())
+    pin_known = any(certificate_pin in peer.certificate_pins for peer in bundle._peers.values())
+    if key_known and pin_known:
+        return DomainResolutionDiagnosis.SPLIT_ACROSS_PEERINGS
+    if key_known:
+        return DomainResolutionDiagnosis.KEY_WITHOUT_PIN
+    if pin_known:
+        return DomainResolutionDiagnosis.PIN_WITHOUT_KEY
+    return DomainResolutionDiagnosis.UNRELATED
+
+
 def scope_authorises(
     accesses: list[tuple[str, Target]],
     *,

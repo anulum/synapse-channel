@@ -18,6 +18,14 @@ All notable changes to this project are documented here.
   offers when any exist) — sized for a shell prompt or a tmux status bar. It draws the roster from the
   live connection set rather than the cumulative last-seen ledger, and its exit code doubles as a prompt
   signal: zero when the hub answers, non-zero when it is down.
+- The federation gate now logs a warning when a signed frame arrives over a pinned connection but
+  resolves to no peered domain because a peering's signing key or certificate pin is missing, stale,
+  split across peerings, or ambiguous. The frame is still handled locally, unchanged; the warning is the
+  operator signal a misconfigured peering previously lacked. An ordinary local frame — neither credential
+  enrolled — stays silent.
+- Documented the connect-once versus per-frame trust model and when to enable `--require-message-auth`
+  (multiple parties, attributable authorship, or federation, which requires it) in the per-message
+  authentication guide.
 
 ## [0.82.0] - 2026-07-01
 
