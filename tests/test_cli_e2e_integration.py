@@ -80,3 +80,17 @@ def test_multihub_observe_folds_a_peer_logs_board(tmp_path: Path) -> None:
         payload = json.loads(observed.stdout)
         assert payload["peer_id"] == "peerA"
         assert "PEER-1" in payload["board"]
+
+
+def test_multihub_follow_pulls_a_peers_board_over_a_connection(tmp_path: Path) -> None:
+    """``multihub follow`` dials a live peer hub and pulls its board snapshot."""
+    with isolated_hub(tmp_path) as hub:
+        run_cli("task", "declare", "FOLLOW-1", "--title", "followed task", uri=hub.uri)
+
+        # follow selects the peer with --peer-uri, not the local --uri default.
+        followed = run_cli(
+            "multihub", "follow", "--peer-uri", hub.uri, "--local-id", "watcher", "--json"
+        )
+        assert followed.ok(), followed.output
+        payload = json.loads(followed.stdout)
+        assert "FOLLOW-1" in payload["board"]
