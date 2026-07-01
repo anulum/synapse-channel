@@ -19,7 +19,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from cli_e2e_helpers import git_repo, git_run, isolated_hub, run_cli
+from cli_e2e_helpers import (
+    A2A_AGENT_CARD_PATH,
+    git_repo,
+    git_run,
+    http_get,
+    isolated_a2a_serve,
+    isolated_hub,
+    run_cli,
+)
 
 # --- editor adapters and shell integration ----------------------------------
 
@@ -52,6 +60,17 @@ def test_a2a_card_emits_valid_agent_card_json(tmp_path: Path) -> None:
         assert result.ok(), result.output
         card = json.loads(result.stdout)
         assert "capabilities" in card
+
+
+def test_a2a_serve_publishes_an_agent_card_over_http(tmp_path: Path) -> None:
+    """``a2a-serve`` binds an HTTP bridge that serves the Agent Card at its well-known path."""
+    with isolated_hub(tmp_path) as hub, isolated_a2a_serve(hub.uri) as base:
+        status, body = http_get(f"{base}{A2A_AGENT_CARD_PATH}")
+        assert status == 200, body
+        card = json.loads(body)
+        assert card["name"]
+        assert "capabilities" in card
+        assert isinstance(card["skills"], list)
 
 
 # --- git claim hooks ---------------------------------------------------------
