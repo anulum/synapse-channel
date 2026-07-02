@@ -1041,8 +1041,8 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Package modules | 285 |
 | Classes | 405 |
 | Wire message types | 67 |
-| CLI subcommands | 124 |
-| Test functions | 4169 |
+| CLI subcommands | 126 |
+| Test functions | 4179 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 46 |
 | GitHub Actions workflows | 12 |
@@ -1100,8 +1100,10 @@ threat model and how to report a vulnerability are in [`SECURITY.md`](SECURITY.m
   cryptographic identity system. Opt-in per-message authentication, Ed25519
   event-signature trust, mTLS certificate pins, and a deny-by-default ACL policy
   exist for exposed or multi-hub deployments (see
-  [Security posture](#security-posture)), but keys, pins, and peerings move
-  out-of-band — there is no key exchange or automatic trust distribution — and an
+  [Security posture](#security-posture)), but every peering is an out-of-band
+  trust decision — bundle bytes can move over the wire
+  (`synapse federation offer`/`fetch`, fingerprint-compared, never
+  trust-on-first-use), yet there is no automatic trust distribution — and an
   agent's identity is a declared name, not a per-agent credential. Do not expose
   the hub on an untrusted network and rely on the token alone.
 - **Graceful shutdown is bounded, not transactional.** `SIGTERM`/`SIGINT` stop

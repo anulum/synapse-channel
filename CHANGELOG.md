@@ -14,6 +14,23 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Federation-bundle exchange over the network, replacing the out-of-band
+  file copy while keeping the trust decision with the operator: a hub
+  started with `--federation-offer FILE` serves its own operator-authored
+  bundle material over the ordinary websocket surface (token-gated,
+  re-read per request so rotated material republishes without a
+  restart); `synapse federation fetch URI --out FILE` pulls it, prints
+  the fingerprint block, and never imports; `synapse federation offer
+  FILE` validates the offering side's material and prints the identical
+  block, so both operators compare like for like out-of-band before the
+  explicit `federation import --confirmed-by` (whose `--source` records
+  the fetch URI as the peering's provenance). The bundle fingerprint is
+  a SHA-256 over the whole canonical bundle, so an in-path alteration of
+  any policy content — namespaces and scope grants as much as keys and
+  pins — changes the value the operators read to each other; there is no
+  trust-on-first-use. Two new wire message types
+  (`federation_offer_request`/`federation_offer`); every transport
+  failure fails the fetch closed with nothing written.
 - `synapse cross-repo --watch --notify-cmd CMD` runs an operator command
   whenever the coordination facts — live claims joined to the graph and
   provable version conflicts — change between two consecutive watch
