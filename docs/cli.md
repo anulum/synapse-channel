@@ -1030,6 +1030,28 @@ $ synapse causality health ~/synapse/hub.db --max-nodes 0
 - seq=1532 task=director-ai-calib-gateb depends on remanentia-ms1-query-stream, which never completed
 ```
 
+With `--watch` the assessment becomes a standing monitor: every
+`--interval` seconds (default 2, `--count` bounds the ticks) the store is
+reread and re-assessed, the first tick prints the full report as the
+baseline, and every later tick prints **only the transitions** — `+ fact`
+for a new anomaly, `- fact` for a cleared one — so a steady fleet stays
+quiet and the scrollback reads as a timeline of what went wrong and what
+recovered. The facts carry each anomaly's identity (kind, anchoring
+sequence, task, owner) and deliberately omit the ages, which grow every
+tick; `--json` streams the full report as one NDJSON line per tick
+instead. A failing tick stops the watch with exit `2`, and a bounded watch
+exits with the last tick's anomaly signal. Replayed against the live
+workstation hub log: the baseline reported 31 anomalies across 405 tasks
+and the following ticks stayed silent, exit `1` — the anomalies persist.
+
+```console
+$ synapse causality health ~/synapse/hub.db --watch --count 2 --max-nodes 0
+# Causal health: 31 anomalies across 405 task(s)
+...
+$ echo $?
+1
+```
+
 `synapse merkle root ./synapse.db` commits the durable event log to a single
 Merkle root: a 32-byte fingerprint of every event, so two operators — or two
 federated hubs — holding the same log derive the same root and a mismatch proves

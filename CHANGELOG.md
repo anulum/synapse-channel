@@ -75,6 +75,17 @@ All notable changes to this project are documented here.
   `federation import` — including the `--max-age` expiry grading at
   import time.
 
+- `synapse causality health --watch` — the lifecycle-anomaly assessment
+  becomes a standing coordination-health monitor: the store is reread
+  and re-assessed every `--interval` seconds, the first tick prints the
+  full report as the baseline, and every later tick prints only the
+  anomaly transitions (`+ fact` new, `- fact` cleared, identity facts
+  that deliberately omit the ever-growing ages), so a steady fleet
+  stays quiet and the scrollback reads as a timeline. `--json` streams
+  one full report per tick as NDJSON; a failing tick stops the watch
+  with exit `2`; a bounded watch exits with the last tick's anomaly
+  signal.
+
 ### Security
 - The last four unpinned tool installs in CI are now hash-locked: the
   pre-commit, release, publish, and reuse workflow jobs install
