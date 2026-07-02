@@ -10,11 +10,14 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Callable, Coroutine
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from synapse_channel.cli_federation import _cmd_import, add_parsers
+from synapse_channel.core.federation import FederationPeer
 from synapse_channel.core.federation_store import load_store
 
 _BUNDLE = {
@@ -211,12 +214,14 @@ def test_offer_reports_a_malformed_bundle(
     assert "invalid federation bundle" in capsys.readouterr().err
 
 
-def _stub_fetcher(captured: dict[str, object] | None = None, *, error: str | None = None):
+def _stub_fetcher(
+    captured: dict[str, object] | None = None, *, error: str | None = None
+) -> Callable[..., Coroutine[Any, Any, FederationPeer]]:
     """Return an async fetcher stub yielding the material bundle, or raising."""
     from synapse_channel.core.federation_fetch import FederationFetchError
     from synapse_channel.core.federation_wire import decode_federation_offer
 
-    async def fetch(uri: str, **kwargs: object):
+    async def fetch(uri: str, **kwargs: object) -> FederationPeer:
         if captured is not None:
             captured.update({"uri": uri, **kwargs})
         if error is not None:
