@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.88.0] - 2026-07-02
+
 ### Added
 - The Participant Fabric gained its operator surface: `synapse participant list`
   reports each registered provider driver's readiness (claude, codex, kimi, ollama,
