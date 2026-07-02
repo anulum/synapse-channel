@@ -323,6 +323,12 @@ class SynapseHub:
         Reads the peer's live certificate for the federation gate; defaults to
         :func:`~synapse_channel.core.multihub_serving.live_peer_certificate_der`. Injected in
         tests to exercise the decision without a mutual-TLS handshake.
+    federation_offer_path : str or Path or None, optional
+        Path to this domain's own federation-bundle material, answered to a peer operator's
+        ``synapse federation fetch``. ``None`` (the default) offers nothing — the request is
+        answered with an error frame. The file is re-read per request, so the offered
+        material rotates without a restart; a fetched offer stays untrusted until the
+        fetching operator compares fingerprints out-of-band and imports it explicitly.
     """
 
     def __init__(
@@ -374,6 +380,7 @@ class SynapseHub:
         observed_asserting_hubs: Callable[[str], Iterable[str]] | None = None,
         federation_bundle: FederationBundle | None = None,
         federation_cert_source: PeerCertificateSource = live_peer_certificate_der,
+        federation_offer_path: str | Path | None = None,
     ) -> None:
         self.journal = journal
         self.enable_metrics = bool(enable_metrics)
@@ -403,6 +410,9 @@ class SynapseHub:
         self.observed_asserting_hubs = observed_asserting_hubs
         self.federation_bundle = federation_bundle
         self.federation_cert_source = federation_cert_source
+        self.federation_offer_path = (
+            Path(federation_offer_path) if federation_offer_path is not None else None
+        )
         self._federation_gate = HubFederationGate(
             federation_bundle,
             cert_source=federation_cert_source,

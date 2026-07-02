@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import ssl
 from collections.abc import Coroutine
 from pathlib import Path
@@ -621,6 +622,57 @@ def test_cmd_hub_rejects_malformed_federation_store(
     store.write_text("{not json", encoding="utf-8")
     assert cli_processes._cmd_hub(_hub_ns(federation_store=str(store)), runner=_close_runner) == 2
     assert "federation store is not valid JSON" in capsys.readouterr().err
+
+
+def test_cmd_hub_passes_the_federation_offer_path(tmp_path: Path) -> None:
+    offer = tmp_path / "offer.json"
+    offer.write_text(json.dumps({"domain_id": "lab-a"}), encoding="utf-8")
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    ns = _hub_ns(federation_offer=str(offer))
+    assert cli_processes._cmd_hub(ns, runner=_close_runner, hub_factory=build_hub) == 0
+    assert captured["federation_offer_path"] == str(offer)
+
+
+def test_cmd_hub_leaves_the_federation_offer_off_by_default() -> None:
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert cli_processes._cmd_hub(_hub_ns(), runner=_close_runner, hub_factory=build_hub) == 0
+    assert captured["federation_offer_path"] is None
+
+
+def test_cmd_hub_rejects_a_missing_federation_offer_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ns = _hub_ns(federation_offer=str(tmp_path / "absent.json"))
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
+    assert "cannot serve --federation-offer" in capsys.readouterr().err
+
+
+def test_cmd_hub_rejects_a_non_json_federation_offer(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    offer = tmp_path / "offer.json"
+    offer.write_text("{not json", encoding="utf-8")
+    assert cli_processes._cmd_hub(_hub_ns(federation_offer=str(offer)), runner=_close_runner) == 2
+    assert "cannot serve --federation-offer" in capsys.readouterr().err
+
+
+def test_cmd_hub_rejects_a_malformed_federation_offer_bundle(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    offer = tmp_path / "offer.json"
+    offer.write_text(json.dumps({"namespaces": ["lab-a/shared"]}), encoding="utf-8")
+    assert cli_processes._cmd_hub(_hub_ns(federation_offer=str(offer)), runner=_close_runner) == 2
+    assert "cannot serve --federation-offer" in capsys.readouterr().err
 
 
 def test_parse_message_auth_keys_rejects_empty_fields() -> None:

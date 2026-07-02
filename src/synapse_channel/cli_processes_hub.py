@@ -10,10 +10,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import ssl
 import sys
 import time
 from collections.abc import Callable, Coroutine
+from pathlib import Path
 from typing import Any
 
 from synapse_channel.cli_processes_runtime import _run
@@ -21,6 +23,7 @@ from synapse_channel.core.acl import AclError, load_acl_policy
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.federation import FederationBundle, bundle_can_authorise
 from synapse_channel.core.federation_store import FederationStoreError, bundle_from_store
+from synapse_channel.core.federation_wire import FederationWireError, decode_federation_offer
 from synapse_channel.core.hub import InsecureBindError, SynapseHub
 from synapse_channel.core.logging_setup import configure_logging
 from synapse_channel.core.message_auth import MessageAuthKey
@@ -147,6 +150,13 @@ def _cmd_hub(
                     "--federation-store with --require-message-auth to enforce federation.",
                     file=sys.stderr,
                 )
+    if args.federation_offer:
+        try:
+            offered = json.loads(Path(args.federation_offer).read_text(encoding="utf-8"))
+            decode_federation_offer(offered)
+        except (OSError, json.JSONDecodeError, FederationWireError) as exc:
+            print(f"synapse hub: cannot serve --federation-offer: {exc}", file=sys.stderr)
+            return 2
     hub = hub_factory(
         journal=journal,
         rate_limiter=limiter,
@@ -182,6 +192,7 @@ def _cmd_hub(
         acl_policy=acl_policy,
         require_acl=args.require_acl,
         federation_bundle=federation_bundle,
+        federation_offer_path=args.federation_offer or None,
         insecure_off_loopback=args.insecure_off_loopback,
     )
     try:
