@@ -175,10 +175,11 @@ class MultiHubConfig:
 
 @dataclass(frozen=True, kw_only=True)
 class FederationConfig:
-    """Cross-domain federation: the peering bundle and the live-certificate reader."""
+    """Cross-domain federation: the peering bundle, certificate reader, and served offer."""
 
     federation_bundle: FederationBundle | None = None
     federation_cert_source: PeerCertificateSource = live_peer_certificate_der
+    federation_offer_path: str | Path | None = None
 
 
 #: HubConfig attributes holding nested family records rather than direct kwargs.
