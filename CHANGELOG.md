@@ -14,6 +14,17 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `synapse cross-repo` widens coordination from one repository to a whole
+  checkout tree: it scans every repository under a root directory for
+  dependency manifests (`pyproject.toml`, `Cargo.toml`, `package.json`,
+  `go.mod`) and CODEOWNERS files, composes them into a graph of `dependency`
+  and `shared_owner` edges, and joins the live claims of a hub event log onto
+  it (a claim's `worktree` is its repository). With `--repo` the exit code
+  becomes a coordination signal — `1` when a live claim exists in a
+  repository connected to the focus by a dependency edge — and `--json` and
+  `--dot` emit the graph as data or a Graphviz digraph. Manifests that exist
+  but cannot be parsed are reported as problems rather than silently
+  skipped. Declaration-level, advisory evidence only.
 - `synapse trust-graph` queries the durable event log as an evidence graph,
   realising the agent-trust-graph design's read-only projection: typed edges
   between agent and task nodes — positive release receipts, stale claims,

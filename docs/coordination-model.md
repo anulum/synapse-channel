@@ -116,6 +116,13 @@ with positive release receipts as traceable graph evidence, queryable with
 Graphviz DOT). It stays advisory: it does not rank agents, authorize
 execution, or replace review.
 
+`synapse cross-repo` extends the same read-side evidence across a whole
+checkout tree: dependency manifests and CODEOWNERS files become edges between
+repositories, and the live claims of the event log join onto the graph so an
+agent can see, before starting a cross-cutting change, whether anyone is
+working in a repository its repository depends on — or one that depends on
+it. Advisory and declaration-level, like every other analysis surface.
+
 The planned [policy engine](policy-engine.md) builds on those same release
 receipts and event-log projections. Its first mode is advisory: required tests,
 strict type checking, owner approval, evidence freshness, generated artifact
