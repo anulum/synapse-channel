@@ -74,7 +74,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse lock` | Hold a lease while running a command, to serialise it across agents. |
 | `synapse release` | Manually drop a claim you own (e.g. an `--auto-release-on manual` claim). |
 | `synapse task` | Declare and update the shared task plan. |
-| `synapse workflow` | Validate and compile a declarative workflow into blackboard tasks (`validate`/`compile`/`plan`/`run`). |
+| `synapse workflow` | Validate and compile a declarative workflow into blackboard tasks (`validate`/`compile`/`plan`/`run`); `contention` weighs overlapping live claims involving the workflow's tasks. |
 
 ## First 60 seconds
 
@@ -804,6 +804,31 @@ live hub — and each recommendation prints with both standings and its reason
 `0` when no live claims overlap, `1` when at least one pair does, `2` on a
 missing store.
 
+A worked example. Alice claims `src/parser.py` for `parser-rework`, which three
+declared tasks (`grammar-tests`, `error-recovery`, `docs-refresh`) depend on;
+Bob later claims the whole `src/` scope for `lint-sweep`, on which only
+`lint-config` depends. The scopes intersect in the same worktree, so the pair
+contends — and because Alice's task gates three downstream tasks against Bob's
+one, the advice names Bob's claim as the lighter one:
+
+```console
+$ synapse causality contention ./synapse.db
+# Contention: 1 overlapping live claim pair(s)
+
+## lint-sweep (bob) should yield to parser-rework (alice)
+- reason: parser-rework blocks 3 downstream task(s) versus 1; the lighter claim yields
+- keeps: parser-rework (alice, seq 7) blocks 3 downstream task(s): docs-refresh, error-recovery, grammar-tests
+- yields: lint-sweep (bob, seq 8) blocks 1 downstream task(s): lint-config
+- advisory only: no claim is preempted; coordinate the yield explicitly
+$ echo $?
+1
+```
+
+Had both tasks gated the same count, the later claim (Bob's, higher sequence)
+would still be the one advised to yield — first-come precedence breaks ties.
+Acting on the advice stays explicit: Bob releases his claim (or narrows its
+paths so the scopes no longer intersect) and re-claims once Alice releases.
+
 `synapse merkle root ./synapse.db` commits the durable event log to a single
 Merkle root: a 32-byte fingerprint of every event, so two operators — or two
 federated hubs — holding the same log derive the same root and a mismatch proves
@@ -1036,7 +1061,14 @@ synapse encrypt-key check ./synapse.key                        # verify its owne
 Newer, advisory surfaces whose shape may still change before 1.0. `sandbox`
 validates a capability manifest and pre-flights or runs a `.wasm` tool against
 it (running needs the `wasm` extra); `workflow` validates a declarative workflow
-and compiles it into the blackboard tasks the board would execute; `participant`
+and compiles it into the blackboard tasks the board would execute —
+`workflow contention FILE DB` additionally joins the compiled task ids to the
+durable log, running the same offline yield-advice analysis as
+`synapse causality contention` but keeping only the overlapping live-claim
+pairs a workflow task is party to (whether it keeps or yields); pairs outside
+the workflow are counted in a trailing note instead of shown, the exit code
+signals scoped collisions only (`0` none, `1` at least one, `2` on an invalid
+workflow, missing store, or the `--max-nodes` ceiling); `participant`
 is the operator surface over the Participant Fabric — `list` probes each
 registered provider driver (claude, codex, kimi, ollama, ollama-api, grok)
 without taking a turn, and `ask` runs exactly one turn against one provider and
@@ -1057,6 +1089,18 @@ produced, or the full typed transcript with `--json`, and exit `0` only when
 every turn answered and the run completed — an unavailable seat, a degraded
 turn, or a `--budget-usd` halt exits `1`; a refused configuration exits `2`.
 
+`convene --dry-run` prints the plan without taking a single turn: the resolved
+mode, its round count, and each seat's identity, readiness (health probes run —
+they never cost a turn), planned turns, and estimated cost. Costs come from an
+operator-supplied `--pricing` table (the same `model -> {input_per_1k,
+output_per_1k}` JSON as `accounting report`) under printed per-turn token
+assumptions (`--est-input-tokens`/`--est-output-tokens`, default 1000/500);
+seats whose model has no price line are reported unpriced and excluded from the
+total rather than counted as free. With `--budget-usd` the report states
+whether the estimate fits. Exit `0` when every seat is ready, `1` when any is
+unavailable — so the dry run doubles as a pre-flight gate — and `2` for a
+refused configuration or an unreadable pricing file.
+
 `costs` reads opt-in session telemetry back from a hub SQLite event store —
 offline, no hub connection, like `accounting report`. Sessions that emitted
 `session_metric` progress notes (the orchestration loop with `emit_metrics`, or
@@ -1075,12 +1119,15 @@ synapse sandbox run ./tool.wasm --manifest ./manifest.json --input ./in.json
 synapse workflow validate ./workflow.json               # parse and validate
 synapse workflow compile ./workflow.json --json         # compile into blackboard tasks
 synapse workflow plan ./workflow.json                   # show the tasks and their dependency order
+synapse workflow contention ./workflow.json ~/synapse/hub.db   # yield advice scoped to this workflow
 synapse participant list                                # readiness of every provider driver
 synapse participant ask ollama "summarise this diff" --model llama3   # one turn, print the answer
 synapse participant ask claude "review src/foo.py" --context "be terse" --json
 synapse participant exchange "is this design sound?" claude codex   # opener + reviewing reactor
 synapse participant convene "how should we cache this?" claude codex ollama:gemma3:1b \
     --mode symposium --moderator claude --budget-usd 2.50          # panel + moderated synthesis
+synapse participant convene "…" claude codex --dry-run --pricing ./prices.json \
+    --budget-usd 2.50                                   # plan + cost estimate, no turns taken
 synapse participant costs ~/synapse/hub.db              # per-session spend and telemetry + totals
 synapse participant costs ~/synapse/hub.db --json       # the same report, machine-readable
 ```

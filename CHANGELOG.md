@@ -14,6 +14,30 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `synapse workflow contention` joins a declarative workflow to the durable
+  log: it compiles the workflow to its task ids, runs the same offline
+  yield-advice analysis as `synapse causality contention`, and keeps only the
+  overlapping live-claim pairs a workflow task is party to — whether it keeps
+  or yields. Pairs outside the workflow are counted in a trailing note; the
+  exit code signals scoped collisions only (`0` none, `1` at least one, `2` on
+  an invalid workflow, a missing store, or the node ceiling).
+- `synapse participant convene --dry-run` prints the convocation plan without
+  taking a single turn: the resolved mode, its round count, and each seat's
+  identity, readiness, planned turns, and estimated cost from an
+  operator-supplied `--pricing` table under printed per-turn token assumptions
+  (`--est-input-tokens`/`--est-output-tokens`). Seats without a price line are
+  reported unpriced and excluded from the total; with `--budget-usd` the report
+  states whether the estimate fits. Exit `0` when every seat is ready, `1` when
+  any is unavailable, `2` for a refused configuration.
+- The repository root now ships a composite GitHub Action (`action.yml`)
+  wrapping `synapse policy-check`, so a repository can gate CI on a release
+  receipt — optionally recomputing the Merkle commitment and requiring a
+  trusted hub signature — with a single `uses:` step. Inputs reach the shell
+  through environment variables, never script interpolation; the decision
+  report is exposed as the `report` step output.
+- The `synapse causality contention` documentation gained a worked two-agent
+  example with real command output, showing how downstream weight picks the
+  yielder and how a tie falls back to first-come precedence.
 - `synapse participant costs` reads opt-in session telemetry back from a hub
   SQLite event store — offline, like `synapse accounting report` — and prints
   the latest cumulative snapshot per `(agent, session)` (turns, errors,

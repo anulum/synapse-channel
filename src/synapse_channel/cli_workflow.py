@@ -11,7 +11,10 @@ A workflow is a plain JSON artifact (a ``name`` and a list of ``steps`` with
 ``depends_on`` edges). ``validate`` parses and checks it; ``compile`` turns it
 into the blackboard task declarations the board would execute, either as a human
 summary or machine-readable JSON. Neither touches the hub — they are offline
-authoring tools over :mod:`synapse_channel.core.workflow`.
+authoring tools over :mod:`synapse_channel.core.workflow`. ``contention`` joins
+them to the durable log: it runs the same offline yield-advice analysis as
+``synapse causality contention`` and keeps only the overlapping live-claim pairs
+a workflow task is party to.
 """
 
 from __future__ import annotations
@@ -36,6 +39,13 @@ from synapse_channel.core.workflow import (
 )
 from synapse_channel.core.workflow_driver import DEFAULT_STATUS, derive_state, plan_assignments
 from synapse_channel.core.workflow_run import BoardSnapshot, RunResult, run_workflow
+from synapse_channel.core.causality import DEFAULT_MAX_GRAPH_NODES
+from synapse_channel.core.yield_advice import (
+    advice_involving,
+    advice_to_json,
+    render_advice_markdown,
+    run_yield_advice,
+)
 
 AgentFactory = Callable[..., SynapseAgent]
 """Factory for the client agent; injectable so the driver is testable."""
@@ -154,6 +164,35 @@ def _cmd_plan(args: argparse.Namespace) -> int:
         task_class = f" [{assignment.task_class}]" if assignment.task_class else ""
         print(f"  {assignment.task_id}{task_class} -> {assignment.agent}")
     return 0
+
+
+def _cmd_contention(args: argparse.Namespace) -> int:
+    """Weigh overlapping live claims scoped to one workflow's tasks.
+
+    Compiles the workflow to its task ids, runs the same offline yield-advice
+    analysis as ``synapse causality contention``, and keeps only the pairs a
+    workflow task is party to — whether it keeps or yields. Exit ``0`` when no
+    live claim involving a workflow task overlaps, ``1`` when at least one pair
+    does, ``2`` on an invalid workflow, a missing store, or the node ceiling.
+    """
+    try:
+        tasks = compile_to_tasks(parse_workflow(_load_workflow_file(args.file)))
+        recommendations = run_yield_advice(args.db, max_nodes=args.max_nodes)
+    except (WorkflowError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    scoped = advice_involving(recommendations, [task.task_id for task in tasks])
+    if args.json:
+        print(json.dumps(advice_to_json(scoped), indent=2, sort_keys=True))
+        return 1 if scoped else 0
+    if scoped:
+        print(render_advice_markdown(scoped))
+    else:
+        print("No live claims involving this workflow's tasks overlap; nothing to weigh.")
+    others = len(recommendations) - len(scoped)
+    if others:
+        print(f"(note: {others} other overlapping pair(s) do not involve this workflow)")
+    return 1 if scoped else 0
 
 
 def _snapshot_from_board(board: Mapping[str, Any]) -> BoardSnapshot:
@@ -368,3 +407,19 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     run.add_argument("--json", action="store_true", help="Emit a machine-readable run summary.")
     run.set_defaults(func=_cmd_run)
+
+    contention = group.add_parser(
+        "contention",
+        help="Weigh overlapping live claims involving this workflow's tasks.",
+    )
+    contention.add_argument("file", help="Path to the workflow JSON file.")
+    contention.add_argument("db", help="Path to the hub event store, e.g. ~/synapse/hub.db.")
+    contention.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    contention.add_argument(
+        "--max-nodes",
+        type=int,
+        default=DEFAULT_MAX_GRAPH_NODES,
+        help="Fail-closed ceiling on coordination events folded into the graph "
+        "(0 lifts it); exceeding it errors instead of exhausting memory.",
+    )
+    contention.set_defaults(func=_cmd_contention)

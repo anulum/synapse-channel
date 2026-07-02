@@ -26,6 +26,7 @@ from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.yield_advice import (
     YieldAdvice,
+    advice_involving,
     advice_to_json,
     advise_yields,
     render_advice_markdown,
@@ -381,3 +382,27 @@ def test_a_task_less_descendant_is_reached_but_never_counted() -> None:
     # A's release causally freed B's fresh claim, so B counts; the task-less
     # ghost claim was reached through the same edge walk yet never counted.
     assert by_yielder["B"].holder.blocked_tasks == ("B",)
+
+
+def test_advice_involving_keeps_holder_and_yielder_matches_in_order() -> None:
+    """A pair survives when either contender's task is in the scope."""
+    recommendations = _advise(
+        _claim(1, "A", "alice", paths=("src/a.py",)),
+        _claim(2, "B", "bob", paths=("src/a.py",)),
+        _claim(3, "C", "carol", paths=("docs/x.md",)),
+        _claim(4, "D", "dave", paths=("docs/x.md",)),
+    )
+    assert len(recommendations) == 2
+    # Holder-side match (A holds against B) and yielder-side match (D yields to C).
+    scoped = advice_involving(recommendations, ["A", "D"])
+    assert [advice.holder.task_id for advice in scoped] == ["A", "C"]
+    assert [advice.yielder.task_id for advice in scoped] == ["B", "D"]
+
+
+def test_advice_involving_drops_uninvolved_pairs_and_empty_scope_keeps_nothing() -> None:
+    recommendations = _advise(
+        _claim(1, "A", "alice", paths=("src/a.py",)),
+        _claim(2, "B", "bob", paths=("src/a.py",)),
+    )
+    assert advice_involving(recommendations, ["Z"]) == []
+    assert advice_involving(recommendations, []) == []

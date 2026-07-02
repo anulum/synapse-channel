@@ -1,0 +1,114 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE_CHANNEL — composite GitHub Action wrapping `synapse policy-check`
+name: SYNAPSE policy check
+description: >-
+  Check a SYNAPSE release receipt against a policy file in CI — optionally
+  recomputing the receipt's coordination-log Merkle commitment and requiring a
+  trusted hub signature over it.
+author: ANULUM
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  task:
+    description: Task id / subject label for the decision report.
+    required: true
+  policy:
+    description: Path to the policy file (.json always; .toml on Python 3.11+).
+    required: true
+  receipt-json:
+    description: Path to the release-receipt JSON (from `synapse release --receipt-json`).
+    required: true
+  enforce:
+    description: >-
+      Exit non-zero when an enforcement-mode policy has a failing rule. The
+      default gates the job; set "false" for an advisory, report-only run.
+    required: false
+    default: "true"
+  merkle-db:
+    description: >-
+      Hub event store to recompute the receipt's coordination-log commitment
+      against; adds a merkle_commitment decision that fails when the committed
+      log prefix changed.
+    required: false
+    default: ""
+  trusted-signing-keys:
+    description: >-
+      Trusted hub verification keys (.pub files from `synapse merkle keygen`),
+      one path per line; adds a merkle_signature decision that fails unless a
+      trusted key's signature verifies over the receipt's commitment.
+    required: false
+    default: ""
+  version:
+    description: >-
+      synapse-channel version to install (e.g. "0.88.0"); empty installs the
+      latest release. Pin this for reproducible gating.
+    required: false
+    default: ""
+  python-version:
+    description: Python version to run the check with.
+    required: false
+    default: "3.12"
+
+outputs:
+  report:
+    description: The JSON decision report `synapse policy-check --json` printed.
+    value: ${{ steps.check.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install synapse-channel
+      shell: bash
+      env:
+        PACKAGE_VERSION: ${{ inputs.version }}
+      run: |
+        if [ -n "$PACKAGE_VERSION" ]; then
+          python -m pip install --disable-pip-version-check "synapse-channel==$PACKAGE_VERSION"
+        else
+          python -m pip install --disable-pip-version-check synapse-channel
+        fi
+
+    - name: Run synapse policy-check
+      id: check
+      shell: bash
+      env:
+        CHECK_TASK: ${{ inputs.task }}
+        CHECK_POLICY: ${{ inputs.policy }}
+        CHECK_RECEIPT: ${{ inputs.receipt-json }}
+        CHECK_ENFORCE: ${{ inputs.enforce }}
+        CHECK_MERKLE_DB: ${{ inputs.merkle-db }}
+        CHECK_TRUSTED_KEYS: ${{ inputs.trusted-signing-keys }}
+      run: |
+        args=(policy-check "$CHECK_TASK" --policy "$CHECK_POLICY" --receipt-json "$CHECK_RECEIPT" --json)
+        if [ "$CHECK_ENFORCE" = "true" ]; then
+          args+=(--enforce)
+        fi
+        if [ -n "$CHECK_MERKLE_DB" ]; then
+          args+=(--merkle-db "$CHECK_MERKLE_DB")
+        fi
+        while IFS= read -r key; do
+          [ -n "$key" ] && args+=(--trusted-signing-key "$key")
+        done <<< "$CHECK_TRUSTED_KEYS"
+        set +e
+        report="$(synapse "${args[@]}")"
+        status=$?
+        set -e
+        printf '%s\n' "$report"
+        {
+          echo "report<<SYNAPSE_POLICY_REPORT"
+          printf '%s\n' "$report"
+          echo "SYNAPSE_POLICY_REPORT"
+        } >> "$GITHUB_OUTPUT"
+        exit "$status"

@@ -36,7 +36,7 @@ from synapse_channel.core.accounting import (
 from synapse_channel.waiter_identity import waiter_owner
 
 
-def _load_pricing(path: str | None) -> dict[str, ModelPrice] | None:
+def load_pricing_table(path: str | None) -> dict[str, ModelPrice] | None:
     """Load a per-model pricing table from a JSON file.
 
     Parameters
@@ -119,7 +119,7 @@ def _as_float(value: object, *, context: str) -> float:
 def _cmd_report(args: argparse.Namespace) -> int:
     """Run one accounting report and print it."""
     try:
-        pricing = _load_pricing(args.pricing)
+        pricing = load_pricing_table(args.pricing)
         budgets = _load_budgets(args.budget)
         report = run_accounting_report(args.db, pricing=pricing, budgets=budgets)
     except ValueError as exc:

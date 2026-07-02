@@ -28,6 +28,7 @@ or an agent can act on with its reasoning attached.
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -175,6 +176,36 @@ def run_yield_advice(
     finally:
         store.close()
     return advise_yields(build_causal_graph(events))
+
+
+def advice_involving(
+    recommendations: list[YieldAdvice], task_ids: Collection[str]
+) -> list[YieldAdvice]:
+    """Return the advice whose pairs involve any of the given tasks.
+
+    A pair is kept when either contender's task is in ``task_ids`` — an
+    operator scoping contention to one workflow cares whenever one of its
+    tasks is party to a collision, whether that task keeps or yields.
+
+    Parameters
+    ----------
+    recommendations : list[YieldAdvice]
+        Advice for every overlapping live-claim pair, as
+        :func:`advise_yields` returns it.
+    task_ids : collections.abc.Collection[str]
+        Task ids to scope to; an empty collection keeps nothing.
+
+    Returns
+    -------
+    list[YieldAdvice]
+        The scoped advice, in the original order.
+    """
+    wanted = set(task_ids)
+    return [
+        advice
+        for advice in recommendations
+        if advice.holder.task_id in wanted or advice.yielder.task_id in wanted
+    ]
 
 
 def advice_to_json(recommendations: list[YieldAdvice]) -> list[dict[str, object]]:
