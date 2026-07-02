@@ -162,10 +162,18 @@ async def test_blank_key_id_is_local() -> None:
     assert disposition is FrameDisposition.LOCAL
 
 
-async def test_no_live_certificate_is_local() -> None:
-    # a plaintext connection presents no certificate -> cannot be cross-domain
+async def test_no_live_certificate_denies_a_peered_key() -> None:
+    # a plaintext connection presents no certificate; a peered key claims
+    # cross-domain authority only a live pin can bind, so the frame is denied
     disposition = await _hub(cert=None)._authorise_federation(
         _REMOTE, MessageType.CLAIM, _claim(), _Recorder()
+    )
+    assert disposition is FrameDisposition.DENY
+
+
+async def test_no_live_certificate_keeps_a_local_key_local() -> None:
+    disposition = await _hub(cert=None)._authorise_federation(
+        _REMOTE, MessageType.CLAIM, _claim(key_id=_LOCAL_KEY_ID), _Recorder()
     )
     assert disposition is FrameDisposition.LOCAL
 
@@ -178,10 +186,11 @@ async def test_unpeered_key_is_local() -> None:
     assert disposition is FrameDisposition.LOCAL
 
 
-async def test_cert_read_that_raises_degrades_to_local() -> None:
+async def test_cert_read_that_raises_denies_a_peered_key() -> None:
     # Reading the live certificate can raise on a socket that closed or never
     # finished its handshake, and an injected cert source is arbitrary code. Such a
-    # failure must degrade the frame to the local path, never crash the frame loop.
+    # failure must never crash the frame loop — and must never let a frame whose
+    # key claims a peered domain downgrade to local processing either.
     def _raising_cert_source(_websocket: Any) -> bytes | None:
         raise OSError("socket closed during certificate read")
 
@@ -193,7 +202,7 @@ async def test_cert_read_that_raises_degrades_to_local() -> None:
         federation_cert_source=_raising_cert_source,
     )
     disposition = await hub._authorise_federation(_REMOTE, MessageType.CLAIM, _claim(), _Recorder())
-    assert disposition is FrameDisposition.LOCAL
+    assert disposition is FrameDisposition.DENY
 
 
 async def test_partial_credential_match_warns_the_operator(

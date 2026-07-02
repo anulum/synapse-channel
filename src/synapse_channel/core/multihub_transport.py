@@ -48,7 +48,7 @@ from synapse_channel.core.multihub_wire import (
     encode_log_request,
 )
 from synapse_channel.core.persistence import StoredEvent
-from synapse_channel.core.protocol import MessageType, build_envelope
+from synapse_channel.core.protocol import MessageType, build_envelope, loads_bounded
 
 DEFAULT_FETCH_TIMEOUT = 10.0
 """Seconds a single fetch waits for the snapshot before failing closed."""
@@ -202,9 +202,15 @@ async def _await_snapshot(socket: _Socket) -> dict[str, Any]:
 
 
 def _parse_frame(raw: str | bytes) -> dict[str, Any]:
-    """Decode one wire frame to a JSON object, or raise :class:`MultiHubFetchError`."""
+    """Decode one wire frame to a JSON object, or raise :class:`MultiHubFetchError`.
+
+    The peer hub is a trust boundary, so the reply is decoded with the same
+    depth-bounded loader the hub applies to its own inbound frames — a deeply
+    nested reply raises :class:`json.JSONDecodeError` and fails the poll closed
+    (cursor unadvanced) instead of recursing.
+    """
     text = raw.decode("utf-8") if isinstance(raw, bytes) else raw
-    decoded = json.loads(text)
+    decoded = loads_bounded(text)
     if not isinstance(decoded, dict):
         msg = "peer hub sent a frame that is not a JSON object"
         raise MultiHubFetchError(msg)

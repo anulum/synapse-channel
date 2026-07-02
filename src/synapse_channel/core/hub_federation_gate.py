@@ -36,6 +36,7 @@ from synapse_channel.core.federation import (
     diagnose_unresolved_domain,
     resolve_domain,
     scope_authorises,
+    signing_key_is_peered,
 )
 from synapse_channel.core.message_auth import DEFAULT_SIGNED_MESSAGE_TYPES
 from synapse_channel.core.multihub_serving import PeerCertificateSource
@@ -118,9 +119,12 @@ class HubFederationGate:
         certificate pin read off the socket resolve, together, to a single peered domain
         (:func:`~synapse_channel.core.federation.resolve_domain`); the key and pin must
         belong to the same peer, and neither is ever taken from a self-declared field. A
-        frame that resolves to no peered domain — unsigned, HMAC-authenticated, presented on
-        a plaintext socket, or signed with a local key — is :attr:`FrameDisposition.LOCAL`
-        and takes the ordinary path unchanged.
+        frame that resolves to no peered domain — unsigned, HMAC-authenticated, or signed
+        with a local key — is :attr:`FrameDisposition.LOCAL` and takes the ordinary path
+        unchanged. A frame signed with a **peered** key whose connection presents no
+        pinnable certificate (plaintext socket, or a certificate read that fails) is
+        :attr:`FrameDisposition.DENY`: it claims cross-domain authority that only a live
+        pin can bind, so it never downgrades to local processing.
 
         A cross-domain frame is authorised deny-closed by composing the peering policy
         (peered, active, namespace granted, key and pin accepted), the live mutual-TLS pin,
@@ -144,17 +148,20 @@ class HubFederationGate:
         except Exception:
             # A certificate read can raise on a socket that has closed or never
             # finished its TLS handshake, and an injected source is arbitrary code.
-            # A cross-domain frame whose peer we cannot pin degrades to the local
-            # path — exactly as an absent certificate does — rather than crashing
-            # the frame handler for that connection.
+            # A frame signed with a purely local key degrades to the local path
+            # rather than crashing the frame handler; a frame whose key a peering
+            # enrols claims cross-domain authority we cannot pin, so it is denied
+            # outright — an unpinnable peer is suspect, never local.
             logger.warning(
-                "Federation certificate read failed for %s (%s); handling frame as local",
+                "Federation certificate read failed for %s (%s)",
                 sender,
                 msg_type,
             )
-            return FrameDisposition.LOCAL
+            return await self._refuse_unpinned(sender, msg_type, key_id, websocket)
         if der is None:
-            return FrameDisposition.LOCAL
+            # A plaintext connection presents no certificate: fine for a locally
+            # signed frame, refusal for one claiming a peered key.
+            return await self._refuse_unpinned(sender, msg_type, key_id, websocket)
         pin = certificate_sha256_pin_from_der(der)
         domain_id = resolve_domain(self._bundle, key_id=key_id, certificate_pin=pin)
         if domain_id is None:
@@ -196,6 +203,38 @@ class HubFederationGate:
                 msg_type=MessageType.ERROR,
                 target=sender,
                 federation_domain=domain_id,
+                federation_reason=reason,
+            ),
+        )
+        return FrameDisposition.DENY
+
+    async def _refuse_unpinned(
+        self, sender: str, msg_type: str, key_id: str, websocket: Any
+    ) -> FrameDisposition:
+        """Dispose of a signed frame whose connection presented no pinnable certificate.
+
+        A frame signed with a key no peering enrols is an ordinary local frame and
+        stays :attr:`FrameDisposition.LOCAL`. A frame signed with a **peered** key
+        claims cross-domain authority, and cross-domain authority binds to the live
+        certificate pin — with no pin to check, the claim cannot be honoured and the
+        frame is denied rather than downgraded to local processing.
+        """
+        if self._bundle is None or not signing_key_is_peered(self._bundle, key_id):
+            return FrameDisposition.LOCAL
+        reason = "peer_certificate_unavailable"
+        logger.warning(
+            "Federation denied %s for %s: key %s is peered but the connection "
+            "presented no pinnable certificate",
+            msg_type,
+            sender,
+            key_id,
+        )
+        await self._send_json(
+            websocket,
+            self._system(
+                f"federation denied: {reason}",
+                msg_type=MessageType.ERROR,
+                target=sender,
                 federation_reason=reason,
             ),
         )

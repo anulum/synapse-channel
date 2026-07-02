@@ -143,20 +143,29 @@ async def test_frame_with_a_blank_key_id_is_local() -> None:
     assert disposition is FrameDisposition.LOCAL
 
 
-async def test_connection_without_a_certificate_is_local() -> None:
-    gate = _gate(_Sink(), bundle=_bundle(), cert=None)
+async def test_peered_key_without_a_certificate_is_denied() -> None:
+    # a peered key claims cross-domain authority only a live pin can bind;
+    # a plaintext connection cannot bind it, so the frame never runs as local
+    sink = _Sink()
+    gate = _gate(sink, bundle=_bundle(), cert=None)
     disposition = await gate.authorise(_REMOTE, MessageType.CLAIM, _claim(), object())
+    assert disposition is FrameDisposition.DENY
+    assert sink.sent[0]["federation_reason"] == "peer_certificate_unavailable"
+
+
+async def test_local_key_without_a_certificate_stays_local() -> None:
+    gate = _gate(_Sink(), bundle=_bundle(), cert=None)
+    disposition = await gate.authorise(
+        _REMOTE, MessageType.CLAIM, _claim(key_id=_LOCAL_KEY_ID), object()
+    )
     assert disposition is FrameDisposition.LOCAL
 
 
-async def test_certificate_read_failure_degrades_to_local(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def _raising_gate(sink: _Sink) -> HubFederationGate:
     def _raising(_websocket: Any) -> bytes | None:
         raise OSError("socket closed during certificate read")
 
-    sink = _Sink()
-    gate = HubFederationGate(
+    return HubFederationGate(
         _bundle(),
         cert_source=_raising,
         require_per_message_auth=True,
@@ -164,10 +173,33 @@ async def test_certificate_read_failure_degrades_to_local(
         system=_system,
         send_json=sink.send_json,
     )
+
+
+async def test_certificate_read_failure_denies_a_peered_key(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # an attacker who can break the certificate read must not be able to
+    # downgrade a cross-domain frame to local processing
+    sink = _Sink()
+    gate = _raising_gate(sink)
     with caplog.at_level("WARNING"):
         disposition = await gate.authorise(_REMOTE, MessageType.CLAIM, _claim(), object())
-    assert disposition is FrameDisposition.LOCAL
+    assert disposition is FrameDisposition.DENY
     assert "certificate read failed" in caplog.text
+    assert sink.sent[0]["federation_reason"] == "peer_certificate_unavailable"
+
+
+async def test_certificate_read_failure_keeps_a_local_key_local(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    sink = _Sink()
+    gate = _raising_gate(sink)
+    with caplog.at_level("WARNING"):
+        disposition = await gate.authorise(
+            _REMOTE, MessageType.CLAIM, _claim(key_id=_LOCAL_KEY_ID), object()
+        )
+    assert disposition is FrameDisposition.LOCAL
+    assert sink.sent == []
 
 
 async def test_partial_credential_match_warns_and_stays_local(
