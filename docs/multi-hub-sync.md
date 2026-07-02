@@ -157,6 +157,19 @@ a secured peer hub, `--limit` to bound the batch, and `--json` for the machine-r
 the federation/mTLS policy (see [Boundaries](#boundaries)); the library API
 `peer_authoriser` composes it and the fetcher fails closed for an ungranted peer.
 
+### 5. Trace causality across the hubs
+
+With both logs at hand, `synapse causality causes ./east.db west:9 --peer west=./west.db`
+answers the causality queries over the *merged* logs: events keep their global identity
+`hub:seq`, the recorded relations (lifecycle, dependency, contention) are derived over the
+deterministic merged order, and an edge whose endpoints two different hubs authored is
+tagged `federation` with the underlying relation as its basis — so a release on one hub
+that satisfied a `depends_on` claimed on another renders as `federation:dependency`. The
+same honesty boundary as the fold applies: cross-hub precedence is ordered by event
+timestamps across the hubs' clocks (there is no shared sequence), so a federation edge is
+clock-ordered evidence, and the query observes and grants nothing. See
+[the CLI guide](cli.md) for a worked cross-hub example.
+
 ### Where this stops
 
 The cross-host event-log pull above now ships, so a hub can *observe* another over a real

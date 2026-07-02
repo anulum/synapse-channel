@@ -52,7 +52,7 @@ everything, since they need the whole command table.
 | `synapse postmortem` | Build a replayable task postmortem from a hub SQLite event store. |
 | `synapse debug` | Fork a task's reconstructed state at a sequence point (read-only what-if). |
 | `synapse reproduce` | Fingerprint a task's authoritative history into a deterministic digest. |
-| `synapse causality` | Trace coordination causes, effects, or counterfactuals over the event log; `contention` weighs overlapping live claims and advises who yields. |
+| `synapse causality` | Trace coordination causes, effects, or counterfactuals over the event log — federated across hubs with `--peer`; `contention` weighs overlapping live claims and advises who yields. |
 | `synapse merkle` | Commit the event log to a Merkle root, prove event inclusion, and generate the receipt-signing keypair (`keygen`). |
 | `synapse reliability` | Build evidence-only reliability memory from a hub SQLite event store. |
 | `synapse trust-graph` | Query the evidence trust graph (receipts, stale claims, conflicts) as text, JSON, or Graphviz DOT. |
@@ -658,6 +658,7 @@ synapse causality causes ./synapse.db 142
 synapse causality effects ./synapse.db 118 --json
 synapse causality counterfactual ./synapse.db 96
 synapse causality contention ./synapse.db      # who should yield on overlapping live claims
+synapse causality causes ./hub.db peer:96 --peer peer=./peer-hub.db   # federated, HUB:SEQ refs
 synapse merkle root ./synapse.db
 synapse merkle prove ./synapse.db 142 --json > proof.json
 synapse merkle verify proof.json --expect 9f2c…
@@ -843,6 +844,53 @@ Had both tasks gated the same count, the later claim (Bob's, higher sequence)
 would still be the one advised to yield — first-come precedence breaks ties.
 Acting on the advice stays explicit: Bob releases his claim (or narrows its
 paths so the scopes no longer intersect) and re-claims once Alice releases.
+
+With `--peer HUB=PATH` (repeatable) the sequence queries trace causality
+*across federated hubs*: the named hubs' logs merge in the deterministic
+multi-hub order (timestamp, then hub id, then sequence — the same order the
+multi-hub read side folds), every event keeps its global identity `hub:seq`,
+and the three recorded relations are derived over that merged order. An edge
+whose endpoints two different hubs authored is tagged `federation`, with the
+recorded relation it derives from kept as its basis — a dependency completed
+on one hub and claimed on another renders as `federation:dependency`. Events
+are addressed as `HUB:SEQ`; a plain `SEQ` means the primary DB's hub, whose id
+defaults to the DB file name and can be set with `--hub-id`. Honest scope:
+within one hub, precedence is the hub's own monotonic sequence —
+authoritative; across hubs there is no shared sequence, so the merged order
+falls back to event timestamps, and a federation edge is clock-ordered
+evidence, only as good as the hubs' clock agreement. Like the multi-hub fold,
+the query observes and grants nothing.
+
+A worked cross-hub example: `eu-hub` completes and releases
+`schema-migration`; `us-hub` declares `api-rollout` depending on it and
+claims it. The claim on `us-hub` traces its cause across the hub boundary to
+the release on `eu-hub`:
+
+```console
+$ synapse causality causes ./eu-hub.db us-hub:2 --peer us-hub=./us-hub.db
+# Federated causality (causes): us-hub:2
+
+- Hubs: eu-hub, us-hub
+- Event: us-hub:2 kind=claim task=api-rollout owner=us/codex-2b40 status=claimed
+- Direct causes: 2
+- Transitive: 5
+
+## Direct causes
+- [federation:dependency] eu-hub:4 kind=release — task api-rollout depends on schema-migration
+- [lifecycle] us-hub:1 kind=ledger_task — ledger_task → claim
+
+## Transitive
+- eu-hub:1 kind=ledger_task task=schema-migration
+- eu-hub:2 kind=claim task=schema-migration owner=eu/claude-11ab status=claimed
+- eu-hub:3 kind=task_update task=schema-migration owner=eu/claude-11ab status=done
+- eu-hub:4 kind=release task=schema-migration
+- us-hub:1 kind=ledger_task task=api-rollout
+```
+
+`contention` stays single-hub (`--peer` is refused there): yield advice
+weighs one hub's *live* claims, and claims are never granted across hubs.
+Exit codes are unchanged — `2` additionally covers a malformed `--peer`
+spec, a duplicate hub id, or a reference naming an unmerged hub.
 
 `synapse merkle root ./synapse.db` commits the durable event log to a single
 Merkle root: a 32-byte fingerprint of every event, so two operators — or two

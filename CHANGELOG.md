@@ -13,6 +13,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse causality` traces coordination causality across federated hubs:
+  `--peer HUB=PATH` (repeatable) merges the named hubs' event logs in the
+  deterministic multi-hub order, events are addressed as `HUB:SEQ`
+  (`--hub-id` names the primary log), and an edge whose endpoints two
+  different hubs authored is tagged `federation` with the recorded
+  relation it derives from as its basis. Cross-hub precedence is
+  clock-ordered evidence — hubs share no sequence — and the queries stay
+  read-only and observe-only, like the multi-hub fold. `contention`
+  remains single-hub and refuses `--peer`.
+
 ## [0.90.0] - 2026-07-02
 
 ### Added
