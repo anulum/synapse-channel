@@ -14,6 +14,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `synapse causality health` flags three lifecycle-anomaly shapes in the
+  coordination-causality graph: orphaned claims (a claim is its task's
+  last recorded event), dangling dependencies (a declared `depends_on`
+  whose task never completed — the same completion predicate the
+  dependency-edge derivation uses), and stale claims (claimed, never
+  released, silent longer than `--stale-after` seconds, default 3600).
+  Ages are measured against the log's own final timestamp, never the
+  wall clock, so a report is deterministic and replayable; exit `1`
+  signals at least one anomaly, and every signal is an operator hint
+  derived from recorded events, not a verdict.
 - Federated causality queries gain `--dot`: the answer renders as a
   Graphviz digraph with one cluster per hub, so an edge inside a cluster
   is same-hub causality and an edge crossing cluster boundaries is a
