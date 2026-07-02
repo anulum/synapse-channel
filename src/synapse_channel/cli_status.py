@@ -21,8 +21,9 @@ import argparse
 import asyncio
 import contextlib
 import json
+import sys
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TextIO
 
 from synapse_channel.cli_query_transport import AgentFactory
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
@@ -195,8 +196,108 @@ def status_to_json(status: HubStatus) -> dict[str, object]:
     }
 
 
+async def watch_status(
+    *,
+    uri: str,
+    name: str = "USER",
+    token: str | None = None,
+    ready_timeout: float = 5.0,
+    interval: float = 2.0,
+    count: int = 0,
+    as_json: bool = False,
+    plain: bool = False,
+    agent_factory: AgentFactory = SynapseAgent,
+    out: TextIO | None = None,
+) -> int:
+    """Refresh the status every ``interval`` seconds — a watch-style dashboard.
+
+    Each refresh opens its own probe connection (exactly one :func:`query_status`
+    call), so a hub restart between refreshes shows up as an honest offline line
+    rather than a stale connection error. On a TTY the line rewrites in place;
+    piped output appends one line per refresh so a consumer can stream it, and
+    ``--json`` emits one JSON object per line (NDJSON) either way. ``count``
+    bounds the refreshes (``0`` runs until interrupted). The exit code reports
+    the LAST observed state: ``0`` reachable, ``1`` down.
+
+    Parameters
+    ----------
+    uri, name, token, ready_timeout
+        Passed through to :func:`query_status` unchanged.
+    interval : float, optional
+        Seconds between refreshes.
+    count : int, optional
+        Refreshes to run; ``0`` means until interrupted.
+    as_json : bool, optional
+        Emit NDJSON instead of the human line.
+    plain : bool, optional
+        ASCII-only rendering for the human line.
+    agent_factory : AgentFactory, optional
+        Factory for the probe agent; injectable for testing.
+    out : typing.TextIO or None, optional
+        Output stream; defaults to ``sys.stdout``.
+
+    Returns
+    -------
+    int
+        ``0`` when the last refresh saw a reachable hub, ``1`` otherwise.
+    """
+    stream = sys.stdout if out is None else out
+    in_place = stream.isatty() and not as_json
+    status = HubStatus(reachable=False)
+    refreshes = 0
+    try:
+        while True:
+            status = await query_status(
+                uri=uri,
+                name=name,
+                agent_factory=agent_factory,
+                token=token,
+                ready_timeout=ready_timeout,
+            )
+            if as_json:
+                stream.write(json.dumps(status_to_json(status), sort_keys=True) + "\n")
+            elif in_place:
+                stream.write("\r\x1b[2K" + render_status_line(status, plain=plain))
+            else:
+                stream.write(render_status_line(status, plain=plain) + "\n")
+            stream.flush()
+            refreshes += 1
+            if count and refreshes >= count:
+                break
+            await asyncio.sleep(interval)
+    finally:
+        if in_place:
+            stream.write("\n")
+            stream.flush()
+    return 0 if status.reachable else 1
+
+
 def _cmd_status(args: argparse.Namespace) -> int:
-    """Dispatch ``status``: print the line, exit ``0`` if reachable else ``1``."""
+    """Dispatch ``status``: print the line, exit ``0`` if reachable else ``1``.
+
+    With ``--watch`` the line refreshes every ``--interval`` seconds until
+    ``--count`` refreshes ran or the operator interrupts; Ctrl-C is the normal
+    way to stop a watch, so it exits ``0`` rather than tracing.
+    """
+    if args.watch:
+        if args.interval <= 0:
+            print("--interval must be positive", file=sys.stderr)
+            return 2
+        try:
+            return asyncio.run(
+                watch_status(
+                    uri=args.uri,
+                    name=args.name,
+                    token=args.token,
+                    ready_timeout=args.ready_timeout,
+                    interval=args.interval,
+                    count=args.count,
+                    as_json=args.json,
+                    plain=args.plain,
+                )
+            )
+        except KeyboardInterrupt:
+            return 0
     status = asyncio.run(
         query_status(
             uri=args.uri,
@@ -233,5 +334,22 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--json",
         action="store_true",
         help="Emit the counts as JSON for monitoring scripts instead of the line.",
+    )
+    status.add_argument(
+        "--watch",
+        action="store_true",
+        help="Refresh the line every --interval seconds until interrupted (Ctrl-C).",
+    )
+    status.add_argument(
+        "--interval",
+        type=float,
+        default=2.0,
+        help="Seconds between --watch refreshes.",
+    )
+    status.add_argument(
+        "--count",
+        type=int,
+        default=0,
+        help="Stop after this many --watch refreshes (0 = until interrupted).",
     )
     status.set_defaults(func=_cmd_status)

@@ -142,11 +142,26 @@ async def test_query_status_reports_unreachable_hub() -> None:
 
 
 def _namespace(
-    *, uri: str, plain: bool = False, ready_timeout: float = 5.0, as_json: bool = False
+    *,
+    uri: str,
+    plain: bool = False,
+    ready_timeout: float = 5.0,
+    as_json: bool = False,
+    watch: bool = False,
+    interval: float = 0.01,
+    count: int = 0,
 ) -> argparse.Namespace:
     """Build the parsed-args namespace the status dispatcher expects."""
     return argparse.Namespace(
-        uri=uri, name="USER", plain=plain, token=None, ready_timeout=ready_timeout, json=as_json
+        uri=uri,
+        name="USER",
+        plain=plain,
+        token=None,
+        ready_timeout=ready_timeout,
+        json=as_json,
+        watch=watch,
+        interval=interval,
+        count=count,
     )
 
 
@@ -300,3 +315,137 @@ async def test_cmd_status_json_carries_the_live_counts(
 def test_parser_accepts_status_json() -> None:
     args = cli.build_parser().parse_args(["status", "--json"])
     assert args.json is True
+
+
+# --- watch mode -----------------------------------------------------------------
+
+
+class _FakeTty:
+    """A text sink whose isatty answer is scripted, recording every write."""
+
+    def __init__(self, *, tty: bool) -> None:
+        self._tty = tty
+        self.chunks: list[str] = []
+
+    def isatty(self) -> bool:
+        return self._tty
+
+    def write(self, text: str) -> int:
+        self.chunks.append(text)
+        return len(text)
+
+    def flush(self) -> None:
+        return None
+
+
+def test_watch_offline_appends_lines_and_exits_one() -> None:
+    out = _FakeTty(tty=False)
+    code = asyncio.run(
+        cli_status.watch_status(
+            uri=f"ws://127.0.0.1:{_free_port()}",
+            ready_timeout=0.05,
+            interval=0.01,
+            count=2,
+            out=out,  # type: ignore[arg-type]
+        )
+    )
+    assert code == 1
+    text = "".join(out.chunks)
+    assert text.count("synapse ○ offline\n") == 2
+    assert "\r" not in text
+
+
+def test_watch_json_emits_ndjson() -> None:
+    out = _FakeTty(tty=False)
+    code = asyncio.run(
+        cli_status.watch_status(
+            uri=f"ws://127.0.0.1:{_free_port()}",
+            ready_timeout=0.05,
+            interval=0.01,
+            count=2,
+            as_json=True,
+            out=out,  # type: ignore[arg-type]
+        )
+    )
+    assert code == 1
+    lines = "".join(out.chunks).strip().splitlines()
+    assert len(lines) == 2
+    assert all(json.loads(line)["reachable"] is False for line in lines)
+
+
+def test_watch_tty_rewrites_in_place_and_restores_the_newline() -> None:
+    out = _FakeTty(tty=True)
+    asyncio.run(
+        cli_status.watch_status(
+            uri=f"ws://127.0.0.1:{_free_port()}",
+            ready_timeout=0.05,
+            interval=0.01,
+            count=2,
+            plain=True,
+            out=out,  # type: ignore[arg-type]
+        )
+    )
+    text = "".join(out.chunks)
+    assert text.count("\r\x1b[2K") == 2
+    assert text.endswith("\n")
+
+
+async def test_watch_reachable_hub_exits_zero() -> None:
+    out = _FakeTty(tty=False)
+    async with running_hub(SynapseHub()) as (_, uri):
+        online = await connect_agent("solo", uri)
+        try:
+            code = await asyncio.to_thread(
+                asyncio.run,
+                cli_status.watch_status(uri=uri, interval=0.01, count=1, out=out),  # type: ignore[arg-type]
+            )
+        finally:
+            await close_agents(online)
+    assert code == 0
+    assert "1 agent" in "".join(out.chunks)
+
+
+def test_cmd_status_watch_requires_a_positive_interval(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = cli_status._cmd_status(
+        _namespace(uri="ws://127.0.0.1:1", watch=True, interval=0.0)
+    )
+    assert code == 2
+    assert "--interval must be positive" in capsys.readouterr().err
+
+
+def test_cmd_status_watch_dispatches_and_bounds_refreshes(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = cli_status._cmd_status(
+        _namespace(
+            uri=f"ws://127.0.0.1:{_free_port()}",
+            ready_timeout=0.05,
+            watch=True,
+            count=2,
+        )
+    )
+    assert code == 1
+    assert capsys.readouterr().out.count("synapse ○ offline") == 2
+
+
+def test_cmd_status_watch_keyboard_interrupt_is_a_clean_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def interrupt(_coro: Any) -> int:
+        _coro.close()
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("synapse_channel.cli_status.asyncio.run", interrupt)
+    code = cli_status._cmd_status(_namespace(uri="ws://127.0.0.1:1", watch=True))
+    assert code == 0
+
+
+def test_parser_accepts_watch_flags() -> None:
+    args = cli.build_parser().parse_args(
+        ["status", "--watch", "--interval", "0.5", "--count", "3"]
+    )
+    assert args.watch is True
+    assert args.interval == 0.5
+    assert args.count == 3
