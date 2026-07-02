@@ -137,3 +137,69 @@ def test_merkle_committed_receipt_round_trips_through_policy_check(tmp_path: Pat
     assert checked.ok(), checked.output
     assert "merkle_commitment" in checked.stdout
     assert "still matches the recorded root" in checked.stdout
+
+
+def test_hub_signed_receipt_round_trips_through_policy_check(tmp_path: Path) -> None:
+    """The provenance loop: keygen, sign the commitment at release, verify offline.
+
+    ``merkle keygen`` creates the deployment's receipt-signing keypair;
+    ``verify-release --signing-key`` signs the commitment over a real hub log;
+    ``policy-check --trusted-signing-key`` verifies the attestation with only
+    the receipt and the ``.pub`` file — no event store access — and a foreign
+    key is refused as untrusted.
+    """
+    key_path = tmp_path / "hub-receipt.key"
+    keygen = run_cli("merkle", "keygen", str(key_path))
+    assert keygen.ok(), keygen.output
+    assert "key_id:" in keygen.stdout
+
+    with isolated_hub(tmp_path) as hub:
+        run_cli("task", "declare", "BUILD", "--title", "build step", uri=hub.uri)
+        receipt = tmp_path / "receipt.json"
+        built = run_cli(
+            "verify-release",
+            "BUILD",
+            "--name",
+            "USER",
+            "--run",
+            "true",
+            "--merkle-db",
+            str(hub.db_path),
+            "--signing-key",
+            str(key_path),
+            "--output",
+            str(receipt),
+        )
+        assert built.ok(), built.output
+        data = json.loads(receipt.read_text(encoding="utf-8"))
+        assert data["verification"]["merkle_signature"]["algorithm"] == "ed25519"
+
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps({"version": 1, "mode": "advisory", "rules": {}}), encoding="utf-8")
+    checked = run_cli(
+        "policy-check",
+        "BUILD",
+        "--policy",
+        str(policy),
+        "--receipt-json",
+        str(receipt),
+        "--trusted-signing-key",
+        f"{key_path}.pub",
+    )
+    assert checked.ok(), checked.output
+    assert "merkle_signature: hub key" in checked.stdout
+
+    foreign = tmp_path / "foreign.key"
+    assert run_cli("merkle", "keygen", str(foreign)).ok()
+    refused = run_cli(
+        "policy-check",
+        "BUILD",
+        "--policy",
+        str(policy),
+        "--receipt-json",
+        str(receipt),
+        "--trusted-signing-key",
+        f"{foreign}.pub",
+    )
+    assert refused.ok(), refused.output  # advisory mode reports without blocking
+    assert "untrusted key" in refused.stdout

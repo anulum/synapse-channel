@@ -29,6 +29,11 @@ from synapse_channel.core.policy_engine import (
     overall_status,
 )
 from synapse_channel.core.policy_rules import evaluate_policy
+from synapse_channel.core.receipt_signing import (
+    ReceiptSigningError,
+    check_receipt_merkle_signature,
+    load_receipt_verification_key,
+)
 from synapse_channel.core.release_verification import check_receipt_merkle_commitment
 
 _STATUS_GLYPH = {"pass": "✓", "warn": "!", "fail": "✗", "not_applicable": "·"}
@@ -90,6 +95,44 @@ def _merkle_decision(receipt: dict[str, Any], db_path: str, subject: str) -> Pol
     )
 
 
+def _signature_decision(
+    receipt: dict[str, Any], key_paths: list[str], subject: str
+) -> PolicyDecision:
+    """Verify the receipt's commitment signature as a policy decision.
+
+    Raises
+    ------
+    ReceiptSigningError
+        When a trusted-key file cannot be loaded — a misconfigured trust anchor
+        is a configuration error, never a silently-empty trust set.
+    """
+    trusted: dict[str, bytes] = {}
+    for key_path in key_paths:
+        key = load_receipt_verification_key(key_path)
+        trusted[key.key_id] = key.public_key
+    check = check_receipt_merkle_signature(receipt, trusted_keys=trusted)
+    next_action = ""
+    if check.status == "fail":
+        next_action = (
+            "do not trust this receipt's provenance; confirm the signing hub's "
+            "verification key (.pub) and re-create the receipt with "
+            "`synapse verify-release --merkle-db --signing-key`"
+        )
+    elif check.status == "not_applicable":
+        next_action = (
+            "sign receipts with `synapse verify-release --merkle-db --signing-key` "
+            "so verifiers can check which hub attested the commitment"
+        )
+    return PolicyDecision(
+        rule="merkle_signature",
+        status=check.status,
+        subject=subject,
+        reason=check.reason,
+        evidence=(f"key_id: {check.key_id}",) if check.key_id else (),
+        next_action=next_action,
+    )
+
+
 def _cmd_policy_check(args: argparse.Namespace) -> int:
     """Run ``synapse policy-check`` and return its exit code."""
     try:
@@ -103,6 +146,12 @@ def _cmd_policy_check(args: argparse.Namespace) -> int:
         try:
             decisions.append(_merkle_decision(receipt, args.merkle_db, args.task))
         except ValueError as exc:
+            print(f"policy-check error: {exc}")
+            return 2
+    if args.trusted_signing_keys:
+        try:
+            decisions.append(_signature_decision(receipt, args.trusted_signing_keys, args.task))
+        except ReceiptSigningError as exc:
             print(f"policy-check error: {exc}")
             return 2
     blocked = bool(args.enforce) and gate_blocks(decisions, config)
@@ -148,5 +197,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Hub event store to recompute the receipt's coordination-log commitment "
         "against (written by `synapse verify-release --merkle-db`); adds a "
         "merkle_commitment decision that fails when the committed log prefix changed.",
+    )
+    parser.add_argument(
+        "--trusted-signing-key",
+        dest="trusted_signing_keys",
+        action="append",
+        default=[],
+        metavar="FILE",
+        help="Trusted hub verification key (.pub from `synapse merkle keygen`); adds a "
+        "merkle_signature decision that fails unless a trusted key's signature "
+        "verifies over the receipt's commitment. Repeat to trust several hubs.",
     )
     parser.set_defaults(func=_cmd_policy_check)

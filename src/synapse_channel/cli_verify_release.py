@@ -17,7 +17,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-from synapse_channel.core.merkle import MerkleRoot, run_root
+from synapse_channel.core.merkle import MerkleRoot, root_to_json, run_root
+from synapse_channel.core.receipt_signing import (
+    ReceiptSigningError,
+    load_receipt_signing_key,
+    sign_merkle_commitment,
+)
 from synapse_channel.core.release_verification import (
     build_verified_release_receipt,
     collect_git_state,
@@ -45,6 +50,12 @@ def _write_receipt_file(output: Path, payload: str) -> None:
 
 def _cmd_verify_release(args: argparse.Namespace) -> int:
     """Run declared verification commands and write a receipt JSON document."""
+    if args.signing_key and not args.merkle_db:
+        print(
+            "verify-release: --signing-key needs --merkle-db; there is no commitment to sign",
+            file=sys.stderr,
+        )
+        return 2
     commands = [shlex.split(command) for command in args.run]
     git_state = collect_git_state(Path.cwd())
     merkle: MerkleRoot | None = None
@@ -54,6 +65,14 @@ def _cmd_verify_release(args: argparse.Namespace) -> int:
         except ValueError as exc:
             print(f"verify-release: {exc}", file=sys.stderr)
             return 2
+    merkle_signature = None
+    if args.signing_key and merkle is not None:
+        try:
+            signing_key = load_receipt_signing_key(args.signing_key)
+        except ReceiptSigningError as exc:
+            print(f"verify-release: {exc}", file=sys.stderr)
+            return 2
+        merkle_signature = sign_merkle_commitment(root_to_json(merkle), key=signing_key)
     receipt = build_verified_release_receipt(
         task_id=args.task_id,
         owner=args.name,
@@ -65,6 +84,7 @@ def _cmd_verify_release(args: argparse.Namespace) -> int:
         signature=args.signature,
         cwd=Path.cwd(),
         merkle=merkle,
+        merkle_signature=merkle_signature,
     )
     payload = json.dumps(receipt, sort_keys=True)
     if args.output:
@@ -111,5 +131,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Hub event store whose Merkle root is committed into the receipt, "
         "binding the release to the exact coordination history behind it; "
         "`synapse policy-check --merkle-db` re-verifies it later.",
+    )
+    parser.add_argument(
+        "--signing-key",
+        default="",
+        metavar="FILE",
+        help="Hub receipt-signing key (from `synapse merkle keygen`) that signs the "
+        "Merkle commitment, so a third party holding only the receipt and the "
+        "deployment's public key can verify which hub attested this log state; "
+        "needs --merkle-db.",
     )
     parser.set_defaults(func=_cmd_verify_release)

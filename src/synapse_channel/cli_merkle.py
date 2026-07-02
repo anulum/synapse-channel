@@ -10,7 +10,10 @@
 ``merkle root`` commits the durable log to one fingerprint (optionally gated
 against an expected root); ``merkle prove`` emits an ``O(log n)`` inclusion proof
 for one event; ``merkle verify`` checks such a proof offline, with no event store
-— the light-client verification a follower runs against a trusted root.
+— the light-client verification a follower runs against a trusted root; ``merkle
+keygen`` creates the hub deployment's receipt-signing keypair, whose private half
+signs receipt commitments (``verify-release --signing-key``) and whose public
+half verifies them (``policy-check --trusted-signing-key``).
 """
 
 from __future__ import annotations
@@ -30,6 +33,10 @@ from synapse_channel.core.merkle import (
     run_root,
     verify_inclusion,
     verify_root,
+)
+from synapse_channel.core.receipt_signing import (
+    ReceiptSigningError,
+    generate_receipt_signing_key,
 )
 
 
@@ -124,6 +131,19 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_keygen(args: argparse.Namespace) -> int:
+    """Generate the hub deployment's receipt-signing keypair."""
+    try:
+        generated = generate_receipt_signing_key(args.path)
+    except ReceiptSigningError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(f"receipt-signing key: {args.path} (0600, keep private)")
+    print(f"verification key:    {args.path}.pub (distribute to verifiers)")
+    print(f"key_id:              {generated.key_id}")
+    return 0
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``merkle`` subcommand and its actions."""
     merkle = subparsers.add_parser(
@@ -177,3 +197,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Emit a machine-readable verdict to stdout instead of a stderr line.",
     )
     verify.set_defaults(func=_cmd_verify)
+
+    keygen = actions.add_parser(
+        "keygen",
+        help="Generate the receipt-signing keypair that attests receipt commitments.",
+    )
+    keygen.add_argument(
+        "path",
+        help="Private-key file to create (0600); the public half goes to PATH.pub.",
+    )
+    keygen.set_defaults(func=_cmd_keygen)

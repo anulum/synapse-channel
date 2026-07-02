@@ -275,3 +275,41 @@ def test_commitment_check_fails_on_a_malformed_commitment(tmp_path: Path) -> Non
     check = check_receipt_merkle_commitment(malformed, db)
     assert check.status == "fail"
     assert "malformed" in check.reason
+
+
+def test_receipt_embeds_the_commitment_signature(tmp_path: Path) -> None:
+    """A signature envelope rides with the commitment it attests."""
+    db = tmp_path / "hub.db"
+    _seeded_store(db)
+    envelope = {"version": 1, "algorithm": "ed25519", "key_id": "abc123", "value": "c2ln"}
+    receipt = build_verified_release_receipt(
+        task_id="T1",
+        owner="alice",
+        commands=[],
+        artifacts=[],
+        changed_files=[],
+        git_head="",
+        git_tree="",
+        merkle=run_root(db),
+        merkle_signature=envelope,
+    )
+    verification = receipt["verification"]
+    assert verification["merkle_signature"] == envelope
+    assert any("merkle signature: ed25519 key_id=abc123" in line for line in receipt["evidence"])
+
+
+def test_a_signature_without_a_commitment_is_never_recorded(tmp_path: Path) -> None:
+    """No commitment means nothing to attest; the envelope is dropped, not stored."""
+    receipt = build_verified_release_receipt(
+        task_id="T1",
+        owner="alice",
+        commands=[],
+        artifacts=[],
+        changed_files=[],
+        git_head="",
+        git_tree="",
+        merkle=None,
+        merkle_signature={"version": 1, "algorithm": "ed25519", "key_id": "x", "value": "c2ln"},
+    )
+    assert "merkle_signature" not in receipt["verification"]
+    assert not any("merkle signature" in line for line in receipt["evidence"])

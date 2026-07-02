@@ -28,6 +28,17 @@ All notable changes to this project are documented here.
   symposium from the panel shape), and in a symposium ends with the moderator's
   synthesis. Both print each turn as it is produced — or the full typed transcript
   with `--json` — and honour a cumulative `--budget-usd` ceiling.
+- Release receipts' coordination-log commitments can now carry hub-key provenance:
+  `synapse merkle keygen` generates the hub deployment's Ed25519 receipt-signing
+  keypair (owner-only private key, distributable `.pub` whose `key_id` is derived
+  from the key material), `synapse verify-release --signing-key` signs the Merkle
+  commitment into `verification.merkle_signature`, and `synapse policy-check
+  --trusted-signing-key` adds a `merkle_signature` decision so a verifier holding
+  only the receipt and the `.pub` file learns which hub attested that exact log
+  state — no access to the live log required. Verification is deny-by-default: a
+  tampered root, an untrusted or transplanted key, a malformed envelope, and a
+  signature with no commitment to cover all fail; only an unsigned receipt reads
+  `not_applicable`.
 
 ## [0.87.0] - 2026-07-02
 
