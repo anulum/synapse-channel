@@ -28,6 +28,7 @@ from synapse_channel.core.handlers.channels import (
     handle_channel_leave,
     handle_channel_list_request,
 )
+from synapse_channel.core.handlers.federation_offer import handle_federation_offer_request
 from synapse_channel.core.handlers.leasing import (
     handle_checkpoint,
     handle_claim,
@@ -90,6 +91,7 @@ DISPATCH: dict[str, Handler] = {
     MessageType.CHANNEL_HISTORY_REQUEST: handle_channel_history_request,
     MessageType.MULTIHUB_LOG_REQUEST: handle_multihub_log_request,
     MessageType.MULTIHUB_CLAIM_REQUEST: handle_multihub_claim_request,
+    MessageType.FEDERATION_OFFER_REQUEST: handle_federation_offer_request,
     **{alias: handle_resource for alias in RESOURCE_TYPE_ALIASES},
 }
 

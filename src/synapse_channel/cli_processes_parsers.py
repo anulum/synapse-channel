@@ -296,6 +296,16 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "which binds its authority.",
     )
     hub.add_argument(
+        "--federation-offer",
+        default="",
+        metavar="FILE",
+        help="Serve this domain's own federation-bundle material (a peer-bundle JSON, "
+        "authored with `synapse federation offer`) to a peer operator's "
+        "`synapse federation fetch`. Off by default; the fetched material stays "
+        "untrusted until the fetching operator compares fingerprints out-of-band "
+        "and imports it explicitly.",
+    )
+    hub.add_argument(
         "--federation-observe-only",
         action="store_true",
         help="Declare the federation store is loaded for diagnostics and deny-closed "
