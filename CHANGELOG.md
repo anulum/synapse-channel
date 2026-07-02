@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `syn reap --stale` sweeps every shell-hook pidfile and reaps the verified waiters
+  whose owner shell or terminal process is dead (recorded `--owner-pid`, or the
+  terminal PID embedded in the identity), keeping live and unjudgeable ones and never
+  signalling a process whose command line is not this Synapse waiter; `--dry-run`
+  reports the verdicts without acting.
+
 ### Fixed
 - `synapse who` and `synapse status` no longer count `-rx` wake-listener sidecars as
   agents: the roster reads `N agents · M waiters` with the waiters listed apart, so a
