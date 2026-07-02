@@ -14,6 +14,13 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `synapse status --watch` refreshes the one-line hub summary every
+  `--interval` seconds (default 2) as an operator dashboard. Each refresh
+  opens its own probe connection, so a hub restart shows as an honest offline
+  line; a TTY rewrites the line in place while piped output appends one line
+  per refresh, and `--json --watch` streams one JSON object per line (NDJSON).
+  `--count N` bounds the refreshes; Ctrl-C stops an unbounded watch cleanly
+  with exit `0`, and the bounded form exits with the last observed state.
 - `synapse workflow contention` joins a declarative workflow to the durable
   log: it compiles the workflow to its task ids, runs the same offline
   yield-advice analysis as `synapse causality contention`, and keeps only the
