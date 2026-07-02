@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse participant costs` reads opt-in session telemetry back from a hub
+  SQLite event store — offline, like `synapse accounting report` — and prints
+  the latest cumulative snapshot per `(agent, session)` (turns, errors,
+  abstentions, token pressure, metered spend, mean latency, highest rate-limit
+  utilisation seen) plus fleet totals, or the machine-readable report with
+  `--json`. Where the accounting report answers what models cost, this answers
+  how participant sessions are going and what they spent; a missing store
+  refuses with exit `2`.
+
 ## [0.88.0] - 2026-07-02
 
 ### Added
