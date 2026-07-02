@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.91.0] - 2026-07-02
+
 ### Added
 - `synapse causality otel` projects the coordination-causality graph onto
   OpenTelemetry spans: one trace per task (a root span covering the task's
