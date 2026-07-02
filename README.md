@@ -108,6 +108,16 @@ This installs the `synapse` command. To run the hub as an always-on local servic
 or a container, see the [deployment guide](docs/deployment.md) (a `systemd` user
 unit and `docker compose` are both included).
 
+Two optional shell conveniences ship with the CLI: `synapse completions
+bash|zsh|fish` prints tab completion for every subcommand (generated from the
+live parser, so it never drifts), and `synapse install-shell-hook` adds the
+guarded block that auto-arms a wake listener in each new terminal:
+
+```bash
+synapse completions bash > ~/.local/share/bash-completion/completions/synapse
+synapse install-shell-hook          # auto-arm Bash, Zsh, and Fish terminals
+```
+
 ## First 60 seconds
 
 On a clean Python environment, verify the installed CLI before wiring agents into
@@ -1008,7 +1018,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 357 |
 | Wire message types | 65 |
 | CLI subcommands | 119 |
-| Test functions | 3716 |
+| Test functions | 3723 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 46 |
 | GitHub Actions workflows | 12 |

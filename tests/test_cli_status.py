@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
-from synapse_channel import cli_status
+from synapse_channel import cli, cli_status
 from synapse_channel.cli_status import (
     HubStatus,
     _count_word,
@@ -140,10 +141,12 @@ async def test_query_status_reports_unreachable_hub() -> None:
 # --- command dispatch ---------------------------------------------------------
 
 
-def _namespace(*, uri: str, plain: bool = False, ready_timeout: float = 5.0) -> argparse.Namespace:
+def _namespace(
+    *, uri: str, plain: bool = False, ready_timeout: float = 5.0, as_json: bool = False
+) -> argparse.Namespace:
     """Build the parsed-args namespace the status dispatcher expects."""
     return argparse.Namespace(
-        uri=uri, name="USER", plain=plain, token=None, ready_timeout=ready_timeout
+        uri=uri, name="USER", plain=plain, token=None, ready_timeout=ready_timeout, json=as_json
     )
 
 
@@ -255,3 +258,45 @@ def test_tally_counts_waiter_sidecars_apart_from_agents() -> None:
     }
     status = _tally(seen, probe="USER-status")
     assert status == HubStatus(reachable=True, online=1, claims=0, waiters=2)
+
+
+def test_cmd_status_json_offline_reports_unreachable(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = cli_status._cmd_status(
+        _namespace(uri=f"ws://127.0.0.1:{_free_port()}", ready_timeout=0.1, as_json=True)
+    )
+    assert code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {
+        "reachable": False,
+        "online": 0,
+        "claims": 0,
+        "resources": 0,
+        "waiters": 0,
+    }
+
+
+async def test_cmd_status_json_carries_the_live_counts(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import asyncio
+
+    async with running_hub(SynapseHub()) as (_, uri):
+        online = await connect_agent("solo", uri)
+        try:
+            code = await asyncio.to_thread(
+                cli_status._cmd_status, _namespace(uri=uri, as_json=True)
+            )
+        finally:
+            await close_agents(online)
+
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["reachable"] is True
+    assert payload["online"] == 1
+
+
+def test_parser_accepts_status_json() -> None:
+    args = cli.build_parser().parse_args(["status", "--json"])
+    assert args.json is True

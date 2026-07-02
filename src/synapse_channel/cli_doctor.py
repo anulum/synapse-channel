@@ -21,8 +21,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import shutil
+import sys
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from pathlib import Path
 from typing import Any, Protocol
@@ -231,6 +233,27 @@ def _resolve_service_identity(
     return identity.project, getattr(args, "identity", None) or identity.identity
 
 
+def doctor_report_to_json(code: int, diagnoses: list[Diagnosis]) -> dict[str, object]:
+    """Return a doctor run as a stable JSON-compatible report.
+
+    ``healthy`` mirrors the exit code (``0`` = no failing check), so a CI gate
+    can read either signal; every verdict keeps its check name, status, detail,
+    and remedy exactly as the text report prints them.
+    """
+    return {
+        "healthy": code == 0,
+        "diagnoses": [
+            {
+                "check": diagnosis.check,
+                "status": diagnosis.status,
+                "detail": diagnosis.detail,
+                "remedy": diagnosis.remedy,
+            }
+            for diagnosis in diagnoses
+        ],
+    }
+
+
 def _cmd_doctor(
     args: argparse.Namespace,
     *,
@@ -253,6 +276,11 @@ def _cmd_doctor(
     the state *after* the repair. Findings the services cannot repair (identity,
     exposure, disk, or any non-default hub) are never touched; their remedy
     stays printed guidance.
+
+    With ``--json`` the run is a plain diagnostic — it refuses the mutating and
+    checklist flags so stdout is exactly one JSON document — and prints every
+    verdict (check, status, detail, remedy) plus the overall health, sized for a
+    CI health gate. The exit code is unchanged.
     """
 
     def diagnose() -> tuple[int, list[str], list[Diagnosis]]:
@@ -268,6 +296,27 @@ def _cmd_doctor(
                 disk_warn_free_mib=getattr(args, "disk_warn_free_mib", 1024),
             )
         )
+
+    if getattr(args, "json", False):
+        mutating = [
+            flag
+            for flag, present in (
+                ("--fix", getattr(args, "fix", False)),
+                ("--redeploy-checklist", getattr(args, "redeploy_checklist", False)),
+                ("--install-user-services", getattr(args, "install_user_services", False)),
+                ("--start-user-services", getattr(args, "start_user_services", False)),
+            )
+            if present
+        ]
+        if mutating:
+            print(
+                f"doctor --json is a plain diagnostic; drop {', '.join(mutating)}",
+                file=sys.stderr,
+            )
+            return 2
+        code, _, diagnoses = diagnose()
+        print(json.dumps(doctor_report_to_json(code, diagnoses), sort_keys=True))
+        return code
 
     code, lines, diagnoses = diagnose()
     for line in lines:
@@ -406,6 +455,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--synapse-bin",
         default=None,
         help="Synapse executable path baked into generated units; defaults to PATH lookup.",
+    )
+    doctor.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit every verdict plus overall health as one JSON document for CI "
+        "health gates; refuses the mutating and checklist flags.",
     )
     doctor.add_argument(
         "--redeploy-checklist",

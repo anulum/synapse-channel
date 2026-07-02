@@ -56,9 +56,9 @@ see the [Integration demos](integration-demos.md).
 | `synapse manifest` | Print the capability manifest of advertised agents. |
 | `synapse directory` | Print a read-only capability directory from live agent cards (discovery only). |
 | `synapse who` | List the agents currently online, optionally for one project or this identity with `--me`. |
-| `synapse status` | Print a one-line hub summary (online agents, active claims) for shell prompts and tmux status bars; exit non-zero when the hub is down. |
+| `synapse status` | Print a one-line hub summary (online agents, active claims) for shell prompts and tmux status bars, or the counts as JSON with `--json`; exit non-zero when the hub is down. |
 | `synapse state` | Print active claims and their checkpoints (a resume view). |
-| `synapse doctor` | Check for common coordination misconfigs (identity, exposure, hub, waiter); exit non-zero on a failure. `--fix` auto-repairs a down default local hub or missing waiter by installing and starting the user services. |
+| `synapse doctor` | Check for common coordination misconfigs (identity, exposure, hub, waiter); exit non-zero on a failure. `--fix` auto-repairs a down default local hub or missing waiter by installing and starting the user services; `--json` emits the verdicts for CI health gates. |
 | `synapse init` | Print or install the local user services (hub, waiter, presence) as systemd units. |
 | `synapse install-shell-hook` | Install auto-arming shell integration into Bash, Zsh, and Fish (idempotent, guarded block). |
 | `synapse shell-hook` | Print the shell code that auto-arms terminals and wraps agent commands, for manual sourcing. |
@@ -100,7 +100,11 @@ default local hub does not answer or the waiter is missing, it installs and star
 the local hub, presence, and wake services, then re-runs the checks so the exit
 code reflects the repaired state. Findings the services cannot repair — identity,
 exposure, disk pressure, or any non-default hub — are reported with a remedy but
-never touched. `synapse demo` starts an ephemeral local hub, drives a planner/worker
+never touched. `synapse doctor --json` emits every verdict plus the overall
+health as one JSON document for CI health gates (it refuses the mutating and
+checklist flags so stdout stays a single document); `synapse status --json`
+does the same for the status counts, sized for monitoring scripts. `synapse
+demo` starts an ephemeral local hub, drives a planner/worker
 flow, and is successful when it prints:
 
 For post-release local fleet restarts, `synapse doctor --redeploy-checklist`
