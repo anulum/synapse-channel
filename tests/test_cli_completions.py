@@ -222,3 +222,16 @@ def test_zsh_script_renders_an_empty_command_tree() -> None:
     script = zsh_script(CommandSpec(name="synapse", options=("--help",)))
     assert "candidates=(" in script
     assert "_describe -t commands 'synapse command' candidates" in script
+
+
+def test_zsh_script_describes_a_command_without_a_summary() -> None:
+    """A spec with no summary is offered by bare name, with no colon suffix."""
+    script = zsh_script(
+        CommandSpec(
+            name="synapse",
+            options=("--help",),
+            subcommands=(CommandSpec(name="bare"),),
+        )
+    )
+    assert "'bare'" in script
+    assert "'bare:'" not in script

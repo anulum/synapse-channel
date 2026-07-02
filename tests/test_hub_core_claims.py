@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel.core.hub import SynapseHub
 
@@ -196,3 +198,27 @@ async def test_release_receipt_progress_broadcasts_without_a_journal() -> None:
     await _record_release_receipt_progress(hub, receipt)
     assert len(broadcasts) == 1
     assert broadcasts[0]["type"] == "ledger_progress_posted"
+
+
+async def test_release_receipt_progress_records_into_a_journal(tmp_path: Path) -> None:
+    """With a durable log the receipt note lands in the journal AND broadcasts."""
+    from synapse_channel.core.handlers.leasing import _record_release_receipt_progress
+    from synapse_channel.core.persistence import EventStore
+    from synapse_channel.core.receipts import build_release_receipt
+
+    journal = EventStore(tmp_path / "hub.db")
+    try:
+        hub = SynapseHub(hub_id="syn-test", journal=journal)
+        broadcasts: list[dict[str, object]] = []
+
+        async def record_broadcast(data: dict[str, object]) -> None:
+            broadcasts.append(data)
+
+        hub._broadcast = record_broadcast  # type: ignore[method-assign]
+        receipt = build_release_receipt(task_id="T1", owner="alice")
+        await _record_release_receipt_progress(hub, receipt)
+        assert len(broadcasts) == 1
+        kinds = [event.kind for event in journal.read_since(0)]
+        assert "ledger_progress" in kinds
+    finally:
+        journal.close()
