@@ -107,6 +107,61 @@ def test_parser_flags_and_defaults() -> None:
     assert args.json is False
     assert args.compare is None
     assert args.tolerance is None
+    assert args.trend is None
+
+
+def test_trend_accumulates_runs_and_renders_the_series(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "trend.db"
+    argv = ["benchmark", "--probe", "encode-lite", "--iterations", "10", "--trend", str(db)]
+
+    first_code, first_out, _ = _run(argv, capsys)
+    second_code, second_out, _ = _run(argv, capsys)
+
+    assert (first_code, second_code) == (0, 0)
+    assert "Benchmark trend: 1 stored run(s)" in first_out
+    assert "(1 run — no trend yet)" in first_out
+    assert "Benchmark trend: 2 stored run(s)" in second_out
+    assert "encode-lite messages_per_second: " in second_out
+    assert ", 2 runs)" in second_out
+
+
+def test_trend_json_carries_the_history(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    db = tmp_path / "trend.db"
+
+    code, out, _ = _run(
+        ["benchmark", "--probe", "encode-lite", "--iterations", "10", "--trend", str(db), "--json"],
+        capsys,
+    )
+
+    assert code == 0
+    payload = json.loads(out)
+    assert len(payload["trend"]["runs"]) == 1
+    assert payload["trend"]["context_breaks"] == []
+
+
+def test_trend_unwritable_store_exits_two(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("occupied", encoding="utf-8")
+
+    code, _, err = _run(
+        [
+            "benchmark",
+            "--probe",
+            "encode-lite",
+            "--iterations",
+            "10",
+            "--trend",
+            str(blocker / "trend.db"),
+        ],
+        capsys,
+    )
+
+    assert code == 2
+    assert "cannot record the trend run" in err
 
 
 def _write_baseline(

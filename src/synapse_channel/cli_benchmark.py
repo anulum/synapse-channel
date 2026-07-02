@@ -14,13 +14,18 @@ CPU, governor) and an explicit shared-workstation isolation label. With
 ``--compare BASELINE.json`` (a file an earlier run saved with ``--results``)
 the run is gated against the baseline: throughput and latency drift beyond
 ``--tolerance`` exits ``1``, and a baseline from a different CPU model is
-refused.
+refused. With ``--trend STORE.db`` the finished scorecard is appended to a
+local SQLite history and every stored run renders as per-metric sparkline
+trend lines — slow drift no single gate catches stays visible — with host
+or package context changes annotated as explicit breaks rather than
+silently connected.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -38,6 +43,12 @@ from synapse_channel.benchmark.scorecard import (
     render_scorecard_human,
     scorecard_to_json,
     write_scorecard,
+)
+from synapse_channel.benchmark.trend import (
+    append_scorecard,
+    load_history,
+    render_trend_human,
+    trend_to_json,
 )
 
 
@@ -72,16 +83,29 @@ def _cmd_benchmark(args: argparse.Namespace) -> int:
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 2
+    history = None
+    if args.trend is not None:
+        try:
+            append_scorecard(Path(args.trend), scorecard)
+            history = load_history(Path(args.trend))
+        except (OSError, sqlite3.Error) as exc:
+            print(f"cannot record the trend run: {exc}", file=sys.stderr)
+            return 2
     if args.json:
         document = scorecard_to_json(scorecard)
         if comparison is not None:
             document["comparison"] = comparison_to_json(comparison)
+        if history is not None:
+            document["trend"] = trend_to_json(history)
         print(json.dumps(document, indent=2, sort_keys=True))
     else:
         print(render_scorecard_human(scorecard))
         if comparison is not None:
             print()
             print(render_comparison_human(comparison))
+        if history is not None:
+            print()
+            print(render_trend_human(history))
     if args.results is not None:
         write_scorecard(Path(args.results), scorecard)
     if comparison is not None and comparison.regressions:
@@ -134,6 +158,16 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help=(
             "Allowed drift in percent before --compare counts a regression "
             f"(default {DEFAULT_TOLERANCE_PCT:g}, sized for shared-workstation noise)."
+        ),
+    )
+    parser.add_argument(
+        "--trend",
+        default=None,
+        metavar="STORE",
+        help=(
+            "Append this run to a local SQLite history and render per-metric sparkline "
+            "trends across every stored run; host/package context changes are annotated "
+            "as breaks, not silently connected."
         ),
     )
     parser.add_argument("--list", action="store_true", help="List the available probes and exit.")
