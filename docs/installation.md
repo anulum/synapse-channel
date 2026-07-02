@@ -34,6 +34,7 @@ This installs the `synapse` console command and the `synapse_channel` package.
 | `dev` | The development toolchain (ruff, mypy, pytest, pre-commit). |
 | `benchmark` | `tiktoken`, for real token counts in the relay benchmark. |
 | `docs` | The documentation-site toolchain (MkDocs Material, mkdocstrings). |
+| `otel` | The OpenTelemetry SDK + OTLP/HTTP exporter, for `synapse causality otel --endpoint`. |
 
 Install one or more with, for example:
 

@@ -479,3 +479,160 @@ def test_cli_federated_missing_peer_store_exits_two(
 
     assert exit_code == 2
     assert "missing event store for hub 'peer'" in capsys.readouterr().err
+
+
+def test_parser_defaults_otel_flags_to_none() -> None:
+    args = cli.build_parser().parse_args(["causality", "otel", "hub.db"])
+
+    assert args.direction == "otel"
+    assert args.out is None
+    assert args.endpoint is None
+
+
+def test_cli_otel_writes_span_records_to_a_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+    out = tmp_path / "spans.json"
+
+    exit_code = cli.main(["causality", "otel", str(db), "--out", str(out)])
+
+    assert exit_code == 0
+    assert "exported 11 span(s) across 3 trace(s)" in capsys.readouterr().out
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["trace_count"] == 3
+    linked = [span for span in payload["spans"] if span["links"]]
+    assert linked
+
+
+def test_cli_otel_requires_exactly_one_destination(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    neither = cli.main(["causality", "otel", str(db)])
+    assert neither == 2
+    assert "exactly one of --out FILE or --endpoint URL" in capsys.readouterr().err
+
+    both = cli.main(
+        [
+            "causality",
+            "otel",
+            str(db),
+            "--out",
+            str(tmp_path / "s.json"),
+            "--endpoint",
+            "http://c:4318/v1/traces",
+        ]
+    )
+    assert both == 2
+
+
+def test_cli_otel_refuses_peers(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    db, peer = _federated_pair(tmp_path)
+
+    exit_code = cli.main(
+        ["causality", "otel", str(db), "--out", str(tmp_path / "s.json"), "--peer", f"peer={peer}"]
+    )
+
+    assert exit_code == 2
+    assert "--peer is not supported" in capsys.readouterr().err
+
+
+def test_cli_otel_flags_are_refused_outside_otel_mode(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    exit_code = cli.main(["causality", "causes", str(db), "4", "--out", str(tmp_path / "s.json")])
+
+    assert exit_code == 2
+    assert "--out/--endpoint belong to the otel mode" in capsys.readouterr().err
+
+
+def test_cli_otel_missing_store_exits_two(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exit_code = cli.main(
+        ["causality", "otel", str(tmp_path / "absent.db"), "--out", str(tmp_path / "s.json")]
+    )
+
+    assert exit_code == 2
+    assert "missing event store" in capsys.readouterr().err
+
+
+def test_cli_otel_unwritable_out_exits_two(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    exit_code = cli.main(
+        ["causality", "otel", str(db), "--out", str(tmp_path / "no-such-dir" / "s.json")]
+    )
+
+    assert exit_code == 2
+    assert "cannot write span records" in capsys.readouterr().err
+
+
+def test_cli_otel_pushes_to_an_endpoint(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+    pushed: list[tuple[object, str]] = []
+
+    def _fake_push(projection: object, endpoint: str) -> int:
+        pushed.append((projection, endpoint))
+        return 11
+
+    monkeypatch.setattr("synapse_channel.otel_export.push_projection", _fake_push)
+
+    exit_code = cli.main(["causality", "otel", str(db), "--endpoint", "http://c:4318/v1/traces"])
+
+    assert exit_code == 0
+    assert pushed and pushed[0][1] == "http://c:4318/v1/traces"
+    assert "to http://c:4318/v1/traces" in capsys.readouterr().out
+
+
+def test_cli_otel_failed_push_exits_two(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    def _refuse(projection: object, endpoint: str) -> int:
+        raise RuntimeError("OTLP export failed: collector down")
+
+    monkeypatch.setattr("synapse_channel.otel_export.push_projection", _refuse)
+
+    exit_code = cli.main(["causality", "otel", str(db), "--endpoint", "http://c:4318/v1/traces"])
+
+    assert exit_code == 2
+    assert "collector down" in capsys.readouterr().err
+
+
+def test_cli_otel_reports_skipped_taskless_events(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    store = EventStore(db)
+    store.append(
+        EventKind.CLAIM,
+        {"task_id": "B", "owner": "alice", "status": "claimed", "paths": [], "worktree": "w"},
+        ts=1.0,
+    )
+    store.append(EventKind.RELEASE, {}, ts=2.0)
+    store.close()
+
+    exit_code = cli.main(["causality", "otel", str(db), "--out", str(tmp_path / "s.json")])
+
+    assert exit_code == 0
+    assert "1 taskless event(s) skipped" in capsys.readouterr().out

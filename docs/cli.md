@@ -52,7 +52,7 @@ everything, since they need the whole command table.
 | `synapse postmortem` | Build a replayable task postmortem from a hub SQLite event store. |
 | `synapse debug` | Fork a task's reconstructed state at a sequence point (read-only what-if). |
 | `synapse reproduce` | Fingerprint a task's authoritative history into a deterministic digest. |
-| `synapse causality` | Trace coordination causes, effects, or counterfactuals over the event log — federated across hubs with `--peer`; `contention` weighs overlapping live claims and advises who yields. |
+| `synapse causality` | Trace coordination causes, effects, or counterfactuals over the event log — federated across hubs with `--peer`; `contention` weighs overlapping live claims and advises who yields; `otel` exports the graph as OpenTelemetry spans. |
 | `synapse merkle` | Commit the event log to a Merkle root, prove event inclusion, and generate the receipt-signing keypair (`keygen`). |
 | `synapse reliability` | Build evidence-only reliability memory from a hub SQLite event store. |
 | `synapse trust-graph` | Query the evidence trust graph (receipts, stale claims, conflicts) as text, JSON, or Graphviz DOT. |
@@ -659,6 +659,8 @@ synapse causality effects ./synapse.db 118 --json
 synapse causality counterfactual ./synapse.db 96
 synapse causality contention ./synapse.db      # who should yield on overlapping live claims
 synapse causality causes ./hub.db peer:96 --peer peer=./peer-hub.db   # federated, HUB:SEQ refs
+synapse causality otel ./synapse.db --out spans.json                  # OpenTelemetry projection
+synapse causality otel ./synapse.db --endpoint http://127.0.0.1:4318/v1/traces  # OTLP push [otel]
 synapse merkle root ./synapse.db
 synapse merkle prove ./synapse.db 142 --json > proof.json
 synapse merkle verify proof.json --expect 9f2c…
@@ -891,6 +893,33 @@ $ synapse causality causes ./eu-hub.db us-hub:2 --peer us-hub=./us-hub.db
 weighs one hub's *live* claims, and claims are never granted across hubs.
 Exit codes are unchanged — `2` additionally covers a malformed `--peer`
 spec, a duplicate hub id, or a reference naming an unmerged hub.
+
+`synapse causality otel ./synapse.db --out spans.json` projects the whole
+graph onto **OpenTelemetry spans**: one trace per task (root span covering the
+task's recorded lifetime), one child span per coordination event, and — the
+part that carries the causality — a span *link* on every event a recorded
+`dependency` or `contention` edge enabled, pointing at the causing event's
+span in the other task's trace. "This claim proceeded because that release
+freed its paths" renders as a first-class link in any trace viewer. Ids are
+deterministic SHA-256 derivations of the task id and event sequence, so
+re-exporting the same log yields identical spans and cross-task links always
+resolve. `--out FILE` writes the span records as JSON with no extra
+dependency; `--endpoint URL` pushes real OTLP over HTTP to a collector's full
+traces URL (typically `http://host:4318/v1/traces`) and needs the optional
+extra: `pip install 'synapse-channel[otel]'`. Exactly one of the two is
+required; a failed push exits `2` with the exporter's verdict rather than
+pretending success, and taskless events are counted in the summary line, not
+silently dropped. Replayed against a real hub log and a real OTLP collector
+(`otel/opentelemetry-collector`, debug exporter):
+
+```console
+$ synapse causality otel ./synapse.db --endpoint http://127.0.0.1:4318/v1/traces
+exported 5 span(s) across 1 trace(s) to http://127.0.0.1:4318/v1/traces
+```
+
+The collector's log confirms the batch (`service.name=synapse-channel`,
+`spans: 5`). Timestamps are the hub's own event timestamps; the projection is
+read-only and, like every causality mode, contacts no live hub.
 
 `synapse merkle root ./synapse.db` commits the durable event log to a single
 Merkle root: a 32-byte fingerprint of every event, so two operators — or two

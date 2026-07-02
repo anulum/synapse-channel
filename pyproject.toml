@@ -52,12 +52,18 @@ dev = [
   "mcp>=1.28.0",
   "cryptography>=42.0",
   "wasmtime>=14.0.0",
+  "opentelemetry-sdk>=1.43.0",
+  "opentelemetry-exporter-otlp-proto-http>=1.43.0",
 ]
 benchmark = [
   "tiktoken>=0.7",
 ]
 wasm = [
   "wasmtime>=14.0.0",
+]
+otel = [
+  "opentelemetry-sdk>=1.43.0",
+  "opentelemetry-exporter-otlp-proto-http>=1.43.0",
 ]
 mcp = [
   "mcp>=1.28.0",
