@@ -13,6 +13,14 @@ downstream events that lose their recorded support without it. ``contention``
 takes no sequence: it weighs every pair of overlapping live claims by what each
 blocks downstream and recommends — advisory, never preempting — which contender
 yields. All four read the durable log and contact no live hub.
+
+With ``--peer HUB=PATH`` (repeatable) the sequence queries run over the
+*federated* graph instead: the named hubs' logs merge in the deterministic
+multi-hub order and an edge whose endpoints two different hubs authored is
+tagged ``federation`` (:mod:`synapse_channel.core.causality_federation`).
+Events are then addressed as ``HUB:SEQ``; a plain ``SEQ`` means the primary
+DB's hub. Cross-hub precedence is clock-ordered evidence — only as good as the
+hubs' clock agreement — and the query stays read-only and advisory.
 """
 
 from __future__ import annotations
@@ -20,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from synapse_channel.core.causality import (
     DEFAULT_MAX_GRAPH_NODES,
@@ -27,6 +36,12 @@ from synapse_channel.core.causality import (
     causality_to_json,
     render_markdown,
     run_causality,
+)
+from synapse_channel.core.causality_federation import (
+    federated_to_json,
+    parse_hub_ref,
+    render_federated_markdown,
+    run_federated_causality,
 )
 from synapse_channel.core.yield_advice import (
     advice_to_json,
@@ -40,13 +55,32 @@ CONTENTION_MODE = "contention"
 
 def _cmd_causality(args: argparse.Namespace) -> int:
     """Answer a causality query against a sequence point and print it."""
+    if args.hub_id and not args.peer:
+        print(
+            "--hub-id names the primary log in a federated query; it requires --peer",
+            file=sys.stderr,
+        )
+        return 2
     if args.direction == CONTENTION_MODE:
+        if args.peer:
+            print(
+                "causality contention weighs one hub's live claims; --peer is not supported",
+                file=sys.stderr,
+            )
+            return 2
         return _cmd_contention(args)
     if args.seq is None:
         print(f"causality {args.direction} requires an event SEQ", file=sys.stderr)
         return 2
+    if args.peer:
+        return _cmd_federated(args)
     try:
-        query = run_causality(args.db, args.direction, args.seq, max_nodes=args.max_nodes)
+        seq = int(args.seq)
+    except ValueError:
+        print(f"invalid SEQ '{args.seq}': expected an integer", file=sys.stderr)
+        return 2
+    try:
+        query = run_causality(args.db, args.direction, seq, max_nodes=args.max_nodes)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -55,6 +89,47 @@ def _cmd_causality(args: argparse.Namespace) -> int:
     else:
         print(render_markdown(query))
     return 0 if query.present else 1
+
+
+def _cmd_federated(args: argparse.Namespace) -> int:
+    """Answer a causality query over the merged logs of several hubs."""
+    primary = args.hub_id or Path(args.db).stem
+    try:
+        stores = _federated_stores(primary, args.db, args.peer)
+        ref = parse_hub_ref(args.seq, primary)
+        query = run_federated_causality(stores, args.direction, ref, max_nodes=args.max_nodes)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(federated_to_json(query), indent=2, sort_keys=True))
+    else:
+        print(render_federated_markdown(query))
+    return 0 if query.present else 1
+
+
+def _federated_stores(primary: str, db: str, peers: list[str]) -> dict[str, str]:
+    """Resolve the primary DB plus every ``--peer HUB=PATH`` into hub-keyed stores.
+
+    Raises
+    ------
+    ValueError
+        If a peer spec is not ``HUB=PATH`` or a hub id repeats — the merge
+        dedupes by ``(hub_id, seq)``, so two logs under one id would silently
+        collapse instead of merging.
+    """
+    stores = {primary: db}
+    for spec in peers:
+        hub, sep, path = spec.partition("=")
+        hub = hub.strip()
+        if not sep or not hub or not path:
+            msg = f"invalid --peer '{spec}': expected HUB=PATH"
+            raise ValueError(msg)
+        if hub in stores:
+            msg = f"duplicate hub id '{hub}'; each merged log needs a unique hub id"
+            raise ValueError(msg)
+        stores[hub] = path
+    return stores
 
 
 def _cmd_contention(args: argparse.Namespace) -> int:
@@ -91,13 +166,26 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     causality.add_argument("db", help="Path to the hub event store, e.g. ~/synapse/hub.db.")
     causality.add_argument(
         "seq",
-        type=int,
         nargs="?",
         default=None,
         metavar="SEQ",
-        help="Event sequence to query; required for causes/effects/counterfactual.",
+        help="Event sequence to query (HUB:SEQ with --peer); required for "
+        "causes/effects/counterfactual.",
     )
     causality.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    causality.add_argument(
+        "--peer",
+        action="append",
+        default=[],
+        metavar="HUB=PATH",
+        help="Merge a peer hub's event store into a federated graph (repeatable); "
+        "an edge whose endpoints two different hubs authored is tagged 'federation'.",
+    )
+    causality.add_argument(
+        "--hub-id",
+        default=None,
+        help="Hub id of the primary DB in a federated query; defaults to the DB file name.",
+    )
     causality.add_argument(
         "--max-nodes",
         type=int,

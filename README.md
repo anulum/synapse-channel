@@ -771,6 +771,7 @@ synapse postmortem ./synapse.db TASK-1
 synapse debug ./synapse.db --fork-at 142 --set status=blocked
 synapse reproduce ./synapse.db TASK-1 --expect 9f2c…
 synapse causality causes ./synapse.db 142
+synapse causality causes ./hub.db peer:96 --peer peer=./peer-hub.db
 synapse merkle root ./synapse.db
 synapse reliability ./synapse.db
 synapse accounting report ./synapse.db --pricing pricing.json --budget budget.json
@@ -815,7 +816,11 @@ it, `effects` for what it enabled, and `counterfactual` for the downstream event
 that would lose their recorded cause without it. This is coordination causality
 inferred from recorded scheduling semantics, not statistical causal discovery;
 every edge is backed by a concrete event, and the counterfactual is a structural
-what-if over the inferred graph.
+what-if over the inferred graph. With `--peer HUB=PATH` the same queries trace
+causality *across federated hubs*: the logs merge in the deterministic
+multi-hub order, events are addressed as `HUB:SEQ`, and an edge whose endpoints
+two different hubs authored is tagged `federation` — clock-ordered evidence,
+since hubs share no sequence, and observe-only like the multi-hub read side.
 
 Use `synapse merkle root ./synapse.db` to commit the durable log to a single
 Merkle root — a 32-byte fingerprint of every event, so two operators or two
@@ -1017,11 +1022,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.90.0 |
 | Public API exports | 70 |
-| Package modules | 276 |
-| Classes | 382 |
+| Package modules | 277 |
+| Classes | 388 |
 | Wire message types | 65 |
 | CLI subcommands | 124 |
-| Test functions | 3932 |
+| Test functions | 3974 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 46 |
 | GitHub Actions workflows | 12 |
