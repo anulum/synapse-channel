@@ -340,9 +340,7 @@ def _dry_run_report(
                 output_tokens=args.est_output_tokens,
             )
         )
-    priced = [
-        plan.estimated_cost_usd for plan in plans if plan.estimated_cost_usd is not None
-    ]
+    priced = [plan.estimated_cost_usd for plan in plans if plan.estimated_cost_usd is not None]
     total = sum(priced) if priced else None
     unpriced = len(plans) - len(priced)
     total_turns = sum(plan.turns for plan in plans)

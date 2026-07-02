@@ -19,8 +19,8 @@ from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel.cli_accounting import (
     _emit_usage,
     _load_budgets,
-    load_pricing_table,
     add_parsers,
+    load_pricing_table,
 )
 from synapse_channel.core.accounting import ModelPrice, format_usage_note, run_accounting_report
 from synapse_channel.core.hub import SynapseHub

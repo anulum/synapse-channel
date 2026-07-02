@@ -30,6 +30,7 @@ from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import closed_after_ready, describe_connect_failure
+from synapse_channel.core.causality import DEFAULT_MAX_GRAPH_NODES
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.workflow import (
     CompiledTask,
@@ -39,7 +40,6 @@ from synapse_channel.core.workflow import (
 )
 from synapse_channel.core.workflow_driver import DEFAULT_STATUS, derive_state, plan_assignments
 from synapse_channel.core.workflow_run import BoardSnapshot, RunResult, run_workflow
-from synapse_channel.core.causality import DEFAULT_MAX_GRAPH_NODES
 from synapse_channel.core.yield_advice import (
     advice_involving,
     advice_to_json,
