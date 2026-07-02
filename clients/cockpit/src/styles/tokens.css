@@ -1,0 +1,72 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Commercial license available */
+/* © Concepts 1996–2026 Miroslav Šotek. All rights reserved. */
+/* © Code 2020–2026 Miroslav Šotek. All rights reserved. */
+/* ORCID: 0009-0009-3560-0851 */
+/* Contact: www.anulum.li | protoscience@anulum.li */
+/* SYNAPSE_CHANNEL — cockpit design tokens (lifted graphite instrument palette) */
+
+:root {
+  /* Surfaces — a cool graphite ramp, never true black (ATC: black is a poor cue). */
+  --abyss: #0e1116;
+  --panel: #151a21;
+  --raised: #1c232c;
+  --line: #2a333f;
+  --line-soft: #202832;
+
+  /* Text — one warm-neutral carries most text (Bloomberg discipline). */
+  --ink: #e6e1d6;
+  --muted: #9ba3ae;
+  --dim: #5c6672;
+
+  /* Signal — desaturated-but-luminant; each state also carries a glyph + position. */
+  --idle: #5c6672;
+  --healthy: #3fb77e;
+  --info: #4aa8ff;
+  --warn: #e0a93b;
+  --critical: #e5484d;
+  --now: #e0a93b; /* the live master-clock edge; amber = instrument, not SaaS */
+
+  /* Signal, dimmed — for recessed baselines and decayed history. */
+  --healthy-trail: rgba(63, 183, 126, 0.28);
+  --info-trail: rgba(74, 168, 255, 0.28);
+  --warn-trail: rgba(224, 169, 59, 0.28);
+  --critical-trail: rgba(229, 72, 77, 0.3);
+  --idle-trail: rgba(92, 102, 114, 0.22);
+
+  /* Type — grotesk labels + mono values. Never Inter for the instrument. */
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --fs-micro: 10px;
+  --fs-tiny: 11px;
+  --fs-small: 12px;
+  --fs-body: 13px;
+  --fs-head: 15px;
+  --fs-display: 19px;
+
+  /* Rhythm — a tight instrument grid. */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --radius: 6px;
+  --hud-h: 54px;
+  --spine-h: 132px;
+
+  /* Motion — serves data only; durations from real-time-dashboard practice. */
+  --t-feedback: 120ms;
+  --t-value: 300ms;
+  --t-pulse: 250ms;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* Honour reduced-motion by neutralising every animated token. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-feedback: 0ms;
+    --t-value: 0ms;
+    --t-pulse: 0ms;
+  }
+}
