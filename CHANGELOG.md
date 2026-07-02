@@ -39,6 +39,13 @@ All notable changes to this project are documented here.
   tampered root, an untrusted or transplanted key, a malformed envelope, and a
   signature with no commitment to cover all fail; only an unsigned receipt reads
   `not_applicable`.
+- `synapse causality contention` weighs every pair of overlapping live claims —
+  different owners, same worktree, intersecting path scopes — by what each
+  contender's task gates downstream (causal descendants of its recorded events
+  plus pending declared dependents, transitively) and recommends which agent
+  yields; on an equal count the later claim yields. Advisory only: no claim is
+  preempted, and the exit code doubles as a collision signal (`0` no overlap,
+  `1` at least one pair).
 
 ## [0.87.0] - 2026-07-02
 

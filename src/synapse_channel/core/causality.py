@@ -587,14 +587,18 @@ def _latest_overlapping_release(
             continue
         if freed.worktree != claim.worktree:
             continue
-        if not _paths_overlap(freed.paths, claim.paths):
+        if not paths_overlap(freed.paths, claim.paths):
             continue
         latest = release_seq
     return latest
 
 
-def _paths_overlap(left: Sequence[str], right: Sequence[str]) -> bool:
-    """Return whether two path-scope sets overlap (empty scope means whole tree)."""
+def paths_overlap(left: Sequence[str], right: Sequence[str]) -> bool:
+    """Return whether two path-scope sets overlap (an empty scope means the whole tree).
+
+    The same predicate the contention edges use; the yield-advice module weighs
+    overlapping live claims with it, so both surfaces agree on what "overlap" means.
+    """
     if not left or not right:
         return True
     return any(
