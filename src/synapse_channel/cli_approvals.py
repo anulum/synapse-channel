@@ -34,6 +34,7 @@ from synapse_channel.core.approvals import (
     render_human,
     run_approval_report,
 )
+from synapse_channel.waiter_identity import waiter_owner
 
 
 async def _emit_approval(
@@ -47,7 +48,7 @@ async def _emit_approval(
     ready_timeout: float,
 ) -> int:
     """Connect to the hub and post one approval workflow note."""
-    sender = name[:-3] if name.endswith("-rx") and len(name) > 3 else name
+    sender = waiter_owner(name)
 
     async def collect(_data: dict[str, Any]) -> None:
         return None

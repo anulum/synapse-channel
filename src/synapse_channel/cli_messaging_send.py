@@ -26,6 +26,7 @@ from synapse_channel.core.payload_crypto import (
     payload_key_fingerprint,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.waiter_identity import waiter_owner
 
 
 def _one_shot_sender_name(name: str) -> str:
@@ -43,9 +44,7 @@ def _one_shot_sender_name(name: str) -> str:
         ``<agent>-rx``. In that case the one-shot command sends as ``<agent>`` so
         it does not collide with the persistent wake socket.
     """
-    if name.endswith("-rx") and len(name) > len("-rx"):
-        return name[: -len("-rx")]
-    return name
+    return waiter_owner(name)
 
 
 async def _send(

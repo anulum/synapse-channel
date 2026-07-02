@@ -42,7 +42,7 @@ async def test_who_lists_project_agents(capsys: pytest.CaptureFixture[str]) -> N
 
     assert code == 0
     out = capsys.readouterr().out
-    assert "Online in quantum (2)" in out
+    assert "Online in quantum (2 agents · 0 waiters)" in out
     assert "quantum/agent-1" in out
     assert "other/agent-3" not in out
 
@@ -56,7 +56,49 @@ async def test_who_lists_all_without_project(capsys: pytest.CaptureFixture[str])
             await close_agents(b_handle)
 
     assert code == 0
-    assert "Online (2)" in capsys.readouterr().out
+    assert "Online (2 agents · 0 waiters)" in capsys.readouterr().out
+
+
+async def test_who_counts_waiter_sidecars_apart_from_agents(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A wake-listener sidecar must never inflate the agent count.
+
+    This pins the defect where a workstation with ~30 terminals reported 200
+    "online agents": every ``-rx`` waiter held a live socket and was counted as
+    an agent. The roster now reads agents and waiters apart.
+    """
+    async with running_hub(SynapseHub()) as (_, uri):
+        agent = await connect_agent("quantum/agent-1", uri)
+        waiter = await connect_agent("quantum/agent-1-rx", uri)
+        try:
+            code = await cli_queries._who(uri=uri, name="U")
+        finally:
+            await close_agents(agent, waiter)
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Online (2 agents · 1 waiter" in out.replace("waiters", "waiter")
+    assert "Waiters (1):" in out
+    assert "  quantum/agent-1-rx" in out
+
+
+async def test_who_project_filter_applies_to_waiters_too(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async with running_hub(SynapseHub()) as (_, uri):
+        agent = await connect_agent("quantum/agent-1", uri)
+        waiter = await connect_agent("quantum/agent-1-rx", uri)
+        foreign = await connect_agent("other/agent-2-rx", uri)
+        try:
+            code = await cli_queries._who(uri=uri, name="U", project="quantum")
+        finally:
+            await close_agents(agent, waiter, foreign)
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Online in quantum (1 agents · 1 waiters)" in out
+    assert "other/agent-2-rx" not in out
 
 
 async def test_who_me_reports_presence_and_waiter_without_creating_subject_presence(

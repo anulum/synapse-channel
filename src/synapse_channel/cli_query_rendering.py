@@ -11,17 +11,31 @@ from __future__ import annotations
 
 from typing import Any
 
+from synapse_channel.waiter_identity import split_roster, waiter_name
+
 
 def _render_who(roster: list[str], *, project: str | None = None) -> None:
-    """Render an online roster, optionally filtered to one project namespace."""
-    agents = sorted(roster)
+    """Render an online roster split into agents and waiter sidecars.
+
+    Every name in the roster holds a live socket, but only the non-``-rx``
+    identities are agents someone acts as — a wake-listener sidecar is presence
+    plumbing. Counting the two apart keeps the headline honest: a workstation
+    with 30 terminals must never read as 200 agents. The optional ``project``
+    filter applies to both sections.
+    """
+    names = roster
     if project:
         prefix = f"{project}/"
-        agents = [agent for agent in agents if agent == project or agent.startswith(prefix)]
-    label = f"Online in {project}" if project else "Online"
-    print(f"{label} ({len(agents)}):")
+        names = [name for name in names if name == project or name.startswith(prefix)]
+    agents, waiters = split_roster(names)
+    scope = f" in {project}" if project else ""
+    print(f"Online{scope} ({len(agents)} agents · {len(waiters)} waiters):")
     for agent_name in agents:
         print(f"  {agent_name}")
+    if waiters:
+        print(f"Waiters ({len(waiters)}):")
+        for waiter in waiters:
+            print(f"  {waiter}")
 
 
 def _render_who_me(roster: list[str], *, name: str) -> None:
@@ -36,7 +50,7 @@ def _render_who_me(roster: list[str], *, name: str) -> None:
         connection name so this report does not create the presence it describes.
     """
     agents = set(roster)
-    waiter = f"{name}-rx"
+    waiter = waiter_name(name)
     presence = "online" if name in agents else "missing"
     waiter_state = "online" if waiter in agents else "missing"
     print(f"Me: {name}")
