@@ -33,7 +33,7 @@ from synapse_channel.core.multihub_wire import (
     encode_log_snapshot,
 )
 from synapse_channel.core.persistence import EventStore, StoredEvent
-from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.protocol import MAX_JSON_DEPTH, MessageType
 
 _REQUEST = MessageType.MULTIHUB_LOG_REQUEST
 _SNAPSHOT = MessageType.MULTIHUB_LOG_SNAPSHOT
@@ -256,3 +256,12 @@ async def test_network_fetcher_pulls_a_real_hubs_log(tmp_path: Any) -> None:
     store.close()
     assert [event.seq for event in events] == [1, 2, 3]
     assert observed is not None
+
+
+async def test_fetch_fails_closed_on_a_deeply_nested_reply() -> None:
+    """A peer reply nested past the wire depth bound fails the poll, not the parser."""
+    bomb = "[" * (MAX_JSON_DEPTH + 1) + "1" + "]" * (MAX_JSON_DEPTH + 1)
+    socket = _FakeSocket([bomb])
+    fetch = network_fetcher("ws://peer/", local_id="f", connector=_connector(socket))
+    with pytest.raises(MultiHubFetchError, match="failed"):
+        await fetch(0)

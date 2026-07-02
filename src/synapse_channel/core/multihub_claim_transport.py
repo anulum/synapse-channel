@@ -43,7 +43,7 @@ from synapse_channel.core.multihub_claim_wire import (
     decode_claim_forward_result,
     encode_claim_forward_request,
 )
-from synapse_channel.core.protocol import MessageType, build_envelope
+from synapse_channel.core.protocol import MessageType, build_envelope, loads_bounded
 
 DEFAULT_FORWARD_TIMEOUT = 10.0
 """Seconds a single forward waits for the owner's result before failing closed."""
@@ -224,9 +224,15 @@ async def _await_result(socket: _Socket) -> dict[str, Any]:
 
 
 def _parse_frame(raw: str | bytes) -> dict[str, Any]:
-    """Decode one wire frame to a JSON object, or raise :class:`ClaimForwardError`."""
+    """Decode one wire frame to a JSON object, or raise :class:`ClaimForwardError`.
+
+    The owning hub is a trust boundary, so its verdict is decoded with the same
+    depth-bounded loader the hub applies to its own inbound frames — a deeply
+    nested reply raises :class:`json.JSONDecodeError` and the forward fails
+    closed (claim refused, owner named) instead of recursing.
+    """
     text = raw.decode("utf-8") if isinstance(raw, bytes) else raw
-    decoded = json.loads(text)
+    decoded = loads_bounded(text)
     if not isinstance(decoded, dict):
         msg = "owning hub sent a frame that is not a JSON object"
         raise ClaimForwardError(msg)

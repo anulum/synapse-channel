@@ -47,6 +47,17 @@ All notable changes to this project are documented here.
   preempted, and the exit code doubles as a collision signal (`0` no overlap,
   `1` at least one pair).
 
+### Fixed
+- Both multi-hub transports now decode peer-hub replies with the same
+  depth-bounded JSON loader the hub applies to its own inbound frames, so a
+  deeply nested reply from a malicious or compromised peer fails the poll (or
+  refuses the forwarded claim) instead of recursing through an unbounded parse.
+- The federation gate no longer downgrades a frame signed with a peered key to
+  local processing when the connection presents no pinnable certificate — a
+  plaintext socket or a certificate read that fails now denies such a frame
+  outright, because the cross-domain authority its key claims can only be bound
+  by a live pin. Frames signed with purely local keys are unaffected.
+
 ## [0.87.0] - 2026-07-02
 
 ### Added

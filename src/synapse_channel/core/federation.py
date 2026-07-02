@@ -235,6 +235,17 @@ def resolve_domain(
     return None
 
 
+def signing_key_is_peered(bundle: FederationBundle, key_id: str) -> bool:
+    """Return whether any peering enrols ``key_id`` as a remote signing key.
+
+    A frame signed with a peered key claims cross-domain authority even when its
+    connection cannot be pinned; the gate uses this predicate to refuse such a
+    frame outright rather than letting it degrade to the local path the way a
+    frame signed with a purely local key does.
+    """
+    return any(key_id in peer.signing_key_ids for peer in bundle._peers.values())
+
+
 class DomainResolutionDiagnosis:
     """Why a ``(key_id, certificate_pin)`` pair resolved to no single peered domain.
 

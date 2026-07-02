@@ -26,7 +26,7 @@ from synapse_channel.core.multihub_claim_wire import (
     encode_claim_forward_result,
 )
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
-from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.protocol import MAX_JSON_DEPTH, MessageType
 
 _REQUEST = MessageType.MULTIHUB_CLAIM_REQUEST
 _RESULT = MessageType.MULTIHUB_CLAIM_RESULT
@@ -250,3 +250,13 @@ async def test_forward_claim_relays_a_real_hubs_refusal() -> None:
         result = await forward_claim(_request(), uri=uri, local_id="peer")
     assert result.granted is False
     assert result.detail == "peer not authorised to forward claims"
+
+
+async def test_forward_fails_closed_on_a_deeply_nested_reply() -> None:
+    """An owning-hub reply nested past the wire depth bound refuses the claim."""
+    bomb = "[" * (MAX_JSON_DEPTH + 1) + "1" + "]" * (MAX_JSON_DEPTH + 1)
+    socket = _FakeSocket([_wire({"type": "welcome"}), bomb])
+    with pytest.raises(ClaimForwardError, match="failed"):
+        await forward_claim(
+            _request(), uri="ws://owner/", local_id="f", connector=_connector(socket)
+        )
