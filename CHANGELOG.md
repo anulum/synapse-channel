@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.89.0] - 2026-07-02
+
 ### Added
 - `synapse benchmark` measures the installed package on the operator's
   machine: probes for durable event-store appends, journal replay, lite
