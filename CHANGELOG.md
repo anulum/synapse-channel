@@ -42,6 +42,15 @@ All notable changes to this project are documented here.
   claim held on the watched peer flips the namespace to partitioned
   refusals and the peer's release clears it on the next poll.
 
+### Security
+- The last four unpinned tool installs in CI are now hash-locked: the
+  pre-commit, release, publish, and reuse workflow jobs install
+  `pre-commit`, `build`, `twine`, and `reuse` from a new
+  `.github/requirements/requirements-tools.txt` (`uv pip compile
+  --universal --generate-hashes`, installed with `--require-hashes`),
+  closing the remaining supply-chain gap the dev and audit lockfiles
+  already closed for every other job.
+
 ## [0.92.0] - 2026-07-03
 
 ### Added
