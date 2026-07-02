@@ -105,3 +105,120 @@ def test_parser_flags_and_defaults() -> None:
     assert args.results is None
     assert args.list is False
     assert args.json is False
+    assert args.compare is None
+    assert args.tolerance is None
+
+
+def _write_baseline(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], *, messages_per_second: float
+) -> Path:
+    """Record a real encode-lite baseline, then pin its throughput value."""
+    path = tmp_path / "baseline.json"
+    code, _, _ = _run(
+        ["benchmark", "--probe", "encode-lite", "--iterations", "10", "--results", str(path)],
+        capsys,
+    )
+    assert code == 0
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["results"][0]["metrics"]["messages_per_second"] = messages_per_second
+    path.write_text(json.dumps(document), encoding="utf-8")
+    return path
+
+
+def test_compare_against_a_slower_baseline_passes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A real current run is always faster than a 0.001 msg/s baseline.
+    baseline = _write_baseline(tmp_path, capsys, messages_per_second=0.001)
+    code, out, _ = _run(
+        ["benchmark", "--probe", "encode-lite", "--iterations", "10", "--compare", str(baseline)],
+        capsys,
+    )
+    assert code == 0
+    assert "Baseline comparison" in out
+    assert "0 regressions beyond" in out
+
+
+def test_compare_against_an_impossible_baseline_regresses(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # No real run reaches 1e12 msg/s: the drop always exceeds the tolerance.
+    baseline = _write_baseline(tmp_path, capsys, messages_per_second=1e12)
+    code, out, _ = _run(
+        ["benchmark", "--probe", "encode-lite", "--iterations", "10", "--compare", str(baseline)],
+        capsys,
+    )
+    assert code == 1
+    assert "REGRESSION" in out
+
+
+def test_compare_json_document_carries_the_comparison(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    baseline = _write_baseline(tmp_path, capsys, messages_per_second=1e12)
+    code, out, _ = _run(
+        [
+            "benchmark",
+            "--probe",
+            "encode-lite",
+            "--iterations",
+            "10",
+            "--compare",
+            str(baseline),
+            "--json",
+        ],
+        capsys,
+    )
+    assert code == 1
+    payload = json.loads(out)
+    assert payload["comparison"]["regressed"] is True
+    (delta,) = [
+        entry
+        for entry in payload["comparison"]["deltas"]
+        if entry["metric"] == "messages_per_second"
+    ]
+    assert delta["regression"] is True
+
+
+def test_compare_refuses_a_baseline_from_another_host(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    baseline = _write_baseline(tmp_path, capsys, messages_per_second=1.0)
+    document = json.loads(baseline.read_text(encoding="utf-8"))
+    document["context"]["cpu_model"] = "Entirely Different CPU"
+    baseline.write_text(json.dumps(document), encoding="utf-8")
+    code, _, err = _run(
+        ["benchmark", "--probe", "encode-lite", "--iterations", "10", "--compare", str(baseline)],
+        capsys,
+    )
+    assert code == 2
+    assert "baseline host does not match" in err
+
+
+def test_compare_refuses_a_malformed_baseline(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "junk.json"
+    path.write_text("{nope", encoding="utf-8")
+    code, _, err = _run(
+        ["benchmark", "--probe", "encode-lite", "--iterations", "10", "--compare", str(path)],
+        capsys,
+    )
+    assert code == 2
+    assert "baseline is not JSON" in err
+
+
+def test_tolerance_without_compare_is_refused(capsys: pytest.CaptureFixture[str]) -> None:
+    code, _, err = _run(["benchmark", "--tolerance", "10"], capsys)
+    assert code == 2
+    assert "--tolerance requires --compare" in err
+
+
+def test_non_positive_tolerance_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, _, err = _run(
+        ["benchmark", "--compare", str(tmp_path / "b.json"), "--tolerance", "0"], capsys
+    )
+    assert code == 2
+    assert "tolerance must be positive" in err

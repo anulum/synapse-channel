@@ -14,6 +14,13 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `synapse benchmark --compare BASELINE.json` gates a run against a
+  scorecard saved with `--results`: throughput and latency-percentile
+  drift beyond `--tolerance` (default 25%, sized for shared-workstation
+  noise) exits `1`, ungated context metrics never gate, a baseline from a
+  different CPU model is refused, and softer host drift (governor,
+  interpreter, package version) is reported as loud warnings. Under
+  `--json` the document gains a `comparison` object beside the scorecard.
 - `synapse cross-repo` flags declared version constraints that can never be
   satisfied together: every package two or more scanned repositories
   consume — external packages included — is checked pairwise, and a

@@ -17,7 +17,7 @@ everything, since they need the whole command table.
 | `synapse commands` | List every subcommand grouped by stability tier — the quickest map of the surface. |
 | `synapse completions` | Print a static tab-completion script for bash, zsh, or fish, generated from the installed CLI. |
 | `synapse demo` | Run a self-contained local coordination demo and print a success marker. |
-| `synapse benchmark` | Benchmark the installed package (event store, relay encoding, live hub round-trips) and print a scorecard with honest host context. |
+| `synapse benchmark` | Benchmark the installed package (event store, relay encoding, live hub round-trips) and print a scorecard with honest host context; `--compare BASELINE.json` gates the run against a saved scorecard, exit `1` on regression. |
 | `synapse quickstart-coding` | Create a coding-fleet workspace, run the no-collision demo, and print a success marker. |
 | `synapse new coding-fleet` | Scaffold a runnable two-agent coding demo workspace. |
 | `synapse health` | Probe the hub; exit `0` if reachable, `1` if not (wired as a container healthcheck). |
@@ -996,6 +996,35 @@ selects a subset (repeatable), `--iterations` overrides the defaults,
 disk. The committed reference numbers in [Benchmarks](benchmarks.md) come
 from the deeper repository harnesses; this command is the quick scorecard
 for *your* installed version.
+
+A saved scorecard becomes a regression gate with `--compare BASELINE.json`:
+the run is measured as usual, then every directional metric shared with the
+baseline — throughput (`*_per_second`, higher is better) and latency
+percentiles (`*_ms`, lower is better) — is checked for drift beyond
+`--tolerance` (default 25%, sized for shared-workstation noise), and any
+regression exits `1`. Ungated context metrics (byte ratios, rebuilt-claim
+counts) never gate. A baseline recorded on a different CPU model is refused
+outright — that comparison would measure hardware, not the package — while
+softer drift (governor, interpreter, package version) is reported as loud
+warnings. A real second run against a baseline saved minutes earlier on the
+same loaded workstation:
+
+```text
+Baseline comparison (tolerance ±25%)
+encode-lite/messages_per_second: 213,906.67 -> 282,884.31 (+32.2%, higher-is-better) ok
+event-store-append/events_per_second: 217.89 -> 190.07 (-12.8%, higher-is-better) ok
+event-store-append/p50_ms: 3.50 -> 3.50 (+0.0%, lower-is-better) ok
+event-store-append/p95_ms: 10.66 -> 13.81 (+29.5%, lower-is-better) REGRESSION
+1 regression beyond ±25% tolerance
+```
+
+That tail-latency trip is the isolation label speaking: on a shared
+workstation p95 jumps with scheduler load, which is exactly why the default
+tolerance is generous and why a CI gate should compare like against like —
+record the baseline on the machine (and load profile) the gate runs on.
+Under `--json` the emitted document gains a `comparison` object beside the
+scorecard; `--compare` composes with `--results`, so a passing run can
+become the next baseline.
 
 `synapse accounting` records and reports opt-in model cost/token usage. Synapse
 never calls a model provider and collects no telemetry, so token and cost figures
