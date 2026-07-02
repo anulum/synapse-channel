@@ -35,10 +35,15 @@ What exists is single-hub plus operator-managed peering, not state sync:
   which is the seam a downstream consumer (or a peer) could replay.
 
 The full multi-host sync now routes a real claim to its owning hub and detects an ownership
-partition at runtime when fed the peers observed asserting a namespace. What is **not
-implemented** is the hub *auto-populating* that feed from a built-in follower loop — today an
-operator wires the observed assertions in (`asserting_owners` over a follower's view), rather
-than the hub maintaining its own standing follower; that stays the research boundary below. The
+partition at runtime from the peers observed asserting a namespace. The hub populates that
+feed itself: `synapse hub --multihub-watch PEER=URI` (repeatable, requiring
+`--namespace-owner`) runs a standing follower (`core/multihub_watch.py`) that polls each
+named peer on a bounded interval and folds the observed claims into the assertions the
+ownership gate consumes. Naming a peer is the operator confirmation for the always-on
+outbound connection — nothing is auto-discovered — and a failed poll keeps the last
+successful observation, so an outage never lets a contested namespace silently resume
+granting. An operator can still wire the feed by hand (`asserting_owners` over a
+follower's view) in library deployments. The
 read-side CRDT layer, the cross-host event-log pull that lets one hub *observe* another over
 a real connection, the **serving-side** gate that lets a hub refuse to serve its log to an
 untrusted peer from the live connection, the **claim-forwarding** path that routes a claim to
@@ -72,7 +77,11 @@ contested namespace, have shipped:
   answered with an empty snapshot — the same shape as "no new events", so the refusal leaks
   nothing. A hub with no policy serves as before, so the gate is strictly opt-in.
 
-What remains is the hub auto-populating the observed-assertions feed from a built-in follower.
+- `core/multihub_watch.py` — the hub's own standing follower: polls each operator-named
+  peer over that same pull, folds the observed claims with the gate's namespace
+  derivation, and holds the per-namespace asserting-hub view partition detection
+  consumes. Opt-in via `--multihub-watch`; fail-closed for authority (a failed poll
+  keeps the last successful observation).
 
 ## Observing a peer — a two-hub walkthrough
 
@@ -262,16 +271,16 @@ namespace-ownership resolution with its local grant-path enforcement
 owning hub and relays the verdict (`claim_peers` + `forward_claim` +
 `handle_multihub_claim_request`), and runtime partition detection that refuses a contested
 namespace when fed observed assertions (`observed_asserting_hubs` + `asserting_owners`) are
-implemented. What remains of multi-hub **sync** — the hub auto-populating that assertions feed
-from a standing follower of its own, rather than an operator wiring it — is **not implemented**.
-It is a research boundary, and the design is deliberately conservative.
+implemented — and so is the hub feeding those assertions itself from a standing follower of
+its own (`core/multihub_watch.py`, opt-in via `--multihub-watch`). The design stays
+deliberately conservative.
 
 - **Claims are not a CRDT.** Mutual exclusion is not conflict-free; the design uses
   single-owner-per-namespace, not claim merging, and fails closed on an ownership
   partition. The ownership resolution, the local refusal of an unowned namespace, the
-  forwarding of a remote-owned claim to its owner, and refusing a contested namespace when fed
-  observed assertions all ship; the hub auto-populating that feed from its own follower is the
-  unbuilt part.
+  forwarding of a remote-owned claim to its owner, refusing a contested namespace on
+  observed assertions, and the hub's own standing follower feeding those assertions
+  (`--multihub-watch`) all ship.
 - It does **not** add a new always-on wire surface casually — the pull is a request/snapshot
   message pair on the existing hub server, reusing the event log, `read_since` seam, and
   mTLS peer bundles; it adds no always-on cross-hub service to the local core.

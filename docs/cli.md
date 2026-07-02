@@ -1312,6 +1312,27 @@ snapshot from a live peer over a connection. Both are read-only observations
 tagged with a peer id and neither mutates the local hub. See
 [Multi-hub sync](multi-hub-sync.md) for the federation and trust model.
 
+The hub itself can run that follower standing, feeding partition detection:
+
+```bash
+synapse hub --port 8876 --hub-id syn-a \
+  --namespace-owner MY-PROJECT=syn-a \
+  --multihub-watch syn-b=ws://peer:8876 --multihub-watch-interval 30
+```
+
+`--namespace-owner NS=HUB_ID` (repeatable, requires `--hub-id`) declares the
+single authoritative owner of each namespace, deny-by-default: an ungoverned
+namespace grants nothing, a remote-owned claim is refused with the owner named.
+`--multihub-watch PEER=URI` (repeatable, requires `--namespace-owner`) polls
+each named peer's event log on a bounded interval and folds the claims it
+observes into the asserting-owners view — a namespace a watched peer is seen
+contesting resolves as *partitioned* and refuses to grant until the contest
+clears. Naming a peer is the operator confirmation for the always-on outbound
+connection; a failed poll keeps the last successful observation, so a link
+outage never lets a contested namespace silently resume granting. Validated
+live: a claim held on the watched peer flips the namespace to repeated
+`partitioned` refusals, and the peer's release clears it on the next poll.
+
 ## Agent2Agent bridge
 
 `synapse a2a-card` projects the live SYNAPSE capability manifest into an A2A

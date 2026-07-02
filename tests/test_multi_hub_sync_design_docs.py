@@ -53,7 +53,10 @@ def test_multi_hub_sync_refuses_to_treat_claims_as_a_crdt() -> None:
 def test_multi_hub_sync_keeps_local_first_boundaries() -> None:
     """The boundaries must preserve local-first and refuse a global cluster."""
     text = _collapsed(DOC)
-    assert "not implemented" in text
+    # The standing follower closed the last "not implemented" sync gap; the doc
+    # now pins the opt-in flag and the fail-closed posture instead.
+    assert "--multihub-watch" in text
+    assert "keeps the last successful observation" in text
     assert "local-first" in text
     assert "no single global leader" in text or "does not introduce a global consensus" in text
     for sibling in ("signed-events-mtls.md", "federated-trust-model.md"):
