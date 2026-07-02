@@ -48,6 +48,16 @@ All notable changes to this project are documented here.
   and `--`. Requires `--trend`; the stored history and the `--json`
   document are byte-identical either way.
 
+- `synapse cross-repo --suggest-resolution` can now name a concrete pin:
+  when a version inside an odd-one-out's remainder range is already
+  declared by one of the remaining consumers in an inclusive bound
+  (`==`, `>=`, `<=`), the advice appends "`X.Y would satisfy them all
+  (a version REPO already declares)`" and the JSON gains `suggested_pin`
+  and `pin_source`. Evidence-based only: the version is lifted from a
+  manifest, never invented — the scanner has no package index, so
+  exclusive fence-post bounds are never candidates and whether an index
+  publishes the version is not claimed.
+
 ### Security
 - The last four unpinned tool installs in CI are now hash-locked: the
   pre-commit, release, publish, and reuse workflow jobs install

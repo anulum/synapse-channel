@@ -115,6 +115,96 @@ class TestAdvisePackage:
         ]
 
 
+class TestSuggestedPin:
+    def test_inclusive_lower_bound_inside_the_remainder_is_suggested(self) -> None:
+        advice = advise_package(
+            "shared-dep",
+            "python",
+            (
+                _consumer("alpha", ">=4.1,<5"),
+                _consumer("beta", ">=4.2,<4.3"),
+                _consumer("gamma", "==2.9"),
+            ),
+        )
+
+        outlier = advice.odd_ones_out[0]
+        assert (outlier.repo, outlier.suggested_pin, outlier.pin_source) == (
+            "gamma",
+            "4.2",
+            "beta",
+        )
+
+    def test_exact_pin_of_the_remaining_consumer_is_the_evidence(self) -> None:
+        advice = advise_package(
+            "shared-dep",
+            "python",
+            (_consumer("alpha", "==1.0"), _consumer("beta", "==2.0")),
+        )
+
+        assert [(odd.repo, odd.suggested_pin, odd.pin_source) for odd in advice.odd_ones_out] == [
+            ("alpha", "2.0", "beta"),
+            ("beta", "1.0", "alpha"),
+        ]
+
+    def test_exclusive_bounds_are_never_evidence(self) -> None:
+        # the remaining consumer's fence-posts (>1.0, <2.0) need not exist
+        # as published versions, so nothing is suggested
+        advice = advise_package(
+            "shared-dep",
+            "python",
+            (_consumer("alpha", ">1.0,<2.0"), _consumer("beta", "==5.0")),
+        )
+
+        outlier = next(odd for odd in advice.odd_ones_out if odd.repo == "beta")
+        assert outlier.remainder == ">1.0, <2.0"
+        assert outlier.suggested_pin is None
+        assert outlier.pin_source is None
+
+    def test_declared_version_outside_the_remainder_is_not_suggested(self) -> None:
+        # alpha names 1.0 but the remainder starts at 2.5 — only 2.5 qualifies
+        advice = advise_package(
+            "shared-dep",
+            "python",
+            (
+                _consumer("alpha", ">=1.0,<3"),
+                _consumer("beta", ">=2.5,<3"),
+                _consumer("gamma", "==9.0"),
+            ),
+        )
+
+        outlier = next(odd for odd in advice.odd_ones_out if odd.repo == "gamma")
+        assert (outlier.suggested_pin, outlier.pin_source) == ("2.5", "beta")
+
+    def test_highest_qualifying_declared_version_wins(self) -> None:
+        advice = advise_package(
+            "shared-dep",
+            "python",
+            (
+                _consumer("alpha", ">=4.2,<5"),
+                _consumer("beta", "<=4.7"),
+                _consumer("gamma", "==1.0"),
+            ),
+        )
+
+        outlier = next(odd for odd in advice.odd_ones_out if odd.repo == "gamma")
+        assert (outlier.suggested_pin, outlier.pin_source) == ("4.7", "beta")
+
+    def test_padded_version_tie_falls_to_the_first_repository(self) -> None:
+        # 4.2 and 4.2.0 are the same release; the tie is deterministic
+        advice = advise_package(
+            "shared-dep",
+            "python",
+            (
+                _consumer("zeta", ">=4.2"),
+                _consumer("alpha", ">=4.2.0"),
+                _consumer("gamma", "==1.0"),
+            ),
+        )
+
+        outlier = next(odd for odd in advice.odd_ones_out if odd.repo == "gamma")
+        assert (outlier.suggested_pin, outlier.pin_source) == ("4.2.0", "alpha")
+
+
 class TestIntervalRendering:
     def test_unbounded_interval_renders_as_any_version(self) -> None:
         assert render_interval(VersionInterval()) == "any version"
@@ -199,6 +289,8 @@ class TestRenderings:
             "repo": "beta",
             "constraint": "==2.9",
             "remainder": ">=4.2, <4.6",
+            "suggested_pin": "4.2",
+            "pin_source": "gamma",
         }
 
     def test_markdown_names_the_outlier_and_the_remainder(self, tmp_path: Path) -> None:
@@ -207,9 +299,25 @@ class TestRenderings:
         assert "## Suggested resolutions (1 conflicting package(s))" in text
         assert "### python shared-dep" in text
         assert (
-            "- ODD ONE OUT: beta ('==2.9') — the other declarations reconcile at >=4.2, <4.6"
-            in text
+            "- ODD ONE OUT: beta ('==2.9') — the other declarations reconcile at "
+            ">=4.2, <4.6; 4.2 would satisfy them all (a version gamma already declares)" in text
         )
+
+    def test_markdown_without_pin_evidence_states_only_the_range(self) -> None:
+        text = render_resolution_markdown(
+            (
+                advise_package(
+                    "shared-dep",
+                    "python",
+                    (_consumer("alpha", ">1.0,<2.0"), _consumer("beta", "==5.0")),
+                ),
+            )
+        )
+
+        assert (
+            "- ODD ONE OUT: beta ('==5.0') — the other declarations reconcile at >1.0, <2.0" in text
+        )
+        assert "reconcile at >1.0, <2.0;" not in text
 
     def test_markdown_of_no_conflicts_says_so(self) -> None:
         assert "no provable version conflicts" in render_resolution_markdown(())
