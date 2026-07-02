@@ -14,6 +14,17 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `synapse cross-repo --suggest-resolution` turns each detected version
+  conflict into actionable advice: for every provably conflicting
+  package it intersects all consumers' declared ranges (the same bounded
+  interval model detection uses, so the two never disagree) and names
+  which single repository's declaration is the odd one out, with the
+  range the remaining consumers reconcile at. When no single declaration
+  is the outlier the advice says the constraints split into mutually
+  disjoint camps; declarations outside the bounded model are listed as
+  unassessed. Advisory text only — nothing rewrites a manifest. The
+  JSON report gains a `resolutions` list; the flag does not combine
+  with `--watch` or `--dot`.
 - `synapse causality health` flags three lifecycle-anomaly shapes in the
   coordination-causality graph: orphaned claims (a claim is its task's
   last recorded event), dangling dependencies (a declared `depends_on`

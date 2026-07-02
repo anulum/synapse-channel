@@ -75,7 +75,7 @@ everything, since they need the whole command table.
 | `synapse git-hook` | Install post-commit/post-merge hooks that auto-release a commit's claims. |
 | `synapse git-release` | Release the claims whose paths a commit or merge just touched. |
 | `synapse conflicts` | Predict cross-branch merge conflicts between overlapping claims; exit non-zero on a hit. |
-| `synapse cross-repo` | Scan a directory of repositories into a dependency graph (manifests/CODEOWNERS as edges), flag provably conflicting version pins, and join live claims onto it; with `--repo`, exit `1` when a connected repository holds a live claim. |
+| `synapse cross-repo` | Scan a directory of repositories into a dependency graph (manifests/CODEOWNERS as edges), flag provably conflicting version pins, and join live claims onto it; with `--repo`, exit `1` when a connected repository holds a live claim; `--suggest-resolution` names each conflict's odd-one-out declaration. |
 | `synapse verify-release` | Run declared verification commands and write an observed release receipt JSON; `--merkle-db` commits the coordination log's Merkle root into it, `--signing-key` attests it with the hub key. |
 | `synapse policy-check` | Evaluate a release receipt against a policy file; advisory by default, `--enforce` to gate, `--trusted-signing-key` verifies the commitment's hub signature. |
 | `synapse identity` | Inventory and audit declared agent identities for enforcement-rollout blockers. |
@@ -1146,6 +1146,35 @@ that minimal version selection reconciles, and a different major version is
 a different module path. This stays declaration-level satisfiability — not
 a resolver: no lockfiles, no transitive closure, no knowledge of which
 versions are actually published.
+
+`--suggest-resolution` turns each detected conflict into actionable advice:
+for every provably conflicting package it intersects **all** consumers'
+declared ranges (the same bounded interval model, so advice and detection
+never disagree) and names which single repository's declaration is the
+**odd one out** — the one whose removal leaves every other consumer a
+common range, rendered so the operator sees what the rest already agree
+on. When no single declaration is the outlier the constraints split into
+mutually disjoint camps, and the advice says so instead of guessing;
+declarations outside the bounded model are listed as unassessed, never
+silently skipped. Advisory text only — nothing rewrites a manifest.
+Replayed against the real GOTM checkout tree, where it named both sides of
+a `cryptography` standoff and honestly refused the nine-way
+`scpn-studio-platform` split:
+
+```text
+$ synapse cross-repo ~/code --suggest-resolution
+...
+### python cryptography
+- DIRECTOR-AI declares '>=42,<49' (pyproject.toml)
+- SCPN-PHASE-ORCHESTRATOR declares '>=49,<50' (pyproject.toml)
+...
+- ODD ONE OUT: DIRECTOR-AI ('>=42,<49') — the other declarations reconcile at >=49, <50
+- ODD ONE OUT: SCPN-PHASE-ORCHESTRATOR ('>=49,<50') — the other declarations reconcile at >=42, <49
+
+### python scpn-studio-platform
+...
+- no single declaration is the odd one out; the constraints split into mutually disjoint camps
+```
 
 Like `status`, the report can stand watch: `--watch` rescans the manifests
 and rejoins the claims every `--interval` seconds (default 2, `--count`

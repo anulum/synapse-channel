@@ -15,7 +15,11 @@ event log onto it, and prints the result as text, JSON, or Graphviz DOT.
 With ``--repo`` the exit code becomes a coordination signal: ``1`` when a
 live claim exists in a repository connected to the focus by a dependency
 edge. ``--watch`` rescans and reprints every ``--interval`` seconds — a
-standing dashboard over the same evidence.
+standing dashboard over the same evidence. ``--suggest-resolution`` turns
+each detected version conflict into advice: the intersection of all
+consumers' declared ranges names which repository's constraint is the odd
+one out and what the rest already reconcile at — advisory text only,
+nothing rewrites a manifest.
 """
 
 from __future__ import annotations
@@ -34,6 +38,11 @@ from synapse_channel.core.cross_repo_graph import (
     render_cross_repo_dot,
     render_cross_repo_human,
     run_cross_repo_graph,
+)
+from synapse_channel.core.version_resolution import (
+    render_resolution_markdown,
+    resolution_to_json,
+    run_resolution_advice,
 )
 
 
@@ -123,6 +132,9 @@ def _cmd_cross_repo(args: argparse.Namespace) -> int:
     ``--count`` refreshes ran or the operator interrupts; Ctrl-C is the
     normal way to stop a watch, so it exits ``0`` rather than tracing.
     """
+    if args.suggest_resolution and (args.watch or args.dot):
+        print("--suggest-resolution does not combine with --watch or --dot", file=sys.stderr)
+        return 2
     if args.watch:
         if args.dot:
             print("--watch does not combine with --dot", file=sys.stderr)
@@ -143,15 +155,22 @@ def _cmd_cross_repo(args: argparse.Namespace) -> int:
             return 0
     try:
         graph = run_cross_repo_graph(args.root, db_path=args.db, focus=args.repo)
+        advice = run_resolution_advice(args.root) if args.suggest_resolution else ()
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
     if args.json:
-        print(json.dumps(cross_repo_graph_to_json(graph), indent=2, sort_keys=True))
+        payload = cross_repo_graph_to_json(graph)
+        if args.suggest_resolution:
+            payload["resolutions"] = resolution_to_json(advice)
+        print(json.dumps(payload, indent=2, sort_keys=True))
     elif args.dot:
         print(render_cross_repo_dot(graph))
     else:
         print(render_cross_repo_human(graph))
+        if args.suggest_resolution:
+            print()
+            print(render_resolution_markdown(advice))
     return _claim_signal(graph, args.repo)
 
 
@@ -200,5 +219,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=int,
         default=0,
         help="Stop after this many --watch refreshes (0 = until interrupted).",
+    )
+    parser.add_argument(
+        "--suggest-resolution",
+        action="store_true",
+        help="For each detected version conflict, name the odd-one-out declaration "
+        "and the range the other consumers reconcile at (advisory text; nothing "
+        "rewrites a manifest).",
     )
     parser.set_defaults(func=_cmd_cross_repo)
