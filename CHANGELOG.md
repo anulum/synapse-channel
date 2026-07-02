@@ -36,6 +36,12 @@ All notable changes to this project are documented here.
   coordination visible in trace viewers. Everything else stays
   `UNSET`: the log records progress, not success verdicts. The JSON
   span records carry the new `status` and `filtered_out_tasks` fields.
+- `synapse causality otel --watch` re-projects and re-exports every
+  `--interval` seconds until `--count` ticks ran (0 = until Ctrl-C) —
+  live coordination observability on a fixed cadence. The store is
+  reread each tick, so newly recorded events appear in the next export,
+  and the deterministic span ids make re-exports idempotent on the
+  collector side; a failing tick stops the watch with its exit code.
 
 ### Security
 - The hub federation gate now denies a frame signed with a peered key whose

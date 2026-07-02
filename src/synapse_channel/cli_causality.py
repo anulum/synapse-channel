@@ -34,7 +34,9 @@ extra). Deterministic ids: re-exporting the same log yields the same spans.
 can share one observability tenant; ``--filter TASK_ID`` (repeatable)
 narrows the projection to named tasks, keeping links into excluded tasks
 and counting the exclusions; an event recording the lifecycle failure
-terminal projects span status ``ERROR``.
+terminal projects span status ``ERROR``; ``--watch`` re-projects and
+re-exports on a fixed cadence, idempotent collector-side thanks to the
+deterministic ids.
 """
 
 from __future__ import annotations
@@ -42,6 +44,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 from synapse_channel.core.causality import (
@@ -89,9 +93,13 @@ def _cmd_causality(args: argparse.Namespace) -> int:
         or args.endpoint is not None
         or args.service_name is not None
         or args.filter
+        or args.watch
     )
     if args.direction != OTEL_MODE and otel_only:
-        print("--out/--endpoint/--service-name/--filter belong to the otel mode", file=sys.stderr)
+        print(
+            "--out/--endpoint/--service-name/--filter/--watch belong to the otel mode",
+            file=sys.stderr,
+        )
         return 2
     if args.dot and not args.peer:
         print(
@@ -145,12 +153,58 @@ def _cmd_otel(args: argparse.Namespace) -> int:
     ``otel`` extra. Exactly one of the two is required. ``--service-name``
     overrides the ``service.name`` resource; ``--filter TASK_ID`` (repeatable)
     projects only the named tasks and refuses a task the log does not record.
+    ``--watch`` re-projects and re-exports every ``--interval`` seconds —
+    live coordination observability; the deterministic ids make each
+    re-export idempotent on the collector side.
     """
     if (args.out is None) == (args.endpoint is None):
         print(
             "causality otel requires exactly one of --out FILE or --endpoint URL", file=sys.stderr
         )
         return 2
+    if args.watch:
+        if args.interval <= 0:
+            print("--interval must be positive", file=sys.stderr)
+            return 2
+        try:
+            return _watch_otel(args)
+        except KeyboardInterrupt:
+            return 0
+    return _otel_once(args)
+
+
+def _watch_otel(args: argparse.Namespace, *, sleeper: Callable[[float], None] | None = None) -> int:
+    """Re-project and re-export the spans on a fixed cadence.
+
+    Each tick is one full :func:`_otel_once` pass — the store is reread, so
+    events recorded since the last tick appear in the next export, and the
+    deterministic span ids mean a collector receiving the same span twice
+    stores one. A failing tick stops the watch with its exit code, exactly
+    as a single export fails visibly; ``--count`` bounds the ticks (``0``
+    runs until interrupted, and Ctrl-C is the normal way to stop).
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        The parsed ``causality otel`` arguments.
+    sleeper : Callable[[float], None] or None, optional
+        Sleep function between ticks; ``None`` uses :func:`time.sleep`.
+        Injectable for testing.
+    """
+    sleep = time.sleep if sleeper is None else sleeper
+    ticks = 0
+    while True:
+        code = _otel_once(args)
+        if code != 0:
+            return code
+        ticks += 1
+        if args.count and ticks >= args.count:
+            return 0
+        sleep(args.interval)
+
+
+def _otel_once(args: argparse.Namespace) -> int:
+    """Run one projection-and-export pass and print its summary line."""
     try:
         projection = run_otel_projection(
             args.db,
@@ -331,6 +385,25 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="otel mode: project only this task's trace (repeatable); a task the log "
         "does not record is refused. Links into excluded tasks are kept and the "
         "exclusions counted.",
+    )
+    causality.add_argument(
+        "--watch",
+        action="store_true",
+        help="otel mode: re-project and re-export every --interval seconds until "
+        "interrupted (Ctrl-C); deterministic ids make re-exports idempotent "
+        "collector-side.",
+    )
+    causality.add_argument(
+        "--interval",
+        type=float,
+        default=2.0,
+        help="Seconds between --watch ticks (default: 2.0).",
+    )
+    causality.add_argument(
+        "--count",
+        type=int,
+        default=0,
+        help="Stop --watch after this many ticks (0 = until interrupted).",
     )
     causality.add_argument(
         "--max-nodes",
