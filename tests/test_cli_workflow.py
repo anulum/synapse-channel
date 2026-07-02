@@ -26,6 +26,8 @@ from synapse_channel.cli_workflow import (
     add_parsers,
 )
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.workflow import compile_to_tasks, parse_workflow
 from synapse_channel.core.workflow_driver import WorkflowState
 from synapse_channel.core.workflow_run import RunResult
@@ -414,3 +416,151 @@ async def test_drive_run_reports_a_name_conflict(
             await close_agents(blocker)
     assert code == 1
     assert "DRIVER" in capsys.readouterr().out
+
+
+# --- contention (workflow-scoped yield advice) ---------------------------------------
+
+
+def _seed_claims(db: Path, *claims: tuple[str, str, list[str]]) -> None:
+    """Append live claims as (task_id, owner, paths) triples in one worktree."""
+    store = EventStore(db)
+    try:
+        for task_id, owner, paths in claims:
+            store.append(
+                EventKind.CLAIM,
+                {
+                    "task_id": task_id,
+                    "owner": owner,
+                    "status": "claimed",
+                    "paths": paths,
+                    "worktree": "repo",
+                },
+            )
+    finally:
+        store.close()
+
+
+def test_contention_reports_a_pair_involving_a_workflow_task(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed_claims(
+        db,
+        ("release/build", "alice", ["src/build.py"]),
+        ("hotfix", "bob", ["src/build.py"]),
+    )
+    parser = _parser()
+    args = parser.parse_args(["workflow", "contention", _write(tmp_path, _GOOD), str(db)])
+    assert args.func(args) == 1
+    out = capsys.readouterr().out
+    assert "1 overlapping live claim pair(s)" in out
+    assert "release/build" in out
+    assert "advisory only" in out
+
+
+def test_contention_ignores_pairs_outside_the_workflow_and_notes_them(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed_claims(
+        db,
+        ("stray-one", "alice", ["src/other.py"]),
+        ("stray-two", "bob", ["src/other.py"]),
+    )
+    parser = _parser()
+    args = parser.parse_args(["workflow", "contention", _write(tmp_path, _GOOD), str(db)])
+    assert args.func(args) == 0
+    out = capsys.readouterr().out
+    assert "No live claims involving this workflow's tasks overlap" in out
+    assert "1 other overlapping pair(s) do not involve this workflow" in out
+
+
+def test_contention_quiet_log_prints_no_note(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed_claims(db, ("release/build", "alice", ["src/build.py"]))
+    parser = _parser()
+    args = parser.parse_args(["workflow", "contention", _write(tmp_path, _GOOD), str(db)])
+    assert args.func(args) == 0
+    out = capsys.readouterr().out
+    assert "No live claims involving this workflow's tasks overlap" in out
+    assert "other overlapping" not in out
+
+
+def test_contention_json_carries_only_the_scoped_pairs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed_claims(
+        db,
+        ("release/build", "alice", ["src/build.py"]),
+        ("hotfix", "bob", ["src/build.py"]),
+        ("stray-one", "carol", ["src/other.py"]),
+        ("stray-two", "dave", ["src/other.py"]),
+    )
+    parser = _parser()
+    args = parser.parse_args(
+        ["workflow", "contention", _write(tmp_path, _GOOD), str(db), "--json"]
+    )
+    assert args.func(args) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert len(payload) == 1
+    assert payload[0]["holder"]["task_id"] == "release/build"
+    assert payload[0]["yielder"]["task_id"] == "hotfix"
+
+
+def test_contention_json_scoped_empty_is_an_empty_list(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed_claims(
+        db,
+        ("stray-one", "alice", ["src/other.py"]),
+        ("stray-two", "bob", ["src/other.py"]),
+    )
+    parser = _parser()
+    args = parser.parse_args(
+        ["workflow", "contention", _write(tmp_path, _GOOD), str(db), "--json"]
+    )
+    assert args.func(args) == 0
+    assert json.loads(capsys.readouterr().out) == []
+
+
+def test_contention_rejects_a_malformed_workflow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed_claims(db, ("release/build", "alice", ["src/build.py"]))
+    parser = _parser()
+    args = parser.parse_args(["workflow", "contention", _write(tmp_path, {"name": "w"}), str(db)])
+    assert args.func(args) == 2
+    assert "steps" in capsys.readouterr().err
+
+
+def test_contention_missing_store_exits_two(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    parser = _parser()
+    args = parser.parse_args(
+        ["workflow", "contention", _write(tmp_path, _GOOD), str(tmp_path / "absent.db")]
+    )
+    assert args.func(args) == 2
+    assert "missing event store" in capsys.readouterr().err
+
+
+def test_contention_honours_the_node_ceiling(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed_claims(
+        db,
+        ("release/build", "alice", ["src/build.py"]),
+        ("hotfix", "bob", ["src/build.py"]),
+    )
+    parser = _parser()
+    args = parser.parse_args(
+        ["workflow", "contention", _write(tmp_path, _GOOD), str(db), "--max-nodes", "1"]
+    )
+    assert args.func(args) == 2
+    assert "would exceed" in capsys.readouterr().err

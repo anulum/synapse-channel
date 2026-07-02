@@ -28,14 +28,18 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import sys
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 
+from synapse_channel.cli_accounting import load_pricing_table
 from synapse_channel.cli_participants import (
     DEFAULT_ASK_TIMEOUT,
     build_participant,
     refusal_for,
 )
+from synapse_channel.core.accounting import ModelPrice
 from synapse_channel.participants.convene import ConvocationTranscript, convene
 from synapse_channel.participants.conversation import STOPPED_BUDGET
 from synapse_channel.participants.envelope import TurnResult
@@ -225,15 +229,175 @@ def _convene_marker(panel_size: int, synthesis_index: int | None) -> Callable[[i
     return marker
 
 
+@dataclass(frozen=True)
+class _SeatPlan:
+    """One seat's dry-run standing: identity, readiness, planned turns, cost.
+
+    The cost is ``turns`` times the seat model's per-turn price; a seat whose
+    model has no line in the pricing table carries a ``None`` estimate rather
+    than a fabricated zero.
+    """
+
+    identity: str
+    provider: str
+    model: str
+    available: bool
+    detail: str
+    turns: int
+    estimated_cost_usd: float | None
+
+    def to_json(self) -> dict[str, object]:
+        """Return the seat plan's JSON wire shape."""
+        return {
+            "identity": self.identity,
+            "provider": self.provider,
+            "model": self.model,
+            "available": self.available,
+            "detail": self.detail,
+            "turns": self.turns,
+            "estimated_cost_usd": self.estimated_cost_usd,
+        }
+
+
+def _seat_plan(
+    spec: str,
+    seat: Participant,
+    *,
+    turns: int,
+    pricing: dict[str, ModelPrice] | None,
+    input_tokens: int,
+    output_tokens: int,
+) -> _SeatPlan:
+    """Describe one seat's dry-run standing without taking a turn."""
+    provider, model = parse_spec(spec)
+    health = seat.health()
+    price = (pricing or {}).get(model)
+    estimated = None if price is None else turns * price.estimate(input_tokens, output_tokens)
+    return _SeatPlan(
+        identity=health.identity,
+        provider=provider,
+        model=model,
+        available=health.available,
+        detail=health.detail,
+        turns=turns,
+        estimated_cost_usd=estimated,
+    )
+
+
+def _render_seat_plan(plan: _SeatPlan) -> str:
+    """Render one seat's dry-run line."""
+    readiness = "ready" if plan.available else f"UNAVAILABLE ({plan.detail})"
+    priced = "unpriced" if plan.estimated_cost_usd is None else f"~${plan.estimated_cost_usd:.4f}"
+    model = f" model={plan.model}" if plan.model else ""
+    return f"- {plan.identity}{model}: {plan.turns} turn(s), {priced}, {readiness}"
+
+
+def _dry_run_report(
+    args: argparse.Namespace,
+    specs: Sequence[str],
+    seats: Sequence[Participant],
+    moderator: Participant | None,
+) -> int:
+    """Print the convocation plan — seats, mode, rounds, cost — without a turn.
+
+    Health probes run (they never take a turn), so the report doubles as a
+    pre-flight: exit ``0`` when every seat is ready, ``1`` when any seat is
+    unavailable, ``2`` for a refused configuration or an unreadable pricing
+    file. Costs come from the operator's ``--pricing`` table under the printed
+    per-turn token assumptions; seats without a price line stay unpriced and
+    are excluded from the total rather than counted as free.
+    """
+    mode = _resolve_mode(args.mode, len(seats), moderator_available=moderator is not None)
+    policy = policy_for(mode)
+    if policy.uses_moderator and moderator is None:
+        print(f"{mode.value} requires a moderator participant")
+        return 2
+    try:
+        pricing = load_pricing_table(args.pricing)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    rounds = policy.critique_rounds + 1
+    plans = [
+        _seat_plan(
+            spec,
+            seat,
+            turns=rounds,
+            pricing=pricing,
+            input_tokens=args.est_input_tokens,
+            output_tokens=args.est_output_tokens,
+        )
+        for spec, seat in zip(specs, seats, strict=False)
+    ]
+    if moderator is not None and policy.uses_moderator:
+        plans.append(
+            _seat_plan(
+                specs[-1],
+                moderator,
+                turns=1,
+                pricing=pricing,
+                input_tokens=args.est_input_tokens,
+                output_tokens=args.est_output_tokens,
+            )
+        )
+    priced = [
+        plan.estimated_cost_usd for plan in plans if plan.estimated_cost_usd is not None
+    ]
+    total = sum(priced) if priced else None
+    unpriced = len(plans) - len(priced)
+    total_turns = sum(plan.turns for plan in plans)
+    exceeded = None
+    if args.budget_usd is not None and total is not None:
+        exceeded = total > args.budget_usd
+    payload: dict[str, object] = {
+        "mode": mode.value,
+        "critique_rounds": policy.critique_rounds,
+        "uses_moderator": policy.uses_moderator,
+        "turns": total_turns,
+        "seats": [plan.to_json() for plan in plans],
+        "estimated_total_usd": total,
+        "unpriced_seats": unpriced,
+        "assumptions": {
+            "input_tokens_per_turn": args.est_input_tokens,
+            "output_tokens_per_turn": args.est_output_tokens,
+        },
+        "budget_usd": args.budget_usd,
+        "budget_exceeded": exceeded,
+    }
+    if args.json:
+        print(json.dumps(payload, sort_keys=True))
+    else:
+        print(
+            f"dry run: mode={mode.value} · rounds={rounds}"
+            f"{' + synthesis' if policy.uses_moderator else ''} · turns={total_turns}"
+        )
+        for plan in plans:
+            print(_render_seat_plan(plan))
+        if total is None:
+            print("estimated total: unpriced (pass --pricing to estimate costs)")
+        else:
+            suffix = f" ({unpriced} seat(s) unpriced, excluded)" if unpriced else ""
+            print(
+                f"estimated total: ~${total:.4f} assuming "
+                f"{args.est_input_tokens} in / {args.est_output_tokens} out tokens per turn"
+                f"{suffix}"
+            )
+        if exceeded is not None:
+            verdict = "EXCEEDS" if exceeded else "fits within"
+            print(f"budget: estimate {verdict} --budget-usd {args.budget_usd:.4f}")
+    return 1 if any(not plan.available for plan in plans) else 0
+
+
 def _cmd_convene(args: argparse.Namespace) -> int:
     """Convene the named panel in a conversation mode and print every turn.
 
     Under ``--mode auto`` the mode follows the session shape (panel size and
     whether ``--moderator`` was given), which is the dynamic selection the modes
-    exist for. Exit ``0`` when the convocation completed with every turn
-    answered, ``1`` for an unavailable seat, any degraded turn, or a
-    ``--budget-usd`` halt, ``2`` for a refused configuration (including a
-    symposium without a moderator).
+    exist for. ``--dry-run`` prints the plan — resolved mode, rounds, per-seat
+    readiness and estimated cost — without taking any turn. Exit ``0`` when the
+    convocation completed with every turn answered, ``1`` for an unavailable
+    seat, any degraded turn, or a ``--budget-usd`` halt, ``2`` for a refused
+    configuration (including a symposium without a moderator).
     """
     specs = list(args.panel) + ([args.moderator] if args.moderator else [])
     try:
@@ -242,6 +406,8 @@ def _cmd_convene(args: argparse.Namespace) -> int:
         print(str(exc))
         return 2
     moderator = seats.pop() if args.moderator else None
+    if args.dry_run:
+        return _dry_run_report(args, specs, seats, moderator)
     if _report_unavailable(seats + ([moderator] if moderator else [])):
         return 1
 
@@ -349,6 +515,28 @@ def add_parsers(group: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
         type=float,
         default=None,
         help="Cumulative cost ceiling checked between rounds and before synthesis.",
+    )
+    convener.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the plan (seats, mode, rounds, estimated cost) without taking a turn.",
+    )
+    convener.add_argument(
+        "--pricing",
+        default=None,
+        help="JSON file mapping model -> {input_per_1k, output_per_1k} for --dry-run estimates.",
+    )
+    convener.add_argument(
+        "--est-input-tokens",
+        type=int,
+        default=1000,
+        help="Assumed input tokens per turn for --dry-run cost estimates.",
+    )
+    convener.add_argument(
+        "--est-output-tokens",
+        type=int,
+        default=500,
+        help="Assumed output tokens per turn for --dry-run cost estimates.",
     )
     _add_shared_arguments(convener)
     convener.set_defaults(func=_cmd_convene)

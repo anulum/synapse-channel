@@ -19,7 +19,7 @@ from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel.cli_accounting import (
     _emit_usage,
     _load_budgets,
-    _load_pricing,
+    load_pricing_table,
     add_parsers,
 )
 from synapse_channel.core.accounting import ModelPrice, format_usage_note, run_accounting_report
@@ -53,15 +53,15 @@ def _seed_store(db: Path) -> None:
 # ---------- pricing / budget loaders ----------
 
 
-def test_load_pricing_and_budgets_none() -> None:
-    assert _load_pricing(None) is None
+def testload_pricing_table_and_budgets_none() -> None:
+    assert load_pricing_table(None) is None
     assert _load_budgets(None) is None
 
 
-def test_load_pricing_valid(tmp_path: Path) -> None:
+def testload_pricing_table_valid(tmp_path: Path) -> None:
     path = tmp_path / "pricing.json"
     path.write_text(json.dumps({"opus": {"input_per_1k": 2.0, "output_per_1k": 4.0}}))
-    pricing = _load_pricing(str(path))
+    pricing = load_pricing_table(str(path))
     assert pricing is not None
     assert pricing["opus"] == ModelPrice(input_per_1k=2.0, output_per_1k=4.0)
 
@@ -73,18 +73,18 @@ def test_load_budgets_valid(tmp_path: Path) -> None:
     assert budgets == {"alpha": 12.5}
 
 
-def test_load_pricing_entry_not_object(tmp_path: Path) -> None:
+def testload_pricing_table_entry_not_object(tmp_path: Path) -> None:
     path = tmp_path / "p.json"
     path.write_text(json.dumps({"opus": 3.0}))
     with pytest.raises(ValueError, match="must be an object"):
-        _load_pricing(str(path))
+        load_pricing_table(str(path))
 
 
-def test_load_pricing_non_object_document(tmp_path: Path) -> None:
+def testload_pricing_table_non_object_document(tmp_path: Path) -> None:
     path = tmp_path / "p.json"
     path.write_text(json.dumps([1, 2, 3]))
     with pytest.raises(ValueError, match="must contain a JSON object"):
-        _load_pricing(str(path))
+        load_pricing_table(str(path))
 
 
 def test_load_budgets_rejects_bool_and_negative(tmp_path: Path) -> None:
@@ -98,9 +98,9 @@ def test_load_budgets_rejects_bool_and_negative(tmp_path: Path) -> None:
         _load_budgets(str(negative))
 
 
-def test_load_pricing_missing_file(tmp_path: Path) -> None:
+def testload_pricing_table_missing_file(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="could not read JSON file"):
-        _load_pricing(str(tmp_path / "missing.json"))
+        load_pricing_table(str(tmp_path / "missing.json"))
 
 
 # ---------- report command ----------

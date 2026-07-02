@@ -374,3 +374,131 @@ def test_convene_shares_the_context_and_timeout_with_every_seat(
     for seat in fabric.created:
         assert seat._timeout == 12.5
         assert seat.requests[0].context.startswith("be brief")
+
+
+# --- convene --dry-run ----------------------------------------------------------------
+
+
+def _pricing_file(tmp_path: Any, table: dict[str, dict[str, float]]) -> str:
+    path = tmp_path / "pricing.json"
+    path.write_text(json.dumps(table), encoding="utf-8")
+    return str(path)
+
+
+def test_dry_run_prints_the_plan_and_takes_no_turn(
+    fabric: SimpleNamespace, tmp_path: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pricing = _pricing_file(tmp_path, {"m": {"input_per_1k": 1.0, "output_per_1k": 2.0}})
+    args = _convene_args(
+        "scripted:m", "other:m", "--dry-run", "--pricing", pricing, "--budget-usd", "20"
+    )
+    code = _cmd_convene(args)
+    out = capsys.readouterr().out
+    assert code == 0
+    # Two seats resolve to a colloquy: 3 rounds x 2 seats, no synthesis.
+    assert "dry run: mode=colloquy · rounds=3 · turns=6" in out
+    # Per-turn price is 1000/1000*1.0 + 500/1000*2.0 = 2.0; three turns each.
+    assert "- participant/scripted model=m: 3 turn(s), ~$6.0000, ready" in out
+    assert "estimated total: ~$12.0000 assuming 1000 in / 500 out tokens per turn" in out
+    assert "budget: estimate fits within --budget-usd 20.0000" in out
+    assert all(seat.requests == [] for seat in fabric.created)
+
+
+def test_dry_run_flags_a_budget_the_estimate_exceeds(
+    fabric: SimpleNamespace, tmp_path: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pricing = _pricing_file(tmp_path, {"m": {"input_per_1k": 1.0, "output_per_1k": 2.0}})
+    args = _convene_args(
+        "scripted:m", "other:m", "--dry-run", "--pricing", pricing, "--budget-usd", "5"
+    )
+    code = _cmd_convene(args)
+    assert code == 0
+    assert "budget: estimate EXCEEDS --budget-usd 5.0000" in capsys.readouterr().out
+
+
+def test_dry_run_reports_an_unavailable_seat_and_exits_one(
+    fabric: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fabric.shape["other"]["available"] = False
+    args = _convene_args("scripted", "other", "--dry-run")
+    code = _cmd_convene(args)
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "UNAVAILABLE (scripted)" in out
+    assert all(seat.requests == [] for seat in fabric.created)
+
+
+def test_dry_run_without_pricing_stays_unpriced(
+    fabric: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = _convene_args("scripted", "other", "--dry-run")
+    code = _cmd_convene(args)
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "3 turn(s), unpriced, ready" in out
+    assert "estimated total: unpriced (pass --pricing to estimate costs)" in out
+
+
+def test_dry_run_symposium_without_moderator_is_refused(
+    fabric: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = _convene_args("scripted", "other", "--mode", "symposium", "--dry-run")
+    code = _cmd_convene(args)
+    assert code == 2
+    assert "symposium requires a moderator participant" in capsys.readouterr().out
+
+
+def test_dry_run_unreadable_pricing_exits_two(
+    fabric: SimpleNamespace, tmp_path: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = _convene_args(
+        "scripted", "other", "--dry-run", "--pricing", str(tmp_path / "absent.json")
+    )
+    code = _cmd_convene(args)
+    assert code == 2
+    assert "could not read JSON file" in capsys.readouterr().err
+
+
+def test_dry_run_symposium_counts_the_moderator_synthesis_turn(
+    fabric: SimpleNamespace, tmp_path: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pricing = _pricing_file(tmp_path, {"m": {"input_per_1k": 1.0, "output_per_1k": 2.0}})
+    args = _convene_args(
+        "scripted:m",
+        "other:m",
+        "--moderator",
+        "scripted:m",
+        "--mode",
+        "symposium",
+        "--dry-run",
+        "--pricing",
+        pricing,
+        "--json",
+    )
+    code = _cmd_convene(args)
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert payload["mode"] == "symposium"
+    assert payload["uses_moderator"] is True
+    # Symposium: 2 rounds x 2 seats + 1 synthesis turn by the moderator.
+    assert payload["turns"] == 5
+    assert [seat["turns"] for seat in payload["seats"]] == [2, 2, 1]
+    assert payload["seats"][2]["identity"] == "participant/scripted-2"
+    assert payload["estimated_total_usd"] == pytest.approx(10.0)
+    assert payload["unpriced_seats"] == 0
+    assert payload["budget_exceeded"] is None
+    assert all(seat.requests == [] for seat in fabric.created)
+
+
+def test_dry_run_with_an_unused_moderator_excludes_it_from_the_plan(
+    fabric: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = _convene_args(
+        "scripted", "other", "--moderator", "scripted", "--mode", "roundtable", "--dry-run"
+    )
+    code = _cmd_convene(args)
+    payload_out = capsys.readouterr().out
+    assert code == 0
+    # A roundtable never synthesises: 2 rounds x 2 seats, the moderator seat unused.
+    assert "dry run: mode=roundtable · rounds=2 · turns=4" in payload_out
+    assert "participant/scripted-2" not in payload_out

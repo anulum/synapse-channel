@@ -29,6 +29,35 @@ The advisory decision layer is implemented in
 CODEOWNERS-sourced approval mapping, event-store-backed claim coverage, and git-
 hook enforcement remain design targets described below.
 
+## CI gating with the GitHub Action
+
+The repository root ships a composite GitHub Action (`action.yml`) wrapping the
+same command, so a repository can gate its pipeline on a receipt without
+writing the install-and-invoke boilerplate:
+
+```yaml
+- name: Check the release receipt against policy
+  uses: anulum/synapse-channel@v0.89.0
+  with:
+    task: release-1.4
+    policy: .synapse/policy.json
+    receipt-json: artifacts/receipt.json
+    # optional hardening: recompute and require a trusted hub signature
+    merkle-db: artifacts/hub.db
+    trusted-signing-keys: |
+      .synapse/hub-a.pub
+      .synapse/hub-b.pub
+    version: "0.89.0"   # pin the checker itself for reproducible gating
+```
+
+The action installs `synapse-channel` (pin it with `version:`), runs
+`synapse policy-check --json --enforce` with the given inputs, prints the
+decision report, exposes it as the `report` step output, and fails the job
+exactly when the CLI exits non-zero. Set `enforce: "false"` for an advisory,
+report-only run that never fails the job. Inputs reach the shell through
+environment variables — never interpolated into the script — so untrusted
+values cannot inject commands; paths with spaces survive intact.
+
 ## Goals
 
 - Keep coordination local-first and evidence-bound.
