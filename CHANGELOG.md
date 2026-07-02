@@ -14,6 +14,11 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- CI installs its dev, benchmark, and docs toolchain from a hash-locked
+  requirements file (`--require-hashes`), making every workflow's
+  dependency set byte-reproducible; the universal resolution carries
+  markers for all supported interpreters, and the regeneration command is
+  documented in the file header.
 - Secret scanning joins the commit gate: a gitleaks pre-commit hook
   refuses a staged secret, and the pre-commit workflow gained a
   digest-pinned full-tree sweep so a secret already in the checkout
