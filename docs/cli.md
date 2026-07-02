@@ -45,7 +45,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse postmortem` | Build a replayable task postmortem from a hub SQLite event store. |
 | `synapse debug` | Fork a task's reconstructed state at a sequence point (read-only what-if). |
 | `synapse reproduce` | Fingerprint a task's authoritative history into a deterministic digest. |
-| `synapse causality` | Trace coordination causes, effects, or counterfactuals over the event log. |
+| `synapse causality` | Trace coordination causes, effects, or counterfactuals over the event log; `contention` weighs overlapping live claims and advises who yields. |
 | `synapse merkle` | Commit the event log to a Merkle root, prove event inclusion, and generate the receipt-signing keypair (`keygen`). |
 | `synapse reliability` | Build evidence-only reliability memory from a hub SQLite event store. |
 | `synapse accounting` | Record and report opt-in model cost/token usage from a hub SQLite event store. |
@@ -638,6 +638,7 @@ synapse reproduce ./synapse.db TASK-1 --expect 9f2c… --json
 synapse causality causes ./synapse.db 142
 synapse causality effects ./synapse.db 118 --json
 synapse causality counterfactual ./synapse.db 96
+synapse causality contention ./synapse.db      # who should yield on overlapping live claims
 synapse merkle root ./synapse.db
 synapse merkle prove ./synapse.db 142 --json > proof.json
 synapse merkle verify proof.json --expect 9f2c…
@@ -785,6 +786,19 @@ backed by a concrete event, and the counterfactual is a structural what-if over
 the inferred graph, not a claim that the work would never have happened another
 way. Exit status is `0` when the sequence names a coordination event, `1` when it
 does not, and `2` on an unknown direction or a missing store.
+
+`synapse causality contention ./synapse.db` takes no sequence: it finds every
+pair of overlapping live claims — different owners, same worktree, path scopes
+that intersect (an empty scope means the whole tree) — and weighs each contender
+by what its task gates downstream: the distinct tasks causally reachable from
+any of its recorded events, plus its declared dependents (transitively) that
+have not completed. The contender whose task gates less is advised to yield;
+on an equal count the later claim yields, so first-come precedence breaks the
+tie. The advice is advisory only — no claim is preempted, nothing contacts a
+live hub — and each recommendation prints with both standings and its reason
+(`--json` for the machine shape). The exit code doubles as a collision signal:
+`0` when no live claims overlap, `1` when at least one pair does, `2` on a
+missing store.
 
 `synapse merkle root ./synapse.db` commits the durable event log to a single
 Merkle root: a 32-byte fingerprint of every event, so two operators — or two
