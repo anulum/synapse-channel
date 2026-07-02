@@ -661,6 +661,7 @@ synapse causality contention ./synapse.db      # who should yield on overlapping
 synapse causality causes ./hub.db peer:96 --peer peer=./peer-hub.db   # federated, HUB:SEQ refs
 synapse causality otel ./synapse.db --out spans.json                  # OpenTelemetry projection
 synapse causality otel ./synapse.db --endpoint http://127.0.0.1:4318/v1/traces  # OTLP push [otel]
+synapse causality otel ./synapse.db --out s.json --filter T1 --service-name hub-eu  # named tasks only
 synapse merkle root ./synapse.db
 synapse merkle prove ./synapse.db 142 --json > proof.json
 synapse merkle verify proof.json --expect 9f2c…
@@ -920,6 +921,25 @@ exported 5 span(s) across 1 trace(s) to http://127.0.0.1:4318/v1/traces
 The collector's log confirms the batch (`service.name=synapse-channel`,
 `spans: 5`). Timestamps are the hub's own event timestamps; the projection is
 read-only and, like every causality mode, contacts no live hub.
+
+Three flags shape the projection. `--service-name NAME` overrides the
+`service.name` resource on the exported spans (default `synapse-channel`), so
+several hubs exporting into one observability tenant stay distinguishable.
+`--filter TASK_ID` (repeatable) projects only the named tasks' traces and
+*refuses* a task the log does not record; links pointing at excluded tasks are
+kept — the deterministic ids resolve against any export that carried the other
+task — and the exclusions are counted in the summary, never silently truncated.
+An event recording the task lifecycle's failure terminal (`failed`) projects
+span status `ERROR` — as does a task root whose *final* recorded status is the
+failure terminal — so failed coordination is visible at a glance in a trace
+viewer; everything else stays `UNSET`, because the log records progress, not
+success verdicts. Replayed against a real 333-task hub log:
+
+```console
+$ synapse causality otel ~/synapse/hub.db --out spans.json \
+    --service-name workstation-hub --filter OUTPUT-INTEGRITY-REAL-SURFACE --max-nodes 0
+exported 3 span(s) across 1 trace(s) to spans.json, 332 task(s) filtered out
+```
 
 `synapse merkle root ./synapse.db` commits the durable event log to a single
 Merkle root: a 32-byte fingerprint of every event, so two operators — or two

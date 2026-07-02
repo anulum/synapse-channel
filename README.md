@@ -824,7 +824,11 @@ since hubs share no sequence, and observe-only like the multi-hub read side.
 `synapse causality otel` projects the graph onto OpenTelemetry spans — one
 trace per task, cross-task dependency/contention edges as span links, ids
 deterministic — written as JSON (`--out`) or pushed as real OTLP over HTTP
-(`--endpoint`, optional extra: `pip install 'synapse-channel[otel]'`).
+(`--endpoint`, optional extra: `pip install 'synapse-channel[otel]'`);
+`--service-name` distinguishes hubs sharing one observability tenant,
+`--filter TASK_ID` narrows the projection to named tasks without truncating
+their cross-task links, and an event recording the lifecycle failure terminal
+projects span status `ERROR`.
 
 Use `synapse merkle root ./synapse.db` to commit the durable log to a single
 Merkle root — a 32-byte fingerprint of every event, so two operators or two
@@ -1030,7 +1034,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 392 |
 | Wire message types | 65 |
 | CLI subcommands | 124 |
-| Test functions | 4010 |
+| Test functions | 4028 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 46 |
 | GitHub Actions workflows | 12 |

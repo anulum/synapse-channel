@@ -16,6 +16,8 @@ from synapse_channel.core.causality import CONTENTION, DEPENDENCY
 from synapse_channel.core.causality_otel import (
     SERVICE_NAME,
     SPAN_ID_HEX_LENGTH,
+    SPAN_STATUS_ERROR,
+    SPAN_STATUS_UNSET,
     TRACE_ID_HEX_LENGTH,
     OtelSpanRecord,
     build_otel_projection,
@@ -207,6 +209,114 @@ class TestRunAndJson:
         assert linked
         link = linked[0]["links"][0]
         assert set(link) == {"trace_id", "span_id", "relation", "detail"}
+
+
+class TestServiceName:
+    def test_override_flows_into_spans_and_json(self) -> None:
+        projection = build_otel_projection(_interlocked_events(), service_name="hub-eu")
+
+        assert projection.service_name == "hub-eu"
+        assert all(dict(span.attributes)["service.name"] == "hub-eu" for span in projection.spans)
+        assert projection_to_json(projection)["service_name"] == "hub-eu"
+
+    def test_default_stays_the_module_constant(self) -> None:
+        projection = build_otel_projection(_interlocked_events())
+
+        assert projection.service_name == SERVICE_NAME
+
+    def test_run_threads_the_override_from_a_store(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        for event in _interlocked_events():
+            store.append(event.kind, event.payload, ts=event.ts)
+        store.close()
+
+        projection = run_otel_projection(db, service_name="hub-us")
+
+        assert projection.service_name == "hub-us"
+
+
+class TestTaskFilter:
+    def test_projects_only_the_named_tasks_and_counts_exclusions(self) -> None:
+        projection = build_otel_projection(_interlocked_events(), task_filter=["B"])
+
+        assert projection.trace_count == 1
+        assert projection.filtered_out_tasks == 2
+        assert {span.trace_id_hex for span in projection.spans} == {trace_id_for_task("B")}
+
+    def test_links_into_excluded_tasks_are_kept(self) -> None:
+        # C's claim was freed by B's release; filtering to C must keep the
+        # contention link — the deterministic ids resolve against any export
+        # that carried B's trace, so dropping it would be silent truncation.
+        projection = build_otel_projection(_interlocked_events(), task_filter=["C"])
+
+        freed_claim = _span(projection.spans, span_id_for_event(6))
+        contention = next(link for link in freed_claim.links if link.relation == CONTENTION)
+        assert contention.trace_id_hex == trace_id_for_task("B")
+        assert contention.span_id_hex == span_id_for_event(3)
+
+    def test_unrecorded_task_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="task\\(s\\) not recorded in the log: NOPE, ZERO"):
+            build_otel_projection(_interlocked_events(), task_filter=["NOPE", "B", "ZERO"])
+
+    def test_no_filter_reports_zero_filtered_out(self) -> None:
+        projection = build_otel_projection(_interlocked_events())
+
+        assert projection.filtered_out_tasks == 0
+        assert projection_to_json(projection)["filtered_out_tasks"] == 0
+
+    def test_run_threads_the_filter_from_a_store(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        for event in _interlocked_events():
+            store.append(event.kind, event.payload, ts=event.ts)
+        store.close()
+
+        projection = run_otel_projection(db, task_filter=["A", "B"])
+
+        assert projection.trace_count == 2
+        assert projection.filtered_out_tasks == 1
+
+
+class TestSpanStatus:
+    def test_failure_terminal_projects_error_on_event_and_root(self) -> None:
+        events = (
+            _claim(1, "B", "alice"),
+            _claim(2, "B", "alice", status="failed", kind=EventKind.TASK_UPDATE),
+        )
+
+        projection = build_otel_projection(events)
+
+        assert _span(projection.spans, span_id_for_event(2)).status == SPAN_STATUS_ERROR
+        assert _span(projection.spans, span_id_for_root("B")).status == SPAN_STATUS_ERROR
+
+    def test_progress_and_completion_stay_unset(self) -> None:
+        projection = build_otel_projection(_interlocked_events())
+
+        assert all(span.status == SPAN_STATUS_UNSET for span in projection.spans)
+
+    def test_failed_midway_but_recovered_root_stays_unset(self) -> None:
+        # only the FINAL recorded status marks the root; the failed event span
+        # itself still carries ERROR
+        events = (
+            _claim(1, "B", "alice", status="failed", kind=EventKind.TASK_UPDATE),
+            _claim(2, "B", "alice", status="done", kind=EventKind.TASK_UPDATE),
+        )
+
+        projection = build_otel_projection(events)
+
+        assert _span(projection.spans, span_id_for_event(1)).status == SPAN_STATUS_ERROR
+        assert _span(projection.spans, span_id_for_root("B")).status == SPAN_STATUS_UNSET
+
+    def test_json_carries_the_status(self) -> None:
+        events = (_claim(1, "B", "alice", status="failed", kind=EventKind.TASK_UPDATE),)
+
+        payload = projection_to_json(build_otel_projection(events))
+
+        spans = payload["spans"]
+        assert isinstance(spans, list)
+        statuses = {span["span_id"]: span["status"] for span in spans}
+        assert statuses[span_id_for_event(1)] == SPAN_STATUS_ERROR
 
 
 def test_link_whose_source_has_no_task_is_dropped() -> None:

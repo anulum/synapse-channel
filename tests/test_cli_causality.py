@@ -487,6 +487,8 @@ def test_parser_defaults_otel_flags_to_none() -> None:
     assert args.direction == "otel"
     assert args.out is None
     assert args.endpoint is None
+    assert args.service_name is None
+    assert args.filter == []
 
 
 def test_cli_otel_writes_span_records_to_a_file(
@@ -550,7 +552,73 @@ def test_cli_otel_flags_are_refused_outside_otel_mode(
     exit_code = cli.main(["causality", "causes", str(db), "4", "--out", str(tmp_path / "s.json")])
 
     assert exit_code == 2
-    assert "--out/--endpoint belong to the otel mode" in capsys.readouterr().err
+    assert "belong to the otel mode" in capsys.readouterr().err
+
+    for flag in (["--service-name", "hub-eu"], ["--filter", "B"]):
+        exit_code = cli.main(["causality", "causes", str(db), "4", *flag])
+        assert exit_code == 2
+        assert "belong to the otel mode" in capsys.readouterr().err
+
+
+def test_cli_otel_service_name_flows_into_the_records(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+    out = tmp_path / "spans.json"
+
+    exit_code = cli.main(
+        ["causality", "otel", str(db), "--out", str(out), "--service-name", "hub-eu"]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["service_name"] == "hub-eu"
+    assert all(span["attributes"]["service.name"] == "hub-eu" for span in payload["spans"])
+
+
+def test_cli_otel_filter_narrows_and_reports_the_exclusions(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+    out = tmp_path / "spans.json"
+
+    exit_code = cli.main(["causality", "otel", str(db), "--out", str(out), "--filter", "B"])
+
+    assert exit_code == 0
+    assert "1 trace(s)" in capsys.readouterr().out
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["trace_count"] == 1
+    assert payload["filtered_out_tasks"] == 2
+
+
+def test_cli_otel_filter_summary_counts_filtered_tasks(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    exit_code = cli.main(
+        ["causality", "otel", str(db), "--out", str(tmp_path / "s.json"), "--filter", "B"]
+    )
+
+    assert exit_code == 0
+    assert "2 task(s) filtered out" in capsys.readouterr().out
+
+
+def test_cli_otel_filter_refuses_an_unrecorded_task(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    exit_code = cli.main(
+        ["causality", "otel", str(db), "--out", str(tmp_path / "s.json"), "--filter", "NOPE"]
+    )
+
+    assert exit_code == 2
+    assert "task(s) not recorded in the log: NOPE" in capsys.readouterr().err
 
 
 def test_cli_otel_missing_store_exits_two(
