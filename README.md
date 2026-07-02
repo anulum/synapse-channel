@@ -1050,6 +1050,34 @@ This snapshot is a static inventory generated from the source tree. Performance 
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`SECURITY.md`](SECURITY.md) · [`GOVERNANCE.md`](GOVERNANCE.md) · [`ROADMAP.md`](ROADMAP.md)
 - Full documentation site: <https://anulum.github.io/synapse-channel>
 
+## Security posture
+
+Local-first by default: the hub binds to loopback, and it refuses a non-loopback bind
+unless a token is configured (or the operator explicitly accepts the exposure with
+`--insecure-off-loopback`). When a deployment crosses that boundary, every control is
+opt-in and deny-by-default:
+
+- **Connect authentication** — a shared-secret token compared in constant time
+  (`--token-file` or `SYNAPSE_TOKEN` preferred over `--token`, which is visible in the
+  process list).
+- **Per-message authentication** — `--require-message-auth` demands authentication on
+  selected mutating frames, with an Ed25519 event-signature trust bundle and mTLS
+  certificate pins for multi-hub pulls and federation peerings; an unresolvable or
+  unpinnable peer is denied, never handled locally.
+- **Deny-by-default ACL** — `--acl-policy` with `--require-acl` rejects mutating frames
+  from identities the policy does not grant.
+- **Bounded resources** — connection, frame-size, JSON-depth, rate, and history caps
+  keep one runaway agent from exhausting the hub.
+- **One-flag strict mode** — [`synapse hub --paranoid`](https://anulum.github.io/synapse-channel/paranoid-mode/)
+  turns the strict set on together.
+
+The supply chain is gated the same way: a gitleaks pre-commit hook on staged changes
+plus a digest-pinned full-tree gitleaks sweep in CI; a hash-locked CI toolchain
+(uv-compiled with `--generate-hashes`, installed with `--require-hashes`) with GitHub
+Actions pinned to full commit SHAs and Docker base images pinned to digests; and
+`pip-audit` on every push alongside the CodeQL and OpenSSF Scorecard workflows. The
+threat model and how to report a vulnerability are in [`SECURITY.md`](SECURITY.md).
+
 ## Known limitations
 
 - **Single hub, single machine.** There is no built-in failover or horizontal
@@ -1057,11 +1085,13 @@ This snapshot is a static inventory generated from the source tree. Performance 
   hub restart resumes from the durable log, but it is not a high-availability
   cluster.
 - **Connect authentication is a proportionate shared secret**, not a
-  cryptographic identity system. Opt-in per-message HMAC authentication protects
-  selected mutating frames, but there is no implemented key exchange,
-  public-key signature trust, per-agent identity, ACL enforcement, or mTLS trust
-  bundle. Do not expose the hub on an untrusted network and rely on the token
-  alone.
+  cryptographic identity system. Opt-in per-message authentication, Ed25519
+  event-signature trust, mTLS certificate pins, and a deny-by-default ACL policy
+  exist for exposed or multi-hub deployments (see
+  [Security posture](#security-posture)), but keys, pins, and peerings move
+  out-of-band — there is no key exchange or automatic trust distribution — and an
+  agent's identity is a declared name, not a per-agent credential. Do not expose
+  the hub on an untrusted network and rely on the token alone.
 - **Graceful shutdown is bounded, not transactional.** `SIGTERM`/`SIGINT` stop
   accepting new sockets, close active WebSocket sessions within
   `--shutdown-close-timeout`, and rely on per-mutation persistence for durable
