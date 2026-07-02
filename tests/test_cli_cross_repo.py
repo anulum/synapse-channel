@@ -115,3 +115,142 @@ def test_parser_flags_and_defaults() -> None:
     assert args.repo is None
     assert args.json is False
     assert args.dot is False
+    assert args.watch is False
+    assert args.interval == 2.0
+    assert args.count == 0
+
+
+class _FakeTty:
+    """A TTY-shaped text sink capturing everything written to it."""
+
+    def __init__(self) -> None:
+        self.written: list[str] = []
+
+    def write(self, text: str) -> int:
+        self.written.append(text)
+        return len(text)
+
+    def flush(self) -> None:
+        return None
+
+    def isatty(self) -> bool:
+        return True
+
+
+def test_watch_on_a_tty_clears_and_redraws_in_place(tmp_path: Path) -> None:
+    from typing import TextIO, cast
+
+    from synapse_channel.cli_cross_repo import watch_cross_repo
+
+    root = _org(tmp_path)
+    sleeps: list[float] = []
+    out = _FakeTty()
+    code = watch_cross_repo(
+        root=str(root),
+        db=None,
+        focus=None,
+        as_json=False,
+        interval=0.5,
+        count=2,
+        out=cast(TextIO, out),
+        sleeper=sleeps.append,
+    )
+    assert code == 0
+    assert sleeps == [0.5]  # count bounds the refreshes: one sleep between two
+    text = "".join(out.written)
+    assert text.count("\x1b[H\x1b[2J") == 2
+    assert text.count("Cross-repository dependency graph:") == 2
+    assert "---" not in text
+
+
+def test_watch_piped_separates_refreshes_with_a_divider(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _org(tmp_path)
+    code, out, _ = _run(
+        ["cross-repo", str(root), "--watch", "--interval", "0.01", "--count", "2"], capsys
+    )
+    assert code == 0
+    assert out.count("Cross-repository dependency graph:") == 2
+    assert out.count("---\n") == 1
+    assert "\x1b[" not in out
+
+
+def test_watch_json_streams_one_document_per_refresh(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _org(tmp_path)
+    code, out, _ = _run(
+        ["cross-repo", str(root), "--json", "--watch", "--interval", "0.01", "--count", "2"],
+        capsys,
+    )
+    assert code == 0
+    lines = out.strip().splitlines()
+    assert len(lines) == 2
+    for line in lines:
+        payload = json.loads(line)
+        assert [node["repo"] for node in payload["nodes"]] == ["consumer", "island", "provider"]
+
+
+def test_watch_exit_reports_the_last_claim_signal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _org(tmp_path)
+    db = tmp_path / "events.db"
+    _seed_claims(db)
+    code, out, _ = _run(
+        [
+            "cross-repo",
+            str(root),
+            "--db",
+            str(db),
+            "--repo",
+            "consumer",
+            "--watch",
+            "--interval",
+            "0.01",
+            "--count",
+            "2",
+        ],
+        capsys,
+    )
+    assert code == 1
+    assert "provider [depends_on]" in out
+
+
+def test_watch_refuses_dot_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    root = _org(tmp_path)
+    code, _, err = _run(["cross-repo", str(root), "--dot", "--watch"], capsys)
+    assert code == 2
+    assert "--watch does not combine with --dot" in err
+
+
+def test_watch_refuses_a_non_positive_interval(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _org(tmp_path)
+    code, _, err = _run(["cross-repo", str(root), "--watch", "--interval", "0"], capsys)
+    assert code == 2
+    assert "--interval must be positive" in err
+
+
+def test_watch_failure_mid_refresh_exits_two(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, _, err = _run(["cross-repo", str(tmp_path / "absent"), "--watch", "--count", "1"], capsys)
+    assert code == 2
+    assert "missing repository root" in err
+
+
+def test_watch_interrupt_is_a_clean_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _org(tmp_path)
+
+    def interrupt(_seconds: float) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("synapse_channel.cli_cross_repo.time.sleep", interrupt)
+    code, out, _ = _run(["cross-repo", str(root), "--watch"], capsys)
+    assert code == 0
+    assert "Cross-repository dependency graph:" in out

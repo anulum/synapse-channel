@@ -14,7 +14,8 @@ whose declared version constraints on the same package are provably disjoint
 event log onto it, and prints the result as text, JSON, or Graphviz DOT.
 With ``--repo`` the exit code becomes a coordination signal: ``1`` when a
 live claim exists in a repository connected to the focus by a dependency
-edge.
+edge. ``--watch`` rescans and reprints every ``--interval`` seconds — a
+standing dashboard over the same evidence.
 """
 
 from __future__ import annotations
@@ -22,9 +23,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
+from collections.abc import Callable
+from typing import TextIO
 
 from synapse_channel.core.cross_repo_graph import (
     SELF_RELATION,
+    CrossRepoGraph,
     cross_repo_graph_to_json,
     render_cross_repo_dot,
     render_cross_repo_human,
@@ -32,8 +37,110 @@ from synapse_channel.core.cross_repo_graph import (
 )
 
 
+def _claim_signal(graph: CrossRepoGraph, focus: str | None) -> int:
+    """Return the ``--repo`` coordination exit code for one scanned graph."""
+    if focus is not None and any(claim.relation != SELF_RELATION for claim in graph.claims):
+        return 1
+    return 0
+
+
+def watch_cross_repo(
+    *,
+    root: str,
+    db: str | None,
+    focus: str | None,
+    as_json: bool,
+    interval: float,
+    count: int,
+    out: TextIO | None = None,
+    sleeper: Callable[[float], None] | None = None,
+) -> int:
+    """Rescan and reprint the cross-repository report on a fixed cadence.
+
+    Each refresh is one full :func:`run_cross_repo_graph` pass — manifests
+    are reread and claims rejoined, so repository edits and hub activity
+    show up on the next tick. On a TTY the screen is cleared and the report
+    redrawn in place; piped output appends each report behind a ``---``
+    divider line so a consumer can split refreshes, and ``--json`` emits one
+    compact JSON document per line (NDJSON) either way. ``count`` bounds the
+    refreshes (``0`` runs until interrupted).
+
+    Parameters
+    ----------
+    root, db, focus
+        Passed through to :func:`run_cross_repo_graph` unchanged.
+    as_json : bool
+        Emit NDJSON instead of the human report.
+    interval : float
+        Seconds between refreshes.
+    count : int
+        Refreshes to run; ``0`` means until interrupted.
+    out : typing.TextIO or None, optional
+        Output stream; defaults to ``sys.stdout``.
+    sleeper : Callable[[float], None] or None, optional
+        Sleep function between refreshes; ``None`` uses :func:`time.sleep`
+        (resolved per call, so a patched clock takes effect). Injectable
+        for testing.
+
+    Returns
+    -------
+    int
+        The LAST refresh's coordination signal — ``1`` when ``--repo`` is
+        set and a connected repository holds a live claim, else ``0`` — or
+        ``2`` when a refresh fails (missing root, store, or focus).
+    """
+    stream = sys.stdout if out is None else out
+    sleep = time.sleep if sleeper is None else sleeper
+    in_place = stream.isatty() and not as_json
+    exit_code = 0
+    refreshes = 0
+    while True:
+        try:
+            graph = run_cross_repo_graph(root, db_path=db, focus=focus)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        if as_json:
+            stream.write(json.dumps(cross_repo_graph_to_json(graph), sort_keys=True) + "\n")
+        else:
+            if in_place:
+                stream.write("\x1b[H\x1b[2J")
+            elif refreshes:
+                stream.write("---\n")
+            stream.write(render_cross_repo_human(graph) + "\n")
+        stream.flush()
+        exit_code = _claim_signal(graph, focus)
+        refreshes += 1
+        if count and refreshes >= count:
+            return exit_code
+        sleep(interval)
+
+
 def _cmd_cross_repo(args: argparse.Namespace) -> int:
-    """Scan, optionally join claims, and print one cross-repository report."""
+    """Scan, optionally join claims, and print one cross-repository report.
+
+    With ``--watch`` the report refreshes every ``--interval`` seconds until
+    ``--count`` refreshes ran or the operator interrupts; Ctrl-C is the
+    normal way to stop a watch, so it exits ``0`` rather than tracing.
+    """
+    if args.watch:
+        if args.dot:
+            print("--watch does not combine with --dot", file=sys.stderr)
+            return 2
+        if args.interval <= 0:
+            print("--interval must be positive", file=sys.stderr)
+            return 2
+        try:
+            return watch_cross_repo(
+                root=args.root,
+                db=args.db,
+                focus=args.repo,
+                as_json=args.json,
+                interval=args.interval,
+                count=args.count,
+            )
+        except KeyboardInterrupt:
+            return 0
     try:
         graph = run_cross_repo_graph(args.root, db_path=args.db, focus=args.repo)
     except ValueError as exc:
@@ -45,9 +152,7 @@ def _cmd_cross_repo(args: argparse.Namespace) -> int:
         print(render_cross_repo_dot(graph))
     else:
         print(render_cross_repo_human(graph))
-    if args.repo is not None and any(claim.relation != SELF_RELATION for claim in graph.claims):
-        return 1
-    return 0
+    return _claim_signal(graph, args.repo)
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -79,4 +184,21 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     output = parser.add_mutually_exclusive_group()
     output.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     output.add_argument("--dot", action="store_true", help="Emit a Graphviz digraph.")
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Rescan and reprint every --interval seconds until interrupted (Ctrl-C).",
+    )
+    parser.add_argument(
+        "--interval",
+        type=float,
+        default=2.0,
+        help="Seconds between --watch refreshes.",
+    )
+    parser.add_argument(
+        "--count",
+        type=int,
+        default=0,
+        help="Stop after this many --watch refreshes (0 = until interrupted).",
+    )
     parser.set_defaults(func=_cmd_cross_repo)

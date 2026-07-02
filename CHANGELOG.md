@@ -14,6 +14,11 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `synapse cross-repo --watch` rescans the checkout tree and rejoins live
+  claims every `--interval` seconds (`--count` bounds the refreshes): a
+  TTY clears and redraws the report in place, piped output separates
+  refreshes with a `---` divider, `--json --watch` streams NDJSON, and the
+  exit code reports the last refresh's `--repo` signal.
 - `synapse benchmark --compare BASELINE.json` gates a run against a
   scorecard saved with `--results`: throughput and latency-percentile
   drift beyond `--tolerance` (default 25%, sized for shared-workstation
