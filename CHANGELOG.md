@@ -14,6 +14,18 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `synapse fleet-init` — empty machine to working fleet in one command,
+  bundling the existing first-run pieces in their right order: the real
+  `doctor` (optionally `--fix`; a failing report is a printed remedy,
+  never an abort), a persistent coding-fleet workspace scaffold
+  (`./synapse-fleet` by default, `--force` to refresh), a probe of every
+  registered provider CLI without taking a turn (`--seat PROVIDER`
+  declares intended seats; an unavailable declared seat is warned about
+  and kept in the plan), the packaged no-collision demo smoke
+  (`--no-smoke` to skip), and a printed next-steps plan — waiter arming,
+  per-provider `worker-session` seat commands, `git-init`, dashboard —
+  with the workspace's project name filled in. No new dependency and no
+  new daemon: everything it starts is what the bundled commands start.
 - The hub can feed its own partition detection: `synapse hub
   --multihub-watch PEER=URI` (repeatable) runs a standing follower that
   polls each named peer's event log on a bounded interval and folds the

@@ -69,6 +69,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "new": STABLE,
     "demo": STABLE,
     "quickstart-coding": STABLE,
+    "fleet-init": STABLE,
     "commands": STABLE,
     "completions": STABLE,
     # bridges to other ecosystems and tools

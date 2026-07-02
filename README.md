@@ -148,6 +148,18 @@ workspace after success, and prints:
 success: coding fleet demo completed
 ```
 
+Or run the whole first-run sequence as one command:
+
+```bash
+synapse fleet-init
+```
+
+It runs the doctor (`--fix` to repair the default local hub and waiter),
+scaffolds a persistent `./synapse-fleet` workspace, probes which provider CLIs
+this machine can seat (claude, codex, kimi, ollama, …), runs the demo smoke,
+and prints the next-steps plan — waiter arming, per-provider seat commands,
+`git-init`, dashboard — with the workspace's project name filled in.
+
 ## Fastest safe trial path
 
 After the self-contained demos pass, try Synapse against a real checkout in this
@@ -1064,11 +1076,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.92.0 |
 | Public API exports | 70 |
-| Package modules | 286 |
+| Package modules | 287 |
 | Classes | 406 |
 | Wire message types | 67 |
-| CLI subcommands | 126 |
-| Test functions | 4201 |
+| CLI subcommands | 127 |
+| Test functions | 4216 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 46 |
 | GitHub Actions workflows | 12 |
