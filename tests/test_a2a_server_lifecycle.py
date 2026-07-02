@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -152,6 +153,12 @@ def test_subscription_queue_receives_terminal_update() -> None:
         target=collect_events,
     )
     worker.start()
+    # completing the task before the subscription registers would replay only
+    # the terminal state; wait for the live queue before publishing
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline and not bridge._events.has_subscribers(task["id"]):
+        time.sleep(0.005)
+    assert bridge._events.has_subscribers(task["id"])
     bridge.handle_synapse_frame(
         {
             "type": "chat",
