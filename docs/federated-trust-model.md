@@ -87,10 +87,14 @@ verified key-and-pin pair, so a stale or foreign certificate, credentials split 
 peerings, or an ambiguous pair two peerings both claim must never downgrade it to local
 processing. The operator log names the diagnosis; the wire reply carries only the reason.
 
-What remains **not implemented** is cross-domain bundle *exchange over the network* and
-trust-root distribution: a peering still moves between domains out-of-band and is imported
-explicitly (`synapse federation import`), and the hub does not auto-discover or negotiate
-trust. This document is the boundary specification for that out-of-band step.
+Bundle *transport* over the network has shipped: a hub serves its own operator-authored
+bundle material (`synapse hub --federation-offer`), and a peer operator pulls it
+(`synapse federation fetch`) instead of moving a file by hand. What stays out-of-band —
+deliberately and permanently — is the *trust decision*: both operators compare the bundle
+fingerprint over an independent channel (`synapse federation offer` prints the same block
+the fetch displays) and only then import explicitly (`synapse federation import
+--confirmed-by`). The hub does not auto-discover or negotiate trust, and there is no
+trust-on-first-use. This document is the boundary specification for that ceremony.
 
 ## Trust domains
 
@@ -131,9 +135,9 @@ rejects is rejected.
 ## Trust-bundle exchange and provenance
 
 Federation needs verification keys and certificate pins to move between domains,
-but Synapse is not a certificate authority and must not become one. Bundle
-exchange is therefore **out-of-band and operator-confirmed**: operators exchange
-domain bundles through their existing trusted channel (signed file, ticket,
+but Synapse is not a certificate authority and must not become one. The trust
+decision is therefore **out-of-band and operator-confirmed**: operators confirm
+domain bundles through their existing trusted channel (a call, a ticket, a
 key-signing exchange) and import them explicitly. `synapse federation import`
 (shipped) records the bundle with its provenance — who provided it, when, and which
 operator confirmed it (a required `--confirmed-by`) — so every federated trust
@@ -141,6 +145,18 @@ relationship is auditable back to a human decision, not auto-discovered from the
 network; `synapse federation list` shows the imported peerings and `synapse federation
 revoke` retires one while keeping its audit record. There is no automatic
 trust-on-first-use and no network-driven trust root.
+
+The bundle *bytes* may move over the wire (shipped): a hub started with
+`--federation-offer FILE` answers a peer operator's `synapse federation fetch` with its
+own published bundle material, and both sides print an identical fingerprint block —
+the domain id, signing key ids, certificate pins, and a whole-bundle SHA-256 — computed
+by the same code (`synapse federation offer` on the offering side). The fetched file is
+untrusted until the operators compare the bundle fingerprint over an independent
+channel, the SSH-known-hosts ceremony; the fetch never imports, and the import command
+records the fetch URI as the peering's provenance source. A fingerprint over the whole
+canonical bundle means an in-path alteration of *any* policy content — an added
+namespace or scope grant as much as a swapped key — changes the value the operators
+read to each other.
 
 ## Scoped cross-domain authorisation
 
@@ -188,9 +204,9 @@ replace any of them, and it adds no trust root they do not already define.
 ## Boundaries
 
 The deny-by-default policy and its composition into the live hub-to-hub and agent-frame
-paths have shipped (see Runtime status); cross-domain bundle exchange over the network is
-**not implemented** and stays out-of-band. These boundaries hold regardless and are never
-relaxed by what ships:
+paths have shipped (see Runtime status), and so has the bundle-exchange transport
+(offer/fetch); the trust decision itself is **out-of-band by design** and stays so.
+These boundaries hold regardless and are never relaxed by what ships:
 
 - It is **not a certificate authority or PKI**: it distributes no keys, issues no
   certificates, and performs no automatic trust discovery. Trust roots are

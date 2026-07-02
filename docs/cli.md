@@ -47,7 +47,7 @@ everything, since they need the whole command table.
 | `synapse event-query` | Query a hub SQLite event store for temporal task and coordination history. |
 | `synapse multihub` | Observe or follow a peer hub's event log and print its board and claims (see [Multi-hub sync](multi-hub-sync.md)). |
 | `synapse participant` | Probe or drive Participant Fabric providers: `list` reports each driver's readiness, `ask` runs one turn, `exchange` and `convene` run multi-party deliberations, `costs` reports per-session spend and telemetry from a hub event store. |
-| `synapse federation` | Import, list, and revoke out-of-band operator-signed peer-domain bundles (`import`/`list`/`revoke`). |
+| `synapse federation` | Exchange, import, list, and revoke operator-confirmed peer-domain bundles (`offer`/`fetch`/`import`/`list`/`revoke`); fetch displays fingerprints and never imports. |
 | `synapse compact` | Apply event-store retention and optionally write an HTML archive report. |
 | `synapse postmortem` | Build a replayable task postmortem from a hub SQLite event store. |
 | `synapse debug` | Fork a task's reconstructed state at a sequence point (read-only what-if). |
@@ -1454,14 +1454,28 @@ so a rollout can observe before it enforces. `identity audit` inventories
 declared identities for enforcement-rollout blockers; `acl shadow` evaluates
 candidate accesses deny-by-default without denying anything live; `policy-check`
 scores a release receipt against a policy (`--enforce` to gate); and `federation`
-manages out-of-band, operator-signed peer-domain bundles for cross-hub trust.
+manages operator-confirmed peer-domain bundles for cross-hub trust.
+
+The federation exchange pair moves bundle *bytes* over the wire while the *trust
+decision* stays out-of-band, the SSH-known-hosts ceremony: the offering operator
+authors their domain's bundle material, serves it with
+`synapse hub --federation-offer FILE`, and reads the fingerprint block
+(`synapse federation offer FILE`); the fetching operator pulls it
+(`synapse federation fetch`), sees the identical block, compares the bundle
+fingerprint over an independent channel, and only then imports explicitly. A
+fetch never imports, and the whole-bundle fingerprint changes when *any* policy
+content is altered in path — namespaces and scope grants as much as keys and
+pins.
 
 ```bash
 synapse identity audit --identities ./identities.json          # audit declared identities for blockers
 synapse identity audit --identities ./identities.json --json
 synapse acl shadow --policy ./acl.json --requests ./requests.json   # non-blocking deny-by-default evaluation
 synapse policy-check --policy ./policy.json --receipt-json ./receipt.json   # advisory; --enforce to gate
-synapse federation import ./peer-domain.json --confirmed-by ceo # trust an operator-signed peer bundle
+synapse federation offer ./my-domain.json                      # validate own material; print fingerprints
+synapse hub --port 8876 --federation-offer ./my-domain.json    # serve it to peer operators (token-gated)
+synapse federation fetch ws://peer-hub:8876 --out ./peer-domain.json  # pull + fingerprints; NEVER imports
+synapse federation import ./peer-domain.json --confirmed-by ceo --source ws://peer-hub:8876  # after comparing
 synapse federation list --store ./federation.json              # imported peer domains and their provenance
 synapse federation revoke example.org --store ./federation.json
 synapse encrypt-key generate ./synapse.key                     # write a fresh owner-only 32-byte key file

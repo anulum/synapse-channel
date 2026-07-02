@@ -36,7 +36,12 @@ def test_federated_trust_model_states_runtime_status_and_dependencies() -> None:
     """The design must ground itself in the shipped single-domain primitives."""
     text = _collapsed(DOC)
     assert "runtime status" in text
-    assert "not implemented" in text
+    # The exchange transport shipped (offer/fetch); the trust decision itself is
+    # declared permanently out-of-band, not a pending implementation gap.
+    assert "out-of-band by design" in text
+    assert "synapse federation fetch" in text
+    assert "--federation-offer" in text
+    assert "fingerprint" in text
     for dependency in (
         "identity-and-acl.md",
         "signed-events-mtls.md",

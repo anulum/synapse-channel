@@ -158,3 +158,176 @@ def test_list_and_revoke_report_a_corrupt_store(
 def test_store_path_default_expands_home() -> None:
     args = _args("list")
     assert args.store == "~/.synapse/federation.json"
+
+
+# --- the exchange ceremony: offer and fetch ------------------------------------------------
+
+
+def _material() -> dict[str, object]:
+    """The bundle material a domain publishes for peering."""
+    return dict(_BUNDLE)
+
+
+def test_offer_prints_the_fingerprint_block_and_serving_hint(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from synapse_channel.core.federation_wire import bundle_fingerprint, decode_federation_offer
+
+    bundle = _write_bundle(tmp_path, _material())
+    args = _args("offer", bundle)
+    assert args.func(args) == 0
+    out = capsys.readouterr().out
+    peer = decode_federation_offer(_material())
+    assert "domain:             acme" in out
+    assert f"bundle fingerprint: {bundle_fingerprint(peer)}" in out
+    assert f"synapse hub --federation-offer {bundle}" in out
+    assert "out-of-band" in out
+
+
+def test_offer_reports_an_unreadable_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = _args("offer", str(tmp_path / "absent.json"))
+    assert args.func(args) == 2
+    assert "could not read bundle file" in capsys.readouterr().err
+
+
+def test_offer_reports_non_json_material(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "offer.json"
+    path.write_text("{not json", encoding="utf-8")
+    args = _args("offer", str(path))
+    assert args.func(args) == 2
+    assert "invalid federation bundle" in capsys.readouterr().err
+
+
+def test_offer_reports_a_malformed_bundle(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bundle = _write_bundle(tmp_path, {"namespaces": ["acme/shared"]})
+    args = _args("offer", bundle)
+    assert args.func(args) == 2
+    assert "invalid federation bundle" in capsys.readouterr().err
+
+
+def _stub_fetcher(captured: dict[str, object] | None = None, *, error: str | None = None):
+    """Return an async fetcher stub yielding the material bundle, or raising."""
+    from synapse_channel.core.federation_fetch import FederationFetchError
+    from synapse_channel.core.federation_wire import decode_federation_offer
+
+    async def fetch(uri: str, **kwargs: object):
+        if captured is not None:
+            captured.update({"uri": uri, **kwargs})
+        if error is not None:
+            raise FederationFetchError(error)
+        return decode_federation_offer(_material())
+
+    return fetch
+
+
+def test_fetch_writes_the_bundle_and_prints_the_same_fingerprints(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from synapse_channel.cli_federation import _cmd_fetch
+    from synapse_channel.core.federation_store import peer_from_dict
+    from synapse_channel.core.federation_wire import bundle_fingerprint, decode_federation_offer
+
+    out_file = tmp_path / "nested" / "peer.json"
+    captured: dict[str, object] = {}
+    args = _args("fetch", "ws://peer:8876", "--out", str(out_file))
+    assert _cmd_fetch(args, fetcher=_stub_fetcher(captured)) == 0
+    peer = decode_federation_offer(_material())
+    assert peer_from_dict(json.loads(out_file.read_text(encoding="utf-8"))) == peer
+    out = capsys.readouterr().out
+    assert f"bundle fingerprint: {bundle_fingerprint(peer)}" in out
+    assert "NOT imported" in out
+    assert f"synapse federation import {out_file}" in out
+    assert "--source ws://peer:8876" in out
+    assert captured["uri"] == "ws://peer:8876"
+    assert captured["local_id"] == "federation-fetch"
+    assert captured["token"] is None
+    assert captured["timeout"] == 10.0
+
+
+def test_fetch_passes_token_local_id_and_timeout(tmp_path: Path) -> None:
+    from synapse_channel.cli_federation import _cmd_fetch
+
+    captured: dict[str, object] = {}
+    args = _args(
+        "fetch",
+        "ws://peer:8876",
+        "--out",
+        str(tmp_path / "peer.json"),
+        "--token",
+        "secret",
+        "--local-id",
+        "ops-a",
+        "--timeout",
+        "3.5",
+    )
+    assert _cmd_fetch(args, fetcher=_stub_fetcher(captured)) == 0
+    assert captured["token"] == "secret"
+    assert captured["local_id"] == "ops-a"
+    assert captured["timeout"] == 3.5
+
+
+def test_fetch_refuses_to_overwrite_without_force(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from synapse_channel.cli_federation import _cmd_fetch
+
+    out_file = tmp_path / "peer.json"
+    out_file.write_text("{}", encoding="utf-8")
+    captured: dict[str, object] = {}
+    args = _args("fetch", "ws://peer:8876", "--out", str(out_file))
+    assert _cmd_fetch(args, fetcher=_stub_fetcher(captured)) == 2
+    assert "refusing to overwrite" in capsys.readouterr().err
+    assert captured == {}  # the network is never touched
+    assert out_file.read_text(encoding="utf-8") == "{}"
+
+
+def test_fetch_replaces_an_existing_file_with_force(tmp_path: Path) -> None:
+    from synapse_channel.cli_federation import _cmd_fetch
+    from synapse_channel.core.federation_store import peer_from_dict
+    from synapse_channel.core.federation_wire import decode_federation_offer
+
+    out_file = tmp_path / "peer.json"
+    out_file.write_text("{}", encoding="utf-8")
+    args = _args("fetch", "ws://peer:8876", "--out", str(out_file), "--force")
+    assert _cmd_fetch(args, fetcher=_stub_fetcher()) == 0
+    fetched = peer_from_dict(json.loads(out_file.read_text(encoding="utf-8")))
+    assert fetched == decode_federation_offer(_material())
+
+
+def test_fetch_reports_a_failed_fetch_and_writes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from synapse_channel.cli_federation import _cmd_fetch
+
+    out_file = tmp_path / "peer.json"
+    args = _args("fetch", "ws://peer:8876", "--out", str(out_file))
+    assert _cmd_fetch(args, fetcher=_stub_fetcher(error="refused")) == 2
+    assert "could not fetch the federation offer: refused" in capsys.readouterr().err
+    assert not out_file.exists()
+
+
+def test_offer_and_fetch_print_the_identical_fingerprint_block(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Both ceremony halves render the same lines, so operators compare like for like."""
+    from synapse_channel.cli_federation import _cmd_fetch
+    from synapse_channel.core.federation_wire import render_offer_fingerprints
+
+    bundle = _write_bundle(tmp_path, _material())
+    offer_args = _args("offer", bundle)
+    assert offer_args.func(offer_args) == 0
+    offer_out = capsys.readouterr().out
+    fetch_args = _args("fetch", "ws://peer:8876", "--out", str(tmp_path / "fetched.json"))
+    assert _cmd_fetch(fetch_args, fetcher=_stub_fetcher()) == 0
+    fetch_out = capsys.readouterr().out
+    from synapse_channel.core.federation_wire import decode_federation_offer
+
+    block = render_offer_fingerprints(decode_federation_offer(_material()))
+    assert block in offer_out
+    assert block in fetch_out

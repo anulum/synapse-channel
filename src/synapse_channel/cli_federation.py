@@ -4,8 +4,8 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — `synapse federation` CLI: import, list, and revoke peer domains
-"""``synapse federation`` — import, list, and revoke operator-confirmed peer domains.
+# SYNAPSE_CHANNEL — `synapse federation` CLI: exchange, import, list, and revoke peer domains
+"""``synapse federation`` — exchange, import, list, and revoke operator-confirmed peer domains.
 
 Trust between Synapse domains is established out-of-band: an operator receives a peer
 domain's bundle through a trusted channel and imports it explicitly. ``import`` reads
@@ -15,21 +15,39 @@ provenance; ``revoke`` marks a peering revoked so it fails authorisation while k
 its audit record. There is no auto-discovery and no trust-on-first-use — every peering
 is auditable back to a human decision.
 
-The policy lives in :mod:`synapse_channel.core.federation` and the persistence in
-:mod:`synapse_channel.core.federation_store`; this is the thin I/O shell, with an
-injectable clock and store path so the commands are testable without a real home.
+The exchange pair moves the bundle *transport* onto the wire while keeping that trust
+decision with the operator: ``offer`` validates this domain's own bundle material and
+prints its fingerprints (served by ``synapse hub --federation-offer``), and ``fetch``
+pulls a peer hub's offered material to a file and prints the same fingerprint block —
+never importing. Both sides compare the bundle fingerprint out-of-band, the
+SSH-known-hosts ceremony, and only then run the explicit ``import``.
+
+The policy lives in :mod:`synapse_channel.core.federation`, the persistence in
+:mod:`synapse_channel.core.federation_store`, and the exchange halves in
+:mod:`synapse_channel.core.federation_wire` and
+:mod:`synapse_channel.core.federation_fetch`; this is the thin I/O shell, with an
+injectable clock, store path, and fetcher so the commands are testable without a real
+home or network.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import dataclasses
 import json
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from pathlib import Path
+from typing import Any
 
+from synapse_channel.core.federation import FederationPeer
+from synapse_channel.core.federation_fetch import (
+    DEFAULT_FETCH_TIMEOUT,
+    FederationFetchError,
+    fetch_federation_offer,
+)
 from synapse_channel.core.federation_store import (
     FederationRecord,
     FederationStoreError,
@@ -38,6 +56,12 @@ from synapse_channel.core.federation_store import (
     merge_record,
     peer_from_dict,
     save_store,
+)
+from synapse_channel.core.federation_wire import (
+    FederationWireError,
+    decode_federation_offer,
+    encode_federation_offer,
+    render_offer_fingerprints,
 )
 
 Clock = Callable[[], float]
@@ -126,6 +150,54 @@ def _cmd_revoke(args: argparse.Namespace) -> int:
     return 0
 
 
+Fetcher = Callable[..., Coroutine[Any, Any, FederationPeer]]
+
+
+def _cmd_offer(args: argparse.Namespace) -> int:
+    """Validate this domain's own bundle material and print the ceremony fingerprints."""
+    try:
+        raw = Path(args.bundle).expanduser().read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"could not read bundle file: {args.bundle}", file=sys.stderr)
+        del exc
+        return 2
+    try:
+        peer = decode_federation_offer(json.loads(raw))
+    except (json.JSONDecodeError, FederationWireError) as exc:
+        print(f"invalid federation bundle: {exc}", file=sys.stderr)
+        return 2
+    print(render_offer_fingerprints(peer))
+    print()
+    print(f"serve it:  synapse hub --federation-offer {args.bundle}")
+    print("then read the bundle fingerprint to the peer operator out-of-band; they")
+    print("compare it against their `synapse federation fetch` output before importing.")
+    return 0
+
+
+def _cmd_fetch(args: argparse.Namespace, *, fetcher: Fetcher = fetch_federation_offer) -> int:
+    """Fetch a peer hub's offered bundle to a file and print its fingerprints — never import."""
+    out = Path(args.out).expanduser()
+    if out.exists() and not args.force:
+        print(f"refusing to overwrite {out}; pass --force to replace it", file=sys.stderr)
+        return 2
+    try:
+        peer = asyncio.run(
+            fetcher(args.uri, local_id=args.local_id, token=args.token, timeout=args.timeout)
+        )
+    except FederationFetchError as exc:
+        print(f"could not fetch the federation offer: {exc}", file=sys.stderr)
+        return 2
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(encode_federation_offer(peer), indent=2) + "\n", encoding="utf-8")
+    print(render_offer_fingerprints(peer))
+    print()
+    print(f"wrote the offered bundle to {out} — NOT imported.")
+    print("compare the bundle fingerprint with the peer operator out-of-band (their")
+    print("`synapse federation offer` prints the same block), then import explicitly:")
+    print(f"  synapse federation import {out} --confirmed-by <operator> --source {args.uri}")
+    return 0
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``federation`` command group."""
     parser = subparsers.add_parser(
@@ -154,3 +226,31 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     revoker.add_argument("domain", help="Domain id of the peering to revoke.")
     _add_store(revoker)
     revoker.set_defaults(func=_cmd_revoke)
+
+    offer = group.add_parser(
+        "offer",
+        help="Validate this domain's own bundle material and print its fingerprints "
+        "(the offering side of the exchange ceremony).",
+    )
+    offer.add_argument("bundle", help="Path to this domain's own peer-bundle JSON file.")
+    offer.set_defaults(func=_cmd_offer)
+
+    fetch = group.add_parser(
+        "fetch",
+        help="Fetch a peer hub's offered bundle to a file and print its fingerprints; "
+        "never imports — compare fingerprints out-of-band, then `federation import`.",
+    )
+    fetch.add_argument("uri", help="Peer hub websocket URI (ws:// or wss://).")
+    fetch.add_argument("--out", required=True, help="File to write the fetched bundle to.")
+    fetch.add_argument(
+        "--local-id", default="federation-fetch", help="Identity stamped on the request frame."
+    )
+    fetch.add_argument("--token", default=None, help="Token for a secured peer hub.")
+    fetch.add_argument(
+        "--timeout",
+        type=float,
+        default=DEFAULT_FETCH_TIMEOUT,
+        help="Seconds to wait for the offer before failing closed.",
+    )
+    fetch.add_argument("--force", action="store_true", help="Replace an existing --out file.")
+    fetch.set_defaults(func=_cmd_fetch)
