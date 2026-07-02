@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.90.0] - 2026-07-02
+
 ### Added
 - CI installs its dev, benchmark, and docs toolchain from a hash-locked
   requirements file (`--require-hashes`), making every workflow's
