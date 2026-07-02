@@ -1,0 +1,44 @@
+{
+  "name": "@anulum/synapse-cockpit",
+  "version": "0.1.0",
+  "description": "Read-only real-time operator cockpit for the SYNAPSE CHANNEL coordination hub: fleet presence, claims and leases, task lifecycle, causality, and a live event spine.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "preview": "vite preview"
+  },
+  "keywords": [
+    "synapse",
+    "coordination",
+    "multi-agent",
+    "dashboard",
+    "cockpit",
+    "observability"
+  ],
+  "author": "Anulum Fortis & Arcane Sapience <protoscience@anulum.li>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anulum/synapse-channel",
+    "directory": "clients/cockpit"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^6.0.3",
+    "@vitest/coverage-v8": "^3.2.6",
+    "typescript": "^5.6.3",
+    "vite": "^8.1.2",
+    "vitest": "^3.2.6"
+  }
+}
