@@ -61,7 +61,9 @@ opt-in:
   signing key and live certificate pin resolve to one peered domain (`resolve_domain`) is
   authorised against that peering's bounded scope (`scope_authorises`), composed with
   mutual TLS, the event signature, and the mapped scope, instead of the local ACL. A frame
-  resolving to no peer stays local. Federation only binds authority on a hub that also runs
+  resolving to no peer stays local only when its signing key is unpeered; a peered key that
+  cannot be bound to a single peering is denied. Federation only binds authority on a hub
+  that also runs
   `--require-message-auth`; without it a cross-domain frame is refused, since its signing
   key is not verified. The hub therefore refuses to *start* when the store's peerings grant
   cross-domain scope but `--require-message-auth` is not set — the configuration claims an
@@ -74,13 +76,16 @@ opt-in:
   likewise refused. With no store the live path is unchanged.
 
 A frame that carries a signing key over a pinned connection yet resolves to no peering is
-handled locally — the fail-closed default. Because a stale or misconfigured peering fails the
-same way, the hub distinguishes an ordinary local frame from a misconfiguration and logs a
-warning only for the latter (`diagnose_unresolved_domain`): the certificate pin enrolled
-without the signing key, the signing key without the pin, the two split across different
-peerings, or an ambiguous pair two peerings both claim. The frame's disposition is unchanged;
-the warning is a signal so a wrong pin or key id does not go silent. An ordinary local
-frame — neither credential enrolled — stays quiet.
+disposed of by whether the *key* is peered. A key no peering enrols is an ordinary local
+frame and is handled locally; because a peering whose signing-key enrolment is stale fails
+the same way, the hub logs a warning when the certificate pin alone is enrolled
+(`diagnose_unresolved_domain`) so a wrong key id does not go silent, and stays quiet when
+neither credential is enrolled. A **peered** key that fails to resolve is denied outright
+(`peer_domain_unresolved`), exactly as a peered key on an unpinnable connection is
+(`peer_certificate_unavailable`): the frame claims cross-domain authority that binds to the
+verified key-and-pin pair, so a stale or foreign certificate, credentials split across
+peerings, or an ambiguous pair two peerings both claim must never downgrade it to local
+processing. The operator log names the diagnosis; the wire reply carries only the reason.
 
 What remains **not implemented** is cross-domain bundle *exchange over the network* and
 trust-root distribution: a peering still moves between domains out-of-band and is imported

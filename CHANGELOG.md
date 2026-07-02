@@ -13,6 +13,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Security
+- The hub federation gate now denies a frame signed with a peered key whose
+  live certificate pin fails to resolve to a single peered domain (reason
+  `peer_domain_unresolved`), matching the existing refusal of a peered key
+  on a connection with no pinnable certificate. Previously such a frame —
+  a stale or foreign certificate, credentials split across peerings, or an
+  ambiguous pair two peerings both claim — degraded to local processing
+  with only an operator warning. A frame signed with an unpeered key still
+  takes the local path unchanged, and the misconfiguration diagnosis is
+  still logged for the operator.
+
 ## [0.91.0] - 2026-07-02
 
 ### Added

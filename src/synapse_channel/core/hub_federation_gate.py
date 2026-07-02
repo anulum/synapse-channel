@@ -11,8 +11,10 @@
 resolving the frame's Ed25519 ``signature.key_id`` together with the **live** peer
 certificate pin to a single peered domain, composing the deny-closed cross-domain
 authorisation (peering policy, mutual-TLS pin, verified event signature, bounded
-scope), and warning the operator when a signed, pinned frame resolves to no peering
-because of a misconfigured key or certificate. The gate captures the hub's
+scope), refusing a peered key whose claimed authority cannot be bound (no pinnable
+certificate, or a pin that resolves to no single peering), and warning the operator
+when a locally signed, pinned frame resolves to no peering because of a misconfigured
+key or certificate. The gate captures the hub's
 federation configuration at construction — the bundle, the certificate source, and
 the per-message-authentication posture are hub constructor arguments that are never
 reassigned — and takes the hub's system-message factory and single-socket sender as
@@ -54,8 +56,9 @@ __all__ = [
 class FrameDisposition(Enum):
     """How the federation gate classifies an inbound frame.
 
-    ``LOCAL`` — no federation bundle, or the frame resolves to no peered domain, so it
-    takes the ordinary local authorisation path unchanged. ``ALLOW_CROSS_DOMAIN`` — the
+    ``LOCAL`` — no federation bundle, or the frame claims no cross-domain authority (its
+    signing key is enrolled by no peering), so it takes the ordinary local authorisation
+    path unchanged. ``ALLOW_CROSS_DOMAIN`` — the
     frame is a peered remote domain's, authorised by the federation policy and its mapped
     scope, and is routed without the local ACL (a remote subject has no local identity).
     ``DENY`` — the frame is cross-domain and some layer refused it; it is not routed.
@@ -121,10 +124,13 @@ class HubFederationGate:
         belong to the same peer, and neither is ever taken from a self-declared field. A
         frame that resolves to no peered domain — unsigned, HMAC-authenticated, or signed
         with a local key — is :attr:`FrameDisposition.LOCAL` and takes the ordinary path
-        unchanged. A frame signed with a **peered** key whose connection presents no
-        pinnable certificate (plaintext socket, or a certificate read that fails) is
-        :attr:`FrameDisposition.DENY`: it claims cross-domain authority that only a live
-        pin can bind, so it never downgrades to local processing.
+        unchanged. A frame signed with a **peered** key is :attr:`FrameDisposition.DENY`
+        whenever the claimed authority cannot be bound: its connection presents no
+        pinnable certificate (plaintext socket, or a certificate read that fails), or the
+        connection is pinned but the key and pin resolve to no single peered domain (a
+        stale or foreign certificate, credentials split across peerings, or an ambiguous
+        pair two peerings claim). Cross-domain authority binds to the verified pair, so
+        an unbindable claim never downgrades to local processing.
 
         A cross-domain frame is authorised deny-closed by composing the peering policy
         (peered, active, namespace granted, key and pin accepted), the live mutual-TLS pin,
@@ -165,8 +171,7 @@ class HubFederationGate:
         pin = certificate_sha256_pin_from_der(der)
         domain_id = resolve_domain(self._bundle, key_id=key_id, certificate_pin=pin)
         if domain_id is None:
-            self.warn_unresolved(sender, msg_type, key_id, pin)
-            return FrameDisposition.LOCAL
+            return await self._refuse_unresolved(sender, msg_type, key_id, pin, websocket)
         namespace = project_of(sender)
         decision = self._bundle.authorise(
             domain_id,
@@ -240,18 +245,63 @@ class HubFederationGate:
         )
         return FrameDisposition.DENY
 
+    async def _refuse_unresolved(
+        self, sender: str, msg_type: str, key_id: str, pin: str, websocket: Any
+    ) -> FrameDisposition:
+        """Dispose of a signed, pinned frame whose key and pin resolve to no peered domain.
+
+        Counterpart to :meth:`_refuse_unpinned` for a connection that *did* present a
+        certificate. A frame signed with a key no peering enrols is an ordinary local
+        frame: it stays :attr:`FrameDisposition.LOCAL`, with
+        :meth:`warn_unresolved` raising the operator signal when the certificate pin
+        alone is enrolled (a stale or missing signing-key enrolment). A frame signed
+        with a **peered** key claims cross-domain authority, and that authority binds
+        to the verified ``(key, pin)`` pair — a pair that resolves to no single
+        peering (the pin stale, foreign, or never enrolled; the credentials split
+        across peerings; or an ambiguous pair two peerings claim) cannot be honoured,
+        so the frame is denied rather than downgraded to local processing, exactly as
+        an unpinnable one is. The diagnosis names the misconfiguration in the
+        operator log only; the wire reply carries the bare reason.
+        """
+        if self._bundle is None or not signing_key_is_peered(self._bundle, key_id):
+            self.warn_unresolved(sender, msg_type, key_id, pin)
+            return FrameDisposition.LOCAL
+        reason = "peer_domain_unresolved"
+        diagnosis = diagnose_unresolved_domain(self._bundle, key_id=key_id, certificate_pin=pin)
+        logger.warning(
+            "Federation denied %s for %s: key %s is peered but, together with the live "
+            "certificate pin %s, resolves to no single peered domain (%s)",
+            msg_type,
+            sender,
+            key_id,
+            pin,
+            diagnosis,
+        )
+        await self._send_json(
+            websocket,
+            self._system(
+                f"federation denied: {reason}",
+                msg_type=MessageType.ERROR,
+                target=sender,
+                federation_reason=reason,
+            ),
+        )
+        return FrameDisposition.DENY
+
     def warn_unresolved(self, sender: str, msg_type: str, key_id: str, pin: str) -> None:
         """Log a misconfiguration signal when a signed, pinned frame resolves to no domain.
 
-        A cross-domain frame arrives signed and over a pinned connection, yet its key and
-        certificate resolve to no single peering. Most such frames are ordinary — a
-        locally signed frame is not cross-domain and rightly takes the local path — so the
-        common case stays silent. But a peering whose signing key or certificate pin is
-        missing, stale, or split across peerings otherwise leaves the operator no signal at
+        A frame arrives signed and over a pinned connection, yet its key and certificate
+        resolve to no single peering. On the live path this is reached only for a key no
+        peering enrols (a peered key that fails to resolve is denied by
+        :meth:`_refuse_unresolved` instead): most such frames are ordinary — a locally
+        signed frame is not cross-domain and rightly takes the local path — so the common
+        case stays silent. But a peering whose signing-key enrolment is missing or stale
+        while its certificate pin is enrolled otherwise leaves the operator no signal at
         all: the frame is simply handled locally and, lacking a local identity, usually
         denied downstream with no hint that a federation peering is misconfigured. When the
-        diagnosis is one of those misconfigurations this logs a warning naming the reason;
-        the frame's disposition is unchanged (still local).
+        diagnosis is a misconfiguration this logs a warning naming the reason; the frame's
+        disposition is unchanged (still local).
         """
         if self._bundle is None:
             return
