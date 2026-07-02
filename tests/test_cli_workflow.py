@@ -500,9 +500,7 @@ def test_contention_json_carries_only_the_scoped_pairs(
         ("stray-two", "dave", ["src/other.py"]),
     )
     parser = _parser()
-    args = parser.parse_args(
-        ["workflow", "contention", _write(tmp_path, _GOOD), str(db), "--json"]
-    )
+    args = parser.parse_args(["workflow", "contention", _write(tmp_path, _GOOD), str(db), "--json"])
     assert args.func(args) == 1
     payload = json.loads(capsys.readouterr().out)
     assert len(payload) == 1
@@ -520,9 +518,7 @@ def test_contention_json_scoped_empty_is_an_empty_list(
         ("stray-two", "bob", ["src/other.py"]),
     )
     parser = _parser()
-    args = parser.parse_args(
-        ["workflow", "contention", _write(tmp_path, _GOOD), str(db), "--json"]
-    )
+    args = parser.parse_args(["workflow", "contention", _write(tmp_path, _GOOD), str(db), "--json"])
     assert args.func(args) == 0
     assert json.loads(capsys.readouterr().out) == []
 

@@ -408,9 +408,7 @@ async def test_watch_reachable_hub_exits_zero() -> None:
 def test_cmd_status_watch_requires_a_positive_interval(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    code = cli_status._cmd_status(
-        _namespace(uri="ws://127.0.0.1:1", watch=True, interval=0.0)
-    )
+    code = cli_status._cmd_status(_namespace(uri="ws://127.0.0.1:1", watch=True, interval=0.0))
     assert code == 2
     assert "--interval must be positive" in capsys.readouterr().err
 
@@ -443,9 +441,7 @@ def test_cmd_status_watch_keyboard_interrupt_is_a_clean_stop(
 
 
 def test_parser_accepts_watch_flags() -> None:
-    args = cli.build_parser().parse_args(
-        ["status", "--watch", "--interval", "0.5", "--count", "3"]
-    )
+    args = cli.build_parser().parse_args(["status", "--watch", "--interval", "0.5", "--count", "3"])
     assert args.watch is True
     assert args.interval == 0.5
     assert args.count == 3

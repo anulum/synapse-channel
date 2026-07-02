@@ -179,9 +179,7 @@ def test_json_report_is_machine_readable(
     assert payload["totals"]["sessions"] == 2
     assert payload["totals"]["cost_usd"] == pytest.approx(0.21)
     assert payload["totals"]["max_rate_limit_utilisation"] == pytest.approx(0.25)
-    sessions = {
-        (record["agent"], record["session_id"]): record for record in payload["sessions"]
-    }
+    sessions = {(record["agent"], record["session_id"]): record for record in payload["sessions"]}
     assert sessions[("participant/claude", "session-a")]["turns"] == 3
     assert sessions[("participant/claude", "session-a")]["errors"] == 1
     assert sessions[("participant/ollama", "session-b")]["abstentions"] == 1

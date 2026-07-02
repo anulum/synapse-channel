@@ -74,7 +74,14 @@ def test_action_flags_exist_on_the_real_policy_check_parser() -> None:
             "hub.pub",
         ]
     )
-    accepted = {"--policy", "--receipt-json", "--json", "--enforce", "--merkle-db", "--trusted-signing-key"}
+    accepted = {
+        "--policy",
+        "--receipt-json",
+        "--json",
+        "--enforce",
+        "--merkle-db",
+        "--trusted-signing-key",
+    }
     assert flags == accepted
     assert args.enforce is True
     assert args.trusted_signing_keys == ["hub.pub"]
@@ -100,9 +107,7 @@ def test_action_inputs_are_all_mapped_into_env() -> None:
 
 def test_action_setup_python_pin_matches_the_repo_ci() -> None:
     """The composite reuses the exact setup-python SHA the repo's CI verified."""
-    action_uses = [
-        step["uses"] for step in _action()["runs"]["steps"] if "uses" in step
-    ]
+    action_uses = [step["uses"] for step in _action()["runs"]["steps"] if "uses" in step]
     assert len(action_uses) == 1
     ci_text = CI_WORKFLOW.read_text(encoding="utf-8")
     pinned = set(re.findall(r"uses: (actions/setup-python@[0-9a-f]{40})", ci_text))
