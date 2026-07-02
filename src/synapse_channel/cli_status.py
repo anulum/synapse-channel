@@ -26,6 +26,7 @@ from typing import Any
 from synapse_channel.cli_query_transport import AgentFactory
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.waiter_identity import split_roster
 
 
 @dataclass(frozen=True)
@@ -37,17 +38,23 @@ class HubStatus:
     reachable : bool
         Whether the welcome handshake completed within the readiness window.
     online : int
-        Agents holding an open connection right now (excludes the status probe).
+        Agents holding an open connection right now (excludes the status probe
+        and ``-rx`` waiter sidecars — a wake listener is presence plumbing, not
+        an agent, and counting sidecars let a 30-terminal workstation read as
+        hundreds of agents).
     claims : int
         Active task leases on the hub.
     resources : int
         Live resource offers on the hub.
+    waiters : int
+        Wake-listener sidecars (``-rx``) holding open connections.
     """
 
     reachable: bool
     online: int = 0
     claims: int = 0
     resources: int = 0
+    waiters: int = 0
 
 
 def _count_word(count: int, singular: str) -> str:
@@ -60,9 +67,9 @@ def render_status_line(status: HubStatus, *, plain: bool = False) -> str:
     """Build the one-line summary for ``status``.
 
     Agents and claims always appear — they are the two numbers a coordinating agent
-    reads at a glance. Resources are appended only when at least one offer is live,
-    so an unused feature never widens a status bar. ``plain`` drops every non-ASCII
-    glyph for prompts and terminals that cannot render them.
+    reads at a glance. Waiter sidecars and resources are appended only when at least
+    one is live, so an unused feature never widens a status bar. ``plain`` drops
+    every non-ASCII glyph for prompts and terminals that cannot render them.
 
     Parameters
     ----------
@@ -79,6 +86,8 @@ def render_status_line(status: HubStatus, *, plain: bool = False) -> str:
     if not status.reachable:
         return "synapse offline" if plain else "synapse ○ offline"
     segments = [_count_word(status.online, "agent"), _count_word(status.claims, "claim")]
+    if status.waiters:
+        segments.append(_count_word(status.waiters, "waiter"))
     if status.resources:
         segments.append(_count_word(status.resources, "resource"))
     if plain:
@@ -152,12 +161,21 @@ def _tally(seen: dict[str, dict[str, Any]], *, probe: str) -> HubStatus:
     """Fold the collected ``who`` and ``state`` replies into a reachable ``HubStatus``."""
     who = seen.get(MessageType.WHO_SNAPSHOT, {})
     roster = who.get("online_agents", [])
-    online = sum(1 for agent in roster if str(agent) != probe) if isinstance(roster, list) else 0
+    names = (
+        [str(agent) for agent in roster if str(agent) != probe] if isinstance(roster, list) else []
+    )
+    agents, waiters = split_roster(names)
     state = seen.get(MessageType.STATE_SNAPSHOT, {})
     snapshot = state.get("snapshot", {})
     claims = _len_of(snapshot.get("active_claims")) if isinstance(snapshot, dict) else 0
     resources = _len_of(snapshot.get("resources")) if isinstance(snapshot, dict) else 0
-    return HubStatus(reachable=True, online=online, claims=claims, resources=resources)
+    return HubStatus(
+        reachable=True,
+        online=len(agents),
+        claims=claims,
+        resources=resources,
+        waiters=len(waiters),
+    )
 
 
 def _len_of(value: object) -> int:

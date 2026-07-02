@@ -229,3 +229,29 @@ async def test_query_status_tallies_zeros_when_snapshots_never_arrive() -> None:
     )
     assert status.reachable is True
     assert (status.online, status.claims, status.resources) == (0, 0, 0)
+
+
+def test_render_appends_waiters_only_when_present() -> None:
+    assert "waiter" not in render_status_line(HubStatus(reachable=True, online=1, claims=0))
+    line = render_status_line(HubStatus(reachable=True, online=1, claims=0, waiters=4))
+    assert "4 waiters" in line
+
+
+def test_tally_counts_waiter_sidecars_apart_from_agents() -> None:
+    """A wake-listener socket is presence plumbing, not an agent.
+
+    Pins the inflated-fleet defect: 166 ``-rx`` waiters (most for dead
+    terminals) once made a ~30-terminal workstation report 200 online agents.
+    """
+    seen: dict[str, dict[str, Any]] = {
+        MessageType.WHO_SNAPSHOT: {
+            "type": MessageType.WHO_SNAPSHOT,
+            "online_agents": ["alpha", "alpha-rx", "beta-rx", "USER-status"],
+        },
+        MessageType.STATE_SNAPSHOT: {
+            "type": MessageType.STATE_SNAPSHOT,
+            "snapshot": {"active_claims": []},
+        },
+    }
+    status = _tally(seen, probe="USER-status")
+    assert status == HubStatus(reachable=True, online=1, claims=0, waiters=2)

@@ -33,6 +33,7 @@ from synapse_channel.core.accounting import (
     render_human,
     run_accounting_report,
 )
+from synapse_channel.waiter_identity import waiter_owner
 
 
 def _load_pricing(path: str | None) -> dict[str, ModelPrice] | None:
@@ -141,7 +142,7 @@ async def _emit_usage(
     ready_timeout: float,
 ) -> int:
     """Connect to the hub and post one opt-in usage progress note."""
-    sender = name[:-3] if name.endswith("-rx") and len(name) > 3 else name
+    sender = waiter_owner(name)
 
     async def collect(_data: dict[str, Any]) -> None:
         return None
