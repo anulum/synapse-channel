@@ -821,6 +821,10 @@ causality *across federated hubs*: the logs merge in the deterministic
 multi-hub order, events are addressed as `HUB:SEQ`, and an edge whose endpoints
 two different hubs authored is tagged `federation` — clock-ordered evidence,
 since hubs share no sequence, and observe-only like the multi-hub read side.
+`synapse causality otel` projects the graph onto OpenTelemetry spans — one
+trace per task, cross-task dependency/contention edges as span links, ids
+deterministic — written as JSON (`--out`) or pushed as real OTLP over HTTP
+(`--endpoint`, optional extra: `pip install 'synapse-channel[otel]'`).
 
 Use `synapse merkle root ./synapse.db` to commit the durable log to a single
 Merkle root — a 32-byte fingerprint of every event, so two operators or two
@@ -1022,15 +1026,15 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.90.0 |
 | Public API exports | 70 |
-| Package modules | 277 |
-| Classes | 388 |
+| Package modules | 279 |
+| Classes | 392 |
 | Wire message types | 65 |
 | CLI subcommands | 124 |
-| Test functions | 3974 |
+| Test functions | 4007 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 46 |
 | GitHub Actions workflows | 12 |
-| Optional-dependency groups | 6 |
+| Optional-dependency groups | 7 |
 
 This snapshot is a static inventory generated from the source tree. Performance and coverage claims have their own committed evidence — see `VALIDATION.md` and `benchmarks/`.
 <!-- capability-snapshot:end -->

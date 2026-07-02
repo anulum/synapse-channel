@@ -14,6 +14,18 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `synapse causality otel` projects the coordination-causality graph onto
+  OpenTelemetry spans: one trace per task (a root span covering the task's
+  recorded lifetime, one child span per coordination event) with cross-task
+  `dependency`/`contention` edges carried as span links — "this claim
+  proceeded because that release freed its paths" renders as a first-class
+  link in any trace viewer. Ids are deterministic derivations of the task id
+  and event sequence, so re-exporting the same log yields identical spans.
+  `--out FILE` writes the span records as JSON with no new dependency;
+  `--endpoint URL` pushes OTLP over HTTP through the official exporter
+  behind the new optional `otel` extra. A failed push exits non-zero with
+  the exporter's verdict, and taskless events are counted in the summary
+  rather than silently dropped.
 - `synapse causality` traces coordination causality across federated hubs:
   `--peer HUB=PATH` (repeatable) merges the named hubs' event logs in the
   deterministic multi-hub order, events are addressed as `HUB:SEQ`
