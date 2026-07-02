@@ -19,13 +19,21 @@ standing dashboard over the same evidence. ``--suggest-resolution`` turns
 each detected version conflict into advice: the intersection of all
 consumers' declared ranges names which repository's constraint is the odd
 one out and what the rest already reconcile at — advisory text only,
-nothing rewrites a manifest.
+nothing rewrites a manifest. ``--watch --notify-cmd CMD`` runs an operator
+command whenever the coordination signal *changes* between refreshes — a
+live claim appearing or clearing in a scanned repository, a version
+conflict appearing or resolving — with the delta on stdin, so desktop
+notifications, ``synapse send``, or any other sink wires up without
+coupling the scanner to a live hub.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import shlex
+import subprocess  # nosec B404
 import sys
 import time
 from collections.abc import Callable
@@ -33,6 +41,7 @@ from typing import TextIO
 
 from synapse_channel.core.cross_repo_graph import (
     SELF_RELATION,
+    VERSION_CONFLICT_EDGE,
     CrossRepoGraph,
     cross_repo_graph_to_json,
     render_cross_repo_dot,
@@ -45,12 +54,67 @@ from synapse_channel.core.version_resolution import (
     run_resolution_advice,
 )
 
+NOTIFY_TIMEOUT_SECONDS = 60.0
+"""Ceiling on one notify-command run, so a hung sink cannot stall the watch."""
+
 
 def _claim_signal(graph: CrossRepoGraph, focus: str | None) -> int:
     """Return the ``--repo`` coordination exit code for one scanned graph."""
     if focus is not None and any(claim.relation != SELF_RELATION for claim in graph.claims):
         return 1
     return 0
+
+
+def coordination_facts(graph: CrossRepoGraph) -> frozenset[str]:
+    """Return one line per observable coordination fact in a scanned graph.
+
+    The facts a watcher wants to be told about: every live claim joined to
+    the graph and every provable version conflict. Each renders as a stable
+    one-line identity, so two refreshes diff by plain set difference.
+    """
+    facts = {
+        f"claim {claim.repo} {claim.task_id}@{claim.owner} [{claim.relation}]"
+        for claim in graph.claims
+    }
+    facts.update(
+        f"version_conflict {edge.source}<->{edge.target} {edge.evidence.get('package', '')}"
+        for edge in graph.edges
+        if edge.kind == VERSION_CONFLICT_EDGE
+    )
+    return frozenset(facts)
+
+
+def run_notify_command(command: str, added: list[str], removed: list[str], root: str) -> None:
+    """Run the operator's notify command with the coordination delta on stdin.
+
+    The command is split with :func:`shlex.split` and executed without a
+    shell — an operator wanting pipes or redirection wraps the command in
+    ``sh -c '…'`` explicitly. Appeared facts arrive as ``+ fact`` lines and
+    cleared facts as ``- fact`` lines; the scanned root is exposed as
+    ``SYNAPSE_CROSS_REPO_ROOT``. A failing or hanging sink is reported on
+    stderr and never stops the watch — notification is best-effort, the
+    report is the record.
+    """
+    summary = (
+        "\n".join(
+            [f"+ {fact}" for fact in sorted(added)] + [f"- {fact}" for fact in sorted(removed)]
+        )
+        + "\n"
+    )
+    try:
+        completed = subprocess.run(  # nosec B603
+            shlex.split(command),
+            input=summary,
+            text=True,
+            timeout=NOTIFY_TIMEOUT_SECONDS,
+            env={**os.environ, "SYNAPSE_CROSS_REPO_ROOT": root},
+            check=False,
+        )
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        print(f"notify command failed: {exc}", file=sys.stderr)
+        return
+    if completed.returncode != 0:
+        print(f"notify command exited {completed.returncode}", file=sys.stderr)
 
 
 def watch_cross_repo(
@@ -61,6 +125,7 @@ def watch_cross_repo(
     as_json: bool,
     interval: float,
     count: int,
+    notify_cmd: str | None = None,
     out: TextIO | None = None,
     sleeper: Callable[[float], None] | None = None,
 ) -> int:
@@ -84,6 +149,12 @@ def watch_cross_repo(
         Seconds between refreshes.
     count : int
         Refreshes to run; ``0`` means until interrupted.
+    notify_cmd : str or None, optional
+        Operator command run via :func:`run_notify_command` whenever the
+        coordination facts (:func:`coordination_facts`) CHANGE between two
+        consecutive refreshes. Fires on transitions only — never on the
+        first refresh, which establishes the baseline, and never on a
+        steady state, so a quiet fleet stays quiet.
     out : typing.TextIO or None, optional
         Output stream; defaults to ``sys.stdout``.
     sleeper : Callable[[float], None] or None, optional
@@ -103,6 +174,7 @@ def watch_cross_repo(
     in_place = stream.isatty() and not as_json
     exit_code = 0
     refreshes = 0
+    previous_facts: frozenset[str] | None = None
     while True:
         try:
             graph = run_cross_repo_graph(root, db_path=db, focus=focus)
@@ -118,6 +190,16 @@ def watch_cross_repo(
                 stream.write("---\n")
             stream.write(render_cross_repo_human(graph) + "\n")
         stream.flush()
+        if notify_cmd is not None:
+            facts = coordination_facts(graph)
+            if previous_facts is not None and facts != previous_facts:
+                run_notify_command(
+                    notify_cmd,
+                    sorted(facts - previous_facts),
+                    sorted(previous_facts - facts),
+                    root,
+                )
+            previous_facts = facts
         exit_code = _claim_signal(graph, focus)
         refreshes += 1
         if count and refreshes >= count:
@@ -135,6 +217,9 @@ def _cmd_cross_repo(args: argparse.Namespace) -> int:
     if args.suggest_resolution and (args.watch or args.dot):
         print("--suggest-resolution does not combine with --watch or --dot", file=sys.stderr)
         return 2
+    if args.notify_cmd is not None and not args.watch:
+        print("--notify-cmd fires on watch transitions; it requires --watch", file=sys.stderr)
+        return 2
     if args.watch:
         if args.dot:
             print("--watch does not combine with --dot", file=sys.stderr)
@@ -150,6 +235,7 @@ def _cmd_cross_repo(args: argparse.Namespace) -> int:
                 as_json=args.json,
                 interval=args.interval,
                 count=args.count,
+                notify_cmd=args.notify_cmd,
             )
         except KeyboardInterrupt:
             return 0
@@ -226,5 +312,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="For each detected version conflict, name the odd-one-out declaration "
         "and the range the other consumers reconcile at (advisory text; nothing "
         "rewrites a manifest).",
+    )
+    parser.add_argument(
+        "--notify-cmd",
+        default=None,
+        metavar="CMD",
+        help="Run CMD (shlex-split, no shell; wrap in `sh -c` for pipes) whenever the "
+        "coordination facts change between --watch refreshes, with the delta on "
+        "stdin (+/- lines) and SYNAPSE_CROSS_REPO_ROOT in the environment; "
+        "requires --watch.",
     )
     parser.set_defaults(func=_cmd_cross_repo)
