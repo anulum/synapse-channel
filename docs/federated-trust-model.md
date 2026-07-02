@@ -160,6 +160,68 @@ canonical bundle means an in-path alteration of *any* policy content — an adde
 namespace or scope grant as much as a swapped key — changes the value the operators
 read to each other.
 
+### The ceremony, end to end
+
+Two operators, two domains. The `atelier.example` operator validates their own
+bundle material and starts serving it; every output below is captured from a real
+run of the shipped commands.
+
+```text
+atelier$ synapse federation offer ./atelier.json
+domain:             atelier.example
+signing key ids:    atelier-signing-2026
+certificate pins:   sha256:9b1f63a2c8d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0
+namespaces:         atelier/shared-docs
+scope grants:       1
+expires:            2026-10-03T04:00:00Z
+bundle fingerprint: sha256:eb240a1ea0be0ba5d96641ab8905905fa2fe09a41dc50cecf746cf19776ad47d
+
+serve it:  synapse hub --federation-offer ./atelier.json
+then read the bundle fingerprint to the peer operator out-of-band; they
+compare it against their `synapse federation fetch` output before importing.
+```
+
+The `brioni.example` operator fetches the offered material from the live hub and
+sees the **identical** block — same renderer, same whole-bundle fingerprint:
+
+```text
+brioni$ synapse federation fetch ws://atelier-hub:8951 --out ./fetched-atelier.json
+domain:             atelier.example
+signing key ids:    atelier-signing-2026
+certificate pins:   sha256:9b1f63a2c8d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0
+namespaces:         atelier/shared-docs
+scope grants:       1
+expires:            2026-10-03T04:00:00Z
+bundle fingerprint: sha256:eb240a1ea0be0ba5d96641ab8905905fa2fe09a41dc50cecf746cf19776ad47d
+
+wrote the offered bundle to fetched-atelier.json — NOT imported.
+compare the bundle fingerprint with the peer operator out-of-band (their
+`synapse federation offer` prints the same block), then import explicitly:
+  synapse federation import fetched-atelier.json --confirmed-by <operator> --source ws://atelier-hub:8951
+```
+
+The operators now read `eb240a1e…` to each other over an independent channel — a
+call, a signed ticket, a key-signing meetup. Only when the values match does the
+fetching operator import, and the import records who confirmed it and where the
+bytes came from. With a `--max-age` lifetime policy the import also grades the
+bundle's expiry on the spot:
+
+```text
+brioni$ synapse federation import ./fetched-atelier.json --confirmed-by brioni-ops \
+    --source ws://atelier-hub:8951 --max-age 90
+warning: bundle expiry is 92 days out, beyond --max-age 90
+imported peering with domain 'atelier.example' (1 namespaces, 1 keys, 1 pins), confirmed by brioni-ops
+
+brioni$ synapse federation list --max-age 90
+1 peer domain(s):
+  atelier.example [active] namespaces=atelier/shared-docs keys=1 pins=1 scope=1 — confirmed by brioni-ops from ws://atelier-hub:8951, imported 0 day(s) ago
+```
+
+The mirror-image run — brioni offering, atelier fetching — completes the pair.
+Nothing in the path decided trust: the hub only moved bytes, both fingerprint
+blocks came from the same rendering code, and the peering exists because two
+humans compared a hash and said so on the record.
+
 ## Scoped cross-domain authorisation
 
 A remote domain's agents never inherit local permissions. The federation bundle

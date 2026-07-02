@@ -68,6 +68,13 @@ All notable changes to this project are documented here.
   succeeds) when the incoming bundle never expires or expires further
   out than the threshold.
 
+- Added the end-to-end exchange-ceremony walkthrough to the federated
+  trust model design doc: two operators, both fingerprint blocks
+  captured from a real two-hub run of `federation offer`, `hub
+  --federation-offer`, `federation fetch`, and the confirmed
+  `federation import` — including the `--max-age` expiry grading at
+  import time.
+
 ### Security
 - The last four unpinned tool installs in CI are now hash-locked: the
   pre-commit, release, publish, and reuse workflow jobs install
