@@ -217,6 +217,46 @@ to loopback or a private interface behind it. In both native and proxy-terminate
 deployments, clients use `wss://host:port` and still pass the shared token for a
 secured hub.
 
+A worked example with [Caddy](https://caddyserver.com) terminating TLS in
+front of a loopback hub (`reverse_proxy` speaks WebSocket without extra
+directives). The hub runs privately with its token:
+
+```console
+$ synapse hub --port 8899 --token "$SYNAPSE_TOKEN" --db ~/synapse/hub.db
+```
+
+and this `Caddyfile` publishes it as `wss://` on 8443:
+
+```text
+{
+	auto_https off
+}
+
+https://localhost:8443 {
+	tls /certs/cert.pem /certs/key.pem
+	reverse_proxy 127.0.0.1:8899
+}
+```
+
+Clients then connect through the proxy:
+
+```console
+$ synapse who --uri wss://localhost:8443 --token "$SYNAPSE_TOKEN"
+Online (1 agents · 0 waiters):
+  USER
+```
+
+This exact configuration was validated end to end (Caddy 2 in a container
+with host networking, a self-signed certificate with a `localhost` SAN, the
+client trusting it via `SSL_CERT_FILE=cert.pem`). For a real deployment,
+substitute your hostname for `localhost`, drop the `auto_https off` global
+block and the `tls` line, and Caddy provisions publicly trusted certificates
+itself; the client-side `SSL_CERT_FILE` override is then unnecessary because
+the certificate chains to the system trust store. The proxy terminates TLS
+only — the hub still requires its `--token`, and per-host limits keep
+applying to the proxy's forwarded connections as one host, so set
+`--max-connections-per-host` with that in mind.
+
 ## Persistence and backups
 
 With `--db`, every authoritative mutation (claims, releases, task updates, chat)
