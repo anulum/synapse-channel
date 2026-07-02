@@ -12,6 +12,7 @@ The ``synapse`` command exposes these subcommands:
 * ``hub`` — run the coordination hub;
 * ``demo`` — run a self-contained first-run coordination demo;
 * ``quickstart-coding`` — create and run the coding-fleet first-run demo;
+* ``fleet-init`` — empty machine to working fleet in one command;
 * ``new`` — create runnable demo workspaces;
 * ``worker`` — run a model worker that answers on the channel;
 * ``team`` — launch a hub plus one or two local workers in one shot;
@@ -140,6 +141,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_commands_overview:add_parsers", ("commands",)),
     ("synapse_channel.cli_completions:add_parsers", ("completions",)),
     ("synapse_channel.cli_quickstart_coding:add_parsers", ("quickstart-coding",)),
+    ("synapse_channel.cli_fleet_init:add_parsers", ("fleet-init",)),
     ("synapse_channel.cli_new:add_parsers", ("new",)),
     ("synapse_channel.cli_messaging:add_parsers", ("send", "wait", "listen")),
     ("synapse_channel.cli_multihub:add_parsers", ("multihub",)),
