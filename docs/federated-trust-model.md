@@ -142,7 +142,9 @@ key-signing exchange) and import them explicitly. `synapse federation import`
 (shipped) records the bundle with its provenance — who provided it, when, and which
 operator confirmed it (a required `--confirmed-by`) — so every federated trust
 relationship is auditable back to a human decision, not auto-discovered from the
-network; `synapse federation list` shows the imported peerings and `synapse federation
+network; `synapse federation list` shows the imported peerings with each peering's
+age (an expired bundle renders as such, and `--max-age` flags active peerings whose
+ceremony has gone stale, exiting `1` for scheduled checks), and `synapse federation
 revoke` retires one while keeping its audit record. There is no automatic
 trust-on-first-use and no network-driven trust root.
 

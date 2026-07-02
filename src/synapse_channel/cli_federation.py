@@ -10,8 +10,10 @@
 Trust between Synapse domains is established out-of-band: an operator receives a peer
 domain's bundle through a trusted channel and imports it explicitly. ``import`` reads
 that bundle file, requires a ``--confirmed-by`` operator, records the provenance, and
-adds the peering to the local store; ``list`` shows the imported peerings and their
-provenance; ``revoke`` marks a peering revoked so it fails authorisation while keeping
+adds the peering to the local store; ``list`` shows the imported peerings, their
+provenance, and each peering's age — trust material is a lifecycle, so an expired
+bundle shows as such and ``--max-age`` flags peerings whose ceremony has gone stale;
+``revoke`` marks a peering revoked so it fails authorisation while keeping
 its audit record. There is no auto-discovery and no trust-on-first-use — every peering
 is auditable back to a human decision.
 
@@ -69,6 +71,9 @@ Clock = Callable[[], float]
 DEFAULT_STORE = "~/.synapse/federation.json"
 """Default operator-level federation store path."""
 
+SECONDS_PER_DAY = 86400.0
+"""One day of peering age, in the store's epoch seconds."""
+
 
 def _store_path(args: argparse.Namespace) -> Path:
     """Return the federation store path, expanding ``~`` and any override."""
@@ -77,6 +82,9 @@ def _store_path(args: argparse.Namespace) -> Path:
 
 def _cmd_import(args: argparse.Namespace, *, clock: Clock = time.time) -> int:
     """Import an out-of-band peer-domain bundle with operator-confirmed provenance."""
+    if args.max_age is not None and args.max_age <= 0:
+        print("--max-age must be a positive number of days", file=sys.stderr)
+        return 2
     try:
         raw = Path(args.bundle).expanduser().read_text(encoding="utf-8")
     except OSError as exc:
@@ -89,6 +97,8 @@ def _cmd_import(args: argparse.Namespace, *, clock: Clock = time.time) -> int:
     except (json.JSONDecodeError, FederationStoreError) as exc:
         print(f"invalid federation bundle: {exc}", file=sys.stderr)
         return 2
+    if args.max_age is not None:
+        _warn_import_expiry(peer.expires_at, max_age_days=args.max_age, now=clock())
     record = FederationRecord(
         peer=peer,
         provenance=PeerProvenance(
@@ -108,8 +118,18 @@ def _cmd_import(args: argparse.Namespace, *, clock: Clock = time.time) -> int:
     return 0
 
 
-def _cmd_list(args: argparse.Namespace) -> int:
-    """List imported peer domains and the provenance of each peering."""
+def _cmd_list(args: argparse.Namespace, *, clock: Clock = time.time) -> int:
+    """List imported peer domains, each peering's age, and any stale trust.
+
+    Every line carries the peering's age since its confirmed import, and a
+    peering whose bundle expiry has passed shows ``[expired]`` instead of
+    ``[active]``. With ``--max-age DAYS``, an active peering imported
+    longer ago than the threshold is flagged stale and the command exits
+    ``1`` — trust material is a lifecycle, not a one-off ceremony.
+    """
+    if args.max_age is not None and args.max_age <= 0:
+        print("--max-age must be a positive number of days", file=sys.stderr)
+        return 2
     try:
         records = load_store(_store_path(args))
     except FederationStoreError as exc:
@@ -118,19 +138,64 @@ def _cmd_list(args: argparse.Namespace) -> int:
     if not records:
         print("no peer domains imported")
         return 0
+    now = clock()
+    stale = 0
     print(f"{len(records)} peer domain(s):")
     for domain_id in sorted(records):
         record = records[domain_id]
         peer = record.peer
-        state = "revoked" if peer.revoked else "active"
+        if peer.revoked:
+            state = "revoked"
+        elif peer.expires_at is not None and now >= peer.expires_at:
+            state = "expired"
+        else:
+            state = "active"
+        age_days = max(0.0, now - record.provenance.imported_at) / SECONDS_PER_DAY
+        marker = ""
+        if args.max_age is not None and state == "active" and age_days > args.max_age:
+            stale += 1
+            marker = f" [stale: imported {age_days:.0f} days ago > {args.max_age:g}]"
         namespaces = ", ".join(sorted(peer.namespaces)) or "(none)"
         print(
-            f"  {domain_id} [{state}] namespaces={namespaces} "
+            f"  {domain_id} [{state}]{marker} namespaces={namespaces} "
             f"keys={len(peer.signing_key_ids)} pins={len(peer.certificate_pins)} "
             f"scope={len(peer.scope_grants)} "
-            f"— confirmed by {record.provenance.confirmed_by} from {record.provenance.source}"
+            f"— confirmed by {record.provenance.confirmed_by} from {record.provenance.source}, "
+            f"imported {age_days:.0f} day(s) ago"
         )
+    if stale:
+        print(
+            f"{stale} peering(s) exceed --max-age {args.max_age:g} days; "
+            "re-run the exchange ceremony to refresh their trust material",
+            file=sys.stderr,
+        )
+        return 1
     return 0
+
+
+def _warn_import_expiry(expires_at: float | None, *, max_age_days: float, now: float) -> None:
+    """Warn when an imported bundle's lifetime overruns the operator's policy.
+
+    Advisory only: the operator is confirming the import explicitly, so the
+    command still succeeds — but a bundle that never expires, or expires
+    further out than ``--max-age`` days, is exactly the trust material the
+    listing would later flag as stale, and the cheapest moment to say so is
+    before it lands in the store.
+    """
+    if expires_at is None:
+        print(
+            f"warning: bundle never expires; --max-age {max_age_days:g} days asks for "
+            "bounded trust — consider having the peer re-issue it with an expiry",
+            file=sys.stderr,
+        )
+        return
+    horizon = now + max_age_days * SECONDS_PER_DAY
+    if expires_at > horizon:
+        days_out = (expires_at - now) / SECONDS_PER_DAY
+        print(
+            f"warning: bundle expiry is {days_out:.0f} days out, beyond --max-age {max_age_days:g}",
+            file=sys.stderr,
+        )
 
 
 def _cmd_revoke(args: argparse.Namespace) -> int:
@@ -215,10 +280,35 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--confirmed-by", required=True, help="Operator confirming the import (audit trail)."
     )
     importer.add_argument("--source", default=None, help="Where the bundle came from.")
+    importer.add_argument(
+        "--max-age",
+        type=float,
+        default=None,
+        metavar="DAYS",
+        help=(
+            "Warn (import still succeeds) when the bundle never expires or expires "
+            "further out than this many days — the trust-lifetime policy check at "
+            "the cheapest moment, before the material lands in the store."
+        ),
+    )
     _add_store(importer)
     importer.set_defaults(func=_cmd_import)
 
-    lister = group.add_parser("list", help="List imported peer domains and their provenance.")
+    lister = group.add_parser(
+        "list",
+        help="List imported peer domains, their provenance, and each peering's age; "
+        "--max-age DAYS flags stale active peerings and exits 1.",
+    )
+    lister.add_argument(
+        "--max-age",
+        type=float,
+        default=None,
+        metavar="DAYS",
+        help=(
+            "Flag active peerings imported longer ago than this many days as stale "
+            "and exit 1 — trust material is a lifecycle, not a one-off ceremony."
+        ),
+    )
     _add_store(lister)
     lister.set_defaults(func=_cmd_list)
 

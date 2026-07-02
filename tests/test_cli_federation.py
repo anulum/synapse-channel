@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from synapse_channel.cli_federation import _cmd_import, add_parsers
+from synapse_channel.cli_federation import SECONDS_PER_DAY, _cmd_import, _cmd_list, add_parsers
 from synapse_channel.core.federation import FederationPeer
 from synapse_channel.core.federation_store import load_store
 
@@ -120,6 +120,183 @@ def test_list_empty_and_populated(tmp_path: Path, capsys: pytest.CaptureFixture[
     assert populated.func(populated) == 0
     out = capsys.readouterr().out
     assert "acme [active]" in out and "confirmed by ops" in out
+
+
+def _imported_store(tmp_path: Path, *, bundle: dict[str, object] | None = None) -> str:
+    """Import one peering at epoch 0 and return the store path."""
+    store = str(tmp_path / "store.json")
+    imp = _args(
+        "import",
+        _write_bundle(tmp_path, bundle if bundle is not None else _BUNDLE),
+        "--confirmed-by",
+        "ops",
+        "--store",
+        store,
+    )
+    assert _cmd_import(imp, clock=lambda: 0.0) == 0
+    return store
+
+
+def test_list_shows_each_peerings_age(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    store = _imported_store(tmp_path)
+    capsys.readouterr()
+
+    args = _args("list", "--store", store)
+    assert _cmd_list(args, clock=lambda: 5 * SECONDS_PER_DAY) == 0
+
+    out = capsys.readouterr().out
+    assert "imported 5 day(s) ago" in out
+    assert "[stale" not in out
+
+
+def test_list_flags_stale_peerings_and_exits_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = _imported_store(tmp_path)
+    capsys.readouterr()
+
+    args = _args("list", "--store", store, "--max-age", "3")
+    assert _cmd_list(args, clock=lambda: 5 * SECONDS_PER_DAY) == 1
+
+    captured = capsys.readouterr()
+    assert "acme [active] [stale: imported 5 days ago > 3]" in captured.out
+    assert "1 peering(s) exceed --max-age 3 days" in captured.err
+    assert "re-run the exchange ceremony" in captured.err
+
+
+def test_list_within_max_age_is_not_flagged(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = _imported_store(tmp_path)
+    capsys.readouterr()
+
+    args = _args("list", "--store", store, "--max-age", "30")
+    assert _cmd_list(args, clock=lambda: 5 * SECONDS_PER_DAY) == 0
+
+    captured = capsys.readouterr()
+    assert "[stale" not in captured.out
+    assert captured.err == ""
+
+
+def test_list_expired_peering_shows_expired_and_is_not_stale(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # an expired peering is already refused by the gate; staleness only
+    # grades peerings that still grant
+    expiring = dict(_BUNDLE, expires_at=2 * SECONDS_PER_DAY)
+    store = _imported_store(tmp_path, bundle=expiring)
+    capsys.readouterr()
+
+    args = _args("list", "--store", store, "--max-age", "3")
+    assert _cmd_list(args, clock=lambda: 5 * SECONDS_PER_DAY) == 0
+
+    captured = capsys.readouterr()
+    assert "acme [expired]" in captured.out
+    assert "[stale" not in captured.out
+    assert captured.err == ""
+
+
+def test_list_revoked_peering_shows_revoked_and_is_not_stale(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = _imported_store(tmp_path)
+    rev = _args("revoke", "acme", "--store", store)
+    assert rev.func(rev) == 0
+    capsys.readouterr()
+
+    args = _args("list", "--store", store, "--max-age", "3")
+    assert _cmd_list(args, clock=lambda: 5 * SECONDS_PER_DAY) == 0
+
+    captured = capsys.readouterr()
+    assert "acme [revoked]" in captured.out
+    assert "[stale" not in captured.out
+    assert captured.err == ""
+
+
+def test_list_rejects_a_non_positive_max_age(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = _args("list", "--store", str(tmp_path / "s"), "--max-age", "0")
+    assert _cmd_list(args) == 2
+    assert "--max-age must be a positive number of days" in capsys.readouterr().err
+
+
+def test_import_rejects_a_non_positive_max_age(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = _args(
+        "import",
+        str(tmp_path / "never-read.json"),
+        "--confirmed-by",
+        "ops",
+        "--store",
+        str(tmp_path / "s"),
+        "--max-age",
+        "-1",
+    )
+    assert _cmd_import(args) == 2
+    assert "--max-age must be a positive number of days" in capsys.readouterr().err
+
+
+def test_import_warns_when_the_bundle_never_expires(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = str(tmp_path / "store.json")
+    args = _args(
+        "import",
+        _write_bundle(tmp_path, _BUNDLE),
+        "--confirmed-by",
+        "ops",
+        "--store",
+        store,
+        "--max-age",
+        "30",
+    )
+
+    assert _cmd_import(args, clock=lambda: 0.0) == 0
+
+    captured = capsys.readouterr()
+    assert "warning: bundle never expires" in captured.err
+    assert "imported peering with domain 'acme'" in captured.out
+    assert "acme" in load_store(store)
+
+
+def test_import_warns_when_expiry_overruns_max_age(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    distant = dict(_BUNDLE, expires_at=100 * SECONDS_PER_DAY)
+    args = _args(
+        "import",
+        _write_bundle(tmp_path, distant),
+        "--confirmed-by",
+        "ops",
+        "--store",
+        str(tmp_path / "store.json"),
+        "--max-age",
+        "30",
+    )
+
+    assert _cmd_import(args, clock=lambda: 0.0) == 0
+    assert "warning: bundle expiry is 100 days out, beyond --max-age 30" in capsys.readouterr().err
+
+
+def test_import_expiry_within_max_age_is_quiet(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    near = dict(_BUNDLE, expires_at=10 * SECONDS_PER_DAY)
+    args = _args(
+        "import",
+        _write_bundle(tmp_path, near),
+        "--confirmed-by",
+        "ops",
+        "--store",
+        str(tmp_path / "store.json"),
+        "--max-age",
+        "30",
+    )
+
+    assert _cmd_import(args, clock=lambda: 0.0) == 0
+    assert capsys.readouterr().err == ""
 
 
 def test_revoke_marks_revoked_and_keeps_the_record(
