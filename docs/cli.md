@@ -659,6 +659,7 @@ synapse causality effects ./synapse.db 118 --json
 synapse causality counterfactual ./synapse.db 96
 synapse causality contention ./synapse.db      # who should yield on overlapping live claims
 synapse causality causes ./hub.db peer:96 --peer peer=./peer-hub.db   # federated, HUB:SEQ refs
+synapse causality causes ./hub.db peer:96 --peer peer=./peer-hub.db --dot  # Graphviz, cluster per hub
 synapse causality otel ./synapse.db --out spans.json                  # OpenTelemetry projection
 synapse causality otel ./synapse.db --endpoint http://127.0.0.1:4318/v1/traces  # OTLP push [otel]
 synapse causality otel ./synapse.db --out s.json --filter T1 --service-name hub-eu  # named tasks only
@@ -890,10 +891,39 @@ $ synapse causality causes ./eu-hub.db us-hub:2 --peer us-hub=./us-hub.db
 - us-hub:1 kind=ledger_task task=api-rollout
 ```
 
+With `--dot` the same federated answer renders as a Graphviz digraph: every
+hub becomes a cluster, so an edge *inside* a cluster is same-hub causality
+and an edge *crossing* cluster boundaries is a federation edge — drawn in
+colour and labelled with its basis. The rendered edges are the query's
+induced subgraph (also carried in the JSON as `edges`), so the picture shows
+the whole causal neighbourhood, not just the one-hop links; the queried node
+is double-bordered and a counterfactual's unsupported descendants are
+dashed. Replayed against the same two stores (`dot -Tsvg` renders it):
+
+```console
+$ synapse causality causes ./eu-hub.db us-hub:2 --peer us-hub=./us-hub.db --dot
+digraph federated_causality {
+  ...
+  subgraph cluster_0 {
+    label="eu-hub";
+    "eu-hub:4" [label="eu-hub:4\nrelease schema-migration", shape=box];
+    ...
+  }
+  subgraph cluster_1 {
+    label="us-hub";
+    "us-hub:2" [label="us-hub:2\nclaim api-rollout", shape=box, peripheries=2];
+    ...
+  }
+  "eu-hub:3" -> "eu-hub:4" [label="lifecycle"];
+  "eu-hub:4" -> "us-hub:2" [label="federation:dependency", color=blue];
+}
+```
+
 `contention` stays single-hub (`--peer` is refused there): yield advice
 weighs one hub's *live* claims, and claims are never granted across hubs.
 Exit codes are unchanged — `2` additionally covers a malformed `--peer`
-spec, a duplicate hub id, or a reference naming an unmerged hub.
+spec, a duplicate hub id, or a reference naming an unmerged hub; `--dot`
+without `--peer` is refused, and `--dot` excludes `--json`.
 
 `synapse causality otel ./synapse.db --out spans.json` projects the whole
 graph onto **OpenTelemetry spans**: one trace per task (root span covering the

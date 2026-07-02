@@ -209,6 +209,11 @@ class FederatedQuery:
         back through ``ref``. Empty for ``causes`` and ``effects``.
     hubs : tuple[str, ...]
         The hub ids whose logs were merged, sorted.
+    edges : tuple[FederatedEdge, ...]
+        Every merged-graph edge both of whose endpoints belong to the answer
+        (the queried node, its direct neighbours, the transitive closure, and
+        the unsupported descendants) — the induced subgraph a faithful
+        rendering needs, since ``transitive`` alone carries no edges.
     """
 
     ref: HubEventRef
@@ -219,6 +224,7 @@ class FederatedQuery:
     transitive: tuple[FederatedNode, ...]
     unsupported: tuple[FederatedNode, ...]
     hubs: tuple[str, ...]
+    edges: tuple[FederatedEdge, ...] = ()
 
 
 def parse_hub_ref(text: str, default_hub: str) -> HubEventRef:
@@ -314,7 +320,7 @@ def federated_query(
     index = {node_ref: seq for seq, node_ref in refs.items()}.get((ref.hub_id, ref.seq), 0)
     query_fn = {"causes": causes, "effects": effects, "counterfactual": counterfactual}[direction]
     answer = query_fn(inner, index)
-    return _federated_answer(answer, ref, refs, tuple(sorted(logs)))
+    return _federated_answer(answer, ref, refs, tuple(sorted(logs)), inner.edges)
 
 
 def run_federated_causality(
@@ -393,6 +399,7 @@ def federated_to_json(query: FederatedQuery) -> dict[str, object]:
         "direct": [_link_to_json(link) for link in query.direct],
         "transitive": [_node_to_json(node) for node in query.transitive],
         "unsupported": [_node_to_json(node) for node in query.unsupported],
+        "edges": [_edge_to_json(edge) for edge in query.edges],
     }
 
 
@@ -435,6 +442,71 @@ def render_federated_markdown(query: FederatedQuery) -> str:
         else:
             lines.append("- none")
     return "\n".join(lines)
+
+
+def render_federated_dot(query: FederatedQuery) -> str:
+    """Render a federated causality query as a Graphviz ``digraph``.
+
+    Every hub becomes a cluster, so the federation topology is visible at a
+    glance: an edge inside a cluster is same-hub causality, an edge crossing
+    cluster boundaries is a :data:`FEDERATION` edge — drawn in colour and
+    labelled ``federation:basis``, since the basis (the recorded relation it
+    derives from) is what the edge actually asserts. The queried node is
+    double-bordered; a counterfactual's unsupported descendants are dashed.
+    The rendered edges are the query's induced subgraph
+    (:attr:`FederatedQuery.edges`), so the picture carries the *whole* causal
+    neighbourhood, not only the one-hop links.
+    """
+    heading = f"federated causality ({query.direction}): {query.ref.render()}"
+    lines = [
+        "digraph federated_causality {",
+        "  rankdir=LR;",
+        f"  label={_dot_quote(heading)};",
+        "  labelloc=b;",
+    ]
+    if query.node is None:
+        lines.append(f"  {_dot_quote('absent')} [label={_dot_quote('no such event')}];")
+        lines.append("}")
+        return "\n".join(lines)
+    nodes: dict[HubEventRef, FederatedNode] = {query.node.ref: query.node}
+    for link in query.direct:
+        nodes.setdefault(link.node.ref, link.node)
+    for node in (*query.transitive, *query.unsupported):
+        nodes.setdefault(node.ref, node)
+    unsupported = {node.ref for node in query.unsupported}
+    for cluster_index, hub_id in enumerate(query.hubs):
+        members = [node for node in nodes.values() if node.hub_id == hub_id]
+        if not members:
+            continue
+        lines.append(f"  subgraph cluster_{cluster_index} {{")
+        lines.append(f"    label={_dot_quote(hub_id)};")
+        for node in members:
+            label = f"{node.ref.render()}\n{node.kind}"
+            if node.task_id:
+                label += f" {node.task_id}"
+            attributes = f"label={_dot_quote(label)}, shape=box"
+            if node.ref == query.ref:
+                attributes += ", peripheries=2"
+            if node.ref in unsupported:
+                attributes += ", style=dashed"
+            lines.append(f"    {_dot_quote(node.ref.render())} [{attributes}];")
+        lines.append("  }")
+    for edge in query.edges:
+        if edge.relation == FEDERATION:
+            attributes = f"label={_dot_quote(f'{FEDERATION}:{edge.basis}')}, color=blue"
+        else:
+            attributes = f"label={_dot_quote(edge.relation)}"
+        lines.append(
+            f"  {_dot_quote(edge.src.render())} -> {_dot_quote(edge.dst.render())} [{attributes}];"
+        )
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def _dot_quote(text: str) -> str:
+    """Return ``text`` as a quoted DOT string literal."""
+    escaped = text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    return f'"{escaped}"'
 
 
 def _synthesise(
@@ -497,8 +569,19 @@ def _federated_answer(
     ref: HubEventRef,
     refs: dict[int, tuple[str, int]],
     hubs: tuple[str, ...],
+    graph_edges: tuple[CausalEdge, ...],
 ) -> FederatedQuery:
     """Translate a synthetic-graph query answer back to global identities."""
+    members = {node.seq for node in answer.transitive}
+    members.update(node.seq for node in answer.unsupported)
+    members.update(link.node.seq for link in answer.direct)
+    if answer.node is not None:
+        members.add(answer.node.seq)
+    induced = tuple(
+        _federated_edge(edge, refs)
+        for edge in graph_edges
+        if edge.src in members and edge.dst in members
+    )
     return FederatedQuery(
         ref=ref,
         direction=answer.direction,
@@ -514,6 +597,7 @@ def _federated_answer(
         transitive=tuple(_federated_node(refs[node.seq], node) for node in answer.transitive),
         unsupported=tuple(_federated_node(refs[node.seq], node) for node in answer.unsupported),
         hubs=hubs,
+        edges=induced,
     )
 
 
@@ -535,6 +619,17 @@ def _render_link(link: FederatedLink) -> str:
 def _ref_to_json(ref: HubEventRef) -> dict[str, object]:
     """Convert a global identity into JSON-compatible fields."""
     return {"hub_id": ref.hub_id, "seq": ref.seq}
+
+
+def _edge_to_json(edge: FederatedEdge) -> dict[str, object]:
+    """Convert an induced-subgraph edge into JSON-compatible fields."""
+    return {
+        "relation": edge.relation,
+        "basis": edge.basis,
+        "src": _ref_to_json(edge.src),
+        "dst": _ref_to_json(edge.dst),
+        "detail": edge.detail,
+    }
 
 
 def _node_to_json(node: FederatedNode) -> dict[str, object]:

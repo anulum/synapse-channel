@@ -354,6 +354,45 @@ def test_cli_federated_json_carries_relation_and_basis(
     assert federated[0]["src"] == {"hub_id": "hub", "seq": 4}
 
 
+def test_cli_federated_dot_renders_clusters_and_coloured_federation_edges(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db, peer = _federated_pair(tmp_path)
+
+    exit_code = cli.main(
+        ["causality", "causes", str(db), "peer:2", "--peer", f"peer={peer}", "--dot"]
+    )
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert out.startswith("digraph federated_causality {")
+    assert 'label="hub";' in out
+    assert 'label="peer";' in out
+    assert 'label="federation:dependency", color=blue];' in out
+
+
+def test_cli_dot_requires_a_federated_query(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    exit_code = cli.main(["causality", "causes", str(db), "4", "--dot"])
+
+    assert exit_code == 2
+    assert "it requires --peer" in capsys.readouterr().err
+
+
+def test_cli_json_and_dot_are_mutually_exclusive(tmp_path: Path) -> None:
+    db, peer = _federated_pair(tmp_path)
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(
+            ["causality", "causes", str(db), "peer:2", "--peer", f"peer={peer}", "--json", "--dot"]
+        )
+    assert excinfo.value.code == 2
+
+
 def test_cli_federated_plain_seq_resolves_to_the_primary_hub(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

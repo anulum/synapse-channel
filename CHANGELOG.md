@@ -14,6 +14,15 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Federated causality queries gain `--dot`: the answer renders as a
+  Graphviz digraph with one cluster per hub, so an edge inside a cluster
+  is same-hub causality and an edge crossing cluster boundaries is a
+  `federation` edge — coloured and labelled with its basis. The rendered
+  edges are the query's induced subgraph (every merged-graph edge whose
+  endpoints both belong to the answer), now also carried in the JSON
+  output as `edges`; the queried node is double-bordered and a
+  counterfactual's unsupported descendants are dashed. `--dot` requires
+  `--peer` and excludes `--json`.
 - `synapse causality otel` gains three projection controls:
   `--service-name NAME` overrides the `service.name` resource on the
   exported spans so several hubs can share one observability tenant;
