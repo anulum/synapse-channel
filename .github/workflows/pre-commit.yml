@@ -26,3 +26,11 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install pre-commit
       - run: pre-commit run --all-files --show-diff-on-failure
+      # The pre-commit gitleaks hook scans staged changes, which an
+      # --all-files CI run leaves empty; this sweep covers the whole
+      # checkout so a secret already in the tree cannot hide.
+      - name: gitleaks full-tree sweep
+        run: >
+          docker run --rm -v "$PWD:/repo:ro"
+          ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+          dir --redact --no-banner /repo

@@ -14,6 +14,12 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Secret scanning joins the commit gate: a gitleaks pre-commit hook
+  refuses a staged secret, and the pre-commit workflow gained a
+  digest-pinned full-tree sweep so a secret already in the checkout
+  cannot hide behind an empty staging area. A repository `.gitleaks.toml`
+  allowlists the one false positive (docstring type annotations naming
+  `Ed25519PrivateKey`) and the gitignored build artefacts that mirror it.
 - The deployment guide's exposure section gained a worked reverse-proxy
   example: a Caddyfile terminating TLS in front of a loopback hub, the
   client invocation through `wss://`, and the trust-store and per-host-cap
