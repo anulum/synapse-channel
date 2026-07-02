@@ -17,6 +17,7 @@ from synapse_channel import cli
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.merkle import proof_to_json, run_proof, run_root
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.receipt_signing import load_receipt_verification_key
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -232,3 +233,28 @@ def test_docs_wire_merkle_command() -> None:
     )
     assert "synapse merkle" in combined
     assert "merkle prove" in combined
+
+
+# --- keygen -------------------------------------------------------------------
+
+
+def test_merkle_keygen_creates_the_keypair_and_prints_its_id(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    key_path = tmp_path / "hub-receipt.key"
+    assert cli.main(["merkle", "keygen", str(key_path)]) == 0
+    out = capsys.readouterr().out
+    assert f"receipt-signing key: {key_path}" in out
+    assert f"verification key:    {key_path}.pub" in out
+    verification = load_receipt_verification_key(f"{key_path}.pub")
+    assert f"key_id:              {verification.key_id}" in out
+
+
+def test_merkle_keygen_refuses_to_overwrite_an_existing_key(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    key_path = tmp_path / "hub-receipt.key"
+    assert cli.main(["merkle", "keygen", str(key_path)]) == 0
+    capsys.readouterr()
+    assert cli.main(["merkle", "keygen", str(key_path)]) == 2
+    assert "cannot write receipt-signing key" in capsys.readouterr().err

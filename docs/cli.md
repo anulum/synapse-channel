@@ -46,7 +46,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse debug` | Fork a task's reconstructed state at a sequence point (read-only what-if). |
 | `synapse reproduce` | Fingerprint a task's authoritative history into a deterministic digest. |
 | `synapse causality` | Trace coordination causes, effects, or counterfactuals over the event log. |
-| `synapse merkle` | Commit the event log to a Merkle root and prove event inclusion. |
+| `synapse merkle` | Commit the event log to a Merkle root, prove event inclusion, and generate the receipt-signing keypair (`keygen`). |
 | `synapse reliability` | Build evidence-only reliability memory from a hub SQLite event store. |
 | `synapse accounting` | Record and report opt-in model cost/token usage from a hub SQLite event store. |
 | `synapse approval` | Request, decide, and replay human-in-the-loop approval gates from a hub SQLite event store. |
@@ -67,8 +67,8 @@ see the [Integration demos](integration-demos.md).
 | `synapse git-hook` | Install post-commit/post-merge hooks that auto-release a commit's claims. |
 | `synapse git-release` | Release the claims whose paths a commit or merge just touched. |
 | `synapse conflicts` | Predict cross-branch merge conflicts between overlapping claims; exit non-zero on a hit. |
-| `synapse verify-release` | Run declared verification commands and write an observed release receipt JSON; `--merkle-db` commits the coordination log's Merkle root into it. |
-| `synapse policy-check` | Evaluate a release receipt against a policy file; advisory by default, `--enforce` to gate. |
+| `synapse verify-release` | Run declared verification commands and write an observed release receipt JSON; `--merkle-db` commits the coordination log's Merkle root into it, `--signing-key` attests it with the hub key. |
+| `synapse policy-check` | Evaluate a release receipt against a policy file; advisory by default, `--enforce` to gate, `--trusted-signing-key` verifies the commitment's hub signature. |
 | `synapse identity` | Inventory and audit declared agent identities for enforcement-rollout blockers. |
 | `synapse acl` | Shadow-mode (non-blocking) deny-by-default ACL evaluation of candidate accesses. |
 | `synapse lock` | Hold a lease while running a command, to serialise it across agents. |
@@ -298,6 +298,32 @@ truncated, or renumbered since the receipt (and passes as the log grows):
 synapse policy-check BUILD --policy ./policy.json \
   --receipt-json verified-release.json \
   --merkle-db ~/synapse/hub.db          # re-verify the committed log prefix
+```
+
+The bare commitment proves the log did not change; it cannot prove who attested
+it — whoever holds the receipt file could have written any root into it.
+`--signing-key` closes that gap: `synapse merkle keygen` creates the hub
+deployment's Ed25519 receipt-signing keypair (private key `0600`, public half in
+a distributable `PATH.pub`), `verify-release --signing-key` signs the commitment
+into `verification.merkle_signature`, and `policy-check --trusted-signing-key`
+(repeatable, one `.pub` per trusted hub) adds a `merkle_signature` decision. A
+verifier holding only the receipt and the `.pub` file — no access to the live
+log — learns which hub attested that exact log state; a tampered root, an
+untrusted or transplanted key, and a signature with no commitment to cover all
+fail, and only a receipt with no signature at all reads `not_applicable`:
+
+```bash
+synapse merkle keygen ~/synapse/hub-receipt.key       # once per hub deployment
+
+synapse verify-release BUILD --name api-dev \
+  --run ".venv/bin/python -m pytest -q" \
+  --merkle-db ~/synapse/hub.db \
+  --signing-key ~/synapse/hub-receipt.key \
+  --output verified-release.json
+
+synapse policy-check BUILD --policy ./policy.json \
+  --receipt-json verified-release.json \
+  --trusted-signing-key ~/synapse/hub-receipt.key.pub  # provenance, offline
 ```
 
 The generated receipt is still advisory coordination evidence. A `supported`
@@ -616,6 +642,7 @@ synapse merkle root ./synapse.db
 synapse merkle prove ./synapse.db 142 --json > proof.json
 synapse merkle verify proof.json --expect 9f2c…
 synapse merkle verify proof.json --json
+synapse merkle keygen ~/synapse/hub-receipt.key   # receipt-signing keypair (private + PATH.pub)
 synapse reliability ./synapse.db
 synapse accounting record --name alpha --task TASK-1 --model claude-opus-4-8 --input-tokens 1200 --output-tokens 300
 synapse accounting report ./synapse.db --pricing pricing.json --budget budget.json
@@ -778,6 +805,15 @@ exits `0` valid, `1` on a bad proof or root mismatch, `2` on an unreadable file.
 to get a `{"valid", "seq", "root"}` verdict on stdout instead (with a `reason` when
 invalid), matching the `--json` stdout payload that `root` and `prove` already
 carry.
+
+`synapse merkle keygen PATH` creates the hub deployment's receipt-signing
+keypair: an Ed25519 private key at `PATH` (owner-only `0600`, never overwritten)
+and its distributable public half at `PATH.pub` — a small JSON document whose
+`key_id` is a fingerprint derived from the key material. The private key signs
+receipt commitments (`synapse verify-release --signing-key`); the `.pub` file is
+what verifiers pass to `synapse policy-check --trusted-signing-key`, so a third
+party can check which hub attested a receipt's log state without access to the
+live log. `keygen` exits `2` when either file already exists.
 
 `synapse reliability ./synapse.db` builds evidence-only reliability memory from
 the same event store. It counts stale claims, declared failed-check evidence,

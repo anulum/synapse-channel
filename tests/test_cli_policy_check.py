@@ -18,6 +18,11 @@ import pytest
 from synapse_channel import cli_policy_check
 from synapse_channel.core.merkle import root_to_json, run_root
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.receipt_signing import (
+    generate_receipt_signing_key,
+    load_receipt_signing_key,
+    sign_merkle_commitment,
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -296,3 +301,164 @@ def test_merkle_db_missing_store_is_a_policy_error(
     )
     assert code == 2
     assert "missing event store" in capsys.readouterr().out
+
+
+# --- merkle_signature decision ------------------------------------------------------
+
+
+def _keypair(tmp_path: Path) -> tuple[Path, Path]:
+    """Generate a receipt-signing keypair; return (private, public) paths."""
+    key_path = tmp_path / "hub-receipt.key"
+    generate_receipt_signing_key(key_path)
+    return key_path, tmp_path / "hub-receipt.key.pub"
+
+
+def _signed_receipt_file(tmp_path: Path, db: Path, key_path: Path) -> Path:
+    merkle = root_to_json(run_root(db))
+    key = load_receipt_signing_key(key_path)
+    return _receipt(
+        tmp_path,
+        evidence=["pytest -q passed"],
+        verification={
+            "merkle": merkle,
+            "merkle_signature": sign_merkle_commitment(merkle, key=key),
+        },
+    )
+
+
+def test_trusted_signing_key_adds_a_passing_signature_decision(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy = _policy(tmp_path, {"required_tests": {"commands": ["pytest"]}})
+    db = tmp_path / "hub.db"
+    _seeded_store(db)
+    key_path, pub_path = _keypair(tmp_path)
+    receipt = _signed_receipt_file(tmp_path, db, key_path)
+    code = _run(
+        [
+            "policy-check",
+            "T1",
+            "--policy",
+            str(policy),
+            "--receipt-json",
+            str(receipt),
+            "--merkle-db",
+            str(db),
+            "--trusted-signing-key",
+            str(pub_path),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "✓ merkle_commitment" in out
+    assert "✓ merkle_signature: hub key" in out
+
+
+def test_signature_decision_fails_on_a_tampered_commitment(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy = _policy(tmp_path, {"required_tests": {"commands": ["pytest"]}})
+    db = tmp_path / "hub.db"
+    _seeded_store(db)
+    key_path, pub_path = _keypair(tmp_path)
+    merkle = root_to_json(run_root(db))
+    envelope = sign_merkle_commitment(merkle, key=load_receipt_signing_key(key_path))
+    merkle["root"] = "0" * 64
+    receipt = _receipt(
+        tmp_path,
+        evidence=["pytest -q passed"],
+        verification={"merkle": merkle, "merkle_signature": envelope},
+    )
+    code = _run(
+        [
+            "policy-check",
+            "T1",
+            "--policy",
+            str(policy),
+            "--receipt-json",
+            str(receipt),
+            "--trusted-signing-key",
+            str(pub_path),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0  # advisory mode reports, never blocks
+    assert "✗ merkle_signature: commitment signature does not verify" in out
+    assert "do not trust this receipt's provenance" in out
+
+
+def test_signature_decision_marks_an_unsigned_receipt(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy = _policy(tmp_path, {"required_tests": {"commands": ["pytest"]}})
+    db = tmp_path / "hub.db"
+    _seeded_store(db)
+    _, pub_path = _keypair(tmp_path)
+    receipt = _committed_receipt(tmp_path, db)
+    code = _run(
+        [
+            "policy-check",
+            "T1",
+            "--policy",
+            str(policy),
+            "--receipt-json",
+            str(receipt),
+            "--trusted-signing-key",
+            str(pub_path),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "merkle_signature: receipt carries no commitment signature" in out
+
+
+def test_an_unreadable_trusted_key_is_a_configuration_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy = _policy(tmp_path, {"required_tests": {"commands": ["pytest"]}})
+    receipt = _receipt(tmp_path, evidence=["pytest -q passed"])
+    code = _run(
+        [
+            "policy-check",
+            "T1",
+            "--policy",
+            str(policy),
+            "--receipt-json",
+            str(receipt),
+            "--trusted-signing-key",
+            str(tmp_path / "absent.pub"),
+        ]
+    )
+    assert code == 2
+    assert "cannot read receipt verification key" in capsys.readouterr().out
+
+
+def test_signature_enforce_blocks_on_an_untrusted_signer(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An enforcement policy gates the release on unverifiable provenance."""
+    policy = _policy(tmp_path, {"required_tests": {"commands": ["pytest"]}}, mode="enforcement")
+    db = tmp_path / "hub.db"
+    _seeded_store(db)
+    key_path, _ = _keypair(tmp_path)
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    _, foreign_pub = _keypair(other_dir)
+    receipt = _signed_receipt_file(tmp_path, db, key_path)
+    code = _run(
+        [
+            "policy-check",
+            "T1",
+            "--policy",
+            str(policy),
+            "--receipt-json",
+            str(receipt),
+            "--trusted-signing-key",
+            str(foreign_pub),
+            "--enforce",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "✗ merkle_signature: commitment signed by an untrusted key" in out
+    assert "BLOCKED" in out

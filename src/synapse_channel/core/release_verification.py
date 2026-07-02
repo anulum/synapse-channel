@@ -75,6 +75,7 @@ class VerificationDetails(TypedDict, total=False):
     timestamp: float
     signature: str
     merkle: dict[str, object]
+    merkle_signature: dict[str, object]
 
 
 class VerifiedReleaseReceipt(ReleaseReceipt, total=False):
@@ -207,6 +208,7 @@ def build_verified_release_receipt(
     cwd: str | Path | None = None,
     command_timeout_seconds: float = DEFAULT_COMMAND_TIMEOUT_SECONDS,
     merkle: MerkleRoot | None = None,
+    merkle_signature: Mapping[str, object] | None = None,
 ) -> VerifiedReleaseReceipt:
     """Run declared checks and build a JSON-serialisable release receipt.
 
@@ -235,6 +237,12 @@ def build_verified_release_receipt(
         the exact coordination history behind the release is tamper-evident:
         :func:`check_receipt_merkle_commitment` later recomputes the same log
         prefix and any rewrite of it changes the root.
+    merkle_signature : Mapping[str, object] or None, optional
+        Hub-key signature envelope over the commitment (from
+        :func:`~synapse_channel.core.receipt_signing.sign_merkle_commitment`),
+        giving the commitment provenance a third party can verify with the hub
+        deployment's public key alone. Ignored when ``merkle`` is ``None`` —
+        a signature with nothing to cover is never recorded.
 
     Returns
     -------
@@ -282,6 +290,11 @@ def build_verified_release_receipt(
             f"merkle root: {merkle.root} over {merkle.tree_size} coordination-log "
             f"event(s) (seq {merkle.first_seq}..{merkle.last_seq})"
         )
+        if merkle_signature is not None:
+            evidence.append(
+                "merkle signature: "
+                f"{merkle_signature.get('algorithm')} key_id={merkle_signature.get('key_id')}"
+            )
     artifact_lines = [
         f"{artifact['path']} sha256={artifact['sha256']} size={artifact['size_bytes']}"
         for artifact in artifact_results
@@ -308,6 +321,8 @@ def build_verified_release_receipt(
         verification["signature"] = signature
     if merkle is not None:
         verification["merkle"] = root_to_json(merkle)
+        if merkle_signature is not None:
+            verification["merkle_signature"] = dict(merkle_signature)
     verified = cast(VerifiedReleaseReceipt, dict(receipt))
     verified["verification"] = verification
     return verified

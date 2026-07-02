@@ -20,6 +20,10 @@ import pytest
 
 from synapse_channel import cli, cli_verify_release
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.receipt_signing import (
+    check_receipt_merkle_signature,
+    load_receipt_verification_key,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -66,6 +70,7 @@ def test_cmd_verify_release_writes_output_in_process(
         output=str(output),
         signature="signed-by-owner",
         merkle_db="",
+        signing_key="",
     )
 
     assert cli_verify_release._cmd_verify_release(args) == 0
@@ -91,6 +96,7 @@ def test_cmd_verify_release_prints_json_failure_in_process(
         output="",
         signature="",
         merkle_db="",
+        signing_key="",
     )
 
     assert cli_verify_release._cmd_verify_release(args) == 1
@@ -217,3 +223,73 @@ def test_verify_release_cli_rejects_a_missing_merkle_store(
     exit_code = cli.main(["verify-release", "VERIFY", "--merkle-db", str(tmp_path / "absent.db")])
     assert exit_code == 2
     assert "missing event store" in capsys.readouterr().err
+
+
+def test_verify_release_cli_signs_the_commitment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--signing-key attests the commitment with the hub deployment's key."""
+    monkeypatch.chdir(tmp_path)
+    db = tmp_path / "hub.db"
+    _seeded_store(db)
+    key_path = tmp_path / "hub-receipt.key"
+    assert cli.main(["merkle", "keygen", str(key_path)]) == 0
+    output = tmp_path / "receipt.json"
+
+    exit_code = cli.main(
+        [
+            "verify-release",
+            "VERIFY",
+            "--merkle-db",
+            str(db),
+            "--signing-key",
+            str(key_path),
+            "--output",
+            str(output),
+        ]
+    )
+
+    assert exit_code == 0
+    receipt = json.loads(output.read_text(encoding="utf-8"))
+    envelope = receipt["verification"]["merkle_signature"]
+    verification_key = load_receipt_verification_key(f"{key_path}.pub")
+    assert envelope["algorithm"] == "ed25519"
+    assert envelope["key_id"] == verification_key.key_id
+    check = check_receipt_merkle_signature(
+        receipt, trusted_keys={verification_key.key_id: verification_key.public_key}
+    )
+    assert check.status == "pass"
+    assert any("merkle signature: ed25519 key_id=" in line for line in receipt["evidence"])
+
+
+def test_verify_release_cli_refuses_a_signing_key_without_a_store(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    exit_code = cli.main(["verify-release", "VERIFY", "--signing-key", str(tmp_path / "hub.key")])
+    assert exit_code == 2
+    assert "needs --merkle-db" in capsys.readouterr().err
+
+
+def test_verify_release_cli_reports_an_unreadable_signing_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    db = tmp_path / "hub.db"
+    _seeded_store(db)
+    exit_code = cli.main(
+        [
+            "verify-release",
+            "VERIFY",
+            "--merkle-db",
+            str(db),
+            "--signing-key",
+            str(tmp_path / "absent.key"),
+        ]
+    )
+    assert exit_code == 2
+    assert "cannot read receipt-signing key" in capsys.readouterr().err
