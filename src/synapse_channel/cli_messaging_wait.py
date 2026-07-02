@@ -16,8 +16,13 @@ from typing import Any
 
 from synapse_channel.cli_messaging_types import AgentFactory, JitterFunction
 from synapse_channel.client.agent import SynapseAgent
-from synapse_channel.connect_failures import describe_connect_failure
+from synapse_channel.connect_failures import (
+    describe_connect_failure,
+    is_superseded_close,
+    is_takeover_refused_close,
+)
 from synapse_channel.core.protocol import MessageType, wakes
+from synapse_channel.waiter_identity import waiter_name
 
 
 async def _wait(
@@ -76,7 +81,10 @@ async def _wait(
     int
         ``0`` when a message arrived, ``1`` when the hub was unreachable, ``2`` on
         timeout with nothing received, ``3`` when the connection dropped while
-        waiting (so the caller knows to re-arm rather than treat it as a timeout).
+        waiting (so the caller knows to re-arm rather than treat it as a timeout),
+        ``4`` when a newer connection took the name over (the caller must *yield*,
+        not re-arm — reconnecting would evict the legitimate holder and the two
+        waiters would fight over the identity indefinitely).
     """
     received: list[dict[str, Any]] = []
 
@@ -110,6 +118,11 @@ async def _wait(
                     close_reason=agent.last_close_reason,
                 )
             )
+            if is_takeover_refused_close(agent.last_close_code, agent.last_close_reason):
+                # Another live connection holds this name and the hub is
+                # protecting it; retrying the takeover would only feed the
+                # oscillation quarantine. Yield the identity.
+                return 4
             return 1
         loop = asyncio.get_event_loop()
         deadline = loop.time() + timeout
@@ -130,6 +143,13 @@ async def _wait(
             print(f"{message.get('sender')}: {message.get('payload')}")
             return 0
         if conn_task.done():
+            if is_superseded_close(agent.last_close_code, agent.last_close_reason):
+                # A newer waiter took this name over. The newcomer is the
+                # legitimate holder (it just proved it is alive); re-arming with
+                # a takeover of our own would evict it and the two waiters would
+                # steal the identity from each other indefinitely.
+                print(f"[{name}] superseded by a newer waiter; yielding.")
+                return 4
             # The connection dropped without a message. Exit so the caller re-arms,
             # rather than looping forever on a dead socket — a timeout=0 waiter that
             # silently stayed up after a hub restart is exactly how an agent goes dark.
@@ -150,7 +170,7 @@ def _cmd_wait(args: argparse.Namespace) -> int:
     two would coincide, the connection name is suffixed with ``-rx``.
     """
     for_name = args.for_name or args.name
-    connect_name = args.name if args.name != for_name else f"{args.name}-rx"
+    connect_name = args.name if args.name != for_name else waiter_name(args.name)
     return asyncio.run(
         _wait(
             uri=args.uri,

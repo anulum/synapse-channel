@@ -21,6 +21,10 @@ All notable changes to this project are documented here.
 - Shell-hook waiters are now leashed to the shell that armed them: `synapse arm` gained
   `--owner-pid`, the bash/zsh/fish hooks pass their shell pid, and a waiter disarms
   itself the moment its terminal exits instead of holding a hub connection for days.
+- A waiter displaced by a takeover now yields instead of fighting for the name back:
+  `synapse wait` reports the eviction as its own exit code (`4`) and `synapse arm` ends
+  its loop on it, so two waiters for one identity no longer steal the connection from
+  each other until the hub quarantines the name.
 
 ## [0.86.0] - 2026-07-02
 

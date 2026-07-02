@@ -81,12 +81,16 @@ async def _arm(
     owner_probe: PidProbe = pid_alive,
     owner_check_interval: float = OWNER_CHECK_INTERVAL_SECONDS,
 ) -> int:
-    """Keep a directed waiter armed until interrupted or its owner process dies.
+    """Keep a directed waiter armed until interrupted, displaced, or orphaned.
 
     With ``owner_pid`` set the waiter is leashed to that process: an owner
     watchdog polls it and, the moment it is gone, the armed wait is cancelled
     and the loop returns — a waiter for a closed terminal can wake nobody, and
     leaving it connected inflates the hub roster with phantom presence.
+
+    A wait that reports a takeover (exit ``4``) also ends the loop: a newer
+    waiter owns the name now, and re-arming would take it back and leave the
+    two stealing the identity from each other until the hub quarantines it.
     """
     if owner_pid is not None and not owner_probe(owner_pid):
         print(f"[{name}] owner pid {owner_pid} is already gone; not arming.")
@@ -130,6 +134,9 @@ async def _arm(
         if code == 0:
             wakes_seen += 1
             continue
+        if code == 4:
+            print(f"[{name}] a newer waiter holds this name; disarming.")
+            return 0
         if reconnect_delay > 0:
             await sleep_runner(reconnect_delay)
     return 0

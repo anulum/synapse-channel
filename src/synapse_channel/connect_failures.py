@@ -95,6 +95,29 @@ PER_HOST_CAP_CLOSE_CODE = 4015
 """Hub close code emitted when a host exceeds its per-host connection cap."""
 
 
+def is_superseded_close(code: int | None, reason: str) -> bool:
+    """Return whether a close means a takeover displaced this connection.
+
+    ``4010`` is overloaded (it also carries authentication refusals), so the
+    reason text decides: only the takeover eviction reads ``"superseded"``. A
+    displaced waiter must *yield* — a newer connection legitimately owns the
+    name — rather than reconnect with a takeover of its own and fight the new
+    holder for the identity indefinitely.
+    """
+    return code == SUPERSEDED_CLOSE_CODE and "auth" not in reason.lower()
+
+
+def is_takeover_refused_close(code: int | None, reason: str) -> bool:
+    """Return whether a close means the hub refused this side's takeover.
+
+    ``4014`` is overloaded with the unauthenticated-socket cap, so the reason
+    text decides. A refused takeover means another live connection holds the
+    name and the hub is protecting it (cooldown or oscillation quarantine) —
+    for a re-arming waiter that is the same verdict as superseded: yield.
+    """
+    return code == TAKEOVER_COOLDOWN_CLOSE_CODE and "takeover" in reason.lower()
+
+
 def _guidance_for(code: int, reason: str) -> str | None:
     """Return actionable guidance for a hub close, disambiguating reused codes.
 
