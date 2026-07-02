@@ -13,6 +13,23 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- The hub can feed its own partition detection: `synapse hub
+  --multihub-watch PEER=URI` (repeatable) runs a standing follower that
+  polls each named peer's event log on a bounded interval and folds the
+  observed claims into the asserting-owners view the namespace-ownership
+  gate consumes, so a namespace a watched peer is seen contesting
+  resolves as partitioned and refuses to grant until the contest clears.
+  Companion flags wire the ownership map from the CLI: `--hub-id` (the
+  hub's stable id) and `--namespace-owner NS=HUB_ID` (repeatable,
+  deny-by-default claim routing; requires `--hub-id`, and the watch
+  requires the map). Naming a peer is the operator confirmation for the
+  always-on outbound connection; a failed poll keeps the last successful
+  observation, so an outage errs on the refusing side; the watch task
+  lives exactly as long as the server. Validated live on two hubs: a
+  claim held on the watched peer flips the namespace to partitioned
+  refusals and the peer's release clears it on the next poll.
+
 ## [0.92.0] - 2026-07-03
 
 ### Added

@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+import contextlib
 import json
 import ssl
 import sys
@@ -27,10 +29,45 @@ from synapse_channel.core.federation_wire import FederationWireError, decode_fed
 from synapse_channel.core.hub import InsecureBindError, SynapseHub
 from synapse_channel.core.logging_setup import configure_logging
 from synapse_channel.core.message_auth import MessageAuthKey
+from synapse_channel.core.multihub_watch import MultiHubWatch, parse_watch_peers
+from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.paranoid import ParanoidModeError, apply_paranoid_hub_profile
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
 from synapse_channel.core.tls import HubTLSConfigError, build_server_ssl_context
+
+
+def _parse_namespace_owners(values: list[str]) -> dict[str, str]:
+    """Parse repeatable ``NS=HUB_ID`` CLI values into an ownership map."""
+    owners: dict[str, str] = {}
+    for value in values:
+        namespace, sep, hub_id = value.partition("=")
+        namespace, hub_id = namespace.strip(), hub_id.strip()
+        if not sep or not namespace or not hub_id:
+            raise ValueError(f"--namespace-owner must use NS=HUB_ID, got {value!r}")
+        if namespace in owners:
+            raise ValueError(f"--namespace-owner names namespace {namespace!r} twice")
+        owners[namespace] = hub_id
+    return owners
+
+
+async def _serve_with_watch(
+    serve: Callable[[], Coroutine[Any, Any, None]], watch: MultiHubWatch
+) -> None:
+    """Run the hub server with the multihub watch polling alongside it.
+
+    The watch task lives exactly as long as the server: it starts when serving starts and
+    is cancelled (and awaited) when serving ends, so no poll outlives the hub. ``serve``
+    is a factory rather than a coroutine so a runner that never awaits this wrapper leaves
+    no orphaned server coroutine behind.
+    """
+    task = asyncio.create_task(watch.run())
+    try:
+        await serve()
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 
 def _parse_message_auth_keys(values: list[str]) -> list[MessageAuthKey]:
@@ -157,6 +194,39 @@ def _cmd_hub(
         except (OSError, json.JSONDecodeError, FederationWireError) as exc:
             print(f"synapse hub: cannot serve --federation-offer: {exc}", file=sys.stderr)
             return 2
+    if args.namespace_owner and not args.hub_id:
+        print(
+            "synapse hub: --namespace-owner requires --hub-id; the ownership map "
+            "compares each namespace's owner against this hub's own stable id.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.multihub_watch and not args.namespace_owner:
+        print(
+            "synapse hub: --multihub-watch requires --namespace-owner; the watch feeds "
+            "partition detection, and without an ownership map there is nothing to "
+            "detect against.",
+            file=sys.stderr,
+        )
+        return 2
+    namespace_ownership: NamespaceOwnership | None = None
+    watch: MultiHubWatch | None = None
+    try:
+        if args.namespace_owner:
+            namespace_ownership = NamespaceOwnership(
+                owners=_parse_namespace_owners(args.namespace_owner),
+                local_hub_id=args.hub_id,
+            )
+        if args.multihub_watch:
+            watch = MultiHubWatch(
+                parse_watch_peers(args.multihub_watch),
+                local_id=args.hub_id,
+                token=args.multihub_watch_token,
+                interval=args.multihub_watch_interval,
+            )
+    except ValueError as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        return 2
     hub = hub_factory(
         journal=journal,
         rate_limiter=limiter,
@@ -193,10 +263,17 @@ def _cmd_hub(
         require_acl=args.require_acl,
         federation_bundle=federation_bundle,
         federation_offer_path=args.federation_offer or None,
+        hub_id=args.hub_id,
+        namespace_ownership=namespace_ownership,
+        observed_asserting_hubs=watch.observed_asserting_hubs if watch is not None else None,
         insecure_off_loopback=args.insecure_off_loopback,
     )
+
+    def serve() -> Coroutine[Any, Any, None]:
+        return hub.serve(host=args.host, port=args.port, ssl_context=ssl_context)
+
     try:
-        runner(hub.serve(host=args.host, port=args.port, ssl_context=ssl_context))
+        runner(serve() if watch is None else _serve_with_watch(serve, watch))
     except InsecureBindError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2

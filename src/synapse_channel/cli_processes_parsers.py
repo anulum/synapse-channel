@@ -314,6 +314,46 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--require-message-auth.",
     )
     hub.add_argument(
+        "--hub-id",
+        default=None,
+        metavar="ID",
+        help="Stable hub id (default: a generated syn-<hex>). Required by "
+        "--namespace-owner, whose ownership map compares owners against this id.",
+    )
+    hub.add_argument(
+        "--namespace-owner",
+        action="append",
+        default=[],
+        metavar="NS=HUB_ID",
+        help="Declare the single authoritative owning hub of a namespace (repeatable). "
+        "Deny-by-default claim routing: a namespace absent from the map is ungoverned "
+        "and grants nothing; a namespace owned by another hub is refused with the "
+        "owner named. Requires --hub-id.",
+    )
+    hub.add_argument(
+        "--multihub-watch",
+        action="append",
+        default=[],
+        metavar="PEER=URI",
+        help="Poll this named peer hub's event log and feed the observed asserting-owner "
+        "view into partition detection (repeatable). Naming a peer here IS the operator "
+        "confirmation for an always-on outbound connection. Requires --namespace-owner; "
+        "a failed poll keeps the last successful observation (refusing side).",
+    )
+    hub.add_argument(
+        "--multihub-watch-interval",
+        type=float,
+        default=30.0,
+        metavar="SECONDS",
+        help="Seconds between watch poll rounds (floor 1.0).",
+    )
+    hub.add_argument(
+        "--multihub-watch-token",
+        default=None,
+        metavar="TOKEN",
+        help="Authentication token sent to secured watch peers.",
+    )
+    hub.add_argument(
         "--insecure-off-loopback",
         action="store_true",
         help="Bind a non-loopback host even without a token (and metrics token); by "

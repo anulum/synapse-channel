@@ -675,6 +675,113 @@ def test_cmd_hub_rejects_a_malformed_federation_offer_bundle(
     assert "cannot serve --federation-offer" in capsys.readouterr().err
 
 
+def test_cmd_hub_rejects_namespace_owner_without_hub_id(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ns = _hub_ns(namespace_owner=["OWNED=syn-a"])
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
+    assert "--namespace-owner requires --hub-id" in capsys.readouterr().err
+
+
+def test_cmd_hub_rejects_watch_without_namespace_owner(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ns = _hub_ns(hub_id="syn-a", multihub_watch=["hub-b=ws://b:8876"])
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
+    assert "--multihub-watch requires --namespace-owner" in capsys.readouterr().err
+
+
+def test_cmd_hub_rejects_a_malformed_namespace_owner(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ns = _hub_ns(hub_id="syn-a", namespace_owner=["OWNED"])
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
+    assert "NS=HUB_ID" in capsys.readouterr().err
+
+
+def test_cmd_hub_rejects_a_repeated_namespace_owner(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ns = _hub_ns(hub_id="syn-a", namespace_owner=["OWNED=syn-a", "OWNED=syn-b"])
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
+    assert "names namespace 'OWNED' twice" in capsys.readouterr().err
+
+
+def test_cmd_hub_rejects_a_malformed_watch_peer(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ns = _hub_ns(hub_id="syn-a", namespace_owner=["OWNED=syn-a"], multihub_watch=["no-separator"])
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
+    assert "PEER=URI" in capsys.readouterr().err
+
+
+def test_cmd_hub_wires_ownership_and_the_watch_feed(tmp_path: Path) -> None:
+    del tmp_path
+    from synapse_channel.core.multihub_watch import MultiHubWatch
+    from synapse_channel.core.namespace_ownership import NamespaceOwnership
+
+    captured: dict[str, Any] = {}
+    closed: list[str] = []
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    def close_runner(coro: Coroutine[Any, Any, None]) -> None:
+        coro.close()
+        closed.append("closed")
+
+    ns = _hub_ns(
+        hub_id="syn-a",
+        namespace_owner=["OWNED=syn-a", "THEIRS=syn-b"],
+        multihub_watch=["hub-b=ws://b:8876"],
+        multihub_watch_interval=7.0,
+    )
+    assert cli_processes._cmd_hub(ns, runner=close_runner, hub_factory=build_hub) == 0
+    assert captured["hub_id"] == "syn-a"
+    ownership = captured["namespace_ownership"]
+    assert isinstance(ownership, NamespaceOwnership)
+    assert ownership.owners == {"OWNED": "syn-a", "THEIRS": "syn-b"}
+    assert ownership.local_hub_id == "syn-a"
+    feed = captured["observed_asserting_hubs"]
+    watch = feed.__self__
+    assert isinstance(watch, MultiHubWatch)
+    assert watch.interval == 7.0
+    assert closed == ["closed"]
+
+
+def test_cmd_hub_leaves_ownership_and_watch_off_by_default() -> None:
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert cli_processes._cmd_hub(_hub_ns(), runner=_close_runner, hub_factory=build_hub) == 0
+    assert captured["namespace_ownership"] is None
+    assert captured["observed_asserting_hubs"] is None
+    assert captured["hub_id"] is None
+
+
+async def test_serve_with_watch_cancels_the_watch_when_serving_ends() -> None:
+    from synapse_channel.cli_processes_hub import _serve_with_watch
+    from synapse_channel.core.multihub_watch import MultiHubWatch
+
+    watch = MultiHubWatch({}, local_id="syn-a", interval=60.0)
+    served: list[str] = []
+
+    async def serve() -> None:
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        served.append("served")
+
+    await _serve_with_watch(serve, watch)
+    assert served == ["served"]
+    # The watch task was cancelled and awaited; nothing is left running.
+    pending = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
+    assert pending == []
+
+
 def test_parse_message_auth_keys_rejects_empty_fields() -> None:
     """A key with a blank id, secret, or sender list is refused with the format."""
     from synapse_channel.cli_processes_hub import _parse_message_auth_keys
