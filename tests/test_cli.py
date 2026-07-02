@@ -155,3 +155,29 @@ def test_resolve_token_missing_file(tmp_path: Path) -> None:
 def test_resolve_token_no_token_file_attr() -> None:
     with _env_var("SYNAPSE_TOKEN", "env-tok"):
         assert cli._resolve_token(argparse.Namespace(token=None)) == "env-tok"
+
+
+def test_main_reports_missing_token_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    absent = tmp_path / "nope"
+    assert cli.main(["send", "hi", "--token-file", str(absent)]) == 2
+    err = capsys.readouterr().err
+    assert "cannot read token file" in err
+    assert str(absent) in err
+
+
+def test_main_reports_unreadable_token_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    secret = tmp_path / "tok"
+    secret.write_text("t", encoding="utf-8")
+
+    def refuse(self: Path, **_kwargs: str) -> str:
+        raise PermissionError(13, "Permission denied", str(self))
+
+    monkeypatch.setattr("synapse_channel.cli.Path.read_text", refuse)
+    assert cli.main(["send", "hi", "--token-file", str(secret)]) == 2
+    assert "cannot read token file" in capsys.readouterr().err

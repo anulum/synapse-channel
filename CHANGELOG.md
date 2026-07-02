@@ -13,6 +13,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- `--token-file` naming a missing or unreadable file now fails with a clean
+  `cannot read token file` message and exit code `2` instead of an unhandled
+  traceback.
+
 ## [0.89.0] - 2026-07-02
 
 ### Added

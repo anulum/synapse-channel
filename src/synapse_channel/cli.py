@@ -299,6 +299,11 @@ def _resolve_token(args: argparse.Namespace) -> str | None:
     -------
     str or None
         The resolved token, or ``None`` when no source supplies one.
+
+    Raises
+    ------
+    OSError
+        When ``--token-file`` names a file that is missing or cannot be read.
     """
     if args.token:
         return str(args.token)
@@ -319,7 +324,8 @@ def main(argv: list[str] | None = None) -> int:
     Returns
     -------
     int
-        The selected command's exit code, or ``1`` when no command was given.
+        The selected command's exit code, ``1`` when no command was given, or
+        ``2`` when ``--token-file`` names a file that cannot be read.
     """
     arguments = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser(command=_requested_command(arguments))
@@ -328,7 +334,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 1
     if hasattr(args, "token"):
-        args.token = _resolve_token(args)
+        try:
+            args.token = _resolve_token(args)
+        except OSError as exc:
+            print(f"cannot read token file: {exc}", file=sys.stderr)
+            return 2
     handler: Callable[[argparse.Namespace], int] = args.func
     return handler(args)
 
