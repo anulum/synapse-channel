@@ -120,6 +120,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "encrypt-key": GOVERNANCE,
     # newer or advisory surfaces still settling
     "memory-recall": EXPERIMENTAL,
+    "participant": EXPERIMENTAL,
     "resource-bids": EXPERIMENTAL,
     "route-task": EXPERIMENTAL,
     "sandbox": EXPERIMENTAL,
