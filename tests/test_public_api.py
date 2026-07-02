@@ -8,6 +8,12 @@
 
 from __future__ import annotations
 
+import importlib
+import subprocess
+import sys
+
+import pytest
+
 import synapse_channel
 
 
@@ -35,3 +41,51 @@ def test_version_is_exported_and_nonempty() -> None:
     assert "__version__" in synapse_channel.__all__
     assert isinstance(synapse_channel.__version__, str)
     assert synapse_channel.__version__.strip()
+
+
+def test_exports_map_covers_exactly_the_public_surface() -> None:
+    # The PEP 562 map and __all__ must stay in lockstep: a name in one but not
+    # the other is either an unreachable promise or an unadvertised export.
+    assert set(synapse_channel._EXPORTS) == set(synapse_channel.__all__) - {"__version__"}
+
+
+def test_every_lazy_name_resolves_to_its_declared_origin() -> None:
+    # Accessing each name walks the lazy path (or its cache) and must yield the
+    # very object living in the module the map points at — not a copy.
+    for name, target in synapse_channel._EXPORTS.items():
+        module_name, _, attribute = target.partition(":")
+        origin = getattr(importlib.import_module(module_name), attribute)
+        assert getattr(synapse_channel, name) is origin, name
+
+
+def test_lazy_access_caches_the_resolved_name_on_the_package() -> None:
+    synapse_channel.__dict__.pop("paths_overlap", None)
+    assert "paths_overlap" not in vars(synapse_channel)
+    resolved = synapse_channel.paths_overlap
+    assert vars(synapse_channel)["paths_overlap"] is resolved
+
+
+def test_unknown_attribute_raises_attribute_error() -> None:
+    with pytest.raises(AttributeError, match="has no attribute 'definitely_missing'"):
+        _ = synapse_channel.definitely_missing
+
+
+def test_dir_lists_the_full_public_surface() -> None:
+    assert set(synapse_channel.__all__) <= set(dir(synapse_channel))
+
+
+def test_bare_package_import_does_not_drag_the_heavy_stack() -> None:
+    # The point of the lazy facade: `import synapse_channel` alone must not
+    # pull in the WebSocket/asyncio client chain or the hub.
+    probe = (
+        "import sys, synapse_channel\n"
+        "heavy = [m for m in ('websockets', 'synapse_channel.client.agent',"
+        " 'synapse_channel.core.hub') if m in sys.modules]\n"
+        "assert not heavy, heavy\n"
+        "print(synapse_channel.__version__)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == synapse_channel.__version__

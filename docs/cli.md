@@ -5,6 +5,12 @@ The `synapse` command exposes the following subcommands.
 For end-to-end examples that combine these commands with existing agent tools,
 see the [Integration demos](integration-demos.md).
 
+Start-up is proportional to the command you run: the CLI imports only the
+module family that owns the requested subcommand, so frequent short calls
+(`synapse who`, `synapse send`, wake loops) skip the import cost of the rest
+of the surface. `synapse --help`, `--version`, and unknown commands still load
+everything, since they need the whole command table.
+
 | Command | What it does |
 | --- | --- |
 | `synapse hub` | Run the coordination hub. |

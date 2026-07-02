@@ -13,6 +13,21 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+- `import synapse_channel` now resolves its public names lazily (PEP 562):
+  the submodule behind a name is imported on first attribute access, cutting
+  the bare package import from roughly one second to under ten milliseconds
+  while keeping `__all__`, every re-exported object, and type-checker
+  visibility identical.
+- The `synapse` CLI registers subcommands lazily: `main` reads the requested
+  command off `argv` and imports only the module family that owns it, so a
+  short call such as `synapse who` or `synapse merkle root` no longer pays
+  the import cost of the whole surface (local commands start in roughly a
+  quarter of the previous time). `--help`, `--version`, and unknown commands
+  still build the full parser, and contract tests pin every registration
+  unit to the exact commands it provides and to help output identical to the
+  full build.
+
 ### Added
 - `synapse status --watch` refreshes the one-line hub summary every
   `--interval` seconds (default 2) as an operator dashboard. Each refresh

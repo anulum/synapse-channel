@@ -74,11 +74,18 @@ service setup / worker-session, task-plan write (task declare/update/progress),
 git, locking, mcp, and file/event — lives in its own ``cli_*`` module and
 registers its subparsers through
 :func:`build_parser`.
+
+Registration is lazy: the ``cli_*`` modules are imported only when their
+commands are needed. :func:`main` reads the requested command off ``argv``
+first and registers just the unit that owns it, so ``synapse who`` does not
+pay the import cost of the whole surface; ``--help``, ``--version``, and
+unknown commands fall back to registering everything.
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib
 import os
 import sys
 from collections.abc import Callable
@@ -86,61 +93,6 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel import __version__
-from synapse_channel.cli_a2a import add_parsers as add_a2a_parsers
-from synapse_channel.cli_accounting import add_parsers as add_accounting_parsers
-from synapse_channel.cli_acl_shadow import add_parsers as add_acl_shadow_parsers
-from synapse_channel.cli_adapters import add_parsers as add_adapters_parsers
-from synapse_channel.cli_adaptive_ttl import add_parsers as add_ttl_advice_parsers
-from synapse_channel.cli_agent_tmux import add_parsers as add_agent_tmux_parsers
-from synapse_channel.cli_approvals import add_parsers as add_approval_parsers
-from synapse_channel.cli_arm import add_parser as add_arm_parser
-from synapse_channel.cli_causality import add_parsers as add_causality_parsers
-from synapse_channel.cli_channels import add_parsers as add_channel_parsers
-from synapse_channel.cli_codex_tmux import add_parsers as add_codex_tmux_parsers
-from synapse_channel.cli_commands_overview import add_parsers as add_commands_overview_parsers
-from synapse_channel.cli_completions import add_parsers as add_completions_parsers
-from synapse_channel.cli_dashboard import add_parsers as add_dashboard_parsers
-from synapse_channel.cli_demo import add_parsers as add_demo_parsers
-from synapse_channel.cli_directory import add_parsers as add_directory_parsers
-from synapse_channel.cli_doctor import add_parsers as add_doctor_parsers
-from synapse_channel.cli_encrypt_key import add_parsers as add_encrypt_key_parsers
-from synapse_channel.cli_event_query import add_parsers as add_event_query_parsers
-from synapse_channel.cli_federation import add_parsers as add_federation_parsers
-from synapse_channel.cli_git import add_parsers as add_git_parsers
-from synapse_channel.cli_identity import add_parsers as add_identity_parsers
-from synapse_channel.cli_locking import add_parsers as add_locking_parsers
-from synapse_channel.cli_mcp import add_parsers as add_mcp_parsers
-from synapse_channel.cli_mcp_call import add_parsers as add_mcp_call_parsers
-from synapse_channel.cli_memory_projection import add_parsers as add_memory_projection_parsers
-from synapse_channel.cli_merkle import add_parsers as add_merkle_parsers
-from synapse_channel.cli_messaging import add_parsers as add_messaging_parsers
-from synapse_channel.cli_multihub import add_parsers as add_multihub_parsers
-from synapse_channel.cli_new import add_parsers as add_new_parsers
-from synapse_channel.cli_participants import add_parsers as add_participant_parsers
-from synapse_channel.cli_participants_costs import (
-    add_parsers as add_participant_costs_parsers,
-)
-from synapse_channel.cli_participants_deliberate import (
-    add_parsers as add_participant_deliberation_parsers,
-)
-from synapse_channel.cli_policy_check import add_parsers as add_policy_check_parsers
-from synapse_channel.cli_postmortem import add_parsers as add_postmortem_parsers
-from synapse_channel.cli_processes import add_parsers as add_process_parsers
-from synapse_channel.cli_queries import add_parsers as add_query_parsers
-from synapse_channel.cli_quickstart_coding import add_parsers as add_quickstart_coding_parsers
-from synapse_channel.cli_reliability import add_parsers as add_reliability_parsers
-from synapse_channel.cli_replay import add_parsers as add_replay_parsers
-from synapse_channel.cli_resource_bidding import add_parsers as add_resource_bidding_parsers
-from synapse_channel.cli_sandbox import add_parsers as add_sandbox_parsers
-from synapse_channel.cli_semantic_routing import add_parsers as add_semantic_routing_parsers
-from synapse_channel.cli_services import add_parsers as add_service_parsers
-from synapse_channel.cli_shell import add_parsers as add_shell_parsers
-from synapse_channel.cli_status import add_parsers as add_status_parsers
-from synapse_channel.cli_streams import add_parsers as add_stream_parsers
-from synapse_channel.cli_tasks import add_parsers as add_task_parsers
-from synapse_channel.cli_verify_release import add_parsers as add_verify_release_parsers
-from synapse_channel.cli_workflow import add_parsers as add_workflow_parsers
-from synapse_channel.update_check import update_notice
 
 
 class _VersionAction(argparse.Action):
@@ -165,6 +117,8 @@ class _VersionAction(argparse.Action):
         option_string: str | None = None,
     ) -> None:
         print(f"synapse-channel {__version__}")
+        from synapse_channel.update_check import update_notice
+
         notice = update_notice()
         if notice:
             print(notice, file=sys.stderr)
@@ -173,102 +127,139 @@ class _VersionAction(argparse.Action):
 
 # -- parser -------------------------------------------------------------------
 
+_Registrar = Callable[["argparse._SubParsersAction[argparse.ArgumentParser]"], object]
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build the top-level argument parser with all subcommands."""
+#: Registration units in ``--help`` display order. Each unit pairs the
+#: ``"module:function"`` registrar of one command family with the exact
+#: top-level commands it adds. The pairing, coverage, and per-unit parser
+#: equivalence are all pinned by contract tests, so a unit that drifts from
+#: its declaration cannot ship.
+_REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("synapse_channel.cli_processes:add_parsers", ("hub", "worker", "team", "supervisor")),
+    ("synapse_channel.cli_demo:add_parsers", ("demo",)),
+    ("synapse_channel.cli_commands_overview:add_parsers", ("commands",)),
+    ("synapse_channel.cli_completions:add_parsers", ("completions",)),
+    ("synapse_channel.cli_quickstart_coding:add_parsers", ("quickstart-coding",)),
+    ("synapse_channel.cli_new:add_parsers", ("new",)),
+    ("synapse_channel.cli_messaging:add_parsers", ("send", "wait", "listen")),
+    ("synapse_channel.cli_multihub:add_parsers", ("multihub",)),
+    ("synapse_channel.cli:_register_participant_group", ("participant",)),
+    ("synapse_channel.cli_arm:add_parser", ("arm",)),
+    ("synapse_channel.cli_queries:add_parsers", ("who", "state", "board", "manifest", "health")),
+    ("synapse_channel.cli_status:add_parsers", ("status",)),
+    ("synapse_channel.cli_dashboard:add_parsers", ("dashboard",)),
+    ("synapse_channel.cli_directory:add_parsers", ("directory",)),
+    ("synapse_channel.cli_semantic_routing:add_parsers", ("route-task",)),
+    ("synapse_channel.cli_resource_bidding:add_parsers", ("resource-bids",)),
+    ("synapse_channel.cli_sandbox:add_parsers", ("sandbox",)),
+    ("synapse_channel.cli_memory_projection:add_parsers", ("memory-recall",)),
+    ("synapse_channel.cli_services:add_parsers", ("init", "worker-session")),
+    ("synapse_channel.cli_agent_tmux:add_parsers", ("agent-tmux",)),
+    ("synapse_channel.cli_channels:add_parsers", ("channel",)),
+    ("synapse_channel.cli_encrypt_key:add_parsers", ("encrypt-key",)),
+    ("synapse_channel.cli_codex_tmux:add_parsers", ("codex-tmux",)),
+    ("synapse_channel.cli_shell:add_parsers", ("shell-hook", "install-shell-hook")),
+    ("synapse_channel.cli_mcp:add_parsers", ("mcp",)),
+    ("synapse_channel.cli_mcp_call:add_parsers", ("mcp-tools", "mcp-call")),
+    ("synapse_channel.cli_a2a:add_parsers", ("a2a-card", "a2a-serve")),
+    ("synapse_channel.cli_adapters:add_parsers", ("adapters",)),
+    (
+        "synapse_channel.cli_git:add_parsers",
+        ("git-claim", "git-hook", "git-init", "git-release", "conflicts"),
+    ),
+    ("synapse_channel.cli_verify_release:add_parsers", ("verify-release",)),
+    ("synapse_channel.cli_policy_check:add_parsers", ("policy-check",)),
+    ("synapse_channel.cli_identity:add_parsers", ("identity",)),
+    ("synapse_channel.cli_acl_shadow:add_parsers", ("acl",)),
+    ("synapse_channel.cli_locking:add_parsers", ("lock", "release")),
+    ("synapse_channel.cli_streams:add_parsers", ("relay", "ingest", "compact")),
+    ("synapse_channel.cli_event_query:add_parsers", ("event-query",)),
+    ("synapse_channel.cli_federation:add_parsers", ("federation",)),
+    ("synapse_channel.cli_postmortem:add_parsers", ("postmortem",)),
+    ("synapse_channel.cli_replay:add_parsers", ("debug", "reproduce")),
+    ("synapse_channel.cli_causality:add_parsers", ("causality",)),
+    ("synapse_channel.cli_merkle:add_parsers", ("merkle",)),
+    ("synapse_channel.cli_reliability:add_parsers", ("reliability",)),
+    ("synapse_channel.cli_accounting:add_parsers", ("accounting",)),
+    ("synapse_channel.cli_approvals:add_parsers", ("approval",)),
+    ("synapse_channel.cli_adaptive_ttl:add_parsers", ("ttl-advice",)),
+    ("synapse_channel.cli_tasks:add_parsers", ("task",)),
+    ("synapse_channel.cli_workflow:add_parsers", ("workflow",)),
+    ("synapse_channel.cli_doctor:add_parsers", ("doctor",)),
+)
+
+
+def _register_participant_group(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """Register ``participant`` with its deliberation and costs extensions.
+
+    The two extension modules attach subcommands to the group returned by the
+    base registrar, so the three registrations must run together and in order.
+    """
+    from synapse_channel.cli_participants import add_parsers as add_participant_parsers
+    from synapse_channel.cli_participants_costs import (
+        add_parsers as add_participant_costs_parsers,
+    )
+    from synapse_channel.cli_participants_deliberate import (
+        add_parsers as add_participant_deliberation_parsers,
+    )
+
+    participant_group = add_participant_parsers(subparsers)
+    add_participant_deliberation_parsers(participant_group)
+    add_participant_costs_parsers(participant_group)
+
+
+def _registrar(spec: str) -> _Registrar:
+    """Resolve a ``"module:function"`` registration spec, importing on demand."""
+    module_name, _, function_name = spec.partition(":")
+    registrar: _Registrar = getattr(importlib.import_module(module_name), function_name)
+    return registrar
+
+
+def _unit_owning(command: str) -> str | None:
+    """Return the registrar spec whose unit provides ``command``, if any."""
+    for spec, commands in _REGISTRATION_UNITS:
+        if command in commands:
+            return spec
+    return None
+
+
+def _requested_command(argv: list[str]) -> str | None:
+    """Return the first positional token of ``argv`` — the subcommand candidate.
+
+    The top-level parser takes only zero-argument options (``--help``,
+    ``--version``), so the first token that is neither an option nor the
+    ``--`` separator names the command. A token this misjudges simply falls
+    back to the full parser, which owns the error message.
+    """
+    for token in argv:
+        if token != "--" and not token.startswith("-"):
+            return token
+    return None
+
+
+def build_parser(*, command: str | None = None) -> argparse.ArgumentParser:
+    """Build the top-level argument parser.
+
+    Parameters
+    ----------
+    command : str or None, optional
+        When given and recognised, register only the unit that owns this
+        command, so start-up imports stay proportional to what will actually
+        run. ``None`` or an unrecognised name registers every unit — the full
+        parser then renders ``--help`` and the canonical unknown-command error.
+    """
     parser = argparse.ArgumentParser(prog="synapse", description="Synapse multi-agent channel.")
     parser.add_argument("--version", action=_VersionAction)
     sub = parser.add_subparsers(dest="command")
 
-    add_process_parsers(sub)
-
-    add_demo_parsers(sub)
-
-    add_commands_overview_parsers(sub)
-
-    add_completions_parsers(sub)
-
-    add_quickstart_coding_parsers(sub)
-
-    add_new_parsers(sub)
-
-    add_messaging_parsers(sub)
-    add_multihub_parsers(sub)
-    participant_group = add_participant_parsers(sub)
-    add_participant_deliberation_parsers(participant_group)
-    add_participant_costs_parsers(participant_group)
-
-    add_arm_parser(sub)
-
-    add_query_parsers(sub)
-
-    add_status_parsers(sub)
-
-    add_dashboard_parsers(sub)
-
-    add_directory_parsers(sub)
-
-    add_semantic_routing_parsers(sub)
-
-    add_resource_bidding_parsers(sub)
-    add_sandbox_parsers(sub)
-
-    add_memory_projection_parsers(sub)
-
-    add_service_parsers(sub)
-
-    add_agent_tmux_parsers(sub)
-    add_channel_parsers(sub)
-    add_encrypt_key_parsers(sub)
-    add_codex_tmux_parsers(sub)
-
-    add_shell_parsers(sub)
-
-    add_mcp_parsers(sub)
-
-    add_mcp_call_parsers(sub)
-
-    add_a2a_parsers(sub)
-    add_adapters_parsers(sub)
-
-    add_git_parsers(sub)
-
-    add_verify_release_parsers(sub)
-
-    add_policy_check_parsers(sub)
-
-    add_identity_parsers(sub)
-
-    add_acl_shadow_parsers(sub)
-
-    add_locking_parsers(sub)
-
-    add_stream_parsers(sub)
-
-    add_event_query_parsers(sub)
-    add_federation_parsers(sub)
-
-    add_postmortem_parsers(sub)
-
-    add_replay_parsers(sub)
-
-    add_causality_parsers(sub)
-
-    add_merkle_parsers(sub)
-
-    add_reliability_parsers(sub)
-
-    add_accounting_parsers(sub)
-
-    add_approval_parsers(sub)
-
-    add_ttl_advice_parsers(sub)
-
-    add_task_parsers(sub)
-
-    add_workflow_parsers(sub)
-
-    add_doctor_parsers(sub)
+    owner = _unit_owning(command) if command is not None else None
+    if owner is not None:
+        _registrar(owner)(sub)
+    else:
+        for spec, _commands in _REGISTRATION_UNITS:
+            _registrar(spec)(sub)
 
     # Give every command that takes --token a --token-file companion, so the secret
     # can come from a file instead of argv (which is visible to anyone running `ps`).
@@ -327,8 +318,9 @@ def main(argv: list[str] | None = None) -> int:
     int
         The selected command's exit code, or ``1`` when no command was given.
     """
-    parser = build_parser()
-    args = parser.parse_args(argv)
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    parser = build_parser(command=_requested_command(arguments))
+    args = parser.parse_args(arguments)
     if not getattr(args, "command", None):
         parser.print_help()
         return 1
