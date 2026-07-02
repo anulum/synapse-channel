@@ -971,6 +971,20 @@ $ synapse causality otel ~/synapse/hub.db --out spans.json \
 exported 3 span(s) across 1 trace(s) to spans.json, 332 task(s) filtered out
 ```
 
+`--watch` turns the one-shot export into live coordination observability:
+the store is reread and the spans re-exported every `--interval` seconds
+(default 2.0) until `--count` ticks ran (0 = until Ctrl-C, which stops the
+watch cleanly). The deterministic ids make each re-export idempotent on the
+collector side — a span received twice is stored once — so a fixed cadence
+against a growing log simply fills in the new events. A failing tick stops
+the watch with exit `2`, exactly as a single export fails visibly:
+
+```console
+$ synapse causality otel ~/synapse/hub.db --out spans.json --watch --count 2 --interval 1 --max-nodes 0
+exported 2582 span(s) across 338 trace(s) to spans.json
+exported 2582 span(s) across 338 trace(s) to spans.json
+```
+
 `synapse merkle root ./synapse.db` commits the durable event log to a single
 Merkle root: a 32-byte fingerprint of every event, so two operators — or two
 federated hubs — holding the same log derive the same root and a mismatch proves

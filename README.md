@@ -830,8 +830,9 @@ deterministic — written as JSON (`--out`) or pushed as real OTLP over HTTP
 (`--endpoint`, optional extra: `pip install 'synapse-channel[otel]'`);
 `--service-name` distinguishes hubs sharing one observability tenant,
 `--filter TASK_ID` narrows the projection to named tasks without truncating
-their cross-task links, and an event recording the lifecycle failure terminal
-projects span status `ERROR`.
+their cross-task links, an event recording the lifecycle failure terminal
+projects span status `ERROR`, and `--watch` re-exports on a fixed cadence —
+idempotent collector-side thanks to the deterministic ids.
 
 Use `synapse merkle root ./synapse.db` to commit the durable log to a single
 Merkle root — a 32-byte fingerprint of every event, so two operators or two
@@ -1037,7 +1038,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 392 |
 | Wire message types | 65 |
 | CLI subcommands | 124 |
-| Test functions | 4042 |
+| Test functions | 4046 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 46 |
 | GitHub Actions workflows | 12 |

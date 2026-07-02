@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel import cli
+from synapse_channel import cli, cli_causality
 from synapse_channel.core.causality import DEFAULT_MAX_GRAPH_NODES
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
@@ -528,6 +528,9 @@ def test_parser_defaults_otel_flags_to_none() -> None:
     assert args.endpoint is None
     assert args.service_name is None
     assert args.filter == []
+    assert args.watch is False
+    assert args.interval == 2.0
+    assert args.count == 0
 
 
 def test_cli_otel_writes_span_records_to_a_file(
@@ -593,7 +596,7 @@ def test_cli_otel_flags_are_refused_outside_otel_mode(
     assert exit_code == 2
     assert "belong to the otel mode" in capsys.readouterr().err
 
-    for flag in (["--service-name", "hub-eu"], ["--filter", "B"]):
+    for flag in (["--service-name", "hub-eu"], ["--filter", "B"], ["--watch"]):
         exit_code = cli.main(["causality", "causes", str(db), "4", *flag])
         assert exit_code == 2
         assert "belong to the otel mode" in capsys.readouterr().err
@@ -644,6 +647,100 @@ def test_cli_otel_filter_summary_counts_filtered_tasks(
 
     assert exit_code == 0
     assert "2 task(s) filtered out" in capsys.readouterr().out
+
+
+def test_cli_otel_watch_reexports_for_count_ticks(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+    out = tmp_path / "spans.json"
+
+    exit_code = cli.main(
+        [
+            "causality",
+            "otel",
+            str(db),
+            "--out",
+            str(out),
+            "--watch",
+            "--count",
+            "2",
+            "--interval",
+            "0.01",
+        ]
+    )
+
+    assert exit_code == 0
+    summaries = capsys.readouterr().out.strip().splitlines()
+    assert len(summaries) == 2
+    assert all("exported 11 span(s)" in line for line in summaries)
+    assert json.loads(out.read_text(encoding="utf-8"))["trace_count"] == 3
+
+
+def test_cli_otel_watch_stops_on_a_failing_tick(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+    slept: list[float] = []
+    args = cli.build_parser().parse_args(
+        [
+            "causality",
+            "otel",
+            str(db),
+            "--out",
+            str(tmp_path / "no-such-dir" / "s.json"),
+            "--watch",
+        ]
+    )
+
+    exit_code = cli_causality._watch_otel(args, sleeper=slept.append)
+
+    assert exit_code == 2
+    assert slept == []
+    assert "cannot write span records" in capsys.readouterr().err
+
+
+def test_cli_otel_watch_interrupt_is_a_clean_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    def _interrupt(args: object) -> int:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli_causality, "_otel_once", _interrupt)
+
+    exit_code = cli.main(
+        ["causality", "otel", str(db), "--out", str(tmp_path / "s.json"), "--watch"]
+    )
+
+    assert exit_code == 0
+
+
+def test_cli_otel_watch_refuses_a_non_positive_interval(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    exit_code = cli.main(
+        [
+            "causality",
+            "otel",
+            str(db),
+            "--out",
+            str(tmp_path / "s.json"),
+            "--watch",
+            "--interval",
+            "0",
+        ]
+    )
+
+    assert exit_code == 2
+    assert "--interval must be positive" in capsys.readouterr().err
 
 
 def test_cli_otel_filter_refuses_an_unrecorded_task(
