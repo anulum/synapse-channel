@@ -20,6 +20,14 @@ All notable changes to this project are documented here.
   one turn against one provider and prints the answer — or the full typed turn result
   with `--json`. Grok turns are refused while its stream schema remains unverified
   against a real binary.
+- The participant surface gained the Fabric's deliberation layers:
+  `synapse participant exchange` runs an opener turn and a reactor turn that sees the
+  opener's result only as fenced peer data, and `synapse participant convene` fans a
+  question out to a panel named as `PROVIDER[:MODEL]` seats, runs the conversation
+  mode's cross-critique rounds (`--mode auto` selects colloquy, roundtable, or
+  symposium from the panel shape), and in a symposium ends with the moderator's
+  synthesis. Both print each turn as it is produced — or the full typed transcript
+  with `--json` — and honour a cumulative `--budget-usd` ceiling.
 
 ## [0.87.0] - 2026-07-02
 
