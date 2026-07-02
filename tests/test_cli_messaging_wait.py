@@ -314,3 +314,98 @@ async def test_wait_no_jitter_on_directed_wake() -> None:
 
     assert code == 0
     assert calls == []  # no jitter for a directed message
+
+
+async def test_superseded_wait_yields_instead_of_rearming(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A waiter displaced by a takeover exits with the yield verdict (4).
+
+    This pins the waiter-fight defect: the displaced side used to report a
+    generic drop (3), and its arm loop reconnected with a takeover of its own —
+    two waiters for one identity then stole the name from each other until the
+    hub quarantined it, while the loser burned reconnect attempts for days.
+    """
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        first_wait = asyncio.create_task(
+            cli_messaging._wait(
+                uri=uri,
+                name="X-rx",
+                for_name="X",
+                timeout=0.0,
+                poll_interval=0.01,
+            )
+        )
+        try:
+            await _wait_for_presence(observer, "X-rx")
+            # a second waiter claims the same identity: hub evicts the first
+            second_wait = asyncio.create_task(
+                cli_messaging._wait(
+                    uri=uri,
+                    name="X-rx",
+                    for_name="X",
+                    timeout=0.0,
+                    poll_interval=0.01,
+                )
+            )
+            code = await asyncio.wait_for(first_wait, timeout=5.0)
+            assert code == 4
+            assert "superseded by a newer waiter; yielding" in capsys.readouterr().out
+            # the new holder is still armed and still wakes
+            await _send_chat(uri, "A", "X", "wake")
+            assert await asyncio.wait_for(second_wait, timeout=5.0) == 0
+        finally:
+            await close_agents(observer)
+
+
+async def test_arm_disarms_after_a_takeover_displacement(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The arm loop ends on the yield verdict instead of fighting for the name."""
+    from synapse_channel import cli_arm
+
+    async def yield_now(**_kwargs: object) -> int:
+        return 4
+
+    code = await asyncio.wait_for(
+        cli_arm._arm(
+            uri="ws://unused",
+            name="X-rx",
+            for_name="X",
+            reconnect_delay=0.0,
+            wait_runner=yield_now,
+        ),
+        timeout=5.0,
+    )
+    assert code == 0
+    assert "a newer waiter holds this name; disarming" in capsys.readouterr().out
+
+
+async def test_takeover_refused_at_handshake_yields(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A takeover refused by cooldown/quarantine is a yield, not an outage retry."""
+
+    class _RefusedAgent:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            self.running = True
+            self.last_close_code: int | None = 4014
+            self.last_close_reason = "takeover quarantine"
+
+        async def connect(self) -> None:
+            return None
+
+        async def wait_until_ready(self, timeout: float) -> bool:
+            del timeout
+            return False
+
+    code = await cli_messaging._wait(
+        uri="ws://unused",
+        name="X-rx",
+        for_name="X",
+        timeout=0.0,
+        agent_factory=_RefusedAgent,  # type: ignore[arg-type]
+    )
+    assert code == 4
+    assert "takeover" in capsys.readouterr().out

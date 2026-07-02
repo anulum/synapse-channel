@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from synapse_channel import connect_failures
 from synapse_channel.connect_failures import (
     AUTH_TIMEOUT_CLOSE_CODE,
     CAPACITY_CLOSE_CODE,
@@ -161,3 +162,24 @@ async def test_closed_after_ready_detects_a_post_welcome_close() -> None:
 
 async def test_closed_after_ready_returns_false_for_a_healthy_socket() -> None:
     assert await closed_after_ready(_FakeConn(), grace_seconds=0.05) is False
+
+
+# --- the yield verdicts a re-arming waiter acts on ---
+
+
+def test_superseded_close_is_recognised_and_auth_overload_excluded() -> None:
+    assert connect_failures.is_superseded_close(4010, "superseded")
+    assert not connect_failures.is_superseded_close(4010, "auth denied")
+    assert not connect_failures.is_superseded_close(4010, "auth required")
+    assert not connect_failures.is_superseded_close(4013, "superseded")
+    assert not connect_failures.is_superseded_close(None, "superseded")
+
+
+def test_takeover_refused_close_is_recognised_and_unauth_cap_excluded() -> None:
+    assert connect_failures.is_takeover_refused_close(4014, "takeover cooldown")
+    assert connect_failures.is_takeover_refused_close(4014, "takeover quarantine")
+    assert not connect_failures.is_takeover_refused_close(
+        4014, "too many unauthenticated connections"
+    )
+    assert not connect_failures.is_takeover_refused_close(4010, "takeover cooldown")
+    assert not connect_failures.is_takeover_refused_close(None, "takeover cooldown")
