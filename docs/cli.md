@@ -199,7 +199,7 @@ A `target` is then a name, a comma list, a **group glob** (`quantum/*` for every
 agent on the project, `quantum/claude-*` for one role), or `all`. List who is live:
 
 ```bash
-synapse who                       # every agent online
+synapse who                       # agents online, with -rx waiter sidecars counted apart
 synapse who --project quantum     # only quantum/... instances
 synapse who --name quantum/codex-2b40 --me  # this identity plus its -rx waiter status
 syn who --me                      # same check using the resolved syn identity
@@ -940,6 +940,7 @@ synapse shell-hook                                      # print the block instea
 synapse completions bash > ~/.local/share/bash-completion/completions/synapse   # tab completion
 synapse completions fish > ~/.config/fish/completions/synapse.fish              # (re-run after upgrades)
 synapse arm --name my-repo --for "my-repo,my-repo/*"    # keep a waiter armed, re-arming after each wake
+synapse arm --name my-repo --owner-pid $$               # leash the waiter: disarm when this shell exits
 synapse worker-session --identity my-repo -- codex      # run a provider CLI with SYN_PROJECT/SYN_IDENTITY set
 synapse adapters list                                   # detect coding tools and report adapter status
 synapse adapters install --project my-repo              # write the claim-aware adapter into each tool
