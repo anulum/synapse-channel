@@ -17,6 +17,7 @@ everything, since they need the whole command table.
 | `synapse commands` | List every subcommand grouped by stability tier — the quickest map of the surface. |
 | `synapse completions` | Print a static tab-completion script for bash, zsh, or fish, generated from the installed CLI. |
 | `synapse demo` | Run a self-contained local coordination demo and print a success marker. |
+| `synapse benchmark` | Benchmark the installed package (event store, relay encoding, live hub round-trips) and print a scorecard with honest host context. |
 | `synapse quickstart-coding` | Create a coding-fleet workspace, run the no-collision demo, and print a success marker. |
 | `synapse new coding-fleet` | Scaffold a runnable two-agent coding demo workspace. |
 | `synapse health` | Probe the hub; exit `0` if reachable, `1` if not (wired as a container healthcheck). |
@@ -947,6 +948,24 @@ depends on — holds a live claim. `--json` emits the graph as data and
 live claims labelled with their count, shared-owner edges dashed). Like
 every analysis surface it is declaration-level, advisory evidence: it reads
 manifests and the log, resolves nothing, and decides nothing.
+
+`synapse benchmark` measures the installed package on your machine and
+prints a scorecard. The probes exercise real production surfaces — durable
+event-store appends and a full journal replay against a temporary SQLite
+file, the lite relay encoding over realistic envelopes, and `who`
+request/response plus claim-to-grant round-trips over a real WebSocket
+connection to an in-process hub on a loopback port. Each probe reports
+throughput and p50/p95 per-operation latency, and the scorecard carries the
+context that makes a number honest: package version, interpreter, CPU model
+and governor, and the load averages before and after the run, plus an
+explicit isolation label — a run of this command is shared-workstation
+evidence for functional comparison and regression hunting, not an
+isolated-core production benchmark. `--list` names the probes, `--probe`
+selects a subset (repeatable), `--iterations` overrides the defaults,
+`--json` emits the scorecard as data, and `--results FILE` also writes it to
+disk. The committed reference numbers in [Benchmarks](benchmarks.md) come
+from the deeper repository harnesses; this command is the quick scorecard
+for *your* installed version.
 
 `synapse accounting` records and reports opt-in model cost/token usage. Synapse
 never calls a model provider and collects no telemetry, so token and cost figures

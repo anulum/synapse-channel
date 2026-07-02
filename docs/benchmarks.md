@@ -4,6 +4,19 @@ Benchmarks are runnable, committed scripts under `benchmarks/`, with their
 results checked in under `benchmarks/results/`. No number here is estimated by
 hand. Run them with `make bench`.
 
+## Installed-version scorecard: `synapse benchmark`
+
+The committed harnesses below measure this repository; `synapse benchmark`
+(shipped in the package) measures *your* machine and *your* installed
+version. Its probes run the same production code paths — durable event-store
+appends, journal replay, lite relay encoding, and `who` plus claim-to-grant
+round-trips over a real loopback WebSocket hub — and the scorecard records
+the host context (CPU model, governor, load before/after) with an explicit
+shared-workstation isolation label, so the output is honest regression
+evidence rather than an isolated-core claim. See the
+[CLI reference](cli.md) for flags (`--probe`, `--iterations`, `--json`,
+`--results`).
+
 ## Relay token benchmark
 
 `relay_token_benchmark.py` measures how much the lite relay encoding shrinks a
