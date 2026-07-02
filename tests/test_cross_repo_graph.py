@@ -99,6 +99,7 @@ def test_dependency_edges_connect_consumer_to_provider(tmp_path: Path) -> None:
         "dependency": "provider-pkg",
         "ecosystem": "python",
         "manifest": "pyproject.toml",
+        "constraint": ">=1",
     }
     # "requests" has no scanned provider: external dependencies create no edge.
     assert all(edge.evidence.get("dependency") != "requests" for edge in graph.edges)
@@ -273,6 +274,80 @@ def test_human_rendering_of_an_edgeless_tree_lists_only_the_header(tmp_path: Pat
     text = render_cross_repo_human(run_cross_repo_graph(root))
     assert "repositories=1 edges=0" in text
     assert "-[dependency]->" not in text
+
+
+def _conflicting_org(tmp_path: Path) -> Path:
+    """Two repositories pinning the same external package disjointly, one honest bystander."""
+    root = tmp_path / "org"
+    root.mkdir(parents=True)
+    pinned_old = root / "pinned-old"
+    pinned_old.mkdir()
+    _write(
+        pinned_old,
+        "pyproject.toml",
+        '[project]\nname = "pinned-old"\ndependencies = ["requests<2", "shared>=1"]\n',
+    )
+    pinned_new = root / "pinned-new"
+    pinned_new.mkdir()
+    _write(
+        pinned_new,
+        "pyproject.toml",
+        '[project]\nname = "pinned-new"\ndependencies = ["requests>=2", "shared<9"]\n',
+    )
+    unpinnable = root / "unpinnable"
+    unpinnable.mkdir()
+    _write(
+        unpinnable,
+        "pyproject.toml",
+        '[project]\nname = "unpinnable"\ndependencies = ["requests>=1.0rc1"]\n',
+    )
+    return root
+
+
+def test_disjoint_constraints_raise_a_version_conflict_edge(tmp_path: Path) -> None:
+    root = _conflicting_org(tmp_path)
+    graph = build_cross_repo_graph(root, scan_repositories(root))
+    conflicts = [edge for edge in graph.edges if edge.kind == "version_conflict"]
+    assert len(conflicts) == 1
+    (edge,) = conflicts
+    assert (edge.source, edge.target) == ("pinned-new", "pinned-old")
+    assert edge.detail == ("pinned-new pins requests '>=2' but pinned-old pins '<2' (python)")
+    assert edge.evidence == {
+        "package": "requests",
+        "ecosystem": "python",
+        "left_repo": "pinned-new",
+        "left_constraint": ">=2",
+        "left_manifest": "pyproject.toml",
+        "right_repo": "pinned-old",
+        "right_constraint": "<2",
+        "right_manifest": "pyproject.toml",
+    }
+
+
+def test_compatible_and_uncomparable_constraints_stay_silent(tmp_path: Path) -> None:
+    root = _conflicting_org(tmp_path)
+    graph = build_cross_repo_graph(root, scan_repositories(root))
+    conflicts = [edge for edge in graph.edges if edge.kind == "version_conflict"]
+    packages = {edge.evidence["package"] for edge in conflicts}
+    # "shared" overlaps (>=1 vs <9) and the rc-pinned repo is not comparable:
+    # neither may claim a conflict, so only the provable requests pair appears.
+    assert packages == {"requests"}
+    involved = {edge.source for edge in conflicts} | {edge.target for edge in conflicts}
+    assert "unpinnable" not in involved
+
+
+def test_version_conflict_edges_render_in_dot_and_json(tmp_path: Path) -> None:
+    root = _conflicting_org(tmp_path)
+    graph = build_cross_repo_graph(root, scan_repositories(root))
+    dot = render_cross_repo_dot(graph)
+    assert '"pinned-new" -> "pinned-old" [label="version_conflict", dir=none, color=red];' in dot
+    payload = cross_repo_graph_to_json(graph)
+    edges = payload["edges"]
+    assert isinstance(edges, list)
+    kinds = {entry["kind"] for entry in edges}
+    assert "version_conflict" in kinds
+    human = render_cross_repo_human(graph)
+    assert "pinned-new -[version_conflict]-> pinned-old:" in human
 
 
 def test_live_claims_skip_taskless_and_unrelated_events(tmp_path: Path) -> None:

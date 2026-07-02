@@ -13,6 +13,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse cross-repo` flags declared version constraints that can never be
+  satisfied together: every package two or more scanned repositories
+  consume — external packages included — is checked pairwise, and a
+  `version_conflict` edge (red in DOT output) appears when the constraints
+  are provably disjoint. The comparison models PEP 440 specifier sets,
+  Cargo requirements, and npm semver ranges over plain numeric release
+  versions; anything outside that bounded model — pre-release or epoch
+  segments, direct URL references, `go.mod` requirements — never claims a
+  conflict, and dependency-edge evidence now carries the declared
+  constraint text.
+
 ### Fixed
 - `--token-file` naming a missing or unreadable file now fails with a clean
   `cannot read token file` message and exit code `2` instead of an unhandled

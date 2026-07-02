@@ -17,6 +17,7 @@ from synapse_channel.core.repo_manifests import (
     discover_repositories,
     normalise_python_name,
     read_repo_manifest,
+    requirement_constraint,
     requirement_name,
 )
 
@@ -276,6 +277,94 @@ def test_codeowners_skips_tokens_that_are_not_handles(tmp_path: Path) -> None:
     )
     manifest = read_repo_manifest(repo)
     assert manifest.owners == ("@writer",)
+
+
+def test_requirement_constraint_extracts_specifier_forms() -> None:
+    assert requirement_constraint("websockets>=12,<16") == ">=12,<16"
+    assert requirement_constraint("Beta.Lib[extra]==2.1 ; python_version >= '3.11'") == "==2.1"
+    assert requirement_constraint("pkg (>=2, <3)") == ">=2, <3"
+    assert requirement_constraint("plain-name") == ""
+    assert requirement_constraint("### not a requirement") == ""
+    assert requirement_constraint("pkg[unclosed>=1") == ""
+    # a direct URL reference keeps its @ form: it pins a source, not a range
+    assert requirement_constraint("pkg @ https://example.invalid/p.tar.gz").startswith("@")
+
+
+def test_python_dependencies_carry_their_declared_constraints(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        "constrained",
+        {
+            "pyproject.toml": (
+                '[project]\nname = "c"\n'
+                'dependencies = ["websockets>=12,<16", "requests"]\n'
+                "[project.optional-dependencies]\n"
+                'dev = ["websockets==99"]\n'
+            )
+        },
+    )
+    manifest = read_repo_manifest(repo)
+    constraints = {dep.name: dep.constraint for dep in manifest.dependencies}
+    # the FIRST declaration's constraint wins, matching the name dedup
+    assert constraints == {"websockets": ">=12,<16", "requests": ""}
+
+
+def test_cargo_dependencies_carry_their_declared_constraints(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        "crate-versions",
+        {
+            "Cargo.toml": (
+                '[dependencies]\nserde = "1"\n'
+                'renamed = { package = "real-name", version = "^2.1" }\n'
+                'local = { path = "../local" }\n'
+                "odd = 7\n"
+            )
+        },
+    )
+    manifest = read_repo_manifest(repo)
+    constraints = {dep.name: dep.constraint for dep in manifest.dependencies}
+    assert constraints == {"serde": "1", "real-name": "^2.1", "local": "", "odd": ""}
+
+
+def test_package_json_dependencies_carry_their_declared_ranges(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        "js-versions",
+        {
+            "package.json": (
+                '{"dependencies": {"react": "^18.2.0", "odd": 7},'
+                ' "devDependencies": {"vite": "~5.1"}}'
+            )
+        },
+    )
+    manifest = read_repo_manifest(repo)
+    constraints = {dep.name: dep.constraint for dep in manifest.dependencies}
+    assert constraints == {"react": "^18.2.0", "odd": "", "vite": "~5.1"}
+
+
+def test_go_mod_requirements_carry_their_versions(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        "go-versions",
+        {
+            "go.mod": (
+                "module example.com/v\n\n"
+                "require (\n"
+                "\tgithub.com/gorilla/websocket v1.5.0\n"
+                "\texample.com/bare-path\n"
+                ")\n\n"
+                "require example.com/org/extra v1.0.0\n"
+            )
+        },
+    )
+    manifest = read_repo_manifest(repo)
+    constraints = {dep.name: dep.constraint for dep in manifest.dependencies}
+    assert constraints == {
+        "github.com/gorilla/websocket": "v1.5.0",
+        "example.com/bare-path": "",
+        "example.com/org/extra": "v1.0.0",
+    }
 
 
 def test_discover_repositories_is_sorted_and_selective(tmp_path: Path) -> None:

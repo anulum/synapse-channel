@@ -12,8 +12,8 @@ checkout directory, it reads the dependency manifests the ecosystem actually
 uses — ``pyproject.toml`` (Python), ``Cargo.toml`` (Rust), ``package.json``
 (JavaScript), ``go.mod`` (Go) — plus ``CODEOWNERS``, into one
 :class:`RepoManifest` record. Everything stays declaration-level: package
-names and dependency names as written by the repository, never resolved
-versions, lockfiles, or network lookups.
+names, dependency names, and version constraints exactly as written by the
+repository, never resolved versions, lockfiles, or network lookups.
 
 TOML manifests need a TOML parser: the standard-library ``tomllib`` on
 Python 3.11+ or the ``tomli`` backport. When neither is importable the TOML
@@ -47,7 +47,7 @@ CODEOWNERS_LOCATIONS = (
 """CODEOWNERS locations in the order GitHub resolves them."""
 
 _REQUIREMENT_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
-_GO_REQUIRE_LINE_RE = re.compile(r"^require\s+(\S+)\s+\S+")
+_GO_REQUIRE_LINE_RE = re.compile(r"^require\s+(\S+)\s+(\S+)")
 _GO_MODULE_RE = re.compile(r"^module\s+(\S+)")
 
 
@@ -84,11 +84,18 @@ class ManifestDependency:
         ``python``, ``rust``, ``javascript``, or ``go``.
     manifest : str
         Repository-relative manifest path that declared the dependency.
+    constraint : str
+        Version constraint exactly as the manifest declares it (the PEP 508
+        specifier part, the Cargo requirement string, the npm range, or the
+        ``go.mod`` version). Empty when the declaration names no version.
+        When a dependency is declared more than once the first declaration's
+        constraint is kept, matching the name deduplication.
     """
 
     name: str
     ecosystem: str
     manifest: str
+    constraint: str = ""
 
 
 @dataclass(frozen=True)
@@ -146,6 +153,37 @@ def requirement_name(requirement: str) -> str:
     return normalise_python_name(match.group(1)) if match else ""
 
 
+def requirement_constraint(requirement: str) -> str:
+    """Extract the version-specifier part of one PEP 508 requirement string.
+
+    Parameters
+    ----------
+    requirement : str
+        A requirement as written in ``[project] dependencies``.
+
+    Returns
+    -------
+    str
+        The specifier set after the name and any extras, with the
+        environment marker stripped and optional parentheses removed —
+        ``"websockets[speedups]>=12,<16 ; python_version >= '3.11'"`` yields
+        ``">=12,<16"``. A direct URL reference keeps its ``@ …`` form (it
+        pins a source, not a comparable version range). Empty when the
+        requirement names no version.
+    """
+    specifier = requirement.split(";", 1)[0]
+    match = _REQUIREMENT_NAME_RE.match(specifier)
+    if not match:
+        return ""
+    rest = specifier[match.end() :].strip()
+    if rest.startswith("["):
+        closing = rest.find("]")
+        rest = rest[closing + 1 :].strip() if closing != -1 else ""
+    if rest.startswith("(") and rest.endswith(")"):
+        rest = rest[1:-1].strip()
+    return rest
+
+
 def _toml_loads(raw: bytes) -> dict[str, Any]:
     """Parse TOML bytes with ``tomllib`` or the ``tomli`` backport.
 
@@ -198,7 +236,12 @@ def _python_manifest(
         if dependency and dependency not in seen:
             seen.add(dependency)
             parsed.append(
-                ManifestDependency(name=dependency, ecosystem=PYTHON_ECOSYSTEM, manifest=manifest)
+                ManifestDependency(
+                    name=dependency,
+                    ecosystem=PYTHON_ECOSYSTEM,
+                    manifest=manifest,
+                    constraint=requirement_constraint(requirement),
+                )
             )
     return packages, parsed
 
@@ -214,6 +257,21 @@ def _rust_dependency_name(key: str, value: Any) -> str:
         if isinstance(package, str) and package.strip():
             return package.strip().lower()
     return key.strip().lower()
+
+
+def _rust_dependency_constraint(value: Any) -> str:
+    """Return the version requirement of one ``Cargo.toml`` dependency entry.
+
+    A string entry is the requirement itself; a table entry carries it under
+    ``version`` (a path or git dependency without one declares no range).
+    """
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        version = value.get("version")
+        if isinstance(version, str):
+            return version.strip()
+    return ""
 
 
 def _rust_manifest(
@@ -241,7 +299,12 @@ def _rust_manifest(
             if crate and crate not in seen:
                 seen.add(crate)
                 dependencies.append(
-                    ManifestDependency(name=crate, ecosystem=RUST_ECOSYSTEM, manifest=manifest)
+                    ManifestDependency(
+                        name=crate,
+                        ecosystem=RUST_ECOSYSTEM,
+                        manifest=manifest,
+                        constraint=_rust_dependency_constraint(table[key]),
+                    )
                 )
     return packages, dependencies
 
@@ -268,9 +331,13 @@ def _javascript_manifest(
             dependency = str(key).strip().lower()
             if dependency and dependency not in seen:
                 seen.add(dependency)
+                value = table[key]
                 dependencies.append(
                     ManifestDependency(
-                        name=dependency, ecosystem=JAVASCRIPT_ECOSYSTEM, manifest=manifest
+                        name=dependency,
+                        ecosystem=JAVASCRIPT_ECOSYSTEM,
+                        manifest=manifest,
+                        constraint=value.strip() if isinstance(value, str) else "",
                     )
                 )
     return packages, dependencies
@@ -303,11 +370,17 @@ def _go_manifest(
             if line == ")":
                 in_require_block = False
                 continue
-            module_path = line.split()[0]
+            tokens = line.split()
+            module_path = tokens[0]
             if module_path not in seen:
                 seen.add(module_path)
                 dependencies.append(
-                    ManifestDependency(name=module_path, ecosystem=GO_ECOSYSTEM, manifest=manifest)
+                    ManifestDependency(
+                        name=module_path,
+                        ecosystem=GO_ECOSYSTEM,
+                        manifest=manifest,
+                        constraint=tokens[1] if len(tokens) > 1 else "",
+                    )
                 )
             continue
         require_match = _GO_REQUIRE_LINE_RE.match(line)
@@ -315,7 +388,10 @@ def _go_manifest(
             seen.add(require_match.group(1))
             dependencies.append(
                 ManifestDependency(
-                    name=require_match.group(1), ecosystem=GO_ECOSYSTEM, manifest=manifest
+                    name=require_match.group(1),
+                    ecosystem=GO_ECOSYSTEM,
+                    manifest=manifest,
+                    constraint=require_match.group(2),
                 )
             )
     return packages, dependencies

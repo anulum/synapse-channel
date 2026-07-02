@@ -17,6 +17,13 @@ answers the coordination question a single-repository view cannot: *who is
 working right now in a repository mine depends on, or one that depends on
 mine?*
 
+Where two scanned repositories declare version constraints on the same
+package that are **provably** disjoint (per
+:mod:`~synapse_channel.core.version_constraints`), the graph adds a
+``version_conflict`` edge between them — a standing declaration-level fact,
+found before any resolver or CI run trips over it. A constraint the bounded
+model cannot compare never claims a conflict.
+
 The join is advisory evidence, exactly like the in-repository contention
 surfaces: it names the live claims and the manifest lines that connect the
 repositories, and decides nothing.
@@ -36,9 +43,11 @@ from synapse_channel.core.repo_manifests import (
     discover_repositories,
     read_repo_manifest,
 )
+from synapse_channel.core.version_constraints import CONFLICT, compare_constraints
 
 DEPENDENCY_EDGE = "dependency"
 SHARED_OWNER_EDGE = "shared_owner"
+VERSION_CONFLICT_EDGE = "version_conflict"
 
 DEPENDS_ON_RELATION = "depends_on"
 DEPENDENCY_OF_RELATION = "dependency_of"
@@ -75,15 +84,18 @@ class CrossRepoEdge:
     ----------
     source, target : str
         Repository names. A ``dependency`` edge points from the consuming
-        repository to the providing one; a ``shared_owner`` edge is
-        undirected and stored with the pair sorted.
+        repository to the providing one; ``shared_owner`` and
+        ``version_conflict`` edges are undirected and stored with the pair
+        sorted.
     kind : str
-        ``dependency`` or ``shared_owner``.
+        ``dependency``, ``shared_owner``, or ``version_conflict``.
     detail : str
         Human-readable line naming the connecting evidence.
     evidence : dict[str, Any]
-        Machine-readable fields: the dependency name, ecosystem, and
-        manifest for a dependency edge; the shared handles for an owner edge.
+        Machine-readable fields: the dependency name, ecosystem, manifest,
+        and declared constraint for a dependency edge; the shared handles
+        for an owner edge; both sides' constraints and manifests for a
+        version-conflict edge.
     """
 
     source: str
@@ -156,6 +168,58 @@ def scan_repositories(root: Path) -> tuple[RepoManifest, ...]:
     return tuple(read_repo_manifest(path) for path in discover_repositories(root))
 
 
+def _version_conflict_edges(manifests: tuple[RepoManifest, ...]) -> list[CrossRepoEdge]:
+    """Return one edge per repository pair whose constraints provably conflict.
+
+    Every package consumed by two or more scanned repositories — provided by
+    a scanned repository or external — is checked pairwise; an edge appears
+    only for the :data:`~synapse_channel.core.version_constraints.CONFLICT`
+    verdict, so a constraint the bounded model cannot compare stays silent.
+    """
+    consumers: dict[tuple[str, str], list[tuple[str, Any]]] = {}
+    for manifest in manifests:
+        for dependency in manifest.dependencies:
+            consumers.setdefault((dependency.ecosystem, dependency.name), []).append(
+                (manifest.repo, dependency)
+            )
+    edges: list[CrossRepoEdge] = []
+    for (ecosystem, package), declarations in sorted(consumers.items()):
+        for index, left_declaration in enumerate(declarations):
+            for right_declaration in declarations[index + 1 :]:
+                first, second = sorted(
+                    (left_declaration, right_declaration), key=lambda item: item[0]
+                )
+                first_repo, first_dependency = first
+                second_repo, second_dependency = second
+                verdict = compare_constraints(
+                    first_dependency.constraint, second_dependency.constraint, ecosystem
+                )
+                if verdict != CONFLICT:
+                    continue
+                edges.append(
+                    CrossRepoEdge(
+                        source=first_repo,
+                        target=second_repo,
+                        kind=VERSION_CONFLICT_EDGE,
+                        detail=(
+                            f"{first_repo} pins {package} '{first_dependency.constraint}' but "
+                            f"{second_repo} pins '{second_dependency.constraint}' ({ecosystem})"
+                        ),
+                        evidence={
+                            "package": package,
+                            "ecosystem": ecosystem,
+                            "left_repo": first_repo,
+                            "left_constraint": first_dependency.constraint,
+                            "left_manifest": first_dependency.manifest,
+                            "right_repo": second_repo,
+                            "right_constraint": second_dependency.constraint,
+                            "right_manifest": second_dependency.manifest,
+                        },
+                    )
+                )
+    return edges
+
+
 def build_cross_repo_graph(root: Path, manifests: tuple[RepoManifest, ...]) -> CrossRepoGraph:
     """Compose per-repository manifests into the typed dependency graph.
 
@@ -164,6 +228,9 @@ def build_cross_repo_graph(root: Path, manifests: tuple[RepoManifest, ...]) -> C
     name provided by no scanned repository creates no edge (external
     dependencies stay out of the graph). Shared-owner edges connect each
     sorted pair of repositories citing a common CODEOWNERS handle.
+    Version-conflict edges connect each sorted pair of repositories whose
+    declared constraints on the same package — external packages included —
+    are provably disjoint.
     """
     providers: dict[tuple[str, str], str] = {}
     for manifest in manifests:
@@ -189,9 +256,11 @@ def build_cross_repo_graph(root: Path, manifests: tuple[RepoManifest, ...]) -> C
                         "dependency": dependency.name,
                         "ecosystem": dependency.ecosystem,
                         "manifest": dependency.manifest,
+                        "constraint": dependency.constraint,
                     },
                 )
             )
+    edges.extend(_version_conflict_edges(manifests))
 
     owner_index: dict[str, list[str]] = {}
     for manifest in manifests:
@@ -404,8 +473,9 @@ def render_cross_repo_dot(graph: CrossRepoGraph) -> str:
 
     Repositories are boxes (the focus, when set, double-bordered); a
     dependency edge points from the consumer to the provider; a shared-owner
-    edge is dashed and undirected. A repository holding live claims carries
-    the claim count in its label.
+    edge is dashed and undirected; a version-conflict edge is red and
+    undirected. A repository holding live claims carries the claim count in
+    its label.
     """
     claims_by_repo: dict[str, int] = {}
     for claim in graph.claims:
@@ -428,6 +498,8 @@ def render_cross_repo_dot(graph: CrossRepoGraph) -> str:
         attributes = f"label={_dot_quote(edge.kind)}"
         if edge.kind == SHARED_OWNER_EDGE:
             attributes += ", dir=none, style=dashed"
+        elif edge.kind == VERSION_CONFLICT_EDGE:
+            attributes += ", dir=none, color=red"
         lines.append(f"  {_dot_quote(edge.source)} -> {_dot_quote(edge.target)} [{attributes}];")
     lines.append("}")
     return "\n".join(lines)
