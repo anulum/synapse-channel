@@ -24,6 +24,18 @@ All notable changes to this project are documented here.
   takes the local path unchanged, and the misconfiguration diagnosis is
   still logged for the operator.
 
+### Documentation
+- New README "Security posture" section: the loopback-first default and
+  the opt-in, deny-by-default runtime controls (connect and per-message
+  authentication, Ed25519 signature trust, mTLS pins, ACL policy,
+  paranoid mode) alongside the supply-chain gates (two-layer gitleaks,
+  hash-locked CI toolchain, SHA-pinned actions, digest-pinned images,
+  per-push pip-audit, CodeQL, Scorecard). The stale "Known limitations"
+  bullet claiming no signature trust, ACL enforcement, or mTLS trust
+  bundle exists is corrected to what actually remains out of scope: no
+  key exchange or automatic trust distribution, and declared (not
+  cryptographic) per-agent identity.
+
 ## [0.91.0] - 2026-07-02
 
 ### Added
