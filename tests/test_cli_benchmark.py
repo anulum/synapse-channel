@@ -15,6 +15,7 @@ import pytest
 
 from synapse_channel.benchmark.probes import PROBES
 from synapse_channel.benchmark.scorecard import NON_ISOLATED_LABEL
+from synapse_channel.benchmark.trend import SPARK_LEVELS
 from synapse_channel.cli import build_parser, main
 
 
@@ -108,6 +109,7 @@ def test_parser_flags_and_defaults() -> None:
     assert args.compare is None
     assert args.tolerance is None
     assert args.trend is None
+    assert args.ascii is False
 
 
 def test_trend_accumulates_runs_and_renders_the_series(
@@ -125,6 +127,38 @@ def test_trend_accumulates_runs_and_renders_the_series(
     assert "Benchmark trend: 2 stored run(s)" in second_out
     assert "encode-lite messages_per_second: " in second_out
     assert ", 2 runs)" in second_out
+
+
+def test_ascii_without_trend_exits_two(capsys: pytest.CaptureFixture[str]) -> None:
+    code, _, err = _run(["benchmark", "--probe", "encode-lite", "--ascii"], capsys)
+    assert code == 2
+    assert "--ascii requires --trend" in err
+
+
+def test_trend_ascii_renders_a_pure_ascii_trend_block(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "trend.db"
+    argv = [
+        "benchmark",
+        "--probe",
+        "encode-lite",
+        "--iterations",
+        "10",
+        "--trend",
+        str(db),
+        "--ascii",
+    ]
+
+    first_code, first_out, _ = _run(argv, capsys)
+    second_code, second_out, _ = _run(argv, capsys)
+
+    assert (first_code, second_code) == (0, 0)
+    assert "(1 run -- no trend yet)" in first_out
+    assert "Benchmark trend: 2 stored run(s)" in second_out
+    trend_block = second_out.split("Benchmark trend:", 1)[1]
+    assert trend_block.isascii()
+    assert not any(glyph in trend_block for glyph in SPARK_LEVELS)
 
 
 def test_trend_json_carries_the_history(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

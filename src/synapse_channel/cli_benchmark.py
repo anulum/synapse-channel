@@ -18,7 +18,8 @@ refused. With ``--trend STORE.db`` the finished scorecard is appended to a
 local SQLite history and every stored run renders as per-metric sparkline
 trend lines — slow drift no single gate catches stays visible — with host
 or package context changes annotated as explicit breaks rather than
-silently connected.
+silently connected. ``--ascii`` renders those trend lines with printable
+ASCII glyphs for consoles and CI log viewers without UTF-8.
 """
 
 from __future__ import annotations
@@ -63,6 +64,9 @@ def _cmd_benchmark(args: argparse.Namespace) -> int:
     if args.tolerance is not None and args.compare is None:
         print("--tolerance requires --compare", file=sys.stderr)
         return 2
+    if args.ascii and args.trend is None:
+        print("--ascii requires --trend", file=sys.stderr)
+        return 2
     if args.tolerance is not None and args.tolerance <= 0:
         print("tolerance must be positive", file=sys.stderr)
         return 2
@@ -105,7 +109,7 @@ def _cmd_benchmark(args: argparse.Namespace) -> int:
             print(render_comparison_human(comparison))
         if history is not None:
             print()
-            print(render_trend_human(history))
+            print(render_trend_human(history, ascii_glyphs=args.ascii))
     if args.results is not None:
         write_scorecard(Path(args.results), scorecard)
     if comparison is not None and comparison.regressions:
@@ -168,6 +172,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             "Append this run to a local SQLite history and render per-metric sparkline "
             "trends across every stored run; host/package context changes are annotated "
             "as breaks, not silently connected."
+        ),
+    )
+    parser.add_argument(
+        "--ascii",
+        action="store_true",
+        help=(
+            "Render the --trend sparklines with printable ASCII glyphs instead of "
+            "Unicode blocks, for consoles and CI log viewers without UTF-8."
         ),
     )
     parser.add_argument("--list", action="store_true", help="List the available probes and exit.")
