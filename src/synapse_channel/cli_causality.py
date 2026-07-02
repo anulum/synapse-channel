@@ -28,6 +28,11 @@ cross-task ``dependency``/``contention`` edges as span links — and either
 writes the span records as JSON (``--out``, no extra dependency) or pushes
 them to an OTLP/HTTP collector (``--endpoint``, needs the optional ``otel``
 extra). Deterministic ids: re-exporting the same log yields the same spans.
+``--service-name`` overrides the ``service.name`` resource so several hubs
+can share one observability tenant; ``--filter TASK_ID`` (repeatable)
+narrows the projection to named tasks, keeping links into excluded tasks
+and counting the exclusions; an event recording the lifecycle failure
+terminal projects span status ``ERROR``.
 """
 
 from __future__ import annotations
@@ -50,7 +55,11 @@ from synapse_channel.core.causality_federation import (
     render_federated_markdown,
     run_federated_causality,
 )
-from synapse_channel.core.causality_otel import projection_to_json, run_otel_projection
+from synapse_channel.core.causality_otel import (
+    SERVICE_NAME,
+    projection_to_json,
+    run_otel_projection,
+)
 from synapse_channel.core.yield_advice import (
     advice_to_json,
     render_advice_markdown,
@@ -72,8 +81,14 @@ def _cmd_causality(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    if args.direction != OTEL_MODE and (args.out is not None or args.endpoint is not None):
-        print("--out/--endpoint belong to the otel mode", file=sys.stderr)
+    otel_only = (
+        args.out is not None
+        or args.endpoint is not None
+        or args.service_name is not None
+        or args.filter
+    )
+    if args.direction != OTEL_MODE and otel_only:
+        print("--out/--endpoint/--service-name/--filter belong to the otel mode", file=sys.stderr)
         return 2
     if args.direction == CONTENTION_MODE:
         if args.peer:
@@ -118,7 +133,9 @@ def _cmd_otel(args: argparse.Namespace) -> int:
 
     ``--out FILE`` writes the pure span records as JSON (no extra dependency);
     ``--endpoint URL`` pushes real OTLP over HTTP and needs the optional
-    ``otel`` extra. Exactly one of the two is required.
+    ``otel`` extra. Exactly one of the two is required. ``--service-name``
+    overrides the ``service.name`` resource; ``--filter TASK_ID`` (repeatable)
+    projects only the named tasks and refuses a task the log does not record.
     """
     if (args.out is None) == (args.endpoint is None):
         print(
@@ -126,7 +143,12 @@ def _cmd_otel(args: argparse.Namespace) -> int:
         )
         return 2
     try:
-        projection = run_otel_projection(args.db, max_nodes=args.max_nodes)
+        projection = run_otel_projection(
+            args.db,
+            max_nodes=args.max_nodes,
+            service_name=args.service_name if args.service_name is not None else SERVICE_NAME,
+            task_filter=args.filter or None,
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -154,9 +176,14 @@ def _cmd_otel(args: argparse.Namespace) -> int:
         if projection.skipped_events
         else ""
     )
+    filtered = (
+        f", {projection.filtered_out_tasks} task(s) filtered out"
+        if projection.filtered_out_tasks
+        else ""
+    )
     print(
         f"exported {len(projection.spans)} span(s) across {projection.trace_count} "
-        f"trace(s) to {destination}{skipped}"
+        f"trace(s) to {destination}{skipped}{filtered}"
     )
     return 0
 
@@ -269,6 +296,22 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         metavar="URL",
         help="otel mode: push OTLP/HTTP to a collector's full traces URL "
         "(e.g. http://localhost:4318/v1/traces); needs `pip install 'synapse-channel[otel]'`.",
+    )
+    causality.add_argument(
+        "--service-name",
+        default=None,
+        metavar="NAME",
+        help="otel mode: override the service.name resource on the exported spans "
+        f"(default: {SERVICE_NAME}); distinguishes hubs sharing one observability tenant.",
+    )
+    causality.add_argument(
+        "--filter",
+        action="append",
+        default=[],
+        metavar="TASK_ID",
+        help="otel mode: project only this task's trace (repeatable); a task the log "
+        "does not record is refused. Links into excluded tasks are kept and the "
+        "exclusions counted.",
     )
     causality.add_argument(
         "--max-nodes",

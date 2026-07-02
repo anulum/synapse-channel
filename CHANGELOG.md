@@ -13,6 +13,21 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse causality otel` gains three projection controls:
+  `--service-name NAME` overrides the `service.name` resource on the
+  exported spans so several hubs can share one observability tenant;
+  `--filter TASK_ID` (repeatable) projects only the named tasks' traces,
+  refusing a task the log does not record, keeping cross-task links into
+  excluded tasks (the deterministic ids resolve against any export that
+  carried the other task) and counting the exclusions in the summary;
+  and an event recording the task lifecycle's failure terminal
+  (`failed`) — or a task whose final recorded status is it — now
+  projects OpenTelemetry span status `ERROR`, making failed
+  coordination visible in trace viewers. Everything else stays
+  `UNSET`: the log records progress, not success verdicts. The JSON
+  span records carry the new `status` and `filtered_out_tasks` fields.
+
 ### Security
 - The hub federation gate now denies a frame signed with a peered key whose
   live certificate pin fails to resolve to a single peered domain (reason

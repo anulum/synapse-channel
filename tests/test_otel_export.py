@@ -103,6 +103,31 @@ class TestSdkSpans:
         roots = [span for span in spans if span.parent is None]
         assert sorted(span.name for span in roots) == ["B", "C"]
 
+    def test_service_name_override_reaches_the_resource(self) -> None:
+        spans = sdk_spans(build_otel_projection(_events(), service_name="hub-eu"))
+
+        assert all(span.resource.attributes["service.name"] == "hub-eu" for span in spans)
+
+    def test_failure_status_converts_to_error_and_the_rest_stay_unset(self) -> None:
+        from opentelemetry.trace import StatusCode
+
+        events = (
+            *_events(),
+            StoredEvent(
+                seq=4,
+                ts=4.0,
+                kind=EventKind.TASK_UPDATE,
+                payload={"task_id": "C", "owner": "carol", "status": "failed"},
+            ),
+        )
+
+        spans = sdk_spans(build_otel_projection(events))
+
+        by_name = {span.name: span for span in spans}
+        assert by_name["task_update C"].status.status_code is StatusCode.ERROR
+        assert by_name["C"].status.status_code is StatusCode.ERROR
+        assert by_name["claim B"].status.status_code is StatusCode.UNSET
+
 
 class TestPushProjection:
     def test_successful_push_reports_the_span_count(self) -> None:

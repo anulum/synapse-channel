@@ -30,7 +30,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from synapse_channel.core.causality_otel import SERVICE_NAME, OtelProjection, OtelSpanRecord
+from synapse_channel.core.causality_otel import (
+    SPAN_STATUS_ERROR,
+    OtelProjection,
+    OtelSpanRecord,
+)
 
 OTEL_EXTRA_HINT = "OTLP export needs the optional 'otel' extra: pip install 'synapse-channel[otel]'"
 """Install hint raised when the OpenTelemetry SDK is not importable."""
@@ -144,7 +148,7 @@ def sdk_spans(
         ``ReadableSpan`` objects, ids and links preserved from the records.
     """
     otel = _require_otel() if modules is None else modules
-    resource = otel.resources.Resource.create({"service.name": SERVICE_NAME})
+    resource = otel.resources.Resource.create({"service.name": projection.service_name})
     return [_sdk_span(span, otel, resource) for span in projection.spans]
 
 
@@ -162,6 +166,11 @@ def _sdk_span(span: OtelSpanRecord, otel: _OtelModules, resource: Any) -> Any:
         )
         for link in span.links
     ]
+    status = (
+        otel.trace_api.Status(otel.trace_api.StatusCode.ERROR)
+        if span.status == SPAN_STATUS_ERROR
+        else otel.trace_api.Status(otel.trace_api.StatusCode.UNSET)
+    )
     return otel.sdk_trace.ReadableSpan(
         name=span.name,
         context=_span_context(span.trace_id_hex, span.span_id_hex, otel),
@@ -170,6 +179,7 @@ def _sdk_span(span: OtelSpanRecord, otel: _OtelModules, resource: Any) -> Any:
         attributes=dict(span.attributes),
         links=links,
         kind=otel.trace_api.SpanKind.INTERNAL,
+        status=status,
         start_time=span.start_ns,
         end_time=span.end_ns,
     )

@@ -27,6 +27,16 @@ spans and links reflect *recorded* coordination events and relations, timestamps
 are the hub's own event timestamps, and the fold is read-only over the log —
 lifecycle ordering is conveyed by the per-task trace itself, so only the
 cross-task relations (``dependency``, ``contention``) become links.
+
+A span's status is derived from the one failure terminal the enforced task
+lifecycle records (:class:`~synapse_channel.core.lifecycle.TaskStatus.FAILED`):
+an event carrying it — and a task whose final recorded status is it — projects
+span status ``ERROR``; everything else stays ``UNSET``, because the log records
+progress, not success verdicts, and inventing ``OK`` would overstate it. The
+projection can be narrowed to named tasks (``task_filter``); links from a span
+to a task outside the batch are **kept**, never truncated — the ids are
+deterministic, so such a link resolves against any export that carried the
+other task, exactly like any partial OTel export batch.
 """
 
 from __future__ import annotations
@@ -45,6 +55,7 @@ from synapse_channel.core.causality import (
     CausalNode,
     build_causal_graph,
 )
+from synapse_channel.core.lifecycle import TaskStatus
 from synapse_channel.core.persistence import EventStore, StoredEvent
 
 TRACE_ID_HEX_LENGTH = 32
@@ -58,7 +69,13 @@ _ROOT_DOMAIN = b"synapse-channel:otel:root:"
 _EVENT_DOMAIN = b"synapse-channel:otel:event:"
 
 SERVICE_NAME = "synapse-channel"
-"""The OTel ``service.name`` resource attribute stamped on exported spans."""
+"""The default OTel ``service.name`` resource attribute stamped on exported spans."""
+
+SPAN_STATUS_ERROR = "ERROR"
+"""Span status of an event recording the lifecycle's failure terminal."""
+
+SPAN_STATUS_UNSET = "UNSET"
+"""Span status of every other event — the log records progress, not verdicts."""
 
 
 @dataclass(frozen=True)
@@ -106,6 +123,9 @@ class OtelSpanRecord:
         Sorted string attribute pairs (empty values omitted).
     links : tuple[SpanLinkRecord, ...]
         Causal links to the spans of enabling events in other tasks.
+    status : str
+        ``ERROR`` when the event (or, for a root, the task's final recorded
+        status) is the lifecycle failure terminal; ``UNSET`` otherwise.
     """
 
     trace_id_hex: str
@@ -116,6 +136,7 @@ class OtelSpanRecord:
     end_ns: int
     attributes: tuple[tuple[str, str], ...]
     links: tuple[SpanLinkRecord, ...]
+    status: str = SPAN_STATUS_UNSET
 
 
 @dataclass(frozen=True)
@@ -132,11 +153,18 @@ class OtelProjection:
     skipped_events : int
         Coordination events that carried no task id — they belong to no trace
         and are counted rather than silently dropped.
+    service_name : str
+        The ``service.name`` resource value the spans carry.
+    filtered_out_tasks : int
+        Tasks present in the log but excluded by a ``task_filter``; ``0`` when
+        no filter narrowed the projection.
     """
 
     spans: tuple[OtelSpanRecord, ...]
     trace_count: int
     skipped_events: int
+    service_name: str = SERVICE_NAME
+    filtered_out_tasks: int = 0
 
 
 def trace_id_for_task(task_id: str) -> str:
@@ -156,13 +184,29 @@ def span_id_for_root(task_id: str) -> str:
     return digest.hexdigest()[:SPAN_ID_HEX_LENGTH]
 
 
-def build_otel_projection(events: Sequence[StoredEvent]) -> OtelProjection:
+def build_otel_projection(
+    events: Sequence[StoredEvent],
+    *,
+    service_name: str = SERVICE_NAME,
+    task_filter: Sequence[str] | None = None,
+) -> OtelProjection:
     """Project an event log onto OpenTelemetry span records.
 
     Parameters
     ----------
     events : Sequence[StoredEvent]
         Loaded events, in any order.
+    service_name : str, optional
+        The ``service.name`` resource value to stamp on the spans; defaults to
+        :data:`SERVICE_NAME`. Several hubs exporting into one observability
+        tenant distinguish themselves here.
+    task_filter : Sequence[str] or None, optional
+        Project only the named tasks' traces. A named task absent from the log
+        is refused with :class:`ValueError` rather than silently exporting
+        nothing for it. Links pointing at excluded tasks are kept — the ids
+        are deterministic, so they resolve against any export that carried the
+        other task — and the excluded tasks are counted, never silently
+        truncated.
 
     Returns
     -------
@@ -170,6 +214,11 @@ def build_otel_projection(events: Sequence[StoredEvent]) -> OtelProjection:
         One trace per task: a root span covering the task's recorded lifetime,
         a child span per coordination event, and links for the cross-task
         ``dependency``/``contention`` edges.
+
+    Raises
+    ------
+    ValueError
+        If ``task_filter`` names a task the log does not record.
     """
     graph = build_causal_graph(events)
     by_task: dict[str, list[CausalNode]] = defaultdict(list)
@@ -179,18 +228,37 @@ def build_otel_projection(events: Sequence[StoredEvent]) -> OtelProjection:
             by_task[node.task_id].append(node)
         else:
             skipped += 1
+    filtered_out = 0
+    if task_filter is not None:
+        wanted = set(task_filter)
+        missing = sorted(wanted - by_task.keys())
+        if missing:
+            msg = f"task(s) not recorded in the log: {', '.join(missing)}"
+            raise ValueError(msg)
+        filtered_out = len(by_task) - len(wanted)
+        by_task = {task_id: nodes for task_id, nodes in by_task.items() if task_id in wanted}
     links = _links_by_destination(graph)
     spans: list[OtelSpanRecord] = []
     for task_id, nodes in by_task.items():
-        spans.append(_root_span(task_id, nodes))
-        spans.extend(_event_span(task_id, node, links.get(node.seq, ())) for node in nodes)
-    return OtelProjection(spans=tuple(spans), trace_count=len(by_task), skipped_events=skipped)
+        spans.append(_root_span(task_id, nodes, service_name))
+        spans.extend(
+            _event_span(task_id, node, links.get(node.seq, ()), service_name) for node in nodes
+        )
+    return OtelProjection(
+        spans=tuple(spans),
+        trace_count=len(by_task),
+        skipped_events=skipped,
+        service_name=service_name,
+        filtered_out_tasks=filtered_out,
+    )
 
 
 def run_otel_projection(
     db_path: str | Path,
     *,
     max_nodes: int | None = DEFAULT_MAX_GRAPH_NODES,
+    service_name: str = SERVICE_NAME,
+    task_filter: Sequence[str] | None = None,
 ) -> OtelProjection:
     """Build the span projection from an existing SQLite event store.
 
@@ -204,6 +272,11 @@ def run_otel_projection(
         Path to a hub event-store database.
     max_nodes : int or None, optional
         Fail-closed ceiling on coordination events; ``None`` or ``0`` lifts it.
+    service_name : str, optional
+        The ``service.name`` resource value to stamp on the spans.
+    task_filter : Sequence[str] or None, optional
+        Project only the named tasks' traces; a task the log does not record
+        is refused. See :func:`build_otel_projection`.
 
     Returns
     -------
@@ -213,8 +286,9 @@ def run_otel_projection(
     Raises
     ------
     ValueError
-        If the event store does not exist or the log holds more coordination
-        events than ``max_nodes``.
+        If the event store does not exist, the log holds more coordination
+        events than ``max_nodes``, or ``task_filter`` names an unrecorded
+        task.
     """
     path = Path(db_path)
     if not path.exists():
@@ -233,15 +307,16 @@ def run_otel_projection(
                 raise ValueError(msg)
     finally:
         store.close()
-    return build_otel_projection(events)
+    return build_otel_projection(events, service_name=service_name, task_filter=task_filter)
 
 
 def projection_to_json(projection: OtelProjection) -> dict[str, object]:
     """Return a stable JSON-compatible representation of a span projection."""
     return {
-        "service_name": SERVICE_NAME,
+        "service_name": projection.service_name,
         "trace_count": projection.trace_count,
         "skipped_events": projection.skipped_events,
+        "filtered_out_tasks": projection.filtered_out_tasks,
         "spans": [_span_to_json(span) for span in projection.spans],
     }
 
@@ -272,13 +347,13 @@ def _links_by_destination(graph: CausalGraph) -> dict[int, tuple[SpanLinkRecord,
     return {seq: tuple(items) for seq, items in links.items()}
 
 
-def _root_span(task_id: str, nodes: Sequence[CausalNode]) -> OtelSpanRecord:
+def _root_span(task_id: str, nodes: Sequence[CausalNode], service_name: str) -> OtelSpanRecord:
     """Build a task's root span covering its recorded lifetime."""
     attributes = _attributes(
         ("synapse.task_id", task_id),
         ("synapse.events", str(len(nodes))),
         ("synapse.final_status", nodes[-1].status),
-        ("service.name", SERVICE_NAME),
+        ("service.name", service_name),
     )
     return OtelSpanRecord(
         trace_id_hex=trace_id_for_task(task_id),
@@ -289,11 +364,12 @@ def _root_span(task_id: str, nodes: Sequence[CausalNode]) -> OtelSpanRecord:
         end_ns=_nanoseconds(nodes[-1].ts),
         attributes=attributes,
         links=(),
+        status=_span_status(nodes[-1].status),
     )
 
 
 def _event_span(
-    task_id: str, node: CausalNode, links: tuple[SpanLinkRecord, ...]
+    task_id: str, node: CausalNode, links: tuple[SpanLinkRecord, ...], service_name: str
 ) -> OtelSpanRecord:
     """Build one coordination event's point span, carrying its causal links."""
     attributes = _attributes(
@@ -305,7 +381,7 @@ def _event_span(
         ("synapse.worktree", node.worktree),
         ("synapse.paths", ",".join(node.paths)),
         ("synapse.text", node.text),
-        ("service.name", SERVICE_NAME),
+        ("service.name", service_name),
     )
     timestamp = _nanoseconds(node.ts)
     return OtelSpanRecord(
@@ -317,7 +393,19 @@ def _event_span(
         end_ns=timestamp,
         attributes=attributes,
         links=links,
+        status=_span_status(node.status),
     )
+
+
+def _span_status(recorded: str) -> str:
+    """Map a recorded status onto span status — ``ERROR`` only for the failure terminal.
+
+    The enforced lifecycle records exactly one failure state
+    (:attr:`~synapse_channel.core.lifecycle.TaskStatus.FAILED`); anything else —
+    progress, completion, or a status the lifecycle does not know — stays
+    ``UNSET``, because the log records progress, not success verdicts.
+    """
+    return SPAN_STATUS_ERROR if recorded == TaskStatus.FAILED else SPAN_STATUS_UNSET
 
 
 def _attributes(*pairs: tuple[str, str]) -> tuple[tuple[str, str], ...]:
@@ -339,6 +427,7 @@ def _span_to_json(span: OtelSpanRecord) -> dict[str, object]:
         "name": span.name,
         "start_ns": span.start_ns,
         "end_ns": span.end_ns,
+        "status": span.status,
         "attributes": dict(span.attributes),
         "links": [
             {
