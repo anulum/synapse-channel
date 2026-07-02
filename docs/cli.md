@@ -1176,7 +1176,12 @@ declared ranges (the same bounded interval model, so advice and detection
 never disagree) and names which single repository's declaration is the
 **odd one out** — the one whose removal leaves every other consumer a
 common range, rendered so the operator sees what the rest already agree
-on. When no single declaration is the outlier the constraints split into
+on. When a concrete version inside that remainder is already named by one
+of the remaining declarations (an inclusive `==`, `>=`, or `<=` bound),
+the advice says so — a pin lifted from a manifest some consumer already
+wrote, never invented, because the scanner reads manifests, not package
+indexes, and cannot know what an index publishes. When no single
+declaration is the outlier the constraints split into
 mutually disjoint camps, and the advice says so instead of guessing;
 declarations outside the bounded model are listed as unassessed, never
 silently skipped. Advisory text only — nothing rewrites a manifest.
@@ -1191,8 +1196,8 @@ $ synapse cross-repo ~/code --suggest-resolution
 - DIRECTOR-AI declares '>=42,<49' (pyproject.toml)
 - SCPN-PHASE-ORCHESTRATOR declares '>=49,<50' (pyproject.toml)
 ...
-- ODD ONE OUT: DIRECTOR-AI ('>=42,<49') — the other declarations reconcile at >=49, <50
-- ODD ONE OUT: SCPN-PHASE-ORCHESTRATOR ('>=49,<50') — the other declarations reconcile at >=42, <49
+- ODD ONE OUT: DIRECTOR-AI ('>=42,<49') — the other declarations reconcile at >=49, <50; 49 would satisfy them all (a version SCPN-PHASE-ORCHESTRATOR already declares)
+- ODD ONE OUT: SCPN-PHASE-ORCHESTRATOR ('>=49,<50') — the other declarations reconcile at >=42, <49; 42 would satisfy them all (a version DIRECTOR-AI already declares)
 
 ### python scpn-studio-platform
 ...
