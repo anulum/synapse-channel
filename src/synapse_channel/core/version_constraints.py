@@ -138,7 +138,7 @@ def _wildcard_interval(base: tuple[int, ...]) -> VersionInterval:
     return VersionInterval(low=base, high=_bump(base, len(base) - 1), high_inclusive=False)
 
 
-def _intersect(left: VersionInterval, right: VersionInterval) -> VersionInterval:
+def intersect_intervals(left: VersionInterval, right: VersionInterval) -> VersionInterval:
     """Return the tightest interval both ``left`` and ``right`` allow."""
     low, low_inclusive = left.low, left.low_inclusive
     if right.low is not None:
@@ -157,7 +157,7 @@ def _intersect(left: VersionInterval, right: VersionInterval) -> VersionInterval
     )
 
 
-def _is_empty(interval: VersionInterval) -> bool:
+def interval_is_empty(interval: VersionInterval) -> bool:
     """Return whether no version can satisfy ``interval``."""
     if interval.low is None or interval.high is None:
         return False
@@ -169,7 +169,7 @@ def _is_empty(interval: VersionInterval) -> bool:
 
 def _disjoint(left: VersionInterval, right: VersionInterval) -> bool:
     """Return whether ``left`` and ``right`` provably share no version."""
-    if _is_empty(left) or _is_empty(right):
+    if interval_is_empty(left) or interval_is_empty(right):
         return True
     for lower, upper in ((left, right), (right, left)):
         if lower.high is None or upper.low is None:
@@ -233,7 +233,7 @@ def _python_intervals(constraint: str) -> tuple[VersionInterval, ...] | None:
         clause_interval = _python_clause_interval(operator, version_text)
         if clause_interval is None:
             return None
-        interval = _intersect(interval, clause_interval)
+        interval = intersect_intervals(interval, clause_interval)
     return (interval,)
 
 
@@ -280,7 +280,7 @@ def _rust_intervals(constraint: str) -> tuple[VersionInterval, ...] | None:
         clause_interval = _requirement_clause_interval(clause, bare_is_caret=True)
         if clause_interval is None:
             return None
-        interval = _intersect(interval, clause_interval)
+        interval = intersect_intervals(interval, clause_interval)
     return (interval,)
 
 
@@ -313,7 +313,7 @@ def _javascript_group_interval(group: str) -> VersionInterval | None:
                 return None
             clause_interval = clause_interval_or_none
             index += 1
-        interval = _intersect(interval, clause_interval)
+        interval = intersect_intervals(interval, clause_interval)
     return interval
 
 

@@ -100,6 +100,72 @@ def test_unknown_focus_exits_two(tmp_path: Path, capsys: pytest.CaptureFixture[s
     assert "unknown repository: nonesuch" in err
 
 
+def _conflicting_root(tmp_path: Path) -> Path:
+    """Two repositories pin shared-dep to provably disjoint ranges, one reconciles."""
+    root = tmp_path / "conflict-org"
+    root.mkdir()
+    for repo, constraint in (
+        ("alpha", "shared-dep>=4.1,<5"),
+        ("beta", "shared-dep==2.9"),
+        ("gamma", "shared-dep>=4.2,<4.6"),
+    ):
+        directory = root / repo
+        directory.mkdir()
+        (directory / "pyproject.toml").write_text(
+            f'[project]\nname = "{repo}-pkg"\ndependencies = ["{constraint}"]\n',
+            encoding="utf-8",
+        )
+    return root
+
+
+def test_suggest_resolution_names_the_outlier_in_the_human_report(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _conflicting_root(tmp_path)
+
+    code, out, _ = _run(["cross-repo", str(root), "--suggest-resolution"], capsys)
+
+    assert code == 0
+    assert "## Suggested resolutions (1 conflicting package(s))" in out
+    assert "ODD ONE OUT: beta ('==2.9')" in out
+    assert "reconcile at >=4.2, <4.6" in out
+
+
+def test_suggest_resolution_extends_the_json_payload(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _conflicting_root(tmp_path)
+
+    code, out, _ = _run(["cross-repo", str(root), "--suggest-resolution", "--json"], capsys)
+
+    assert code == 0
+    payload = json.loads(out)
+    assert payload["resolutions"][0]["package"] == "shared-dep"
+    assert payload["resolutions"][0]["odd_ones_out"][0]["repo"] == "beta"
+
+
+def test_suggest_resolution_without_conflicts_says_so(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _org(tmp_path)
+
+    code, out, _ = _run(["cross-repo", str(root), "--suggest-resolution"], capsys)
+
+    assert code == 0
+    assert "no provable version conflicts" in out
+
+
+def test_suggest_resolution_refuses_watch_and_dot(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _org(tmp_path)
+
+    for extra in ("--dot", "--watch"):
+        code, _, err = _run(["cross-repo", str(root), "--suggest-resolution", extra], capsys)
+        assert code == 2
+        assert "--suggest-resolution does not combine" in err
+
+
 def test_json_and_dot_are_mutually_exclusive(tmp_path: Path) -> None:
     root = _org(tmp_path)
     with pytest.raises(SystemExit) as excinfo:
