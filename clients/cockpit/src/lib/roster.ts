@@ -33,6 +33,11 @@ export interface RosterEntry {
   readonly paths: readonly string[];
   /** Whether the identity appears in an advisory branch conflict. */
   readonly inConflict: boolean;
+  /**
+   * Whether the hub expected this agent's `-rx` waiter and found it absent —
+   * the agent is reachable-in-name only and will not wake on messages.
+   */
+  readonly wakerMissing: boolean;
 }
 
 function conflictOwners(snapshot: FleetSnapshot): ReadonlySet<string> {
@@ -79,6 +84,7 @@ export function deriveRoster(snapshot: FleetSnapshot | null): RosterEntry[] {
   const live = new Set(snapshot.fleet.agents.live);
   const online = new Set([...snapshot.online_agents, ...live]);
   const inConflict = conflictOwners(snapshot);
+  const missingWaiters = new Set(snapshot.fleet.agents.missing_waiters);
 
   const active = groupByOwner(snapshot.fleet.claims.active_claims);
   const stale = groupByOwner(snapshot.fleet.claims.stale_claims);
@@ -102,6 +108,7 @@ export function deriveRoster(snapshot: FleetSnapshot | null): RosterEntry[] {
       staleClaims,
       paths,
       inConflict: inConflict.has(agent),
+      wakerMissing: missingWaiters.has(`${agent}-rx`),
     });
   }
 

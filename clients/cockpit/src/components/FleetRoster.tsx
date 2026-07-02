@@ -67,6 +67,9 @@ function RosterRow({ entry }: RosterRowProps): JSX.Element {
         ) : (
           <span className="roster-row__count roster-row__count--none">no claims</span>
         )}
+        {entry.wakerMissing && (
+          <span className="roster-row__tag roster-row__tag--warn">waker missing</span>
+        )}
         {!entry.online && <span className="roster-row__tag roster-row__tag--warn">offline</span>}
       </span>
       {held > 0 && (

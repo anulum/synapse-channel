@@ -8,10 +8,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivitySpine } from "./components/ActivitySpine";
+import { ClaimsBoard } from "./components/ClaimsBoard";
 import { FleetRoster } from "./components/FleetRoster";
 import { Hud, type Kpi } from "./components/Hud";
 import { RiskRail } from "./components/RiskRail";
 import { SignalLog } from "./components/SignalLog";
+import { deriveClaims, parseConflicts } from "./lib/claims";
 import { deriveRoster } from "./lib/roster";
 import {
   createSnapshotStore,
@@ -65,6 +67,7 @@ export function App(): JSX.Element {
   const [kpis, setKpis] = useState<readonly Kpi[]>([]);
   const [log, setLog] = useState<readonly CockpitEvent[]>([]);
   const [spineSource, setSpineSource] = useState<TransitionEventSource | undefined>(undefined);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const previous = useRef<Metrics>(ZERO_METRICS);
 
   useEffect(() => {
@@ -81,8 +84,11 @@ export function App(): JSX.Element {
     const unsubscribeSnapshots = store.subscribe(setSnap);
     // Re-evaluate freshness between polls so the beacon flips to `stale` even
     // while the hub is silent, without waiting for the next fetch to return.
+    // The same tick drives the lease countdowns on the claims board.
     const clock = setInterval(() => {
-      setSnap((current) => withFreshness(current, Date.now()));
+      const tick = Date.now();
+      setNowMs(tick);
+      setSnap((current) => withFreshness(current, tick));
     }, 1000);
     return () => {
       unsubscribeEvents();
@@ -106,6 +112,11 @@ export function App(): JSX.Element {
 
   const roster = useMemo(() => deriveRoster(snap.snapshot), [snap.snapshot]);
   const waiters = snap.snapshot?.fleet.agents.waiters.length ?? 0;
+  const claims = useMemo(() => deriveClaims(snap.snapshot, nowMs), [snap.snapshot, nowMs]);
+  const conflicts = useMemo(
+    () => (snap.snapshot === null ? [] : parseConflicts(snap.snapshot)),
+    [snap.snapshot],
+  );
 
   return (
     <div className="shell">
@@ -113,7 +124,10 @@ export function App(): JSX.Element {
       <ActivitySpine source={spineSource} />
       <div className="deck">
         <FleetRoster roster={roster} waiters={waiters} />
-        <SignalLog events={log} />
+        <div className="deck__stack">
+          <ClaimsBoard claims={claims} conflicts={conflicts} connected={snap.snapshot !== null} />
+          <SignalLog events={log} />
+        </div>
         <RiskRail risk={snap.snapshot?.risk ?? null} />
       </div>
     </div>

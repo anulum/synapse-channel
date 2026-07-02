@@ -35,6 +35,22 @@ describe("deriveRoster", () => {
     expect(rows[0]?.paths).toEqual([]);
   });
 
+  it("flags exactly the agent whose -rx waiter the hub reports missing", () => {
+    const snapshot = snapshotOf({
+      online_agents: ["alpha/aster", "beta/briar"],
+      fleet: {
+        agents: {
+          live: ["alpha/aster", "beta/briar"],
+          waiters: ["beta/briar-rx"],
+          missing_waiters: ["alpha/aster-rx"],
+        },
+      },
+    });
+    const byName = new Map(deriveRoster(snapshot).map((row) => [row.agent, row]));
+    expect(byName.get("alpha/aster")?.wakerMissing).toBe(true);
+    expect(byName.get("beta/briar")?.wakerMissing).toBe(false);
+  });
+
   it("classifies holding, stale, and conflict, worst-first", () => {
     const snapshot = snapshotOf({
       online_agents: ["alpha/aster", "beta/briar", "gamma/cedar"],
