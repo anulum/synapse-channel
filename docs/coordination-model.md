@@ -121,7 +121,11 @@ checkout tree: dependency manifests and CODEOWNERS files become edges between
 repositories, and the live claims of the event log join onto the graph so an
 agent can see, before starting a cross-cutting change, whether anyone is
 working in a repository its repository depends on — or one that depends on
-it. Advisory and declaration-level, like every other analysis surface.
+it. Declared version constraints that are provably disjoint — two
+repositories pinning the same package to ranges no version satisfies — are
+flagged as `version_conflict` edges; a constraint the bounded comparison
+cannot model never claims a conflict. Advisory and declaration-level, like
+every other analysis surface.
 
 The planned [policy engine](policy-engine.md) builds on those same release
 receipts and event-log projections. Its first mode is advisory: required tests,

@@ -75,7 +75,7 @@ everything, since they need the whole command table.
 | `synapse git-hook` | Install post-commit/post-merge hooks that auto-release a commit's claims. |
 | `synapse git-release` | Release the claims whose paths a commit or merge just touched. |
 | `synapse conflicts` | Predict cross-branch merge conflicts between overlapping claims; exit non-zero on a hit. |
-| `synapse cross-repo` | Scan a directory of repositories into a dependency graph (manifests/CODEOWNERS as edges) and join live claims onto it; with `--repo`, exit `1` when a connected repository holds a live claim. |
+| `synapse cross-repo` | Scan a directory of repositories into a dependency graph (manifests/CODEOWNERS as edges), flag provably conflicting version pins, and join live claims onto it; with `--repo`, exit `1` when a connected repository holds a live claim. |
 | `synapse verify-release` | Run declared verification commands and write an observed release receipt JSON; `--merkle-db` commits the coordination log's Merkle root into it, `--signing-key` attests it with the hub key. |
 | `synapse policy-check` | Evaluate a release receipt against a policy file; advisory by default, `--enforce` to gate, `--trusted-signing-key` verifies the commitment's hub signature. |
 | `synapse identity` | Inventory and audit declared agent identities for enforcement-rollout blockers. |
@@ -945,9 +945,39 @@ consumer [self] CONS-1@agent-b seq=2 paths=src/thing.py
 The command exits `1` here because `provider` — a repository the focus
 depends on — holds a live claim. `--json` emits the graph as data and
 `--dot` a Graphviz digraph (the focus double-bordered, repositories holding
-live claims labelled with their count, shared-owner edges dashed). Like
-every analysis surface it is declaration-level, advisory evidence: it reads
-manifests and the log, resolves nothing, and decides nothing.
+live claims labelled with their count, shared-owner edges dashed,
+version-conflict edges red). Like every analysis surface it is
+declaration-level, advisory evidence: it reads manifests and the log,
+resolves nothing, and decides nothing.
+
+The graph also flags declared version constraints that can never be
+satisfied together. Every package two or more scanned repositories consume —
+including external packages that create no dependency edge — is checked
+pairwise, and a `version_conflict` edge appears when the constraints are
+*provably* disjoint: no version lies in both declared ranges. When
+`consumer` pins `httpx>=0.27` while `provider` pins `httpx<0.25`:
+
+```text
+$ synapse cross-repo ./org
+Cross-repository dependency graph: declaration-level evidence, advisory only
+root=org repositories=2 edges=3
+
+consumer -[dependency]-> provider: consumer depends on provider-pkg (python) provided by provider
+consumer -[shared_owner]-> provider: consumer and provider share owner(s) @org/platform
+consumer -[version_conflict]-> provider: consumer pins httpx '>=0.27' but provider pins '<0.25' (python)
+```
+
+The comparison is deliberately conservative so a flagged conflict is always
+defensible: it models PEP 440 specifier sets, Cargo requirements, and npm
+semver ranges over plain numeric release versions, and anything outside
+that bounded model — pre-release or epoch segments, direct URL references,
+unrecognised operators — never claims a conflict. PEP 440 exclusions
+(`!=`) are ignored, which can only suppress a claim, never invent one.
+`go.mod` requirements are never compared: a Go requirement is a minimum
+that minimal version selection reconciles, and a different major version is
+a different module path. This stays declaration-level satisfiability — not
+a resolver: no lockfiles, no transitive closure, no knowledge of which
+versions are actually published.
 
 `synapse benchmark` measures the installed package on your machine and
 prints a scorecard. The probes exercise real production surfaces — durable

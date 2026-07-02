@@ -8,11 +8,13 @@
 """CLI wrapper for the cross-repository dependency graph.
 
 ``synapse cross-repo`` scans a directory of repository checkouts into a
-dependency graph (manifests and CODEOWNERS as edges), optionally joins the
-live claims of a hub event log onto it, and prints the result as text, JSON,
-or Graphviz DOT. With ``--repo`` the exit code becomes a coordination
-signal: ``1`` when a live claim exists in a repository connected to the
-focus by a dependency edge.
+dependency graph (manifests and CODEOWNERS as edges), flags repository pairs
+whose declared version constraints on the same package are provably disjoint
+(``version_conflict`` edges), optionally joins the live claims of a hub
+event log onto it, and prints the result as text, JSON, or Graphviz DOT.
+With ``--repo`` the exit code becomes a coordination signal: ``1`` when a
+live claim exists in a repository connected to the focus by a dependency
+edge.
 """
 
 from __future__ import annotations
