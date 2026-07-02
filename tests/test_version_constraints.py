@@ -197,3 +197,51 @@ def test_weaker_bounds_never_loosen_the_intersection() -> None:
 def test_unmodelled_constraint_returns_none() -> None:
     assert constraint_intervals(">=1.0rc1", "python") is None
     assert constraint_intervals("v1.0.0", "go") is None
+
+
+class TestUrlPinDivergence:
+    def test_same_base_different_hex_revisions_conflict(self) -> None:
+        left = "@ git+https://github.com/org/pkg@0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b"
+        right = "@ git+https://github.com/org/pkg@f9e8d7c6b5a4938271605f4e3d2c1b0a99887766"
+        assert compare_constraints(left, right, "python") == CONFLICT
+
+    def test_same_base_identical_revision_overlaps(self) -> None:
+        pin = "@ git+https://github.com/org/pkg@0a1b2c3"
+        assert compare_constraints(pin, pin, "python") == NO_CONFLICT
+
+    def test_different_bases_are_not_comparable(self) -> None:
+        left = "@ git+https://github.com/org/pkg@0a1b2c3"
+        right = "@ git+https://gitlab.com/org/pkg@f9e8d7c"
+        assert compare_constraints(left, right, "python") == NOT_COMPARABLE
+
+    def test_branch_or_tag_revisions_never_support_a_claim(self) -> None:
+        left = "@ git+https://github.com/org/pkg@main"
+        right = "@ git+https://github.com/org/pkg@develop"
+        assert compare_constraints(left, right, "python") == NOT_COMPARABLE
+
+    def test_prefix_revisions_could_be_one_commit(self) -> None:
+        # a short hash and a longer hash it prefixes may name the same commit
+        left = "@ git+https://github.com/org/pkg@0a1b2c3"
+        right = "@ git+https://github.com/org/pkg@0a1b2c3d4e5f"
+        assert compare_constraints(left, right, "python") == NOT_COMPARABLE
+
+    def test_userinfo_at_sign_stays_in_the_base(self) -> None:
+        left = "@ git+ssh://git@github.com/org/pkg@0a1b2c3"
+        right = "@ git+ssh://git@github.com/org/pkg@f9e8d7c"
+        assert compare_constraints(left, right, "python") == CONFLICT
+
+    def test_fragment_is_stripped_before_the_revision_split(self) -> None:
+        left = "@ git+https://github.com/org/pkg@0a1b2c3#egg=pkg"
+        right = "@ git+https://github.com/org/pkg@0a1b2c3#subdirectory=sub"
+        assert compare_constraints(left, right, "python") == NO_CONFLICT
+
+    def test_url_without_a_revision_is_not_comparable(self) -> None:
+        left = "@ https://files.example/pkg-1.0.tar.gz"
+        right = "@ git+https://github.com/org/pkg@0a1b2c3"
+        assert compare_constraints(left, right, "python") == NOT_COMPARABLE
+
+    def test_url_against_a_version_range_is_not_comparable(self) -> None:
+        assert (
+            compare_constraints("@ git+https://github.com/org/pkg@0a1b2c3", ">=1,<2", "python")
+            == NOT_COMPARABLE
+        )
