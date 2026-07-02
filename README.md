@@ -972,6 +972,32 @@ guarantee that work is actually abandoned.
 See [`TEAM_PROTOCOL.md`](TEAM_PROTOCOL.md) for the working agreement and message
 reference.
 
+### Why not just git worktrees?
+
+Worktrees are a good tool and SYNAPSE composes with them rather than competing:
+a claim declares its `worktree`, and agents in different worktrees never contend
+on files. But worktrees alone solve only file *isolation*, and they solve it by
+deferring the collision to merge time. What they do not give you:
+
+- **Work deduplication** — two agents in two worktrees can happily build the
+  same feature twice; a claimed task on the shared board cannot be claimed
+  again while its lease is live.
+- **Real-time conflict refusal** — inside one worktree (the common case for a
+  shared checkout), the hub refuses an overlapping file-scope claim *before*
+  the second agent edits, instead of surfacing the damage as a merge conflict
+  hours later.
+- **Visibility** — presence, live claims, a task board with dependencies, and
+  progress you can query, instead of discovering what each agent did from its
+  branch diff.
+- **Continuity** — leases expire, checkpoints survive crashes, tasks hand off
+  atomically; a worktree left behind by a dead agent is just a stale directory.
+- **A durable record** — an append-only event log of who claimed, did, and
+  released what, replayable after an incident (`synapse causality`,
+  `synapse debug`), which no branch topology records.
+
+If per-agent worktrees already work for you, keep them — and let the hub carry
+the claims, the plan, and the audit trail across them.
+
 ## Library use
 
 ```python
