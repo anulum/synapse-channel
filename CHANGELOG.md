@@ -13,6 +13,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `HubConfig` groups the forty-odd `SynapseHub` keyword parameters into typed,
+  frozen family records — `HubLimits` (every enforced ceiling),
+  `TakeoverDamping`, `HubAuthConfig` (connection, per-message, and ACL
+  enforcement), `HubMetricsConfig`, `MultiHubConfig`, and `FederationConfig` —
+  and `SynapseHub.from_config(config)` builds a hub from the record.
+  Behaviour is identical by construction: every field name and default
+  mirrors its keyword parameter, contract tests pin the flattened record
+  against the live signature so the two surfaces cannot drift, and the flat
+  keyword surface and every CLI flag remain unchanged.
+
 ### Changed
 - `import synapse_channel` now resolves its public names lazily (PEP 562):
   the submodule behind a name is imported on first attribute access, cutting

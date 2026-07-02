@@ -32,7 +32,10 @@ import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from synapse_channel.core.hub_config import HubConfig
 
 import websockets
 from websockets.exceptions import ConnectionClosed
@@ -508,6 +511,23 @@ class SynapseHub:
         )
         # Aliased so existing callers and tests can read the live cache off the hub.
         self._idempotency = self._ledger.idempotency
+
+    @classmethod
+    def from_config(cls, config: HubConfig | None = None) -> SynapseHub:
+        """Construct a hub from a grouped :class:`HubConfig` record.
+
+        Parameters
+        ----------
+        config : HubConfig or None, optional
+            The grouped configuration; ``None`` builds the same hub as a bare
+            ``SynapseHub()``. The record flattens to exactly this class's
+            keyword parameters (pinned by contract tests), so the two
+            construction paths cannot diverge.
+        """
+        from synapse_channel.core.hub_config import HubConfig
+
+        resolved = config if config is not None else HubConfig()
+        return cls(**resolved.to_kwargs())
 
     # -- helpers --------------------------------------------------------------
 

@@ -69,6 +69,15 @@ if TYPE_CHECKING:
         Subkind,
     )
     from synapse_channel.core.hub import SynapseHub
+    from synapse_channel.core.hub_config import (
+        FederationConfig,
+        HubAuthConfig,
+        HubConfig,
+        HubLimits,
+        HubMetricsConfig,
+        MultiHubConfig,
+        TakeoverDamping,
+    )
     from synapse_channel.core.journal import MEMORY_KINDS
     from synapse_channel.core.ledger import Blackboard, LedgerTask, ProgressNote
     from synapse_channel.core.lifecycle import TaskStatus, can_transition
@@ -133,6 +142,13 @@ _EXPORTS: dict[str, str] = {
     "Lifecycle": "synapse_channel.core.finding:Lifecycle",
     "Subkind": "synapse_channel.core.finding:Subkind",
     "SynapseHub": "synapse_channel.core.hub:SynapseHub",
+    "FederationConfig": "synapse_channel.core.hub_config:FederationConfig",
+    "HubAuthConfig": "synapse_channel.core.hub_config:HubAuthConfig",
+    "HubConfig": "synapse_channel.core.hub_config:HubConfig",
+    "HubLimits": "synapse_channel.core.hub_config:HubLimits",
+    "HubMetricsConfig": "synapse_channel.core.hub_config:HubMetricsConfig",
+    "MultiHubConfig": "synapse_channel.core.hub_config:MultiHubConfig",
+    "TakeoverDamping": "synapse_channel.core.hub_config:TakeoverDamping",
     "MEMORY_KINDS": "synapse_channel.core.journal:MEMORY_KINDS",
     "Blackboard": "synapse_channel.core.ledger:Blackboard",
     "LedgerTask": "synapse_channel.core.ledger:LedgerTask",
@@ -192,13 +208,19 @@ __all__ = [
     "Decision",
     "EventStore",
     "EvidenceKind",
+    "FederationConfig",
     "Finding",
     "Freshness",
+    "HubAuthConfig",
+    "HubConfig",
+    "HubLimits",
+    "HubMetricsConfig",
     "Intervention",
     "LedgerTask",
     "Lifecycle",
     "MessageType",
     "Metric",
+    "MultiHubConfig",
     "OpenAIChatClient",
     "ProgressNote",
     "ResourceOffer",
@@ -209,6 +231,7 @@ __all__ = [
     "SupervisorWorker",
     "SynapseAgent",
     "SynapseHub",
+    "TakeoverDamping",
     "SynapseLLMWorker",
     "SynapseState",
     "TaskClaim",
