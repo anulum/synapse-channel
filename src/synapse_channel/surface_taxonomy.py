@@ -100,6 +100,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "health": ANALYSIS,
     "reliability": ANALYSIS,
     "trust-graph": ANALYSIS,
+    "cross-repo": ANALYSIS,
     "conflicts": ANALYSIS,
     "directory": ANALYSIS,
     "manifest": ANALYSIS,

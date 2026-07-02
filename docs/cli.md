@@ -74,6 +74,7 @@ everything, since they need the whole command table.
 | `synapse git-hook` | Install post-commit/post-merge hooks that auto-release a commit's claims. |
 | `synapse git-release` | Release the claims whose paths a commit or merge just touched. |
 | `synapse conflicts` | Predict cross-branch merge conflicts between overlapping claims; exit non-zero on a hit. |
+| `synapse cross-repo` | Scan a directory of repositories into a dependency graph (manifests/CODEOWNERS as edges) and join live claims onto it; with `--repo`, exit `1` when a connected repository holds a live claim. |
 | `synapse verify-release` | Run declared verification commands and write an observed release receipt JSON; `--merkle-db` commits the coordination log's Merkle root into it, `--signing-key` attests it with the hub key. |
 | `synapse policy-check` | Evaluate a release receipt against a policy file; advisory by default, `--enforce` to gate, `--trusted-signing-key` verifies the commitment's hub signature. |
 | `synapse identity` | Inventory and audit declared agent identities for enforcement-rollout blockers. |
@@ -908,6 +909,44 @@ gamma -[stale_claim seq=7]-> HANDOFF-BROKEN: lease expired at 30.000 by as_of 10
 Piping `--dot` into Graphviz (`synapse trust-graph ./synapse.db --dot | dot
 -Tsvg -o trust.svg`) draws the same evidence for a review meeting; every edge
 label keeps the `seq` pointer back to the log.
+
+`synapse cross-repo ~/code` widens coordination from one repository to the
+whole checkout tree. It scans every immediate subdirectory of the root for
+dependency manifests — `pyproject.toml`, `Cargo.toml`, `package.json`,
+`go.mod` — and CODEOWNERS files, and composes them into a graph: a
+`dependency` edge where one repository's manifest names a package another
+scanned repository declares (external dependencies create no edge), and a
+`shared_owner` edge where two repositories cite the same CODEOWNERS handle. A
+manifest that exists but cannot be parsed is reported as a problem, never
+silently skipped (TOML manifests need Python 3.11+ or the `tomli` package).
+With `--db` the live claims of a hub event log join the graph — a claim's
+`worktree` is its repository — and with `--repo` the report focuses on one
+repository and the exit code becomes a coordination signal: `1` when a live
+claim exists in a repository connected to the focus by a dependency edge,
+answering *"is anyone working right now in a repository mine depends on, or
+one that depends on mine?"* before a cross-cutting change starts. Against a
+tree where `consumer` declares a dependency on the package `provider`
+publishes, with live claims in both:
+
+```text
+$ synapse cross-repo ./org --db ./synapse.db --repo consumer
+Cross-repository dependency graph: declaration-level evidence, advisory only
+root=./org repositories=3 edges=2 focus=consumer
+
+consumer -[dependency]-> provider: consumer depends on provider-pkg (python) provided by provider
+consumer -[shared_owner]-> provider: consumer and provider share owner(s) @org/platform
+
+Live claims
+provider [depends_on] PROV-1@agent-a seq=1 paths=src/thing.py
+consumer [self] CONS-1@agent-b seq=2 paths=src/thing.py
+```
+
+The command exits `1` here because `provider` — a repository the focus
+depends on — holds a live claim. `--json` emits the graph as data and
+`--dot` a Graphviz digraph (the focus double-bordered, repositories holding
+live claims labelled with their count, shared-owner edges dashed). Like
+every analysis surface it is declaration-level, advisory evidence: it reads
+manifests and the log, resolves nothing, and decides nothing.
 
 `synapse accounting` records and reports opt-in model cost/token usage. Synapse
 never calls a model provider and collects no telemetry, so token and cost figures
