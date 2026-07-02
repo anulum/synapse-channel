@@ -14,6 +14,17 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `synapse benchmark --trend STORE.db` appends each finished scorecard
+  to a local SQLite history and renders per-metric sparkline trend
+  lines across every stored run — first and latest values, the observed
+  range, and the series shape — so a slow regression no single
+  `--compare` gate trips stays visible. Host or package context changes
+  between consecutive runs (CPU model, governor, version) are annotated
+  as explicit breaks rather than silently connected; unlike
+  `--compare`, a differing CPU model is annotated, not refused, since a
+  history legitimately spans upgrades. The JSON document gains a
+  `trend` object, and the flag composes with `--results` and
+  `--compare`.
 - Version-conflict detection now compares direct-URL requirements in the
   one case the conservative model can honestly claim: two references to
   the same base URL pinned at two hex revisions of which neither

@@ -17,7 +17,7 @@ everything, since they need the whole command table.
 | `synapse commands` | List every subcommand grouped by stability tier — the quickest map of the surface. |
 | `synapse completions` | Print a static tab-completion script for bash, zsh, or fish, generated from the installed CLI. |
 | `synapse demo` | Run a self-contained local coordination demo and print a success marker. |
-| `synapse benchmark` | Benchmark the installed package (event store, relay encoding, live hub round-trips) and print a scorecard with honest host context; `--compare BASELINE.json` gates the run against a saved scorecard, exit `1` on regression. |
+| `synapse benchmark` | Benchmark the installed package (event store, relay encoding, live hub round-trips) and print a scorecard with honest host context; `--compare BASELINE.json` gates the run against a saved scorecard, exit `1` on regression; `--trend STORE.db` accumulates runs and renders per-metric sparkline trends. |
 | `synapse quickstart-coding` | Create a coding-fleet workspace, run the no-collision demo, and print a success marker. |
 | `synapse new coding-fleet` | Scaffold a runnable two-agent coding demo workspace. |
 | `synapse health` | Probe the hub; exit `0` if reachable, `1` if not (wired as a container healthcheck). |
@@ -1235,6 +1235,29 @@ record the baseline on the machine (and load profile) the gate runs on.
 Under `--json` the emitted document gains a `comparison` object beside the
 scorecard; `--compare` composes with `--results`, so a passing run can
 become the next baseline.
+
+Where `--compare` gates one run against one baseline, `--trend STORE.db`
+watches the long arc: the finished scorecard is appended to a local SQLite
+history and every stored run renders as per-metric sparkline trend lines —
+first and latest values, the observed range, and the series shape — so a
+slow regression no single gate trips stays visible. A change of CPU model,
+governor, or package version between consecutive runs is annotated as an
+explicit **context break** rather than silently connected; unlike
+`--compare`, a differing CPU model is annotated, not refused, because a
+history legitimately spans upgrades. The store is a plain SQLite file the
+operator owns. Two real runs on the same workstation:
+
+```text
+$ synapse benchmark --probe encode-lite --trend bench-trend.db
+...
+Benchmark trend: 2 stored run(s)
+encode-lite lite_to_raw_ratio: ▁█ 0.72 → 0.72 (min 0.72, max 0.72, 2 runs)
+encode-lite messages_per_second: ▁█ 31,585.98 → 60,645.33 (min 31,585.98, max 60,645.33, 2 runs)
+```
+
+Under `--json` the document gains a `trend` object with the full stored
+history and its context breaks; `--trend` composes with both `--results`
+and `--compare`.
 
 `synapse accounting` records and reports opt-in model cost/token usage. Synapse
 never calls a model provider and collects no telemetry, so token and cost figures
