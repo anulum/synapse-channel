@@ -14,6 +14,10 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- The deployment guide's exposure section gained a worked reverse-proxy
+  example: a Caddyfile terminating TLS in front of a loopback hub, the
+  client invocation through `wss://`, and the trust-store and per-host-cap
+  considerations — validated end to end against a real proxy.
 - `synapse cross-repo --watch` rescans the checkout tree and rejoins live
   claims every `--interval` seconds (`--count` bounds the refreshes): a
   TTY clears and redraws the report in place, piped output separates
