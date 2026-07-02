@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- `synapse who` and `synapse status` no longer count `-rx` wake-listener sidecars as
+  agents: the roster reads `N agents · M waiters` with the waiters listed apart, so a
+  workstation's agent count matches the terminals actually running instead of every
+  presence socket ever armed.
+- Shell-hook waiters are now leashed to the shell that armed them: `synapse arm` gained
+  `--owner-pid`, the bash/zsh/fish hooks pass their shell pid, and a waiter disarms
+  itself the moment its terminal exits instead of holding a hub connection for days.
+
 ## [0.86.0] - 2026-07-02
 
 ### Fixed

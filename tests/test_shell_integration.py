@@ -44,6 +44,8 @@ def _write_fake_synapse(tmp_path: Path) -> Path:
 def test_render_shell_hook_auto_arms_and_wraps_default_providers() -> None:
     hook = render_shell_hook(shell="bash")
     assert 'synapse arm --name "$identity-rx" --for "$project" --directed-only' in hook
+    # the waiter is leashed to the arming shell so it cannot outlive the terminal
+    assert "--owner-pid $$" in hook
     assert 'synapse worker-session --project "$SYN_PROJECT"' in hook
     assert "SYNAPSE_DEFAULT_PROJECT:-user" in hook
     assert ".synapse/project" in hook
@@ -132,6 +134,8 @@ def test_render_shell_hook_fish_uses_prompt_event() -> None:
     assert "function codex --wraps codex" in hook
     assert 'synapse worker-session --project "$SYN_PROJECT"' in hook
     assert "disown $last_pid" in hook
+    # the waiter is leashed to the arming fish so it cannot outlive the terminal
+    assert "--owner-pid $fish_pid" in hook
 
 
 def test_bash_shell_hook_uses_neutral_project_without_marker(tmp_path: Path) -> None:

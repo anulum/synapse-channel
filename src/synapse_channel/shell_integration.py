@@ -233,7 +233,7 @@ function __synapse_auto_arm --on-event fish_prompt
     end
   end
   nohup synapse arm --name "$identity-rx" --for "$project" --directed-only \
-    >"$logfile" 2>&1 &
+    --owner-pid $fish_pid >"$logfile" 2>&1 &
   echo $last_pid >"$pidfile"
   disown $last_pid 2>/dev/null
 end
@@ -391,7 +391,7 @@ __synapse_auto_arm() {{
     fi
   fi
   nohup synapse arm --name "$identity-rx" --for "$project" --directed-only \
-    >"$logfile" 2>&1 &
+    --owner-pid $$ >"$logfile" 2>&1 &
   printf '%s\n' "$!" >"$pidfile"
 }}
 

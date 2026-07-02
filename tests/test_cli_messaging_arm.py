@@ -137,6 +137,7 @@ def test_cmd_arm_derives_rx_name_for_bare_identity() -> None:
         reconnect_delay=0.0,
         max_wakes=None,
         token=None,
+        owner_pid=None,
     )
     assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=run_once) == 0
     assert captured["name"] == "B-rx"
@@ -160,6 +161,7 @@ def test_cmd_arm_handles_keyboard_interrupt(capsys: pytest.CaptureFixture[str]) 
         reconnect_delay=0.0,
         max_wakes=None,
         token=None,
+        owner_pid=None,
     )
 
     assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=stop) == 0
@@ -185,7 +187,136 @@ def test_cmd_arm_keeps_distinct_connect_name() -> None:
         reconnect_delay=0.0,
         max_wakes=None,
         token=None,
+        owner_pid=None,
     )
     assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=run_once) == 0
     assert captured["name"] == "B-rx"
     assert captured["for_name"] == "B"
+
+
+# --- the owner-pid leash: a waiter must not outlive the terminal it wakes ---
+
+
+async def test_arm_refuses_to_start_for_a_dead_owner(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A waiter armed for an already-gone shell exits before connecting."""
+    code = await cli_arm._arm(
+        uri="ws://unused",
+        name="B-rx",
+        for_name="B",
+        owner_pid=999_999_999,
+        owner_probe=lambda _pid: False,
+    )
+    assert code == 0
+    assert "already gone; not arming" in capsys.readouterr().out
+
+
+async def test_arm_disarms_when_the_owner_dies_mid_wait(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The owner watchdog cancels the armed wait the moment the shell exits.
+
+    This pins the phantom-presence defect: detached (nohup + disown) waiters
+    survived their terminals for days, each holding a live hub socket, until a
+    ~30-terminal workstation reported 200 online identities.
+    """
+    probes = iter([True, False])
+
+    async def wait_forever(**_kwargs: Any) -> int:
+        await asyncio.sleep(3600)
+        return 0
+
+    code = await asyncio.wait_for(
+        cli_arm._arm(
+            uri="ws://unused",
+            name="B-rx",
+            for_name="B",
+            owner_pid=42,
+            owner_probe=lambda _pid: next(probes),
+            owner_check_interval=0.01,
+            wait_runner=wait_forever,
+        ),
+        timeout=5.0,
+    )
+    assert code == 0
+    assert "owner pid 42 exited; disarming" in capsys.readouterr().out
+
+
+async def test_arm_keeps_waking_while_the_owner_lives() -> None:
+    """A live owner never interrupts the wake loop; wakes still count down."""
+    wakes = 0
+
+    async def wake_now(**_kwargs: Any) -> int:
+        nonlocal wakes
+        wakes += 1
+        return 0
+
+    code = await asyncio.wait_for(
+        cli_arm._arm(
+            uri="ws://unused",
+            name="B-rx",
+            for_name="B",
+            max_wakes=3,
+            owner_pid=42,
+            owner_probe=lambda _pid: True,
+            owner_check_interval=30.0,
+            wait_runner=wake_now,
+        ),
+        timeout=5.0,
+    )
+    assert code == 0
+    assert wakes == 3
+
+
+def test_pid_alive_reports_this_process_and_rejects_nonsense() -> None:
+    import os
+
+    assert cli_arm.pid_alive(os.getpid())
+    assert not cli_arm.pid_alive(0)
+    assert not cli_arm.pid_alive(-5)
+
+
+def test_pid_alive_treats_permission_errors_as_alive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pid owned by another user exists even though signalling it is denied."""
+
+    def deny(_pid: int, _sig: int) -> None:
+        raise PermissionError
+
+    monkeypatch.setattr("os.kill", deny)
+    assert cli_arm.pid_alive(1234)
+
+
+def test_pid_alive_reports_a_vanished_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    def vanish(_pid: int, _sig: int) -> None:
+        raise ProcessLookupError
+
+    monkeypatch.setattr("os.kill", vanish)
+    assert not cli_arm.pid_alive(1234)
+
+
+def test_cmd_arm_forwards_the_owner_pid() -> None:
+    captured: dict[str, Any] = {}
+
+    async def arm_once(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 0
+
+    def run_once(coro: Coroutine[Any, Any, int]) -> int:
+        return asyncio.run(coro)
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="B",
+        for_name=None,
+        directed_only=True,
+        wake_jitter=0.0,
+        reconnect_delay=0.0,
+        max_wakes=None,
+        token=None,
+        owner_pid=4321,
+    )
+    assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=run_once) == 0
+    assert captured["owner_pid"] == 4321
