@@ -14,7 +14,12 @@ import pytest
 
 from synapse_channel.core.causality_health import (
     DEFAULT_STALE_AFTER,
+    CausalHealthReport,
+    DanglingDependency,
+    OrphanedClaim,
+    StaleClaim,
     assess_causal_health,
+    health_facts,
     health_to_json,
     render_health_markdown,
     run_causal_health,
@@ -324,3 +329,66 @@ class TestRunFromStore:
 
         assert run_causal_health(db, stale_after=5.0).stale != ()
         assert run_causal_health(db, stale_after=100.0).stale == ()
+
+
+class TestHealthFacts:
+    def _report(
+        self,
+        *,
+        orphaned: tuple[OrphanedClaim, ...] = (),
+        dangling: tuple[DanglingDependency, ...] = (),
+        stale: tuple[StaleClaim, ...] = (),
+    ) -> CausalHealthReport:
+        return CausalHealthReport(
+            orphaned=orphaned,
+            dangling=dangling,
+            stale=stale,
+            tasks_scanned=3,
+            log_end_ts=100.0,
+            stale_after=900.0,
+        )
+
+    def test_each_anomaly_kind_renders_one_identity_fact(self) -> None:
+        report = self._report(
+            orphaned=(OrphanedClaim(task_id="A", owner="alice", seq=4, ts=2.0, age_seconds=50.0),),
+            dangling=(DanglingDependency(task_id="B", depends_on="Z", declared_seq=7),),
+            stale=(StaleClaim(task_id="C", owner="", last_seq=9, last_ts=3.0, age_seconds=97.0),),
+        )
+
+        assert health_facts(report) == frozenset(
+            {
+                "orphaned claim seq=4 task=A owner=alice",
+                "dangling dependency seq=7 task=B depends_on=Z",
+                "stale claim seq=9 task=C",
+            }
+        )
+
+    def test_growing_ages_do_not_change_the_facts(self) -> None:
+        # the log's final timestamp advances every tick; a persisting anomaly
+        # must stay the SAME fact or every tick would report churn
+        young = self._report(
+            orphaned=(OrphanedClaim(task_id="A", owner="alice", seq=4, ts=2.0, age_seconds=50.0),),
+            stale=(
+                StaleClaim(task_id="C", owner="bob", last_seq=9, last_ts=3.0, age_seconds=10.0),
+            ),
+        )
+        aged = self._report(
+            orphaned=(
+                OrphanedClaim(task_id="A", owner="alice", seq=4, ts=2.0, age_seconds=5000.0),
+            ),
+            stale=(
+                StaleClaim(task_id="C", owner="bob", last_seq=9, last_ts=3.0, age_seconds=999.0),
+            ),
+        )
+
+        assert health_facts(young) == health_facts(aged)
+
+    def test_ownerless_anomalies_omit_the_owner_part(self) -> None:
+        report = self._report(
+            orphaned=(OrphanedClaim(task_id="A", owner="", seq=4, ts=2.0, age_seconds=50.0),),
+        )
+
+        assert health_facts(report) == frozenset({"orphaned claim seq=4 task=A"})
+
+    def test_healthy_report_has_no_facts(self) -> None:
+        assert health_facts(self._report()) == frozenset()

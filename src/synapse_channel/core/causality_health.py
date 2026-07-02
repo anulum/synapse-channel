@@ -284,6 +284,35 @@ def run_causal_health(
     return assess_causal_health(events, stale_after=stale_after)
 
 
+def health_facts(report: CausalHealthReport) -> frozenset[str]:
+    """Return each anomaly as one stable identity fact for transition watching.
+
+    A fact names *which* anomaly exists — kind, anchoring sequence, task,
+    and owner — and deliberately omits the ages, which grow every tick as
+    the log's final timestamp advances: a watcher comparing consecutive
+    fact sets must see a persisting anomaly as the same fact, not as one
+    cleared and one new. A stale claim that receives a fresh event and
+    goes silent again anchors to a new sequence, which is a real
+    transition and reads as one.
+    """
+    facts = {
+        f"orphaned claim seq={item.seq} task={item.task_id}"
+        + (f" owner={item.owner}" if item.owner else "")
+        for item in report.orphaned
+    }
+    facts.update(
+        f"dangling dependency seq={item.declared_seq} task={item.task_id} "
+        f"depends_on={item.depends_on}"
+        for item in report.dangling
+    )
+    facts.update(
+        f"stale claim seq={item.last_seq} task={item.task_id}"
+        + (f" owner={item.owner}" if item.owner else "")
+        for item in report.stale
+    )
+    return frozenset(facts)
+
+
 def health_to_json(report: CausalHealthReport) -> dict[str, object]:
     """Return a stable JSON-compatible representation of a health report."""
     return {

@@ -42,7 +42,13 @@ deterministic ids.
 and flags orphaned claims (claimed, then silence), declared dependencies that
 never completed, and unreleased claims silent past ``--stale-after`` seconds —
 ages measured against the log's own final timestamp, never the wall clock.
-Exit ``1`` signals at least one anomaly, mirroring ``contention``.
+Exit ``1`` signals at least one anomaly, mirroring ``contention``. With
+``--watch`` the assessment repeats on a cadence: the first tick prints the
+full report as the baseline and every later tick prints only the anomaly
+transitions (``+ fact`` new, ``- fact`` cleared), so a steady fleet stays
+quiet and the scrollback reads as a timeline; ``--json`` streams one full
+report per tick as NDJSON instead, and a failing tick stops the watch
+fail-visible.
 """
 
 from __future__ import annotations
@@ -70,6 +76,7 @@ from synapse_channel.core.causality_federation import (
 )
 from synapse_channel.core.causality_health import (
     DEFAULT_STALE_AFTER,
+    health_facts,
     health_to_json,
     render_health_markdown,
     run_causal_health,
@@ -108,13 +115,15 @@ def _cmd_causality(args: argparse.Namespace) -> int:
         or args.endpoint is not None
         or args.service_name is not None
         or args.filter
-        or args.watch
     )
     if args.direction != OTEL_MODE and otel_only:
         print(
-            "--out/--endpoint/--service-name/--filter/--watch belong to the otel mode",
+            "--out/--endpoint/--service-name/--filter belong to the otel mode",
             file=sys.stderr,
         )
+        return 2
+    if args.watch and args.direction not in (OTEL_MODE, HEALTH_MODE):
+        print("--watch re-runs the otel or health mode on a cadence", file=sys.stderr)
         return 2
     if args.dot and not args.peer:
         print(
@@ -325,12 +334,21 @@ def _cmd_health(args: argparse.Namespace) -> int:
 
     Exit ``0`` when the log shows no anomaly, ``1`` when at least one claim is
     orphaned or stale or a declared dependency never completed — the exit code
-    doubles as a health signal for scripts, mirroring ``contention``.
+    doubles as a health signal for scripts, mirroring ``contention``. With
+    ``--watch`` the assessment repeats on a cadence via :func:`_watch_health`.
     """
     stale_after = args.stale_after if args.stale_after is not None else DEFAULT_STALE_AFTER
     if stale_after <= 0:
         print("--stale-after must be positive", file=sys.stderr)
         return 2
+    if args.watch:
+        if args.interval <= 0:
+            print("--interval must be positive", file=sys.stderr)
+            return 2
+        try:
+            return _watch_health(args, stale_after=stale_after)
+        except KeyboardInterrupt:
+            return 0
     try:
         report = run_causal_health(args.db, max_nodes=args.max_nodes, stale_after=stale_after)
     except ValueError as exc:
@@ -341,6 +359,63 @@ def _cmd_health(args: argparse.Namespace) -> int:
     else:
         print(render_health_markdown(report))
     return 1 if report.anomaly_count else 0
+
+
+def _watch_health(
+    args: argparse.Namespace,
+    *,
+    stale_after: float,
+    sleeper: Callable[[float], None] | None = None,
+) -> int:
+    """Re-assess the log's lifecycle health on a cadence, reporting transitions.
+
+    Each tick is one full :func:`run_causal_health` pass — the store is
+    reread, so events recorded since the last tick move the assessment. The
+    first tick prints the full report as the baseline; every later tick
+    prints only the transitions, ``+ fact`` for a new anomaly and ``- fact``
+    for a cleared one (:func:`health_facts`), so a steady fleet stays quiet
+    and a scrollback reads as a timeline of what went wrong and what
+    recovered. Under ``--json`` every tick emits the full report as one
+    compact NDJSON line instead. A failing tick stops the watch with exit
+    ``2``, fail-visible like a single run; ``--count`` bounds the ticks and
+    the exit code then reports the LAST tick's anomaly signal (``1`` when
+    anomalies remain, ``0`` when clear).
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        The parsed ``causality health`` arguments.
+    stale_after : float
+        Validated staleness threshold in seconds.
+    sleeper : Callable[[float], None] or None, optional
+        Sleep function between ticks; ``None`` uses :func:`time.sleep`.
+        Injectable for testing.
+    """
+    sleep = time.sleep if sleeper is None else sleeper
+    ticks = 0
+    previous: frozenset[str] | None = None
+    while True:
+        try:
+            report = run_causal_health(args.db, max_nodes=args.max_nodes, stale_after=stale_after)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        facts = health_facts(report)
+        if args.json:
+            print(json.dumps(health_to_json(report), sort_keys=True))
+        elif previous is None:
+            print(render_health_markdown(report))
+        else:
+            for fact in sorted(facts - previous):
+                print(f"+ {fact}")
+            for fact in sorted(previous - facts):
+                print(f"- {fact}")
+        sys.stdout.flush()
+        previous = facts
+        ticks += 1
+        if args.count and ticks >= args.count:
+            return 1 if report.anomaly_count else 0
+        sleep(args.interval)
 
 
 def _cmd_contention(args: argparse.Namespace) -> int:
@@ -439,9 +514,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     causality.add_argument(
         "--watch",
         action="store_true",
-        help="otel mode: re-project and re-export every --interval seconds until "
-        "interrupted (Ctrl-C); deterministic ids make re-exports idempotent "
-        "collector-side.",
+        help="otel/health mode: repeat every --interval seconds until interrupted "
+        "(Ctrl-C). otel re-projects and re-exports (deterministic ids make "
+        "re-exports idempotent collector-side); health prints the first report "
+        "as the baseline and then only '+ fact'/'- fact' anomaly transitions.",
     )
     causality.add_argument(
         "--interval",
