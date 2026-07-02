@@ -39,6 +39,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse ingest` | Stream durable event-store records since a sequence cursor. |
 | `synapse event-query` | Query a hub SQLite event store for temporal task and coordination history. |
 | `synapse multihub` | Observe or follow a peer hub's event log and print its board and claims (see [Multi-hub sync](multi-hub-sync.md)). |
+| `synapse participant` | Probe or drive a Participant Fabric provider: `list` reports each driver's readiness, `ask` runs one turn and prints the answer. |
 | `synapse federation` | Import, list, and revoke out-of-band operator-signed peer-domain bundles (`import`/`list`/`revoke`). |
 | `synapse compact` | Apply event-store retention and optionally write an HTML archive report. |
 | `synapse postmortem` | Build a replayable task postmortem from a hub SQLite event store. |
@@ -981,7 +982,13 @@ synapse encrypt-key check ./synapse.key                        # verify its owne
 Newer, advisory surfaces whose shape may still change before 1.0. `sandbox`
 validates a capability manifest and pre-flights or runs a `.wasm` tool against
 it (running needs the `wasm` extra); `workflow` validates a declarative workflow
-and compiles it into the blackboard tasks the board would execute.
+and compiles it into the blackboard tasks the board would execute; `participant`
+is the operator surface over the Participant Fabric — `list` probes each
+registered provider driver (claude, codex, kimi, ollama, ollama-api, grok)
+without taking a turn, and `ask` runs exactly one turn against one provider and
+prints the answer, or the full typed turn result with `--json`. Grok turns stay
+refused while its stream schema is unverified against a real binary. `--model`
+is required for `ollama` and `ollama-api` (their drivers configure no default).
 
 ```bash
 synapse sandbox validate ./manifest.json                # validate a capability manifest
@@ -990,6 +997,9 @@ synapse sandbox run ./tool.wasm --manifest ./manifest.json --input ./in.json
 synapse workflow validate ./workflow.json               # parse and validate
 synapse workflow compile ./workflow.json --json         # compile into blackboard tasks
 synapse workflow plan ./workflow.json                   # show the tasks and their dependency order
+synapse participant list                                # readiness of every provider driver
+synapse participant ask ollama "summarise this diff" --model llama3   # one turn, print the answer
+synapse participant ask claude "review src/foo.py" --context "be terse" --json
 ```
 
 For a secured hub, pass `--token SECRET` to `worker`, `send`, `listen`, `board`,

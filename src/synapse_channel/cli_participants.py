@@ -1,0 +1,246 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE_CHANNEL — CLI surface over the Participant Fabric providers
+"""``synapse participant`` — probe and drive Participant Fabric providers.
+
+The Participant Fabric presents each provider CLI or API as a uniform
+:class:`~synapse_channel.participants.participant.Participant`; until now it was
+reachable only as a library import. This command group is its operator surface:
+``participant list`` reports every registered provider's readiness snapshot
+(:class:`~synapse_channel.participants.participant.ParticipantHealth`), and
+``participant ask`` runs exactly one
+:class:`~synapse_channel.participants.envelope.TurnRequest` against one provider and
+prints the answer — or the full typed
+:class:`~synapse_channel.participants.envelope.TurnResult` with ``--json``.
+
+Grok is registered but refused for turns while
+:data:`~synapse_channel.participants.grok_stream.GROK_SCHEMA_VERIFIED` is false:
+its stream schema is modelled on documentation, not verified against the real
+CLI, and driving an unverified schema silently would fabricate confidence.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import uuid
+from collections.abc import Callable
+
+from synapse_channel.participants.api_ollama import OllamaApiParticipant
+from synapse_channel.participants.envelope import TurnRequest
+from synapse_channel.participants.grok_stream import GROK_SCHEMA_VERIFIED
+from synapse_channel.participants.headless_claude import HeadlessClaudeParticipant
+from synapse_channel.participants.headless_codex import CodexParticipant
+from synapse_channel.participants.headless_grok import GrokParticipant
+from synapse_channel.participants.headless_kimi import KimiParticipant
+from synapse_channel.participants.headless_ollama import OllamaParticipant
+from synapse_channel.participants.participant import Participant
+
+ParticipantBuilder = Callable[..., Participant]
+
+DEFAULT_ASK_TIMEOUT = 600.0
+
+_MODEL_REQUIRED = frozenset({"ollama", "ollama-api"})
+"""Providers whose driver has no configured default model, so ``--model`` is mandatory."""
+
+PROVIDERS: dict[str, ParticipantBuilder] = {
+    "claude": HeadlessClaudeParticipant,
+    "codex": CodexParticipant,
+    "kimi": KimiParticipant,
+    "ollama": OllamaParticipant,
+    "ollama-api": OllamaApiParticipant,
+    "grok": GrokParticipant,
+}
+"""Registered provider drivers, keyed by the name the operator selects."""
+
+_GROK_REFUSAL = (
+    "grok turns are disabled: the Grok CLI stream schema is documented but not "
+    "verified against a real binary (GROK_SCHEMA_VERIFIED is false), so a turn "
+    "could silently misparse. Use another provider, or verify the schema first."
+)
+
+
+def build_participant(
+    provider: str,
+    *,
+    identity: str,
+    model: str,
+    timeout: float,
+    probe: bool = False,
+) -> Participant:
+    """Construct the named provider's participant.
+
+    Parameters
+    ----------
+    provider : str
+        Key in :data:`PROVIDERS`.
+    identity : str
+        Bus identity the participant reports in its health and results.
+    model : str
+        Model override; required for the providers in :data:`_MODEL_REQUIRED`
+        (their drivers configure no default) unless probing, optional elsewhere.
+    timeout : float
+        Seconds one turn may take.
+    probe : bool, optional
+        A health probe never takes a turn, so it skips the model requirement —
+        binary presence is checkable without knowing which model would run.
+
+    Raises
+    ------
+    ValueError
+        For an unknown provider, or a model-less *turn* request to a provider
+        whose driver has no default model.
+    """
+    builder = PROVIDERS.get(provider)
+    if builder is None:
+        known = ", ".join(sorted(PROVIDERS))
+        msg = f"unknown provider {provider!r}; known providers: {known}"
+        raise ValueError(msg)
+    if not probe and provider in _MODEL_REQUIRED and not model:
+        msg = f"provider {provider!r} has no default model; pass --model"
+        raise ValueError(msg)
+    return builder(identity, model=model, timeout=timeout)
+
+
+def _default_identity(provider: str) -> str:
+    """Return the identity a CLI-driven participant reports by default."""
+    return f"participant/{provider}"
+
+
+def _cmd_list(args: argparse.Namespace) -> int:
+    """Report every registered provider's readiness snapshot.
+
+    Each provider is constructed with a throwaway identity and asked for its
+    :meth:`health` — a probe, never a turn. Grok's line carries the schema
+    caveat so the roster never over-promises. Exit code ``0`` regardless of
+    availability: this is a report, not a gate.
+    """
+    healths = []
+    for provider in sorted(PROVIDERS):
+        participant = build_participant(
+            provider,
+            identity=_default_identity(provider),
+            model=args.model,
+            timeout=DEFAULT_ASK_TIMEOUT,
+            probe=True,
+        )
+        health = participant.health()
+        note = "" if provider != "grok" else " [turns disabled: stream schema unverified]"
+        healths.append((provider, health, note))
+    if args.json:
+        payload = [
+            {
+                "provider": provider,
+                "identity": health.identity,
+                "channel": str(health.channel.value),
+                "available": health.available,
+                "detail": health.detail + note,
+            }
+            for provider, health, note in healths
+        ]
+        print(json.dumps(payload, sort_keys=True))
+        return 0
+    print(f"Participant providers ({len(healths)}):")
+    for provider, health, note in healths:
+        state = "available" if health.available else "unavailable"
+        print(f"  {provider} [{health.channel.value}] {state}: {health.detail}{note}")
+    return 0
+
+
+def _cmd_ask(args: argparse.Namespace) -> int:
+    """Run one turn against one provider and print its outcome.
+
+    The prompt travels as the turn's ``prompt`` and ``--context`` as its
+    system-level framing, exactly as the conversation layers pass them, so a
+    CLI turn behaves like a bus turn. Exit ``0`` for an answer, ``1`` when the
+    provider is unavailable or the turn errored or abstained, ``2`` for a
+    refused configuration (unknown provider, missing required model, grok).
+    """
+    if args.provider == "grok" and not GROK_SCHEMA_VERIFIED:
+        print(_GROK_REFUSAL)
+        return 2
+    identity = args.identity or _default_identity(args.provider)
+    try:
+        participant = build_participant(
+            args.provider,
+            identity=identity,
+            model=args.model,
+            timeout=args.timeout,
+        )
+    except ValueError as exc:
+        print(str(exc))
+        return 2
+    health = participant.health()
+    if not health.available:
+        print(f"{args.provider} is unavailable: {health.detail}")
+        return 1
+    request = TurnRequest(
+        topic_id=args.topic or f"participant-cli-{uuid.uuid4().hex[:8]}",
+        prompt=args.prompt,
+        context=args.context,
+        model=args.model,
+    )
+    result = asyncio.run(participant.take_turn(request))
+    if args.json:
+        print(json.dumps(result, sort_keys=True))
+    elif result["is_error"] or result["abstained"]:
+        verdict = "errored" if result["is_error"] else "abstained"
+        print(f"{args.provider} {verdict}: {result['reason']}")
+    else:
+        print(result["answer"])
+    return 1 if result["is_error"] or result["abstained"] else 0
+
+
+def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register the ``participant`` command group."""
+    parser = subparsers.add_parser(
+        "participant",
+        help="Probe or drive a Participant Fabric provider (claude, codex, kimi, ollama, …).",
+    )
+    group = parser.add_subparsers(dest="participant_command", required=True)
+
+    lister = group.add_parser(
+        "list", help="Report each registered provider's readiness without taking a turn."
+    )
+    lister.add_argument(
+        "--model", default="", help="Model recorded on the probe identities (informational)."
+    )
+    lister.add_argument("--json", action="store_true", help="Emit the report as JSON.")
+    lister.set_defaults(func=_cmd_list)
+
+    ask = group.add_parser("ask", help="Run one turn against one provider and print the answer.")
+    ask.add_argument("provider", help="Provider to drive: " + ", ".join(sorted(PROVIDERS)) + ".")
+    ask.add_argument("prompt", help="The question or instruction for this turn.")
+    ask.add_argument(
+        "--model",
+        default="",
+        help="Model for this turn; required for ollama and ollama-api (no driver default).",
+    )
+    ask.add_argument(
+        "--context",
+        default="",
+        help="System-level framing injected alongside the prompt (never the user prompt).",
+    )
+    ask.add_argument(
+        "--identity",
+        default=None,
+        help="Bus identity stamped on the result; defaults to participant/<provider>.",
+    )
+    ask.add_argument(
+        "--topic",
+        default=None,
+        help="Topic id correlating this turn; defaults to a fresh participant-cli id.",
+    )
+    ask.add_argument(
+        "--timeout",
+        type=float,
+        default=DEFAULT_ASK_TIMEOUT,
+        help="Seconds the turn may take before the driver reports an error result.",
+    )
+    ask.add_argument("--json", action="store_true", help="Print the full TurnResult as JSON.")
+    ask.set_defaults(func=_cmd_ask)

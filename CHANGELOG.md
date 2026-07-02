@@ -13,6 +13,14 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- The Participant Fabric gained its operator surface: `synapse participant list`
+  reports each registered provider driver's readiness (claude, codex, kimi, ollama,
+  ollama-api, grok) without taking a turn, and `synapse participant ask` runs exactly
+  one turn against one provider and prints the answer — or the full typed turn result
+  with `--json`. Grok turns are refused while its stream schema remains unverified
+  against a real binary.
+
 ## [0.87.0] - 2026-07-02
 
 ### Added
