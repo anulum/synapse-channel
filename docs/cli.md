@@ -979,6 +979,14 @@ a different module path. This stays declaration-level satisfiability — not
 a resolver: no lockfiles, no transitive closure, no knowledge of which
 versions are actually published.
 
+Like `status`, the report can stand watch: `--watch` rescans the manifests
+and rejoins the claims every `--interval` seconds (default 2, `--count`
+bounds the refreshes, Ctrl-C stops cleanly). A TTY clears and redraws the
+report in place; piped output appends each report behind a `---` divider,
+and `--json --watch` streams one compact document per refresh (NDJSON).
+The exit code reports the last refresh's `--repo` signal. `--dot` does not
+combine with `--watch`.
+
 `synapse benchmark` measures the installed package on your machine and
 prints a scorecard. The probes exercise real production surfaces — durable
 event-store appends and a full journal replay against a temporary SQLite
