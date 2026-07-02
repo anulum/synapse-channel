@@ -21,6 +21,7 @@ from synapse_channel.core.causality_federation import (
     federated_query,
     federated_to_json,
     parse_hub_ref,
+    render_federated_dot,
     render_federated_markdown,
     run_federated_causality,
 )
@@ -342,3 +343,116 @@ class TestRenderings:
 
         assert "## Direct causes\n- none" in text
         assert "## Transitive\n- none" in text
+
+
+class TestInducedEdges:
+    def test_query_carries_the_induced_subgraph_edges(self) -> None:
+        query = federated_query(_federated_logs(), "causes", HubEventRef("hub-b", 2))
+
+        rendered = {(edge.src.render(), edge.dst.render()) for edge in query.edges}
+        # the cross-hub dependency into the queried claim AND the same-hub
+        # lifecycle chain among its hub-a ancestors — edges `transitive` alone
+        # could never carry
+        assert ("hub-a:4", "hub-b:2") in rendered
+        assert ("hub-a:2", "hub-a:3") in rendered
+
+    def test_induced_edges_exclude_nodes_outside_the_answer(self) -> None:
+        query = federated_query(_federated_logs(), "causes", HubEventRef("hub-b", 2))
+
+        members = {query.ref.render()} | {node.ref.render() for node in query.transitive}
+        for edge in query.edges:
+            assert edge.src.render() in members
+            assert edge.dst.render() in members
+
+    def test_json_carries_the_induced_edges(self) -> None:
+        payload = federated_to_json(
+            federated_query(_federated_logs(), "causes", HubEventRef("hub-b", 2))
+        )
+
+        edges = payload["edges"]
+        assert isinstance(edges, list)
+        assert {"relation", "basis", "src", "dst", "detail"} == set(edges[0])
+
+    def test_absent_reference_has_no_induced_edges(self) -> None:
+        query = federated_query(_federated_logs(), "causes", HubEventRef("hub-a", 999))
+
+        assert query.edges == ()
+
+
+class TestDotRendering:
+    def test_hubs_render_as_clusters_and_the_queried_node_is_marked(self) -> None:
+        query = federated_query(_federated_logs(), "causes", HubEventRef("hub-b", 2))
+
+        dot = render_federated_dot(query)
+
+        assert dot.startswith("digraph federated_causality {")
+        assert 'label="hub-a";' in dot
+        assert 'label="hub-b";' in dot
+        assert "subgraph cluster_0 {" in dot
+        assert "subgraph cluster_1 {" in dot
+        assert '"hub-b:2" [label="hub-b:2\\nclaim A", shape=box, peripheries=2];' in dot
+
+    def test_federation_edges_are_coloured_and_carry_their_basis(self) -> None:
+        query = federated_query(_federated_logs(), "causes", HubEventRef("hub-b", 2))
+
+        dot = render_federated_dot(query)
+
+        assert f'"hub-a:4" -> "hub-b:2" [label="{FEDERATION}:{DEPENDENCY}", color=blue];' in dot
+
+    def test_same_hub_edges_stay_plain(self) -> None:
+        query = federated_query(_federated_logs(), "causes", HubEventRef("hub-b", 2))
+
+        dot = render_federated_dot(query)
+
+        same_hub_line = next(line for line in dot.splitlines() if '"hub-a:2" -> "hub-a:3"' in line)
+        assert same_hub_line == f'  "hub-a:2" -> "hub-a:3" [label="{LIFECYCLE}"];'
+
+    def test_counterfactual_unsupported_nodes_are_dashed(self) -> None:
+        logs = {
+            "hub-a": (
+                _claim(1, 1.0, "B", "alice", paths=("src/x",)),
+                _release(2, 2.0, "B"),
+            ),
+            "hub-b": (_claim(1, 3.0, "D", "dave", paths=("src/x",)),),
+        }
+
+        dot = render_federated_dot(federated_query(logs, "counterfactual", HubEventRef("hub-a", 2)))
+
+        unsupported_line = next(line for line in dot.splitlines() if '"hub-b:1" [' in line)
+        assert "style=dashed" in unsupported_line
+
+    def test_taskless_node_labels_carry_no_task_suffix(self) -> None:
+        # a release recorded without a task id still frees an overlapping
+        # claim; its node renders with kind only
+        logs = {
+            "hub-a": (
+                _claim(1, 1.0, "", "alice", paths=("src/x",)),
+                StoredEvent(seq=2, ts=2.0, kind=EventKind.RELEASE, payload={"task_id": ""}),
+            ),
+            "hub-b": (_claim(1, 3.0, "D", "dave", paths=("src/x",)),),
+        }
+
+        dot = render_federated_dot(federated_query(logs, "causes", HubEventRef("hub-b", 1)))
+
+        assert '"hub-a:2" [label="hub-a:2\\nrelease", shape=box];' in dot
+
+    def test_absent_reference_renders_a_placeholder_digraph(self) -> None:
+        query = federated_query(_federated_logs(), "causes", HubEventRef("hub-a", 999))
+
+        dot = render_federated_dot(query)
+
+        assert '"absent" [label="no such event"];' in dot
+        assert dot.rstrip().endswith("}")
+
+    def test_hub_without_answer_members_renders_no_cluster(self) -> None:
+        # a leaf event on hub-a only: hub-b contributes nothing to the answer,
+        # so no empty cluster is emitted for it
+        logs = {
+            "hub-a": (_claim(1, 1.0, "B", "alice"),),
+            "hub-b": (_claim(1, 2.0, "Z", "zoe"),),
+        }
+
+        dot = render_federated_dot(federated_query(logs, "causes", HubEventRef("hub-a", 1)))
+
+        assert 'label="hub-a";' in dot
+        assert 'label="hub-b";' not in dot

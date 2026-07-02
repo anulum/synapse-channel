@@ -820,7 +820,10 @@ what-if over the inferred graph. With `--peer HUB=PATH` the same queries trace
 causality *across federated hubs*: the logs merge in the deterministic
 multi-hub order, events are addressed as `HUB:SEQ`, and an edge whose endpoints
 two different hubs authored is tagged `federation` — clock-ordered evidence,
-since hubs share no sequence, and observe-only like the multi-hub read side.
+since hubs share no sequence, and observe-only like the multi-hub read side;
+`--dot` renders the federated answer as a Graphviz digraph, one cluster per
+hub with federation edges coloured, so the cross-hub topology is visible at a
+glance.
 `synapse causality otel` projects the graph onto OpenTelemetry spans — one
 trace per task, cross-task dependency/contention edges as span links, ids
 deterministic — written as JSON (`--out`) or pushed as real OTLP over HTTP
@@ -1034,7 +1037,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 392 |
 | Wire message types | 65 |
 | CLI subcommands | 124 |
-| Test functions | 4028 |
+| Test functions | 4042 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 46 |
 | GitHub Actions workflows | 12 |

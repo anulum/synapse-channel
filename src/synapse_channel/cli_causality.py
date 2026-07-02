@@ -20,7 +20,9 @@ multi-hub order and an edge whose endpoints two different hubs authored is
 tagged ``federation`` (:mod:`synapse_channel.core.causality_federation`).
 Events are then addressed as ``HUB:SEQ``; a plain ``SEQ`` means the primary
 DB's hub. Cross-hub precedence is clock-ordered evidence — only as good as the
-hubs' clock agreement — and the query stays read-only and advisory.
+hubs' clock agreement — and the query stays read-only and advisory. ``--dot``
+renders the federated answer as a Graphviz digraph, one cluster per hub with
+federation edges coloured, so the cross-hub topology is visible at a glance.
 
 ``otel`` takes no sequence either: it projects the whole graph onto
 OpenTelemetry spans — one trace per task, one span per coordination event,
@@ -52,6 +54,7 @@ from synapse_channel.core.causality import (
 from synapse_channel.core.causality_federation import (
     federated_to_json,
     parse_hub_ref,
+    render_federated_dot,
     render_federated_markdown,
     run_federated_causality,
 )
@@ -89,6 +92,12 @@ def _cmd_causality(args: argparse.Namespace) -> int:
     )
     if args.direction != OTEL_MODE and otel_only:
         print("--out/--endpoint/--service-name/--filter belong to the otel mode", file=sys.stderr)
+        return 2
+    if args.dot and not args.peer:
+        print(
+            "--dot renders the federated causal graph; it requires --peer HUB=PATH",
+            file=sys.stderr,
+        )
         return 2
     if args.direction == CONTENTION_MODE:
         if args.peer:
@@ -200,6 +209,8 @@ def _cmd_federated(args: argparse.Namespace) -> int:
         return 2
     if args.json:
         print(json.dumps(federated_to_json(query), indent=2, sort_keys=True))
+    elif args.dot:
+        print(render_federated_dot(query))
     else:
         print(render_federated_markdown(query))
     return 0 if query.present else 1
@@ -270,7 +281,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Event sequence to query (HUB:SEQ with --peer); required for "
         "causes/effects/counterfactual.",
     )
-    causality.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    output = causality.add_mutually_exclusive_group()
+    output.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    output.add_argument(
+        "--dot",
+        action="store_true",
+        help="Emit the federated causal neighbourhood as a Graphviz digraph — one "
+        "cluster per hub, federation edges coloured and labelled with their basis; "
+        "requires --peer.",
+    )
     causality.add_argument(
         "--peer",
         action="append",
