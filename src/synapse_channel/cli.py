@@ -180,6 +180,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_causality:add_parsers", ("causality",)),
     ("synapse_channel.cli_merkle:add_parsers", ("merkle",)),
     ("synapse_channel.cli_reliability:add_parsers", ("reliability",)),
+    ("synapse_channel.cli_trust_graph:add_parsers", ("trust-graph",)),
     ("synapse_channel.cli_accounting:add_parsers", ("accounting",)),
     ("synapse_channel.cli_approvals:add_parsers", ("approval",)),
     ("synapse_channel.cli_adaptive_ttl:add_parsers", ("ttl-advice",)),

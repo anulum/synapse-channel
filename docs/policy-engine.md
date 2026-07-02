@@ -94,9 +94,9 @@ adding new protocol fields:
   incident-style review.
 - `synapse reliability` evidence for stale claims, declared failed checks,
   broken handoff candidates, and conflict history.
-- The planned [agent trust graph](agent-trust-graph.md), which can expose
-  reliability signals, release receipts, capability observations, handoff
-  outcomes, and conflict history as policy input without ranking agents.
+- The [agent trust graph](agent-trust-graph.md) (`synapse trust-graph`), which
+  exposes reliability signals, positive release receipts, broken handoff
+  candidates, and conflict history as policy input without ranking agents.
 - Git hooks from `synapse git-init`, including claim checks before commit and
   release checks before merge or push.
 - Repository-local files such as `CODEOWNERS`, generated-artifact maps, test
