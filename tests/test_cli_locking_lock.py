@@ -9,11 +9,15 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+import logging
+from typing import Any, cast
 
 import pytest
 
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_locking
+from synapse_channel.cli_locking import AgentFactory
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.protocol import MessageType
 
@@ -191,3 +195,107 @@ def test_cmd_lock_dispatches_real_command(capsys: pytest.CaptureFixture[str]) ->
     )
     assert cli_locking._cmd_lock(ns) == 1
     assert "Could not reach hub" in capsys.readouterr().out
+
+
+# --- scripted-agent paths a live hub cannot exercise deterministically ---
+
+
+class _ScriptedLockAgent:
+    """Feeds a scripted claim verdict per ``claim()`` call, without a hub."""
+
+    def __init__(
+        self,
+        name: str,
+        callback: Any,
+        **_kwargs: Any,
+    ) -> None:
+        self.name = name
+        self.callback = callback
+        self.running = True
+        self.last_close_code: int | None = None
+        self.last_close_reason = ""
+        self.claim_calls = 0
+        self.release_error: Exception | None = None
+
+    async def connect(self) -> None:
+        await asyncio.sleep(3600)
+
+    async def wait_until_ready(self, timeout: float) -> bool:
+        del timeout
+        return True
+
+    async def claim(self, task_id: str, **_kwargs: Any) -> None:
+        self.claim_calls += 1
+        if self.claim_calls == 1:
+            # foreign frames the collector must ignore before the real verdict
+            await self.callback({"type": MessageType.CLAIM_GRANTED, "task_id": "other"})
+            await self.callback(
+                {"type": MessageType.CLAIM_GRANTED, "task_id": task_id, "owner": "someone-else"}
+            )
+            await self.callback(
+                {"type": MessageType.CLAIM_DENIED, "task_id": task_id, "payload": "held"}
+            )
+            return
+        await self.callback(
+            {"type": MessageType.CLAIM_GRANTED, "task_id": task_id, "owner": self.name}
+        )
+
+    async def release(self, task_id: str, **_kwargs: Any) -> None:
+        del task_id
+        if self.release_error is not None:
+            raise self.release_error
+
+
+async def test_lock_retries_after_a_denial_and_wins_the_second_round() -> None:
+    """A denied first claim sleeps the retry interval and re-claims — and a
+    grant for another task or another owner never counts as ours."""
+    ran: list[list[str]] = []
+
+    async def runner(command: list[str]) -> int:
+        ran.append(command)
+        return 0
+
+    code = await cli_locking._lock(
+        uri="ws://unused",
+        name="X",
+        task_id="g",
+        command=["c"],
+        paths=[],
+        wait_timeout=30.0,
+        retry_interval=0.01,
+        poll_interval=0.001,
+        agent_factory=cast("AgentFactory", _ScriptedLockAgent),
+        runner=runner,
+    )
+    assert code == 0
+    assert ran == [["c"]]
+
+
+async def test_lock_logs_a_teardown_release_failure_at_debug(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A release that fails on teardown leaves a debug trace, never masks the result."""
+
+    class _GrantThenFailRelease(_ScriptedLockAgent):
+        def __init__(self, name: str, callback: Any, **kwargs: Any) -> None:
+            super().__init__(name, callback, **kwargs)
+            self.claim_calls = 1  # grant immediately on the first claim
+            self.release_error = RuntimeError("release refused during teardown")
+
+    async def runner(_command: list[str]) -> int:
+        return 0
+
+    with caplog.at_level(logging.DEBUG, logger="synapse.lock"):
+        code = await cli_locking._lock(
+            uri="ws://unused",
+            name="X",
+            task_id="g",
+            command=["c"],
+            paths=[],
+            wait_timeout=1.0,
+            poll_interval=0.001,
+            agent_factory=cast("AgentFactory", _GrantThenFailRelease),
+            runner=runner,
+        )
+    assert code == 0
+    assert "best-effort release of 'g' failed on teardown" in caplog.text

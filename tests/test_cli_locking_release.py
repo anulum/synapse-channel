@@ -9,13 +9,16 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
 from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_locking
+from synapse_channel.cli_locking import AgentFactory
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.protocol import MessageType
 
@@ -352,3 +355,74 @@ async def test_release_rejects_a_malformed_receipt_file(
     )
     assert code == 1
     assert "invalid release receipt for 'T1'" in capsys.readouterr().out
+
+
+# --- scripted-agent paths a live hub cannot exercise deterministically ---
+
+
+class _ScriptedReleaseAgent:
+    """Replays crafted release verdicts through the collector, without a hub."""
+
+    frames: tuple[dict[str, Any], ...] = ()
+
+    def __init__(self, name: str, callback: Any, **_kwargs: Any) -> None:
+        self.name = name
+        self.callback = callback
+        self.running = True
+        self.last_close_code: int | None = None
+        self.last_close_reason = ""
+
+    async def connect(self) -> None:
+        await asyncio.sleep(3600)
+
+    async def wait_until_ready(self, timeout: float) -> bool:
+        del timeout
+        return True
+
+    async def release(self, task_id: str, **_kwargs: Any) -> None:
+        del task_id
+        for frame in self.frames:
+            await self.callback(frame)
+
+
+async def test_release_receipt_json_falls_back_when_the_hub_echoes_none(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A grant without a receipt still prints valid receipt JSON — and grants
+    for another task or another owner never count as ours."""
+
+    class _GrantWithoutReceipt(_ScriptedReleaseAgent):
+        frames = (
+            {"type": MessageType.RELEASE_GRANTED, "task_id": "other", "owner": "X"},
+            {"type": MessageType.RELEASE_GRANTED, "task_id": "g", "owner": "someone-else"},
+            {"type": MessageType.RELEASE_GRANTED, "task_id": "g", "owner": "X", "receipt": "no"},
+        )
+
+    code = await cli_locking._release(
+        uri="ws://unused",
+        name="X",
+        task_id="g",
+        receipt_json=True,
+        agent_factory=cast("AgentFactory", _GrantWithoutReceipt),
+        poll_interval=0.001,
+    )
+    assert code == 0
+    receipt = json.loads(capsys.readouterr().out)
+    assert receipt["task_id"] == "g"
+    assert receipt["owner"] == "X"
+
+
+async def test_release_with_no_verdict_explains_the_silent_outcome(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A hub that never answers the release yields the silent-outcome guidance."""
+    code = await cli_locking._release(
+        uri="ws://unused",
+        name="X",
+        task_id="g",
+        agent_factory=cast("AgentFactory", _ScriptedReleaseAgent),
+        attempts=2,
+        poll_interval=0.001,
+    )
+    assert code == 1
+    assert "release refused for 'g': no response from hub" in capsys.readouterr().out

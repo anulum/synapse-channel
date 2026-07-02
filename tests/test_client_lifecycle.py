@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import errno
 import json
+from collections.abc import Coroutine
 from typing import Any
 
 import pytest
@@ -331,3 +332,46 @@ def _closing(runner: object) -> object:
 
 async def _noop_handler(_data: object) -> None:
     return None
+
+
+def test_is_connection_refused_reads_a_manually_set_errno() -> None:
+    """A bare OSError with the refusal errno set after construction still counts.
+
+    Constructing ``OSError(ECONNREFUSED, …)`` promotes to ConnectionRefusedError,
+    so the errno attribute branch is reachable only through an instance whose
+    errno was assigned separately (as wrapped transport errors do).
+    """
+    from synapse_channel.client.agent_lifecycle import _is_connection_refused
+
+    exc = OSError("wrapped transport failure")
+    exc.errno = errno.ECONNREFUSED
+    assert _is_connection_refused(exc) is True
+
+
+async def test_quiet_agent_swallows_a_non_refusal_os_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """verbose=False silences the connection-lost line for a non-refusal OSError."""
+
+    def unreachable(*_args: object, **_kwargs: object) -> object:
+        raise OSError(errno.EHOSTUNREACH, "No route to host")
+
+    monkeypatch.setattr("synapse_channel.client.agent_lifecycle.connect", unreachable)
+    agent = SynapseAgent("LONELY", _noop_handler, uri="ws://10.255.255.1:9", verbose=False)
+    await agent.connect()
+    assert capsys.readouterr().out == ""
+
+
+def test_start_quiet_keyboard_interrupt(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """verbose=False keeps the Ctrl-C shutdown note silent."""
+    agent = SynapseAgent("LONELY", _noop_handler, verbose=False)
+
+    def interrupt(coro: Coroutine[Any, Any, None]) -> None:
+        coro.close()
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("asyncio.run", interrupt)
+    agent.start()
+    assert capsys.readouterr().out == ""

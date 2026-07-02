@@ -401,3 +401,20 @@ def test_wait_and_wake_propagates_a_failed_injection(tmp_path: Path) -> None:
     result = wait_and_wake(config, runner=runner, max_wakes=2, sleeper=RecordingSleeper())
 
     assert result == 3
+
+
+def test_status_with_an_empty_display_message_reports_no_pane_command(tmp_path: Path) -> None:
+    """A session whose display-message returns nothing leaves the pane fields unset."""
+    config = _config(tmp_path)
+    runner = RecordingRunner(
+        [
+            _result(["tmux", "has-session"], 0),
+            _result(["tmux", "display-message"], 0, ""),
+        ]
+    )
+
+    result = status(config, runner=runner)
+
+    assert result.session_exists is True
+    assert result.pane_command is None
+    assert result.agent_active is False

@@ -359,3 +359,28 @@ def test_float_or_none_rejects_unparsable_text() -> None:
     assert _float_or_none("not-a-number") is None
     assert _float_or_none(None) is None
     assert _float_or_none("2.5") == 2.5
+
+
+def test_unmet_dependencies_skips_terminal_dependencies() -> None:
+    """A dependency already done or cancelled never blocks its dependant."""
+    from synapse_channel.dashboard_fleet import _unmet_dependencies
+
+    by_id = {
+        "closed": {"task_id": "closed", "status": "done"},
+        "open": {"task_id": "open", "status": "in_progress"},
+    }
+    task = {"task_id": "T", "depends_on": ["closed", "open"]}
+    assert _unmet_dependencies(task, by_id) == ["open"]
+
+
+def test_a2a_summary_counts_a_task_without_an_id(tmp_path: Path) -> None:
+    """A persisted task lacking an id is counted by state but polls no push configs."""
+    from synapse_channel.dashboard_fleet import _a2a_summary
+
+    path = tmp_path / "a2a-state.json"
+    store = A2ATaskStore(path)
+    store.put({"id": "", "status": {"state": "TASK_STATE_WORKING"}, "metadata": {"createdAt": 1.0}})
+    summary = _a2a_summary(path)
+    assert summary.source == "loaded"
+    assert summary.total == 1
+    assert summary.push_configs == 0

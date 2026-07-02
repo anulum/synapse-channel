@@ -11,12 +11,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 from collections.abc import Coroutine
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli_messaging
+from synapse_channel.cli_messaging_types import AgentFactory
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
 
@@ -172,3 +173,34 @@ def test_render_chat_payload_round_trips_and_reports_a_wrong_key() -> None:
     assert _render_chat_payload(data, key) == "secret text"
     wrong = _render_chat_payload(data, b"x" * 32)
     assert wrong.startswith("<encrypted payload:")
+
+
+async def test_listen_max_reached_with_no_open_connection(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Hitting the message cap with the socket already gone skips the close call."""
+
+    class _NoSocketAgent:
+        def __init__(self, name: str, callback: Any, **_kwargs: Any) -> None:
+            self.name = name
+            self.callback = callback
+            self.running = True
+            self.connection = None
+            self.last_close_code: int | None = None
+            self.last_close_reason = ""
+
+        async def connect(self) -> None:
+            await self.callback({"type": "chat", "sender": "A", "payload": "hi", "target": "all"})
+
+        async def wait_until_ready(self, timeout: float) -> bool:
+            del timeout
+            return True
+
+    code = await cli_messaging._listen(
+        uri="ws://unused",
+        name="L",
+        max_messages=1,
+        agent_factory=cast("AgentFactory", _NoSocketAgent),
+    )
+    assert code == 0
+    assert "A: hi" in capsys.readouterr().out

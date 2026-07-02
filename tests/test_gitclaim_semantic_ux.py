@@ -9,15 +9,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from hub_e2e_helpers import running_hub
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.git.gitclaim import run_git_claim
+from synapse_channel.git.gitclaim import AgentFactory, run_git_claim
 
 
 def _write(path: Path, text: str = "") -> None:
@@ -153,3 +155,76 @@ def test_write_semantic_evidence_resolves_a_relative_destination(tmp_path: Path)
     written = tmp_path / "sub" / "evidence.json"
     assert written.exists()
     assert written.read_text(encoding="utf-8").strip() in ("[]", "{}")
+
+
+async def test_run_git_claim_resolves_selectors_without_evidence_output(
+    tmp_path: Path,
+) -> None:
+    """Selectors resolve into claim paths even when no evidence file is requested."""
+    _build_semantic_repo(tmp_path)
+
+    async with running_hub(SynapseHub()) as (hub, uri):
+        rc = await run_git_claim(
+            uri=uri,
+            name="me",
+            task_id="SEMANTIC",
+            paths=[],
+            semantic_selectors=("symbol:synapse_channel.core.receipts.build_release_receipt",),
+            semantic_evidence_json=None,
+            runner=_branch_then_repo("feature/semantic", tmp_path),
+        )
+
+    assert rc == 0
+    assert "src/synapse_channel/core/receipts.py" in hub.state.claims["SEMANTIC"].paths
+    assert not (tmp_path / "semantic-evidence.json").exists()
+
+
+class _ScriptedClaimAgent:
+    """Feeds crafted claim verdicts to run_git_claim without a hub."""
+
+    frames: tuple[dict[str, object], ...] = ()
+
+    def __init__(self, name: str, callback: object, **_kwargs: object) -> None:
+        self.name = name
+        self.callback = callback
+        self.running = True
+        self.last_close_code: int | None = None
+        self.last_close_reason = ""
+
+    async def connect(self) -> None:
+        await asyncio.sleep(3600)
+
+    async def wait_until_ready(self, timeout: float) -> bool:
+        del timeout
+        return True
+
+    async def claim(self, task_id: str, **_kwargs: object) -> None:
+        del task_id
+        for frame in self.frames:
+            await self.callback(frame)  # type: ignore[operator]
+
+
+async def test_run_git_claim_ignores_foreign_grants_and_explains_silence(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A grant for another owner never counts as ours; with no verdict at all the
+    silent-outcome guidance is printed instead of a bare denial."""
+
+    class _ForeignGrantOnly(_ScriptedClaimAgent):
+        frames = (
+            {"type": "claim_granted", "task_id": "T", "owner": "someone-else"},
+            {"type": "claim_granted", "task_id": "other", "owner": "me"},
+        )
+
+    rc = await run_git_claim(
+        uri="ws://unused",
+        name="me",
+        task_id="T",
+        paths=["src"],
+        runner=_branch_then_repo("feature/x", tmp_path),
+        agent_factory=cast("AgentFactory", _ForeignGrantOnly),
+        attempts=2,
+        poll_interval=0.001,
+    )
+    assert rc == 1
+    assert "claim denied for 'T': no response from hub" in capsys.readouterr().out
