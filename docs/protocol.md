@@ -31,9 +31,9 @@ keeps `ledger_task`, `ledger_progress`, and `board_request` as ordinary local
 messages while defining future redacted or noisy projections for shared reports.
 It is not implemented yet and does not anonymize raw event logs.
 
-The planned [agent trust graph design](agent-trust-graph.md) keeps the wire
-protocol unchanged. It would read existing event-log records and release
-receipts as graph evidence for routing review; it is not implemented yet and
+The [agent trust graph](agent-trust-graph.md) (`synapse trust-graph`) keeps
+the wire protocol unchanged. It reads existing event-log records and release
+receipts as graph evidence for routing review, entirely on the read side; it
 does not add agent grades to protocol envelopes.
 
 ## Agent → hub

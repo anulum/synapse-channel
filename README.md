@@ -849,11 +849,14 @@ gate). It is advisory evidence and an audit trail, not a hard runtime gate; an
 approved subject can be cited in a release receipt via `synapse release
 --approval`.
 
-The planned [agent trust graph](docs/agent-trust-graph.md) profile connects
-those reliability signals, release receipts, capability observations, handoff
-outcomes, and conflict history into an inspectable evidence graph for routing
-review. It is not implemented yet and does not rank agents, assign trust grades,
-authorize execution, replace code review, or replace identity and ACL.
+The [agent trust graph](docs/agent-trust-graph.md) connects those reliability
+signals, positive release receipts, handoff outcomes, and conflict history
+into an inspectable evidence graph: `synapse trust-graph ./synapse.db` prints
+typed evidence edges with event-log provenance, filtered by `--agent`,
+`--task`, or a `--since` decay window, as text, JSON, or Graphviz DOT. It does
+not rank agents, assign trust grades, authorize execution, replace code
+review, or replace identity and ACL; the routing integration and the
+owner-annotation workflow remain design targets.
 
 The planned [federated trust model](docs/federated-trust-model.md) profile
 designs how independent operator-managed domains could peer — out-of-band,
@@ -1014,11 +1017,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.88.0 |
 | Public API exports | 70 |
-| Package modules | 266 |
-| Classes | 365 |
+| Package modules | 268 |
+| Classes | 368 |
 | Wire message types | 65 |
-| CLI subcommands | 121 |
-| Test functions | 3778 |
+| CLI subcommands | 122 |
+| Test functions | 3801 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 46 |
 | GitHub Actions workflows | 12 |

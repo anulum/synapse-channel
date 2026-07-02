@@ -54,6 +54,7 @@ everything, since they need the whole command table.
 | `synapse causality` | Trace coordination causes, effects, or counterfactuals over the event log; `contention` weighs overlapping live claims and advises who yields. |
 | `synapse merkle` | Commit the event log to a Merkle root, prove event inclusion, and generate the receipt-signing keypair (`keygen`). |
 | `synapse reliability` | Build evidence-only reliability memory from a hub SQLite event store. |
+| `synapse trust-graph` | Query the evidence trust graph (receipts, stale claims, conflicts) as text, JSON, or Graphviz DOT. |
 | `synapse accounting` | Record and report opt-in model cost/token usage from a hub SQLite event store. |
 | `synapse approval` | Request, decide, and replay human-in-the-loop approval gates from a hub SQLite event store. |
 | `synapse ttl-advice` | Build read-only lease TTL advice from a hub SQLite event store. |
@@ -875,6 +876,38 @@ the same event store. It counts stale claims, declared failed-check evidence,
 broken handoff candidates, and reconstructed conflict pairs per owner. The
 output is audit signals, not scores: it does not rank agents, assign trust
 grades, or prove intent.
+
+`synapse trust-graph ./synapse.db` projects the same evidence as a queryable
+graph: typed edges between agent and task nodes — `positive_receipt` (from
+positive release receipts tied to a prior board task), `stale_claim`,
+`declared_failed_check`, `broken_handoff_candidate`, and one agent-to-agent
+`conflict_pair` edge per reconstructed conflict — each carrying the event-log
+sequence, timestamp, and evidence fields that created it. Focus a review with
+`--agent NAME`, `--task ID`, or `--since TS` (the decay window: evidence older
+than the timestamp drops out of the view without being deleted from the log),
+and choose the projection with `--json` or `--dot` (Graphviz; agents are
+ellipses, tasks boxes, conflicts dashed undirected edges). Like `reliability`,
+it is evidence with provenance, not scores. Against a store holding one
+positive receipt, one degraded receipt, a stale claim, an overlapping claim
+pair, and an expired handoff:
+
+```text
+$ synapse trust-graph ./synapse.db
+Trust graph: evidence with event-log provenance, not scores; authorship is as recorded in the local log and is not cryptographically verified here
+generated_from_seq=7 as_of=100.000
+nodes=8 edges=6
+
+alpha -[positive_receipt seq=2]-> ROUTING: release receipt: evidence=pytest tests/test_routing.py -q
+alpha -[declared_failed_check seq=3]-> ROUTING: release receipt: known_failures=mypy failed; epistemic_status=degraded
+beta -[stale_claim seq=4]-> STALE: lease expired at 20.000 by as_of 100.000
+alpha -[conflict_pair seq=6]-> beta: OVERLAP-A@alpha overlaps OVERLAP-B@beta
+gamma -[broken_handoff_candidate seq=7]-> HANDOFF-BROKEN: handoff recipient had no later task update/checkpoint/release before lease expiry 30.000
+gamma -[stale_claim seq=7]-> HANDOFF-BROKEN: lease expired at 30.000 by as_of 100.000
+```
+
+Piping `--dot` into Graphviz (`synapse trust-graph ./synapse.db --dot | dot
+-Tsvg -o trust.svg`) draws the same evidence for a review meeting; every edge
+label keeps the `seq` pointer back to the log.
 
 `synapse accounting` records and reports opt-in model cost/token usage. Synapse
 never calls a model provider and collects no telemetry, so token and cost figures

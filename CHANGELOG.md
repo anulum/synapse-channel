@@ -14,6 +14,15 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `synapse trust-graph` queries the durable event log as an evidence graph,
+  realising the agent-trust-graph design's read-only projection: typed edges
+  between agent and task nodes — positive release receipts, stale claims,
+  declared failed checks, broken handoff candidates, and one agent-to-agent
+  edge per reconstructed conflict pair — each carrying the event-log sequence,
+  timestamp, and evidence fields that created it. `--agent`, `--task`, and
+  `--since` (a decay window) focus a review; `--json` emits the graph as data
+  and `--dot` as a Graphviz digraph. Evidence with provenance, not scores: no
+  ranking, no grades, no authorisation.
 - `HubConfig` groups the forty-odd `SynapseHub` keyword parameters into typed,
   frozen family records — `HubLimits` (every enforced ceiling),
   `TakeoverDamping`, `HubAuthConfig` (connection, per-message, and ACL

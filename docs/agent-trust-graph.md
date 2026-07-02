@@ -10,10 +10,17 @@ SYNAPSE CHANNEL — agent trust graph design
 
 # Agent trust graph design
 
-The agent trust graph is a design target for making reliability and routing
-evidence easier to inspect without turning agents into hidden scores. It is not
-implemented yet. Today, `synapse reliability` reports audit signals, and
-`synapse route-task` returns advisory routing hints with explainable reasons.
+The agent trust graph makes reliability and routing evidence easier to inspect
+without turning agents into hidden scores. The queryable evidence graph is now
+implemented: `synapse trust-graph` (see the [CLI reference](cli.md)) projects
+the durable event log into typed evidence edges between agent and task nodes —
+positive release receipts, stale claims, declared failed checks, broken
+handoff candidates, and conflict pairs — each carrying event-log provenance,
+filtered by agent, task, or a `--since` decay window, and rendered as text,
+JSON, or Graphviz DOT. `synapse reliability` reports the same audit signals as
+per-owner counts, and `synapse route-task` returns advisory routing hints with
+explainable reasons. The routing integration and the owner-annotation workflow
+described below are not implemented yet and remain design targets.
 
 The goal is a local evidence graph over existing event-log records: release
 receipts, capability observations, claim outcomes, handoff outcomes, conflict
@@ -94,9 +101,11 @@ provider or a social reputation service.
 
 ## Boundaries
 
-This is a design target, not implemented yet. The agent trust graph does not
-rank agents, does not assign trust grades, does not authorize execution, does
-not reserve resources, does not replace code review, does not replace identity
+The shipped `synapse trust-graph` command covers only the read-only evidence
+projection; routing integration and owner annotations remain design targets.
+Implemented or not, the boundaries hold: the agent trust graph does not rank
+agents, does not assign trust grades, does not authorize execution, does not
+reserve resources, does not replace code review, does not replace identity
 and ACL, does not sandbox agents, and does not certify external providers.
 
 The local-first tradeoff is interpretability over automation. Evidence should be

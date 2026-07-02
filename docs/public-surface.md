@@ -42,7 +42,7 @@ optional extras and none belongs to the single-dependency local core.
 Read-only inspection and reporting with no coordination side effects. Safe to run
 at any time; they observe state and never mutate the plan or leases.
 
-`accounting`  `causality`  `conflicts`  `dashboard`  `debug`  `directory`  `doctor`  `event-query`  `health`  `identity`  `manifest`  `multihub`  `relay`  `reliability`  `state`
+`accounting`  `causality`  `conflicts`  `dashboard`  `debug`  `directory`  `doctor`  `event-query`  `health`  `identity`  `manifest`  `multihub`  `relay`  `reliability`  `state`  `trust-graph`
 
 ### Advisory governance — `governance`
 
