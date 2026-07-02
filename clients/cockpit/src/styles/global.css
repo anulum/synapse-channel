@@ -48,6 +48,15 @@ body {
   min-height: 0;
 }
 
+.deck__stack {
+  display: grid;
+  grid-template-rows: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 1px;
+  background: var(--line-soft);
+  min-height: 0;
+  min-width: 0;
+}
+
 /* ---------- HUD ---------- */
 .hud {
   display: flex;
@@ -415,6 +424,206 @@ body {
   letter-spacing: 0.14em;
   color: var(--dim);
   padding-left: var(--sp-3);
+}
+
+/* ---------- claims board ---------- */
+.panel__sub--warn {
+  color: var(--warn);
+}
+
+.conflict-banner {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  column-gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-2);
+  background: var(--critical-trail);
+  border: 1px solid var(--critical);
+  border-radius: var(--radius);
+}
+
+.conflict-banner__glyph {
+  color: var(--critical);
+  font-size: var(--fs-body);
+  line-height: 1.4;
+}
+
+.conflict-banner__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.conflict-banner__head {
+  font-family: var(--font-display);
+  font-size: var(--fs-tiny);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--critical);
+}
+
+.conflict-banner__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.conflict-banner__pair {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--ink);
+}
+
+.conflict-banner__paths {
+  display: block;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claims {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.claim-row {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: baseline;
+  column-gap: var(--sp-2);
+  padding: var(--sp-2);
+  background: var(--raised);
+  border-left: 2px solid var(--info);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.claim-row--stale {
+  border-left-color: var(--warn);
+}
+
+.claim-row--conflict {
+  border-left-color: var(--critical);
+  background: #23202a;
+}
+
+.claim-row__glyph {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1;
+  text-align: center;
+  color: var(--info);
+}
+
+.claim-row--stale .claim-row__glyph {
+  color: var(--warn);
+}
+
+.claim-row--conflict .claim-row__glyph {
+  color: var(--critical);
+}
+
+.claim-row__id {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.claim-row__task {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claim-row__owner {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claim-row__meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  justify-self: end;
+}
+
+.claim-row__branch {
+  font-size: var(--fs-micro);
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+.claim-row__tag {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+.claim-row__tag--stale {
+  color: var(--warn);
+  border-color: var(--warn-trail);
+}
+
+.claim-row__lease {
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  min-width: 52px;
+  text-align: right;
+}
+
+.claim-row__lease--overdue {
+  color: var(--warn);
+  font-weight: 700;
+}
+
+.claim-row__paths {
+  grid-column: 2 / -1;
+  list-style: none;
+  margin: var(--sp-1) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.claim-row__path {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claim-row__path::before {
+  content: "└ ";
+  color: var(--dim);
 }
 
 /* ---------- risk rail ---------- */

@@ -21,9 +21,14 @@ interface RiskRailProps {
   readonly risk: RiskView | null;
 }
 
+/** How many safe-next-work rows show before the tail collapses into a count. */
+const SAFE_WORK_SHOWN = 14;
+
 export function RiskRail({ risk }: RiskRailProps): JSX.Element {
   const signals = risk === null ? [] : orderSignals(risk.signals);
   const safeWork = risk?.safe_next_work ?? [];
+  const safeShown = safeWork.slice(0, SAFE_WORK_SHOWN);
+  const safeOverflow = safeWork.length - safeShown.length;
 
   return (
     <section className="panel" aria-label="Risk rail">
@@ -65,11 +70,14 @@ export function RiskRail({ risk }: RiskRailProps): JSX.Element {
           <div className="risk-safe">
             <span className="risk-safe__head">Safe next work</span>
             <ul className="risk-safe__list">
-              {safeWork.map((item) => (
+              {safeShown.map((item) => (
                 <li key={item} className="risk-safe__item">
                   {item}
                 </li>
               ))}
+              {safeOverflow > 0 && (
+                <li className="risk-safe__item risk-safe__item--more">{`+${safeOverflow} more`}</li>
+              )}
             </ul>
           </div>
         )}
