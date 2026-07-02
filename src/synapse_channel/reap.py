@@ -27,10 +27,13 @@ import re
 import signal
 import sys
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Protocol
+
+from synapse_channel.waiter_identity import is_waiter, waiter_owner
 
 CmdlineReader = Callable[[int], Sequence[str] | None]
 """Callable that returns a process argv vector for a PID, or ``None`` when dead."""
@@ -200,6 +203,46 @@ def _is_verified_waiter(argv: Sequence[str], identity: ReapIdentity) -> bool:
     )
 
 
+def _flag_value(argv: Sequence[str], flag: str) -> str | None:
+    """Return the value following ``flag`` in ``argv``, if any."""
+    for index, item in enumerate(argv):
+        if item == flag and index + 1 < len(argv):
+            return argv[index + 1]
+    return None
+
+
+TERMINAL_PID_PATTERN = re.compile(r"/terminal-(\d+)$")
+"""Shell-hook identities embed the arming shell's PID as ``…/terminal-<pid>``."""
+
+
+def _owner_pid_of(argv: Sequence[str], identity: str) -> int | None:
+    """Return the process the waiter serves: its recorded owner or terminal PID.
+
+    A leashed waiter carries ``--owner-pid``; an older hook encodes the arming
+    shell's PID in the identity itself (``…/terminal-<pid>``). ``None`` means the
+    waiter names no checkable owner (a service identity), so staleness cannot be
+    judged from process liveness and the waiter is left alone.
+    """
+    recorded = _flag_value(argv, "--owner-pid")
+    if recorded is not None and recorded.isdigit():
+        return int(recorded)
+    match = TERMINAL_PID_PATTERN.search(identity)
+    return int(match.group(1)) if match else None
+
+
+def _pid_exists(pid: int) -> bool:
+    """Return whether ``pid`` is a live process (signal 0 probe)."""
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 def discover_waiters(
     identity: ReapIdentity,
     *,
@@ -301,6 +344,120 @@ def reap_waiter(
     return ReapResult(ReapStatus.SIGNALED, pid, "TERM")
 
 
+@dataclass(frozen=True)
+class StaleVerdict:
+    """One pidfile-driven sweep candidate and what was decided about it.
+
+    Attributes
+    ----------
+    waiter : WaiterProcess
+        The candidate as discovered from its pidfile and argv.
+    owner_pid : int or None
+        Process the waiter serves (recorded ``--owner-pid`` or the terminal PID
+        embedded in the identity), when one is nameable.
+    action : str
+        ``"kept"`` (owner alive or unjudgeable), ``"signaled"`` (stale, TERM
+        sent), ``"removed-pidfile"`` (recorded process already dead), or
+        ``"refused-unverified"`` (live process is not a Synapse waiter — never
+        signalled).
+    """
+
+    waiter: WaiterProcess
+    owner_pid: int | None
+    action: str
+
+
+def sweep_stale_waiters(
+    *,
+    runtime: Path | None = None,
+    env: Mapping[str, str] | None = None,
+    cmdline_reader: CmdlineReader = read_proc_cmdline,
+    killer: ProcessKiller = os.kill,
+    pid_probe: Callable[[int], bool] = _pid_exists,
+    act: bool = True,
+) -> list[StaleVerdict]:
+    """Sweep every shell-hook pidfile and reap waiters whose owner is gone.
+
+    The sweep stays evidence-scoped, like the single-identity path: candidates
+    come only from pidfiles in the hook's runtime directory, a live process is
+    touched only when its argv verifies as a Synapse arm waiter whose ``--name``
+    matches the pidfile it was recorded in, and it is signalled only when the
+    process it serves — the recorded ``--owner-pid`` or the terminal PID in the
+    identity — is demonstrably dead. A waiter with no nameable owner is kept.
+    This is the first-class form of the cleanup that removed 105 dead-terminal
+    waiters (of 166) found holding live hub sockets on one workstation.
+
+    Parameters
+    ----------
+    runtime, env, cmdline_reader, killer : optional
+        Injection points mirroring :func:`reap_waiter`.
+    pid_probe : callable, optional
+        Liveness probe for owner PIDs.
+    act : bool, optional
+        When ``False``, report verdicts without signalling or unlinking.
+
+    Returns
+    -------
+    list[StaleVerdict]
+        One verdict per pidfile, in sorted pidfile order.
+    """
+    root = runtime_dir(env) if runtime is None else runtime
+    try:
+        pidfiles = sorted(root.glob("*.pid"))
+    except OSError:
+        return []
+    verdicts: list[StaleVerdict] = []
+    for pidfile in pidfiles:
+        pid = _read_pidfile(pidfile)
+        if pid is None:
+            continue
+        argv = tuple(cmdline_reader(pid) or ())
+        name = _flag_value(argv, "--name") or ""
+        identity = waiter_owner(name)
+        project = _flag_value(argv, "--for") or ""
+        verified = (
+            bool(argv)
+            and "arm" in argv
+            and _looks_like_synapse_entrypoint(argv)
+            and is_waiter(name)
+            and pidfile.name == f"{safe_key(identity)}.pid"
+        )
+        waiter = WaiterProcess(
+            pid=pid,
+            identity=identity,
+            waiter_name=name,
+            project=project,
+            pidfile=pidfile,
+            argv=argv,
+            live=bool(argv),
+            verified=verified,
+        )
+        if not waiter.live:
+            if act:
+                with suppress(OSError):
+                    pidfile.unlink()
+            verdicts.append(StaleVerdict(waiter, None, "removed-pidfile"))
+            continue
+        if not waiter.verified:
+            verdicts.append(StaleVerdict(waiter, None, "refused-unverified"))
+            continue
+        owner = _owner_pid_of(argv, identity)
+        if owner is None or pid_probe(owner):
+            verdicts.append(StaleVerdict(waiter, owner, "kept"))
+            continue
+        action = "signaled"
+        if act:
+            try:
+                killer(pid, signal.SIGTERM)
+            except OSError:
+                action = "signal-failed"
+            else:
+                with suppress(OSError):
+                    pidfile.unlink()
+        verdicts.append(StaleVerdict(waiter, owner, action))
+    return verdicts
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the ``syn reap`` parser."""
     parser = argparse.ArgumentParser(
@@ -312,6 +469,19 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="PID to clean up; must match this identity's pidfile.",
+    )
+    parser.add_argument(
+        "--stale",
+        action="store_true",
+        help=(
+            "Sweep every shell-hook pidfile and reap verified waiters whose owner "
+            "shell or terminal process is dead."
+        ),
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="With --stale: report verdicts without signalling or removing anything.",
     )
     return parser
 
@@ -336,6 +506,7 @@ def main(
     runtime: Path | None = None,
     cmdline_reader: CmdlineReader = read_proc_cmdline,
     killer: ProcessKiller = os.kill,
+    pid_probe: Callable[[int], bool] = _pid_exists,
 ) -> int:
     """Run the ``syn reap`` identity-scoped cleanup command.
 
@@ -344,6 +515,25 @@ def main(
     only when that PID is verified as this identity's Synapse arm waiter.
     """
     args = build_parser().parse_args(list(argv or ()))
+    if args.stale:
+        verdicts = sweep_stale_waiters(
+            runtime=runtime,
+            env=env,
+            cmdline_reader=cmdline_reader,
+            killer=killer,
+            pid_probe=pid_probe,
+            act=not args.dry_run,
+        )
+        prefix = "would " if args.dry_run else ""
+        for verdict in verdicts:
+            owner = f" owner={verdict.owner_pid}" if verdict.owner_pid is not None else ""
+            print(
+                f"{prefix}{verdict.action}: {verdict.waiter.pid} {verdict.waiter.identity}{owner}"
+            )
+        swept = sum(1 for verdict in verdicts if verdict.action == "signaled")
+        kept = sum(1 for verdict in verdicts if verdict.action == "kept")
+        print(f"{prefix}reaped {swept} stale waiter(s); kept {kept} live")
+        return 0
     if args.pid is None:
         _print_waiters(
             discover_waiters(identity, runtime=runtime, env=env, cmdline_reader=cmdline_reader)

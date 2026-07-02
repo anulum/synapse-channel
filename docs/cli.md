@@ -205,6 +205,8 @@ synapse who --name quantum/codex-2b40 --me  # this identity plus its -rx waiter 
 syn who --me                      # same check using the resolved syn identity
 syn reap                          # list this identity's shell-hook waiter pidfile
 syn reap --pid 1234               # clean up only that verified identity waiter PID
+syn reap --stale                  # reap all verified waiters whose owner shell is dead
+syn reap --stale --dry-run        # report the sweep verdicts without acting
 syn locks                         # list this project's leases, scopes, ages, and release commands
 syn ask <target> <message>        # send, require an online recipient, and wait for replies
 syn commit <paths> -m <message>   # hold the project git lease and commit only those paths
@@ -404,6 +406,13 @@ the pidfile for the resolved identity. If the pidfile points at a dead PID,
 SIGTERM only after the command line verifies as this exact `synapse arm --name
 <identity>-rx --for <project>` waiter. It refuses unrelated PIDs instead of
 searching or pattern-killing.
+
+`syn reap --stale` sweeps every pidfile in the runtime directory and reaps the
+verified waiters whose owner is demonstrably dead — the recorded `--owner-pid`,
+or the terminal PID embedded in a `…/terminal-<pid>` identity. A waiter whose
+owner is alive, or that names no checkable owner, is kept; a live process whose
+command line is not this Synapse waiter is reported and never signalled. Add
+`--dry-run` to see the verdicts without acting.
 
 ```bash
 synapse wait --for api-dev                  # default: broadcast wakes jitter 0–8s
