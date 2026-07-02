@@ -71,6 +71,13 @@ All notable changes to this project are documented here.
   and the deterministic span ids make re-exports idempotent on the
   collector side; a failing tick stops the watch with its exit code.
 
+### Fixed
+- `A2ATaskEvents.has_subscribers` reports whether a live local
+  subscription is registered for a task, so a publisher can sequence an
+  update after a subscriber is known to be listening instead of racing
+  the registration — the race a slow CI runner exposed in the
+  subscription lifecycle test, which now synchronises on it.
+
 ### Security
 - The hub federation gate now denies a frame signed with a peered key whose
   live certificate pin fails to resolve to a single peered domain (reason

@@ -204,3 +204,34 @@ def test_task_events_invalid_status_shapes_are_non_terminal() -> None:
     assert no_status == [{"task": {"id": "task-b", "status": "bad"}}]
     assert events._last_state([]) == ""
     assert events._last_state([{"task": "bad"}]) == ""
+
+
+def test_has_subscribers_observes_a_live_registration_only() -> None:
+    events = A2ATaskEvents()
+    task: JsonMap = {"id": "task-a", "status": {"state": "TASK_STATE_WORKING"}}
+
+    assert events.has_subscribers("task-a") is False
+
+    ready = threading.Event()
+    observed: list[list[JsonMap]] = []
+
+    def _subscribe() -> None:
+        ready.set()
+        observed.append(
+            events.subscribe("task-a", task, wait_seconds=1.0, default_wait_seconds=1.0)
+        )
+
+    worker = threading.Thread(target=_subscribe)
+    worker.start()
+    ready.wait(timeout=2.0)
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline and not events.has_subscribers("task-a"):
+        time.sleep(0.005)
+    assert events.has_subscribers("task-a") is True
+
+    events.publish("task-a", {"id": "task-a", "status": {"state": "TASK_STATE_COMPLETED"}})
+    worker.join(timeout=2.0)
+
+    assert events.has_subscribers("task-a") is False
+    states = [event["task"]["status"]["state"] for event in observed[0]]
+    assert states == ["TASK_STATE_WORKING", "TASK_STATE_COMPLETED"]

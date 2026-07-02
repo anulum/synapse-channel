@@ -50,6 +50,18 @@ class A2ATaskEvents:
                 self._history.pop(task_id, None)
                 self._subscribers.pop(task_id, None)
 
+    def has_subscribers(self, task_id: str) -> bool:
+        """Return whether any live local subscription is registered for a task.
+
+        A subscription exists only between :meth:`subscribe` registering its
+        queue and the same call draining it, so this is a point-in-time
+        observation — useful for operational introspection and for
+        deterministically sequencing a publish after a subscriber is known
+        to be listening, instead of racing the registration.
+        """
+        with self._lock:
+            return bool(self._subscribers.get(task_id))
+
     def subscribe(
         self,
         task_id: str,
