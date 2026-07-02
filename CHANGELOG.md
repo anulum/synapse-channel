@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.87.0] - 2026-07-02
+
 ### Added
 - `syn reap --stale` sweeps every shell-hook pidfile and reaps the verified waiters
   whose owner shell or terminal process is dead (recorded `--owner-pid`, or the
