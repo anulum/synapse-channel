@@ -37,6 +37,12 @@ and counting the exclusions; an event recording the lifecycle failure
 terminal projects span status ``ERROR``; ``--watch`` re-projects and
 re-exports on a fixed cadence, idempotent collector-side thanks to the
 deterministic ids.
+
+``health`` takes no sequence either: it walks each task's recorded lifecycle
+and flags orphaned claims (claimed, then silence), declared dependencies that
+never completed, and unreleased claims silent past ``--stale-after`` seconds —
+ages measured against the log's own final timestamp, never the wall clock.
+Exit ``1`` signals at least one anomaly, mirroring ``contention``.
 """
 
 from __future__ import annotations
@@ -62,6 +68,12 @@ from synapse_channel.core.causality_federation import (
     render_federated_markdown,
     run_federated_causality,
 )
+from synapse_channel.core.causality_health import (
+    DEFAULT_STALE_AFTER,
+    health_to_json,
+    render_health_markdown,
+    run_causal_health,
+)
 from synapse_channel.core.causality_otel import (
     SERVICE_NAME,
     projection_to_json,
@@ -78,6 +90,9 @@ CONTENTION_MODE = "contention"
 
 OTEL_MODE = "otel"
 """Mode that projects the causality graph onto OpenTelemetry spans."""
+
+HEALTH_MODE = "health"
+"""Mode that flags anomalies in each task's recorded lifecycle."""
 
 
 def _cmd_causality(args: argparse.Namespace) -> int:
@@ -107,6 +122,17 @@ def _cmd_causality(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    if args.direction != HEALTH_MODE and args.stale_after is not None:
+        print("--stale-after belongs to the health mode", file=sys.stderr)
+        return 2
+    if args.direction == HEALTH_MODE:
+        if args.peer:
+            print(
+                "causality health assesses one hub's log; --peer is not supported",
+                file=sys.stderr,
+            )
+            return 2
+        return _cmd_health(args)
     if args.direction == CONTENTION_MODE:
         if args.peer:
             print(
@@ -294,6 +320,29 @@ def _federated_stores(primary: str, db: str, peers: list[str]) -> dict[str, str]
     return stores
 
 
+def _cmd_health(args: argparse.Namespace) -> int:
+    """Flag lifecycle anomalies in the causal graph and print the report.
+
+    Exit ``0`` when the log shows no anomaly, ``1`` when at least one claim is
+    orphaned or stale or a declared dependency never completed — the exit code
+    doubles as a health signal for scripts, mirroring ``contention``.
+    """
+    stale_after = args.stale_after if args.stale_after is not None else DEFAULT_STALE_AFTER
+    if stale_after <= 0:
+        print("--stale-after must be positive", file=sys.stderr)
+        return 2
+    try:
+        report = run_causal_health(args.db, max_nodes=args.max_nodes, stale_after=stale_after)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(health_to_json(report), indent=2, sort_keys=True))
+    else:
+        print(render_health_markdown(report))
+    return 1 if report.anomaly_count else 0
+
+
 def _cmd_contention(args: argparse.Namespace) -> int:
     """Weigh overlapping live claims and print the yield recommendations.
 
@@ -321,10 +370,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     causality.add_argument(
         "direction",
-        choices=(*DIRECTIONS, CONTENTION_MODE, OTEL_MODE),
+        choices=(*DIRECTIONS, CONTENTION_MODE, OTEL_MODE, HEALTH_MODE),
         help="causes (upstream), effects (downstream), counterfactual (lost support), "
-        "contention (weigh overlapping live claims; takes no SEQ), or otel "
-        "(project the graph onto OpenTelemetry spans; takes no SEQ).",
+        "contention (weigh overlapping live claims; takes no SEQ), otel "
+        "(project the graph onto OpenTelemetry spans; takes no SEQ), or health "
+        "(flag orphaned claims, dangling dependencies, and stale claims; takes no SEQ).",
     )
     causality.add_argument("db", help="Path to the hub event store, e.g. ~/synapse/hub.db.")
     causality.add_argument(
@@ -404,6 +454,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=int,
         default=0,
         help="Stop --watch after this many ticks (0 = until interrupted).",
+    )
+    causality.add_argument(
+        "--stale-after",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help="health mode: flag an unreleased claim as stale after this much "
+        f"log-relative silence (default: {DEFAULT_STALE_AFTER:.0f}).",
     )
     causality.add_argument(
         "--max-nodes",

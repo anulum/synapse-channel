@@ -743,6 +743,106 @@ def test_cli_otel_watch_refuses_a_non_positive_interval(
     assert "--interval must be positive" in capsys.readouterr().err
 
 
+# --- health mode --------------------------------------------------------------------
+
+
+def test_cli_health_flags_anomalies_and_exits_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+    store = EventStore(db)
+    store.append(
+        EventKind.CLAIM,
+        {"task_id": "X", "owner": "eve", "status": "claimed", "paths": [], "worktree": "w"},
+        ts=9.0,
+    )
+    store.append(EventKind.RELEASE, {"task_id": "C"}, ts=99999.0)
+    store.close()
+
+    exit_code = cli.main(["causality", "health", str(db)])
+
+    assert exit_code == 1
+    out = capsys.readouterr().out
+    assert "# Causal health:" in out
+    assert "task=X owner=eve" in out
+
+
+def test_cli_health_clean_log_exits_zero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    store = EventStore(db)
+    store.append(
+        EventKind.CLAIM,
+        {"task_id": "B", "owner": "alice", "status": "claimed", "paths": [], "worktree": "w"},
+        ts=1.0,
+    )
+    store.append(EventKind.RELEASE, {"task_id": "B"}, ts=2.0)
+    store.close()
+
+    exit_code = cli.main(["causality", "health", str(db)])
+
+    assert exit_code == 0
+    assert "0 anomalies" in capsys.readouterr().out
+
+
+def test_cli_health_json_carries_the_signals(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    exit_code = cli.main(["causality", "health", str(db), "--json", "--stale-after", "1"])
+
+    assert exit_code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["note"] == "recorded-event signals, not verdicts"
+    assert payload["stale_after"] == 1.0
+
+
+def test_cli_health_refuses_peers(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    db, peer = _federated_pair(tmp_path)
+
+    exit_code = cli.main(["causality", "health", str(db), "--peer", f"peer={peer}"])
+
+    assert exit_code == 2
+    assert "--peer is not supported" in capsys.readouterr().err
+
+
+def test_cli_health_refuses_a_non_positive_stale_after(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    exit_code = cli.main(["causality", "health", str(db), "--stale-after", "0"])
+
+    assert exit_code == 2
+    assert "--stale-after must be positive" in capsys.readouterr().err
+
+
+def test_cli_stale_after_is_refused_outside_health_mode(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    exit_code = cli.main(["causality", "causes", str(db), "4", "--stale-after", "60"])
+
+    assert exit_code == 2
+    assert "--stale-after belongs to the health mode" in capsys.readouterr().err
+
+
+def test_cli_health_missing_store_exits_two(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exit_code = cli.main(["causality", "health", str(tmp_path / "absent.db")])
+
+    assert exit_code == 2
+    assert "missing event store" in capsys.readouterr().err
+
+
 def test_cli_otel_filter_refuses_an_unrecorded_task(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

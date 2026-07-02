@@ -52,7 +52,7 @@ everything, since they need the whole command table.
 | `synapse postmortem` | Build a replayable task postmortem from a hub SQLite event store. |
 | `synapse debug` | Fork a task's reconstructed state at a sequence point (read-only what-if). |
 | `synapse reproduce` | Fingerprint a task's authoritative history into a deterministic digest. |
-| `synapse causality` | Trace coordination causes, effects, or counterfactuals over the event log — federated across hubs with `--peer`; `contention` weighs overlapping live claims and advises who yields; `otel` exports the graph as OpenTelemetry spans. |
+| `synapse causality` | Trace coordination causes, effects, or counterfactuals over the event log — federated across hubs with `--peer`; `contention` weighs overlapping live claims and advises who yields; `otel` exports the graph as OpenTelemetry spans; `health` flags orphaned claims, dangling dependencies, and stale claims. |
 | `synapse merkle` | Commit the event log to a Merkle root, prove event inclusion, and generate the receipt-signing keypair (`keygen`). |
 | `synapse reliability` | Build evidence-only reliability memory from a hub SQLite event store. |
 | `synapse trust-graph` | Query the evidence trust graph (receipts, stale claims, conflicts) as text, JSON, or Graphviz DOT. |
@@ -663,6 +663,7 @@ synapse causality causes ./hub.db peer:96 --peer peer=./peer-hub.db --dot  # Gra
 synapse causality otel ./synapse.db --out spans.json                  # OpenTelemetry projection
 synapse causality otel ./synapse.db --endpoint http://127.0.0.1:4318/v1/traces  # OTLP push [otel]
 synapse causality otel ./synapse.db --out s.json --filter T1 --service-name hub-eu  # named tasks only
+synapse causality health ./synapse.db                                 # orphaned/dangling/stale claims
 synapse merkle root ./synapse.db
 synapse merkle prove ./synapse.db 142 --json > proof.json
 synapse merkle verify proof.json --expect 9f2c…
@@ -983,6 +984,32 @@ the watch with exit `2`, exactly as a single export fails visibly:
 $ synapse causality otel ~/synapse/hub.db --out spans.json --watch --count 2 --interval 1 --max-nodes 0
 exported 2582 span(s) across 338 trace(s) to spans.json
 exported 2582 span(s) across 338 trace(s) to spans.json
+```
+
+`synapse causality health ./synapse.db` walks each task's recorded lifecycle
+in the same causal graph and flags three shapes that usually mean coordination
+went wrong: **orphaned claims** (a claim is its task's last recorded event —
+claimed, then silence), **dangling dependencies** (a declared `depends_on`
+whose task never completed, using exactly the completion predicate the
+dependency-edge derivation uses, so the two never disagree), and **stale
+claims** (claimed, never released, silent longer than `--stale-after` seconds,
+default 3600). Ages are measured against the log's own final timestamp — never
+the wall clock — so the assessment is deterministic and replayable. Exit `1`
+signals at least one anomaly, mirroring `contention`; every signal is an
+operator hint derived from recorded events, not a verdict — an orphaned claim
+may simply be an agent mid-work. Replayed against the real workstation hub log
+(341 tasks), where it flagged 22 anomalies including a claim the session
+itself was holding:
+
+```console
+$ synapse causality health ~/synapse/hub.db --max-nodes 0
+# Causal health: 22 anomalies across 341 task(s)
+...
+## Orphaned claims (claimed, then silence)
+- seq=4807 task=causality-health owner=SYNAPSE-CHANNEL/claude-2759-work silent 238s
+...
+## Dangling dependencies (declared, never completed)
+- seq=1532 task=director-ai-calib-gateb depends on remanentia-ms1-query-stream, which never completed
 ```
 
 `synapse merkle root ./synapse.db` commits the durable event log to a single
