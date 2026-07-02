@@ -39,7 +39,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse ingest` | Stream durable event-store records since a sequence cursor. |
 | `synapse event-query` | Query a hub SQLite event store for temporal task and coordination history. |
 | `synapse multihub` | Observe or follow a peer hub's event log and print its board and claims (see [Multi-hub sync](multi-hub-sync.md)). |
-| `synapse participant` | Probe or drive Participant Fabric providers: `list` reports each driver's readiness, `ask` runs one turn, `exchange` and `convene` run multi-party deliberations. |
+| `synapse participant` | Probe or drive Participant Fabric providers: `list` reports each driver's readiness, `ask` runs one turn, `exchange` and `convene` run multi-party deliberations, `costs` reports per-session spend and telemetry from a hub event store. |
 | `synapse federation` | Import, list, and revoke out-of-band operator-signed peer-domain bundles (`import`/`list`/`revoke`). |
 | `synapse compact` | Apply event-store retention and optionally write an HTML archive report. |
 | `synapse postmortem` | Build a replayable task postmortem from a hub SQLite event store. |
@@ -1057,6 +1057,17 @@ produced, or the full typed transcript with `--json`, and exit `0` only when
 every turn answered and the run completed — an unavailable seat, a degraded
 turn, or a `--budget-usd` halt exits `1`; a refused configuration exits `2`.
 
+`costs` reads opt-in session telemetry back from a hub SQLite event store —
+offline, no hub connection, like `accounting report`. Sessions that emitted
+`session_metric` progress notes (the orchestration loop with `emit_metrics`, or
+any caller of the emit helper) appear as their latest cumulative snapshot per
+`(agent, session)`: turns, errors, abstentions, token pressure, metered spend,
+mean latency, and the highest rate-limit utilisation seen, plus fleet totals.
+Where `accounting report` answers what models cost, `participant costs` answers
+how participant sessions are going and what they spent; both are descriptive
+evidence, never an enforcement gate. Exits `0` for any produced report (even an
+empty one) and `2` when the store is missing.
+
 ```bash
 synapse sandbox validate ./manifest.json                # validate a capability manifest
 synapse sandbox test ./tool.wasm --manifest ./manifest.json    # pre-flight without running
@@ -1070,6 +1081,8 @@ synapse participant ask claude "review src/foo.py" --context "be terse" --json
 synapse participant exchange "is this design sound?" claude codex   # opener + reviewing reactor
 synapse participant convene "how should we cache this?" claude codex ollama:gemma3:1b \
     --mode symposium --moderator claude --budget-usd 2.50          # panel + moderated synthesis
+synapse participant costs ~/synapse/hub.db              # per-session spend and telemetry + totals
+synapse participant costs ~/synapse/hub.db --json       # the same report, machine-readable
 ```
 
 For a secured hub, pass `--token SECRET` to `worker`, `send`, `listen`, `board`,
