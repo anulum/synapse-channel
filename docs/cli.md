@@ -1138,8 +1138,13 @@ consumer -[version_conflict]-> provider: consumer pins httpx '>=0.27' but provid
 The comparison is deliberately conservative so a flagged conflict is always
 defensible: it models PEP 440 specifier sets, Cargo requirements, and npm
 semver ranges over plain numeric release versions, and anything outside
-that bounded model — pre-release or epoch segments, direct URL references,
-unrecognised operators — never claims a conflict. PEP 440 exclusions
+that bounded model — pre-release or epoch segments, unrecognised
+operators — never claims a conflict. Direct URL references stay
+uncompared with one honest exception: two references to the *same base
+URL* pinned at two *hex revisions* of which neither prefixes the other are
+provably two different commits and do conflict (identical revisions
+overlap; a branch or tag revision is mutable and never supports a claim).
+PEP 440 exclusions
 (`!=`) are ignored, which can only suppress a claim, never invent one.
 `go.mod` requirements are never compared: a Go requirement is a minimum
 that minimal version selection reconciles, and a different major version is

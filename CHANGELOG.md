@@ -14,6 +14,13 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Version-conflict detection now compares direct-URL requirements in the
+  one case the conservative model can honestly claim: two references to
+  the same base URL pinned at two hex revisions of which neither
+  prefixes the other are provably two different commits and conflict;
+  identical revisions overlap. Every other URL shape — different bases,
+  branch or tag revisions (mutable), revision-less URLs, or a URL
+  against a version range — remains uncompared, exactly as before.
 - `synapse cross-repo --suggest-resolution` turns each detected version
   conflict into actionable advice: for every provably conflicting
   package it intersects all consumers' declared ranges (the same bounded

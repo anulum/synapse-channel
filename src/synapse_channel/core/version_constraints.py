@@ -22,8 +22,13 @@ question: *can no version satisfy both?* The answer is one of three verdicts:
 
 The model is deliberately conservative so a conflict claim is always
 defensible: only plain numeric dot-release versions compare (``1.2.3``);
-pre-release, post-release, dev, epoch, local, and build parts, direct URL
-references, and unrecognised operators all yield :data:`NOT_COMPARABLE`.
+pre-release, post-release, dev, epoch, local, and build parts, and
+unrecognised operators all yield :data:`NOT_COMPARABLE`. Direct URL
+references stay :data:`NOT_COMPARABLE` too, with one honest exception:
+two references to the **same base URL** pinned at two **hex revisions**
+of which neither prefixes the other are provably two different commits
+and yield :data:`CONFLICT` (identical revisions overlap; a branch or tag
+revision is mutable and never supports a claim).
 PEP 440 exclusions (``!=``) are ignored — dropping an exclusion can only
 widen a range, so ignoring them can only suppress a conflict claim, never
 invent one. Go constraints are never compared: a ``go.mod`` requirement is a
@@ -377,8 +382,15 @@ def compare_constraints(left: str, right: str, ecosystem: str) -> str:
     str
         :data:`CONFLICT` when provably disjoint, :data:`NO_CONFLICT` when
         the modelled ranges overlap, :data:`NOT_COMPARABLE` when either side
-        is outside the bounded model.
+        is outside the bounded model. Two direct-URL references compare only
+        in the one case the model can honestly claim: the same base URL
+        pinned to two hex revisions of which neither prefixes the other is
+        provably two different commits (:data:`CONFLICT`); the same base and
+        the identical revision is :data:`NO_CONFLICT`; every other URL shape
+        stays :data:`NOT_COMPARABLE`.
     """
+    if left.strip().startswith("@") or right.strip().startswith("@"):
+        return _compare_url_pins(left, right)
     left_intervals = constraint_intervals(left, ecosystem)
     right_intervals = constraint_intervals(right, ecosystem)
     if left_intervals is None or right_intervals is None:
@@ -387,4 +399,54 @@ def compare_constraints(left: str, right: str, ecosystem: str) -> str:
         for right_interval in right_intervals:
             if not _disjoint(left_interval, right_interval):
                 return NO_CONFLICT
+    return CONFLICT
+
+
+_HEX_REVISION_RE = re.compile(r"^[0-9a-f]{7,40}$")
+
+
+def _url_pin(constraint: str) -> tuple[str, str] | None:
+    """Split a direct-URL constraint into ``(base, revision)``.
+
+    Parses the ``@ <url>`` form :func:`~synapse_channel.core.repo_manifests.
+    requirement_constraint` preserves for a PEP 508 direct reference: the
+    fragment (``#egg=…``, ``#subdirectory=…``) is stripped and the revision
+    is the part after the URL's *last* ``@`` — the VCS ref separator — so a
+    ``git+ssh://git@host/repo@rev`` form keeps its userinfo ``@`` in the
+    base. Returns ``None`` when the text is not a URL reference or carries
+    no revision at all.
+    """
+    text = constraint.strip()
+    if not text.startswith("@"):
+        return None
+    url = text[1:].strip().split("#", 1)[0].strip()
+    base, sep, revision = url.rpartition("@")
+    if not sep or not base or not revision:
+        return None
+    return base, revision
+
+
+def _compare_url_pins(left: str, right: str) -> str:
+    """Verdict for constraint texts of which at least one is a direct URL.
+
+    The only honest claims: the same base URL at the identical revision
+    overlaps, and the same base URL at two hex revisions of which neither
+    is a prefix of the other is provably two different commits. A revision
+    that is not a hex object name (a branch or tag) is mutable and may
+    resolve anywhere, so it never supports a conflict claim.
+    """
+    left_pin = _url_pin(left)
+    right_pin = _url_pin(right)
+    if left_pin is None or right_pin is None:
+        return NOT_COMPARABLE
+    left_base, left_revision = left_pin
+    right_base, right_revision = right_pin
+    if left_base != right_base:
+        return NOT_COMPARABLE
+    if left_revision == right_revision:
+        return NO_CONFLICT
+    if not (_HEX_REVISION_RE.match(left_revision) and _HEX_REVISION_RE.match(right_revision)):
+        return NOT_COMPARABLE
+    if left_revision.startswith(right_revision) or right_revision.startswith(left_revision):
+        return NOT_COMPARABLE
     return CONFLICT
