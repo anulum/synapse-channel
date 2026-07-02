@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.92.0] - 2026-07-03
+
 ### Added
 - Federation-bundle exchange over the network, replacing the out-of-band
   file copy while keeping the trust decision with the operator: a hub
