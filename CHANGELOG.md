@@ -14,6 +14,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `synapse benchmark` measures the installed package on the operator's
+  machine: probes for durable event-store appends, journal replay, lite
+  relay encoding, and `who` plus claim-to-grant round-trips over a real
+  loopback WebSocket hub, each reporting throughput and p50/p95 latency.
+  The scorecard carries the host context — package version, interpreter,
+  CPU model and governor, load averages before and after — and an explicit
+  shared-workstation isolation label, so the numbers read as regression
+  evidence, not as isolated-core production claims. `--probe` selects a
+  subset, `--iterations` overrides defaults, `--json` emits data, and
+  `--results FILE` writes the scorecard to disk.
 - `synapse cross-repo` widens coordination from one repository to a whole
   checkout tree: it scans every repository under a root directory for
   dependency manifests (`pyproject.toml`, `Cargo.toml`, `package.json`,

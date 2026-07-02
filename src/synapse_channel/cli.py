@@ -182,6 +182,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_reliability:add_parsers", ("reliability",)),
     ("synapse_channel.cli_trust_graph:add_parsers", ("trust-graph",)),
     ("synapse_channel.cli_cross_repo:add_parsers", ("cross-repo",)),
+    ("synapse_channel.cli_benchmark:add_parsers", ("benchmark",)),
     ("synapse_channel.cli_accounting:add_parsers", ("accounting",)),
     ("synapse_channel.cli_approvals:add_parsers", ("approval",)),
     ("synapse_channel.cli_adaptive_ttl:add_parsers", ("ttl-advice",)),
