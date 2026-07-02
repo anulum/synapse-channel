@@ -75,7 +75,7 @@ everything, since they need the whole command table.
 | `synapse git-hook` | Install post-commit/post-merge hooks that auto-release a commit's claims. |
 | `synapse git-release` | Release the claims whose paths a commit or merge just touched. |
 | `synapse conflicts` | Predict cross-branch merge conflicts between overlapping claims; exit non-zero on a hit. |
-| `synapse cross-repo` | Scan a directory of repositories into a dependency graph (manifests/CODEOWNERS as edges), flag provably conflicting version pins, and join live claims onto it; with `--repo`, exit `1` when a connected repository holds a live claim; `--suggest-resolution` names each conflict's odd-one-out declaration. |
+| `synapse cross-repo` | Scan a directory of repositories into a dependency graph (manifests/CODEOWNERS as edges), flag provably conflicting version pins, and join live claims onto it; with `--repo`, exit `1` when a connected repository holds a live claim; `--suggest-resolution` names each conflict's odd-one-out declaration; `--watch --notify-cmd` runs a sink command on coordination-fact transitions. |
 | `synapse verify-release` | Run declared verification commands and write an observed release receipt JSON; `--merkle-db` commits the coordination log's Merkle root into it, `--signing-key` attests it with the hub key. |
 | `synapse policy-check` | Evaluate a release receipt against a policy file; advisory by default, `--enforce` to gate, `--trusted-signing-key` verifies the commitment's hub signature. |
 | `synapse identity` | Inventory and audit declared agent identities for enforcement-rollout blockers. |
@@ -1188,6 +1188,23 @@ report in place; piped output appends each report behind a `---` divider,
 and `--json --watch` streams one compact document per refresh (NDJSON).
 The exit code reports the last refresh's `--repo` signal. `--dot` does not
 combine with `--watch`.
+
+With `--notify-cmd CMD` the watch also *tells* someone: whenever the
+coordination facts — live claims joined to the graph and provable version
+conflicts — change between two consecutive refreshes, CMD runs with the
+delta on stdin (`+ fact` appeared, `- fact` cleared) and the scanned root
+in `SYNAPSE_CROSS_REPO_ROOT`. It fires on transitions only: never on the
+first refresh (the baseline) and never on a steady state, so a quiet fleet
+stays quiet. The command is shlex-split and run without a shell (wrap in
+`sh -c '…'` for pipes); a failing or hanging sink is reported on stderr
+and never stops the watch. The sink is deliberately generic — a desktop
+notifier, `synapse send` back onto the bus, or anything else — so the
+scanner stays decoupled from any live hub. Validated end-to-end: a claim
+seeded between ticks delivered this to a real sink script:
+
+```text
++ claim repo-a LIVE-1@bob [self]
+```
 
 `synapse benchmark` measures the installed package on your machine and
 prints a scorecard. The probes exercise real production surfaces — durable

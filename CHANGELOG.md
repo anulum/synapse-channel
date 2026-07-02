@@ -14,6 +14,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `synapse cross-repo --watch --notify-cmd CMD` runs an operator command
+  whenever the coordination facts — live claims joined to the graph and
+  provable version conflicts — change between two consecutive watch
+  refreshes, with the delta on stdin (`+ fact` appeared, `- fact`
+  cleared) and the scanned root in `SYNAPSE_CROSS_REPO_ROOT`. Fires on
+  transitions only (never on the baseline refresh or a steady state);
+  the command is shlex-split and run without a shell, and a failing or
+  hanging sink is reported without stopping the watch. The sink is
+  generic by design — a desktop notifier, `synapse send`, or anything
+  else — keeping the scanner decoupled from any live hub.
 - `synapse benchmark --trend STORE.db` appends each finished scorecard
   to a local SQLite history and renders per-metric sparkline trend
   lines across every stored run — first and latest values, the observed

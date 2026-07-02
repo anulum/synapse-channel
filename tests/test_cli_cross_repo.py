@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -282,6 +283,156 @@ def test_watch_exit_reports_the_last_claim_signal(
     )
     assert code == 1
     assert "provider [depends_on]" in out
+
+
+def test_notify_cmd_fires_on_a_transition_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import io
+    from typing import TextIO, cast
+
+    from synapse_channel import cli_cross_repo
+    from synapse_channel.cli_cross_repo import watch_cross_repo
+
+    root = _org(tmp_path)
+    db = tmp_path / "events.db"
+    _seed_claims(db)
+    fired: list[tuple[list[str], list[str]]] = []
+    monkeypatch.setattr(
+        cli_cross_repo,
+        "run_notify_command",
+        lambda command, added, removed, notify_root: fired.append((added, removed)),
+    )
+
+    def _release_between_ticks(_seconds: float) -> None:
+        from synapse_channel.core.journal import EventKind
+        from synapse_channel.core.persistence import EventStore
+
+        store = EventStore(db)
+        store.append(EventKind.RELEASE, {"task_id": "CONS-1"}, ts=6.0, durable=True)
+        store.close()
+
+    code = watch_cross_repo(
+        root=str(root),
+        db=str(db),
+        focus=None,
+        as_json=False,
+        interval=0.01,
+        count=3,
+        notify_cmd="true",
+        out=cast(TextIO, io.StringIO()),
+        sleeper=_release_between_ticks,
+    )
+
+    assert code == 0
+    # refresh 1 = baseline (no fire); refresh 2 sees CONS-1 released (fire);
+    # refresh 3 sees the same facts again (no fire)
+    assert len(fired) == 1
+    added, removed = fired[0]
+    assert added == []
+    assert removed == ["claim consumer CONS-1@agent-b [self]"]
+
+
+def test_notify_cmd_stays_silent_on_a_steady_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import io
+    from typing import TextIO, cast
+
+    from synapse_channel import cli_cross_repo
+    from synapse_channel.cli_cross_repo import watch_cross_repo
+
+    root = _org(tmp_path)
+    fired: list[object] = []
+    monkeypatch.setattr(
+        cli_cross_repo,
+        "run_notify_command",
+        lambda *call: fired.append(call),
+    )
+
+    code = watch_cross_repo(
+        root=str(root),
+        db=None,
+        focus=None,
+        as_json=False,
+        interval=0.01,
+        count=3,
+        notify_cmd="true",
+        out=cast(TextIO, io.StringIO()),
+        sleeper=lambda _seconds: None,
+    )
+
+    assert code == 0
+    assert fired == []
+
+
+def test_notify_cmd_requires_watch(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    root = _org(tmp_path)
+
+    code, _, err = _run(["cross-repo", str(root), "--notify-cmd", "true"], capsys)
+
+    assert code == 2
+    assert "it requires --watch" in err
+
+
+def test_run_notify_command_delivers_the_delta_and_environment(tmp_path: Path) -> None:
+    from synapse_channel.cli_cross_repo import run_notify_command
+
+    capture = tmp_path / "captured.txt"
+    script = tmp_path / "sink.py"
+    script.write_text(
+        "import os, sys, pathlib\n"
+        "pathlib.Path(sys.argv[1]).write_text(\n"
+        "    sys.stdin.read() + os.environ['SYNAPSE_CROSS_REPO_ROOT'],\n"
+        "    encoding='utf-8',\n"
+        ")\n",
+        encoding="utf-8",
+    )
+
+    run_notify_command(
+        f"{sys.executable} {script} {capture}",
+        ["claim beta NEW-1@bob [self]"],
+        ["version_conflict alpha<->beta shared-dep"],
+        "/scanned/root",
+    )
+
+    written = capture.read_text(encoding="utf-8")
+    assert "+ claim beta NEW-1@bob [self]\n" in written
+    assert "- version_conflict alpha<->beta shared-dep\n" in written
+    assert written.endswith("/scanned/root")
+
+
+def test_run_notify_command_reports_failures_without_raising(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    from synapse_channel import cli_cross_repo
+    from synapse_channel.cli_cross_repo import run_notify_command
+
+    run_notify_command(f"{sys.executable} -c 'raise SystemExit(3)'", ["+ x"], [], "/root")
+    assert "notify command exited 3" in capsys.readouterr().err
+
+    run_notify_command("/no/such/binary-anywhere", ["+ x"], [], "/root")
+    assert "notify command failed" in capsys.readouterr().err
+
+    def _hang(*args: object, **kwargs: object) -> object:
+        raise subprocess.TimeoutExpired(cmd="sink", timeout=60.0)
+
+    monkeypatch.setattr(cli_cross_repo.subprocess, "run", _hang)
+    run_notify_command("sink", ["+ x"], [], "/root")
+    assert "notify command failed" in capsys.readouterr().err
+
+
+def test_coordination_facts_cover_claims_and_conflicts_only(tmp_path: Path) -> None:
+    from synapse_channel.cli_cross_repo import coordination_facts
+    from synapse_channel.core.cross_repo_graph import run_cross_repo_graph
+
+    root = _conflicting_root(tmp_path)
+    facts = coordination_facts(run_cross_repo_graph(str(root), db_path=None, focus=None))
+
+    assert any(fact.startswith("version_conflict ") for fact in facts)
+    assert all(fact.split()[0] in {"claim", "version_conflict"} for fact in facts)
 
 
 def test_watch_refuses_dot_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
