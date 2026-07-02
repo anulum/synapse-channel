@@ -39,7 +39,7 @@ see the [Integration demos](integration-demos.md).
 | `synapse ingest` | Stream durable event-store records since a sequence cursor. |
 | `synapse event-query` | Query a hub SQLite event store for temporal task and coordination history. |
 | `synapse multihub` | Observe or follow a peer hub's event log and print its board and claims (see [Multi-hub sync](multi-hub-sync.md)). |
-| `synapse participant` | Probe or drive a Participant Fabric provider: `list` reports each driver's readiness, `ask` runs one turn and prints the answer. |
+| `synapse participant` | Probe or drive Participant Fabric providers: `list` reports each driver's readiness, `ask` runs one turn, `exchange` and `convene` run multi-party deliberations. |
 | `synapse federation` | Import, list, and revoke out-of-band operator-signed peer-domain bundles (`import`/`list`/`revoke`). |
 | `synapse compact` | Apply event-store retention and optionally write an HTML archive report. |
 | `synapse postmortem` | Build a replayable task postmortem from a hub SQLite event store. |
@@ -990,6 +990,19 @@ prints the answer, or the full typed turn result with `--json`. Grok turns stay
 refused while its stream schema is unverified against a real binary. `--model`
 is required for `ollama` and `ollama-api` (their drivers configure no default).
 
+The deliberation subcommands drive the Fabric's multi-party layers from the same
+surface, naming each seat as `PROVIDER[:MODEL]` (the model part may itself hold
+colons, so `ollama:gemma3:1b` works). `exchange` runs an opener turn and then a
+reactor turn that sees the opener's result only as fenced peer data; `convene`
+fans a question out to a whole panel, runs the mode's cross-critique rounds
+(`--mode` defaults to `auto`, choosing colloquy, roundtable, or symposium from
+the panel size and whether `--moderator` was given), and in a symposium ends
+with the moderator's synthesis. A repeated provider gets numbered seats
+(`participant/claude`, `participant/claude-2`, …). Both print each turn as it is
+produced, or the full typed transcript with `--json`, and exit `0` only when
+every turn answered and the run completed — an unavailable seat, a degraded
+turn, or a `--budget-usd` halt exits `1`; a refused configuration exits `2`.
+
 ```bash
 synapse sandbox validate ./manifest.json                # validate a capability manifest
 synapse sandbox test ./tool.wasm --manifest ./manifest.json    # pre-flight without running
@@ -1000,6 +1013,9 @@ synapse workflow plan ./workflow.json                   # show the tasks and the
 synapse participant list                                # readiness of every provider driver
 synapse participant ask ollama "summarise this diff" --model llama3   # one turn, print the answer
 synapse participant ask claude "review src/foo.py" --context "be terse" --json
+synapse participant exchange "is this design sound?" claude codex   # opener + reviewing reactor
+synapse participant convene "how should we cache this?" claude codex ollama:gemma3:1b \
+    --mode symposium --moderator claude --budget-usd 2.50          # panel + moderated synthesis
 ```
 
 For a secured hub, pass `--token SECRET` to `worker`, `send`, `listen`, `board`,

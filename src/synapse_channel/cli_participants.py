@@ -65,6 +65,17 @@ _GROK_REFUSAL = (
 )
 
 
+def refusal_for(provider: str) -> str | None:
+    """Return why ``provider`` must not take turns right now, or ``None`` when it may.
+
+    ``ask`` and the deliberation subcommands share this gate so a provider refused
+    solo is refused on a panel for the same stated reason.
+    """
+    if provider == "grok" and not GROK_SCHEMA_VERIFIED:
+        return _GROK_REFUSAL
+    return None
+
+
 def build_participant(
     provider: str,
     *,
@@ -161,8 +172,9 @@ def _cmd_ask(args: argparse.Namespace) -> int:
     provider is unavailable or the turn errored or abstained, ``2`` for a
     refused configuration (unknown provider, missing required model, grok).
     """
-    if args.provider == "grok" and not GROK_SCHEMA_VERIFIED:
-        print(_GROK_REFUSAL)
+    refusal = refusal_for(args.provider)
+    if refusal is not None:
+        print(refusal)
         return 2
     identity = args.identity or _default_identity(args.provider)
     try:
@@ -196,11 +208,19 @@ def _cmd_ask(args: argparse.Namespace) -> int:
     return 1 if result["is_error"] or result["abstained"] else 0
 
 
-def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register the ``participant`` command group."""
+def add_parsers(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> argparse._SubParsersAction[argparse.ArgumentParser]:
+    """Register the ``participant`` command group; return it for further subcommands.
+
+    The deliberation subcommands (``exchange``, ``convene``) live in
+    :mod:`synapse_channel.cli_participants_deliberate`, which builds on this
+    module's registry; returning the group lets the CLI wire them onto it without
+    an import cycle.
+    """
     parser = subparsers.add_parser(
         "participant",
-        help="Probe or drive a Participant Fabric provider (claude, codex, kimi, ollama, …).",
+        help="Probe or drive Participant Fabric providers (claude, codex, kimi, ollama, …).",
     )
     group = parser.add_subparsers(dest="participant_command", required=True)
 
@@ -244,3 +264,4 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     ask.add_argument("--json", action="store_true", help="Print the full TurnResult as JSON.")
     ask.set_defaults(func=_cmd_ask)
+    return group

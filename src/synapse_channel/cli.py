@@ -117,6 +117,9 @@ from synapse_channel.cli_messaging import add_parsers as add_messaging_parsers
 from synapse_channel.cli_multihub import add_parsers as add_multihub_parsers
 from synapse_channel.cli_new import add_parsers as add_new_parsers
 from synapse_channel.cli_participants import add_parsers as add_participant_parsers
+from synapse_channel.cli_participants_deliberate import (
+    add_parsers as add_participant_deliberation_parsers,
+)
 from synapse_channel.cli_policy_check import add_parsers as add_policy_check_parsers
 from synapse_channel.cli_postmortem import add_parsers as add_postmortem_parsers
 from synapse_channel.cli_processes import add_parsers as add_process_parsers
@@ -188,7 +191,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_messaging_parsers(sub)
     add_multihub_parsers(sub)
-    add_participant_parsers(sub)
+    add_participant_deliberation_parsers(add_participant_parsers(sub))
 
     add_arm_parser(sub)
 
