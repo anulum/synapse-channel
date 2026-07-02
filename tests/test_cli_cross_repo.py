@@ -407,7 +407,6 @@ def test_run_notify_command_reports_failures_without_raising(
 ) -> None:
     import subprocess
 
-    from synapse_channel import cli_cross_repo
     from synapse_channel.cli_cross_repo import run_notify_command
 
     run_notify_command(f"{sys.executable} -c 'raise SystemExit(3)'", ["+ x"], [], "/root")
@@ -419,7 +418,7 @@ def test_run_notify_command_reports_failures_without_raising(
     def _hang(*args: object, **kwargs: object) -> object:
         raise subprocess.TimeoutExpired(cmd="sink", timeout=60.0)
 
-    monkeypatch.setattr(cli_cross_repo.subprocess, "run", _hang)
+    monkeypatch.setattr(subprocess, "run", _hang)
     run_notify_command("sink", ["+ x"], [], "/root")
     assert "notify command failed" in capsys.readouterr().err
 
