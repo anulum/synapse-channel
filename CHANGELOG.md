@@ -47,6 +47,12 @@ All notable changes to this project are documented here.
   preempted, and the exit code doubles as a collision signal (`0` no overlap,
   `1` at least one pair).
 
+- `synapse status --json` and `synapse doctor --json` emit their counts and
+  verdicts as machine-readable JSON for monitoring scripts and CI health gates;
+  `doctor --json` is a plain diagnostic and refuses the mutating and checklist
+  flags so stdout stays one document. The install guide now surfaces
+  `synapse completions` and `synapse install-shell-hook`.
+
 ### Fixed
 - Both multi-hub transports now decode peer-hub replies with the same
   depth-bounded JSON loader the hub applies to its own inbound frames, so a

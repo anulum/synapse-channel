@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Any
 
@@ -335,3 +336,42 @@ def test_main_routes_to_doctor(
     port = _free_port()
     assert cli.main(["doctor", "--uri", f"ws://127.0.0.1:{port}", "--project", "repo"]) == 1
     assert "did not answer" in capsys.readouterr().out
+
+
+# --- --json -------------------------------------------------------------------
+
+
+def test_cmd_doctor_json_reports_every_verdict(capsys: pytest.CaptureFixture[str]) -> None:
+    async def diagnose(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
+        return (0, ["unused text report"], [_pass("hub"), _warn("disk")])
+
+    ns = _doctor_ns(json=True)
+    assert cli_doctor._cmd_doctor(ns, diagnose_runner=diagnose) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["healthy"] is True
+    assert payload["diagnoses"] == [
+        {"check": "hub", "status": "pass", "detail": "fine", "remedy": ""},
+        {"check": "disk", "status": "warn", "detail": "wobbly", "remedy": ""},
+    ]
+
+
+def test_cmd_doctor_json_mirrors_a_failing_exit(capsys: pytest.CaptureFixture[str]) -> None:
+    async def diagnose(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
+        return (1, ["unused"], [_fail("hub")])
+
+    ns = _doctor_ns(json=True)
+    assert cli_doctor._cmd_doctor(ns, diagnose_runner=diagnose) == 1
+    assert json.loads(capsys.readouterr().out)["healthy"] is False
+
+
+def test_cmd_doctor_json_refuses_mutating_flags(capsys: pytest.CaptureFixture[str]) -> None:
+    ns = _doctor_ns(json=True, fix=True, start_user_services=True)
+    assert cli_doctor._cmd_doctor(ns) == 2
+    err = capsys.readouterr().err
+    assert "plain diagnostic" in err
+    assert "--fix" in err and "--start-user-services" in err
+
+
+def test_parser_accepts_doctor_json() -> None:
+    args = cli.build_parser().parse_args(["doctor", "--json"])
+    assert args.json is True

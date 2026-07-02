@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -183,6 +184,17 @@ def _len_of(value: object) -> int:
     return len(value) if isinstance(value, (list, dict)) else 0
 
 
+def status_to_json(status: HubStatus) -> dict[str, object]:
+    """Return the status counts as a stable JSON-compatible object."""
+    return {
+        "reachable": status.reachable,
+        "online": status.online,
+        "claims": status.claims,
+        "resources": status.resources,
+        "waiters": status.waiters,
+    }
+
+
 def _cmd_status(args: argparse.Namespace) -> int:
     """Dispatch ``status``: print the line, exit ``0`` if reachable else ``1``."""
     status = asyncio.run(
@@ -193,7 +205,10 @@ def _cmd_status(args: argparse.Namespace) -> int:
             ready_timeout=args.ready_timeout,
         )
     )
-    print(render_status_line(status, plain=args.plain))
+    if args.json:
+        print(json.dumps(status_to_json(status), sort_keys=True))
+    else:
+        print(render_status_line(status, plain=args.plain))
     return 0 if status.reachable else 1
 
 
@@ -213,5 +228,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     status.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     status.add_argument(
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
+    )
+    status.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the counts as JSON for monitoring scripts instead of the line.",
     )
     status.set_defaults(func=_cmd_status)
