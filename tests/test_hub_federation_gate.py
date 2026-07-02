@@ -228,6 +228,88 @@ async def test_wholly_unrelated_signed_frame_stays_silent(
     assert "resolves to no peered domain" not in caplog.text
 
 
+async def test_peered_key_with_an_unenrolled_pin_is_denied(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # the mirror of the unpinned refusal: the connection DID present a certificate,
+    # but its pin is not the peering's — a stale or foreign certificate presenting a
+    # peered key must not downgrade to local processing the way an unpeered key does
+    sink = _Sink()
+    gate = _gate(sink, bundle=_bundle(), cert=_OTHER_DER)
+    with caplog.at_level("WARNING"):
+        disposition = await gate.authorise(_REMOTE, MessageType.CLAIM, _claim(), object())
+    assert disposition is FrameDisposition.DENY
+    assert sink.sent[0]["federation_reason"] == "peer_domain_unresolved"
+    assert sink.sent[0]["payload"] == "federation denied: peer_domain_unresolved"
+    assert "signing_key_enrolled_but_certificate_pin_unknown" in caplog.text
+
+
+async def test_credentials_split_across_peerings_are_denied(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # key enrolled by one peering, pin by another: neither owns the frame alone,
+    # and a peered key that resolves to no single domain is refused, not guessed
+    other_pin = certificate_sha256_pin_from_der(_OTHER_DER)
+    bundle = FederationBundle(
+        [
+            FederationPeer(
+                domain_id=_DOMAIN,
+                namespaces=frozenset({_NAMESPACE}),
+                certificate_pins=frozenset({other_pin}),
+                signing_key_ids=frozenset({_KEY_ID}),
+                scope_grants=(ScopeGrant(CLAIM, _NAMESPACE),),
+            ),
+            FederationPeer(
+                domain_id="domain-c",
+                namespaces=frozenset({_NAMESPACE}),
+                certificate_pins=frozenset({_PIN}),
+                signing_key_ids=frozenset({"domain-c:main:2026-06"}),
+                scope_grants=(ScopeGrant(CLAIM, _NAMESPACE),),
+            ),
+        ]
+    )
+    sink = _Sink()
+    gate = _gate(sink, bundle=bundle)
+    with caplog.at_level("WARNING"):
+        disposition = await gate.authorise(_REMOTE, MessageType.CLAIM, _claim(), object())
+    assert disposition is FrameDisposition.DENY
+    assert sink.sent[0]["federation_reason"] == "peer_domain_unresolved"
+    assert "signing_key_and_certificate_pin_in_different_peerings" in caplog.text
+
+
+async def test_ambiguous_pair_two_peerings_claim_is_denied(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # two peerings each enrol both credentials: resolve_domain refuses to guess,
+    # and the peered key turns that refusal into a deny rather than a local pass
+    peer = FederationPeer(
+        domain_id=_DOMAIN,
+        namespaces=frozenset({_NAMESPACE}),
+        certificate_pins=frozenset({_PIN}),
+        signing_key_ids=frozenset({_KEY_ID}),
+        scope_grants=(ScopeGrant(CLAIM, _NAMESPACE),),
+    )
+    bundle = FederationBundle(
+        [
+            peer,
+            FederationPeer(
+                domain_id="domain-c",
+                namespaces=frozenset({_NAMESPACE}),
+                certificate_pins=frozenset({_PIN}),
+                signing_key_ids=frozenset({_KEY_ID}),
+                scope_grants=(ScopeGrant(CLAIM, _NAMESPACE),),
+            ),
+        ]
+    )
+    sink = _Sink()
+    gate = _gate(sink, bundle=bundle)
+    with caplog.at_level("WARNING"):
+        disposition = await gate.authorise(_REMOTE, MessageType.CLAIM, _claim(), object())
+    assert disposition is FrameDisposition.DENY
+    assert sink.sent[0]["federation_reason"] == "peer_domain_unresolved"
+    assert "ambiguous_multiple_peerings" in caplog.text
+
+
 # --- cross-domain authorisation: one allow, every refusal reason ---
 
 
