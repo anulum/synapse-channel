@@ -17,7 +17,7 @@ everything, since they need the whole command table.
 | `synapse commands` | List every subcommand grouped by stability tier — the quickest map of the surface. |
 | `synapse completions` | Print a static tab-completion script for bash, zsh, or fish, generated from the installed CLI. |
 | `synapse demo` | Run a self-contained local coordination demo and print a success marker. |
-| `synapse benchmark` | Benchmark the installed package (event store, relay encoding, live hub round-trips) and print a scorecard with honest host context; `--compare BASELINE.json` gates the run against a saved scorecard, exit `1` on regression; `--trend STORE.db` accumulates runs and renders per-metric sparkline trends. |
+| `synapse benchmark` | Benchmark the installed package (event store, relay encoding, live hub round-trips) and print a scorecard with honest host context; `--compare BASELINE.json` gates the run against a saved scorecard, exit `1` on regression; `--trend STORE.db` accumulates runs and renders per-metric sparkline trends (`--ascii` for a printable-ASCII trend block). |
 | `synapse quickstart-coding` | Create a coding-fleet workspace, run the no-collision demo, and print a success marker. |
 | `synapse fleet-init` | Empty machine to working fleet in one command: doctor (`--fix`), persistent workspace scaffold, provider-seat probe, demo smoke, and a printed next-steps plan. |
 | `synapse new coding-fleet` | Scaffold a runnable two-agent coding demo workspace. |
@@ -1292,7 +1292,19 @@ encode-lite messages_per_second: ▁█ 31,585.98 → 60,645.33 (min 31,585.98, 
 
 Under `--json` the document gains a `trend` object with the full stored
 history and its context breaks; `--trend` composes with both `--results`
-and `--compare`.
+and `--compare`. For consoles and CI log viewers without UTF-8, `--ascii`
+renders the same trend block in printable ASCII — the glyph ramp becomes
+`._-=+*#%@` and the arrow and dash punctuation degrade to `->` and `--`
+(it requires `--trend`; the stored history and the JSON document are
+unchanged):
+
+```text
+$ synapse benchmark --probe encode-lite --trend bench-trend.db --ascii
+...
+Benchmark trend: 2 stored run(s)
+encode-lite lite_to_raw_ratio: .@ 0.72 -> 0.72 (min 0.72, max 0.72, 2 runs)
+encode-lite messages_per_second: .@ 31,585.98 -> 60,645.33 (min 31,585.98, max 60,645.33, 2 runs)
+```
 
 `synapse accounting` records and reports opt-in model cost/token usage. Synapse
 never calls a model provider and collects no telemetry, so token and cost figures

@@ -42,6 +42,12 @@ All notable changes to this project are documented here.
   claim held on the watched peer flips the namespace to partitioned
   refusals and the peer's release clears it on the next poll.
 
+- `synapse benchmark --ascii` — renders the `--trend` block in printable
+  ASCII for consoles and CI log viewers without UTF-8: the sparkline ramp
+  becomes `._-=+*#%@` and the arrow and dash punctuation degrade to `->`
+  and `--`. Requires `--trend`; the stored history and the `--json`
+  document are byte-identical either way.
+
 ### Security
 - The last four unpinned tool installs in CI are now hash-locked: the
   pre-commit, release, publish, and reuse workflow jobs install

@@ -11,7 +11,9 @@ One scorecard is a snapshot; a performance story needs the runs *over time*.
 This module appends each finished scorecard to a local SQLite store and
 renders, per probe metric, the series across every stored run — a sparkline,
 the first and latest values, and the observed range — so a slow regression
-that no single ``--compare`` gate catches is still visible.
+that no single ``--compare`` gate catches is still visible. The sparkline
+ramp is Unicode blocks by default with a printable-ASCII alternative for
+consoles and CI log viewers without UTF-8.
 
 Honest scope, same doctrine as the scorecard itself: numbers from different
 host contexts do not form one comparable series, so a change of CPU model,
@@ -33,6 +35,14 @@ from synapse_channel.benchmark.scorecard import Scorecard, scorecard_to_json
 
 SPARK_LEVELS = "▁▂▃▄▅▆▇█"
 """Sparkline glyphs, lowest to highest."""
+
+ASCII_SPARK_LEVELS = "._-=+*#%@"
+"""Printable-ASCII sparkline glyphs, lowest to highest.
+
+For consoles and CI log viewers without UTF-8: every glyph is 7-bit
+ASCII, ordered by visual weight, so the same series reads the same way
+the block glyphs do.
+"""
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS benchmark_runs (
@@ -182,16 +192,33 @@ def context_breaks(runs: tuple[StoredRun, ...]) -> tuple[ContextBreak, ...]:
     return tuple(breaks)
 
 
-def sparkline(values: list[float]) -> str:
-    """Render values as one sparkline glyph each (flat series renders mid-level)."""
+def sparkline(values: list[float], levels: str = SPARK_LEVELS) -> str:
+    """Render values as one sparkline glyph each (flat series renders mid-level).
+
+    Parameters
+    ----------
+    values : list of float
+        The series to render, oldest first.
+    levels : str
+        The glyph ramp, lowest to highest; :data:`SPARK_LEVELS` by
+        default, :data:`ASCII_SPARK_LEVELS` for pure-ASCII output.
+
+    Raises
+    ------
+    ValueError
+        If ``levels`` is empty.
+    """
+    if not levels:
+        msg = "sparkline needs at least one glyph level"
+        raise ValueError(msg)
     if not values:
         return ""
     lowest, highest = min(values), max(values)
     if highest == lowest:
-        return SPARK_LEVELS[3] * len(values)
+        return levels[(len(levels) - 1) // 2] * len(values)
     span = highest - lowest
-    top = len(SPARK_LEVELS) - 1
-    return "".join(SPARK_LEVELS[round((value - lowest) / span * top)] for value in values)
+    top = len(levels) - 1
+    return "".join(levels[round((value - lowest) / span * top)] for value in values)
 
 
 def trend_to_json(runs: tuple[StoredRun, ...]) -> dict[str, object]:
@@ -216,14 +243,30 @@ def trend_to_json(runs: tuple[StoredRun, ...]) -> dict[str, object]:
     }
 
 
-def render_trend_human(runs: tuple[StoredRun, ...]) -> str:
-    """Render the stored history as per-metric sparkline trend lines."""
+def render_trend_human(runs: tuple[StoredRun, ...], *, ascii_glyphs: bool = False) -> str:
+    """Render the stored history as per-metric sparkline trend lines.
+
+    Parameters
+    ----------
+    runs : tuple of StoredRun
+        The stored history, oldest first.
+    ascii_glyphs : bool
+        When true, the whole trend block is printable ASCII: the
+        :data:`ASCII_SPARK_LEVELS` ramp replaces the Unicode blocks and
+        the arrow and dash punctuation degrade to ``->`` and ``--``, so
+        the output survives consoles and CI log viewers without UTF-8.
+    """
+    levels = ASCII_SPARK_LEVELS if ascii_glyphs else SPARK_LEVELS
+    arrow = "->" if ascii_glyphs else "→"
     if not runs:
         return "Benchmark trend: no stored runs."
     lines = [f"Benchmark trend: {len(runs)} stored run(s)"]
     breaks = context_breaks(runs)
     for item in breaks:
-        lines.append(f"  context break before run {item.before_run_id}: {', '.join(item.changes)}")
+        changes = ", ".join(item.changes)
+        if ascii_glyphs:
+            changes = changes.replace("→", "->")
+        lines.append(f"  context break before run {item.before_run_id}: {changes}")
     for probe, metric in _series_keys(runs):
         series = [
             (run.run_id, run.metrics[probe][metric])
@@ -232,10 +275,12 @@ def render_trend_human(runs: tuple[StoredRun, ...]) -> str:
         ]
         values = [value for _, value in series]
         if len(values) < 2:
-            lines.append(f"{probe} {metric}: {values[0]:,.2f} (1 run — no trend yet)")
+            dash = "--" if ascii_glyphs else "—"
+            lines.append(f"{probe} {metric}: {values[0]:,.2f} (1 run {dash} no trend yet)")
             continue
         lines.append(
-            f"{probe} {metric}: {sparkline(values)} {values[0]:,.2f} → {values[-1]:,.2f} "
+            f"{probe} {metric}: {sparkline(values, levels)} "
+            f"{values[0]:,.2f} {arrow} {values[-1]:,.2f} "
             f"(min {min(values):,.2f}, max {max(values):,.2f}, {len(values)} runs)"
         )
     return "\n".join(lines)

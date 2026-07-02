@@ -15,6 +15,7 @@ import pytest
 from synapse_channel.benchmark.probes import ProbeResult
 from synapse_channel.benchmark.scorecard import NON_ISOLATED_LABEL, HostContext, Scorecard
 from synapse_channel.benchmark.trend import (
+    ASCII_SPARK_LEVELS,
     SPARK_LEVELS,
     append_scorecard,
     context_breaks,
@@ -135,6 +136,23 @@ class TestSparkline:
     def test_empty_series_renders_nothing(self) -> None:
         assert sparkline([]) == ""
 
+    def test_ascii_range_maps_to_the_glyph_extremes(self) -> None:
+        line = sparkline([0.0, 100.0], ASCII_SPARK_LEVELS)
+        assert line == ASCII_SPARK_LEVELS[0] + ASCII_SPARK_LEVELS[-1]
+
+    def test_ascii_flat_series_renders_the_middle_glyph(self) -> None:
+        middle = ASCII_SPARK_LEVELS[(len(ASCII_SPARK_LEVELS) - 1) // 2]
+        assert sparkline([5.0, 5.0, 5.0], ASCII_SPARK_LEVELS) == middle * 3
+
+    def test_ascii_ramp_is_pure_distinct_ascii(self) -> None:
+        assert ASCII_SPARK_LEVELS.isascii()
+        assert ASCII_SPARK_LEVELS.isprintable()
+        assert len(set(ASCII_SPARK_LEVELS)) == len(ASCII_SPARK_LEVELS)
+
+    def test_empty_glyph_ramp_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="glyph level"):
+            sparkline([1.0], "")
+
 
 class TestRenderings:
     def test_trend_lines_carry_sparkline_and_range(self, tmp_path: Path) -> None:
@@ -169,6 +187,28 @@ class TestRenderings:
 
     def test_empty_history_renders_a_plain_statement(self) -> None:
         assert render_trend_human(()) == "Benchmark trend: no stored runs."
+
+    def test_ascii_rendering_is_pure_printable_ascii(self, tmp_path: Path) -> None:
+        db = tmp_path / "trend.db"
+        append_scorecard(db, _scorecard(100.0, started_at=1000.0))
+        append_scorecard(db, _scorecard(150.0, started_at=2000.0, package_version="0.92.0"))
+
+        text = render_trend_human(load_history(db), ascii_glyphs=True)
+
+        assert text.isascii()
+        assert "context break before run 2: package 0.91.0->0.92.0" in text
+        assert "100.00 -> 150.00 (min 100.00, max 150.00, 2 runs)" in text
+        assert not any(glyph in text for glyph in SPARK_LEVELS)
+        assert any(glyph in text for glyph in ASCII_SPARK_LEVELS)
+
+    def test_ascii_single_run_degrades_the_dash(self, tmp_path: Path) -> None:
+        db = tmp_path / "trend.db"
+        append_scorecard(db, _scorecard(100.0))
+
+        text = render_trend_human(load_history(db), ascii_glyphs=True)
+
+        assert "event-store-append events_per_second: 100.00 (1 run -- no trend yet)" in text
+        assert text.isascii()
 
     def test_run_missing_a_metric_shortens_that_series_only(self, tmp_path: Path) -> None:
         # a --probe-narrowed run stores fewer probes; the other series keep
