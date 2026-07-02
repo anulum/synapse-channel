@@ -1523,6 +1523,16 @@ fetch never imports, and the whole-bundle fingerprint changes when *any* policy
 content is altered in path — namespaces and scope grants as much as keys and
 pins.
 
+Trust material is a lifecycle, not a one-off ceremony: `federation list`
+shows each peering's age since its confirmed import and renders a peering
+whose bundle expiry has passed as `[expired]`; with `--max-age DAYS` an
+active peering imported longer ago than the threshold is flagged
+`[stale: …]` and the command exits `1`, so a scheduled job can hold the
+fleet to a re-ceremony cadence. The same policy applies at the cheapest
+moment with `federation import --max-age DAYS`, which warns (the import
+still succeeds — the operator is confirming it explicitly) when the
+incoming bundle never expires or expires further out than the threshold.
+
 ```bash
 synapse identity audit --identities ./identities.json          # audit declared identities for blockers
 synapse identity audit --identities ./identities.json --json
@@ -1532,7 +1542,8 @@ synapse federation offer ./my-domain.json                      # validate own ma
 synapse hub --port 8876 --federation-offer ./my-domain.json    # serve it to peer operators (token-gated)
 synapse federation fetch ws://peer-hub:8876 --out ./peer-domain.json  # pull + fingerprints; NEVER imports
 synapse federation import ./peer-domain.json --confirmed-by ceo --source ws://peer-hub:8876  # after comparing
-synapse federation list --store ./federation.json              # imported peer domains and their provenance
+synapse federation list --store ./federation.json              # imported peer domains, provenance, and age
+synapse federation list --store ./federation.json --max-age 90 # flag active peerings imported >90 days ago; exit 1
 synapse federation revoke example.org --store ./federation.json
 synapse encrypt-key generate ./synapse.key                     # write a fresh owner-only 32-byte key file
 synapse encrypt-key check ./synapse.key                        # verify its ownership, mode, and length

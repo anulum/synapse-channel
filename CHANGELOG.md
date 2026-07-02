@@ -58,6 +58,16 @@ All notable changes to this project are documented here.
   exclusive fence-post bounds are never candidates and whether an index
   publishes the version is not claimed.
 
+- Federation peering age is now visible and enforceable: `synapse
+  federation list` shows each peering's age since its confirmed import
+  and renders a peering whose bundle expiry has passed as `[expired]`;
+  `--max-age DAYS` flags active peerings imported longer ago than the
+  threshold as stale and exits `1`, so a scheduled job can hold the
+  fleet to a re-ceremony cadence. `federation import --max-age DAYS`
+  applies the same policy at import time, warning (the import still
+  succeeds) when the incoming bundle never expires or expires further
+  out than the threshold.
+
 ### Security
 - The last four unpinned tool installs in CI are now hash-locked: the
   pre-commit, release, publish, and reuse workflow jobs install
