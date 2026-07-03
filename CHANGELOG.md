@@ -13,6 +13,14 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `/events.json` accepts `since=latest` — the tail shortcut that starts
+  at the log's end instead of walking a large history to catch up.
+- A `present: false` causality-feed answer now carries a `note` naming
+  which absence it is: an event recorded but outside the coordination
+  causal graph (chatter carries no causal edges), or no event at that
+  sequence at all.
+
 ## [0.94.0] - 2026-07-03
 
 ### Added

@@ -789,7 +789,7 @@ def test_events_feed_refuses_malformed_numbers(tmp_path: Path) -> None:
         server.close()
 
     assert status == 400
-    assert "must be integers" in body
+    assert "must be an integer or 'latest'" in body
 
 
 def test_events_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
@@ -1034,3 +1034,19 @@ def test_causality_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None
 
     assert status == 503
     assert "missing event store" in body
+
+
+def test_events_feed_supports_the_latest_tail_shortcut(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_feed_store(db)
+
+    server = _feeds_server(reliability_db=db)
+    try:
+        status, _, body = _http_get(server.url("/events.json?since=latest"))
+    finally:
+        server.close()
+
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["events"] == []  # caught up instantly, no history walk
+    assert payload["next_cursor"] == 2  # the log's end, ready for the next poll
