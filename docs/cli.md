@@ -229,16 +229,33 @@ page exposes agent names, claim scopes, branch names, and task text. Pass
 and `/snapshot.json`; when `--allow-non-loopback` exposes the dashboard and no
 token is supplied, Synapse generates and prints a startup token.
 
-With `--reliability-db <hub.db>` the dashboard also serves
-`/reliability.json` — the same audit-signal report as `synapse reliability`
-(per-owner tallies and finding records anchored to event sequences,
-explicitly "audit signals, not scores"), which the cockpit's reliability
-panel consumes. The report is read from the durable event store, not the
-live hub, so it stays available when the hub is down; without the flag the
-endpoint answers 404 and the panel states the feed is absent, and an
-unreadable store answers 503 rather than an empty report pretending the
-log is clean. The endpoint sits behind the same dashboard bearer token as
-every other path.
+With `--feeds-db <hub.db>` (`--reliability-db` is the same flag's original
+name) the dashboard serves three feeds off the **durable event store** —
+available when the hub is down, real sequences and timestamps, behind the
+same dashboard bearer token as every other path:
+
+- `/reliability.json` — the same audit-signal report as `synapse
+  reliability` (per-owner tallies and finding records anchored to event
+  sequences, explicitly "audit signals, not scores"), which the cockpit's
+  reliability panel consumes;
+- `/events.json?since=SEQ&limit=N` — the raw event-log tail past a
+  cursor, in the exact multihub snapshot shape (`events` + `next_cursor`),
+  so a polling client walks the log forward without loss or duplication;
+- `/causality.json?seq=N|task=ID&direction=causes|effects` — one
+  causality query in the CLI's exact `--json` shape; `task=ID` resolves to
+  the task's most recent recorded event, so a client can hop from a log
+  row to its causal cone without knowing sequences (an unrecorded task is
+  404, not an invented anchor).
+
+Without the flag each endpoint answers 404 naming the remedy; an
+unreadable store answers 503 rather than an empty document pretending the
+log is clean. `--federation-store <federation.json>` adds
+`/federation.json` — the imported peerings with provenance and the bundle
+fingerprints operators compared in the exchange ceremony; namespace
+outcomes are hub-runtime state no durable store carries, so that section
+ships empty with the reason stated. `--cockpit-dist <dir>` serves a built
+cockpit single-page app read-only under `/cockpit/` (paths escaping the
+directory or with unrecognised suffixes are refused).
 
 ## Identities and groups
 

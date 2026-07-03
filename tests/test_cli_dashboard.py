@@ -713,3 +713,324 @@ def test_cmd_dashboard_announces_the_reliability_url(
     assert int(handler(args)) == 0
     out = capsys.readouterr().out
     assert "reliability JSON: http://127.0.0.1:8765/reliability.json" in out
+
+
+def _feeds_server(
+    *,
+    reliability_db: Path | None = None,
+    federation_store: Path | None = None,
+    cockpit_dist: Path | None = None,
+) -> DashboardServer:
+    """Start a dashboard with store feeds against an unreachable hub."""
+    return start_dashboard_server(
+        host="127.0.0.1",
+        port=0,
+        uri="ws://127.0.0.1:1",
+        name="SYNAPSE-CHANNEL/dashboard",
+        token=None,
+        ready_timeout=0.01,
+        response_timeout=0.01,
+        refresh_seconds=5,
+        allow_non_loopback=False,
+        reliability_db=reliability_db,
+        federation_store=federation_store,
+        cockpit_dist=cockpit_dist,
+    )
+
+
+def _seed_feed_store(db: Path) -> None:
+    store = EventStore(db)
+    store.append(
+        EventKind.CLAIM,
+        {"task_id": "T", "owner": "alice", "status": "claimed", "paths": [], "worktree": "w"},
+        ts=1.0,
+    )
+    store.append(EventKind.RELEASE, {"task_id": "T"}, ts=2.0)
+    store.close()
+
+
+def test_events_feed_reports_absence_without_a_store() -> None:
+    server = _feeds_server()
+    try:
+        status, _, body = _http_get(server.url("/events.json"))
+    finally:
+        server.close()
+
+    assert status == 404
+    assert "--feeds-db" in body
+
+
+def test_events_feed_serves_the_tail_with_the_hub_down(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_feed_store(db)
+
+    server = _feeds_server(reliability_db=db)
+    try:
+        status, content_type, body = _http_get(server.url("/events.json?since=1&limit=5"))
+    finally:
+        server.close()
+
+    assert status == 200
+    assert content_type == "application/json"
+    payload = json.loads(body)
+    assert [event["seq"] for event in payload["events"]] == [2]
+    assert payload["events"][0]["ts"] == 2.0
+    assert payload["next_cursor"] == 2
+
+
+def test_events_feed_refuses_malformed_numbers(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_feed_store(db)
+
+    server = _feeds_server(reliability_db=db)
+    try:
+        status, _, body = _http_get(server.url("/events.json?since=abc"))
+    finally:
+        server.close()
+
+    assert status == 400
+    assert "must be integers" in body
+
+
+def test_events_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
+    server = _feeds_server(reliability_db=tmp_path / "absent.db")
+    try:
+        status, _, body = _http_get(server.url("/events.json"))
+    finally:
+        server.close()
+
+    assert status == 503
+    assert "missing event store" in body
+
+
+def test_causality_feed_mirrors_the_cli_shape(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_feed_store(db)
+
+    server = _feeds_server(reliability_db=db)
+    try:
+        by_seq_status, _, by_seq_body = _http_get(
+            server.url("/causality.json?seq=1&direction=effects")
+        )
+        by_task_status, _, by_task_body = _http_get(
+            server.url("/causality.json?task=T&direction=causes")
+        )
+    finally:
+        server.close()
+
+    assert (by_seq_status, by_task_status) == (200, 200)
+    by_seq = json.loads(by_seq_body)
+    assert by_seq["direction"] == "effects"
+    assert by_seq["seq"] == 1
+    assert by_seq["present"] is True
+    by_task = json.loads(by_task_body)
+    assert by_task["seq"] == 2  # the task's most recent event anchors the query
+
+
+def test_causality_feed_maps_errors_to_honest_statuses(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_feed_store(db)
+
+    server = _feeds_server(reliability_db=db)
+    try:
+        ghost_status, _, ghost_body = _http_get(server.url("/causality.json?task=GHOST"))
+        bad_seq_status, _, _ = _http_get(server.url("/causality.json?seq=abc"))
+        bad_direction_status, _, _ = _http_get(
+            server.url("/causality.json?seq=1&direction=sideways")
+        )
+        unconfigured = _feeds_server()
+        try:
+            absent_status, _, _ = _http_get(unconfigured.url("/causality.json?seq=1"))
+        finally:
+            unconfigured.close()
+    finally:
+        server.close()
+
+    assert ghost_status == 404
+    assert "no recorded event for task" in ghost_body
+    assert bad_seq_status == 400
+    assert bad_direction_status == 400
+    assert absent_status == 404
+
+
+def test_federation_feed_serves_peerings_and_reports_absence(tmp_path: Path) -> None:
+    from synapse_channel.core.federation import FederationPeer
+    from synapse_channel.core.federation_store import (
+        FederationRecord,
+        PeerProvenance,
+        save_store,
+    )
+
+    store = tmp_path / "federation.json"
+    save_store(
+        store,
+        [
+            FederationRecord(
+                peer=FederationPeer(domain_id="atelier.example"),
+                provenance=PeerProvenance(source="ws://a:1", imported_at=1.0, confirmed_by="ops"),
+            )
+        ],
+    )
+
+    configured = _feeds_server(federation_store=store)
+    try:
+        status, _, body = _http_get(configured.url("/federation.json"))
+    finally:
+        configured.close()
+    unconfigured = _feeds_server()
+    try:
+        absent_status, _, absent_body = _http_get(unconfigured.url("/federation.json"))
+    finally:
+        unconfigured.close()
+
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["peerings"][0]["domain"] == "atelier.example"
+    assert payload["peerings"][0]["state"] == "active"
+    assert payload["namespaces"] == []
+    assert absent_status == 404
+    assert "--federation-store" in absent_body
+
+
+def test_federation_feed_fails_visible_on_a_corrupt_store(tmp_path: Path) -> None:
+    store = tmp_path / "federation.json"
+    store.write_text("{not json", encoding="utf-8")
+
+    server = _feeds_server(federation_store=store)
+    try:
+        status, _, _ = _http_get(server.url("/federation.json"))
+    finally:
+        server.close()
+
+    assert status == 503
+
+
+def test_cockpit_dist_serves_index_assets_and_refuses_escapes(tmp_path: Path) -> None:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<title>cockpit</title>", encoding="utf-8")
+    (dist / "app.js").write_text("console.log('ok')", encoding="utf-8")
+    (dist / "tool.exe").write_bytes(b"MZ")
+    (tmp_path / "secret.txt").write_text("outside", encoding="utf-8")
+
+    server = _feeds_server(cockpit_dist=dist)
+    try:
+        index_status, index_type, index_body = _http_get(server.url("/cockpit/"))
+        bare_status, _, _ = _http_get(server.url("/cockpit"))
+        js_status, js_type, _ = _http_get(server.url("/cockpit/app.js"))
+        escape_status, _, _ = _http_get(server.url("/cockpit/../secret.txt"))
+        suffix_status, _, _ = _http_get(server.url("/cockpit/tool.exe"))
+        missing_status, _, _ = _http_get(server.url("/cockpit/nope.css"))
+    finally:
+        server.close()
+
+    assert (index_status, index_type) == (200, "text/html")
+    assert "cockpit" in index_body
+    assert bare_status == 200
+    assert (js_status, js_type) == (200, "text/javascript")
+    assert escape_status == 404
+    assert suffix_status == 404
+    assert missing_status == 404
+
+
+def test_cockpit_dist_reports_absence_when_unconfigured() -> None:
+    server = _feeds_server()
+    try:
+        status, _, body = _http_get(server.url("/cockpit/"))
+    finally:
+        server.close()
+
+    assert status == 404
+    assert "--cockpit-dist" in body
+
+
+def test_feed_endpoints_sit_behind_the_dashboard_token(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_feed_store(db)
+
+    server = start_dashboard_server(
+        host="127.0.0.1",
+        port=0,
+        uri="ws://127.0.0.1:1",
+        name="SYNAPSE-CHANNEL/dashboard",
+        token=None,
+        ready_timeout=0.01,
+        response_timeout=0.01,
+        refresh_seconds=5,
+        allow_non_loopback=False,
+        reliability_db=db,
+        dashboard_token="secret",
+    )
+    try:
+        denied, _, _ = _http_get(server.url("/events.json"))
+        allowed, _, _ = _http_get(server.url("/events.json"), authorization="Bearer secret")
+    finally:
+        server.close()
+
+    assert denied == 401
+    assert allowed == 200
+
+
+def test_dashboard_parser_wires_the_feed_flags() -> None:
+    parser = cli.build_parser(command="dashboard")
+
+    default = parser.parse_args(["dashboard"])
+    assert default.reliability_db is None
+    assert default.federation_store is None
+    assert default.cockpit_dist is None
+
+    named = parser.parse_args(
+        [
+            "dashboard",
+            "--feeds-db",
+            "./hub.db",
+            "--federation-store",
+            "./federation.json",
+            "--cockpit-dist",
+            "./dist",
+        ]
+    )
+    assert named.reliability_db == Path("./hub.db")
+    assert named.federation_store == Path("./federation.json")
+    assert named.cockpit_dist == Path("./dist")
+
+    alias = parser.parse_args(["dashboard", "--reliability-db", "./hub.db"])
+    assert alias.reliability_db == Path("./hub.db")
+
+
+def test_cmd_dashboard_announces_every_configured_feed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from synapse_channel import cli_dashboard
+
+    server = _FakeDashboardServer(token=None, generated=False)
+    monkeypatch.setattr(cli_dashboard, "start_dashboard_server", lambda **_: server)
+
+    def interrupt(_: float) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("synapse_channel.cli_dashboard.time.sleep", interrupt)
+    args = _dashboard_args(
+        reliability_db=Path("./hub.db"),
+        federation_store=Path("./federation.json"),
+        cockpit_dist=Path("./dist"),
+    )
+    handler = args.func  # type: ignore[attr-defined]
+
+    assert int(handler(args)) == 0
+    out = capsys.readouterr().out
+    assert "events tail JSON: http://127.0.0.1:8765/events.json" in out
+    assert "causality JSON: http://127.0.0.1:8765/causality.json" in out
+    assert "federation JSON: http://127.0.0.1:8765/federation.json" in out
+    assert "cockpit: http://127.0.0.1:8765/cockpit/" in out
+
+
+def test_causality_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
+    server = _feeds_server(reliability_db=tmp_path / "absent.db")
+    try:
+        status, _, body = _http_get(server.url("/causality.json?seq=1"))
+    finally:
+        server.close()
+
+    assert status == 503
+    assert "missing event store" in body

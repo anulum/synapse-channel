@@ -31,9 +31,10 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, ClassVar, Final
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.core.federation_store import FederationStoreError
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.reliability import reliability_to_json, run_reliability_report
 from synapse_channel.dashboard_cockpit import (
@@ -43,6 +44,12 @@ from synapse_channel.dashboard_cockpit import (
 )
 from synapse_channel.dashboard_fleet import build_fleet_visibility, render_fleet_visibility_html
 from synapse_channel.dashboard_risk import build_risk_view
+from synapse_channel.dashboard_store_feeds import (
+    DEFAULT_EVENTS_LIMIT,
+    build_causality_feed,
+    build_events_tail,
+    build_federation_feed,
+)
 from synapse_channel.dashboard_studio import (
     STUDIO_REFERENCE_PATH,
     render_studio_reference_html,
@@ -455,6 +462,34 @@ def _json_bytes(snapshot: DashboardSnapshot, *, a2a_state_file: str | Path | Non
 RELIABILITY_PATH = "/reliability.json"
 """Read-only endpoint serving the reliability audit-signal report."""
 
+EVENTS_PATH = "/events.json"
+"""Read-only endpoint serving the raw event-log tail past a cursor."""
+
+CAUSALITY_PATH = "/causality.json"
+"""Read-only endpoint answering one causality query in the CLI's JSON shape."""
+
+FEDERATION_PATH = "/federation.json"
+"""Read-only endpoint serving the imported peerings from the federation store."""
+
+COCKPIT_DIST_PREFIX = "/cockpit/"
+"""URL prefix under which an operator-named cockpit build directory is served."""
+
+_DIST_CONTENT_TYPES = {
+    ".html": "text/html",
+    ".js": "text/javascript",
+    ".mjs": "text/javascript",
+    ".css": "text/css",
+    ".map": "application/json",
+    ".json": "application/json",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+    ".woff2": "font/woff2",
+    ".woff": "font/woff",
+    ".txt": "text/plain",
+}
+"""Suffixes the cockpit dist serving recognises; anything else is refused."""
+
 
 class _DashboardHandler(BaseHTTPRequestHandler):
     """HTTP handler populated by ``start_dashboard_server`` class attributes."""
@@ -468,6 +503,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     a2a_state_file: ClassVar[Path | None]
     dashboard_token: ClassVar[str | None]
     reliability_db: ClassVar[Path | None]
+    federation_store: ClassVar[Path | None]
+    cockpit_dist: ClassVar[Path | None]
 
     def do_GET(self) -> None:
         """Serve the dashboard HTML page, JSON snapshot, or a 404 response."""
@@ -512,6 +549,18 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             # reliability report is an offline audit surface, so it stays
             # available when the hub is down and needs no hub round-trip.
             self._serve_reliability()
+            return
+        if path == EVENTS_PATH:
+            self._serve_events(urlsplit(self.path).query)
+            return
+        if path == CAUSALITY_PATH:
+            self._serve_causality(urlsplit(self.path).query)
+            return
+        if path == FEDERATION_PATH:
+            self._serve_federation()
+            return
+        if path.startswith(COCKPIT_DIST_PREFIX) or path == COCKPIT_DIST_PREFIX.rstrip("/"):
+            self._serve_cockpit_dist(path)
             return
         if path not in {"/", "/index.html", "/snapshot.json", STUDIO_SNAPSHOT_PATH}:
             self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
@@ -585,6 +634,136 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             content_type="application/json",
         )
 
+    def _serve_events(self, query: str) -> None:
+        """Serve the raw event-log tail past a cursor, or its honest absence.
+
+        Rides the same durable store as the reliability feed; parameters are
+        ``since`` (exclusive sequence cursor) and ``limit``. Malformed numbers
+        are a 400 naming the parameter, not a silent default.
+        """
+        if self.reliability_db is None:
+            self._write(
+                HTTPStatus.NOT_FOUND,
+                b"events feed not configured; start the dashboard with --feeds-db\n",
+                content_type="text/plain",
+            )
+            return
+        params = parse_qs(query)
+        try:
+            since = int(params.get("since", ["0"])[0])
+            limit = int(params.get("limit", [str(DEFAULT_EVENTS_LIMIT)])[0])
+        except ValueError:
+            self._write(
+                HTTPStatus.BAD_REQUEST,
+                b"since and limit must be integers\n",
+                content_type="text/plain",
+            )
+            return
+        try:
+            document = build_events_tail(self.reliability_db, since=since, limit=limit)
+        except ValueError as exc:
+            self._write(
+                HTTPStatus.SERVICE_UNAVAILABLE, f"{exc}\n".encode(), content_type="text/plain"
+            )
+            return
+        self._write_json(document)
+
+    def _serve_causality(self, query: str) -> None:
+        """Answer one causality query in the CLI's exact JSON shape.
+
+        ``seq=N`` or ``task=ID`` anchors the query; ``direction`` defaults to
+        ``causes``. A bad anchor or direction is a 400 with the reason; a task
+        the log never recorded is a 404 — absent, not invented.
+        """
+        if self.reliability_db is None:
+            self._write(
+                HTTPStatus.NOT_FOUND,
+                b"causality feed not configured; start the dashboard with --feeds-db\n",
+                content_type="text/plain",
+            )
+            return
+        params = parse_qs(query)
+        direction = params.get("direction", ["causes"])[0]
+        task = params.get("task", [None])[0]
+        seq_raw = params.get("seq", [None])[0]
+        try:
+            seq = int(seq_raw) if seq_raw is not None else None
+        except ValueError:
+            self._write(
+                HTTPStatus.BAD_REQUEST, b"seq must be an integer\n", content_type="text/plain"
+            )
+            return
+        try:
+            document = build_causality_feed(
+                self.reliability_db, direction=direction, seq=seq, task=task
+            )
+        except ValueError as exc:
+            reason = str(exc)
+            status = (
+                HTTPStatus.NOT_FOUND
+                if reason.startswith("no recorded event for task")
+                else HTTPStatus.BAD_REQUEST
+            )
+            if reason.startswith("missing event store"):
+                status = HTTPStatus.SERVICE_UNAVAILABLE
+            self._write(status, f"{reason}\n".encode(), content_type="text/plain")
+            return
+        self._write_json(document)
+
+    def _serve_federation(self) -> None:
+        """Serve the imported peerings, or the feed's honest absence."""
+        if self.federation_store is None:
+            self._write(
+                HTTPStatus.NOT_FOUND,
+                b"federation feed not configured; start the dashboard with --federation-store\n",
+                content_type="text/plain",
+            )
+            return
+        try:
+            document = build_federation_feed(self.federation_store)
+        except FederationStoreError as exc:
+            self._write(
+                HTTPStatus.SERVICE_UNAVAILABLE, f"{exc}\n".encode(), content_type="text/plain"
+            )
+            return
+        self._write_json(document)
+
+    def _serve_cockpit_dist(self, path: str) -> None:
+        """Serve one file from the operator-named cockpit build directory.
+
+        ``/cockpit/`` maps to ``index.html``; every other path resolves inside
+        the named directory and is refused when it escapes it (path
+        traversal), carries an unrecognised suffix, or does not exist.
+        """
+        if self.cockpit_dist is None:
+            self._write(
+                HTTPStatus.NOT_FOUND,
+                b"cockpit build not configured; start the dashboard with --cockpit-dist\n",
+                content_type="text/plain",
+            )
+            return
+        relative = path[len(COCKPIT_DIST_PREFIX) :] if path.startswith(COCKPIT_DIST_PREFIX) else ""
+        if relative == "":
+            relative = "index.html"
+        root = self.cockpit_dist.resolve()
+        target = (root / relative).resolve()
+        if not target.is_relative_to(root):
+            self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
+            return
+        content_type = _DIST_CONTENT_TYPES.get(target.suffix.lower())
+        if content_type is None or not target.is_file():
+            self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
+            return
+        self._write(HTTPStatus.OK, target.read_bytes(), content_type=content_type)
+
+    def _write_json(self, document: dict[str, object]) -> None:
+        """Write one JSON feed response with the shared headers."""
+        self._write(
+            HTTPStatus.OK,
+            json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8"),
+            content_type="application/json",
+        )
+
     def log_message(self, _format: str, *_args: object) -> None:
         """Suppress stdlib access-log noise during CLI and tests."""
         return None
@@ -626,6 +805,8 @@ def _handler_class(
     a2a_state_file: Path | None,
     dashboard_token: str | None,
     reliability_db: Path | None,
+    federation_store: Path | None,
+    cockpit_dist: Path | None,
 ) -> type[_DashboardHandler]:
     """Create an isolated handler class for one dashboard server."""
     bound_uri = uri
@@ -637,6 +818,8 @@ def _handler_class(
     bound_a2a_state_file = a2a_state_file
     bound_dashboard_token = dashboard_token
     bound_reliability_db = reliability_db
+    bound_federation_store = federation_store
+    bound_cockpit_dist = cockpit_dist
 
     class BoundDashboardHandler(_DashboardHandler):
         """Dashboard handler bound to one hub URI and dashboard identity."""
@@ -650,6 +833,8 @@ def _handler_class(
         a2a_state_file = bound_a2a_state_file
         dashboard_token = bound_dashboard_token
         reliability_db = bound_reliability_db
+        federation_store = bound_federation_store
+        cockpit_dist = bound_cockpit_dist
 
     return BoundDashboardHandler
 
@@ -668,6 +853,8 @@ def start_dashboard_server(
     a2a_state_file: str | Path | None = None,
     dashboard_token: str | None = None,
     reliability_db: str | Path | None = None,
+    federation_store: str | Path | None = None,
+    cockpit_dist: str | Path | None = None,
 ) -> DashboardServer:
     """Start a background read-only dashboard HTTP server.
 
@@ -693,9 +880,13 @@ def start_dashboard_server(
         token is generated automatically for non-loopback binds when the caller
         does not provide one.
     reliability_db : str, pathlib.Path, or None, optional
-        Hub event store to serve the reliability audit-signal report from at
-        ``/reliability.json``; without it the endpoint reports its absence
-        with 404.
+        Hub event store powering the store-backed feeds —
+        ``/reliability.json``, ``/events.json``, and ``/causality.json``;
+        without it each endpoint reports its absence with 404.
+    federation_store : str, pathlib.Path, or None, optional
+        Operator federation store powering ``/federation.json``.
+    cockpit_dist : str, pathlib.Path, or None, optional
+        Built cockpit directory served under ``/cockpit/``.
 
     Returns
     -------
@@ -718,6 +909,8 @@ def start_dashboard_server(
         a2a_state_file=Path(a2a_state_file) if a2a_state_file is not None else None,
         dashboard_token=effective_dashboard_token,
         reliability_db=Path(reliability_db) if reliability_db is not None else None,
+        federation_store=Path(federation_store) if federation_store is not None else None,
+        cockpit_dist=Path(cockpit_dist) if cockpit_dist is not None else None,
     )
     server = ThreadingHTTPServer((host, int(port)), handler)
     thread = threading.Thread(target=server.serve_forever, name="synapse-dashboard", daemon=True)
