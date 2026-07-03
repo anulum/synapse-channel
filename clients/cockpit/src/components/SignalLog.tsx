@@ -28,8 +28,14 @@ interface SignalLogProps {
   readonly window?: TimeWindow | null;
   /** Clears the brushed window (also clears the spine highlight). */
   readonly onClearWindow?: (() => void) | undefined;
-  /** Jump to the causality inspector for the task a row names. */
-  readonly onSelectTask?: ((taskId: string) => void) | undefined;
+  /** Jump to the causality inspector for the subject a row names. */
+  readonly onSelectTask?: ((subject: string) => void) | undefined;
+  /**
+   * Where the events come from. `hub` = the durable log (real seq + ts; every
+   * row can hop by its exact sequence); `derived` = snapshot-diff transitions
+   * (local seq, poll-quantised ts; only task-naming rows hop, by task id).
+   */
+  readonly provenance?: "hub" | "derived";
 }
 
 function SignalLogView({
@@ -37,6 +43,7 @@ function SignalLogView({
   window = null,
   onClearWindow,
   onSelectTask,
+  provenance = "derived",
 }: SignalLogProps): JSX.Element {
   const shown = eventsInWindow(events, window);
   const actors = window === null ? [] : actorsInWindow(events, window);
@@ -47,7 +54,9 @@ function SignalLogView({
         <span>Signal log</span>
         <span className="panel__count">{shown.length}</span>
         {window === null ? (
-          <span className="panel__sub">observed transitions</span>
+          <span className="panel__sub">
+            {provenance === "hub" ? "hub event log" : "observed transitions"}
+          </span>
         ) : (
           <span className="panel__sub panel__sub--brush">
             {`${windowEdgeLabel(window.fromTs)}–${windowEdgeLabel(window.toTs)} · ${
@@ -90,12 +99,19 @@ function SignalLogView({
                     {event.actor === "" ? "—" : event.actor}
                   </td>
                   <td className="log__label" title={event.label}>
-                    {event.taskId !== "" && onSelectTask !== undefined ? (
+                    {onSelectTask !== undefined &&
+                    ((provenance === "hub" && event.kind !== "chat") || event.taskId !== "") ? (
                       <button
                         type="button"
                         className="log__hop"
-                        title={`Trace the recorded causes of ${event.taskId}`}
-                        onClick={() => onSelectTask(event.taskId)}
+                        title={
+                          provenance === "hub"
+                            ? `Trace the recorded causes of event seq ${event.seq}`
+                            : `Trace the recorded causes of ${event.taskId}`
+                        }
+                        onClick={() =>
+                          onSelectTask(provenance === "hub" ? String(event.seq) : event.taskId)
+                        }
                       >
                         {event.label}
                       </button>

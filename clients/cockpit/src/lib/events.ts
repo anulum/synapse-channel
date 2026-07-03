@@ -32,6 +32,21 @@ export const COLOUR_OF: Record<EventKind, string> = {
   conflict: "var(--critical)",
 };
 
+/**
+ * Severity per event kind, 0..1 — drives impulse height on the spine. One
+ * policy for every event source, derived or hub-attested.
+ */
+export const SEVERITY_OF: Record<EventKind, number> = {
+  presence: 0.3,
+  claim: 0.45,
+  lease: 0.7,
+  release: 0.5,
+  task: 0.6,
+  chat: 0.25,
+  finding: 0.55,
+  conflict: 0.9,
+};
+
 /** The lane an operator scans peripherally; a deflection here is an alarm. */
 export const RISK_LANE: Lane = "risk";
 

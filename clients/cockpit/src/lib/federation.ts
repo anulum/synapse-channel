@@ -6,19 +6,13 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the federation posture feed: hub identity, peers, partition honesty
 
-// PROPOSED server contract (the dashboard does not serve /federation.json yet;
-// the Python side owns the final shape and this parser tolerates partial
-// payloads field-by-field):
-//
-//   {
-//     "hub_id":  str,          — the serving hub's identity
-//     "domain":  str,          — this hub's federation domain, "" when unfederated
-//     "peerings": [{"domain": str, "state": "active"|"revoked"|"stale",
-//                   "imported_at": epoch|null, "fingerprint": str}],
-//     "namespaces": [{"namespace": str,
-//                     "outcome": "local"|"remote"|"ungoverned"|"partitioned",
-//                     "owner_hub": str, "contesting": [str]}]
-//   }
+// The dashboard's /federation.json serves what the DURABLE stores prove
+// (`--federation-store`): imported peerings with provenance and bundle
+// fingerprints — {domain, state active|expired|revoked, imported_at,
+// confirmed_by, source, fingerprint, expires_at} — plus a `note`. Namespace
+// outcomes (local/remote/ungoverned/partitioned) are hub-RUNTIME state no
+// durable store carries, so `namespaces` ships empty until a hub-side export
+// exists; the parser reads them the moment they appear.
 //
 // Partition honesty is the row's reason to exist: a `partitioned` namespace —
 // more than one hub asserting ownership — must be loud, because the hub is
@@ -29,11 +23,18 @@ import { createEndpointFeed, type EndpointFeed, type FeedState } from "./feed";
 /** One imported peering as the federation store records it. */
 export interface PeeringView {
   readonly domain: string;
-  /** Lifecycle state the server reports: `active`, `revoked`, or `stale`. */
+  /** Lifecycle state the store proves: `active`, `expired`, or `revoked`. */
   readonly state: string;
   /** Epoch seconds the bundle was imported, or null when unknown. */
   readonly importedAt: number | null;
+  /** Who confirmed the fingerprint ceremony, "" when unrecorded. */
+  readonly confirmedBy: string;
+  /** Where the bundle came from, "" when unrecorded. */
+  readonly source: string;
+  /** The whole-bundle fingerprint the operators compared. */
   readonly fingerprint: string;
+  /** Epoch seconds the peering expires, or null for no expiry. */
+  readonly expiresAt: number | null;
 }
 
 /** One governed namespace and who asserts ownership of it. */
@@ -46,12 +47,14 @@ export interface NamespaceView {
   readonly contesting: readonly string[];
 }
 
-/** The hub's federation posture as the proposed endpoint reports it. */
+/** The hub's federation posture as the endpoint reports it. */
 export interface FederationPosture {
   readonly hubId: string;
   readonly domain: string;
   readonly peerings: readonly PeeringView[];
   readonly namespaces: readonly NamespaceView[];
+  /** The server's own caveat, e.g. why the namespaces section is empty. */
+  readonly note: string;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -74,7 +77,10 @@ function parsePeering(value: unknown): PeeringView {
     domain: asString(peering["domain"]),
     state: asString(peering["state"]),
     importedAt: asEpochOrNull(peering["imported_at"]),
+    confirmedBy: asString(peering["confirmed_by"]),
+    source: asString(peering["source"]),
     fingerprint: asString(peering["fingerprint"]),
+    expiresAt: asEpochOrNull(peering["expires_at"]),
   };
 }
 
@@ -104,6 +110,7 @@ export function parseFederation(raw: unknown): FederationPosture | null {
     namespaces: Array.isArray(payload["namespaces"])
       ? payload["namespaces"].map(parseNamespace)
       : [],
+    note: asString(payload["note"]),
   };
 }
 

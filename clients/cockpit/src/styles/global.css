@@ -121,7 +121,7 @@ body {
   background: var(--critical);
 }
 
-.fed-peer__dot--stale {
+.fed-peer__dot--expired {
   background: var(--warn);
 }
 

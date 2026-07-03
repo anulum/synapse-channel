@@ -21,6 +21,7 @@ import { TaskBoard } from "./components/TaskBoard";
 import { deriveBoard, deriveFindings } from "./lib/board";
 import type { TimeWindow } from "./lib/brush";
 import { deriveClaims, parseConflicts } from "./lib/claims";
+import { createEventsTailSource, type SpineProvenance } from "./lib/eventsTail";
 import { createFederationStore, type FederationState } from "./lib/federation";
 import { createReliabilityStore, type ReliabilityState } from "./lib/reliability";
 import { deriveRoster } from "./lib/roster";
@@ -29,8 +30,8 @@ import {
   withFreshness,
   type SnapshotState,
 } from "./lib/snapshot";
-import { createSnapshotEventSource, type TransitionEventSource } from "./lib/spineEvents";
-import type { CockpitEvent } from "./types";
+import { createSnapshotEventSource } from "./lib/spineEvents";
+import type { CockpitEvent, EventSource } from "./types";
 
 /** Wall-clock time-of-day stamp for the freshness contract. */
 function stampFor(ms: number | null): string {
@@ -106,7 +107,8 @@ export function App(): JSX.Element {
   const [snap, setSnap] = useState<SnapshotState>(INITIAL_SNAPSHOT);
   const [kpis, setKpis] = useState<readonly Kpi[]>([]);
   const [log, setLog] = useState<readonly CockpitEvent[]>([]);
-  const [spineSource, setSpineSource] = useState<TransitionEventSource | undefined>(undefined);
+  const [spineSource, setSpineSource] = useState<EventSource | undefined>(undefined);
+  const [provenance, setProvenance] = useState<SpineProvenance>("connecting");
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [reliability, setReliability] = useState<ReliabilityState>(INITIAL_RELIABILITY);
   const [federation, setFederation] = useState<FederationState>(INITIAL_FEDERATION);
@@ -118,15 +120,45 @@ export function App(): JSX.Element {
   const onClearWindow = useCallback(() => setBrush(null), []);
 
   useEffect(() => {
-    // The store owns its polling and is created per-mount so its lifecycle is
-    // tied to the effect: a clean start on mount, a full stop on unmount. The
-    // event source diffs consecutive fetches into the real transitions that
-    // feed both the spine and the signal log.
+    // The stores own their polling and are created per-mount so their
+    // lifecycle is tied to the effect. Two event sources exist: the
+    // hub-attested tail (/events.json, real seq + ts) and the snapshot-diff
+    // derivation. The tail wins whenever the dashboard serves it; the
+    // derivation is the honest fallback while the endpoint is absent. A
+    // router forwards exactly one of them to the spine and the log, and a
+    // provenance flip clears the log so the two never mix.
     const store = createSnapshotStore();
-    const source = createSnapshotEventSource(store);
-    setSpineSource(source);
-    const unsubscribeEvents = source.subscribe((event) => {
+    const derived = createSnapshotEventSource(store);
+    const tail = createEventsTailSource();
+
+    const routed = new Set<(event: CockpitEvent) => void>();
+    setSpineSource({
+      subscribe(listener) {
+        routed.add(listener);
+        return () => routed.delete(listener);
+      },
+      stop() {
+        // The router owns nothing; the effect cleanup stops the real sources.
+      },
+    });
+    let active: "tail" | "derived" | null = null;
+    const push = (event: CockpitEvent): void => {
       setLog((current) => [event, ...current].slice(0, LOG_LIMIT));
+      for (const listener of routed) listener(event);
+    };
+    const unsubscribeTail = tail.subscribe((event) => {
+      if (active === "tail") push(event);
+    });
+    const unsubscribeDerived = derived.subscribe((event) => {
+      if (active === "derived") push(event);
+    });
+    const unsubscribeMode = tail.subscribeMode((mode) => {
+      setProvenance(mode);
+      const next = mode === "hub" ? "tail" : mode === "absent" ? "derived" : active;
+      if (next !== active) {
+        active = next;
+        setLog([]);
+      }
     });
     const unsubscribeSnapshots = store.subscribe(setSnap);
     // Reliability evidence is log-derived and heavier server-side, so it polls
@@ -144,12 +176,15 @@ export function App(): JSX.Element {
       setSnap((current) => withFreshness(current, tick));
     }, 1000);
     return () => {
-      unsubscribeEvents();
+      unsubscribeTail();
+      unsubscribeDerived();
+      unsubscribeMode();
       unsubscribeSnapshots();
       unsubscribeReliability();
       unsubscribeFederation();
       clearInterval(clock);
-      source.stop();
+      tail.stop();
+      derived.stop();
       store.stop();
       reliabilityStore.stop();
       federationStore.stop();
@@ -187,7 +222,12 @@ export function App(): JSX.Element {
     <div className="shell">
       <Hud kpis={kpis} live={snap.status === "live"} stamp={stampFor(snap.fetchedAt)} />
       <PanelBoundary name="Activity spine">
-        <ActivitySpine source={spineSource} onBrush={onBrush} brush={brush} />
+        <ActivitySpine
+          key={provenance === "hub" ? "hub" : "derived"}
+          source={spineSource}
+          onBrush={onBrush}
+          brush={brush}
+        />
       </PanelBoundary>
       <PanelBoundary name="Federation">
         <FederationRow state={federation} />
@@ -206,7 +246,12 @@ export function App(): JSX.Element {
             <ClaimsBoard claims={claims} conflicts={conflicts} connected={connected} />
           </PanelBoundary>
           <PanelBoundary name="Inspector">
-            <InspectorTabs events={log} window={brush} onClearWindow={onClearWindow} />
+            <InspectorTabs
+              events={log}
+              window={brush}
+              onClearWindow={onClearWindow}
+              provenance={provenance === "hub" ? "hub" : "derived"}
+            />
           </PanelBoundary>
         </div>
         <PanelBoundary name="Board">

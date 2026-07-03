@@ -19,46 +19,83 @@ afterEach(() => {
 });
 
 describe("parseFederation", () => {
-  it("parses the proposed posture contract", () => {
+  it("parses the served store-backed contract", () => {
     const posture = parseFederation({
-      hub_id: "syn-635eb7b8",
-      domain: "workstation",
       peerings: [
-        { domain: "ml350", state: "active", imported_at: 1783000000.5, fingerprint: "ab:cd" },
+        {
+          domain: "ml350",
+          state: "active",
+          imported_at: 1783000000.5,
+          confirmed_by: "operator",
+          source: "offer:ml350",
+          fingerprint: "ab:cd",
+          expires_at: 1790000000,
+        },
         { domain: "laptop", state: "revoked" },
       ],
-      namespaces: [
-        { namespace: "REPO", outcome: "local", owner_hub: "syn-635eb7b8", contesting: [] },
-        {
-          namespace: "SHARED",
-          outcome: "partitioned",
-          owner_hub: "",
-          contesting: ["syn-a", "syn-b", 7],
-        },
-      ],
+      namespaces: [],
+      note: "namespace outcomes are hub-runtime state",
     });
     expect(posture).toEqual({
-      hubId: "syn-635eb7b8",
-      domain: "workstation",
+      hubId: "",
+      domain: "",
       peerings: [
-        { domain: "ml350", state: "active", importedAt: 1783000000.5, fingerprint: "ab:cd" },
-        { domain: "laptop", state: "revoked", importedAt: null, fingerprint: "" },
+        {
+          domain: "ml350",
+          state: "active",
+          importedAt: 1783000000.5,
+          confirmedBy: "operator",
+          source: "offer:ml350",
+          fingerprint: "ab:cd",
+          expiresAt: 1790000000,
+        },
+        {
+          domain: "laptop",
+          state: "revoked",
+          importedAt: null,
+          confirmedBy: "",
+          source: "",
+          fingerprint: "",
+          expiresAt: null,
+        },
       ],
+      namespaces: [],
+      note: "namespace outcomes are hub-runtime state",
+    });
+  });
+
+  it("reads namespace outcomes the moment a future server serves them", () => {
+    const posture = parseFederation({
+      hub_id: "syn-x",
+      domain: "workstation",
       namespaces: [
-        { namespace: "REPO", outcome: "local", ownerHub: "syn-635eb7b8", contesting: [] },
-        { namespace: "SHARED", outcome: "partitioned", ownerHub: "", contesting: ["syn-a", "syn-b"] },
+        { namespace: "REPO", outcome: "local", owner_hub: "syn-x", contesting: [] },
+        { namespace: "SHARED", outcome: "partitioned", owner_hub: "", contesting: ["a", "b", 7] },
       ],
     });
+    expect(posture?.hubId).toBe("syn-x");
+    expect(posture?.namespaces).toEqual([
+      { namespace: "REPO", outcome: "local", ownerHub: "syn-x", contesting: [] },
+      { namespace: "SHARED", outcome: "partitioned", ownerHub: "", contesting: ["a", "b"] },
+    ]);
   });
 
   it("rejects non-objects and tolerates missing sections", () => {
     expect(parseFederation(null)).toBeNull();
     expect(parseFederation([])).toBeNull();
     const empty = parseFederation({ peerings: "junk", namespaces: "junk" });
-    expect(empty).toEqual({ hubId: "", domain: "", peerings: [], namespaces: [] });
+    expect(empty).toEqual({ hubId: "", domain: "", peerings: [], namespaces: [], note: "" });
     const junkEntries = parseFederation({ peerings: ["junk"], namespaces: [42] });
     expect(junkEntries?.peerings).toEqual([
-      { domain: "", state: "", importedAt: null, fingerprint: "" },
+      {
+        domain: "",
+        state: "",
+        importedAt: null,
+        confirmedBy: "",
+        source: "",
+        fingerprint: "",
+        expiresAt: null,
+      },
     ]);
     expect(junkEntries?.namespaces).toEqual([
       { namespace: "", outcome: "", ownerHub: "", contesting: [] },
