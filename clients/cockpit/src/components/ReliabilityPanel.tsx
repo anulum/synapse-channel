@@ -133,8 +133,10 @@ function ReliabilityPanelView({ state }: ReliabilityPanelProps): JSX.Element {
               <p className="panel__placeholder">No reliability findings recorded.</p>
             ) : (
               <ul className="evidence">
-                {shown.map((finding) => (
-                  <FindingRow key={`${finding.seq}:${finding.kind}`} finding={finding} />
+                {shown.map((finding, index) => (
+                  // A conflict_pair anchors BOTH sides to one seq, so the key
+                  // needs the position to stay unique.
+                  <FindingRow key={`${finding.seq}:${finding.kind}:${index}`} finding={finding} />
                 ))}
                 {overflow > 0 && (
                   <li className="evidence-row evidence-row--more">{`+${overflow} more recorded`}</li>

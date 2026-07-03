@@ -8,6 +8,7 @@
 
 import { useCallback, useState } from "react";
 import { windowEdgeLabel, type TimeWindow } from "../lib/brush";
+import type { LogQuery } from "../lib/logQuery";
 import type { CockpitEvent } from "../types";
 import { CausalityView, type CausalityPrefill } from "./CausalityView";
 import { SignalLog } from "./SignalLog";
@@ -23,6 +24,10 @@ interface InspectorTabsProps {
   readonly onClearWindow?: (() => void) | undefined;
   /** Where the events come from: the hub's log or the snapshot derivation. */
   readonly provenance?: "hub" | "derived";
+  /** The operator's log query, owned by the caller (URL-shareable). */
+  readonly query?: LogQuery;
+  /** Query updates from the log's controls. */
+  readonly onQueryChange?: ((query: LogQuery) => void) | undefined;
 }
 
 export function InspectorTabs({
@@ -30,6 +35,8 @@ export function InspectorTabs({
   window = null,
   onClearWindow,
   provenance = "derived",
+  query,
+  onQueryChange,
 }: InspectorTabsProps): JSX.Element {
   const [tab, setTab] = useState<InspectorTab>("log");
   const [prefill, setPrefill] = useState<CausalityPrefill | null>(null);
@@ -84,6 +91,8 @@ export function InspectorTabs({
             onClearWindow={onClearWindow}
             onSelectTask={onSelectTask}
             provenance={provenance}
+            {...(query !== undefined ? { query } : {})}
+            onQueryChange={onQueryChange}
           />
         ) : (
           <CausalityView prefill={prefill} />

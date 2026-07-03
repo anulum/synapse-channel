@@ -23,6 +23,7 @@ const DASHBOARD_PROXY = {
   "/reliability.json": DASHBOARD_ORIGIN,
   "/causality.json": DASHBOARD_ORIGIN,
   "/federation.json": DASHBOARD_ORIGIN,
+  "/events.json": DASHBOARD_ORIGIN,
 } as const;
 
 export default defineConfig({
