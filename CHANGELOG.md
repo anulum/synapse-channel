@@ -23,6 +23,14 @@ All notable changes to this project are documented here.
   row) for spreadsheets and external monitors.
 - The README now points at the cockpit build instructions and documents
   the state snapshot's `dead_letters` section.
+- `/metrics.json` dashboard feed — store-attested log metrics for the
+  cockpit's metrics panel (total and per-kind event counts, plus the same
+  split over trailing hour/day windows), measured against the log's own
+  final timestamp so the document is deterministic and replayable; same
+  `--feeds-db` posture as the other store feeds (available with the hub
+  down, 404 unconfigured, 503 fail-visible), and the document itself
+  states that the live process registry remains the hub's own `/metrics`
+  endpoint.
 - `synapse doctor --notify-cmd CMD` — pipe any warn/fail findings to an
   operator sink command (one line per finding with the remedy attached,
   hub URI in `SYNAPSE_DOCTOR_URI`), turning diagnostics into proactive

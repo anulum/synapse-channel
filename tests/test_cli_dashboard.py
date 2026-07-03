@@ -720,6 +720,7 @@ def _feeds_server(
     reliability_db: Path | None = None,
     federation_store: Path | None = None,
     cockpit_dist: Path | None = None,
+    dashboard_token: str | None = None,
 ) -> DashboardServer:
     """Start a dashboard with store feeds against an unreachable hub."""
     return start_dashboard_server(
@@ -728,6 +729,7 @@ def _feeds_server(
         uri="ws://127.0.0.1:1",
         name="SYNAPSE-CHANNEL/dashboard",
         token=None,
+        dashboard_token=dashboard_token,
         ready_timeout=0.01,
         response_timeout=0.01,
         refresh_seconds=5,
@@ -1050,3 +1052,60 @@ def test_events_feed_supports_the_latest_tail_shortcut(tmp_path: Path) -> None:
     payload = json.loads(body)
     assert payload["events"] == []  # caught up instantly, no history walk
     assert payload["next_cursor"] == 2  # the log's end, ready for the next poll
+
+
+def test_metrics_feed_reports_absence_without_a_store() -> None:
+    server = _feeds_server()
+    try:
+        status, _, body = _http_get(server.url("/metrics.json"))
+    finally:
+        server.close()
+
+    assert status == 404
+    assert "--feeds-db" in body
+
+
+def test_metrics_feed_serves_log_metrics_with_the_hub_down(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_feed_store(db)
+
+    server = _feeds_server(reliability_db=db)
+    try:
+        status, content_type, body = _http_get(server.url("/metrics.json"))
+    finally:
+        server.close()
+
+    assert status == 200
+    assert content_type == "application/json"
+    payload = json.loads(body)
+    assert payload["log"]["total_events"] == 2
+    assert payload["events_by_kind"] == {"claim": 1, "release": 1}
+    assert payload["windows"]["last_hour"]["events"] == 2
+    assert "hub's own /metrics" in payload["note"]
+
+
+def test_metrics_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
+    server = _feeds_server(reliability_db=tmp_path / "absent.db")
+    try:
+        status, _, body = _http_get(server.url("/metrics.json"))
+    finally:
+        server.close()
+
+    assert status == 503
+    assert "missing event store" in body
+
+
+def test_metrics_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_feed_store(db)
+
+    server = _feeds_server(reliability_db=db, dashboard_token="s3cret")
+    try:
+        denied, _, _ = _http_get(server.url("/metrics.json"))
+        allowed, _, body = _http_get(server.url("/metrics.json"), authorization="Bearer s3cret")
+    finally:
+        server.close()
+
+    assert denied == 401
+    assert allowed == 200
+    assert json.loads(body)["log"]["total_events"] == 2
