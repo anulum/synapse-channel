@@ -58,6 +58,49 @@ report-only run that never fails the job. Inputs reach the shell through
 environment variables — never interpolated into the script — so untrusted
 values cannot inject commands; paths with spaces survive intact.
 
+## The SYNAPSE-protected badge
+
+A repository whose pipeline gates on the action may say so with a badge:
+
+[![SYNAPSE protected](https://img.shields.io/badge/SYNAPSE-protected-6b46c1)](https://anulum.github.io/synapse-channel/policy-engine/)
+
+```markdown
+[![SYNAPSE protected](https://img.shields.io/badge/SYNAPSE-protected-6b46c1)](https://anulum.github.io/synapse-channel/policy-engine/)
+```
+
+```html
+<a href="https://anulum.github.io/synapse-channel/policy-engine/"><img src="https://img.shields.io/badge/SYNAPSE-protected-6b46c1" alt="SYNAPSE protected"></a>
+```
+
+**What the badge claims.** Adding it declares that the repository's CI runs
+the `anulum/synapse-channel` action (or `synapse policy-check --enforce`
+directly) as a **gating** step — a failing enforcement-mode rule fails the
+pipeline — on the workflows that release or merge its code. It claims
+nothing else: not that the policy is strict, not that the coordination it
+gates was correct, and not that any third party audited it.
+
+**Wear it only when it is true.** The badge is eligible when all three hold:
+
+1. a workflow runs `uses: anulum/synapse-channel@<tag>` (or invokes
+   `synapse policy-check` itself) with enforcement on — the action's
+   default; `enforce: "false"` is an advisory run and does not qualify;
+2. that workflow gates the protected path — releases, or PRs into the
+   default branch — rather than running somewhere its failure cannot block;
+3. the policy file it checks is committed to the repository, so readers can
+   see what is actually enforced.
+
+**How a reader verifies it.** The badge is a static image and a
+self-declaration — there is no attestation service behind it. Verification
+is one look at the repository itself: open `.github/workflows/`, find the
+workflow with `uses: anulum/synapse-channel@`, and confirm it runs on the
+protected path with enforcement on and a committed policy file. A badge on
+a repository where that search comes up empty is a false claim, and the
+linked page — this one — tells every reader exactly how to check. A
+managed GitHub App that issues the badge from observed check runs (turning
+self-declaration into attestation) is a separate layer under design in
+[the managed GitHub App design](managed-github-app.md); the badge
+deliberately ships first because it needs no hosting at all.
+
 ## Goals
 
 - Keep coordination local-first and evidence-bound.

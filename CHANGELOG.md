@@ -97,6 +97,15 @@ All notable changes to this project are documented here.
   baseline has no sigma, so any deviation from it is flagged as such.
   `--json` gains a `drift` object; composes with `--compare`.
 
+- The SYNAPSE-protected badge — a repository whose CI gates on the
+  `anulum/synapse-channel` policy-check action (or `synapse policy-check
+  --enforce` directly) may declare it with a static badge; the policy
+  engine page documents exactly what the badge claims, the three
+  eligibility conditions (enforcement on, gating the protected path,
+  committed policy file), and how a reader verifies the claim in the
+  repository itself — an honest self-declaration with no hosting, the
+  first slice of the managed GitHub App build order.
+
 ### Security
 - The last four unpinned tool installs in CI are now hash-locked: the
   pre-commit, release, publish, and reuse workflow jobs install

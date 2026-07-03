@@ -26,10 +26,22 @@ def test_design_is_in_the_nav() -> None:
     )
 
 
-def test_design_states_it_is_not_implemented_and_gated() -> None:
+def test_design_states_the_app_is_not_implemented() -> None:
     text = _collapsed()
-    assert "not implemented" in text
-    assert "adoption signal" in text or "gated on adoption" in text
+    assert "the app is not implemented" in text
+    assert "no webhook intake, no github app, no hosted state exists" in text
+
+
+def test_design_records_the_badge_first_build_order() -> None:
+    text = _collapsed()
+    raw = DOC.read_text(encoding="utf-8")
+
+    assert "the adoption-signal gate is lifted" in text
+    assert "badge on the existing action — shipped" in text
+    # the shipped half links to the badge's eligibility and verification rules
+    assert "policy-engine.md#the-synapse-protected-badge" in raw
+    # and stays honest about what it is until the App exists
+    assert "self-declaration, not an attestation" in text
 
 
 def test_design_keeps_the_core_managed_boundary() -> None:

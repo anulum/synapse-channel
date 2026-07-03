@@ -77,3 +77,22 @@ def test_policy_engine_design_wires_to_existing_receipt_surfaces() -> None:
     )
     for surface in required_surfaces:
         assert surface in text
+
+
+def test_badge_section_is_honest_and_verifiable() -> None:
+    """The SYNAPSE-protected badge must state its claim, eligibility, and check."""
+    text = _collapsed(POLICY_DOC)
+    raw = _read(POLICY_DOC)
+
+    assert "## the synapse-protected badge" in text
+    # rendered badge + markdown snippet + html snippet all carry the same image
+    assert raw.count("https://img.shields.io/badge/SYNAPSE-protected-6b46c1") == 3
+    # the claim is bounded and the self-declared nature is explicit
+    assert "it claims nothing else" in text
+    assert "there is no attestation service behind it" in text
+    assert "wear it only when it is true" in text
+    # an advisory run does not qualify and the reader's check is spelled out
+    assert 'enforce: "false"' in raw
+    assert "uses: anulum/synapse-channel@" in raw
+    # the attestation upgrade path points at the managed App design
+    assert "managed-github-app.md" in raw
