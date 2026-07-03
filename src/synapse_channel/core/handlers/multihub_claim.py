@@ -95,6 +95,7 @@ async def handle_multihub_claim_request(
 
     application = apply_claim(hub, request.claimant, request.claim)
     if application.claim is not None:
+        hub.counters.claims_granted += 1
         grant_fields = claim_grant_fields(application.claim)
         # The lease now authoritatively exists on this hub: tell its own agents, exactly as
         # a direct claim does, before relaying the grant back to the forwarding hub.

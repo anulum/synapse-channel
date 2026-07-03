@@ -13,6 +13,8 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from synapse_channel.core.hub_counters import HubCounters
+
 logger = logging.getLogger("synapse.hub")
 
 
@@ -22,6 +24,7 @@ class HubClientRegistry:
     def __init__(
         self,
         *,
+        counters: HubCounters | None = None,
         max_clients: int,
         max_unauth_clients: int | None,
         max_connections_per_host: int | None,
@@ -42,6 +45,7 @@ class HubClientRegistry:
         self.takeover_oscillation_window = max(float(takeover_oscillation_window), 0.0)
         self.takeover_oscillation_threshold = max(int(takeover_oscillation_threshold), 2)
         self.takeover_quarantine = max(float(takeover_quarantine), 0.0)
+        self.counters = counters if counters is not None else HubCounters()
         self._clock = clock
         self._last_takeover: dict[str, float] = {}
         self._takeover_times: dict[str, list[float]] = {}
@@ -145,8 +149,10 @@ class HubClientRegistry:
         if len(recent) >= self.takeover_oscillation_threshold:
             self._quarantine_until[sender] = now + self.takeover_quarantine
             self._takeover_times.pop(sender, None)
+            self.counters.takeover_quarantines += 1
             return "quarantine_enter"
         self._takeover_times[sender] = recent
+        self.counters.takeovers += 1
         return "accept"
 
     async def resolve_sender(

@@ -45,6 +45,10 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
         return
     target = str(data.get("target") or "all")
     recipients = _matching_online_recipients(target, sender, hub.online_agents())
+    if is_directed_target(target):
+        hub.counters.chat_directed += 1
+    else:
+        hub.counters.chat_broadcast += 1
     if not recipients and is_directed_target(target):
         # durable but waking nobody - remember the blackhole so the state
         # snapshot can show it instead of a human discovering it by relaying
