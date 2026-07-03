@@ -71,18 +71,35 @@ interface Metrics {
   readonly agents: number;
   readonly claims: number;
   readonly risk: number;
+  readonly ratePerMinute: number;
 }
 
-const ZERO_METRICS: Metrics = { agents: 0, claims: 0, risk: 0 };
+const ZERO_METRICS: Metrics = { agents: 0, claims: 0, risk: 0, ratePerMinute: 0 };
 
-function metricsOf(state: SnapshotState): Metrics {
+function metricsOf(state: SnapshotState, ratePerMinute: number): Metrics {
   const snapshot = state.snapshot;
-  if (snapshot === null) return ZERO_METRICS;
+  if (snapshot === null) return { ...ZERO_METRICS, ratePerMinute };
   return {
     agents: snapshot.fleet.agents.live.length,
     claims: snapshot.fleet.claims.active,
     risk: snapshot.risk.signals.filter((signal) => signal.level === "red").length,
+    ratePerMinute,
   };
+}
+
+/**
+ * Observed transitions in the trailing minute. Counts the derived event log
+ * (capped upstream), so a fleet outpacing the cap reads as at-least-the-cap —
+ * an undercount, never an invention.
+ */
+function observedPerMinute(log: readonly CockpitEvent[], nowMs: number): number {
+  const since = nowMs / 1000 - 60;
+  let count = 0;
+  for (const event of log) {
+    if (event.ts >= since) count += 1;
+    else break; // newest-first: everything after this is older still
+  }
+  return count;
 }
 
 export function App(): JSX.Element {
@@ -140,15 +157,20 @@ export function App(): JSX.Element {
   }, []);
 
   useEffect(() => {
-    const metrics = metricsOf(snap);
+    const metrics = metricsOf(snap, observedPerMinute(log, nowMs));
     const prior = previous.current;
     previous.current = metrics;
     setKpis([
       { label: "agents online", value: metrics.agents, delta: metrics.agents - prior.agents },
       { label: "claims held", value: metrics.claims, delta: metrics.claims - prior.claims },
+      {
+        label: "obs / min",
+        value: metrics.ratePerMinute,
+        delta: metrics.ratePerMinute - prior.ratePerMinute,
+      },
       { label: "risk signals", value: metrics.risk, delta: metrics.risk - prior.risk },
     ]);
-  }, [snap]);
+  }, [snap, log, nowMs]);
 
   const roster = useMemo(() => deriveRoster(snap.snapshot), [snap.snapshot]);
   const waiters = snap.snapshot?.fleet.agents.waiters.length ?? 0;

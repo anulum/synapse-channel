@@ -90,6 +90,14 @@ describe("deriveTransitionEvents", () => {
       ["release", "a", "released gets-released"],
       ["release", "b", "stale claim gets-cleared cleared"],
     ]);
+    // Every claim-lane transition names its task, so the log can hop into the
+    // causality inspector for it.
+    expect(events.map((event) => event.taskId)).toEqual([
+      "brand-new",
+      "goes-stale",
+      "gets-released",
+      "gets-cleared",
+    ]);
   });
 
   it("does not re-announce a claim resurfacing from the stale bucket", () => {
@@ -148,6 +156,7 @@ describe("deriveTransitionEvents", () => {
       ["finding", "a", "t1: found it"],
       ["chat", "b", "just a note"],
     ]);
+    expect(events.map((event) => event.taskId)).toEqual(["t1", ""]);
   });
 
   it("tolerates a missing or non-list progress payload", () => {

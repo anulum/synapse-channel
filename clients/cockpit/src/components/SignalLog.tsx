@@ -28,9 +28,16 @@ interface SignalLogProps {
   readonly window?: TimeWindow | null;
   /** Clears the brushed window (also clears the spine highlight). */
   readonly onClearWindow?: (() => void) | undefined;
+  /** Jump to the causality inspector for the task a row names. */
+  readonly onSelectTask?: ((taskId: string) => void) | undefined;
 }
 
-function SignalLogView({ events, window = null, onClearWindow }: SignalLogProps): JSX.Element {
+function SignalLogView({
+  events,
+  window = null,
+  onClearWindow,
+  onSelectTask,
+}: SignalLogProps): JSX.Element {
   const shown = eventsInWindow(events, window);
   const actors = window === null ? [] : actorsInWindow(events, window);
 
@@ -83,7 +90,18 @@ function SignalLogView({ events, window = null, onClearWindow }: SignalLogProps)
                     {event.actor === "" ? "—" : event.actor}
                   </td>
                   <td className="log__label" title={event.label}>
-                    {event.label}
+                    {event.taskId !== "" && onSelectTask !== undefined ? (
+                      <button
+                        type="button"
+                        className="log__hop"
+                        title={`Trace the recorded causes of ${event.taskId}`}
+                        onClick={() => onSelectTask(event.taskId)}
+                      >
+                        {event.label}
+                      </button>
+                    ) : (
+                      event.label
+                    )}
                   </td>
                 </tr>
               ))}

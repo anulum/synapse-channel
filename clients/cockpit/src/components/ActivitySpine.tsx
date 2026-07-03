@@ -280,10 +280,20 @@ export function ActivitySpine({ source, onInspect, onBrush, brush }: SpineProps)
       onInspect?.(null);
     };
 
+    const onKeyDown = (key: KeyboardEvent): void => {
+      if (key.key !== "Escape") return;
+      dragOrigin.current = null;
+      dragCurrent.current = null;
+      selection.current = null;
+      onBrush?.(null);
+      if (reduce) draw(Date.now());
+    };
+
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerup", onPointerUp);
     canvas.addEventListener("pointerleave", onPointerLeave);
+    canvas.addEventListener("keydown", onKeyDown);
 
     const unsubscribe =
       source?.subscribe((event) => {
@@ -297,6 +307,7 @@ export function ActivitySpine({ source, onInspect, onBrush, brush }: SpineProps)
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointerleave", onPointerLeave);
+      canvas.removeEventListener("keydown", onKeyDown);
       observer.disconnect();
       if (frame !== 0) window.cancelAnimationFrame(frame);
     };
@@ -304,7 +315,12 @@ export function ActivitySpine({ source, onInspect, onBrush, brush }: SpineProps)
 
   return (
     <section className="spine" aria-label="Fleet activity spine">
-      <canvas ref={canvasRef} className="spine__canvas" />
+      <canvas
+        ref={canvasRef}
+        className="spine__canvas"
+        tabIndex={0}
+        aria-label="Activity spine. Drag to brush a time window that filters the signal log; press Escape to clear it. The signal log table is the accessible reading of the same events."
+      />
       <div className="spine__lanes" aria-hidden="true">
         {LANES.map((lane) => (
           <div key={lane} className="spine__lane-label">
