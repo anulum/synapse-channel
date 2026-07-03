@@ -61,19 +61,27 @@ gains GitHub-specific dependencies, webhooks, or hosted state.
 The check is **advisory**: like the rest of Synapse's governance surface, it
 informs and records rather than enforcing at the merge gate.
 
-## Why it is gated
+## Build order
 
-Building and hosting this before teams coordinate locally would invert the
-adoption order: the App is only useful once file-scope claims are part of a team's
-workflow. The trigger to build it is a local adoption signal, not a date. Until
-then, this design exists so that when the signal comes, the boundary is already
-settled and no managed concern leaks into the local core.
+The adoption-signal gate is lifted; the build proceeds smallest-hosting-first:
+
+1. **Badge on the existing action — shipped.** The
+   [SYNAPSE-protected badge](policy-engine.md#the-synapse-protected-badge)
+   rides the composite `policy-check` action that already exists, needs no
+   hosting, and is an honest self-declaration with a documented
+   verification path.
+2. **App manifest and checks-API skeleton** — the App's identity and the
+   neutral advisory check, still without hosted state.
+3. **Hosting decision** — where the managed layer runs; an owner decision
+   tied to the enterprise packaging boundary.
 
 ## Boundaries
 
-- **Not implemented.** No webhook intake, no GitHub App, no hosted state exists.
+- **The App is not implemented.** No webhook intake, no GitHub App, no hosted
+  state exists; only the badge half (step 1) has shipped, and it is a
+  self-declaration, not an attestation — the App is what would turn the badge
+  into one, issued from observed check runs.
 - **Core stays local-first.** Conflict prediction reuses the existing core finder;
   the managed layer is a separate service and never adds GitHub or hosting
   dependencies to `synapse_channel.core`.
 - **Advisory only.** The check informs; it does not block merges or replace review.
-- **Gated on adoption.** It is built after local adoption, not before.
