@@ -28,6 +28,15 @@ All notable changes to this project are documented here.
   a built cockpit single-page app read-only under `/cockpit/` with path
   traversal and unrecognised suffixes refused.
 
+### Fixed
+- `synapse lock` now waits (bounded) for the hub's release confirmation
+  before exiting. The release frame itself is fire-and-forget and the
+  hub persists the release before broadcasting the grant, so previously
+  a follow-up step could read the event log — or contend for the lease —
+  before the release landed; the process now exits only after the lease
+  is durably gone. A hub that never confirms costs only the bounded
+  wait, with the lease TTL remaining the backstop.
+
 ### Security
 - The chat backend client refuses a `base_url` whose scheme is not
   `http`/`https` at construction — a `file://` or custom scheme smuggled

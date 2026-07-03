@@ -241,9 +241,12 @@ class _ScriptedLockAgent:
         )
 
     async def release(self, task_id: str, **_kwargs: Any) -> None:
-        del task_id
         if self.release_error is not None:
             raise self.release_error
+        # mirror the real hub: the release is confirmed back to its owner
+        await self.callback(
+            {"type": MessageType.RELEASE_GRANTED, "task_id": task_id, "owner": self.name}
+        )
 
 
 async def test_lock_retries_after_a_denial_and_wins_the_second_round() -> None:
@@ -299,3 +302,81 @@ async def test_lock_logs_a_teardown_release_failure_at_debug(
         )
     assert code == 0
     assert "best-effort release of 'g' failed on teardown" in caplog.text
+
+
+async def test_lock_teardown_waits_for_the_release_confirmation() -> None:
+    """The process exits only after the hub confirms the release — the durable
+    log already carries it, so a follow-up step never races the teardown."""
+    seen: dict[str, float] = {}
+
+    class _SlowConfirmRelease(_ScriptedLockAgent):
+        def __init__(self, name: str, callback: Any, **kwargs: Any) -> None:
+            super().__init__(name, callback, **kwargs)
+            self.claim_calls = 1  # grant immediately on the first claim
+
+        async def release(self, task_id: str, **_kwargs: Any) -> None:
+            seen["released_at"] = asyncio.get_event_loop().time()
+
+            async def confirm_later() -> None:
+                await asyncio.sleep(0.05)
+                await self.callback(
+                    {
+                        "type": MessageType.RELEASE_GRANTED,
+                        "task_id": task_id,
+                        "owner": self.name,
+                    }
+                )
+                seen["confirmed_at"] = asyncio.get_event_loop().time()
+
+            asyncio.get_event_loop().create_task(confirm_later())
+
+    async def runner(_command: list[str]) -> int:
+        return 0
+
+    code = await cli_locking._lock(
+        uri="ws://unused",
+        name="X",
+        task_id="g",
+        command=["c"],
+        paths=[],
+        wait_timeout=1.0,
+        poll_interval=0.01,
+        agent_factory=cast("AgentFactory", _SlowConfirmRelease),
+        runner=runner,
+    )
+
+    assert code == 0
+    assert "confirmed_at" in seen  # teardown waited through the late confirmation
+
+
+async def test_lock_teardown_wait_is_bounded_without_a_confirmation() -> None:
+    """A hub that never confirms costs only the bounded wait, never a hang."""
+
+    class _NeverConfirmRelease(_ScriptedLockAgent):
+        def __init__(self, name: str, callback: Any, **kwargs: Any) -> None:
+            super().__init__(name, callback, **kwargs)
+            self.claim_calls = 1
+
+        async def release(self, task_id: str, **_kwargs: Any) -> None:
+            del task_id  # fire-and-forget with no confirmation ever arriving
+
+    async def runner(_command: list[str]) -> int:
+        return 0
+
+    code = await asyncio.wait_for(
+        cli_locking._lock(
+            uri="ws://unused",
+            name="X",
+            task_id="g",
+            command=["c"],
+            paths=[],
+            wait_timeout=1.0,
+            attempts=3,
+            poll_interval=0.01,
+            agent_factory=cast("AgentFactory", _NeverConfirmRelease),
+            runner=runner,
+        ),
+        timeout=5.0,
+    )
+
+    assert code == 0
