@@ -49,6 +49,7 @@ from synapse_channel.dashboard_store_feeds import (
     build_causality_feed,
     build_events_tail,
     build_federation_feed,
+    latest_cursor,
 )
 from synapse_channel.dashboard_studio import (
     STUDIO_REFERENCE_PATH,
@@ -649,17 +650,22 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             )
             return
         params = parse_qs(query)
+        since_raw = params.get("since", ["0"])[0]
         try:
-            since = int(params.get("since", ["0"])[0])
             limit = int(params.get("limit", [str(DEFAULT_EVENTS_LIMIT)])[0])
+            since = None if since_raw == "latest" else int(since_raw)
         except ValueError:
             self._write(
                 HTTPStatus.BAD_REQUEST,
-                b"since and limit must be integers\n",
+                b"since must be an integer or 'latest'; limit must be an integer\n",
                 content_type="text/plain",
             )
             return
         try:
+            if since is None:
+                # the tail shortcut: start at the log's end instead of
+                # walking a large history just to catch up to now
+                since = latest_cursor(self.reliability_db)
             document = build_events_tail(self.reliability_db, since=since, limit=limit)
         except ValueError as exc:
             self._write(

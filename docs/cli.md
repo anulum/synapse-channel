@@ -241,11 +241,16 @@ same dashboard bearer token as every other path:
 - `/events.json?since=SEQ&limit=N` — the raw event-log tail past a
   cursor, in the exact multihub snapshot shape (`events` + `next_cursor`),
   so a polling client walks the log forward without loss or duplication;
+  `since=latest` starts at the log's end — the tail shortcut that spares
+  a client the full history walk on a large log;
 - `/causality.json?seq=N|task=ID&direction=causes|effects` — one
   causality query in the CLI's exact `--json` shape; `task=ID` resolves to
   the task's most recent recorded event, so a client can hop from a log
   row to its causal cone without knowing sequences (an unrecorded task is
-  404, not an invented anchor).
+  404, not an invented anchor). A `present: false` answer carries a
+  `note` naming which absence it is: an event recorded but outside the
+  coordination causal graph (chatter carries no causal edges), or no
+  event at that sequence at all.
 
 Without the flag each endpoint answers 404 naming the remedy; an
 unreadable store answers 503 rather than an empty document pretending the

@@ -88,6 +88,38 @@ def build_events_tail(
     return encode_log_snapshot(LogSnapshot(events=tuple(events), next_cursor=next_cursor))
 
 
+def latest_cursor(db_path: str | Path) -> int:
+    """Return the log's highest sequence — the ``since=latest`` tail shortcut.
+
+    A client that only wants "now onwards" on a large log starts here
+    instead of walking the whole history to catch up.
+
+    Raises
+    ------
+    ValueError
+        If the store does not exist.
+    """
+    path = Path(db_path)
+    if not path.exists():
+        msg = f"missing event store: {path}"
+        raise ValueError(msg)
+    store = EventStore(path)
+    try:
+        return store.max_seq()
+    finally:
+        store.close()
+
+
+def _seq_exists(db_path: str | Path, seq: int) -> bool:
+    """Return whether the log records an event at exactly ``seq``."""
+    store = EventStore(Path(db_path))
+    try:
+        batch = store.read_since(max(0, seq - 1), limit=1)
+    finally:
+        store.close()
+    return bool(batch) and batch[0].seq == seq
+
+
 def resolve_task_last_seq(db_path: str | Path, task_id: str) -> int | None:
     """Return the sequence of a task's most recent recorded event, or ``None``.
 
@@ -152,7 +184,19 @@ def build_causality_feed(
         # the exclusive-anchor guard leaves seq non-None on this branch
         anchor = int(cast("int", seq))
     query = run_causality(db_path, direction, anchor, max_nodes=max_nodes)
-    return causality_to_json(query)
+    document = causality_to_json(query)
+    if document.get("present") is False:
+        # `present` means "in the coordination causal graph", not "in the
+        # log" — a chat frame is recorded but carries no causal edges. Say
+        # which of the two the client is looking at instead of letting
+        # `false` read as "nothing there".
+        document["note"] = (
+            "event recorded but outside the coordination causal graph "
+            "(chatter and taskless events carry no causal edges)"
+            if _seq_exists(db_path, anchor)
+            else "no event recorded at this sequence"
+        )
+    return document
 
 
 def build_federation_feed(store_path: str | Path, *, clock: Clock = time.time) -> dict[str, object]:

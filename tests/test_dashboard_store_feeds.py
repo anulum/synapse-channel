@@ -29,6 +29,7 @@ from synapse_channel.dashboard_store_feeds import (
     build_causality_feed,
     build_events_tail,
     build_federation_feed,
+    latest_cursor,
     resolve_task_last_seq,
 )
 
@@ -249,3 +250,53 @@ class TestFederationFeed:
 
         with pytest.raises(FederationStoreError):
             build_federation_feed(store, clock=lambda: 0.0)
+
+
+class TestLatestCursor:
+    def test_latest_cursor_is_the_logs_highest_sequence(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        _seed_log(db)
+
+        assert latest_cursor(db) == 5
+
+    def test_empty_log_starts_at_zero(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        EventStore(db).close()
+
+        assert latest_cursor(db) == 0
+
+    def test_missing_store_is_refused(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="missing event store"):
+            latest_cursor(tmp_path / "absent.db")
+
+
+class TestCausalityAbsenceNotes:
+    def test_recorded_but_graphless_event_says_so(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        _seed_log(db)
+        store = EventStore(db)
+        store.append("chat", {"sender": "P", "text": "hello"}, ts=6.0)
+        store.close()
+
+        document = build_causality_feed(db, direction="causes", seq=6)
+
+        assert document["present"] is False
+        assert "outside the coordination causal graph" in str(document["note"])
+
+    def test_truly_absent_sequence_says_so(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        _seed_log(db)
+
+        document = build_causality_feed(db, direction="causes", seq=999)
+
+        assert document["present"] is False
+        assert document["note"] == "no event recorded at this sequence"
+
+    def test_present_answers_carry_no_note(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        _seed_log(db)
+
+        document = build_causality_feed(db, direction="causes", seq=3)
+
+        assert document["present"] is True
+        assert "note" not in document
