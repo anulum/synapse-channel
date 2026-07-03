@@ -23,6 +23,14 @@ All notable changes to this project are documented here.
   row) for spreadsheets and external monitors.
 - The README now points at the cockpit build instructions and documents
   the state snapshot's `dead_letters` section.
+- The hub's `/metrics` endpoint grew from 8 to 21 metrics: decision
+  counters wired at the decision sites — claims granted/denied, releases,
+  directed and broadcast chat, per-message auth failures, rate-limit
+  rejections, federation-gate denials, waiter takeovers and their
+  quarantines — plus live gauges for connected `-rx` waiters and the
+  dead-letter ledger (targets and letters). Each increment is one integer
+  addition in the message path and a scrape stays I/O-free, so an alert
+  rule can now see the hub *deciding*, not just existing.
 - `/metrics.json` dashboard feed — store-attested log metrics for the
   cockpit's metrics panel (total and per-kind event counts, plus the same
   split over trailing hour/day windows), measured against the log's own

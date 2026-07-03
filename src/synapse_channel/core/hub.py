@@ -51,6 +51,7 @@ from synapse_channel.core.federation import FederationBundle
 from synapse_channel.core.handlers import DISPATCH
 from synapse_channel.core.hub_broadcast import HubBroadcaster
 from synapse_channel.core.hub_clients import HubClientRegistry
+from synapse_channel.core.hub_counters import HubCounters
 from synapse_channel.core.hub_exposure import (
     LOOPBACK_HOSTS,
     InsecureBindError,
@@ -436,7 +437,9 @@ class SynapseHub:
         self.max_msg_bytes = max(int(max_msg_bytes), 1)
         self._clock = clock or time.monotonic
         self._started = self._clock()
+        self.counters = HubCounters()
         self.clients = HubClientRegistry(
+            counters=self.counters,
             max_clients=max_clients,
             max_unauth_clients=max_unauth_clients,
             max_connections_per_host=max_connections_per_host,
@@ -834,6 +837,7 @@ class SynapseHub:
             and self.rate_limiter is not None
             and not self.rate_limiter.allow(sender)
         ):
+            self.counters.rate_limited += 1
             await self._send_json(
                 websocket,
                 self._system("Rate limit exceeded.", msg_type=MessageType.ERROR, target=sender),
@@ -841,10 +845,12 @@ class SynapseHub:
             return
 
         if not await self._verify_per_message_auth(sender, msg_type, data, websocket):
+            self.counters.auth_failures += 1
             return
 
         disposition = await self._authorise_federation(sender, msg_type, data, websocket)
         if disposition is FrameDisposition.DENY:
+            self.counters.federation_denied += 1
             return
         if disposition is FrameDisposition.ALLOW_CROSS_DOMAIN:
             await self._route(sender, msg_type, data, websocket)

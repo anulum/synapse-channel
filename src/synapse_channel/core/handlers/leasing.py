@@ -174,6 +174,7 @@ async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], webso
     """Apply a scoped claim request and broadcast the grant, or deny the sender."""
     application = apply_claim(hub, sender, data)
     if application.claim is not None:
+        hub.counters.claims_granted += 1
         grant = hub._system(
             application.message,
             msg_type=MessageType.CLAIM_GRANTED,
@@ -182,6 +183,7 @@ async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], webso
         hub._remember(data, grant)
         await hub._broadcast(grant)
         return
+    hub.counters.claims_denied += 1
     await hub._send_json(
         websocket,
         hub._system(
@@ -253,6 +255,7 @@ async def handle_release(
             confidence=data.get("confidence", ""),
             freshness_seconds=data.get("freshness_seconds"),
         )
+        hub.counters.releases_granted += 1
         granted = hub._system(
             message,
             msg_type=MessageType.RELEASE_GRANTED,

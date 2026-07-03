@@ -100,8 +100,12 @@ def collect_hub_metrics(hub: SynapseHub) -> list[Metric]:
     -------
     list[Metric]
         A constant ``synapse_up`` liveness gauge, gauges for the live
-        presence/claims/resources/history/board counts, and a monotonic message
-        counter.
+        presence/claims/resources/history/board counts (waiter sidecars and
+        dead-letter targets included), the monotonic message counter, and the
+        hub's decision counters — claims granted/denied, releases, directed and
+        broadcast chat, auth failures, rate-limit rejections, federation
+        denials, takeovers and their quarantines — everything a Grafana panel
+        or an alert rule needs to see the hub deciding, not just existing.
     """
     return [
         Metric("synapse_up", "Whether the hub is serving (always 1).", "gauge", 1),
@@ -146,6 +150,88 @@ def collect_hub_metrics(hub: SynapseHub) -> list[Metric]:
             "Messages assigned a sequence id since start (resumed from the journal).",
             "counter",
             hub._message_seq,
+        ),
+        Metric(
+            "synapse_live_waiters",
+            "Connected -rx waiter sidecars.",
+            "gauge",
+            sum(1 for name in hub.agent_sockets if name.endswith("-rx")),
+        ),
+        Metric(
+            "synapse_dead_letter_targets",
+            "Directed-chat targets nobody was listening for (cleared on connect).",
+            "gauge",
+            len(hub.dead_letters.snapshot()),
+        ),
+        Metric(
+            "synapse_dead_letters",
+            "Directed chats that reached no live connection, across all targets.",
+            "gauge",
+            sum(
+                count
+                for letter in hub.dead_letters.snapshot()
+                if isinstance(count := letter["count"], int)
+            ),
+        ),
+        Metric(
+            "synapse_claims_granted_total",
+            "Claim requests granted since start, forwarded claims included.",
+            "counter",
+            hub.counters.claims_granted,
+        ),
+        Metric(
+            "synapse_claims_denied_total",
+            "Claim requests denied since start.",
+            "counter",
+            hub.counters.claims_denied,
+        ),
+        Metric(
+            "synapse_releases_granted_total",
+            "Releases granted since start.",
+            "counter",
+            hub.counters.releases_granted,
+        ),
+        Metric(
+            "synapse_chat_directed_total",
+            "Chat frames addressed to a name, list, or glob since start.",
+            "counter",
+            hub.counters.chat_directed,
+        ),
+        Metric(
+            "synapse_chat_broadcast_total",
+            "Chat frames addressed to everyone since start.",
+            "counter",
+            hub.counters.chat_broadcast,
+        ),
+        Metric(
+            "synapse_auth_failures_total",
+            "Frames refused by required per-message authentication since start.",
+            "counter",
+            hub.counters.auth_failures,
+        ),
+        Metric(
+            "synapse_rate_limited_total",
+            "Frames refused by the per-sender rate limiter since start.",
+            "counter",
+            hub.counters.rate_limited,
+        ),
+        Metric(
+            "synapse_federation_denied_total",
+            "Frames refused by the federation gate since start.",
+            "counter",
+            hub.counters.federation_denied,
+        ),
+        Metric(
+            "synapse_takeovers_total",
+            "Waiter takeover requests accepted since start.",
+            "counter",
+            hub.counters.takeovers,
+        ),
+        Metric(
+            "synapse_takeover_quarantines_total",
+            "Takeover oscillations that entered quarantine since start.",
+            "counter",
+            hub.counters.takeover_quarantines,
         ),
     ]
 
