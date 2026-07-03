@@ -129,3 +129,67 @@ export function windowEdgeLabel(ts: number): string {
     hour12: false,
   });
 }
+
+/** The narrowest window the keyboard can shrink to, in seconds. */
+const MIN_WINDOW_SPAN = 1;
+
+/** Clamp a window into the spine's visible range, preserving its span. */
+function clampToView(window: TimeWindow, nowMs: number, windowSeconds: number): TimeWindow {
+  const now = nowMs / 1000;
+  const oldest = now - windowSeconds;
+  const span = Math.min(window.toTs - window.fromTs, windowSeconds);
+  let fromTs = window.fromTs;
+  let toTs = window.toTs;
+  if (toTs > now) {
+    toTs = now;
+    fromTs = toTs - span;
+  }
+  if (fromTs < oldest) {
+    fromTs = oldest;
+    toTs = fromTs + span;
+  }
+  return { fromTs, toTs };
+}
+
+/**
+ * Shift a window along the spine by `bySeconds` (negative = into the past),
+ * clamped to the visible range with its span preserved. With no window yet,
+ * start a ten-second window ending at now — a keyboard operator's seed
+ * selection.
+ */
+export function shiftWindow(
+  window: TimeWindow | null,
+  bySeconds: number,
+  nowMs: number,
+  windowSeconds: number,
+): TimeWindow {
+  const now = nowMs / 1000;
+  if (window === null) {
+    return clampToView({ fromTs: now - 10, toTs: now }, nowMs, windowSeconds);
+  }
+  return clampToView(
+    { fromTs: window.fromTs + bySeconds, toTs: window.toTs + bySeconds },
+    nowMs,
+    windowSeconds,
+  );
+}
+
+/**
+ * Grow or shrink a window symmetrically by `bySeconds` total (negative
+ * shrinks), never below a one-second span, clamped to the visible range.
+ */
+export function resizeWindow(
+  window: TimeWindow,
+  bySeconds: number,
+  nowMs: number,
+  windowSeconds: number,
+): TimeWindow {
+  const span = window.toTs - window.fromTs;
+  const nextSpan = Math.max(MIN_WINDOW_SPAN, Math.min(windowSeconds, span + bySeconds));
+  const centre = (window.fromTs + window.toTs) / 2;
+  return clampToView(
+    { fromTs: centre - nextSpan / 2, toTs: centre + nextSpan / 2 },
+    nowMs,
+    windowSeconds,
+  );
+}

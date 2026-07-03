@@ -13,6 +13,8 @@ import {
   inWindow,
   laneAtY,
   nearestEvent,
+  resizeWindow,
+  shiftWindow,
   tsAtX,
   windowEdgeLabel,
   windowFromDrag,
@@ -129,5 +131,43 @@ describe("laneAtY", () => {
 describe("windowEdgeLabel", () => {
   it("renders a 24-hour wall-clock stamp", () => {
     expect(windowEdgeLabel(0)).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+  });
+});
+
+describe("shiftWindow", () => {
+  it("moves a window by the step, both directions", () => {
+    const window = { fromTs: 950, toTs: 960 };
+    expect(shiftWindow(window, 5, NOW_MS, WINDOW_SECONDS)).toEqual({ fromTs: 955, toTs: 965 });
+    expect(shiftWindow(window, -5, NOW_MS, WINDOW_SECONDS)).toEqual({ fromTs: 945, toTs: 955 });
+  });
+
+  it("clamps at the now-edge and at the oldest visible second, span preserved", () => {
+    expect(shiftWindow({ fromTs: 985, toTs: 995 }, 20, NOW_MS, WINDOW_SECONDS)).toEqual({
+      fromTs: 990,
+      toTs: 1000,
+    });
+    expect(shiftWindow({ fromTs: 930, toTs: 940 }, -20, NOW_MS, WINDOW_SECONDS)).toEqual({
+      fromTs: 925,
+      toTs: 935,
+    });
+  });
+
+  it("seeds a ten-second window ending at now when none exists", () => {
+    expect(shiftWindow(null, 1, NOW_MS, WINDOW_SECONDS)).toEqual({ fromTs: 990, toTs: 1000 });
+  });
+});
+
+describe("resizeWindow", () => {
+  it("grows and shrinks symmetrically about the centre", () => {
+    const window = { fromTs: 950, toTs: 960 };
+    expect(resizeWindow(window, 4, NOW_MS, WINDOW_SECONDS)).toEqual({ fromTs: 948, toTs: 962 });
+    expect(resizeWindow(window, -4, NOW_MS, WINDOW_SECONDS)).toEqual({ fromTs: 952, toTs: 958 });
+  });
+
+  it("never shrinks below one second and clamps growth to the view", () => {
+    const tiny = resizeWindow({ fromTs: 950, toTs: 951.5 }, -4, NOW_MS, WINDOW_SECONDS);
+    expect(tiny.toTs - tiny.fromTs).toBeCloseTo(1);
+    const huge = resizeWindow({ fromTs: 950, toTs: 960 }, 1000, NOW_MS, WINDOW_SECONDS);
+    expect(huge).toEqual({ fromTs: 925, toTs: 1000 });
   });
 });
