@@ -45,11 +45,16 @@ export interface CauseEdge {
 export interface CausalityTrace {
   readonly direction: string;
   readonly seq: number;
-  /** Whether the requested event exists in the log at all. */
+  /** Whether the event is in the coordination causal graph (not: the log). */
   readonly present: boolean;
   readonly node: CausalityNode | null;
   readonly direct: readonly CauseEdge[];
   readonly transitive: readonly CausalityNode[];
+  /**
+   * The server's own explanation for a `present: false` answer — recorded but
+   * outside the causal graph (chatter) versus no event at that sequence.
+   */
+  readonly note: string;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -122,6 +127,7 @@ export function parseTrace(raw: unknown): CausalityTrace | null {
     transitive: Array.isArray(payload["transitive"])
       ? payload["transitive"].map(parseNode)
       : [],
+    note: asString(payload["note"]),
   };
 }
 

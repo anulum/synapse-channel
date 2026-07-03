@@ -138,9 +138,9 @@ export interface EventsTailOptions {
   readonly pollMs?: number;
   /** Re-check cadence while the endpoint is absent. */
   readonly absentPollMs?: number;
-  /** Page size for the catch-up walk and each incremental poll. */
+  /** Page size for each incremental poll. */
   readonly limit?: number;
-  /** How many tail events the catch-up emits as history. */
+  /** How many tail events the first-contact backfill emits as history. */
   readonly historyLimit?: number;
   /** Injectable fetch for tests; defaults to the global. */
   readonly fetcher?: typeof fetch;
@@ -153,12 +153,12 @@ const DEFAULT_PAGE_LIMIT = 1_000;
 const DEFAULT_HISTORY_LIMIT = 250;
 
 /**
- * Poll the hub-attested event tail. The first contact walks the log forward
- * page by page to find the tail (emitting nothing on the way), then emits the
- * last `historyLimit` events as attested history and switches to incremental
- * polling from the cursor. A `404` reports `absent` and re-checks slowly, so
- * the feed comes alive the moment the operator passes `--feeds-db`; any other
- * failure reports `error` and keeps trying on the normal cadence.
+ * Poll the hub-attested event tail. First contact costs two requests on a log
+ * of any size: `since=latest` answers the current cursor, one backfill page
+ * carries the last `historyLimit` events as attested history, and incremental
+ * polling proceeds from the cursor. A `404` reports `absent` and re-checks
+ * slowly, so the feed comes alive the moment the operator passes `--feeds-db`;
+ * any other failure reports `error` and keeps trying on the normal cadence.
  */
 export function createEventsTailSource(options: EventsTailOptions = {}): EventsTailSource {
   const url = options.url ?? DEFAULT_EVENTS_URL;
@@ -190,9 +190,12 @@ export function createEventsTailSource(options: EventsTailOptions = {}): EventsT
     }
   };
 
-  const fetchPage = async (): Promise<{ events: StoredEvent[]; nextCursor: number } | "absent"> => {
+  const fetchPage = async (
+    since: number | "latest",
+    pageLimit: number,
+  ): Promise<{ events: StoredEvent[]; nextCursor: number } | "absent"> => {
     controller = new AbortController();
-    const response = await fetcher(`${url}?since=${cursor}&limit=${limit}`, {
+    const response = await fetcher(`${url}?since=${since}&limit=${pageLimit}`, {
       signal: controller.signal,
     });
     if (response.status === 404) return "absent";
@@ -206,29 +209,30 @@ export function createEventsTailSource(options: EventsTailOptions = {}): EventsT
     let delay = pollMs;
     try {
       if (!caughtUp) {
-        // Catch-up walk: page forward to the tail, keeping only the recent
-        // history worth emitting. Nothing is emitted until the tail is found,
-        // so a long log never floods the spine with ancient impulses.
-        const history: StoredEvent[] = [];
-        for (;;) {
-          const page = await fetchPage();
-          if (page === "absent") {
-            setMode("absent");
-            delay = absentPollMs;
-            return;
-          }
-          history.push(...page.events);
-          if (history.length > historyLimit) history.splice(0, history.length - historyLimit);
-          cursor = page.nextCursor;
-          if (page.events.length < limit) break;
-          if (stopped) return;
+        // Two requests find the tail on a log of any size: `since=latest`
+        // answers the current cursor, then one backfill page carries the
+        // recent history worth plotting. No walk, no flood.
+        const tip = await fetchPage("latest", 1);
+        if (tip === "absent") {
+          setMode("absent");
+          delay = absentPollMs;
+          return;
         }
+        if (stopped) return;
+        const backfillFrom = Math.max(0, tip.nextCursor - historyLimit);
+        const history = await fetchPage(backfillFrom, historyLimit);
+        if (history === "absent") {
+          setMode("absent");
+          delay = absentPollMs;
+          return;
+        }
+        cursor = Math.max(tip.nextCursor, history.nextCursor);
         caughtUp = true;
         setMode("hub");
-        if (!stopped) emit(history);
+        if (!stopped) emit(history.events);
         return;
       }
-      const page = await fetchPage();
+      const page = await fetchPage(cursor, limit);
       if (page === "absent") {
         // The operator restarted the dashboard without the store: say so.
         caughtUp = false;

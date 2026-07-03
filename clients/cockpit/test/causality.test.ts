@@ -89,7 +89,7 @@ describe("parseTrace", () => {
   it("rejects non-objects and tolerates a partial or absent payload", () => {
     expect(parseTrace(null)).toBeNull();
     expect(parseTrace([])).toBeNull();
-    const missing = parseTrace({ direction: "causes", seq: 9, present: false });
+    const missing = parseTrace({ direction: "causes", seq: 9, present: false, note: "no event" });
     expect(missing).toEqual({
       direction: "causes",
       seq: 9,
@@ -97,6 +97,7 @@ describe("parseTrace", () => {
       node: null,
       direct: [],
       transitive: [],
+      note: "no event",
     });
     const junk = parseTrace({ direct: "junk", transitive: "junk", node: "junk", present: "yes" });
     expect(junk?.node).toBeNull();
