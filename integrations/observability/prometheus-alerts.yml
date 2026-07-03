@@ -79,6 +79,31 @@ groups:
             Usually two sessions armed the same identity: `synapse who`
             shows the survivors, `syn reap --stale` cleans dead ones.
 
+      - alert: SynapseReliabilityFindings
+        expr: sum(synapse_reliability_findings) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Reliability findings in the durable log"
+          description: >-
+            The log-derived reliability report (via the node_exporter textfile
+            collector) shows findings — stale claims, declared failed checks,
+            broken handoffs, or conflict pairs. Read them with `synapse
+            reliability ~/synapse/hub.db`; these are evidence, not grades.
+
+      - alert: SynapseCausalHealthAnomalies
+        expr: synapse_causal_health_anomalies_total > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Causal-health anomalies in the durable log"
+          description: >-
+            The log-derived causal-health assessment shows orphaned claims,
+            dangling dependencies, or stale leases. Read them with `synapse
+            causality health ~/synapse/hub.db`.
+
       - alert: SynapseFederationDenials
         expr: increase(synapse_federation_denied_total[10m]) > 0
         for: 0m

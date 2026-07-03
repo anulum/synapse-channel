@@ -22,11 +22,38 @@ from pathlib import Path
 
 import yaml
 
+from synapse_channel.core.causality_health import run_causal_health
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import EventKind
 from synapse_channel.core.metrics import collect_hub_metrics
+from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.reliability import run_reliability_report
+from synapse_channel.observability_textfile import (
+    render_health_textfile,
+    render_reliability_textfile,
+)
 
 BUNDLE = Path(__file__).resolve().parent.parent / "integrations" / "observability"
 
+
+def _textfile_metric_names(tmp: Path) -> set[str]:
+    """The metric family names the log-derived textfiles emit, for the drift guard."""
+    db = tmp / "hub.db"
+    store = EventStore(db)
+    store.append(
+        EventKind.CLAIM,
+        {"task_id": "T", "owner": "a", "status": "claimed", "paths": [], "worktree": "w"},
+        ts=1.0,
+    )
+    store.close()
+    text = render_reliability_textfile(run_reliability_report(db)) + render_health_textfile(
+        run_causal_health(db)
+    )
+    return _referenced_names(text)
+
+
+# The live hub registry plus the log-derived textfile families: an alert rule may
+# reference either plane, and both are pinned so a renamed metric fails the suite.
 EXPORTED = {metric.name for metric in collect_hub_metrics(SynapseHub())}
 
 _METRIC_NAME = re.compile(r"\bsynapse_[a-z_]+\b")
@@ -53,13 +80,14 @@ def test_dashboard_panels_are_wired_to_the_datasource_input() -> None:
         assert panel["datasource"]["uid"] == "${DS_PROMETHEUS}", panel["title"]
 
 
-def test_alert_rules_reference_only_exported_metrics() -> None:
+def test_alert_rules_reference_only_exported_metrics(tmp_path: Path) -> None:
     document = yaml.safe_load((BUNDLE / "prometheus-alerts.yml").read_text("utf-8"))
     rules = [rule for group in document["groups"] for rule in group["rules"]]
-    assert len(rules) >= 6
+    assert len(rules) >= 8
+    known = EXPORTED | _textfile_metric_names(tmp_path)
     for rule in rules:
         referenced = _referenced_names(str(rule["expr"]))
-        assert referenced <= EXPORTED, (
+        assert referenced <= known, (
             f"alert {rule['alert']} references unknown metrics: {referenced - EXPORTED}"
         )
         assert rule["annotations"]["summary"]

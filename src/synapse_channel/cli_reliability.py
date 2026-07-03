@@ -12,12 +12,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from synapse_channel.core.reliability import (
     reliability_to_json,
     render_human,
     run_reliability_report,
 )
+from synapse_channel.observability_textfile import render_reliability_textfile
 
 
 def _cmd_reliability(args: argparse.Namespace) -> int:
@@ -27,6 +29,16 @@ def _cmd_reliability(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    if args.textfile is not None:
+        try:
+            Path(args.textfile).expanduser().write_text(
+                render_reliability_textfile(report), encoding="utf-8"
+            )
+        except OSError as exc:
+            print(f"cannot write the textfile metrics: {exc}", file=sys.stderr)
+            return 2
+        print(f"reliability metrics written to {args.textfile}")
+        return 0
     if args.json:
         print(json.dumps(reliability_to_json(report), indent=2, sort_keys=True))
     else:
@@ -48,4 +60,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Timestamp used for stale lease checks; defaults to the latest event timestamp.",
     )
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    parser.add_argument(
+        "--textfile",
+        default=None,
+        metavar="FILE",
+        help="Write the report as node_exporter textfile-collector metrics "
+        "(per-kind and per-owner finding gauges) into FILE instead of printing.",
+    )
     parser.set_defaults(func=_cmd_reliability)

@@ -103,3 +103,35 @@ def test_docs_wire_reliability_command() -> None:
     assert "synapse reliability ./synapse.db" in combined
     assert "audit signals, not scores" in combined
     assert "stale claims" in combined
+
+
+def test_cli_reliability_textfile_output(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db = tmp_path / "events.db"
+    _seed_store(db)
+    out_file = tmp_path / "reliability.prom"
+
+    exit_code = cli.main(["reliability", str(db), "--as-of", "10", "--textfile", str(out_file)])
+
+    assert exit_code == 0
+    assert f"reliability metrics written to {out_file}" in capsys.readouterr().out
+    text = out_file.read_text(encoding="utf-8")
+    assert "# TYPE synapse_reliability_findings gauge" in text
+    assert 'synapse_reliability_findings{kind="stale_claim"}' in text
+
+
+def test_cli_reliability_textfile_reports_an_unwritable_target(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db = tmp_path / "events.db"
+    _seed_store(db)
+    blocker = tmp_path / "occupied"
+    blocker.write_text("not a dir", encoding="utf-8")
+
+    exit_code = cli.main(["reliability", str(db), "--textfile", str(blocker / "out.prom")])
+
+    assert exit_code == 2
+    assert "cannot write the textfile metrics" in capsys.readouterr().err

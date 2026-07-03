@@ -23,6 +23,16 @@ All notable changes to this project are documented here.
   row) for spreadsheets and external monitors.
 - The README now points at the cockpit build instructions and documents
   the state snapshot's `dead_letters` section.
+- Log-derived signals reach Prometheus through the node_exporter
+  textfile collector: `synapse reliability --textfile FILE` and
+  `synapse causality health --textfile FILE` write the reliability
+  findings and causal-health anomalies as valid labelled exposition
+  (`synapse_reliability_findings{kind}`, `synapse_causal_health_anomalies
+  {shape}`), deterministic over a given log and parsed back by the
+  Prometheus client in the suite so node_exporter never rejects one.
+  Two alert rules ship with the observability bundle, and
+  `docs/observability.md` documents the analytics plane landing beside
+  the live counters — evidence gauges, not grades.
 - The WASM sandbox gained an adversarial proof battery and run
   attestation. `tests/test_wasm_sandbox_escapes.py` drives a hostile
   module past every limit — memory bomb, fuel bomb, wall-clock runaway,
