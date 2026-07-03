@@ -152,7 +152,7 @@ def _hash_artifact(path: Path) -> ArtifactEvidence | None:
 def _git_stdout(root: Path, args: list[str]) -> str:
     """Return stripped stdout from one Git command, or an empty string on failure."""
     try:
-        result = subprocess.run(  # nosec B603,B607
+        result = subprocess.run(  # nosec B603 B607
             ["git", *args],
             cwd=root,
             check=False,

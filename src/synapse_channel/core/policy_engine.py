@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-PASS = "pass"
+PASS = "pass"  # nosec B105 - decision status name, not a secret
 WARN = "warn"
 FAIL = "fail"
 NOT_APPLICABLE = "not_applicable"

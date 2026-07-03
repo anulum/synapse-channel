@@ -29,7 +29,7 @@ def _cmd_shell_hook(
 ) -> int:
     """Print shell code for automatic terminal arming and provider wrappers."""
     providers = tuple(args.provider) if args.provider else DEFAULT_PROVIDER_COMMANDS
-    print(renderer(shell=args.shell, provider_commands=providers), end="")
+    print(renderer(shell=args.shell, provider_commands=providers), end="")  # nosec B604 - shell names a dialect, no subprocess
     return 0
 
 
@@ -40,7 +40,7 @@ def _cmd_install_shell_hook(
 ) -> int:
     """Install the shell integration startup block."""
     try:
-        lines = installer(shell=args.shell, synapse_bin=args.synapse_bin)
+        lines = installer(shell=args.shell, synapse_bin=args.synapse_bin)  # nosec B604 - shell names a dialect, no subprocess
     except ValueError as exc:
         print(str(exc))
         return 2

@@ -17,7 +17,7 @@ all injectable, so the whole module is unit-testable without a real server.
 from __future__ import annotations
 
 import json
-import subprocess
+import subprocess  # nosec B404 - fixed provider argv, never a shell string
 import sys
 import time
 import urllib.request

@@ -239,7 +239,7 @@ def _requested_command(argv: list[str]) -> str | None:
     back to the full parser, which owns the error message.
     """
     for token in argv:
-        if token != "--" and not token.startswith("-"):
+        if token != "--" and not token.startswith("-"):  # nosec B105 - argv separator, not a secret
             return token
     return None
 
