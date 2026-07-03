@@ -42,7 +42,7 @@ body {
 
 .deck {
   display: grid;
-  grid-template-columns: minmax(240px, 300px) 1fr minmax(260px, 340px);
+  grid-template-columns: minmax(220px, 270px) minmax(0, 1.15fr) minmax(0, 1fr) minmax(230px, 300px);
   gap: 1px;
   background: var(--line-soft);
   min-height: 0;
@@ -55,6 +55,10 @@ body {
   background: var(--line-soft);
   min-height: 0;
   min-width: 0;
+}
+
+.deck__stack--rail {
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
 }
 
 /* ---------- HUD ---------- */
@@ -763,6 +767,206 @@ body {
 .risk-safe__item::before {
   content: "→ ";
   color: var(--dim);
+}
+
+/* ---------- task board ---------- */
+.board {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.board-row {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: baseline;
+  column-gap: var(--sp-2);
+  padding: var(--sp-2);
+  background: var(--raised);
+  border-left: 2px solid var(--idle);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.board-row--blocked {
+  border-left-color: var(--critical);
+}
+
+.board-row--ready {
+  border-left-color: var(--healthy);
+}
+
+.board-row--open {
+  border-left-color: var(--info);
+}
+
+.board-row--done {
+  border-left-color: var(--line);
+  opacity: 0.66;
+}
+
+.board-row--more {
+  border-left-color: transparent;
+  color: var(--dim);
+  font-size: var(--fs-micro);
+}
+
+.board-row__glyph {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.2;
+  text-align: center;
+  color: var(--idle);
+}
+
+.board-row--blocked .board-row__glyph {
+  color: var(--critical);
+}
+
+.board-row--ready .board-row__glyph {
+  color: var(--healthy);
+}
+
+.board-row--open .board-row__glyph {
+  color: var(--info);
+}
+
+.board-row--done .board-row__glyph {
+  color: var(--muted);
+}
+
+.board-row__id {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.board-row__task {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-row__title {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-row__status {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  justify-self: end;
+}
+
+.board-row__edges {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: var(--sp-1);
+  min-width: 0;
+}
+
+.dep-chip {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 4px;
+  color: var(--muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dep-chip--satisfied {
+  color: var(--healthy);
+  border-color: var(--healthy-trail);
+}
+
+.dep-chip--waiting {
+  color: var(--warn);
+  border-color: var(--warn-trail);
+}
+
+.dep-chip--missing {
+  color: var(--critical);
+  border-color: var(--critical-trail);
+}
+
+.dep-chip--unblocks {
+  color: var(--info);
+  border-color: var(--info-trail);
+}
+
+/* ---------- findings stream ---------- */
+.findings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.finding-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-2);
+  background: var(--raised);
+  border-left: 2px solid var(--info);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.finding-row__meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.finding-row__time {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+  flex: none;
+}
+
+.finding-row__author {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finding-row__task {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finding-row__text {
+  font-size: var(--fs-small);
+  color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 /* ---------- signal log ---------- */

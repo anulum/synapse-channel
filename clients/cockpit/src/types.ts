@@ -86,11 +86,41 @@ export interface FleetClaims {
   readonly stale_claims: readonly ClaimRecord[];
 }
 
+/** One blackboard task as a dependency-graph node. */
+export interface TaskGraphNode {
+  readonly task_id: string;
+  readonly title: string;
+  readonly status: string;
+  /** Whether the hub reports the task in the current ready set. */
+  readonly ready: boolean;
+}
+
+/** One prerequisite edge between blackboard tasks (`from` gates `to`). */
+export interface TaskGraphEdge {
+  readonly from: string;
+  readonly to: string;
+  /** Whether the prerequisite has reached a terminal status. */
+  readonly satisfied: boolean;
+  /** Whether the prerequisite is absent from the current board snapshot. */
+  readonly missing: boolean;
+  /** Prerequisite status, or `missing` when absent. */
+  readonly from_status: string;
+}
+
+/** The hub's read-only dependency graph over blackboard tasks. */
+export interface TaskGraphSection {
+  readonly nodes: readonly TaskGraphNode[];
+  readonly edges: readonly TaskGraphEdge[];
+}
+
 /** The derived fleet section the cockpit reads directly. */
 export interface FleetSection {
   readonly agents: FleetAgents;
   readonly claims: FleetClaims;
   readonly branch_conflicts: readonly Record<string, unknown>[];
+  readonly task_graph: TaskGraphSection;
+  /** Release-receipt progress notes from the blackboard snapshot. */
+  readonly receipts: readonly Record<string, unknown>[];
 }
 
 /** One triaged risk pointing back to a concrete snapshot record. */

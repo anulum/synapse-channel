@@ -9,10 +9,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivitySpine } from "./components/ActivitySpine";
 import { ClaimsBoard } from "./components/ClaimsBoard";
+import { FindingsStream } from "./components/FindingsStream";
 import { FleetRoster } from "./components/FleetRoster";
 import { Hud, type Kpi } from "./components/Hud";
 import { RiskRail } from "./components/RiskRail";
 import { SignalLog } from "./components/SignalLog";
+import { TaskBoard } from "./components/TaskBoard";
+import { deriveBoard, deriveFindings } from "./lib/board";
 import { deriveClaims, parseConflicts } from "./lib/claims";
 import { deriveRoster } from "./lib/roster";
 import {
@@ -117,6 +120,9 @@ export function App(): JSX.Element {
     () => (snap.snapshot === null ? [] : parseConflicts(snap.snapshot)),
     [snap.snapshot],
   );
+  const board = useMemo(() => deriveBoard(snap.snapshot), [snap.snapshot]);
+  const findings = useMemo(() => deriveFindings(snap.snapshot), [snap.snapshot]);
+  const connected = snap.snapshot !== null;
 
   return (
     <div className="shell">
@@ -125,10 +131,14 @@ export function App(): JSX.Element {
       <div className="deck">
         <FleetRoster roster={roster} waiters={waiters} />
         <div className="deck__stack">
-          <ClaimsBoard claims={claims} conflicts={conflicts} connected={snap.snapshot !== null} />
+          <ClaimsBoard claims={claims} conflicts={conflicts} connected={connected} />
           <SignalLog events={log} />
         </div>
-        <RiskRail risk={snap.snapshot?.risk ?? null} />
+        <TaskBoard tasks={board} connected={connected} />
+        <div className="deck__stack deck__stack--rail">
+          <RiskRail risk={snap.snapshot?.risk ?? null} />
+          <FindingsStream findings={findings} connected={connected} />
+        </div>
       </div>
     </div>
   );

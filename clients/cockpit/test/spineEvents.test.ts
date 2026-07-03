@@ -40,6 +40,8 @@ function snapshotOf(overrides: SnapshotOverrides = {}): FleetSnapshot {
         stale_claims: stale,
       },
       branch_conflicts: [],
+      task_graph: { nodes: [], edges: [] },
+      receipts: [],
     },
     risk: {
       level: "green",

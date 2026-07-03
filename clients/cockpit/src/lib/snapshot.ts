@@ -15,6 +15,9 @@ import type {
   FleetSnapshot,
   RiskSignal,
   RiskView,
+  TaskGraphEdge,
+  TaskGraphNode,
+  TaskGraphSection,
 } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -108,12 +111,43 @@ function parseClaims(value: unknown): FleetClaims {
   };
 }
 
+function parseGraphNode(value: unknown): TaskGraphNode {
+  const node = asRecord(value);
+  return {
+    task_id: asString(node["task_id"]),
+    title: asString(node["title"]),
+    status: asString(node["status"]),
+    ready: node["ready"] === true,
+  };
+}
+
+function parseGraphEdge(value: unknown): TaskGraphEdge {
+  const edge = asRecord(value);
+  return {
+    from: asString(edge["from"]),
+    to: asString(edge["to"]),
+    satisfied: edge["satisfied"] === true,
+    missing: edge["missing"] === true,
+    from_status: asString(edge["from_status"]),
+  };
+}
+
+function parseTaskGraph(value: unknown): TaskGraphSection {
+  const graph = asRecord(value);
+  return {
+    nodes: asArray(graph["nodes"]).map(parseGraphNode),
+    edges: asArray(graph["edges"]).map(parseGraphEdge),
+  };
+}
+
 function parseFleet(value: unknown): FleetSection {
   const fleet = asRecord(value);
   return {
     agents: parseAgents(fleet["agents"]),
     claims: parseClaims(fleet["claims"]),
     branch_conflicts: asRecordArray(fleet["branch_conflicts"]),
+    task_graph: parseTaskGraph(fleet["task_graph"]),
+    receipts: asRecordArray(fleet["receipts"]),
   };
 }
 

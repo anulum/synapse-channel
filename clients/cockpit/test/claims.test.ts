@@ -47,6 +47,8 @@ function snapshotOf(options: {
         stale_claims: stale,
       },
       branch_conflicts: options.conflicts ?? [],
+      task_graph: { nodes: [], edges: [] },
+      receipts: [],
     },
     risk: { level: "green", signals: [], safe_next_work: [] },
   };
