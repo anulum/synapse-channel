@@ -15,6 +15,7 @@
 // is a stated count, not visual noise.
 
 import type { BranchConflictView, ClaimView } from "./claims";
+import type { PeeringView } from "./federation";
 
 /** Vertical pitch between nodes, in SVG user units. */
 export const ROW_PITCH = 26;
@@ -71,6 +72,52 @@ export interface TopologyLayout {
  * across refreshes; `liveAgentCount` minus the drawn agents is the stated
  * idle remainder.
  */
+/** One drawn peer-domain node in the federation band. */
+export interface PeerNode {
+  readonly domain: string;
+  readonly y: number;
+  /** Peering lifecycle state the durable store proves. */
+  readonly state: string;
+  /** Tooltip material: provenance and fingerprint, joined and non-empty parts only. */
+  readonly detail: string;
+}
+
+/** The federation band: this hub on the left, imported peerings on the right. */
+export interface FederationBand {
+  readonly peers: readonly PeerNode[];
+  /** This hub's node y — vertically centred against the peer ladder. */
+  readonly hubY: number;
+  /** SVG height covering the peer ladder. */
+  readonly height: number;
+}
+
+/**
+ * Lay out the federation band from the imported peerings, sorted by domain.
+ * An empty store yields an empty band (the panel states it in words instead).
+ */
+export function layoutFederation(peerings: readonly PeeringView[]): FederationBand {
+  const ordered = [...peerings].sort((a, b) => a.domain.localeCompare(b.domain));
+  const peers: PeerNode[] = ordered.map((peering, index) => ({
+    domain: peering.domain,
+    y: (index + 1) * ROW_PITCH,
+    state: peering.state,
+    detail: [
+      peering.state,
+      peering.confirmedBy === "" ? "" : `confirmed by ${peering.confirmedBy}`,
+      peering.source === "" ? "" : `source ${peering.source}`,
+      peering.fingerprint === "" ? "" : `fingerprint ${peering.fingerprint}`,
+    ]
+      .filter((part) => part !== "")
+      .join(" · "),
+  }));
+  const height = (peers.length + 1) * ROW_PITCH + ROW_PITCH / 2;
+  return {
+    peers,
+    hubY: peers.length === 0 ? ROW_PITCH : (ROW_PITCH + peers.length * ROW_PITCH) / 2 + ROW_PITCH / 2,
+    height,
+  };
+}
+
 export function layoutTopology(
   claims: readonly ClaimView[],
   conflicts: readonly BranchConflictView[],

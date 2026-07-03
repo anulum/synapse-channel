@@ -9,6 +9,7 @@
 import { useCallback, useState } from "react";
 import { windowEdgeLabel, type TimeWindow } from "../lib/brush";
 import type { BranchConflictView, ClaimView } from "../lib/claims";
+import type { FederationState } from "../lib/federation";
 import type { LogQuery } from "../lib/logQuery";
 import type { CockpitEvent } from "../types";
 import { CausalityView, type CausalityPrefill } from "./CausalityView";
@@ -38,6 +39,8 @@ interface InspectorTabsProps {
   readonly liveAgentCount?: number;
   /** Whether a snapshot has arrived at all. */
   readonly connected?: boolean;
+  /** The federation posture feed, for the topology tab's peering band. */
+  readonly federation?: FederationState | undefined;
 }
 
 export function InspectorTabs({
@@ -51,6 +54,7 @@ export function InspectorTabs({
   conflicts = [],
   liveAgentCount = 0,
   connected = false,
+  federation,
 }: InspectorTabsProps): JSX.Element {
   const [tab, setTab] = useState<InspectorTab>("log");
   const [prefill, setPrefill] = useState<CausalityPrefill | null>(null);
@@ -123,6 +127,7 @@ export function InspectorTabs({
             conflicts={conflicts}
             liveAgentCount={liveAgentCount}
             connected={connected}
+            {...(federation !== undefined ? { federation } : {})}
           />
         ) : (
           <CausalityView prefill={prefill} />

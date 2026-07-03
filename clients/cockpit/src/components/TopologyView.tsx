@@ -9,7 +9,8 @@
 import { memo } from "react";
 
 import type { BranchConflictView, ClaimView } from "../lib/claims";
-import { layoutTopology, ROW_PITCH } from "../lib/topology";
+import type { FederationState } from "../lib/federation";
+import { layoutFederation, layoutTopology, ROW_PITCH } from "../lib/topology";
 
 /** Horizontal positions of the two columns in the SVG's 640-unit width. */
 const AGENT_X = 200;
@@ -29,6 +30,8 @@ interface TopologyViewProps {
   readonly liveAgentCount: number;
   /** Whether a snapshot has arrived at all. */
   readonly connected: boolean;
+  /** The federation posture feed, for the peering band. */
+  readonly federation?: FederationState;
 }
 
 function TopologyViewComponent({
@@ -36,8 +39,11 @@ function TopologyViewComponent({
   conflicts,
   liveAgentCount,
   connected,
+  federation,
 }: TopologyViewProps): JSX.Element {
   const layout = layoutTopology(claims, conflicts, liveAgentCount);
+  const posture = federation?.data ?? null;
+  const band = layoutFederation(posture?.peerings ?? []);
 
   return (
     <section className="panel" aria-label="Fleet topology">
@@ -118,6 +124,59 @@ function TopologyViewComponent({
             </text>
           </svg>
         )}
+        <div className="topology-federation">
+          <span className="topology-federation__head">federation</span>
+          {federation === undefined || federation.status === "absent" ? (
+            <p className="panel__placeholder">
+              Posture surface not served (/federation.json) — the peering band
+              appears when the operator passes a federation store.
+            </p>
+          ) : posture === null ? (
+            <p className="panel__placeholder">
+              {federation.status === "error"
+                ? `Federation feed failed: ${federation.error ?? "unknown"}`
+                : "Waiting for the federation feed."}
+            </p>
+          ) : band.peers.length === 0 ? (
+            <p className="panel__placeholder">No peerings imported — a single-hub posture.</p>
+          ) : (
+            <svg
+              className="topology"
+              viewBox={`0 0 640 ${band.height}`}
+              role="img"
+              aria-label="This hub on the left, imported peer domains on the right; edge colour is the peering's lifecycle state"
+            >
+              {band.peers.map((peer) => (
+                <line
+                  key={`edge:${peer.domain}`}
+                  className={`topology__peer-edge topology__peer-edge--${peer.state}`}
+                  x1={AGENT_X + 6}
+                  y1={band.hubY}
+                  x2={TASK_X - 6}
+                  y2={peer.y}
+                />
+              ))}
+              <circle className="topology__node topology__node--hub" cx={AGENT_X} cy={band.hubY} r={5} />
+              <text className="topology__label topology__label--agent" x={AGENT_X - 10} y={band.hubY + 3}>
+                this hub
+              </text>
+              {band.peers.map((peer) => (
+                <g key={peer.domain}>
+                  <circle
+                    className={`topology__node topology__node--peer topology__node--peer-${peer.state}`}
+                    cx={TASK_X}
+                    cy={peer.y}
+                    r={4}
+                  />
+                  <text className="topology__label" x={TASK_X + 10} y={peer.y + 3}>
+                    <title>{peer.detail}</title>
+                    {peer.domain}
+                  </text>
+                </g>
+              ))}
+            </svg>
+          )}
+        </div>
       </div>
     </section>
   );

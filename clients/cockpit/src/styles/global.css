@@ -1651,6 +1651,51 @@ body {
   text-anchor: middle;
 }
 
+/* ---------- federation band in the topology tab ---------- */
+.topology-federation {
+  border-top: 1px solid var(--line);
+  padding: var(--sp-2) var(--sp-3);
+}
+
+.topology-federation__head {
+  display: block;
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--dim);
+}
+
+.topology__peer-edge {
+  stroke: var(--healthy-trail);
+  stroke-width: 1;
+}
+
+.topology__peer-edge--expired {
+  stroke: var(--warn-trail);
+}
+
+.topology__peer-edge--revoked {
+  stroke: var(--critical);
+  stroke-dasharray: 3 3;
+}
+
+.topology__node--hub {
+  fill: var(--now);
+}
+
+.topology__node--peer {
+  fill: var(--healthy);
+}
+
+.topology__node--peer-expired {
+  fill: var(--warn);
+}
+
+.topology__node--peer-revoked {
+  fill: var(--critical);
+}
+
 /* ---------- risk heuristics section ---------- */
 .risk-heuristics {
   margin-top: var(--sp-3);
