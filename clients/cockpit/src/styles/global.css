@@ -35,9 +35,103 @@ body {
 /* ---------- app shell: HUD strip over an asymmetric deck ---------- */
 .shell {
   display: grid;
-  grid-template-rows: var(--hud-h) auto 1fr;
+  grid-template-rows: var(--hud-h) auto auto 1fr;
   height: 100vh;
   overflow: hidden;
+}
+
+/* ---------- federation row ---------- */
+.fed-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding: 3px var(--sp-4);
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-tiny);
+  min-width: 0;
+}
+
+.fed-row--quiet {
+  color: var(--dim);
+}
+
+.fed-row--partitioned {
+  background: var(--critical-trail);
+  border-bottom-color: var(--critical);
+}
+
+.fed-row__label {
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--dim);
+  flex: none;
+}
+
+.fed-row__hub {
+  font-family: var(--font-mono);
+  color: var(--ink);
+  flex: none;
+}
+
+.fed-row__domain {
+  font-family: var(--font-mono);
+  color: var(--muted);
+  flex: none;
+}
+
+.fed-row__note {
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fed-row__peers {
+  display: flex;
+  gap: var(--sp-3);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.fed-peer {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--font-mono);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.fed-peer__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dim);
+  align-self: center;
+}
+
+.fed-peer__dot--active {
+  background: var(--healthy);
+}
+
+.fed-peer__dot--revoked {
+  background: var(--critical);
+}
+
+.fed-peer__dot--stale {
+  background: var(--warn);
+}
+
+.fed-row__contested {
+  margin-left: auto;
+  color: var(--critical);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .deck {

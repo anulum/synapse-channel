@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivitySpine } from "./components/ActivitySpine";
 import { ClaimsBoard } from "./components/ClaimsBoard";
+import { FederationRow } from "./components/FederationRow";
 import { FindingsStream } from "./components/FindingsStream";
 import { FleetRoster } from "./components/FleetRoster";
 import { Hud, type Kpi } from "./components/Hud";
@@ -18,6 +19,7 @@ import { RiskRail } from "./components/RiskRail";
 import { TaskBoard } from "./components/TaskBoard";
 import { deriveBoard, deriveFindings } from "./lib/board";
 import { deriveClaims, parseConflicts } from "./lib/claims";
+import { createFederationStore, type FederationState } from "./lib/federation";
 import { createReliabilityStore, type ReliabilityState } from "./lib/reliability";
 import { deriveRoster } from "./lib/roster";
 import {
@@ -47,7 +49,14 @@ const INITIAL_SNAPSHOT: SnapshotState = {
 };
 
 const INITIAL_RELIABILITY: ReliabilityState = {
-  report: null,
+  data: null,
+  status: "connecting",
+  fetchedAt: null,
+  error: null,
+};
+
+const INITIAL_FEDERATION: FederationState = {
+  data: null,
   status: "connecting",
   fetchedAt: null,
   error: null,
@@ -81,6 +90,7 @@ export function App(): JSX.Element {
   const [spineSource, setSpineSource] = useState<TransitionEventSource | undefined>(undefined);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [reliability, setReliability] = useState<ReliabilityState>(INITIAL_RELIABILITY);
+  const [federation, setFederation] = useState<FederationState>(INITIAL_FEDERATION);
   const previous = useRef<Metrics>(ZERO_METRICS);
 
   useEffect(() => {
@@ -99,6 +109,8 @@ export function App(): JSX.Element {
     // on its own slow cadence, independent of the 2 s fleet snapshot.
     const reliabilityStore = createReliabilityStore();
     const unsubscribeReliability = reliabilityStore.subscribe(setReliability);
+    const federationStore = createFederationStore();
+    const unsubscribeFederation = federationStore.subscribe(setFederation);
     // Re-evaluate freshness between polls so the beacon flips to `stale` even
     // while the hub is silent, without waiting for the next fetch to return.
     // The same tick drives the lease countdowns on the claims board.
@@ -111,10 +123,12 @@ export function App(): JSX.Element {
       unsubscribeEvents();
       unsubscribeSnapshots();
       unsubscribeReliability();
+      unsubscribeFederation();
       clearInterval(clock);
       source.stop();
       store.stop();
       reliabilityStore.stop();
+      federationStore.stop();
     };
   }, []);
 
@@ -144,6 +158,7 @@ export function App(): JSX.Element {
     <div className="shell">
       <Hud kpis={kpis} live={snap.status === "live"} stamp={stampFor(snap.fetchedAt)} />
       <ActivitySpine source={spineSource} />
+      <FederationRow state={federation} />
       <div className="deck">
         <div className="deck__stack deck__stack--roster">
           <FleetRoster roster={roster} waiters={waiters} />

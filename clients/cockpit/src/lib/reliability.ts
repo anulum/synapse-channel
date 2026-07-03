@@ -12,6 +12,8 @@
 // scores") and never folds them into a rank, grade, or number of merit. The
 // operator draws the conclusion; the panel shows the record.
 
+import { createEndpointFeed, type EndpointFeed, type FeedState } from "./feed";
+
 /** One recorded reliability finding, pointing back at its event seq. */
 export interface ReliabilityFinding {
   readonly kind: string;
@@ -118,23 +120,8 @@ export function orderOwners(owners: readonly OwnerEvidence[]): OwnerEvidence[] {
   return [...owners].sort((a, b) => volume(b) - volume(a) || a.owner.localeCompare(b.owner));
 }
 
-/** Connection state of the reliability feed. `absent` = hub has no endpoint. */
-export type ReliabilityStatus = "connecting" | "live" | "absent" | "error";
-
-/** The latest reliability report plus how it was (or was not) obtained. */
-export interface ReliabilityState {
-  readonly report: ReliabilityReport | null;
-  readonly status: ReliabilityStatus;
-  /** Epoch milliseconds of the last successful fetch, or null before one. */
-  readonly fetchedAt: number | null;
-  readonly error: string | null;
-}
-
-/** A polling feed of the reliability report. */
-export interface ReliabilityStore {
-  subscribe(listener: (state: ReliabilityState) => void): () => void;
-  stop(): void;
-}
+/** The reliability feed's state; `absent` means the hub serves no endpoint. */
+export type ReliabilityState = FeedState<ReliabilityReport>;
 
 export interface ReliabilityStoreOptions {
   /** Endpoint to poll; defaults to the dashboard-served `/reliability.json`. */
@@ -151,72 +138,18 @@ const DEFAULT_RELIABILITY_URL = "/reliability.json";
 const DEFAULT_RELIABILITY_POLL_MS = 15_000;
 
 /**
- * Poll the hub's reliability endpoint. A `404` is reported as `absent` — the
- * dashboard build serving this cockpit does not expose reliability evidence —
- * and is re-checked on the same cadence, so the panel comes alive the moment
- * the server side ships. Other failures keep the last good report and report
- * `error` with the reason.
+ * Poll the hub's reliability endpoint with the shared feed lifecycle: `404`
+ * reports `absent` and keeps re-checking, so the panel comes alive the moment
+ * the server side ships; other failures keep the last good report.
  */
-export function createReliabilityStore(options: ReliabilityStoreOptions = {}): ReliabilityStore {
-  const url = options.url ?? DEFAULT_RELIABILITY_URL;
-  const pollMs = options.pollMs ?? DEFAULT_RELIABILITY_POLL_MS;
-  const fetcher = options.fetcher ?? fetch;
-  const now = options.now ?? Date.now;
-
-  const listeners = new Set<(state: ReliabilityState) => void>();
-  let state: ReliabilityState = {
-    report: null,
-    status: "connecting",
-    fetchedAt: null,
-    error: null,
-  };
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let controller: AbortController | undefined;
-  let stopped = false;
-
-  const publish = (next: ReliabilityState): void => {
-    state = next;
-    for (const listener of listeners) listener(state);
-  };
-
-  const poll = async (): Promise<void> => {
-    controller = new AbortController();
-    try {
-      const response = await fetcher(url, { signal: controller.signal });
-      if (response.status === 404) {
-        if (!stopped) {
-          publish({ report: state.report, status: "absent", fetchedAt: state.fetchedAt, error: null });
-        }
-        return;
-      }
-      if (!response.ok) throw new Error(`hub returned ${response.status}`);
-      const report = parseReliability(await response.json());
-      if (report === null) throw new Error("reliability payload was not an object");
-      if (!stopped) {
-        publish({ report, status: "live", fetchedAt: now(), error: null });
-      }
-    } catch (cause) {
-      if (stopped) return;
-      const message = cause instanceof Error ? cause.message : String(cause);
-      publish({ report: state.report, status: "error", fetchedAt: state.fetchedAt, error: message });
-    } finally {
-      if (!stopped) timer = setTimeout(poll, pollMs);
-    }
-  };
-
-  void poll();
-
-  return {
-    subscribe(listener) {
-      listeners.add(listener);
-      listener(state);
-      return () => listeners.delete(listener);
-    },
-    stop() {
-      stopped = true;
-      if (timer !== undefined) clearTimeout(timer);
-      controller?.abort();
-      listeners.clear();
-    },
-  };
+export function createReliabilityStore(
+  options: ReliabilityStoreOptions = {},
+): EndpointFeed<ReliabilityReport> {
+  return createEndpointFeed({
+    url: options.url ?? DEFAULT_RELIABILITY_URL,
+    pollMs: options.pollMs ?? DEFAULT_RELIABILITY_POLL_MS,
+    parse: parseReliability,
+    ...(options.fetcher !== undefined ? { fetcher: options.fetcher } : {}),
+    ...(options.now !== undefined ? { now: options.now } : {}),
+  });
 }

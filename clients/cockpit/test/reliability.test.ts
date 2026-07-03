@@ -121,7 +121,7 @@ describe("createReliabilityStore", () => {
     await vi.waitFor(() => {
       expect(states.at(-1)?.status).toBe("live");
     });
-    expect(states.at(-1)?.report?.note).toBe("audit signals, not scores");
+    expect(states.at(-1)?.data?.note).toBe("audit signals, not scores");
     expect(states.at(-1)?.fetchedAt).toBe(5_000);
     store.stop();
   });
@@ -145,10 +145,10 @@ describe("createReliabilityStore", () => {
       expect(states.at(-1)?.status).toBe("error");
     });
     expect(states.at(-1)?.error).toContain("500");
-    expect(states.at(-1)?.report?.note).toBe("n");
+    expect(states.at(-1)?.data?.note).toBe("n");
     await vi.advanceTimersByTimeAsync(1000);
     await vi.waitFor(() => {
-      expect(states.at(-1)?.error).toContain("not an object");
+      expect(states.at(-1)?.error).toContain("not parseable");
     });
     store.stop();
   });
@@ -176,7 +176,7 @@ describe("createReliabilityStore", () => {
     await vi.waitFor(() => {
       expect(states.at(-1)?.status).toBe("error");
     });
-    expect(states.at(-1)?.report).toBeNull();
+    expect(states.at(-1)?.data).toBeNull();
     store.stop();
   });
 
