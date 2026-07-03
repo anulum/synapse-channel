@@ -123,6 +123,14 @@ never touched. `synapse doctor --json` emits every verdict plus the overall
 health as one JSON document for CI health gates (it refuses the mutating and
 checklist flags so stdout stays a single document); `synapse status --json`
 does the same for the status counts, sized for monitoring scripts.
+`synapse doctor --notify-cmd CMD` additionally pipes any warn/fail findings
+to the sink command's stdin — one line each, remedy attached, hub URI in
+`SYNAPSE_DOCTOR_URI` — turning the diagnostics into a proactive alert: a
+healthy run sends nothing, under `--fix` the sink sees the state *after* the
+repair, and it composes with `--json` (stdout stays one document). Same
+contract as `cross-repo --notify-cmd`: split without a shell (wrap in
+`sh -c '…'` for pipes), best-effort, a failing sink never changes the exit
+code.
 `synapse status --watch` refreshes the line every `--interval` seconds (default
 2) as an operator dashboard: each refresh opens its own probe connection so a
 hub restart shows as an honest offline line, a TTY rewrites the line in place

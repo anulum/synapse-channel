@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -432,3 +433,182 @@ def test_cursor_reader_swallows_an_unreadable_home(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(ergonomics_module, "syn_home", lambda _env: _HostileHome())
     assert cli_doctor._read_cursor_names({}) == []
+
+
+# --- --notify-cmd ---------------------------------------------------------------
+
+
+def test_finding_lines_render_non_pass_verdicts_with_remedy() -> None:
+    diagnoses = [
+        _pass("identity"),
+        Diagnosis(check="hub", status="fail", detail="no answer", remedy="synapse hub"),
+        Diagnosis(check="waiter", status="warn", detail="not armed", remedy="syn-wait"),
+    ]
+
+    lines = cli_doctor.finding_lines(diagnoses)
+
+    assert lines == [
+        "fail hub: no answer | remedy: synapse hub",
+        "warn waiter: not armed | remedy: syn-wait",
+    ]
+
+
+def test_finding_lines_are_empty_for_a_healthy_report() -> None:
+    assert cli_doctor.finding_lines([_pass("hub"), _pass("waiter")]) == []
+
+
+def test_run_doctor_notify_pipes_findings_and_uri_to_the_sink(tmp_path: Path) -> None:
+    capture = tmp_path / "captured.txt"
+    sink = (
+        "import os,sys,pathlib; pathlib.Path(sys.argv[1]).write_text("
+        "sys.stdin.read() + os.environ['SYNAPSE_DOCTOR_URI'], encoding='utf-8')"
+    )
+
+    cli_doctor.run_doctor_notify(
+        f'{sys.executable} -c "{sink}" {capture}',
+        ["fail hub: no answer | remedy: synapse hub"],
+        uri="ws://h:1",
+    )
+
+    assert capture.read_text(encoding="utf-8") == (
+        "fail hub: no answer | remedy: synapse hub\nws://h:1"
+    )
+
+
+def test_run_doctor_notify_reports_a_missing_sink_without_raising(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_doctor.run_doctor_notify("/definitely/not/a/binary", ["fail hub: x | remedy: y"], uri="u")
+    assert "notify command failed" in capsys.readouterr().err
+
+
+def test_run_doctor_notify_reports_an_unparseable_command(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_doctor.run_doctor_notify("sink 'unbalanced", ["fail hub: x | remedy: y"], uri="u")
+    assert "notify command failed" in capsys.readouterr().err
+
+
+def test_run_doctor_notify_reports_a_nonzero_sink_exit(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_doctor.run_doctor_notify(
+        f'{sys.executable} -c "raise SystemExit(3)"',
+        ["fail hub: x | remedy: y"],
+        uri="u",
+    )
+    assert "notify command exited 3" in capsys.readouterr().err
+
+
+def test_cmd_doctor_notify_fires_on_findings(capsys: pytest.CaptureFixture[str]) -> None:
+    calls: list[tuple[str, list[str], str]] = []
+
+    async def diagnose(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
+        return (1, ["[FAIL] hub: nope"], [_fail("hub"), _pass("waiter")])
+
+    ns = _doctor_ns(notify_cmd="pager")
+    code = cli_doctor._cmd_doctor(
+        ns,
+        diagnose_runner=diagnose,
+        notify_runner=lambda cmd, findings, *, uri: calls.append((cmd, findings, uri)),
+    )
+
+    assert code == 1
+    assert calls == [("pager", ["fail hub: nope | remedy: "], "ws://h")]
+    capsys.readouterr()
+
+
+def test_cmd_doctor_notify_stays_silent_when_healthy(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[str] = []
+
+    async def diagnose(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
+        return (0, ["synapse doctor: all clear"], [_pass("hub")])
+
+    ns = _doctor_ns(notify_cmd="pager")
+    code = cli_doctor._cmd_doctor(
+        ns,
+        diagnose_runner=diagnose,
+        notify_runner=lambda cmd, *_a, **_k: calls.append(cmd),
+    )
+
+    assert code == 0
+    assert calls == []
+    capsys.readouterr()
+
+
+def test_cmd_doctor_notify_composes_with_json(capsys: pytest.CaptureFixture[str]) -> None:
+    calls: list[list[str]] = []
+
+    async def diagnose(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
+        return (1, ["[FAIL] hub: nope"], [_fail("hub")])
+
+    ns = _doctor_ns(notify_cmd="pager", json=True)
+    code = cli_doctor._cmd_doctor(
+        ns,
+        diagnose_runner=diagnose,
+        notify_runner=lambda _cmd, findings, *, uri: calls.append(findings),
+    )
+
+    assert code == 1
+    # stdout stays exactly one JSON document; the sink got the findings
+    document = json.loads(capsys.readouterr().out)
+    assert document["healthy"] is False
+    assert calls == [["fail hub: nope | remedy: "]]
+
+
+def test_cmd_doctor_notify_reports_the_state_after_a_fix(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A repaired fleet sends nothing — the sink sees post-repair reality."""
+    runs: list[int] = []
+    calls: list[list[str]] = []
+
+    async def diagnose(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
+        runs.append(1)
+        if len(runs) == 1:
+            return (1, ["[FAIL] hub: down"], [_fail("hub")])
+        return (0, ["[ok] hub: answered"], [_pass("hub")])
+
+    ns = _doctor_ns(
+        uri="ws://localhost:8876", project="r", identity="r/x", fix=True, notify_cmd="pager"
+    )
+    code = cli_doctor._cmd_doctor(
+        ns,
+        diagnose_runner=diagnose,
+        service_installer=lambda **_: ["ok"],
+        notify_runner=lambda _cmd, findings, *, uri: calls.append(findings),
+    )
+
+    assert code == 0
+    assert len(runs) == 2
+    assert calls == []  # healthy after the repair: nothing to page
+    capsys.readouterr()
+
+
+def test_cmd_doctor_notify_pages_a_repair_that_did_not_take(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[list[str]] = []
+
+    async def diagnose(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
+        return (
+            1,
+            ["[FAIL] hub: still down"],
+            [Diagnosis(check="hub", status="fail", detail="still down", remedy="look")],
+        )
+
+    ns = _doctor_ns(
+        uri="ws://localhost:8876", project="r", identity="r/x", fix=True, notify_cmd="pager"
+    )
+    code = cli_doctor._cmd_doctor(
+        ns,
+        diagnose_runner=diagnose,
+        service_installer=lambda **_: ["ok"],
+        notify_runner=lambda _cmd, findings, *, uri: calls.append(findings),
+    )
+
+    assert code == 1
+    assert calls == [["fail hub: still down | remedy: look"]]
+    capsys.readouterr()

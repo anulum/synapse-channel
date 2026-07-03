@@ -23,6 +23,13 @@ All notable changes to this project are documented here.
   row) for spreadsheets and external monitors.
 - The README now points at the cockpit build instructions and documents
   the state snapshot's `dead_letters` section.
+- `synapse doctor --notify-cmd CMD` — pipe any warn/fail findings to an
+  operator sink command (one line per finding with the remedy attached,
+  hub URI in `SYNAPSE_DOCTOR_URI`), turning diagnostics into proactive
+  alerts; a healthy run sends nothing, `--fix` pages the post-repair
+  state, `--json` composes (stdout stays one document), and the sink is
+  best-effort under the same no-shell contract as
+  `cross-repo --notify-cmd`.
 - `synapse lock --release-timeout SECONDS` — tune how long the exit is
   held for the hub's release confirmation on slower links; the wait
   stays bounded either way and the lease TTL remains the backstop.
