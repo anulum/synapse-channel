@@ -40,10 +40,38 @@ discrete event-driven oscilloscope of observed coordination transitions.
   because the hub refuses claims there until the split heals.
 - **Deck** — the fleet roster (waker-missing presence honesty included) over
   the reliability EVIDENCE panel; the claims board (per-path detail, ticking
-  lease countdowns, loud branch-conflict banner) over the signal log /
-  causality inspector tabs; the task board (hub-verdicted dependency chips,
-  done tasks listing the dependents they unblocked); the risk rail over the
-  findings stream.
+  lease countdowns, loud branch-conflict banner) over the inspector tabs; the
+  task board (hub-verdicted dependency chips, done tasks listing the
+  dependents they unblocked); the risk rail — the hub's signals, then the
+  hub-recorded **dead letters** (targets whose messages nobody reads), then
+  client-side **repetition heuristics** (claim churn, repeating lease expiry)
+  in their own clearly-labelled section — over the findings stream.
+
+## Inspector tabs
+
+- **Signal log** — the event stream with a query surface: text search, kind
+  filters (the HUD's KPI tiles drill straight into them), newest/oldest
+  order, a task-grouped compact view, pause-with-new-count, a raw-JSON
+  expansion per hub event, and an **export** button that downloads exactly
+  the shown window as a self-describing JSON document (provenance, query,
+  window, and count stated inside the document). The query lives in the URL
+  hash, so a filtered view is a shareable address. On hub provenance a
+  **history** mode scrubs the whole durable log by sequence — any position
+  renders its attested 200-event window in the same table.
+- **Topology** — a deterministic bipartite graph of who holds what: agents in
+  one column, held tasks in the other, one line per claim (stale amber,
+  conflict red), dashed ties for advisory conflicts, idle agents as a stated
+  count. Below it, the **federation band**: this hub and its imported peer
+  domains, edges coloured by the lifecycle state the durable store proves.
+- **Metrics** — the log's pulse from the store-attested metrics feed: whole-
+  log coverage, per-kind counts as plain horizontal bars, and the trailing
+  windows the server measures against the log's own final timestamp.
+- **Causality** — recorded causes/effects traces for a sequence or task, with
+  per-hub clustering; log rows and task chips hop straight into it.
+
+The layout is responsive: under 1100px the deck folds to two columns, under
+720px to a single scrolling column re-ordered by triage priority (risk rail
+first), with the spine kept at every width.
 
 ## Data contract
 
@@ -53,12 +81,16 @@ discrete event-driven oscilloscope of observed coordination transitions.
 | `/reliability.json` | 15 s poll | the `synapse reliability --json` report (optional) |
 | `/causality.json?seq=N\|task=ID&direction=causes\|effects` | on demand | a `synapse causality --json` trace (optional) |
 | `/federation.json` | 20 s poll | federation posture (proposed contract; optional) |
+| `/events.json?since=SEQ\|latest&limit=N` | 2 s incremental | the hub-attested event log (optional; also drives history mode) |
+| `/metrics.json` | 30 s poll | store-attested log metrics: totals, per-kind, trailing windows (optional) |
 
 Optional endpoints answer `404` on dashboards that do not serve them; the
 corresponding panel states that plainly and activates the moment the surface
-ships. Spine events are derived client-side by diffing consecutive snapshot
-fetches — real transitions, quantised to the poll cadence; a hub-attested
-event feed (true seq + ts) replaces the derivation when the server exposes one.
+ships (`synapse dashboard --feeds-db PATH` serves the store-backed feeds).
+Spine and log events prefer the hub-attested tail (true seq + ts, provenance
+labelled "hub event log"); while it is absent they fall back to diffing
+consecutive snapshot fetches — real transitions, quantised to the poll
+cadence, labelled "observed transitions". The two sources never mix.
 
 ## Develop
 
