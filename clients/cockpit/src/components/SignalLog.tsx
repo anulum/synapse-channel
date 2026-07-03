@@ -9,9 +9,28 @@
 import { Fragment, memo, useRef, useState } from "react";
 
 import { actorsInWindow, eventsInWindow, windowEdgeLabel, type TimeWindow } from "../lib/brush";
+import { buildLogExport, exportFilename } from "../lib/exportLog";
 import { groupByTask } from "../lib/logGroups";
 import { applyQuery, isConstrained, OPEN_QUERY, type LogQuery } from "../lib/logQuery";
 import type { CockpitEvent } from "../types";
+
+/** Hand the shown window to the operator as a self-describing JSON download. */
+function downloadShown(
+  events: readonly CockpitEvent[],
+  provenance: "hub" | "derived",
+  query: LogQuery,
+  window: TimeWindow | null,
+): void {
+  const nowMs = Date.now();
+  const document_ = buildLogExport(events, provenance, query, window, nowMs);
+  const blob = new Blob([JSON.stringify(document_, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = exportFilename(provenance, nowMs);
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 
 /** Wall-clock HH:MM:SS for a spine event's timestamp (epoch seconds). */
 function timeOf(event: CockpitEvent): string {
@@ -134,6 +153,15 @@ function SignalLogView({
           title="Freeze the view while the feed keeps recording"
         >
           {paused ? `paused · ${newerCount} new` : "pause"}
+        </button>
+        <button
+          type="button"
+          className="log-controls__toggle"
+          onClick={() => downloadShown(shown, provenance, query, window)}
+          disabled={shown.length === 0}
+          title="Download the shown events as JSON (provenance and query stated in the document)"
+        >
+          export
         </button>
         {isConstrained(query) && (
           <button

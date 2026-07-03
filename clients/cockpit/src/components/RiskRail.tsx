@@ -8,6 +8,7 @@
 
 import { memo } from "react";
 
+import type { AnomalyFlag } from "../lib/anomalies";
 import { orderSignals } from "../lib/risk";
 import type { RiskView } from "../types";
 
@@ -21,12 +22,17 @@ const LEVEL_GLYPH: Record<RiskView["level"], string> = {
 interface RiskRailProps {
   /** The snapshot's risk view, or null before the first successful fetch. */
   readonly risk: RiskView | null;
+  /**
+   * Client-side repetition heuristics over the observed window — rendered in
+   * their own clearly-labelled section, never mixed into the hub's signals.
+   */
+  readonly anomalies?: readonly AnomalyFlag[];
 }
 
 /** How many safe-next-work rows show before the tail collapses into a count. */
 const SAFE_WORK_SHOWN = 14;
 
-function RiskRailView({ risk }: RiskRailProps): JSX.Element {
+function RiskRailView({ risk, anomalies = [] }: RiskRailProps): JSX.Element {
   const signals = risk === null ? [] : orderSignals(risk.signals);
   const safeWork = risk?.safe_next_work ?? [];
   const safeShown = safeWork.slice(0, SAFE_WORK_SHOWN);
@@ -67,6 +73,34 @@ function RiskRailView({ risk }: RiskRailProps): JSX.Element {
               </li>
             ))}
           </ul>
+        )}
+        {anomalies.length > 0 && (
+          <div className="risk-heuristics">
+            <span
+              className="risk-safe__head"
+              title="Computed client-side from the observed event window only; not the hub's verdict."
+            >
+              repetition heuristics · observed window
+            </span>
+            <ul className="risk-list">
+              {anomalies.map((flag) => (
+                <li key={`${flag.kind}:${flag.taskId}`} className="risk-row risk-row--amber">
+                  <span className="risk-row__glyph" aria-hidden="true">
+                    ↻
+                  </span>
+                  <span className="risk-row__body">
+                    <span className="risk-row__subject">
+                      <span className="risk-row__category">
+                        {flag.kind === "claim_churn" ? "churn" : "lease"}
+                      </span>
+                      {flag.taskId}
+                    </span>
+                    <span className="risk-row__detail">{flag.detail}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
         {safeWork.length > 0 && (
           <div className="risk-safe">

@@ -18,6 +18,7 @@ import { PanelBoundary } from "./components/PanelBoundary";
 import { ReliabilityPanel } from "./components/ReliabilityPanel";
 import { RiskRail } from "./components/RiskRail";
 import { TaskBoard } from "./components/TaskBoard";
+import { deriveAnomalies } from "./lib/anomalies";
 import { boardTruncation, deriveBoard, deriveFindings } from "./lib/board";
 import type { TimeWindow } from "./lib/brush";
 import { deriveClaims, parseConflicts } from "./lib/claims";
@@ -248,6 +249,7 @@ export function App(): JSX.Element {
   );
   const board = useMemo(() => deriveBoard(snap.snapshot), [snap.snapshot]);
   const findings = useMemo(() => deriveFindings(snap.snapshot), [snap.snapshot]);
+  const anomalies = useMemo(() => deriveAnomalies(log), [log]);
   const connected = snap.snapshot !== null;
 
   return (
@@ -290,6 +292,10 @@ export function App(): JSX.Element {
               provenance={provenance === "hub" ? "hub" : "derived"}
               query={logQuery}
               onQueryChange={onQueryChange}
+              claims={claims}
+              conflicts={conflicts}
+              liveAgentCount={snap.snapshot?.fleet.agents.live.length ?? 0}
+              connected={connected}
             />
           </PanelBoundary>
         </div>
@@ -298,7 +304,7 @@ export function App(): JSX.Element {
         </PanelBoundary>
         <div className="deck__stack deck__stack--rail">
           <PanelBoundary name="Risk rail">
-            <RiskRail risk={snap.snapshot?.risk ?? null} />
+            <RiskRail risk={snap.snapshot?.risk ?? null} anomalies={anomalies} />
           </PanelBoundary>
           <PanelBoundary name="Findings">
             <FindingsStream findings={findings} connected={connected} />
