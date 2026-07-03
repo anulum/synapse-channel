@@ -482,7 +482,7 @@ def test_run_doctor_notify_reports_a_missing_sink_without_raising(
     assert "notify command failed" in capsys.readouterr().err
 
 
-def test_run_doctor_notify_reports_an_unparseable_command(
+def test_run_doctor_notify_reports_an_unparsable_command(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     cli_doctor.run_doctor_notify("sink 'unbalanced", ["fail hub: x | remedy: y"], uri="u")
