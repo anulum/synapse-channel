@@ -21,7 +21,10 @@ import synapse_channel.dashboard as dashboard_module
 from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
 from synapse_channel import cli
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.dashboard import (
+    DashboardServer,
     DashboardSnapshot,
     fetch_dashboard_snapshot,
     render_dashboard_html,
@@ -590,3 +593,123 @@ def test_dashboard_handler_authorizes_everything_without_a_token() -> None:
     assert _DashboardHandler._authorized(bearer) is True
     wrong = cast("_DashboardHandler", types.SimpleNamespace(dashboard_token="secret", headers={}))
     assert _DashboardHandler._authorized(wrong) is False
+
+
+def _reliability_server(reliability_db: Path | None, **overrides: str) -> DashboardServer:
+    """Start a dashboard against an unreachable hub — the reliability feed
+    reads the durable store, so it must serve even when the hub is down."""
+    return start_dashboard_server(
+        host="127.0.0.1",
+        port=0,
+        uri="ws://127.0.0.1:1",
+        name="SYNAPSE-CHANNEL/dashboard",
+        token=None,
+        ready_timeout=0.01,
+        response_timeout=0.01,
+        refresh_seconds=5,
+        allow_non_loopback=False,
+        reliability_db=reliability_db,
+        dashboard_token=overrides.get("dashboard_token"),
+    )
+
+
+def test_dashboard_reliability_endpoint_reports_absence_without_a_store() -> None:
+    server = _reliability_server(None)
+    try:
+        status, content_type, body = _http_get(server.url("/reliability.json"))
+    finally:
+        server.close()
+
+    assert status == 404
+    assert content_type == "text/plain"
+    assert "--reliability-db" in body
+
+
+def test_dashboard_reliability_endpoint_serves_the_report_with_the_hub_down(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "hub.db"
+    store = EventStore(db)
+    store.append(
+        EventKind.CLAIM,
+        {"task_id": "T", "owner": "alice", "status": "claimed", "paths": [], "worktree": "w"},
+        ts=1.0,
+    )
+    store.close()
+
+    server = _reliability_server(db)
+    try:
+        status, content_type, body = _http_get(server.url("/reliability.json"))
+    finally:
+        server.close()
+
+    assert status == 200
+    assert content_type == "application/json"
+    payload = json.loads(body)
+    assert payload["note"] == "audit signals, not scores"
+    assert "owners" in payload and "findings" in payload
+
+
+def test_dashboard_reliability_endpoint_fails_visible_on_a_missing_store(
+    tmp_path: Path,
+) -> None:
+    server = _reliability_server(tmp_path / "absent.db")
+    try:
+        status, content_type, body = _http_get(server.url("/reliability.json"))
+    finally:
+        server.close()
+
+    assert status == 503
+    assert content_type == "text/plain"
+    assert "missing event store" in body
+
+
+def test_dashboard_reliability_endpoint_requires_the_dashboard_token(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "hub.db"
+    EventStore(db).close()
+
+    server = _reliability_server(db, dashboard_token="secret")
+    try:
+        denied_status, _, _ = _http_get(server.url("/reliability.json"))
+        allowed_status, _, allowed_body = _http_get(
+            server.url("/reliability.json"), authorization="Bearer secret"
+        )
+    finally:
+        server.close()
+
+    assert denied_status == 401
+    assert allowed_status == 200
+    assert json.loads(allowed_body)["note"] == "audit signals, not scores"
+
+
+def test_dashboard_parser_wires_the_reliability_store_flag() -> None:
+    parser = cli.build_parser(command="dashboard")
+
+    default = parser.parse_args(["dashboard"])
+    assert default.reliability_db is None
+
+    named = parser.parse_args(["dashboard", "--reliability-db", "./hub.db"])
+    assert named.reliability_db == Path("./hub.db")
+
+
+def test_cmd_dashboard_announces_the_reliability_url(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With --reliability-db the dispatcher names the reliability endpoint."""
+    from synapse_channel import cli_dashboard
+
+    server = _FakeDashboardServer(token=None, generated=False)
+    monkeypatch.setattr(cli_dashboard, "start_dashboard_server", lambda **_: server)
+
+    def interrupt(_: float) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("synapse_channel.cli_dashboard.time.sleep", interrupt)
+    args = _dashboard_args(reliability_db=Path("./hub.db"))
+    handler = args.func  # type: ignore[attr-defined]
+
+    assert int(handler(args)) == 0
+    out = capsys.readouterr().out
+    assert "reliability JSON: http://127.0.0.1:8765/reliability.json" in out

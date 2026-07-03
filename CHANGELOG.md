@@ -106,6 +106,15 @@ All notable changes to this project are documented here.
   repository itself — an honest self-declaration with no hosting, the
   first slice of the managed GitHub App build order.
 
+- `synapse dashboard --reliability-db HUB.DB` — the dashboard serves
+  `/reliability.json`, the same audit-signal report as `synapse
+  reliability` ("audit signals, not scores"), read from the durable
+  event store rather than the live hub so it stays available when the
+  hub is down. Without the flag the endpoint answers 404 (the cockpit
+  reliability panel treats that as the feed being honestly absent); an
+  unreadable store answers 503 rather than an empty report. Behind the
+  same dashboard bearer token as every other path.
+
 ### Security
 - The last four unpinned tool installs in CI are now hash-locked: the
   pre-commit, release, publish, and reuse workflow jobs install
