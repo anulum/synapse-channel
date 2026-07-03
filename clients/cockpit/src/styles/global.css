@@ -1118,6 +1118,235 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* ---------- inspector tabs (signal log | causality) ---------- */
+.inspector {
+  display: grid;
+  grid-template-rows: 30px minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+  background: var(--panel);
+}
+
+.inspector__tabs {
+  display: flex;
+  gap: 1px;
+  background: var(--line-soft);
+  border-bottom: 1px solid var(--line);
+}
+
+.inspector__tab {
+  appearance: none;
+  border: 0;
+  background: var(--panel);
+  color: var(--dim);
+  font-family: var(--font-display);
+  font-size: var(--fs-tiny);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  padding: 0 var(--sp-3);
+  cursor: pointer;
+}
+
+.inspector__tab--active {
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--now);
+}
+
+.inspector__tab:focus-visible {
+  outline: 1px solid var(--info);
+  outline-offset: -1px;
+}
+
+.inspector__tab-count {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0;
+}
+
+.inspector__body {
+  display: grid;
+  min-height: 0;
+  min-width: 0;
+}
+
+.inspector__body .panel__head {
+  display: none;
+}
+
+/* ---------- causality inspector ---------- */
+.causality-form {
+  display: flex;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+
+.causality-form__subject {
+  flex: 1;
+  min-width: 0;
+  background: var(--abyss);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  padding: var(--sp-1) var(--sp-2);
+}
+
+.causality-form__subject::placeholder {
+  color: var(--dim);
+}
+
+.causality-form__direction,
+.causality-form__go {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: var(--fs-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: var(--sp-1) var(--sp-2);
+  cursor: pointer;
+}
+
+.causality-form__go:disabled {
+  color: var(--dim);
+  cursor: wait;
+}
+
+.causality-form__subject:focus-visible,
+.causality-form__direction:focus-visible,
+.causality-form__go:focus-visible {
+  outline: 1px solid var(--info);
+  outline-offset: -1px;
+}
+
+.causality-focus {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-2);
+  background: var(--raised);
+  border-left: 2px solid var(--now);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  margin-bottom: var(--sp-2);
+}
+
+.causality-focus__label {
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--dim);
+}
+
+.causality-node {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-size: var(--fs-small);
+}
+
+.causality-node__seq {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--dim);
+  flex: none;
+}
+
+.causality-node__time {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+  flex: none;
+}
+
+.causality-node__kind {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--info);
+  flex: none;
+}
+
+.causality-node__who {
+  font-family: var(--font-mono);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.causality-edges {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.causality-edge {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-2);
+  background: var(--raised);
+  border-left: 2px solid var(--info);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.causality-edge__relation {
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--warn);
+}
+
+.causality-edge__detail {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+
+.causality-transitive {
+  margin-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+  padding-top: var(--sp-2);
+}
+
+.causality-transitive__head {
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--dim);
+}
+
+.causality-cluster {
+  margin-top: var(--sp-2);
+}
+
+.causality-cluster__hub {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--info);
+  margin-bottom: var(--sp-1);
+}
+
+.causality-cluster__nodes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 /* ---------- signal log ---------- */
 .log {
   width: 100%;
