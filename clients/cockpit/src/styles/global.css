@@ -61,6 +61,10 @@ body {
   grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
 }
 
+.deck__stack--roster {
+  grid-template-rows: minmax(0, 1.2fr) minmax(0, 0.8fr);
+}
+
 /* ---------- HUD ---------- */
 .hud {
   display: flex;
@@ -767,6 +771,151 @@ body {
 .risk-safe__item::before {
   content: "→ ";
   color: var(--dim);
+}
+
+/* ---------- reliability evidence ---------- */
+.evidence-owners {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-micro);
+  margin-bottom: var(--sp-2);
+}
+
+.evidence-owners th {
+  text-align: right;
+  font-family: var(--font-display);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.evidence-owners th:first-child {
+  text-align: left;
+}
+
+.evidence-owners td {
+  padding: 2px 4px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.evidence-owners__name {
+  text-align: left !important;
+  color: var(--ink) !important;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.evidence-row {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  column-gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--raised);
+  border-left: 2px solid var(--idle);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.evidence-row--warn {
+  border-left-color: var(--warn);
+}
+
+.evidence-row--critical {
+  border-left-color: var(--critical);
+}
+
+.evidence-row--more {
+  border-left-color: transparent;
+  color: var(--dim);
+  font-size: var(--fs-micro);
+}
+
+.evidence-row__glyph {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.4;
+  text-align: center;
+  color: var(--muted);
+}
+
+.evidence-row--warn .evidence-row__glyph {
+  color: var(--warn);
+}
+
+.evidence-row--critical .evidence-row__glyph {
+  color: var(--critical);
+}
+
+.evidence-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.evidence-row__meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+
+.evidence-row__seq {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--dim);
+  flex: none;
+}
+
+.evidence-row__time {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+  flex: none;
+}
+
+.evidence-row__kind {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence-row__detail {
+  font-size: var(--fs-micro);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence-row__who {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------- task board ---------- */
