@@ -161,6 +161,8 @@ async def _lock(
             outcome["granted"] = True
         elif data.get("type") == MessageType.CLAIM_DENIED:
             outcome["denied"] = str(data.get("payload") or "held by another agent")
+        elif data.get("type") == MessageType.RELEASE_GRANTED and data.get("owner") == name:
+            outcome["released"] = True
 
     agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
     conn_task = asyncio.create_task(agent.connect())
@@ -222,7 +224,21 @@ async def _lock(
         return await runner(command)
     finally:
         try:
+            outcome.pop("released", None)
             await agent.release(task_id)
+            # The release frame itself is fire-and-forget on the wire, and the
+            # hub persists the release BEFORE broadcasting the grant — so
+            # waiting boundedly for the confirmation here means that when the
+            # process exits, the lease is gone and the durable log already
+            # carries the release. Without the wait, a follow-up step reading
+            # the log (or contending for the lease) can race the hub. A
+            # missing confirmation only costs this bounded wait: the TTL
+            # remains the backstop, and teardown never hangs the command's
+            # outcome.
+            for _ in range(attempts):
+                if outcome.get("released") or conn_task.done():
+                    break
+                await asyncio.sleep(poll_interval)
         except Exception:
             # Teardown must not mask the held command's outcome, but a lease
             # that could not be dropped stays visible until its TTL — leave a
