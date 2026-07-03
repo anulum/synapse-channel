@@ -1587,6 +1587,81 @@ body {
   gap: 2px;
 }
 
+/* ---------- fleet topology ---------- */
+.topology {
+  display: block;
+  width: 100%;
+  height: auto;
+  padding: var(--sp-2) 0;
+}
+
+.topology__edge {
+  stroke: var(--info-trail);
+  stroke-width: 1;
+}
+
+.topology__edge--stale {
+  stroke: var(--warn-trail);
+}
+
+.topology__edge--conflict {
+  stroke: var(--critical);
+  stroke-width: 1.4;
+}
+
+.topology__tie {
+  fill: none;
+  stroke: var(--critical);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+}
+
+.topology__node {
+  fill: var(--info);
+}
+
+.topology__node--conflict {
+  fill: var(--critical);
+}
+
+.topology__node--task {
+  fill: var(--healthy);
+}
+
+.topology__node--task.topology__node--stale {
+  fill: var(--warn);
+}
+
+.topology__label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  fill: var(--ink);
+}
+
+.topology__label--agent {
+  text-anchor: end;
+}
+
+.topology__column {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  fill: var(--dim);
+  text-anchor: middle;
+}
+
+/* ---------- risk heuristics section ---------- */
+.risk-heuristics {
+  margin-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+  padding-top: var(--sp-2);
+}
+
+.risk-heuristics .risk-list {
+  margin-top: var(--sp-1);
+}
+
 /* ---------- signal log query controls ---------- */
 .log-controls {
   display: flex;

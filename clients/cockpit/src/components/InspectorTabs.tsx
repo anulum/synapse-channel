@@ -8,12 +8,14 @@
 
 import { useCallback, useState } from "react";
 import { windowEdgeLabel, type TimeWindow } from "../lib/brush";
+import type { BranchConflictView, ClaimView } from "../lib/claims";
 import type { LogQuery } from "../lib/logQuery";
 import type { CockpitEvent } from "../types";
 import { CausalityView, type CausalityPrefill } from "./CausalityView";
 import { SignalLog } from "./SignalLog";
+import { TopologyView } from "./TopologyView";
 
-type InspectorTab = "log" | "causality";
+type InspectorTab = "log" | "topology" | "causality";
 
 interface InspectorTabsProps {
   /** Events for the signal-log tab, newest first. */
@@ -28,6 +30,14 @@ interface InspectorTabsProps {
   readonly query?: LogQuery;
   /** Query updates from the log's controls. */
   readonly onQueryChange?: ((query: LogQuery) => void) | undefined;
+  /** Claim rows for the topology tab. */
+  readonly claims?: readonly ClaimView[];
+  /** Advisory branch conflicts for the topology tab. */
+  readonly conflicts?: readonly BranchConflictView[];
+  /** Live roster size (topology states the idle remainder). */
+  readonly liveAgentCount?: number;
+  /** Whether a snapshot has arrived at all. */
+  readonly connected?: boolean;
 }
 
 export function InspectorTabs({
@@ -37,6 +47,10 @@ export function InspectorTabs({
   provenance = "derived",
   query,
   onQueryChange,
+  claims = [],
+  conflicts = [],
+  liveAgentCount = 0,
+  connected = false,
 }: InspectorTabsProps): JSX.Element {
   const [tab, setTab] = useState<InspectorTab>("log");
   const [prefill, setPrefill] = useState<CausalityPrefill | null>(null);
@@ -59,6 +73,15 @@ export function InspectorTabs({
           onClick={() => setTab("log")}
         >
           signal log <span className="inspector__tab-count">{events.length}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "topology"}
+          className={`inspector__tab${tab === "topology" ? " inspector__tab--active" : ""}`}
+          onClick={() => setTab("topology")}
+        >
+          topology
         </button>
         <button
           type="button"
@@ -93,6 +116,13 @@ export function InspectorTabs({
             provenance={provenance}
             {...(query !== undefined ? { query } : {})}
             onQueryChange={onQueryChange}
+          />
+        ) : tab === "topology" ? (
+          <TopologyView
+            claims={claims}
+            conflicts={conflicts}
+            liveAgentCount={liveAgentCount}
+            connected={connected}
           />
         ) : (
           <CausalityView prefill={prefill} />
