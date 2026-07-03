@@ -12,9 +12,9 @@ import { ClaimsBoard } from "./components/ClaimsBoard";
 import { FindingsStream } from "./components/FindingsStream";
 import { FleetRoster } from "./components/FleetRoster";
 import { Hud, type Kpi } from "./components/Hud";
+import { InspectorTabs } from "./components/InspectorTabs";
 import { ReliabilityPanel } from "./components/ReliabilityPanel";
 import { RiskRail } from "./components/RiskRail";
-import { SignalLog } from "./components/SignalLog";
 import { TaskBoard } from "./components/TaskBoard";
 import { deriveBoard, deriveFindings } from "./lib/board";
 import { deriveClaims, parseConflicts } from "./lib/claims";
@@ -151,7 +151,7 @@ export function App(): JSX.Element {
         </div>
         <div className="deck__stack">
           <ClaimsBoard claims={claims} conflicts={conflicts} connected={connected} />
-          <SignalLog events={log} />
+          <InspectorTabs events={log} />
         </div>
         <TaskBoard tasks={board} connected={connected} />
         <div className="deck__stack deck__stack--rail">
