@@ -12,11 +12,13 @@ import { ClaimsBoard } from "./components/ClaimsBoard";
 import { FindingsStream } from "./components/FindingsStream";
 import { FleetRoster } from "./components/FleetRoster";
 import { Hud, type Kpi } from "./components/Hud";
+import { ReliabilityPanel } from "./components/ReliabilityPanel";
 import { RiskRail } from "./components/RiskRail";
 import { SignalLog } from "./components/SignalLog";
 import { TaskBoard } from "./components/TaskBoard";
 import { deriveBoard, deriveFindings } from "./lib/board";
 import { deriveClaims, parseConflicts } from "./lib/claims";
+import { createReliabilityStore, type ReliabilityState } from "./lib/reliability";
 import { deriveRoster } from "./lib/roster";
 import {
   createSnapshotStore,
@@ -39,6 +41,13 @@ function stampFor(ms: number | null): string {
 
 const INITIAL_SNAPSHOT: SnapshotState = {
   snapshot: null,
+  status: "connecting",
+  fetchedAt: null,
+  error: null,
+};
+
+const INITIAL_RELIABILITY: ReliabilityState = {
+  report: null,
   status: "connecting",
   fetchedAt: null,
   error: null,
@@ -71,6 +80,7 @@ export function App(): JSX.Element {
   const [log, setLog] = useState<readonly CockpitEvent[]>([]);
   const [spineSource, setSpineSource] = useState<TransitionEventSource | undefined>(undefined);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [reliability, setReliability] = useState<ReliabilityState>(INITIAL_RELIABILITY);
   const previous = useRef<Metrics>(ZERO_METRICS);
 
   useEffect(() => {
@@ -85,6 +95,10 @@ export function App(): JSX.Element {
       setLog((current) => [event, ...current].slice(0, LOG_LIMIT));
     });
     const unsubscribeSnapshots = store.subscribe(setSnap);
+    // Reliability evidence is log-derived and heavier server-side, so it polls
+    // on its own slow cadence, independent of the 2 s fleet snapshot.
+    const reliabilityStore = createReliabilityStore();
+    const unsubscribeReliability = reliabilityStore.subscribe(setReliability);
     // Re-evaluate freshness between polls so the beacon flips to `stale` even
     // while the hub is silent, without waiting for the next fetch to return.
     // The same tick drives the lease countdowns on the claims board.
@@ -96,9 +110,11 @@ export function App(): JSX.Element {
     return () => {
       unsubscribeEvents();
       unsubscribeSnapshots();
+      unsubscribeReliability();
       clearInterval(clock);
       source.stop();
       store.stop();
+      reliabilityStore.stop();
     };
   }, []);
 
@@ -129,7 +145,10 @@ export function App(): JSX.Element {
       <Hud kpis={kpis} live={snap.status === "live"} stamp={stampFor(snap.fetchedAt)} />
       <ActivitySpine source={spineSource} />
       <div className="deck">
-        <FleetRoster roster={roster} waiters={waiters} />
+        <div className="deck__stack deck__stack--roster">
+          <FleetRoster roster={roster} waiters={waiters} />
+          <ReliabilityPanel state={reliability} />
+        </div>
         <div className="deck__stack">
           <ClaimsBoard claims={claims} conflicts={conflicts} connected={connected} />
           <SignalLog events={log} />
