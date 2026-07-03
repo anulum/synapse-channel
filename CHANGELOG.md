@@ -13,7 +13,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.94.0] - 2026-07-03
+
 ### Added
+- The cockpit grew from a read-only viewer into a query surface: the
+  activity spine is brushable from mouse and keyboard (arrows seed and
+  move the window, brackets resize), a brushed window correlates the
+  panels, hovered events carry an inspector, log rows hop to their
+  causal cone through the causality feed, the spine consumes the
+  hub-attested event tail (real sequences and timestamps instead of
+  poll-quantised derivation), a capped board renders "N of M tasks" —
+  never a page masquerading as the whole plan — and the fonts are
+  self-hosted so the page loads without third-party requests.
 - Three new dashboard feeds off the durable stores, closing the cockpit's
   server-side asks: `/events.json?since=SEQ&limit=N` (the raw event-log
   tail past a cursor in the exact multihub snapshot shape — real
