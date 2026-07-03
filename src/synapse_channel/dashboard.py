@@ -35,6 +35,7 @@ from urllib.parse import urlsplit
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.reliability import reliability_to_json, run_reliability_report
 from synapse_channel.dashboard_cockpit import (
     COCKPIT_ASSETS,
     load_cockpit_asset,
@@ -451,6 +452,10 @@ def _json_bytes(snapshot: DashboardSnapshot, *, a2a_state_file: str | Path | Non
     ).encode("utf-8")
 
 
+RELIABILITY_PATH = "/reliability.json"
+"""Read-only endpoint serving the reliability audit-signal report."""
+
+
 class _DashboardHandler(BaseHTTPRequestHandler):
     """HTTP handler populated by ``start_dashboard_server`` class attributes."""
 
@@ -462,6 +467,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     refresh_seconds: ClassVar[int]
     a2a_state_file: ClassVar[Path | None]
     dashboard_token: ClassVar[str | None]
+    reliability_db: ClassVar[Path | None]
 
     def do_GET(self) -> None:
         """Serve the dashboard HTML page, JSON snapshot, or a 404 response."""
@@ -501,6 +507,12 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 content_type="text/html",
             )
             return
+        if path == RELIABILITY_PATH:
+            # Served from the durable event store, not the live hub: the
+            # reliability report is an offline audit surface, so it stays
+            # available when the hub is down and needs no hub round-trip.
+            self._serve_reliability()
+            return
         if path not in {"/", "/index.html", "/snapshot.json", STUDIO_SNAPSHOT_PATH}:
             self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
             return
@@ -539,6 +551,39 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             a2a_state_file=self.a2a_state_file,
         ).encode("utf-8")
         self._write(HTTPStatus.OK, html_body, content_type="text/html")
+
+    def _serve_reliability(self) -> None:
+        """Serve the reliability audit-signal report, or its honest absence.
+
+        Without a configured store the endpoint is 404 — the cockpit panel
+        treats that as the feed being absent, states so, and activates the
+        moment the operator starts the dashboard with ``--reliability-db``.
+        An unreadable store is 503, fail-visible rather than an empty
+        report pretending the log is clean.
+        """
+        if self.reliability_db is None:
+            self._write(
+                HTTPStatus.NOT_FOUND,
+                b"reliability feed not configured; start the dashboard with --reliability-db\n",
+                content_type="text/plain",
+            )
+            return
+        try:
+            report = run_reliability_report(self.reliability_db)
+        except ValueError as exc:
+            self._write(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                f"{exc}\n".encode(),
+                content_type="text/plain",
+            )
+            return
+        self._write(
+            HTTPStatus.OK,
+            json.dumps(reliability_to_json(report), ensure_ascii=False, sort_keys=True).encode(
+                "utf-8"
+            ),
+            content_type="application/json",
+        )
 
     def log_message(self, _format: str, *_args: object) -> None:
         """Suppress stdlib access-log noise during CLI and tests."""
@@ -580,6 +625,7 @@ def _handler_class(
     refresh_seconds: int,
     a2a_state_file: Path | None,
     dashboard_token: str | None,
+    reliability_db: Path | None,
 ) -> type[_DashboardHandler]:
     """Create an isolated handler class for one dashboard server."""
     bound_uri = uri
@@ -590,6 +636,7 @@ def _handler_class(
     bound_refresh_seconds = refresh_seconds
     bound_a2a_state_file = a2a_state_file
     bound_dashboard_token = dashboard_token
+    bound_reliability_db = reliability_db
 
     class BoundDashboardHandler(_DashboardHandler):
         """Dashboard handler bound to one hub URI and dashboard identity."""
@@ -602,6 +649,7 @@ def _handler_class(
         refresh_seconds = bound_refresh_seconds
         a2a_state_file = bound_a2a_state_file
         dashboard_token = bound_dashboard_token
+        reliability_db = bound_reliability_db
 
     return BoundDashboardHandler
 
@@ -619,6 +667,7 @@ def start_dashboard_server(
     allow_non_loopback: bool,
     a2a_state_file: str | Path | None = None,
     dashboard_token: str | None = None,
+    reliability_db: str | Path | None = None,
 ) -> DashboardServer:
     """Start a background read-only dashboard HTTP server.
 
@@ -643,6 +692,10 @@ def start_dashboard_server(
         Optional HTTP bearer token for dashboard browser and JSON requests. A
         token is generated automatically for non-loopback binds when the caller
         does not provide one.
+    reliability_db : str, pathlib.Path, or None, optional
+        Hub event store to serve the reliability audit-signal report from at
+        ``/reliability.json``; without it the endpoint reports its absence
+        with 404.
 
     Returns
     -------
@@ -664,6 +717,7 @@ def start_dashboard_server(
         refresh_seconds=max(1, int(refresh_seconds)),
         a2a_state_file=Path(a2a_state_file) if a2a_state_file is not None else None,
         dashboard_token=effective_dashboard_token,
+        reliability_db=Path(reliability_db) if reliability_db is not None else None,
     )
     server = ThreadingHTTPServer((host, int(port)), handler)
     thread = threading.Thread(target=server.serve_forever, name="synapse-dashboard", daemon=True)

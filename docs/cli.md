@@ -35,7 +35,7 @@ everything, since they need the whole command table.
 | `synapse encrypt-key` | Generate and check at-rest encryption key files (needs the `encryption` extra to encrypt). |
 | `synapse agent-tmux` | Wake an existing terminal-agent tmux session (Codex, Kimi, …) with a fixed safe prompt. |
 | `synapse codex-tmux` | Codex-defaulted alias of `agent-tmux`. |
-| `synapse dashboard` | Serve a loopback-only read-only live cockpit (fleet graph, board, claims, stream, receipts) over hub snapshots, plus `/snapshot.json`. |
+| `synapse dashboard` | Serve a loopback-only read-only live cockpit (fleet graph, board, claims, stream, receipts) over hub snapshots, plus `/snapshot.json`; `--reliability-db` adds the `/reliability.json` audit-signal feed. |
 | `synapse route-task` | Recommend agents for a board task using local capability signals. |
 | `synapse resource-bids` | Rank live resource offers for a board task without reserving capacity. |
 | `synapse memory-recall` | Recall matching durable memory records from a local event store. |
@@ -228,6 +228,17 @@ page exposes agent names, claim scopes, branch names, and task text. Pass
 `--dashboard-token <token>` to require `Authorization: Bearer <token>` on `/`
 and `/snapshot.json`; when `--allow-non-loopback` exposes the dashboard and no
 token is supplied, Synapse generates and prints a startup token.
+
+With `--reliability-db <hub.db>` the dashboard also serves
+`/reliability.json` — the same audit-signal report as `synapse reliability`
+(per-owner tallies and finding records anchored to event sequences,
+explicitly "audit signals, not scores"), which the cockpit's reliability
+panel consumes. The report is read from the durable event store, not the
+live hub, so it stays available when the hub is down; without the flag the
+endpoint answers 404 and the panel states the feed is absent, and an
+unreadable store answers 503 rather than an empty report pretending the
+log is clean. The endpoint sits behind the same dashboard bearer token as
+every other path.
 
 ## Identities and groups
 
