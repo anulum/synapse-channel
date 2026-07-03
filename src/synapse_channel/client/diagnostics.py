@@ -17,6 +17,8 @@ gathers the live inputs and renders the report.
 
 from __future__ import annotations
 
+import json
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from os import PathLike
 from typing import TYPE_CHECKING, Literal
@@ -246,6 +248,65 @@ def check_waiter(roster: list[str] | None, waiter_name: str) -> Diagnosis:
             f"arm one in the background: synapse wait --name {waiter_name} "
             "--for <project> --directed-only"
         ),
+    )
+
+
+def check_unread_addressees(
+    *,
+    feed_lines: Sequence[str],
+    cursor_names: Collection[str],
+    roster: list[str] | None,
+) -> Diagnosis:
+    """Warn when recent directed traffic addresses a name nobody reads.
+
+    A message addressed to an identity whose inbox no cursor drains and
+    whose waiter is not on the bus lands durably in the feed and wakes no
+    one — the human ends up relaying, which is the exact failure the bus
+    exists to remove. A target counts as read when its project's inbox
+    cursor exists (the project-stable inbox covers ``project/...``
+    sub-addresses), its own aliased cursor exists, or the name (or its
+    ``-rx`` waiter) is live on the roster. Broadcasts and group globs are
+    not directed traffic and are ignored.
+    """
+    targets: dict[str, int] = {}
+    for raw in feed_lines:
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(record, dict) or record.get("ty") != "chat":
+            continue
+        target = str(record.get("to", "")).strip()
+        if not target or target == "all" or "*" in target:
+            continue
+        targets[target] = targets.get(target, 0) + 1
+    cursors = set(cursor_names)
+    live = set(roster or [])
+    unread: dict[str, int] = {}
+    for target, count in targets.items():
+        project = target.split("/", 1)[0]
+        if project in cursors or target.replace("/", "__") in cursors:
+            continue
+        if target in live or f"{target}-rx" in live:
+            continue
+        unread[target] = count
+    if not unread:
+        return Diagnosis(
+            check="addressees",
+            status="pass",
+            detail="every directed address in the recent feed has a reader",
+        )
+    worst = sorted(unread.items(), key=lambda item: (-item[1], item[0]))
+    listing = ", ".join(f"{name} ({count} msg)" for name, count in worst[:3])
+    more = f" and {len(worst) - 3} more" if len(worst) > 3 else ""
+    return Diagnosis(
+        check="addressees",
+        status="warn",
+        detail=f"directed messages nobody reads: {listing}{more}",
+        remedy=f"drain them: syn inbox --as {worst[0][0]} (repeat --as per name)",
     )
 
 

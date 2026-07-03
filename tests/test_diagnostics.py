@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from synapse_channel.client.diagnostics import (
@@ -17,6 +18,7 @@ from synapse_channel.client.diagnostics import (
     check_identity,
     check_reachable,
     check_send_identity,
+    check_unread_addressees,
     check_waiter,
     summarise,
 )
@@ -181,3 +183,77 @@ def test_summarise_failure_sets_exit_one() -> None:
     assert code == 1
     assert "FAILED — 1 issue(s), 1 warning(s)" in lines[-1]
     assert "[FAIL] a: broken" in lines[0]
+
+
+# --- directed-message blackhole visibility -------------------------------------------
+
+
+def _chat(to: str) -> str:
+    return json.dumps({"v": 1, "ty": "chat", "s": "A", "to": to, "p": "hello"})
+
+
+class TestUnreadAddressees:
+    def test_quiet_feed_passes(self) -> None:
+        verdict = check_unread_addressees(feed_lines=[], cursor_names=[], roster=[])
+        assert verdict.status == "pass"
+
+    def test_directed_traffic_nobody_reads_warns_with_the_remedy(self) -> None:
+        lines = [_chat("ACME/coordinator"), _chat("ACME/coordinator"), _chat("OTHER")]
+
+        verdict = check_unread_addressees(feed_lines=lines, cursor_names=[], roster=[])
+
+        assert verdict.status == "warn"
+        assert "ACME/coordinator (2 msg)" in verdict.detail
+        assert "OTHER (1 msg)" in verdict.detail
+        assert "syn inbox --as ACME/coordinator" in verdict.remedy
+
+    def test_project_cursor_covers_its_sub_addresses(self) -> None:
+        # relay --project matches 'project/...', so a drained project inbox
+        # already reads the role name
+        verdict = check_unread_addressees(
+            feed_lines=[_chat("ACME/coordinator")], cursor_names=["ACME"], roster=[]
+        )
+        assert verdict.status == "pass"
+
+    def test_aliased_cursor_covers_the_exact_name(self) -> None:
+        verdict = check_unread_addressees(
+            feed_lines=[_chat("ACME/coordinator")],
+            cursor_names=["ACME__coordinator"],
+            roster=[],
+        )
+        assert verdict.status == "pass"
+
+    def test_live_name_or_waiter_counts_as_read(self) -> None:
+        by_name = check_unread_addressees(
+            feed_lines=[_chat("ACME/coordinator")],
+            cursor_names=[],
+            roster=["ACME/coordinator"],
+        )
+        by_waiter = check_unread_addressees(
+            feed_lines=[_chat("ACME/coordinator")],
+            cursor_names=[],
+            roster=["ACME/coordinator-rx"],
+        )
+        assert by_name.status == "pass"
+        assert by_waiter.status == "pass"
+
+    def test_broadcasts_globs_and_noise_are_ignored(self) -> None:
+        lines = [
+            _chat("all"),
+            _chat("ACME/*"),
+            "",
+            "{not json",
+            json.dumps({"ty": "presence_update", "to": "ACME/x"}),
+        ]
+
+        verdict = check_unread_addressees(feed_lines=lines, cursor_names=[], roster=None)
+
+        assert verdict.status == "pass"
+
+    def test_listing_is_bounded_with_a_count_of_the_rest(self) -> None:
+        lines = [_chat(f"P{index}/role") for index in range(5)]
+
+        verdict = check_unread_addressees(feed_lines=lines, cursor_names=[], roster=[])
+
+        assert verdict.status == "warn"
+        assert "and 2 more" in verdict.detail

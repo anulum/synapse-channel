@@ -103,7 +103,16 @@ synapse quickstart-coding
 you can find the daily-safe core without scrolling the flat `synapse --help` list.
 
 `synapse doctor` reports local wiring issues, including identity, hub exposure,
-root-filesystem pressure, hub reachability, and the current identity's waiter. On
+root-filesystem pressure, hub reachability, the current identity's waiter, and
+**directed messages nobody reads**: one reader often answers to several names
+(a terminal identity, an agent identity, a role name like
+`project/coordinator`), and a message addressed to a name whose inbox no
+cursor drains and whose waiter is absent lands durably in the feed while
+waking no one — the human ends up relaying, the exact failure the bus exists
+to remove. The doctor names such addresses with their message counts and the
+remedy (`syn inbox --as NAME`, repeatable; a standing set goes in the
+comma-separated `$SYN_ALIASES`, and each name advances its own cursor so
+draining a role never consumes another reader's delta). On
 a fresh machine, a missing hub or waiter can be a warning before services are
 installed. `synapse doctor --fix` repairs the safely repairable findings: when the
 default local hub does not answer or the waiter is missing, it installs and starts
@@ -280,6 +289,7 @@ syn reap --stale                  # reap all verified waiters whose owner shell 
 syn reap --stale --dry-run        # report the sweep verdicts without acting
 syn locks                         # list this project's leases, scopes, ages, and release commands
 syn ask <target> <message>        # send, require an online recipient, and wait for replies
+syn inbox --as PROJ/coordinator   # also drain a role name, under its own cursor (repeatable)
 syn commit <paths> -m <message>   # hold the project git lease and commit only those paths
 synapse send --target quantum/* "rebasing main now"   # the whole project team
 ```
