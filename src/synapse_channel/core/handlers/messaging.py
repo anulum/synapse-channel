@@ -20,6 +20,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.dead_letters import is_directed_target
 from synapse_channel.core.journal import record_chat
 from synapse_channel.core.protocol import MessageType, is_recipient
 
@@ -44,6 +45,10 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
         return
     target = str(data.get("target") or "all")
     recipients = _matching_online_recipients(target, sender, hub.online_agents())
+    if not recipients and is_directed_target(target):
+        # durable but waking nobody - remember the blackhole so the state
+        # snapshot can show it instead of a human discovering it by relaying
+        hub.dead_letters.record(target, sender=sender, ts=float(data["timestamp"]))
     hub.chat_history.append(data.copy())
     if len(hub.chat_history) > hub.max_history:
         del hub.chat_history[0]

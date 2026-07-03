@@ -14,6 +14,14 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- The hub now remembers directed chats that reached no live connection:
+  a bounded per-target ledger (biggest blackhole first, stalest target
+  evicted beyond 200, cleared the moment the addressed name connects)
+  rides the state snapshot as `dead_letters`, so the dashboard and the
+  cockpit can show "N messages, nobody listening" instead of leaving
+  the blackhole invisible. Honest scope: an entry attests only that no
+  live connection matched at send time — feed-history draining remains
+  the doctor's addressee check.
 - Directed-message blackholes are now visible and drainable. `syn inbox
   --as NAME` (repeatable; standing set via the comma-separated
   `$SYN_ALIASES`) drains additional identities — a role name like

@@ -222,7 +222,10 @@ A lapsed claim keeps its checkpoint, so re-claiming the task resumes from it rat
 than restarting.
 
 `synapse dashboard` binds to `127.0.0.1` by default and reads roster, state,
-board, and manifest snapshots from the live hub. It serves `/` for the browser
+board, and manifest snapshots from the live hub. The state snapshot carries
+`dead_letters` — directed chats that reached no live connection, per target
+with counts, so a blackhole shows up on the page instead of being discovered
+by a human relaying messages. It serves `/` for the browser
 view and `/snapshot.json` for local tooling. The snapshot also includes a derived
 `fleet` section for live agents, `-rx` waiters, missing waiters, active and stale
 claims, a task-dependency graph from blackboard task edges, branch-conflict candidates
