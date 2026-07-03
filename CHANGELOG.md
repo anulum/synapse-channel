@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.93.0] - 2026-07-03
+
 ### Added
 - `synapse fleet-init` — empty machine to working fleet in one command,
   bundling the existing first-run pieces in their right order: the real
@@ -114,6 +116,14 @@ All notable changes to this project are documented here.
   reliability panel treats that as the feed being honestly absent); an
   unreadable store answers 503 rather than an empty report. Behind the
   same dashboard bearer token as every other path.
+
+- A read-only web cockpit under `clients/cockpit/` (React + TypeScript +
+  Vite single-page app over the dashboard's `/snapshot.json`): a live
+  activity spine plotting real coordination transitions, fleet roster
+  with per-path claims and presence honesty, worst-first risk rail,
+  claims board, shared-plan deck, federation row, signal log, and a
+  reliability panel fed by `/reliability.json` that renders audit
+  signals — never a score.
 
 ### Security
 - The last four unpinned tool installs in CI are now hash-locked: the
