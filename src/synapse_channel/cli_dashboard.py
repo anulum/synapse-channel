@@ -33,6 +33,8 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
             a2a_state_file=args.a2a_state_file,
             dashboard_token=args.dashboard_token,
             reliability_db=args.reliability_db,
+            federation_store=args.federation_store,
+            cockpit_dist=args.cockpit_dist,
         )
     except ValueError as exc:
         print(str(exc))
@@ -41,6 +43,12 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
     print("snapshot JSON: " + server.url("/snapshot.json"))
     if args.reliability_db is not None:
         print("reliability JSON: " + server.url("/reliability.json"))
+        print("events tail JSON: " + server.url("/events.json"))
+        print("causality JSON: " + server.url("/causality.json"))
+    if args.federation_store is not None:
+        print("federation JSON: " + server.url("/federation.json"))
+    if args.cockpit_dist is not None:
+        print("cockpit: " + server.url("/cockpit/"))
     if server.dashboard_token_generated and server.dashboard_token is not None:
         print("dashboard token: " + server.dashboard_token)
         print("dashboard auth: Authorization: Bearer <dashboard token>")
@@ -101,13 +109,37 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Optional persisted A2A bridge state file summarised in the dashboard.",
     )
     dashboard.add_argument(
+        "--feeds-db",
         "--reliability-db",
+        dest="reliability_db",
         type=Path,
         default=None,
         help=(
-            "Hub event store to serve the reliability audit-signal report from at "
-            "/reliability.json (read-only, evidence not scores); without it the "
-            "endpoint reports its absence with 404."
+            "Hub event store powering the store-backed feeds: /reliability.json "
+            "(audit signals, not scores), /events.json (raw log tail past a "
+            "cursor), and /causality.json (one causality query in the CLI's JSON "
+            "shape). Read-only; without it each endpoint reports its absence "
+            "with 404. --reliability-db is the same flag's original name."
+        ),
+    )
+    dashboard.add_argument(
+        "--federation-store",
+        type=Path,
+        default=None,
+        help=(
+            "Operator federation store powering /federation.json — imported "
+            "peerings with provenance and bundle fingerprints; namespace "
+            "outcomes are hub-runtime state and are not served."
+        ),
+    )
+    dashboard.add_argument(
+        "--cockpit-dist",
+        type=Path,
+        default=None,
+        help=(
+            "Built cockpit directory (clients/cockpit/dist) served read-only "
+            "under /cockpit/; paths escaping the directory or with "
+            "unrecognised suffixes are refused."
         ),
     )
     dashboard.set_defaults(func=_cmd_dashboard)

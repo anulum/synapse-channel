@@ -13,6 +13,21 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Three new dashboard feeds off the durable stores, closing the cockpit's
+  server-side asks: `/events.json?since=SEQ&limit=N` (the raw event-log
+  tail past a cursor in the exact multihub snapshot shape — real
+  sequences and timestamps instead of poll-quantised derivation),
+  `/causality.json?seq=N|task=ID&direction=causes|effects` (one causality
+  query in the CLI's exact `--json` shape, with `task=ID` resolving to
+  the task's most recent recorded event), and `/federation.json`
+  (imported peerings with provenance and ceremony fingerprints; namespace
+  outcomes are hub-runtime state and ship absent with the reason stated).
+  The event-store flag is now named `--feeds-db` with `--reliability-db`
+  kept as the same flag's original name, and `--cockpit-dist DIR` serves
+  a built cockpit single-page app read-only under `/cockpit/` with path
+  traversal and unrecognised suffixes refused.
+
 ### Security
 - The chat backend client refuses a `base_url` whose scheme is not
   `http`/`https` at construction — a `file://` or custom scheme smuggled
