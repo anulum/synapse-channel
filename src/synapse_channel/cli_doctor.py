@@ -23,12 +23,15 @@ import argparse
 import asyncio
 import json
 import os
+import shlex
 import shutil
+import subprocess  # nosec B404
 import sys
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from pathlib import Path
 from typing import Any, Protocol
 
+from synapse_channel.cli_cross_repo import NOTIFY_TIMEOUT_SECONDS
 from synapse_channel.cli_queries import AgentFactory, _query_hub
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.client.diagnostics import (
@@ -54,6 +57,48 @@ DiagnoseRunner = Callable[..., Coroutine[Any, Any, tuple[int, list[str], list[Di
 
 _LOCAL_DEFAULT_URIS = frozenset({"ws://localhost:8876", "ws://127.0.0.1:8876"})
 """The default local hub addresses the generated user services manage."""
+
+
+def finding_lines(diagnoses: list[Diagnosis]) -> list[str]:
+    """Render each non-pass verdict as one stable line for a notify sink.
+
+    ``STATUS check: detail | remedy: …`` — the remedy rides along because the
+    sink's reader acts on it directly (a pager message that says *what to run*
+    beats one that says *something is wrong*). Healthy checks are omitted: a
+    quiet fleet sends nothing.
+    """
+    return [
+        f"{d.status} {d.check}: {d.detail} | remedy: {d.remedy}"
+        for d in diagnoses
+        if d.status != "pass"
+    ]
+
+
+def run_doctor_notify(command: str, findings: list[str], *, uri: str) -> None:
+    """Run the operator's notify command with the findings on stdin.
+
+    The same contract as ``cross-repo --notify-cmd``: the command is split
+    with :func:`shlex.split` and executed without a shell (wrap in
+    ``sh -c '…'`` for pipes), the checked hub URI is exposed as
+    ``SYNAPSE_DOCTOR_URI``, and a failing or hanging sink is reported on
+    stderr without changing the doctor's exit code — notification is
+    best-effort, the report is the record.
+    """
+    payload = "\n".join(findings) + "\n"
+    try:
+        completed = subprocess.run(  # nosec B603
+            shlex.split(command),
+            input=payload,
+            text=True,
+            timeout=NOTIFY_TIMEOUT_SECONDS,
+            env={**os.environ, "SYNAPSE_DOCTOR_URI": uri},
+            check=False,
+        )
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        print(f"notify command failed: {exc}", file=sys.stderr)
+        return
+    if completed.returncode != 0:
+        print(f"notify command exited {completed.returncode}", file=sys.stderr)
 
 
 def service_repairable_checks(diagnoses: list[Diagnosis], *, uri: str) -> list[str]:
@@ -309,6 +354,7 @@ def _cmd_doctor(
     env: Mapping[str, str] | None = None,
     cwd_basename: str | None = None,
     home_basename: str | None = None,
+    notify_runner: Callable[..., None] = run_doctor_notify,
 ) -> int:
     """Dispatch ``doctor``: print the report, exit non-zero when a check fails.
 
@@ -323,6 +369,13 @@ def _cmd_doctor(
     checklist flags so stdout is exactly one JSON document — and prints every
     verdict (check, status, detail, remedy) plus the overall health, sized for a
     CI health gate. The exit code is unchanged.
+
+    With ``--notify-cmd CMD`` any warn/fail findings are also piped to the
+    operator's sink command, one line each with the remedy attached — the
+    diagnostics become a proactive alert instead of a report someone must
+    remember to read. A healthy run sends nothing; under ``--fix`` the sink
+    receives the state *after* the repair; the sink composes with ``--json``
+    (stdout stays one JSON document, the sink gets its own stream).
     """
 
     def diagnose() -> tuple[int, list[str], list[Diagnosis]]:
@@ -358,6 +411,10 @@ def _cmd_doctor(
             return 2
         code, _, diagnoses = diagnose()
         print(json.dumps(doctor_report_to_json(code, diagnoses), sort_keys=True))
+        notify_cmd = getattr(args, "notify_cmd", None)
+        findings = finding_lines(diagnoses)
+        if notify_cmd and findings:
+            notify_runner(notify_cmd, findings, uri=args.uri)
         return code
 
     code, lines, diagnoses = diagnose()
@@ -414,7 +471,7 @@ def _cmd_doctor(
                 start=True,
             ):
                 print(line)
-            code, lines, _ = diagnose()
+            code, lines, diagnoses = diagnose()
             print("[fix] re-check:")
             for line in lines:
                 print(line)
@@ -432,6 +489,10 @@ def _cmd_doctor(
                 print(line)
         else:
             print("[fix] nothing to auto-repair — no hub or waiter finding")
+    notify_cmd = getattr(args, "notify_cmd", None)
+    findings = finding_lines(diagnoses)
+    if notify_cmd and findings:
+        notify_runner(notify_cmd, findings, uri=args.uri)
     return code
 
 
@@ -503,6 +564,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         action="store_true",
         help="Emit every verdict plus overall health as one JSON document for CI "
         "health gates; refuses the mutating and checklist flags.",
+    )
+    doctor.add_argument(
+        "--notify-cmd",
+        default=None,
+        metavar="CMD",
+        help="Also pipe any warn/fail findings (one line each, remedy attached) "
+        "to this command's stdin — split without a shell, hub URI in "
+        "SYNAPSE_DOCTOR_URI, best-effort. A healthy run sends nothing.",
     )
     doctor.add_argument(
         "--redeploy-checklist",
