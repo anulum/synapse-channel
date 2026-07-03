@@ -68,7 +68,7 @@ interface ReliabilityPanelProps {
 }
 
 export function ReliabilityPanel({ state }: ReliabilityPanelProps): JSX.Element {
-  const report = state.report;
+  const report = state.data;
   const owners = report === null ? [] : orderOwners(report.owners);
   const findings = report?.findings ?? [];
   const shown = findings.slice(0, FINDINGS_SHOWN);
