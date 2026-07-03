@@ -127,6 +127,22 @@ export function App(): JSX.Element {
     history.replaceState(null, "", hash === "" ? location.pathname + location.search : `#${hash}`);
   }, []);
 
+  // KPI drill-down: a headline number filters the log to the kinds behind it.
+  const onSelectKpi = useCallback(
+    (label: string) => {
+      const kinds =
+        label === "claims held"
+          ? (["claim", "lease", "release"] as const)
+          : label === "risk signals"
+            ? (["conflict"] as const)
+            : label === "agents online"
+              ? (["presence"] as const)
+              : null;
+      onQueryChange({ text: "", kinds: kinds === null ? null : [...kinds], order: "newest", view: "flat" });
+    },
+    [onQueryChange],
+  );
+
   // Stable identities so the spine's canvas effect never re-arms mid-flight.
   const onBrush = useCallback((window: TimeWindow | null) => setBrush(window), []);
   const onClearWindow = useCallback(() => setBrush(null), []);
@@ -236,7 +252,12 @@ export function App(): JSX.Element {
 
   return (
     <div className="shell">
-      <Hud kpis={kpis} live={snap.status === "live"} stamp={stampFor(snap.fetchedAt)} />
+      <Hud
+        kpis={kpis}
+        live={snap.status === "live"}
+        stamp={stampFor(snap.fetchedAt)}
+        onSelect={onSelectKpi}
+      />
       <PanelBoundary name="Activity spine">
         <ActivitySpine
           key={provenance === "hub" ? "hub" : "derived"}

@@ -60,7 +60,7 @@ describe("matchesQuery / applyQuery", () => {
   });
 
   it("combines text and kind constraints", () => {
-    const query: LogQuery = { text: "vega", kinds: ["conflict"], order: "newest" };
+    const query: LogQuery = { text: "vega", kinds: ["conflict"], order: "newest", view: "flat" };
     expect(applyQuery(events, query).map((item) => item.seq)).toEqual([3]);
     expect(applyQuery(events, { ...query, kinds: ["chat"] })).toEqual([]);
   });
@@ -72,15 +72,22 @@ describe("isConstrained", () => {
     expect(isConstrained({ ...OPEN_QUERY, text: " x " })).toBe(true);
     expect(isConstrained({ ...OPEN_QUERY, kinds: [] })).toBe(true);
     expect(isConstrained({ ...OPEN_QUERY, order: "oldest" })).toBe(true);
+    expect(isConstrained({ ...OPEN_QUERY, view: "compact" })).toBe(true);
   });
 });
 
 describe("URL hash round-trip", () => {
   it("serialises only non-defaults and round-trips", () => {
     expect(queryToHash(OPEN_QUERY)).toBe("");
-    const query: LogQuery = { text: "vega kernel", kinds: ["claim", "conflict"], order: "oldest" };
+    const query: LogQuery = {
+      text: "vega kernel",
+      kinds: ["claim", "conflict"],
+      order: "oldest",
+      view: "compact",
+    };
     const hash = queryToHash(query);
     expect(hash).toContain("q=vega+kernel");
+    expect(hash).toContain("view=compact");
     expect(queryFromHash(`#${hash}`)).toEqual(query);
     expect(queryFromHash("")).toEqual(OPEN_QUERY);
   });
@@ -89,5 +96,6 @@ describe("URL hash round-trip", () => {
     expect(queryFromHash("#kinds=claim,junk").kinds).toEqual(["claim"]);
     expect(queryFromHash("#kinds=junk,also-junk").kinds).toBeNull();
     expect(queryFromHash("#order=sideways").order).toBe("newest");
+    expect(queryFromHash("#view=sideways").view).toBe("flat");
   });
 });

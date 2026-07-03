@@ -6,9 +6,10 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the signal log: the plain, legible table under the spine
 
-import { memo, useRef, useState } from "react";
+import { Fragment, memo, useRef, useState } from "react";
 
 import { actorsInWindow, eventsInWindow, windowEdgeLabel, type TimeWindow } from "../lib/brush";
+import { groupByTask } from "../lib/logGroups";
 import { applyQuery, isConstrained, OPEN_QUERY, type LogQuery } from "../lib/logQuery";
 import type { CockpitEvent } from "../types";
 
@@ -56,6 +57,7 @@ function SignalLogView({
   // is a real snapshot of what was on screen, and the header counts what has
   // arrived since, so nothing is silently missed.
   const [paused, setPaused] = useState(false);
+  const [expandedSeq, setExpandedSeq] = useState<number | null>(null);
   const frozen = useRef<readonly CockpitEvent[]>([]);
   const togglePause = (): void => {
     if (!paused) frozen.current = events;
@@ -116,6 +118,16 @@ function SignalLogView({
         </button>
         <button
           type="button"
+          className="log-controls__toggle"
+          onClick={() =>
+            onQueryChange?.({ ...query, view: query.view === "flat" ? "compact" : "flat" })
+          }
+          title="Flat = one row per event; compact = one row per task with its lifecycle"
+        >
+          {query.view}
+        </button>
+        <button
+          type="button"
           className={`log-controls__toggle${paused ? " log-controls__toggle--paused" : ""}`}
           onClick={togglePause}
           aria-pressed={paused}
@@ -143,10 +155,13 @@ function SignalLogView({
                 ? "No coordination events observed yet. The spine baseline stays flat until the fleet moves."
                 : "No observed events inside the brushed window."}
           </p>
+        ) : query.view === "compact" ? (
+          <CompactLogList events={shown} onSelectTask={onSelectTask} provenance={provenance} />
         ) : (
           <table className="log">
             <thead>
               <tr>
+                <th scope="col" aria-label="Raw event" />
                 <th scope="col">time</th>
                 <th scope="col">lane</th>
                 <th scope="col">kind</th>
@@ -156,44 +171,150 @@ function SignalLogView({
             </thead>
             <tbody>
               {shown.map((event) => (
-                <tr key={event.seq} className={`log__row log__row--${event.kind}`}>
-                  <td className="log__time">{timeOf(event)}</td>
-                  <td className="log__lane">{event.lane}</td>
-                  <td className="log__kind">
-                    <span className="log__dot" aria-hidden="true" />
-                    {event.kind}
-                  </td>
-                  <td className="log__actor" title={event.actor}>
-                    {event.actor === "" ? "—" : event.actor}
-                  </td>
-                  <td className="log__label" title={event.label}>
-                    {onSelectTask !== undefined &&
-                    ((provenance === "hub" && event.kind !== "chat") || event.taskId !== "") ? (
-                      <button
-                        type="button"
-                        className="log__hop"
-                        title={
-                          provenance === "hub"
-                            ? `Trace the recorded causes of event seq ${event.seq}`
-                            : `Trace the recorded causes of ${event.taskId}`
-                        }
-                        onClick={() =>
-                          onSelectTask(provenance === "hub" ? String(event.seq) : event.taskId)
-                        }
-                      >
-                        {event.label}
-                      </button>
-                    ) : (
-                      event.label
-                    )}
-                  </td>
-                </tr>
+                <Fragment key={event.seq}>
+                  <tr className={`log__row log__row--${event.kind}`}>
+                    <td className="log__raw">
+                      {event.payload !== undefined && (
+                        <button
+                          type="button"
+                          className="log__raw-toggle"
+                          aria-expanded={expandedSeq === event.seq}
+                          title="Show the hub's raw stored event"
+                          onClick={() =>
+                            setExpandedSeq(expandedSeq === event.seq ? null : event.seq)
+                          }
+                        >
+                          {"{}"}
+                        </button>
+                      )}
+                    </td>
+                    <td className="log__time">{timeOf(event)}</td>
+                    <td className="log__lane">{event.lane}</td>
+                    <td className="log__kind">
+                      <span className="log__dot" aria-hidden="true" />
+                      {event.kind}
+                    </td>
+                    <td className="log__actor" title={event.actor}>
+                      {event.actor === "" ? "—" : event.actor}
+                    </td>
+                    <td className="log__label" title={event.label}>
+                      {onSelectTask !== undefined &&
+                      ((provenance === "hub" && event.kind !== "chat") || event.taskId !== "") ? (
+                        <button
+                          type="button"
+                          className="log__hop"
+                          title={
+                            provenance === "hub"
+                              ? `Trace the recorded causes of event seq ${event.seq}`
+                              : `Trace the recorded causes of ${event.taskId}`
+                          }
+                          onClick={() =>
+                            onSelectTask(provenance === "hub" ? String(event.seq) : event.taskId)
+                          }
+                        >
+                          {event.label}
+                        </button>
+                      ) : (
+                        event.label
+                      )}
+                    </td>
+                  </tr>
+                  {expandedSeq === event.seq && event.payload !== undefined && (
+                    <tr className="log__detail">
+                      <td colSpan={6}>
+                        <pre className="log__json">
+                          {JSON.stringify(
+                            { seq: event.seq, ts: event.ts, kind: event.kind, payload: event.payload },
+                            null,
+                            2,
+                          )}
+                        </pre>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
         )}
       </div>
     </section>
+  );
+}
+
+interface CompactLogListProps {
+  /** Query-filtered events, newest first. */
+  readonly events: readonly CockpitEvent[];
+  readonly onSelectTask?: ((subject: string) => void) | undefined;
+  readonly provenance: "hub" | "derived";
+}
+
+/** One row per task with its observed lifecycle inline; chatter stays flat. */
+function CompactLogList({ events, onSelectTask, provenance }: CompactLogListProps): JSX.Element {
+  const compact = groupByTask(events);
+  return (
+    <div className="log-compact">
+      {compact.groups.map((group) => (
+        <div key={group.taskId} className="log-group">
+          <div className="log-group__head">
+            {onSelectTask !== undefined ? (
+              <button
+                type="button"
+                className="log__hop log-group__task"
+                title={`Trace the recorded causes of ${group.taskId}`}
+                onClick={() => onSelectTask(group.taskId)}
+              >
+                {group.taskId}
+              </button>
+            ) : (
+              <span className="log-group__task">{group.taskId}</span>
+            )}
+            {group.lastActor !== "" && (
+              <span className="log-group__actor" title={group.lastActor}>
+                {group.lastActor}
+              </span>
+            )}
+            <span className="log-group__time">{timeOf(group.events.at(-1) as CockpitEvent)}</span>
+          </div>
+          <div className="log-group__chain">
+            {group.events.map((event) => (
+              <span
+                key={event.seq}
+                className={`log-chip log__row--${event.kind}`}
+                title={`${timeOf(event)} · ${event.label}${
+                  provenance === "hub" ? ` · seq ${event.seq}` : ""
+                }`}
+              >
+                <span className="log__dot" aria-hidden="true" />
+                {event.kind}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+      {compact.ungrouped.length > 0 && (
+        <div className="log-group log-group--chatter">
+          <div className="log-group__head">
+            <span className="log-group__task">chatter · {compact.ungrouped.length}</span>
+          </div>
+          <div className="log-group__chain">
+            {compact.ungrouped.slice(0, 40).map((event) => (
+              <span
+                key={event.seq}
+                className={`log-chip log__row--${event.kind}`}
+                title={`${timeOf(event)} · ${event.actor === "" ? "" : `${event.actor} · `}${event.label}`}
+              >
+                <span className="log__dot" aria-hidden="true" />
+                {event.kind}
+              </span>
+            ))}
+            {compact.ungrouped.length > 40 && (
+              <span className="log-chip log-chip--more">{`+${compact.ungrouped.length - 40}`}</span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

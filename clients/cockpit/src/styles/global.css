@@ -244,6 +244,26 @@ body {
   color: var(--dim);
 }
 
+.kpi--link {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kpi--link:hover .kpi__label {
+  color: var(--muted);
+}
+
+.kpi--link:focus-visible {
+  outline: 1px solid var(--info);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 /* ---------- liveness beacon + freshness ---------- */
 .beacon {
   display: flex;
@@ -1736,6 +1756,117 @@ body {
 .log__hop:focus-visible {
   outline: 1px solid var(--info);
   outline-offset: -1px;
+}
+
+.log__raw {
+  width: 22px;
+  text-align: center;
+}
+
+.log__raw-toggle {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+
+.log__raw-toggle:hover,
+.log__raw-toggle[aria-expanded="true"] {
+  color: var(--info);
+}
+
+.log__detail td {
+  padding: 0 var(--sp-3) var(--sp-2);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.log__json {
+  margin: 0;
+  padding: var(--sp-2);
+  background: var(--abyss);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  overflow-x: auto;
+  max-height: 220px;
+}
+
+/* ---------- compact log (one row per task) ---------- */
+.log-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--sp-2) var(--sp-3);
+}
+
+.log-group {
+  padding: var(--sp-1) 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.log-group--chatter {
+  opacity: 0.75;
+}
+
+.log-group__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.log-group__task {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-group__actor {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-group__time {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+  flex: none;
+}
+
+.log-group__chain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 2px;
+}
+
+.log-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+.log-chip--more {
+  color: var(--dim);
 }
 
 .log__label {
