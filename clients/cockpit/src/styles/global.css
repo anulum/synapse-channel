@@ -512,6 +512,54 @@ body {
   touch-action: none;
 }
 
+.spine__canvas:focus-visible {
+  outline: 1px solid var(--info);
+  outline-offset: -1px;
+}
+
+.spine__legend {
+  position: absolute;
+  top: var(--sp-1);
+  right: var(--sp-3);
+  display: flex;
+  gap: var(--sp-3);
+  pointer-events: none;
+}
+
+.spine-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.spine-key::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dim);
+}
+
+.spine-key--info::before {
+  background: var(--info);
+}
+
+.spine-key--healthy::before {
+  background: var(--healthy);
+}
+
+.spine-key--warn::before {
+  background: var(--warn);
+}
+
+.spine-key--critical::before {
+  background: var(--critical);
+}
+
 .spine__tooltip {
   position: absolute;
   z-index: 2;

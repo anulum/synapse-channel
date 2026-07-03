@@ -7,7 +7,14 @@
 // SYNAPSE_CHANNEL — the activity spine, the cockpit's signature instrument
 
 import { useEffect, useRef, useState } from "react";
-import { laneAtY, nearestEvent, windowFromDrag, type TimeWindow } from "../lib/brush";
+import {
+  laneAtY,
+  nearestEvent,
+  resizeWindow,
+  shiftWindow,
+  windowFromDrag,
+  type TimeWindow,
+} from "../lib/brush";
 import { COLOUR_OF, LANES } from "../lib/events";
 import type { CockpitEvent, EventSource, Lane } from "../types";
 
@@ -281,11 +288,33 @@ export function ActivitySpine({ source, onInspect, onBrush, brush }: SpineProps)
     };
 
     const onKeyDown = (key: KeyboardEvent): void => {
-      if (key.key !== "Escape") return;
-      dragOrigin.current = null;
-      dragCurrent.current = null;
-      selection.current = null;
-      onBrush?.(null);
+      if (key.key === "Escape") {
+        dragOrigin.current = null;
+        dragCurrent.current = null;
+        selection.current = null;
+        onBrush?.(null);
+        if (reduce) draw(Date.now());
+        return;
+      }
+      // Keyboard brushing: arrows shift the window (Shift = coarse), the
+      // bracket keys resize it; with no window an arrow seeds a ten-second one.
+      let next: TimeWindow | null = null;
+      if (key.key === "ArrowLeft" || key.key === "ArrowRight") {
+        const step = (key.shiftKey ? 5 : 1) * (key.key === "ArrowLeft" ? -1 : 1);
+        next = shiftWindow(selection.current, step, Date.now(), WINDOW_SECONDS);
+      } else if ((key.key === "[" || key.key === "]") && selection.current !== null) {
+        next = resizeWindow(
+          selection.current,
+          key.key === "[" ? -2 : 2,
+          Date.now(),
+          WINDOW_SECONDS,
+        );
+      } else {
+        return;
+      }
+      key.preventDefault();
+      selection.current = next;
+      onBrush?.(next);
       if (reduce) draw(Date.now());
     };
 
@@ -319,7 +348,7 @@ export function ActivitySpine({ source, onInspect, onBrush, brush }: SpineProps)
         ref={canvasRef}
         className="spine__canvas"
         tabIndex={0}
-        aria-label="Activity spine. Drag to brush a time window that filters the signal log; press Escape to clear it. The signal log table is the accessible reading of the same events."
+        aria-label="Activity spine. Drag or use the arrow keys to brush a time window that filters the signal log; brackets resize it, Escape clears it. The signal log table is the accessible reading of the same events."
       />
       <div className="spine__lanes" aria-hidden="true">
         {LANES.map((lane) => (
@@ -327,6 +356,13 @@ export function ActivitySpine({ source, onInspect, onBrush, brush }: SpineProps)
             {lane}
           </div>
         ))}
+      </div>
+      <div className="spine__legend" aria-hidden="true">
+        <span className="spine-key spine-key--info">claim · finding</span>
+        <span className="spine-key spine-key--healthy">release · done</span>
+        <span className="spine-key spine-key--warn">lease expiry</span>
+        <span className="spine-key spine-key--dim">chatter</span>
+        <span className="spine-key spine-key--critical">conflict</span>
       </div>
       {hover !== null && (
         <div

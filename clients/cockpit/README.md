@@ -17,18 +17,24 @@ never invents, smooths, or extrapolates state, and an empty surface is shown
 as empty.
 
 The design is a control-room instrument, not a SaaS analytics page: a lifted
-graphite palette, Space Grotesk + JetBrains Mono, a small semantic signal set
-redundantly encoded (colour + glyph + position, never colour alone), and one
-dominant live instrument — the **activity spine**, a discrete event-driven
-oscilloscope of observed coordination transitions.
+graphite palette, Space Grotesk + JetBrains Mono (self-hosted woff2 — the
+cockpit contacts no external origin and renders identically offline), a small
+semantic signal set redundantly encoded (colour + glyph + position, never
+colour alone), and one dominant live instrument — the **activity spine**, a
+discrete event-driven oscilloscope of observed coordination transitions.
 
 ## Layout
 
-- **HUD** — mark, the KPI triad (agents online / claims held / risk signals,
-  each with a redundant delta), liveness beacon + freshness stamp.
+- **HUD** — mark, the KPIs (agents online / claims held / observed
+  transitions per minute / risk signals, each with a redundant delta),
+  liveness beacon + freshness stamp.
 - **Activity spine** — four lanes (presence, claims, task, risk) of discrete
-  impulses at true timestamps against an amber now-edge. The risk lane is
-  deliberately quiet; a deflection there is the alarm.
+  impulses at true timestamps against an amber now-edge, with a semantic
+  colour legend. The risk lane is deliberately quiet; a deflection there is
+  the alarm. The spine is a query surface: **drag** (or the arrow keys) to
+  brush a time window that filters the signal log — brackets resize it,
+  Escape clears it — and **hover** an impulse to name it. A log row that
+  names a task is a hop straight into the causality inspector.
 - **Federation row** — hub identity, imported peerings with lifecycle dots,
   and partition honesty: a contested namespace renders as a loud alert,
   because the hub refuses claims there until the split heals.
