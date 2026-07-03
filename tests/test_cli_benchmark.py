@@ -8,14 +8,19 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 
 import pytest
 
-from synapse_channel.benchmark.probes import PROBES
-from synapse_channel.benchmark.scorecard import NON_ISOLATED_LABEL
-from synapse_channel.benchmark.trend import SPARK_LEVELS
+from synapse_channel.benchmark.probes import PROBES, ProbeResult
+from synapse_channel.benchmark.scorecard import (
+    NON_ISOLATED_LABEL,
+    Scorecard,
+    capture_host_context,
+)
+from synapse_channel.benchmark.trend import SPARK_LEVELS, append_scorecard
 from synapse_channel.cli import build_parser, main
 
 
@@ -110,6 +115,9 @@ def test_parser_flags_and_defaults() -> None:
     assert args.tolerance is None
     assert args.trend is None
     assert args.ascii is False
+    assert args.alert is False
+    assert args.alert_sigma is None
+    assert args.alert_min_samples is None
 
 
 def test_trend_accumulates_runs_and_renders_the_series(
@@ -159,6 +167,142 @@ def test_trend_ascii_renders_a_pure_ascii_trend_block(
     trend_block = second_out.split("Benchmark trend:", 1)[1]
     assert trend_block.isascii()
     assert not any(glyph in trend_block for glyph in SPARK_LEVELS)
+
+
+def _seed_same_context_history(db: Path, values: list[float]) -> None:
+    """Store synthetic encode-lite runs carrying THIS host's real context.
+
+    The real benchmark run that follows appends to the same context segment,
+    so the drift gate sees one comparable population — the only setup that
+    makes an end-to-end alert deterministic.
+    """
+    context = capture_host_context()
+    for index, value in enumerate(values):
+        result = ProbeResult(
+            name="encode-lite",
+            iterations=10,
+            duration_seconds=0.1,
+            metrics={"messages_per_second": value},
+        )
+        append_scorecard(
+            db,
+            Scorecard(
+                context=dataclasses.replace(context, started_at=float(index)),
+                results=(result,),
+            ),
+        )
+
+
+def test_alert_without_trend_exits_two(capsys: pytest.CaptureFixture[str]) -> None:
+    code, _, err = _run(["benchmark", "--probe", "encode-lite", "--alert"], capsys)
+    assert code == 2
+    assert "--alert requires --trend" in err
+
+
+def test_alert_tuning_flags_require_alert(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for flag in (["--alert-sigma", "2"], ["--alert-min-samples", "4"]):
+        code, _, err = _run(
+            ["benchmark", "--probe", "encode-lite", "--trend", str(tmp_path / "t.db"), *flag],
+            capsys,
+        )
+        assert code == 2
+        assert "--alert-sigma/--alert-min-samples require --alert" in err
+
+
+def test_alert_rejects_invalid_thresholds(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    base = ["benchmark", "--probe", "encode-lite", "--trend", str(tmp_path / "t.db"), "--alert"]
+
+    code, _, err = _run([*base, "--alert-sigma", "0"], capsys)
+    assert code == 2
+    assert "--alert-sigma must be positive" in err
+
+    code, _, err = _run([*base, "--alert-min-samples", "2"], capsys)
+    assert code == 2
+    assert "--alert-min-samples must be at least 3" in err
+
+
+def test_alert_flags_a_flat_baseline_deviation_and_exits_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "trend.db"
+    _seed_same_context_history(db, [100.0, 100.0, 100.0, 100.0])
+
+    code, out, _ = _run(
+        [
+            "benchmark",
+            "--probe",
+            "encode-lite",
+            "--iterations",
+            "10",
+            "--trend",
+            str(db),
+            "--alert",
+        ],
+        capsys,
+    )
+
+    # a real run measures far above the planted 100 msg/s flat baseline
+    assert code == 1
+    assert "DRIFT encode-lite messages_per_second:" in out
+    assert "off a flat baseline" in out
+    assert "insufficient samples" in out  # the real run's other metrics have one sample
+
+
+def test_alert_with_insufficient_history_reports_and_exits_zero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "trend.db"
+    argv = [
+        "benchmark",
+        "--probe",
+        "encode-lite",
+        "--iterations",
+        "10",
+        "--trend",
+        str(db),
+        "--alert",
+    ]
+
+    first_code, first_out, _ = _run(argv, capsys)
+    second_code, second_out, _ = _run(argv, capsys)
+
+    assert (first_code, second_code) == (0, 0)
+    for out in (first_out, second_out):
+        assert "Drift alert: 0 finding(s)" in out
+        assert "insufficient samples" in out
+        assert "not gated" in out
+
+
+def test_alert_json_carries_the_drift_document(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "trend.db"
+    _seed_same_context_history(db, [100.0, 100.0, 100.0, 100.0])
+
+    code, out, _ = _run(
+        [
+            "benchmark",
+            "--probe",
+            "encode-lite",
+            "--iterations",
+            "10",
+            "--trend",
+            str(db),
+            "--alert",
+            "--json",
+        ],
+        capsys,
+    )
+
+    assert code == 1
+    payload = json.loads(out)
+    drift = payload["drift"]
+    assert drift["findings"][0]["metric"] == "messages_per_second"
+    assert drift["note"] == "same-context statistics only; an insufficient series is never gated"
 
 
 def test_trend_json_carries_the_history(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

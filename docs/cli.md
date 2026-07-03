@@ -17,7 +17,7 @@ everything, since they need the whole command table.
 | `synapse commands` | List every subcommand grouped by stability tier — the quickest map of the surface. |
 | `synapse completions` | Print a static tab-completion script for bash, zsh, or fish, generated from the installed CLI. |
 | `synapse demo` | Run a self-contained local coordination demo and print a success marker. |
-| `synapse benchmark` | Benchmark the installed package (event store, relay encoding, live hub round-trips) and print a scorecard with honest host context; `--compare BASELINE.json` gates the run against a saved scorecard, exit `1` on regression; `--trend STORE.db` accumulates runs and renders per-metric sparkline trends (`--ascii` for a printable-ASCII trend block). |
+| `synapse benchmark` | Benchmark the installed package (event store, relay encoding, live hub round-trips) and print a scorecard with honest host context; `--compare BASELINE.json` gates the run against a saved scorecard, exit `1` on regression; `--trend STORE.db` accumulates runs and renders per-metric sparkline trends (`--ascii` for a printable-ASCII trend block); `--alert` gates the run statistically against its own same-context history, exit `1` on drift. |
 | `synapse quickstart-coding` | Create a coding-fleet workspace, run the no-collision demo, and print a success marker. |
 | `synapse fleet-init` | Empty machine to working fleet in one command: doctor (`--fix`), persistent workspace scaffold, provider-seat probe, demo smoke, and a printed next-steps plan. |
 | `synapse new coding-fleet` | Scaffold a runnable two-agent coding demo workspace. |
@@ -1332,6 +1332,34 @@ Benchmark trend: 2 stored run(s)
 encode-lite lite_to_raw_ratio: .@ 0.72 -> 0.72 (min 0.72, max 0.72, 2 runs)
 encode-lite messages_per_second: .@ 31,585.98 -> 60,645.33 (min 31,585.98, max 60,645.33, 2 runs)
 ```
+
+`--alert` turns that history into a **deterministic statistical gate**: the
+latest value of every probe metric is measured in sigma distances from the
+sample mean of its predecessors, and a value further out than
+`--alert-sigma` (default 3) is a drift finding that exits `1`. Honesty
+bounds the statistics the same way the rendering bounds the sparklines:
+only the **trailing same-context segment** (same package version, CPU
+model, and governor as the latest run — exactly the fields the context
+breaks annotate) forms the population, a series with fewer than
+`--alert-min-samples` same-context samples (default 5, floor 3) is
+reported as *insufficient* and never silently gated, and a perfectly flat
+baseline has no sigma, so any deviation from it is flagged as such.
+Captured from a real run against a store seeded with a flat 100 msg/s
+history:
+
+```text
+$ synapse benchmark --probe encode-lite --trend bench-trend.db --alert
+...
+Drift alert: 1 finding(s) across 1 gated series (5 same-context run(s), sigma 3, floor 5)
+DRIFT encode-lite messages_per_second: 997,319.24 is off a flat baseline (baseline mean 100.00, std 0.00, 5 samples)
+insufficient samples for encode-lite lite_to_raw_ratio: 1 of 5 same-context run(s) — not gated
+$ echo $?
+1
+```
+
+Under `--json` the document gains a `drift` object with the findings and
+the insufficient series; `--alert` composes with `--compare` (either gate
+failing exits `1`) and requires `--trend`.
 
 `synapse accounting` records and reports opt-in model cost/token usage. Synapse
 never calls a model provider and collects no telemetry, so token and cost figures

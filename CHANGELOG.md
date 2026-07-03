@@ -86,6 +86,17 @@ All notable changes to this project are documented here.
   with exit `2`; a bounded watch exits with the last tick's anomaly
   signal.
 
+- `synapse benchmark --alert` — a deterministic statistical drift gate
+  over the `--trend` history: every probe metric's latest value is
+  measured in sigma distances from the sample mean of its same-context
+  predecessors (same package version, CPU model, and governor as the
+  latest run — the fields the context breaks annotate), and a value
+  beyond `--alert-sigma` (default 3) exits `1`. A series with fewer
+  than `--alert-min-samples` same-context samples (default 5, floor 3)
+  is reported as insufficient and never silently gated; a flat
+  baseline has no sigma, so any deviation from it is flagged as such.
+  `--json` gains a `drift` object; composes with `--compare`.
+
 ### Security
 - The last four unpinned tool installs in CI are now hash-locked: the
   pre-commit, release, publish, and reuse workflow jobs install
