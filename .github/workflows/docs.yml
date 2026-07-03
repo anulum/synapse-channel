@@ -51,7 +51,17 @@ jobs:
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
     steps:
+      # The Pages backend intermittently answers "Deployment failed, try again
+      # later" on a first attempt and succeeds on a delayed retry — observed
+      # repeatedly (four pushes on 2026-07-03 alone). Attempt once, wait out
+      # the flake window, retry once; fail only when both attempts fail.
       - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
+        continue-on-error: true
+      - if: steps.deployment.outcome == 'failure'
+        run: sleep 300
+      - id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5

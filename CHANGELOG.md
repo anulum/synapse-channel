@@ -38,6 +38,11 @@ All notable changes to this project are documented here.
   trimmed — the cap bounds one reply, not the plan.
 
 ### Fixed
+- The docs workflow retries its GitHub Pages deployment once after a
+  five-minute wait: the Pages backend intermittently refuses a first
+  attempt with "Deployment failed, try again later" and accepts a
+  delayed retry, which previously cost a manual rerun on almost every
+  push. The job fails only when both attempts fail.
 - `synapse lock` now waits (bounded) for the hub's release confirmation
   before exiting. The release frame itself is fire-and-forget and the
   hub persists the release before broadcasting the grant, so previously
