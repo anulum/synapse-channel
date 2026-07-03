@@ -1766,6 +1766,101 @@ body {
   outline-offset: -1px;
 }
 
+/* ---------- log-pulse metrics ---------- */
+.metrics-coverage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: var(--sp-3);
+}
+
+.metrics-coverage__item {
+  white-space: nowrap;
+}
+
+.metrics-window {
+  margin-bottom: var(--sp-3);
+}
+
+.metrics-window__head {
+  display: block;
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--dim);
+  margin-bottom: var(--sp-1);
+}
+
+.metrics-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.metrics-bar {
+  display: grid;
+  grid-template-columns: 120px 1fr 56px;
+  align-items: center;
+  column-gap: var(--sp-2);
+}
+
+.metrics-bar__kind {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metrics-bar__track {
+  height: 8px;
+  background: var(--abyss);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.metrics-bar__fill {
+  display: block;
+  height: 100%;
+  background: var(--dim);
+}
+
+.metrics-bar__fill--info {
+  background: var(--info);
+}
+
+.metrics-bar__fill--healthy {
+  background: var(--healthy);
+}
+
+.metrics-bar__fill--warn {
+  background: var(--warn);
+}
+
+.metrics-bar__fill--dim {
+  background: var(--dim);
+}
+
+.metrics-bar__count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  text-align: right;
+}
+
+.metrics-note {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-micro);
+  color: var(--dim);
+}
+
 /* ---------- history scrub ---------- */
 .log-scrub {
   display: flex;
