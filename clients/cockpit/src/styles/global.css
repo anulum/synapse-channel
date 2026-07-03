@@ -1721,6 +1721,32 @@ body {
   outline-offset: -1px;
 }
 
+/* ---------- history scrub ---------- */
+.log-scrub {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-1) var(--sp-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--raised);
+  flex: none;
+}
+
+.log-scrub__slider {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--now);
+  height: 14px;
+}
+
+.log-scrub__label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--now);
+  white-space: nowrap;
+}
+
 /* ---------- signal log ---------- */
 .log {
   width: 100%;
