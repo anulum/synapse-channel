@@ -10,6 +10,12 @@ import { Fragment, memo, useRef, useState } from "react";
 
 import { actorsInWindow, eventsInWindow, windowEdgeLabel, type TimeWindow } from "../lib/brush";
 import { buildLogExport, exportFilename } from "../lib/exportLog";
+import {
+  fetchHistoryWindow,
+  fetchLatestSeq,
+  HISTORY_WINDOW_SIZE,
+  type HistoryWindow,
+} from "../lib/history";
 import { groupByTask } from "../lib/logGroups";
 import { applyQuery, isConstrained, OPEN_QUERY, type LogQuery } from "../lib/logQuery";
 import type { CockpitEvent } from "../types";
@@ -78,6 +84,52 @@ function SignalLogView({
   const [paused, setPaused] = useState(false);
   const [expandedSeq, setExpandedSeq] = useState<number | null>(null);
   const frozen = useRef<readonly CockpitEvent[]>([]);
+
+  // History scrub: any window of the attested log, picked by sequence. Live
+  // rendering continues underneath; leaving history returns to it untouched.
+  const [historyOn, setHistoryOn] = useState(false);
+  const [historyLatest, setHistoryLatest] = useState(0);
+  const [historyPos, setHistoryPos] = useState(0);
+  const [historyWindow, setHistoryWindow] = useState<HistoryWindow | null>(null);
+  const [historyNote, setHistoryNote] = useState<string | null>(null);
+  const scrubTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const enterHistory = async (): Promise<void> => {
+    const latest = await fetchLatestSeq();
+    if (latest.kind !== "loaded") {
+      setHistoryNote(latest.kind === "absent" ? "event feed not served" : latest.message);
+      return;
+    }
+    setHistoryLatest(latest.latest);
+    setHistoryPos(latest.latest);
+    setHistoryNote(null);
+    setHistoryOn(true);
+    const window_ = await fetchHistoryWindow(latest.latest);
+    if (window_.kind === "loaded") setHistoryWindow(window_.window);
+    else setHistoryNote(window_.kind === "absent" ? "event feed not served" : window_.message);
+  };
+
+  const leaveHistory = (): void => {
+    setHistoryOn(false);
+    setHistoryWindow(null);
+    setHistoryNote(null);
+  };
+
+  const scrubTo = (position: number): void => {
+    setHistoryPos(position);
+    // Debounce the fetch so dragging the slider costs one request, not fifty.
+    if (scrubTimer.current !== undefined) clearTimeout(scrubTimer.current);
+    scrubTimer.current = setTimeout(() => {
+      void fetchHistoryWindow(position).then((result) => {
+        if (result.kind === "loaded") {
+          setHistoryWindow(result.window);
+          setHistoryNote(null);
+        } else {
+          setHistoryNote(result.kind === "absent" ? "event feed not served" : result.message);
+        }
+      });
+    }, 250);
+  };
   const togglePause = (): void => {
     if (!paused) frozen.current = events;
     setPaused(!paused);
@@ -94,8 +146,13 @@ function SignalLogView({
     }
   }
 
-  const shown = applyQuery(eventsInWindow(base, window), query);
-  const actors = window === null ? [] : actorsInWindow(base, window);
+  // In history mode the shown events come from the fetched window; the text
+  // and kind filters still apply, the live brush window does not (history is
+  // sequence-addressed, not clock-addressed).
+  const shown = historyOn
+    ? applyQuery(historyWindow?.events ?? [], query)
+    : applyQuery(eventsInWindow(base, window), query);
+  const actors = window === null || historyOn ? [] : actorsInWindow(base, window);
 
   return (
     <section className="panel" aria-label="Signal log">
@@ -145,14 +202,30 @@ function SignalLogView({
         >
           {query.view}
         </button>
+        {!historyOn && (
+          <button
+            type="button"
+            className={`log-controls__toggle${paused ? " log-controls__toggle--paused" : ""}`}
+            onClick={togglePause}
+            aria-pressed={paused}
+            title="Freeze the view while the feed keeps recording"
+          >
+            {paused ? `paused · ${newerCount} new` : "pause"}
+          </button>
+        )}
         <button
           type="button"
-          className={`log-controls__toggle${paused ? " log-controls__toggle--paused" : ""}`}
-          onClick={togglePause}
-          aria-pressed={paused}
-          title="Freeze the view while the feed keeps recording"
+          className={`log-controls__toggle${historyOn ? " log-controls__toggle--paused" : ""}`}
+          onClick={() => (historyOn ? leaveHistory() : void enterHistory())}
+          aria-pressed={historyOn}
+          disabled={provenance !== "hub"}
+          title={
+            provenance === "hub"
+              ? "Scrub any window of the hub's durable log"
+              : "History needs the hub-attested event feed (--feeds-db)"
+          }
         >
-          {paused ? `paused · ${newerCount} new` : "pause"}
+          {historyOn ? "live" : "history"}
         </button>
         <button
           type="button"
@@ -174,6 +247,26 @@ function SignalLogView({
           </button>
         )}
       </div>
+      {historyOn && (
+        <div className="log-scrub">
+          <input
+            type="range"
+            className="log-scrub__slider"
+            min={1}
+            max={Math.max(1, historyLatest)}
+            value={historyPos}
+            onChange={(change) => scrubTo(Number(change.target.value))}
+            aria-label="Scrub position in the hub's event log, by sequence"
+          />
+          <span className="log-scrub__label">
+            {historyNote !== null
+              ? historyNote
+              : historyWindow === null
+                ? "fetching…"
+                : `seq ${historyWindow.fromSeq}–${historyWindow.toSeq} of ${historyLatest} · window ${HISTORY_WINDOW_SIZE}`}
+          </span>
+        </div>
+      )}
       <div className="panel__body panel__body--flush">
         {shown.length === 0 ? (
           <p className="panel__placeholder panel__placeholder--padded">
