@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE_CHANNEL — Prometheus alerting rules over the hub's decision counters
+#
+# Load via `rule_files:` in prometheus.yml. Thresholds are starting points
+# sized for a single-workstation fleet — tune `for:` and rates to your
+# fleet's chatter before paging anyone. Every rule reads only series the
+# hub exports; nothing here needs an exporter beyond `synapse hub --metrics`.
+
+groups:
+  - name: synapse-hub
+    rules:
+      - alert: SynapseHubDown
+        expr: up{job="synapse-hub"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SYNAPSE hub scrape failing"
+          description: >-
+            Prometheus cannot scrape the hub's /metrics endpoint. The fleet
+            coordinates blind while this holds: no claims, no directed chat,
+            no waiter wakes. Check `systemctl --user status synapse-hub`
+            and `synapse doctor`.
+
+      - alert: SynapseDeadLettersGrowing
+        expr: increase(synapse_dead_letters[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Directed messages reaching nobody"
+          description: >-
+            The dead-letter ledger grew in the last 15 minutes: someone is
+            writing to a name with no live connection. `synapse doctor`
+            names the unread addressees; `syn inbox --as <name>` drains
+            them. The ledger clears itself when the addressee connects.
+
+      - alert: SynapseClaimDenySpike
+        expr: >-
+          rate(synapse_claims_denied_total[10m])
+          > rate(synapse_claims_granted_total[10m])
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Claims denied faster than granted"
+          description: >-
+            Sustained contention: for ten minutes denials outpaced grants.
+            Either two agents fight over one scope (see `synapse causality
+            contention`) or a stale lease blocks the fleet (see `synapse
+            causality health --stale-after`).
+
+      - alert: SynapseAuthFailures
+        expr: increase(synapse_auth_failures_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Per-message authentication failing"
+          description: >-
+            A required-auth hub refused frames in the last 10 minutes:
+            either an agent lost its key material or something unauthorised
+            is knocking. `synapse event-query --kind error` shows who.
+
+      - alert: SynapseTakeoverQuarantine
+        expr: increase(synapse_takeover_quarantines_total[30m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Waiter takeover oscillation quarantined"
+          description: >-
+            Two waiters evicted each other until the hub pinned the name.
+            Usually two sessions armed the same identity: `synapse who`
+            shows the survivors, `syn reap --stale` cleans dead ones.
+
+      - alert: SynapseFederationDenials
+        expr: increase(synapse_federation_denied_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Federation gate refusing cross-domain frames"
+          description: >-
+            Frames signed with peered keys were denied — certificate pin,
+            scope, or signature did not resolve to a single peered domain.
+            Expected during a botched key rotation; investigate with
+            `synapse federation list --max-age` and the hub log.
