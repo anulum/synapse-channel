@@ -91,6 +91,7 @@ from synapse_channel.core.yield_advice import (
     render_advice_markdown,
     run_yield_advice,
 )
+from synapse_channel.observability_textfile import render_health_textfile
 
 CONTENTION_MODE = "contention"
 """Query mode that weighs overlapping live claims instead of one sequence."""
@@ -136,6 +137,12 @@ def _cmd_causality(args: argparse.Namespace) -> int:
         return 2
     if args.direction != HEALTH_MODE and args.since is not None:
         print("--since belongs to the health mode", file=sys.stderr)
+        return 2
+    if args.direction != HEALTH_MODE and args.textfile is not None:
+        print("--textfile belongs to the health mode", file=sys.stderr)
+        return 2
+    if args.textfile is not None and args.watch:
+        print("--textfile writes one report; it does not compose with --watch", file=sys.stderr)
         return 2
     if args.direction == HEALTH_MODE:
         if args.peer:
@@ -359,6 +366,16 @@ def _cmd_health(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    if args.textfile is not None:
+        try:
+            Path(args.textfile).expanduser().write_text(
+                render_health_textfile(report), encoding="utf-8"
+            )
+        except OSError as exc:
+            print(f"cannot write the textfile metrics: {exc}", file=sys.stderr)
+            return 2
+        print(f"causal-health metrics written to {args.textfile}")
+        return 1 if report.anomaly_count else 0
     if args.json:
         print(json.dumps(health_to_json(report), indent=2, sort_keys=True))
     else:
@@ -537,6 +554,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=int,
         default=0,
         help="Stop --watch after this many ticks (0 = until interrupted).",
+    )
+    causality.add_argument(
+        "--textfile",
+        default=None,
+        metavar="FILE",
+        help="health mode: write the anomaly counts as node_exporter "
+        "textfile-collector metrics into FILE instead of printing (one report; "
+        "does not compose with --watch).",
     )
     causality.add_argument(
         "--since",

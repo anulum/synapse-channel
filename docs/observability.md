@@ -46,9 +46,11 @@ Two planes, deliberately separate:
 
 4. **Alert.** Load
    [`prometheus-alerts.yml`](https://github.com/anulum/synapse-channel/blob/main/integrations/observability/prometheus-alerts.yml)
-   via `rule_files:`. Six rules ship: hub down, dead letters growing,
+   via `rule_files:`. Eight rules ship: hub down, dead letters growing,
    claims denied faster than granted, auth failures, takeover quarantine,
-   federation denials. The thresholds are starting points sized for a
+   federation denials, and — from the log-derived textfiles below —
+   reliability findings and causal-health anomalies. The thresholds are
+   starting points sized for a
    single-workstation fleet — tune them to your chatter before paging
    anyone at 03:00.
 
@@ -70,6 +72,31 @@ happened. The signals that matter operationally:
 - `synapse_takeover_quarantines_total` moving means two waiters fought
   over one identity until the hub pinned it — `syn reap --stale` cleans
   the corpse that caused it.
+
+## Log-derived signals (the analytics plane, in Prometheus)
+
+The store-derived analytics — reliability findings and causal-health
+anomalies — reach the same Prometheus and alerting plane through the
+`node_exporter` **textfile collector**, so they show up next to the live
+counters without the hub needing to be up:
+
+```bash
+# a timer writes these into node_exporter's --collector.textfile.directory
+synapse reliability ~/synapse/hub.db --textfile /var/lib/node_exporter/synapse_reliability.prom
+synapse causality health ~/synapse/hub.db --textfile /var/lib/node_exporter/synapse_health.prom
+```
+
+The reliability file carries `synapse_reliability_findings{kind=...}` (all
+four evidence kinds, zero included so an alert can fire the first time a
+kind goes positive) and `synapse_reliability_owner_findings{owner,kind}`.
+The health file carries `synapse_causal_health_anomalies{shape=...}`
+(orphaned/dangling/stale), its total, and tasks scanned. Every value is
+deterministic over a given log — the same log renders the same file — and
+every file is valid exposition (the suite parses each back with the
+Prometheus client parser, so node_exporter never silently rejects one).
+These are **evidence gauges, not grades**: alert on a positive count, then
+read the finding with `synapse reliability` or `synapse causality health`
+to see what it is.
 
 ## Traces
 

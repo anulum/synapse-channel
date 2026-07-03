@@ -1104,3 +1104,68 @@ def test_cli_since_is_refused_outside_health_mode(
 
     assert exit_code == 2
     assert "--since belongs to the health mode" in capsys.readouterr().err
+
+
+def test_cli_health_textfile_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    db = tmp_path / "hub.db"
+    store = EventStore(db)
+    store.append(
+        EventKind.CLAIM,
+        {"task_id": "ORPH", "owner": "a", "status": "claimed", "paths": [], "worktree": "w"},
+        ts=10.0,
+    )
+    store.close()
+    out_file = tmp_path / "health.prom"
+
+    exit_code = cli.main(["causality", "health", str(db), "--textfile", str(out_file)])
+
+    assert exit_code == 1  # the orphan is an anomaly
+    assert f"causal-health metrics written to {out_file}" in capsys.readouterr().out
+    text = out_file.read_text(encoding="utf-8")
+    assert 'synapse_causal_health_anomalies{shape="orphaned"} 1' in text
+
+
+def test_cli_health_textfile_is_refused_outside_health_mode(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    exit_code = cli.main(["causality", "causes", str(db), "4", "--textfile", "x.prom"])
+
+    assert exit_code == 2
+    assert "--textfile belongs to the health mode" in capsys.readouterr().err
+
+
+def test_cli_health_textfile_does_not_compose_with_watch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    exit_code = cli.main(
+        ["causality", "health", str(db), "--textfile", "x.prom", "--watch", "--count", "1"]
+    )
+
+    assert exit_code == 2
+    assert "does not compose with --watch" in capsys.readouterr().err
+
+
+def test_cli_health_textfile_reports_an_unwritable_target(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    store = EventStore(db)
+    store.append(
+        EventKind.CLAIM,
+        {"task_id": "T", "owner": "a", "status": "claimed", "paths": [], "worktree": "w"},
+        ts=1.0,
+    )
+    store.close()
+    blocker = tmp_path / "occupied"
+    blocker.write_text("not a dir", encoding="utf-8")
+
+    exit_code = cli.main(["causality", "health", str(db), "--textfile", str(blocker / "out.prom")])
+
+    assert exit_code == 2
+    assert "cannot write the textfile metrics" in capsys.readouterr().err
