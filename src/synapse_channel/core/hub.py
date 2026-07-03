@@ -46,6 +46,7 @@ from synapse_channel.core.acl_enforcement import authorise_frame, project_of
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.channels import ChannelRegistry
+from synapse_channel.core.dead_letters import DeadLetterLedger
 from synapse_channel.core.federation import FederationBundle
 from synapse_channel.core.handlers import DISPATCH
 from synapse_channel.core.hub_broadcast import HubBroadcaster
@@ -459,6 +460,7 @@ class SynapseHub:
         self.board_task_cap = max(1, int(board_task_cap)) if board_task_cap is not None else None
         self.relay_log = Path(relay_log) if relay_log else None
         self.relay_max_lines = max(int(relay_max_lines), 1)
+        self.dead_letters = DeadLetterLedger()
         self._relay = RelayMirror(self.relay_log, self.relay_max_lines)
         self._broadcaster = HubBroadcaster(
             self.clients,
@@ -814,6 +816,7 @@ class SynapseHub:
 
         self.state.heartbeat(sender)
         is_new_agent = self.clients.set_agent_socket(sender, websocket)
+        self.dead_letters.clear(sender)
         if is_new_agent:
             await self._broadcast_presence("joined", sender)
         # A channel-scoped frame is audience-restricted, so its body must not land
