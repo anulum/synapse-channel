@@ -20,6 +20,7 @@ import { RiskRail } from "./components/RiskRail";
 import { TaskBoard } from "./components/TaskBoard";
 import { deriveAnomalies } from "./lib/anomalies";
 import { boardTruncation, deriveBoard, deriveFindings } from "./lib/board";
+import { parseDeadLetters } from "./lib/deadLetters";
 import type { TimeWindow } from "./lib/brush";
 import { deriveClaims, parseConflicts } from "./lib/claims";
 import { createEventsTailSource, type SpineProvenance } from "./lib/eventsTail";
@@ -250,6 +251,7 @@ export function App(): JSX.Element {
   const board = useMemo(() => deriveBoard(snap.snapshot), [snap.snapshot]);
   const findings = useMemo(() => deriveFindings(snap.snapshot), [snap.snapshot]);
   const anomalies = useMemo(() => deriveAnomalies(log), [log]);
+  const deadLetters = useMemo(() => parseDeadLetters(snap.snapshot), [snap.snapshot]);
   const connected = snap.snapshot !== null;
 
   return (
@@ -304,7 +306,11 @@ export function App(): JSX.Element {
         </PanelBoundary>
         <div className="deck__stack deck__stack--rail">
           <PanelBoundary name="Risk rail">
-            <RiskRail risk={snap.snapshot?.risk ?? null} anomalies={anomalies} />
+            <RiskRail
+              risk={snap.snapshot?.risk ?? null}
+              anomalies={anomalies}
+              deadLetters={deadLetters}
+            />
           </PanelBoundary>
           <PanelBoundary name="Findings">
             <FindingsStream findings={findings} connected={connected} />

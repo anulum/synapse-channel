@@ -9,8 +9,19 @@
 import { memo } from "react";
 
 import type { AnomalyFlag } from "../lib/anomalies";
+import type { DeadLetterView } from "../lib/deadLetters";
 import { orderSignals } from "../lib/risk";
 import type { RiskView } from "../types";
+
+function deadLetterTime(ts: number | null): string {
+  if (ts === null) return "—";
+  return new Date(ts * 1000).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
 
 /** Glyph per level — redundant with colour, never colour alone. */
 const LEVEL_GLYPH: Record<RiskView["level"], string> = {
@@ -27,12 +38,14 @@ interface RiskRailProps {
    * their own clearly-labelled section, never mixed into the hub's signals.
    */
   readonly anomalies?: readonly AnomalyFlag[];
+  /** Hub-recorded dead letters: targets whose messages nobody reads. */
+  readonly deadLetters?: readonly DeadLetterView[];
 }
 
 /** How many safe-next-work rows show before the tail collapses into a count. */
 const SAFE_WORK_SHOWN = 14;
 
-function RiskRailView({ risk, anomalies = [] }: RiskRailProps): JSX.Element {
+function RiskRailView({ risk, anomalies = [], deadLetters = [] }: RiskRailProps): JSX.Element {
   const signals = risk === null ? [] : orderSignals(risk.signals);
   const safeWork = risk?.safe_next_work ?? [];
   const safeShown = safeWork.slice(0, SAFE_WORK_SHOWN);
@@ -73,6 +86,34 @@ function RiskRailView({ risk, anomalies = [] }: RiskRailProps): JSX.Element {
               </li>
             ))}
           </ul>
+        )}
+        {deadLetters.length > 0 && (
+          <div className="risk-heuristics">
+            <span
+              className="risk-safe__head"
+              title="The hub recorded messages for these targets, and no reader has picked them up."
+            >
+              dead letters · nobody listening
+            </span>
+            <ul className="risk-list">
+              {deadLetters.map((letter) => (
+                <li key={letter.target} className="risk-row risk-row--red">
+                  <span className="risk-row__glyph" aria-hidden="true">
+                    ✉
+                  </span>
+                  <span className="risk-row__body">
+                    <span className="risk-row__subject">
+                      <span className="risk-row__category">{`${letter.count} unread`}</span>
+                      {letter.target}
+                    </span>
+                    <span className="risk-row__detail">
+                      {`last from ${letter.lastSender === "" ? "—" : letter.lastSender} at ${deadLetterTime(letter.lastTs)}`}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
         {anomalies.length > 0 && (
           <div className="risk-heuristics">
