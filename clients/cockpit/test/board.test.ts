@@ -7,7 +7,7 @@
 // SYNAPSE_CHANNEL — task-board derivation and findings-stream tests
 
 import { describe, expect, it } from "vitest";
-import { deriveBoard, deriveFindings } from "../src/lib/board";
+import { boardTruncation, deriveBoard, deriveFindings } from "../src/lib/board";
 import { parseSnapshot } from "../src/lib/snapshot";
 import type { FleetSnapshot, TaskGraphEdge, TaskGraphNode } from "../src/types";
 
@@ -115,6 +115,22 @@ describe("deriveBoard", () => {
       }),
     );
     expect(rows[0]?.bucket).toBe("ready");
+  });
+});
+
+describe("boardTruncation", () => {
+  it("reads the hub's cap signal and defaults honestly without one", () => {
+    expect(boardTruncation(null)).toEqual({ totalTasks: null, truncated: false });
+    expect(boardTruncation(snapshotOf({ board: {} }))).toEqual({
+      totalTasks: null,
+      truncated: false,
+    });
+    expect(
+      boardTruncation(snapshotOf({ board: { total_tasks: 977, truncated: true } })),
+    ).toEqual({ totalTasks: 977, truncated: true });
+    expect(
+      boardTruncation(snapshotOf({ board: { total_tasks: "junk", truncated: "yes" } })),
+    ).toEqual({ totalTasks: null, truncated: false });
   });
 });
 
