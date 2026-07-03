@@ -6,6 +6,8 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the reliability EVIDENCE panel: the record, never a score
 
+import { memo } from "react";
+
 import { orderOwners, type ReliabilityFinding, type ReliabilityState } from "../lib/reliability";
 
 /** Glyph per finding kind — redundant with colour, never colour alone. */
@@ -67,7 +69,7 @@ interface ReliabilityPanelProps {
   readonly state: ReliabilityState;
 }
 
-export function ReliabilityPanel({ state }: ReliabilityPanelProps): JSX.Element {
+function ReliabilityPanelView({ state }: ReliabilityPanelProps): JSX.Element {
   const report = state.data;
   const owners = report === null ? [] : orderOwners(report.owners);
   const findings = report?.findings ?? [];
@@ -145,3 +147,6 @@ export function ReliabilityPanel({ state }: ReliabilityPanelProps): JSX.Element 
     </section>
   );
 }
+
+/** Memoised: re-renders only when its own data changes, not on the 1 s clock. */
+export const ReliabilityPanel = memo(ReliabilityPanelView);

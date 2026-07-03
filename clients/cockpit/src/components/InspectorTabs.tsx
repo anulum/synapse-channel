@@ -7,6 +7,7 @@
 // SYNAPSE_CHANNEL — tab switch between the signal log and the causality inspector
 
 import { useState } from "react";
+import { windowEdgeLabel, type TimeWindow } from "../lib/brush";
 import type { CockpitEvent } from "../types";
 import { CausalityView } from "./CausalityView";
 import { SignalLog } from "./SignalLog";
@@ -16,9 +17,13 @@ type InspectorTab = "log" | "causality";
 interface InspectorTabsProps {
   /** Derived transition events for the signal-log tab, newest first. */
   readonly events: readonly CockpitEvent[];
+  /** The brushed spine window filtering the log, or null. */
+  readonly window?: TimeWindow | null;
+  /** Clears the brushed window. */
+  readonly onClearWindow?: (() => void) | undefined;
 }
 
-export function InspectorTabs({ events }: InspectorTabsProps): JSX.Element {
+export function InspectorTabs({ events, window = null, onClearWindow }: InspectorTabsProps): JSX.Element {
   const [tab, setTab] = useState<InspectorTab>("log");
 
   return (
@@ -42,9 +47,26 @@ export function InspectorTabs({ events }: InspectorTabsProps): JSX.Element {
         >
           causality
         </button>
+        {window !== null && (
+          <span className="inspector__brush">
+            {`${windowEdgeLabel(window.fromTs)}–${windowEdgeLabel(window.toTs)}`}
+            <button
+              type="button"
+              className="panel__clear"
+              onClick={() => onClearWindow?.()}
+              aria-label="Clear the brushed window"
+            >
+              clear
+            </button>
+          </span>
+        )}
       </div>
       <div className="inspector__body">
-        {tab === "log" ? <SignalLog events={events} /> : <CausalityView />}
+        {tab === "log" ? (
+          <SignalLog events={events} window={window} onClearWindow={onClearWindow} />
+        ) : (
+          <CausalityView />
+        )}
       </div>
     </div>
   );

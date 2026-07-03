@@ -6,7 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — cockpit app shell
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivitySpine } from "./components/ActivitySpine";
 import { ClaimsBoard } from "./components/ClaimsBoard";
 import { FederationRow } from "./components/FederationRow";
@@ -14,10 +14,12 @@ import { FindingsStream } from "./components/FindingsStream";
 import { FleetRoster } from "./components/FleetRoster";
 import { Hud, type Kpi } from "./components/Hud";
 import { InspectorTabs } from "./components/InspectorTabs";
+import { PanelBoundary } from "./components/PanelBoundary";
 import { ReliabilityPanel } from "./components/ReliabilityPanel";
 import { RiskRail } from "./components/RiskRail";
 import { TaskBoard } from "./components/TaskBoard";
 import { deriveBoard, deriveFindings } from "./lib/board";
+import type { TimeWindow } from "./lib/brush";
 import { deriveClaims, parseConflicts } from "./lib/claims";
 import { createFederationStore, type FederationState } from "./lib/federation";
 import { createReliabilityStore, type ReliabilityState } from "./lib/reliability";
@@ -91,7 +93,12 @@ export function App(): JSX.Element {
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [reliability, setReliability] = useState<ReliabilityState>(INITIAL_RELIABILITY);
   const [federation, setFederation] = useState<FederationState>(INITIAL_FEDERATION);
+  const [brush, setBrush] = useState<TimeWindow | null>(null);
   const previous = useRef<Metrics>(ZERO_METRICS);
+
+  // Stable identities so the spine's canvas effect never re-arms mid-flight.
+  const onBrush = useCallback((window: TimeWindow | null) => setBrush(window), []);
+  const onClearWindow = useCallback(() => setBrush(null), []);
 
   useEffect(() => {
     // The store owns its polling and is created per-mount so its lifecycle is
@@ -157,21 +164,39 @@ export function App(): JSX.Element {
   return (
     <div className="shell">
       <Hud kpis={kpis} live={snap.status === "live"} stamp={stampFor(snap.fetchedAt)} />
-      <ActivitySpine source={spineSource} />
-      <FederationRow state={federation} />
+      <PanelBoundary name="Activity spine">
+        <ActivitySpine source={spineSource} onBrush={onBrush} brush={brush} />
+      </PanelBoundary>
+      <PanelBoundary name="Federation">
+        <FederationRow state={federation} />
+      </PanelBoundary>
       <div className="deck">
         <div className="deck__stack deck__stack--roster">
-          <FleetRoster roster={roster} waiters={waiters} />
-          <ReliabilityPanel state={reliability} />
+          <PanelBoundary name="Fleet roster">
+            <FleetRoster roster={roster} waiters={waiters} />
+          </PanelBoundary>
+          <PanelBoundary name="Reliability">
+            <ReliabilityPanel state={reliability} />
+          </PanelBoundary>
         </div>
         <div className="deck__stack">
-          <ClaimsBoard claims={claims} conflicts={conflicts} connected={connected} />
-          <InspectorTabs events={log} />
+          <PanelBoundary name="Claims">
+            <ClaimsBoard claims={claims} conflicts={conflicts} connected={connected} />
+          </PanelBoundary>
+          <PanelBoundary name="Inspector">
+            <InspectorTabs events={log} window={brush} onClearWindow={onClearWindow} />
+          </PanelBoundary>
         </div>
-        <TaskBoard tasks={board} connected={connected} />
+        <PanelBoundary name="Board">
+          <TaskBoard tasks={board} connected={connected} />
+        </PanelBoundary>
         <div className="deck__stack deck__stack--rail">
-          <RiskRail risk={snap.snapshot?.risk ?? null} />
-          <FindingsStream findings={findings} connected={connected} />
+          <PanelBoundary name="Risk rail">
+            <RiskRail risk={snap.snapshot?.risk ?? null} />
+          </PanelBoundary>
+          <PanelBoundary name="Findings">
+            <FindingsStream findings={findings} connected={connected} />
+          </PanelBoundary>
         </div>
       </div>
     </div>

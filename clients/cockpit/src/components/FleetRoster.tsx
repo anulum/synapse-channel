@@ -6,6 +6,8 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the fleet roster panel: who is present and what they hold
 
+import { memo } from "react";
+
 import type { RosterEntry, RowStatus } from "../lib/roster";
 
 /** Glyph per status — redundant with colour and row order, never colour alone. */
@@ -92,7 +94,7 @@ interface FleetRosterProps {
   readonly waiters: number;
 }
 
-export function FleetRoster({ roster, waiters }: FleetRosterProps): JSX.Element {
+function FleetRosterView({ roster, waiters }: FleetRosterProps): JSX.Element {
   const live = roster.filter((entry) => entry.online).length;
 
   return (
@@ -116,3 +118,6 @@ export function FleetRoster({ roster, waiters }: FleetRosterProps): JSX.Element 
     </section>
   );
 }
+
+/** Memoised: re-renders only when its own data changes, not on the 1 s clock. */
+export const FleetRoster = memo(FleetRosterView);
