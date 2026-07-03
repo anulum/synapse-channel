@@ -355,7 +355,11 @@ class EventStore:
         if not seq_list:
             return 0
         placeholders = ",".join("?" for _ in seq_list)
-        cursor = self._conn.execute(f"DELETE FROM events WHERE seq IN ({placeholders})", seq_list)
+        # the interpolation is only "?" placeholders; every value binds parameterised
+        cursor = self._conn.execute(
+            f"DELETE FROM events WHERE seq IN ({placeholders})",  # nosec B608
+            seq_list,
+        )
         self._conn.commit()
         return int(cursor.rowcount)
 

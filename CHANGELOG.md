@@ -13,6 +13,19 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Security
+- The chat backend client refuses a `base_url` whose scheme is not
+  `http`/`https` at construction — a `file://` or custom scheme smuggled
+  in through configuration is a `ValueError`, not a silently opened
+  request.
+- Bandit now gates CI: the lint job runs `bandit -r src -c
+  pyproject.toml` (it was configured but never invoked). Every prior
+  finding was triaged in place: one unparsed suppression fixed (bandit
+  1.9 reads `# nosec B603 B607`, not the comma form), the placeholder-only
+  SQL construction and status-string/argv false positives annotated with
+  their reasons, and the subprocess imports documented as fixed-argv
+  surfaces.
+
 ## [0.93.0] - 2026-07-03
 
 ### Added

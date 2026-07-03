@@ -48,6 +48,20 @@ def test_rule_based_client_returns_canned_reply() -> None:
 # --- OpenAIChatClient construction ------------------------------------------
 
 
+def test_openai_client_refuses_non_http_schemes() -> None:
+    # a file:// or custom scheme smuggled in through configuration must be
+    # refused at construction, not silently opened at request time
+    for base_url in ("file:///etc/passwd", "ftp://host/v1", "unix:///tmp/sock", "host/v1"):
+        with pytest.raises(ValueError, match="must be http"):
+            OpenAIChatClient(api_key="k", model="m", base_url=base_url, timeout_seconds=1.0)
+
+
+def test_openai_client_accepts_both_http_schemes() -> None:
+    for base_url in ("http://h/v1", "https://h/v1", "HTTPS://h/v1"):
+        client = OpenAIChatClient(api_key="k", model="m", base_url=base_url, timeout_seconds=1.0)
+        assert client.base_url == base_url
+
+
 def test_openai_client_strips_base_url_and_clamps_timeout() -> None:
     client = OpenAIChatClient(api_key="k", model="m", base_url="http://h/v1/", timeout_seconds=0.1)
     assert client.base_url == "http://h/v1"

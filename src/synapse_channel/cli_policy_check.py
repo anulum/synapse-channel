@@ -36,7 +36,7 @@ from synapse_channel.core.receipt_signing import (
 )
 from synapse_channel.core.release_verification import check_receipt_merkle_commitment
 
-_STATUS_GLYPH = {"pass": "✓", "warn": "!", "fail": "✗", "not_applicable": "·"}
+_STATUS_GLYPH = {"pass": "✓", "warn": "!", "fail": "✗", "not_applicable": "·"}  # nosec B105 - status names, not secrets
 
 
 def _load_receipt(path: str | Path) -> dict[str, Any]:

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Protocol
 
@@ -91,11 +92,23 @@ class OpenAIChatClient:
         Model identifier passed in the request body.
     base_url : str
         Base URL of the OpenAI-compatible API; a trailing slash is stripped.
+        Only ``http``/``https`` schemes are accepted — a ``file://`` or
+        custom scheme smuggled in through configuration is refused at
+        construction rather than silently opened.
     timeout_seconds : float
         Per-request timeout, clamped up to ``3.0`` seconds.
+
+    Raises
+    ------
+    ValueError
+        If ``base_url`` carries a scheme other than ``http`` or ``https``.
     """
 
     def __init__(self, *, api_key: str, model: str, base_url: str, timeout_seconds: float) -> None:
+        scheme = urllib.parse.urlsplit(base_url).scheme.lower()
+        if scheme not in {"http", "https"}:
+            msg = f"chat backend URL must be http(s), got scheme '{scheme or '(none)'}'"
+            raise ValueError(msg)
         self.api_key = api_key
         self.model = model
         self.base_url = base_url.rstrip("/")
@@ -142,7 +155,8 @@ class OpenAIChatClient:
             },
         )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
+            # scheme constrained to http/https at construction
+            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:  # nosec B310
                 raw = resp.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")

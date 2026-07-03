@@ -16,7 +16,7 @@ remain operator-readable templates; these helpers are the installed path.
 from __future__ import annotations
 
 import shutil
-import subprocess
+import subprocess  # nosec B404 - fixed systemctl argv, never a shell string
 from pathlib import Path
 from typing import Protocol
 
