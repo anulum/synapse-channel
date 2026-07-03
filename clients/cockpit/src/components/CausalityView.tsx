@@ -155,7 +155,11 @@ export function CausalityView({ prefill = null }: CausalityViewProps): JSX.Eleme
         {status === "loaded" && trace !== null && (
           <div className="causality-trace">
             {!trace.present ? (
-              <p className="panel__placeholder">{`Event ${trace.seq} is not in the log.`}</p>
+              <p className="panel__placeholder">
+                {trace.note !== ""
+                  ? `Event ${trace.seq}: ${trace.note}.`
+                  : `Event ${trace.seq} is not in the coordination causal graph.`}
+              </p>
             ) : (
               <>
                 {trace.node !== null && (

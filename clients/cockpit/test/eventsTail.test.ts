@@ -105,13 +105,12 @@ function wire(seq: number): Page["events"][number] {
 }
 
 describe("createEventsTailSource", () => {
-  it("walks a multi-page catch-up, emits only the recent history, then polls forward", async () => {
+  it("finds the tail in two requests (latest + backfill), then polls forward", async () => {
     vi.useFakeTimers();
     const fetcher = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(pageResponse({ events: [wire(1), wire(2)], next_cursor: 2 }))
-      .mockResolvedValueOnce(pageResponse({ events: [wire(3), wire(4)], next_cursor: 4 }))
-      .mockResolvedValueOnce(pageResponse({ events: [wire(5)], next_cursor: 5 }))
+      .mockResolvedValueOnce(pageResponse({ events: [], next_cursor: 5 }))
+      .mockResolvedValueOnce(pageResponse({ events: [wire(3), wire(4), wire(5)], next_cursor: 5 }))
       .mockResolvedValueOnce(pageResponse({ events: [wire(6)], next_cursor: 6 }));
     const events: CockpitEvent[] = [];
     const modes: SpineProvenance[] = [];
@@ -122,18 +121,45 @@ describe("createEventsTailSource", () => {
     await vi.waitFor(() => {
       expect(modes.at(-1)).toBe("hub");
     });
-    // History trimmed to the last 3 of the 5 walked events.
     expect(events.map((event) => event.seq)).toEqual([3, 4, 5]);
-    expect(fetcher.mock.calls[0]?.[0]).toBe("/events.json?since=0&limit=2");
-    expect(fetcher.mock.calls[2]?.[0]).toBe("/events.json?since=4&limit=2");
+    expect(fetcher.mock.calls[0]?.[0]).toBe("/events.json?since=latest&limit=1");
+    expect(fetcher.mock.calls[1]?.[0]).toBe("/events.json?since=2&limit=3");
 
     await vi.advanceTimersByTimeAsync(1000);
     await vi.waitFor(() => {
       expect(events.map((event) => event.seq)).toEqual([3, 4, 5, 6]);
     });
-    expect(fetcher.mock.calls[3]?.[0]).toBe("/events.json?since=5&limit=2");
+    expect(fetcher.mock.calls[2]?.[0]).toBe("/events.json?since=5&limit=2");
     expect(modes[0]).toBe("connecting");
     source.stop();
+  });
+
+  it("clamps the backfill start to zero on a short log and reports a backfill 404 as absent", async () => {
+    vi.useFakeTimers();
+    const short = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(pageResponse({ events: [], next_cursor: 2 }))
+      .mockResolvedValueOnce(pageResponse({ events: [wire(1), wire(2)], next_cursor: 2 }));
+    const shortModes: SpineProvenance[] = [];
+    const shortSource = createEventsTailSource({ fetcher: short, pollMs: 1000, historyLimit: 10 });
+    shortSource.subscribeMode((mode) => shortModes.push(mode));
+    await vi.waitFor(() => {
+      expect(shortModes.at(-1)).toBe("hub");
+    });
+    expect(short.mock.calls[1]?.[0]).toBe("/events.json?since=0&limit=10");
+    shortSource.stop();
+
+    const halfAbsent = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(pageResponse({ events: [], next_cursor: 5 }))
+      .mockResolvedValueOnce(new Response("no", { status: 404 }));
+    const halfModes: SpineProvenance[] = [];
+    const halfSource = createEventsTailSource({ fetcher: halfAbsent, pollMs: 1000 });
+    halfSource.subscribeMode((mode) => halfModes.push(mode));
+    await vi.waitFor(() => {
+      expect(halfModes.at(-1)).toBe("absent");
+    });
+    halfSource.stop();
   });
 
   it("reports absent on 404, re-checks slowly, and comes alive when served", async () => {
@@ -141,6 +167,7 @@ describe("createEventsTailSource", () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(new Response("no", { status: 404 }))
+      .mockResolvedValueOnce(pageResponse({ events: [], next_cursor: 1 }))
       .mockResolvedValueOnce(pageResponse({ events: [wire(1)], next_cursor: 1 }));
     const modes: SpineProvenance[] = [];
     const source = createEventsTailSource({ fetcher, pollMs: 1000, absentPollMs: 5000 });
@@ -153,7 +180,7 @@ describe("createEventsTailSource", () => {
     await vi.waitFor(() => {
       expect(modes.at(-1)).toBe("hub");
     });
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(3);
     source.stop();
   });
 
@@ -161,6 +188,7 @@ describe("createEventsTailSource", () => {
     vi.useFakeTimers();
     const fetcher = vi
       .fn<typeof fetch>()
+      .mockResolvedValueOnce(pageResponse({ events: [], next_cursor: 1 }))
       .mockResolvedValueOnce(pageResponse({ events: [wire(1)], next_cursor: 1 }))
       .mockResolvedValueOnce(new Response("no", { status: 404 }));
     const modes: SpineProvenance[] = [];
@@ -189,6 +217,7 @@ describe("createEventsTailSource", () => {
 
     const junk = vi
       .fn<typeof fetch>()
+      .mockResolvedValueOnce(pageResponse({ events: [], next_cursor: 1 }))
       .mockResolvedValueOnce(pageResponse({ events: [wire(1)], next_cursor: 1 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([1])));
     const junkModes: SpineProvenance[] = [];
@@ -259,32 +288,29 @@ describe("createEventsTailSource", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
-  it("abandons a multi-page walk when stopped mid-walk", async () => {
+  it("emits nothing when stopped between the tip and the backfill", async () => {
     vi.useFakeTimers();
     const source = createEventsTailSource({
       fetcher: vi
         .fn<typeof fetch>()
-        .mockResolvedValueOnce(pageResponse({ events: [wire(1), wire(2)], next_cursor: 2 }))
+        .mockResolvedValueOnce(pageResponse({ events: [], next_cursor: 2 }))
         .mockImplementationOnce(() => {
           source.stop();
-          return Promise.resolve(pageResponse({ events: [wire(3), wire(4)], next_cursor: 4 }));
+          return Promise.resolve(pageResponse({ events: [wire(1), wire(2)], next_cursor: 2 }));
         }),
       pollMs: 1000,
-      limit: 2,
     });
     const events: CockpitEvent[] = [];
-    const modes: SpineProvenance[] = [];
     source.subscribe((event) => events.push(event));
-    source.subscribeMode((mode) => modes.push(mode));
     await vi.advanceTimersByTimeAsync(50);
     expect(events).toEqual([]);
-    expect(modes.at(-1)).toBe("connecting");
   });
 
   it("unsubscribing an event listener stops its delivery while others continue", async () => {
     vi.useFakeTimers();
     const fetcher = vi
       .fn<typeof fetch>()
+      .mockResolvedValueOnce(pageResponse({ events: [], next_cursor: 1 }))
       .mockResolvedValueOnce(pageResponse({ events: [wire(1)], next_cursor: 1 }))
       .mockResolvedValueOnce(pageResponse({ events: [wire(2)], next_cursor: 2 }));
     const first: CockpitEvent[] = [];
