@@ -15,15 +15,22 @@ import { SignalLog } from "./SignalLog";
 type InspectorTab = "log" | "causality";
 
 interface InspectorTabsProps {
-  /** Derived transition events for the signal-log tab, newest first. */
+  /** Events for the signal-log tab, newest first. */
   readonly events: readonly CockpitEvent[];
   /** The brushed spine window filtering the log, or null. */
   readonly window?: TimeWindow | null;
   /** Clears the brushed window. */
   readonly onClearWindow?: (() => void) | undefined;
+  /** Where the events come from: the hub's log or the snapshot derivation. */
+  readonly provenance?: "hub" | "derived";
 }
 
-export function InspectorTabs({ events, window = null, onClearWindow }: InspectorTabsProps): JSX.Element {
+export function InspectorTabs({
+  events,
+  window = null,
+  onClearWindow,
+  provenance = "derived",
+}: InspectorTabsProps): JSX.Element {
   const [tab, setTab] = useState<InspectorTab>("log");
   const [prefill, setPrefill] = useState<CausalityPrefill | null>(null);
 
@@ -76,6 +83,7 @@ export function InspectorTabs({ events, window = null, onClearWindow }: Inspecto
             window={window}
             onClearWindow={onClearWindow}
             onSelectTask={onSelectTask}
+            provenance={provenance}
           />
         ) : (
           <CausalityView prefill={prefill} />

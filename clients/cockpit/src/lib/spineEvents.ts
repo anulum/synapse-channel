@@ -7,7 +7,7 @@
 // SYNAPSE_CHANNEL — derive real coordination events from fleet-snapshot transitions
 
 import type { CockpitEvent, EventKind, FleetSnapshot } from "../types";
-import { laneOf } from "./events";
+import { laneOf, SEVERITY_OF } from "./events";
 import type { SnapshotStore } from "./snapshot";
 
 // ---------------------------------------------------------------------------
@@ -25,18 +25,6 @@ import type { SnapshotStore } from "./snapshot";
 // therefore quantised to the poll cadence. A hub-attested event feed (true
 // seq + ts) is a server-side surface the cockpit will adopt when it exists.
 // ---------------------------------------------------------------------------
-
-/** Severity assigned to each derived transition, 0..1 (drives impulse height). */
-const SEVERITY: Record<EventKind, number> = {
-  presence: 0.3,
-  claim: 0.45,
-  lease: 0.7,
-  release: 0.5,
-  task: 0.6,
-  chat: 0.25,
-  finding: 0.55,
-  conflict: 0.9,
-};
 
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -235,7 +223,7 @@ export function deriveTransitionEvents(
     ts: atMs / 1000,
     kind: seed.kind,
     lane: laneOf(seed.kind),
-    severity: SEVERITY[seed.kind],
+    severity: SEVERITY_OF[seed.kind],
     actor: seed.actor,
     label: seed.label,
     taskId: seed.taskId ?? "",

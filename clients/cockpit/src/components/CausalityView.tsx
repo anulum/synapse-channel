@@ -101,7 +101,12 @@ export function CausalityView({ prefill = null }: CausalityViewProps): JSX.Eleme
     void runTrace(prefill.subject, "causes");
   }, [prefill, runTrace]);
 
-  const clusters = trace === null ? [] : clusterByHub(trace.transitive);
+  // The transitive closure of a busy hub runs to hundreds of events; show the
+  // most recent slice and say how much of the record lies beyond it.
+  const TRANSITIVE_SHOWN = 60;
+  const transitive = trace === null ? [] : trace.transitive.slice(-TRANSITIVE_SHOWN);
+  const transitiveOverflow = trace === null ? 0 : trace.transitive.length - transitive.length;
+  const clusters = clusterByHub(transitive);
   const federated = clusters.some((cluster) => cluster.hubId !== "");
 
   return (
@@ -177,7 +182,9 @@ export function CausalityView({ prefill = null }: CausalityViewProps): JSX.Eleme
                 {trace.transitive.length > 0 && (
                   <div className="causality-transitive">
                     <span className="causality-transitive__head">
-                      transitive ({trace.transitive.length})
+                      {transitiveOverflow > 0
+                        ? `transitive (last ${transitive.length} of ${trace.transitive.length})`
+                        : `transitive (${trace.transitive.length})`}
                     </span>
                     {clusters.map((cluster) => (
                       <div key={cluster.hubId} className="causality-cluster">

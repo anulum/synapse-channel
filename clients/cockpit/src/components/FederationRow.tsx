@@ -10,11 +10,11 @@ import { memo } from "react";
 
 import { contestedNamespaces, type FederationState } from "../lib/federation";
 
-/** Dot class per peering lifecycle state. */
+/** Dot class per peering lifecycle state (active / revoked / expired). */
 function peerDotClass(state: string): string {
   if (state === "active") return "fed-peer__dot fed-peer__dot--active";
   if (state === "revoked") return "fed-peer__dot fed-peer__dot--revoked";
-  return "fed-peer__dot fed-peer__dot--stale";
+  return "fed-peer__dot fed-peer__dot--expired";
 }
 
 interface FederationRowProps {
@@ -55,22 +55,31 @@ function FederationRowView({ state }: FederationRowProps): JSX.Element {
       aria-label="Federation posture"
       role={contested.length > 0 ? "alert" : undefined}
     >
-      <span className="fed-row__label">federation</span>
-      <span className="fed-row__hub" title={`hub ${posture.hubId}`}>
-        {posture.hubId === "" ? "hub —" : posture.hubId}
+      <span className="fed-row__label" title={posture.note === "" ? undefined : posture.note}>
+        federation
       </span>
+      {posture.hubId !== "" && (
+        <span className="fed-row__hub" title={`hub ${posture.hubId}`}>
+          {posture.hubId}
+        </span>
+      )}
       {posture.domain !== "" && <span className="fed-row__domain">{posture.domain}</span>}
       {posture.peerings.length === 0 ? (
-        <span className="fed-row__note">no peerings</span>
+        <span className="fed-row__note">no peerings imported</span>
       ) : (
         <span className="fed-row__peers">
           {posture.peerings.map((peering) => (
             <span
               key={peering.domain}
               className="fed-peer"
-              title={`${peering.domain}: ${peering.state}${
-                peering.fingerprint === "" ? "" : ` · ${peering.fingerprint}`
-              }`}
+              title={[
+                `${peering.domain}: ${peering.state}`,
+                peering.confirmedBy === "" ? "" : `confirmed by ${peering.confirmedBy}`,
+                peering.source === "" ? "" : `source ${peering.source}`,
+                peering.fingerprint === "" ? "" : `fingerprint ${peering.fingerprint}`,
+              ]
+                .filter((part) => part !== "")
+                .join(" · ")}
             >
               <span className={peerDotClass(peering.state)} aria-hidden="true" />
               {peering.domain}
