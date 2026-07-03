@@ -26,6 +26,8 @@ file the operator owns; nothing uploads anywhere.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import sqlite3
 from dataclasses import dataclass
@@ -241,6 +243,49 @@ def trend_to_json(runs: tuple[StoredRun, ...]) -> dict[str, object]:
         ],
         "note": "host-dependent series; compare within one context segment",
     }
+
+
+def trend_to_csv(runs: tuple[StoredRun, ...]) -> str:
+    """Render the stored history as portable long-format CSV.
+
+    One row per stored metric value — ``run_id``, ``started_at``,
+    ``package_version``, ``cpu_model``, ``governor``, ``probe``, ``metric``,
+    ``value`` — so a spreadsheet or an external monitor ingests the history
+    without knowing the store's schema. The context columns ride every row
+    because the numbers are only comparable within one context; a consumer
+    that groups by them reproduces the same segments the sparklines and the
+    drift gate use.
+    """
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(
+        [
+            "run_id",
+            "started_at",
+            "package_version",
+            "cpu_model",
+            "governor",
+            "probe",
+            "metric",
+            "value",
+        ]
+    )
+    for run in runs:
+        for probe in sorted(run.metrics):
+            for metric in sorted(run.metrics[probe]):
+                writer.writerow(
+                    [
+                        run.run_id,
+                        run.started_at,
+                        run.package_version,
+                        run.cpu_model,
+                        run.governor,
+                        probe,
+                        metric,
+                        run.metrics[probe][metric],
+                    ]
+                )
+    return buffer.getvalue()
 
 
 def render_trend_human(runs: tuple[StoredRun, ...], *, ascii_glyphs: bool = False) -> str:

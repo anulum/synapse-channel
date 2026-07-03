@@ -22,6 +22,7 @@ from synapse_channel.benchmark.trend import (
     load_history,
     render_trend_human,
     sparkline,
+    trend_to_csv,
     trend_to_json,
 )
 
@@ -250,3 +251,24 @@ class TestRenderings:
             "before_run_id": 2,
             "changes": ["governor performance→powersave"],
         }
+
+
+class TestCsvExport:
+    def test_csv_is_long_format_with_context_on_every_row(self, tmp_path: Path) -> None:
+        db = tmp_path / "trend.db"
+        append_scorecard(db, _scorecard(100.0, started_at=1000.0))
+        append_scorecard(db, _scorecard(150.0, started_at=2000.0, package_version="0.92.0"))
+
+        text = trend_to_csv(load_history(db))
+
+        lines = text.splitlines()
+        assert lines[0] == "run_id,started_at,package_version,cpu_model,governor,probe,metric,value"
+        # 2 runs x 2 metrics (events_per_second + p95_ms) = 4 data rows
+        assert len(lines) == 5
+        assert lines[1].startswith("1,1000.0,0.91.0,Test CPU 9000,performance,event-store-append,")
+        assert any(",0.92.0," in line and ",150.0" in line for line in lines)
+
+    def test_empty_history_is_a_header_only_csv(self) -> None:
+        assert trend_to_csv(()).splitlines() == [
+            "run_id,started_at,package_version,cpu_model,governor,probe,metric,value"
+        ]

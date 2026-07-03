@@ -134,6 +134,9 @@ def _cmd_causality(args: argparse.Namespace) -> int:
     if args.direction != HEALTH_MODE and args.stale_after is not None:
         print("--stale-after belongs to the health mode", file=sys.stderr)
         return 2
+    if args.direction != HEALTH_MODE and args.since is not None:
+        print("--since belongs to the health mode", file=sys.stderr)
+        return 2
     if args.direction == HEALTH_MODE:
         if args.peer:
             print(
@@ -350,7 +353,9 @@ def _cmd_health(args: argparse.Namespace) -> int:
         except KeyboardInterrupt:
             return 0
     try:
-        report = run_causal_health(args.db, max_nodes=args.max_nodes, stale_after=stale_after)
+        report = run_causal_health(
+            args.db, max_nodes=args.max_nodes, stale_after=stale_after, since=args.since
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -396,7 +401,9 @@ def _watch_health(
     previous: frozenset[str] | None = None
     while True:
         try:
-            report = run_causal_health(args.db, max_nodes=args.max_nodes, stale_after=stale_after)
+            report = run_causal_health(
+                args.db, max_nodes=args.max_nodes, stale_after=stale_after, since=args.since
+            )
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 2
@@ -530,6 +537,16 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=int,
         default=0,
         help="Stop --watch after this many ticks (0 = until interrupted).",
+    )
+    causality.add_argument(
+        "--since",
+        type=float,
+        default=None,
+        metavar="TS",
+        help="health mode: assess only events with ts >= TS — the focus control "
+        "for a large log (a task whose whole lifecycle predates the window is "
+        "not assessed; a window-straddling task is judged on window evidence "
+        "only).",
     )
     causality.add_argument(
         "--stale-after",

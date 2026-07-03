@@ -62,6 +62,7 @@ from synapse_channel.benchmark.trend import (
     append_scorecard,
     load_history,
     render_trend_human,
+    trend_to_csv,
     trend_to_json,
 )
 
@@ -82,6 +83,9 @@ def _cmd_benchmark(args: argparse.Namespace) -> int:
         return 2
     if args.alert and args.trend is None:
         print("--alert requires --trend", file=sys.stderr)
+        return 2
+    if args.export_csv is not None and args.trend is None:
+        print("--export-csv requires --trend", file=sys.stderr)
         return 2
     if (args.alert_sigma is not None or args.alert_min_samples is not None) and not args.alert:
         print("--alert-sigma/--alert-min-samples require --alert", file=sys.stderr)
@@ -151,6 +155,13 @@ def _cmd_benchmark(args: argparse.Namespace) -> int:
         if drift is not None:
             print()
             print(render_drift_human(drift))
+    if args.export_csv is not None and history is not None:
+        try:
+            Path(args.export_csv).write_text(trend_to_csv(history), encoding="utf-8")
+        except OSError as exc:
+            print(f"cannot write the trend CSV: {exc}", file=sys.stderr)
+            return 2
+        print(f"trend CSV written to {args.export_csv}")
     if args.results is not None:
         write_scorecard(Path(args.results), scorecard)
     if comparison is not None and comparison.regressions:
@@ -245,6 +256,16 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help=(
             "Same-context samples (latest included) a series needs before --alert "
             f"gates it (default {DEFAULT_MIN_SAMPLES}, floor {MIN_SAMPLES_FLOOR})."
+        ),
+    )
+    parser.add_argument(
+        "--export-csv",
+        default=None,
+        metavar="FILE",
+        help=(
+            "Also write the --trend history as long-format CSV (one row per stored "
+            "metric value, context columns on every row) for spreadsheets and "
+            "external monitors."
         ),
     )
     parser.add_argument(

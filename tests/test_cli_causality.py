@@ -1064,3 +1064,43 @@ def test_cli_otel_reports_skipped_taskless_events(
 
     assert exit_code == 0
     assert "1 taskless event(s) skipped" in capsys.readouterr().out
+
+
+def test_cli_health_since_bounds_the_scan(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    store = EventStore(db)
+    store.append(
+        EventKind.CLAIM,
+        {"task_id": "OLD", "owner": "bob", "status": "claimed", "paths": [], "worktree": "w"},
+        ts=10.0,
+    )
+    store.append(
+        EventKind.CLAIM,
+        {"task_id": "NEW", "owner": "alice", "status": "claimed", "paths": [], "worktree": "w"},
+        ts=500.0,
+    )
+    store.close()
+
+    full = cli.main(["causality", "health", str(db)])
+    full_out = capsys.readouterr().out
+    windowed = cli.main(["causality", "health", str(db), "--since", "400"])
+    windowed_out = capsys.readouterr().out
+
+    assert full == 1 and "task=OLD" in full_out
+    assert windowed == 1  # NEW's orphan is inside the window
+    assert "task=OLD" not in windowed_out
+    assert "task=NEW" in windowed_out
+
+
+def test_cli_since_is_refused_outside_health_mode(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    exit_code = cli.main(["causality", "causes", str(db), "4", "--since", "1"])
+
+    assert exit_code == 2
+    assert "--since belongs to the health mode" in capsys.readouterr().err

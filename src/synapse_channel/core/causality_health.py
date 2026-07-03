@@ -241,6 +241,7 @@ def run_causal_health(
     *,
     max_nodes: int | None = DEFAULT_MAX_GRAPH_NODES,
     stale_after: float = DEFAULT_STALE_AFTER,
+    since: float | None = None,
 ) -> CausalHealthReport:
     """Assess an existing SQLite event store, streaming and bounded.
 
@@ -252,6 +253,13 @@ def run_causal_health(
         Fail-closed ceiling on coordination events; ``None`` or ``0`` lifts it.
     stale_after : float, optional
         Staleness threshold in seconds.
+    since : float or None, optional
+        When set, only events with ``ts >= since`` are assessed — the focus
+        control for a large log, mirroring the trust graph's ``--since``.
+        Honest scope: a task whose entire recorded lifecycle predates the
+        window is not assessed at all, and a task whose earlier events fall
+        outside it is judged on the window's evidence only (a claim inside
+        the window with its release outside reads as unreleased).
 
     Returns
     -------
@@ -272,6 +280,8 @@ def run_causal_health(
     try:
         events: list[StoredEvent] = []
         for event in store.iter_events(kinds=GRAPH_KINDS):
+            if since is not None and event.ts < since:
+                continue
             events.append(event)
             if max_nodes and len(events) > max_nodes:
                 msg = (

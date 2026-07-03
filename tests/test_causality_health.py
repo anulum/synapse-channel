@@ -392,3 +392,55 @@ class TestHealthFacts:
 
     def test_healthy_report_has_no_facts(self) -> None:
         assert health_facts(self._report()) == frozenset()
+
+
+class TestSinceWindow:
+    def _seed(self, path: Path, events: tuple[StoredEvent, ...]) -> None:
+        store = EventStore(path)
+        for event in events:
+            store.append(event.kind, dict(event.payload), ts=event.ts)
+        store.close()
+
+    def test_lifecycles_before_the_window_are_not_assessed(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        # an ancient orphan (claim, then silence) entirely before the window
+        self._seed(
+            db,
+            (
+                _claim(1, 10.0, "OLD", "bob"),
+                _claim(2, 500.0, "NEW", "alice"),
+                _release(3, 600.0, "NEW"),
+            ),
+        )
+
+        full = run_causal_health(db)
+        windowed = run_causal_health(db, since=400.0)
+
+        assert [item.task_id for item in full.orphaned] == ["OLD"]
+        assert windowed.orphaned == ()
+        assert windowed.tasks_scanned == 1  # only NEW is inside the window
+
+    def test_window_straddling_task_is_judged_on_window_evidence(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        # claim before the window, release inside it: full log = clean,
+        # window = the release alone (release-only lifecycles raise nothing)
+        self._seed(
+            db,
+            (
+                _claim(1, 10.0, "X", "bob"),
+                _release(2, 500.0, "X"),
+            ),
+        )
+
+        full = run_causal_health(db)
+        windowed = run_causal_health(db, since=400.0)
+
+        assert full.anomaly_count == 0
+        assert windowed.anomaly_count == 0
+        assert windowed.tasks_scanned == 1
+
+    def test_since_none_is_the_full_log(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        self._seed(db, (_claim(1, 10.0, "OLD", "bob"),))
+
+        assert run_causal_health(db, since=None).anomaly_count == 1
