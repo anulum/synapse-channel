@@ -2020,3 +2020,96 @@ body {
   max-width: 0;
   width: 99%;
 }
+
+/* ---------- responsive: the instrument folds, it never breaks ----------
+   Two breakpoints. Under 1100px the four-column deck folds to two columns;
+   under 720px it folds to one, the page scrolls instead of locking to the
+   viewport, and the panels re-order by triage priority (risk first). The
+   spine stays — it is the signature at every width. */
+
+@media (max-width: 1100px) {
+  .deck {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .shell {
+    grid-template-rows: auto auto auto auto;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .hud {
+    flex-wrap: wrap;
+    row-gap: var(--sp-1);
+    padding: var(--sp-2) var(--sp-3);
+    height: auto;
+  }
+
+  .hud__kpis {
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+  }
+
+  .deck {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Triage order on a phone: risk first, then claims and the inspector,
+     the board, and the roster last (reference material, not triage). */
+  .deck > .deck__stack--rail {
+    order: 1;
+  }
+  .deck > .deck__stack:not(.deck__stack--rail):not(.deck__stack--roster) {
+    order: 2;
+  }
+  .deck > .panel {
+    order: 3;
+  }
+  .deck > .deck__stack--roster {
+    order: 4;
+  }
+
+  .deck__stack,
+  .deck__stack--rail,
+  .deck__stack--roster {
+    grid-template-rows: none;
+    grid-auto-rows: auto;
+  }
+
+  .panel__body {
+    max-height: 60vh;
+  }
+
+  .inspector {
+    grid-template-rows: 30px auto;
+  }
+
+  /* The legend crowds a phone-width spine; the tooltips still carry it. */
+  .spine__legend {
+    display: none;
+  }
+
+  /* The lane column duplicates what the kind dot already says; drop it and
+     let the event text breathe. */
+  .log__lane,
+  .log thead th:nth-child(3) {
+    display: none;
+  }
+
+  .log__actor {
+    max-width: 110px;
+  }
+
+  .fed-row {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .fed-row__contested {
+    margin-left: 0;
+    white-space: normal;
+  }
+}
