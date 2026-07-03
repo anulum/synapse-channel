@@ -26,7 +26,7 @@ export const ALL_KINDS: readonly EventKind[] = [
   "conflict",
 ];
 
-/** The signal log's query: free text, a kind subset, and render order. */
+/** The signal log's query: free text, a kind subset, render order, and view. */
 export interface LogQuery {
   /** Case-insensitive substring over actor, label, task id, and kind. */
   readonly text: string;
@@ -34,10 +34,12 @@ export interface LogQuery {
   readonly kinds: readonly EventKind[] | null;
   /** Newest-first is the live default; oldest-first reads a window as a story. */
   readonly order: "newest" | "oldest";
+  /** Flat = one row per event; compact = one row per task with its lifecycle. */
+  readonly view: "flat" | "compact";
 }
 
-/** The query that filters nothing: empty text, all kinds, newest first. */
-export const OPEN_QUERY: LogQuery = { text: "", kinds: null, order: "newest" };
+/** The query that filters nothing: empty text, all kinds, newest first, flat. */
+export const OPEN_QUERY: LogQuery = { text: "", kinds: null, order: "newest", view: "flat" };
 
 /** Whether one event matches the query's text and kind constraints. */
 export function matchesQuery(event: CockpitEvent, query: LogQuery): boolean {
@@ -67,7 +69,12 @@ export function applyQuery(
 
 /** Whether the query constrains anything (drives the "clear query" control). */
 export function isConstrained(query: LogQuery): boolean {
-  return query.text.trim() !== "" || query.kinds !== null || query.order !== "newest";
+  return (
+    query.text.trim() !== "" ||
+    query.kinds !== null ||
+    query.order !== "newest" ||
+    query.view !== "flat"
+  );
 }
 
 /**
@@ -80,6 +87,7 @@ export function queryToHash(query: LogQuery): string {
   if (query.text.trim() !== "") params.set("q", query.text.trim());
   if (query.kinds !== null) params.set("kinds", query.kinds.join(","));
   if (query.order !== "newest") params.set("order", query.order);
+  if (query.view !== "flat") params.set("view", query.view);
   return params.toString();
 }
 
@@ -103,5 +111,6 @@ export function queryFromHash(hash: string): LogQuery {
     text: params.get("q") ?? "",
     kinds,
     order: params.get("order") === "oldest" ? "oldest" : "newest",
+    view: params.get("view") === "compact" ? "compact" : "flat",
   };
 }

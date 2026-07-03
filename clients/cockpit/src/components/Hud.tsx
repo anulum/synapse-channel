@@ -19,6 +19,8 @@ interface HudProps {
   readonly live: boolean;
   /** Freshness stamp, e.g. the last event's wall-clock time. */
   readonly stamp: string;
+  /** Drill-down: clicking a KPI filters the signal log to its event kinds. */
+  readonly onSelect?: ((label: string) => void) | undefined;
 }
 
 function deltaClass(delta: number): string {
@@ -34,7 +36,7 @@ function deltaText(delta: number): string {
   return "• 0";
 }
 
-export function Hud({ kpis, live, stamp }: HudProps): JSX.Element {
+export function Hud({ kpis, live, stamp, onSelect }: HudProps): JSX.Element {
   return (
     <header className="hud">
       <div className="hud__mark">
@@ -45,15 +47,31 @@ export function Hud({ kpis, live, stamp }: HudProps): JSX.Element {
       <div className="hud__spacer" />
 
       <div className="hud__kpis">
-        {kpis.map((kpi) => (
-          <div className="kpi" key={kpi.label}>
-            <span className="kpi__label">{kpi.label}</span>
-            <span className="kpi__row">
-              <span className="kpi__value">{kpi.value}</span>
-              <span className={deltaClass(kpi.delta)}>{deltaText(kpi.delta)}</span>
-            </span>
-          </div>
-        ))}
+        {kpis.map((kpi) =>
+          onSelect !== undefined ? (
+            <button
+              type="button"
+              className="kpi kpi--link"
+              key={kpi.label}
+              title={`Filter the signal log to ${kpi.label}`}
+              onClick={() => onSelect(kpi.label)}
+            >
+              <span className="kpi__label">{kpi.label}</span>
+              <span className="kpi__row">
+                <span className="kpi__value">{kpi.value}</span>
+                <span className={deltaClass(kpi.delta)}>{deltaText(kpi.delta)}</span>
+              </span>
+            </button>
+          ) : (
+            <div className="kpi" key={kpi.label}>
+              <span className="kpi__label">{kpi.label}</span>
+              <span className="kpi__row">
+                <span className="kpi__value">{kpi.value}</span>
+                <span className={deltaClass(kpi.delta)}>{deltaText(kpi.delta)}</span>
+              </span>
+            </div>
+          ),
+        )}
       </div>
 
       <div className={`beacon ${live ? "beacon--live" : "beacon--stale"}`}>

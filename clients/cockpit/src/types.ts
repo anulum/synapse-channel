@@ -42,6 +42,11 @@ export interface CockpitEvent {
   readonly label: string;
   /** The task the event concerns, when it names one; "" otherwise. */
   readonly taskId: string;
+  /**
+   * The hub's raw stored payload, present only on hub-attested events —
+   * the material behind the raw-JSON inspection mode.
+   */
+  readonly payload?: Record<string, unknown>;
 }
 
 /** A source of live coordination events for the spine and log. */

@@ -116,6 +116,7 @@ export function mapStoredEvent(stored: StoredEvent): CockpitEvent {
     actor,
     label,
     taskId,
+    payload: stored.payload,
   };
 }
 
