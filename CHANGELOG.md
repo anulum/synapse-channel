@@ -23,6 +23,17 @@ All notable changes to this project are documented here.
   row) for spreadsheets and external monitors.
 - The README now points at the cockpit build instructions and documents
   the state snapshot's `dead_letters` section.
+- The WASM sandbox gained an adversarial proof battery and run
+  attestation. `tests/test_wasm_sandbox_escapes.py` drives a hostile
+  module past every limit — memory bomb, fuel bomb, wall-clock runaway,
+  a reach for a host syscall, a reach for the network — and asserts each
+  is contained by a mechanism (an undefined import cannot link; a grow
+  past the cap is refused; the epoch timer interrupts a fuel-free loop),
+  not by the tool's good behaviour. `synapse sandbox run --attest DB`
+  appends the run receipt to a durable event store as a `sandbox_run`
+  event, auditable through `synapse event-query` and replay without the
+  tool's bytes ever entering the log. `docs/sandbox-threat-model.md`
+  states what is denied by what mechanism and what is out of scope.
 - An observability provisioning bundle under
   `integrations/observability/`: a Prometheus scrape job, six alerting
   rules over the decision counters (hub down, dead letters growing,

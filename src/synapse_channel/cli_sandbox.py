@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -47,6 +48,21 @@ from synapse_channel.core.wasm_sandbox import (
 )
 
 Runner = Callable[..., RunReceipt]
+Attestor = Callable[[Path, RunReceipt], None]
+
+
+def _attest_run(db_path: Path, receipt: RunReceipt) -> None:
+    """Append a run receipt to a durable event store as a sandbox attestation."""
+    from synapse_channel.core.journal import record_sandbox_run
+    from synapse_channel.core.persistence import EventStore
+
+    store = EventStore(db_path)
+    try:
+        record_sandbox_run(store, dict(receipt))
+    finally:
+        store.close()
+
+
 Preflighter = Callable[..., PreflightReport]
 
 
@@ -142,7 +158,12 @@ def _request_for(manifest: CapabilityManifest, content_digest: str) -> SandboxRe
     )
 
 
-def _cmd_run(args: argparse.Namespace, *, runner: Runner = run_sandboxed) -> int:
+def _cmd_run(
+    args: argparse.Namespace,
+    *,
+    runner: Runner = run_sandboxed,
+    attestor: Attestor = _attest_run,
+) -> int:
     """Run a sandboxed tool under its manifest, gated by the module digest and operator approval."""
     try:
         manifest = _load_manifest(args.manifest)
@@ -180,6 +201,13 @@ def _cmd_run(args: argparse.Namespace, *, runner: Runner = run_sandboxed) -> int
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    if args.attest is not None:
+        try:
+            attestor(Path(args.attest).expanduser(), receipt)
+        except (OSError, sqlite3.Error) as exc:
+            print(f"ran the tool but could not attest it: {exc}", file=sys.stderr)
+            return 2
+        print(f"attested to {args.attest}")
     _print_receipt(receipt, json_out=args.json)
     return 0
 
@@ -234,6 +262,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     runner.add_argument(
         "--approve", action="store_true", help="Confirm the capability grant (required to run)."
+    )
+    runner.add_argument(
+        "--attest",
+        default=None,
+        metavar="DB",
+        help="Append the run receipt to this durable event store as an audit "
+        "attestation (query it later with `synapse event-query --kind sandbox_run`).",
     )
     runner.add_argument("--json", action="store_true", help="Emit the run receipt as JSON.")
     runner.set_defaults(func=_cmd_run)

@@ -63,6 +63,7 @@ class EventKind:
     RECALL = "recall"
     FINDING = "finding"
     IDEMPOTENCY = "idempotency"
+    SANDBOX_RUN = "sandbox_run"
 
 
 MEMORY_KINDS = frozenset(
@@ -167,6 +168,20 @@ def record_resource(store: EventStore, offer: ResourceOffer) -> None:
             "offered_at": offer.offered_at,
         },
     )
+
+
+def record_sandbox_run(store: EventStore, receipt: dict[str, Any]) -> None:
+    """Append a WASM sandbox run receipt to the durable log as an attestation.
+
+    The receipt is already a bounded, digest-only record — tool id, content
+    digest, input/output digests, exit token, fuel used, granted capabilities,
+    and any containment reason — so persisting it makes every sandboxed
+    execution auditable through the same event query and replay path as a
+    claim or a release: an operator can later prove which tool ran under which
+    grants and how it exited, without the tool's inputs or outputs ever
+    entering the log.
+    """
+    store.append(EventKind.SANDBOX_RUN, dict(receipt), durable=True)
 
 
 def record_chat(store: EventStore, message: dict[str, Any]) -> None:

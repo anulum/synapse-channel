@@ -347,3 +347,86 @@ def test_test_runs_end_to_end_against_the_real_runtime(
     args = _args("test", str(tool), "--manifest", str(manifest))
     assert args.func(args) == 0
     assert "ready to run" in capsys.readouterr().out
+
+
+# -- attestation (W2) -----------------------------------------------------------
+
+
+def test_run_attests_the_receipt_to_a_durable_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from synapse_channel.core.journal import EventKind
+    from synapse_channel.core.persistence import EventStore
+
+    db = tmp_path / "audit.db"
+    args = _args(
+        "run",
+        str(_tool(tmp_path)),
+        "--manifest",
+        str(_manifest_file(tmp_path)),
+        "--approve",
+        "--attest",
+        str(db),
+    )
+
+    assert _run(args) == 0
+    assert f"attested to {db}" in capsys.readouterr().out
+
+    store = EventStore(db)
+    try:
+        events = list(store.iter_events(kinds=[EventKind.SANDBOX_RUN]))
+    finally:
+        store.close()
+    assert len(events) == 1
+    assert events[0].payload["tool_id"] == "calc"
+    assert events[0].payload["exit"] == EXIT_OK
+    assert events[0].payload["output_digest"] == digest_bytes(b"7")
+
+
+def test_run_without_attest_writes_no_store(tmp_path: Path) -> None:
+    db = tmp_path / "audit.db"
+    args = _args(
+        "run", str(_tool(tmp_path)), "--manifest", str(_manifest_file(tmp_path)), "--approve"
+    )
+
+    assert _run(args) == 0
+    assert not db.exists()
+
+
+def test_run_reports_an_unwritable_attestation_target(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    blocker = tmp_path / "occupied"
+    blocker.write_text("not a directory", encoding="utf-8")
+    args = _args(
+        "run",
+        str(_tool(tmp_path)),
+        "--manifest",
+        str(_manifest_file(tmp_path)),
+        "--approve",
+        "--attest",
+        str(blocker / "audit.db"),
+    )
+
+    def _runner(manifest: object, wasm: bytes, inputs: bytes, *, entrypoint: str) -> RunReceipt:
+        return _receipt()
+
+    exit_code = _cmd_run(args, runner=_runner)
+    assert exit_code == 2
+    assert "could not attest it" in capsys.readouterr().err
+
+
+def test_record_sandbox_run_round_trips_through_the_journal(tmp_path: Path) -> None:
+    from synapse_channel.core.journal import EventKind, record_sandbox_run
+    from synapse_channel.core.persistence import EventStore
+
+    store = EventStore(tmp_path / "j.db")
+    try:
+        record_sandbox_run(store, dict(_receipt(exit="out_of_fuel", reason="ran out")))
+        events = list(store.iter_events(kinds=[EventKind.SANDBOX_RUN]))
+    finally:
+        store.close()
+
+    assert len(events) == 1
+    assert events[0].payload["exit"] == "out_of_fuel"
+    assert events[0].payload["reason"] == "ran out"
