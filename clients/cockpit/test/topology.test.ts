@@ -8,7 +8,8 @@
 
 import { describe, expect, it } from "vitest";
 import type { BranchConflictView, ClaimView } from "../src/lib/claims";
-import { layoutTopology, ROW_PITCH } from "../src/lib/topology";
+import type { PeeringView } from "../src/lib/federation";
+import { layoutFederation, layoutTopology, ROW_PITCH } from "../src/lib/topology";
 import type { ClaimRecord } from "../src/types";
 
 function claim(owner: string, taskId: string, overrides: Partial<ClaimRecord> = {}): ClaimView {
@@ -81,6 +82,30 @@ describe("layoutTopology", () => {
     expect(layout.conflicts).toHaveLength(1);
     // "ghost" enters the agent column via the conflict record's owner A.
     expect(layout.agents.map((node) => node.name)).toEqual(["a", "b", "ghost"]);
+  });
+
+  it("lays out the federation band: sorted peers, centred hub, joined detail", () => {
+    const peering = (domain: string, overrides: Partial<PeeringView> = {}): PeeringView => ({
+      domain,
+      state: "active",
+      importedAt: null,
+      confirmedBy: "",
+      source: "",
+      fingerprint: "",
+      expiresAt: null,
+      ...overrides,
+    });
+    const band = layoutFederation([
+      peering("ml350", { confirmedBy: "operator", fingerprint: "ab:cd" }),
+      peering("laptop", { state: "revoked", source: "offer:laptop" }),
+    ]);
+    expect(band.peers.map((peer) => peer.domain)).toEqual(["laptop", "ml350"]);
+    expect(band.peers[0]?.y).toBe(ROW_PITCH);
+    expect(band.peers[0]?.detail).toBe("revoked · source offer:laptop");
+    expect(band.peers[1]?.detail).toBe("active · confirmed by operator · fingerprint ab:cd");
+    expect(band.hubY).toBeGreaterThan(ROW_PITCH / 2);
+    expect(band.height).toBe(3 * ROW_PITCH + ROW_PITCH / 2);
+    expect(layoutFederation([])).toMatchObject({ peers: [], hubY: ROW_PITCH });
   });
 
   it("skips claims whose owner or task is blank and handles the empty fleet", () => {

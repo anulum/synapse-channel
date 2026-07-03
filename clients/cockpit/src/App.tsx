@@ -298,6 +298,7 @@ export function App(): JSX.Element {
               conflicts={conflicts}
               liveAgentCount={snap.snapshot?.fleet.agents.live.length ?? 0}
               connected={connected}
+              federation={federation}
             />
           </PanelBoundary>
         </div>
