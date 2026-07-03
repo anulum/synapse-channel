@@ -455,3 +455,60 @@ def test_non_positive_tolerance_is_refused(
     )
     assert code == 2
     assert "tolerance must be positive" in err
+
+
+def test_export_csv_requires_trend(capsys: pytest.CaptureFixture[str]) -> None:
+    code, _, err = _run(["benchmark", "--probe", "encode-lite", "--export-csv", "out.csv"], capsys)
+    assert code == 2
+    assert "--export-csv requires --trend" in err
+
+
+def test_export_csv_writes_the_history(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    db = tmp_path / "trend.db"
+    out = tmp_path / "trend.csv"
+
+    code, stdout, _ = _run(
+        [
+            "benchmark",
+            "--probe",
+            "encode-lite",
+            "--iterations",
+            "10",
+            "--trend",
+            str(db),
+            "--export-csv",
+            str(out),
+        ],
+        capsys,
+    )
+
+    assert code == 0
+    assert f"trend CSV written to {out}" in stdout
+    lines = out.read_text(encoding="utf-8").splitlines()
+    assert lines[0].startswith("run_id,started_at,package_version")
+    assert any("encode-lite,messages_per_second," in line for line in lines[1:])
+
+
+def test_export_csv_fails_visible_on_an_unwritable_target(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("occupied", encoding="utf-8")
+
+    code, _, err = _run(
+        [
+            "benchmark",
+            "--probe",
+            "encode-lite",
+            "--iterations",
+            "10",
+            "--trend",
+            str(tmp_path / "trend.db"),
+            "--export-csv",
+            str(blocker / "trend.csv"),
+        ],
+        capsys,
+    )
+
+    assert code == 2
+    assert "cannot write the trend CSV" in err

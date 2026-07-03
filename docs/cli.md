@@ -1076,6 +1076,11 @@ $ synapse causality health ~/synapse/hub.db --max-nodes 0
 - seq=1532 task=director-ai-calib-gateb depends on remanentia-ms1-query-stream, which never completed
 ```
 
+`--since TS` bounds the scan to events with `ts >= TS` — the focus control
+for a large log, mirroring the trust graph's `--since`. Honest scope: a task
+whose entire recorded lifecycle predates the window is not assessed, and a
+window-straddling task is judged on the window's evidence only.
+
 With `--watch` the assessment becomes a standing monitor: every
 `--interval` seconds (default 2, `--count` bounds the ticks) the store is
 reread and re-assessed, the first tick prints the full report as the
@@ -1365,7 +1370,9 @@ encode-lite messages_per_second: ▁█ 31,585.98 → 60,645.33 (min 31,585.98, 
 
 Under `--json` the document gains a `trend` object with the full stored
 history and its context breaks; `--trend` composes with both `--results`
-and `--compare`. For consoles and CI log viewers without UTF-8, `--ascii`
+and `--compare`, and `--export-csv FILE` also writes the history as
+long-format CSV (one row per stored metric value, the context columns on
+every row) for spreadsheets and external monitors. For consoles and CI log viewers without UTF-8, `--ascii`
 renders the same trend block in printable ASCII — the glyph ramp becomes
 `._-=+*#%@` and the arrow and dash punctuation degrade to `->` and `--`
 (it requires `--trend`; the stored history and the JSON document are

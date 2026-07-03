@@ -13,6 +13,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse causality health --since TS` — bound the scan to recent
+  events on a large log, mirroring the trust graph's `--since`; a task
+  whose entire recorded lifecycle predates the window is not assessed,
+  and a window-straddling task is judged on the window's evidence only.
+- `synapse benchmark --trend --export-csv FILE` — the stored history as
+  long-format CSV (one row per metric value, context columns on every
+  row) for spreadsheets and external monitors.
+- The README now points at the cockpit build instructions and documents
+  the state snapshot's `dead_letters` section.
+
 ## [0.95.0] - 2026-07-03
 
 ### Added

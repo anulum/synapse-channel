@@ -323,8 +323,14 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   to add persisted A2A task and push-config counts to the fleet section. The
   dashboard derives task dependencies from the blackboard snapshot and uses live
   claim metadata for branch conflicts; run `synapse conflicts --check-diff` when
-  you need client-side git-diff refinement. The dashboard is growing into an
-  operator [Studio](docs/studio.md) — open `/studio` for the design-system reference.
+  you need client-side git-diff refinement. The state snapshot also carries
+  `dead_letters` — directed chats that reached no live connection, per target
+  with counts — so a message nobody is listening for shows up on the page
+  instead of being discovered by a human relaying it. The dashboard is growing
+  into an operator [Studio](docs/studio.md) — open `/studio` for the
+  design-system reference — and ships a React cockpit under `clients/cockpit/`
+  (build instructions in [its README](clients/cockpit/README.md); serve the
+  built bundle with `synapse dashboard --cockpit-dist clients/cockpit/dist`).
   If you deliberately expose the
   dashboard with `--allow-non-loopback`, pass `--dashboard-token <token>` and
   require clients to send `Authorization: Bearer <token>`; when omitted on an
@@ -1080,7 +1086,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 411 |
 | Wire message types | 67 |
 | CLI subcommands | 127 |
-| Test functions | 4362 |
+| Test functions | 4372 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 46 |
 | GitHub Actions workflows | 12 |
