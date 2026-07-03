@@ -1086,7 +1086,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 411 |
 | Wire message types | 67 |
 | CLI subcommands | 127 |
-| Test functions | 4385 |
+| Test functions | 4393 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 46 |
 | GitHub Actions workflows | 12 |

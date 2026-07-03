@@ -49,6 +49,7 @@ from synapse_channel.dashboard_store_feeds import (
     build_causality_feed,
     build_events_tail,
     build_federation_feed,
+    build_metrics_feed,
     latest_cursor,
 )
 from synapse_channel.dashboard_studio import (
@@ -466,6 +467,9 @@ RELIABILITY_PATH = "/reliability.json"
 EVENTS_PATH = "/events.json"
 """Read-only endpoint serving the raw event-log tail past a cursor."""
 
+METRICS_FEED_PATH = "/metrics.json"
+"""Read-only endpoint serving store-attested log metrics for the cockpit."""
+
 CAUSALITY_PATH = "/causality.json"
 """Read-only endpoint answering one causality query in the CLI's JSON shape."""
 
@@ -554,6 +558,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if path == EVENTS_PATH:
             self._serve_events(urlsplit(self.path).query)
             return
+        if path == METRICS_FEED_PATH:
+            self._serve_metrics_feed()
+            return
         if path == CAUSALITY_PATH:
             self._serve_causality(urlsplit(self.path).query)
             return
@@ -632,6 +639,37 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             json.dumps(reliability_to_json(report), ensure_ascii=False, sort_keys=True).encode(
                 "utf-8"
             ),
+            content_type="application/json",
+        )
+
+    def _serve_metrics_feed(self) -> None:
+        """Serve store-attested log metrics, or their honest absence.
+
+        Same posture as the other store feeds: 404 without ``--feeds-db``
+        (the panel states the feed is absent), 503 on an unreadable store
+        (fail-visible, never an empty document pretending quiet), and the
+        document itself explains that the live process registry lives on
+        the hub's own ``/metrics`` endpoint, not here.
+        """
+        if self.reliability_db is None:
+            self._write(
+                HTTPStatus.NOT_FOUND,
+                b"metrics feed not configured; start the dashboard with --feeds-db\n",
+                content_type="text/plain",
+            )
+            return
+        try:
+            document = build_metrics_feed(self.reliability_db)
+        except ValueError as exc:
+            self._write(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                f"{exc}\n".encode(),
+                content_type="text/plain",
+            )
+            return
+        self._write(
+            HTTPStatus.OK,
+            json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8"),
             content_type="application/json",
         )
 

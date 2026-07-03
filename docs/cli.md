@@ -250,7 +250,7 @@ and `/snapshot.json`; when `--allow-non-loopback` exposes the dashboard and no
 token is supplied, Synapse generates and prints a startup token.
 
 With `--feeds-db <hub.db>` (`--reliability-db` is the same flag's original
-name) the dashboard serves three feeds off the **durable event store** —
+name) the dashboard serves four feeds off the **durable event store** —
 available when the hub is down, real sequences and timestamps, behind the
 same dashboard bearer token as every other path:
 
@@ -270,7 +270,15 @@ same dashboard bearer token as every other path:
   404, not an invented anchor). A `present: false` answer carries a
   `note` naming which absence it is: an event recorded but outside the
   coordination causal graph (chatter carries no causal edges), or no
-  event at that sequence at all.
+  event at that sequence at all;
+- `/metrics.json` — store-attested log metrics for the cockpit's metrics
+  panel: total and per-kind event counts plus the same split over
+  trailing hour/day windows, measured against the log's own final
+  timestamp (never the wall clock) so the document is deterministic over
+  a given log. Honest scope stated in the document itself: these are
+  *log* metrics; the live process registry (connection gauges, handler
+  timings) is the hub's own `/metrics` endpoint and is deliberately not
+  duplicated here.
 
 Without the flag each endpoint answers 404 naming the remedy; an
 unreadable store answers 503 rather than an empty document pretending the
@@ -281,6 +289,16 @@ outcomes are hub-runtime state no durable store carries, so that section
 ships empty with the reason stated. `--cockpit-dist <dir>` serves a built
 cockpit single-page app read-only under `/cockpit/` (paths escaping the
 directory or with unrecognised suffixes are refused).
+
+**Public status-page posture:** the dashboard is read-only end to end —
+every endpoint answers `GET` only and nothing on the surface mutates the
+hub or the store — so a public status page needs no special mode: expose
+the dashboard deliberately with `--allow-non-loopback`, set
+`--dashboard-token` (or accept the generated one), and point it at a
+store copy with `--feeds-db` if you want it serving with the hub down.
+What limits a *public* page is the data, not the verbs: the snapshot and
+feeds carry agent names, task ids, and message subjects, so publish them
+only where that operational metadata is fine to show.
 
 ## Identities and groups
 

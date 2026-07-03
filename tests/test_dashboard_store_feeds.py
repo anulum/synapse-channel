@@ -29,6 +29,7 @@ from synapse_channel.dashboard_store_feeds import (
     build_causality_feed,
     build_events_tail,
     build_federation_feed,
+    build_metrics_feed,
     latest_cursor,
     resolve_task_last_seq,
 )
@@ -300,3 +301,56 @@ class TestCausalityAbsenceNotes:
 
         assert document["present"] is True
         assert "note" not in document
+
+
+class TestMetricsFeed:
+    def test_counts_totals_kinds_and_windows(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        base = 100000.0
+        store.append(EventKind.CHAT, {"m": 1}, ts=base)  # outside both windows
+        store.append(EventKind.CLAIM, {"m": 2}, ts=base + 90000.0)  # inside day only
+        store.append(EventKind.CHAT, {"m": 3}, ts=base + 176000.0)  # inside hour
+        store.append(EventKind.CHAT, {"m": 4}, ts=base + 176400.0)  # last event
+        store.close()
+
+        document = build_metrics_feed(db)
+
+        log = document["log"]
+        assert isinstance(log, dict)
+        assert log["total_events"] == 4
+        assert log["max_seq"] == 4
+        assert log["first_ts"] == base
+        assert log["last_ts"] == base + 176400.0
+        assert document["events_by_kind"] == {"chat": 3, "claim": 1}
+        windows = document["windows"]
+        assert isinstance(windows, dict)
+        assert windows["last_hour"] == {"events": 2, "by_kind": {"chat": 2}}
+        assert windows["last_day"] == {"events": 3, "by_kind": {"chat": 2, "claim": 1}}
+        assert "hub's own /metrics" in str(document["note"])
+
+    def test_empty_store_is_all_zero_not_an_error(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        EventStore(db).close()
+
+        document = build_metrics_feed(db)
+
+        log = document["log"]
+        assert isinstance(log, dict)
+        assert log == {"total_events": 0, "max_seq": 0, "first_ts": None, "last_ts": None}
+        assert document["events_by_kind"] == {}
+        windows = document["windows"]
+        assert isinstance(windows, dict)
+        assert windows["last_hour"] == {"events": 0, "by_kind": {}}
+
+    def test_missing_store_is_refused(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="missing event store"):
+            build_metrics_feed(tmp_path / "absent.db")
+
+    def test_document_is_deterministic_over_a_given_log(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        store.append(EventKind.CHAT, {"m": 1}, ts=500.0)
+        store.close()
+
+        assert build_metrics_feed(db) == build_metrics_feed(db)

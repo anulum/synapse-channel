@@ -26,6 +26,7 @@ the hub is down, and never invent state the disk cannot prove. Three feeds:
 
 from __future__ import annotations
 
+import sqlite3
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -86,6 +87,71 @@ def build_events_tail(
         store.close()
     next_cursor = events[-1].seq if events else max(0, int(since))
     return encode_log_snapshot(LogSnapshot(events=tuple(events), next_cursor=next_cursor))
+
+
+METRIC_WINDOWS_SECONDS = {"last_hour": 3600.0, "last_day": 86400.0}
+"""Log-relative aggregation windows the metrics feed reports."""
+
+
+def build_metrics_feed(db_path: str | Path) -> dict[str, object]:
+    """Aggregate the event store into operational metrics for the cockpit.
+
+    Store-attested log metrics — total and per-kind event counts, plus the
+    same split over trailing windows — measured against the log's own final
+    timestamp, never the wall clock, so the document is deterministic over a
+    given log and replayable byte-for-byte (the causality-health doctrine).
+    Available with the hub down, like every store feed. Honest scope: these
+    are *log* metrics; the live process's Prometheus registry (connection
+    gauges, handler timings) is served by the hub's own ``/metrics`` endpoint
+    and is deliberately not duplicated here — the ``note`` says so.
+
+    Raises
+    ------
+    ValueError
+        If the store does not exist.
+    """
+    path = Path(db_path)
+    if not path.exists():
+        msg = f"missing event store: {path}"
+        raise ValueError(msg)
+    connection = sqlite3.connect(path)
+    try:
+        total, first_ts, last_ts, max_seq = connection.execute(
+            "SELECT COUNT(*), MIN(ts), MAX(ts), MAX(seq) FROM events"
+        ).fetchone()
+        by_kind = dict(
+            connection.execute("SELECT kind, COUNT(*) FROM events GROUP BY kind ORDER BY kind")
+        )
+        windows: dict[str, object] = {}
+        for name, span in METRIC_WINDOWS_SECONDS.items():
+            cutoff = float(last_ts) - span if last_ts is not None else 0.0
+            window_kinds = dict(
+                connection.execute(
+                    "SELECT kind, COUNT(*) FROM events WHERE ts >= ? GROUP BY kind ORDER BY kind",
+                    (cutoff,),
+                )
+            )
+            windows[name] = {
+                "events": sum(window_kinds.values()),
+                "by_kind": window_kinds,
+            }
+    finally:
+        connection.close()
+    return {
+        "source": "event-store",
+        "log": {
+            "total_events": int(total),
+            "max_seq": int(max_seq) if max_seq is not None else 0,
+            "first_ts": float(first_ts) if first_ts is not None else None,
+            "last_ts": float(last_ts) if last_ts is not None else None,
+        },
+        "events_by_kind": by_kind,
+        "windows": windows,
+        "note": (
+            "log metrics measured against the log's final timestamp; the live "
+            "process registry is the hub's own /metrics endpoint"
+        ),
+    }
 
 
 def latest_cursor(db_path: str | Path) -> int:
