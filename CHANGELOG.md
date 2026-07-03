@@ -23,6 +23,16 @@ All notable changes to this project are documented here.
   row) for spreadsheets and external monitors.
 - The README now points at the cockpit build instructions and documents
   the state snapshot's `dead_letters` section.
+- An observability provisioning bundle under
+  `integrations/observability/`: a Prometheus scrape job, six alerting
+  rules over the decision counters (hub down, dead letters growing,
+  denials outpacing grants, auth failures, takeover quarantine,
+  federation denials), and a committed Grafana dashboard — import,
+  pick the datasource, done. A drift-guard test pins every metric name
+  the bundle references to the registry, so a renamed metric fails the
+  suite instead of silently emptying a panel. `docs/observability.md`
+  walks the five-minute setup and states the plane boundary: `/metrics`
+  is the live process deciding, the store feeds are log analytics.
 - The hub's `/metrics` endpoint grew from 8 to 21 metrics: decision
   counters wired at the decision sites — claims granted/denied, releases,
   directed and broadcast chat, per-message auth failures, rate-limit

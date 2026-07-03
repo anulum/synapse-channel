@@ -43,6 +43,12 @@ SPDX-License-Identifier = "AGPL-3.0-or-later"
 # --- Client packages incl. JSON manifests and lockfiles (AGPL-3.0-or-later) ---
 
 [[annotations]]
+path = ["integrations/**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "1998-2026 Miroslav Šotek <protoscience@anulum.li>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+[[annotations]]
 path = ["clients/**"]
 SPDX-FileCopyrightText = "1998-2026 Miroslav Šotek <protoscience@anulum.li>"
 SPDX-License-Identifier = "AGPL-3.0-or-later"

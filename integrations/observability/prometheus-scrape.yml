@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE_CHANNEL — Prometheus scrape job for the hub's /metrics endpoint
+#
+# Merge the job into your prometheus.yml `scrape_configs:`. The hub serves
+# GET /metrics on its WebSocket port when started with `--metrics`; when it
+# was also started with `--metrics-token TOKEN`, uncomment `authorization`
+# and keep the credential in a file, not in this config.
+
+scrape_configs:
+  - job_name: synapse-hub
+    metrics_path: /metrics
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["localhost:8876"]
+    # authorization:
+    #   type: Bearer
+    #   credentials_file: /etc/prometheus/synapse-hub.token
