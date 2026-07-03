@@ -6,6 +6,8 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the federation row: hub identity, peers, and partition honesty
 
+import { memo } from "react";
+
 import { contestedNamespaces, type FederationState } from "../lib/federation";
 
 /** Dot class per peering lifecycle state. */
@@ -20,7 +22,7 @@ interface FederationRowProps {
   readonly state: FederationState;
 }
 
-export function FederationRow({ state }: FederationRowProps): JSX.Element {
+function FederationRowView({ state }: FederationRowProps): JSX.Element {
   const posture = state.data;
 
   if (state.status === "absent" || (posture === null && state.status !== "error")) {
@@ -88,3 +90,6 @@ export function FederationRow({ state }: FederationRowProps): JSX.Element {
     </div>
   );
 }
+
+/** Memoised: re-renders only when its own data changes, not on the 1 s clock. */
+export const FederationRow = memo(FederationRowView);

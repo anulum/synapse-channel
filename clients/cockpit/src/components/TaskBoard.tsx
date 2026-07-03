@@ -6,6 +6,8 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the task board: the shared plan with hub-verdicted dependency edges
 
+import { memo } from "react";
+
 import type { BoardBucket, BoardTask, DependencyChip } from "../lib/board";
 
 /** Glyph per bucket — redundant with colour and order, never colour alone. */
@@ -81,7 +83,7 @@ interface TaskBoardProps {
   readonly connected: boolean;
 }
 
-export function TaskBoard({ tasks, connected }: TaskBoardProps): JSX.Element {
+function TaskBoardView({ tasks, connected }: TaskBoardProps): JSX.Element {
   const done = tasks.filter((task) => task.bucket === "done");
   const active = tasks.filter((task) => task.bucket !== "done");
   const doneShown = done.slice(0, DONE_SHOWN);
@@ -117,3 +119,6 @@ export function TaskBoard({ tasks, connected }: TaskBoardProps): JSX.Element {
     </section>
   );
 }
+
+/** Memoised: re-renders only when its own data changes, not on the 1 s clock. */
+export const TaskBoard = memo(TaskBoardView);

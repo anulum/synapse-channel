@@ -6,6 +6,9 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the signal log: the plain, legible table under the spine
 
+import { memo } from "react";
+
+import { actorsInWindow, eventsInWindow, windowEdgeLabel, type TimeWindow } from "../lib/brush";
 import type { CockpitEvent } from "../types";
 
 /** Wall-clock HH:MM:SS for a spine event's timestamp (epoch seconds). */
@@ -21,21 +24,40 @@ function timeOf(event: CockpitEvent): string {
 interface SignalLogProps {
   /** Derived transition events, newest first; the caller owns the cap. */
   readonly events: readonly CockpitEvent[];
+  /** The brushed spine window filtering this log, or null for everything. */
+  readonly window?: TimeWindow | null;
+  /** Clears the brushed window (also clears the spine highlight). */
+  readonly onClearWindow?: (() => void) | undefined;
 }
 
-export function SignalLog({ events }: SignalLogProps): JSX.Element {
+function SignalLogView({ events, window = null, onClearWindow }: SignalLogProps): JSX.Element {
+  const shown = eventsInWindow(events, window);
+  const actors = window === null ? [] : actorsInWindow(events, window);
+
   return (
     <section className="panel" aria-label="Signal log">
       <div className="panel__head">
         <span>Signal log</span>
-        <span className="panel__count">{events.length}</span>
-        <span className="panel__sub">observed transitions</span>
+        <span className="panel__count">{shown.length}</span>
+        {window === null ? (
+          <span className="panel__sub">observed transitions</span>
+        ) : (
+          <span className="panel__sub panel__sub--brush">
+            {`${windowEdgeLabel(window.fromTs)}–${windowEdgeLabel(window.toTs)} · ${
+              actors.length
+            } actor${actors.length === 1 ? "" : "s"}`}
+            <button type="button" className="panel__clear" onClick={() => onClearWindow?.()}>
+              clear
+            </button>
+          </span>
+        )}
       </div>
       <div className="panel__body panel__body--flush">
-        {events.length === 0 ? (
+        {shown.length === 0 ? (
           <p className="panel__placeholder panel__placeholder--padded">
-            No coordination events observed yet. The spine baseline stays flat
-            until the fleet moves.
+            {window === null
+              ? "No coordination events observed yet. The spine baseline stays flat until the fleet moves."
+              : "No observed events inside the brushed window."}
           </p>
         ) : (
           <table className="log">
@@ -49,7 +71,7 @@ export function SignalLog({ events }: SignalLogProps): JSX.Element {
               </tr>
             </thead>
             <tbody>
-              {events.map((event) => (
+              {shown.map((event) => (
                 <tr key={event.seq} className={`log__row log__row--${event.kind}`}>
                   <td className="log__time">{timeOf(event)}</td>
                   <td className="log__lane">{event.lane}</td>
@@ -72,3 +94,6 @@ export function SignalLog({ events }: SignalLogProps): JSX.Element {
     </section>
   );
 }
+
+/** Memoised: re-renders only when its own data changes, not on the 1 s clock. */
+export const SignalLog = memo(SignalLogView);

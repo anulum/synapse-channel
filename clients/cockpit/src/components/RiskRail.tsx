@@ -6,6 +6,8 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the risk rail: the operator's triage list
 
+import { memo } from "react";
+
 import { orderSignals } from "../lib/risk";
 import type { RiskView } from "../types";
 
@@ -24,7 +26,7 @@ interface RiskRailProps {
 /** How many safe-next-work rows show before the tail collapses into a count. */
 const SAFE_WORK_SHOWN = 14;
 
-export function RiskRail({ risk }: RiskRailProps): JSX.Element {
+function RiskRailView({ risk }: RiskRailProps): JSX.Element {
   const signals = risk === null ? [] : orderSignals(risk.signals);
   const safeWork = risk?.safe_next_work ?? [];
   const safeShown = safeWork.slice(0, SAFE_WORK_SHOWN);
@@ -85,3 +87,6 @@ export function RiskRail({ risk }: RiskRailProps): JSX.Element {
     </section>
   );
 }
+
+/** Memoised: re-renders only when its own data changes, not on the 1 s clock. */
+export const RiskRail = memo(RiskRailView);

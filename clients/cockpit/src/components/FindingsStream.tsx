@@ -6,6 +6,8 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the findings stream: recorded discoveries, newest first
 
+import { memo } from "react";
+
 import type { FindingNote } from "../lib/board";
 
 /** Wall-clock HH:MM:SS for a finding's posted time, or a dash without one. */
@@ -26,7 +28,7 @@ interface FindingsStreamProps {
   readonly connected: boolean;
 }
 
-export function FindingsStream({ findings, connected }: FindingsStreamProps): JSX.Element {
+function FindingsStreamView({ findings, connected }: FindingsStreamProps): JSX.Element {
   return (
     <section className="panel" aria-label="Findings stream">
       <div className="panel__head">
@@ -62,3 +64,6 @@ export function FindingsStream({ findings, connected }: FindingsStreamProps): JS
     </section>
   );
 }
+
+/** Memoised: re-renders only when its own data changes, not on the 1 s clock. */
+export const FindingsStream = memo(FindingsStreamView);
