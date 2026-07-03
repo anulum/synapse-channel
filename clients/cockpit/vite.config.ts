@@ -9,20 +9,32 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// The cockpit is a static client bundle. In development it proxies the hub's
-// read-only snapshot endpoints to the local `synapse dashboard` HTTP server so
-// the SPA can consume live fleet state without a separate CORS configuration.
+// The cockpit is a static client bundle. In development (and in `vite preview`,
+// which serves the production build for validation) the hub's read-only JSON
+// endpoints proxy to the local `synapse dashboard` HTTP server so the SPA can
+// consume live fleet state without a separate CORS configuration. In production
+// the bundle is served from the dashboard origin itself, so the same relative
+// paths hit the real endpoints with no proxy at all.
 const DASHBOARD_ORIGIN = process.env["SYNAPSE_DASHBOARD_ORIGIN"] ?? "http://127.0.0.1:8765";
+
+const DASHBOARD_PROXY = {
+  "/snapshot.json": DASHBOARD_ORIGIN,
+  "/studio.snapshot.json": DASHBOARD_ORIGIN,
+  "/reliability.json": DASHBOARD_ORIGIN,
+  "/causality.json": DASHBOARD_ORIGIN,
+  "/federation.json": DASHBOARD_ORIGIN,
+} as const;
 
 export default defineConfig({
   plugins: [react()],
   base: "./",
   server: {
     port: 8770,
-    proxy: {
-      "/snapshot.json": DASHBOARD_ORIGIN,
-      "/studio.snapshot.json": DASHBOARD_ORIGIN,
-    },
+    proxy: { ...DASHBOARD_PROXY },
+  },
+  preview: {
+    port: 8772,
+    proxy: { ...DASHBOARD_PROXY },
   },
   build: {
     outDir: "dist",
