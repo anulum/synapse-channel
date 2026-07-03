@@ -8,7 +8,7 @@
 
 import { memo } from "react";
 
-import type { BoardBucket, BoardTask, DependencyChip } from "../lib/board";
+import type { BoardBucket, BoardTask, BoardTruncation, DependencyChip } from "../lib/board";
 
 /** Glyph per bucket — redundant with colour and order, never colour alone. */
 const BUCKET_GLYPH: Record<BoardBucket, string> = {
@@ -81,21 +81,30 @@ interface TaskBoardProps {
   readonly tasks: readonly BoardTask[];
   /** Whether a snapshot has arrived at all (drives the honest empty state). */
   readonly connected: boolean;
+  /** The hub's own board-cap statement; drives the "N of M" count. */
+  readonly truncation?: BoardTruncation | undefined;
 }
 
-function TaskBoardView({ tasks, connected }: TaskBoardProps): JSX.Element {
+function TaskBoardView({ tasks, connected, truncation }: TaskBoardProps): JSX.Element {
   const done = tasks.filter((task) => task.bucket === "done");
   const active = tasks.filter((task) => task.bucket !== "done");
   const doneShown = done.slice(0, DONE_SHOWN);
   const doneOverflow = done.length - doneShown.length;
   const blocked = active.filter((task) => task.bucket === "blocked").length;
+  const capped = truncation?.truncated === true && truncation.totalTasks !== null;
 
   return (
     <section className="panel" aria-label="Task board">
       <div className="panel__head">
         <span>Board</span>
-        <span className="panel__count">{tasks.length}</span>
+        <span
+          className="panel__count"
+          title={capped ? "The hub capped this reply; the full board is larger." : undefined}
+        >
+          {capped ? `${tasks.length} of ${truncation.totalTasks}` : tasks.length}
+        </span>
         {blocked > 0 && <span className="panel__sub panel__sub--warn">{blocked} blocked</span>}
+        {capped && blocked === 0 && <span className="panel__sub">capped reply</span>}
       </div>
       <div className="panel__body">
         {!connected ? (

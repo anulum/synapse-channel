@@ -18,7 +18,7 @@ import { PanelBoundary } from "./components/PanelBoundary";
 import { ReliabilityPanel } from "./components/ReliabilityPanel";
 import { RiskRail } from "./components/RiskRail";
 import { TaskBoard } from "./components/TaskBoard";
-import { deriveBoard, deriveFindings } from "./lib/board";
+import { boardTruncation, deriveBoard, deriveFindings } from "./lib/board";
 import type { TimeWindow } from "./lib/brush";
 import { deriveClaims, parseConflicts } from "./lib/claims";
 import { createEventsTailSource, type SpineProvenance } from "./lib/eventsTail";
@@ -255,7 +255,7 @@ export function App(): JSX.Element {
           </PanelBoundary>
         </div>
         <PanelBoundary name="Board">
-          <TaskBoard tasks={board} connected={connected} />
+          <TaskBoard tasks={board} connected={connected} truncation={boardTruncation(snap.snapshot)} />
         </PanelBoundary>
         <div className="deck__stack deck__stack--rail">
           <PanelBoundary name="Risk rail">

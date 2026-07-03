@@ -105,6 +105,28 @@ export function deriveBoard(snapshot: FleetSnapshot | null): BoardTask[] {
   return rows;
 }
 
+/** The board's own truncation statement, present when a task cap is set. */
+export interface BoardTruncation {
+  /** Total tasks on the full board, or null when the hub sent no cap signal. */
+  readonly totalTasks: number | null;
+  /** Whether the served task list is a capped subset of the full board. */
+  readonly truncated: boolean;
+}
+
+/**
+ * Read the hub's board-cap signal (`total_tasks` + `truncated`, sent when
+ * `--board-task-cap` trims the reply) so the panel can state "N of M" instead
+ * of presenting a capped list as the whole plan.
+ */
+export function boardTruncation(snapshot: FleetSnapshot | null): BoardTruncation {
+  if (snapshot === null) return { totalTasks: null, truncated: false };
+  const total = snapshot.board["total_tasks"];
+  return {
+    totalTasks: typeof total === "number" && Number.isFinite(total) ? Math.trunc(total) : null,
+    truncated: snapshot.board["truncated"] === true,
+  };
+}
+
 /** One finding note from the blackboard progress ledger. */
 export interface FindingNote {
   readonly author: string;
