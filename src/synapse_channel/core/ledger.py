@@ -478,18 +478,50 @@ class Blackboard:
                 stack.extend(other.depends_on)
         return False
 
-    def snapshot(self) -> dict[str, Any]:
+    def snapshot(self, *, task_cap: int | None = None) -> dict[str, Any]:
         """Return a consistent view of the plan and the recent progress stream.
+
+        Parameters
+        ----------
+        task_cap : int or None, optional
+            When set, bound the served ``tasks`` list (floored at ``1``):
+            every live task is kept ahead of any terminal one, the newest
+            ``updated_at`` wins inside each class when trimming, and the
+            reply carries ``total_tasks`` and ``truncated`` so a consumer
+            sees the bound instead of mistaking the page for the whole
+            plan. ``ready`` always lists every ready id — ids are cheap,
+            the task bodies are what outgrow a frame. ``None`` serves the
+            full board unchanged.
 
         Returns
         -------
         dict[str, Any]
-            Mapping with ``tasks`` (sorted by id), ``ready`` (ready task ids),
-            and ``progress`` (the retained notes in order).
+            Mapping with ``tasks`` (sorted by id), ``ready`` (ready task
+            ids), and ``progress`` (the retained notes in order); under a
+            cap also ``total_tasks`` and ``truncated``.
         """
         ordered = sorted(self.tasks.values(), key=lambda t: t.task_id)
+        ready = [task.task_id for task in self.ready_tasks()]
+        notes = [note.as_dict() for note in self.progress]
+        if task_cap is None:
+            return {
+                "tasks": [task.as_dict() for task in ordered],
+                "ready": ready,
+                "progress": notes,
+            }
+        cap = max(1, int(task_cap))
+        live = [task for task in ordered if task.status not in TERMINAL_LEDGER_STATUSES]
+        terminal = [task for task in ordered if task.status in TERMINAL_LEDGER_STATUSES]
+        if len(live) >= cap:
+            kept = sorted(live, key=lambda t: t.updated_at, reverse=True)[:cap]
+        else:
+            fill = sorted(terminal, key=lambda t: t.updated_at, reverse=True)[: cap - len(live)]
+            kept = live + fill
+        kept_ordered = sorted(kept, key=lambda t: t.task_id)
         return {
-            "tasks": [task.as_dict() for task in ordered],
-            "ready": [task.task_id for task in self.ready_tasks()],
-            "progress": [note.as_dict() for note in self.progress],
+            "tasks": [task.as_dict() for task in kept_ordered],
+            "ready": ready,
+            "progress": notes,
+            "total_tasks": len(ordered),
+            "truncated": len(kept_ordered) < len(ordered),
         }

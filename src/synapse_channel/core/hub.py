@@ -213,6 +213,15 @@ class SynapseHub:
     max_progress_per_task : int, optional
         Maximum progress notes retained for one task id on the shared blackboard.
         Defaults to :data:`~synapse_channel.core.ledger.DEFAULT_MAX_PROGRESS_PER_TASK`.
+    board_task_cap : int or None, optional
+        Bound on the tasks served per board snapshot (floored at ``1``):
+        live tasks are kept ahead of terminal ones, the newest
+        ``updated_at`` wins inside each class when trimming, and a capped
+        reply carries ``total_tasks`` and ``truncated`` so a consumer sees
+        the bound instead of mistaking the page for the whole plan.
+        ``None`` (the default) serves the full board unchanged; the cap
+        exists because a long-running fleet's full board eventually
+        outgrows a websocket frame.
     max_findings_per_agent : int, optional
         Maximum durable findings one agent may admit before new findings are
         privately rejected. Defaults to :data:`DEFAULT_MAX_FINDINGS_PER_AGENT`.
@@ -345,6 +354,7 @@ class SynapseHub:
         max_progress: int = DEFAULT_MAX_PROGRESS,
         max_progress_per_author: int = DEFAULT_MAX_PROGRESS_PER_AUTHOR,
         max_progress_per_task: int = DEFAULT_MAX_PROGRESS_PER_TASK,
+        board_task_cap: int | None = None,
         max_findings_per_agent: int = DEFAULT_MAX_FINDINGS_PER_AGENT,
         compact_hint_threshold: int = DEFAULT_COMPACT_HINT_THRESHOLD,
         authenticator: TokenAuthenticator | None = None,
@@ -446,6 +456,7 @@ class SynapseHub:
         self.max_history = max(int(max_history), 1)
         self.max_findings_per_agent = max(int(max_findings_per_agent), 1)
         self.compact_hint_threshold = max(1, int(compact_hint_threshold))
+        self.board_task_cap = max(1, int(board_task_cap)) if board_task_cap is not None else None
         self.relay_log = Path(relay_log) if relay_log else None
         self.relay_max_lines = max(int(relay_max_lines), 1)
         self._relay = RelayMirror(self.relay_log, self.relay_max_lines)

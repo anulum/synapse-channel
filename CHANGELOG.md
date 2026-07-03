@@ -28,6 +28,15 @@ All notable changes to this project are documented here.
   a built cockpit single-page app read-only under `/cockpit/` with path
   traversal and unrecognised suffixes refused.
 
+- `synapse hub --board-task-cap N` — bound the tasks served per board
+  snapshot, because a long-running fleet's full board eventually
+  outgrows a websocket frame (field-observed around a thousand tasks).
+  Live tasks are kept ahead of terminal ones, the newest `updated_at`
+  wins inside each class when trimming, the reply carries `total_tasks`
+  and `truncated`, and the `ready` id list always stays complete. The
+  default serves the full board unchanged; the ledger itself is never
+  trimmed — the cap bounds one reply, not the plan.
+
 ### Fixed
 - `synapse lock` now waits (bounded) for the hub's release confirmation
   before exiting. The release frame itself is fire-and-forget and the

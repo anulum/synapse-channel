@@ -135,7 +135,7 @@ async def handle_board_request(
             "Board snapshot",
             msg_type=MessageType.BOARD_SNAPSHOT,
             target=sender,
-            board=hub.blackboard.snapshot(),
+            board=hub.blackboard.snapshot(task_cap=hub.board_task_cap),
         ),
     )
 
