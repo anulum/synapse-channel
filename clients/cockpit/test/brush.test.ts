@@ -33,6 +33,7 @@ function event(ts: number, overrides: Partial<CockpitEvent> = {}): CockpitEvent 
     severity: 0.5,
     actor: "a",
     label: "claimed t",
+    taskId: "t",
     ...overrides,
   };
 }

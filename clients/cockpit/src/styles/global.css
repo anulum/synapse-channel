@@ -1606,6 +1606,31 @@ body {
   max-width: 210px;
 }
 
+.log__hop {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log__hop:hover {
+  text-decoration: underline dotted var(--info);
+  text-underline-offset: 3px;
+}
+
+.log__hop:focus-visible {
+  outline: 1px solid var(--info);
+  outline-offset: -1px;
+}
+
 .log__label {
   color: var(--ink);
   max-width: 0;

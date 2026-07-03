@@ -6,7 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the causality inspector: recorded causes and effects on demand
 
-import { useCallback, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
   clusterByHub,
   fetchTrace,
@@ -14,6 +14,12 @@ import {
   type CausalityTrace,
   type TraceResult,
 } from "../lib/causality";
+
+/** A subject pushed in from another panel; the nonce re-fires equal subjects. */
+export interface CausalityPrefill {
+  readonly subject: string;
+  readonly nonce: number;
+}
 
 function timeOf(ts: number | null): string {
   if (ts === null) return "—";
@@ -45,19 +51,26 @@ function NodeLine({ node }: NodeLineProps): JSX.Element {
 
 type InspectorStatus = "idle" | "loading" | "loaded" | "absent" | "error";
 
-export function CausalityView(): JSX.Element {
+interface CausalityViewProps {
+  /** A subject handed over from the signal log (master-detail hop), if any. */
+  readonly prefill?: CausalityPrefill | null | undefined;
+}
+
+export function CausalityView({ prefill = null }: CausalityViewProps): JSX.Element {
   const [subject, setSubject] = useState("");
   const [direction, setDirection] = useState<"causes" | "effects">("causes");
   const [status, setStatus] = useState<InspectorStatus>("idle");
   const [trace, setTrace] = useState<CausalityTrace | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const run = useCallback(
-    async (event: FormEvent): Promise<void> => {
-      event.preventDefault();
-      if (subject.trim() === "") return;
+  const runTrace = useCallback(
+    async (querySubject: string, queryDirection: "causes" | "effects"): Promise<void> => {
+      if (querySubject.trim() === "") return;
       setStatus("loading");
-      const result: TraceResult = await fetchTrace({ subject, direction });
+      const result: TraceResult = await fetchTrace({
+        subject: querySubject,
+        direction: queryDirection,
+      });
       if (result.kind === "loaded") {
         setTrace(result.trace);
         setStatus("loaded");
@@ -69,8 +82,24 @@ export function CausalityView(): JSX.Element {
         setError(result.message);
       }
     },
-    [subject, direction],
+    [],
   );
+
+  const run = useCallback(
+    async (event: FormEvent): Promise<void> => {
+      event.preventDefault();
+      await runTrace(subject, direction);
+    },
+    [runTrace, subject, direction],
+  );
+
+  // A log-row hop lands here: adopt the subject and trace it immediately —
+  // it is a read-only query, and the operator asked by clicking the row.
+  useEffect(() => {
+    if (prefill === null || prefill === undefined) return;
+    setSubject(prefill.subject);
+    void runTrace(prefill.subject, "causes");
+  }, [prefill, runTrace]);
 
   const clusters = trace === null ? [] : clusterByHub(trace.transitive);
   const federated = clusters.some((cluster) => cluster.hubId !== "");

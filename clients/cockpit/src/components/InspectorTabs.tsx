@@ -6,10 +6,10 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — tab switch between the signal log and the causality inspector
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { windowEdgeLabel, type TimeWindow } from "../lib/brush";
 import type { CockpitEvent } from "../types";
-import { CausalityView } from "./CausalityView";
+import { CausalityView, type CausalityPrefill } from "./CausalityView";
 import { SignalLog } from "./SignalLog";
 
 type InspectorTab = "log" | "causality";
@@ -25,6 +25,14 @@ interface InspectorTabsProps {
 
 export function InspectorTabs({ events, window = null, onClearWindow }: InspectorTabsProps): JSX.Element {
   const [tab, setTab] = useState<InspectorTab>("log");
+  const [prefill, setPrefill] = useState<CausalityPrefill | null>(null);
+
+  // Master-detail hop: a task named by a log row jumps straight into the
+  // causality inspector, subject adopted and traced.
+  const onSelectTask = useCallback((taskId: string) => {
+    setPrefill((current) => ({ subject: taskId, nonce: (current?.nonce ?? 0) + 1 }));
+    setTab("causality");
+  }, []);
 
   return (
     <div className="inspector">
@@ -63,9 +71,14 @@ export function InspectorTabs({ events, window = null, onClearWindow }: Inspecto
       </div>
       <div className="inspector__body">
         {tab === "log" ? (
-          <SignalLog events={events} window={window} onClearWindow={onClearWindow} />
+          <SignalLog
+            events={events}
+            window={window}
+            onClearWindow={onClearWindow}
+            onSelectTask={onSelectTask}
+          />
         ) : (
-          <CausalityView />
+          <CausalityView prefill={prefill} />
         )}
       </div>
     </div>

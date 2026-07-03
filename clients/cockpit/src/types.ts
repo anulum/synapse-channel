@@ -40,6 +40,8 @@ export interface CockpitEvent {
   readonly actor: string;
   /** Short human-readable summary for the detail panel and tooltip. */
   readonly label: string;
+  /** The task the event concerns, when it names one; "" otherwise. */
+  readonly taskId: string;
 }
 
 /** A source of live coordination events for the spine and log. */
