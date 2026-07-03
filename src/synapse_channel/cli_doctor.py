@@ -38,6 +38,7 @@ from synapse_channel.client.diagnostics import (
     check_identity,
     check_reachable,
     check_send_identity,
+    check_unread_addressees,
     check_waiter,
     summarise,
 )
@@ -144,6 +145,36 @@ async def _fetch_roster(
     return captured[-1] if captured else []
 
 
+FEED_TAIL_BYTES = 512 * 1024
+"""How much of the feed's tail the addressee check reads — bounded, newest last."""
+
+
+def _read_feed_tail(env: Mapping[str, str]) -> list[str]:
+    """Return the trailing lines of the shared feed, empty when it is absent."""
+    from synapse_channel.ergonomics import syn_home
+
+    feed = syn_home(env) / "feed.ndjson"
+    try:
+        with feed.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - FEED_TAIL_BYTES))
+            data = handle.read()
+    except OSError:
+        return []
+    return data.decode("utf-8", errors="replace").splitlines()
+
+
+def _read_cursor_names(env: Mapping[str, str]) -> list[str]:
+    """Return the inbox cursor basenames present in the coordination home."""
+    from synapse_channel.ergonomics import syn_home
+
+    try:
+        return [path.name.removesuffix(".cursor") for path in syn_home(env).glob("*.cursor")]
+    except OSError:
+        return []
+
+
 async def _diagnose(
     *,
     uri: str,
@@ -161,6 +192,8 @@ async def _diagnose(
     disk_warn_used_percent: float = 95.0,
     disk_warn_free_mib: int = 1024,
     disk_usage_probe: DiskUsageProbe = _disk_usage,
+    feed_tail_reader: Callable[[Mapping[str, str]], list[str]] | None = None,
+    cursor_names_reader: Callable[[Mapping[str, str]], list[str]] | None = None,
 ) -> tuple[int, list[str], list[Diagnosis]]:
     """Resolve the identity, run every check, and return the summarised verdicts.
 
@@ -172,6 +205,8 @@ async def _diagnose(
     from synapse_channel.ergonomics import resolve_identity
 
     env = os.environ if env is None else env
+    feed_tail_reader = _read_feed_tail if feed_tail_reader is None else feed_tail_reader
+    cursor_names_reader = _read_cursor_names if cursor_names_reader is None else cursor_names_reader
     identity = resolve_identity(
         project=project,
         agent_id=agent_id,
@@ -206,6 +241,13 @@ async def _diagnose(
     )
     diagnoses.append(check_reachable(roster is not None, uri))
     diagnoses.append(check_waiter(roster, identity.waiter_name))
+    diagnoses.append(
+        check_unread_addressees(
+            feed_lines=feed_tail_reader(env),
+            cursor_names=cursor_names_reader(env),
+            roster=roster,
+        )
+    )
     code, lines = summarise(diagnoses)
     return code, lines, diagnoses
 

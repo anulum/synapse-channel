@@ -14,6 +14,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Directed-message blackholes are now visible and drainable. `syn inbox
+  --as NAME` (repeatable; standing set via the comma-separated
+  `$SYN_ALIASES`) drains additional identities — a role name like
+  `project/coordinator` alongside the resolved one — each under its own
+  cursor, so no reader ever consumes another's delta. And `synapse
+  doctor` gained an addressee check: recent directed traffic whose
+  target has no inbox cursor, no live waiter, and no live connection is
+  reported with message counts and the drain command, because a message
+  nobody reads otherwise waits for a human to relay it — the exact
+  failure the bus exists to remove.
 - `/events.json` accepts `since=latest` — the tail shortcut that starts
   at the log's end instead of walking a large history to catch up.
 - A `present: false` causality-feed answer now carries a `note` naming

@@ -54,6 +54,8 @@ async def test_diagnose_reachable_with_waiter_passes() -> None:
         waiter = await connect_agent("demorepo-rx", uri)
         try:
             code, lines, _ = await cli_doctor._diagnose(
+                feed_tail_reader=lambda _env: [],
+                cursor_names_reader=lambda _env: [],
                 uri=uri,
                 project="demorepo",
                 agent_id=None,
@@ -70,6 +72,8 @@ async def test_diagnose_reachable_with_waiter_passes() -> None:
 async def test_diagnose_reachable_without_waiter_warns() -> None:
     async with running_hub(SynapseHub()) as (_, uri):
         code, lines, _ = await cli_doctor._diagnose(
+            feed_tail_reader=lambda _env: [],
+            cursor_names_reader=lambda _env: [],
             uri=uri,
             project="demorepo",
             agent_id=None,
@@ -82,6 +86,8 @@ async def test_diagnose_reachable_without_waiter_warns() -> None:
 
 async def test_diagnose_unreachable_fails() -> None:
     code, lines, diagnoses = await cli_doctor._diagnose(
+        feed_tail_reader=lambda _env: [],
+        cursor_names_reader=lambda _env: [],
         uri=f"ws://127.0.0.1:{_free_port()}",
         project="demorepo",
         agent_id=None,
@@ -102,6 +108,8 @@ async def test_diagnose_flags_off_loopback_without_token_and_disk_pressure(
         return []
 
     code, lines, _ = await cli_doctor._diagnose(
+        feed_tail_reader=lambda _env: [],
+        cursor_names_reader=lambda _env: [],
         uri="ws://10.0.0.5:8876",
         project="demorepo",
         agent_id=None,
@@ -120,6 +128,8 @@ async def test_diagnose_flags_off_loopback_without_token_and_disk_pressure(
 async def test_diagnose_warns_on_hyphen_send_identity() -> None:
     async with running_hub(SynapseHub()) as (_, uri):
         _, lines, _ = await cli_doctor._diagnose(
+            feed_tail_reader=lambda _env: [],
+            cursor_names_reader=lambda _env: [],
             uri=uri,
             project="demorepo",
             agent_id=None,
@@ -375,3 +385,50 @@ def test_cmd_doctor_json_refuses_mutating_flags(capsys: pytest.CaptureFixture[st
 def test_parser_accepts_doctor_json() -> None:
     args = cli.build_parser().parse_args(["doctor", "--json"])
     assert args.json is True
+
+
+async def test_diagnose_surfaces_directed_messages_nobody_reads() -> None:
+    """The addressee check rides the doctor: unread directed traffic warns."""
+    lines = [json.dumps({"v": 1, "ty": "chat", "s": "A", "to": "GHOST/coordinator", "p": "hi"})]
+    async with running_hub(SynapseHub()) as (_, uri):
+        code, report, _ = await cli_doctor._diagnose(
+            feed_tail_reader=lambda _env: lines,
+            cursor_names_reader=lambda _env: [],
+            uri=uri,
+            project="demorepo",
+            agent_id=None,
+            token=None,
+        )
+    text = "\n".join(report)
+    assert "GHOST/coordinator (1 msg)" in text
+    assert "syn inbox --as GHOST/coordinator" in text
+    assert code == 0  # a blackhole warns; it does not fail the doctor
+
+
+def test_feed_tail_and_cursor_readers_use_the_syn_home(tmp_path: Path) -> None:
+    home = tmp_path / "synapse"
+    home.mkdir()
+    (home / "feed.ndjson").write_text("line-1\nline-2\n", encoding="utf-8")
+    (home / "ACME.cursor").write_text("0", encoding="utf-8")
+    (home / "ACME__coordinator.cursor").write_text("0", encoding="utf-8")
+    env = {"SYN_HOME": str(home)}
+
+    assert cli_doctor._read_feed_tail(env) == ["line-1", "line-2"]
+    assert sorted(cli_doctor._read_cursor_names(env)) == ["ACME", "ACME__coordinator"]
+
+    absent = {"SYN_HOME": str(tmp_path / "nowhere")}
+    assert cli_doctor._read_feed_tail(absent) == []
+    assert cli_doctor._read_cursor_names(absent) == []
+
+
+def test_cursor_reader_swallows_an_unreadable_home(monkeypatch: pytest.MonkeyPatch) -> None:
+    # pathlib.glob answers [] for a missing home; this guards the uglier
+    # case - a home directory the process cannot iterate (permissions)
+    import synapse_channel.ergonomics as ergonomics_module
+
+    class _HostileHome:
+        def glob(self, _pattern: str) -> list[Path]:
+            raise OSError("permission denied")
+
+    monkeypatch.setattr(ergonomics_module, "syn_home", lambda _env: _HostileHome())
+    assert cli_doctor._read_cursor_names({}) == []

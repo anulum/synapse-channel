@@ -772,3 +772,97 @@ def test_syn_ask_is_packaged_and_documented() -> None:
     assert 'syn ask CEO "status?"' in readme
     assert "syn ask <target> <message>" in cli_docs
     assert 'syn ask test-dev "status?"' in recipes
+
+
+# --- multi-identity inbox (--as / $SYN_ALIASES) --------------------------------------
+
+
+def test_split_as_names_reads_flags_in_both_forms() -> None:
+    names = ergonomics.split_as_names(
+        ["--as", "SYNAPSE-CHANNEL/coordinator", "--as=OTHER", "noise"], env={}
+    )
+    assert names == ["SYNAPSE-CHANNEL/coordinator", "OTHER"]
+
+
+def test_split_as_names_falls_back_to_the_env_aliases() -> None:
+    names = ergonomics.split_as_names([], env={"SYN_ALIASES": "A/coord, B ,, "})
+    assert names == ["A/coord", "B"]
+
+
+def test_explicit_as_flags_beat_the_env_aliases() -> None:
+    names = ergonomics.split_as_names(["--as", "X"], env={"SYN_ALIASES": "A,B"})
+    assert names == ["X"]
+
+
+def test_split_as_names_drops_blanks_and_dangling_flag() -> None:
+    assert ergonomics.split_as_names(["--as"], env={}) == []
+    assert ergonomics.split_as_names(["--as", "  "], env={}) == []
+
+
+def test_aliased_inbox_argv_scopes_projects_and_exact_names(tmp_path: Path) -> None:
+    project = ergonomics.aliased_inbox_argv("ACME", feed="/h/feed.ndjson", home=tmp_path)
+    assert project == [
+        "relay",
+        "/h/feed.ndjson",
+        "--project",
+        "ACME",
+        "--cursor",
+        str(tmp_path / "ACME.cursor"),
+    ]
+
+    exact = ergonomics.aliased_inbox_argv("ACME/coordinator", feed="/h/feed.ndjson", home=tmp_path)
+    assert exact == [
+        "relay",
+        "/h/feed.ndjson",
+        "--for",
+        "ACME/coordinator",
+        "--cursor",
+        str(tmp_path / "ACME__coordinator.cursor"),
+    ]
+
+
+def test_main_inbox_drains_every_as_identity_under_its_own_cursor(
+    captured_cli: CapturedCalls, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert (
+        ergonomics.main(
+            ["inbox", "--as", "SYNAPSE-CHANNEL/coordinator", "--as", "ACME"],
+            env={"HOME": "/home/u"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 0
+    )
+    assert len(captured_cli) == 3
+    assert captured_cli[0][:4] == [
+        "relay",
+        "/home/u/synapse/feed.ndjson",
+        "--project",
+        "SYNAPSE-CHANNEL",
+    ]
+    assert captured_cli[1] == [
+        "relay",
+        "/home/u/synapse/feed.ndjson",
+        "--for",
+        "SYNAPSE-CHANNEL/coordinator",
+        "--cursor",
+        "/home/u/synapse/SYNAPSE-CHANNEL__coordinator.cursor",
+    ]
+    assert captured_cli[2][2:4] == ["--project", "ACME"]
+    out = capsys.readouterr().out
+    assert "--- inbox as SYNAPSE-CHANNEL/coordinator ---" in out
+    assert "--- inbox as ACME ---" in out
+
+
+def test_main_inbox_env_aliases_apply_without_flags(captured_cli: CapturedCalls) -> None:
+    assert (
+        ergonomics.main(
+            ["inbox"],
+            env={"HOME": "/home/u", "SYN_ALIASES": "SYNAPSE-CHANNEL/coordinator"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 0
+    )
+    assert len(captured_cli) == 2
+    assert captured_cli[1][2:4] == ["--for", "SYNAPSE-CHANNEL/coordinator"]
