@@ -1567,6 +1567,65 @@ body {
   gap: 2px;
 }
 
+/* ---------- signal log query controls ---------- */
+.log-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+
+.log-controls__search {
+  flex: 1;
+  min-width: 0;
+  background: var(--abyss);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+  padding: 2px var(--sp-2);
+}
+
+.log-controls__search::placeholder {
+  color: var(--dim);
+}
+
+.log-controls__search:focus-visible {
+  outline: 1px solid var(--info);
+  outline-offset: -1px;
+}
+
+.log-controls__toggle {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  padding: 2px var(--sp-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.log-controls__toggle:hover {
+  color: var(--ink);
+}
+
+.log-controls__toggle--paused {
+  color: var(--warn);
+  border-color: var(--warn-trail);
+}
+
+.log-controls__toggle:focus-visible {
+  outline: 1px solid var(--info);
+  outline-offset: -1px;
+}
+
 /* ---------- signal log ---------- */
 .log {
   width: 100%;

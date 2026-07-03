@@ -6,9 +6,10 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the signal log: the plain, legible table under the spine
 
-import { memo } from "react";
+import { memo, useRef, useState } from "react";
 
 import { actorsInWindow, eventsInWindow, windowEdgeLabel, type TimeWindow } from "../lib/brush";
+import { applyQuery, isConstrained, OPEN_QUERY, type LogQuery } from "../lib/logQuery";
 import type { CockpitEvent } from "../types";
 
 /** Wall-clock HH:MM:SS for a spine event's timestamp (epoch seconds). */
@@ -36,6 +37,10 @@ interface SignalLogProps {
    * (local seq, poll-quantised ts; only task-naming rows hop, by task id).
    */
   readonly provenance?: "hub" | "derived";
+  /** The operator's query (text/kinds/order), owned by the caller. */
+  readonly query?: LogQuery;
+  /** Query updates (typing, order toggle, clear). */
+  readonly onQueryChange?: ((query: LogQuery) => void) | undefined;
 }
 
 function SignalLogView({
@@ -44,9 +49,32 @@ function SignalLogView({
   onClearWindow,
   onSelectTask,
   provenance = "derived",
+  query = OPEN_QUERY,
+  onQueryChange,
 }: SignalLogProps): JSX.Element {
-  const shown = eventsInWindow(events, window);
-  const actors = window === null ? [] : actorsInWindow(events, window);
+  // Pause freezes the VIEW while the feed keeps recording — the frozen list
+  // is a real snapshot of what was on screen, and the header counts what has
+  // arrived since, so nothing is silently missed.
+  const [paused, setPaused] = useState(false);
+  const frozen = useRef<readonly CockpitEvent[]>([]);
+  const togglePause = (): void => {
+    if (!paused) frozen.current = events;
+    setPaused(!paused);
+  };
+  const base = paused ? frozen.current : events;
+  let newerCount = 0;
+  if (paused) {
+    const frozenHead = frozen.current[0]?.seq;
+    if (frozenHead === undefined) {
+      newerCount = events.length;
+    } else {
+      const headAt = events.findIndex((event) => event.seq === frozenHead);
+      newerCount = headAt === -1 ? events.length : headAt;
+    }
+  }
+
+  const shown = applyQuery(eventsInWindow(base, window), query);
+  const actors = window === null ? [] : actorsInWindow(base, window);
 
   return (
     <section className="panel" aria-label="Signal log">
@@ -68,12 +96,52 @@ function SignalLogView({
           </span>
         )}
       </div>
+      <div className="log-controls">
+        <input
+          className="log-controls__search"
+          value={query.text}
+          onChange={(change) => onQueryChange?.({ ...query, text: change.target.value })}
+          placeholder="search events (actor, task, text)"
+          aria-label="Search events by actor, task, or text"
+        />
+        <button
+          type="button"
+          className="log-controls__toggle"
+          onClick={() =>
+            onQueryChange?.({ ...query, order: query.order === "newest" ? "oldest" : "newest" })
+          }
+          title="Toggle render order"
+        >
+          {query.order === "newest" ? "newest ↓" : "oldest ↑"}
+        </button>
+        <button
+          type="button"
+          className={`log-controls__toggle${paused ? " log-controls__toggle--paused" : ""}`}
+          onClick={togglePause}
+          aria-pressed={paused}
+          title="Freeze the view while the feed keeps recording"
+        >
+          {paused ? `paused · ${newerCount} new` : "pause"}
+        </button>
+        {isConstrained(query) && (
+          <button
+            type="button"
+            className="panel__clear"
+            onClick={() => onQueryChange?.(OPEN_QUERY)}
+            title="Clear the query"
+          >
+            reset
+          </button>
+        )}
+      </div>
       <div className="panel__body panel__body--flush">
         {shown.length === 0 ? (
           <p className="panel__placeholder panel__placeholder--padded">
-            {window === null
-              ? "No coordination events observed yet. The spine baseline stays flat until the fleet moves."
-              : "No observed events inside the brushed window."}
+            {isConstrained(query)
+              ? "No events match the query."
+              : window === null
+                ? "No coordination events observed yet. The spine baseline stays flat until the fleet moves."
+                : "No observed events inside the brushed window."}
           </p>
         ) : (
           <table className="log">

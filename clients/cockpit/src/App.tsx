@@ -22,6 +22,7 @@ import { boardTruncation, deriveBoard, deriveFindings } from "./lib/board";
 import type { TimeWindow } from "./lib/brush";
 import { deriveClaims, parseConflicts } from "./lib/claims";
 import { createEventsTailSource, type SpineProvenance } from "./lib/eventsTail";
+import { queryFromHash, queryToHash, type LogQuery } from "./lib/logQuery";
 import { createFederationStore, type FederationState } from "./lib/federation";
 import { createReliabilityStore, type ReliabilityState } from "./lib/reliability";
 import { deriveRoster } from "./lib/roster";
@@ -113,7 +114,18 @@ export function App(): JSX.Element {
   const [reliability, setReliability] = useState<ReliabilityState>(INITIAL_RELIABILITY);
   const [federation, setFederation] = useState<FederationState>(INITIAL_FEDERATION);
   const [brush, setBrush] = useState<TimeWindow | null>(null);
+  // The log query lives in the URL hash, so a filtered view is a shareable
+  // address and survives a reload.
+  const [logQuery, setLogQuery] = useState<LogQuery>(() =>
+    queryFromHash(typeof location === "undefined" ? "" : location.hash),
+  );
   const previous = useRef<Metrics>(ZERO_METRICS);
+
+  const onQueryChange = useCallback((query: LogQuery) => {
+    setLogQuery(query);
+    const hash = queryToHash(query);
+    history.replaceState(null, "", hash === "" ? location.pathname + location.search : `#${hash}`);
+  }, []);
 
   // Stable identities so the spine's canvas effect never re-arms mid-flight.
   const onBrush = useCallback((window: TimeWindow | null) => setBrush(window), []);
@@ -154,7 +166,11 @@ export function App(): JSX.Element {
     });
     const unsubscribeMode = tail.subscribeMode((mode) => {
       setProvenance(mode);
-      const next = mode === "hub" ? "tail" : mode === "absent" ? "derived" : active;
+      // The tail feeds the deck only while it is genuinely live; on absence
+      // AND on error the derivation takes over — an erroring endpoint must
+      // never leave the cockpit with no event source at all. `connecting` is
+      // the only (sub-second) window with no active source.
+      const next = mode === "hub" ? "tail" : mode === "connecting" ? active : "derived";
       if (next !== active) {
         active = next;
         setLog([]);
@@ -251,6 +267,8 @@ export function App(): JSX.Element {
               window={brush}
               onClearWindow={onClearWindow}
               provenance={provenance === "hub" ? "hub" : "derived"}
+              query={logQuery}
+              onQueryChange={onQueryChange}
             />
           </PanelBoundary>
         </div>
