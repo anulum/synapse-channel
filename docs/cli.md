@@ -316,6 +316,7 @@ id, so the others wait their turn instead of clobbering each other:
 ```bash
 synapse lock quantum:git -- git push          # holds quantum:git while pushing
 synapse lock quantum:git --wait-timeout 0 -- git push   # fail fast if someone holds it
+synapse lock quantum:git --release-timeout 10 -- git push  # hold the exit up to 10s for the release confirmation (slow links)
 ```
 
 A lock is a named mutex keyed by its id: `quantum:git` and `physics:git` are

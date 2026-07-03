@@ -22,6 +22,7 @@ import argparse
 import asyncio
 import json
 import logging
+import math
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -109,6 +110,7 @@ async def _lock(
     ready_timeout: float = 5.0,
     attempts: int = 40,
     poll_interval: float = 0.05,
+    release_timeout: float | None = None,
 ) -> int:
     """Hold a lease on ``task_id`` while running ``command``, serialising it across agents.
 
@@ -145,6 +147,11 @@ async def _lock(
         Claim verdict polling attempts per claim request.
     poll_interval : float, optional
         Seconds to wait between verdict polls.
+    release_timeout : float or None, optional
+        Seconds the teardown waits for the hub's release confirmation;
+        ``None`` keeps the default bound (``attempts`` polls). The wait is
+        always bounded and the lease TTL remains the backstop — this knob
+        only tunes how long the exit is held for slower links.
 
     Returns
     -------
@@ -235,7 +242,12 @@ async def _lock(
             # missing confirmation only costs this bounded wait: the TTL
             # remains the backstop, and teardown never hangs the command's
             # outcome.
-            for _ in range(attempts):
+            release_polls = (
+                attempts
+                if release_timeout is None
+                else max(1, math.ceil(release_timeout / poll_interval))
+            )
+            for _ in range(release_polls):
                 if outcome.get("released") or conn_task.done():
                     break
                 await asyncio.sleep(poll_interval)
@@ -260,6 +272,7 @@ def _cmd_lock(args: argparse.Namespace) -> int:
             wait_timeout=args.wait_timeout,
             token=args.token,
             ready_timeout=args.ready_timeout,
+            release_timeout=args.release_timeout,
         )
     )
 
@@ -461,6 +474,17 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=float,
         default=30.0,
         help="Seconds to keep retrying while another agent holds the lease; 0 fails fast.",
+    )
+    lock.add_argument(
+        "--release-timeout",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "Seconds the exit waits for the hub's release confirmation (default "
+            "~2s); always bounded, lease TTL remains the backstop. Distinct from "
+            "--wait-timeout, which bounds ACQUIRING the lease."
+        ),
     )
     lock.add_argument("--uri", default=default_hub_uri())
     lock.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")

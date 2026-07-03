@@ -192,6 +192,7 @@ def test_cmd_lock_dispatches_real_command(capsys: pytest.CaptureFixture[str]) ->
         wait_timeout=0.0,
         token=None,
         ready_timeout=0.1,
+        release_timeout=None,
     )
     assert cli_locking._cmd_lock(ns) == 1
     assert "Could not reach hub" in capsys.readouterr().out
@@ -374,6 +375,53 @@ async def test_lock_teardown_wait_is_bounded_without_a_confirmation() -> None:
             attempts=3,
             poll_interval=0.01,
             agent_factory=cast("AgentFactory", _NeverConfirmRelease),
+            runner=runner,
+        ),
+        timeout=5.0,
+    )
+
+    assert code == 0
+
+
+def test_parser_lock_release_timeout() -> None:
+    args = cli.build_parser().parse_args(["lock", "g", "--release-timeout", "7.5", "--", "true"])
+    assert args.release_timeout == 7.5
+    default = cli.build_parser().parse_args(["lock", "g", "--", "true"])
+    assert default.release_timeout is None
+
+
+async def test_release_timeout_bounds_the_teardown_wait() -> None:
+    """An explicit timeout replaces the default poll budget — and stays bounded."""
+    polls: list[float] = []
+
+    class _NeverConfirm(_ScriptedLockAgent):
+        def __init__(self, name: str, callback: Any, **kwargs: Any) -> None:
+            super().__init__(name, callback, **kwargs)
+            self.claim_calls = 1
+
+        async def release(self, task_id: str, **_kwargs: Any) -> None:
+            del task_id  # no confirmation ever arrives
+
+    async def runner(_command: list[str]) -> int:
+        return 0
+
+    original_sleep = asyncio.sleep
+
+    async def counting_sleep(delay: float) -> None:
+        polls.append(delay)
+        await original_sleep(0)
+
+    code = await asyncio.wait_for(
+        cli_locking._lock(
+            uri="ws://unused",
+            name="X",
+            task_id="g",
+            command=["c"],
+            paths=[],
+            wait_timeout=1.0,
+            poll_interval=0.05,
+            release_timeout=0.2,  # 4 polls at 0.05s, instead of the default 40
+            agent_factory=cast("AgentFactory", _NeverConfirm),
             runner=runner,
         ),
         timeout=5.0,
