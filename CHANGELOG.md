@@ -23,6 +23,10 @@ All notable changes to this project are documented here.
   row) for spreadsheets and external monitors.
 - The README now points at the cockpit build instructions and documents
   the state snapshot's `dead_letters` section.
+- `synapse lock --release-timeout SECONDS` — tune how long the exit is
+  held for the hub's release confirmation on slower links; the wait
+  stays bounded either way and the lease TTL remains the backstop.
+  Distinct from `--wait-timeout`, which bounds acquiring the lease.
 
 ## [0.95.0] - 2026-07-03
 
