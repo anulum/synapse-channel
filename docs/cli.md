@@ -1750,6 +1750,7 @@ empty one) and `2` when the store is missing.
 synapse sandbox validate ./manifest.json                # validate a capability manifest
 synapse sandbox test ./tool.wasm --manifest ./manifest.json    # pre-flight without running
 synapse sandbox run ./tool.wasm --manifest ./manifest.json --input ./in.json
+synapse sandbox run ./tool.wasm --manifest ./manifest.json --approve --attest ~/synapse/audit.db  # run + record an audit attestation
 synapse workflow validate ./workflow.json               # parse and validate
 synapse workflow compile ./workflow.json --json         # compile into blackboard tasks
 synapse workflow plan ./workflow.json                   # show the tasks and their dependency order
