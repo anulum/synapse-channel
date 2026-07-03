@@ -10,13 +10,15 @@ import { useCallback, useState } from "react";
 import { windowEdgeLabel, type TimeWindow } from "../lib/brush";
 import type { BranchConflictView, ClaimView } from "../lib/claims";
 import type { FederationState } from "../lib/federation";
+import type { MetricsState } from "../lib/metrics";
 import type { LogQuery } from "../lib/logQuery";
 import type { CockpitEvent } from "../types";
 import { CausalityView, type CausalityPrefill } from "./CausalityView";
 import { SignalLog } from "./SignalLog";
+import { MetricsPanel } from "./MetricsPanel";
 import { TopologyView } from "./TopologyView";
 
-type InspectorTab = "log" | "topology" | "causality";
+type InspectorTab = "log" | "topology" | "metrics" | "causality";
 
 interface InspectorTabsProps {
   /** Events for the signal-log tab, newest first. */
@@ -41,6 +43,8 @@ interface InspectorTabsProps {
   readonly connected?: boolean;
   /** The federation posture feed, for the topology tab's peering band. */
   readonly federation?: FederationState | undefined;
+  /** The log-pulse metrics feed, for the metrics tab. */
+  readonly metrics?: MetricsState | undefined;
 }
 
 export function InspectorTabs({
@@ -55,6 +59,7 @@ export function InspectorTabs({
   liveAgentCount = 0,
   connected = false,
   federation,
+  metrics,
 }: InspectorTabsProps): JSX.Element {
   const [tab, setTab] = useState<InspectorTab>("log");
   const [prefill, setPrefill] = useState<CausalityPrefill | null>(null);
@@ -90,6 +95,15 @@ export function InspectorTabs({
         <button
           type="button"
           role="tab"
+          aria-selected={tab === "metrics"}
+          className={`inspector__tab${tab === "metrics" ? " inspector__tab--active" : ""}`}
+          onClick={() => setTab("metrics")}
+        >
+          metrics
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={tab === "causality"}
           className={`inspector__tab${tab === "causality" ? " inspector__tab--active" : ""}`}
           onClick={() => setTab("causality")}
@@ -120,6 +134,10 @@ export function InspectorTabs({
             provenance={provenance}
             {...(query !== undefined ? { query } : {})}
             onQueryChange={onQueryChange}
+          />
+        ) : tab === "metrics" ? (
+          <MetricsPanel
+            state={metrics ?? { data: null, status: "connecting", fetchedAt: null, error: null }}
           />
         ) : tab === "topology" ? (
           <TopologyView

@@ -25,6 +25,7 @@ import type { TimeWindow } from "./lib/brush";
 import { deriveClaims, parseConflicts } from "./lib/claims";
 import { createEventsTailSource, type SpineProvenance } from "./lib/eventsTail";
 import { queryFromHash, queryToHash, type LogQuery } from "./lib/logQuery";
+import { createMetricsStore, type MetricsState } from "./lib/metrics";
 import { createFederationStore, type FederationState } from "./lib/federation";
 import { createReliabilityStore, type ReliabilityState } from "./lib/reliability";
 import { deriveRoster } from "./lib/roster";
@@ -62,6 +63,13 @@ const INITIAL_RELIABILITY: ReliabilityState = {
 };
 
 const INITIAL_FEDERATION: FederationState = {
+  data: null,
+  status: "connecting",
+  fetchedAt: null,
+  error: null,
+};
+
+const INITIAL_METRICS: MetricsState = {
   data: null,
   status: "connecting",
   fetchedAt: null,
@@ -115,6 +123,7 @@ export function App(): JSX.Element {
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [reliability, setReliability] = useState<ReliabilityState>(INITIAL_RELIABILITY);
   const [federation, setFederation] = useState<FederationState>(INITIAL_FEDERATION);
+  const [metrics, setMetrics] = useState<MetricsState>(INITIAL_METRICS);
   const [brush, setBrush] = useState<TimeWindow | null>(null);
   // The log query lives in the URL hash, so a filtered view is a shareable
   // address and survives a reload.
@@ -201,6 +210,8 @@ export function App(): JSX.Element {
     const unsubscribeReliability = reliabilityStore.subscribe(setReliability);
     const federationStore = createFederationStore();
     const unsubscribeFederation = federationStore.subscribe(setFederation);
+    const metricsStore = createMetricsStore();
+    const unsubscribeMetrics = metricsStore.subscribe(setMetrics);
     // Re-evaluate freshness between polls so the beacon flips to `stale` even
     // while the hub is silent, without waiting for the next fetch to return.
     // The same tick drives the lease countdowns on the claims board.
@@ -216,12 +227,14 @@ export function App(): JSX.Element {
       unsubscribeSnapshots();
       unsubscribeReliability();
       unsubscribeFederation();
+      unsubscribeMetrics();
       clearInterval(clock);
       tail.stop();
       derived.stop();
       store.stop();
       reliabilityStore.stop();
       federationStore.stop();
+      metricsStore.stop();
     };
   }, []);
 
@@ -299,6 +312,7 @@ export function App(): JSX.Element {
               liveAgentCount={snap.snapshot?.fleet.agents.live.length ?? 0}
               connected={connected}
               federation={federation}
+              metrics={metrics}
             />
           </PanelBoundary>
         </div>
