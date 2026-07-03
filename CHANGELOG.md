@@ -13,7 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.95.0] - 2026-07-03
+
 ### Added
+- The cockpit reads the raw event tail in two requests on any log size
+  and states why a causality trace is empty, riding the `since=latest`
+  shortcut and the absence notes below.
 - The hub now remembers directed chats that reached no live connection:
   a bounded per-target ledger (biggest blackhole first, stalest target
   evicted beyond 200, cleared the moment the addressed name connects)
