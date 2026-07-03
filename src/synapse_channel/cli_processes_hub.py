@@ -235,6 +235,7 @@ def _cmd_hub(
         max_progress=args.max_progress,
         max_progress_per_author=args.max_progress_per_author,
         max_progress_per_task=args.max_progress_per_task,
+        board_task_cap=args.board_task_cap,
         max_findings_per_agent=args.max_findings_per_agent,
         relay_log=args.relay_log,
         relay_max_lines=args.relay_max_lines,

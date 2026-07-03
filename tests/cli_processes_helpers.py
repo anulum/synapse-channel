@@ -37,6 +37,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "max_progress": 5000,
         "max_progress_per_author": 1000,
         "max_progress_per_task": 1000,
+        "board_task_cap": None,
         "max_findings_per_agent": 512,
         "relay_log": None,
         "relay_max_lines": 5000,

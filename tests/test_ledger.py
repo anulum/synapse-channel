@@ -304,3 +304,88 @@ def test_snapshot_orders_tasks_and_lists_ready_and_progress() -> None:
     assert [t["task_id"] for t in snap["tasks"]] == ["A", "B"]
     assert set(snap["ready"]) == {"A", "B"}
     assert snap["progress"][-1]["text"] == "note-1"
+
+
+def test_snapshot_without_a_cap_carries_no_bound_metadata() -> None:
+    board = Blackboard()
+    board.post_task(task_id="A", title="a", author="P")
+    snap = board.snapshot()
+    assert "total_tasks" not in snap
+    assert "truncated" not in snap
+
+
+def test_capped_snapshot_keeps_live_tasks_ahead_of_terminal_ones() -> None:
+    board = Blackboard()
+    board.post_task(task_id="done-1", title="d", author="P")
+    board.update_task("done-1", status="done", now=50.0)
+    board.post_task(task_id="live-1", title="l", author="P")
+    board.post_task(task_id="live-2", title="l", author="P")
+
+    snap = board.snapshot(task_cap=2)
+
+    assert [t["task_id"] for t in snap["tasks"]] == ["live-1", "live-2"]
+    assert snap["total_tasks"] == 3
+    assert snap["truncated"] is True
+
+
+def test_capped_snapshot_trims_live_tasks_by_recency() -> None:
+    board = Blackboard()
+    board.post_task(task_id="old", title="o", author="P", now=1.0)
+    board.post_task(task_id="mid", title="m", author="P", now=2.0)
+    board.post_task(task_id="new", title="n", author="P", now=3.0)
+
+    snap = board.snapshot(task_cap=2)
+
+    assert [t["task_id"] for t in snap["tasks"]] == ["mid", "new"]
+    assert snap["truncated"] is True
+
+
+def test_capped_snapshot_fills_the_remainder_with_newest_terminal_tasks() -> None:
+    board = Blackboard()
+    board.post_task(task_id="live-1", title="l", author="P", now=1.0)
+    board.post_task(task_id="done-old", title="d", author="P", now=2.0)
+    board.update_task("done-old", status="done", now=10.0)
+    board.post_task(task_id="done-new", title="d", author="P", now=3.0)
+    board.update_task("done-new", status="cancelled", now=20.0)
+
+    snap = board.snapshot(task_cap=2)
+
+    assert [t["task_id"] for t in snap["tasks"]] == ["done-new", "live-1"]
+    assert snap["total_tasks"] == 3
+    assert snap["truncated"] is True
+
+
+def test_capped_snapshot_under_the_cap_is_complete_and_says_so() -> None:
+    board = Blackboard()
+    board.post_task(task_id="A", title="a", author="P")
+    board.post_task(task_id="B", title="b", author="P")
+
+    snap = board.snapshot(task_cap=10)
+
+    assert [t["task_id"] for t in snap["tasks"]] == ["A", "B"]
+    assert snap["total_tasks"] == 2
+    assert snap["truncated"] is False
+
+
+def test_capped_snapshot_always_lists_every_ready_id() -> None:
+    # ids are cheap; the task bodies are what outgrow a frame
+    board = Blackboard()
+    for index in range(5):
+        board.post_task(task_id=f"t-{index}", title="t", author="P", now=float(index))
+
+    snap = board.snapshot(task_cap=2)
+
+    ready = set(snap["ready"])
+    assert {f"t-{index}" for index in range(5)} <= ready
+    assert len(snap["tasks"]) == 2
+
+
+def test_task_cap_floors_at_one() -> None:
+    board = Blackboard()
+    board.post_task(task_id="A", title="a", author="P", now=1.0)
+    board.post_task(task_id="B", title="b", author="P", now=2.0)
+
+    snap = board.snapshot(task_cap=0)
+
+    assert [t["task_id"] for t in snap["tasks"]] == ["B"]
+    assert snap["truncated"] is True

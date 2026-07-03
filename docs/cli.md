@@ -1541,6 +1541,17 @@ agent. These limits apply on live writes and on `--db` replay; the append-only
 event log still retains accepted events until `synapse compact` removes safe
 history.
 
+`--board-task-cap N` bounds the tasks served per board snapshot — on a
+long-running fleet the full board eventually outgrows a websocket frame
+(observed around a thousand tasks). Under a cap every live task is kept
+ahead of any terminal one, the newest `updated_at` wins inside each class
+when trimming, and the reply carries `total_tasks` and `truncated` so a
+consumer sees the bound instead of mistaking the page for the whole plan;
+the `ready` id list always stays complete, because ids are cheap and the
+task bodies are what outgrow the frame. The default serves the full board
+unchanged, and the ledger itself is never trimmed — the cap bounds one
+reply, not the plan.
+
 `syn ack <task>` is the ergonomic closeout path for a completed board task. It
 requires at least one `--evidence` or `--artifact` value, writes those values as an
 `assessment` progress note from the resolved `syn` identity, waits for the hub's

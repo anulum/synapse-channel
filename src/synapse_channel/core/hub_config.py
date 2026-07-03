@@ -110,6 +110,7 @@ class HubLimits:
     max_progress: int = DEFAULT_MAX_PROGRESS
     max_progress_per_author: int = DEFAULT_MAX_PROGRESS_PER_AUTHOR
     max_progress_per_task: int = DEFAULT_MAX_PROGRESS_PER_TASK
+    board_task_cap: int | None = None
     max_findings_per_agent: int = DEFAULT_MAX_FINDINGS_PER_AGENT
     max_claims_per_agent: int = MAX_CLAIMS_PER_AGENT
     max_offers_per_agent: int = MAX_OFFERS_PER_AGENT

@@ -102,6 +102,7 @@ def test_parser_hub_blackboard_and_memory_quotas() -> None:
     assert defaults.max_progress_per_author == 1000
     assert defaults.max_progress_per_task == 1000
     assert defaults.max_findings_per_agent == 512
+    assert defaults.board_task_cap is None
 
     args = cli.build_parser().parse_args(
         [
@@ -114,8 +115,11 @@ def test_parser_hub_blackboard_and_memory_quotas() -> None:
             "8",
             "--max-findings-per-agent",
             "9",
+            "--board-task-cap",
+            "500",
         ]
     )
+    assert args.board_task_cap == 500
     assert args.max_progress == 99
     assert args.max_progress_per_author == 7
     assert args.max_progress_per_task == 8

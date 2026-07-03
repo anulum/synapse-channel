@@ -234,3 +234,45 @@ async def test_hub_replay_trims_progress_to_bound(tmp_path: Path) -> None:
     hub_b = SynapseHub(hub_id="syn-b", journal=store_b, max_progress=2)
     store_b.close()
     assert [n.text for n in hub_b.blackboard.progress] == ["2", "3"]
+
+
+async def test_capped_hub_bounds_the_board_snapshot_and_says_so() -> None:
+    async with running_hub(SynapseHub(board_task_cap=2)) as (_, uri):
+        poster = await connect_agent("P", uri)
+        try:
+            for index in range(4):
+                want = f"T{index}"
+                await poster.agent.post_task(want, "t")
+
+                def posted(m: dict[str, object], want: str = want) -> bool:
+                    task = m.get("task")
+                    return (
+                        m.get("type") == "ledger_task_posted"
+                        and isinstance(task, dict)
+                        and task.get("task_id") == want
+                    )
+
+                await poster.recorder.wait_for(posted)
+            await poster.agent.request_board()
+            snap = await poster.recorder.wait_for(lambda m: m.get("type") == "board_snapshot")
+            board = snap["board"]
+            assert len(board["tasks"]) == 2
+            assert board["total_tasks"] == 4
+            assert board["truncated"] is True
+            # every ready id survives the cap — ids are cheap
+            assert set(board["ready"]) == {"T0", "T1", "T2", "T3"}
+        finally:
+            await close_agents(poster)
+
+
+async def test_uncapped_hub_serves_the_full_board_without_bound_metadata() -> None:
+    async with running_hub() as (_, uri):
+        poster = await connect_agent("P", uri)
+        try:
+            await poster.agent.post_task("T1", "t")
+            await poster.agent.request_board()
+            snap = await poster.recorder.wait_for(lambda m: m.get("type") == "board_snapshot")
+            assert "total_tasks" not in snap["board"]
+            assert "truncated" not in snap["board"]
+        finally:
+            await close_agents(poster)

@@ -123,6 +123,19 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Maximum blackboard progress notes retained per task id.",
     )
     hub.add_argument(
+        "--board-task-cap",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Bound the tasks served per board snapshot: live tasks kept ahead of "
+            "terminal ones, newest updated first, and the reply carries "
+            "total_tasks/truncated so consumers see the bound. Default serves the "
+            "full board; set it when a long-running fleet's board outgrows a "
+            "websocket frame."
+        ),
+    )
+    hub.add_argument(
         "--max-findings-per-agent",
         type=int,
         default=DEFAULT_MAX_FINDINGS_PER_AGENT,
