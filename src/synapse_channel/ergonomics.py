@@ -279,7 +279,7 @@ def split_as_names(rest: Sequence[str], env: Mapping[str, str]) -> list[str]:
     index = 0
     while index < len(tokens):
         token = tokens[index]
-        if token == "--as" and index + 1 < len(tokens):
+        if token == "--as" and index + 1 < len(tokens):  # nosec B105 - a CLI flag literal, not a secret
             names.append(tokens[index + 1].strip())
             index += 2
             continue
