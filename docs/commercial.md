@@ -19,19 +19,27 @@ licence.
 
 ## Plans
 
-| Plan | For | Grant |
+The paid layers **add** permission, hosting, support, and convenience on top of the free
+core — nothing is ever moved behind a paywall.
+
+| Plan | For | What it adds |
 | --- | --- | --- |
-| **Community** — free (AGPL-3.0) | open source, research, personal | the full feature set; copyleft applies |
-| **Indie** — pay-what-you-want, from CHF 9.99 | a solo developer or one closed-source project | copyleft exemption for **one** product, perpetual for the purchased version line |
-| **Team** | a company shipping closed-source or SaaS | exemption for **unlimited** projects in one legal entity, with email support |
-| **Managed / Enterprise** | hosted multi-tenant coordination, SLAs, compliance | bespoke terms |
+| **Community** — free (AGPL-3.0) | open source, research, personal, internal | the whole product, unlimited; copyleft applies |
+| **Commercial Licence** | an org whose policy or product cannot use AGPL | the copyleft exemption on its own — same code, different terms, with a signed certificate |
+| **Pro** | a solo developer or small team shipping one closed-source project | a commercial licence for one developer, the mobile app with push, and email support |
+| **Team** | a company owning a shared fleet | unlimited projects in one legal entity, a managed observability dashboard (your hubs and data stay local), priority security patches, and named support |
+| **Business / Enterprise** | regulated or multi-organisation deployments | an SLA with indemnification, a **managed federation gateway**, SSO, audit exports, and compliance support |
+
+An optional **Supporter** (name-your-price) contribution funds the research and lists you
+in `BACKERS`; it grants no extra rights, because the free core already holds none back.
 
 [![View plans and buy a commercial licence](https://img.shields.io/badge/View_plans_%26_buy-anulum.li%2Fsynapse-0a7d3c?style=for-the-badge)](https://anulum.li/synapse/pricing.html)
 
-Plans and checkout are at
+Plans, current prices, and checkout are at
 [**anulum.li/synapse/pricing.html**](https://anulum.li/synapse/pricing.html) (handled by
-Polar.sh, CHF). For enterprise, OEM, academic, or non-profit terms, write to
-[protoscience@anulum.li](mailto:protoscience@anulum.li).
+Polar.sh in **USD**; each buyer sees their local currency at checkout, CHF invoicing on
+request). For enterprise, OEM, academic, non-profit, managed-hosting, or co-ownership
+terms, write to [protoscience@anulum.li](mailto:protoscience@anulum.li).
 
 The full commercial terms are in
 [`COMMERCIAL-LICENSE.md`](https://github.com/anulum/synapse-channel/blob/main/COMMERCIAL-LICENSE.md);
@@ -46,7 +54,7 @@ Use this path before buying or requesting custom terms:
    open source under compatible terms, or your use stays private/internal, the
    Community path is normally the right fit.
 2. If you will distribute a closed-source product or operate a hosted service
-   without publishing corresponding source, choose the published Indie or Team
+   without publishing corresponding source, choose the published Pro or Team
    plan unless your case needs custom terms.
 3. For enterprise, OEM, academic, non-profit, managed-hosting, procurement, or
    co-ownership discussions, email
