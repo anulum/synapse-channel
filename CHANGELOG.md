@@ -14,6 +14,13 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `SynapsePersistentDeadLetters` Prometheus alert — fires when
+  `synapse_dead_letter_targets` stays above zero for an hour, catching a name
+  left blackholed and undrained where `SynapseDeadLettersGrowing` catches only
+  the passing miss. Meaningful now that the ledger ages quiet names out: a
+  still-counted target is a genuine persistent gap. The honest live-path answer
+  to "alert on dead letters" — the ledger is not journalled, so this rides the
+  exported gauge, not the log-derived causal-health surface.
 - Session telemetry can name the coordination task it advanced — `orchestrate_session`,
   `BusOrchestration.run`, and `emit_session_metric` gained an optional `task_id`
   that rides each durable `session_metric` snapshot's body (the note's own
