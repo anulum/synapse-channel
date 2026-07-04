@@ -1134,3 +1134,92 @@ def test_cockpit_dist_serves_pwa_manifest_and_service_worker(tmp_path: Path) -> 
     assert (man_status, man_type) == (200, "application/manifest+json")
     assert "SYNAPSE Cockpit" in man_body
     assert (sw_status, sw_type) == (200, "text/javascript")  # SW at /cockpit/ scope
+
+
+def test_state_at_feed_reports_absence_without_a_store() -> None:
+    server = _feeds_server()
+    try:
+        status, _, body = _http_get(server.url("/state-at.json?seq=1"))
+    finally:
+        server.close()
+    assert status == 404
+    assert "--feeds-db" in body
+
+
+def _seed_replayable_store(db: Path) -> None:
+    """A full claim payload (replayable) then a release — for state reconstruction."""
+    store = EventStore(db)
+    store.append(
+        EventKind.CLAIM,
+        {
+            "task_id": "T",
+            "owner": "alice",
+            "note": "",
+            "claimed_at": 1.0,
+            "lease_expires_at": 1_000_000_000_000.0,
+            "status": "claimed",
+            "data_ref": "",
+            "worktree": "w",
+            "paths": [],
+            "epoch": 1,
+        },
+        ts=1.0,
+    )
+    store.append(EventKind.RELEASE, {"task_id": "T"}, ts=2.0)
+    store.close()
+
+
+def test_state_at_feed_reconstructs_state_at_a_seq(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_replayable_store(db)  # a claim then a release (2 events)
+
+    server = _feeds_server(reliability_db=db)
+    try:
+        status, content_type, body = _http_get(server.url("/state-at.json?seq=1"))
+    finally:
+        server.close()
+
+    assert status == 200
+    assert content_type == "application/json"
+    payload = json.loads(body)
+    assert payload["as_of_seq"] == 1
+    assert payload["log_end_seq"] == 2
+    assert [c["task_id"] for c in payload["state"]["active_claims"]] == [
+        "T"
+    ]  # claimed, not yet released
+    assert "presence/roster is not journalled" in payload["note"]
+
+
+def test_state_at_feed_refuses_a_malformed_seq(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_feed_store(db)
+    server = _feeds_server(reliability_db=db)
+    try:
+        status, _, body = _http_get(server.url("/state-at.json?seq=abc"))
+    finally:
+        server.close()
+    assert status == 400
+    assert "seq must be an integer" in body
+
+
+def test_state_at_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
+    server = _feeds_server(reliability_db=tmp_path / "absent.db")
+    try:
+        status, _, body = _http_get(server.url("/state-at.json?seq=1"))
+    finally:
+        server.close()
+    assert status == 503
+    assert "missing event store" in body
+
+
+def test_state_at_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_replayable_store(db)
+    server = _feeds_server(reliability_db=db, dashboard_token="s3cret")
+    try:
+        denied, _, _ = _http_get(server.url("/state-at.json?seq=1"))
+        allowed, _, _ = _http_get(server.url("/state-at.json?seq=1"), authorization="Bearer s3cret")
+    finally:
+        server.close()
+    assert denied == 401
+    assert allowed == 200

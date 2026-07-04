@@ -14,6 +14,18 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `/state-at.json?seq=N` dashboard feed — reconstructs coordination state
+  (claims + board) as of any event sequence by bounded replay of the
+  durable log (`core.journal.replay(up_to_seq=)`), in the live-snapshot
+  shape plus `as_of_seq` and `log_end_seq`. Store-derived and
+  deterministic (judged against the bounded event's own timestamp, never
+  the wall clock), so a cockpit can time-travel the whole fleet, not just
+  the event log. Honest scope: presence/roster is not journalled and is
+  omitted; `seq` is clamped into range; same `--feeds-db` posture as the
+  other store feeds.
+
+
+### Added
 - The dashboard's `--cockpit-dist` static server now serves
   `.webmanifest` (`application/manifest+json`) and `.webp`, so the
   cockpit can ship a web-app manifest and modern icons — the server-side

@@ -322,6 +322,7 @@ def replay(
     max_offers_per_agent: int = MAX_OFFERS_PER_AGENT,
     max_paths_per_claim: int = MAX_DECLARED_PATHS,
     now: float | None = None,
+    up_to_seq: int | None = None,
 ) -> ReplayResult:
     """Rebuild coordination state by replaying the whole event log.
 
@@ -348,6 +349,10 @@ def replay(
         Wall-clock time used to expire stale leases/offers after replay; the
         system clock is used when ``None``.
 
+    up_to_seq : int or None, optional
+        Replay only events with ``seq <= up_to_seq``; ``None`` replays the whole
+        log. Bounds the reconstruction to a point in time for a state-at-seq view.
+
     Returns
     -------
     ReplayResult
@@ -373,6 +378,8 @@ def replay(
     epoch_seq = 0
 
     for event in store.read_all():
+        if up_to_seq is not None and event.seq > up_to_seq:
+            break
         payload = event.payload
         # CHECKPOINT and HANDOFF carry the full claim snapshot, distinct only so
         # the memory read-side can pick them out — coordination replay reconstructs

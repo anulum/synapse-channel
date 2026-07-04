@@ -347,3 +347,26 @@ def test_replay_empty_log_yields_empty_state(tmp_path: Path) -> None:
     assert result.state.claims == {}
     assert result.chat_history == []
     assert result.message_seq == 0
+
+
+def test_replay_up_to_seq_bounds_the_reconstruction(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    record_claim(store, _claim(task_id="T1"))  # seq 1
+    record_claim(store, _claim(task_id="T2"))  # seq 2
+
+    at1 = replay(store, up_to_seq=1, now=1000.0)
+    at2 = replay(store, up_to_seq=2, now=1000.0)
+    full = replay(store, now=1000.0)
+
+    assert {c.task_id for c in at1.state.claims.values()} == {"T1"}
+    assert {c.task_id for c in at2.state.claims.values()} == {"T1", "T2"}
+    assert {c.task_id for c in full.state.claims.values()} == {"T1", "T2"}
+
+
+def test_replay_up_to_seq_none_is_the_whole_log(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    record_claim(store, _claim(task_id="T1"))
+    assert (
+        replay(store, up_to_seq=None, now=1000.0).state.claims
+        == replay(store, now=1000.0).state.claims
+    )
