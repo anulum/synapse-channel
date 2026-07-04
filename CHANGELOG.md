@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- The dashboard's `--cockpit-dist` static server now serves
+  `.webmanifest` (`application/manifest+json`) and `.webp`, so the
+  cockpit can ship a web-app manifest and modern icons — the server-side
+  enabler for an installable, mobile-responsive cockpit PWA.
+
+
 ## [0.96.0] - 2026-07-04
 
 ### Fixed

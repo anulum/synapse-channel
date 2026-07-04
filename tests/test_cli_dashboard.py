@@ -1109,3 +1109,28 @@ def test_metrics_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
     assert denied == 401
     assert allowed == 200
     assert json.loads(body)["log"]["total_events"] == 2
+
+
+def test_cockpit_dist_serves_pwa_manifest_and_service_worker(tmp_path: Path) -> None:
+    """A PWA cockpit needs its manifest served as application/manifest+json.
+
+    The service worker is a plain .js served at the /cockpit/ scope (already
+    supported); the manifest suffix is the one the whitelist was missing, so an
+    installable cockpit is refused without it.
+    """
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<title>cockpit</title>", encoding="utf-8")
+    (dist / "manifest.webmanifest").write_text('{"name":"SYNAPSE Cockpit"}', encoding="utf-8")
+    (dist / "sw.js").write_text("self.addEventListener('install', () => {})", encoding="utf-8")
+
+    server = _feeds_server(cockpit_dist=dist)
+    try:
+        man_status, man_type, man_body = _http_get(server.url("/cockpit/manifest.webmanifest"))
+        sw_status, sw_type, _ = _http_get(server.url("/cockpit/sw.js"))
+    finally:
+        server.close()
+
+    assert (man_status, man_type) == (200, "application/manifest+json")
+    assert "SYNAPSE Cockpit" in man_body
+    assert (sw_status, sw_type) == (200, "text/javascript")  # SW at /cockpit/ scope
