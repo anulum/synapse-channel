@@ -1896,6 +1896,63 @@ body {
   display: none;
 }
 
+/* ---------- window diff strip ---------- */
+.log-diff {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--raised);
+  flex: none;
+}
+
+.log-diff__totals {
+  display: flex;
+  gap: var(--sp-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  margin-bottom: var(--sp-1);
+  flex-wrap: wrap;
+}
+
+.log-diff__table {
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+.log-diff__table th {
+  text-align: left;
+  color: var(--dim);
+  font-weight: 400;
+  padding-right: var(--sp-4);
+}
+
+.log-diff__table td {
+  color: var(--ink);
+  padding-right: var(--sp-4);
+}
+
+.log-diff__up {
+  color: var(--healthy);
+}
+
+.log-diff__down {
+  color: var(--warn);
+}
+
+.log-diff__actors {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--sp-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 /* ---------- signal log ---------- */
 .log {
   width: 100%;
