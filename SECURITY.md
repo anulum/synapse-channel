@@ -32,6 +32,44 @@ SYNAPSE CHANNEL is a **local-first** coordination bus. Its default and intended
 deployment is a single operator on one machine, with the hub bound to loopback
 and no authentication — appropriate for that single-owner setting.
 
+### Deployment profiles
+
+Security here is proportionate to exposure, not one-size-fits-all. Pick the
+profile that matches where the hub is reachable from, and apply its controls; a
+control is *required* where the table says so, and the hub refuses to start when
+a required exposure guard is missing (override only with `--insecure-off-loopback`).
+
+| Control | local-dev | single-user workstation | team LAN | internet-exposed (behind reverse proxy) |
+|---|---|---|---|---|
+| Bind | loopback | loopback | private interface | loopback behind the proxy |
+| Connect token (`--token-file`) | optional | recommended | **required** | **required** |
+| Transport encryption (TLS / WSS) | — | — | recommended | **required** (proxy or `--tls-certfile`) |
+| ACL policy (`--require-acl`) | — | optional | recommended | **required** |
+| Per-message auth (`--require-message-auth`) | — | optional | recommended | **required** |
+| Metrics token (`--metrics-token`) | — | required if `--metrics` | **required** if `--metrics` | **required** if `--metrics` |
+| Metrics query token | loopback debug only | loopback debug only | disabled | disabled |
+| Durable log (`--db`) | optional | recommended | recommended | recommended |
+| One-flag preset | — | — | `--paranoid` | `--paranoid` |
+
+`synapse hub --paranoid` composes the team-LAN / internet-exposed column into a
+single switch (token, durable log, per-message auth, ACL, native WSS; query
+tokens and the off-loopback override disabled) and fails closed when any of them
+is absent.
+
+The runtime floor is a single dependency (`websockets`); several
+security-relevant features need an optional extra installed:
+
+| Capability | Extra |
+|---|---|
+| At-rest encryption, signed release receipts, Ed25519 per-message auth, TLS certificate pinning | `encryption` |
+| WASM capability sandbox | `wasm` |
+| OpenTelemetry span export | `otel` |
+| MCP bridge and registration | `mcp` |
+| All of the above | `all` |
+
+Native WSS itself uses the standard-library `ssl` module and needs no extra; the
+`encryption` extra adds the cryptographic identity and pinning helpers on top.
+
 When that boundary is crossed, the proportionate controls are:
 
 - **Connect authentication.** `synapse hub --token SECRET` requires a shared
@@ -93,12 +131,15 @@ worth stating plainly:
   sandbox untrusted commands, review whether commands are sufficient, or turn a
   `supported` receipt into independent proof of correctness.
 
-[`synapse hub --paranoid`](docs/paranoid-mode.md) is implemented for the hub
-runtime. It requires a token, durable event-log replay, per-message
-authentication on selected mutating frames, and metrics bearer-token auth when
-metrics are enabled, while still reporting missing hooks. Encryption, signed
-events, per-agent identity, ACLs, private channels, and exposed deployment
-threat modelling remain explicit future work.
+[`synapse hub --paranoid`](docs/paranoid-mode.md) is the production secure preset
+for the hub runtime. It refuses to start unless the hub is fully hardened — a
+connect token, durable event-log replay, per-message authentication on selected
+mutating frames, ACL enforcement with a policy, native WSS (TLS), and metrics
+bearer-token auth when metrics are enabled — and it disables the metrics query
+token and the insecure off-loopback override. It still reports the hooks it
+cannot honestly enforce: at-rest encryption, mutual-TLS client-certificate
+verification, cryptographic per-agent identity, private channels, and exposed
+deployment threat modelling remain explicit future work.
 
 The planned [at-rest encryption](docs/at-rest-encryption.md) profile scopes
 optional protection for local SQLite event stores, relay logs, A2A state, cursor

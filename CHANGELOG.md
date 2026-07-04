@@ -52,6 +52,14 @@ All notable changes to this project are documented here.
   signed events (now enforced) and names what genuinely remains — mutual-TLS
   client-certificate verification and cryptographic per-agent identity.
 
+### Documentation
+- `SECURITY.md` gains a deployment-profile matrix (local-dev, single-user
+  workstation, team LAN, internet-exposed) mapping each profile to its required
+  controls, plus a capability→extra map, and its paranoid-mode summary is updated
+  for the now-required ACL and TLS. `CONTRIBUTING.md` gains a definition of done
+  (changelog fragment, backward-compat statement, threat-model delta) and a
+  `core/*` hot-path ownership note.
+
 ### Security
 - Every dashboard and cockpit HTTP response now carries browser-hardening headers:
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
