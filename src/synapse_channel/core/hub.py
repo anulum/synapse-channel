@@ -706,14 +706,15 @@ class SynapseHub:
         """Return the exposure problems for binding on ``host`` (empty when safe).
 
         A loopback bind is always safe. Off loopback, a hub with no token — or
-        with metrics served but no metrics token — is reachable unauthenticated,
-        so each such condition is returned as a human-readable problem.
+        with metrics served but no metrics token, or with the metrics query-string
+        token accepted (it would leak into URL logs) — is a human-readable problem.
         """
         return exposure_problems(
             host,
             authenticator=self.authenticator,
             enable_metrics=self.enable_metrics,
             metrics_token=self.metrics_token,
+            metrics_query_token_ok=self.metrics_query_token_ok,
         )
 
     def _guard_exposure(self, host: str) -> None:
@@ -729,6 +730,7 @@ class SynapseHub:
             authenticator=self.authenticator,
             enable_metrics=self.enable_metrics,
             metrics_token=self.metrics_token,
+            metrics_query_token_ok=self.metrics_query_token_ok,
             insecure_off_loopback=self.insecure_off_loopback,
             logger=logger,
         )
