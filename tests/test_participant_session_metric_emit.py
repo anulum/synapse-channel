@@ -66,3 +66,17 @@ async def test_empty_session_is_skipped() -> None:
     )
     assert emitted is False
     assert poster.notes == []
+
+
+async def test_coordination_task_id_rides_the_body_while_session_stays_the_note_id() -> None:
+    poster = _RecordingPoster()
+    metrics = SessionMetrics(turns=2, input_tokens=100, output_tokens=20)
+    emitted = await emit_session_metric(
+        metrics, post_progress=poster, session_id="sess-9", task_id="quantum/T42"
+    )
+    assert emitted is True
+    note_task_id, text, _ = poster.notes[0]
+    assert note_task_id == "sess-9"  # the note's own slot still carries the session
+    parsed = parse_session_metric_note(text)
+    assert parsed is not None
+    assert parsed["task_id"] == "quantum/T42"  # the coordination task rides the body

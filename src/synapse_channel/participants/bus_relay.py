@@ -529,6 +529,7 @@ class BusOrchestration:
         rounds: int,
         topic_id: str,
         shared_context: str = "",
+        task_id: str = "",
     ) -> OrchestrationTranscript | None:
         """Connect, run the routed deliberation publishing each turn, then disconnect.
 
@@ -542,6 +543,11 @@ class BusOrchestration:
             Correlation id stamped on every turn, published payload, and durable snapshot.
         shared_context : str, optional
             Common framing prepended to every turn's context.
+        task_id : str, optional
+            The coordination task this deliberation advances (the claim or board task id), carried
+            in every durable ``session_metric`` snapshot so a reader can correlate the session's
+            telemetry to the coordination work. Empty (the default) omits it; distinct from
+            ``topic_id``, the session's own correlation id.
 
         Returns
         -------
@@ -563,4 +569,5 @@ class BusOrchestration:
                 shared_context=shared_context,
                 post_progress=post_progress if self._emit_metrics else None,
                 auto_action=self._auto_action,
+                task_id=task_id,
             )

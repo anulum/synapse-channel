@@ -170,6 +170,7 @@ async def orchestrate_session(
     which: PathResolver | None = None,
     post_progress: ProgressPoster | None = None,
     auto_action: AutoActionDispatch | None = None,
+    task_id: str = "",
 ) -> OrchestrationTranscript:
     """Run up to ``rounds`` routed turns over ``roster``, reacting to telemetry each round.
 
@@ -208,6 +209,11 @@ async def orchestrate_session(
     auto_action : AutoActionDispatch or None, optional
         When supplied, each round's advice is reacted to with the dispatch's armed, handled actions
         (opt-in; ``None`` reacts to nothing, leaving the advisor purely advisory).
+    task_id : str, optional
+        The coordination task this session advances (the claim or board task id). When set, it is
+        carried in every durable ``session_metric`` snapshot's body so a reader can correlate the
+        session's telemetry to the coordination work; empty (the default) omits it. Distinct from
+        ``topic_id``, which is the session's own correlation id.
 
     Returns
     -------
@@ -261,7 +267,9 @@ async def orchestrate_session(
         metrics = accumulate(metrics, result, latency_seconds=latency)
         advice = assess_session(metrics, thresholds)
         if post_progress is not None:
-            await emit_session_metric(metrics, post_progress=post_progress, session_id=topic_id)
+            await emit_session_metric(
+                metrics, post_progress=post_progress, session_id=topic_id, task_id=task_id
+            )
 
         fired_actions: tuple[AutoAction, ...] = ()
         if auto_action is not None:

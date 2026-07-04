@@ -14,6 +14,14 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Session telemetry can name the coordination task it advanced — `orchestrate_session`,
+  `BusOrchestration.run`, and `emit_session_metric` gained an optional `task_id`
+  that rides each durable `session_metric` snapshot's body (the note's own
+  task-id slot carries the session id, so the coordination task rides the body,
+  omitted when empty). `synapse participant costs` and the report reader surface
+  it, so a session's turns/tokens/spend can be read against the claim or board
+  task it was working, not only its session. Backward compatible: empty leaves
+  the body and every reader unchanged.
 - `/health-anomalies.json` dashboard feed — the honest hub-side alert surface:
   the orphaned, dangling, and stale coordination anomalies the causality graph
   makes visible (`core.causality_health.run_causal_health`), in the same JSON

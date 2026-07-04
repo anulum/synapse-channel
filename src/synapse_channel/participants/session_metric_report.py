@@ -43,6 +43,9 @@ class SessionMetricRecord:
         Recording agent identity (the progress-note author).
     session_id : str
         Session the snapshot was recorded against; carried as the note's task id.
+    task_id : str
+        The coordination task the session was advancing (the claim or board task id), carried in
+        the note body; an empty string when the snapshot recorded none.
     turns : int
         Turns folded into the session so far.
     errors : int
@@ -69,6 +72,7 @@ class SessionMetricRecord:
 
     agent: str
     session_id: str
+    task_id: str
     turns: int
     errors: int
     abstentions: int
@@ -275,6 +279,7 @@ def _snapshot_records(events: Sequence[StoredEvent]) -> tuple[SessionMetricRecor
             SessionMetricRecord(
                 agent=str(event.payload.get("author", "")),
                 session_id=str(event.payload.get("task_id", "")),
+                task_id=str(parsed["task_id"]),
                 turns=int(parsed["turns"]),
                 errors=int(parsed["errors"]),
                 abstentions=int(parsed["abstentions"]),
@@ -323,6 +328,7 @@ def _record_to_json(record: SessionMetricRecord) -> dict[str, object]:
     return {
         "agent": record.agent,
         "session_id": record.session_id,
+        "task_id": record.task_id,
         "turns": record.turns,
         "errors": record.errors,
         "abstentions": record.abstentions,
@@ -362,8 +368,9 @@ def _render_record(record: SessionMetricRecord) -> str:
     """Render one session snapshot row."""
     agent = record.agent or "(unattributed)"
     session = record.session_id or "(no-session)"
+    task = f" task={record.task_id}" if record.task_id else ""
     return (
-        f"- {agent}/{session}: turns={record.turns} errors={record.errors} "
+        f"- {agent}/{session}{task}: turns={record.turns} errors={record.errors} "
         f"abstentions={record.abstentions} tokens={record.total_tokens} "
         f"(in={record.input_tokens} out={record.output_tokens}) cost_usd={record.cost_usd:.4f} "
         f"mean_latency={record.mean_latency_seconds:.3f}s ctx={record.last_input_tokens}"

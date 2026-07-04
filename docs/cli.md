@@ -1746,6 +1746,9 @@ offline, no hub connection, like `accounting report`. Sessions that emitted
 any caller of the emit helper) appear as their latest cumulative snapshot per
 `(agent, session)`: turns, errors, abstentions, token pressure, metered spend,
 mean latency, and the highest rate-limit utilisation seen, plus fleet totals.
+When the emitting session names the coordination task it was advancing (a claim
+or board `task_id`), that id rides each snapshot too, so a row can be read
+against the work it was doing, not only its session.
 Where `accounting report` answers what models cost, `participant costs` answers
 how participant sessions are going and what they spent; both are descriptive
 evidence, never an enforcement gate. Exits `0` for any produced report (even an
