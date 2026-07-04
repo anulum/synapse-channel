@@ -58,6 +58,24 @@ The `Makefile` wraps the common tasks (`make help` lists them):
   grow a module that does two things.
 - **No fabricated data.** Every benchmark number in the docs comes from a
   committed, runnable script under `benchmarks/` with results checked in.
+- **Changelog.** A user-visible change adds a `CHANGELOG.md` `[Unreleased]`
+  fragment under the right heading (`Added`, `Changed`, `Fixed`, `Security`).
+- **Backward compatibility.** A change to the wire protocol, a CLI flag's meaning,
+  or a public function's signature states its compatibility impact in the commit
+  or PR. Until 1.0 the wire format may still change; say so when it does.
+- **Threat-model delta.** A change that touches authentication, ACLs, exposure
+  guards, TLS, rate limiting, or the durable log states what it changes in the
+  posture and updates [`SECURITY.md`](SECURITY.md) or
+  [`docs/paranoid-mode.md`](docs/paranoid-mode.md) when a control's contract moves.
+
+### Changes to `core/*`
+
+The `core/` modules sit on the request, authentication, and durability hot paths,
+so a change there carries extra weight. State in the commit or PR which invariant
+the change preserves — no overlapping claims, no ACL bypass, no unauthenticated
+mutation, replay idempotency, no lost durability — and add the test that pins it.
+When a hot-path module (`hub.py`, `state.py`, `message_auth.py`, `persistence.py`)
+grows a second responsibility, prefer extracting a new module over widening it.
 
 ## Pull requests
 
