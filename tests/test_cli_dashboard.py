@@ -22,6 +22,7 @@ from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hu
 from synapse_channel import cli
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
+from synapse_channel.core.merkle import proof_from_json, verify_inclusion
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.dashboard import (
     DashboardServer,
@@ -1219,6 +1220,88 @@ def test_state_at_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
     try:
         denied, _, _ = _http_get(server.url("/state-at.json?seq=1"))
         allowed, _, _ = _http_get(server.url("/state-at.json?seq=1"), authorization="Bearer s3cret")
+    finally:
+        server.close()
+    assert denied == 401
+    assert allowed == 200
+
+
+def test_merkle_proof_feed_reports_absence_without_a_store() -> None:
+    server = _feeds_server()
+    try:
+        status, _, body = _http_get(server.url("/merkle-proof.json?seq=1"))
+    finally:
+        server.close()
+    assert status == 404
+    assert "--feeds-db" in body
+
+
+def test_merkle_proof_feed_proves_inclusion_with_the_hub_down(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_feed_store(db)  # two events; merkle hashes leaves, no replay needed
+
+    server = _feeds_server(reliability_db=db)
+    try:
+        status, content_type, body = _http_get(server.url("/merkle-proof.json?seq=1"))
+    finally:
+        server.close()
+
+    assert status == 200
+    assert content_type == "application/json"
+    payload = json.loads(body)
+    assert payload["present"] is True
+    assert payload["seq"] == 1
+    assert payload["tree_size"] == 2
+    # The served proof verifies through the same client-side check the cockpit's
+    # per-row verify button runs — the row is committed to the attested root.
+    assert verify_inclusion(proof_from_json(payload)) is True
+
+
+def test_merkle_proof_feed_reports_an_absent_seq_without_fabricating(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_feed_store(db)  # only seq 1..2 exist
+    server = _feeds_server(reliability_db=db)
+    try:
+        status, _, body = _http_get(server.url("/merkle-proof.json?seq=99"))
+    finally:
+        server.close()
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["present"] is False
+    assert "no event at that sequence" in payload["note"]
+
+
+def test_merkle_proof_feed_refuses_a_malformed_seq(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_feed_store(db)
+    server = _feeds_server(reliability_db=db)
+    try:
+        status, _, body = _http_get(server.url("/merkle-proof.json?seq=abc"))
+    finally:
+        server.close()
+    assert status == 400
+    assert "seq must be an integer" in body
+
+
+def test_merkle_proof_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
+    server = _feeds_server(reliability_db=tmp_path / "absent.db")
+    try:
+        status, _, body = _http_get(server.url("/merkle-proof.json?seq=1"))
+    finally:
+        server.close()
+    assert status == 503
+    assert "missing event store" in body
+
+
+def test_merkle_proof_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_feed_store(db)
+    server = _feeds_server(reliability_db=db, dashboard_token="s3cret")
+    try:
+        denied, _, _ = _http_get(server.url("/merkle-proof.json?seq=1"))
+        allowed, _, _ = _http_get(
+            server.url("/merkle-proof.json?seq=1"), authorization="Bearer s3cret"
+        )
     finally:
         server.close()
     assert denied == 401

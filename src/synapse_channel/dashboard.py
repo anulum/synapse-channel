@@ -49,6 +49,7 @@ from synapse_channel.dashboard_store_feeds import (
     build_causality_feed,
     build_events_tail,
     build_federation_feed,
+    build_merkle_proof_feed,
     build_metrics_feed,
     build_state_at_feed,
     latest_cursor,
@@ -474,6 +475,9 @@ METRICS_FEED_PATH = "/metrics.json"
 STATE_AT_PATH = "/state-at.json"
 """Read-only endpoint reconstructing coordination state as of an event seq."""
 
+MERKLE_PROOF_PATH = "/merkle-proof.json"
+"""Read-only endpoint proving one event's inclusion in the attested log."""
+
 CAUSALITY_PATH = "/causality.json"
 """Read-only endpoint answering one causality query in the CLI's JSON shape."""
 
@@ -569,6 +573,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         if path == STATE_AT_PATH:
             self._serve_state_at(urlsplit(self.path).query)
+            return
+        if path == MERKLE_PROOF_PATH:
+            self._serve_merkle_proof(urlsplit(self.path).query)
             return
         if path == CAUSALITY_PATH:
             self._serve_causality(urlsplit(self.path).query)
@@ -710,6 +717,48 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         try:
             document = build_state_at_feed(self.reliability_db, seq=seq)
+        except ValueError as exc:
+            self._write(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                f"{exc}\n".encode(),
+                content_type="text/plain",
+            )
+            return
+        self._write(
+            HTTPStatus.OK,
+            json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8"),
+            content_type="application/json",
+        )
+
+    def _serve_merkle_proof(self, query: str) -> None:
+        """Serve an inclusion proof for the event named by ``?seq=N``.
+
+        Store-derived tamper-evidence: an RFC 6962 Merkle inclusion proof a
+        cockpit row's *verify* button checks against the tree root. Same posture
+        as the other store feeds — 404 without ``--feeds-db``, 503 on an
+        unreadable store, 400 on a malformed ``seq``. A ``seq`` the committed
+        log does not hold yields ``{"present": false}`` with a note, never a
+        fabricated proof.
+        """
+        if self.reliability_db is None:
+            self._write(
+                HTTPStatus.NOT_FOUND,
+                b"merkle-proof feed not configured; start the dashboard with --feeds-db\n",
+                content_type="text/plain",
+            )
+            return
+        raw = parse_qs(query).get("seq", ["0"])[0]
+        try:
+            seq = int(raw)
+        except ValueError:
+            self._write(
+                HTTPStatus.BAD_REQUEST,
+                b"seq must be an integer\n",
+                content_type="text/plain",
+            )
+            return
+        try:
+            document = build_merkle_proof_feed(self.reliability_db, seq=seq)
         except ValueError as exc:
             self._write(
                 HTTPStatus.SERVICE_UNAVAILABLE,

@@ -22,14 +22,16 @@ from synapse_channel.core.federation_store import (
 )
 from synapse_channel.core.federation_wire import bundle_fingerprint
 from synapse_channel.core.journal import EventKind, record_claim, record_release
-from synapse_channel.core.state import TaskClaim
+from synapse_channel.core.merkle import proof_from_json, verify_inclusion
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.state import TaskClaim
 from synapse_channel.dashboard_store_feeds import (
     DEFAULT_EVENTS_LIMIT,
     MAX_EVENTS_LIMIT,
     build_causality_feed,
     build_events_tail,
     build_federation_feed,
+    build_merkle_proof_feed,
     build_metrics_feed,
     build_state_at_feed,
     latest_cursor,
@@ -433,3 +435,40 @@ class TestStateAtFeed:
     def test_missing_store_is_refused(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="missing event store"):
             build_state_at_feed(tmp_path / "absent.db", seq=1)
+
+
+class TestMerkleProofFeed:
+    def test_proof_is_present_and_verifies(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        _seed_log(db)  # five events, seq 1..5
+
+        document = build_merkle_proof_feed(db, seq=3)
+
+        assert document["present"] is True
+        assert document["seq"] == 3
+        assert document["tree_size"] == 5
+        assert isinstance(document["path"], list)
+        # The proof round-trips through the client-side verifier the cockpit's
+        # verify button uses: the row is committed to the attested tree root.
+        assert verify_inclusion(proof_from_json(document)) is True
+
+    def test_absent_seq_is_present_false_not_a_fabricated_proof(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        _seed_log(db)  # only seq 1..5 exist
+
+        document = build_merkle_proof_feed(db, seq=99)
+
+        assert document == {
+            "present": False,
+            "seq": 99,
+            "note": "no event at that sequence in the committed log",
+        }
+
+    def test_missing_store_is_refused(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="missing event store"):
+            build_merkle_proof_feed(tmp_path / "absent.db", seq=1)
+
+    def test_document_is_deterministic_over_a_given_log(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        _seed_log(db)
+        assert build_merkle_proof_feed(db, seq=2) == build_merkle_proof_feed(db, seq=2)
