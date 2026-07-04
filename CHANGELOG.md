@@ -31,6 +31,12 @@ All notable changes to this project are documented here.
   is unreachable.
 
 ### Security
+- Every dashboard and cockpit HTTP response now carries browser-hardening headers:
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
+  `X-Frame-Options: DENY`, and a same-origin `Content-Security-Policy`
+  (`frame-ancestors 'none'`, `base-uri 'none'`, `object-src 'none'`; inline
+  script/style retained for the server-rendered pages). The dashboard is
+  self-contained, so the policy blocks injected remote resources at no cost.
 - The metrics query-string token (`--metrics-query-token-ok`) is now loopback-only.
   Binding a non-loopback host with it set is refused with `InsecureBindError` (like
   the other exposure guards, downgradable with `--insecure-off-loopback`), because a
