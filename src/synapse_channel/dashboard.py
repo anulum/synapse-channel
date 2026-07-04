@@ -554,6 +554,28 @@ def _is_string_list(value: object) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
+# SQLite stores integers as signed 64-bit. A query integer beyond that range parses
+# fine as an unbounded Python int, then raises OverflowError deep inside a store
+# query — a 500. The feed handlers bound it here so an out-of-range value is a 400.
+_SQLITE_INT_MIN: Final = -(2**63)
+_SQLITE_INT_MAX: Final = 2**63 - 1
+
+
+def _bounded_query_int(raw: str) -> int:
+    """Parse a query integer, rejecting values outside SQLite's 64-bit range.
+
+    Raises
+    ------
+    ValueError
+        For a non-numeric value, or one too large to reach the durable store
+        safely. Every feed handler already maps this to a ``400``.
+    """
+    value = int(raw)
+    if not _SQLITE_INT_MIN <= value <= _SQLITE_INT_MAX:
+        raise ValueError("integer out of range")
+    return value
+
+
 _DIST_CONTENT_TYPES = {
     ".html": "text/html",
     ".js": "text/javascript",
@@ -957,7 +979,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         raw = parse_qs(query).get("seq", ["0"])[0]
         try:
-            seq = int(raw)
+            seq = _bounded_query_int(raw)
         except ValueError:
             self._write(
                 HTTPStatus.BAD_REQUEST,
@@ -999,7 +1021,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         raw = parse_qs(query).get("seq", ["0"])[0]
         try:
-            seq = int(raw)
+            seq = _bounded_query_int(raw)
         except ValueError:
             self._write(
                 HTTPStatus.BAD_REQUEST,
@@ -1071,8 +1093,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         params = parse_qs(query)
         since_raw = params.get("since", ["0"])[0]
         try:
-            limit = int(params.get("limit", [str(DEFAULT_EVENTS_LIMIT)])[0])
-            since = None if since_raw == "latest" else int(since_raw)
+            limit = _bounded_query_int(params.get("limit", [str(DEFAULT_EVENTS_LIMIT)])[0])
+            since = None if since_raw == "latest" else _bounded_query_int(since_raw)
         except ValueError:
             self._write(
                 HTTPStatus.BAD_REQUEST,
@@ -1112,7 +1134,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         task = params.get("task", [None])[0]
         seq_raw = params.get("seq", [None])[0]
         try:
-            seq = int(seq_raw) if seq_raw is not None else None
+            seq = _bounded_query_int(seq_raw) if seq_raw is not None else None
         except ValueError:
             self._write(
                 HTTPStatus.BAD_REQUEST, b"seq must be an integer\n", content_type="text/plain"
