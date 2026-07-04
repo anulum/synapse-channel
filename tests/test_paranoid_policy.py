@@ -29,6 +29,10 @@ def _args(**overrides: object) -> argparse.Namespace:
         "metrics_token": None,
         "message_auth_key": ["main:shared-secret:ALPHA"],
         "require_message_auth": True,
+        "require_acl": True,
+        "acl_policy": "acl.json",
+        "tls_certfile": "cert.pem",
+        "tls_keyfile": "key.pem",
         "metrics_query_token_ok": True,
         "insecure_off_loopback": True,
     }
@@ -57,8 +61,11 @@ def test_paranoid_policy_reports_enforced_and_missing_hooks() -> None:
     assert "hub token required" in report.enforced
     assert "metrics bearer-token auth required" in report.enforced
     assert "per-message authentication required" in report.enforced
+    assert "ACL enforcement required" in report.enforced
+    assert "native WSS (TLS) required" in report.enforced
     assert "private channels" in report.missing_hooks
     assert "per-message authentication" not in report.missing_hooks
+    assert "ACL enforcement" not in report.missing_hooks
     assert report.missing_hooks == MISSING_PARANOID_HOOKS
     assert "paranoid mode missing hooks:" in report.stderr_lines()[1]
 
@@ -79,6 +86,10 @@ def test_paranoid_policy_omits_metrics_auth_when_metrics_disabled() -> None:
         ({"metrics": True, "metrics_token": None}, "requires --metrics-token"),
         ({"message_auth_key": []}, "requires --message-auth-key"),
         ({"require_message_auth": False}, "requires --require-message-auth"),
+        ({"require_acl": False}, "requires --require-acl"),
+        ({"acl_policy": ""}, "requires --require-acl with an --acl-policy"),
+        ({"tls_certfile": None}, "requires native WSS"),
+        ({"tls_keyfile": None}, "requires native WSS"),
     ],
 )
 def test_paranoid_policy_rejects_missing_required_settings(
