@@ -126,6 +126,33 @@ contract, the polling stores, transition derivation, and every panel's data
 shaping — held to full line and branch coverage. React view components are
 exercised by the build and by visual review.
 
+## Installing on a phone (PWA)
+
+The built cockpit is an installable PWA. A phone on the tailnet opens
+`http://<hub-tailnet-ip>:<dashboard-port>/cockpit/` (for a tokened dashboard
+use the `?token=` query form — a plain navigation cannot send an
+Authorization header), and installs it:
+
+- **Android / Chromium**: the cockpit shows an "add to home screen" chip
+  when the browser fires its install prompt; one tap hands over to the
+  browser dialog.
+- **iOS Safari**: there is no prompt event — use **Share → Add to Home
+  Screen**.
+
+The service worker (`public/sw.js`) caches the **app shell only** —
+navigations are network-first with a cached fallback, hashed assets are
+cache-first. The data feeds (`*.json`) are **never cached**: stale
+coordination data presented as current is worse than a spinner, so an
+unreachable hub surfaces through the HUD beacon's honest `stale HH:MM:SS`
+state (amber-bordered at phone width) instead of silently served old JSON.
+Under 640px the deck becomes a segmented single-column view (signals ·
+claims · board · roster · reliability) with 44px touch targets; the spine
+stays at every width and yields vertical panning to the page on touch.
+
+Honest scope (Tier 1): read-mostly observation. No push, no background
+wake — mobile OSes suspend the tab, so "the phone stays live on the bus"
+is deliberately not promised here.
+
 ## Serving the built cockpit
 
 `npm run build` emits a self-contained static bundle in `dist/` with relative

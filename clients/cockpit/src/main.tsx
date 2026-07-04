@@ -23,6 +23,16 @@ import "./styles/global.css";
 const mount = document.getElementById("cockpit");
 if (mount === null) throw new Error("cockpit mount node #cockpit is missing");
 
+// The service worker caches only the app shell (the data feeds are
+// network-only by design — see public/sw.js). Registered on the production
+// bundle only: in dev the shell changes on every edit and caching it would
+// serve yesterday's code.
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register("sw.js");
+  });
+}
+
 createRoot(mount).render(
   <StrictMode>
     <App />

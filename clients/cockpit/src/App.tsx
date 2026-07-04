@@ -14,6 +14,8 @@ import { FindingsStream } from "./components/FindingsStream";
 import { FleetRoster } from "./components/FleetRoster";
 import { Hud, type Kpi } from "./components/Hud";
 import { InspectorTabs } from "./components/InspectorTabs";
+import { InstallChip } from "./components/InstallChip";
+import { MobileNav, type MobileSegment } from "./components/MobileNav";
 import { PanelBoundary } from "./components/PanelBoundary";
 import { ReliabilityPanel } from "./components/ReliabilityPanel";
 import { RiskRail } from "./components/RiskRail";
@@ -125,6 +127,9 @@ export function App(): JSX.Element {
   const [federation, setFederation] = useState<FederationState>(INITIAL_FEDERATION);
   const [metrics, setMetrics] = useState<MetricsState>(INITIAL_METRICS);
   const [brush, setBrush] = useState<TimeWindow | null>(null);
+  // Phone-width segment: one deck section at a time; CSS ignores this above
+  // 640px, where the whole deck renders as always.
+  const [mobileSegment, setMobileSegment] = useState<MobileSegment>("signals");
   // The log query lives in the URL hash, so a filtered view is a shareable
   // address and survives a reload.
   const [logQuery, setLogQuery] = useState<LogQuery>(() =>
@@ -286,52 +291,72 @@ export function App(): JSX.Element {
       <PanelBoundary name="Federation">
         <FederationRow state={federation} />
       </PanelBoundary>
-      <div className="deck">
+      <MobileNav active={mobileSegment} onSelect={setMobileSegment} />
+      <div className={`deck deck--seg-${mobileSegment}`}>
         <div className="deck__stack deck__stack--roster">
-          <PanelBoundary name="Fleet roster">
-            <FleetRoster roster={roster} waiters={waiters} />
-          </PanelBoundary>
-          <PanelBoundary name="Reliability">
-            <ReliabilityPanel state={reliability} />
-          </PanelBoundary>
+          <div className="seg seg--roster">
+            <PanelBoundary name="Fleet roster">
+              <FleetRoster roster={roster} waiters={waiters} />
+            </PanelBoundary>
+          </div>
+          <div className="seg seg--reliability">
+            <PanelBoundary name="Reliability">
+              <ReliabilityPanel state={reliability} />
+            </PanelBoundary>
+          </div>
         </div>
         <div className="deck__stack">
-          <PanelBoundary name="Claims">
-            <ClaimsBoard claims={claims} conflicts={conflicts} connected={connected} />
-          </PanelBoundary>
-          <PanelBoundary name="Inspector">
-            <InspectorTabs
-              events={log}
-              window={brush}
-              onClearWindow={onClearWindow}
-              provenance={provenance === "hub" ? "hub" : "derived"}
-              query={logQuery}
-              onQueryChange={onQueryChange}
-              claims={claims}
-              conflicts={conflicts}
-              liveAgentCount={snap.snapshot?.fleet.agents.live.length ?? 0}
+          <div className="seg seg--claims">
+            <PanelBoundary name="Claims">
+              <ClaimsBoard claims={claims} conflicts={conflicts} connected={connected} />
+            </PanelBoundary>
+          </div>
+          <div className="seg seg--signals">
+            <PanelBoundary name="Inspector">
+              <InspectorTabs
+                events={log}
+                window={brush}
+                onClearWindow={onClearWindow}
+                provenance={provenance === "hub" ? "hub" : "derived"}
+                query={logQuery}
+                onQueryChange={onQueryChange}
+                claims={claims}
+                conflicts={conflicts}
+                liveAgentCount={snap.snapshot?.fleet.agents.live.length ?? 0}
+                connected={connected}
+                federation={federation}
+                metrics={metrics}
+              />
+            </PanelBoundary>
+          </div>
+        </div>
+        <div className="seg seg--board">
+          <PanelBoundary name="Board">
+            <TaskBoard
+              tasks={board}
               connected={connected}
-              federation={federation}
-              metrics={metrics}
+              truncation={boardTruncation(snap.snapshot)}
             />
           </PanelBoundary>
         </div>
-        <PanelBoundary name="Board">
-          <TaskBoard tasks={board} connected={connected} truncation={boardTruncation(snap.snapshot)} />
-        </PanelBoundary>
         <div className="deck__stack deck__stack--rail">
-          <PanelBoundary name="Risk rail">
-            <RiskRail
-              risk={snap.snapshot?.risk ?? null}
-              anomalies={anomalies}
-              deadLetters={deadLetters}
-            />
-          </PanelBoundary>
-          <PanelBoundary name="Findings">
-            <FindingsStream findings={findings} connected={connected} />
-          </PanelBoundary>
+          <div className="seg seg--signals">
+            <PanelBoundary name="Risk rail">
+              <RiskRail
+                risk={snap.snapshot?.risk ?? null}
+                anomalies={anomalies}
+                deadLetters={deadLetters}
+              />
+            </PanelBoundary>
+          </div>
+          <div className="seg seg--signals">
+            <PanelBoundary name="Findings">
+              <FindingsStream findings={findings} connected={connected} />
+            </PanelBoundary>
+          </div>
         </div>
       </div>
+      <InstallChip />
     </div>
   );
 }
