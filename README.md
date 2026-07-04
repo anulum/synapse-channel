@@ -1187,20 +1187,23 @@ threat model and how to report a vulnerability are in [`SECURITY.md`](SECURITY.m
 
 SYNAPSE CHANNEL is **dual-licensed**, and there is **no feature difference between the
 open-source and the commercial build** — the package on PyPI *is* the full product. A
-commercial licence changes the terms, not the code.
+commercial licence changes the **terms, not the code**. You can run the whole platform
+yourself, forever, at no cost; the paid layers **add** permission, hosting, support, and
+convenience on top of the free core, and nothing is ever moved behind a paywall.
 
 - **Use it free under the AGPL-3.0** for open-source, research, internal, or personal
   work — including inside a company — as long as you do not expose a closed-source or
   hosted derivative over a network to third parties.
 - **Buy a commercial licence** to ship a **closed-source** product or a **SaaS** without
-  the AGPL's network-copyleft obligation.
+  the AGPL's network-copyleft obligation — the same code, under your own terms.
 
-| Plan | For | Grant |
+| Layer | For | What you add |
 | --- | --- | --- |
-| **Community** — free (AGPL-3.0) | open source, research, personal | the full feature set; copyleft applies |
-| **Indie** — pay-what-you-want, from CHF&nbsp;9.99 | a solo developer or one closed-source project | copyleft exemption for **one** product, perpetual for the purchased version line |
-| **Team** | a company shipping closed-source or SaaS | exemption for **unlimited** projects in one legal entity, with email support |
-| **Managed / Enterprise** | hosted multi-tenant coordination, SLAs, compliance | bespoke terms |
+| **Community** — free (AGPL-3.0) | self-hosting, research, personal, internal | the whole platform, unlimited; copyleft applies |
+| **Commercial Licence** | an org whose policy or product cannot use AGPL | the right to use and embed it **without** the AGPL copyleft — same code, different terms, with a signed certificate |
+| **Pro** | an individual or small team depending on it daily | priority support and the published **mobile app with push** (the self-hosted cockpit stays free) |
+| **Team** | a team owning a shared fleet | a **managed observability dashboard** (your hubs and data stay local), priority security patches, and named support |
+| **Business / Enterprise** | regulated or multi-organisation deployments | an **SLA with indemnification**, audit exports, a **managed federation gateway**, and SSO |
 
 <p align="center">
   <a href="https://anulum.li/synapse/pricing.html"><img src="https://img.shields.io/badge/View_plans_%26_buy-anulum.li%2Fsynapse-0a7d3c?style=for-the-badge" alt="View plans and buy a commercial licence"></a>
