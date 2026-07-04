@@ -71,6 +71,13 @@ mcp = [
 encryption = [
   "cryptography>=42.0",
 ]
+all = [
+  "wasmtime>=14.0.0",
+  "opentelemetry-sdk>=1.43.0",
+  "opentelemetry-exporter-otlp-proto-http>=1.43.0",
+  "mcp>=1.28.0",
+  "cryptography>=42.0",
+]
 docs = [
   "mkdocs-material>=9.5",
   "mkdocstrings[python]>=0.26",

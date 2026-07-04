@@ -30,6 +30,13 @@ All notable changes to this project are documented here.
   `409` when the blackboard refuses a task on its own terms, and `503` when the hub
   is unreachable.
 
+- `all` convenience extra bundling every runtime feature library (cryptography,
+  WASM, OTel, MCP) — `pip install synapse-channel[all]` for a full-feature install
+  without naming each extra. A packaging drift guard keeps `all` exactly the union
+  of the feature extras, keeps the runtime floor a single dependency, and imports
+  every feature-consuming module to prove the base import surface never
+  hard-requires an optional library.
+
 ### Security
 - Every dashboard and cockpit HTTP response now carries browser-hardening headers:
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
