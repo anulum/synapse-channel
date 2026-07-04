@@ -93,6 +93,7 @@ CLI_TAXONOMY: dict[str, str] = {
     # read-only inspection and reporting
     "doctor": ANALYSIS,
     "state": ANALYSIS,
+    "dead-letters": ANALYSIS,
     "relay": ANALYSIS,
     "event-query": ANALYSIS,
     "debug": ANALYSIS,

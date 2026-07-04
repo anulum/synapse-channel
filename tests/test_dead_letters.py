@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel.core.dead_letters import (
+    DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS,
     DEFAULT_DEAD_LETTER_TARGETS,
     DeadLetterLedger,
     is_directed_target,
@@ -72,6 +73,51 @@ class TestLedger:
     def test_default_bound_is_the_documented_value(self) -> None:
         assert DeadLetterLedger().max_targets == DEFAULT_DEAD_LETTER_TARGETS
         assert DeadLetterLedger(max_targets=0).max_targets == 1
+
+
+class TestLedgerAgeBound:
+    def test_no_age_bound_by_default_keeps_ancient_entries(self) -> None:
+        ledger = DeadLetterLedger()
+        ledger.record("ghost", sender="X", ts=1.0)
+
+        # A snapshot judged far in the future still shows it — no age bound.
+        assert [e["target"] for e in ledger.snapshot(now=1_000_000.0)] == ["ghost"]
+        assert ledger.max_age_seconds is None
+
+    def test_snapshot_expires_a_target_older_than_the_age_bound(self) -> None:
+        ledger = DeadLetterLedger(max_age_seconds=10.0)
+        ledger.record("ghost", sender="X", ts=100.0)
+
+        assert [e["target"] for e in ledger.snapshot(now=109.0)] == ["ghost"]  # within window
+        assert ledger.snapshot(now=111.0) == []  # aged out
+
+    def test_a_refreshed_target_never_ages_out(self) -> None:
+        ledger = DeadLetterLedger(max_age_seconds=10.0)
+        ledger.record("busy", sender="X", ts=100.0)
+        ledger.record("busy", sender="Y", ts=200.0)  # fresh traffic keeps it alive
+
+        snapshot = ledger.snapshot(now=205.0)
+
+        assert snapshot == [{"target": "busy", "count": 2, "last_ts": 200.0, "last_sender": "Y"}]
+
+    def test_recording_a_fresh_target_prunes_a_gone_quiet_one(self) -> None:
+        ledger = DeadLetterLedger(max_age_seconds=10.0)
+        ledger.record("old", sender="X", ts=100.0)
+        ledger.record("new", sender="X", ts=200.0)  # 'old' is now 100s stale, age bound 10s
+
+        assert [e["target"] for e in ledger.snapshot(now=200.0)] == ["new"]
+
+    def test_age_bound_and_capacity_bound_compose(self) -> None:
+        ledger = DeadLetterLedger(max_targets=5, max_age_seconds=10.0)
+        ledger.record("a", sender="X", ts=1.0)
+        ledger.record("b", sender="X", ts=2.0)
+        ledger.record("c", sender="X", ts=100.0)  # a, b are now stale and pruned on record
+
+        assert [e["target"] for e in ledger.snapshot(now=100.0)] == ["c"]
+
+    def test_hub_applies_the_recommended_age_default(self) -> None:
+        assert DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS == 7 * 24 * 60 * 60
+        assert SynapseHub().dead_letters.max_age_seconds == DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS
 
 
 async def test_hub_reports_and_clears_dead_letters_end_to_end() -> None:

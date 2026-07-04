@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import time
+
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.metrics import (
@@ -156,9 +158,12 @@ def test_counters_and_gauges_surface_hub_decisions() -> None:
     hub.counters.takeover_quarantines = 10
     hub.agent_sockets["repo/agent"] = object()
     hub.agent_sockets["repo/agent-rx"] = object()
-    hub.dead_letters.record("ghost/one", sender="a", ts=1.0)
-    hub.dead_letters.record("ghost/one", sender="b", ts=2.0)
-    hub.dead_letters.record("ghost/two", sender="a", ts=3.0)
+    # Fresh timestamps: the hub's ledger ages out stale targets, so the gauge
+    # reflects live blackholes measured against the wall clock, not epoch zero.
+    now = time.time()
+    hub.dead_letters.record("ghost/one", sender="a", ts=now - 2.0)
+    hub.dead_letters.record("ghost/one", sender="b", ts=now - 1.0)
+    hub.dead_letters.record("ghost/two", sender="a", ts=now)
 
     by_name = {m.name: m.value for m in collect_hub_metrics(hub)}
 

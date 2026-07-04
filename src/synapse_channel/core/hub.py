@@ -46,7 +46,7 @@ from synapse_channel.core.acl_enforcement import authorise_frame, project_of
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.channels import ChannelRegistry
-from synapse_channel.core.dead_letters import DeadLetterLedger
+from synapse_channel.core.dead_letters import DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS, DeadLetterLedger
 from synapse_channel.core.federation import FederationBundle
 from synapse_channel.core.handlers import DISPATCH
 from synapse_channel.core.hub_broadcast import HubBroadcaster
@@ -463,7 +463,7 @@ class SynapseHub:
         self.board_task_cap = max(1, int(board_task_cap)) if board_task_cap is not None else None
         self.relay_log = Path(relay_log) if relay_log else None
         self.relay_max_lines = max(int(relay_max_lines), 1)
-        self.dead_letters = DeadLetterLedger()
+        self.dead_letters = DeadLetterLedger(max_age_seconds=DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS)
         self._relay = RelayMirror(self.relay_log, self.relay_max_lines)
         self._broadcaster = HubBroadcaster(
             self.clients,

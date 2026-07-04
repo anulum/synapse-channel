@@ -67,6 +67,7 @@ everything, since they need the whole command table.
 | `synapse who` | List the agents currently online, optionally for one project or this identity with `--me`. |
 | `synapse status` | Print a one-line hub summary (online agents, active claims) for shell prompts and tmux status bars, the counts as JSON with `--json`, or a refreshing operator dashboard with `--watch`; exit non-zero when the hub is down. |
 | `synapse state` | Print active claims and their checkpoints (a resume view). |
+| `synapse dead-letters` | Print directed messages the hub delivered to no live connection — the blackhole ledger the dashboard and cockpit show, now on the terminal, worst first with the `syn inbox --as NAME` drain remedy. |
 | `synapse doctor` | Check for common coordination misconfigs (identity, exposure, hub, waiter); exit non-zero on a failure. `--fix` auto-repairs a down default local hub or missing waiter by installing and starting the user services; `--json` emits the verdicts for CI health gates. |
 | `synapse init` | Print or install the local user services (hub, waiter, presence) as systemd units. |
 | `synapse install-shell-hook` | Install auto-arming shell integration into Bash, Zsh, and Fish (idempotent, guarded block). |
