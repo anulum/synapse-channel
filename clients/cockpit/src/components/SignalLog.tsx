@@ -18,6 +18,7 @@ import {
 } from "../lib/history";
 import { groupByTask } from "../lib/logGroups";
 import { applyQuery, isConstrained, OPEN_QUERY, type LogQuery } from "../lib/logQuery";
+import { readLogExportFile, type PostMortem } from "../lib/postmortem";
 import type { CockpitEvent } from "../types";
 
 /** Hand the shown window to the operator as a self-describing JSON download. */
@@ -115,6 +116,24 @@ function SignalLogView({
     setHistoryNote(null);
   };
 
+  // Post-mortem: the log opened over an exported document instead of the
+  // live feed — incident review with no hub attached. The banner states what
+  // the document says about itself; malformed files are refused, not fixed.
+  const [postMortem, setPostMortem] = useState<{ data: PostMortem; name: string } | null>(null);
+  const [postMortemNote, setPostMortemNote] = useState<string | null>(null);
+  const filePicker = useRef<HTMLInputElement | null>(null);
+
+  const openExportFile = async (file: File): Promise<void> => {
+    const parsed = await readLogExportFile(file);
+    if (parsed === null) {
+      setPostMortemNote(`${file.name} is not a cockpit export`);
+      return;
+    }
+    setPostMortemNote(null);
+    setPostMortem({ data: parsed, name: file.name });
+    if (historyOn) leaveHistory();
+  };
+
   const scrubTo = (position: number): void => {
     setHistoryPos(position);
     // Debounce the fetch so dragging the slider costs one request, not fifty.
@@ -146,20 +165,27 @@ function SignalLogView({
     }
   }
 
-  // In history mode the shown events come from the fetched window; the text
-  // and kind filters still apply, the live brush window does not (history is
-  // sequence-addressed, not clock-addressed).
-  const shown = historyOn
-    ? applyQuery(historyWindow?.events ?? [], query)
-    : applyQuery(eventsInWindow(base, window), query);
-  const actors = window === null || historyOn ? [] : actorsInWindow(base, window);
+  // Post-mortem beats history beats live. In the file and history modes the
+  // text and kind filters still apply; the live brush window does not (those
+  // modes are not clock-addressed).
+  const shown = postMortem
+    ? applyQuery(postMortem.data.events, query)
+    : historyOn
+      ? applyQuery(historyWindow?.events ?? [], query)
+      : applyQuery(eventsInWindow(base, window), query);
+  const actors = window === null || historyOn || postMortem !== null ? [] : actorsInWindow(base, window);
+  const shownProvenance = postMortem ? postMortem.data.provenance : provenance;
 
   return (
     <section className="panel" aria-label="Signal log">
       <div className="panel__head">
         <span>Signal log</span>
         <span className="panel__count">{shown.length}</span>
-        {window === null ? (
+        {postMortem !== null ? (
+          <span className="panel__sub">
+            {postMortem.data.provenance === "hub" ? "hub event log · file" : "observed transitions · file"}
+          </span>
+        ) : window === null ? (
           <span className="panel__sub">
             {provenance === "hub" ? "hub event log" : "observed transitions"}
           </span>
@@ -202,7 +228,7 @@ function SignalLogView({
         >
           {query.view}
         </button>
-        {!historyOn && (
+        {!historyOn && postMortem === null && (
           <button
             type="button"
             className={`log-controls__toggle${paused ? " log-controls__toggle--paused" : ""}`}
@@ -213,28 +239,56 @@ function SignalLogView({
             {paused ? `paused · ${newerCount} new` : "pause"}
           </button>
         )}
-        <button
-          type="button"
-          className={`log-controls__toggle${historyOn ? " log-controls__toggle--paused" : ""}`}
-          onClick={() => (historyOn ? leaveHistory() : void enterHistory())}
-          aria-pressed={historyOn}
-          disabled={provenance !== "hub"}
-          title={
-            provenance === "hub"
-              ? "Scrub any window of the hub's durable log"
-              : "History needs the hub-attested event feed (--feeds-db)"
-          }
-        >
-          {historyOn ? "live" : "history"}
-        </button>
+        {postMortem === null && (
+          <button
+            type="button"
+            className={`log-controls__toggle${historyOn ? " log-controls__toggle--paused" : ""}`}
+            onClick={() => (historyOn ? leaveHistory() : void enterHistory())}
+            aria-pressed={historyOn}
+            disabled={provenance !== "hub"}
+            title={
+              provenance === "hub"
+                ? "Scrub any window of the hub's durable log"
+                : "History needs the hub-attested event feed (--feeds-db)"
+            }
+          >
+            {historyOn ? "live" : "history"}
+          </button>
+        )}
         <button
           type="button"
           className="log-controls__toggle"
-          onClick={() => downloadShown(shown, provenance, query, window)}
+          onClick={() => downloadShown(shown, shownProvenance, query, window)}
           disabled={shown.length === 0}
           title="Download the shown events as JSON (provenance and query stated in the document)"
         >
           export
+        </button>
+        <input
+          ref={filePicker}
+          type="file"
+          accept="application/json,.json"
+          className="log-controls__file"
+          aria-label="Open a cockpit export for post-mortem review"
+          onChange={(change) => {
+            const file = change.target.files?.[0];
+            change.target.value = "";
+            if (file !== undefined) void openExportFile(file);
+          }}
+        />
+        <button
+          type="button"
+          className={`log-controls__toggle${postMortem !== null ? " log-controls__toggle--paused" : ""}`}
+          onClick={() => {
+            if (postMortem !== null) {
+              setPostMortem(null);
+              setPostMortemNote(null);
+            } else filePicker.current?.click();
+          }}
+          aria-pressed={postMortem !== null}
+          title="Open a downloaded cockpit export and review it offline — no hub needed"
+        >
+          {postMortem !== null ? "close file" : "open"}
         </button>
         {isConstrained(query) && (
           <button
@@ -247,6 +301,17 @@ function SignalLogView({
           </button>
         )}
       </div>
+      {(postMortem !== null || postMortemNote !== null) && (
+        <div className="log-scrub log-scrub--file">
+          <span className="log-scrub__label">
+            {postMortemNote !== null
+              ? postMortemNote
+              : postMortem !== null
+                ? `post-mortem · ${postMortem.name} · ${postMortem.data.count} events · exported ${postMortem.data.exportedAt || "(unstamped)"}`
+                : ""}
+          </span>
+        </div>
+      )}
       {historyOn && (
         <div className="log-scrub">
           <input

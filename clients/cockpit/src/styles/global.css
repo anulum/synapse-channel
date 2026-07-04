@@ -1887,6 +1887,15 @@ body {
   white-space: nowrap;
 }
 
+.log-scrub--file .log-scrub__label {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.log-controls__file {
+  display: none;
+}
+
 /* ---------- signal log ---------- */
 .log {
   width: 100%;
