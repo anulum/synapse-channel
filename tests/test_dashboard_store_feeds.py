@@ -485,6 +485,16 @@ def _seed_claim(db: Path, *, task: str, owner: str, ts: float) -> None:
     store.close()
 
 
+def _stale_task_ids(document: dict[str, object]) -> list[str]:
+    stale = document["stale"]
+    assert isinstance(stale, list)
+    task_ids: list[str] = []
+    for item in stale:
+        assert isinstance(item, dict)
+        task_ids.append(str(item["task_id"]))
+    return task_ids
+
+
 class TestHealthAnomaliesFeed:
     def test_flags_an_orphaned_claim(self, tmp_path: Path) -> None:
         db = tmp_path / "hub.db"
@@ -516,8 +526,8 @@ class TestHealthAnomaliesFeed:
         lenient = build_health_anomalies_feed(db, stale_after=10_000.0)
         strict = build_health_anomalies_feed(db, stale_after=100.0)
 
-        assert [item["task_id"] for item in lenient["stale"]] == []  # within the window
-        assert "X" in {item["task_id"] for item in strict["stale"]}  # aged past the window
+        assert _stale_task_ids(lenient) == []  # within the window
+        assert "X" in _stale_task_ids(strict)  # aged past the window
 
     def test_is_deterministic(self, tmp_path: Path) -> None:
         db = tmp_path / "hub.db"
