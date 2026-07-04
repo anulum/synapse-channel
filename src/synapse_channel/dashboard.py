@@ -43,6 +43,12 @@ from synapse_channel.dashboard_cockpit import (
     render_cockpit_html,
 )
 from synapse_channel.dashboard_fleet import build_fleet_visibility, render_fleet_visibility_html
+from synapse_channel.dashboard_operator import (
+    DENIED,
+    UNREACHABLE,
+    OperatorRelay,
+    WriteRateLimiter,
+)
 from synapse_channel.dashboard_risk import build_risk_view
 from synapse_channel.dashboard_store_feeds import (
     DEFAULT_EVENTS_LIMIT,
@@ -491,6 +497,18 @@ FEDERATION_PATH = "/federation.json"
 COCKPIT_DIST_PREFIX = "/cockpit/"
 """URL prefix under which an operator-named cockpit build directory is served."""
 
+MESSAGE_PATH = "/message"
+"""Operator write endpoint (POST) relaying one chat message to the fleet."""
+
+MAX_OPERATOR_BODY_BYTES: Final = 64 * 1024
+"""Largest operator write body accepted; anything larger is a 400."""
+
+OPERATOR_RATE_MAX: Final = 30
+"""Operator write actions permitted within :data:`OPERATOR_RATE_WINDOW_SECONDS`."""
+
+OPERATOR_RATE_WINDOW_SECONDS: Final = 60.0
+"""Sliding-window length for the operator write rate limit."""
+
 _DIST_CONTENT_TYPES = {
     ".html": "text/html",
     ".js": "text/javascript",
@@ -524,6 +542,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     reliability_db: ClassVar[Path | None]
     federation_store: ClassVar[Path | None]
     cockpit_dist: ClassVar[Path | None]
+    operator_enabled: ClassVar[bool]
+    operator_name: ClassVar[str]
+    operator_rate_limiter: ClassVar[WriteRateLimiter]
 
     def do_GET(self) -> None:
         """Serve the dashboard HTML page, JSON snapshot, or a 404 response."""
@@ -631,6 +652,120 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             a2a_state_file=self.a2a_state_file,
         ).encode("utf-8")
         self._write(HTTPStatus.OK, html_body, content_type="text/html")
+
+    def do_POST(self) -> None:
+        """Relay one operator write action, or refuse it.
+
+        Off by default: without operator mode every write route is a 404,
+        indistinguishable from an unknown path, so a read-only dashboard reveals
+        no write surface at all. When armed, a write still requires the dashboard
+        bearer token, is rate-limited, and is authorised and audited by the hub —
+        this handler only validates the body and relays the frame.
+        """
+        if not self.operator_enabled:
+            self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
+            return
+        if self.dashboard_token is not None and not self._authorized():
+            self._write(
+                HTTPStatus.UNAUTHORIZED,
+                b"dashboard authorization required\n",
+                content_type="text/plain",
+                authenticate=True,
+            )
+            return
+        if urlsplit(self.path).path != MESSAGE_PATH:
+            self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
+            return
+        if not self.operator_rate_limiter.allow():
+            self._write(
+                HTTPStatus.TOO_MANY_REQUESTS,
+                b"operator write rate limit exceeded\n",
+                content_type="text/plain",
+            )
+            return
+        body = self._read_json_body()
+        if body is None:
+            self._write(
+                HTTPStatus.BAD_REQUEST,
+                b"request body must be a JSON object within the size limit\n",
+                content_type="text/plain",
+            )
+            return
+        to = body.get("to")
+        text = body.get("text")
+        if not isinstance(to, str) or not to.strip():
+            self._write(
+                HTTPStatus.BAD_REQUEST,
+                b"'to' must be a non-empty string\n",
+                content_type="text/plain",
+            )
+            return
+        if not isinstance(text, str) or not text.strip():
+            self._write(
+                HTTPStatus.BAD_REQUEST,
+                b"'text' must be a non-empty string\n",
+                content_type="text/plain",
+            )
+            return
+        self._relay_message(to.strip(), text)
+
+    def _relay_message(self, to: str, text: str) -> None:
+        """Relay one validated chat message and map the hub's outcome to a status."""
+        relay = OperatorRelay(
+            uri=self.uri,
+            operator_name=self.operator_name,
+            token=self.token,
+            ready_timeout=self.ready_timeout,
+            response_timeout=self.response_timeout,
+        )
+        try:
+            outcome = asyncio.run(relay.relay_message(to, text))
+        except (OSError, RuntimeError) as exc:
+            self._write(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                f"operator relay failed: {exc}\n".encode(),
+                content_type="text/plain",
+            )
+            return
+        if outcome.status == DENIED:
+            status = HTTPStatus.FORBIDDEN
+        elif outcome.status == UNREACHABLE:
+            status = HTTPStatus.SERVICE_UNAVAILABLE
+        else:
+            status = HTTPStatus.OK
+        document = {
+            "action": "message",
+            "to": to,
+            "status": outcome.status,
+            "detail": outcome.detail,
+            "ok": outcome.ok,
+        }
+        self._write(
+            status,
+            json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8"),
+            content_type="application/json",
+        )
+
+    def _read_json_body(self) -> dict[str, Any] | None:
+        """Return the request body as a JSON object, or ``None`` when unusable.
+
+        ``None`` covers a missing, over-large, non-JSON, or non-object body — every
+        case the caller answers with one 400, never a stack trace.
+        """
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except (TypeError, ValueError):
+            return None
+        if length <= 0 or length > MAX_OPERATOR_BODY_BYTES:
+            return None
+        raw = self.rfile.read(length)
+        try:
+            parsed = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        if not isinstance(parsed, dict):
+            return None
+        return parsed
 
     def _serve_reliability(self) -> None:
         """Serve the reliability audit-signal report, or its honest absence.
@@ -989,6 +1124,9 @@ def _handler_class(
     reliability_db: Path | None,
     federation_store: Path | None,
     cockpit_dist: Path | None,
+    operator_enabled: bool,
+    operator_name: str,
+    operator_rate_limiter: WriteRateLimiter,
 ) -> type[_DashboardHandler]:
     """Create an isolated handler class for one dashboard server."""
     bound_uri = uri
@@ -1002,6 +1140,9 @@ def _handler_class(
     bound_reliability_db = reliability_db
     bound_federation_store = federation_store
     bound_cockpit_dist = cockpit_dist
+    bound_operator_enabled = operator_enabled
+    bound_operator_name = operator_name
+    bound_operator_rate_limiter = operator_rate_limiter
 
     class BoundDashboardHandler(_DashboardHandler):
         """Dashboard handler bound to one hub URI and dashboard identity."""
@@ -1017,6 +1158,9 @@ def _handler_class(
         reliability_db = bound_reliability_db
         federation_store = bound_federation_store
         cockpit_dist = bound_cockpit_dist
+        operator_enabled = bound_operator_enabled
+        operator_name = bound_operator_name
+        operator_rate_limiter = bound_operator_rate_limiter
 
     return BoundDashboardHandler
 
@@ -1037,8 +1181,10 @@ def start_dashboard_server(
     reliability_db: str | Path | None = None,
     federation_store: str | Path | None = None,
     cockpit_dist: str | Path | None = None,
+    operator: bool = False,
+    operator_name: str | None = None,
 ) -> DashboardServer:
-    """Start a background read-only dashboard HTTP server.
+    """Start a background dashboard HTTP server (read-only unless armed).
 
     Parameters
     ----------
@@ -1069,6 +1215,12 @@ def start_dashboard_server(
         Operator federation store powering ``/federation.json``.
     cockpit_dist : str, pathlib.Path, or None, optional
         Built cockpit directory served under ``/cockpit/``.
+    operator : bool, optional
+        Arm the operator write-path (``POST /message``). Off by default; when off,
+        every write route is a 404 and the server stays a read-only observer.
+    operator_name : str or None, optional
+        Sender identity for relayed operator actions; ``operator:<name>`` when
+        omitted, so operator writes are attributed and never impersonate an agent.
 
     Returns
     -------
@@ -1093,6 +1245,11 @@ def start_dashboard_server(
         reliability_db=Path(reliability_db) if reliability_db is not None else None,
         federation_store=Path(federation_store) if federation_store is not None else None,
         cockpit_dist=Path(cockpit_dist) if cockpit_dist is not None else None,
+        operator_enabled=operator,
+        operator_name=(operator_name if operator_name else f"operator:{name}"),
+        operator_rate_limiter=WriteRateLimiter(
+            max_calls=OPERATOR_RATE_MAX, window_seconds=OPERATOR_RATE_WINDOW_SECONDS
+        ),
     )
     server = ThreadingHTTPServer((host, int(port)), handler)
     thread = threading.Thread(target=server.serve_forever, name="synapse-dashboard", daemon=True)

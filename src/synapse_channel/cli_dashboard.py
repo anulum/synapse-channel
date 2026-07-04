@@ -35,12 +35,16 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
             reliability_db=args.reliability_db,
             federation_store=args.federation_store,
             cockpit_dist=args.cockpit_dist,
+            operator=args.operator,
+            operator_name=args.operator_name,
         )
     except ValueError as exc:
         print(str(exc))
         return 2
     print(f"dashboard: {server.url('/')}")
     print("snapshot JSON: " + server.url("/snapshot.json"))
+    if args.operator:
+        print("operator write: POST " + server.url("/message"))
     if args.reliability_db is not None:
         print("reliability JSON: " + server.url("/reliability.json"))
         print("events tail JSON: " + server.url("/events.json"))
@@ -140,6 +144,24 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             "Built cockpit directory (clients/cockpit/dist) served read-only "
             "under /cockpit/; paths escaping the directory or with "
             "unrecognised suffixes are refused."
+        ),
+    )
+    dashboard.add_argument(
+        "--operator",
+        action="store_true",
+        help=(
+            "Arm the operator write-path (POST /message) so the cockpit can relay "
+            "chat to the fleet. Off by default: without it every write is a 404 and "
+            "the dashboard stays a read-only observer. Writes still require the "
+            "dashboard bearer token and are authorised and audited by the hub."
+        ),
+    )
+    dashboard.add_argument(
+        "--operator-name",
+        default=None,
+        help=(
+            "Sender identity for relayed operator writes; 'operator:<name>' when "
+            "omitted, so operator actions are attributed and never impersonate an agent."
         ),
     )
     dashboard.set_defaults(func=_cmd_dashboard)
