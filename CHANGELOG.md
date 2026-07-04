@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- The CLI no longer aborts with `UnicodeEncodeError` on a non-UTF-8
+  console (Windows `cp1250` and friends): the entry point reconfigures
+  stdout/stderr to UTF-8, so the arrows, bullets, and sparkline glyphs
+  the commands print survive a legacy code page instead of crashing the
+  whole command. Found on the first Windows run of `synapse doctor`;
+  harmless where the streams are already UTF-8.
+
+
 ### Added
 - `synapse causality health --since TS` — bound the scan to recent
   events on a large log, mirroring the trust graph's `--since`; a task

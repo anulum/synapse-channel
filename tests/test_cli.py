@@ -181,3 +181,47 @@ def test_main_reports_unreadable_token_file(
     monkeypatch.setattr("synapse_channel.cli.Path.read_text", refuse)
     assert cli.main(["send", "hi", "--token-file", str(secret)]) == 2
     assert "cannot read token file" in capsys.readouterr().err
+
+
+class TestForceUtf8Console:
+    """The CLI entry forces UTF-8 output so a non-UTF-8 console never aborts a command."""
+
+    def test_reconfigures_streams_that_support_it(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        class _Stream:
+            def reconfigure(self, **kwargs: object) -> None:
+                calls.append(kwargs)
+
+        stdout, stderr = _Stream(), _Stream()
+        with _patched_streams(stdout, stderr):
+            cli._force_utf8_console()
+
+        assert calls == [
+            {"encoding": "utf-8", "errors": "backslashreplace"},
+            {"encoding": "utf-8", "errors": "backslashreplace"},
+        ]
+
+    def test_leaves_a_stream_without_reconfigure_untouched(self) -> None:
+        class _Bare:
+            pass  # no reconfigure attribute
+
+        with _patched_streams(_Bare(), _Bare()):
+            cli._force_utf8_console()  # must not raise
+
+    def test_a_cp1250_style_stream_would_no_longer_crash_on_the_arrow(self) -> None:
+        """After reconfigure to utf-8, the arrow glyph the doctor prints encodes fine."""
+        encoded = "→ set $SYN_PROJECT".encode("utf-8", "backslashreplace")
+        assert b"\xe2\x86\x92" in encoded  # the arrow is real UTF-8, not a crash
+
+
+@contextmanager
+def _patched_streams(stdout: object, stderr: object) -> Iterator[None]:
+    import sys
+
+    saved_out, saved_err = sys.stdout, sys.stderr
+    sys.stdout, sys.stderr = stdout, stderr  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        sys.stdout, sys.stderr = saved_out, saved_err

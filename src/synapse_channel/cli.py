@@ -315,6 +315,29 @@ def _resolve_token(args: argparse.Namespace) -> str | None:
     return os.environ.get(TOKEN_ENV) or None
 
 
+def _force_utf8_console() -> None:
+    """Make CLI output UTF-8 so it never crashes on a non-UTF-8 console.
+
+    A Windows console defaults to a legacy code page (``cp1250`` and friends)
+    that cannot encode the arrows, bullets, and sparkline glyphs the CLI
+    prints — an unguarded ``print`` of those raises ``UnicodeEncodeError`` and
+    aborts the whole command (found running ``synapse doctor`` on Windows).
+    Reconfiguring the text streams to UTF-8 fixes the entire class at the entry
+    point and is a harmless no-op where they are already UTF-8 (Linux, macOS, a
+    modern Windows terminal). ``backslashreplace`` is a last-resort belt so a
+    stream that still cannot encode a glyph degrades visibly instead of
+    crashing; a stream that cannot be reconfigured at all is left untouched.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (ValueError, OSError):  # pragma: no cover - stream-specific refusal
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments and dispatch to the selected subcommand.
 
@@ -329,6 +352,8 @@ def main(argv: list[str] | None = None) -> int:
         The selected command's exit code, ``1`` when no command was given, or
         ``2`` when ``--token-file`` names a file that cannot be read.
     """
+    if argv is None:
+        _force_utf8_console()
     arguments = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser(command=_requested_command(arguments))
     args = parser.parse_args(arguments)
