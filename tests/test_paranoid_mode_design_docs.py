@@ -38,6 +38,8 @@ def test_paranoid_mode_design_names_strict_local_settings() -> None:
     required_settings = (
         "token required",
         "durable event log required",
+        "acl enforcement required",
+        "native wss (tls) required",
         "loopback-only by default",
         "metrics token required",
         "metrics query tokens disabled",

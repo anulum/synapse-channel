@@ -5,7 +5,15 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — paranoid-mode runtime policy
-"""Paranoid-mode policy checks for local Synapse runtimes."""
+"""Paranoid-mode policy checks for local Synapse runtimes.
+
+The ``synapse hub --paranoid`` profile is the production secure preset: it refuses
+to start unless the hub is fully hardened — a connect token, a durable event log,
+per-message authentication, ACL enforcement with a policy, and native WSS — and it
+disables the relaxations that weaken an exposed bind (metrics query tokens and the
+insecure off-loopback override). It fails closed for every setting it directly
+controls and reports the hardening hooks it still cannot honestly enforce.
+"""
 
 from __future__ import annotations
 
@@ -14,15 +22,22 @@ from dataclasses import dataclass
 
 MISSING_PARANOID_HOOKS: tuple[str, ...] = (
     "at-rest encryption",
-    "signed events and mTLS enforcement",
-    "per-agent identity and ACL enforcement",
+    "mutual-TLS client-certificate verification",
+    "cryptographic per-agent identity verification",
     "private channels",
     "end-to-end encrypted channels",
     "differential-privacy blackboard projections",
     "per-message key rotation and revocation operator workflow",
     "deployment threat-model evidence for exposed bridges",
 )
-"""Runtime hooks that paranoid mode must report as unavailable today."""
+"""Runtime hooks that paranoid mode must report as unavailable today.
+
+Server TLS, ACL enforcement, and signed events are now *required* by the profile
+(see :func:`apply_paranoid_hub_profile`), so they are no longer listed here; what
+remains are the hooks the profile cannot yet enforce — notably mutual-TLS client
+verification (server TLS is required, client-certificate pinning is not) and
+cryptographic per-agent identity (the ACL authorises a *declared* sender name).
+"""
 
 
 class ParanoidModeError(ValueError):
@@ -87,6 +102,12 @@ def apply_paranoid_hub_profile(args: argparse.Namespace) -> ParanoidHubReport | 
         raise ParanoidModeError("paranoid mode requires --message-auth-key")
     if not bool(getattr(args, "require_message_auth", False)):
         raise ParanoidModeError("paranoid mode requires --require-message-auth")
+    if not bool(getattr(args, "require_acl", False)) or not getattr(args, "acl_policy", None):
+        raise ParanoidModeError("paranoid mode requires --require-acl with an --acl-policy")
+    if not getattr(args, "tls_certfile", None) or not getattr(args, "tls_keyfile", None):
+        raise ParanoidModeError(
+            "paranoid mode requires native WSS: --tls-certfile and --tls-keyfile"
+        )
 
     args.metrics_query_token_ok = False
     args.insecure_off_loopback = False
@@ -94,6 +115,8 @@ def apply_paranoid_hub_profile(args: argparse.Namespace) -> ParanoidHubReport | 
         "hub token required",
         "durable event log required",
         "per-message authentication required",
+        "ACL enforcement required",
+        "native WSS (TLS) required",
         "metrics query tokens disabled",
         "insecure off-loopback override disabled",
     ]

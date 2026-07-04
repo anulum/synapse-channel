@@ -32,6 +32,11 @@ The hub switch maps to these concrete settings:
   at least one `--message-auth-key KEY_ID:SECRET:SENDER[,SENDER...]` and set
   `--require-message-auth`, so HMAC verification runs after WebSocket connect
   authentication.
+- **ACL enforcement required** through `--require-acl` with an `--acl-policy`, so
+  mutating verbs are authorised against the policy before routing rather than
+  passing on the shared token alone.
+- **Native WSS (TLS) required** through `--tls-certfile` and `--tls-keyfile`, so
+  the transport is encrypted rather than plain `ws://`.
 - **Metrics token required** whenever `--metrics` is enabled.
 - **Metrics query tokens disabled** even if `--metrics-query-token-ok` is passed;
   `Authorization: Bearer` remains the only token presentation in paranoid mode.
@@ -68,19 +73,21 @@ pretending they are solved:
   generated reports. See the [at-rest encryption design](at-rest-encryption.md)
   for storage scope, key storage, rotation, backup recovery, and local-first
   tradeoffs.
-- **Signed events and mTLS operator workflow** beyond the runtime primitives.
-  Embedded hubs can enforce Ed25519 signed-event trust bundles and mTLS peer
-  certificate pins, but the CLI has no trust-bundle import/export, key
-  rotation, peer inventory, or incident-response workflow yet. See
+- **Mutual-TLS client-certificate verification and the signed-events/mTLS operator
+  workflow** beyond the runtime primitives. Paranoid mode now requires server TLS
+  and signed mutating frames, but the transport does not yet verify a client
+  certificate, and the CLI has no trust-bundle import/export, key rotation, peer
+  inventory, or incident-response workflow. See
   [signed events and mTLS](signed-events-mtls.md).
 - **Per-message key rotation and revocation operator workflow** beyond the
   runtime's explicit HMAC key list. The hub can enforce selected signed
   mutating frames, but there is no managed key store, no key file lifecycle, and
   no automatic rotation workflow. See the
   [per-message authentication runtime](per-message-authentication.md).
-- **Per-agent identity and ACL enforcement** beyond the current shared-token and
-  caller-name model, including identity-bound credentials, verbs, namespaces,
-  metrics, dashboard, A2A, and release actions. See the
+- **Cryptographic per-agent identity** beyond the current shared-token and
+  caller-name model. Paranoid mode now enforces ACL authorisation of mutating
+  verbs, but the ACL authorises a *declared* sender name — there is no
+  identity-bound credential binding a caller to that name. See the
   [identity and ACL design](identity-and-acl.md).
 - **Private channels** for project-local or worktree-local payloads that the hub
   should not broadcast to every trusted participant. See the

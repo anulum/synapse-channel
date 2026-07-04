@@ -37,6 +37,16 @@ All notable changes to this project are documented here.
   every feature-consuming module to prove the base import surface never
   hard-requires an optional library.
 
+### Changed
+- `synapse hub --paranoid` is now the full production secure preset: besides the
+  token, durable log, and per-message authentication it already required, it now
+  also requires ACL enforcement (`--require-acl` with an `--acl-policy`) and native
+  WSS (`--tls-certfile`/`--tls-keyfile`), and still disables metrics query tokens
+  and the insecure off-loopback override. A paranoid start without ACL or TLS now
+  fails closed with a specific message. The missing-hooks report drops ACL and
+  signed events (now enforced) and names what genuinely remains — mutual-TLS
+  client-certificate verification and cryptographic per-agent identity.
+
 ### Security
 - Every dashboard and cockpit HTTP response now carries browser-hardening headers:
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
