@@ -220,7 +220,7 @@ def _patched_streams(stdout: object, stderr: object) -> Iterator[None]:
     import sys
 
     saved_out, saved_err = sys.stdout, sys.stderr
-    sys.stdout, sys.stderr = stdout, stderr  # type: ignore[assignment]
+    sys.stdout, sys.stderr = stdout, stderr
     try:
         yield
     finally:
