@@ -13,6 +13,19 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Operator write-path for the dashboard (opt-in) — `synapse dashboard --operator`
+  arms `POST /message` (`{"to","text"}`), so the cockpit can relay a chat message
+  to the fleet rather than only observe it. Off by default: without the flag the
+  route is a 404, indistinguishable from an unknown path, and the dashboard stays
+  a read-only observer. When armed, a write still requires the dashboard bearer
+  token, is rate-limited, and is sent under an explicit `operator:<name>` identity
+  that never impersonates an agent. The relay reimplements neither authorisation
+  nor auditing — the hub ACL-checks the relayed frame and records it in the
+  durable log, so every operator action is authorised at the hub and appears in
+  replay, `/state-at`, and the signal stream. Responds `200` delivered or
+  dead-lettered, `403` on ACL refusal, `503` when the hub is unreachable.
+
 ## [0.97.0] - 2026-07-04
 
 ### Added

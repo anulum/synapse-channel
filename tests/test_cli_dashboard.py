@@ -32,6 +32,13 @@ from synapse_channel.dashboard import (
     start_dashboard_server,
     validate_dashboard_bind,
 )
+from synapse_channel.dashboard_operator import (
+    DELIVERED,
+    DENIED,
+    UNDELIVERED,
+    UNREACHABLE,
+    RelayOutcome,
+)
 
 
 def _http_get(url: str, *, authorization: str | None = None) -> tuple[int, str, str]:
@@ -1365,3 +1372,173 @@ def test_health_anomalies_feed_is_behind_the_dashboard_token(tmp_path: Path) -> 
         server.close()
     assert denied == 401
     assert allowed == 200
+
+
+def _http_post(
+    url: str,
+    body: bytes | str,
+    *,
+    authorization: str | None = None,
+    content_type: str = "application/json",
+) -> tuple[int, str, str]:
+    headers = {"Connection": "close", "Content-Type": content_type}
+    if authorization is not None:
+        headers["Authorization"] = authorization
+    data = body.encode("utf-8") if isinstance(body, str) else body
+    request = Request(url, data=data, headers=headers, method="POST")
+    try:
+        with urlopen(request, timeout=3) as response:  # nosec B310
+            return (
+                response.status,
+                response.headers.get_content_type(),
+                response.read().decode("utf-8"),
+            )
+    except HTTPError as exc:
+        return exc.code, exc.headers.get_content_type(), exc.read().decode("utf-8")
+
+
+def _stub_relay_class(outcome: RelayOutcome) -> type:
+    """Return a drop-in OperatorRelay that yields ``outcome`` without a hub."""
+
+    class _StubRelay:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        async def relay_message(self, to: str, text: str) -> RelayOutcome:
+            return outcome
+
+    return _StubRelay
+
+
+def _operator_server(*, dashboard_token: str | None = None) -> DashboardServer:
+    return start_dashboard_server(
+        host="127.0.0.1",
+        port=0,
+        uri="ws://hub.invalid",
+        name="DASH",
+        token=None,
+        ready_timeout=0.2,
+        response_timeout=0.2,
+        refresh_seconds=5,
+        allow_non_loopback=False,
+        operator=True,
+        dashboard_token=dashboard_token,
+    )
+
+
+def test_operator_write_is_404_without_operator_mode() -> None:
+    server = start_dashboard_server(
+        host="127.0.0.1",
+        port=0,
+        uri="ws://hub.invalid",
+        name="DASH",
+        token=None,
+        ready_timeout=0.2,
+        response_timeout=0.2,
+        refresh_seconds=5,
+        allow_non_loopback=False,
+    )
+    try:
+        status, _, _ = _http_post(server.url("/message"), json.dumps({"to": "x", "text": "hi"}))
+    finally:
+        server.close()
+
+    assert status == 404
+
+
+def test_operator_write_requires_bearer_when_token_set() -> None:
+    server = _operator_server(dashboard_token="viewer")
+    try:
+        missing, _, _ = _http_post(server.url("/message"), json.dumps({"to": "x", "text": "hi"}))
+        wrong, _, _ = _http_post(
+            server.url("/message"),
+            json.dumps({"to": "x", "text": "hi"}),
+            authorization="Bearer nope",
+        )
+    finally:
+        server.close()
+
+    assert missing == 401
+    assert wrong == 401
+
+
+def test_operator_write_rejects_bad_bodies() -> None:
+    server = _operator_server()
+    try:
+        non_json, _, _ = _http_post(server.url("/message"), "not json at all")
+        missing_to, _, _ = _http_post(server.url("/message"), json.dumps({"text": "hi"}))
+        empty_text, _, _ = _http_post(
+            server.url("/message"), json.dumps({"to": "x", "text": "   "})
+        )
+        not_object, _, _ = _http_post(server.url("/message"), json.dumps(["to", "text"]))
+        unknown_route, _, _ = _http_post(
+            server.url("/other"), json.dumps({"to": "x", "text": "hi"})
+        )
+    finally:
+        server.close()
+
+    assert non_json == 400
+    assert missing_to == 400
+    assert empty_text == 400
+    assert not_object == 400
+    assert unknown_route == 404
+
+
+@pytest.mark.parametrize(
+    ("outcome", "expected_status"),
+    [
+        (RelayOutcome(DELIVERED, "delivered to a live recipient"), 200),
+        (RelayOutcome(UNDELIVERED, "accepted; no live recipient (dead-lettered)"), 200),
+        (RelayOutcome(DENIED, "no chat rule for team-b"), 403),
+        (RelayOutcome(UNREACHABLE, "could not reach hub"), 503),
+    ],
+)
+def test_operator_write_maps_relay_outcome_to_status(
+    monkeypatch: pytest.MonkeyPatch, outcome: RelayOutcome, expected_status: int
+) -> None:
+    monkeypatch.setattr(dashboard_module, "OperatorRelay", _stub_relay_class(outcome))
+    server = _operator_server()
+    try:
+        status, content_type, body = _http_post(
+            server.url("/message"), json.dumps({"to": "SC-NEUROCORE", "text": "ship it"})
+        )
+    finally:
+        server.close()
+
+    assert status == expected_status
+    assert content_type == "application/json"
+    document = json.loads(body)
+    assert document["action"] == "message"
+    assert document["to"] == "SC-NEUROCORE"
+    assert document["status"] == outcome.status
+    assert document["ok"] is outcome.ok
+
+
+def test_operator_write_is_rate_limited(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(dashboard_module, "OPERATOR_RATE_MAX", 1)
+    monkeypatch.setattr(
+        dashboard_module,
+        "OperatorRelay",
+        _stub_relay_class(RelayOutcome(DELIVERED, "delivered")),
+    )
+    server = _operator_server()
+    try:
+        first, _, _ = _http_post(server.url("/message"), json.dumps({"to": "x", "text": "hi"}))
+        second, _, body = _http_post(server.url("/message"), json.dumps({"to": "x", "text": "hi"}))
+    finally:
+        server.close()
+
+    assert first == 200
+    assert second == 429
+    assert "rate limit" in body
+
+
+def test_dashboard_parser_wires_operator_flags() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(["dashboard", "--operator", "--operator-name", "operator:CEO"])
+
+    assert args.operator is True
+    assert args.operator_name == "operator:CEO"
+    default = parser.parse_args(["dashboard"])
+    assert default.operator is False
+    assert default.operator_name is None

@@ -295,9 +295,25 @@ ships empty with the reason stated. `--cockpit-dist <dir>` serves a built
 cockpit single-page app read-only under `/cockpit/` (paths escaping the
 directory or with unrecognised suffixes are refused).
 
-**Public status-page posture:** the dashboard is read-only end to end —
-every endpoint answers `GET` only and nothing on the surface mutates the
-hub or the store — so a public status page needs no special mode: expose
+**Operator write-path (opt-in).** `--operator` arms one write route:
+`POST /message` with `{"to": "<name|group|all>", "text": "..."}` relays a
+single chat message to the fleet, so the cockpit can delegate rather than
+only observe. It is **off by default** — without the flag the route answers
+404, indistinguishable from an unknown path, and the dashboard stays a pure
+observer. When armed, a write still requires the dashboard bearer token, is
+rate-limited, and is sent under the identity `operator:<name>` (set with
+`--operator-name`), never impersonating an agent. The relay reimplements
+neither authorisation nor auditing: the hub applies its own ACL to the
+relayed frame and records it in the durable log, so every operator action is
+authorised at the hub and shows up in replay, `/state-at`, and the signal
+stream like any other frame. The response is JSON — `200` delivered or
+dead-lettered, `403` when the ACL refuses it, `503` when the hub is
+unreachable.
+
+**Public status-page posture:** the dashboard is read-only by default —
+every endpoint answers `GET` only unless `--operator` is set (above), and
+nothing on the read surface mutates the hub or the store — so a public
+status page needs no special mode: expose
 the dashboard deliberately with `--allow-non-loopback`, set
 `--dashboard-token` (or accept the generated one), and point it at a
 store copy with `--feeds-db` if you want it serving with the hub down.
