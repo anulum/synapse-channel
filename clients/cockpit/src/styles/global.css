@@ -2160,7 +2160,7 @@ body {
   .deck > .deck__stack:not(.deck__stack--rail):not(.deck__stack--roster) {
     order: 2;
   }
-  .deck > .panel {
+  .deck .seg--board > .panel {
     order: 3;
   }
   .deck > .deck__stack--roster {
@@ -2206,5 +2206,117 @@ body {
   .fed-row__contested {
     margin-left: 0;
     white-space: normal;
+  }
+}
+
+/* ---------- PWA: segments, install chip, safe areas ----------
+   Above 640px the .seg wrappers are layout-transparent (display: contents),
+   so the desktop and tablet grids render exactly as before. At phone width
+   the wrappers become the switch: the segmented nav appears and exactly one
+   deck section renders at a time — HUD and spine stay above it at every
+   width. */
+
+.seg {
+  display: contents;
+}
+
+.mobile-nav {
+  display: none;
+}
+
+.install-chip {
+  position: fixed;
+  right: max(var(--sp-3), env(safe-area-inset-right));
+  bottom: max(var(--sp-3), env(safe-area-inset-bottom));
+  z-index: 30;
+  min-height: 44px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--now);
+  border-radius: 22px;
+  background: var(--raised);
+  color: var(--now);
+  font-family: var(--font-display);
+  font-size: var(--fs-small);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .shell {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    grid-template-rows: auto auto auto auto auto;
+  }
+
+  .mobile-nav {
+    display: flex;
+    gap: 4px;
+    padding: var(--sp-1) var(--sp-2);
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+
+  .mobile-nav__seg {
+    flex: 1;
+    min-height: 44px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: none;
+    color: var(--muted);
+    font-family: var(--font-display);
+    font-size: var(--fs-micro);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+  }
+
+  .mobile-nav__seg--active {
+    color: var(--now);
+    border-color: var(--now);
+    background: var(--raised);
+  }
+
+  /* The stacks dissolve; the segments take over visibility. */
+  .deck__stack,
+  .deck__stack--rail,
+  .deck__stack--roster {
+    display: contents;
+  }
+
+  .seg {
+    display: none;
+  }
+
+  .deck--seg-signals .seg--signals,
+  .deck--seg-claims .seg--claims,
+  .deck--seg-board .seg--board,
+  .deck--seg-roster .seg--roster,
+  .deck--seg-reliability .seg--reliability {
+    display: block;
+  }
+
+  /* Touch: the spine yields vertical panning to the page; a tap still
+     names the nearest impulse via the pointer handlers. */
+  .spine__canvas {
+    touch-action: pan-y;
+  }
+
+  /* Finger-sized log rows. */
+  .log td {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  /* Staleness must not be subtle on a phone. */
+  .hud .beacon--stale {
+    flex-basis: 100%;
+    justify-content: flex-start;
+    border: 1px solid var(--warn);
+    border-radius: 6px;
+    padding: 4px var(--sp-2);
   }
 }
