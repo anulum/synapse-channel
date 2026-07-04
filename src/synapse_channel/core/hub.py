@@ -55,12 +55,11 @@ from synapse_channel.core.hub_counters import HubCounters
 from synapse_channel.core.hub_exposure import (
     LOOPBACK_HOSTS,
     InsecureBindError,
-    exposure_problems,
-    guard_exposure,
     is_loopback_host,
 )
 from synapse_channel.core.hub_federation_gate import FrameDisposition, HubFederationGate
 from synapse_channel.core.hub_http import http_endpoint_response
+from synapse_channel.core.hub_ingress import HubIngress
 from synapse_channel.core.hub_ledger_guard import HubLedgerGuard
 from synapse_channel.core.hub_relay import RelayMirror
 from synapse_channel.core.journal import replay
@@ -472,6 +471,16 @@ class SynapseHub:
             online_agents=self.online_agents,
         )
         self.hub_id = hub_id or f"syn-{uuid.uuid4().hex[:8]}"
+        self._ingress = HubIngress(
+            self.clients,
+            authenticator=self.authenticator,
+            enable_metrics=self.enable_metrics,
+            metrics_token=self.metrics_token,
+            metrics_query_token_ok=self.metrics_query_token_ok,
+            insecure_off_loopback=self.insecure_off_loopback,
+            send_json=self._send_json,
+            system=self._system,
+        )
         self.connected_clients = self.clients.connected_clients
         self.unauth_clients = self.clients.unauth_clients
         self.agent_sockets = self.clients.agent_sockets
@@ -671,105 +680,60 @@ class SynapseHub:
     async def _authorise(self, sender: str, data: dict[str, Any], websocket: Any) -> bool:
         """Gate the first message from a socket on the shared-secret token.
 
-        Authentication is checked once, when a socket first binds a name; later
-        messages on an already-bound socket are trusted. With no authenticator
-        the hub is open.
-
-        Parameters
-        ----------
-        sender : str
-            The agent name the connection claims.
-        data : dict[str, Any]
-            The decoded message; the token is read from its ``token`` field.
-        websocket : Any
-            The sender's socket, closed (code ``4010``) when authentication fails.
-
-        Returns
-        -------
-        bool
-            ``True`` when the message may proceed, ``False`` when it was refused
-            and the socket closed.
+        Thin wrapper over :meth:`~synapse_channel.core.hub_ingress.HubIngress.authorise`,
+        kept because :meth:`handle_message` calls ``self._authorise`` directly.
         """
-        if self.authenticator is None or self.socket_agent.get(websocket) is not None:
-            return True
-        ok, reason = self.authenticator.authenticate(str(data.get("token") or ""), sender)
-        if ok:
-            return True
-        await self._send_json(
-            websocket,
-            self._system(reason, msg_type=MessageType.AUTH_DENIED, target=sender),
-        )
-        await websocket.close(code=4010, reason="auth denied")
-        return False
+        return await self._ingress.authorise(sender, data, websocket)
 
     def _exposure_problems(self, host: str) -> list[str]:
         """Return the exposure problems for binding on ``host`` (empty when safe).
 
-        A loopback bind is always safe. Off loopback, a hub with no token — or
-        with metrics served but no metrics token, or with the metrics query-string
-        token accepted (it would leak into URL logs) — is a human-readable problem.
+        Thin wrapper over
+        :meth:`~synapse_channel.core.hub_ingress.HubIngress.exposure_problems`, kept
+        because operator tooling and tests read ``hub._exposure_problems`` directly.
         """
-        return exposure_problems(
-            host,
-            authenticator=self.authenticator,
-            enable_metrics=self.enable_metrics,
-            metrics_token=self.metrics_token,
-            metrics_query_token_ok=self.metrics_query_token_ok,
-        )
+        return self._ingress.exposure_problems(host)
 
     def _guard_exposure(self, host: str) -> None:
         """Refuse — or, when overridden, warn — before binding an exposed host.
 
-        Off loopback without the matching guard the hub would be reachable
-        unauthenticated. By default this raises :class:`InsecureBindError` so the
-        bus is never accidentally exposed; with :attr:`insecure_off_loopback` set
-        the problems are logged as warnings and the bind proceeds.
+        Thin wrapper over
+        :meth:`~synapse_channel.core.hub_ingress.HubIngress.guard_exposure`, kept
+        because :meth:`serve` and tests call ``hub._guard_exposure`` directly.
         """
-        guard_exposure(
-            host,
-            authenticator=self.authenticator,
-            enable_metrics=self.enable_metrics,
-            metrics_token=self.metrics_token,
-            metrics_query_token_ok=self.metrics_query_token_ok,
-            insecure_off_loopback=self.insecure_off_loopback,
-            logger=logger,
-        )
+        self._ingress.guard_exposure(host)
 
     async def _resolve_sender(
         self, sender: str, websocket: Any, *, takeover: bool = False
     ) -> str | None:
         """Bind a socket to a sender name, enforcing uniqueness.
 
-        When ``takeover`` is set and the name is held by another (possibly stale)
-        socket, the holder is evicted and the name rebound to the newcomer — this
-        lets a re-arming waiter reclaim its own ``<name>-rx`` from a ghost connection
-        without waiting for the keepalive ping to reap it.
-
-        Returns the resolved name, or ``None`` when a name conflict closed the
-        socket.
+        Thin wrapper over
+        :meth:`~synapse_channel.core.hub_ingress.HubIngress.resolve_sender`, kept
+        because :meth:`handle_message` calls ``self._resolve_sender`` directly.
         """
-        return await self.clients.resolve_sender(
-            sender,
-            websocket,
-            takeover=takeover,
-            send_json=self._send_json,
-            system=self._system,
-        )
+        return await self._ingress.resolve_sender(sender, websocket, takeover=takeover)
 
     @staticmethod
     async def _close_socket(websocket: Any, *, code: int, reason: str) -> None:
-        """Close a websocket and wait for close propagation when supported."""
-        await HubClientRegistry.close_socket(websocket, code=code, reason=reason)
+        """Close a websocket and wait for close propagation when supported.
+
+        Thin wrapper over
+        :meth:`~synapse_channel.core.hub_ingress.HubIngress.close_socket`, kept as a
+        class-callable staticmethod because tests invoke ``SynapseHub._close_socket``.
+        """
+        await HubIngress.close_socket(websocket, code=code, reason=reason)
 
     @staticmethod
     def _remote_host(websocket: Any) -> str:
         """Return the remote host of ``websocket`` for per-host rate keying.
 
-        Accepts the ``(host, port)`` tuple the websockets server exposes, a bare
-        address, or nothing, collapsing to ``"unknown"`` so the per-host bucket
-        always has a stable key.
+        Thin wrapper over
+        :meth:`~synapse_channel.core.hub_ingress.HubIngress.remote_host`, kept as a
+        class-callable staticmethod because :meth:`handle_message` and tests invoke
+        ``SynapseHub._remote_host``.
         """
-        return HubClientRegistry.remote_host(websocket)
+        return HubIngress.remote_host(websocket)
 
     async def handle_message(self, raw_message: str | bytes, websocket: Any) -> None:
         """Parse and route one inbound frame.

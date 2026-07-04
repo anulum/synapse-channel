@@ -43,6 +43,19 @@ All notable changes to this project are documented here.
   hard-requires an optional library.
 
 ### Changed
+- Extracted the hub's pre-route ingress guards into `core/hub_ingress.py`
+  (`HubIngress`): authenticating a socket's first frame against the shared-secret
+  token, binding the claimed sender name (with optional takeover), keying the remote
+  host for per-host rate limiting, closing a socket, and refusing — or, when
+  overridden, warning about — an exposed bind now live in one class the hub holds,
+  with `_authorise` / `_resolve_sender` / `_exposure_problems` / `_guard_exposure`
+  left as thin delegating wrappers and `_close_socket` / `_remote_host` kept as
+  class-callable staticmethods (the handler call surface is unchanged). It reads the
+  live socket registry and takes the hub's per-socket send and system-message factory
+  as injected callbacks, so it carries no back-reference to the hub. No behaviour
+  change; the token gate, name resolution, and exposure refusal are identical. First
+  slice of the resumed hub decomposition, taking `core/hub.py` from 1294 to 1258
+  lines. 100% line+branch on the new module.
 - `synapse hub --paranoid` is now the full production secure preset: besides the
   token, durable log, and per-message authentication it already required, it now
   also requires ACL enforcement (`--require-acl` with an `--acl-policy`) and native
