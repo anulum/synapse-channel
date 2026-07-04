@@ -698,6 +698,65 @@ def test_dashboard_reliability_endpoint_serves_the_report_with_the_hub_down(
     assert "owners" in payload and "findings" in payload
 
 
+_MALFORMED_FEED_QUERIES = (
+    "seq=abc",
+    "seq=",
+    "seq=-1",
+    "seq=1.5",
+    "seq=99999999999999999999999999",
+    "seq=0x10",
+    "seq=%00",
+    "seq[]=1",
+    "seq=1&seq=2",
+    "task=",
+    "task=%ff%fe",
+    "direction=sideways",
+    "direction=",
+    "limit=-5",
+    "limit=abc",
+    "limit=999999999999",
+    "=noname",
+    "&&&",
+    "seq=" + "9" * 4096,
+    "task=" + "A" * 8192,
+)
+"""Hostile query strings thrown at every store feed by the fuzz test below."""
+
+
+def test_dashboard_feed_queries_never_crash_on_malformed_input(tmp_path: Path) -> None:
+    # The store feeds parse an untrusted query string (?seq=, ?task=, ?direction=,
+    # ?limit=). No input may crash the handler into a 500: every response must be a
+    # deliberate status. This fuzzes each feed with hostile queries and asserts the
+    # handler always answers 200 (parsed), 400 (rejected), 404 (absent anchor), or
+    # 503 (store error) — never an unhandled 500.
+    db = tmp_path / "hub.db"
+    store = EventStore(db)
+    store.append(
+        EventKind.CLAIM,
+        {
+            "task_id": "T",
+            "owner": "alice",
+            "status": "claimed",
+            "paths": [],
+            "worktree": "w",
+            "claimed_at": 1.0,
+            "lease_expires_at": 61.0,
+        },
+        ts=1.0,
+    )
+    store.close()
+
+    feeds = ("/state-at.json", "/merkle-proof.json", "/events.json", "/causality.json")
+    server = _reliability_server(db)
+    try:
+        for feed in feeds:
+            for raw_query in _MALFORMED_FEED_QUERIES:
+                status, _, _ = _http_get(server.url(f"{feed}?{raw_query}"))
+                assert status in {200, 400, 404, 503}, f"{feed}?{raw_query} -> {status}"
+    finally:
+        server.close()
+
+
 def test_dashboard_reliability_endpoint_fails_visible_on_a_missing_store(
     tmp_path: Path,
 ) -> None:

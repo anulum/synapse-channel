@@ -52,7 +52,20 @@ All notable changes to this project are documented here.
   signed events (now enforced) and names what genuinely remains — mutual-TLS
   client-certificate verification and cryptographic per-agent identity.
 
+### Fixed
+- A dashboard store feed (`/state-at.json`, `/merkle-proof.json`, `/events.json`,
+  `/causality.json`) crashed with an unhandled `OverflowError` when a `?seq=` or
+  `?limit=` query carried an integer beyond SQLite's signed 64-bit range — an
+  arbitrarily large value parsed as an unbounded Python int, then overflowed
+  inside the store query. The feeds now bound the parsed integer and answer `400`
+  instead of a `500`. Found by the new query-feed fuzz test.
+
 ### Tests
+- Fuzz coverage for the dashboard store-feed query parsers: hostile `?seq=`,
+  `?task=`, `?direction=`, and `?limit=` values (non-numeric, negative, huge,
+  duplicated, percent-encoded, multi-kilobyte) are thrown at every feed and the
+  handler must answer a deliberate status (`200`/`400`/`404`/`503`), never an
+  unhandled `500`.
 - Property-based coverage (Hypothesis) for the coordination invariants a
   correctness bug would break silently: claim-scope overlap is symmetric and
   agrees with per-path overlap (no file collision slips a non-conflicting scope),
