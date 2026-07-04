@@ -4,10 +4,10 @@
     "classes": 415,
     "cli_subcommands": 128,
     "documentation_pages": 48,
-    "optional_dependency_groups": 7,
+    "optional_dependency_groups": 8,
     "package_modules": 293,
     "public_api_exports": 70,
-    "tests": 4517,
+    "tests": 4521,
     "version": "0.97.0",
     "wire_message_types": 67,
     "workflows": 12
