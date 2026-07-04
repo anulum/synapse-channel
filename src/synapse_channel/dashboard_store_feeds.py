@@ -22,6 +22,14 @@ the hub is down, and never invent state the disk cannot prove. Three feeds:
   fingerprints. Namespace outcomes (local/remote/ungoverned/partitioned) are
   hub-runtime state that no durable store carries, so the section ships empty
   with its absence stated rather than guessed.
+
+Three further store-derived feeds serve the cockpit's operational panels, all
+measured against the log's own timestamps (never the wall clock) so each is
+deterministic and available with the hub down: **metrics** (event counts by
+kind over trailing windows), **state-at** (coordination state reconstructed by
+bounded replay to a sequence — whole-fleet time-travel), and **merkle proof**
+(an inclusion proof for one event so a cockpit row can be verified against the
+attested tree root).
 """
 
 from __future__ import annotations
@@ -36,6 +44,7 @@ from synapse_channel.core.causality import DEFAULT_MAX_GRAPH_NODES, causality_to
 from synapse_channel.core.federation_store import load_store
 from synapse_channel.core.federation_wire import bundle_fingerprint
 from synapse_channel.core.journal import replay
+from synapse_channel.core.merkle import proof_to_json, run_proof
 from synapse_channel.core.multihub_wire import LogSnapshot, encode_log_snapshot
 from synapse_channel.core.persistence import EventStore
 
@@ -204,6 +213,42 @@ def build_metrics_feed(db_path: str | Path) -> dict[str, object]:
             "process registry is the hub's own /metrics endpoint"
         ),
     }
+
+
+def build_merkle_proof_feed(db_path: str | Path, *, seq: int) -> dict[str, object]:
+    """Prove a single event's inclusion in the attested log by its sequence.
+
+    Builds an RFC 6962 Merkle inclusion proof for event ``seq`` against the
+    durable log and returns it in the same JSON shape ``synapse debug merkle``
+    emits, so a cockpit's per-row *verify* button can hand the proof straight to
+    the client-side :func:`~synapse_channel.core.merkle.verify_inclusion` (via
+    ``proof_from_json``) and confirm the row is committed to the tree root —
+    tamper-evidence the operator can check without trusting the dashboard.
+
+    Store-derived and deterministic: the same log and ``seq`` always yield the
+    same proof (the tree is built over the committed leaves, not the wall
+    clock), and it answers with the hub down like every store feed. Honest
+    scope: a ``seq`` with no event in the committed log returns
+    ``{"present": False}`` with a note rather than a fabricated proof — the
+    tree can only attest sequences it actually holds.
+
+    Raises
+    ------
+    ValueError
+        If the event store does not exist.
+    """
+    path = Path(db_path)
+    if not path.exists():
+        msg = f"missing event store: {path}"
+        raise ValueError(msg)
+    proof = run_proof(path, seq)
+    if proof is None:
+        return {
+            "present": False,
+            "seq": seq,
+            "note": "no event at that sequence in the committed log",
+        }
+    return {"present": True, **proof_to_json(proof)}
 
 
 def latest_cursor(db_path: str | Path) -> int:

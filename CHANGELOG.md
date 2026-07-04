@@ -14,6 +14,13 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `/merkle-proof.json?seq=N` dashboard feed — serves an RFC 6962 Merkle
+  inclusion proof for one event so a cockpit row's *verify* button can
+  confirm the row is committed to the attested log's tree root, in the same
+  JSON shape `synapse debug merkle` emits. Store-derived, deterministic, and
+  available with the hub down; a `seq` the committed log does not hold returns
+  `{"present": false}` with a note rather than a fabricated proof; same
+  `--feeds-db` posture as the other store feeds.
 - `/state-at.json?seq=N` dashboard feed — reconstructs coordination state
   (claims + board) as of any event sequence by bounded replay of the
   durable log (`core.journal.replay(up_to_seq=)`), in the live-snapshot
