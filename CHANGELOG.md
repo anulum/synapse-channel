@@ -30,6 +30,11 @@ All notable changes to this project are documented here.
   `409` when the blackboard refuses a task on its own terms, and `503` when the hub
   is unreachable.
 
+- CycloneDX SBOM (`synapse-channel-<tag>-sbom.cdx.json`) is generated from the
+  built wheel's dependency closure and attached to every GitHub Release alongside
+  the distributions, so the published software bill of materials is a first-class
+  release artifact. The generator (`cyclonedx-bom`) is hash-locked in a dedicated
+  `requirements-sbom.txt`.
 - `all` convenience extra bundling every runtime feature library (cryptography,
   WASM, OTel, MCP) — `pip install synapse-channel[all]` for a full-feature install
   without naming each extra. A packaging drift guard keeps `all` exactly the union
