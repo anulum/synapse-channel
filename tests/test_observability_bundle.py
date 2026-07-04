@@ -95,6 +95,24 @@ def test_alert_rules_reference_only_exported_metrics(tmp_path: Path) -> None:
         assert rule["labels"]["severity"] in {"critical", "warning"}
 
 
+def test_persistent_dead_letter_alert_watches_the_targets_gauge() -> None:
+    """The persistent-blackhole alert reads the aged-out targets gauge, sustained.
+
+    Distinct from ``SynapseDeadLettersGrowing`` (which fires on ledger growth),
+    this fires when a name stays blackholed past a window — meaningful only
+    because the ledger now ages quiet names out, so a still-counted target is a
+    genuine persistent gap. Pins the gauge, the sustain window, and that the
+    gauge is a real exported series.
+    """
+    document = yaml.safe_load((BUNDLE / "prometheus-alerts.yml").read_text("utf-8"))
+    rules = {rule["alert"]: rule for group in document["groups"] for rule in group["rules"]}
+    alert = rules["SynapsePersistentDeadLetters"]
+    assert "synapse_dead_letter_targets" in alert["expr"]
+    assert "synapse_dead_letter_targets" in EXPORTED  # the gauge is really exported
+    assert alert["for"] == "1h"  # sustained, not a passing miss
+    assert alert["labels"]["severity"] == "warning"
+
+
 def test_scrape_job_targets_the_metrics_path() -> None:
     document = yaml.safe_load((BUNDLE / "prometheus-scrape.yml").read_text("utf-8"))
     jobs = document["scrape_configs"]

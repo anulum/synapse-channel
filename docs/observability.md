@@ -64,7 +64,11 @@ happened. The signals that matter operationally:
   is contention — `synapse causality contention` names the fight.
 - `synapse_dead_letters` climbing means someone writes to a name nobody
   holds — `synapse doctor` names the unread addressee, `syn inbox --as`
-  drains it, and the gauge falls when the addressee connects.
+  drains it, and the gauge falls when the addressee connects. Its companion
+  `synapse_dead_letter_targets` counts the distinct names currently
+  blackholed; the ledger ages quiet names out, so a value that stays above
+  zero (the `SynapsePersistentDeadLetters` alert watches it over an hour) is
+  a persistent gap, not a passing miss. `synapse dead-letters` lists them.
 - Any movement on `synapse_auth_failures_total` or
   `synapse_federation_denied_total` on a locked-down hub deserves a look
   at `synapse event-query --kind error` — expected during key rotation,

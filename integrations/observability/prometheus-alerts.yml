@@ -40,6 +40,24 @@ groups:
             names the unread addressees; `syn inbox --as <name>` drains
             them. The ledger clears itself when the addressee connects.
 
+      - alert: SynapsePersistentDeadLetters
+        expr: synapse_dead_letter_targets > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "A blackholed name left undrained for an hour"
+          description: >-
+            One or more addressed names have held unread directed messages
+            for an hour with nobody connecting to clear them. Where
+            `SynapseDeadLettersGrowing` catches a passing miss, this catches
+            a persistent blackhole: the ledger ages out names that have gone
+            quiet, so a name still counted here is one someone keeps writing
+            to that never connects — a real coordination gap, not a
+            transient. `synapse dead-letters` lists them worst first;
+            `syn inbox --as <name>` drains one; `synapse doctor` names the
+            unread addressees.
+
       - alert: SynapseClaimDenySpike
         expr: >-
           rate(synapse_claims_denied_total[10m])
