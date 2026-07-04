@@ -458,6 +458,44 @@ def test_dashboard_http_server_rejects_unknown_paths() -> None:
     assert body == "not found\n"
 
 
+def _response_headers(url: str) -> dict[str, str]:
+    """Return the response headers for ``url``, whatever the HTTP status."""
+    try:
+        with urlopen(Request(url, headers={"Connection": "close"}), timeout=3) as response:  # nosec B310
+            return {k: v for k, v in response.headers.items()}
+    except HTTPError as exc:
+        return {k: v for k, v in exc.headers.items()}
+
+
+def test_dashboard_responses_carry_browser_hardening_headers() -> None:
+    # The 404 path runs through _write without reaching a hub, so it exercises the
+    # header set on every response cheaply.
+    server = start_dashboard_server(
+        host="127.0.0.1",
+        port=0,
+        uri="ws://127.0.0.1:1",
+        name="SYNAPSE-CHANNEL/dashboard",
+        token=None,
+        ready_timeout=0.01,
+        response_timeout=0.01,
+        refresh_seconds=5,
+        allow_non_loopback=False,
+    )
+    try:
+        headers = _response_headers(server.url("/missing"))
+    finally:
+        server.close()
+
+    assert headers.get("X-Content-Type-Options") == "nosniff"
+    assert headers.get("Referrer-Policy") == "no-referrer"
+    assert headers.get("X-Frame-Options") == "DENY"
+    csp = headers.get("Content-Security-Policy", "")
+    assert "frame-ancestors 'none'" in csp
+    assert "base-uri 'none'" in csp
+    assert "object-src 'none'" in csp
+    assert "default-src 'self'" in csp
+
+
 def test_dashboard_public_docs_describe_local_readonly_surface() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
     cli_docs = Path("docs/cli.md").read_text(encoding="utf-8")

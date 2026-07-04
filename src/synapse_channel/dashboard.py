@@ -524,6 +524,30 @@ _OUTCOME_STATUS: Final[dict[str, HTTPStatus]] = {
 }
 """Relay-outcome to HTTP-status map; an unlisted (accepted) outcome is ``200``."""
 
+# The dashboard and cockpit are self-contained — no CDN, external font, or remote
+# script — so a same-origin content policy costs nothing and blocks injected remote
+# resources. `'unsafe-inline'` for script/style is retained deliberately: the
+# server-rendered pages carry inline `<script>`/`<style>` and there is no nonce
+# pipeline; `data:` images cover embedded favicons and glyphs. The framing and
+# base-uri directives are the clickjacking and base-tag-injection guards.
+_CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'none'; "
+    "object-src 'none'"
+)
+_SECURITY_HEADERS: Final[tuple[tuple[str, str], ...]] = (
+    ("X-Content-Type-Options", "nosniff"),
+    ("Referrer-Policy", "no-referrer"),
+    ("X-Frame-Options", "DENY"),
+    ("Content-Security-Policy", _CONTENT_SECURITY_POLICY),
+)
+"""Browser-hardening headers sent on every dashboard response."""
+
 
 def _is_string_list(value: object) -> bool:
     """Return whether ``value`` is a list whose every element is a string."""
@@ -1184,13 +1208,15 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         content_type: str,
         authenticate: bool = False,
     ) -> None:
-        """Write one HTTP response."""
+        """Write one HTTP response with browser-hardening headers."""
         self.send_response(status.value)
         if authenticate:
             self.send_header("WWW-Authenticate", 'Bearer realm="synapse-dashboard"')
         self.send_header("Content-Type", f"{content_type}; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for header, value in _SECURITY_HEADERS:
+            self.send_header(header, value)
         self.end_headers()
         self.wfile.write(body)
 

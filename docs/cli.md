@@ -327,7 +327,11 @@ the dashboard deliberately with `--allow-non-loopback`, set
 store copy with `--feeds-db` if you want it serving with the hub down.
 What limits a *public* page is the data, not the verbs: the snapshot and
 feeds carry agent names, task ids, and message subjects, so publish them
-only where that operational metadata is fine to show.
+only where that operational metadata is fine to show. Every response also
+carries browser-hardening headers (`X-Content-Type-Options: nosniff`,
+`Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, and a same-origin
+`Content-Security-Policy`), so the page cannot be framed and pulls no remote
+resources.
 
 ## Identities and groups
 
