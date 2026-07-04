@@ -35,6 +35,7 @@ from typing import cast
 from synapse_channel.core.causality import DEFAULT_MAX_GRAPH_NODES, causality_to_json, run_causality
 from synapse_channel.core.federation_store import load_store
 from synapse_channel.core.federation_wire import bundle_fingerprint
+from synapse_channel.core.journal import replay
 from synapse_channel.core.multihub_wire import LogSnapshot, encode_log_snapshot
 from synapse_channel.core.persistence import EventStore
 
@@ -91,6 +92,57 @@ def build_events_tail(
 
 METRIC_WINDOWS_SECONDS = {"last_hour": 3600.0, "last_day": 86400.0}
 """Log-relative aggregation windows the metrics feed reports."""
+
+
+def build_state_at_feed(db_path: str | Path, *, seq: int) -> dict[str, object]:
+    """Reconstruct coordination state as of event ``seq`` by bounded replay.
+
+    Replays the durable event store up to and including ``seq`` and returns the
+    reconstructed state and board in the same shape the live hub's state and
+    board snapshots use, plus ``as_of_seq`` and ``log_end_seq`` so a caller
+    scrubbing a timeline knows where it is. Store-derived and deterministic —
+    the same log and seq always rebuild the same state — so a cockpit can
+    time-travel the whole fleet's claims and board, not just the event log.
+
+    Honest scope: **presence/roster is not in the durable log** (live socket
+    connections are not journalled), so this feed reconstructs *claims and the
+    board*, not who was online. ``seq`` is clamped into ``0..log_end_seq``; a
+    seq at or past the end yields the current reconstructed state.
+
+    Raises
+    ------
+    ValueError
+        If the event store does not exist.
+    """
+    path = Path(db_path)
+    if not path.exists():
+        msg = f"missing event store: {path}"
+        raise ValueError(msg)
+    store = EventStore(path)
+    try:
+        log_end_seq = store.max_seq()
+        bounded = max(0, min(int(seq), log_end_seq))
+        # Reconstruct as of the bounded event's own timestamp, never the wall
+        # clock — so lease expiry is judged at that point in time and the
+        # document is deterministic (a lease live at seq N reads live).
+        as_of_ts = next(
+            (event.ts for event in reversed(store.read_since(0)) if event.seq <= bounded),
+            None,
+        )
+        result = replay(EventStore(path), up_to_seq=bounded, now=as_of_ts)
+    finally:
+        store.close()
+    snapshot_now = as_of_ts if as_of_ts is not None else 0.0
+    return {
+        "as_of_seq": bounded,
+        "log_end_seq": log_end_seq,
+        "state": result.state.snapshot(now=snapshot_now),
+        "board": result.blackboard.snapshot(),
+        "note": (
+            "claims and board reconstructed from the durable log up to as_of_seq; "
+            "live presence/roster is not journalled and is omitted"
+        ),
+    }
 
 
 def build_metrics_feed(db_path: str | Path) -> dict[str, object]:

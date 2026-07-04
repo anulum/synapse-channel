@@ -21,7 +21,8 @@ from synapse_channel.core.federation_store import (
     save_store,
 )
 from synapse_channel.core.federation_wire import bundle_fingerprint
-from synapse_channel.core.journal import EventKind
+from synapse_channel.core.journal import EventKind, record_claim, record_release
+from synapse_channel.core.state import TaskClaim
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.dashboard_store_feeds import (
     DEFAULT_EVENTS_LIMIT,
@@ -30,6 +31,7 @@ from synapse_channel.dashboard_store_feeds import (
     build_events_tail,
     build_federation_feed,
     build_metrics_feed,
+    build_state_at_feed,
     latest_cursor,
     resolve_task_last_seq,
 )
@@ -354,3 +356,80 @@ class TestMetricsFeed:
         store.close()
 
         assert build_metrics_feed(db) == build_metrics_feed(db)
+
+
+def _replayable_claim(**overrides: object) -> TaskClaim:
+    base: dict[str, object] = {
+        "task_id": "T1",
+        "owner": "alice",
+        "note": "",
+        "claimed_at": 1000.0,
+        "lease_expires_at": 1_000_000_000_000.0,
+        "status": "claimed",
+        "data_ref": "",
+        "worktree": "w",
+        "paths": (),
+        "epoch": 1,
+    }
+    base.update(overrides)
+    return TaskClaim(**base)  # type: ignore[arg-type]
+
+
+def _task_ids(document: dict[str, object]) -> list[str]:
+    state = document["state"]
+    assert isinstance(state, dict)
+    claims = state["active_claims"]
+    assert isinstance(claims, list)
+    task_ids: list[str] = []
+    for claim in claims:
+        assert isinstance(claim, dict)
+        task_ids.append(str(claim["task_id"]))
+    return sorted(task_ids)
+
+
+class TestStateAtFeed:
+    def _seed(self, db: Path) -> None:
+        store = EventStore(db)
+        record_claim(store, _replayable_claim(task_id="T1", owner="alice"))  # seq 1
+        record_claim(store, _replayable_claim(task_id="T2", owner="bob"))  # seq 2
+        record_release(store, "T1")  # seq 3
+        store.close()
+
+    def test_reconstructs_claims_as_of_a_seq(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        self._seed(db)
+
+        at1 = build_state_at_feed(db, seq=1)
+        at2 = build_state_at_feed(db, seq=2)
+        at3 = build_state_at_feed(db, seq=3)
+
+        assert _task_ids(at1) == ["T1"]  # only T1 claimed yet
+        assert _task_ids(at2) == ["T1", "T2"]  # both claimed
+        assert _task_ids(at3) == ["T2"]  # T1 released
+
+    def test_carries_as_of_and_log_end(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        self._seed(db)
+
+        doc = build_state_at_feed(db, seq=2)
+        assert doc["as_of_seq"] == 2
+        assert doc["log_end_seq"] == 3
+        assert "board" in doc
+        assert "presence/roster is not journalled" in str(doc["note"])
+
+    def test_seq_is_clamped_into_range(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        self._seed(db)
+
+        assert build_state_at_feed(db, seq=999)["as_of_seq"] == 3  # clamped to log end
+        assert build_state_at_feed(db, seq=-5)["as_of_seq"] == 0  # clamped to 0
+        assert _task_ids(build_state_at_feed(db, seq=0)) == []  # before any event
+
+    def test_is_deterministic(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        self._seed(db)
+        assert build_state_at_feed(db, seq=2) == build_state_at_feed(db, seq=2)
+
+    def test_missing_store_is_refused(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="missing event store"):
+            build_state_at_feed(tmp_path / "absent.db", seq=1)

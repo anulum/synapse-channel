@@ -50,6 +50,7 @@ from synapse_channel.dashboard_store_feeds import (
     build_events_tail,
     build_federation_feed,
     build_metrics_feed,
+    build_state_at_feed,
     latest_cursor,
 )
 from synapse_channel.dashboard_studio import (
@@ -470,6 +471,9 @@ EVENTS_PATH = "/events.json"
 METRICS_FEED_PATH = "/metrics.json"
 """Read-only endpoint serving store-attested log metrics for the cockpit."""
 
+STATE_AT_PATH = "/state-at.json"
+"""Read-only endpoint reconstructing coordination state as of an event seq."""
+
 CAUSALITY_PATH = "/causality.json"
 """Read-only endpoint answering one causality query in the CLI's JSON shape."""
 
@@ -562,6 +566,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         if path == METRICS_FEED_PATH:
             self._serve_metrics_feed()
+            return
+        if path == STATE_AT_PATH:
+            self._serve_state_at(urlsplit(self.path).query)
             return
         if path == CAUSALITY_PATH:
             self._serve_causality(urlsplit(self.path).query)
@@ -662,6 +669,47 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         try:
             document = build_metrics_feed(self.reliability_db)
+        except ValueError as exc:
+            self._write(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                f"{exc}\n".encode(),
+                content_type="text/plain",
+            )
+            return
+        self._write(
+            HTTPStatus.OK,
+            json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8"),
+            content_type="application/json",
+        )
+
+    def _serve_state_at(self, query: str) -> None:
+        """Serve the coordination state reconstructed as of ``?seq=N``.
+
+        Store-derived time-travel: bounded replay of the durable log to ``seq``,
+        the state and board in the live-snapshot shape plus ``as_of_seq`` and
+        ``log_end_seq``. Same posture as the other store feeds — 404 without
+        ``--feeds-db``, 503 on an unreadable store, 400 on a malformed ``seq``.
+        Presence/roster is not journalled and is omitted (the document says so).
+        """
+        if self.reliability_db is None:
+            self._write(
+                HTTPStatus.NOT_FOUND,
+                b"state-at feed not configured; start the dashboard with --feeds-db\n",
+                content_type="text/plain",
+            )
+            return
+        raw = parse_qs(query).get("seq", ["0"])[0]
+        try:
+            seq = int(raw)
+        except ValueError:
+            self._write(
+                HTTPStatus.BAD_REQUEST,
+                b"seq must be an integer\n",
+                content_type="text/plain",
+            )
+            return
+        try:
+            document = build_state_at_feed(self.reliability_db, seq=seq)
         except ValueError as exc:
             self._write(
                 HTTPStatus.SERVICE_UNAVAILABLE,
