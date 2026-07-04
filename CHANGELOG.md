@@ -30,6 +30,14 @@ All notable changes to this project are documented here.
   `409` when the blackboard refuses a task on its own terms, and `503` when the hub
   is unreachable.
 
+### Security
+- The metrics query-string token (`--metrics-query-token-ok`) is now loopback-only.
+  Binding a non-loopback host with it set is refused with `InsecureBindError` (like
+  the other exposure guards, downgradable with `--insecure-off-loopback`), because a
+  `?token=` value leaks into proxy access logs, browser history, and shell history.
+  On a loopback bind it remains a legitimate local debug aid; off loopback the token
+  belongs in the `Authorization` header.
+
 ## [0.97.0] - 2026-07-04
 
 ### Added

@@ -38,6 +38,7 @@ def exposure_problems(
     authenticator: Any | None,
     enable_metrics: bool,
     metrics_token: str | None,
+    metrics_query_token_ok: bool = False,
 ) -> list[str]:
     """Return the exposure problems for binding on ``host``."""
     if is_loopback_host(host):
@@ -53,6 +54,13 @@ def exposure_problems(
             f"metrics enabled on non-loopback host {host!r} with no "
             "--metrics-token; /metrics and /health would be unauthenticated"
         )
+    if enable_metrics and metrics_query_token_ok:
+        problems.append(
+            f"metrics query-string token accepted on non-loopback host {host!r}; a "
+            "?token= value leaks into proxy access logs, browser history, and shell "
+            "history — drop --metrics-query-token-ok and pass the token in the "
+            "Authorization header, or bind loopback where it is a local-only debug aid"
+        )
     return problems
 
 
@@ -62,6 +70,7 @@ def guard_exposure(
     authenticator: Any | None,
     enable_metrics: bool,
     metrics_token: str | None,
+    metrics_query_token_ok: bool = False,
     insecure_off_loopback: bool,
     logger: logging.Logger,
 ) -> None:
@@ -71,6 +80,7 @@ def guard_exposure(
         authenticator=authenticator,
         enable_metrics=enable_metrics,
         metrics_token=metrics_token,
+        metrics_query_token_ok=metrics_query_token_ok,
     )
     if not problems:
         return

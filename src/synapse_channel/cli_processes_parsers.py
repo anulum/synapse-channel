@@ -256,7 +256,9 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--metrics-query-token-ok",
         action="store_true",
         help="Also accept the metrics token as a ?token= query parameter (off by "
-        "default; a query token can leak into logs, history, and proxy records).",
+        "default; a query token can leak into logs, history, and proxy records). "
+        "Loopback-only: binding a non-loopback host with this set is refused unless "
+        "--insecure-off-loopback is also passed.",
     )
     hub.add_argument(
         "--message-auth-key",

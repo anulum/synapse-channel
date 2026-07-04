@@ -367,3 +367,40 @@ def test_guard_exposure_passes_when_metrics_token_set(
     with caplog.at_level("WARNING", logger="synapse.hub"):
         hub._guard_exposure("0.0.0.0")
     assert caplog.records == []
+
+
+def test_guard_exposure_refuses_metrics_query_token_off_loopback() -> None:
+    # A fully authenticated hub is still refused off loopback when the query-string
+    # token is accepted: the token would leak into URL logs, so the mode is
+    # loopback-only.
+    hub = SynapseHub(
+        authenticator=TokenAuthenticator(["t"]),
+        enable_metrics=True,
+        metrics_token="m",
+        metrics_query_token_ok=True,
+    )
+    with pytest.raises(InsecureBindError, match="query-string token"):
+        hub._guard_exposure("0.0.0.0")
+
+
+def test_guard_exposure_warns_on_query_token_off_loopback_when_overridden(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    hub = SynapseHub(
+        authenticator=TokenAuthenticator(["t"]),
+        enable_metrics=True,
+        metrics_token="m",
+        metrics_query_token_ok=True,
+        insecure_off_loopback=True,
+    )
+    with caplog.at_level("WARNING", logger="synapse.hub"):
+        hub._guard_exposure("0.0.0.0")
+    assert any("query-string token" in r.message for r in caplog.records)
+
+
+def test_guard_exposure_allows_query_token_on_loopback() -> None:
+    # On a loopback bind the query-token mode is a legitimate local debug aid, so
+    # no exposure problem is raised.
+    hub = SynapseHub(enable_metrics=True, metrics_token="m", metrics_query_token_ok=True)
+    assert hub._exposure_problems("127.0.0.1") == []
+    hub._guard_exposure("127.0.0.1")
