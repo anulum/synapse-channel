@@ -158,6 +158,28 @@ def test_to_json_is_stable_and_complete() -> None:
     assert sessions[0]["max_rate_limit_utilisation"] == pytest.approx(0.3)
 
 
+def test_coordination_task_id_surfaces_in_record_json_and_render() -> None:
+    body = format_session_metric_note(
+        SessionMetrics(turns=2, input_tokens=100, output_tokens=20), task_id="quantum/T42"
+    )
+    report = build_session_metric_report([_event(seq=1, author="a", session="s", body=body)])
+
+    record = report.sessions[0]
+    assert record.session_id == "s"  # the note's slot carries the session
+    assert record.task_id == "quantum/T42"  # the body carries the coordination task
+    payload = session_metric_report_to_json(report)
+    sessions = cast("list[dict[str, object]]", payload["sessions"])
+    assert sessions[0]["task_id"] == "quantum/T42"
+    assert "task=quantum/T42" in render_session_metric_report(report)
+
+
+def test_a_body_without_a_task_id_leaves_the_record_task_empty() -> None:
+    report = build_session_metric_report([_event(seq=1, author="a", session="s", body=_body())])
+
+    assert report.sessions[0].task_id == ""
+    assert "task=" not in render_session_metric_report(report)
+
+
 def test_run_report_missing_store_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="missing event store"):
         run_session_metric_report(tmp_path / "nope.db")

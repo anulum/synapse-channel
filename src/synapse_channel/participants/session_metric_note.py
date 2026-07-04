@@ -19,7 +19,10 @@ The body is a snapshot of a :class:`~synapse_channel.participants.session_teleme
 Because that object is *cumulative* — each emission supersedes the prior one for the same session —
 a reader keeps the latest snapshot per session rather than summing snapshots. The session identity
 is carried by the progress note's ``task_id`` (as the usage note carries its task id), not by the
-body, so the body holds only the metric figures.
+body, so the note's task-id slot is spent on the session. The *coordination* task a session
+advances — the claim or board task id — is therefore carried in the body as an optional
+``task_id=`` token (omitted when empty, like the optional utilisation), letting a reader correlate a
+session's telemetry to the coordination work it was doing, not only to its session.
 """
 
 from __future__ import annotations
@@ -46,7 +49,7 @@ _INT_FIELDS = (
 """Non-negative integer fields carried in the note body, in canonical order."""
 
 
-def format_session_metric_note(metrics: SessionMetrics) -> str:
+def format_session_metric_note(metrics: SessionMetrics, *, task_id: str = "") -> str:
     """Return the canonical text body for an operational session-metric snapshot.
 
     Emit the result as a ``LEDGER_PROGRESS`` note with ``kind="session_metric"`` (see
@@ -59,6 +62,11 @@ def format_session_metric_note(metrics: SessionMetrics) -> str:
     ----------
     metrics : SessionMetrics
         The running session totals to snapshot.
+    task_id : str, optional
+        The coordination task the session was advancing (the claim or board task id). Included
+        as a trailing ``task_id=`` token only when non-empty, so a reader can correlate the
+        session's telemetry to the coordination work; empty (the default) omits it, leaving the
+        body unchanged. The note's own task-id slot carries the session id, not this.
 
     Returns
     -------
@@ -68,8 +76,9 @@ def format_session_metric_note(metrics: SessionMetrics) -> str:
     Raises
     ------
     ValueError
-        If any count, the spend, or the latency is negative, or a present utilisation is
-        outside the ``[0, 1]`` range.
+        If any count, the spend, or the latency is negative, a present utilisation is
+        outside the ``[0, 1]`` range, or ``task_id`` contains whitespace (which the
+        space-delimited body could not round-trip).
     """
     counts = (
         metrics.turns,
@@ -89,6 +98,9 @@ def format_session_metric_note(metrics: SessionMetrics) -> str:
     if utilisation is not None and not 0.0 <= utilisation <= 1.0:
         msg = "session-metric rate-limit utilisation must be within [0, 1]"
         raise ValueError(msg)
+    if task_id and any(character.isspace() for character in task_id):
+        msg = "session-metric task_id must not contain whitespace"
+        raise ValueError(msg)
     fields = [
         SESSION_METRIC_PREFIX,
         f"turns={int(metrics.turns)}",
@@ -102,6 +114,8 @@ def format_session_metric_note(metrics: SessionMetrics) -> str:
     ]
     if utilisation is not None:
         fields.append(f"max_rate_limit_utilisation={float(utilisation):.6f}")
+    if task_id:
+        fields.append(f"task_id={task_id}")
     return " ".join(fields)
 
 
@@ -116,10 +130,11 @@ def parse_session_metric_note(text: str) -> dict[str, Any] | None:
     Returns
     -------
     dict[str, Any] or None
-        Parsed fields (the six integer counts, ``cost_usd``, ``total_latency_seconds``, and an
-        optional ``max_rate_limit_utilisation``), or ``None`` when the body is not a
-        session-metric note. Missing numeric fields default to zero so an older or partial
-        body still yields a usable snapshot.
+        Parsed fields (the six integer counts, ``cost_usd``, ``total_latency_seconds``, an
+        optional ``max_rate_limit_utilisation``, and the coordination ``task_id`` — an empty
+        string when the body carried none), or ``None`` when the body is not a session-metric
+        note. Missing numeric fields default to zero so an older or partial body still yields a
+        usable snapshot.
     """
     tokens = text.split()
     if not tokens or tokens[0] != SESSION_METRIC_PREFIX:
@@ -137,6 +152,7 @@ def parse_session_metric_note(text: str) -> dict[str, Any] | None:
     parsed["max_rate_limit_utilisation"] = _coerce_optional_float(
         pairs.get("max_rate_limit_utilisation")
     )
+    parsed["task_id"] = pairs.get("task_id", "")
     return parsed
 
 

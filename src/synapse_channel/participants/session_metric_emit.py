@@ -48,7 +48,11 @@ class ProgressPoster(Protocol):
 
 
 async def emit_session_metric(
-    metrics: SessionMetrics, *, post_progress: ProgressPoster, session_id: str
+    metrics: SessionMetrics,
+    *,
+    post_progress: ProgressPoster,
+    session_id: str,
+    task_id: str = "",
 ) -> bool:
     """Record one session's running telemetry as an opt-in durable snapshot, if it carries signal.
 
@@ -67,6 +71,10 @@ async def emit_session_metric(
         Poster that appends the note to the progress ledger (e.g. ``SynapseAgent.post_progress``).
     session_id : str
         Identifier correlating snapshots of the same session; recorded as the note's task id.
+    task_id : str, optional
+        The coordination task the session is advancing (the claim or board task id), carried in
+        the note body so a reader can correlate the session's telemetry to the coordination work.
+        Empty (the default) omits it, leaving the body unchanged.
 
     Returns
     -------
@@ -76,6 +84,6 @@ async def emit_session_metric(
     """
     if metrics.turns <= 0:
         return False
-    note = format_session_metric_note(metrics)
+    note = format_session_metric_note(metrics, task_id=task_id)
     await post_progress(session_id, note, kind=SESSION_METRIC_NOTE_KIND)
     return True

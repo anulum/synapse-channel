@@ -126,3 +126,24 @@ def test_parser_reads_an_invalid_utilisation_token_as_absent() -> None:
     )
     assert parsed is not None
     assert parsed["max_rate_limit_utilisation"] is None
+
+
+def test_coordination_task_id_is_carried_and_round_trips() -> None:
+    note = format_session_metric_note(_metrics(), task_id="quantum/T42")
+    assert "task_id=quantum/T42" in note
+    parsed = parse_session_metric_note(note)
+    assert parsed is not None
+    assert parsed["task_id"] == "quantum/T42"
+
+
+def test_absent_task_id_is_omitted_and_parses_back_as_empty() -> None:
+    note = format_session_metric_note(_metrics())
+    assert "task_id=" not in note  # the note's own slot carries the session, not this
+    parsed = parse_session_metric_note(note)
+    assert parsed is not None
+    assert parsed["task_id"] == ""
+
+
+def test_task_id_with_whitespace_is_rejected_at_format() -> None:
+    with pytest.raises(ValueError, match="task_id must not contain whitespace"):
+        format_session_metric_note(_metrics(), task_id="bad id")

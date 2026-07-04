@@ -36,6 +36,7 @@ from synapse_channel.participants.orchestration import (
 from synapse_channel.participants.participant import ParticipantChannel, ParticipantHealth
 from synapse_channel.participants.provider_route import ModelCandidate, TaskProfile
 from synapse_channel.participants.session_advisor import AdvisorThresholds, SessionSignal
+from synapse_channel.participants.session_metric_note import parse_session_metric_note
 
 
 class _FakeParticipant:
@@ -214,6 +215,30 @@ async def test_routes_away_from_a_rate_limited_provider_and_persists() -> None:
     assert all(
         task_id == "topic-2" and kind == "session_metric" for task_id, _, kind in poster.notes
     )
+
+
+async def test_coordination_task_id_is_carried_into_each_snapshot() -> None:
+    poster = _RecordingPoster()
+    seat = _seat("a", [_result(), _result()])
+    transcript = await orchestrate_session(
+        "q",
+        [seat],
+        rounds=2,
+        topic_id="topic-3",
+        task=TaskProfile(),
+        thresholds=AdvisorThresholds(),
+        clock=_Clock(),
+        which=lambda name: f"/usr/bin/{name}",
+        post_progress=poster,
+        task_id="quantum/T42",
+    )
+    assert transcript.stopped == STOPPED_COMPLETED
+    assert len(poster.notes) == 2
+    for note_task_id, text, _ in poster.notes:
+        assert note_task_id == "topic-3"  # the note's slot still carries the session
+        parsed = parse_session_metric_note(text)
+        assert parsed is not None
+        assert parsed["task_id"] == "quantum/T42"  # the coordination task rides the body
 
 
 async def test_unroutable_round_stops() -> None:
