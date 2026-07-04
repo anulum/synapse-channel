@@ -25,10 +25,21 @@ the doctor's addressee check, not this ledger.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 DEFAULT_DEAD_LETTER_TARGETS = 200
 """Bounded number of distinct targets retained; the stalest entry is evicted."""
+
+DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+"""Recommended age after which a target with no fresh dead letter is forgotten.
+
+A blackhole nobody has even *tried* to reach in a week is stale — the sender
+stopped, so it is noise, not a live problem. A target that keeps drawing
+directed traffic nobody reads refreshes ``last_ts`` on every message and so
+never ages out; only a target that has gone quiet expires. The hub applies this
+default; the ledger itself defaults to no age bound so a library caller keeps
+the pure capacity-bounded behaviour."""
 
 
 def is_directed_target(target: str) -> bool:
@@ -74,11 +85,33 @@ class DeadLetterLedger:
         Distinct targets retained (floored at ``1``); recording a new
         target beyond the bound evicts the entry with the oldest
         ``last_ts``, so a flood of one-off names cannot grow the hub.
+    max_age_seconds : float or None, optional
+        When set, a target is forgotten once its ``last_ts`` falls more than
+        this many seconds behind the current time, so a blackhole that has
+        gone quiet ages out instead of lingering as a stale slot. Expiry runs
+        on every :meth:`record` (against the message's own timestamp) and on
+        every :meth:`snapshot` (against ``now``), so a read is fresh even
+        during a quiet stretch. ``None`` (the default) keeps the pure
+        capacity-bounded behaviour with no age bound.
     """
 
-    def __init__(self, max_targets: int = DEFAULT_DEAD_LETTER_TARGETS) -> None:
+    def __init__(
+        self,
+        max_targets: int = DEFAULT_DEAD_LETTER_TARGETS,
+        *,
+        max_age_seconds: float | None = None,
+    ) -> None:
         self.max_targets = max(1, int(max_targets))
+        self.max_age_seconds = None if max_age_seconds is None else float(max_age_seconds)
         self._entries: dict[str, DeadLetter] = {}
+
+    def _expire_stale(self, now: float) -> None:
+        """Drop targets whose most recent dead letter is older than the age bound."""
+        if self.max_age_seconds is None:
+            return
+        cutoff = now - self.max_age_seconds
+        for target in [t for t, entry in self._entries.items() if entry.last_ts < cutoff]:
+            del self._entries[target]
 
     def record(self, target: str, *, sender: str, ts: float) -> None:
         """Count one directed message that matched no live connection."""
@@ -87,6 +120,7 @@ class DeadLetterLedger:
         self._entries[target] = DeadLetter(
             target=target, count=count, last_ts=float(ts), last_sender=sender
         )
+        self._expire_stale(float(ts))
         if len(self._entries) > self.max_targets:
             stalest = min(self._entries.values(), key=lambda entry: entry.last_ts)
             del self._entries[stalest.target]
@@ -95,12 +129,16 @@ class DeadLetterLedger:
         """Forget a target — its reader just connected."""
         self._entries.pop(name, None)
 
-    def snapshot(self) -> list[dict[str, object]]:
+    def snapshot(self, now: float | None = None) -> list[dict[str, object]]:
         """Return the ledger for the state snapshot, worst first.
 
-        Sorted by count descending, then target, so the biggest blackhole
-        leads; the shape is one JSON object per target.
+        Aged-out targets are expired against ``now`` (wall clock when ``None``)
+        before the view is built, mirroring the state snapshot's own expiry, so
+        the ledger never reports a blackhole that has gone quiet past the age
+        bound. Sorted by count descending, then target, so the biggest
+        blackhole leads; the shape is one JSON object per target.
         """
+        self._expire_stale(time.time() if now is None else float(now))
         ordered = sorted(self._entries.values(), key=lambda entry: (-entry.count, entry.target))
         return [
             {

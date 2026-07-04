@@ -147,7 +147,10 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_multihub:add_parsers", ("multihub",)),
     ("synapse_channel.cli:_register_participant_group", ("participant",)),
     ("synapse_channel.cli_arm:add_parser", ("arm",)),
-    ("synapse_channel.cli_queries:add_parsers", ("who", "state", "board", "manifest", "health")),
+    (
+        "synapse_channel.cli_queries:add_parsers",
+        ("who", "state", "dead-letters", "board", "manifest", "health"),
+    ),
     ("synapse_channel.cli_status:add_parsers", ("status",)),
     ("synapse_channel.cli_dashboard:add_parsers", ("dashboard",)),
     ("synapse_channel.cli_directory:add_parsers", ("directory",)),

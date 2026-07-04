@@ -14,6 +14,18 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `synapse dead-letters` — a terminal view of the hub's dead-letter ledger
+  (directed messages delivered to no live connection), worst blackhole first,
+  with the exact `syn inbox --as NAME` drain remedy the doctor's addressee
+  check emits. The ledger already rode in the state snapshot for the dashboard
+  and cockpit; this brings it to a terminal operator too. Read-only, reuses the
+  state request.
+- Dead-letter ledger age bound — `DeadLetterLedger` gained an optional
+  `max_age_seconds`, and the hub applies a seven-day default: a target that has
+  gone quiet past the bound is forgotten (expired on both `record` and
+  `snapshot`) so a stale slot no longer shows as a live blackhole. A target
+  that keeps drawing directed traffic refreshes and never ages out; the library
+  default stays unbounded so existing callers are unchanged.
 - `/merkle-proof.json?seq=N` dashboard feed — serves an RFC 6962 Merkle
   inclusion proof for one event so a cockpit row's *verify* button can
   confirm the row is committed to the attested log's tree root, in the same

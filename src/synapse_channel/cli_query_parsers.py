@@ -13,6 +13,7 @@ import argparse
 
 from synapse_channel.cli_query_commands import (
     _cmd_board,
+    _cmd_dead_letters,
     _cmd_health,
     _cmd_manifest,
     _cmd_state,
@@ -22,7 +23,10 @@ from synapse_channel.client.agent import default_hub_uri
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register the ``who``, ``health``, ``state``, ``board``, and ``manifest`` subparsers."""
+    """Register the read-only query subparsers.
+
+    ``who``, ``health``, ``state``, ``dead-letters``, ``board``, and ``manifest``.
+    """
     who = subparsers.add_parser(
         "who", help="List the agents currently online (optionally one project's)."
     )
@@ -68,6 +72,20 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
     )
     state.set_defaults(func=_cmd_state)
+
+    dead_letters = subparsers.add_parser(
+        "dead-letters",
+        help="Print directed messages the hub delivered to no live connection.",
+    )
+    dead_letters.add_argument("--uri", default=default_hub_uri())
+    dead_letters.add_argument("--name", default="USER")
+    dead_letters.add_argument(
+        "--token", default=None, help="Shared-secret token for a secured hub."
+    )
+    dead_letters.add_argument(
+        "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
+    )
+    dead_letters.set_defaults(func=_cmd_dead_letters)
 
     board = subparsers.add_parser("board", help="Print the hub's shared task/progress board.")
     board.add_argument("--uri", default=default_hub_uri())

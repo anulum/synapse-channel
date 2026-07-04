@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from synapse_channel.waiter_identity import split_roster, waiter_name
@@ -79,6 +80,28 @@ def _render_state(snapshot: dict[str, Any], *, owner: str | None = None) -> None
             f"  {claim.get('task_id')} [{claim.get('status')}] "
             f"owner={claim.get('owner')} paths={paths} checkpoint={checkpoint}{git_suffix}"
         )
+
+
+def _render_dead_letters(snapshot: dict[str, Any]) -> None:
+    """Render the hub's dead-letter ledger — directed chats that reached nobody.
+
+    The ledger already rides in the state snapshot for the dashboard and the
+    cockpit; this brings the same blackhole list to a terminal operator, worst
+    first, with the exact one-line remedy the doctor's addressee check emits.
+    An empty ledger is stated plainly, not left as silence a reader must guess.
+    """
+    entries = list(snapshot.get("dead_letters", []))
+    if not entries:
+        print("Dead letters: none — every recent directed message reached a live connection.")
+        return
+    print(f"Dead letters ({len(entries)}: directed messages the hub delivered to nobody live):")
+    for entry in entries:
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(float(entry.get("last_ts", 0.0))))
+        print(
+            f"  {entry.get('target')}  count={entry.get('count')} "
+            f"from={entry.get('last_sender')}  last={when}"
+        )
+    print(f"  drain a name's backlog: syn inbox --as {entries[0].get('target')}")
 
 
 def _print_board(board: dict[str, Any]) -> None:
