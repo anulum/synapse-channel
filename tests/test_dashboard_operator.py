@@ -17,8 +17,10 @@ import pytest
 
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.dashboard_operator import (
+    ACCEPTED,
     DELIVERED,
     DENIED,
+    REJECTED,
     UNDELIVERED,
     UNREACHABLE,
     AgentFactory,
@@ -27,10 +29,16 @@ from synapse_channel.dashboard_operator import (
 )
 
 OnSend = Callable[["_FakeAgent", str, str], Awaitable[None]]
+OnTask = Callable[["_FakeAgent"], Awaitable[None]]
 
 
 class _FakeAgent:
-    """A stand-in client that drives the relay's collect callback on send."""
+    """A stand-in client that drives the relay's collect callback on send.
+
+    It records every outbound action in :attr:`sent` as
+    ``(verb, id_or_target, body, extra)`` and, after each, invokes the matching
+    injected callback so a test can emit the hub's confirmation or error.
+    """
 
     def __init__(
         self,
@@ -43,6 +51,7 @@ class _FakeAgent:
         ready: bool,
         closed: bool,
         on_send: OnSend | None,
+        on_task: OnTask | None,
     ) -> None:
         self.name = name
         self.collect = collect
@@ -53,6 +62,7 @@ class _FakeAgent:
         self.last_close_reason: str | None = "name conflict" if closed else None
         self._ready = ready
         self._on_send = on_send
+        self._on_task = on_task
         self.sent: list[tuple[str, str, str, dict[str, Any]]] = []
 
     async def connect(self) -> None:
@@ -69,9 +79,32 @@ class _FakeAgent:
         if self._on_send is not None:
             await self._on_send(self, target, payload)
 
+    async def post_task(
+        self, task_id: str, title: str, *, depends_on: tuple[str, ...] | list[str] = ()
+    ) -> None:
+        self.sent.append(("post_task", task_id, title, {"depends_on": tuple(depends_on)}))
+        if self._on_task is not None:
+            await self._on_task(self)
+
+    async def update_ledger_task(
+        self, task_id: str, *, status: str | None = None, suggested_owner: str | None = None
+    ) -> None:
+        self.sent.append(("update_ledger_task", task_id, status or "", {}))
+        if self._on_task is not None:
+            await self._on_task(self)
+
+    async def post_progress(self, task_id: str, text: str, *, kind: str = "note") -> None:
+        self.sent.append(("post_progress", task_id, text, {"kind": kind}))
+        if self._on_task is not None:
+            await self._on_task(self)
+
 
 def _factory(
-    *, ready: bool = True, closed: bool = False, on_send: OnSend | None = None
+    *,
+    ready: bool = True,
+    closed: bool = False,
+    on_send: OnSend | None = None,
+    on_task: OnTask | None = None,
 ) -> Callable[..., _FakeAgent]:
     """Build an agent factory yielding a configured :class:`_FakeAgent`."""
 
@@ -94,6 +127,7 @@ def _factory(
             ready=ready,
             closed=closed,
             on_send=on_send,
+            on_task=on_task,
         )
         holder["agent"] = agent
         return agent
@@ -120,6 +154,46 @@ async def _deny(agent: _FakeAgent, target: str, payload: str) -> None:
             "type": MessageType.ERROR,
             "target": agent.name,
             "acl_reason": "no chat rule for team-b",
+            "acl_decision": "deny",
+        }
+    )
+
+
+async def _confirm_task(agent: _FakeAgent) -> None:
+    """Emit the hub confirmation that matches the agent's most recent action."""
+    verb, identifier, body, _extra = agent.sent[-1]
+    if verb == "post_task":
+        await agent.collect(
+            {"type": MessageType.LEDGER_TASK_POSTED, "task": {"task_id": identifier}}
+        )
+    elif verb == "update_ledger_task":
+        await agent.collect(
+            {
+                "type": MessageType.LEDGER_TASK_UPDATED,
+                "task": {"task_id": identifier, "status": body},
+            }
+        )
+    elif verb == "post_progress":
+        await agent.collect(
+            {
+                "type": MessageType.LEDGER_PROGRESS_POSTED,
+                "note": {"task_id": identifier, "author": agent.name},
+            }
+        )
+
+
+async def _reject_task(agent: _FakeAgent) -> None:
+    await agent.collect(
+        {"type": MessageType.ERROR, "target": agent.name, "payload": "Task title is required."}
+    )
+
+
+async def _deny_task(agent: _FakeAgent) -> None:
+    await agent.collect(
+        {
+            "type": MessageType.ERROR,
+            "target": agent.name,
+            "acl_reason": "no board rule for team-b",
             "acl_decision": "deny",
         }
     )
@@ -184,6 +258,93 @@ def test_relay_message_unreachable_on_no_outcome_in_time() -> None:
 
     assert outcome.status == UNREACHABLE
     assert "no delivery outcome" in outcome.detail
+
+
+def test_relay_task_reports_accepted() -> None:
+    factory = _factory(on_task=_confirm_task)
+    outcome = asyncio.run(
+        _relay(factory).relay_task("T-100", "Ship the release", depends_on=["T-1", "T-2"])
+    )
+
+    assert outcome.status == ACCEPTED
+    assert outcome.ok is True
+    agent = factory.holder["agent"]  # type: ignore[attr-defined]
+    assert agent.sent == [
+        ("post_task", "T-100", "Ship the release", {"depends_on": ("T-1", "T-2")})
+    ]
+    assert agent.running is False  # torn down
+
+
+def test_relay_task_reports_denied_on_acl_error() -> None:
+    outcome = asyncio.run(_relay(_factory(on_task=_deny_task)).relay_task("T-1", "title"))
+
+    assert outcome.status == DENIED
+    assert outcome.ok is False
+    assert "team-b" in outcome.detail
+
+
+def test_relay_task_reports_rejected_on_blackboard_error() -> None:
+    outcome = asyncio.run(_relay(_factory(on_task=_reject_task)).relay_task("T-1", "title"))
+
+    assert outcome.status == REJECTED
+    assert outcome.ok is False
+    assert "title is required" in outcome.detail
+
+
+def test_relay_task_unreachable_on_no_outcome_in_time() -> None:
+    outcome = asyncio.run(_relay(_factory(on_task=None)).relay_task("T-1", "title"))
+
+    assert outcome.status == UNREACHABLE
+    assert "task declaration" in outcome.detail
+
+
+def test_relay_task_update_status_reports_accepted() -> None:
+    factory = _factory(on_task=_confirm_task)
+    outcome = asyncio.run(_relay(factory).relay_task_update("T-9", status="done"))
+
+    assert outcome.status == ACCEPTED
+    assert outcome.ok is True
+    agent = factory.holder["agent"]  # type: ignore[attr-defined]
+    assert agent.sent == [("update_ledger_task", "T-9", "done", {})]
+
+
+def test_relay_task_update_note_reports_accepted() -> None:
+    factory = _factory(on_task=_confirm_task)
+    outcome = asyncio.run(_relay(factory).relay_task_update("T-9", note="halfway there"))
+
+    assert outcome.status == ACCEPTED
+    agent = factory.holder["agent"]  # type: ignore[attr-defined]
+    assert agent.sent == [("post_progress", "T-9", "halfway there", {"kind": "note"})]
+
+
+def test_relay_task_update_status_and_note_sends_both_and_waits_for_both() -> None:
+    factory = _factory(on_task=_confirm_task)
+    outcome = asyncio.run(
+        _relay(factory).relay_task_update("T-9", status="blocked", note="waiting on CI")
+    )
+
+    assert outcome.status == ACCEPTED
+    agent = factory.holder["agent"]  # type: ignore[attr-defined]
+    assert agent.sent == [
+        ("update_ledger_task", "T-9", "blocked", {}),
+        ("post_progress", "T-9", "waiting on CI", {"kind": "note"}),
+    ]
+
+
+def test_relay_task_update_denied_on_acl_error() -> None:
+    outcome = asyncio.run(
+        _relay(_factory(on_task=_deny_task)).relay_task_update("T-1", status="done")
+    )
+
+    assert outcome.status == DENIED
+    assert outcome.ok is False
+
+
+def test_relay_task_update_unreachable_on_no_outcome_in_time() -> None:
+    outcome = asyncio.run(_relay(_factory(on_task=None)).relay_task_update("T-1", status="done"))
+
+    assert outcome.status == UNREACHABLE
+    assert "task update" in outcome.detail
 
 
 def test_rate_limiter_allows_up_to_the_budget_then_refuses() -> None:

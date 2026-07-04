@@ -295,20 +295,28 @@ ships empty with the reason stated. `--cockpit-dist <dir>` serves a built
 cockpit single-page app read-only under `/cockpit/` (paths escaping the
 directory or with unrecognised suffixes are refused).
 
-**Operator write-path (opt-in).** `--operator` arms one write route:
-`POST /message` with `{"to": "<name|group|all>", "text": "..."}` relays a
-single chat message to the fleet, so the cockpit can delegate rather than
-only observe. It is **off by default** — without the flag the route answers
-404, indistinguishable from an unknown path, and the dashboard stays a pure
-observer. When armed, a write still requires the dashboard bearer token, is
-rate-limited, and is sent under the identity `operator:<name>` (set with
-`--operator-name`), never impersonating an agent. The relay reimplements
-neither authorisation nor auditing: the hub applies its own ACL to the
-relayed frame and records it in the durable log, so every operator action is
-authorised at the hub and shows up in replay, `/state-at`, and the signal
-stream like any other frame. The response is JSON — `200` delivered or
-dead-lettered, `403` when the ACL refuses it, `503` when the hub is
-unreachable.
+**Operator write-path (opt-in).** `--operator` arms three write routes so the
+cockpit can act on the fleet rather than only observe it:
+
+- `POST /message` `{"to": "<name|group|all>", "text": "..."}` — relay one chat
+  message to the fleet.
+- `POST /task` `{"id": "...", "title": "...", "depends_on": ["..."]?}` — declare
+  a board task.
+- `POST /task/update` `{"id": "...", "status": "..."?, "note": "..."?}` — change
+  a task's status and/or append a progress note (at least one of the two).
+
+The write-path is **off by default** — without the flag every route answers 404,
+indistinguishable from an unknown path, and the dashboard stays a pure observer.
+When armed, a write still requires the dashboard bearer token, is rate-limited,
+and is sent under the identity `operator:<name>` (set with `--operator-name`),
+never impersonating an agent. The relay reimplements neither authorisation nor
+auditing: the hub applies its own ACL to the relayed frame and records it in the
+durable log, so every operator action is authorised at the hub and shows up in
+replay, `/state-at`, and the signal stream like any other frame. The response is
+JSON — `200` when the hub delivered, dead-lettered, or applied it, `403` when the
+ACL refuses it, `409` when the blackboard refuses the task on its own terms
+(unknown id, empty title, dependency cycle, unknown status), and `503` when the
+hub is unreachable.
 
 **Public status-page posture:** the dashboard is read-only by default —
 every endpoint answers `GET` only unless `--operator` is set (above), and

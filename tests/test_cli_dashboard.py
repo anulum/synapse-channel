@@ -33,8 +33,10 @@ from synapse_channel.dashboard import (
     validate_dashboard_bind,
 )
 from synapse_channel.dashboard_operator import (
+    ACCEPTED,
     DELIVERED,
     DENIED,
+    REJECTED,
     UNDELIVERED,
     UNREACHABLE,
     RelayOutcome,
@@ -1407,6 +1409,16 @@ def _stub_relay_class(outcome: RelayOutcome) -> type:
         async def relay_message(self, to: str, text: str) -> RelayOutcome:
             return outcome
 
+        async def relay_task(
+            self, task_id: str, title: str, *, depends_on: object = ()
+        ) -> RelayOutcome:
+            return outcome
+
+        async def relay_task_update(
+            self, task_id: str, *, status: str | None = None, note: str | None = None
+        ) -> RelayOutcome:
+            return outcome
+
     return _StubRelay
 
 
@@ -1531,6 +1543,103 @@ def test_operator_write_is_rate_limited(monkeypatch: pytest.MonkeyPatch) -> None
     assert first == 200
     assert second == 429
     assert "rate limit" in body
+
+
+def test_operator_task_rejects_bad_bodies() -> None:
+    server = _operator_server()
+    try:
+        missing_id, _, _ = _http_post(server.url("/task"), json.dumps({"title": "Ship"}))
+        empty_title, _, _ = _http_post(
+            server.url("/task"), json.dumps({"id": "T-1", "title": "  "})
+        )
+        bad_deps, _, _ = _http_post(
+            server.url("/task"),
+            json.dumps({"id": "T-1", "title": "Ship", "depends_on": [1, 2]}),
+        )
+    finally:
+        server.close()
+
+    assert missing_id == 400
+    assert empty_title == 400
+    assert bad_deps == 400
+
+
+def test_operator_task_update_rejects_bad_bodies() -> None:
+    server = _operator_server()
+    try:
+        missing_id, _, _ = _http_post(server.url("/task/update"), json.dumps({"status": "done"}))
+        neither, _, _ = _http_post(server.url("/task/update"), json.dumps({"id": "T-1"}))
+        bad_status, _, _ = _http_post(
+            server.url("/task/update"), json.dumps({"id": "T-1", "status": 7})
+        )
+    finally:
+        server.close()
+
+    assert missing_id == 400
+    assert neither == 400
+    assert bad_status == 400
+
+
+@pytest.mark.parametrize(
+    ("outcome", "expected_status"),
+    [
+        (RelayOutcome(ACCEPTED, "task 'T-1' declared on the board"), 200),
+        (RelayOutcome(DENIED, "no board rule for team-b"), 403),
+        (RelayOutcome(REJECTED, "Task title is required."), 409),
+        (RelayOutcome(UNREACHABLE, "could not reach hub"), 503),
+    ],
+)
+def test_operator_task_maps_relay_outcome_to_status(
+    monkeypatch: pytest.MonkeyPatch, outcome: RelayOutcome, expected_status: int
+) -> None:
+    monkeypatch.setattr(dashboard_module, "OperatorRelay", _stub_relay_class(outcome))
+    server = _operator_server()
+    try:
+        status, content_type, body = _http_post(
+            server.url("/task"),
+            json.dumps({"id": "T-1", "title": "Ship", "depends_on": ["T-0"]}),
+        )
+    finally:
+        server.close()
+
+    assert status == expected_status
+    assert content_type == "application/json"
+    document = json.loads(body)
+    assert document["action"] == "task"
+    assert document["id"] == "T-1"
+    assert document["status"] == outcome.status
+    assert document["ok"] is outcome.ok
+
+
+@pytest.mark.parametrize(
+    ("outcome", "expected_status"),
+    [
+        (RelayOutcome(ACCEPTED, "task 'T-1' update applied on the board"), 200),
+        (RelayOutcome(DENIED, "no board rule for team-b"), 403),
+        (RelayOutcome(REJECTED, "Unknown ledger status 'nope'."), 409),
+        (RelayOutcome(UNREACHABLE, "could not reach hub"), 503),
+    ],
+)
+def test_operator_task_update_maps_relay_outcome_to_status(
+    monkeypatch: pytest.MonkeyPatch, outcome: RelayOutcome, expected_status: int
+) -> None:
+    monkeypatch.setattr(dashboard_module, "OperatorRelay", _stub_relay_class(outcome))
+    server = _operator_server()
+    try:
+        status, content_type, body = _http_post(
+            server.url("/task/update"),
+            json.dumps({"id": "T-1", "status": "done", "note": "shipped"}),
+        )
+    finally:
+        server.close()
+
+    assert status == expected_status
+    assert content_type == "application/json"
+    document = json.loads(body)
+    assert document["action"] == "task_update"
+    assert document["id"] == "T-1"
+    assert document["status"] == outcome.status
+    assert document["ok"] is outcome.ok
 
 
 def test_dashboard_parser_wires_operator_flags() -> None:
