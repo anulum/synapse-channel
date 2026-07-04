@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.96.0] - 2026-07-04
+
 ### Fixed
 - The CLI no longer aborts with `UnicodeEncodeError` on a non-UTF-8
   console (Windows `cp1250` and friends): the entry point reconfigures
