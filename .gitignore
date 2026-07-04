@@ -59,3 +59,6 @@ docs/internal/
 
 # JS/TS client dependencies
 node_modules/
+BACKUP/
+ARCHIVE/
+target/
