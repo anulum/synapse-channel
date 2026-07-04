@@ -49,6 +49,7 @@ from synapse_channel.dashboard_store_feeds import (
     build_causality_feed,
     build_events_tail,
     build_federation_feed,
+    build_health_anomalies_feed,
     build_merkle_proof_feed,
     build_metrics_feed,
     build_state_at_feed,
@@ -478,6 +479,9 @@ STATE_AT_PATH = "/state-at.json"
 MERKLE_PROOF_PATH = "/merkle-proof.json"
 """Read-only endpoint proving one event's inclusion in the attested log."""
 
+HEALTH_ANOMALIES_PATH = "/health-anomalies.json"
+"""Read-only endpoint flagging coordination anomalies — the hub-side alert view."""
+
 CAUSALITY_PATH = "/causality.json"
 """Read-only endpoint answering one causality query in the CLI's JSON shape."""
 
@@ -576,6 +580,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         if path == MERKLE_PROOF_PATH:
             self._serve_merkle_proof(urlsplit(self.path).query)
+            return
+        if path == HEALTH_ANOMALIES_PATH:
+            self._serve_health_anomalies()
             return
         if path == CAUSALITY_PATH:
             self._serve_causality(urlsplit(self.path).query)
@@ -759,6 +766,38 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         try:
             document = build_merkle_proof_feed(self.reliability_db, seq=seq)
+        except ValueError as exc:
+            self._write(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                f"{exc}\n".encode(),
+                content_type="text/plain",
+            )
+            return
+        self._write(
+            HTTPStatus.OK,
+            json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8"),
+            content_type="application/json",
+        )
+
+    def _serve_health_anomalies(self) -> None:
+        """Serve the coordination-anomaly report, or its honest absence.
+
+        The hub-side alert surface: orphaned, dangling, and stale coordination
+        signals the causality graph makes visible, with an ``anomaly_count`` for
+        a cockpit badge. Same posture as the other store feeds — 404 without
+        ``--feeds-db``, 503 on an unreadable store (or one past the graph node
+        ceiling). Fired alerts stay collector-side off ``/metrics``; this is
+        only what the durable log can prove.
+        """
+        if self.reliability_db is None:
+            self._write(
+                HTTPStatus.NOT_FOUND,
+                b"health-anomalies feed not configured; start the dashboard with --feeds-db\n",
+                content_type="text/plain",
+            )
+            return
+        try:
+            document = build_health_anomalies_feed(self.reliability_db)
         except ValueError as exc:
             self._write(
                 HTTPStatus.SERVICE_UNAVAILABLE,

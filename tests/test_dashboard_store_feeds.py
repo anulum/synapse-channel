@@ -31,6 +31,7 @@ from synapse_channel.dashboard_store_feeds import (
     build_causality_feed,
     build_events_tail,
     build_federation_feed,
+    build_health_anomalies_feed,
     build_merkle_proof_feed,
     build_metrics_feed,
     build_state_at_feed,
@@ -472,3 +473,57 @@ class TestMerkleProofFeed:
         db = tmp_path / "hub.db"
         _seed_log(db)
         assert build_merkle_proof_feed(db, seq=2) == build_merkle_proof_feed(db, seq=2)
+
+
+def _seed_claim(db: Path, *, task: str, owner: str, ts: float) -> None:
+    store = EventStore(db)
+    store.append(
+        EventKind.CLAIM,
+        {"task_id": task, "owner": owner, "status": "claimed", "paths": ["src/x"], "worktree": "w"},
+        ts=ts,
+    )
+    store.close()
+
+
+class TestHealthAnomaliesFeed:
+    def test_flags_an_orphaned_claim(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        _seed_claim(db, task="X", owner="bob", ts=1.0)  # a claim that is its task's last event
+
+        document = build_health_anomalies_feed(db)
+
+        assert document["present"] is True
+        assert isinstance(document["anomaly_count"], int)
+        assert document["anomaly_count"] >= 1
+        orphaned = document["orphaned"]
+        assert isinstance(orphaned, list)
+        assert [item["task_id"] for item in orphaned] == ["X"]
+
+    def test_stale_after_controls_the_stale_signal(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        store.append(
+            EventKind.CLAIM,
+            {"task_id": "X", "owner": "bob", "status": "claimed", "paths": ["s"], "worktree": "w"},
+            ts=1.0,
+        )
+        # A far-later event advances the log's final timestamp, so X has aged.
+        store.append(
+            EventKind.CLAIM, {"task_id": "Y", "owner": "amy", "status": "claimed"}, ts=5000.0
+        )
+        store.close()
+
+        lenient = build_health_anomalies_feed(db, stale_after=10_000.0)
+        strict = build_health_anomalies_feed(db, stale_after=100.0)
+
+        assert [item["task_id"] for item in lenient["stale"]] == []  # within the window
+        assert "X" in {item["task_id"] for item in strict["stale"]}  # aged past the window
+
+    def test_is_deterministic(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        _seed_claim(db, task="X", owner="bob", ts=1.0)
+        assert build_health_anomalies_feed(db) == build_health_anomalies_feed(db)
+
+    def test_missing_store_is_refused(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="missing event store"):
+            build_health_anomalies_feed(tmp_path / "absent.db")
