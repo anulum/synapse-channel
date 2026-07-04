@@ -34,15 +34,16 @@ AGPL-3.0 licence already covers you.
 
 ## Tiers
 
-The current tiers, prices (CHF), and what each grants are published at
+The current tiers, prices (USD), and what each grants are published at
 **<https://anulum.li/synapse/pricing.html>** and sold through Polar.sh. In summary:
 
 | Tier | Who it is for | Grant |
 | --- | --- | --- |
 | **Community** (free, AGPL-3.0) | OSS, research, personal | full feature set, copyleft applies |
-| **Indie** (pay-what-you-want, from CHF 9.99) | a solo developer or a single closed-source project | AGPL-copyleft exemption for **one** product, perpetual for the purchased version line |
-| **Team** | a company shipping closed-source or SaaS | exemption for **unlimited** projects within one legal entity, email support |
-| **Managed / Enterprise** | hosted multi-tenant coordination, SLAs, compliance | bespoke — contact us |
+| **Commercial Licence** | an org whose policy or product cannot use AGPL | AGPL-copyleft exemption on its own — same code, different terms, signed certificate |
+| **Pro** | a solo developer or small team shipping one closed-source project | copyleft exemption for **one** developer, the mobile app with push, email support |
+| **Team** | a company shipping closed-source or SaaS | exemption for **unlimited** projects within one legal entity, a managed observability dashboard, priority security patches, named support |
+| **Business / Enterprise** | regulated or multi-organisation deployments | SLA with indemnification, a **managed federation gateway**, SSO, audit exports, compliance — contact us |
 
 There is **no feature difference** between the open-source and commercial builds.
 The package on PyPI *is* the full product; a commercial licence changes only the
@@ -91,7 +92,8 @@ opening a pull request.
 
 ## Buy / contact
 
-- Buy a licence: **<https://anulum.li/synapse/pricing.html>** (Polar.sh, CHF).
+- Buy a licence: **<https://anulum.li/synapse/pricing.html>** (Polar.sh, USD; local
+  currency shown at checkout, CHF invoicing on request).
 - Custom, OEM, academic, or non-profit terms: **protoscience@anulum.li**.
 - For custom evaluation, include the legal entity, product/service name,
   deployment shape, source availability, support expectations, compliance needs,
