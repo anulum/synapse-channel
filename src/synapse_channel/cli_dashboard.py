@@ -45,6 +45,8 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
     print("snapshot JSON: " + server.url("/snapshot.json"))
     if args.operator:
         print("operator write: POST " + server.url("/message"))
+        print("operator task: POST " + server.url("/task"))
+        print("operator task update: POST " + server.url("/task/update"))
     if args.reliability_db is not None:
         print("reliability JSON: " + server.url("/reliability.json"))
         print("events tail JSON: " + server.url("/events.json"))
@@ -150,10 +152,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--operator",
         action="store_true",
         help=(
-            "Arm the operator write-path (POST /message) so the cockpit can relay "
-            "chat to the fleet. Off by default: without it every write is a 404 and "
-            "the dashboard stays a read-only observer. Writes still require the "
-            "dashboard bearer token and are authorised and audited by the hub."
+            "Arm the operator write-path (POST /message, /task, /task/update) so the "
+            "cockpit can relay chat and delegate board tasks to the fleet. Off by "
+            "default: without it every write is a 404 and the dashboard stays a "
+            "read-only observer. Writes still require the dashboard bearer token and "
+            "are authorised and audited by the hub."
         ),
     )
     dashboard.add_argument(

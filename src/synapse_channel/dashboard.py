@@ -25,7 +25,7 @@ import json
 import secrets
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Coroutine, Mapping
 from dataclasses import asdict, dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -45,8 +45,10 @@ from synapse_channel.dashboard_cockpit import (
 from synapse_channel.dashboard_fleet import build_fleet_visibility, render_fleet_visibility_html
 from synapse_channel.dashboard_operator import (
     DENIED,
+    REJECTED,
     UNREACHABLE,
     OperatorRelay,
+    RelayOutcome,
     WriteRateLimiter,
 )
 from synapse_channel.dashboard_risk import build_risk_view
@@ -500,6 +502,12 @@ COCKPIT_DIST_PREFIX = "/cockpit/"
 MESSAGE_PATH = "/message"
 """Operator write endpoint (POST) relaying one chat message to the fleet."""
 
+TASK_PATH = "/task"
+"""Operator write endpoint (POST) declaring one board task for the fleet."""
+
+TASK_UPDATE_PATH = "/task/update"
+"""Operator write endpoint (POST) updating a board task's status or progress note."""
+
 MAX_OPERATOR_BODY_BYTES: Final = 64 * 1024
 """Largest operator write body accepted; anything larger is a 400."""
 
@@ -508,6 +516,19 @@ OPERATOR_RATE_MAX: Final = 30
 
 OPERATOR_RATE_WINDOW_SECONDS: Final = 60.0
 """Sliding-window length for the operator write rate limit."""
+
+_OUTCOME_STATUS: Final[dict[str, HTTPStatus]] = {
+    DENIED: HTTPStatus.FORBIDDEN,
+    REJECTED: HTTPStatus.CONFLICT,
+    UNREACHABLE: HTTPStatus.SERVICE_UNAVAILABLE,
+}
+"""Relay-outcome to HTTP-status map; an unlisted (accepted) outcome is ``200``."""
+
+
+def _is_string_list(value: object) -> bool:
+    """Return whether ``value`` is a list whose every element is a string."""
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
 
 _DIST_CONTENT_TYPES = {
     ".html": "text/html",
@@ -673,7 +694,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 authenticate=True,
             )
             return
-        if urlsplit(self.path).path != MESSAGE_PATH:
+        route = urlsplit(self.path).path
+        if route not in (MESSAGE_PATH, TASK_PATH, TASK_UPDATE_PATH):
             self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
             return
         if not self.operator_rate_limiter.allow():
@@ -691,26 +713,86 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 content_type="text/plain",
             )
             return
+        if route == MESSAGE_PATH:
+            self._handle_message(body)
+        elif route == TASK_PATH:
+            self._handle_task(body)
+        else:
+            self._handle_task_update(body)
+
+    def _handle_message(self, body: dict[str, Any]) -> None:
+        """Validate a chat write and relay it, or answer 400 on a bad body."""
         to = body.get("to")
         text = body.get("text")
         if not isinstance(to, str) or not to.strip():
-            self._write(
-                HTTPStatus.BAD_REQUEST,
-                b"'to' must be a non-empty string\n",
-                content_type="text/plain",
-            )
+            self._bad_request("'to' must be a non-empty string")
             return
         if not isinstance(text, str) or not text.strip():
-            self._write(
-                HTTPStatus.BAD_REQUEST,
-                b"'text' must be a non-empty string\n",
-                content_type="text/plain",
-            )
+            self._bad_request("'text' must be a non-empty string")
             return
-        self._relay_message(to.strip(), text)
+        target = to.strip()
+        self._dispatch_relay(
+            "message", {"to": target}, lambda relay: relay.relay_message(target, text)
+        )
 
-    def _relay_message(self, to: str, text: str) -> None:
-        """Relay one validated chat message and map the hub's outcome to a status."""
+    def _handle_task(self, body: dict[str, Any]) -> None:
+        """Validate a task declaration and relay it, or answer 400 on a bad body."""
+        task_id = body.get("id")
+        title = body.get("title")
+        depends_on = body.get("depends_on", [])
+        if not isinstance(task_id, str) or not task_id.strip():
+            self._bad_request("'id' must be a non-empty string")
+            return
+        if not isinstance(title, str) or not title.strip():
+            self._bad_request("'title' must be a non-empty string")
+            return
+        if not _is_string_list(depends_on):
+            self._bad_request("'depends_on' must be a list of strings")
+            return
+        task = task_id.strip()
+        deps = tuple(dep.strip() for dep in depends_on if dep.strip())
+        self._dispatch_relay(
+            "task", {"id": task}, lambda relay: relay.relay_task(task, title, depends_on=deps)
+        )
+
+    def _handle_task_update(self, body: dict[str, Any]) -> None:
+        """Validate a task update and relay it, or answer 400 on a bad body.
+
+        At least one of ``status`` or ``note`` must be present; each, when present,
+        must be a non-empty string.
+        """
+        task_id = body.get("id")
+        status_value = body.get("status")
+        note = body.get("note")
+        if not isinstance(task_id, str) or not task_id.strip():
+            self._bad_request("'id' must be a non-empty string")
+            return
+        if status_value is not None and (
+            not isinstance(status_value, str) or not status_value.strip()
+        ):
+            self._bad_request("'status' must be a non-empty string when present")
+            return
+        if note is not None and (not isinstance(note, str) or not note.strip()):
+            self._bad_request("'note' must be a non-empty string when present")
+            return
+        if status_value is None and note is None:
+            self._bad_request("a task update needs at least one of 'status' or 'note'")
+            return
+        task = task_id.strip()
+        new_status = status_value.strip() if isinstance(status_value, str) else None
+        self._dispatch_relay(
+            "task_update",
+            {"id": task},
+            lambda relay: relay.relay_task_update(task, status=new_status, note=note),
+        )
+
+    def _dispatch_relay(
+        self,
+        action: str,
+        extra: dict[str, str],
+        make_coro: Callable[[OperatorRelay], Coroutine[Any, Any, RelayOutcome]],
+    ) -> None:
+        """Run one relay coroutine and map its outcome to an HTTP response."""
         relay = OperatorRelay(
             uri=self.uri,
             operator_name=self.operator_name,
@@ -719,7 +801,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             response_timeout=self.response_timeout,
         )
         try:
-            outcome = asyncio.run(relay.relay_message(to, text))
+            outcome = asyncio.run(make_coro(relay))
         except (OSError, RuntimeError) as exc:
             self._write(
                 HTTPStatus.SERVICE_UNAVAILABLE,
@@ -727,23 +809,25 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 content_type="text/plain",
             )
             return
-        if outcome.status == DENIED:
-            status = HTTPStatus.FORBIDDEN
-        elif outcome.status == UNREACHABLE:
-            status = HTTPStatus.SERVICE_UNAVAILABLE
-        else:
-            status = HTTPStatus.OK
-        document = {
-            "action": "message",
-            "to": to,
+        document: dict[str, object] = {
+            "action": action,
+            **extra,
             "status": outcome.status,
             "detail": outcome.detail,
             "ok": outcome.ok,
         }
         self._write(
-            status,
+            _OUTCOME_STATUS.get(outcome.status, HTTPStatus.OK),
             json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8"),
             content_type="application/json",
+        )
+
+    def _bad_request(self, message: str) -> None:
+        """Answer a malformed operator body with a specific, stack-free 400."""
+        self._write(
+            HTTPStatus.BAD_REQUEST,
+            f"{message}\n".encode(),
+            content_type="text/plain",
         )
 
     def _read_json_body(self) -> dict[str, Any] | None:

@@ -9,7 +9,8 @@
 
 The dashboard is a read-only observer by default. When it is armed with operator
 mode it may relay a small, explicit set of write actions — sending a directed or
-broadcast chat message, and (in later slices) declaring or updating a board task.
+broadcast chat message, declaring a board task, and updating a task's status or
+appending a progress note.
 
 This module holds the relay itself, deliberately thin: it opens a short-lived,
 authenticated client under an explicit operator identity, sends one frame, and
@@ -89,13 +90,36 @@ DELIVERED = "delivered"
 #: The hub accepted the frame but no live recipient matched; it is recorded in the
 #: dead-letter ledger. This is fleet state, not a relay failure.
 UNDELIVERED = "undelivered"
+#: The hub applied a board mutation (task declared or updated) and confirmed it.
+ACCEPTED = "accepted"
 #: The hub's ACL refused the frame; it was not routed.
 DENIED = "denied"
+#: The hub's blackboard refused the write on its own terms (unknown id, invalid
+#: title, dependency cycle, unknown status). Authorised, but not applied.
+REJECTED = "rejected"
 #: The hub could not be reached, closed the connection, or returned no outcome in
 #: time.
 UNREACHABLE = "unreachable"
 
 AgentFactory = Callable[..., SynapseAgent]
+
+#: A sync resolver polled after sending: it returns a settled outcome, or ``None``
+#: to keep waiting until the response bound expires.
+OutcomeResolver = Callable[[], "RelayOutcome | None"]
+
+
+def _task_confirms(message: dict[str, Any], task_id: str) -> bool:
+    """Return whether a broadcast carries the confirmed board task ``task_id``."""
+    task = message.get("task")
+    return isinstance(task, dict) and task.get("task_id") == task_id
+
+
+def _note_confirms(message: dict[str, Any], task_id: str, author: str) -> bool:
+    """Return whether a broadcast carries this operator's progress note for the task."""
+    note = message.get("note")
+    return (
+        isinstance(note, dict) and note.get("task_id") == task_id and note.get("author") == author
+    )
 
 
 @dataclass(frozen=True)
@@ -105,13 +129,13 @@ class RelayOutcome:
     Attributes
     ----------
     status : str
-        One of :data:`DELIVERED`, :data:`UNDELIVERED`, :data:`DENIED`, or
-        :data:`UNREACHABLE`.
+        One of :data:`DELIVERED`, :data:`UNDELIVERED`, :data:`ACCEPTED`,
+        :data:`DENIED`, :data:`REJECTED`, or :data:`UNREACHABLE`.
     detail : str
         A short human-readable explanation, safe to surface to the operator.
     confirm : dict
-        The hub message that decided the outcome (delivery receipt or ACL error),
-        empty when none arrived.
+        The hub message that decided the outcome (delivery receipt, board
+        confirmation, or error), empty when none arrived.
     """
 
     status: str
@@ -120,8 +144,8 @@ class RelayOutcome:
 
     @property
     def ok(self) -> bool:
-        """Return whether the hub accepted the frame (delivered or dead-lettered)."""
-        return self.status in (DELIVERED, UNDELIVERED)
+        """Return whether the hub accepted the frame (delivered, dead-lettered, or applied)."""
+        return self.status in (DELIVERED, UNDELIVERED, ACCEPTED)
 
 
 class OperatorRelay:
@@ -207,14 +231,148 @@ class OperatorRelay:
                 receipt_requested=True,
             )
 
-        return await self._run(collect, send, errors, receipts)
+        def resolve() -> RelayOutcome | None:
+            if errors:
+                return self._denial(errors[0])
+            if receipts:
+                receipt = receipts[0]
+                if bool(receipt.get("delivered")):
+                    return RelayOutcome(DELIVERED, "delivered to a live recipient", receipt)
+                return RelayOutcome(
+                    UNDELIVERED, "accepted; no live recipient (dead-lettered)", receipt
+                )
+            return None
+
+        return await self._run(
+            collect, send, resolve, timeout_detail="hub returned no delivery outcome in time"
+        )
+
+    async def relay_task(
+        self, task_id: str, title: str, *, depends_on: tuple[str, ...] | list[str] = ()
+    ) -> RelayOutcome:
+        """Declare a board task on behalf of the operator and report the outcome.
+
+        Parameters
+        ----------
+        task_id : str
+            Identifier of the task to declare or re-declare.
+        title : str
+            Human title for the task.
+        depends_on : tuple of str or list of str, optional
+            Task ids this task depends on; the hub rejects a dependency cycle.
+
+        Returns
+        -------
+        RelayOutcome
+            :data:`ACCEPTED` when the hub declared the task and broadcast the
+            confirmation, :data:`DENIED` when the ACL refused it, :data:`REJECTED`
+            when the blackboard refused it (unknown id, empty title, cycle), or
+            :data:`UNREACHABLE` when the hub could not be reached or gave no
+            outcome in time.
+        """
+        task = task_id.strip()
+        posted: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+
+        async def collect(data: dict[str, Any]) -> None:
+            message_type = data.get("type")
+            if message_type == MessageType.LEDGER_TASK_POSTED and _task_confirms(data, task):
+                posted.append(data)
+            elif message_type == MessageType.ERROR and data.get("target") == self.operator_name:
+                errors.append(data)
+
+        async def send(agent: SynapseAgent) -> None:
+            await agent.post_task(task, title, depends_on=tuple(depends_on))
+
+        def resolve() -> RelayOutcome | None:
+            if errors:
+                return self._denial(errors[0])
+            if posted:
+                return RelayOutcome(ACCEPTED, f"task '{task}' declared on the board", posted[0])
+            return None
+
+        return await self._run(
+            collect, send, resolve, timeout_detail="hub confirmed no task declaration in time"
+        )
+
+    async def relay_task_update(
+        self, task_id: str, *, status: str | None = None, note: str | None = None
+    ) -> RelayOutcome:
+        """Update a board task's status and/or append a progress note.
+
+        At least one of ``status`` or ``note`` must be supplied; both are sent when
+        both are present, and the outcome settles only once every requested change
+        is confirmed by the hub.
+
+        Parameters
+        ----------
+        task_id : str
+            Identifier of the task to update.
+        status : str or None, optional
+            New planning status (for example ``done`` or ``blocked``).
+        note : str or None, optional
+            Progress note text appended to the task's ledger.
+
+        Returns
+        -------
+        RelayOutcome
+            :data:`ACCEPTED` once every requested change is confirmed,
+            :data:`DENIED` on ACL refusal, :data:`REJECTED` when the blackboard
+            refuses the change (unknown id or status), or :data:`UNREACHABLE` when
+            the hub could not be reached or gave no outcome in time.
+        """
+        task = task_id.strip()
+        want_status = status is not None
+        want_note = note is not None
+        updated: list[dict[str, Any]] = []
+        progressed: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+
+        async def collect(data: dict[str, Any]) -> None:
+            message_type = data.get("type")
+            if message_type == MessageType.LEDGER_TASK_UPDATED and _task_confirms(data, task):
+                updated.append(data)
+            elif message_type == MessageType.LEDGER_PROGRESS_POSTED and _note_confirms(
+                data, task, self.operator_name
+            ):
+                progressed.append(data)
+            elif message_type == MessageType.ERROR and data.get("target") == self.operator_name:
+                errors.append(data)
+
+        async def send(agent: SynapseAgent) -> None:
+            if want_status:
+                await agent.update_ledger_task(task, status=status)
+            if want_note:
+                await agent.post_progress(task, note or "")
+
+        def resolve() -> RelayOutcome | None:
+            if errors:
+                return self._denial(errors[0])
+            if (not want_status or updated) and (not want_note or progressed):
+                confirm = updated[0] if updated else progressed[0]
+                return RelayOutcome(ACCEPTED, f"task '{task}' update applied on the board", confirm)
+            return None
+
+        return await self._run(
+            collect, send, resolve, timeout_detail="hub confirmed no task update in time"
+        )
+
+    @staticmethod
+    def _denial(error: dict[str, Any]) -> RelayOutcome:
+        """Classify a hub error as an ACL denial or a blackboard rejection."""
+        if error.get("acl_reason") or error.get("acl_decision"):
+            reason = str(error.get("acl_reason") or error.get("payload") or "access denied")
+            return RelayOutcome(DENIED, reason, error)
+        reason = str(error.get("payload") or error.get("text") or "the hub refused the write")
+        return RelayOutcome(REJECTED, reason, error)
 
     async def _run(
         self,
         collect: Callable[[dict[str, Any]], Awaitable[None]],
         send: Callable[[SynapseAgent], Awaitable[None]],
-        errors: list[dict[str, Any]],
-        receipts: list[dict[str, Any]],
+        resolve: OutcomeResolver,
+        *,
+        timeout_detail: str,
     ) -> RelayOutcome:
         """Open the operator client, send one frame, and resolve the outcome.
 
@@ -232,29 +390,19 @@ class OperatorRelay:
                 reason = agent.last_close_reason or "connection closed after ready"
                 return RelayOutcome(UNREACHABLE, str(reason))
             await send(agent)
-            return await self._await_outcome(errors, receipts)
+            return await self._await_outcome(resolve, timeout_detail)
         finally:
             agent.running = False
             conn_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await conn_task
 
-    async def _await_outcome(
-        self, errors: list[dict[str, Any]], receipts: list[dict[str, Any]]
-    ) -> RelayOutcome:
-        """Poll for the first ACL error or delivery receipt within the bound."""
+    async def _await_outcome(self, resolve: OutcomeResolver, timeout_detail: str) -> RelayOutcome:
+        """Poll the resolver for a settled outcome within the response bound."""
         deadline = time.monotonic() + max(0.0, self.response_timeout)
         while time.monotonic() < deadline:
-            if errors:
-                error = errors[0]
-                reason = str(error.get("acl_reason") or error.get("payload") or "access denied")
-                return RelayOutcome(DENIED, reason, error)
-            if receipts:
-                receipt = receipts[0]
-                if bool(receipt.get("delivered")):
-                    return RelayOutcome(DELIVERED, "delivered to a live recipient", receipt)
-                return RelayOutcome(
-                    UNDELIVERED, "accepted; no live recipient (dead-lettered)", receipt
-                )
+            outcome = resolve()
+            if outcome is not None:
+                return outcome
             await asyncio.sleep(0.02)
-        return RelayOutcome(UNREACHABLE, "hub returned no delivery outcome in time")
+        return RelayOutcome(UNREACHABLE, timeout_detail)
