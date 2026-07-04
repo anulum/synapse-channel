@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.97.0] - 2026-07-04
+
 ### Added
 - `SynapsePersistentDeadLetters` Prometheus alert — fires when
   `synapse_dead_letter_targets` stays above zero for an hour, catching a name
@@ -66,13 +68,16 @@ All notable changes to this project are documented here.
   the event log. Honest scope: presence/roster is not journalled and is
   omitted; `seq` is clamped into range; same `--feeds-db` posture as the
   other store feeds.
-
-
-### Added
 - The dashboard's `--cockpit-dist` static server now serves
   `.webmanifest` (`application/manifest+json`) and `.webp`, so the
   cockpit can ship a web-app manifest and modern icons — the server-side
   enabler for an installable, mobile-responsive cockpit PWA.
+
+### Changed
+- Commercial pricing documentation reconciled to a single value-ladder
+  (Community, Commercial Licence, Pro, Team, Business / Enterprise) priced in
+  USD; the retired pay-what-you-want tier is dropped from `docs/commercial.md`,
+  `COMMERCIAL-LICENSE.md`, and the README.
 
 
 ## [0.96.0] - 2026-07-04
