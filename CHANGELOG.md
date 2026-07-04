@@ -52,6 +52,14 @@ All notable changes to this project are documented here.
   signed events (now enforced) and names what genuinely remains — mutual-TLS
   client-certificate verification and cryptographic per-agent identity.
 
+### Tests
+- Property-based coverage (Hypothesis) for the coordination invariants a
+  correctness bug would break silently: claim-scope overlap is symmetric and
+  agrees with per-path overlap (no file collision slips a non-conflicting scope),
+  a whole-worktree claim conflicts with any other, the idempotency cache replays
+  the most recent response for a key and never exceeds its bound, and a task never
+  takes a forbidden lifecycle transition — least of all out of a terminal state.
+
 ### Documentation
 - `SECURITY.md` gains a deployment-profile matrix (local-dev, single-user
   workstation, team LAN, internet-exposed) mapping each profile to its required
