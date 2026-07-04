@@ -19,7 +19,60 @@ import {
 import { groupByTask } from "../lib/logGroups";
 import { applyQuery, isConstrained, OPEN_QUERY, type LogQuery } from "../lib/logQuery";
 import { readLogExportFile, type PostMortem } from "../lib/postmortem";
+import { diffWindows, type WindowDiff } from "../lib/windowDiff";
 import type { CockpitEvent } from "../types";
+
+function rateLabel(rate: number | null): string {
+  return rate === null ? "—" : `${rate.toFixed(1)}/min`;
+}
+
+/** The A↔B comparison strip: arithmetic over attested counts, no judgement. */
+function WindowDiffView({
+  diff,
+  labelA,
+  labelB,
+}: {
+  readonly diff: WindowDiff;
+  readonly labelA: string;
+  readonly labelB: string;
+}): JSX.Element {
+  return (
+    <div className="log-diff">
+      <div className="log-diff__totals">
+        <span>{`A ${labelA} · ${diff.totalA} events · ${rateLabel(diff.rateA)}`}</span>
+        <span>{`B ${labelB} · ${diff.totalB} events · ${rateLabel(diff.rateB)}`}</span>
+      </div>
+      <table className="log-diff__table">
+        <thead>
+          <tr>
+            <th>kind</th>
+            <th>A</th>
+            <th>B</th>
+            <th>Δ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {diff.kinds.slice(0, 8).map((row) => (
+            <tr key={row.kind}>
+              <td>{row.kind}</td>
+              <td>{row.a}</td>
+              <td>{row.b}</td>
+              <td className={row.delta > 0 ? "log-diff__up" : row.delta < 0 ? "log-diff__down" : ""}>
+                {row.delta > 0 ? `+${row.delta}` : row.delta}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {(diff.appeared.length > 0 || diff.wentQuiet.length > 0) && (
+        <div className="log-diff__actors">
+          {diff.appeared.length > 0 && <span>{`appeared: ${diff.appeared.join(", ")}`}</span>}
+          {diff.wentQuiet.length > 0 && <span>{`went quiet: ${diff.wentQuiet.join(", ")}`}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Hand the shown window to the operator as a self-describing JSON download. */
 function downloadShown(
@@ -110,10 +163,17 @@ function SignalLogView({
     else setHistoryNote(window_.kind === "absent" ? "event feed not served" : window_.message);
   };
 
+  // Window diffing: pin the shown history window as A, scrub elsewhere, and
+  // compare it with the shown window B — two slices of the same attested log.
+  const [pinnedWindow, setPinnedWindow] = useState<HistoryWindow | null>(null);
+  const [diffOpen, setDiffOpen] = useState(false);
+
   const leaveHistory = (): void => {
     setHistoryOn(false);
     setHistoryWindow(null);
     setHistoryNote(null);
+    setPinnedWindow(null);
+    setDiffOpen(false);
   };
 
   // Post-mortem: the log opened over an exported document instead of the
@@ -330,7 +390,38 @@ function SignalLogView({
                 ? "fetching…"
                 : `seq ${historyWindow.fromSeq}–${historyWindow.toSeq} of ${historyLatest} · window ${HISTORY_WINDOW_SIZE}`}
           </span>
+          <button
+            type="button"
+            className={`log-controls__toggle${pinnedWindow !== null ? " log-controls__toggle--paused" : ""}`}
+            onClick={() => {
+              if (pinnedWindow !== null) {
+                setPinnedWindow(null);
+                setDiffOpen(false);
+              } else if (historyWindow !== null) setPinnedWindow(historyWindow);
+            }}
+            disabled={pinnedWindow === null && historyWindow === null}
+            title="Pin the shown window as A, then scrub elsewhere and compare"
+          >
+            {pinnedWindow === null ? "pin A" : `A ${pinnedWindow.fromSeq}–${pinnedWindow.toSeq} ✕`}
+          </button>
+          <button
+            type="button"
+            className={`log-controls__toggle${diffOpen ? " log-controls__toggle--paused" : ""}`}
+            onClick={() => setDiffOpen(!diffOpen)}
+            disabled={pinnedWindow === null || historyWindow === null}
+            aria-pressed={diffOpen}
+            title="Compare the pinned window A with the shown window B"
+          >
+            compare
+          </button>
         </div>
+      )}
+      {historyOn && diffOpen && pinnedWindow !== null && historyWindow !== null && (
+        <WindowDiffView
+          diff={diffWindows(pinnedWindow.events, historyWindow.events)}
+          labelA={`seq ${pinnedWindow.fromSeq}–${pinnedWindow.toSeq}`}
+          labelB={`seq ${historyWindow.fromSeq}–${historyWindow.toSeq}`}
+        />
       )}
       <div className="panel__body panel__body--flush">
         {shown.length === 0 ? (
