@@ -14,6 +14,15 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `/health-anomalies.json` dashboard feed — the honest hub-side alert surface:
+  the orphaned, dangling, and stale coordination anomalies the causality graph
+  makes visible (`core.causality_health.run_causal_health`), in the same JSON
+  shape `synapse causality --health` emits, with an `anomaly_count` a cockpit
+  alerts badge can show. Fired alerts stay collector-side off `/metrics`
+  (Prometheus/Alertmanager); this is only what the durable log can prove —
+  store-derived, deterministic (ages measured against the log's own final
+  timestamp), available with the hub down; same `--feeds-db` posture as the
+  other store feeds.
 - `synapse dead-letters` — a terminal view of the hub's dead-letter ledger
   (directed messages delivered to no live connection), worst blackhole first,
   with the exact `syn inbox --as NAME` drain remedy the doctor's addressee

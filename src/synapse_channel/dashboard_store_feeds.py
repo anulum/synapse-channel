@@ -23,13 +23,15 @@ the hub is down, and never invent state the disk cannot prove. Three feeds:
   hub-runtime state that no durable store carries, so the section ships empty
   with its absence stated rather than guessed.
 
-Three further store-derived feeds serve the cockpit's operational panels, all
+Four further store-derived feeds serve the cockpit's operational panels, all
 measured against the log's own timestamps (never the wall clock) so each is
 deterministic and available with the hub down: **metrics** (event counts by
 kind over trailing windows), **state-at** (coordination state reconstructed by
-bounded replay to a sequence — whole-fleet time-travel), and **merkle proof**
-(an inclusion proof for one event so a cockpit row can be verified against the
-attested tree root).
+bounded replay to a sequence — whole-fleet time-travel), **merkle proof** (an
+inclusion proof for one event so a cockpit row can be verified against the
+attested tree root), and **health anomalies** (orphaned, dangling, and stale
+coordination signals the causality graph makes visible — the honest hub-side
+alert surface).
 """
 
 from __future__ import annotations
@@ -41,6 +43,11 @@ from pathlib import Path
 from typing import cast
 
 from synapse_channel.core.causality import DEFAULT_MAX_GRAPH_NODES, causality_to_json, run_causality
+from synapse_channel.core.causality_health import (
+    DEFAULT_STALE_AFTER,
+    health_to_json,
+    run_causal_health,
+)
 from synapse_channel.core.federation_store import load_store
 from synapse_channel.core.federation_wire import bundle_fingerprint
 from synapse_channel.core.journal import replay
@@ -249,6 +256,34 @@ def build_merkle_proof_feed(db_path: str | Path, *, seq: int) -> dict[str, objec
             "note": "no event at that sequence in the committed log",
         }
     return {"present": True, **proof_to_json(proof)}
+
+
+def build_health_anomalies_feed(
+    db_path: str | Path, *, stale_after: float = DEFAULT_STALE_AFTER
+) -> dict[str, object]:
+    """Flag coordination anomalies the causality graph makes visible.
+
+    Assesses the durable log for the three anomaly shapes ``synapse causality
+    --health`` reports — orphaned claims (a claim is its task's final recorded
+    event), dangling dependencies (a declared dependency that never completed),
+    and stale claims (unreleased and silent past ``stale_after``) — and returns
+    them in the same JSON shape that CLI emits, plus an ``anomaly_count`` a
+    cockpit's alerts badge can show.
+
+    This is the honest hub-side "alert" surface: fired alerts live collector
+    side (the hub's ``/metrics`` feeds Prometheus/Alertmanager), but the
+    coordination anomalies the log can *prove* belong here — store-derived,
+    deterministic (every age measured against the log's own final timestamp,
+    never the wall clock), and available with the hub down like every store
+    feed.
+
+    Raises
+    ------
+    ValueError
+        If the event store does not exist or exceeds the graph node ceiling.
+    """
+    report = run_causal_health(db_path, stale_after=stale_after)
+    return {"present": True, **health_to_json(report)}
 
 
 def latest_cursor(db_path: str | Path) -> int:

@@ -251,7 +251,7 @@ and `/snapshot.json`; when `--allow-non-loopback` exposes the dashboard and no
 token is supplied, Synapse generates and prints a startup token.
 
 With `--feeds-db <hub.db>` (`--reliability-db` is the same flag's original
-name) the dashboard serves six feeds off the **durable event store** —
+name) the dashboard serves seven feeds off the **durable event store** —
 available when the hub is down, real sequences and timestamps, behind the
 same dashboard bearer token as every other path:
 
@@ -283,6 +283,7 @@ same dashboard bearer token as every other path:
 
 - `/state-at.json?seq=N` — coordination state (claims + board) reconstructed as of event `seq` by bounded replay, in the live snapshot shape plus `as_of_seq` and `log_end_seq`; deterministic (judged at the bounded event's own timestamp), `seq` clamped into range, presence/roster omitted (not journalled).
 - `/merkle-proof.json?seq=N` — an RFC 6962 Merkle inclusion proof for event `seq`, in the same shape `synapse debug merkle` emits, so a cockpit row's verify button can check the row against the attested tree root; a `seq` the committed log does not hold returns `{"present": false}` with a note, never a fabricated proof.
+- `/health-anomalies.json` — the honest hub-side alert surface: the orphaned, dangling, and stale coordination anomalies the causality graph makes visible, in the same shape `synapse causality --health` emits, with an `anomaly_count` for a cockpit alerts badge. Fired alerts stay collector-side off `/metrics`; this is only what the durable log can prove.
 
 Without the flag each endpoint answers 404 naming the remedy; an
 unreadable store answers 503 rather than an empty document pretending the
