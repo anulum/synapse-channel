@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import socket
 from pathlib import Path
 from typing import cast
 from urllib.error import HTTPError
@@ -1839,12 +1840,20 @@ def test_operator_task_update_rejects_bad_bodies() -> None:
         bad_status, _, _ = _http_post(
             server.url("/task/update"), json.dumps({"id": "T-1", "status": 7})
         )
+        bad_note_type, _, _ = _http_post(
+            server.url("/task/update"), json.dumps({"id": "T-1", "note": 7})
+        )
+        empty_note, _, _ = _http_post(
+            server.url("/task/update"), json.dumps({"id": "T-1", "note": "   "})
+        )
     finally:
         server.close()
 
     assert missing_id == 400
     assert neither == 400
     assert bad_status == 400
+    assert bad_note_type == 400  # a present note that is not a string
+    assert empty_note == 400  # a present note that is blank
 
 
 @pytest.mark.parametrize(
@@ -1907,6 +1916,81 @@ def test_operator_task_update_maps_relay_outcome_to_status(
     assert document["id"] == "T-1"
     assert document["status"] == outcome.status
     assert document["ok"] is outcome.ok
+
+
+def _raising_relay_class(exc: Exception) -> type:
+    """Return a drop-in OperatorRelay whose relay coroutine raises ``exc``."""
+
+    class _RaisingRelay:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        async def relay_message(self, to: str, text: str) -> RelayOutcome:
+            raise exc
+
+    return _RaisingRelay
+
+
+def test_operator_write_maps_a_relay_exception_to_503(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A relay that dies mid-flight (a dropped socket, a runtime fault) must
+    # surface as a fail-visible 503, never a 500 stack trace on a write surface.
+    monkeypatch.setattr(
+        dashboard_module, "OperatorRelay", _raising_relay_class(OSError("connection reset"))
+    )
+    server = _operator_server()
+    try:
+        status, _, body = _http_post(server.url("/message"), json.dumps({"to": "x", "text": "hi"}))
+    finally:
+        server.close()
+
+    assert status == 503
+    assert "operator relay failed" in body
+    assert "connection reset" in body
+
+
+def test_operator_write_refuses_an_oversize_body() -> None:
+    # A body past the 64 KiB ceiling is refused before it is read as JSON, so a
+    # write route cannot be used to feed the process an unbounded payload.
+    server = _operator_server()
+    oversize = json.dumps({"to": "x", "text": "z" * (64 * 1024 + 16)})
+    try:
+        status, _, body = _http_post(server.url("/message"), oversize)
+    finally:
+        server.close()
+
+    assert status == 400
+    assert "within the size limit" in body
+
+
+def test_operator_write_refuses_a_non_numeric_content_length() -> None:
+    # A hand-crafted request whose Content-Length is not a number must be
+    # refused with a 400, not crash the handler — urllib always sends a valid
+    # length, so this defence is exercised over a raw socket.
+    server = _operator_server()
+    host = str(server.server.server_address[0])
+    port = int(server.server.server_address[1])
+    raw = (
+        "POST /message HTTP/1.1\r\n"
+        f"Host: {host}:{port}\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: not-a-number\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+    ).encode("ascii")
+    try:
+        with socket.create_connection((host, port), timeout=3) as connection:
+            connection.sendall(raw)
+            response = b""
+            while True:
+                chunk = connection.recv(4096)
+                if not chunk:
+                    break
+                response += chunk
+    finally:
+        server.close()
+
+    status_line = response.split(b"\r\n", 1)[0].decode("ascii")
+    assert "400" in status_line
 
 
 def test_dashboard_parser_wires_operator_flags() -> None:
