@@ -21,7 +21,13 @@ from synapse_channel.core.federation_store import (
     save_store,
 )
 from synapse_channel.core.federation_wire import bundle_fingerprint
-from synapse_channel.core.journal import EventKind, record_claim, record_release
+from synapse_channel.core.journal import (
+    EventKind,
+    record_claim,
+    record_ledger_task,
+    record_release,
+)
+from synapse_channel.core.ledger import LedgerTask
 from synapse_channel.core.merkle import proof_from_json, verify_inclusion
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.state import TaskClaim
@@ -36,6 +42,7 @@ from synapse_channel.dashboard_store_feeds import (
     build_metrics_feed,
     build_sessions_feed,
     build_state_at_feed,
+    build_waits_feed,
     latest_cursor,
     resolve_task_last_seq,
 )
@@ -650,3 +657,122 @@ class TestSessionsFeed:
         _seed_session_metric(store, author="a", session="s", ts=1.0)
         store.close()
         assert build_sessions_feed(db) == build_sessions_feed(db)
+
+
+def _seed_task(
+    store: EventStore,
+    *,
+    task_id: str,
+    title: str = "task",
+    depends_on: tuple[str, ...] = (),
+    status: str = "open",
+    owner: str = "",
+    created_by: str = "amy",
+    created_at: float = 1.0,
+) -> None:
+    """Record one declared ledger task into the durable log."""
+    record_ledger_task(
+        store,
+        LedgerTask(
+            task_id=task_id,
+            title=title,
+            created_at=created_at,
+            updated_at=created_at,
+            depends_on=depends_on,
+            status=status,
+            suggested_owner=owner,
+            created_by=created_by,
+        ),
+    )
+
+
+class TestWaitsFeed:
+    def test_lists_a_task_blocked_on_an_unfinished_dependency(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        _seed_task(store, task_id="PENDING", status="open")  # a dep, not yet done
+        _seed_task(
+            store,
+            task_id="BLOCKED",
+            title="ship it",
+            depends_on=("PENDING",),
+            owner="amy",
+            created_at=5.0,
+        )
+        store.close()
+
+        document = build_waits_feed(db)
+
+        assert document["present"] is True
+        assert document["wait_count"] == 1
+        waits = document["waits"]
+        assert isinstance(waits, list)
+        gate = waits[0]
+        assert gate["task_id"] == "BLOCKED"
+        assert gate["who"] == "amy"
+        assert gate["on_what"] == ["PENDING"]
+        assert gate["since"] == 5.0
+
+    def test_a_task_whose_dependencies_are_done_is_not_a_gate(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        _seed_task(store, task_id="DONE", status="done")
+        _seed_task(store, task_id="OK", depends_on=("DONE",), status="open")
+        store.close()
+
+        document = build_waits_feed(db)
+
+        assert document["wait_count"] == 0
+        assert document["waits"] == []
+
+    def test_a_terminal_task_is_never_a_gate(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        # A cancelled task with an unmet dependency is not a pending gate — it is
+        # not waiting on anything, it is finished.
+        _seed_task(store, task_id="MISSING", status="open")
+        _seed_task(store, task_id="CANCELLED", depends_on=("MISSING",), status="cancelled")
+        store.close()
+
+        document = build_waits_feed(db)
+
+        gates = document["waits"]
+        assert isinstance(gates, list)
+        assert "CANCELLED" not in [gate["task_id"] for gate in gates]
+
+    def test_who_falls_back_to_the_declarer_without_a_suggested_owner(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        _seed_task(store, task_id="DEP", status="open")
+        _seed_task(store, task_id="G", depends_on=("DEP",), owner="", created_by="declarer")
+        store.close()
+
+        gates = build_waits_feed(db)["waits"]
+        assert isinstance(gates, list)
+        assert gates[0]["who"] == "declarer"
+
+    def test_a_log_of_unblocked_tasks_reports_no_gates(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        _seed_task(store, task_id="DONE", status="done")
+        _seed_task(store, task_id="STANDALONE", status="open")  # no dependencies
+        _seed_task(store, task_id="SATISFIED", depends_on=("DONE",), status="open")  # dep done
+        store.close()
+
+        document = build_waits_feed(db)
+
+        assert document["present"] is True
+        assert document["waits"] == []
+        assert document["wait_count"] == 0
+
+    def test_missing_store_is_refused(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="missing event store"):
+            build_waits_feed(tmp_path / "absent.db")
+
+    def test_document_is_deterministic_over_a_given_log(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        _seed_task(store, task_id="DEP", status="open")
+        _seed_task(store, task_id="G", depends_on=("DEP",))
+        store.close()
+        assert build_waits_feed(db) == build_waits_feed(db)

@@ -14,6 +14,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `/waits.json` dashboard store feed (with `--feeds-db`) — the pending
+  coordination gates reconstructed from the durable plan: each non-terminal task
+  blocked on a dependency that has not reached a terminal status, with `who` is
+  waiting (the task's suggested owner, or whoever declared it), `on_what`
+  dependency ids block it, and `since` when it was declared, plus a `wait_count`.
+  The "what is the fleet stuck behind" panel. Store-derived and deterministic
+  (dependency satisfaction judged from the log's own recorded task statuses),
+  available with the hub down; 404 without `--feeds-db`, 503 on an unreadable
+  store. Transient socket waiters are not journalled and are omitted — this is the
+  coordination gates the plan can prove, not who holds a socket open.
 - `/sessions.json` dashboard store feed (with `--feeds-db`) — the opt-in
   `session_metric` telemetry the fleet left in the durable log, in the same JSON
   `synapse participants costs` renders: per-session token counts, cost, latency,
