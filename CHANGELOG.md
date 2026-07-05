@@ -14,6 +14,18 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- TPM 2.0 hardware key-encryption-key backend for at-rest wrapped keys (optional
+  `synapse-channel[tpm2]` extra). A decrypt-only RSA-2048 key-encryption key is derived
+  from the device's storage seed and a fixed template — the identical key every process,
+  so no handle is persisted — and wraps and unwraps the data key with RSA-OAEP; the RSA
+  private key is generated inside the TPM and never leaves it.
+  `synapse encrypt-key generate-wrapped-tpm2` writes such a file (`--tcti` / `TPM2_TCTI`,
+  defaulting to the in-kernel resource manager `device:/dev/tpmrm0`), recording only the
+  template version — never a device path. New `core.at_rest_tpm2`
+  (`Tpm2KeyEncryptionKey`, `generate_wrapped_key_file_tpm2`,
+  `cipher_from_wrapped_key_file_tpm2`) implementing the `KeyEncryptionKey` protocol over
+  the same wrapped-key file format. CI installs swtpm so the backend is exercised, not
+  skipped. This completes the pluggable hardware backend family (passphrase, PKCS#11, TPM).
 - PKCS#11 hardware key-encryption-key backend for at-rest wrapped keys (optional
   `synapse-channel[pkcs11]` extra). A key-encryption key held on a PKCS#11 token — a
   YubiKey PIV, a cloud or network HSM, or SoftHSM for tests — wraps and unwraps the

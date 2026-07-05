@@ -92,6 +92,11 @@ The design should support three operator profiles:
     (YubiKey PIV, cloud/network HSM, or SoftHSM), wrapping and unwrapping on the device
     so the key never leaves it — the optional `python-pkcs11` dependency
     (`synapse-channel[pkcs11]`) and a module path via `--pkcs11-module` / `PKCS11_MODULE`.
+  - `synapse encrypt-key generate-wrapped-tpm2` roots the KEK in a **TPM 2.0** device: a
+    decrypt-only RSA-2048 key is derived from the TPM storage seed and wraps the data key
+    with RSA-OAEP, so the RSA private key never leaves the chip. The optional `tpm2-pytss`
+    dependency (`synapse-channel[tpm2]`) and a TPM interface via `--tcti` / `TPM2_TCTI`
+    (default the in-kernel resource manager `device:/dev/tpmrm0`).
 
 Key storage must be explicit. Synapse should never silently write an encryption
 key next to the encrypted database with broad permissions. A doctor check should

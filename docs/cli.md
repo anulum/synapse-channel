@@ -1743,6 +1743,7 @@ synapse encrypt-key generate --from-passphrase --scrypt-n 65536 ./synapse.key  #
 synapse encrypt-key generate-wrapped ./synapse.wrapped.key     # envelope-encrypted key whose passphrase can be rotated later
 synapse encrypt-key rewrap ./synapse.wrapped.key               # rotate that passphrase without re-encrypting any data
 synapse encrypt-key generate-wrapped-pkcs11 --token-label synapse ./synapse.hsm.key  # wrap the key on a PKCS#11 token (YubiKey/HSM)
+synapse encrypt-key generate-wrapped-tpm2 ./synapse.tpm.key    # wrap the key with a TPM 2.0 device (RSA-OAEP)
 synapse encrypt-key check ./synapse.key                        # verify its ownership, mode, and length
 ```
 
@@ -1774,6 +1775,19 @@ one), and the PIN comes from `PKCS11_PIN` or an interactive prompt. Needs the op
 `python-pkcs11` dependency (`pip install synapse-channel[pkcs11]`). The written file
 records only the token and key labels — never the PIN or the module path — so loading
 it at startup re-opens the token to unwrap the data key.
+
+`generate-wrapped-tpm2` is the same hardware step rooted in a **TPM 2.0** device. A
+decrypt-only RSA-2048 key-encryption key is derived from the TPM's storage seed and a
+fixed template — the identical key every time, so nothing needs to be persisted as a
+handle — and wraps the random data key with RSA-OAEP; the RSA private key is generated
+inside the TPM and never leaves it. Point it at the device with `--tcti` (or the
+`TPM2_TCTI` environment variable), defaulting to the in-kernel resource manager
+`device:/dev/tpmrm0`; a software TPM such as swtpm (`swtpm:host=127.0.0.1,port=2321`)
+serves for testing. Needs the optional `tpm2-pytss` dependency (`pip install
+synapse-channel[tpm2]`). The written file records only the template version — no device
+path — so loading it re-derives the same key inside the TPM to unwrap the data key.
+Clearing the TPM hierarchy destroys the key-encryption key and, with it, access to the
+data key, which is the intended way to make the store unrecoverable.
 
 ## Experimental surfaces
 
