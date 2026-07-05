@@ -14,6 +14,17 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `/sessions.json` dashboard store feed (with `--feeds-db`) — the opt-in
+  `session_metric` telemetry the fleet left in the durable log, in the same JSON
+  `synapse participants costs` renders: per-session token counts, cost, latency,
+  and error/abstention rates, plus `totals` aggregated across sessions. Every
+  record carries the `seq` of the snapshot it was read from and the coordination
+  `task_id` from the note body, so a cockpit joins a session's cost straight to
+  its causal cone (via `/causality.json`) — "this session spent N tokens on task
+  T42", not merely "on session S". Same posture as the other store feeds:
+  store-derived and deterministic (available with the hub down), 404 without
+  `--feeds-db`, 503 on an unreadable store; a log with no session notes reports
+  empty `sessions` and zeroed `totals`, never a fabricated cost.
 - Operator write-path for the dashboard (opt-in) — `synapse dashboard --operator`
   arms three write routes so the cockpit can act on the fleet rather than only
   observe it: `POST /message` (`{"to","text"}`) relays a chat message, `POST /task`
