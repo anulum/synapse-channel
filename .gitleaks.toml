@@ -14,9 +14,14 @@ description = """NumPy docstring type annotations ('private_key : Ed25519Private
 trip the generic-api-key heuristic; the captured 'secret' is the type name itself. \
 'atelier-signing-2026' is the public signing-key *identifier* in the federation \
 ceremony walkthrough (docs/federated-trust-model.md) — a label printed by design, \
-not key material. Build artefacts and bytecode mirror the same source lines and \
-are gitignored."""
-regexes = ['''^Ed25519PrivateKey$''', '''^atelier-signing-2026$''']
+not key material. 'generate-wrapped-pkcs11' is the at-rest-key CLI subcommand name \
+(a hyphenated verb that trips the generic-api-key heuristic), not a secret. Build \
+artefacts and bytecode mirror the same source lines and are gitignored."""
+regexes = [
+    '''^Ed25519PrivateKey$''',
+    '''^atelier-signing-2026$''',
+    '''^generate-wrapped-pkcs11$''',
+]
 paths = [
     '''^build/''',
     '''__pycache__/''',
