@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import time
 from collections import OrderedDict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -64,6 +65,7 @@ class EventKind:
     FINDING = "finding"
     IDEMPOTENCY = "idempotency"
     SANDBOX_RUN = "sandbox_run"
+    OPERATOR_RELAY = "operator_relay"
 
 
 MEMORY_KINDS = frozenset(
@@ -129,6 +131,28 @@ def record_release(store: EventStore, task_id: str) -> None:
 def record_task_update(store: EventStore, claim: TaskClaim) -> None:
     """Append a durable event with the post-update claim snapshot."""
     store.append(EventKind.TASK_UPDATE, claim.as_dict(), durable=True)
+
+
+def record_operator_relay(store: EventStore, provenance: Mapping[str, Any]) -> None:
+    """Append a durable audit event for a governed cross-hub operator relay.
+
+    This kind is **audit-only**: :func:`replay` skips it, because the state change a
+    relay makes (for a release relay, the freed lease) is journalled by the underlying
+    coordination event (a ``release``) that reconstructs state on its own. The relay
+    event exists so the durable log records the cross-hub *provenance* a coordination
+    event never carries — which action was relayed, into which namespace, the verified
+    peer it arrived from, and the operator and origin hub it asserts — so a force-release
+    performed on one hub's authority by another is attributable after the fact.
+
+    Parameters
+    ----------
+    store : EventStore
+        The receiving hub's durable event store.
+    provenance : Mapping[str, Any]
+        The relay's audit fields (action, namespace, task id, verified peer, asserted
+        operator and origin hub, previous owner, whether it was applied, and a detail).
+    """
+    store.append(EventKind.OPERATOR_RELAY, dict(provenance), durable=True)
 
 
 def record_checkpoint(store: EventStore, claim: TaskClaim) -> None:

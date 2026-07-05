@@ -14,6 +14,20 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Cross-hub operator relay — `synapse federation relay release` relays a governed
+  operator action to a peer hub over the existing federation transport, the first
+  being a force-release of a stuck lease the peer holds. The peer authorises the
+  relay deny-by-default (mutual TLS + the peering's bounded scope granting the
+  action's verb in the namespace + the peer must own the namespace) and refuses an
+  unverified peer or an unregistered action fail-closed. An applied release is
+  journalled twice on the acting hub: a standard `release` for state reconstruction
+  and a new audit-only `operator_relay` event carrying the cross-hub provenance a
+  release never records — the verified peer, the asserting operator and origin hub,
+  and the previous holder — and the hub's own agents are told the lease was revoked.
+  New `core.operator_relay` (deny-by-default policy + relayable-action registry),
+  `core.operator_relay_wire`, `core.operator_relay_transport`, and a serving handler,
+  plus `SynapseState.force_release`. Relayable actions are an explicit allowlist, so a
+  new cross-hub capability is a deliberate registry entry, never an accident of the wire.
 - TPM 2.0 hardware key-encryption-key backend for at-rest wrapped keys (optional
   `synapse-channel[tpm2]` extra). A decrypt-only RSA-2048 key-encryption key is derived
   from the device's storage seed and a fixed template — the identical key every process,

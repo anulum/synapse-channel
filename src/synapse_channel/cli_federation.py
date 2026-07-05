@@ -44,6 +44,7 @@ from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.cli_relay import add_relay_parser
 from synapse_channel.core.federation import FederationPeer
 from synapse_channel.core.federation_fetch import (
     DEFAULT_FETCH_TIMEOUT,
@@ -344,3 +345,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     fetch.add_argument("--force", action="store_true", help="Replace an existing --out file.")
     fetch.set_defaults(func=_cmd_fetch)
+
+    # Relaying a governed action to a peer (a distinct responsibility from managing peerings)
+    # lives in its own module but registers here, so it reads as `synapse federation relay`.
+    add_relay_parser(group)

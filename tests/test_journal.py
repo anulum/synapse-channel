@@ -21,6 +21,7 @@ from synapse_channel.core.journal import (
     record_idempotency,
     record_ledger_progress,
     record_ledger_task,
+    record_operator_relay,
     record_release,
     record_resource,
     record_task_update,
@@ -59,6 +60,37 @@ def test_record_claim_writes_claim_kind(tmp_path: Path) -> None:
     store.close()
     assert events[0].kind == EventKind.CLAIM
     assert events[0].payload["task_id"] == "T1"
+
+
+def test_record_operator_relay_writes_the_provenance(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    record_operator_relay(
+        store,
+        {
+            "action": "release",
+            "namespace": "NS",
+            "task_id": "T1",
+            "peer": "peer-b",
+            "applied": True,
+        },
+    )
+    events = store.read_all()
+    store.close()
+    assert events[0].kind == EventKind.OPERATOR_RELAY
+    assert events[0].payload["peer"] == "peer-b"
+    assert events[0].payload["applied"] is True
+
+
+def test_replay_skips_the_audit_only_operator_relay_event(tmp_path: Path) -> None:
+    # The relay's state change rides a plain release; the operator_relay event is audit-only, so
+    # replay must ignore it and reconstruct the same released state a bare release would.
+    store = _store(tmp_path)
+    record_claim(store, _claim())
+    record_release(store, "T1")
+    record_operator_relay(store, {"action": "release", "task_id": "T1", "applied": True})
+    result = replay(store, now=2000.0)
+    store.close()
+    assert "T1" not in result.state.claims
 
 
 def test_replay_reconstructs_claim_scope_and_epoch(tmp_path: Path) -> None:
