@@ -21,13 +21,16 @@ from synapse_channel.core.operator_relay_wire import RelayActionRequest
 _NAMESPACE = "SYNAPSE-CHANNEL"
 
 
-def _request(action: str = RELAY_RELEASE, namespace: str = _NAMESPACE) -> RelayActionRequest:
+def _request(
+    action: str = RELAY_RELEASE, namespace: str = _NAMESPACE, *, reason: str = ""
+) -> RelayActionRequest:
     return RelayActionRequest(
         action=action,
         namespace=namespace,
         task_id="t1",
         operator="ops-admin",
         origin_hub_id="syn-a",
+        reason=reason,
     )
 
 
@@ -112,3 +115,34 @@ def test_refuses_a_state_mutation_when_the_hub_does_not_own_the_namespace() -> N
     )
     assert decision.allowed is False
     assert decision.reason == RelayDenyReason.NAMESPACE_NOT_OWNED
+
+
+def test_refuses_a_reasonless_relay_when_a_reason_is_required() -> None:
+    decision = authorise_relay(
+        _request(reason="   "),  # blank after stripping is no reason at all
+        peer_authorised=True,
+        scope=_release_scope(),
+        owns_namespace=True,
+        require_reason=True,
+    )
+    assert decision.allowed is False
+    assert decision.reason == RelayDenyReason.REASON_REQUIRED
+
+
+def test_authorises_a_relay_with_a_reason_when_a_reason_is_required() -> None:
+    decision = authorise_relay(
+        _request(reason="freeing a wedged release"),
+        peer_authorised=True,
+        scope=_release_scope(),
+        owns_namespace=True,
+        require_reason=True,
+    )
+    assert decision.allowed is True
+    assert decision.reason == RELAY_AUTHORISED
+
+
+def test_a_missing_reason_is_ignored_when_no_reason_is_required() -> None:
+    decision = authorise_relay(
+        _request(), peer_authorised=True, scope=_release_scope(), owns_namespace=True
+    )
+    assert decision.allowed is True  # default off: a reasonless relay still authorises

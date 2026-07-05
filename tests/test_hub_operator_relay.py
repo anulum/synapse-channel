@@ -115,6 +115,7 @@ def _acting_hub(
     policy: MultiHubServingPolicy | None,
     ownership: NamespaceOwnership | None,
     journal: EventStore | None = None,
+    require_relay_reason: bool = False,
 ) -> SynapseHub:
     """Return a hub configured with the given serving policy, ownership map, and journal."""
     return SynapseHub(
@@ -122,6 +123,7 @@ def _acting_hub(
         multihub_serving_policy=policy,
         namespace_ownership=ownership,
         journal=journal,
+        require_relay_reason=require_relay_reason,
     )
 
 
@@ -130,13 +132,21 @@ def _owns() -> NamespaceOwnership:
     return NamespaceOwnership(owners={_NAMESPACE: _ACTING}, local_hub_id=_ACTING)
 
 
-def _request(action: str = "release", task_id: str = "t1") -> RelayActionRequest:
+def _request(
+    action: str = "release",
+    task_id: str = "t1",
+    *,
+    reason: str = "",
+    break_glass: bool = False,
+) -> RelayActionRequest:
     return RelayActionRequest(
         action=action,
         namespace=_NAMESPACE,
         task_id=task_id,
         operator="ops-admin",
         origin_hub_id=_DOMAIN,
+        reason=reason,
+        break_glass=break_glass,
     )
 
 
@@ -162,7 +172,8 @@ async def test_applies_a_relayed_release_and_audits_it(tmp_path: Path) -> None:
     hub = _acting_hub(policy=_serving_policy(pin, der), ownership=_owns(), journal=journal)
     hub.state.claim(_HOLDER, "t1")
     async with running_hub(hub) as (_, uri):
-        result = await _relay(uri, _request())
+        request = _request(reason="lease wedged by a crashed agent", break_glass=True)
+        result = await _relay(uri, request)
     assert result.applied is True
     assert result.owner_hub_id == _ACTING
     assert "was held by" in result.detail
@@ -178,8 +189,25 @@ async def test_applies_a_relayed_release_and_audits_it(tmp_path: Path) -> None:
     assert audit["peer"] == "peer"
     assert audit["operator"] == "ops-admin"
     assert audit["origin_hub_id"] == _DOMAIN
+    assert audit["reason"] == "lease wedged by a crashed agent"
+    assert audit["break_glass"] is True
     assert audit["previous_owner"] == _HOLDER
     assert audit["applied"] is True
+
+
+async def test_refuses_a_relay_without_a_reason_when_the_hub_requires_one(tmp_path: Path) -> None:
+    pin, der = _write_peer_cert(tmp_path)
+    hub = _acting_hub(
+        policy=_serving_policy(pin, der), ownership=_owns(), require_relay_reason=True
+    )
+    hub.state.claim(_HOLDER, "t1")
+    async with running_hub(hub) as (_, uri):
+        refused = await _relay(uri, _request())  # no reason
+        applied = await _relay(uri, _request(reason="freeing a wedged release"))
+    assert refused.applied is False
+    assert refused.detail == "reason_required"
+    assert applied.applied is True  # the same relay with a reason is authorised
+    assert "t1" not in hub.state.claims
 
 
 async def test_notifies_the_hubs_own_agents_that_the_lease_was_revoked(tmp_path: Path) -> None:

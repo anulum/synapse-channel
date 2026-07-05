@@ -1738,6 +1738,11 @@ applied the action, `1` when it refused it or there was nothing to release, and
 `2` when the relay never reached the peer — the fail-closed case. Only registered
 actions relay: an unknown action is refused, never smuggled through the wire.
 
+`--reason` records why the action was relayed, in the audit on both hubs; `--break-glass`
+tags it a distinct emergency override. A hub started with reason-required receipts refuses
+a relay that carries no reason, so a team or production deployment can hold every governed
+cross-hub action to an auditable why.
+
 The relay can also go **through** the operator's own hub instead of straight to the
 peer: point `--peer` at your local hub, and if that hub is configured with a relay
 route to the namespace's owner (a hub started with a relay-peer map, the operator-relay
@@ -1762,6 +1767,7 @@ synapse federation list --store ./federation.json              # imported peer d
 synapse federation list --store ./federation.json --max-age 90 # flag active peerings imported >90 days ago; exit 1
 synapse federation revoke example.org --store ./federation.json
 synapse federation relay release --peer ws://peer-hub:8876 --namespace TEAM-X --task build-7  # force-release a stuck lease on a peer hub
+synapse federation relay release --peer ws://peer-hub:8876 --namespace TEAM-X --task build-7 --reason "wedged by a crashed agent" --break-glass  # with an auditable reason, tagged break-glass
 synapse encrypt-key generate ./synapse.key                     # write a fresh owner-only 32-byte key file
 synapse encrypt-key generate --from-passphrase ./synapse.key   # derive the key from a prompted passphrase (scrypt) instead of random bytes
 synapse encrypt-key generate --from-passphrase --scrypt-n 65536 ./synapse.key  # tune the scrypt cost (n a power of two; also --scrypt-r/--scrypt-p)

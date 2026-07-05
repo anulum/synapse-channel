@@ -14,6 +14,14 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Security
+- The cross-hub operator relay now carries a `reason` and a `break_glass` tag, recorded in the
+  `operator_relay` audit on both the originating and the owning hub, so a governed force-release
+  across hubs leaves an auditable why and an emergency override stands apart from routine
+  governance in the log. `synapse federation relay` gains `--reason` and `--break-glass`, and a
+  hub started with `require_relay_reason` refuses a relay that carries no reason (reason-required
+  receipts) — deny-by-default, checked in `authorise_relay` after the peer and action gates. Both
+  wire fields default empty for backward compatibility. (Two-person approval of a relay is a
+  larger stateful workflow, tracked as a follow-up.)
 - The AES-GCM per-key message limit can now be enforced across restarts, not just within one
   process. `AtRestCipher` takes an optional `counter`, and the new `core.at_rest_counter`
   provides a crash-safe `PersistentMessageCounter` that persists the count to a sidecar file by

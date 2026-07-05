@@ -322,6 +322,11 @@ class SynapseHub:
         The seam that relays an operator action to an owning hub; defaults to the network
         :func:`~synapse_channel.core.operator_relay_transport.relay_operator_action`. Injected
         in tests.
+    require_relay_reason : bool, optional
+        Whether this hub refuses an operator relay that carries no reason. ``False`` (the
+        default) records a reason when one is given but does not demand it; a team or production
+        hub sets it so every governed cross-hub action leaves an auditable why (reason-required
+        receipts).
     observed_asserting_hubs : Callable[[str], Iterable[str]] or None, optional
         A runtime feed of the hub ids observed asserting authority over a namespace, consulted
         when resolving ownership so a partition — a peer seen owning a namespace this hub also
@@ -397,6 +402,7 @@ class SynapseHub:
         claim_forwarder: ClaimForwarder = forward_claim,
         relay_peers: Mapping[str, OperatorRelayPeer] | None = None,
         relay_forwarder: RelayForwarder = relay_operator_action,
+        require_relay_reason: bool = False,
         observed_asserting_hubs: Callable[[str], Iterable[str]] | None = None,
         federation_bundle: FederationBundle | None = None,
         federation_cert_source: PeerCertificateSource = live_peer_certificate_der,
@@ -429,6 +435,7 @@ class SynapseHub:
         self.claim_forwarder = claim_forwarder
         self.relay_peers = dict(relay_peers) if relay_peers else None
         self.relay_forwarder = relay_forwarder
+        self.require_relay_reason = bool(require_relay_reason)
         self.observed_asserting_hubs = observed_asserting_hubs
         self.federation_bundle = federation_bundle
         self.federation_cert_source = federation_cert_source

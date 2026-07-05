@@ -201,6 +201,8 @@ class OperatorRelayForwarding:
             task_id=request.task_id,
             operator=request.operator,
             origin_hub_id=self._hub_id,
+            reason=request.reason,
+            break_glass=request.break_glass,
         )
         try:
             result = await self._relay_forwarder(
@@ -249,6 +251,8 @@ class OperatorRelayForwarding:
                 "operator": request.operator,
                 "origin_hub_id": self._hub_id,
                 "owner_hub_id": decision.owner_hub_id or "",
+                "reason": request.reason,
+                "break_glass": request.break_glass,
                 "applied": result.applied,
                 "detail": result.detail,
             },

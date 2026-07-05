@@ -91,6 +91,7 @@ class RelayDenyReason:
 
     UNKNOWN_ACTION = "unknown_action"
     PEER_NOT_AUTHORISED = "peer_not_authorised"
+    REASON_REQUIRED = "reason_required"
     SCOPE_NOT_GRANTED = "scope_not_granted"
     NAMESPACE_NOT_OWNED = "namespace_not_owned"
 
@@ -124,6 +125,7 @@ def authorise_relay(
     peer_authorised: bool,
     scope: Iterable[ScopeGrant],
     owns_namespace: bool,
+    require_reason: bool = False,
 ) -> RelayDecision:
     """Decide whether a relayed operator action may be applied, deny-by-default.
 
@@ -133,8 +135,10 @@ def authorise_relay(
     1. the peer must be a verified federated hub (``peer_authorised``) — a relay from an
        unauthenticated or unpinned peer is refused before anything else;
     2. the action must be in :data:`RELAYABLE_ACTIONS`;
-    3. the peering's bounded ``scope`` must grant the action's verb in the request's namespace;
-    4. for an action that mutates state, this hub must authoritatively own the namespace.
+    3. when ``require_reason`` is set, the request must carry a non-blank reason — a hub that
+       demands reason-required receipts refuses a relay that records no why;
+    4. the peering's bounded ``scope`` must grant the action's verb in the request's namespace;
+    5. for an action that mutates state, this hub must authoritatively own the namespace.
 
     The first failure returns its :class:`RelayDenyReason`; otherwise the relay is authorised.
     This is only the relay-policy gate — the caller has already composed the mutual-TLS and
@@ -152,6 +156,10 @@ def authorise_relay(
         The bounded scope the peering maps the remote operator to.
     owns_namespace : bool
         Whether this hub authoritatively and uncontestedly owns the target namespace.
+    require_reason : bool, optional
+        Whether this hub refuses a relay that carries no reason. Off by default, so a relay
+        without a reason is still authorised; a team or production hub turns it on to require an
+        auditable why on every governed cross-hub action.
 
     Returns
     -------
@@ -163,6 +171,8 @@ def authorise_relay(
     action = RELAYABLE_ACTIONS.get(request.action)
     if action is None:
         return RelayDecision(False, request.action, RelayDenyReason.UNKNOWN_ACTION)
+    if require_reason and not request.reason.strip():
+        return RelayDecision(False, request.action, RelayDenyReason.REASON_REQUIRED)
     if not _scope_grants(scope, verb=action.verb, namespace=request.namespace):
         return RelayDecision(False, request.action, RelayDenyReason.SCOPE_NOT_GRANTED)
     if action.requires_ownership and not owns_namespace:
