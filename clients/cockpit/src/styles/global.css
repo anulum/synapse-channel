@@ -2757,3 +2757,11 @@ body {
   padding-top: 3px;
   padding-bottom: 3px;
 }
+
+/* ---------- render-cap remainder ---------- */
+.log__more {
+  padding: var(--sp-2) var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+  color: var(--warn);
+}
