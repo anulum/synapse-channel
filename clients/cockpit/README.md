@@ -26,8 +26,13 @@ discrete event-driven oscilloscope of observed coordination transitions.
 ## Layout
 
 - **HUD** — mark, the KPIs (agents online / claims held / observed
-  transitions per minute / risk signals, each with a redundant delta),
-  liveness beacon + freshness stamp.
+  transitions per minute / risk signals, each with a redundant delta —
+  clicking one drills the signal log to its event kinds), the **focus
+  lens** (name an identity and the claims board and task board narrow to
+  its orbit, persistently, with a lens chip on every narrowed panel), the
+  **density** and **theme** toggles (compact row rhythm; a WCAG-AA
+  warm-paper light variant — stored choice wins, the OS preference decides
+  otherwise), liveness beacon + freshness stamp.
 - **Activity spine** — four lanes (presence, claims, task, risk) of discrete
   impulses at true timestamps against an amber now-edge, with a semantic
   colour legend. The risk lane is deliberately quiet; a deflection there is
@@ -38,11 +43,26 @@ discrete event-driven oscilloscope of observed coordination transitions.
 - **Federation row** — hub identity, imported peerings with lifecycle dots,
   and partition honesty: a contested namespace renders as a loud alert,
   because the hub refuses claims there until the split heals.
+- **Time-travel bar** — arm it and scrub the durable log by sequence: the
+  claims board, task board, and topology render the moment `/state-at.json`
+  reconstructs (leases judged at that moment's own clock), amber-bordered
+  and labelled while armed. The spine, log, and roster stay live — presence
+  is not journalled, and the two truths never blend.
+- **Toasts** — transitions said once: a task newly blocked, a new advisory
+  conflict, a dead letter appearing or deepening, the risk rail crossing
+  amber → red, a task newly done. Computed from live facts only; the first
+  poll emits nothing; click or eight seconds dismisses.
+- **Detail drawers** — click a roster row or a board card: everything the
+  fleet knows about that name (claims with paths, the identity's unread
+  dead-letter mailbox, dependency verdicts, history in the window), with
+  actions that only steer other panels — filter the log, trace causality.
 - **Deck** — the fleet roster (waker-missing presence honesty included) over
   the reliability EVIDENCE panel; the claims board (per-path detail, ticking
   lease countdowns, loud branch-conflict banner) over the inspector tabs; the
   task board (hub-verdicted dependency chips, done tasks listing the
-  dependents they unblocked); the risk rail — the hub's signals, then the
+  dependents they unblocked, a text + bucket-chip query with honest
+  shown-of-total counts, and a Markdown **report** export that states its
+  scope in the header); the risk rail — the hub's signals, then the
   hub-recorded **dead letters** (targets whose messages nobody reads), then
   client-side **repetition heuristics** (claim churn, repeating lease expiry)
   in their own clearly-labelled section — over the findings stream.
@@ -57,7 +77,12 @@ discrete event-driven oscilloscope of observed coordination transitions.
   window, and count stated inside the document). The query lives in the URL
   hash, so a filtered view is a shareable address. On hub provenance a
   **history** mode scrubs the whole durable log by sequence — any position
-  renders its attested 200-event window in the same table.
+  renders its attested 200-event window in the same table, a **pin A /
+  compare** pair diffs two windows (per-kind deltas, actors that appeared
+  or went quiet, each window's own observed rate), and an **open** button
+  loads a downloaded export back in as a **post-mortem** — same table,
+  same filters, no hub required, with the document's provenance and stamp
+  in a banner so replayed evidence never poses as live.
 - **Topology** — a deterministic bipartite graph of who holds what: agents in
   one column, held tasks in the other, one line per claim (stale amber,
   conflict red), dashed ties for advisory conflicts, idle agents as a stated
@@ -83,6 +108,7 @@ first), with the spine kept at every width.
 | `/federation.json` | 20 s poll | federation posture (proposed contract; optional) |
 | `/events.json?since=SEQ\|latest&limit=N` | 2 s incremental | the hub-attested event log (optional; also drives history mode) |
 | `/metrics.json` | 30 s poll | store-attested log metrics: totals, per-kind, trailing windows (optional) |
+| `/state-at.json?seq=N` | on scrub | claims + board reconstructed as of seq N by bounded replay (optional) |
 
 Optional endpoints answer `404` on dashboards that do not serve them; the
 corresponding panel states that plainly and activates the moment the surface
