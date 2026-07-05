@@ -140,4 +140,32 @@ def test_release_roundtrip() -> None:
     assert "TASK-11" not in state.claims
 
 
+# --- force release (governed revocation, ownership checked upstream) ----------
+
+
+def test_force_release_requires_task_id() -> None:
+    state = SynapseState()
+    ok, msg = state.force_release("  ", by="ops")
+    assert ok is False
+    assert "required" in msg
+
+
+def test_force_release_on_an_unclaimed_task_returns_error() -> None:
+    state = SynapseState()
+    ok, msg = state.force_release("GHOST", by="ops")
+    assert ok is False
+    assert "not currently claimed" in msg
+
+
+def test_force_release_revokes_a_claim_held_by_another_agent() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    state.claim("A", "TASK-12", now=1000.0)
+    # Unlike release, force_release does not require the caller to be the owner.
+    ok, msg = state.force_release("TASK-12", by="ops-admin")
+    assert ok is True
+    assert "operator ops-admin" in msg
+    assert "was held by A" in msg
+    assert "TASK-12" not in state.claims
+
+
 # --- resources ---------------------------------------------------------------

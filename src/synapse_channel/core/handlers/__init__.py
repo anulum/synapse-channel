@@ -42,6 +42,7 @@ from synapse_channel.core.handlers.messaging import handle_chat, handle_heartbea
 from synapse_channel.core.handlers.multihub import handle_multihub_log_request
 from synapse_channel.core.handlers.multihub_claim import handle_multihub_claim_request
 from synapse_channel.core.handlers.offerings import handle_advertise, handle_resource
+from synapse_channel.core.handlers.operator_relay import handle_operator_relay_request
 from synapse_channel.core.handlers.planning import (
     handle_ledger_progress,
     handle_ledger_task,
@@ -91,6 +92,7 @@ DISPATCH: dict[str, Handler] = {
     MessageType.CHANNEL_HISTORY_REQUEST: handle_channel_history_request,
     MessageType.MULTIHUB_LOG_REQUEST: handle_multihub_log_request,
     MessageType.MULTIHUB_CLAIM_REQUEST: handle_multihub_claim_request,
+    MessageType.OPERATOR_RELAY_REQUEST: handle_operator_relay_request,
     MessageType.FEDERATION_OFFER_REQUEST: handle_federation_offer_request,
     **{alias: handle_resource for alias in RESOURCE_TYPE_ALIASES},
 }

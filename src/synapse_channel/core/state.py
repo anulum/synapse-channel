@@ -477,6 +477,46 @@ class SynapseState:
         self.expired_checkpoints.pop(task, None)
         return True, f"Task '{task}' released by {agent}."
 
+    def force_release(self, task_id: str, *, by: str) -> tuple[bool, str]:
+        """Release a task regardless of who holds it, on externally verified authority.
+
+        Unlike :meth:`release`, this does not require the caller to be the lease owner:
+        the authority to revoke another agent's claim is established *before* this is
+        called — a governed cross-hub operator relay whose peer, scope, and namespace
+        ownership have all been verified deny-closed. This method only executes the
+        revocation the caller is already entitled to make, so it never checks ownership
+        itself; it must not be reachable except behind that authorisation.
+
+        The revocation is otherwise identical to a self-release: the lease is dropped and
+        any retained checkpoint discarded, so a later unrelated claim of the same id does
+        not resurrect stale resume state. It does not touch the operator's heartbeat — the
+        operator is remote and holds no presence on this hub.
+
+        Parameters
+        ----------
+        task_id : str
+            Identifier of the task to revoke; surrounding whitespace is stripped.
+        by : str
+            The operator identity the revocation is attributed to, named in the message
+            for the audit trail.
+
+        Returns
+        -------
+        tuple[bool, str]
+            ``(True, message)`` naming the operator and the previous holder on success;
+            ``(False, reason)`` when the task id is empty or the task is not claimed.
+        """
+        task = task_id.strip()
+        if not task:
+            return False, "Task ID is required."
+        existing = self.claims.get(task)
+        if existing is None:
+            return False, f"Task '{task}' is not currently claimed."
+        previous_owner = existing.owner
+        del self.claims[task]
+        self.expired_checkpoints.pop(task, None)
+        return True, (f"Task '{task}' released by operator {by} (was held by {previous_owner}).")
+
     def handoff(
         self,
         agent: str,

@@ -1725,6 +1725,19 @@ moment with `federation import --max-age DAYS`, which warns (the import
 still succeeds — the operator is confirming it explicitly) when the
 incoming bundle never expires or expires further out than the threshold.
 
+`federation relay` performs a governed operator action **on** a peer hub over the
+same federation transport, rather than managing peerings. The first action is
+`release` — an operator whose domain is granted the `release` verb in a namespace
+the peer owns force-releases a stuck lease held on that peer, without a shell on
+it. The peer authorises the relay deny-by-default (mutual TLS + the peering's
+scope + it must own the namespace) and audits it with the verified peer, the
+asserting operator, and the previous holder, so a lease revoked across hubs stays
+attributable. `--local-id` must match a serving grant on the peer, `--operator`
+records who asked (default: the OS user), and the exit code is `0` when the peer
+applied the action, `1` when it refused it or there was nothing to release, and
+`2` when the relay never reached the peer — the fail-closed case. Only registered
+actions relay: an unknown action is refused, never smuggled through the wire.
+
 ```bash
 synapse identity audit --identities ./identities.json          # audit declared identities for blockers
 synapse identity audit --identities ./identities.json --json
@@ -1737,6 +1750,7 @@ synapse federation import ./peer-domain.json --confirmed-by ceo --source ws://pe
 synapse federation list --store ./federation.json              # imported peer domains, provenance, and age
 synapse federation list --store ./federation.json --max-age 90 # flag active peerings imported >90 days ago; exit 1
 synapse federation revoke example.org --store ./federation.json
+synapse federation relay release --peer ws://peer-hub:8876 --namespace TEAM-X --task build-7  # force-release a stuck lease on a peer hub
 synapse encrypt-key generate ./synapse.key                     # write a fresh owner-only 32-byte key file
 synapse encrypt-key generate --from-passphrase ./synapse.key   # derive the key from a prompted passphrase (scrypt) instead of random bytes
 synapse encrypt-key generate --from-passphrase --scrypt-n 65536 ./synapse.key  # tune the scrypt cost (n a power of two; also --scrypt-r/--scrypt-p)
