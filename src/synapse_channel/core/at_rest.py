@@ -68,11 +68,15 @@ BACKUP_MANIFEST_SCHEMA = "synapse-at-rest-backup.v1"
 WRAPPED_KEY_SCHEMA = "synapse-at-rest-wrapped-key.v1"
 """Schema marker for an envelope-encrypted (KEK-wrapped) at-rest key file.
 
-A random data key does the bulk AES-GCM; a key-encryption key (KEK) derived from a passphrase — or,
-in a later tranche, held in a TPM/YubiKey/cloud HSM — wraps it with RFC 3394 AES-KW. Because the
-data key is unchanged when the KEK rotates, the passphrase (or HSM) can change without re-encrypting
-any stored data.
+A random data key does the bulk AES-GCM; a key-encryption key (KEK) — from a passphrase now, or a
+PKCS#11 token, TPM, YubiKey, or cloud HSM in an optional backend — wraps it. The file records which
+``backend`` produced it, so a fresh process rebuilds the matching key-encryption key. Because the
+data key is unchanged when the KEK rotates, the passphrase (or hardware key) can change without
+re-encrypting any stored data.
 """
+
+PASSPHRASE_SCRYPT_BACKEND = "passphrase-scrypt"
+"""Wrapped-key ``backend`` tag for the default software KEK (a passphrase derived with scrypt)."""
 
 GCM_MESSAGE_LIMIT = 2**32
 """Per-key AES-GCM message cap for random 96-bit nonces (NIST SP 800-38D).
@@ -548,42 +552,111 @@ def unwrap_data_key(wrapped: bytes, key_encryption_key: bytes) -> bytes:
     return recovered
 
 
-def _wrapped_key_document(*, salt: bytes, wrapped: bytes, n: int, r: int, p: int) -> bytes:
+class KeyEncryptionKey(Protocol):
+    """Wraps and unwraps an at-rest data key.
+
+    A key-encryption key (KEK) never touches stored data directly — it only wraps the random data
+    key :class:`AtRestCipher` uses for bulk AES-GCM. The backend that provides it — a passphrase
+    now, a PKCS#11 token, a TPM, or a cloud HSM in an optional backend — is recorded in the
+    wrapped-key file so a fresh process can rebuild it. Rotating the KEK re-wraps the same data key,
+    so no encrypted data is ever rewritten.
+    """
+
+    def wrap(self, data_key: bytes) -> bytes:
+        """Return ``data_key`` wrapped under this key-encryption key."""
+
+    def unwrap(self, wrapped: bytes) -> bytes:
+        """Return the data key recovered from ``wrapped``."""
+
+
+class PassphraseKeyEncryptionKey:
+    """A software key-encryption key derived from a passphrase with scrypt.
+
+    The derived key wraps and unwraps the data key with RFC 3394 AES-KW in-process. This is the
+    default, dependency-free backend; hardware backends keep their key material in the device while
+    implementing the same :class:`KeyEncryptionKey` shape.
+    """
+
+    def __init__(self, kek: bytes) -> None:
+        self._kek = bytes(kek)
+
+    def wrap(self, data_key: bytes) -> bytes:
+        """Wrap ``data_key`` under the passphrase-derived key with RFC 3394 AES-KW."""
+        return wrap_data_key(data_key, self._kek)
+
+    def unwrap(self, wrapped: bytes) -> bytes:
+        """Unwrap the data key under the passphrase-derived key with RFC 3394 AES-KW."""
+        return unwrap_data_key(wrapped, self._kek)
+
+
+def _new_passphrase_kek(
+    passphrase: str, *, n: int, r: int, p: int
+) -> tuple[dict[str, Any], PassphraseKeyEncryptionKey]:
+    """Draw a fresh salt, derive a passphrase KEK, and return its file params and the KEK."""
+    salt = secrets.token_bytes(SCRYPT_SALT_BYTES)
+    kek = PassphraseKeyEncryptionKey(derive_key(passphrase, salt, n=n, r=r, p=p))
+    params = {"n": int(n), "r": int(r), "p": int(p), "salt": base64.b64encode(salt).decode("ascii")}
+    return params, kek
+
+
+def _passphrase_kek_from_params(
+    passphrase: str, params: dict[str, Any], path: Path
+) -> PassphraseKeyEncryptionKey:
+    """Rebuild a passphrase KEK from a wrapped-key file's recorded scrypt params."""
+    try:
+        n, r, p = int(params["n"]), int(params["r"]), int(params["p"])
+        salt = base64.b64decode(params["salt"], validate=True)
+    except (KeyError, ValueError, TypeError) as exc:
+        raise ValueError(f"malformed wrapped at-rest key file: {path}") from exc
+    return PassphraseKeyEncryptionKey(derive_key(passphrase, salt, n=n, r=r, p=p))
+
+
+def _write_wrapped_key_document(*, backend: str, params: dict[str, Any], wrapped: bytes) -> bytes:
     """Serialise a wrapped-key file's JSON document (deterministic, newline-terminated)."""
     document = {
         "schema": WRAPPED_KEY_SCHEMA,
-        "kdf": "scrypt",
-        "n": int(n),
-        "r": int(r),
-        "p": int(p),
-        "salt": base64.b64encode(salt).decode("ascii"),
+        "backend": backend,
+        "params": params,
         "wrapped_key": base64.b64encode(wrapped).decode("ascii"),
     }
     return json.dumps(document, ensure_ascii=True, indent=2, sort_keys=True).encode("utf-8") + b"\n"
 
 
-def _load_wrapped_key(path: Path, passphrase: str) -> bytes:
-    """Read a wrapped-key file and return the unwrapped data key.
+def _read_wrapped_key_document(path: Path) -> tuple[str, dict[str, Any], bytes]:
+    """Read and validate a wrapped-key file, returning ``(backend, params, wrapped_key)``.
 
     Raises
     ------
     ValueError
-        When the file is not a wrapped key file, its fields are malformed, or the passphrase is
-        wrong.
+        When the file is not a wrapped key file or its top-level fields are malformed.
     """
     raw: Any = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict) or raw.get("schema") != WRAPPED_KEY_SCHEMA:
         raise ValueError(f"not a Synapse wrapped at-rest key file: {path}")
-    if raw.get("kdf") != "scrypt":
-        raise ValueError(f"unsupported key-derivation function in wrapped key file: {path}")
+    backend = raw.get("backend")
+    params = raw.get("params")
+    if not isinstance(backend, str) or not isinstance(params, dict):
+        raise ValueError(f"malformed wrapped at-rest key file: {path}")
     try:
-        n, r, p = int(raw["n"]), int(raw["r"]), int(raw["p"])
-        salt = base64.b64decode(raw["salt"], validate=True)
         wrapped = base64.b64decode(raw["wrapped_key"], validate=True)
     except (KeyError, ValueError, TypeError) as exc:
         raise ValueError(f"malformed wrapped at-rest key file: {path}") from exc
-    kek = derive_key(passphrase, salt, n=n, r=r, p=p)
-    return unwrap_data_key(wrapped, kek)
+    return backend, params, wrapped
+
+
+def _load_wrapped_key(path: Path, passphrase: str) -> bytes:
+    """Read a passphrase-wrapped key file and return the unwrapped data key.
+
+    Raises
+    ------
+    ValueError
+        When the file is not a passphrase-wrapped key file, its fields are malformed, or the
+        passphrase is wrong.
+    """
+    backend, params, wrapped = _read_wrapped_key_document(path)
+    if backend != PASSPHRASE_SCRYPT_BACKEND:
+        raise ValueError(f"wrapped key file uses the {backend!r} backend, not a passphrase: {path}")
+    return _passphrase_kek_from_params(passphrase, params, path).unwrap(wrapped)
 
 
 def generate_wrapped_key_file(
@@ -627,10 +700,10 @@ def generate_wrapped_key_file(
     if not passphrase:
         raise ValueError("passphrase must not be empty")
     data_key = secrets.token_bytes(KEY_BYTES)
-    salt = secrets.token_bytes(SCRYPT_SALT_BYTES)
-    kek = derive_key(passphrase, salt, n=n, r=r, p=p)
-    wrapped = wrap_data_key(data_key, kek)
-    document = _wrapped_key_document(salt=salt, wrapped=wrapped, n=n, r=r, p=p)
+    params, kek = _new_passphrase_kek(passphrase, n=n, r=r, p=p)
+    document = _write_wrapped_key_document(
+        backend=PASSPHRASE_SCRYPT_BACKEND, params=params, wrapped=kek.wrap(data_key)
+    )
     return _write_new_key_file(Path(path), document)
 
 
@@ -673,10 +746,11 @@ def rewrap_wrapped_key_file(
         raise ValueError("passphrase must not be empty")
     target = Path(path)
     data_key = _load_wrapped_key(target, old_passphrase)
-    salt = secrets.token_bytes(SCRYPT_SALT_BYTES)
-    kek = derive_key(new_passphrase, salt, n=n, r=r, p=p)
-    wrapped = wrap_data_key(data_key, kek)
-    _write_owner_only(target, _wrapped_key_document(salt=salt, wrapped=wrapped, n=n, r=r, p=p))
+    params, kek = _new_passphrase_kek(new_passphrase, n=n, r=r, p=p)
+    document = _write_wrapped_key_document(
+        backend=PASSPHRASE_SCRYPT_BACKEND, params=params, wrapped=kek.wrap(data_key)
+    )
+    _write_owner_only(target, document)
     return target
 
 

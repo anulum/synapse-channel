@@ -14,16 +14,20 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
-- Envelope-encrypted (KEK-wrapped) at-rest key files, the foundation for
-  hardware-backed keys (TPM / YubiKey / cloud HSM). A random data key does the bulk
-  AES-GCM while a key-encryption key — derived from a passphrase now, held in
-  hardware later — wraps it with RFC 3394 AES-KW. `synapse encrypt-key
-  generate-wrapped` writes one and `synapse encrypt-key rewrap` rotates its
-  passphrase **without re-encrypting any data**, because only the key-encryption key
-  changes and the data key underneath is unchanged. New `wrap_data_key` /
-  `unwrap_data_key` / `generate_wrapped_key_file` / `rewrap_wrapped_key_file` and
-  `AtRestCipher.from_wrapped_key_file` in `core.at_rest`. A later tranche adds the
-  PKCS#11/TPM/YubiKey key-encryption-key backends that plug into this same format.
+- Envelope-encrypted (KEK-wrapped) at-rest key files with a pluggable
+  key-encryption-key backend, the foundation for hardware-backed keys (PKCS#11 /
+  TPM / YubiKey / cloud HSM). A random data key does the bulk AES-GCM while a
+  key-encryption key wraps it with RFC 3394 AES-KW; the wrapped-key file records
+  which `backend` produced it (`passphrase-scrypt` today, hardware backends as
+  optional extras next) so a fresh process rebuilds the matching key. `synapse
+  encrypt-key generate-wrapped` writes one and `synapse encrypt-key rewrap` rotates
+  its passphrase **without re-encrypting any data**, because only the
+  key-encryption key changes and the data key underneath is unchanged. New
+  `KeyEncryptionKey` protocol and `PassphraseKeyEncryptionKey`, `wrap_data_key` /
+  `unwrap_data_key` / `generate_wrapped_key_file` / `rewrap_wrapped_key_file`, and
+  `AtRestCipher.from_wrapped_key_file` in `core.at_rest`. The optional PKCS#11 / TPM
+  / YubiKey key-encryption-key backends implement the same protocol and plug into
+  this same wrapped-key format.
 - `synapse auto-action` gives the opt-in auto-action reactor a discoverable CLI
   surface. The reactor (which turns the session advisor's per-round signals into
   automatic compact/log/handover actions) was previously reachable only in-process
