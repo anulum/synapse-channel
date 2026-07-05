@@ -28,6 +28,13 @@ import { deriveClaims, parseConflicts } from "./lib/claims";
 import { createEventsTailSource, type SpineProvenance } from "./lib/eventsTail";
 import { queryFromHash, queryToHash, type LogQuery } from "./lib/logQuery";
 import { createMetricsStore, type MetricsState } from "./lib/metrics";
+import {
+  applyTheme,
+  persistTheme,
+  resolveInitialTheme,
+  toggledTheme,
+  type Theme,
+} from "./lib/theme";
 import { createFederationStore, type FederationState } from "./lib/federation";
 import { createReliabilityStore, type ReliabilityState } from "./lib/reliability";
 import { deriveRoster } from "./lib/roster";
@@ -130,6 +137,22 @@ export function App(): JSX.Element {
   // Phone-width segment: one deck section at a time; CSS ignores this above
   // 640px, where the whole deck renders as always.
   const [mobileSegment, setMobileSegment] = useState<MobileSegment>("signals");
+  // Theme ladder: stored explicit choice, else the OS preference, else dark.
+  const [theme, setTheme] = useState<Theme>(() =>
+    resolveInitialTheme(localStorage, matchMedia("(prefers-color-scheme: light)").matches),
+  );
+
+  useEffect(() => {
+    applyTheme(theme, document.documentElement);
+  }, [theme]);
+
+  const onToggleTheme = useCallback(() => {
+    setTheme((current) => {
+      const next = toggledTheme(current);
+      persistTheme(next, localStorage);
+      return next;
+    });
+  }, []);
   // The log query lives in the URL hash, so a filtered view is a shareable
   // address and survives a reload.
   const [logQuery, setLogQuery] = useState<LogQuery>(() =>
@@ -279,6 +302,8 @@ export function App(): JSX.Element {
         live={snap.status === "live"}
         stamp={stampFor(snap.fetchedAt)}
         onSelect={onSelectKpi}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
       />
       <PanelBoundary name="Activity spine">
         <ActivitySpine

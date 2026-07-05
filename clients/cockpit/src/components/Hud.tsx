@@ -21,6 +21,10 @@ interface HudProps {
   readonly stamp: string;
   /** Drill-down: clicking a KPI filters the signal log to its event kinds. */
   readonly onSelect?: ((label: string) => void) | undefined;
+  /** The active palette, for the toggle's label. */
+  readonly theme?: "dark" | "light";
+  /** Theme toggle; the control renders only when provided. */
+  readonly onToggleTheme?: (() => void) | undefined;
 }
 
 function deltaClass(delta: number): string {
@@ -36,7 +40,7 @@ function deltaText(delta: number): string {
   return "• 0";
 }
 
-export function Hud({ kpis, live, stamp, onSelect }: HudProps): JSX.Element {
+export function Hud({ kpis, live, stamp, onSelect, theme = "dark", onToggleTheme }: HudProps): JSX.Element {
   return (
     <header className="hud">
       <div className="hud__mark">
@@ -74,6 +78,17 @@ export function Hud({ kpis, live, stamp, onSelect }: HudProps): JSX.Element {
         )}
       </div>
 
+      {onToggleTheme !== undefined && (
+        <button
+          type="button"
+          className="hud__theme"
+          onClick={onToggleTheme}
+          title={theme === "dark" ? "Switch to the light instrument" : "Switch to the graphite instrument"}
+          aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+        >
+          {theme === "dark" ? "light" : "dark"}
+        </button>
+      )}
       <div className={`beacon ${live ? "beacon--live" : "beacon--stale"}`}>
         <span className="beacon__dot" />
         <span>{live ? "live" : "stale"}</span>

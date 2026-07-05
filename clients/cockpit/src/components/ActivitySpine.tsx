@@ -104,7 +104,13 @@ export function ActivitySpine({ source, onInspect, onBrush, brush }: SpineProps)
     const ctx = canvas.getContext("2d");
     if (ctx === null) return;
 
-    const tokens = resolveTokens(document.documentElement);
+    // Tokens re-resolve when the theme attribute flips, so the canvas
+    // re-colours on toggle without a remount.
+    let tokens = resolveTokens(document.documentElement);
+    const themeWatcher = new MutationObserver(() => {
+      tokens = resolveTokens(document.documentElement);
+    });
+    themeWatcher.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let width = 0;
     let height = 0;
@@ -338,6 +344,7 @@ export function ActivitySpine({ source, onInspect, onBrush, brush }: SpineProps)
       canvas.removeEventListener("pointerleave", onPointerLeave);
       canvas.removeEventListener("keydown", onKeyDown);
       observer.disconnect();
+      themeWatcher.disconnect();
       if (frame !== 0) window.cancelAnimationFrame(frame);
     };
   }, [source, onInspect, onBrush]);

@@ -7,25 +7,24 @@
 /* SYNAPSE_CHANNEL — cockpit design tokens (lifted graphite instrument palette) */
 
 :root {
-  /* Surfaces — a cool graphite ramp, never true black (ATC: black is a poor cue). */
-  --abyss: #0e1116;
+  color-scheme: dark;
+
+  /* Canonical tokens — the theme switches THESE; everything else aliases
+     them. Dark = the lifted-graphite instrument values (a cool graphite
+     ramp, never true black; one warm-neutral carries most text). */
+  --bg: #0e1116;
   --panel: #151a21;
-  --raised: #1c232c;
+  --panel-2: #1c232c;
   --line: #2a333f;
   --line-soft: #202832;
-
-  /* Text — one warm-neutral carries most text (Bloomberg discipline). */
   --ink: #e6e1d6;
-  --muted: #9ba3ae;
-  --dim: #5c6672;
-
-  /* Signal — desaturated-but-luminant; each state also carries a glyph + position. */
-  --idle: #5c6672;
-  --healthy: #3fb77e;
-  --info: #4aa8ff;
-  --warn: #e0a93b;
-  --critical: #e5484d;
-  --now: #e0a93b; /* the live master-clock edge; amber = instrument, not SaaS */
+  --ink-dim: #9ba3ae;
+  --ink-faint: #5c6672;
+  --accent: #e0a93b; /* the live master-clock edge; amber = instrument, not SaaS */
+  --signal: #4aa8ff;
+  --sev-ok: #3fb77e;
+  --sev-warn: #e0a93b;
+  --sev-crit: #e5484d;
 
   /* Signal, dimmed — for recessed baselines and decayed history. */
   --healthy-trail: rgba(63, 183, 126, 0.28);
@@ -33,6 +32,18 @@
   --warn-trail: rgba(224, 169, 59, 0.28);
   --critical-trail: rgba(229, 72, 77, 0.3);
   --idle-trail: rgba(92, 102, 114, 0.22);
+
+  /* Legacy aliases — the names the stylesheet grew up with, kept stable. */
+  --abyss: var(--bg);
+  --raised: var(--panel-2);
+  --muted: var(--ink-dim);
+  --dim: var(--ink-faint);
+  --idle: var(--ink-faint);
+  --healthy: var(--sev-ok);
+  --info: var(--signal);
+  --warn: var(--sev-warn);
+  --critical: var(--sev-crit);
+  --now: var(--accent);
 
   /* Type — grotesk labels + mono values. Never Inter for the instrument. */
   --font-display: "Space Grotesk", system-ui, sans-serif;
@@ -60,6 +71,35 @@
   --t-value: 300ms;
   --t-pulse: 250ms;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* Light theme — warm-neutral paper, not pure white (a faint accent-biased
+   grey ground); dark ink; the same signal family darkened for WCAG AA
+   contrast on text and severity pills. Everything below reads through the
+   same canonical tokens, so the whole instrument — canvas and SVG included —
+   re-colours on the [data-theme] flip. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #eeeae1;
+  --panel: #f6f3ec;
+  --panel-2: #e6e1d5;
+  --line: #cdc6b7;
+  --line-soft: #dbd5c7;
+  --ink: #23282f;
+  --ink-dim: #565e69;
+  --ink-faint: #83898f;
+  --accent: #8a6410;
+  --signal: #135ba3;
+  --sev-ok: #1a7a4d;
+  --sev-warn: #8a6410;
+  --sev-crit: #b3261e;
+
+  --healthy-trail: rgba(26, 122, 77, 0.3);
+  --info-trail: rgba(19, 91, 163, 0.3);
+  --warn-trail: rgba(138, 100, 16, 0.32);
+  --critical-trail: rgba(179, 38, 30, 0.3);
+  --idle-trail: rgba(131, 137, 143, 0.25);
 }
 
 /* Honour reduced-motion by neutralising every animated token. */
