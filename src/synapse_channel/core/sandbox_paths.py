@@ -82,6 +82,4 @@ def harden_preopens(
     :class:`SandboxPathError` on the first host path that fails validation, so a run with any
     unsafe grant is refused whole before the tool executes.
     """
-    return tuple(
-        (resolve_preopen_host(host), guest, write) for host, guest, write in preopens
-    )
+    return tuple((resolve_preopen_host(host), guest, write) for host, guest, write in preopens)
