@@ -38,6 +38,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
+from synapse_channel.core.at_rest_counter import InMemoryMessageCounter, MessageCounter
+
 if TYPE_CHECKING:  # pragma: no cover - typing-only import, never required at runtime.
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -248,26 +250,31 @@ class AtRestCipher:
     by another format or version fails authentication rather than decrypting to
     garbage.
 
-    Each instance counts the messages it seals and refuses to encrypt past
+    The cipher counts the messages it seals and refuses to encrypt past
     :data:`GCM_MESSAGE_LIMIT`, logging a one-time warning at
     :data:`GCM_REKEY_WARNING_THRESHOLD` so the key can be rotated in good time.
-    The count is per instance and resets whenever the cipher is rebuilt (for
-    example on a hub restart or a key reload); it guards a single long-running
-    process rather than tracking a key's cumulative lifetime across restarts.
+    The count is kept by an injected
+    :class:`~synapse_channel.core.at_rest_counter.MessageCounter`. The default,
+    :class:`~synapse_channel.core.at_rest_counter.InMemoryMessageCounter`, is
+    per-process and resets whenever the cipher is rebuilt (a hub restart, a key
+    reload) — it guards one long-running process. A long-lived store that must
+    hold a key's cumulative lifetime across restarts passes a
+    :class:`~synapse_channel.core.at_rest_counter.PersistentMessageCounter`, so
+    the limit is enforced over the key's whole life rather than one process.
     """
 
-    def __init__(self, key: bytes) -> None:
+    def __init__(self, key: bytes, *, counter: MessageCounter | None = None) -> None:
         if len(key) != KEY_BYTES:
             raise ValueError(f"at-rest key must be {KEY_BYTES} bytes, got {len(key)}")
         self._key = bytes(key)
         self._aesgcm = require_aes_gcm()(self._key)
-        self._encrypted = 0
+        self._counter: MessageCounter = counter if counter is not None else InMemoryMessageCounter()
         self._warned = False
 
     @property
     def encrypted_count(self) -> int:
-        """Return how many messages this instance has sealed under its key."""
-        return self._encrypted
+        """Return how many messages have been sealed under this key, per its counter."""
+        return self._counter.count
 
     @classmethod
     def from_passphrase(
@@ -283,13 +290,19 @@ class AtRestCipher:
         return cls(derive_key(passphrase, salt, n=n, r=r, p=p))
 
     @classmethod
-    def from_key_file(cls, path: str | Path) -> AtRestCipher:
+    def from_key_file(
+        cls, path: str | Path, *, counter: MessageCounter | None = None
+    ) -> AtRestCipher:
         """Build a cipher from a raw 32-byte key file after a permission check.
 
         Parameters
         ----------
         path : str or pathlib.Path
             Key-file path holding exactly :data:`KEY_BYTES` raw bytes.
+        counter : MessageCounter or None, optional
+            The message counter enforcing the AES-GCM per-key limit; pass a
+            :class:`~synapse_channel.core.at_rest_counter.PersistentMessageCounter` to hold the
+            key's cumulative count across restarts. Defaults to per-process in-memory counting.
 
         Returns
         -------
@@ -312,12 +325,14 @@ class AtRestCipher:
             ok, reason = _validate_key_stat(os.fstat(fd), target)
             if not ok:
                 raise ValueError(reason)
-            return cls(os.read(fd, KEY_BYTES))
+            return cls(os.read(fd, KEY_BYTES), counter=counter)
         finally:
             os.close(fd)
 
     @classmethod
-    def from_wrapped_key_file(cls, path: str | Path, passphrase: str) -> AtRestCipher:
+    def from_wrapped_key_file(
+        cls, path: str | Path, passphrase: str, *, counter: MessageCounter | None = None
+    ) -> AtRestCipher:
         """Build a cipher from an envelope-encrypted (KEK-wrapped) key file and its passphrase.
 
         Parameters
@@ -326,6 +341,10 @@ class AtRestCipher:
             Wrapped-key file written by :func:`generate_wrapped_key_file`.
         passphrase : str
             The passphrase whose scrypt-derived key-encryption key unwraps the data key.
+        counter : MessageCounter or None, optional
+            The message counter enforcing the AES-GCM per-key limit; pass a
+            :class:`~synapse_channel.core.at_rest_counter.PersistentMessageCounter` to hold the
+            key's cumulative count across restarts. Defaults to per-process in-memory counting.
 
         Returns
         -------
@@ -337,7 +356,7 @@ class AtRestCipher:
         ValueError
             When the file is not a wrapped key file, is malformed, or the passphrase is wrong.
         """
-        return cls(_load_wrapped_key(Path(path), passphrase))
+        return cls(_load_wrapped_key(Path(path), passphrase), counter=counter)
 
     def encrypt(self, plaintext: bytes) -> bytes:
         """Return the AES-GCM envelope for ``plaintext`` with a fresh nonce.
@@ -350,21 +369,22 @@ class AtRestCipher:
             so a key at its limit never risks a fresh nonce colliding with an
             earlier one.
         """
-        if self._encrypted >= GCM_MESSAGE_LIMIT:
+        sealed_so_far = self._counter.count
+        if sealed_so_far >= GCM_MESSAGE_LIMIT:
             raise AtRestKeyExhausted(
                 f"at-rest key has reached its AES-GCM message limit "
                 f"({GCM_MESSAGE_LIMIT} messages); rotate the key before encrypting more"
             )
-        if not self._warned and self._encrypted >= GCM_REKEY_WARNING_THRESHOLD:
+        if not self._warned and sealed_so_far >= GCM_REKEY_WARNING_THRESHOLD:
             logger.warning(
                 "at-rest key has sealed %d of %d AES-GCM messages; rotate the key soon",
-                self._encrypted,
+                sealed_so_far,
                 GCM_MESSAGE_LIMIT,
             )
             self._warned = True
         nonce = secrets.token_bytes(NONCE_BYTES)
         sealed = self._aesgcm.encrypt(nonce, plaintext, ENVELOPE_MAGIC)
-        self._encrypted += 1
+        self._counter.increment()
         return ENVELOPE_MAGIC + nonce + sealed
 
     def decrypt(self, blob: bytes) -> bytes:

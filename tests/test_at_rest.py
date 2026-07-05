@@ -47,6 +47,10 @@ from synapse_channel.core.at_rest import (
     unwrap_data_key,
     wrap_data_key,
 )
+from synapse_channel.core.at_rest_counter import (
+    InMemoryMessageCounter,
+    PersistentMessageCounter,
+)
 
 
 def _cipher() -> AtRestCipher:
@@ -77,8 +81,9 @@ def test_encrypted_count_tracks_sealed_messages() -> None:
 def test_encrypt_warns_once_near_the_message_limit(caplog: pytest.LogCaptureFixture) -> None:
     # 2**32 messages are untestable by real encryption, so seed the counter at the
     # warning threshold and confirm the one-time warning fires exactly once.
-    cipher = _cipher()
-    cipher._encrypted = GCM_REKEY_WARNING_THRESHOLD
+    cipher = AtRestCipher(
+        b"k" * KEY_BYTES, counter=InMemoryMessageCounter(GCM_REKEY_WARNING_THRESHOLD)
+    )
     with caplog.at_level(logging.WARNING, logger="synapse.at_rest"):
         cipher.encrypt(b"first past the threshold")
         cipher.encrypt(b"second past the threshold")
@@ -88,12 +93,30 @@ def test_encrypt_warns_once_near_the_message_limit(caplog: pytest.LogCaptureFixt
 
 
 def test_encrypt_refuses_past_the_message_limit() -> None:
-    cipher = _cipher()
-    cipher._encrypted = GCM_MESSAGE_LIMIT
+    cipher = AtRestCipher(b"k" * KEY_BYTES, counter=InMemoryMessageCounter(GCM_MESSAGE_LIMIT))
     with pytest.raises(AtRestKeyExhausted, match="rotate the key"):
         cipher.encrypt(b"one too many")
     # The cap is enforced before a nonce is drawn, so nothing was sealed.
     assert cipher.encrypted_count == GCM_MESSAGE_LIMIT
+
+
+def test_a_persistent_counter_makes_the_gcm_count_cumulative_across_rebuilds(
+    tmp_path: Path,
+) -> None:
+    # With the default in-memory counter the count resets on rebuild; a persistent counter
+    # carries a key's lifetime total, so a long-lived store enforces the AES-GCM limit across
+    # restarts rather than starting each process from zero.
+    path = tmp_path / "gcm-count"
+    counter = PersistentMessageCounter(path, batch_size=1024)
+    cipher = AtRestCipher(b"k" * KEY_BYTES, counter=counter)
+    for message in (b"one", b"two", b"three"):
+        cipher.encrypt(message)
+    counter.close()
+
+    resumed = AtRestCipher(b"k" * KEY_BYTES, counter=PersistentMessageCounter(path))
+    assert resumed.encrypted_count == 3  # the lifetime count survived the rebuild
+    resumed.encrypt(b"four")
+    assert resumed.encrypted_count == 4
 
 
 def test_wrong_key_fails_authentication() -> None:
