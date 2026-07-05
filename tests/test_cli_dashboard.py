@@ -21,6 +21,7 @@ import synapse_channel.dashboard as dashboard_module
 from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
 from synapse_channel import cli
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.hub_config import HubConfig, HubLimits, config_fingerprint
 from synapse_channel.core.journal import EventKind, record_ledger_task
 from synapse_channel.core.ledger import LedgerTask
 from synapse_channel.core.merkle import proof_from_json, verify_inclusion
@@ -157,6 +158,27 @@ async def test_dashboard_snapshot_fetches_real_hub_state() -> None:
     assert snapshot.board["tasks"][0]["task_id"] == "TASK-1"
     assert snapshot.state["active_claims"][0]["owner"] == "SYNAPSE-CHANNEL/demo"
     assert snapshot.manifest[0]["agent"] == "SYNAPSE-CHANNEL/demo"
+
+
+async def test_dashboard_snapshot_carries_the_hub_pinning_tag() -> None:
+    from synapse_channel import __version__
+
+    config = HubConfig(limits=HubLimits(max_clients=9))
+    async with running_hub(SynapseHub.from_config(config)) as (_hub, uri):
+        snapshot = await fetch_dashboard_snapshot(
+            uri=uri,
+            name="SYNAPSE-CHANNEL/dashboard",
+            token=None,
+            ready_timeout=1.0,
+            response_timeout=1.0,
+        )
+
+    assert snapshot.hub_version == __version__
+    assert snapshot.config_epoch == config_fingerprint(config)
+    # The pinning tag reaches /snapshot.json unchanged.
+    payload = snapshot.to_dict()
+    assert payload["hub_version"] == __version__
+    assert payload["config_epoch"] == config_fingerprint(config)
 
 
 async def test_dashboard_snapshot_reports_missing_hub_responses(

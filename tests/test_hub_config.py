@@ -14,6 +14,7 @@ from collections import Counter
 
 import pytest
 
+from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.hub_config import (
     _FAMILY_FIELDS,
@@ -24,6 +25,7 @@ from synapse_channel.core.hub_config import (
     HubMetricsConfig,
     MultiHubConfig,
     TakeoverDamping,
+    config_fingerprint,
 )
 
 
@@ -150,3 +152,43 @@ def test_from_config_accepts_an_explicit_record() -> None:
     hub = SynapseHub.from_config(HubConfig(hub_id="explicit"))
     assert isinstance(hub, SynapseHub)
     assert hub.hub_id == "explicit"
+
+
+class TestConfigFingerprint:
+    def test_is_deterministic_and_a_short_hex_digest(self) -> None:
+        first = config_fingerprint(HubConfig())
+        second = config_fingerprint(HubConfig())
+        assert first == second
+        assert len(first) == 16
+        assert all(character in "0123456789abcdef" for character in first)
+
+    def test_tracks_a_scalar_posture_change(self) -> None:
+        base = config_fingerprint(HubConfig())
+        raised = config_fingerprint(HubConfig(limits=HubLimits(max_clients=99)))
+        assert raised != base
+
+    def test_tracks_arming_an_optional_subsystem(self) -> None:
+        open_posture = config_fingerprint(HubConfig())
+        acl_armed = config_fingerprint(HubConfig(auth=HubAuthConfig(require_acl=True)))
+        assert acl_armed != open_posture
+
+    def test_is_presence_only_for_objects_never_their_identity(self) -> None:
+        # Two hubs that both have *an* authenticator share a posture, so they
+        # share a fingerprint — the digest marks presence, never the secret or
+        # the object identity. Arming auth at all does change it.
+        armed_a = config_fingerprint(
+            HubConfig(auth=HubAuthConfig(authenticator=TokenAuthenticator(["alpha"])))
+        )
+        armed_b = config_fingerprint(
+            HubConfig(auth=HubAuthConfig(authenticator=TokenAuthenticator(["beta"])))
+        )
+        unarmed = config_fingerprint(HubConfig())
+        assert armed_a == armed_b
+        assert armed_a != unarmed
+
+    def test_from_config_stamps_the_epoch_and_an_adhoc_hub_is_empty(self) -> None:
+        config = HubConfig(limits=HubLimits(max_clients=7))
+        configured = SynapseHub.from_config(config)
+        assert configured.config_epoch == config_fingerprint(config)
+        # A bare construction was not built from a record, so it carries no epoch.
+        assert SynapseHub().config_epoch == ""

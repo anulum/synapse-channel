@@ -103,12 +103,20 @@ class DashboardSnapshot:
         Raw shared-board snapshot returned by the hub.
     manifest : list[dict[str, Any]]
         Capability cards returned by the hub.
+    hub_version : str
+        Package version the live hub reports, for a cockpit pinning indicator.
+        Empty when the hub predates the field.
+    config_epoch : str
+        Fingerprint of the hub's configuration posture, for the same indicator.
+        Empty when the hub predates the field or was built without a config.
     """
 
     online_agents: list[str]
     state: SnapshotMapping
     board: SnapshotMapping
     manifest: ManifestCards
+    hub_version: str = ""
+    config_epoch: str = ""
 
     def to_dict(self, *, a2a_state_file: str | Path | None = None) -> dict[str, Any]:
         """Return a JSON-serialisable dictionary for HTTP responses.
@@ -304,11 +312,9 @@ async def fetch_dashboard_snapshot(
         if missing:
             joined = ", ".join(missing)
             raise DashboardUnavailable(f"hub did not return dashboard snapshot(s): {joined}")
+        who = messages[MessageType.WHO_SNAPSHOT]
         return DashboardSnapshot(
-            online_agents=[
-                str(agent_name)
-                for agent_name in messages[MessageType.WHO_SNAPSHOT].get("online_agents", [])
-            ],
+            online_agents=[str(agent_name) for agent_name in who.get("online_agents", [])],
             state=dict(messages[MessageType.STATE_SNAPSHOT].get("snapshot", {})),
             board=dict(messages[MessageType.BOARD_SNAPSHOT].get("board", {})),
             manifest=[
@@ -316,6 +322,8 @@ async def fetch_dashboard_snapshot(
                 for card in messages[MessageType.MANIFEST_SNAPSHOT].get("manifest", [])
                 if isinstance(card, Mapping)
             ],
+            hub_version=str(who.get("hub_version", "")),
+            config_epoch=str(who.get("config_epoch", "")),
         )
     finally:
         agent.running = False

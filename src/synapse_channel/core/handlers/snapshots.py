@@ -42,7 +42,11 @@ async def handle_state_request(
 async def handle_who_request(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
-    """Send the requesting agent the online-agent roster."""
+    """Send the requesting agent the online-agent roster and the hub's pinning tag."""
+    # Lazy: the package __init__ pulls in the handler modules, so a top-level
+    # import of __version__ would be circular; by call time it is initialised.
+    from synapse_channel import __version__
+
     await hub._send_json(
         websocket,
         hub._system(
@@ -51,6 +55,8 @@ async def handle_who_request(
             target=sender,
             online_agents=hub.online_agents(),
             connected_clients=len(hub.connected_clients),
+            hub_version=__version__,
+            config_epoch=hub.config_epoch,
         ),
     )
 

@@ -102,10 +102,25 @@ def test_health_snapshot_reports_ok_version_uptime_and_counts() -> None:
         "status": "ok",
         "version": __version__,
         "hub_id": "syn-health",
+        "config_epoch": "",  # an ad-hoc hub was built without a fingerprinted config
         "uptime_seconds": 5.0,
         "online_agents": 1,
         "active_claims": 1,
     }
+
+
+def test_health_snapshot_reports_the_config_epoch_of_a_configured_hub() -> None:
+    from synapse_channel.core.hub_config import HubConfig, HubLimits, config_fingerprint
+
+    config = HubConfig(limits=HubLimits(max_clients=7))
+    hub = SynapseHub.from_config(config)
+
+    snapshot = health_snapshot(hub)
+
+    # A hub built from a config carries its posture fingerprint, so a cockpit can
+    # pin it; the same config always yields the same epoch.
+    assert snapshot["config_epoch"] == config_fingerprint(config)
+    assert snapshot["config_epoch"] != ""
 
 
 def test_rendered_metrics_parse_with_prometheus_client() -> None:

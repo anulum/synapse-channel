@@ -248,8 +248,11 @@ def health_snapshot(hub: SynapseHub) -> dict[str, Any]:
     -------
     dict[str, Any]
         ``status`` (``ok`` whenever the hub answers), the package ``version``, the
-        ``hub_id``, the ``uptime_seconds`` since start, and the current
-        online-agent and active-claim counts.
+        ``hub_id``, the ``config_epoch`` (a fingerprint of the configuration
+        posture the hub was built from — empty for an ad-hoc construction), the
+        ``uptime_seconds`` since start, and the current online-agent and
+        active-claim counts. ``version`` and ``config_epoch`` together are the
+        hub's pinning indicator: a change in either is a deploy or a config drift.
     """
     # Imported lazily: the package __init__ imports this module, so a top-level
     # import would be circular; by call time the package is fully initialised.
@@ -259,6 +262,7 @@ def health_snapshot(hub: SynapseHub) -> dict[str, Any]:
         "status": "ok",
         "version": __version__,
         "hub_id": hub.hub_id,
+        "config_epoch": hub.config_epoch,
         "uptime_seconds": round(hub.uptime_seconds(), 3),
         "online_agents": len(hub.agent_sockets),
         "active_claims": len(hub.state.claims),
