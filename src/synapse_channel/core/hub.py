@@ -60,12 +60,11 @@ from synapse_channel.core.hub_http import http_endpoint_response
 from synapse_channel.core.hub_ingress import HubIngress
 from synapse_channel.core.hub_ledger_guard import HubLedgerGuard
 from synapse_channel.core.hub_relay import RelayMirror
-from synapse_channel.core.journal import replay
+from synapse_channel.core.hub_state_seed import seed_hub_state
 from synapse_channel.core.ledger import (
     DEFAULT_MAX_PROGRESS,
     DEFAULT_MAX_PROGRESS_PER_AUTHOR,
     DEFAULT_MAX_PROGRESS_PER_TASK,
-    Blackboard,
 )
 from synapse_channel.core.message_auth import (
     DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
@@ -95,7 +94,6 @@ from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 from synapse_channel.core.state import (
     MAX_CLAIMS_PER_AGENT,
     MAX_OFFERS_PER_AGENT,
-    SynapseState,
 )
 
 logger = logging.getLogger("synapse.hub")
@@ -506,62 +504,30 @@ class SynapseHub:
             send_json=self._send_json,
             system=self._system,
         )
-        # Ledger-guard seed (message id, idempotency cache, finding quota), resumed
-        # from a durable-log replay so the at-most-once and quota guarantees survive a
-        # restart, or empty for a purely in-memory hub.
-        message_seq = 0
-        finding_counts: Mapping[str, int] = {}
-        idempotency_seed: tuple[tuple[str, dict[str, Any]], ...] = ()
-        if journal is not None:
-            replayed = replay(
-                journal,
-                default_ttl_seconds=default_ttl_seconds,
-                max_progress=max_progress,
-                max_progress_per_author=max_progress_per_author,
-                max_progress_per_task=max_progress_per_task,
-                max_claims_per_agent=max_claims_per_agent,
-                max_offers_per_agent=max_offers_per_agent,
-                max_paths_per_claim=max_paths_per_claim,
-            )
-            self.state = replayed.state
-            self.chat_history = replayed.chat_history[-self.max_history :]
-            self.blackboard = replayed.blackboard
-            message_seq = replayed.message_seq
-            finding_counts = replayed.finding_counts_by_actor
-            # Seeded oldest first, the bounded cache keeps the most-recent keys, so a
-            # retry after a restart replays the original response instead of re-applying.
-            idempotency_seed = tuple(replayed.idempotency)
-            # The durable log is append-only and never auto-compacted (pruning is safe
-            # only below a sequence the read-side has consumed, which the hub cannot
-            # know); a hub started on an oversized log emits one hint to compact manually.
-            record_count = journal.count()
-            if record_count > self.compact_hint_threshold:
-                logger.warning(
-                    "Event log holds %d records (over the %d hint threshold); it grows "
-                    "append-only and is never auto-compacted. Run `synapse compact <db>` "
-                    "to bound it — safe only below a sequence the read-side has consumed.",
-                    record_count,
-                    self.compact_hint_threshold,
-                )
-        else:
-            self.state = SynapseState(
-                default_ttl_seconds=default_ttl_seconds,
-                max_claims_per_agent=max_claims_per_agent,
-                max_offers_per_agent=max_offers_per_agent,
-                max_paths_per_claim=max_paths_per_claim,
-            )
-            self.chat_history = []
-            self.blackboard = Blackboard(
-                max_progress=max_progress,
-                max_progress_per_author=max_progress_per_author,
-                max_progress_per_task=max_progress_per_task,
-            )
+        # Resume durable state from the log — leases, chat history, the blackboard,
+        # and the ledger-guard seed (message id, finding quota, idempotency cache) —
+        # so a restart continues where it left off, or start empty with no journal.
+        seeded = seed_hub_state(
+            journal,
+            default_ttl_seconds=default_ttl_seconds,
+            max_history=self.max_history,
+            max_progress=max_progress,
+            max_progress_per_author=max_progress_per_author,
+            max_progress_per_task=max_progress_per_task,
+            max_claims_per_agent=max_claims_per_agent,
+            max_offers_per_agent=max_offers_per_agent,
+            max_paths_per_claim=max_paths_per_claim,
+            compact_hint_threshold=self.compact_hint_threshold,
+        )
+        self.state = seeded.state
+        self.chat_history = seeded.chat_history
+        self.blackboard = seeded.blackboard
         self._ledger = HubLedgerGuard(
             max_findings_per_agent=self.max_findings_per_agent,
             journal=self.journal,
-            message_seq=message_seq,
-            finding_counts=finding_counts,
-            idempotency_seed=idempotency_seed,
+            message_seq=seeded.message_seq,
+            finding_counts=seeded.finding_counts,
+            idempotency_seed=seeded.idempotency_seed,
         )
         # Aliased so existing callers and tests can read the live cache off the hub.
         self._idempotency = self._ledger.idempotency

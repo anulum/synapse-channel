@@ -43,6 +43,18 @@ All notable changes to this project are documented here.
   hard-requires an optional library.
 
 ### Changed
+- Extracted the hub's durable-state seeding into `core/hub_state_seed.py`
+  (`seed_hub_state`): the decision to replay the event log — resuming live leases,
+  chat history, the shared blackboard, and the ledger-guard seed (the message-id
+  high-water mark, per-actor finding counts, and the idempotency cache) — or build an
+  empty registry, together with the one-off compaction hint a hub emits when opened on
+  an oversized log, now lives in one pure function returning a `SeededHubState` the
+  constructor binds, instead of a ~50-line branch inlined in `__init__`. It holds no
+  hub reference, so the resume-versus-fresh behaviour is testable without a live hub.
+  No behaviour change — a restart resumes exactly as before and the compaction hint
+  fires on the same threshold. Fourth slice of the resumed hub decomposition, taking
+  `core/hub.py` from 1037 to 1003 lines (1294 at the start of the arc, with four
+  single-responsibility collaborators peeled). 100% line+branch on the new module.
 - Extracted the hub's frame-authorisation gates into `core/hub_frame_gates.py`
   (`HubFrameGates`): verifying required per-message authentication (an HMAC frame
   signature or an Ed25519 signed-event signature), authorising a mutating frame
