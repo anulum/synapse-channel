@@ -26,6 +26,7 @@ const DASHBOARD_PROXY = {
   "/events.json": DASHBOARD_ORIGIN,
   "/metrics.json": DASHBOARD_ORIGIN,
   "/state-at.json": DASHBOARD_ORIGIN,
+  "/message": DASHBOARD_ORIGIN,
 } as const;
 
 export default defineConfig({
