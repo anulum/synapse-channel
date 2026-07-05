@@ -43,6 +43,22 @@ All notable changes to this project are documented here.
   hard-requires an optional library.
 
 ### Changed
+- Extracted the hub's socket-connection lifecycle into `core/hub_connection.py`
+  (`HubConnection`): admitting a socket against the capacity, per-host, and
+  unauthenticated-burst ceilings; welcoming it (on connect for an open hub, or only
+  after the first frame authenticates on a secured one); reading the authenticated
+  first frame under the auth deadline; pumping later frames into the routing
+  pipeline; releasing the agent name and broadcasting the departure on disconnect;
+  and the `SIGTERM`/`SIGINT` graceful-shutdown wiring — now live in one class the
+  hub holds, with `register` / `unregister` / `handler` / `_send_welcome` /
+  `_authenticate_or_close` / `_install_signal_handlers` left as thin delegating
+  wrappers, so `serve` and every test keep one entry point. Frame routing itself
+  stays on the hub and is handed in as an injected callback, so the collaborator
+  carries no back-reference to the hub; `_process_request` also stays on the hub as
+  the HTTP-endpoint renderer. No behaviour change — connection admission, the
+  withheld-welcome timing on a secured hub, and disconnect cleanup are identical.
+  Second slice of the resumed hub decomposition, taking `core/hub.py` from 1258 to
+  1202 lines. 100% line+branch on the new module.
 - Extracted the hub's pre-route ingress guards into `core/hub_ingress.py`
   (`HubIngress`): authenticating a socket's first frame against the shared-secret
   token, binding the claimed sender name (with optional takeover), keying the remote
