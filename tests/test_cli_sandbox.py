@@ -59,6 +59,7 @@ def _receipt(**fields: object) -> RunReceipt:
         "content_digest": digest_bytes(_WASM),
         "inputs_digest": digest_bytes(b""),
         "granted_capabilities": ["resource:mem=1048576,fuel=100000,wall=2000ms"],
+        "preopened_paths": [],
         "exit": EXIT_OK,
         "output_digest": digest_bytes(b"7"),
         "fuel_used": 2,

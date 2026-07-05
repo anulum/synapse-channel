@@ -71,9 +71,7 @@ def test_harden_preopens_resolves_each_host_and_preserves_guest_and_write(tmp_pa
     read_dir.mkdir()
     write_dir = tmp_path / "out"
     write_dir.mkdir()
-    hardened = harden_preopens(
-        ((str(read_dir), "/in", False), (str(write_dir), "/out", True))
-    )
+    hardened = harden_preopens(((str(read_dir), "/in", False), (str(write_dir), "/out", True)))
     assert hardened == (
         (os.path.realpath(read_dir), "/in", False),
         (os.path.realpath(write_dir), "/out", True),
