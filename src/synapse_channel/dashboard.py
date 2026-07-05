@@ -747,9 +747,14 @@ class _DashboardHandler(BaseHTTPRequestHandler):
 
         Off by default: without operator mode every write route is a 404,
         indistinguishable from an unknown path, so a read-only dashboard reveals
-        no write surface at all. When armed, a write still requires the dashboard
-        bearer token, is rate-limited, and is authorised and audited by the hub —
-        this handler only validates the body and relays the frame.
+        no write surface at all. When armed, a write must be an
+        ``application/json`` request — a cross-origin web page can only send a
+        CORS "simple" content type without a preflight, and this surface answers
+        no preflight, so requiring JSON blocks a browser on another origin from
+        driving an operator write (a local CSRF). A write also carries the
+        dashboard bearer token when one is configured (always, on an exposed
+        bind), is rate-limited, and is authorised and audited by the hub — this
+        handler only validates the body and relays the frame.
         """
         if not self.operator_enabled:
             self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
@@ -765,6 +770,13 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         route = urlsplit(self.path).path
         if route not in (MESSAGE_PATH, TASK_PATH, TASK_UPDATE_PATH):
             self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
+            return
+        if not self._is_json_request():
+            self._write(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                b"operator writes require Content-Type: application/json\n",
+                content_type="text/plain",
+            )
             return
         if not self.operator_rate_limiter.allow():
             self._write(
@@ -897,6 +909,21 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             f"{message}\n".encode(),
             content_type="text/plain",
         )
+
+    def _is_json_request(self) -> bool:
+        """Return whether the request declares an ``application/json`` body.
+
+        Operator writes require this media type. A browser can send a request to
+        another origin without a CORS preflight only when its content type is one
+        of the three "simple" types (``text/plain``, form-encoded, or multipart);
+        ``application/json`` forces a preflight, which this surface never answers
+        with cross-origin allow headers, so the browser blocks the real write.
+        Requiring JSON therefore turns away a cross-origin page trying to drive an
+        operator action it cannot read the response of — a local CSRF. The check
+        ignores any charset or boundary parameter after the media type.
+        """
+        media_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        return media_type == "application/json"
 
     def _read_json_body(self) -> dict[str, Any] | None:
         """Return the request body as a JSON object, or ``None`` when unusable.
