@@ -14,6 +14,14 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Security
+- The AES-GCM per-key message limit can now be enforced across restarts, not just within one
+  process. `AtRestCipher` takes an optional `counter`, and the new `core.at_rest_counter`
+  provides a crash-safe `PersistentMessageCounter` that persists the count to a sidecar file by
+  reserving a batch ahead of use — so a long-lived encrypted store resumes a key's cumulative
+  lifetime count after a restart or crash (over-counting by less than a batch and rekeying early,
+  never under-counting and risking a fresh nonce colliding with an old one). The default remains
+  the per-process `InMemoryMessageCounter`, byte-identical to before. `AtRestCipher.from_key_file`
+  and `from_wrapped_key_file` accept the counter so a store can opt in.
 - The WebAssembly sandbox now canonicalises a filesystem grant's host path before it
   preopens it, and refuses the run fail-closed if the path resolves through a symlink or
   is not an existing directory. A host path is resolved on disk at run time, so a symlink
