@@ -22,10 +22,12 @@ from synapse_channel.core.at_rest import (
     GCM_MESSAGE_LIMIT,
     GCM_REKEY_WARNING_THRESHOLD,
     KEY_BYTES,
+    PASSPHRASE_SCRYPT_BACKEND,
     WRAPPED_KEY_SCHEMA,
     AtRestCipher,
     AtRestKeyExhausted,
     AtRestSurface,
+    PassphraseKeyEncryptionKey,
     backup_profile,
     check_key_file,
     decrypt_file,
@@ -247,24 +249,62 @@ def test_rewrap_rejects_empty_new_passphrase(tmp_path: Path) -> None:
         rewrap_wrapped_key_file(key_path, "old", "", n=2**10)
 
 
+def test_passphrase_key_encryption_key_wraps_and_unwraps() -> None:
+    kek = PassphraseKeyEncryptionKey(b"K" * KEY_BYTES)
+    dek = b"D" * KEY_BYTES
+    assert kek.unwrap(kek.wrap(dek)) == dek
+
+
 def test_load_wrapped_key_rejects_non_wrapped_and_malformed_files(tmp_path: Path) -> None:
     not_wrapped = tmp_path / "plain.json"
     not_wrapped.write_text(json.dumps({"schema": "something-else"}), encoding="utf-8")
     with pytest.raises(ValueError, match="not a Synapse wrapped at-rest key file"):
         AtRestCipher.from_wrapped_key_file(not_wrapped, "pw")
 
-    bad_kdf = tmp_path / "bad_kdf.json"
-    bad_kdf.write_text(
+    no_backend = tmp_path / "no_backend.json"
+    no_backend.write_text(
         json.dumps({"schema": WRAPPED_KEY_SCHEMA, "kdf": "pbkdf2"}), encoding="utf-8"
     )
-    with pytest.raises(ValueError, match="unsupported key-derivation function"):
-        AtRestCipher.from_wrapped_key_file(bad_kdf, "pw")
+    with pytest.raises(ValueError, match="malformed wrapped at-rest key file"):
+        AtRestCipher.from_wrapped_key_file(no_backend, "pw")
+
+    no_wrapped_key = tmp_path / "no_wrapped_key.json"
+    no_wrapped_key.write_text(
+        json.dumps(
+            {"schema": WRAPPED_KEY_SCHEMA, "backend": PASSPHRASE_SCRYPT_BACKEND, "params": {}}
+        ),
+        encoding="utf-8",
+    )  # valid backend/params, but the wrapped_key field is absent
+    with pytest.raises(ValueError, match="malformed wrapped at-rest key file"):
+        AtRestCipher.from_wrapped_key_file(no_wrapped_key, "pw")
+
+    wrong_backend = tmp_path / "pkcs11.json"
+    wrong_backend.write_text(
+        json.dumps(
+            {
+                "schema": WRAPPED_KEY_SCHEMA,
+                "backend": "pkcs11",
+                "params": {"token_label": "t"},
+                "wrapped_key": "AAAA",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="uses the 'pkcs11' backend, not a passphrase"):
+        AtRestCipher.from_wrapped_key_file(wrong_backend, "pw")
 
     malformed = tmp_path / "malformed.json"
     malformed.write_text(
-        json.dumps({"schema": WRAPPED_KEY_SCHEMA, "kdf": "scrypt", "n": 1024, "r": 8, "p": 1}),
+        json.dumps(
+            {
+                "schema": WRAPPED_KEY_SCHEMA,
+                "backend": PASSPHRASE_SCRYPT_BACKEND,
+                "params": {"n": 1024, "r": 8, "p": 1},  # no salt
+                "wrapped_key": "AAAA",
+            }
+        ),
         encoding="utf-8",
-    )  # no salt / wrapped_key
+    )
     with pytest.raises(ValueError, match="malformed wrapped at-rest key file"):
         AtRestCipher.from_wrapped_key_file(malformed, "pw")
 
