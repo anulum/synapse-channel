@@ -81,13 +81,17 @@ The design should support three operator profiles:
   permissions, suitable for systemd user services where interactive prompts are
   impossible.
 - **Wrapped key (envelope encryption)**: a random data key does the bulk AES-GCM,
-  and a key-encryption key (KEK) — derived from a passphrase now, held in a
-  TPM/YubiKey/cloud HSM later — wraps it with RFC 3394 AES-KW. The wrapped data key
-  is stored on disk and unwrapped at startup. Because only the KEK changes when the
-  passphrase rotates (or when the key moves into hardware), **no encrypted data is
-  re-written** — the data key underneath is unchanged. `synapse encrypt-key
-  generate-wrapped` writes such a file and `synapse encrypt-key rewrap` rotates its
-  passphrase; hardware-KEK backends plug into this same wrapped-file format.
+  and a key-encryption key (KEK) wraps it with RFC 3394 AES-KW. The wrapped data key
+  is stored on disk and unwrapped at startup. Because only the KEK changes when it
+  rotates (or moves into hardware), **no encrypted data is re-written** — the data key
+  underneath is unchanged. The wrapped-key file records which `backend` produced it,
+  and backends are pluggable:
+  - `synapse encrypt-key generate-wrapped` derives the KEK from a passphrase in
+    software; `synapse encrypt-key rewrap` rotates that passphrase.
+  - `synapse encrypt-key generate-wrapped-pkcs11` holds the KEK on a **PKCS#11 token**
+    (YubiKey PIV, cloud/network HSM, or SoftHSM), wrapping and unwrapping on the device
+    so the key never leaves it — the optional `python-pkcs11` dependency
+    (`synapse-channel[pkcs11]`) and a module path via `--pkcs11-module` / `PKCS11_MODULE`.
 
 Key storage must be explicit. Synapse should never silently write an encryption
 key next to the encrypted database with broad permissions. A doctor check should
