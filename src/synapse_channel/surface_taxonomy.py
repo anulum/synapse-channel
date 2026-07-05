@@ -130,6 +130,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "route-task": EXPERIMENTAL,
     "sandbox": EXPERIMENTAL,
     "ttl-advice": EXPERIMENTAL,
+    "auto-action": EXPERIMENTAL,
     "workflow": EXPERIMENTAL,
 }
 """Every CLI subcommand mapped to exactly one stability tier."""

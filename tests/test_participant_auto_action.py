@@ -15,12 +15,17 @@ advisor's recommendation order, and hands each fired handler the round's context
 
 from __future__ import annotations
 
+import json
+
 from synapse_channel.participants.auto_action import (
     AutoAction,
     AutoActionContext,
     AutoActionDispatch,
     AutoActionPolicy,
+    auto_action_report_to_json,
+    describe_auto_actions,
     react_to_advice,
+    render_auto_action_report,
 )
 from synapse_channel.participants.session_advisor import (
     Recommendation,
@@ -166,3 +171,66 @@ async def test_empty_advice_fires_nothing() -> None:
 def test_policy_default_arms_nothing_and_all_on_arms_everything() -> None:
     assert AutoActionPolicy().armed == frozenset()
     assert AutoActionPolicy.all_on().armed == frozenset(AutoAction)
+
+
+def test_describe_maps_each_signal_to_its_action_in_order() -> None:
+    report = describe_auto_actions()
+    assert [(d.signal, d.action) for d in report.descriptions] == [
+        (SessionSignal.COMPACT_SOON, AutoAction.COMPACT),
+        (SessionSignal.LOG_NOW, AutoAction.LOG),
+        (SessionSignal.HIGH_ERROR_RATE, AutoAction.HANDOVER),
+    ]
+
+
+def test_describe_default_arms_nothing() -> None:
+    report = describe_auto_actions()
+    assert all(not d.armed for d in report.descriptions)
+    assert report.armed == ()
+
+
+def test_describe_marks_only_the_selected_actions_armed() -> None:
+    report = describe_auto_actions(frozenset({AutoAction.COMPACT, AutoAction.LOG}))
+    assert report.armed == (AutoAction.COMPACT, AutoAction.LOG)
+    armed_by_action = {d.action: d.armed for d in report.descriptions}
+    assert armed_by_action == {
+        AutoAction.COMPACT: True,
+        AutoAction.LOG: True,
+        AutoAction.HANDOVER: False,
+    }
+
+
+def test_describe_accounts_for_every_advisory_signal_exactly_once() -> None:
+    # No signal may be silently dropped: mapped and unmapped must partition SessionSignal.
+    report = describe_auto_actions()
+    mapped = {d.signal for d in report.descriptions}
+    unmapped = {u.signal for u in report.unmapped_signals}
+    assert mapped | unmapped == set(SessionSignal)
+    assert mapped & unmapped == set()
+    assert {u.signal for u in report.unmapped_signals} == {
+        SessionSignal.OVER_BUDGET,
+        SessionSignal.APPROACHING_RATE_LIMIT,
+    }
+    assert all(u.reason for u in report.unmapped_signals)
+
+
+def test_report_to_json_is_complete_and_serialisable() -> None:
+    report = describe_auto_actions(frozenset({AutoAction.HANDOVER}))
+    payload = auto_action_report_to_json(report)
+    assert json.dumps(payload, sort_keys=True)  # round-trips without error
+    assert payload["actions"] == [
+        {"action": "compact", "signal": "compact-soon", "armed": False},
+        {"action": "log", "signal": "log-now", "armed": False},
+        {"action": "handover", "signal": "high-error-rate", "armed": True},
+    ]
+    assert {entry["signal"] for entry in payload["unmapped_signals"]} == {
+        "over-budget",
+        "approaching-rate-limit",
+    }
+
+
+def test_render_report_shows_armed_available_and_unmapped_lines() -> None:
+    text = render_auto_action_report(describe_auto_actions(frozenset({AutoAction.COMPACT})))
+    assert "compact" in text and "(armed)" in text
+    assert "(available)" in text  # log and handover are not armed
+    assert "over-budget" in text
+    assert "arming alone does not act" in text
