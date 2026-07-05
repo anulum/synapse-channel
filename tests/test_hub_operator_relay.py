@@ -174,6 +174,7 @@ async def test_applies_a_relayed_release_and_audits_it(tmp_path: Path) -> None:
     assert EventKind.OPERATOR_RELAY in kinds
     audit = next(e.payload for e in journal.read_all() if e.kind == EventKind.OPERATOR_RELAY)
     assert audit["action"] == "release"
+    assert audit["direction"] == "in"  # the applying (owning) side of the two-hub trail
     assert audit["peer"] == "peer"
     assert audit["operator"] == "ops-admin"
     assert audit["origin_hub_id"] == _DOMAIN
@@ -228,15 +229,21 @@ async def test_refuses_a_relay_from_an_untrusted_certificate(tmp_path: Path) -> 
     assert hub.state.claims["t1"].owner == _HOLDER
 
 
-async def test_refuses_a_relay_for_a_namespace_this_hub_does_not_own(tmp_path: Path) -> None:
+async def test_refuses_a_relay_when_this_hub_cannot_prove_it_owns_the_namespace(
+    tmp_path: Path,
+) -> None:
+    # With no ownership map the origin-routing gate steps aside, and the serving handler still
+    # refuses fail-closed: a hub that cannot prove it authoritatively owns the namespace never
+    # applies a relayed release. (A remote-owned namespace is instead intercepted by the gate
+    # and forwarded or refused there — see test_hub_operator_relay_forwarding.)
     pin, der = _write_peer_cert(tmp_path)
-    remote = NamespaceOwnership(owners={_NAMESPACE: "syn-elsewhere"}, local_hub_id=_ACTING)
-    hub = _acting_hub(policy=_serving_policy(pin, der), ownership=remote)
+    hub = _acting_hub(policy=_serving_policy(pin, der), ownership=None)
     hub.state.claim(_HOLDER, "t1")
     async with running_hub(hub) as (_, uri):
         result = await _relay(uri, _request())
     assert result.applied is False
     assert result.detail == "namespace_not_owned"
+    assert hub.state.claims["t1"].owner == _HOLDER  # the lease is untouched
 
 
 async def test_refuses_an_unregistered_action(tmp_path: Path) -> None:

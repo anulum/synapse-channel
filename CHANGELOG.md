@@ -28,6 +28,20 @@ All notable changes to this project are documented here.
   `core.operator_relay_wire`, `core.operator_relay_transport`, and a serving handler,
   plus `SynapseState.force_release`. Relayable actions are an explicit allowlist, so a
   new cross-hub capability is a deliberate registry entry, never an accident of the wire.
+- Origin-side routing for the cross-hub operator relay — an operator can target their
+  own hub, and a hub configured with a relay-peer route to the namespace's owner
+  forwards the relay on their behalf and relays the verdict back, so the operator never
+  needs the owning hub's credentials (the origin-side counterpart of claim forwarding).
+  The relay is now audited on **both** hubs: the origin hub records an outbound
+  `operator_relay` event (a new `direction` field distinguishes it from the owning hub's
+  inbound one) naming the requester and the destination owner, and stamps its own id as
+  the forwarded request's origin so the owner attributes the relay to the hub that
+  relayed it, never a value the requester asserted. Routing is deny-by-default: a relay
+  for a namespace the hub neither owns nor has a route to is refused fail-closed. New
+  `core.operator_relay_routing` (pure route resolution) and `core.operator_relay_forwarding`
+  (the origin-side gate), plus `SynapseHub(relay_peers=…, relay_forwarder=…)`, a route map
+  kept separate from the claim-forwarding peers because relaying a force-release is more
+  privileged than forwarding a claim.
 - TPM 2.0 hardware key-encryption-key backend for at-rest wrapped keys (optional
   `synapse-channel[tpm2]` extra). A decrypt-only RSA-2048 key-encryption key is derived
   from the device's storage seed and a fixed template — the identical key every process,

@@ -38,7 +38,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from synapse_channel.core.journal import record_operator_relay, record_release
+from synapse_channel.core.journal import (
+    RELAY_DIRECTION_IN,
+    record_operator_relay,
+    record_release,
+)
 from synapse_channel.core.operator_relay import RelayDecision, authorise_relay
 from synapse_channel.core.operator_relay_wire import (
     RelayActionRequest,
@@ -163,6 +167,7 @@ def _apply_release(hub: SynapseHub, sender: str, request: RelayActionRequest) ->
                 "action": request.action,
                 "namespace": request.namespace,
                 "task_id": request.task_id.strip(),
+                "direction": RELAY_DIRECTION_IN,
                 "peer": sender,
                 "operator": request.operator,
                 "origin_hub_id": request.origin_hub_id,

@@ -1738,6 +1738,17 @@ applied the action, `1` when it refused it or there was nothing to release, and
 `2` when the relay never reached the peer — the fail-closed case. Only registered
 actions relay: an unknown action is refused, never smuggled through the wire.
 
+The relay can also go **through** the operator's own hub instead of straight to the
+peer: point `--peer` at your local hub, and if that hub is configured with a relay
+route to the namespace's owner (a hub started with a relay-peer map, the operator-relay
+counterpart of the claim-forwarding routes), it forwards the action to the owner on
+your behalf and relays the verdict back — so the operator never needs the owning hub's
+credentials, exactly as a claim routes through the claimant's hub. The originating hub
+records an **outbound** audit event naming the requester and the destination owner, and
+the owning hub records the **inbound** one when it applies the action, so a force-release
+routed across hubs is attributable on **both** ends. A relay for a namespace the local
+hub neither owns nor has a route to is refused fail-closed, never silently dropped.
+
 ```bash
 synapse identity audit --identities ./identities.json          # audit declared identities for blockers
 synapse identity audit --identities ./identities.json --json

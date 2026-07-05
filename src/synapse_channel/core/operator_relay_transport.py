@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
 from websockets.asyncio.client import connect
@@ -55,6 +56,51 @@ class RelayTransportError(RuntimeError):
     type, so the caller catches a single error and reports that the relay never reached a
     verdict rather than a result it never received.
     """
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorRelayPeer:
+    """How an origin hub reaches an owning hub to relay a governed action to it.
+
+    An origin hub maps an owning hub's id to one of these so a relay it cannot apply — the
+    target namespace is owned by that peer — is routed to the hub that owns it. The map is
+    opt-in and separate from the claim-forwarding route map: relaying a force-release is a
+    more privileged capability than forwarding a claim, so an operator arms the two peer sets
+    independently, and a hub with no relay route for an owner refuses the relay fail-closed
+    rather than reaching a hub it was never told to relay to.
+
+    Attributes
+    ----------
+    uri : str
+        The owning hub's websocket URI (``ws://`` or, with TLS, ``wss://``).
+    token : str or None
+        An authentication token carried on the relayed request where the owner gates the
+        first frame; ``None`` for an open or mutual-TLS-only owner. The origin hub holds this
+        so the operator relaying through it never needs the peer's credentials directly.
+    """
+
+    uri: str
+    token: str | None = None
+
+
+class RelayForwarder(Protocol):
+    """Relays an operator action to an owning hub and returns its verdict.
+
+    The seam an origin hub calls to reach an owner; :func:`relay_operator_action` is the
+    shipped implementation, and a test injects a stand-in so the origin-routing wiring is
+    exercised without a real owner connection.
+    """
+
+    async def __call__(
+        self,
+        request: RelayActionRequest,
+        *,
+        uri: str,
+        local_id: str,
+        token: str | None = None,
+    ) -> RelayActionResult:  # pragma: no cover
+        """Relay ``request`` to the owner at ``uri`` and return the result."""
+        ...
 
 
 class _Socket(Protocol):

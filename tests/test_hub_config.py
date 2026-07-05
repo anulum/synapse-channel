@@ -97,6 +97,8 @@ def test_default_config_builds_the_same_hub_as_bare_construction() -> None:
         "namespace_ownership",
         "claim_peers",
         "claim_forwarder",
+        "relay_peers",
+        "relay_forwarder",
         "observed_asserting_hubs",
         "federation_bundle",
         "federation_cert_source",
