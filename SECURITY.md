@@ -137,14 +137,23 @@ connect token, durable event-log replay, per-message authentication on selected
 mutating frames, ACL enforcement with a policy, native WSS (TLS), and metrics
 bearer-token auth when metrics are enabled — and it disables the metrics query
 token and the insecure off-loopback override. It still reports the hooks it
-cannot honestly enforce: at-rest encryption, mutual-TLS client-certificate
-verification, cryptographic per-agent identity, private channels, and exposed
-deployment threat modelling remain explicit future work.
+cannot honestly enforce on its own: mutual-TLS client-certificate verification,
+cryptographic per-agent identity, and exposed deployment threat modelling remain
+explicit future work. At-rest encryption and private channels ship as separate
+opt-in profiles (below) that paranoid mode does not automatically enable.
 
-The planned [at-rest encryption](docs/at-rest-encryption.md) profile scopes
-optional protection for local SQLite event stores, relay logs, A2A state, cursor
-files, archive reports, temporary files, and backups. It is not implemented yet
-and does not encrypt existing databases or replace host filesystem permissions.
+The [at-rest encryption](docs/at-rest-encryption.md) runtime encrypts local
+SQLite event stores and their WAL/SHM sidecars, relay logs, A2A state, cursor
+files, archive reports, temporary files, and backups at rest with AES-256-GCM
+envelope encryption. A random data key does the bulk encryption and is wrapped by
+a pluggable key-encryption key — a scrypt passphrase, or a hardware backend
+(PKCS#11 token, TPM 2.0) — so rotating that key rewraps the data key without
+re-encrypting any data; the cipher counts sealed messages and refuses to encrypt
+past the AES-GCM per-key safety bound. It writes owner-only files, ships a
+migration/rekey flow for existing databases, and starts fail-safe. It does not
+transparently encrypt a live, open database's pages in memory — a page-level,
+SQLCipher-class profile for the running event store remains future work — and it
+does not replace host filesystem permissions.
 
 The [end-to-end encrypted channels](docs/end-to-end-encrypted-channels.md)
 runtime encrypts selected chat payloads on the sending endpoint and decrypts

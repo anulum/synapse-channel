@@ -14,6 +14,12 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Security
+- `SECURITY.md` no longer describes at-rest encryption as unimplemented. The at-rest
+  encryption runtime (envelope encryption of SQLite stores, WAL/SHM sidecars, relay
+  logs, A2A state, archives, and backups; scrypt/PKCS#11/TPM2 key-encryption backends;
+  migration/rekey) has shipped, so the security posture doc now states it accurately,
+  with the transparent live-database (SQLCipher-class) boundary kept honest as the
+  remaining gap. Private channels are likewise no longer listed as future work.
 - Dashboard operator writes now require `Content-Type: application/json`, closing a
   local cross-site-request-forgery hole. A cross-origin web page can POST a body to
   the loopback dashboard without a CORS preflight only with a "simple" content type
