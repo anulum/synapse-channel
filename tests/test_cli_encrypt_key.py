@@ -55,6 +55,69 @@ def test_generate_then_check_round_trip(tmp_path: Path, capsys: pytest.CaptureFi
     assert "key file ok" in capsys.readouterr().out
 
 
+def test_generate_from_passphrase_writes_a_key_check_passes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    key_path = tmp_path / "pp.key"
+    args = cli.build_parser().parse_args(
+        ["encrypt-key", "generate", "--from-passphrase", str(key_path)]
+    )
+    rc = cli_encrypt_key._cmd_generate(args, passphrase_reader=lambda _prompt: "correct horse")
+    assert rc == 0
+    assert key_path.stat().st_size == KEY_BYTES
+    assert oct(key_path.stat().st_mode & 0o777) == "0o600"
+    assert "owner-only" in capsys.readouterr().out
+
+    check_args = cli.build_parser().parse_args(["encrypt-key", "check", str(key_path)])
+    assert check_args.func(check_args) == 0
+
+
+def test_generate_from_passphrase_rejects_mismatched_confirmation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    key_path = tmp_path / "pp.key"
+    args = cli.build_parser().parse_args(
+        ["encrypt-key", "generate", "--from-passphrase", str(key_path)]
+    )
+    prompts = iter(["first", "second"])
+    rc = cli_encrypt_key._cmd_generate(args, passphrase_reader=lambda _prompt: next(prompts))
+    assert rc == 2
+    assert "do not match" in capsys.readouterr().out
+    assert not key_path.exists()  # nothing written on a mismatch
+
+
+def test_generate_from_passphrase_threads_scrypt_params_and_rejects_bad_n(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    good = cli.build_parser().parse_args(
+        ["encrypt-key", "generate", "--from-passphrase", "--scrypt-n", "16384", str(tmp_path / "a")]
+    )
+    assert good.scrypt_n == 16384
+    assert cli_encrypt_key._cmd_generate(good, passphrase_reader=lambda _p: "pw") == 0
+    assert (tmp_path / "a").stat().st_size == KEY_BYTES
+
+    # scrypt n must be a power of two — a bad value is a clean 2, not a crash.
+    bad = cli.build_parser().parse_args(
+        ["encrypt-key", "generate", "--from-passphrase", "--scrypt-n", "1000", str(tmp_path / "b")]
+    )
+    assert cli_encrypt_key._cmd_generate(bad, passphrase_reader=lambda _p: "pw") == 2
+    assert not (tmp_path / "b").exists()
+
+
+def test_generate_parser_defaults_scrypt_and_passphrase_flags() -> None:
+    from synapse_channel.core.at_rest import (
+        DEFAULT_SCRYPT_N,
+        DEFAULT_SCRYPT_P,
+        DEFAULT_SCRYPT_R,
+    )
+
+    args = cli.build_parser().parse_args(["encrypt-key", "generate", "/tmp/k"])  # nosec B108
+    assert args.from_passphrase is False
+    assert args.scrypt_n == DEFAULT_SCRYPT_N
+    assert args.scrypt_r == DEFAULT_SCRYPT_R
+    assert args.scrypt_p == DEFAULT_SCRYPT_P
+
+
 def test_generate_refuses_to_overwrite(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     key_path = tmp_path / "store.key"
     key_path.write_bytes(b"existing")

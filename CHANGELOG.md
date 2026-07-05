@@ -13,6 +13,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse encrypt-key generate --from-passphrase` derives the at-rest key from a
+  passphrase (prompted twice) via scrypt instead of random bytes, with the scrypt
+  cost tunable through `--scrypt-n` (a power of two), `--scrypt-r`, and `--scrypt-p`
+  for a security/performance trade-off. A fresh random salt is drawn per derivation
+  and discarded — the written file is a normal owner-only 32-byte key of record,
+  protected exactly like a random one, and the passphrase alone cannot reconstruct
+  it. The default remains a random key; the passphrase path (and its `scrypt`
+  parameters, previously reachable only through the `AtRestCipher.from_passphrase`
+  library API) is now exposed on the CLI. New `generate_key_file_from_passphrase`.
+
 ## [0.98.1] - 2026-07-05
 
 ### Fixed

@@ -1726,8 +1726,18 @@ synapse federation list --store ./federation.json              # imported peer d
 synapse federation list --store ./federation.json --max-age 90 # flag active peerings imported >90 days ago; exit 1
 synapse federation revoke example.org --store ./federation.json
 synapse encrypt-key generate ./synapse.key                     # write a fresh owner-only 32-byte key file
+synapse encrypt-key generate --from-passphrase ./synapse.key   # derive the key from a prompted passphrase (scrypt) instead of random bytes
+synapse encrypt-key generate --from-passphrase --scrypt-n 65536 ./synapse.key  # tune the scrypt cost (n a power of two; also --scrypt-r/--scrypt-p)
 synapse encrypt-key check ./synapse.key                        # verify its ownership, mode, and length
 ```
+
+`--from-passphrase` derives the 32-byte key from a passphrase (prompted twice)
+with scrypt, whose cost is tunable via `--scrypt-n` (a power of two), `--scrypt-r`,
+and `--scrypt-p` for a security/performance trade-off. A fresh random salt is used
+per derivation and discarded — the written file is a normal key of record that
+must be protected exactly like a random one, and the passphrase alone cannot
+reconstruct it. Prefer the default random key unless a passphrase source is
+specifically wanted.
 
 ## Experimental surfaces
 
