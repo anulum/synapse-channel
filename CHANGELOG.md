@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.2] - 2026-07-05
+
 ### Added
 - Cross-hub operator relay — `synapse federation relay release` relays a governed
   operator action to a peer hub over the existing federation transport, the first
