@@ -80,6 +80,14 @@ The design should support three operator profiles:
 - **File key**: automation reads a key file protected by owner-only file
   permissions, suitable for systemd user services where interactive prompts are
   impossible.
+- **Wrapped key (envelope encryption)**: a random data key does the bulk AES-GCM,
+  and a key-encryption key (KEK) — derived from a passphrase now, held in a
+  TPM/YubiKey/cloud HSM later — wraps it with RFC 3394 AES-KW. The wrapped data key
+  is stored on disk and unwrapped at startup. Because only the KEK changes when the
+  passphrase rotates (or when the key moves into hardware), **no encrypted data is
+  re-written** — the data key underneath is unchanged. `synapse encrypt-key
+  generate-wrapped` writes such a file and `synapse encrypt-key rewrap` rotates its
+  passphrase; hardware-KEK backends plug into this same wrapped-file format.
 
 Key storage must be explicit. Synapse should never silently write an encryption
 key next to the encrypted database with broad permissions. A doctor check should

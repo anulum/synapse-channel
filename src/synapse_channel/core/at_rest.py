@@ -24,6 +24,7 @@ encryption operation is actually attempted without it installed.
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import hashlib
 import json
@@ -63,6 +64,15 @@ SCRYPT_SALT_BYTES = 16
 
 BACKUP_MANIFEST_SCHEMA = "synapse-at-rest-backup.v1"
 """Schema marker for at-rest encrypted backup manifests."""
+
+WRAPPED_KEY_SCHEMA = "synapse-at-rest-wrapped-key.v1"
+"""Schema marker for an envelope-encrypted (KEK-wrapped) at-rest key file.
+
+A random data key does the bulk AES-GCM; a key-encryption key (KEK) derived from a passphrase — or,
+in a later tranche, held in a TPM/YubiKey/cloud HSM — wraps it with RFC 3394 AES-KW. Because the
+data key is unchanged when the KEK rotates, the passphrase (or HSM) can change without re-encrypting
+any stored data.
+"""
 
 GCM_MESSAGE_LIMIT = 2**32
 """Per-key AES-GCM message cap for random 96-bit nonces (NIST SP 800-38D).
@@ -302,6 +312,29 @@ class AtRestCipher:
         finally:
             os.close(fd)
 
+    @classmethod
+    def from_wrapped_key_file(cls, path: str | Path, passphrase: str) -> AtRestCipher:
+        """Build a cipher from an envelope-encrypted (KEK-wrapped) key file and its passphrase.
+
+        Parameters
+        ----------
+        path : str or pathlib.Path
+            Wrapped-key file written by :func:`generate_wrapped_key_file`.
+        passphrase : str
+            The passphrase whose scrypt-derived key-encryption key unwraps the data key.
+
+        Returns
+        -------
+        AtRestCipher
+            A cipher bound to the unwrapped data key.
+
+        Raises
+        ------
+        ValueError
+            When the file is not a wrapped key file, is malformed, or the passphrase is wrong.
+        """
+        return cls(_load_wrapped_key(Path(path), passphrase))
+
     def encrypt(self, plaintext: bytes) -> bytes:
         """Return the AES-GCM envelope for ``plaintext`` with a fresh nonce.
 
@@ -429,6 +462,221 @@ def _write_new_key_file(target: Path, key_bytes: bytes) -> Path:
     fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "wb") as handle:
         handle.write(key_bytes)
+    return target
+
+
+def _require_key_wrap() -> tuple[Any, Any, type[Exception]]:
+    """Return the RFC 3394 AES-KW wrap/unwrap callables and the unwrap-failure type.
+
+    Raises
+    ------
+    RuntimeError
+        When the optional ``cryptography`` dependency is not installed.
+    """
+    try:
+        from cryptography.hazmat.primitives.keywrap import (
+            InvalidUnwrap,
+            aes_key_unwrap,
+            aes_key_wrap,
+        )
+    except ImportError as exc:  # pragma: no cover - exercised via a patched import in tests.
+        raise RuntimeError(
+            "at-rest key wrapping requires the optional 'cryptography' dependency; "
+            "install it with: pip install synapse-channel[encryption]"
+        ) from exc
+    return aes_key_wrap, aes_key_unwrap, InvalidUnwrap
+
+
+def wrap_data_key(data_key: bytes, key_encryption_key: bytes) -> bytes:
+    """Wrap a data key under a key-encryption key with RFC 3394 AES-KW.
+
+    Parameters
+    ----------
+    data_key : bytes
+        The :data:`KEY_BYTES`-length AES-256-GCM data key to protect.
+    key_encryption_key : bytes
+        A 16-, 24-, or 32-byte key-encryption key (from a passphrase now; from an HSM later).
+
+    Returns
+    -------
+    bytes
+        The wrapped data key (deterministic, integrity-checked on unwrap).
+
+    Raises
+    ------
+    ValueError
+        When either key has an invalid length.
+    """
+    if len(data_key) != KEY_BYTES:
+        raise ValueError(f"data key must be {KEY_BYTES} bytes, got {len(data_key)}")
+    if len(key_encryption_key) not in (16, 24, 32):
+        raise ValueError("key-encryption key must be 16, 24, or 32 bytes")
+    aes_key_wrap, _unwrap, _invalid = _require_key_wrap()
+    wrapped: bytes = aes_key_wrap(key_encryption_key, data_key)
+    return wrapped
+
+
+def unwrap_data_key(wrapped: bytes, key_encryption_key: bytes) -> bytes:
+    """Recover a data key wrapped with :func:`wrap_data_key`.
+
+    Parameters
+    ----------
+    wrapped : bytes
+        The wrapped data key.
+    key_encryption_key : bytes
+        The 16-, 24-, or 32-byte key-encryption key.
+
+    Returns
+    -------
+    bytes
+        The recovered data key.
+
+    Raises
+    ------
+    ValueError
+        When the key-encryption key has an invalid length, is wrong, or the wrapped blob is corrupt.
+    """
+    if len(key_encryption_key) not in (16, 24, 32):
+        raise ValueError("key-encryption key must be 16, 24, or 32 bytes")
+    _wrap, aes_key_unwrap, invalid_unwrap = _require_key_wrap()
+    try:
+        recovered: bytes = aes_key_unwrap(key_encryption_key, wrapped)
+    except invalid_unwrap as exc:
+        raise ValueError(
+            "cannot unwrap data key: wrong key-encryption key or corrupt wrapped key"
+        ) from exc
+    return recovered
+
+
+def _wrapped_key_document(*, salt: bytes, wrapped: bytes, n: int, r: int, p: int) -> bytes:
+    """Serialise a wrapped-key file's JSON document (deterministic, newline-terminated)."""
+    document = {
+        "schema": WRAPPED_KEY_SCHEMA,
+        "kdf": "scrypt",
+        "n": int(n),
+        "r": int(r),
+        "p": int(p),
+        "salt": base64.b64encode(salt).decode("ascii"),
+        "wrapped_key": base64.b64encode(wrapped).decode("ascii"),
+    }
+    return json.dumps(document, ensure_ascii=True, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+
+
+def _load_wrapped_key(path: Path, passphrase: str) -> bytes:
+    """Read a wrapped-key file and return the unwrapped data key.
+
+    Raises
+    ------
+    ValueError
+        When the file is not a wrapped key file, its fields are malformed, or the passphrase is
+        wrong.
+    """
+    raw: Any = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict) or raw.get("schema") != WRAPPED_KEY_SCHEMA:
+        raise ValueError(f"not a Synapse wrapped at-rest key file: {path}")
+    if raw.get("kdf") != "scrypt":
+        raise ValueError(f"unsupported key-derivation function in wrapped key file: {path}")
+    try:
+        n, r, p = int(raw["n"]), int(raw["r"]), int(raw["p"])
+        salt = base64.b64decode(raw["salt"], validate=True)
+        wrapped = base64.b64decode(raw["wrapped_key"], validate=True)
+    except (KeyError, ValueError, TypeError) as exc:
+        raise ValueError(f"malformed wrapped at-rest key file: {path}") from exc
+    kek = derive_key(passphrase, salt, n=n, r=r, p=p)
+    return unwrap_data_key(wrapped, kek)
+
+
+def generate_wrapped_key_file(
+    path: str | Path,
+    passphrase: str,
+    *,
+    n: int = DEFAULT_SCRYPT_N,
+    r: int = DEFAULT_SCRYPT_R,
+    p: int = DEFAULT_SCRYPT_P,
+) -> Path:
+    """Write a random data key wrapped under a passphrase-derived KEK, owner-only.
+
+    Unlike :func:`generate_key_file_from_passphrase` — which derives the key *itself* from the
+    passphrase and discards the salt, so changing the passphrase means re-encrypting every file —
+    this writes a **random** data key wrapped by a key-encryption key derived from the passphrase,
+    and keeps the salt. The passphrase can then be rotated with :func:`rewrap_wrapped_key_file`
+    without touching any encrypted data. This is the envelope-encryption model an HSM-held KEK plugs
+    into: only the KEK source changes, the data key and the wrapped-file format stay the same.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path
+        Destination file; refused when it already exists.
+    passphrase : str
+        Non-empty passphrase whose scrypt-derived key wraps the data key.
+    n, r, p : int, optional
+        scrypt cost, block-size, and parallelisation parameters (``n`` a power of two).
+
+    Returns
+    -------
+    pathlib.Path
+        The written wrapped-key file path.
+
+    Raises
+    ------
+    ValueError
+        When the passphrase is empty or the scrypt parameters are invalid.
+    FileExistsError
+        When ``path`` already exists, so an existing key is never overwritten.
+    """
+    if not passphrase:
+        raise ValueError("passphrase must not be empty")
+    data_key = secrets.token_bytes(KEY_BYTES)
+    salt = secrets.token_bytes(SCRYPT_SALT_BYTES)
+    kek = derive_key(passphrase, salt, n=n, r=r, p=p)
+    wrapped = wrap_data_key(data_key, kek)
+    document = _wrapped_key_document(salt=salt, wrapped=wrapped, n=n, r=r, p=p)
+    return _write_new_key_file(Path(path), document)
+
+
+def rewrap_wrapped_key_file(
+    path: str | Path,
+    old_passphrase: str,
+    new_passphrase: str,
+    *,
+    n: int = DEFAULT_SCRYPT_N,
+    r: int = DEFAULT_SCRYPT_R,
+    p: int = DEFAULT_SCRYPT_P,
+) -> Path:
+    """Re-wrap a wrapped-key file's data key under a new passphrase-derived KEK, in place.
+
+    The underlying data key is unchanged, so no encrypted data is rewritten — only the KEK rotates.
+    A fresh salt is drawn and the file is atomically replaced.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path
+        Existing wrapped-key file.
+    old_passphrase : str
+        The current passphrase, used to unwrap the data key.
+    new_passphrase : str
+        The non-empty replacement passphrase whose derived key re-wraps the same data key.
+    n, r, p : int, optional
+        scrypt cost parameters for the new KEK.
+
+    Returns
+    -------
+    pathlib.Path
+        The rewrapped file path.
+
+    Raises
+    ------
+    ValueError
+        When the new passphrase is empty, or the old passphrase is wrong / the file is malformed.
+    """
+    if not new_passphrase:
+        raise ValueError("passphrase must not be empty")
+    target = Path(path)
+    data_key = _load_wrapped_key(target, old_passphrase)
+    salt = secrets.token_bytes(SCRYPT_SALT_BYTES)
+    kek = derive_key(new_passphrase, salt, n=n, r=r, p=p)
+    wrapped = wrap_data_key(data_key, kek)
+    _write_owner_only(target, _wrapped_key_document(salt=salt, wrapped=wrapped, n=n, r=r, p=p))
     return target
 
 
