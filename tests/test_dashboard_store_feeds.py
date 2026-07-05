@@ -34,10 +34,16 @@ from synapse_channel.dashboard_store_feeds import (
     build_health_anomalies_feed,
     build_merkle_proof_feed,
     build_metrics_feed,
+    build_sessions_feed,
     build_state_at_feed,
     latest_cursor,
     resolve_task_last_seq,
 )
+from synapse_channel.participants.session_metric_note import (
+    SESSION_METRIC_NOTE_KIND,
+    format_session_metric_note,
+)
+from synapse_channel.participants.session_telemetry import SessionMetrics
 
 
 def _seed_log(db: Path) -> None:
@@ -537,3 +543,110 @@ class TestHealthAnomaliesFeed:
     def test_missing_store_is_refused(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="missing event store"):
             build_health_anomalies_feed(tmp_path / "absent.db")
+
+
+def _seed_session_metric(
+    store: EventStore, *, author: str, session: str, ts: float, **metrics: object
+) -> None:
+    """Append one cumulative ``session_metric`` progress note to the store."""
+    base: dict[str, object] = {
+        "turns": 2,
+        "errors": 0,
+        "abstentions": 0,
+        "input_tokens": 100,
+        "output_tokens": 20,
+        "cost_usd": 0.1,
+        "total_latency_seconds": 2.0,
+        "max_rate_limit_utilisation": None,
+        "last_input_tokens": 60,
+    }
+    base.update(metrics)
+    note = format_session_metric_note(SessionMetrics(**base))  # type: ignore[arg-type]
+    store.append(
+        EventKind.LEDGER_PROGRESS,
+        {"kind": SESSION_METRIC_NOTE_KIND, "text": note, "author": author, "task_id": session},
+        ts=ts,
+    )
+
+
+def _sessions_by_agent(document: dict[str, object]) -> dict[str, dict[str, object]]:
+    sessions = document["sessions"]
+    assert isinstance(sessions, list)
+    by_agent: dict[str, dict[str, object]] = {}
+    for record in sessions:
+        assert isinstance(record, dict)
+        by_agent[str(record["agent"])] = record
+    return by_agent
+
+
+class TestSessionsFeed:
+    def test_reports_each_session_with_seq_for_a_causality_join(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        _seed_session_metric(store, author="alpha", session="s1", ts=1.0, input_tokens=100)
+        _seed_session_metric(store, author="beta", session="s2", ts=2.0, input_tokens=300)
+        store.close()
+
+        document = build_sessions_feed(db)
+
+        # The two notes are the log's first two events, so each record's join
+        # anchor is the sequence a cockpit hands to the causality feed.
+        by_agent = _sessions_by_agent(document)
+        assert set(by_agent) == {"alpha", "beta"}
+        assert by_agent["alpha"]["seq"] == 1
+        assert by_agent["beta"]["seq"] == 2
+        assert by_agent["alpha"]["input_tokens"] == 100
+        assert by_agent["alpha"]["total_tokens"] == 120  # 100 in + 20 out
+        assert document["generated_from_seq"] == 2
+
+    def test_totals_aggregate_cost_across_sessions(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        _seed_session_metric(store, author="a", session="x", ts=1.0, cost_usd=0.10)
+        _seed_session_metric(store, author="b", session="y", ts=2.0, cost_usd=0.25)
+        store.close()
+
+        totals = build_sessions_feed(db)["totals"]
+
+        assert isinstance(totals, dict)
+        assert totals["sessions"] == 2
+        assert totals["cost_usd"] == pytest.approx(0.35)
+
+    def test_latest_cumulative_snapshot_per_session_wins(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        # Same (agent, session): the later, higher-seq snapshot supersedes.
+        _seed_session_metric(store, author="a", session="s", ts=1.0, turns=2)
+        _seed_session_metric(store, author="a", session="s", ts=2.0, turns=7)
+        store.close()
+
+        document = build_sessions_feed(db)
+
+        by_agent = _sessions_by_agent(document)
+        assert len(by_agent) == 1
+        assert by_agent["a"]["turns"] == 7
+
+    def test_log_without_session_notes_is_honest_zeroes(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        _seed_log(db)  # claims and releases, no session_metric notes
+
+        document = build_sessions_feed(db)
+
+        assert document["sessions"] == []
+        totals = document["totals"]
+        assert isinstance(totals, dict)
+        assert totals["sessions"] == 0
+        assert totals["cost_usd"] == 0.0
+        # The absence is stated, not a fabricated cost.
+        assert "opt-in" in str(document["note"])
+
+    def test_missing_store_is_refused(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="missing event store"):
+            build_sessions_feed(tmp_path / "absent.db")
+
+    def test_document_is_deterministic_over_a_given_log(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        _seed_session_metric(store, author="a", session="s", ts=1.0)
+        store.close()
+        assert build_sessions_feed(db) == build_sessions_feed(db)

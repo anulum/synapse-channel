@@ -60,6 +60,7 @@ from synapse_channel.dashboard_store_feeds import (
     build_health_anomalies_feed,
     build_merkle_proof_feed,
     build_metrics_feed,
+    build_sessions_feed,
     build_state_at_feed,
     latest_cursor,
 )
@@ -496,6 +497,9 @@ CAUSALITY_PATH = "/causality.json"
 FEDERATION_PATH = "/federation.json"
 """Read-only endpoint serving the imported peerings from the federation store."""
 
+SESSIONS_PATH = "/sessions.json"
+"""Read-only endpoint reporting opt-in session telemetry left in the durable log."""
+
 COCKPIT_DIST_PREFIX = "/cockpit/"
 """URL prefix under which an operator-named cockpit build directory is served."""
 
@@ -677,6 +681,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         if path == FEDERATION_PATH:
             self._serve_federation()
+            return
+        if path == SESSIONS_PATH:
+            self._serve_sessions()
             return
         if path.startswith(COCKPIT_DIST_PREFIX) or path == COCKPIT_DIST_PREFIX.rstrip("/"):
             self._serve_cockpit_dist(path)
@@ -1075,6 +1082,35 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8"),
             content_type="application/json",
         )
+
+    def _serve_sessions(self) -> None:
+        """Serve the opt-in session-telemetry report, or its honest absence.
+
+        Aggregates the ``session_metric`` notes the fleet left in the durable
+        log — per-session token counts, cost, latency, and error/abstention
+        rates, each record carrying the ``seq`` a cockpit joins back to the
+        causality feed. Same posture as the other store feeds: 404 without
+        ``--feeds-db``, 503 on an unreadable store. Opt-in operational
+        telemetry, never hub-core collected — a log with no notes reports empty
+        sessions and zeroed totals, not a fabricated cost.
+        """
+        if self.reliability_db is None:
+            self._write(
+                HTTPStatus.NOT_FOUND,
+                b"sessions feed not configured; start the dashboard with --feeds-db\n",
+                content_type="text/plain",
+            )
+            return
+        try:
+            document = build_sessions_feed(self.reliability_db)
+        except ValueError as exc:
+            self._write(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                f"{exc}\n".encode(),
+                content_type="text/plain",
+            )
+            return
+        self._write_json(document)
 
     def _serve_events(self, query: str) -> None:
         """Serve the raw event-log tail past a cursor, or its honest absence.

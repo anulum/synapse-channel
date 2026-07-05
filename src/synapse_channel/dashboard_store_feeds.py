@@ -23,15 +23,17 @@ the hub is down, and never invent state the disk cannot prove. Three feeds:
   hub-runtime state that no durable store carries, so the section ships empty
   with its absence stated rather than guessed.
 
-Four further store-derived feeds serve the cockpit's operational panels, all
+Five further store-derived feeds serve the cockpit's operational panels, all
 measured against the log's own timestamps (never the wall clock) so each is
 deterministic and available with the hub down: **metrics** (event counts by
 kind over trailing windows), **state-at** (coordination state reconstructed by
 bounded replay to a sequence — whole-fleet time-travel), **merkle proof** (an
 inclusion proof for one event so a cockpit row can be verified against the
-attested tree root), and **health anomalies** (orphaned, dangling, and stale
+attested tree root), **health anomalies** (orphaned, dangling, and stale
 coordination signals the causality graph makes visible — the honest hub-side
-alert surface).
+alert surface), and **sessions** (the opt-in ``session_metric`` telemetry the
+fleet left in the log, each record indexed by ``seq`` for a cost-to-causality
+join).
 """
 
 from __future__ import annotations
@@ -54,6 +56,10 @@ from synapse_channel.core.journal import replay
 from synapse_channel.core.merkle import proof_to_json, run_proof
 from synapse_channel.core.multihub_wire import LogSnapshot, encode_log_snapshot
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.participants.session_metric_report import (
+    run_session_metric_report,
+    session_metric_report_to_json,
+)
 
 Clock = Callable[[], float]
 
@@ -256,6 +262,31 @@ def build_merkle_proof_feed(db_path: str | Path, *, seq: int) -> dict[str, objec
             "note": "no event at that sequence in the committed log",
         }
     return {"present": True, **proof_to_json(proof)}
+
+
+def build_sessions_feed(db_path: str | Path) -> dict[str, object]:
+    """Report opt-in session telemetry the fleet left in the durable log.
+
+    Aggregates the ``session_metric`` progress notes participants emit (turns,
+    token counts, cost, latency, error and abstention rates) into the same JSON
+    the ``synapse participants costs`` report renders, so a cockpit can join a
+    session's cost to its causal cone: every per-session record carries the
+    ``seq`` of the snapshot it was read from, which indexes straight back into
+    the event log the causality feed walks.
+
+    Store-derived and deterministic like every store feed — the latest snapshot
+    per ``(agent, session)`` wins because each snapshot is cumulative, and the
+    report answers with the hub down. Honest scope: this is opt-in operational
+    telemetry, never hub-core collected and never an enforcement gate; a log
+    with no ``session_metric`` notes yields empty ``sessions`` and zeroed
+    ``totals`` rather than a fabricated cost.
+
+    Raises
+    ------
+    ValueError
+        If the event store does not exist.
+    """
+    return session_metric_report_to_json(run_session_metric_report(db_path))
 
 
 def build_health_anomalies_feed(

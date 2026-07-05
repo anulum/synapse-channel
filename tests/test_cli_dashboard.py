@@ -41,6 +41,11 @@ from synapse_channel.dashboard_operator import (
     UNREACHABLE,
     RelayOutcome,
 )
+from synapse_channel.participants.session_metric_note import (
+    SESSION_METRIC_NOTE_KIND,
+    format_session_metric_note,
+)
+from synapse_channel.participants.session_telemetry import SessionMetrics
 
 
 def _http_get(url: str, *, authorization: str | None = None) -> tuple[int, str, str]:
@@ -905,6 +910,86 @@ def test_events_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
     server = _feeds_server(reliability_db=tmp_path / "absent.db")
     try:
         status, _, body = _http_get(server.url("/events.json"))
+    finally:
+        server.close()
+
+    assert status == 503
+    assert "missing event store" in body
+
+
+def _seed_session_note(db: Path) -> None:
+    store = EventStore(db)
+    note = format_session_metric_note(
+        SessionMetrics(
+            turns=3,
+            errors=0,
+            abstentions=0,
+            input_tokens=200,
+            output_tokens=40,
+            cost_usd=0.25,
+            total_latency_seconds=4.0,
+            max_rate_limit_utilisation=None,
+            last_input_tokens=120,
+        )
+    )
+    store.append(
+        EventKind.LEDGER_PROGRESS,
+        {"kind": SESSION_METRIC_NOTE_KIND, "text": note, "author": "alpha", "task_id": "s1"},
+        ts=1.0,
+    )
+    store.close()
+
+
+def test_sessions_feed_reports_absence_without_a_store() -> None:
+    server = _feeds_server()
+    try:
+        status, _, body = _http_get(server.url("/sessions.json"))
+    finally:
+        server.close()
+
+    assert status == 404
+    assert "--feeds-db" in body
+
+
+def test_sessions_feed_serves_the_report_with_the_hub_down(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_session_note(db)
+
+    server = _feeds_server(reliability_db=db)
+    try:
+        status, content_type, body = _http_get(server.url("/sessions.json"))
+    finally:
+        server.close()
+
+    assert status == 200
+    assert content_type == "application/json"
+    payload = json.loads(body)
+    assert [record["agent"] for record in payload["sessions"]] == ["alpha"]
+    assert payload["sessions"][0]["seq"] == 1  # the causality-join anchor
+    assert payload["sessions"][0]["cost_usd"] == 0.25
+    assert payload["totals"]["cost_usd"] == 0.25
+
+
+def test_sessions_feed_is_honest_empty_on_a_log_without_notes(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_feed_store(db)  # claims and releases, no session_metric notes
+
+    server = _feeds_server(reliability_db=db)
+    try:
+        status, _, body = _http_get(server.url("/sessions.json"))
+    finally:
+        server.close()
+
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["sessions"] == []
+    assert payload["totals"]["sessions"] == 0
+
+
+def test_sessions_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
+    server = _feeds_server(reliability_db=tmp_path / "absent.db")
+    try:
+        status, _, body = _http_get(server.url("/sessions.json"))
     finally:
         server.close()
 
