@@ -26,6 +26,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 from synapse_channel.participants.session_advisor import (
     Recommendation,
@@ -54,6 +55,13 @@ Only the signals with a natural operational response map to an action. ``over-bu
 the orchestration loop, and ``approaching-rate-limit`` is already handled by the router steering the
 next route away, so neither maps to an automatic action here.
 """
+
+
+_UNMAPPED_SIGNAL_REASON: dict[SessionSignal, str] = {
+    SessionSignal.OVER_BUDGET: "already halts the orchestration loop",
+    SessionSignal.APPROACHING_RATE_LIMIT: "already steered away by the router",
+}
+"""Why each advisory signal outside :data:`_SIGNAL_ACTION` maps to no automatic action."""
 
 
 @dataclass(frozen=True)
@@ -182,3 +190,124 @@ async def react_to_advice(
         )
         fired.append(action)
     return tuple(fired)
+
+
+@dataclass(frozen=True)
+class AutoActionDescription:
+    """One action in the reactor model: the signal it reacts to and whether it is armed.
+
+    Attributes
+    ----------
+    action : AutoAction
+        The automatic action.
+    signal : SessionSignal
+        The advisory signal that triggers it.
+    armed : bool
+        Whether the introspected policy arms this action. An armed action still fires at runtime
+        only when its signal is raised in a round and a handler for it was supplied.
+    """
+
+    action: AutoAction
+    signal: SessionSignal
+    armed: bool
+
+
+@dataclass(frozen=True)
+class UnmappedSignal:
+    """An advisory signal that deliberately triggers no automatic action, and why.
+
+    Attributes
+    ----------
+    signal : SessionSignal
+        The advisory signal.
+    reason : str
+        Why it maps to no action here — it is handled on another path.
+    """
+
+    signal: SessionSignal
+    reason: str
+
+
+@dataclass(frozen=True)
+class AutoActionReport:
+    """Read-only projection of the reactor's action model for a chosen armed set.
+
+    Attributes
+    ----------
+    descriptions : tuple[AutoActionDescription, ...]
+        Every mapped action, in the fixed signal-to-action order, marked armed or not.
+    unmapped_signals : tuple[UnmappedSignal, ...]
+        The advisory signals that map to no action, each with the reason it is handled elsewhere.
+    """
+
+    descriptions: tuple[AutoActionDescription, ...]
+    unmapped_signals: tuple[UnmappedSignal, ...]
+
+    @property
+    def armed(self) -> tuple[AutoAction, ...]:
+        """Return the actions this report marks armed, in signal-to-action order."""
+        return tuple(item.action for item in self.descriptions if item.armed)
+
+
+def describe_auto_actions(armed: frozenset[AutoAction] = frozenset()) -> AutoActionReport:
+    """Project the fixed signal-to-action model, marking which of ``armed`` would fire.
+
+    Read-only introspection for discoverability: it constructs no live dispatch and fires nothing.
+    Arming is necessary but not sufficient — an action fires at runtime only when its signal is
+    raised in a round *and* a handler was supplied to :func:`react_to_advice`.
+
+    Parameters
+    ----------
+    armed : frozenset[AutoAction], optional
+        The actions to mark as armed. Defaults to the empty set (arm nothing), matching the default
+        :class:`AutoActionPolicy`.
+
+    Returns
+    -------
+    AutoActionReport
+        The mapped actions with their armed state and the deliberately unmapped signals.
+    """
+    descriptions = tuple(
+        AutoActionDescription(action=action, signal=signal, armed=action in armed)
+        for signal, action in _SIGNAL_ACTION.items()
+    )
+    unmapped = tuple(
+        UnmappedSignal(
+            signal=signal,
+            reason=_UNMAPPED_SIGNAL_REASON.get(signal, "no automatic action"),
+        )
+        for signal in SessionSignal
+        if signal not in _SIGNAL_ACTION
+    )
+    return AutoActionReport(descriptions=descriptions, unmapped_signals=unmapped)
+
+
+def auto_action_report_to_json(report: AutoActionReport) -> dict[str, Any]:
+    """Return a JSON-ready mapping for an auto-action introspection report."""
+    return {
+        "actions": [
+            {"action": item.action.value, "signal": item.signal.value, "armed": item.armed}
+            for item in report.descriptions
+        ],
+        "unmapped_signals": [
+            {"signal": item.signal.value, "reason": item.reason} for item in report.unmapped_signals
+        ],
+    }
+
+
+def render_auto_action_report(report: AutoActionReport) -> str:
+    """Render a human-readable auto-action introspection report."""
+    lines = ["Auto-action reactor — advisory signals mapped to opt-in automatic actions:"]
+    for item in report.descriptions:
+        state = "armed" if item.armed else "available"
+        lines.append(f"  {item.action.value:<9} <- {item.signal.value:<23} ({state})")
+    lines.append("")
+    lines.append("Advisory signals with no automatic action (handled on another path):")
+    for unmapped in report.unmapped_signals:
+        lines.append(f"  {unmapped.signal.value:<23} {unmapped.reason}")
+    lines.append("")
+    lines.append(
+        "An armed action fires only when its signal is raised in a round and a handler was "
+        "supplied to react_to_advice; arming alone does not act."
+    )
+    return "\n".join(lines)

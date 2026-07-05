@@ -60,6 +60,7 @@ everything, since they need the whole command table.
 | `synapse accounting` | Record and report opt-in model cost/token usage from a hub SQLite event store. |
 | `synapse approval` | Request, decide, and replay human-in-the-loop approval gates from a hub SQLite event store. |
 | `synapse ttl-advice` | Build read-only lease TTL advice from a hub SQLite event store. |
+| `synapse auto-action` | Introspect the opt-in auto-action reactor: which advisory signals map to which automatic actions, and preview an armed policy (read-only). |
 | `synapse board` | Print the shared task/progress blackboard. |
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
 | `synapse manifest` | Print the capability manifest of advertised agents. |
@@ -1508,6 +1509,17 @@ the same event store. It derives completed-task duration samples, active
 live-claim counts, and stale-claim counts, then prints an advisory default and
 optional owner-specific rows when enough samples exist. The command does not
 change the hub default, and explicit manual TTL values remain the control path.
+
+`synapse auto-action` introspects the opt-in auto-action reactor — the layer that
+turns the session advisor's per-round signals into automatic actions (compact a
+filling context, write a log, hand a run over). It prints which advisory signal
+maps to which action, which signals deliberately map to none (`over-budget` halts
+the loop; `approaching-rate-limit` is steered by the router), and — given `--arm
+compact,log` or `--all` — previews the armed posture a policy would have. The
+reactor is armed in-process by an orchestration loop rather than by a persistent
+hub-side toggle, so this command only reads the static model: it starts nothing
+and fires nothing, and an armed action still fires at runtime only when its signal
+is raised and a handler was supplied. Add `--json` for the machine-readable form.
 
 `synapse multihub` reads a *peer* hub's event log rather than the local one.
 `multihub observe --peer-db ./peer.db` folds a peer's log file offline into its

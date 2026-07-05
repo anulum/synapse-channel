@@ -191,6 +191,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_accounting:add_parsers", ("accounting",)),
     ("synapse_channel.cli_approvals:add_parsers", ("approval",)),
     ("synapse_channel.cli_adaptive_ttl:add_parsers", ("ttl-advice",)),
+    ("synapse_channel.cli_auto_action:add_parsers", ("auto-action",)),
     ("synapse_channel.cli_tasks:add_parsers", ("task",)),
     ("synapse_channel.cli_workflow:add_parsers", ("workflow",)),
     ("synapse_channel.cli_doctor:add_parsers", ("doctor",)),

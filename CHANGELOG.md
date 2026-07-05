@@ -14,6 +14,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `synapse auto-action` gives the opt-in auto-action reactor a discoverable CLI
+  surface. The reactor (which turns the session advisor's per-round signals into
+  automatic compact/log/handover actions) was previously reachable only in-process
+  through `react_to_advice`, so an operator could not see what it does. The command
+  prints the signal-to-action map, the signals that deliberately map to no action,
+  and — with `--arm`/`--all` — a preview of a policy's armed posture. It reads the
+  static model only (starts nothing, fires nothing), and states honestly that
+  arming happens in the orchestration loop, not through a hub-side toggle. New
+  read-only `describe_auto_actions`/`auto_action_report_to_json`/
+  `render_auto_action_report` in `participants.auto_action`.
 - `synapse encrypt-key generate --from-passphrase` derives the at-rest key from a
   passphrase (prompted twice) via scrypt instead of random bytes, with the scrypt
   cost tunable through `--scrypt-n` (a power of two), `--scrypt-r`, and `--scrypt-p`
