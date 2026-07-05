@@ -108,6 +108,19 @@ source path, and copied encrypted file path without storing raw key material.
 Future platform-keyring profiles can add key ids and KDF metadata without
 changing the envelope bytes.
 
+### AES-GCM message limit
+
+AES-GCM with random 96-bit nonces carries a per-key safety bound: after roughly
+`2**32` messages the probability of a nonce repeating climbs past the `2**-32`
+threshold, which would weaken confidentiality. `AtRestCipher` counts the messages
+it seals (exposed as `encrypted_count`), logs a one-time warning once it passes
+fifteen-sixteenths of that limit, and raises `AtRestKeyExhausted` rather than
+encrypt beyond it. The correct response is a key rotation (rekey, above). The
+count is held per cipher instance and resets when the process restarts or the key
+is reloaded, so it guards a single long-running hub rather than a key's cumulative
+lifetime — a durable cross-restart counter would need the count persisted beside
+the key and is out of scope for this tranche.
+
 ## Backup recovery
 
 Backup recovery must be boring and documented:

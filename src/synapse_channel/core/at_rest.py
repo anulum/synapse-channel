@@ -27,6 +27,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import logging
 import os
 import secrets
 import stat
@@ -62,6 +63,32 @@ SCRYPT_SALT_BYTES = 16
 
 BACKUP_MANIFEST_SCHEMA = "synapse-at-rest-backup.v1"
 """Schema marker for at-rest encrypted backup manifests."""
+
+GCM_MESSAGE_LIMIT = 2**32
+"""Per-key AES-GCM message cap for random 96-bit nonces (NIST SP 800-38D).
+
+Sealing more than this many messages under one key with random nonces lets the
+nonce-collision probability climb past the 2**-32 safety bound, weakening the
+confidentiality guarantee. :class:`AtRestCipher` refuses to encrypt past it.
+"""
+
+GCM_REKEY_WARNING_THRESHOLD = GCM_MESSAGE_LIMIT - GCM_MESSAGE_LIMIT // 16
+"""Message count at which a cipher instance logs a one-time rekey warning.
+
+Set to fifteen-sixteenths of :data:`GCM_MESSAGE_LIMIT`, leaving an operator a
+wide margin to rotate the key before the hard cap stops encryption.
+"""
+
+logger = logging.getLogger("synapse.at_rest")
+
+
+class AtRestKeyExhausted(RuntimeError):
+    """Raised when a cipher instance reaches its per-key AES-GCM message cap.
+
+    This is a fail-closed backstop, not a routine condition: reaching
+    :data:`GCM_MESSAGE_LIMIT` messages under a single key means the key must be
+    rotated before any further data is sealed with it.
+    """
 
 
 @dataclass(frozen=True)
@@ -206,6 +233,13 @@ class AtRestCipher:
     The magic header is bound as additional authenticated data, so a blob written
     by another format or version fails authentication rather than decrypting to
     garbage.
+
+    Each instance counts the messages it seals and refuses to encrypt past
+    :data:`GCM_MESSAGE_LIMIT`, logging a one-time warning at
+    :data:`GCM_REKEY_WARNING_THRESHOLD` so the key can be rotated in good time.
+    The count is per instance and resets whenever the cipher is rebuilt (for
+    example on a hub restart or a key reload); it guards a single long-running
+    process rather than tracking a key's cumulative lifetime across restarts.
     """
 
     def __init__(self, key: bytes) -> None:
@@ -213,6 +247,13 @@ class AtRestCipher:
             raise ValueError(f"at-rest key must be {KEY_BYTES} bytes, got {len(key)}")
         self._key = bytes(key)
         self._aesgcm = require_aes_gcm()(self._key)
+        self._encrypted = 0
+        self._warned = False
+
+    @property
+    def encrypted_count(self) -> int:
+        """Return how many messages this instance has sealed under its key."""
+        return self._encrypted
 
     @classmethod
     def from_passphrase(
@@ -262,9 +303,31 @@ class AtRestCipher:
             os.close(fd)
 
     def encrypt(self, plaintext: bytes) -> bytes:
-        """Return the AES-GCM envelope for ``plaintext`` with a fresh nonce."""
+        """Return the AES-GCM envelope for ``plaintext`` with a fresh nonce.
+
+        Raises
+        ------
+        AtRestKeyExhausted
+            When this instance has already sealed :data:`GCM_MESSAGE_LIMIT`
+            messages under its key. The cap is checked before a nonce is drawn,
+            so a key at its limit never risks a fresh nonce colliding with an
+            earlier one.
+        """
+        if self._encrypted >= GCM_MESSAGE_LIMIT:
+            raise AtRestKeyExhausted(
+                f"at-rest key has reached its AES-GCM message limit "
+                f"({GCM_MESSAGE_LIMIT} messages); rotate the key before encrypting more"
+            )
+        if not self._warned and self._encrypted >= GCM_REKEY_WARNING_THRESHOLD:
+            logger.warning(
+                "at-rest key has sealed %d of %d AES-GCM messages; rotate the key soon",
+                self._encrypted,
+                GCM_MESSAGE_LIMIT,
+            )
+            self._warned = True
         nonce = secrets.token_bytes(NONCE_BYTES)
         sealed = self._aesgcm.encrypt(nonce, plaintext, ENVELOPE_MAGIC)
+        self._encrypted += 1
         return ENVELOPE_MAGIC + nonce + sealed
 
     def decrypt(self, blob: bytes) -> bytes:
