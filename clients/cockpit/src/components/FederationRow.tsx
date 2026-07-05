@@ -20,15 +20,27 @@ function peerDotClass(state: string): string {
 interface FederationRowProps {
   /** The federation feed's current state, including how it was obtained. */
   readonly state: FederationState;
+  /** Hub version + config-posture fingerprint for the pinning chip. */
+  readonly hubVersion?: string;
+  readonly configEpoch?: string;
 }
 
-function FederationRowView({ state }: FederationRowProps): JSX.Element {
+function FederationRowView({ state, hubVersion = "", configEpoch = "" }: FederationRowProps): JSX.Element {
   const posture = state.data;
 
   if (state.status === "absent" || (posture === null && state.status !== "error")) {
     return (
       <div className="fed-row fed-row--quiet" aria-label="Federation posture">
         <span className="fed-row__label">federation</span>
+      {(hubVersion !== "" || configEpoch !== "") && (
+        <span
+          className="fed-row__epoch"
+          title="Hub version and configuration-posture fingerprint — together the pin a cockpit checks against drift"
+        >
+          {hubVersion !== "" ? `v${hubVersion}` : ""}
+          {configEpoch !== "" ? ` · epoch ${configEpoch.slice(0, 8)}` : ""}
+        </span>
+      )}
         <span className="fed-row__note">
           {state.status === "absent"
             ? "posture surface not served (/federation.json)"

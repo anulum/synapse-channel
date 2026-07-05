@@ -10,6 +10,8 @@ import { memo } from "react";
 
 import type { AnomalyFlag } from "../lib/anomalies";
 import type { DeadLetterView } from "../lib/deadLetters";
+import type { HealthAnomaliesState } from "../lib/healthAnomalies";
+import type { WaitsState } from "../lib/waits";
 import { orderSignals } from "../lib/risk";
 import type { RiskView } from "../types";
 
@@ -40,12 +42,16 @@ interface RiskRailProps {
   readonly anomalies?: readonly AnomalyFlag[];
   /** Hub-recorded dead letters: targets whose messages nobody reads. */
   readonly deadLetters?: readonly DeadLetterView[];
+  /** Read-only pending coordination gates (/waits.json). */
+  readonly waits?: WaitsState | undefined;
+  /** The hub's causal-graph anomaly report (/health-anomalies.json). */
+  readonly anomalyReport?: HealthAnomaliesState | undefined;
 }
 
 /** How many safe-next-work rows show before the tail collapses into a count. */
 const SAFE_WORK_SHOWN = 14;
 
-function RiskRailView({ risk, anomalies = [], deadLetters = [] }: RiskRailProps): JSX.Element {
+function RiskRailView({ risk, anomalies = [], deadLetters = [], waits, anomalyReport }: RiskRailProps): JSX.Element {
   const signals = risk === null ? [] : orderSignals(risk.signals);
   const safeWork = risk?.safe_next_work ?? [];
   const safeShown = safeWork.slice(0, SAFE_WORK_SHOWN);
@@ -112,6 +118,66 @@ function RiskRailView({ risk, anomalies = [], deadLetters = [] }: RiskRailProps)
                   </span>
                 </li>
               ))}
+            </ul>
+          </div>
+        )}
+        {anomalyReport?.data != null && anomalyReport.data.anomalyCount > 0 && (
+          <div className="risk-heuristics">
+            <span className="risk-safe__head" title="The hub's own causal-graph anomaly report.">
+              hub health anomalies · {anomalyReport.data.anomalyCount}
+            </span>
+            <ul className="risk-list">
+              {[
+                ...anomalyReport.data.orphaned.map((item) => ({ ...item, category: "orphaned" })),
+                ...anomalyReport.data.dangling.map((item) => ({ ...item, category: "dangling" })),
+                ...anomalyReport.data.stale.map((item) => ({ ...item, category: "stale" })),
+              ].map((item) => (
+                <li key={`${item.category}:${item.taskId}`} className="risk-row risk-row--amber">
+                  <span className="risk-row__glyph" aria-hidden="true">
+                    !
+                  </span>
+                  <span className="risk-row__body">
+                    <span className="risk-row__subject">
+                      <span className="risk-row__category">{item.category}</span>
+                      {item.taskId}
+                    </span>
+                    <span className="risk-row__detail">{item.detail}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {waits?.data != null && waits.data.waits.length > 0 && (
+          <div className="risk-heuristics">
+            <span
+              className="risk-safe__head"
+              title="Tasks standing behind unmet dependencies — the pending decision queue, read-only."
+            >
+              pending gates · {waits.data.waitCount}
+            </span>
+            <ul className="risk-list">
+              {waits.data.waits.slice(0, 8).map((wait) => (
+                <li key={wait.taskId} className="risk-row risk-row--amber">
+                  <span className="risk-row__glyph" aria-hidden="true">
+                    ⏳
+                  </span>
+                  <span className="risk-row__body">
+                    <span className="risk-row__subject">
+                      <span className="risk-row__category">{wait.who === "" ? "unowned" : wait.who}</span>
+                      {wait.taskId}
+                    </span>
+                    <span className="risk-row__detail">{`waits on ${wait.onWhat.join(", ")}`}</span>
+                  </span>
+                </li>
+              ))}
+              {waits.data.waits.length > 8 && (
+                <li className="risk-row risk-row--amber">
+                  <span className="risk-row__body">
+                    <span className="risk-row__detail">{`+${waits.data.waits.length - 8} more gates`}</span>
+                  </span>
+                </li>
+              )}
             </ul>
           </div>
         )}

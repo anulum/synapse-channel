@@ -41,6 +41,9 @@ import {
   type Theme,
 } from "./lib/theme";
 import { createFederationStore, type FederationState } from "./lib/federation";
+import { createHealthAnomaliesStore, type HealthAnomaliesState } from "./lib/healthAnomalies";
+import { createSessionsStore, type SessionsState } from "./lib/sessions";
+import { createWaitsStore, type WaitsState } from "./lib/waits";
 import { createReliabilityStore, type ReliabilityState } from "./lib/reliability";
 import { deriveRoster } from "./lib/roster";
 import {
@@ -95,6 +98,10 @@ const INITIAL_METRICS: MetricsState = {
   error: null,
 };
 
+const INITIAL_SESSIONS: SessionsState = { data: null, status: "connecting", fetchedAt: null, error: null };
+const INITIAL_WAITS: WaitsState = { data: null, status: "connecting", fetchedAt: null, error: null };
+const INITIAL_ANOMALIES: HealthAnomaliesState = { data: null, status: "connecting", fetchedAt: null, error: null };
+
 /** Most recent derived events held for the signal log. */
 const LOG_LIMIT = 250;
 
@@ -143,6 +150,9 @@ export function App(): JSX.Element {
   const [reliability, setReliability] = useState<ReliabilityState>(INITIAL_RELIABILITY);
   const [federation, setFederation] = useState<FederationState>(INITIAL_FEDERATION);
   const [metrics, setMetrics] = useState<MetricsState>(INITIAL_METRICS);
+  const [sessions, setSessions] = useState<SessionsState>(INITIAL_SESSIONS);
+  const [waits, setWaits] = useState<WaitsState>(INITIAL_WAITS);
+  const [anomalyReport, setAnomalyReport] = useState<HealthAnomaliesState>(INITIAL_ANOMALIES);
   const [brush, setBrush] = useState<TimeWindow | null>(null);
   // Phone-width segment: one deck section at a time; CSS ignores this above
   // 640px, where the whole deck renders as always.
@@ -344,6 +354,12 @@ export function App(): JSX.Element {
     const unsubscribeFederation = federationStore.subscribe(setFederation);
     const metricsStore = createMetricsStore();
     const unsubscribeMetrics = metricsStore.subscribe(setMetrics);
+    const sessionsStore = createSessionsStore();
+    const unsubscribeSessions = sessionsStore.subscribe(setSessions);
+    const waitsStore = createWaitsStore();
+    const unsubscribeWaits = waitsStore.subscribe(setWaits);
+    const anomaliesStore = createHealthAnomaliesStore();
+    const unsubscribeAnomalies = anomaliesStore.subscribe(setAnomalyReport);
     // Re-evaluate freshness between polls so the beacon flips to `stale` even
     // while the hub is silent, without waiting for the next fetch to return.
     // The same tick drives the lease countdowns on the claims board.
@@ -360,6 +376,9 @@ export function App(): JSX.Element {
       unsubscribeReliability();
       unsubscribeFederation();
       unsubscribeMetrics();
+      unsubscribeSessions();
+      unsubscribeWaits();
+      unsubscribeAnomalies();
       clearInterval(clock);
       tail.stop();
       derived.stop();
@@ -367,6 +386,9 @@ export function App(): JSX.Element {
       reliabilityStore.stop();
       federationStore.stop();
       metricsStore.stop();
+      sessionsStore.stop();
+      waitsStore.stop();
+      anomaliesStore.stop();
     };
   }, []);
 
@@ -428,7 +450,7 @@ export function App(): JSX.Element {
   }, []);
   useEffect(() => {
     if (snap.snapshot === null) return;
-    const facts = factsOf(liveBoard, liveConflicts, deadLetters, snap.snapshot.risk);
+    const facts = factsOf(liveBoard, liveConflicts, deadLetters, snap.snapshot.risk, snap.snapshot.config_epoch);
     const fresh = toastsBetween(previousFacts.current, facts);
     previousFacts.current = facts;
     if (fresh.length === 0) return;
@@ -492,7 +514,11 @@ export function App(): JSX.Element {
         />
       </PanelBoundary>
       <PanelBoundary name="Federation">
-        <FederationRow state={federation} />
+        <FederationRow
+          state={federation}
+          hubVersion={snap.snapshot?.hub_version ?? ""}
+          configEpoch={snap.snapshot?.config_epoch ?? ""}
+        />
       </PanelBoundary>
       <TimeTravelBar
         on={travelOn}
@@ -537,6 +563,7 @@ export function App(): JSX.Element {
                 connected={connected}
                 federation={federation}
                 metrics={metrics}
+                sessions={sessions}
                 traceRequest={traceRequest}
               />
             </PanelBoundary>
@@ -560,6 +587,8 @@ export function App(): JSX.Element {
                 risk={snap.snapshot?.risk ?? null}
                 anomalies={anomalies}
                 deadLetters={deadLetters}
+                waits={waits}
+                anomalyReport={anomalyReport}
               />
             </PanelBoundary>
           </div>

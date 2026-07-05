@@ -11,6 +11,7 @@ import { windowEdgeLabel, type TimeWindow } from "../lib/brush";
 import type { BranchConflictView, ClaimView } from "../lib/claims";
 import type { FederationState } from "../lib/federation";
 import type { MetricsState } from "../lib/metrics";
+import type { SessionsState } from "../lib/sessions";
 import type { LogQuery } from "../lib/logQuery";
 import type { CockpitEvent } from "../types";
 import { CausalityView, type CausalityPrefill } from "./CausalityView";
@@ -45,6 +46,8 @@ interface InspectorTabsProps {
   readonly federation?: FederationState | undefined;
   /** The log-pulse metrics feed, for the metrics tab. */
   readonly metrics?: MetricsState | undefined;
+  /** The sessions/cost feed, rendered inside the metrics tab. */
+  readonly sessions?: SessionsState | undefined;
   /** External trace request (e.g. a drawer's hop); nonce forces re-fire. */
   readonly traceRequest?: { readonly subject: string; readonly nonce: number } | undefined;
 }
@@ -62,6 +65,7 @@ export function InspectorTabs({
   connected = false,
   federation,
   metrics,
+  sessions,
   traceRequest,
 }: InspectorTabsProps): JSX.Element {
   const [tab, setTab] = useState<InspectorTab>("log");
@@ -148,6 +152,7 @@ export function InspectorTabs({
         ) : tab === "metrics" ? (
           <MetricsPanel
             state={metrics ?? { data: null, status: "connecting", fetchedAt: null, error: null }}
+            sessions={sessions}
           />
         ) : tab === "topology" ? (
           <TopologyView

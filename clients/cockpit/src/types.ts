@@ -153,6 +153,10 @@ export interface RiskView {
  */
 export interface FleetSnapshot {
   readonly online_agents: readonly string[];
+  /** Hub package version, "" when the hub predates the field. */
+  readonly hub_version: string;
+  /** Configuration-posture fingerprint, "" when unavailable. */
+  readonly config_epoch: string;
   readonly state: Record<string, unknown>;
   readonly board: Record<string, unknown>;
   readonly manifest: readonly Record<string, unknown>[];

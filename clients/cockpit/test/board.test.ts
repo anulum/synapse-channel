@@ -29,6 +29,8 @@ function snapshotOf(options: {
   board?: Record<string, unknown>;
 }): FleetSnapshot {
   return {
+    hub_version: "",
+    config_epoch: "",
     online_agents: [],
     state: {},
     board: options.board ?? {},

@@ -300,3 +300,14 @@ describe("createSnapshotStore", () => {
     expect(notified).toBe(false);
   });
 });
+
+describe("configuration pinning fields", () => {
+  it("carries hub_version and config_epoch when the hub reports them", () => {
+    const parsed = parseSnapshot({ hub_version: "0.98.0", config_epoch: "abc123" });
+    expect(parsed?.hub_version).toBe("0.98.0");
+    expect(parsed?.config_epoch).toBe("abc123");
+    const bare = parseSnapshot({});
+    expect(bare?.hub_version).toBe("");
+    expect(bare?.config_epoch).toBe("");
+  });
+});
