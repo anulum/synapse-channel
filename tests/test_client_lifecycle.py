@@ -248,6 +248,27 @@ async def test_connect_refused_quiet(capsys: pytest.CaptureFixture[str]) -> None
     assert capsys.readouterr().out == ""
 
 
+async def test_connect_names_a_bare_oserror_refusal(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # asyncio surfaces a refusal as a bare OSError (its "Multiple exceptions"
+    # wrapper) whose message — not its type — carries the ECONNREFUSED errno, so
+    # it skips the ConnectionRefusedError clause. The `(errno, strerror)` form is
+    # avoided on purpose: Python auto-promotes it to ConnectionRefusedError, which
+    # would test the wrong branch. The verbose path must still name this one.
+    from synapse_channel.client import agent_lifecycle
+
+    def refuse(*_args: object, **_kwargs: object) -> object:
+        raise OSError(
+            f"Multiple exceptions: Connect call failed [Errno {errno.ECONNREFUSED}] 127.0.0.1:1"
+        )
+
+    monkeypatch.setattr(agent_lifecycle, "connect", refuse)
+    agent = SynapseAgent("A", uri="ws://localhost:1", verbose=True)
+    await agent.connect()
+    assert "could not connect" in capsys.readouterr().out
+
+
 # --- refused-connection classification and verbose failure paths ---------------
 
 
