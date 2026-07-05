@@ -2407,3 +2407,42 @@ body {
   color: var(--ink);
   border-color: var(--muted);
 }
+
+/* ---------- board query controls ---------- */
+.board-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-3);
+  border-bottom: 1px solid var(--line);
+  flex: none;
+  flex-wrap: wrap;
+}
+
+.board-chip {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: none;
+  padding: 1px var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.board-chip--active {
+  color: var(--ink);
+  border-color: var(--muted);
+  background: var(--raised);
+}
+
+.board-chip--blocked.board-chip--active {
+  border-color: var(--critical);
+  color: var(--critical);
+}
+
+.board-chip--ready.board-chip--active {
+  border-color: var(--healthy);
+  color: var(--healthy);
+}

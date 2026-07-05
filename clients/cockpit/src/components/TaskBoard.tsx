@@ -6,9 +6,20 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the task board: the shared plan with hub-verdicted dependency edges
 
-import { memo } from "react";
+import { memo, useState } from "react";
 
 import type { BoardBucket, BoardTask, BoardTruncation, DependencyChip } from "../lib/board";
+import {
+  boardQueryConstrained,
+  bucketCounts,
+  filterBoard,
+  OPEN_BOARD_QUERY,
+  toggleBucket,
+  type BoardQuery,
+} from "../lib/boardFilter";
+
+/** Bucket chips in triage order. */
+const BUCKET_ORDER: readonly BoardBucket[] = ["blocked", "ready", "open", "done"];
 
 /** Glyph per bucket — redundant with colour and order, never colour alone. */
 const BUCKET_GLYPH: Record<BoardBucket, string> = {
@@ -86,9 +97,16 @@ interface TaskBoardProps {
 }
 
 function TaskBoardView({ tasks, connected, truncation }: TaskBoardProps): JSX.Element {
-  const done = tasks.filter((task) => task.bucket === "done");
-  const active = tasks.filter((task) => task.bucket !== "done");
-  const doneShown = done.slice(0, DONE_SHOWN);
+  // The board query is panel-local: a fifty-task board needs finding, not
+  // sharing, so it does not ride the URL the way the log's query does.
+  const [query, setQuery] = useState<BoardQuery>(OPEN_BOARD_QUERY);
+  const constrained = boardQueryConstrained(query);
+  const counts = bucketCounts(tasks);
+  const shown = filterBoard(tasks, query);
+  const done = shown.filter((task) => task.bucket === "done");
+  const active = shown.filter((task) => task.bucket !== "done");
+  // A constrained board is being searched: show every match, no done-cap.
+  const doneShown = constrained ? done : done.slice(0, DONE_SHOWN);
   const doneOverflow = done.length - doneShown.length;
   const blocked = active.filter((task) => task.bucket === "blocked").length;
   const capped = truncation?.truncated === true && truncation.totalTasks !== null;
@@ -103,14 +121,52 @@ function TaskBoardView({ tasks, connected, truncation }: TaskBoardProps): JSX.El
         >
           {capped ? `${tasks.length} of ${truncation.totalTasks}` : tasks.length}
         </span>
+        {constrained && (
+          <span className="panel__sub">{`${shown.length} of ${tasks.length} shown`}</span>
+        )}
         {blocked > 0 && <span className="panel__sub panel__sub--warn">{blocked} blocked</span>}
-        {capped && blocked === 0 && <span className="panel__sub">capped reply</span>}
+        {capped && blocked === 0 && !constrained && <span className="panel__sub">capped reply</span>}
+      </div>
+      <div className="board-controls">
+        <input
+          className="log-controls__search"
+          value={query.text}
+          onChange={(change) => setQuery({ ...query, text: change.target.value })}
+          placeholder="find a task (id, title)"
+          aria-label="Find a task by id or title"
+        />
+        {BUCKET_ORDER.map((bucket) => (
+          <button
+            key={bucket}
+            type="button"
+            className={`board-chip board-chip--${bucket}${
+              query.buckets?.includes(bucket) === true ? " board-chip--active" : ""
+            }`}
+            onClick={() => setQuery(toggleBucket(query, bucket))}
+            aria-pressed={query.buckets?.includes(bucket) === true}
+            title={`Only ${bucket} tasks`}
+          >
+            {`${bucket} ${counts[bucket]}`}
+          </button>
+        ))}
+        {constrained && (
+          <button
+            type="button"
+            className="panel__clear"
+            onClick={() => setQuery(OPEN_BOARD_QUERY)}
+            title="Clear the board query"
+          >
+            reset
+          </button>
+        )}
       </div>
       <div className="panel__body">
         {!connected ? (
           <p className="panel__placeholder">Waiting for the hub.</p>
         ) : tasks.length === 0 ? (
           <p className="panel__placeholder">The board is empty — no tasks declared.</p>
+        ) : shown.length === 0 ? (
+          <p className="panel__placeholder">No task matches the query.</p>
         ) : (
           <ul className="board">
             {active.map((task) => (
