@@ -65,6 +65,10 @@ jobs:
           softhsm2 swtpm swtpm-tools tpm2-tools libtss2-dev
       - run: python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
       - run: python -m pip install -e . --no-deps
+      # tpm2-pytss is sdist-only and needs the TSS2 headers, so it is kept out of the hash-locked
+      # dev requirements (which every job installs) and built here, where libtss2-dev is present, to
+      # exercise the TPM 2.0 backend against swtpm rather than skip it.
+      - run: python -m pip install 'tpm2-pytss>=2.3'
       - run: pytest --cov=synapse_channel --cov-report=term-missing --cov-report=xml
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.12'

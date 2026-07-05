@@ -52,11 +52,14 @@ dev = [
   "mcp>=1.28.0",
   "cryptography>=42.0",
   "python-pkcs11>=0.9",
-  "tpm2-pytss>=2.3",
   "wasmtime>=14.0.0",
   "opentelemetry-sdk>=1.43.0",
   "opentelemetry-exporter-otlp-proto-http>=1.43.0",
 ]
+# NB: tpm2-pytss (the [tpm2] extra) is deliberately NOT in dev. It is sdist-only and its build
+# needs the TSS2 system headers (libtss2-dev), so putting it in the hash-locked requirements-dev.txt
+# would break every CI job that installs those requirements without the system libraries (docs, type,
+# lint). The test job installs it separately after apt-installing libtss2-dev + swtpm.
 benchmark = [
   "tiktoken>=0.7",
 ]
