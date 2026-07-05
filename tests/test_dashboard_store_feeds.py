@@ -765,6 +765,33 @@ class TestWaitsFeed:
         assert document["waits"] == []
         assert document["wait_count"] == 0
 
+    def test_a_dependency_on_an_undeclared_task_is_a_gate(self, tmp_path: Path) -> None:
+        # A task declared before its prerequisite exists on the board is waiting
+        # on an absent dependency — the honest gate, not a silent pass.
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        _seed_task(store, task_id="EARLY", depends_on=("NOT-YET-DECLARED",))
+        store.close()
+
+        document = build_waits_feed(db)
+
+        assert document["wait_count"] == 1
+        gate = document["waits"][0]  # type: ignore[index]
+        assert gate["on_what"] == ["NOT-YET-DECLARED"]
+
+    def test_a_blocked_status_task_with_unmet_deps_is_a_gate(self, tmp_path: Path) -> None:
+        # "blocked" is a non-terminal planning status; such a task with an unmet
+        # dependency is still a pending gate.
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        _seed_task(store, task_id="DEP", status="open")
+        _seed_task(store, task_id="HELD", depends_on=("DEP",), status="blocked")
+        store.close()
+
+        gates = build_waits_feed(db)["waits"]
+        assert isinstance(gates, list)
+        assert "HELD" in [gate["task_id"] for gate in gates]
+
     def test_missing_store_is_refused(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="missing event store"):
             build_waits_feed(tmp_path / "absent.db")
