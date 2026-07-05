@@ -185,8 +185,18 @@ class FederationConfig:
     federation_offer_path: str | Path | None = None
 
 
+#: HubConfig attributes holding nested family records, mapped to their record type.
+_FAMILY_TYPES: dict[str, type[Any]] = {
+    "limits": HubLimits,
+    "takeover": TakeoverDamping,
+    "auth": HubAuthConfig,
+    "metrics": HubMetricsConfig,
+    "multihub": MultiHubConfig,
+    "federation": FederationConfig,
+}
+
 #: HubConfig attributes holding nested family records rather than direct kwargs.
-_FAMILY_FIELDS = ("limits", "takeover", "auth", "metrics", "multihub", "federation")
+_FAMILY_FIELDS = tuple(_FAMILY_TYPES)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -234,6 +244,36 @@ class HubConfig:
             if spec.name not in _FAMILY_FIELDS:
                 kwargs[spec.name] = getattr(self, spec.name)
         return kwargs
+
+    @classmethod
+    def from_kwargs(cls, kwargs: Mapping[str, Any]) -> HubConfig:
+        """Re-group flat ``SynapseHub`` keyword arguments into a record.
+
+        The inverse of :meth:`to_kwargs`: each family field regroups under its
+        family, every other key is a direct field, and an omitted key takes its
+        default — so a caller can hand over the **partial** keyword set it
+        actually assembled (for example the CLI's subset of the ~40 parameters)
+        and still get a complete record to fingerprint or reconstruct from. On
+        the full key set it round-trips with :meth:`to_kwargs`.
+
+        Raises
+        ------
+        TypeError
+            If ``kwargs`` carries a key that is neither a family field nor a
+            direct ``SynapseHub`` parameter.
+        """
+        remaining = dict(kwargs)
+        grouped: dict[str, Any] = {}
+        for family_name, family_cls in _FAMILY_TYPES.items():
+            family_field_names = {spec.name for spec in fields(family_cls)}
+            grouped[family_name] = family_cls(
+                **{
+                    name: remaining.pop(name)
+                    for name in list(remaining)
+                    if name in family_field_names
+                }
+            )
+        return cls(**grouped, **remaining)
 
 
 def config_fingerprint(config: HubConfig) -> str:

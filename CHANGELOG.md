@@ -13,6 +13,21 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.1] - 2026-07-05
+
+### Fixed
+- The CLI-launched hub now reports a real `config_epoch`. `synapse hub`
+  constructs `SynapseHub(...)` directly rather than through `from_config`, so the
+  configuration-posture fingerprint added in 0.98.0 stayed empty on the actual
+  deployed hub — leaving the pinning indicator inert (`/health`, the `who`
+  snapshot, and `/snapshot.json` all reported an empty `config_epoch`, and a
+  cockpit's drift chip never lit). The command now regroups its assembled
+  arguments with `HubConfig.from_kwargs` (a new inverse of `HubConfig.to_kwargs`
+  that fills defaults for the partial keyword set the CLI passes) and stamps the
+  fingerprint onto the hub, so a CLI-deployed hub pins the same way a
+  `from_config` hub does. A gap the 0.98.0 fleet deploy surfaced: the library
+  `from_config` path was tested, the CLI construction path was not.
+
 ## [0.98.0] - 2026-07-05
 
 ### Added

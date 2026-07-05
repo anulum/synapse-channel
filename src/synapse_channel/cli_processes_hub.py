@@ -27,6 +27,7 @@ from synapse_channel.core.federation import FederationBundle, bundle_can_authori
 from synapse_channel.core.federation_store import FederationStoreError, bundle_from_store
 from synapse_channel.core.federation_wire import FederationWireError, decode_federation_offer
 from synapse_channel.core.hub import InsecureBindError, SynapseHub
+from synapse_channel.core.hub_config import HubConfig, config_fingerprint
 from synapse_channel.core.logging_setup import configure_logging
 from synapse_channel.core.message_auth import MessageAuthKey
 from synapse_channel.core.multihub_watch import MultiHubWatch, parse_watch_peers
@@ -227,48 +228,54 @@ def _cmd_hub(
     except ValueError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
-    hub = hub_factory(
-        journal=journal,
-        rate_limiter=limiter,
-        host_rate_limiter=host_limiter,
-        max_history=args.max_history,
-        max_progress=args.max_progress,
-        max_progress_per_author=args.max_progress_per_author,
-        max_progress_per_task=args.max_progress_per_task,
-        board_task_cap=args.board_task_cap,
-        max_findings_per_agent=args.max_findings_per_agent,
-        relay_log=args.relay_log,
-        relay_max_lines=args.relay_max_lines,
-        authenticator=authenticator,
-        max_clients=args.max_clients,
-        max_unauth_clients=args.max_unauth_clients,
-        max_connections_per_host=(
+    hub_kwargs: dict[str, Any] = {
+        "journal": journal,
+        "rate_limiter": limiter,
+        "host_rate_limiter": host_limiter,
+        "max_history": args.max_history,
+        "max_progress": args.max_progress,
+        "max_progress_per_author": args.max_progress_per_author,
+        "max_progress_per_task": args.max_progress_per_task,
+        "board_task_cap": args.board_task_cap,
+        "max_findings_per_agent": args.max_findings_per_agent,
+        "relay_log": args.relay_log,
+        "relay_max_lines": args.relay_max_lines,
+        "authenticator": authenticator,
+        "max_clients": args.max_clients,
+        "max_unauth_clients": args.max_unauth_clients,
+        "max_connections_per_host": (
             args.max_connections_per_host if args.max_connections_per_host > 0 else None
         ),
-        max_msg_bytes=args.max_msg_kb * 1024,
-        max_claims_per_agent=args.max_claims_per_agent,
-        max_offers_per_agent=args.max_offers_per_agent,
-        max_paths_per_claim=args.max_paths_per_claim,
-        compact_hint_threshold=args.compact_hint_threshold,
-        takeover_cooldown=args.takeover_cooldown,
-        shutdown_close_timeout=args.shutdown_close_timeout,
-        enable_metrics=args.metrics,
-        auth_timeout=args.auth_timeout,
-        metrics_token=args.metrics_token,
-        metrics_query_token_ok=args.metrics_query_token_ok,
-        per_message_auth_keys=message_auth_keys,
-        require_per_message_auth=args.require_message_auth,
-        per_message_auth_window_seconds=args.message_auth_window_seconds,
-        per_message_auth_replay_capacity=args.message_auth_replay_capacity,
-        acl_policy=acl_policy,
-        require_acl=args.require_acl,
-        federation_bundle=federation_bundle,
-        federation_offer_path=args.federation_offer or None,
-        hub_id=args.hub_id,
-        namespace_ownership=namespace_ownership,
-        observed_asserting_hubs=watch.observed_asserting_hubs if watch is not None else None,
-        insecure_off_loopback=args.insecure_off_loopback,
-    )
+        "max_msg_bytes": args.max_msg_kb * 1024,
+        "max_claims_per_agent": args.max_claims_per_agent,
+        "max_offers_per_agent": args.max_offers_per_agent,
+        "max_paths_per_claim": args.max_paths_per_claim,
+        "compact_hint_threshold": args.compact_hint_threshold,
+        "takeover_cooldown": args.takeover_cooldown,
+        "shutdown_close_timeout": args.shutdown_close_timeout,
+        "enable_metrics": args.metrics,
+        "auth_timeout": args.auth_timeout,
+        "metrics_token": args.metrics_token,
+        "metrics_query_token_ok": args.metrics_query_token_ok,
+        "per_message_auth_keys": message_auth_keys,
+        "require_per_message_auth": args.require_message_auth,
+        "per_message_auth_window_seconds": args.message_auth_window_seconds,
+        "per_message_auth_replay_capacity": args.message_auth_replay_capacity,
+        "acl_policy": acl_policy,
+        "require_acl": args.require_acl,
+        "federation_bundle": federation_bundle,
+        "federation_offer_path": args.federation_offer or None,
+        "hub_id": args.hub_id,
+        "namespace_ownership": namespace_ownership,
+        "observed_asserting_hubs": (watch.observed_asserting_hubs if watch is not None else None),
+        "insecure_off_loopback": args.insecure_off_loopback,
+    }
+    hub = hub_factory(**hub_kwargs)
+    # Direct SynapseHub(...) construction does not run from_config, so config_epoch
+    # would stay empty and the hub's pinning indicator inert. Regroup the flat kwargs
+    # and fingerprint the posture, so /health, the who snapshot, and /snapshot.json
+    # report the same config_epoch a from_config hub would.
+    hub.config_epoch = config_fingerprint(HubConfig.from_kwargs(hub_kwargs))
 
     def serve() -> Coroutine[Any, Any, None]:
         return hub.serve(host=args.host, port=args.port, ssl_context=ssl_context)
