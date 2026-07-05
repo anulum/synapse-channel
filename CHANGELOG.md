@@ -24,6 +24,16 @@ All notable changes to this project are documented here.
   parameters, previously reachable only through the `AtRestCipher.from_passphrase`
   library API) is now exposed on the CLI. New `generate_key_file_from_passphrase`.
 
+### Security
+- `AtRestCipher` now enforces the AES-GCM per-key safety bound for random 96-bit
+  nonces. It counts the messages it seals (exposed as `encrypted_count`), logs a
+  one-time rekey warning once it passes fifteen-sixteenths of the `GCM_MESSAGE_LIMIT`
+  (`2**32`), and raises the new `AtRestKeyExhausted` rather than encrypt past it —
+  so a key is rotated before the nonce-collision probability can rise past the
+  `2**-32` bound. The count is per cipher instance and resets when the cipher is
+  rebuilt, guarding a single long-running process rather than a key's cumulative
+  lifetime across restarts.
+
 ## [0.98.1] - 2026-07-05
 
 ### Fixed

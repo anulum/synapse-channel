@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -18,8 +19,11 @@ from cryptography.exceptions import InvalidTag
 from synapse_channel.core import at_rest
 from synapse_channel.core.at_rest import (
     ENVELOPE_MAGIC,
+    GCM_MESSAGE_LIMIT,
+    GCM_REKEY_WARNING_THRESHOLD,
     KEY_BYTES,
     AtRestCipher,
+    AtRestKeyExhausted,
     AtRestSurface,
     backup_profile,
     check_key_file,
@@ -53,6 +57,36 @@ def test_round_trip_recovers_plaintext() -> None:
 def test_each_encryption_uses_a_fresh_nonce() -> None:
     cipher = _cipher()
     assert cipher.encrypt(b"same") != cipher.encrypt(b"same")
+
+
+def test_encrypted_count_tracks_sealed_messages() -> None:
+    cipher = _cipher()
+    assert cipher.encrypted_count == 0
+    cipher.encrypt(b"one")
+    cipher.encrypt(b"two")
+    assert cipher.encrypted_count == 2
+
+
+def test_encrypt_warns_once_near_the_message_limit(caplog: pytest.LogCaptureFixture) -> None:
+    # 2**32 messages are untestable by real encryption, so seed the counter at the
+    # warning threshold and confirm the one-time warning fires exactly once.
+    cipher = _cipher()
+    cipher._encrypted = GCM_REKEY_WARNING_THRESHOLD
+    with caplog.at_level(logging.WARNING, logger="synapse.at_rest"):
+        cipher.encrypt(b"first past the threshold")
+        cipher.encrypt(b"second past the threshold")
+    rekey_warnings = [r for r in caplog.records if "rotate the key soon" in r.getMessage()]
+    assert len(rekey_warnings) == 1
+    assert cipher.encrypted_count == GCM_REKEY_WARNING_THRESHOLD + 2
+
+
+def test_encrypt_refuses_past_the_message_limit() -> None:
+    cipher = _cipher()
+    cipher._encrypted = GCM_MESSAGE_LIMIT
+    with pytest.raises(AtRestKeyExhausted, match="rotate the key"):
+        cipher.encrypt(b"one too many")
+    # The cap is enforced before a nonce is drawn, so nothing was sealed.
+    assert cipher.encrypted_count == GCM_MESSAGE_LIMIT
 
 
 def test_wrong_key_fails_authentication() -> None:
