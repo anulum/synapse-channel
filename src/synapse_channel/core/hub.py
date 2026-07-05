@@ -39,7 +39,6 @@ import websockets
 from websockets.http11 import Request, Response
 
 from synapse_channel.core.acl import AclPolicy
-from synapse_channel.core.acl_enforcement import authorise_frame, project_of
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.channels import ChannelRegistry
@@ -56,6 +55,7 @@ from synapse_channel.core.hub_exposure import (
     is_loopback_host,
 )
 from synapse_channel.core.hub_federation_gate import FrameDisposition, HubFederationGate
+from synapse_channel.core.hub_frame_gates import HubFrameGates
 from synapse_channel.core.hub_http import http_endpoint_response
 from synapse_channel.core.hub_ingress import HubIngress
 from synapse_channel.core.hub_ledger_guard import HubLedgerGuard
@@ -69,28 +69,21 @@ from synapse_channel.core.ledger import (
 )
 from synapse_channel.core.message_auth import (
     DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
-    DEFAULT_SIGNED_MESSAGE_TYPES,
     EventSignatureTrustBundle,
     MessageAuthKey,
     MessageReplayCache,
-    SignedEventVerificationResult,
-    VerificationResult,
-    verify_event_signature,
-    verify_frame,
 )
 from synapse_channel.core.multihub_claim_transport import (
     ClaimForwarder,
-    ClaimForwardError,
     ClaimForwardPeer,
     forward_claim,
 )
-from synapse_channel.core.multihub_claim_wire import ClaimForwardRequest
 from synapse_channel.core.multihub_serving import (
     MultiHubServingPolicy,
     PeerCertificateSource,
     live_peer_certificate_der,
 )
-from synapse_channel.core.namespace_ownership import NamespaceOwnership, OwnershipOutcome
+from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import (
     MessageType,
@@ -498,6 +491,21 @@ class SynapseHub:
             broadcast_presence=self._broadcast_presence,
             drop_waits=self._drop_waits,
         )
+        self._frame_gates = HubFrameGates(
+            require_per_message_auth=self.require_per_message_auth,
+            per_message_auth_keys=self.per_message_auth_keys,
+            message_replay=self._message_replay,
+            signed_event_trust_bundle=self.signed_event_trust_bundle,
+            require_acl=self.require_acl,
+            acl_policy=self.acl_policy,
+            namespace_ownership=self.namespace_ownership,
+            observed_asserting_hubs=self.observed_asserting_hubs,
+            claim_peers=self.claim_peers,
+            claim_forwarder=self.claim_forwarder,
+            hub_id=self.hub_id,
+            send_json=self._send_json,
+            system=self._system,
+        )
         # Ledger-guard seed (message id, idempotency cache, finding quota), resumed
         # from a durable-log replay so the at-most-once and quota guarantees survive a
         # restart, or empty for a purely in-memory hub.
@@ -868,206 +876,33 @@ class SynapseHub:
     ) -> bool:
         """Authorise a mutating frame against the ACL when enforcement is on.
 
-        Returns ``True`` when enforcement is off, no policy is configured, or the
-        frame is allowed (including ungated verbs). A denied frame is refused with
-        an error naming the rule reason and is not routed.
+        Thin wrapper over
+        :meth:`~synapse_channel.core.hub_frame_gates.HubFrameGates.authorise_acl`, kept
+        because :meth:`handle_message` calls ``self._authorise_acl`` directly.
         """
-        if not self.require_acl or self.acl_policy is None:
-            return True
-        denial = authorise_frame(
-            sender=sender, msg_type=msg_type, data=data, policy=self.acl_policy
-        )
-        if denial is None:
-            return True
-        logger.warning(
-            "ACL denied %s for %s on %s:%s (%s)",
-            msg_type,
-            sender,
-            denial.target.kind,
-            denial.target.value,
-            denial.reason,
-        )
-        await self._send_json(
-            websocket,
-            self._system(
-                f"access denied: {denial.permission} on {denial.target.kind}:{denial.target.value}",
-                msg_type=MessageType.ERROR,
-                target=sender,
-                acl_decision=denial.decision,
-                acl_reason=denial.reason,
-            ),
-        )
-        return False
+        return await self._frame_gates.authorise_acl(sender, msg_type, data, websocket)
 
     async def _authorise_claim_ownership(
         self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
     ) -> bool:
-        """Route a claim by namespace ownership: grant locally, forward to the owner, or refuse.
+        """Route a claim by namespace ownership: grant locally, forward, or refuse.
 
-        Claims are mutual exclusion and are routed by namespace ownership, never merged: a hub
-        grants claims only for the namespaces it owns, so two hubs never grant the same scope.
-        When a :class:`~synapse_channel.core.namespace_ownership.NamespaceOwnership` map is
-        configured, a claim whose namespace — derived from the sender identity exactly as the
-        ACL derives it — this hub owns runs the local grant path. A namespace a named peer owns is
-        forwarded to that peer when a ``ClaimForwardPeer`` route is configured, and the peer's
-        verdict is relayed to the claimant; without a route, or when the owner is unreachable,
-        ungoverned, or contested, the claim is refused fail-closed with the owning hub named so
-        the caller can route it itself. With no map
-        configured the hub owns every namespace it is asked about, preserving single-hub behaviour.
-
-        Returns
-        -------
-        bool
-            ``True`` when the claim may be routed to the local grant path; ``False`` when it was
-            handled here — forwarded and its verdict relayed, or refused (a
-            :data:`~synapse_channel.core.protocol.MessageType.CLAIM_DENIED` was sent).
+        Thin wrapper over
+        :meth:`~synapse_channel.core.hub_frame_gates.HubFrameGates.authorise_claim_ownership`,
+        kept because :meth:`handle_message` calls ``self._authorise_claim_ownership`` directly.
         """
-        if self.namespace_ownership is None or msg_type != MessageType.CLAIM:
-            return True
-        namespace = project_of(sender)
-        decision = self.namespace_ownership.resolve(
-            namespace, asserting_hubs=self._observed_asserting_hubs(namespace)
-        )
-        if decision.grants_locally:
-            return True
-        task_id = str(data.get("task_id") or data.get("payload") or "").strip()
-        if decision.outcome is OwnershipOutcome.REMOTE and await self._forward_remote_claim(
-            sender, namespace, task_id, data, decision.owner_hub_id or "", websocket
-        ):
-            return False
-        logger.warning(
-            "Claim refused for %s: namespace %r is %s (owner %s)",
-            sender,
-            namespace,
-            decision.outcome.value,
-            decision.owner_hub_id,
-        )
-        await self._send_json(
-            websocket,
-            self._system(
-                f"claim refused: this hub does not own namespace {namespace!r} "
-                f"({decision.outcome.value})",
-                msg_type=MessageType.CLAIM_DENIED,
-                target=sender,
-                task_id=task_id,
-                namespace=namespace,
-                ownership=decision.outcome.value,
-                owner_hub_id=decision.owner_hub_id,
-            ),
-        )
-        return False
-
-    def _observed_asserting_hubs(self, namespace: str) -> tuple[str, ...]:
-        """Return the hub ids observed asserting authority over ``namespace``, or empty.
-
-        Reads the optional runtime feed configured on the hub; with none configured the
-        ownership resolution sees no assertions and decides from its static map alone.
-        """
-        if self.observed_asserting_hubs is None:
-            return ()
-        return tuple(self.observed_asserting_hubs(namespace))
-
-    async def _forward_remote_claim(
-        self,
-        sender: str,
-        namespace: str,
-        task_id: str,
-        data: dict[str, Any],
-        owner_hub_id: str,
-        websocket: Any,
-    ) -> bool:
-        """Forward a remote-owned claim to its owning hub and relay the verdict to the claimant.
-
-        The owning hub applies the claim authoritatively and answers with a grant or a denial,
-        which is relayed privately to the claimant — a grant carries the authentic lease fields,
-        so the client sees the same ``CLAIM_GRANTED`` it would for a local claim.
-
-        Returns
-        -------
-        bool
-            ``True`` when the claim was forwarded and a verdict relayed, so the local grant path
-            must not also run. ``False`` when no route is configured for the owner, the task
-            carries no id to forward, or the forward failed — leaving the caller to refuse the
-            claim and name the owner, fail-closed.
-        """
-        peer = self.claim_peers.get(owner_hub_id) if self.claim_peers else None
-        if peer is None or not task_id:
-            return False
-        request = ClaimForwardRequest(
-            namespace=namespace, claimant=sender, task_id=task_id, claim=data
-        )
-        try:
-            result = await self.claim_forwarder(
-                request, uri=peer.uri, local_id=self.hub_id, token=peer.token
-            )
-        except ClaimForwardError:
-            logger.warning(
-                "Forwarding claim %r for %s to owner %s failed", task_id, sender, owner_hub_id
-            )
-            return False
-        if result.granted and result.grant is not None:
-            await self._send_json(
-                websocket,
-                self._system(
-                    result.detail or f"claim granted by {owner_hub_id}",
-                    msg_type=MessageType.CLAIM_GRANTED,
-                    target=sender,
-                    **result.grant,
-                ),
-            )
-        else:
-            await self._send_json(
-                websocket,
-                self._system(
-                    result.detail or "claim refused by the owning hub",
-                    msg_type=MessageType.CLAIM_DENIED,
-                    target=sender,
-                    task_id=task_id,
-                    namespace=namespace,
-                    owner_hub_id=owner_hub_id,
-                ),
-            )
-        return True
+        return await self._frame_gates.authorise_claim_ownership(sender, msg_type, data, websocket)
 
     async def _verify_per_message_auth(
         self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
     ) -> bool:
-        """Verify required per-message authentication before mutating state."""
-        if not self.require_per_message_auth or msg_type not in DEFAULT_SIGNED_MESSAGE_TYPES:
-            return True
-        now = time.time()
-        if "auth" in data:
-            result: VerificationResult | SignedEventVerificationResult = verify_frame(
-                data,
-                keys=self.per_message_auth_keys,
-                replay_cache=self._message_replay,
-                now=now,
-                required_sender=sender,
-            )
-            if result is VerificationResult.OK:
-                return True
-        elif "signature" in data and self.signed_event_trust_bundle is not None:
-            result = verify_event_signature(
-                data,
-                trust_bundle=self.signed_event_trust_bundle,
-                now=now,
-                required_sender=sender,
-                required_project=str(data.get("project") or ""),
-            )
-            if result is SignedEventVerificationResult.VALID:
-                return True
-        else:
-            result = VerificationResult.MISSING
-        await self._send_json(
-            websocket,
-            self._system(
-                f"per-message authentication failed: {result.value}",
-                msg_type=MessageType.ERROR,
-                target=sender,
-                verification_result=result.value,
-            ),
-        )
-        return False
+        """Verify required per-message authentication before mutating state.
+
+        Thin wrapper over
+        :meth:`~synapse_channel.core.hub_frame_gates.HubFrameGates.verify_per_message_auth`,
+        kept because :meth:`handle_message` calls ``self._verify_per_message_auth`` directly.
+        """
+        return await self._frame_gates.verify_per_message_auth(sender, msg_type, data, websocket)
 
     async def _route(
         self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any

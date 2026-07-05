@@ -43,6 +43,22 @@ All notable changes to this project are documented here.
   hard-requires an optional library.
 
 ### Changed
+- Extracted the hub's frame-authorisation gates into `core/hub_frame_gates.py`
+  (`HubFrameGates`): verifying required per-message authentication (an HMAC frame
+  signature or an Ed25519 signed-event signature), authorising a mutating frame
+  against the ACL, and routing a claim by namespace ownership — granting locally,
+  forwarding to the owning peer hub and relaying its verdict, or refusing fail-closed
+  with the owner named — now live in one class the hub holds, with
+  `_verify_per_message_auth` / `_authorise_acl` / `_authorise_claim_ownership` left as
+  thin delegating wrappers (the `handle_message` pipeline keeps one entry point per
+  gate) and the internal `_observed_asserting_hubs` / `_forward_remote_claim` folded
+  into the collaborator. Routing itself stays on the hub, since a handler is invoked
+  with the hub as its first argument; the gates take the hub's per-socket send and
+  system-message factory as injected callbacks and capture their policy inputs at
+  construction, so the collaborator carries no back-reference to the hub. No behaviour
+  change — the auth verdicts, the ACL denials, and the claim grant/forward/refuse
+  decisions are identical. Third slice of the resumed hub decomposition, taking
+  `core/hub.py` from 1202 to 1037 lines. 100% line+branch on the new module.
 - Extracted the hub's socket-connection lifecycle into `core/hub_connection.py`
   (`HubConnection`): admitting a socket against the capacity, per-host, and
   unauthenticated-burst ceilings; welcoming it (on connect for an open hub, or only
