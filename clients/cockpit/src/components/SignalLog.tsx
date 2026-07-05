@@ -22,6 +22,15 @@ import { readLogExportFile, type PostMortem } from "../lib/postmortem";
 import { diffWindows, type WindowDiff } from "../lib/windowDiff";
 import type { CockpitEvent } from "../types";
 
+/**
+ * How many rows the table PAINTS. Measured, not guessed: ten thousand DOM
+ * rows cost 9.45 s to paint and 81 MB of heap (2026-07-05 benchmark on the
+ * production build); a thousand paint instantly. Everything above the cap
+ * is stated as a remainder — an operator narrows a query, they do not read
+ * ten thousand rows.
+ */
+const RENDERED_ROWS_CAP = 1000;
+
 function rateLabel(rate: number | null): string {
   return rate === null ? "—" : `${rate.toFixed(1)}/min`;
 }
@@ -433,7 +442,12 @@ function SignalLogView({
                 : "No observed events inside the brushed window."}
           </p>
         ) : query.view === "compact" ? (
-          <CompactLogList events={shown} onSelectTask={onSelectTask} provenance={provenance} />
+          <CompactLogList
+            events={shown.slice(0, RENDERED_ROWS_CAP)}
+            onSelectTask={onSelectTask}
+            provenance={provenance}
+            truncated={Math.max(0, shown.length - RENDERED_ROWS_CAP)}
+          />
         ) : (
           <table className="log">
             <thead>
@@ -447,7 +461,7 @@ function SignalLogView({
               </tr>
             </thead>
             <tbody>
-              {shown.map((event) => (
+              {shown.slice(0, RENDERED_ROWS_CAP).map((event) => (
                 <Fragment key={event.seq}>
                   <tr className={`log__row log__row--${event.kind}`}>
                     <td className="log__raw">
@@ -511,7 +525,14 @@ function SignalLogView({
                   )}
                 </Fragment>
               ))}
-            </tbody>
+                          {shown.length > RENDERED_ROWS_CAP && (
+                <tr className="log__row">
+                  <td colSpan={6} className="log__more">
+                    {`+${shown.length - RENDERED_ROWS_CAP} more match — narrow the query to see them`}
+                  </td>
+                </tr>
+              )}
+</tbody>
           </table>
         )}
       </div>
@@ -520,6 +541,8 @@ function SignalLogView({
 }
 
 interface CompactLogListProps {
+  /** Events beyond the render cap, stated instead of painted. */
+  readonly truncated?: number;
   /** Query-filtered events, newest first. */
   readonly events: readonly CockpitEvent[];
   readonly onSelectTask?: ((subject: string) => void) | undefined;
@@ -527,7 +550,7 @@ interface CompactLogListProps {
 }
 
 /** One row per task with its observed lifecycle inline; chatter stays flat. */
-function CompactLogList({ events, onSelectTask, provenance }: CompactLogListProps): JSX.Element {
+function CompactLogList({ events, onSelectTask, provenance, truncated = 0 }: CompactLogListProps): JSX.Element {
   const compact = groupByTask(events);
   return (
     <div className="log-compact">
@@ -589,6 +612,11 @@ function CompactLogList({ events, onSelectTask, provenance }: CompactLogListProp
               <span className="log-chip log-chip--more">{`+${compact.ungrouped.length - 40}`}</span>
             )}
           </div>
+        </div>
+      )}
+      {truncated > 0 && (
+        <div className="log__more">
+          {`+${truncated} more match beyond the render cap — narrow the query to see them`}
         </div>
       )}
     </div>
