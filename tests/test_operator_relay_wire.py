@@ -23,7 +23,7 @@ from synapse_channel.core.operator_relay_wire import (
 
 
 def _request(**overrides: Any) -> RelayActionRequest:
-    fields = {
+    fields: dict[str, Any] = {
         "action": "release",
         "namespace": "SYNAPSE-CHANNEL",
         "task_id": "t1",
@@ -31,7 +31,7 @@ def _request(**overrides: Any) -> RelayActionRequest:
         "origin_hub_id": "syn-a",
     }
     fields.update(overrides)
-    return RelayActionRequest(**fields)  # type: ignore[arg-type]
+    return RelayActionRequest(**fields)
 
 
 def _result(**overrides: Any) -> RelayActionResult:
