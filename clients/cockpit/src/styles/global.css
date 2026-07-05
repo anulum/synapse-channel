@@ -2765,3 +2765,93 @@ body {
   font-size: var(--fs-tiny);
   color: var(--warn);
 }
+
+/* ---------- command palette ---------- */
+.palette {
+  position: absolute;
+  top: 12vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, 92vw);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.palette__input {
+  width: 100%;
+  background: var(--abyss);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  padding: var(--sp-3);
+  outline: none;
+}
+
+.palette__list {
+  list-style: none;
+  margin: 0;
+  padding: var(--sp-1) 0;
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.palette__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  padding: var(--sp-2) var(--sp-3);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette__item--active {
+  background: var(--raised);
+  color: var(--ink);
+}
+
+.palette__item--write {
+  color: var(--warn);
+}
+
+.palette__empty {
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--dim);
+  font-size: var(--fs-small);
+}
+
+.palette__compose {
+  display: flex;
+  flex-direction: column;
+}
+
+.palette__compose-head {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-micro);
+  color: var(--warn);
+  border-bottom: 1px solid var(--line);
+}
+
+.palette__compose-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+}
+
+.palette__outcome {
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}

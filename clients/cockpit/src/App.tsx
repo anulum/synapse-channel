@@ -16,6 +16,7 @@ import { Hud, type Kpi } from "./components/Hud";
 import { InspectorTabs } from "./components/InspectorTabs";
 import { InstallChip } from "./components/InstallChip";
 import { MobileNav, type MobileSegment } from "./components/MobileNav";
+import { Palette } from "./components/Palette";
 import { PanelBoundary } from "./components/PanelBoundary";
 import { ReliabilityPanel } from "./components/ReliabilityPanel";
 import { RiskRail } from "./components/RiskRail";
@@ -50,6 +51,7 @@ import {
 import { createSnapshotEventSource } from "./lib/spineEvents";
 import { fetchStateAt, type FleetStateAt } from "./lib/stateAt";
 import { focusClaims, focusTasks } from "./lib/focus";
+import { buildCommands, type Command } from "./lib/palette";
 import { readPref, writePref } from "./lib/prefs";
 import { factsOf, toastsBetween, type FleetFacts, type Toast } from "./lib/toasts";
 import type { CockpitEvent, EventSource } from "./types";
@@ -190,6 +192,19 @@ export function App(): JSX.Element {
     },
     [travelFetch],
   );
+
+  // The command palette: Ctrl/Cmd+K anywhere.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key.toLowerCase() === "k" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        setPaletteOpen((current) => !current);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // The detail drawer's subject: one agent or one task, or nothing.
   const [inspected, setInspected] = useState<
@@ -429,6 +444,30 @@ export function App(): JSX.Element {
     toastTimers.current.add(timer);
   }, [snap.snapshot, liveBoard, liveConflicts, deadLetters]);
 
+  const paletteCommands = useMemo(
+    () =>
+      buildCommands(
+        roster.map((entry) => entry.agent),
+        liveBoard.map((task) => task.taskId),
+      ),
+    [roster, liveBoard],
+  );
+
+  const runPaletteCommand = useCallback(
+    (command: Command) => {
+      if (command.kind === "focus-agent") onFocusChange(command.subject);
+      else if (command.kind === "inspect-agent") setInspected({ kind: "agent", id: command.subject });
+      else if (command.kind === "inspect-task") setInspected({ kind: "task", id: command.subject });
+      else if (command.kind === "trace-task")
+        setTraceRequest((current) => ({ subject: command.subject, nonce: (current?.nonce ?? 0) + 1 }));
+      else if (command.kind === "toggle-theme") onToggleTheme();
+      else if (command.kind === "toggle-density") onToggleDensity();
+      else if (command.kind === "toggle-travel") onToggleTravel();
+      else if (command.kind === "clear-focus") onFocusChange("");
+    },
+    [onFocusChange, onToggleTheme, onToggleDensity, onToggleTravel],
+  );
+
   return (
     <div className="shell">
       <Hud
@@ -532,6 +571,12 @@ export function App(): JSX.Element {
         </div>
       </div>
       <InstallChip />
+      <Palette
+        open={paletteOpen}
+        commands={paletteCommands}
+        onClose={() => setPaletteOpen(false)}
+        onRun={runPaletteCommand}
+      />
       <ToastStack toasts={toasts} onDismiss={onDismissToast} />
       <DetailDrawer
         agent={
