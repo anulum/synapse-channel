@@ -58,8 +58,11 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
-      # SoftHSM2 provides a PKCS#11 module so the at-rest PKCS#11 backend tests run (not skip).
-      - run: sudo apt-get update && sudo apt-get install -y softhsm2
+      # SoftHSM2 provides a PKCS#11 module and swtpm a software TPM 2.0, so the at-rest hardware
+      # key backends run (not skip); libtss2-dev builds tpm2-pytss (sdist-only, no wheel).
+      - run: >-
+          sudo apt-get update && sudo apt-get install -y
+          softhsm2 swtpm swtpm-tools tpm2-tools libtss2-dev
       - run: python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
       - run: python -m pip install -e . --no-deps
       - run: pytest --cov=synapse_channel --cov-report=term-missing --cov-report=xml

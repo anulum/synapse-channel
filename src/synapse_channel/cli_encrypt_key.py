@@ -45,6 +45,7 @@ from synapse_channel.core.at_rest import (
     rewrap_wrapped_key_file,
 )
 from synapse_channel.core.at_rest_pkcs11 import DEFAULT_KEK_LABEL
+from synapse_channel.core.at_rest_tpm2 import DEFAULT_TPM2_TCTI
 
 
 def _cmd_generate(
@@ -183,6 +184,28 @@ def _cmd_generate_wrapped_pkcs11(
         print(f"synapse encrypt-key generate-wrapped-pkcs11: {exc}")
         return 2
     print(f"wrote PKCS#11-wrapped at-rest key (owner-only): {written}")
+    return 0
+
+
+def _cmd_generate_wrapped_tpm2(args: argparse.Namespace) -> int:
+    """Create a key file wrapped by a key-encryption key rooted in a TPM 2.0 device.
+
+    The data key is random and wrapped with RSA-OAEP against a decrypt-only primary derived inside
+    the TPM; the RSA private key never leaves the chip. The TPM is reached through ``--tcti`` (or
+    the ``TPM2_TCTI`` environment variable), defaulting to the in-kernel resource-managed device.
+    """
+    from synapse_channel.core.at_rest_tpm2 import generate_wrapped_key_file_tpm2
+
+    tcti = args.tcti or os.environ.get("TPM2_TCTI") or DEFAULT_TPM2_TCTI
+    try:
+        written = generate_wrapped_key_file_tpm2(args.path, tcti=tcti)
+    except FileExistsError as exc:
+        print(str(exc))
+        return 1
+    except (ValueError, RuntimeError) as exc:
+        print(f"synapse encrypt-key generate-wrapped-tpm2: {exc}")
+        return 2
+    print(f"wrote TPM-wrapped at-rest key (owner-only): {written}")
     return 0
 
 
@@ -402,6 +425,21 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Fail if the key-encryption key is absent instead of generating it on the token.",
     )
     pkcs11.set_defaults(func=_cmd_generate_wrapped_pkcs11, create_kek=True)
+
+    tpm2 = nested.add_parser(
+        "generate-wrapped-tpm2",
+        help="Write a key file wrapped by a key-encryption key rooted in a TPM 2.0 device.",
+    )
+    tpm2.add_argument("path", help="Destination wrapped-key-file path (must not already exist).")
+    tpm2.add_argument(
+        "--tcti",
+        default=None,
+        help=(
+            "TPM transmission interface (e.g. device:/dev/tpmrm0), or set the TPM2_TCTI env var "
+            f"(default {DEFAULT_TPM2_TCTI!r})."
+        ),
+    )
+    tpm2.set_defaults(func=_cmd_generate_wrapped_tpm2)
 
     check = nested.add_parser("check", help="Verify a key file's ownership, mode, and length.")
     check.add_argument("path", help="Key-file path to check.")
