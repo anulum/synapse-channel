@@ -10,6 +10,9 @@
 # Domain terms that are not typos.
 ndjson = "ndjson"
 tiktoken = "tiktoken"
+# TPM 2.0 API type names (tpm2-pytss): the TPM spec abbreviates "parameters" as PARMS
+# (TPMU_PUBLIC_PARMS, TPMS_RSA_PARMS), so it is a verbatim external identifier, not a typo.
+parms = "parms"
 
 [files]
 extend-exclude = [
