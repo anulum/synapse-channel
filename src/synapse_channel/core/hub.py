@@ -23,10 +23,8 @@ routing core stays a table lookup rather than a growing branch ladder.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
-import signal
 import ssl
 import time
 import uuid
@@ -38,7 +36,6 @@ if TYPE_CHECKING:
     from synapse_channel.core.hub_config import HubConfig
 
 import websockets
-from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request, Response
 
 from synapse_channel.core.acl import AclPolicy
@@ -51,6 +48,7 @@ from synapse_channel.core.federation import FederationBundle
 from synapse_channel.core.handlers import DISPATCH
 from synapse_channel.core.hub_broadcast import HubBroadcaster
 from synapse_channel.core.hub_clients import HubClientRegistry
+from synapse_channel.core.hub_connection import HubConnection
 from synapse_channel.core.hub_counters import HubCounters
 from synapse_channel.core.hub_exposure import (
     LOOPBACK_HOSTS,
@@ -487,6 +485,19 @@ class SynapseHub:
         self.socket_agent = self.clients.socket_agent
         self._waits: dict[str, str] = {}
         self.capabilities = CapabilityRegistry()
+        self._connection = HubConnection(
+            self.clients,
+            self.capabilities,
+            authenticator=self.authenticator,
+            auth_timeout=self.auth_timeout,
+            rate_limiter=self.rate_limiter,
+            handle_message=self.handle_message,
+            send_json=self._send_json,
+            system=self._system,
+            online_agents=self.online_agents,
+            broadcast_presence=self._broadcast_presence,
+            drop_waits=self._drop_waits,
+        )
         # Ledger-guard seed (message id, idempotency cache, finding quota), resumed
         # from a durable-log replay so the at-most-once and quota guarantees survive a
         # restart, or empty for a purely in-memory hub.
@@ -1083,125 +1094,58 @@ class SynapseHub:
         await handler(self, sender, data, websocket)
 
     async def _send_welcome(self, websocket: Any) -> None:
-        """Send the welcome frame (roster + connection count) to one socket."""
-        await self._send_json(
-            websocket,
-            self._system(
-                "Welcome to Synapse",
-                msg_type=MessageType.WELCOME,
-                target="self",
-                connected_clients=len(self.connected_clients),
-                online_agents=self.online_agents(),
-            ),
-        )
+        """Send the welcome frame (roster + connection count) to one socket.
+
+        Thin wrapper over
+        :meth:`~synapse_channel.core.hub_connection.HubConnection.send_welcome`, kept
+        because :meth:`handle_message` sends the withheld welcome on first auth.
+        """
+        await self._connection.send_welcome(websocket)
 
     async def register(self, websocket: Any) -> None:
         """Record a new socket; welcome it now only on an open hub.
 
-        On a secured hub the welcome — which carries the online roster and the
-        connection count — is withheld until the socket authenticates (see
-        :meth:`handle_message`), so an unauthenticated client never learns who is
-        online. An open hub has nothing to gate, so it is welcomed on connect.
+        Thin wrapper over
+        :meth:`~synapse_channel.core.hub_connection.HubConnection.register`, kept
+        because tests and integration paths reach ``hub.register`` directly.
         """
-        self.clients.add_client(websocket)
-        logger.info("Client connected: %s (total=%d)", id(websocket), len(self.connected_clients))
-        if self.authenticator is None:
-            await self._send_welcome(websocket)
+        await self._connection.register(websocket)
 
     async def unregister(self, websocket: Any) -> None:
-        """Drop a socket, releasing its agent name and broadcasting departure."""
-        name = self.clients.drop_client(websocket)
-        if name is not None:
-            self._drop_waits(name)
-            self.capabilities.forget(name)
-            if self.rate_limiter is not None:
-                self.rate_limiter.forget(name)
-            await self._broadcast_presence("left", name)
-        logger.info(
-            "Client disconnected: %s (total=%d)", id(websocket), len(self.connected_clients)
-        )
+        """Drop a socket, releasing its agent name and broadcasting departure.
+
+        Thin wrapper over
+        :meth:`~synapse_channel.core.hub_connection.HubConnection.unregister`.
+        """
+        await self._connection.unregister(websocket)
 
     async def _authenticate_or_close(self, websocket: Any) -> bool:
         """On a secured hub, process the first frame under the auth deadline.
 
-        Reads one frame within :attr:`auth_timeout`, routes it (which authenticates
-        and binds the sender, then sends the withheld welcome), and reports whether
-        the socket is now an authenticated, bound client. A socket that sends
-        nothing in time is closed (``4012``) so an idle unauthenticated connection
-        cannot hold a slot; a first frame that fails to authenticate or bind is
-        closed (``4010``).
-
-        Returns
-        -------
-        bool
-            ``True`` when the socket authenticated and bound a name, ``False``
-            when it timed out, disconnected, or failed to authenticate (the socket
-            is closed in every ``False`` case).
+        Thin wrapper over
+        :meth:`~synapse_channel.core.hub_connection.HubConnection.authenticate_or_close`.
         """
-        try:
-            first = await asyncio.wait_for(websocket.recv(), timeout=self.auth_timeout)
-        except asyncio.TimeoutError:
-            await websocket.close(code=4012, reason="auth timeout")
-            return False
-        except ConnectionClosed:
-            return False
-        await self.handle_message(first, websocket)
-        if not self.clients.is_bound(websocket):
-            # The first frame did not authenticate and bind a name; _authorise may
-            # already have closed the socket, so closing again is suppressed.
-            with contextlib.suppress(Exception):
-                await websocket.close(code=4010, reason="auth required")
-            return False
-        return True
+        return await self._connection.authenticate_or_close(websocket)
 
     async def handler(self, websocket: Any) -> None:
         """Serve one client connection from registration to disconnect.
 
-        On a secured hub the first frame must authenticate within
-        :attr:`auth_timeout` before the connection joins the channel (see
-        :meth:`_authenticate_or_close`). A separate :attr:`max_unauth_clients` cap
-        refuses a new socket (code ``4014``) while that many sockets are still in
-        their pre-auth window, so an authentication-stall burst cannot occupy the
-        connection table for the whole timeout.
+        Thin wrapper over
+        :meth:`~synapse_channel.core.hub_connection.HubConnection.handler`, kept as
+        the entry point :meth:`serve` hands to ``websockets.serve``.
         """
-        if self.clients.at_capacity():
-            await websocket.close(code=4013, reason="hub at capacity")
-            return
-        if self.clients.host_at_capacity(websocket):
-            await websocket.close(code=4015, reason="too many connections from host")
-            return
-        if self.authenticator is not None and self.clients.unauthenticated_at_capacity():
-            await websocket.close(code=4014, reason="too many unauthenticated connections")
-            return
-        await self.register(websocket)
-        try:
-            if self.authenticator is not None:
-                self.clients.add_unauthenticated(websocket)
-                try:
-                    authenticated = await self._authenticate_or_close(websocket)
-                finally:
-                    self.clients.discard_unauthenticated(websocket)
-                if not authenticated:
-                    return
-            async for raw in websocket:
-                await self.handle_message(raw, websocket)
-        except ConnectionClosed:
-            pass
-        finally:
-            await self.unregister(websocket)
+        await self._connection.handler(websocket)
 
     def _install_signal_handlers(
         self, loop: asyncio.AbstractEventLoop, stop: asyncio.Event
     ) -> None:
         """Wire ``SIGTERM``/``SIGINT`` to set ``stop`` for a graceful shutdown.
 
-        Best-effort: a platform without signal support (e.g. the Windows proactor loop)
-        raises ``NotImplementedError``, which is suppressed — the hub then simply runs
-        until its task is cancelled.
+        Thin wrapper over
+        :meth:`~synapse_channel.core.hub_connection.HubConnection.install_signal_handlers`,
+        kept because :meth:`serve` and tests call ``hub._install_signal_handlers``.
         """
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            with contextlib.suppress(NotImplementedError):
-                loop.add_signal_handler(sig, stop.set)
+        HubConnection.install_signal_handlers(loop, stop)
 
     def _process_request(self, _connection: Any, request: Request) -> Response | None:
         """``websockets`` request hook serving ``/metrics`` and ``/health`` over HTTP.
