@@ -95,9 +95,11 @@ interface ClaimsBoardProps {
   readonly conflicts: readonly BranchConflictView[];
   /** Whether a snapshot has arrived at all (drives the honest empty state). */
   readonly connected: boolean;
+  /** The active focus lens ("" = off), stated in the head. */
+  readonly lens?: string;
 }
 
-export function ClaimsBoard({ claims, conflicts, connected }: ClaimsBoardProps): JSX.Element {
+export function ClaimsBoard({ claims, conflicts, connected, lens = "" }: ClaimsBoardProps): JSX.Element {
   const staleCount = claims.filter((view) => view.claim.stale).length;
 
   return (
@@ -105,6 +107,7 @@ export function ClaimsBoard({ claims, conflicts, connected }: ClaimsBoardProps):
       <div className="panel__head">
         <span>Claims</span>
         <span className="panel__count">{claims.length}</span>
+        {lens !== "" && <span className="panel__sub panel__sub--warn">{`lens: ${lens}`}</span>}
         {staleCount > 0 && <span className="panel__sub panel__sub--warn">{staleCount} stale</span>}
       </div>
       <div className="panel__body">

@@ -25,6 +25,16 @@ interface HudProps {
   readonly theme?: "dark" | "light";
   /** Theme toggle; the control renders only when provided. */
   readonly onToggleTheme?: (() => void) | undefined;
+  /** The focus lens: an identity narrowing claims and board, "" = off. */
+  readonly focus?: string;
+  /** Focus changes from the picker. */
+  readonly onFocusChange?: ((focus: string) => void) | undefined;
+  /** Live roster names for the picker's suggestions. */
+  readonly rosterNames?: readonly string[];
+  /** Whether the compact density is on. */
+  readonly density?: "cozy" | "compact";
+  /** Density toggle; the control renders only when provided. */
+  readonly onToggleDensity?: (() => void) | undefined;
 }
 
 function deltaClass(delta: number): string {
@@ -40,7 +50,7 @@ function deltaText(delta: number): string {
   return "• 0";
 }
 
-export function Hud({ kpis, live, stamp, onSelect, theme = "dark", onToggleTheme }: HudProps): JSX.Element {
+export function Hud({ kpis, live, stamp, onSelect, theme = "dark", onToggleTheme, focus = "", onFocusChange, rosterNames = [], density = "cozy", onToggleDensity }: HudProps): JSX.Element {
   return (
     <header className="hud">
       <div className="hud__mark">
@@ -78,6 +88,45 @@ export function Hud({ kpis, live, stamp, onSelect, theme = "dark", onToggleTheme
         )}
       </div>
 
+      {onFocusChange !== undefined && (
+        <span className={`hud__focus${focus !== "" ? " hud__focus--on" : ""}`}>
+          <input
+            className="hud__focus-input"
+            list="hud-focus-roster"
+            value={focus}
+            onChange={(change) => onFocusChange(change.target.value)}
+            placeholder="focus identity…"
+            aria-label="Focus the claims and board on one identity"
+            title="Narrow the claims board and task board to one identity's work"
+          />
+          <datalist id="hud-focus-roster">
+            {rosterNames.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
+          {focus !== "" && (
+            <button
+              type="button"
+              className="panel__clear"
+              onClick={() => onFocusChange("")}
+              aria-label="Clear the focus lens"
+            >
+              clear
+            </button>
+          )}
+        </span>
+      )}
+      {onToggleDensity !== undefined && (
+        <button
+          type="button"
+          className="hud__theme"
+          onClick={onToggleDensity}
+          title={density === "cozy" ? "Tighten the rows for a big fleet" : "Relax the rows"}
+          aria-label="Toggle display density"
+        >
+          {density === "cozy" ? "compact" : "cozy"}
+        </button>
+      )}
       {onToggleTheme !== undefined && (
         <button
           type="button"
