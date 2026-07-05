@@ -14,6 +14,17 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Hub pinning indicator — the hub now reports a `config_epoch` alongside its
+  `version`, a short deterministic fingerprint of its configuration posture (the
+  scalar limits and the armed/disarmed state of each optional subsystem: auth,
+  ACL, per-message auth, metrics, multi-hub, federation). It appears in the hub's
+  `/health` response, in the `who` snapshot, and in the dashboard's
+  `/snapshot.json` (as `hub_version` and `config_epoch`), so a cockpit can badge
+  which hub build and configuration it is watching and notice a deploy or a config
+  drift. Honest scope: it fingerprints posture, not secrets — object-valued
+  settings enter only as a presence marker, so rotating a key or editing an ACL
+  rule within the same posture does not change it. A hub built without a grouped
+  config (an ad-hoc `SynapseHub()`) reports an empty `config_epoch`.
 - `/waits.json` dashboard store feed (with `--feeds-db`) — the pending
   coordination gates reconstructed from the durable plan: each non-terminal task
   blocked on a dependency that has not reached a terminal status, with `who` is

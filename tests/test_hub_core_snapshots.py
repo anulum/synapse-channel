@@ -25,6 +25,8 @@ async def test_state_request_returns_snapshot_end_to_end() -> None:
 
 
 async def test_who_request_returns_roster_end_to_end() -> None:
+    from synapse_channel import __version__
+
     async with running_hub() as (_, uri):
         alpha = await connect_agent("ALPHA", uri)
         try:
@@ -32,6 +34,9 @@ async def test_who_request_returns_roster_end_to_end() -> None:
             snap = await alpha.recorder.wait_for(lambda m: m.get("type") == "who_snapshot")
             assert snap["online_agents"] == ["ALPHA"]
             assert snap["connected_clients"] == 1
+            # The roster response carries the hub's pinning tag for a cockpit.
+            assert snap["hub_version"] == __version__
+            assert "config_epoch" in snap
         finally:
             await close_agents(alpha)
 

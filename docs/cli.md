@@ -239,7 +239,11 @@ view and `/snapshot.json` for local tooling. The snapshot also includes a derive
 `fleet` section for live agents, `-rx` waiters, missing waiters, active and stale
 claims, a task-dependency graph from blackboard task edges, branch-conflict candidates
 from live git-scoped claims, ready and blocked board tasks, release receipt
-notes, and optional A2A task counts. Pass `--a2a-state-file <path>` to
+notes, and optional A2A task counts. It also carries the live hub's pinning tag —
+`hub_version` (the package version) and `config_epoch` (a fingerprint of the hub's
+configuration posture) — so a cockpit can badge which hub build and configuration
+it is watching and notice a deploy or a config drift; the hub's own `/health`
+endpoint reports the same two values. Pass `--a2a-state-file <path>` to
 summarise a persisted `synapse a2a-serve --state-file <path>` store in that
 section. The task-dependency graph is read-only and does not mutate the
 blackboard. Dashboard branch conflicts use the same declared-claim metadata as

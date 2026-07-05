@@ -460,6 +460,10 @@ class SynapseHub:
             online_agents=self.online_agents,
         )
         self.hub_id = hub_id or f"syn-{uuid.uuid4().hex[:8]}"
+        # A fingerprint of the configuration posture this hub was built from,
+        # for a cockpit's pinning indicator. Empty for an ad-hoc construction;
+        # :meth:`from_config` sets it from the grouped record (the production path).
+        self.config_epoch = ""
         self._ingress = HubIngress(
             self.clients,
             authenticator=self.authenticator,
@@ -544,10 +548,12 @@ class SynapseHub:
             keyword parameters (pinned by contract tests), so the two
             construction paths cannot diverge.
         """
-        from synapse_channel.core.hub_config import HubConfig
+        from synapse_channel.core.hub_config import HubConfig, config_fingerprint
 
         resolved = config if config is not None else HubConfig()
-        return cls(**resolved.to_kwargs())
+        hub = cls(**resolved.to_kwargs())
+        hub.config_epoch = config_fingerprint(resolved)
+        return hub
 
     # -- helpers --------------------------------------------------------------
 

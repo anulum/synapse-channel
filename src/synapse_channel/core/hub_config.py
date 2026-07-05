@@ -34,6 +34,8 @@ Construct a hub from a record with
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -232,3 +234,40 @@ class HubConfig:
             if spec.name not in _FAMILY_FIELDS:
                 kwargs[spec.name] = getattr(self, spec.name)
         return kwargs
+
+
+def config_fingerprint(config: HubConfig) -> str:
+    """Return a stable fingerprint of the hub's effective configuration posture.
+
+    A short, deterministic digest a cockpit can pin: while it stays the same the
+    hub is running the configuration it started with, and a change is a config
+    drift an operator should notice (a limit raised, a subsystem armed or
+    disarmed). It is derived from the six configuration families —
+    :class:`HubLimits`, :class:`TakeoverDamping`, :class:`HubAuthConfig`,
+    :class:`HubMetricsConfig`, :class:`MultiHubConfig`, :class:`FederationConfig` —
+    so a new configuration parameter is covered the moment it joins a family.
+
+    Deterministic by construction: scalar fields (the limits, timeouts, and the
+    ``require_*`` / ``enable_*`` posture toggles) enter by value, while object
+    fields (an authenticator, an ACL policy, a federation bundle) enter only as a
+    **presence marker** naming their type — never their identity or contents. So
+    the same posture always yields the same fingerprint across restarts, and no
+    secret material is hashed.
+
+    Honest scope: it fingerprints *posture*, not secrets. Arming or disarming a
+    subsystem, or changing a numeric bound, changes the fingerprint; rotating a
+    key or editing an ACL rule while the posture is unchanged does not — that is a
+    credential-rotation concern, not a configuration-drift one.
+    """
+    posture: dict[str, object] = {}
+    for family_name in _FAMILY_FIELDS:
+        family = getattr(config, family_name)
+        for spec in fields(family):
+            value = getattr(family, spec.name)
+            key = f"{family_name}.{spec.name}"
+            if value is None or isinstance(value, (bool, int, float, str)):
+                posture[key] = value
+            else:
+                posture[key] = f"<set:{type(value).__name__}>"
+    canonical = json.dumps(posture, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
