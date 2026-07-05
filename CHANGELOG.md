@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.0] - 2026-07-05
+
 ### Added
 - Hub pinning indicator — the hub now reports a `config_epoch` alongside its
   `version`, a short deterministic fingerprint of its configuration posture (the
