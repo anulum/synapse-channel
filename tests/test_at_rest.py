@@ -28,6 +28,7 @@ from synapse_channel.core.at_rest import (
     encrypt_file,
     full_profile_surfaces,
     generate_key_file,
+    generate_key_file_from_passphrase,
     inspect_profile,
     is_envelope,
     migrate_profile,
@@ -114,6 +115,28 @@ def test_generate_key_file_writes_owner_only_and_refuses_overwrite(tmp_path: Pat
     assert key_path.stat().st_mode & 0o077 == 0
     with pytest.raises(FileExistsError):
         generate_key_file(key_path)
+
+
+def test_generate_key_file_from_passphrase_derives_owner_only_and_usable(tmp_path: Path) -> None:
+    key_path = tmp_path / "pp.key"
+    generate_key_file_from_passphrase(key_path, "correct horse battery staple", n=2**14)
+    assert key_path.stat().st_size == KEY_BYTES
+    assert key_path.stat().st_mode & 0o077 == 0
+    # The derived file is a real key: a cipher round-trips a payload through it.
+    cipher = AtRestCipher.from_key_file(key_path)
+    assert cipher.decrypt(cipher.encrypt(b"secret")) == b"secret"
+    # A fresh random salt per derivation means the same passphrase yields a
+    # different key each time, so it is not a deterministic (reproducible) key.
+    other = tmp_path / "pp2.key"
+    generate_key_file_from_passphrase(other, "correct horse battery staple", n=2**14)
+    assert key_path.read_bytes() != other.read_bytes()
+    with pytest.raises(FileExistsError):
+        generate_key_file_from_passphrase(key_path, "x")
+
+
+def test_generate_key_file_from_passphrase_rejects_empty_passphrase(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="passphrase must not be empty"):
+        generate_key_file_from_passphrase(tmp_path / "k", "")
 
 
 def test_check_key_file_accepts_a_good_key_and_rejects_problems(tmp_path: Path) -> None:

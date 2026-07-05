@@ -309,12 +309,63 @@ def generate_key_file(path: str | Path) -> Path:
     FileExistsError
         When ``path`` already exists, so an existing key is never overwritten.
     """
-    target = Path(path)
+    return _write_new_key_file(Path(path), secrets.token_bytes(KEY_BYTES))
+
+
+def generate_key_file_from_passphrase(
+    path: str | Path,
+    passphrase: str,
+    *,
+    n: int = DEFAULT_SCRYPT_N,
+    r: int = DEFAULT_SCRYPT_R,
+    p: int = DEFAULT_SCRYPT_P,
+) -> Path:
+    """Derive a 32-byte key from a passphrase with scrypt and write it owner-only.
+
+    The scrypt cost parameters are the caller's to tune for a security/performance
+    trade-off (``n`` must be a power of two; larger ``n`` costs ``128 * n * r``
+    bytes of memory). A fresh random salt is drawn per derivation and then
+    discarded: the written file is a normal 32-byte key of record, protected
+    exactly like a randomly generated one, and the passphrase alone cannot
+    reconstruct it — the file is authoritative, the passphrase is only its source
+    at creation. Prefer the random :func:`generate_key_file` unless a passphrase
+    source is specifically wanted.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path
+        Destination key-file path; refused when it already exists.
+    passphrase : str
+        Non-empty passphrase to derive the key from.
+    n, r, p : int, optional
+        scrypt cost, block-size, and parallelisation parameters.
+
+    Returns
+    -------
+    pathlib.Path
+        The written key-file path.
+
+    Raises
+    ------
+    ValueError
+        When the passphrase is empty or the scrypt parameters are invalid.
+    FileExistsError
+        When ``path`` already exists, so an existing key is never overwritten.
+    """
+    if not passphrase:
+        raise ValueError("passphrase must not be empty")
+    salt = secrets.token_bytes(SCRYPT_SALT_BYTES)
+    key = derive_key(passphrase, salt, n=n, r=r, p=p)
+    return _write_new_key_file(Path(path), key)
+
+
+def _write_new_key_file(target: Path, key_bytes: bytes) -> Path:
+    """Write ``key_bytes`` to a new owner-only (0600) file, never overwriting."""
     if target.exists():
         raise FileExistsError(f"refusing to overwrite existing key file: {target}")
     fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "wb") as handle:
-        handle.write(secrets.token_bytes(KEY_BYTES))
+        handle.write(key_bytes)
     return target
 
 

@@ -17,8 +17,13 @@ encryption that builds on this foundation (see ``docs/at-rest-encryption``).
 from __future__ import annotations
 
 import argparse
+import getpass
+from collections.abc import Callable
 
 from synapse_channel.core.at_rest import (
+    DEFAULT_SCRYPT_N,
+    DEFAULT_SCRYPT_P,
+    DEFAULT_SCRYPT_R,
     AtRestCipher,
     AtRestProfileReport,
     AtRestSurface,
@@ -26,6 +31,7 @@ from synapse_channel.core.at_rest import (
     check_key_file,
     full_profile_surfaces,
     generate_key_file,
+    generate_key_file_from_passphrase,
     inspect_profile,
     migrate_profile,
     rekey_profile,
@@ -34,13 +40,35 @@ from synapse_channel.core.at_rest import (
 )
 
 
-def _cmd_generate(args: argparse.Namespace) -> int:
-    """Create a fresh owner-only key file, refusing to overwrite an existing one."""
+def _cmd_generate(
+    args: argparse.Namespace,
+    *,
+    passphrase_reader: Callable[[str], str] = getpass.getpass,
+) -> int:
+    """Create a fresh owner-only key file, refusing to overwrite an existing one.
+
+    With ``--from-passphrase`` the key is derived from a prompted passphrase via
+    scrypt, whose cost is tunable with ``--scrypt-n`` / ``--scrypt-r`` /
+    ``--scrypt-p``; otherwise it is 32 random bytes. Either way the written file
+    is a 32-byte owner-only key of record.
+    """
     try:
-        written = generate_key_file(args.path)
+        if args.from_passphrase:
+            passphrase = passphrase_reader("At-rest passphrase: ")
+            if passphrase != passphrase_reader("Confirm passphrase: "):
+                print("passphrases do not match")
+                return 2
+            written = generate_key_file_from_passphrase(
+                args.path, passphrase, n=args.scrypt_n, r=args.scrypt_r, p=args.scrypt_p
+            )
+        else:
+            written = generate_key_file(args.path)
     except FileExistsError as exc:
         print(str(exc))
         return 1
+    except ValueError as exc:
+        print(f"synapse encrypt-key generate: {exc}")
+        return 2
     print(f"wrote at-rest key (owner-only, 32 bytes): {written}")
     return 0
 
@@ -186,6 +214,29 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
 
     generate = nested.add_parser("generate", help="Write a fresh owner-only 32-byte key file.")
     generate.add_argument("path", help="Destination key-file path (must not already exist).")
+    generate.add_argument(
+        "--from-passphrase",
+        action="store_true",
+        help="Derive the key from a prompted passphrase via scrypt instead of random bytes.",
+    )
+    generate.add_argument(
+        "--scrypt-n",
+        type=int,
+        default=DEFAULT_SCRYPT_N,
+        help=f"scrypt CPU/memory cost, a power of two (default {DEFAULT_SCRYPT_N}).",
+    )
+    generate.add_argument(
+        "--scrypt-r",
+        type=int,
+        default=DEFAULT_SCRYPT_R,
+        help=f"scrypt block-size parameter (default {DEFAULT_SCRYPT_R}).",
+    )
+    generate.add_argument(
+        "--scrypt-p",
+        type=int,
+        default=DEFAULT_SCRYPT_P,
+        help=f"scrypt parallelisation parameter (default {DEFAULT_SCRYPT_P}).",
+    )
     generate.set_defaults(func=_cmd_generate)
 
     check = nested.add_parser("check", help="Verify a key file's ownership, mode, and length.")
