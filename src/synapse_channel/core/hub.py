@@ -83,6 +83,12 @@ from synapse_channel.core.multihub_serving import (
     live_peer_certificate_der,
 )
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
+from synapse_channel.core.operator_relay_forwarding import OperatorRelayForwarding
+from synapse_channel.core.operator_relay_transport import (
+    OperatorRelayPeer,
+    RelayForwarder,
+    relay_operator_action,
+)
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import (
     MessageType,
@@ -304,6 +310,18 @@ class SynapseHub:
     claim_forwarder : ClaimForwarder, optional
         The seam that forwards a claim to an owning hub; defaults to the network
         :func:`~synapse_channel.core.multihub_claim_transport.forward_claim`. Injected in tests.
+    relay_peers : Mapping[str, OperatorRelayPeer] or None, optional
+        How to reach each owning hub to relay a governed operator action into a namespace it
+        owns, keyed by owning hub id — separate from ``claim_peers`` because relaying a
+        force-release is more privileged than forwarding a claim. ``None`` (the default)
+        forwards no relay: an operator-relay frame for a namespace this hub does not own is
+        refused fail-closed. With an entry for the resolved owner, the relay is forwarded to
+        that hub and its verdict relayed to the requester, and the origin hub records an
+        outbound audit event so the relay is attributable on both hubs.
+    relay_forwarder : RelayForwarder, optional
+        The seam that relays an operator action to an owning hub; defaults to the network
+        :func:`~synapse_channel.core.operator_relay_transport.relay_operator_action`. Injected
+        in tests.
     observed_asserting_hubs : Callable[[str], Iterable[str]] or None, optional
         A runtime feed of the hub ids observed asserting authority over a namespace, consulted
         when resolving ownership so a partition — a peer seen owning a namespace this hub also
@@ -377,6 +395,8 @@ class SynapseHub:
         namespace_ownership: NamespaceOwnership | None = None,
         claim_peers: Mapping[str, ClaimForwardPeer] | None = None,
         claim_forwarder: ClaimForwarder = forward_claim,
+        relay_peers: Mapping[str, OperatorRelayPeer] | None = None,
+        relay_forwarder: RelayForwarder = relay_operator_action,
         observed_asserting_hubs: Callable[[str], Iterable[str]] | None = None,
         federation_bundle: FederationBundle | None = None,
         federation_cert_source: PeerCertificateSource = live_peer_certificate_der,
@@ -407,6 +427,8 @@ class SynapseHub:
         self.namespace_ownership = namespace_ownership
         self.claim_peers = dict(claim_peers) if claim_peers else None
         self.claim_forwarder = claim_forwarder
+        self.relay_peers = dict(relay_peers) if relay_peers else None
+        self.relay_forwarder = relay_forwarder
         self.observed_asserting_hubs = observed_asserting_hubs
         self.federation_bundle = federation_bundle
         self.federation_cert_source = federation_cert_source
@@ -505,6 +527,16 @@ class SynapseHub:
             claim_peers=self.claim_peers,
             claim_forwarder=self.claim_forwarder,
             hub_id=self.hub_id,
+            send_json=self._send_json,
+            system=self._system,
+        )
+        self._relay_forwarding = OperatorRelayForwarding(
+            namespace_ownership=self.namespace_ownership,
+            relay_peers=self.relay_peers,
+            relay_forwarder=self.relay_forwarder,
+            observed_asserting_hubs=self.observed_asserting_hubs,
+            hub_id=self.hub_id,
+            journal=self.journal,
             send_json=self._send_json,
             system=self._system,
         )
@@ -819,6 +851,9 @@ class SynapseHub:
         if not await self._authorise_claim_ownership(sender, msg_type, data, websocket):
             return
 
+        if not await self._route_operator_relay(sender, msg_type, data, websocket):
+            return
+
         await self._route(sender, msg_type, data, websocket)
 
     async def _authorise_federation(
@@ -864,6 +899,19 @@ class SynapseHub:
         kept because :meth:`handle_message` calls ``self._authorise_claim_ownership`` directly.
         """
         return await self._frame_gates.authorise_claim_ownership(sender, msg_type, data, websocket)
+
+    async def _route_operator_relay(
+        self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
+    ) -> bool:
+        """Route an operator-relay frame by ownership: apply locally, forward, or refuse.
+
+        Thin wrapper over
+        :meth:`~synapse_channel.core.operator_relay_forwarding.OperatorRelayForwarding.route`,
+        kept because :meth:`handle_message` calls ``self._route_operator_relay`` directly. Returns
+        ``True`` when the frame may proceed to the local serving handler (this hub owns the
+        namespace), ``False`` when it was forwarded to the owner or refused fail-closed.
+        """
+        return await self._relay_forwarding.route(sender, msg_type, data, websocket)
 
     async def _verify_per_message_auth(
         self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any

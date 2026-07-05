@@ -79,6 +79,11 @@ from synapse_channel.core.multihub_serving import (
     live_peer_certificate_der,
 )
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
+from synapse_channel.core.operator_relay_transport import (
+    OperatorRelayPeer,
+    RelayForwarder,
+    relay_operator_action,
+)
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
@@ -167,12 +172,14 @@ class HubMetricsConfig:
 
 @dataclass(frozen=True, kw_only=True)
 class MultiHubConfig:
-    """Multi-hub claim routing: serving policy, namespace ownership, forwarding."""
+    """Multi-hub routing: serving policy, namespace ownership, claim and relay forwarding."""
 
     multihub_serving_policy: MultiHubServingPolicy | None = None
     namespace_ownership: NamespaceOwnership | None = None
     claim_peers: Mapping[str, ClaimForwardPeer] | None = None
     claim_forwarder: ClaimForwarder = forward_claim
+    relay_peers: Mapping[str, OperatorRelayPeer] | None = None
+    relay_forwarder: RelayForwarder = relay_operator_action
     observed_asserting_hubs: Callable[[str], Iterable[str]] | None = None
 
 

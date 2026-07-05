@@ -133,6 +133,13 @@ def record_task_update(store: EventStore, claim: TaskClaim) -> None:
     store.append(EventKind.TASK_UPDATE, claim.as_dict(), durable=True)
 
 
+RELAY_DIRECTION_IN = "in"
+"""Audit ``direction`` on the hub that *applies* a relayed action (the owning hub)."""
+
+RELAY_DIRECTION_OUT = "out"
+"""Audit ``direction`` on the hub that *originates* a relay and forwards it to the owner."""
+
+
 def record_operator_relay(store: EventStore, provenance: Mapping[str, Any]) -> None:
     """Append a durable audit event for a governed cross-hub operator relay.
 
@@ -144,13 +151,20 @@ def record_operator_relay(store: EventStore, provenance: Mapping[str, Any]) -> N
     peer it arrived from, and the operator and origin hub it asserts — so a force-release
     performed on one hub's authority by another is attributable after the fact.
 
+    A relay leaves an audit trail on **both** hubs it touches, distinguished by the
+    ``direction`` field: :data:`RELAY_DIRECTION_OUT` on the origin hub that forwarded it
+    (recording the local requester and the destination owner) and
+    :data:`RELAY_DIRECTION_IN` on the owning hub that applied it (recording the verified
+    peer and the previous holder), so the two sides of one relay reconcile in the log.
+
     Parameters
     ----------
     store : EventStore
-        The receiving hub's durable event store.
+        The recording hub's durable event store.
     provenance : Mapping[str, Any]
-        The relay's audit fields (action, namespace, task id, verified peer, asserted
-        operator and origin hub, previous owner, whether it was applied, and a detail).
+        The relay's audit fields (action, namespace, task id, ``direction``, asserted
+        operator and origin hub, whether it was applied, and a detail; plus the verified
+        peer and previous owner inbound, or the local requester and destination outbound).
     """
     store.append(EventKind.OPERATOR_RELAY, dict(provenance), durable=True)
 

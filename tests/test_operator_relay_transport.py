@@ -21,6 +21,7 @@ from hub_e2e_helpers import running_hub
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.operator_relay_transport import (
+    OperatorRelayPeer,
     RelayTransportError,
     relay_operator_action,
 )
@@ -44,6 +45,14 @@ def _request(task_id: str = "t1") -> RelayActionRequest:
         operator="ops-admin",
         origin_hub_id="syn-a",
     )
+
+
+def test_operator_relay_peer_defaults_its_token_to_none() -> None:
+    open_peer = OperatorRelayPeer(uri="ws://owner/")
+    assert open_peer.uri == "ws://owner/"
+    assert open_peer.token is None
+    secured = OperatorRelayPeer(uri="wss://owner/", token="tok")
+    assert secured.token == "tok"
 
 
 def _wire(frame: dict[str, Any]) -> str:
