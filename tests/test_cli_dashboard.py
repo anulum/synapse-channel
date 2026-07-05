@@ -1305,6 +1305,30 @@ def test_cmd_dashboard_announces_every_configured_feed(
     assert "cockpit: http://127.0.0.1:8765/cockpit/" in out
 
 
+def test_cmd_dashboard_announces_operator_write_routes(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # With --operator the dispatcher must print the three write routes, so an
+    # operator sees exactly which mutating endpoints the armed dashboard exposes.
+    from synapse_channel import cli_dashboard
+
+    server = _FakeDashboardServer(token=None, generated=False)
+    monkeypatch.setattr(cli_dashboard, "start_dashboard_server", lambda **_: server)
+
+    def interrupt(_: float) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("synapse_channel.cli_dashboard.time.sleep", interrupt)
+    args = _dashboard_args(operator=True)
+    handler = args.func  # type: ignore[attr-defined]
+
+    assert int(handler(args)) == 0
+    out = capsys.readouterr().out
+    assert "operator write: POST http://127.0.0.1:8765/message" in out
+    assert "operator task: POST http://127.0.0.1:8765/task" in out
+    assert "operator task update: POST http://127.0.0.1:8765/task/update" in out
+
+
 def test_causality_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
     server = _feeds_server(reliability_db=tmp_path / "absent.db")
     try:
