@@ -45,11 +45,16 @@ function chipTitle(chip: DependencyChip): string {
 
 interface TaskRowProps {
   readonly task: BoardTask;
+  /** Opens the task detail drawer. */
+  readonly onInspect?: ((taskId: string) => void) | undefined;
 }
 
-function TaskRow({ task }: TaskRowProps): JSX.Element {
+function TaskRow({ task, onInspect }: TaskRowProps): JSX.Element {
   return (
-    <li className={`board-row board-row--${task.bucket}`}>
+    <li
+      className={`board-row board-row--${task.bucket}${onInspect !== undefined ? " board-row--link" : ""}`}
+      onClick={onInspect === undefined ? undefined : () => onInspect(task.taskId)}
+    >
       <span className="board-row__glyph" aria-hidden="true">
         {BUCKET_GLYPH[task.bucket]}
       </span>
@@ -94,9 +99,11 @@ interface TaskBoardProps {
   readonly connected: boolean;
   /** The hub's own board-cap statement; drives the "N of M" count. */
   readonly truncation?: BoardTruncation | undefined;
+  /** Opens the task detail drawer. */
+  readonly onInspect?: ((taskId: string) => void) | undefined;
 }
 
-function TaskBoardView({ tasks, connected, truncation }: TaskBoardProps): JSX.Element {
+function TaskBoardView({ tasks, connected, truncation, onInspect }: TaskBoardProps): JSX.Element {
   // The board query is panel-local: a fifty-task board needs finding, not
   // sharing, so it does not ride the URL the way the log's query does.
   const [query, setQuery] = useState<BoardQuery>(OPEN_BOARD_QUERY);
@@ -170,10 +177,10 @@ function TaskBoardView({ tasks, connected, truncation }: TaskBoardProps): JSX.El
         ) : (
           <ul className="board">
             {active.map((task) => (
-              <TaskRow key={task.taskId} task={task} />
+              <TaskRow key={task.taskId} task={task} onInspect={onInspect} />
             ))}
             {doneShown.map((task) => (
-              <TaskRow key={task.taskId} task={task} />
+              <TaskRow key={task.taskId} task={task} onInspect={onInspect} />
             ))}
             {doneOverflow > 0 && (
               <li className="board-row board-row--more">{`+${doneOverflow} more done`}</li>

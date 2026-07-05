@@ -20,7 +20,9 @@ import { PanelBoundary } from "./components/PanelBoundary";
 import { ReliabilityPanel } from "./components/ReliabilityPanel";
 import { RiskRail } from "./components/RiskRail";
 import { TaskBoard } from "./components/TaskBoard";
+import { DetailDrawer } from "./components/DetailDrawer";
 import { deriveAnomalies } from "./lib/anomalies";
+import { agentDetail, taskDetail } from "./lib/detail";
 import { boardTruncation, deriveBoard, deriveFindings } from "./lib/board";
 import { parseDeadLetters } from "./lib/deadLetters";
 import type { TimeWindow } from "./lib/brush";
@@ -137,6 +139,19 @@ export function App(): JSX.Element {
   // Phone-width segment: one deck section at a time; CSS ignores this above
   // 640px, where the whole deck renders as always.
   const [mobileSegment, setMobileSegment] = useState<MobileSegment>("signals");
+  // The detail drawer's subject: one agent or one task, or nothing.
+  const [inspected, setInspected] = useState<
+    { readonly kind: "agent" | "task"; readonly id: string } | null
+  >(null);
+  // A drawer's trace hop steers the inspector; the nonce re-fires same subjects.
+  const [traceRequest, setTraceRequest] = useState<
+    { readonly subject: string; readonly nonce: number } | undefined
+  >(undefined);
+
+  const onInspectAgent = useCallback((name: string) => setInspected({ kind: "agent", id: name }), []);
+  const onInspectTask = useCallback((taskId: string) => setInspected({ kind: "task", id: taskId }), []);
+  const onCloseDrawer = useCallback(() => setInspected(null), []);
+
   // Theme ladder: stored explicit choice, else the OS preference, else dark.
   const [theme, setTheme] = useState<Theme>(() =>
     resolveInitialTheme(localStorage, matchMedia("(prefers-color-scheme: light)").matches),
@@ -321,7 +336,7 @@ export function App(): JSX.Element {
         <div className="deck__stack deck__stack--roster">
           <div className="seg seg--roster">
             <PanelBoundary name="Fleet roster">
-              <FleetRoster roster={roster} waiters={waiters} />
+              <FleetRoster roster={roster} waiters={waiters} onInspect={onInspectAgent} />
             </PanelBoundary>
           </div>
           <div className="seg seg--reliability">
@@ -351,6 +366,7 @@ export function App(): JSX.Element {
                 connected={connected}
                 federation={federation}
                 metrics={metrics}
+                traceRequest={traceRequest}
               />
             </PanelBoundary>
           </div>
@@ -361,6 +377,7 @@ export function App(): JSX.Element {
               tasks={board}
               connected={connected}
               truncation={boardTruncation(snap.snapshot)}
+              onInspect={onInspectTask}
             />
           </PanelBoundary>
         </div>
@@ -382,6 +399,25 @@ export function App(): JSX.Element {
         </div>
       </div>
       <InstallChip />
+      <DetailDrawer
+        agent={
+          inspected?.kind === "agent"
+            ? agentDetail(inspected.id, roster, claims, deadLetters, log)
+            : undefined
+        }
+        task={
+          inspected?.kind === "task" ? taskDetail(inspected.id, board, claims, log) : undefined
+        }
+        onClose={onCloseDrawer}
+        onFilterLog={(text) => {
+          onQueryChange({ text, kinds: null, order: "newest", view: "flat" });
+          setInspected(null);
+        }}
+        onTrace={(taskId) => {
+          setTraceRequest((current) => ({ subject: taskId, nonce: (current?.nonce ?? 0) + 1 }));
+          setInspected(null);
+        }}
+      />
     </div>
   );
 }

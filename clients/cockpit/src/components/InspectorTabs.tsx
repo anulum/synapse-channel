@@ -6,7 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — tab switch between the signal log and the causality inspector
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { windowEdgeLabel, type TimeWindow } from "../lib/brush";
 import type { BranchConflictView, ClaimView } from "../lib/claims";
 import type { FederationState } from "../lib/federation";
@@ -45,6 +45,8 @@ interface InspectorTabsProps {
   readonly federation?: FederationState | undefined;
   /** The log-pulse metrics feed, for the metrics tab. */
   readonly metrics?: MetricsState | undefined;
+  /** External trace request (e.g. a drawer's hop); nonce forces re-fire. */
+  readonly traceRequest?: { readonly subject: string; readonly nonce: number } | undefined;
 }
 
 export function InspectorTabs({
@@ -60,6 +62,7 @@ export function InspectorTabs({
   connected = false,
   federation,
   metrics,
+  traceRequest,
 }: InspectorTabsProps): JSX.Element {
   const [tab, setTab] = useState<InspectorTab>("log");
   const [prefill, setPrefill] = useState<CausalityPrefill | null>(null);
@@ -70,6 +73,13 @@ export function InspectorTabs({
     setPrefill((current) => ({ subject: taskId, nonce: (current?.nonce ?? 0) + 1 }));
     setTab("causality");
   }, []);
+
+  // A drawer (or any outside caller) can steer the inspector the same way a
+  // log row does; the nonce lets the same subject fire twice.
+  useEffect(() => {
+    if (traceRequest === undefined) return;
+    onSelectTask(traceRequest.subject);
+  }, [traceRequest, onSelectTask]);
 
   return (
     <div className="inspector">

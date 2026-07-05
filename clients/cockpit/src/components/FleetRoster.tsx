@@ -41,9 +41,11 @@ function project(name: string): string {
 
 interface RosterRowProps {
   readonly entry: RosterEntry;
+  /** Opens the agent detail drawer. */
+  readonly onInspect?: ((name: string) => void) | undefined;
 }
 
-function RosterRow({ entry }: RosterRowProps): JSX.Element {
+function RosterRow({ entry, onInspect }: RosterRowProps): JSX.Element {
   const held = entry.paths.length;
   const shown = entry.paths.slice(0, PATHS_SHOWN);
   const overflow = held - shown.length;
@@ -51,7 +53,8 @@ function RosterRow({ entry }: RosterRowProps): JSX.Element {
 
   return (
     <li
-      className={`roster-row roster-row--${entry.status}${entry.online ? "" : " roster-row--offline"}`}
+      className={`roster-row roster-row--${entry.status}${entry.online ? "" : " roster-row--offline"}${onInspect !== undefined ? " roster-row--link" : ""}`}
+      onClick={onInspect === undefined ? undefined : () => onInspect(entry.agent)}
       title={`${entry.agent} — ${STATUS_WORD[entry.status]}${entry.online ? "" : " (offline)"}`}
     >
       <span className="roster-row__glyph" aria-hidden="true">
@@ -92,9 +95,11 @@ interface FleetRosterProps {
   readonly roster: readonly RosterEntry[];
   /** Number of `-rx` waiters folded out of the primary rows, if any. */
   readonly waiters: number;
+  /** Opens the agent detail drawer. */
+  readonly onInspect?: ((name: string) => void) | undefined;
 }
 
-function FleetRosterView({ roster, waiters }: FleetRosterProps): JSX.Element {
+function FleetRosterView({ roster, waiters, onInspect }: FleetRosterProps): JSX.Element {
   const live = roster.filter((entry) => entry.online).length;
 
   return (
@@ -110,7 +115,7 @@ function FleetRosterView({ roster, waiters }: FleetRosterProps): JSX.Element {
         ) : (
           <ul className="roster">
             {roster.map((entry) => (
-              <RosterRow key={entry.agent} entry={entry} />
+              <RosterRow key={entry.agent} entry={entry} onInspect={onInspect} />
             ))}
           </ul>
         )}
