@@ -23,7 +23,7 @@ the hub is down, and never invent state the disk cannot prove. Three feeds:
   hub-runtime state that no durable store carries, so the section ships empty
   with its absence stated rather than guessed.
 
-Five further store-derived feeds serve the cockpit's operational panels, all
+Six further store-derived feeds serve the cockpit's operational panels, all
 measured against the log's own timestamps (never the wall clock) so each is
 deterministic and available with the hub down: **metrics** (event counts by
 kind over trailing windows), **state-at** (coordination state reconstructed by
@@ -31,9 +31,10 @@ bounded replay to a sequence — whole-fleet time-travel), **merkle proof** (an
 inclusion proof for one event so a cockpit row can be verified against the
 attested tree root), **health anomalies** (orphaned, dangling, and stale
 coordination signals the causality graph makes visible — the honest hub-side
-alert surface), and **sessions** (the opt-in ``session_metric`` telemetry the
-fleet left in the log, each record indexed by ``seq`` for a cost-to-causality
-join).
+alert surface), **sessions** (the opt-in ``session_metric`` telemetry the fleet
+left in the log, each record indexed by ``seq`` for a cost-to-causality join),
+and **waits** (the pending coordination gates — non-terminal tasks blocked on
+dependencies that have not completed — reconstructed from the plan).
 """
 
 from __future__ import annotations
@@ -53,6 +54,7 @@ from synapse_channel.core.causality_health import (
 from synapse_channel.core.federation_store import load_store
 from synapse_channel.core.federation_wire import bundle_fingerprint
 from synapse_channel.core.journal import replay
+from synapse_channel.core.ledger import TERMINAL_LEDGER_STATUSES
 from synapse_channel.core.merkle import proof_to_json, run_proof
 from synapse_channel.core.multihub_wire import LogSnapshot, encode_log_snapshot
 from synapse_channel.core.persistence import EventStore
@@ -163,6 +165,71 @@ def build_state_at_feed(db_path: str | Path, *, seq: int) -> dict[str, object]:
         "note": (
             "claims and board reconstructed from the durable log up to as_of_seq; "
             "live presence/roster is not journalled and is omitted"
+        ),
+    }
+
+
+def build_waits_feed(db_path: str | Path) -> dict[str, object]:
+    """Report the coordination gates the plan is currently waiting on.
+
+    Reconstructs the board from the durable log and lists the pending gates: each
+    non-terminal task whose declared dependencies have not all reached a terminal
+    status, with **who** is waiting (the task's suggested owner, or whoever
+    declared it), **on** which dependency ids it is blocked, and **since** when it
+    was declared. This is the "what is the fleet stuck behind" panel — the gates
+    an operator clears by finishing a prerequisite.
+
+    Store-derived and deterministic like every store feed: the same log rebuilds
+    the same gates, dependency satisfaction is judged from the log's own recorded
+    task statuses, and it answers with the hub down. Honest scope: live socket
+    waiters (a client's ``-rx`` connection parked on the bus) are transient hub
+    state, never journalled, so they are omitted — this is the *coordination*
+    gates the durable plan can prove, not who currently holds a socket open.
+
+    Raises
+    ------
+    ValueError
+        If the event store does not exist.
+    """
+    path = Path(db_path)
+    if not path.exists():
+        msg = f"missing event store: {path}"
+        raise ValueError(msg)
+    store = EventStore(path)
+    try:
+        log_end_seq = store.max_seq()
+        as_of_ts = next((event.ts for event in reversed(store.read_since(0))), None)
+        result = replay(EventStore(path), up_to_seq=log_end_seq, now=as_of_ts)
+    finally:
+        store.close()
+    board = result.blackboard
+    waits: list[dict[str, object]] = []
+    for task in sorted(board.tasks.values(), key=lambda item: item.task_id):
+        if task.status in TERMINAL_LEDGER_STATUSES:
+            continue
+        blocking = board.blocking_dependencies(task.task_id)
+        if not blocking:
+            continue
+        waits.append(
+            {
+                "task_id": task.task_id,
+                "title": task.title,
+                "who": task.suggested_owner or task.created_by,
+                "on_what": blocking,
+                "since": task.created_at,
+                "status": task.status,
+            }
+        )
+    return {
+        "present": True,
+        "waits": waits,
+        "wait_count": len(waits),
+        "log_end_seq": log_end_seq,
+        "note": (
+            "pending coordination gates reconstructed from the durable log: "
+            "non-terminal tasks whose declared dependencies have not reached a "
+            "terminal status; transient socket waiters are not journalled and "
+            "are omitted"
         ),
     }
 

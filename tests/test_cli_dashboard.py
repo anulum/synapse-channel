@@ -21,7 +21,8 @@ import synapse_channel.dashboard as dashboard_module
 from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
 from synapse_channel import cli
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.journal import EventKind
+from synapse_channel.core.journal import EventKind, record_ledger_task
+from synapse_channel.core.ledger import LedgerTask
 from synapse_channel.core.merkle import proof_from_json, verify_inclusion
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.dashboard import (
@@ -990,6 +991,68 @@ def test_sessions_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
     server = _feeds_server(reliability_db=tmp_path / "absent.db")
     try:
         status, _, body = _http_get(server.url("/sessions.json"))
+    finally:
+        server.close()
+
+    assert status == 503
+    assert "missing event store" in body
+
+
+def _seed_waits_store(db: Path) -> None:
+    store = EventStore(db)
+    record_ledger_task(
+        store,
+        LedgerTask(task_id="PENDING", title="prereq", created_at=1.0, updated_at=1.0),
+    )
+    record_ledger_task(
+        store,
+        LedgerTask(
+            task_id="BLOCKED",
+            title="ship it",
+            created_at=2.0,
+            updated_at=2.0,
+            depends_on=("PENDING",),
+            suggested_owner="amy",
+        ),
+    )
+    store.close()
+
+
+def test_waits_feed_reports_absence_without_a_store() -> None:
+    server = _feeds_server()
+    try:
+        status, _, body = _http_get(server.url("/waits.json"))
+    finally:
+        server.close()
+
+    assert status == 404
+    assert "--feeds-db" in body
+
+
+def test_waits_feed_serves_the_gates_with_the_hub_down(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_waits_store(db)
+
+    server = _feeds_server(reliability_db=db)
+    try:
+        status, content_type, body = _http_get(server.url("/waits.json"))
+    finally:
+        server.close()
+
+    assert status == 200
+    assert content_type == "application/json"
+    payload = json.loads(body)
+    assert payload["wait_count"] == 1
+    gate = payload["waits"][0]
+    assert gate["task_id"] == "BLOCKED"
+    assert gate["who"] == "amy"
+    assert gate["on_what"] == ["PENDING"]
+
+
+def test_waits_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
+    server = _feeds_server(reliability_db=tmp_path / "absent.db")
+    try:
+        status, _, body = _http_get(server.url("/waits.json"))
     finally:
         server.close()
 

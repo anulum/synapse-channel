@@ -62,6 +62,7 @@ from synapse_channel.dashboard_store_feeds import (
     build_metrics_feed,
     build_sessions_feed,
     build_state_at_feed,
+    build_waits_feed,
     latest_cursor,
 )
 from synapse_channel.dashboard_studio import (
@@ -500,6 +501,9 @@ FEDERATION_PATH = "/federation.json"
 SESSIONS_PATH = "/sessions.json"
 """Read-only endpoint reporting opt-in session telemetry left in the durable log."""
 
+WAITS_PATH = "/waits.json"
+"""Read-only endpoint listing pending coordination gates — tasks blocked on deps."""
+
 COCKPIT_DIST_PREFIX = "/cockpit/"
 """URL prefix under which an operator-named cockpit build directory is served."""
 
@@ -684,6 +688,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         if path == SESSIONS_PATH:
             self._serve_sessions()
+            return
+        if path == WAITS_PATH:
+            self._serve_waits()
             return
         if path.startswith(COCKPIT_DIST_PREFIX) or path == COCKPIT_DIST_PREFIX.rstrip("/"):
             self._serve_cockpit_dist(path)
@@ -1103,6 +1110,34 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         try:
             document = build_sessions_feed(self.reliability_db)
+        except ValueError as exc:
+            self._write(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                f"{exc}\n".encode(),
+                content_type="text/plain",
+            )
+            return
+        self._write_json(document)
+
+    def _serve_waits(self) -> None:
+        """Serve the pending coordination gates, or their honest absence.
+
+        Lists the non-terminal tasks blocked on dependencies that have not
+        completed — who is waiting, on which dependency ids, and since when —
+        reconstructed from the durable log. Same posture as the other store
+        feeds: 404 without ``--feeds-db``, 503 on an unreadable store. Transient
+        socket waiters are not journalled and are omitted; this is the
+        coordination gates the plan can prove.
+        """
+        if self.reliability_db is None:
+            self._write(
+                HTTPStatus.NOT_FOUND,
+                b"waits feed not configured; start the dashboard with --feeds-db\n",
+                content_type="text/plain",
+            )
+            return
+        try:
+            document = build_waits_feed(self.reliability_db)
         except ValueError as exc:
             self._write(
                 HTTPStatus.SERVICE_UNAVAILABLE,
