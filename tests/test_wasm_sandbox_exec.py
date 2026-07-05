@@ -53,6 +53,23 @@ def test_a_well_behaved_tool_runs_and_is_receipted() -> None:
     assert receipt["content_digest"] == _DIGEST
 
 
+def test_run_records_the_resolved_preopened_paths(tmp_path: Path) -> None:
+    # A filesystem grant is preopened as its canonical real directory, and the receipt records
+    # exactly where the sandbox reached — resolved, not the manifest's literal string.
+    work = tmp_path / "work"
+    work.mkdir()
+    host = str(work.resolve())  # already canonical, so it survives host-path hardening
+    manifest = CapabilityManifest(
+        tool_id="calc",
+        content_digest=_DIGEST,
+        resources=ResourceGrant(memory_bytes=1 << 20, fuel=1_000_000, wall_clock_ms=2_000),
+        filesystem=(FilesystemGrant(host_path=host, guest_path="/data", write=False),),
+    )
+    receipt = run_sandboxed(manifest, _RUN_42, b"")
+    assert receipt["exit"] == EXIT_OK
+    assert receipt["preopened_paths"] == [host]
+
+
 def test_a_fuel_bomb_is_stopped() -> None:
     receipt = run_sandboxed(_manifest(fuel=5_000), _SPIN, b"")
     assert receipt["exit"] == EXIT_OUT_OF_FUEL

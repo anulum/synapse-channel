@@ -28,9 +28,10 @@ from __future__ import annotations
 import importlib
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol, cast
 
+from synapse_channel.core.sandbox_paths import SandboxPathError, harden_preopens
 from synapse_channel.core.sandbox_policy import CapabilityManifest
 from synapse_channel.core.sandbox_receipt import (
     EXIT_EPOCH_DEADLINE,
@@ -234,7 +235,23 @@ def run_sandboxed(
     """
     wasm = runtime or _require_wasm()
     config = derive_runtime_config(manifest)
-    exit_token, output, reason, fuel_used = _execute(wasm, config, wasm_bytes, entrypoint)
+    try:
+        hardened = harden_preopens(config.preopens)
+    except SandboxPathError as exc:
+        # A grant whose host path resolves through a symlink, or is not a directory, is
+        # refused before the tool runs — the sandbox never preopens a moving target.
+        return build_run_receipt(
+            manifest=manifest,
+            inputs=inputs,
+            output=b"",
+            exit=EXIT_ERROR,
+            fuel_used=0,
+            reason=f"sandbox path refused: {exc}",
+            preopened_paths=[],
+        )
+    exit_token, output, reason, fuel_used = _execute(
+        wasm, replace(config, preopens=hardened), wasm_bytes, entrypoint
+    )
     return build_run_receipt(
         manifest=manifest,
         inputs=inputs,
@@ -242,4 +259,5 @@ def run_sandboxed(
         exit=exit_token,
         fuel_used=fuel_used,
         reason=reason,
+        preopened_paths=sorted(host for host, _guest, _write in hardened),
     )

@@ -94,6 +94,7 @@ def test_build_run_receipt_carries_digests_and_outcome() -> None:
     assert receipt["exit"] == EXIT_OK and receipt["fuel_used"] == 17
     assert receipt["reason"] == ""
     assert receipt["granted_capabilities"] == granted_capabilities(_MANIFEST)
+    assert receipt["preopened_paths"] == []  # defaults empty when none is recorded
 
 
 def test_build_preflight_report_passes_when_everything_lines_up() -> None:

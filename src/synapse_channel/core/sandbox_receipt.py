@@ -21,6 +21,7 @@ module names no runtime and does no execution. The runtime that produces them li
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Sequence
 from typing import TypedDict
 
 from synapse_channel.core.sandbox_policy import CapabilityManifest
@@ -45,6 +46,7 @@ class RunReceipt(TypedDict):
     content_digest: str
     inputs_digest: str
     granted_capabilities: list[str]
+    preopened_paths: list[str]
     exit: str
     output_digest: str
     fuel_used: int
@@ -76,13 +78,21 @@ def build_run_receipt(
     exit: str,
     fuel_used: int,
     reason: str = "",
+    preopened_paths: Sequence[str] = (),
 ) -> RunReceipt:
-    """Assemble a :class:`RunReceipt` from a run's inputs, output, and outcome."""
+    """Assemble a :class:`RunReceipt` from a run's inputs, output, and outcome.
+
+    ``preopened_paths`` records the canonical host directories the run actually preopened,
+    after symlink resolution (:mod:`synapse_channel.core.sandbox_paths`) — the audit trail of
+    where on the host the sandbox reached, resolved rather than as the manifest's literal
+    strings. It is empty for a run that grants no filesystem, or one refused before it executed.
+    """
     return RunReceipt(
         tool_id=manifest.tool_id,
         content_digest=manifest.content_digest,
         inputs_digest=digest_bytes(inputs),
         granted_capabilities=granted_capabilities(manifest),
+        preopened_paths=list(preopened_paths),
         exit=exit,
         output_digest=digest_bytes(output),
         fuel_used=fuel_used,

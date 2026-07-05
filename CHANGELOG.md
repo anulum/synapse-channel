@@ -14,6 +14,14 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Security
+- The WebAssembly sandbox now canonicalises a filesystem grant's host path before it
+  preopens it, and refuses the run fail-closed if the path resolves through a symlink or
+  is not an existing directory. A host path is resolved on disk at run time, so a symlink
+  swapped into a granted path between manifest authoring and execution could have
+  redirected a preopen to a directory the operator never granted; the sandbox now preopens
+  the resolved real directory and records it in the run receipt's new `preopened_paths`
+  field, so the run reaches exactly the directory the receipt shows and no moving target.
+  New `core.sandbox_paths` (`resolve_preopen_host`, `harden_preopens`).
 - `SECURITY.md` no longer describes at-rest encryption as unimplemented. The at-rest
   encryption runtime (envelope encryption of SQLite stores, WAL/SHM sidecars, relay
   logs, A2A state, archives, and backups; scrypt/PKCS#11/TPM2 key-encryption backends;
