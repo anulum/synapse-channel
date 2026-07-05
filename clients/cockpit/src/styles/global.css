@@ -2386,3 +2386,24 @@ body {
     padding: 4px var(--sp-2);
   }
 }
+
+/* ---------- theme toggle ---------- */
+.hud__theme {
+  min-height: 28px;
+  padding: 2px var(--sp-3);
+  margin-right: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+
+.hud__theme:hover {
+  color: var(--ink);
+  border-color: var(--muted);
+}
