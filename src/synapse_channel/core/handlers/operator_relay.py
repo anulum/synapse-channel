@@ -133,10 +133,15 @@ def _authorise(
     """
     ownership = hub.namespace_ownership
     owns_namespace = ownership is not None and ownership.resolve(request.namespace).grants_locally
+    require_reason = hub.require_relay_reason
     policy = hub.multihub_serving_policy
     if policy is None:
         return authorise_relay(
-            request, peer_authorised=False, scope=(), owns_namespace=owns_namespace
+            request,
+            peer_authorised=False,
+            scope=(),
+            owns_namespace=owns_namespace,
+            require_reason=require_reason,
         )
     authorisation = policy.authorise(sender=sender, websocket=websocket)
     return authorise_relay(
@@ -144,6 +149,7 @@ def _authorise(
         peer_authorised=authorisation.allowed,
         scope=authorisation.scope,
         owns_namespace=owns_namespace,
+        require_reason=require_reason,
     )
 
 
@@ -171,6 +177,8 @@ def _apply_release(hub: SynapseHub, sender: str, request: RelayActionRequest) ->
                 "peer": sender,
                 "operator": request.operator,
                 "origin_hub_id": request.origin_hub_id,
+                "reason": request.reason,
+                "break_glass": request.break_glass,
                 "previous_owner": previous_owner,
                 "applied": True,
                 "detail": detail,

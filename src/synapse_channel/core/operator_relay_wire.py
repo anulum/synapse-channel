@@ -51,6 +51,12 @@ OPERATOR_FIELD = "operator"
 ORIGIN_HUB_ID_FIELD = "origin_hub_id"
 """Request field: the hub id the relay asserts it originates from, recorded for audit."""
 
+REASON_FIELD = "reason"
+"""Request field: the operator's reason for the relay, recorded on both hubs; may be empty."""
+
+BREAK_GLASS_FIELD = "break_glass"
+"""Request field: whether the relay is tagged as a break-glass emergency override."""
+
 APPLIED_FIELD = "applied"
 """Result field: whether the acting hub applied the action."""
 
@@ -89,6 +95,13 @@ class RelayActionRequest:
     origin_hub_id : str
         The hub id the relay asserts it originates from, recorded for audit alongside the
         cryptographically verified peer identity. Non-empty.
+    reason : str, optional
+        The operator's reason for the relay, recorded in the audit on both hubs. Empty by
+        default; a hub may refuse a relay without one when it requires a reason (reason-required
+        receipts). Not an identifier, so it is carried as-is, blank or not.
+    break_glass : bool, optional
+        Whether the relay is tagged a break-glass emergency override, recorded distinctly in the
+        audit so an out-of-band, urgent action stands apart from routine governance in the log.
     """
 
     action: str
@@ -96,6 +109,8 @@ class RelayActionRequest:
     task_id: str
     operator: str
     origin_hub_id: str
+    reason: str = ""
+    break_glass: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +155,8 @@ def encode_relay_request(request: RelayActionRequest) -> dict[str, Any]:
         TASK_ID_FIELD: _require_nonempty(request.task_id, TASK_ID_FIELD),
         OPERATOR_FIELD: _require_nonempty(request.operator, OPERATOR_FIELD),
         ORIGIN_HUB_ID_FIELD: _require_nonempty(request.origin_hub_id, ORIGIN_HUB_ID_FIELD),
+        REASON_FIELD: str(request.reason),
+        BREAK_GLASS_FIELD: bool(request.break_glass),
     }
 
 
@@ -152,12 +169,18 @@ def decode_relay_request(raw: object) -> RelayActionRequest:
         If the body is not a mapping or an identifier field is missing, non-string, or empty.
     """
     body = _require_mapping(raw, "request")
+    raw_reason = body.get(REASON_FIELD)
+    raw_break_glass = body.get(BREAK_GLASS_FIELD)
     return RelayActionRequest(
         action=_require_nonempty(body.get(ACTION_FIELD), ACTION_FIELD),
         namespace=_require_nonempty(body.get(NAMESPACE_FIELD), NAMESPACE_FIELD),
         task_id=_require_nonempty(body.get(TASK_ID_FIELD), TASK_ID_FIELD),
         operator=_require_nonempty(body.get(OPERATOR_FIELD), OPERATOR_FIELD),
         origin_hub_id=_require_nonempty(body.get(ORIGIN_HUB_ID_FIELD), ORIGIN_HUB_ID_FIELD),
+        reason="" if raw_reason is None else _require_str(raw_reason, REASON_FIELD),
+        break_glass=(
+            False if raw_break_glass is None else _require_bool(raw_break_glass, BREAK_GLASS_FIELD)
+        ),
     )
 
 

@@ -55,6 +55,38 @@ def test_request_round_trips() -> None:
     assert decode_relay_request(encode_relay_request(request)) == request
 
 
+def test_request_carries_reason_and_break_glass() -> None:
+    request = _request(reason="freeing a wedged release", break_glass=True)
+    decoded = decode_relay_request(encode_relay_request(request))
+    assert decoded == request
+    assert decoded.reason == "freeing a wedged release"
+    assert decoded.break_glass is True
+
+
+def test_decode_request_defaults_absent_reason_and_break_glass() -> None:
+    # An older initiator that never sends the fields decodes to the safe defaults.
+    body = encode_relay_request(_request())
+    del body["reason"]
+    del body["break_glass"]
+    decoded = decode_relay_request(body)
+    assert decoded.reason == ""
+    assert decoded.break_glass is False
+
+
+def test_decode_request_rejects_a_non_string_reason() -> None:
+    body = encode_relay_request(_request())
+    body["reason"] = 7
+    with pytest.raises(RelayWireError, match="reason must be a string"):
+        decode_relay_request(body)
+
+
+def test_decode_request_rejects_a_non_boolean_break_glass() -> None:
+    body = encode_relay_request(_request())
+    body["break_glass"] = "yes"
+    with pytest.raises(RelayWireError, match="break_glass must be a boolean"):
+        decode_relay_request(body)
+
+
 def test_result_round_trips() -> None:
     result = _result()
     assert decode_relay_result(encode_relay_result(result)) == result

@@ -69,6 +69,8 @@ def _cmd_relay(args: argparse.Namespace, *, relayer: Relayer = relay_operator_ac
         task_id=args.task,
         operator=args.operator or _default_operator(),
         origin_hub_id=args.local_id,
+        reason=args.reason or "",
+        break_glass=args.break_glass,
     )
     try:
         result = asyncio.run(
@@ -135,6 +137,17 @@ def add_relay_parser(group: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Origin identity stamped on the relay; must match a grant on the peer's policy.",
     )
     relay.add_argument("--peer-token", default=None, help="Token for a secured peer hub.")
+    relay.add_argument(
+        "--reason",
+        default=None,
+        help="Why the action is relayed, recorded in the audit on both hubs. A hub started "
+        "with reason-required receipts refuses a relay without one.",
+    )
+    relay.add_argument(
+        "--break-glass",
+        action="store_true",
+        help="Tag the relay a break-glass emergency override, marked distinctly in the audit.",
+    )
     relay.add_argument(
         "--timeout",
         type=float,

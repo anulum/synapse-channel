@@ -104,7 +104,9 @@ async def _connect(uri: str, name: str) -> ClientConnection:
     return websocket
 
 
-def _request(*, task_id: str = "t1", operator: str = "ops-admin") -> RelayActionRequest:
+def _request(
+    *, task_id: str = "t1", operator: str = "ops-admin", reason: str = "", break_glass: bool = False
+) -> RelayActionRequest:
     """A relay request as a local agent sends it, asserting an origin id the hub must override."""
     return RelayActionRequest(
         action="release",
@@ -112,6 +114,8 @@ def _request(*, task_id: str = "t1", operator: str = "ops-admin") -> RelayAction
         task_id=task_id,
         operator=operator,
         origin_hub_id="agent-asserted-origin",
+        reason=reason,
+        break_glass=break_glass,
     )
 
 
@@ -139,16 +143,19 @@ async def test_forwards_a_remote_owned_relay_and_relays_the_applied_verdict(tmp_
     journal = EventStore(tmp_path / "events.db")
     hub = _edge_hub(forwarder, journal=journal)
     async with running_hub(hub) as (_, uri):
-        reply = await _relay(uri, _request())
+        reply = await _relay(uri, _request(reason="wedged by a crash", break_glass=True))
     result = decode_relay_result(reply)
     assert result.applied is True
     assert result.owner_hub_id == _OWNER
-    # Forwarded with this hub stamped as origin and sender, the operator preserved, over the route.
+    # Forwarded with this hub stamped as origin and sender, the operator, reason, and break-glass
+    # tag preserved, over the route.
     forwarded, peer_uri, local_id, token = forwarder.calls[0]
     assert forwarded.origin_hub_id == _EDGE  # the agent-asserted origin was overridden
     assert forwarded.operator == "ops-admin"
     assert forwarded.namespace == _NAMESPACE
     assert forwarded.task_id == "t1"
+    assert forwarded.reason == "wedged by a crash"
+    assert forwarded.break_glass is True
     assert peer_uri == "ws://owner/"
     assert local_id == _EDGE
     assert token == "tok"
@@ -158,6 +165,8 @@ async def test_forwards_a_remote_owned_relay_and_relays_the_applied_verdict(tmp_
     assert audit["agent"] == _AGENT
     assert audit["owner_hub_id"] == _OWNER
     assert audit["origin_hub_id"] == _EDGE
+    assert audit["reason"] == "wedged by a crash"
+    assert audit["break_glass"] is True
     assert audit["applied"] is True
 
 

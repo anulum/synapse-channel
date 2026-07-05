@@ -120,6 +120,25 @@ def test_relay_forwards_the_request_fields_and_local_id() -> None:
     assert captured["kwargs"]["token"] == "tok"
 
 
+def test_relay_forwards_the_reason_and_break_glass_tag() -> None:
+    captured: dict[str, Any] = {}
+    rc = cli_relay._cmd_relay(
+        _args("--reason", "freeing a wedged release", "--break-glass"),
+        relayer=_relayer(_applied(), captured=captured),
+    )
+    assert rc == 0
+    request: RelayActionRequest = captured["request"]
+    assert request.reason == "freeing a wedged release"
+    assert request.break_glass is True
+
+
+def test_relay_defaults_the_reason_empty_and_break_glass_off() -> None:
+    captured: dict[str, Any] = {}
+    cli_relay._cmd_relay(_args(), relayer=_relayer(_applied(), captured=captured))
+    assert captured["request"].reason == ""
+    assert captured["request"].break_glass is False
+
+
 def test_relay_defaults_the_operator_to_the_os_user(monkeypatch: pytest.MonkeyPatch) -> None:
     # Patch the getpass module the CLI resolves the default operator through.
     monkeypatch.setattr(getpass, "getuser", lambda: "logged-in-user")

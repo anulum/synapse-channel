@@ -180,6 +180,7 @@ class MultiHubConfig:
     claim_forwarder: ClaimForwarder = forward_claim
     relay_peers: Mapping[str, OperatorRelayPeer] | None = None
     relay_forwarder: RelayForwarder = relay_operator_action
+    require_relay_reason: bool = False
     observed_asserting_hubs: Callable[[str], Iterable[str]] | None = None
 
 
