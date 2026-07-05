@@ -49,6 +49,8 @@ import {
 } from "./lib/snapshot";
 import { createSnapshotEventSource } from "./lib/spineEvents";
 import { fetchStateAt, type FleetStateAt } from "./lib/stateAt";
+import { focusClaims, focusTasks } from "./lib/focus";
+import { readPref, writePref } from "./lib/prefs";
 import { factsOf, toastsBetween, type FleetFacts, type Toast } from "./lib/toasts";
 import type { CockpitEvent, EventSource } from "./types";
 
@@ -201,6 +203,28 @@ export function App(): JSX.Element {
   const onInspectAgent = useCallback((name: string) => setInspected({ kind: "agent", id: name }), []);
   const onInspectTask = useCallback((taskId: string) => setInspected({ kind: "task", id: taskId }), []);
   const onCloseDrawer = useCallback(() => setInspected(null), []);
+
+  // The focus lens and density are small persisted preferences, same
+  // storage discipline as the theme (a throwing storage costs persistence).
+  const [focus, setFocus] = useState<string>(() => readPref(localStorage, "cockpit-focus") ?? "");
+  const onFocusChange = useCallback((next: string) => {
+    setFocus(next);
+    writePref(localStorage, "cockpit-focus", next);
+  }, []);
+  const [density, setDensity] = useState<"cozy" | "compact">(() =>
+    readPref(localStorage, "cockpit-density") === "compact" ? "compact" : "cozy",
+  );
+  const onToggleDensity = useCallback(() => {
+    setDensity((current) => {
+      const next = current === "cozy" ? "compact" : "cozy";
+      writePref(localStorage, "cockpit-density", next);
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    if (density === "compact") document.documentElement.setAttribute("data-density", "compact");
+    else document.documentElement.removeAttribute("data-density");
+  }, [density]);
 
   // Theme ladder: stored explicit choice, else the OS preference, else dark.
   const [theme, setTheme] = useState<Theme>(() =>
@@ -360,6 +384,9 @@ export function App(): JSX.Element {
   // Advisory conflicts are a live computation, not journalled — none in the past.
   const conflicts = travelling ? [] : liveConflicts;
   const board = travelling && travelState !== null ? travelState.tasks : liveBoard;
+  // The focus lens narrows whatever is shown — live or reconstructed alike.
+  const lensedClaims = useMemo(() => focusClaims(claims, focus), [claims, focus]);
+  const lensedBoard = useMemo(() => focusTasks(board, claims, focus), [board, claims, focus]);
   const findings = useMemo(() => deriveFindings(snap.snapshot), [snap.snapshot]);
   const anomalies = useMemo(() => deriveAnomalies(log), [log]);
   const deadLetters = useMemo(() => parseDeadLetters(snap.snapshot), [snap.snapshot]);
@@ -411,6 +438,11 @@ export function App(): JSX.Element {
         onSelect={onSelectKpi}
         theme={theme}
         onToggleTheme={onToggleTheme}
+        focus={focus}
+        onFocusChange={onFocusChange}
+        rosterNames={roster.map((entry) => entry.agent)}
+        density={density}
+        onToggleDensity={onToggleDensity}
       />
       <PanelBoundary name="Activity spine">
         <ActivitySpine
@@ -448,7 +480,7 @@ export function App(): JSX.Element {
         <div className="deck__stack">
           <div className="seg seg--claims">
             <PanelBoundary name="Claims">
-              <ClaimsBoard claims={claims} conflicts={conflicts} connected={connected} />
+              <ClaimsBoard claims={lensedClaims} conflicts={conflicts} connected={connected} lens={focus} />
             </PanelBoundary>
           </div>
           <div className="seg seg--signals">
@@ -474,10 +506,11 @@ export function App(): JSX.Element {
         <div className="seg seg--board">
           <PanelBoundary name="Board">
             <TaskBoard
-              tasks={board}
+              tasks={lensedBoard}
               connected={connected}
               truncation={travelling ? undefined : boardTruncation(snap.snapshot)}
               onInspect={onInspectTask}
+              lens={focus}
             />
           </PanelBoundary>
         </div>

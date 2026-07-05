@@ -2709,3 +2709,51 @@ body {
   background: none;
   border-style: dashed;
 }
+
+/* ---------- focus lens picker ---------- */
+.hud__focus {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.hud__focus-input {
+  width: 150px;
+  background: var(--abyss);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  padding: 4px var(--sp-2);
+}
+
+.hud__focus--on .hud__focus-input {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+/* ---------- compact density ---------- */
+:root[data-density="compact"] {
+  --fs-micro: 9px;
+  --fs-tiny: 10px;
+  --fs-small: 11px;
+  --fs-body: 12px;
+  --sp-2: 6px;
+  --sp-3: 9px;
+}
+
+:root[data-density="compact"] .panel__head {
+  height: 24px;
+}
+
+:root[data-density="compact"] .log td {
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+
+:root[data-density="compact"] .roster-row,
+:root[data-density="compact"] .board-row {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}

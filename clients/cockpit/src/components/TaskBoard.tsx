@@ -9,6 +9,7 @@
 import { memo, useState } from "react";
 
 import type { BoardBucket, BoardTask, BoardTruncation, DependencyChip } from "../lib/board";
+import { renderBoardReport } from "../lib/boardReport";
 import {
   boardQueryConstrained,
   bucketCounts,
@@ -101,9 +102,11 @@ interface TaskBoardProps {
   readonly truncation?: BoardTruncation | undefined;
   /** Opens the task detail drawer. */
   readonly onInspect?: ((taskId: string) => void) | undefined;
+  /** The active focus lens ("" = off), stated in the head. */
+  readonly lens?: string;
 }
 
-function TaskBoardView({ tasks, connected, truncation, onInspect }: TaskBoardProps): JSX.Element {
+function TaskBoardView({ tasks, connected, truncation, onInspect, lens = "" }: TaskBoardProps): JSX.Element {
   // The board query is panel-local: a fifty-task board needs finding, not
   // sharing, so it does not ride the URL the way the log's query does.
   const [query, setQuery] = useState<BoardQuery>(OPEN_BOARD_QUERY);
@@ -128,6 +131,7 @@ function TaskBoardView({ tasks, connected, truncation, onInspect }: TaskBoardPro
         >
           {capped ? `${tasks.length} of ${truncation.totalTasks}` : tasks.length}
         </span>
+        {lens !== "" && <span className="panel__sub panel__sub--warn">{`lens: ${lens}`}</span>}
         {constrained && (
           <span className="panel__sub">{`${shown.length} of ${tasks.length} shown`}</span>
         )}
@@ -166,6 +170,30 @@ function TaskBoardView({ tasks, connected, truncation, onInspect }: TaskBoardPro
             reset
           </button>
         )}
+        <button
+          type="button"
+          className="board-chip"
+          disabled={shown.length === 0}
+          onClick={() => {
+            const scope = [
+              lens === "" ? "" : `focus ${lens}`,
+              constrained ? "board query applied" : "",
+            ]
+              .filter((part) => part !== "")
+              .join(" · ");
+            const report = renderBoardReport(shown, scope === "" ? "full board" : scope, new Date().toISOString());
+            const blob = new Blob([report], { type: "text/markdown" });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = "board-report.md";
+            anchor.click();
+            URL.revokeObjectURL(url);
+          }}
+          title="Download the shown board as a Markdown report (scope stated inside)"
+        >
+          report
+        </button>
       </div>
       <div className="panel__body">
         {!connected ? (
