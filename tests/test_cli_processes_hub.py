@@ -24,6 +24,7 @@ from synapse_channel.core.hub import (
     InsecureBindError,
     SynapseHub,
 )
+from synapse_channel.core.hub_config import HubConfig, config_fingerprint
 from synapse_channel.core.ratelimit import RateLimiter
 
 
@@ -65,6 +66,27 @@ def test_cmd_hub_threads_insecure_off_loopback() -> None:
         == 0
     )
     assert built["insecure_off_loopback"] is True
+
+
+def test_cmd_hub_stamps_the_config_epoch_from_its_arguments() -> None:
+    # The CLI constructs SynapseHub(...) directly, which does not run from_config,
+    # so config_epoch would be empty and the pinning indicator inert. The command
+    # must stamp it from the flat arguments it assembled.
+    hubs: list[SynapseHub] = []
+    kwargs_seen: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        kwargs_seen.update(kwargs)
+        hub = SynapseHub(**kwargs)
+        hubs.append(hub)
+        return hub
+
+    assert (
+        cli_processes._cmd_hub(_hub_ns(max_clients=17), runner=_close_runner, hub_factory=build_hub)
+        == 0
+    )
+    assert hubs[0].config_epoch != ""  # not the inert empty default
+    assert hubs[0].config_epoch == config_fingerprint(HubConfig.from_kwargs(kwargs_seen))
 
 
 def test_cmd_hub_with_db_opens_and_closes_event_store(tmp_path: Path) -> None:

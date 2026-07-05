@@ -192,3 +192,35 @@ class TestConfigFingerprint:
         assert configured.config_epoch == config_fingerprint(config)
         # A bare construction was not built from a record, so it carries no epoch.
         assert SynapseHub().config_epoch == ""
+
+
+class TestFromKwargs:
+    def test_round_trips_with_to_kwargs_on_the_full_key_set(self) -> None:
+        original = HubConfig(
+            hub_id="rt",
+            limits=HubLimits(max_clients=17, max_history=9),
+            auth=HubAuthConfig(require_acl=True, auth_timeout=4.0),
+            metrics=HubMetricsConfig(enable_metrics=True, metrics_token="t"),
+        )
+        assert HubConfig.from_kwargs(original.to_kwargs()) == original
+
+    def test_regroups_a_partial_flat_kwarg_set_filling_defaults(self) -> None:
+        # The CLI hands over only the subset it assembled; the rest must default.
+        config = HubConfig.from_kwargs(
+            {"max_clients": 42, "require_acl": True, "hub_id": "cli", "enable_metrics": True}
+        )
+        assert config.limits.max_clients == 42
+        assert config.auth.require_acl is True
+        assert config.metrics.enable_metrics is True
+        assert config.hub_id == "cli"
+        # An unspecified field keeps its family default.
+        assert config.limits.max_history == HubLimits().max_history
+
+    def test_an_unknown_key_is_rejected(self) -> None:
+        with pytest.raises(TypeError):
+            HubConfig.from_kwargs({"not_a_hub_parameter": 1})
+
+    def test_fingerprint_of_the_regrouped_record_matches_the_original(self) -> None:
+        original = HubConfig(limits=HubLimits(max_clients=8), auth=HubAuthConfig(require_acl=True))
+        regrouped = HubConfig.from_kwargs(original.to_kwargs())
+        assert config_fingerprint(regrouped) == config_fingerprint(original)
