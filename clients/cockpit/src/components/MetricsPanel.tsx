@@ -9,6 +9,7 @@
 import { memo } from "react";
 
 import { orderKindCounts, type MetricsState, type MetricsWindow } from "../lib/metrics";
+import type { SessionsState } from "../lib/sessions";
 
 /** Kind → semantic colour class, matching the spine's palette discipline. */
 function kindClass(kind: string): string {
@@ -74,9 +75,11 @@ function WindowBlock({ name, window }: WindowBlockProps): JSX.Element {
 interface MetricsPanelProps {
   /** The log-pulse feed's current state, including how it was obtained. */
   readonly state: MetricsState;
+  /** The sessions/cost feed, rendered under the log pulse when served. */
+  readonly sessions?: SessionsState | undefined;
 }
 
-function MetricsPanelView({ state }: MetricsPanelProps): JSX.Element {
+function MetricsPanelView({ state, sessions }: MetricsPanelProps): JSX.Element {
   const metrics = state.data;
 
   return (
@@ -118,6 +121,57 @@ function MetricsPanelView({ state }: MetricsPanelProps): JSX.Element {
             {metrics.note !== "" && <p className="metrics-note">{metrics.note}</p>}
           </>
         )}
+        <div className="metrics-window">
+          <span className="metrics-window__head">
+            sessions · cost
+            {sessions?.data !== null && sessions?.data !== undefined
+              ? ` · ${sessions.data.sessions.length}`
+              : ""}
+          </span>
+          {sessions === undefined || sessions.status === "absent" ? (
+            <p className="panel__placeholder">
+              Session telemetry not served (/sessions.json) — activates when the
+              store feed ships it.
+            </p>
+          ) : sessions.data === null ? (
+            <p className="panel__placeholder">
+              {sessions.status === "error"
+                ? `Sessions feed failed: ${sessions.error ?? "unknown"}`
+                : "Waiting for the hub."}
+            </p>
+          ) : sessions.data.sessions.length === 0 ? (
+            <p className="panel__placeholder">No session metrics recorded yet.</p>
+          ) : (
+            <>
+              <table className="sessions-table">
+                <thead>
+                  <tr>
+                    <th>agent</th>
+                    <th>task</th>
+                    <th>turns</th>
+                    <th>tokens</th>
+                    <th>cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessions.data.sessions.slice(0, 20).map((row) => (
+                    <tr key={`${row.agent}:${row.sessionId}:${row.seq}`}>
+                      <td title={row.agent}>{row.agent}</td>
+                      <td title={row.taskId}>{row.taskId === "" ? "—" : row.taskId}</td>
+                      <td>{row.turns}</td>
+                      <td>{row.totalTokens}</td>
+                      <td>{row.costUsd === null ? "—" : `$${row.costUsd.toFixed(4)}`}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {sessions.data.sessions.length > 20 && (
+                <p className="metrics-note">{`+${sessions.data.sessions.length - 20} more sessions in the feed`}</p>
+              )}
+              {sessions.data.note !== "" && <p className="metrics-note">{sessions.data.note}</p>}
+            </>
+          )}
+        </div>
       </div>
     </section>
   );

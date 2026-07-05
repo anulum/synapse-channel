@@ -18,6 +18,7 @@ import {
 } from "../lib/history";
 import { groupByTask } from "../lib/logGroups";
 import { applyQuery, isConstrained, OPEN_QUERY, type LogQuery } from "../lib/logQuery";
+import { fetchAndVerify, type VerifyResult } from "../lib/merkleVerify";
 import { readLogExportFile, type PostMortem } from "../lib/postmortem";
 import { diffWindows, type WindowDiff } from "../lib/windowDiff";
 import type { CockpitEvent } from "../types";
@@ -189,6 +190,24 @@ function SignalLogView({
   // live feed — incident review with no hub attached. The banner states what
   // the document says about itself; malformed files are refused, not fixed.
   const [postMortem, setPostMortem] = useState<{ data: PostMortem; name: string } | null>(null);
+  // Per-seq verify verdicts: the proof re-computed in THIS browser.
+  const [verdicts, setVerdicts] = useState<ReadonlyMap<number, string>>(new Map());
+  const runVerify = (seq: number): void => {
+    setVerdicts((current) => new Map(current).set(seq, "verifying…"));
+    void fetchAndVerify(seq).then((result: VerifyResult) => {
+      const line =
+        result.kind === "verified"
+          ? `✓ committed to root ${result.root.slice(0, 12)}… (recomputed in this browser)`
+          : result.kind === "mismatch"
+            ? "✗ proof did not reconstruct the claimed root"
+            : result.kind === "absent"
+              ? `not in the committed tree: ${result.note}`
+              : result.kind === "unserved"
+                ? "proof surface not served (/merkle-proof.json)"
+                : `verify failed: ${result.message}`;
+      setVerdicts((current) => new Map(current).set(seq, line));
+    });
+  };
   const [postMortemNote, setPostMortemNote] = useState<string | null>(null);
   const filePicker = useRef<HTMLInputElement | null>(null);
 
@@ -520,6 +539,21 @@ function SignalLogView({
                             2,
                           )}
                         </pre>
+                        {shownProvenance === "hub" && (
+                          <div className="log__verify">
+                            <button
+                              type="button"
+                              className="log-controls__toggle"
+                              onClick={() => runVerify(event.seq)}
+                              title="Fetch the RFC 6962 inclusion proof and recompute the root client-side"
+                            >
+                              verify inclusion
+                            </button>
+                            {verdicts.has(event.seq) && (
+                              <span className="log__verify-verdict">{verdicts.get(event.seq)}</span>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )}

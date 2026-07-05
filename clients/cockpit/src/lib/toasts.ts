@@ -34,6 +34,8 @@ export interface FleetFacts {
   /** Dead-letter unread count per target. */
   readonly deadLetters: ReadonlyMap<string, number>;
   readonly riskRed: boolean;
+  /** The hub's config-posture fingerprint; "" when the hub predates it. */
+  readonly configEpoch: string;
 }
 
 /** Capture the compared facts from live (never reconstructed) data. */
@@ -42,8 +44,10 @@ export function factsOf(
   conflicts: readonly BranchConflictView[],
   deadLetters: readonly DeadLetterView[],
   risk: RiskView | null,
+  configEpoch = "",
 ): FleetFacts {
   return {
+    configEpoch,
     blocked: new Set(board.filter((task) => task.bucket === "blocked").map((task) => task.taskId)),
     done: new Set(board.filter((task) => task.bucket === "done").map((task) => task.taskId)),
     conflicts: new Set(
@@ -79,6 +83,13 @@ export function toastsBetween(previous: FleetFacts | null, next: FleetFacts): To
   }
   if (next.riskRed && !previous.riskRed) {
     toasts.push({ id: "risk:red", severity: "crit", text: "risk rail crossed amber → red" });
+  }
+  if (previous.configEpoch !== "" && next.configEpoch !== "" && previous.configEpoch !== next.configEpoch) {
+    toasts.push({
+      id: `epoch:${next.configEpoch}`,
+      severity: "crit",
+      text: `hub config epoch changed: ${previous.configEpoch.slice(0, 8)} → ${next.configEpoch.slice(0, 8)}`,
+    });
   }
   for (const taskId of next.blocked) {
     if (!previous.blocked.has(taskId)) {

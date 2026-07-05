@@ -180,6 +180,8 @@ export function parseSnapshot(raw: unknown): FleetSnapshot | null {
   const payload = asRecord(raw);
   return {
     online_agents: asStringArray(payload["online_agents"]),
+    hub_version: typeof payload["hub_version"] === "string" ? payload["hub_version"] : "",
+    config_epoch: typeof payload["config_epoch"] === "string" ? payload["config_epoch"] : "",
     state: asRecord(payload["state"]),
     board: asRecord(payload["board"]),
     manifest: asRecordArray(payload["manifest"]),
