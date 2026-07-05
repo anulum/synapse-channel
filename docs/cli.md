@@ -1742,6 +1742,7 @@ synapse encrypt-key generate --from-passphrase ./synapse.key   # derive the key 
 synapse encrypt-key generate --from-passphrase --scrypt-n 65536 ./synapse.key  # tune the scrypt cost (n a power of two; also --scrypt-r/--scrypt-p)
 synapse encrypt-key generate-wrapped ./synapse.wrapped.key     # envelope-encrypted key whose passphrase can be rotated later
 synapse encrypt-key rewrap ./synapse.wrapped.key               # rotate that passphrase without re-encrypting any data
+synapse encrypt-key generate-wrapped-pkcs11 --token-label synapse ./synapse.hsm.key  # wrap the key on a PKCS#11 token (YubiKey/HSM)
 synapse encrypt-key check ./synapse.key                        # verify its ownership, mode, and length
 ```
 
@@ -1762,6 +1763,17 @@ sealed before the rotation still decrypts. This is the model a hardware key stor
 (TPM, YubiKey, cloud HSM) plugs into: only the key-encryption key moves into
 hardware, the wrapped-file format and the data key stay the same. Both commands
 take the same `--scrypt-*` cost flags.
+
+`generate-wrapped-pkcs11` is that hardware step. It wraps the random data key with a
+key-encryption key held on a **PKCS#11 token** — a YubiKey PIV, a cloud or network
+HSM, or SoftHSM for testing — via RFC 3394 AES key wrap on the device, so the token
+key never leaves the hardware. Point it at the token with `--pkcs11-module` (or the
+`PKCS11_MODULE` environment variable) and `--token-label`; the key-encryption key is
+generated on the token on first use (or `--no-create-kek` to require a pre-provisioned
+one), and the PIN comes from `PKCS11_PIN` or an interactive prompt. Needs the optional
+`python-pkcs11` dependency (`pip install synapse-channel[pkcs11]`). The written file
+records only the token and key labels — never the PIN or the module path — so loading
+it at startup re-opens the token to unwrap the data key.
 
 ## Experimental surfaces
 

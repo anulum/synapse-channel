@@ -43,6 +43,26 @@ def test_parser_registers_encrypt_key_subcommands() -> None:
     assert generate_wrapped.func is cli_encrypt_key._cmd_generate_wrapped
     rewrap = parser.parse_args(["encrypt-key", "rewrap", "/tmp/w.key"])
     assert rewrap.func is cli_encrypt_key._cmd_rewrap
+    pkcs11 = parser.parse_args(
+        ["encrypt-key", "generate-wrapped-pkcs11", "--token-label", "t", "/tmp/w.key"]
+    )
+    assert pkcs11.func is cli_encrypt_key._cmd_generate_wrapped_pkcs11
+    assert pkcs11.token_label == "t"
+    assert pkcs11.create_kek is True
+
+
+def test_generate_wrapped_pkcs11_requires_a_module(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No --pkcs11-module and no PKCS11_MODULE env -> a clean exit 2 before touching the token.
+    monkeypatch.delenv("PKCS11_MODULE", raising=False)
+    args = cli.build_parser().parse_args(
+        ["encrypt-key", "generate-wrapped-pkcs11", "--token-label", "t", str(tmp_path / "w.key")]
+    )
+    rc = cli_encrypt_key._cmd_generate_wrapped_pkcs11(args, pin_reader=lambda _p: "1234")
+    assert rc == 2
+    assert "PKCS#11 module is required" in capsys.readouterr().out
+    assert not (tmp_path / "w.key").exists()
 
 
 def test_generate_then_check_round_trip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

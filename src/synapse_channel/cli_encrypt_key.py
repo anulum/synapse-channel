@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import os
 from collections.abc import Callable
 
 from synapse_channel.core.at_rest import (
@@ -43,6 +44,7 @@ from synapse_channel.core.at_rest import (
     restore_profile_backup,
     rewrap_wrapped_key_file,
 )
+from synapse_channel.core.at_rest_pkcs11 import DEFAULT_KEK_LABEL
 
 
 def _cmd_generate(
@@ -141,6 +143,46 @@ def _cmd_rewrap(
         print(f"synapse encrypt-key rewrap: {exc}")
         return 2
     print(f"rewrapped at-rest key (owner-only): {written}")
+    return 0
+
+
+def _cmd_generate_wrapped_pkcs11(
+    args: argparse.Namespace,
+    *,
+    pin_reader: Callable[[str], str] = getpass.getpass,
+) -> int:
+    """Create a key file wrapped by a key-encryption key held on a PKCS#11 token.
+
+    The data key is random and wrapped on the token (YubiKey PIV, cloud/network HSM, or SoftHSM);
+    the token key never leaves the device. The module path comes from ``--pkcs11-module`` or the
+    ``PKCS11_MODULE`` environment variable; the PIN from ``PKCS11_PIN`` or an interactive prompt.
+    """
+    from synapse_channel.core.at_rest_pkcs11 import generate_wrapped_key_file_pkcs11
+
+    module_path = args.pkcs11_module or os.environ.get("PKCS11_MODULE")
+    if not module_path:
+        print(
+            "synapse encrypt-key generate-wrapped-pkcs11: "
+            "a PKCS#11 module is required via --pkcs11-module or PKCS11_MODULE"
+        )
+        return 2
+    pin = os.environ.get("PKCS11_PIN") or pin_reader("PKCS#11 user PIN: ")
+    try:
+        written = generate_wrapped_key_file_pkcs11(
+            args.path,
+            module_path=module_path,
+            token_label=args.token_label,
+            pin=pin,
+            key_label=args.key_label,
+            create_kek=args.create_kek,
+        )
+    except FileExistsError as exc:
+        print(str(exc))
+        return 1
+    except (ValueError, RuntimeError) as exc:
+        print(f"synapse encrypt-key generate-wrapped-pkcs11: {exc}")
+        return 2
+    print(f"wrote PKCS#11-wrapped at-rest key (owner-only): {written}")
     return 0
 
 
@@ -332,6 +374,34 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     rewrap.add_argument("path", help="Existing wrapped-key-file path.")
     _add_scrypt_args(rewrap)
     rewrap.set_defaults(func=_cmd_rewrap)
+
+    pkcs11 = nested.add_parser(
+        "generate-wrapped-pkcs11",
+        help="Write a key file wrapped by a key-encryption key on a PKCS#11 token (YubiKey/HSM).",
+    )
+    pkcs11.add_argument("path", help="Destination wrapped-key-file path (must not already exist).")
+    pkcs11.add_argument(
+        "--pkcs11-module",
+        default=None,
+        help="Path to the PKCS#11 module (.so/.dll), or set the PKCS11_MODULE env var.",
+    )
+    pkcs11.add_argument(
+        "--token-label",
+        required=True,
+        help="Label of the token that holds (or will hold) the key-encryption key.",
+    )
+    pkcs11.add_argument(
+        "--key-label",
+        default=DEFAULT_KEK_LABEL,
+        help=f"Label of the token key-encryption key object (default {DEFAULT_KEK_LABEL!r}).",
+    )
+    pkcs11.add_argument(
+        "--no-create-kek",
+        dest="create_kek",
+        action="store_false",
+        help="Fail if the key-encryption key is absent instead of generating it on the token.",
+    )
+    pkcs11.set_defaults(func=_cmd_generate_wrapped_pkcs11, create_kek=True)
 
     check = nested.add_parser("check", help="Verify a key file's ownership, mode, and length.")
     check.add_argument("path", help="Key-file path to check.")

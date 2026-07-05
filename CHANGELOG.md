@@ -14,6 +14,18 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- PKCS#11 hardware key-encryption-key backend for at-rest wrapped keys (optional
+  `synapse-channel[pkcs11]` extra). A key-encryption key held on a PKCS#11 token — a
+  YubiKey PIV, a cloud or network HSM, or SoftHSM for tests — wraps and unwraps the
+  data key on the device via RFC 3394 AES key wrap (`C_WrapKey` / `C_UnwrapKey`), so
+  the token key never leaves the hardware. `synapse encrypt-key generate-wrapped-pkcs11`
+  writes such a file (`--pkcs11-module` / `PKCS11_MODULE`, `--token-label`,
+  `--key-label`, `--no-create-kek`; PIN from `PKCS11_PIN` or a prompt), recording only
+  the token and key labels — never the PIN or module path. New `core.at_rest_pkcs11`
+  (`Pkcs11KeyEncryptionKey`, `generate_wrapped_key_file_pkcs11`,
+  `cipher_from_wrapped_key_file_pkcs11`) implementing the `KeyEncryptionKey` protocol
+  over the same wrapped-key file format. CI installs SoftHSM2 so the backend is
+  exercised, not skipped.
 - Envelope-encrypted (KEK-wrapped) at-rest key files with a pluggable
   key-encryption-key backend, the foundation for hardware-backed keys (PKCS#11 /
   TPM / YubiKey / cloud HSM). A random data key does the bulk AES-GCM while a
