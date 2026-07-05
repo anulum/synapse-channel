@@ -21,6 +21,7 @@ import { ReliabilityPanel } from "./components/ReliabilityPanel";
 import { RiskRail } from "./components/RiskRail";
 import { TaskBoard } from "./components/TaskBoard";
 import { TimeTravelBar } from "./components/TimeTravelBar";
+import { ToastStack } from "./components/ToastStack";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { deriveAnomalies } from "./lib/anomalies";
 import { agentDetail, taskDetail } from "./lib/detail";
@@ -48,6 +49,7 @@ import {
 } from "./lib/snapshot";
 import { createSnapshotEventSource } from "./lib/spineEvents";
 import { fetchStateAt, type FleetStateAt } from "./lib/stateAt";
+import { factsOf, toastsBetween, type FleetFacts, type Toast } from "./lib/toasts";
 import type { CockpitEvent, EventSource } from "./types";
 
 /** Wall-clock time-of-day stamp for the freshness contract. */
@@ -363,6 +365,43 @@ export function App(): JSX.Element {
   const deadLetters = useMemo(() => parseDeadLetters(snap.snapshot), [snap.snapshot]);
   const connected = snap.snapshot !== null;
 
+  // Toasts mark transitions between polls — computed from LIVE facts only
+  // (the reconstruction must never fire alarms about the past). The first
+  // capture emits nothing; each toast auto-dismisses after eight seconds.
+  const [toasts, setToasts] = useState<readonly Toast[]>([]);
+  const previousFacts = useRef<FleetFacts | null>(null);
+  const onDismissToast = useCallback(
+    (id: string) => setToasts((current) => current.filter((toast) => toast.id !== id)),
+    [],
+  );
+  // Dismissal timers live across effect re-runs (each poll re-runs the
+  // delta effect; cancelling there would keep every toast forever). They
+  // are cleared only on unmount.
+  const toastTimers = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  useEffect(() => {
+    const timers = toastTimers.current;
+    return () => {
+      for (const timer of timers) clearTimeout(timer);
+    };
+  }, []);
+  useEffect(() => {
+    if (snap.snapshot === null) return;
+    const facts = factsOf(liveBoard, liveConflicts, deadLetters, snap.snapshot.risk);
+    const fresh = toastsBetween(previousFacts.current, facts);
+    previousFacts.current = facts;
+    if (fresh.length === 0) return;
+    setToasts((current) => {
+      const seen = new Set(current.map((toast) => toast.id));
+      return [...current, ...fresh.filter((toast) => !seen.has(toast.id))];
+    });
+    const ids = fresh.map((toast) => toast.id);
+    const timer = setTimeout(() => {
+      toastTimers.current.delete(timer);
+      setToasts((current) => current.filter((toast) => !ids.includes(toast.id)));
+    }, 8000);
+    toastTimers.current.add(timer);
+  }, [snap.snapshot, liveBoard, liveConflicts, deadLetters]);
+
   return (
     <div className="shell">
       <Hud
@@ -460,6 +499,7 @@ export function App(): JSX.Element {
         </div>
       </div>
       <InstallChip />
+      <ToastStack toasts={toasts} onDismiss={onDismissToast} />
       <DetailDrawer
         agent={
           inspected?.kind === "agent"

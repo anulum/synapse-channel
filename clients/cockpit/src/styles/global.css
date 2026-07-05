@@ -2654,3 +2654,58 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ---------- toast stack ---------- */
+.toasts {
+  position: fixed;
+  left: var(--sp-3);
+  bottom: max(var(--sp-3), env(safe-area-inset-bottom));
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  max-width: min(440px, 90vw);
+}
+
+.toast {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--ink);
+  padding: var(--sp-2) var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.toast--crit {
+  border-color: var(--critical);
+}
+
+.toast--crit .toast__glyph {
+  color: var(--critical);
+}
+
+.toast--warn {
+  border-color: var(--warn);
+}
+
+.toast--warn .toast__glyph {
+  color: var(--warn);
+}
+
+.toast--ok .toast__glyph {
+  color: var(--healthy);
+}
+
+.toast--more {
+  cursor: default;
+  color: var(--dim);
+  background: none;
+  border-style: dashed;
+}
