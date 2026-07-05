@@ -43,6 +43,14 @@ All notable changes to this project are documented here.
   hard-requires an optional library.
 
 ### Changed
+- Removed the hub's `register` / `unregister` / `_authenticate_or_close` methods —
+  thin wrappers over the `HubConnection` collaborator that no live path or test
+  reached once the socket lifecycle moved behind the `handler` entry point. The
+  collaborator owns these steps and is tested on them directly; the hub keeps only
+  the `handler`, `_send_welcome`, and `_install_signal_handlers` delegators, each
+  with its own hub call site (`serve`, the withheld-welcome path, and shutdown
+  wiring). No behaviour change — a redundant indirection is gone. `core/hub.py`
+  drops from 1003 to 978 lines.
 - Extracted the hub's durable-state seeding into `core/hub_state_seed.py`
   (`seed_hub_state`): the decision to replay the event log — resuming live leases,
   chat history, the shared blackboard, and the ledger-guard seed (the message-id
