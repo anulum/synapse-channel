@@ -903,31 +903,6 @@ class SynapseHub:
         """
         await self._connection.send_welcome(websocket)
 
-    async def register(self, websocket: Any) -> None:
-        """Record a new socket; welcome it now only on an open hub.
-
-        Thin wrapper over
-        :meth:`~synapse_channel.core.hub_connection.HubConnection.register`, kept
-        because tests and integration paths reach ``hub.register`` directly.
-        """
-        await self._connection.register(websocket)
-
-    async def unregister(self, websocket: Any) -> None:
-        """Drop a socket, releasing its agent name and broadcasting departure.
-
-        Thin wrapper over
-        :meth:`~synapse_channel.core.hub_connection.HubConnection.unregister`.
-        """
-        await self._connection.unregister(websocket)
-
-    async def _authenticate_or_close(self, websocket: Any) -> bool:
-        """On a secured hub, process the first frame under the auth deadline.
-
-        Thin wrapper over
-        :meth:`~synapse_channel.core.hub_connection.HubConnection.authenticate_or_close`.
-        """
-        return await self._connection.authenticate_or_close(websocket)
-
     async def handler(self, websocket: Any) -> None:
         """Serve one client connection from registration to disconnect.
 
