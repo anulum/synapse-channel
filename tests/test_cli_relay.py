@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import getpass
 import json
 from typing import Any
 
@@ -120,7 +121,8 @@ def test_relay_forwards_the_request_fields_and_local_id() -> None:
 
 
 def test_relay_defaults_the_operator_to_the_os_user(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli_relay.getpass, "getuser", lambda: "logged-in-user")
+    # Patch the getpass module the CLI resolves the default operator through.
+    monkeypatch.setattr(getpass, "getuser", lambda: "logged-in-user")
     captured: dict[str, Any] = {}
     cli_relay._cmd_relay(_args(), relayer=_relayer(_applied(), captured=captured))
     assert captured["request"].operator == "logged-in-user"
