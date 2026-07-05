@@ -1788,6 +1788,54 @@ def test_operator_write_rejects_bad_bodies() -> None:
     assert unknown_route == 404
 
 
+def test_operator_write_rejects_a_non_json_content_type() -> None:
+    # The CSRF defence: a cross-origin page can POST a body to a loopback surface
+    # without a preflight only with a "simple" content type (text/plain / form /
+    # multipart). Requiring application/json turns that request away with a 415,
+    # even though the body is valid JSON, so a web page cannot drive a write.
+    server = _operator_server()
+    try:
+        text_plain, _, body = _http_post(
+            server.url("/message"),
+            json.dumps({"to": "x", "text": "hi"}),
+            content_type="text/plain",
+        )
+        form, _, _ = _http_post(
+            server.url("/message"),
+            json.dumps({"to": "x", "text": "hi"}),
+            content_type="application/x-www-form-urlencoded",
+        )
+    finally:
+        server.close()
+
+    assert text_plain == 415
+    assert "application/json" in body
+    assert form == 415
+
+
+def test_operator_write_accepts_json_with_a_charset_parameter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A charset (or any) parameter after the media type must not defeat the check —
+    # application/json; charset=utf-8 is still JSON and must reach the relay.
+    monkeypatch.setattr(
+        dashboard_module,
+        "OperatorRelay",
+        _stub_relay_class(RelayOutcome(DELIVERED, "delivered")),
+    )
+    server = _operator_server()
+    try:
+        status, _, _ = _http_post(
+            server.url("/message"),
+            json.dumps({"to": "x", "text": "hi"}),
+            content_type="application/json; charset=utf-8",
+        )
+    finally:
+        server.close()
+
+    assert status == 200
+
+
 @pytest.mark.parametrize(
     ("outcome", "expected_status"),
     [

@@ -13,6 +13,19 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Security
+- Dashboard operator writes now require `Content-Type: application/json`, closing a
+  local cross-site-request-forgery hole. A cross-origin web page can POST a body to
+  the loopback dashboard without a CORS preflight only with a "simple" content type
+  (`text/plain`, form-encoded, multipart); the operator write path parsed JSON from any
+  content type, so a malicious page a local operator visited could drive `/message`,
+  `/task`, and `/task/update` in `synapse dashboard --operator` without reading the
+  response. Requiring `application/json` forces a preflight the surface never answers
+  with cross-origin allow headers, so the browser blocks the write; a non-JSON operator
+  write is refused `415`. The read-only dashboard and the same-origin cockpit (which
+  already sends `application/json`) are unaffected. The misleading docstring that claimed
+  loopback writes require the bearer token is corrected.
+
 ## [0.98.2] - 2026-07-05
 
 ### Added
