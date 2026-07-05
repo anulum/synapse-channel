@@ -35,7 +35,7 @@ body {
 /* ---------- app shell: HUD strip over an asymmetric deck ---------- */
 .shell {
   display: grid;
-  grid-template-rows: var(--hud-h) auto auto 1fr;
+  grid-template-rows: var(--hud-h) auto auto auto 1fr;
   height: 100vh;
   overflow: hidden;
 }
@@ -2196,7 +2196,8 @@ body {
 
 @media (max-width: 720px) {
   .shell {
-    grid-template-rows: auto auto auto auto;
+    grid-template-rows: none;
+    grid-auto-rows: auto;
     height: auto;
     min-height: 100vh;
     overflow: visible;
@@ -2312,7 +2313,8 @@ body {
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
     padding-bottom: env(safe-area-inset-bottom);
-    grid-template-rows: auto auto auto auto auto;
+    grid-template-rows: none;
+    grid-auto-rows: auto;
   }
 
   .mobile-nav {
@@ -2626,4 +2628,29 @@ body {
 .roster-row--link:hover,
 .board-row--link:hover {
   background: var(--raised);
+}
+
+/* ---------- time-travel bar ---------- */
+.timetravel {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 3px var(--sp-4);
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.timetravel--armed {
+  background: var(--warn-trail);
+  border-bottom-color: var(--warn);
+}
+
+.timetravel__label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

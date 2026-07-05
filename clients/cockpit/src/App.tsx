@@ -20,6 +20,7 @@ import { PanelBoundary } from "./components/PanelBoundary";
 import { ReliabilityPanel } from "./components/ReliabilityPanel";
 import { RiskRail } from "./components/RiskRail";
 import { TaskBoard } from "./components/TaskBoard";
+import { TimeTravelBar } from "./components/TimeTravelBar";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { deriveAnomalies } from "./lib/anomalies";
 import { agentDetail, taskDetail } from "./lib/detail";
@@ -46,6 +47,7 @@ import {
   type SnapshotState,
 } from "./lib/snapshot";
 import { createSnapshotEventSource } from "./lib/spineEvents";
+import { fetchStateAt, type FleetStateAt } from "./lib/stateAt";
 import type { CockpitEvent, EventSource } from "./types";
 
 /** Wall-clock time-of-day stamp for the freshness contract. */
@@ -139,6 +141,52 @@ export function App(): JSX.Element {
   // Phone-width segment: one deck section at a time; CSS ignores this above
   // 640px, where the whole deck renders as always.
   const [mobileSegment, setMobileSegment] = useState<MobileSegment>("signals");
+  // Fleet time-travel: when armed, the claims board, task board, and
+  // topology render the moment reconstructed from the durable log; the
+  // spine, log, and roster stay live. The bar is the loud boundary.
+  const [travelOn, setTravelOn] = useState(false);
+  const [travelSeq, setTravelSeq] = useState(0);
+  const [travelState, setTravelState] = useState<FleetStateAt | null>(null);
+  const [travelNote, setTravelNote] = useState<string | null>(null);
+  const travelTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const travelFetch = useCallback((seq: number) => {
+    void fetchStateAt(seq).then((result) => {
+      if (result.kind === "loaded") {
+        setTravelState(result.state);
+        setTravelNote(null);
+      } else {
+        setTravelState(null);
+        setTravelNote(result.kind === "absent" ? "state-at surface not served (--feeds-db)" : result.message);
+      }
+    });
+  }, []);
+
+  const onToggleTravel = useCallback(() => {
+    setTravelOn((current) => {
+      const next = !current;
+      if (next) {
+        // Arm at the log's end; the first fetch names the real bound.
+        const seed = Number.MAX_SAFE_INTEGER;
+        setTravelSeq(seed);
+        travelFetch(seed);
+      } else {
+        setTravelState(null);
+        setTravelNote(null);
+      }
+      return next;
+    });
+  }, [travelFetch]);
+
+  const onScrubTravel = useCallback(
+    (seq: number) => {
+      setTravelSeq(seq);
+      if (travelTimer.current !== undefined) clearTimeout(travelTimer.current);
+      travelTimer.current = setTimeout(() => travelFetch(seq), 250);
+    },
+    [travelFetch],
+  );
+
   // The detail drawer's subject: one agent or one task, or nothing.
   const [inspected, setInspected] = useState<
     { readonly kind: "agent" | "task"; readonly id: string } | null
@@ -299,12 +347,17 @@ export function App(): JSX.Element {
 
   const roster = useMemo(() => deriveRoster(snap.snapshot), [snap.snapshot]);
   const waiters = snap.snapshot?.fleet.agents.waiters.length ?? 0;
-  const claims = useMemo(() => deriveClaims(snap.snapshot, nowMs), [snap.snapshot, nowMs]);
-  const conflicts = useMemo(
+  const liveClaims = useMemo(() => deriveClaims(snap.snapshot, nowMs), [snap.snapshot, nowMs]);
+  const liveConflicts = useMemo(
     () => (snap.snapshot === null ? [] : parseConflicts(snap.snapshot)),
     [snap.snapshot],
   );
-  const board = useMemo(() => deriveBoard(snap.snapshot), [snap.snapshot]);
+  const liveBoard = useMemo(() => deriveBoard(snap.snapshot), [snap.snapshot]);
+  const travelling = travelOn && travelState !== null;
+  const claims = travelling && travelState !== null ? travelState.claims : liveClaims;
+  // Advisory conflicts are a live computation, not journalled — none in the past.
+  const conflicts = travelling ? [] : liveConflicts;
+  const board = travelling && travelState !== null ? travelState.tasks : liveBoard;
   const findings = useMemo(() => deriveFindings(snap.snapshot), [snap.snapshot]);
   const anomalies = useMemo(() => deriveAnomalies(log), [log]);
   const deadLetters = useMemo(() => parseDeadLetters(snap.snapshot), [snap.snapshot]);
@@ -331,6 +384,14 @@ export function App(): JSX.Element {
       <PanelBoundary name="Federation">
         <FederationRow state={federation} />
       </PanelBoundary>
+      <TimeTravelBar
+        on={travelOn}
+        seq={travelSeq}
+        state={travelState}
+        note={travelNote}
+        onToggle={onToggleTravel}
+        onScrub={onScrubTravel}
+      />
       <MobileNav active={mobileSegment} onSelect={setMobileSegment} />
       <div className={`deck deck--seg-${mobileSegment}`}>
         <div className="deck__stack deck__stack--roster">
@@ -376,7 +437,7 @@ export function App(): JSX.Element {
             <TaskBoard
               tasks={board}
               connected={connected}
-              truncation={boardTruncation(snap.snapshot)}
+              truncation={travelling ? undefined : boardTruncation(snap.snapshot)}
               onInspect={onInspectTask}
             />
           </PanelBoundary>
