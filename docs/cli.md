@@ -1740,6 +1740,8 @@ synapse federation revoke example.org --store ./federation.json
 synapse encrypt-key generate ./synapse.key                     # write a fresh owner-only 32-byte key file
 synapse encrypt-key generate --from-passphrase ./synapse.key   # derive the key from a prompted passphrase (scrypt) instead of random bytes
 synapse encrypt-key generate --from-passphrase --scrypt-n 65536 ./synapse.key  # tune the scrypt cost (n a power of two; also --scrypt-r/--scrypt-p)
+synapse encrypt-key generate-wrapped ./synapse.wrapped.key     # envelope-encrypted key whose passphrase can be rotated later
+synapse encrypt-key rewrap ./synapse.wrapped.key               # rotate that passphrase without re-encrypting any data
 synapse encrypt-key check ./synapse.key                        # verify its ownership, mode, and length
 ```
 
@@ -1750,6 +1752,16 @@ per derivation and discarded — the written file is a normal key of record that
 must be protected exactly like a random one, and the passphrase alone cannot
 reconstruct it. Prefer the default random key unless a passphrase source is
 specifically wanted.
+
+`generate-wrapped` writes a different kind of key file — **envelope encryption**: a
+random data key does the bulk AES-GCM, and a key-encryption key derived from the
+prompted passphrase wraps it with RFC 3394 AES-KW. The salt is kept, so `rewrap`
+can rotate the passphrase (unwrap with the old, wrap with the new) **without
+re-encrypting any data** — the data key underneath is unchanged, so ciphertext
+sealed before the rotation still decrypts. This is the model a hardware key store
+(TPM, YubiKey, cloud HSM) plugs into: only the key-encryption key moves into
+hardware, the wrapped-file format and the data key stay the same. Both commands
+take the same `--scrypt-*` cost flags.
 
 ## Experimental surfaces
 

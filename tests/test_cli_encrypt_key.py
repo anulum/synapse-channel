@@ -39,6 +39,10 @@ def test_parser_registers_encrypt_key_subcommands() -> None:
         ["encrypt-key", "restore", "--key", "/tmp/store.key", "--manifest", "/tmp/manifest.json"]
     )
     assert restore.func is cli_encrypt_key._cmd_restore
+    generate_wrapped = parser.parse_args(["encrypt-key", "generate-wrapped", "/tmp/w.key"])
+    assert generate_wrapped.func is cli_encrypt_key._cmd_generate_wrapped
+    rewrap = parser.parse_args(["encrypt-key", "rewrap", "/tmp/w.key"])
+    assert rewrap.func is cli_encrypt_key._cmd_rewrap
 
 
 def test_generate_then_check_round_trip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -102,6 +106,105 @@ def test_generate_from_passphrase_threads_scrypt_params_and_rejects_bad_n(
     )
     assert cli_encrypt_key._cmd_generate(bad, passphrase_reader=lambda _p: "pw") == 2
     assert not (tmp_path / "b").exists()
+
+
+def test_generate_wrapped_round_trips_and_rewrap_rotates_passphrase(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from synapse_channel.core.at_rest import AtRestCipher
+
+    key_path = tmp_path / "wrapped.key"
+    gen = cli.build_parser().parse_args(
+        ["encrypt-key", "generate-wrapped", "--scrypt-n", "1024", str(key_path)]
+    )
+    assert cli_encrypt_key._cmd_generate_wrapped(gen, passphrase_reader=lambda _p: "old-pass") == 0
+    assert oct(key_path.stat().st_mode & 0o777) == "0o600"
+    assert "wrapped at-rest key" in capsys.readouterr().out
+
+    # The wrapped key opens the cipher and seals data.
+    blob = AtRestCipher.from_wrapped_key_file(key_path, "old-pass").encrypt(b"secret")
+
+    # Rotate the passphrase: current, then the new passphrase twice.
+    prompts = iter(["old-pass", "new-pass", "new-pass"])
+    rw = cli.build_parser().parse_args(
+        ["encrypt-key", "rewrap", "--scrypt-n", "1024", str(key_path)]
+    )
+    assert cli_encrypt_key._cmd_rewrap(rw, passphrase_reader=lambda _p: next(prompts)) == 0
+    assert "rewrapped at-rest key" in capsys.readouterr().out
+    # Same data key underneath ⇒ ciphertext sealed before the rotation still decrypts.
+    assert AtRestCipher.from_wrapped_key_file(key_path, "new-pass").decrypt(blob) == b"secret"
+
+
+def test_generate_wrapped_rejects_bad_scrypt_n(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # scrypt n must be a power of two — a bad value is a clean exit 2, not a crash.
+    bad = cli.build_parser().parse_args(
+        ["encrypt-key", "generate-wrapped", "--scrypt-n", "1000", str(tmp_path / "w.key")]
+    )
+    assert cli_encrypt_key._cmd_generate_wrapped(bad, passphrase_reader=lambda _p: "pw") == 2
+    assert "generate-wrapped" in capsys.readouterr().out
+    assert not (tmp_path / "w.key").exists()
+
+
+def test_generate_wrapped_rejects_mismatched_confirmation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    key_path = tmp_path / "wrapped.key"
+    args = cli.build_parser().parse_args(["encrypt-key", "generate-wrapped", str(key_path)])
+    prompts = iter(["first", "second"])
+    rc = cli_encrypt_key._cmd_generate_wrapped(args, passphrase_reader=lambda _p: next(prompts))
+    assert rc == 2
+    assert "do not match" in capsys.readouterr().out
+    assert not key_path.exists()
+
+
+def test_generate_wrapped_refuses_overwrite(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    key_path = tmp_path / "wrapped.key"
+    first = cli.build_parser().parse_args(
+        ["encrypt-key", "generate-wrapped", "--scrypt-n", "1024", str(key_path)]
+    )
+    assert cli_encrypt_key._cmd_generate_wrapped(first, passphrase_reader=lambda _p: "pw") == 0
+    capsys.readouterr()
+    again = cli.build_parser().parse_args(
+        ["encrypt-key", "generate-wrapped", "--scrypt-n", "1024", str(key_path)]
+    )
+    assert cli_encrypt_key._cmd_generate_wrapped(again, passphrase_reader=lambda _p: "pw") == 1
+    assert "refusing to overwrite" in capsys.readouterr().out
+
+
+def test_rewrap_reports_wrong_current_passphrase(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    key_path = tmp_path / "wrapped.key"
+    gen = cli.build_parser().parse_args(
+        ["encrypt-key", "generate-wrapped", "--scrypt-n", "1024", str(key_path)]
+    )
+    assert cli_encrypt_key._cmd_generate_wrapped(gen, passphrase_reader=lambda _p: "right") == 0
+    capsys.readouterr()
+    prompts = iter(["wrong", "new", "new"])  # wrong current, matching new pair
+    rw = cli.build_parser().parse_args(
+        ["encrypt-key", "rewrap", "--scrypt-n", "1024", str(key_path)]
+    )
+    assert cli_encrypt_key._cmd_rewrap(rw, passphrase_reader=lambda _p: next(prompts)) == 2
+    assert "rewrap" in capsys.readouterr().out
+
+
+def test_rewrap_rejects_mismatched_new_passphrase(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    key_path = tmp_path / "wrapped.key"
+    gen = cli.build_parser().parse_args(
+        ["encrypt-key", "generate-wrapped", "--scrypt-n", "1024", str(key_path)]
+    )
+    assert cli_encrypt_key._cmd_generate_wrapped(gen, passphrase_reader=lambda _p: "old") == 0
+    capsys.readouterr()
+    prompts = iter(["old", "newA", "newB"])  # correct current, mismatched new pair
+    rw = cli.build_parser().parse_args(["encrypt-key", "rewrap", str(key_path)])
+    assert cli_encrypt_key._cmd_rewrap(rw, passphrase_reader=lambda _p: next(prompts)) == 2
+    assert "do not match" in capsys.readouterr().out
 
 
 def test_generate_parser_defaults_scrypt_and_passphrase_flags() -> None:

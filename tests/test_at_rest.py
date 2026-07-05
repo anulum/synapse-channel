@@ -22,6 +22,7 @@ from synapse_channel.core.at_rest import (
     GCM_MESSAGE_LIMIT,
     GCM_REKEY_WARNING_THRESHOLD,
     KEY_BYTES,
+    WRAPPED_KEY_SCHEMA,
     AtRestCipher,
     AtRestKeyExhausted,
     AtRestSurface,
@@ -33,12 +34,16 @@ from synapse_channel.core.at_rest import (
     full_profile_surfaces,
     generate_key_file,
     generate_key_file_from_passphrase,
+    generate_wrapped_key_file,
     inspect_profile,
     is_envelope,
     migrate_profile,
     rekey_profile,
     require_encrypted_profile,
     restore_profile_backup,
+    rewrap_wrapped_key_file,
+    unwrap_data_key,
+    wrap_data_key,
 )
 
 
@@ -171,6 +176,97 @@ def test_generate_key_file_from_passphrase_derives_owner_only_and_usable(tmp_pat
 def test_generate_key_file_from_passphrase_rejects_empty_passphrase(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="passphrase must not be empty"):
         generate_key_file_from_passphrase(tmp_path / "k", "")
+
+
+def test_wrap_and_unwrap_data_key_round_trips() -> None:
+    kek = b"K" * KEY_BYTES
+    dek = b"D" * KEY_BYTES
+    wrapped = wrap_data_key(dek, kek)
+    assert wrapped != dek
+    assert unwrap_data_key(wrapped, kek) == dek
+
+
+def test_unwrap_with_wrong_kek_raises() -> None:
+    wrapped = wrap_data_key(b"D" * KEY_BYTES, b"K" * KEY_BYTES)
+    with pytest.raises(ValueError, match="wrong key-encryption key or corrupt"):
+        unwrap_data_key(wrapped, b"X" * KEY_BYTES)
+
+
+def test_wrap_and_unwrap_reject_invalid_key_lengths() -> None:
+    with pytest.raises(ValueError, match="data key must be 32 bytes"):
+        wrap_data_key(b"short", b"K" * KEY_BYTES)
+    with pytest.raises(ValueError, match="16, 24, or 32"):
+        wrap_data_key(b"D" * KEY_BYTES, b"K" * 20)
+    with pytest.raises(ValueError, match="16, 24, or 32"):
+        unwrap_data_key(b"whatever", b"K" * 20)
+
+
+def test_generate_wrapped_key_file_round_trips_and_is_owner_only(tmp_path: Path) -> None:
+    key_path = tmp_path / "wrapped.key"
+    generate_wrapped_key_file(key_path, "correct horse", n=2**10)
+    assert oct(key_path.stat().st_mode & 0o777) == "0o600"
+    assert WRAPPED_KEY_SCHEMA in key_path.read_text(encoding="utf-8")
+    cipher = AtRestCipher.from_wrapped_key_file(key_path, "correct horse")
+    assert cipher.decrypt(cipher.encrypt(b"secret")) == b"secret"
+
+
+def test_generate_wrapped_key_file_refuses_overwrite_and_empty_passphrase(tmp_path: Path) -> None:
+    key_path = tmp_path / "wrapped.key"
+    generate_wrapped_key_file(key_path, "pw", n=2**10)
+    with pytest.raises(FileExistsError):
+        generate_wrapped_key_file(key_path, "pw", n=2**10)
+    with pytest.raises(ValueError, match="passphrase must not be empty"):
+        generate_wrapped_key_file(tmp_path / "other.key", "", n=2**10)
+
+
+def test_from_wrapped_key_file_wrong_passphrase_raises(tmp_path: Path) -> None:
+    key_path = tmp_path / "wrapped.key"
+    generate_wrapped_key_file(key_path, "right", n=2**10)
+    with pytest.raises(ValueError, match="wrong key-encryption key or corrupt"):
+        AtRestCipher.from_wrapped_key_file(key_path, "wrong")
+
+
+def test_rewrap_rotates_passphrase_without_changing_the_data_key(tmp_path: Path) -> None:
+    key_path = tmp_path / "wrapped.key"
+    generate_wrapped_key_file(key_path, "old-pass", n=2**10)
+    # Seal data under the original key.
+    blob = AtRestCipher.from_wrapped_key_file(key_path, "old-pass").encrypt(b"durable event")
+    # Rotate the passphrase; the data key underneath is unchanged.
+    rewrap_wrapped_key_file(key_path, "old-pass", "new-pass", n=2**10)
+    with pytest.raises(ValueError):
+        AtRestCipher.from_wrapped_key_file(key_path, "old-pass")
+    # Same data key ⇒ ciphertext sealed before the rotation still decrypts.
+    rotated = AtRestCipher.from_wrapped_key_file(key_path, "new-pass")
+    assert rotated.decrypt(blob) == b"durable event"
+
+
+def test_rewrap_rejects_empty_new_passphrase(tmp_path: Path) -> None:
+    key_path = tmp_path / "wrapped.key"
+    generate_wrapped_key_file(key_path, "old", n=2**10)
+    with pytest.raises(ValueError, match="passphrase must not be empty"):
+        rewrap_wrapped_key_file(key_path, "old", "", n=2**10)
+
+
+def test_load_wrapped_key_rejects_non_wrapped_and_malformed_files(tmp_path: Path) -> None:
+    not_wrapped = tmp_path / "plain.json"
+    not_wrapped.write_text(json.dumps({"schema": "something-else"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="not a Synapse wrapped at-rest key file"):
+        AtRestCipher.from_wrapped_key_file(not_wrapped, "pw")
+
+    bad_kdf = tmp_path / "bad_kdf.json"
+    bad_kdf.write_text(
+        json.dumps({"schema": WRAPPED_KEY_SCHEMA, "kdf": "pbkdf2"}), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="unsupported key-derivation function"):
+        AtRestCipher.from_wrapped_key_file(bad_kdf, "pw")
+
+    malformed = tmp_path / "malformed.json"
+    malformed.write_text(
+        json.dumps({"schema": WRAPPED_KEY_SCHEMA, "kdf": "scrypt", "n": 1024, "r": 8, "p": 1}),
+        encoding="utf-8",
+    )  # no salt / wrapped_key
+    with pytest.raises(ValueError, match="malformed wrapped at-rest key file"):
+        AtRestCipher.from_wrapped_key_file(malformed, "pw")
 
 
 def test_check_key_file_accepts_a_good_key_and_rejects_problems(tmp_path: Path) -> None:
