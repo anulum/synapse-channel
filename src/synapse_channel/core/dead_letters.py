@@ -113,8 +113,15 @@ class DeadLetterLedger:
         for target in [t for t, entry in self._entries.items() if entry.last_ts < cutoff]:
             del self._entries[target]
 
-    def record(self, target: str, *, sender: str, ts: float) -> None:
-        """Count one directed message that matched no live connection."""
+    def record(self, target: str, *, sender: str, ts: float) -> int:
+        """Count one directed message that matched no live connection.
+
+        Returns
+        -------
+        int
+            The target's running undelivered count after this message, so a caller can decide
+            whether it has crossed an escalation threshold without re-reading the ledger.
+        """
         known = self._entries.get(target)
         count = known.count + 1 if known is not None else 1
         self._entries[target] = DeadLetter(
@@ -124,6 +131,7 @@ class DeadLetterLedger:
         if len(self._entries) > self.max_targets:
             stalest = min(self._entries.values(), key=lambda entry: entry.last_ts)
             del self._entries[stalest.target]
+        return count
 
     def clear(self, name: str) -> None:
         """Forget a target — its reader just connected."""

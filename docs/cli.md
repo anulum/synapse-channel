@@ -235,7 +235,15 @@ than restarting.
 board, and manifest snapshots from the live hub. The state snapshot carries
 `dead_letters` — directed chats that reached no live connection, per target
 with counts, so a blackhole shows up on the page instead of being discovered
-by a human relaying messages. It serves `/` for the browser
+by a human relaying messages. A hub started with a
+`dead_letter_escalation_threshold` turns that passive visibility into an active
+signal: when a target's undelivered count reaches the threshold, and each further
+multiple of it, the hub broadcasts a one-line `dead_letter_escalation` notice to
+every connected socket and journals an audit event, so a growing blackhole is
+surfaced without polling. It never re-delivers a message — the ledger keeps
+counts and names, not bodies — so escalation points a human or an orchestrator at
+the blackhole rather than silently re-sending. The default of `0` disables it,
+leaving the ledger's visibility unchanged. It serves `/` for the browser
 view and `/snapshot.json` for local tooling. The snapshot also includes a derived
 `fleet` section for live agents, `-rx` waiters, missing waiters, active and stale
 claims, a task-dependency graph from blackboard task edges, branch-conflict candidates
