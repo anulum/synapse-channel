@@ -14,6 +14,12 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- An **API and wire stability** policy (`docs/api-stability.md`): what counts as a stable surface, the
+  test that guards each one against accidental change (the public `__all__`, the complete wire
+  `MessageType` vocabulary, the federation primitives out-of-tree consumers import, and the tiered CLI),
+  the decoupled wire-protocol version, the stability tiers, and the deprecation policy. The wire message
+  vocabulary is now frozen in full by `tests/test_wire_surface_freeze.py` — previously only the count
+  was pinned, blind to a rename that keeps the count constant.
 - The hub advertises a wire-protocol version. `WIRE_PROTOCOL_VERSION` (an integer, baseline `1`,
   decoupled from the package version so it changes only on a wire-incompatible change) now rides in the
   `welcome` handshake as `protocol_version` and in `/health`, and a client captures the peer's version
