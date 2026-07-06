@@ -19,7 +19,6 @@ from synapse_channel.core.finding import (
     Validity,
     default_freshness,
 )
-from synapse_channel.core.protocol import loads_bounded
 
 
 def _raw(**overrides: Any) -> dict[str, Any]:
@@ -115,16 +114,18 @@ def test_source_event_seq_rejects_boolean() -> None:
 
 
 def test_from_dict_rejects_non_finite_numbers_without_crashing() -> None:
-    # A finding envelope is decoded from an untrusted frame, and json.loads yields
-    # inf/nan from the Infinity/NaN tokens. int(inf) raises OverflowError and int(nan)
-    # raises ValueError, which previously escaped the finding handler; a non-finite
-    # value must instead become None (no usable number) so a single hostile frame
-    # cannot crash the handler and drop the connection.
-    data = loads_bounded(
-        '{"statement": "s", "provenance": {"project": "p", "source_event_seq": Infinity,'
-        ' "ts": NaN}, "validity": {"valid_from": NaN, "valid_to": Infinity},'
-        ' "producer_confidence": -Infinity}'
-    )
+    # A non-finite number reaching a finding field must become None, not crash the
+    # handler: int(inf) raises OverflowError and int(nan) raises ValueError, which
+    # previously escaped and dropped the sender's connection. The values are built
+    # directly here — the bounded frame loader now rejects the NaN/Infinity tokens at
+    # the boundary, so this exercises Finding.from_dict's own defence in depth for a
+    # non-finite value arriving by any path that bypasses that loader.
+    data = {
+        "statement": "s",
+        "provenance": {"project": "p", "source_event_seq": float("inf"), "ts": float("nan")},
+        "validity": {"valid_from": float("nan"), "valid_to": float("inf")},
+        "producer_confidence": float("-inf"),
+    }
     f = Finding.from_dict(data)  # must not raise
     assert f.provenance is not None
     assert f.provenance.source_event_seq is None
