@@ -24,6 +24,7 @@ exactly the directory the operator can see it reached, never a link's moving tar
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 
 
 class SandboxPathError(RuntimeError):
@@ -71,6 +72,58 @@ def resolve_preopen_host(host_path: str) -> str:
         msg = f"host path {host_path!r} is not an existing directory"
         raise SandboxPathError(msg)
     return real
+
+
+@dataclass(frozen=True)
+class PreopenCheck:
+    """The outcome of dry-checking one preopen host path against the live filesystem.
+
+    A non-raising view of :func:`resolve_preopen_host`: ``ok`` is true when the path would be
+    preopened at run time and ``resolved`` holds the canonical directory; otherwise ``ok`` is
+    false, ``resolved`` is empty, and ``reason`` carries the same refusal message the runner
+    would raise. It lets an operator pre-flight a manifest's grants without executing anything.
+
+    Attributes
+    ----------
+    host_path : str
+        The grant's host path, echoed back unchanged.
+    ok : bool
+        Whether the runner would accept this host path.
+    resolved : str
+        The canonical, symlink-free directory when ``ok``; empty otherwise.
+    reason : str
+        The refusal message when not ``ok``; empty otherwise.
+    """
+
+    host_path: str
+    ok: bool
+    resolved: str
+    reason: str
+
+
+def check_preopen_host(host_path: str) -> PreopenCheck:
+    """Dry-check a preopen host path, reporting acceptance instead of raising.
+
+    Runs the same resolution as :func:`resolve_preopen_host` but turns a
+    :class:`SandboxPathError` into a :class:`PreopenCheck` with ``ok=False`` and the refusal
+    reason, so a caller (the ``sandbox validate`` pre-flight) can report every grant's fate in
+    one pass rather than stopping at the first unsafe path.
+
+    Parameters
+    ----------
+    host_path : str
+        The host directory a filesystem grant names.
+
+    Returns
+    -------
+    PreopenCheck
+        The acceptance outcome, mirroring exactly what the runner would decide at run time.
+    """
+    try:
+        resolved = resolve_preopen_host(host_path)
+    except SandboxPathError as exc:
+        return PreopenCheck(host_path=host_path, ok=False, resolved="", reason=str(exc))
+    return PreopenCheck(host_path=host_path, ok=True, resolved=resolved, reason="")
 
 
 def harden_preopens(

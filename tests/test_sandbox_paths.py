@@ -13,7 +13,9 @@ from pathlib import Path
 import pytest
 
 from synapse_channel.core.sandbox_paths import (
+    PreopenCheck,
     SandboxPathError,
+    check_preopen_host,
     harden_preopens,
     resolve_preopen_host,
 )
@@ -85,6 +87,33 @@ def test_harden_preopens_refuses_the_whole_set_on_one_bad_host(tmp_path: Path) -
     link.symlink_to(good, target_is_directory=True)
     with pytest.raises(SandboxPathError):
         harden_preopens(((str(good), "/g", False), (str(link), "/l", False)))
+
+
+def test_check_preopen_host_reports_a_real_directory_as_ok(tmp_path: Path) -> None:
+    work = tmp_path / "work"
+    work.mkdir()
+    check = check_preopen_host(str(work))
+    assert check == PreopenCheck(
+        host_path=str(work), ok=True, resolved=os.path.realpath(work), reason=""
+    )
+
+
+def test_check_preopen_host_reports_a_symlink_as_refused_without_raising(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(target, target_is_directory=True)
+    check = check_preopen_host(str(link))
+    assert check.ok is False
+    assert check.resolved == ""
+    assert "symlink" in check.reason
+    assert check.host_path == str(link)
+
+
+def test_check_preopen_host_reports_a_missing_directory_as_refused(tmp_path: Path) -> None:
+    check = check_preopen_host(str(tmp_path / "gone"))
+    assert check.ok is False
+    assert "not an existing directory" in check.reason
 
 
 def _manifest_granting(host_path: str) -> CapabilityManifest:

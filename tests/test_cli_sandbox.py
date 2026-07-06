@@ -125,6 +125,66 @@ def test_validate_reports_a_valid_manifest(
     assert json.loads(capsys.readouterr().out)["tool_id"] == "calc"
 
 
+def _fs_grant(
+    host_path: str, guest_path: str = "/data", *, write: bool = False
+) -> dict[str, object]:
+    return {"host_path": host_path, "guest_path": guest_path, "write": write}
+
+
+def test_validate_check_paths_passes_a_real_directory(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    work = tmp_path / "work"
+    work.mkdir()
+    manifest = _manifest_file(tmp_path, filesystem=[_fs_grant(str(work))])
+    args = _args("validate", str(manifest), "--check-paths")
+    assert args.func(args) == 0
+    out = capsys.readouterr().out
+    assert "host paths (pre-flight against the live filesystem):" in out
+    assert "OK" in out and str(work) in out
+
+
+def test_validate_check_paths_refuses_a_symlinked_grant(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(target, target_is_directory=True)
+    manifest = _manifest_file(tmp_path, filesystem=[_fs_grant(str(link))])
+    args = _args("validate", str(manifest), "--check-paths")
+    assert args.func(args) == 1
+    out = capsys.readouterr().out
+    assert "REFUSED" in out and "symlink" in out
+
+
+def test_validate_check_paths_emits_json(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    work = tmp_path / "work"
+    work.mkdir()
+    missing = tmp_path / "gone"
+    manifest = _manifest_file(
+        tmp_path, filesystem=[_fs_grant(str(work)), _fs_grant(str(missing), "/more")]
+    )
+    args = _args("validate", str(manifest), "--check-paths", "--json")
+    assert args.func(args) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["all_paths_ok"] is False
+    assert payload["manifest"]["tool_id"] == "calc"
+    first, second = payload["host_paths"]
+    assert first["ok"] is True and first["resolved"]
+    assert second["ok"] is False and "not an existing directory" in second["reason"]
+
+
+def test_validate_check_paths_with_no_filesystem_grants(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = _args("validate", str(_manifest_file(tmp_path)), "--check-paths")
+    assert args.func(args) == 0
+    assert "none to pre-flight" in capsys.readouterr().out
+
+
 def test_validate_rejects_a_broken_manifest(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
