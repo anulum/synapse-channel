@@ -17,16 +17,19 @@ running it*: it compiles the module, checks the entrypoint is exported, and conf
 module matches its manifest digest, spending no fuel — a cheap gate before an approved run.
 ``run`` executes a ``.wasm`` tool under that manifest: it binds the manifest to the exact
 module by content digest (a swapped module is refused), requires an explicit ``--approve``
-so a capability-bearing run is always an operator decision, and prints the bounded run
-receipt. The WASM runtime lives behind the optional ``[wasm]`` extra; ``test`` and ``run``
-report the install hint when it is absent rather than failing obscurely.
+so a capability-bearing run is always an operator decision, optionally confines every
+preopen to an operator-approved ``--workspace-root`` (a grant outside it is refused before
+the tool runs), and prints the bounded run receipt. The WASM runtime lives behind the
+optional ``[wasm]`` extra; ``test`` and ``run`` report the install hint when it is absent
+rather than failing obscurely.
 
 Exit codes: ``0`` success; ``2`` the command could not proceed (unreadable manifest or
 tool, a refused run, or the missing ``[wasm]`` extra); ``test`` additionally returns ``1``
 when the pre-flight completed but the tool is not ready to run (invalid module, missing
 entrypoint, or a digest that does not match its manifest), and ``validate --check-paths``
-returns ``1`` when the manifest is valid but a filesystem grant's host path would be refused
-here (a symlink redirect or a missing directory).
+(or ``--workspace-root``) returns ``1`` when the manifest is valid but a filesystem grant's
+host path would be refused here (a symlink redirect, a missing directory, or a path outside
+every approved workspace root).
 """
 
 from __future__ import annotations
@@ -92,19 +95,23 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     With ``--check-paths`` it additionally pre-flights each filesystem grant's host path against
     the live filesystem — the same resolution the runner performs before a run — and returns
     ``1`` when the manifest is structurally valid but a host path would be refused here (a
-    symlink redirect or a missing directory), leaving ``0`` for a manifest whose grants all
-    resolve and ``2`` for an unreadable or malformed manifest. Without the flag the host paths
-    are left untouched, so a manifest authored off-target still validates.
+    symlink redirect, a missing directory, or a path outside every ``--workspace-root``),
+    leaving ``0`` for a manifest whose grants all resolve and ``2`` for an unreadable or
+    malformed manifest. Passing ``--workspace-root`` implies the pre-flight. Without either the
+    host paths are left untouched, so a manifest authored off-target still validates.
     """
     try:
         manifest = _load_manifest(args.manifest)
     except SandboxManifestError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    if not args.check_paths:
+    roots = tuple(args.workspace_root or ())
+    if not args.check_paths and not roots:
         _print_manifest(manifest, json_out=args.json)
         return 0
-    checks = [check_preopen_host(grant.host_path) for grant in manifest.filesystem]
+    checks = [
+        check_preopen_host(grant.host_path, approved_roots=roots) for grant in manifest.filesystem
+    ]
     _print_validation(manifest, checks, json_out=args.json)
     return 0 if all(check.ok for check in checks) else 1
 
@@ -266,8 +273,11 @@ def _cmd_run(
         )
         return 2
 
+    roots = tuple(args.workspace_root or ())
     try:
-        receipt = runner(manifest, wasm_bytes, inputs, entrypoint=args.entrypoint)
+        receipt = runner(
+            manifest, wasm_bytes, inputs, entrypoint=args.entrypoint, approved_roots=roots
+        )
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -315,6 +325,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Pre-flight each filesystem grant's host path against the live filesystem "
         "(the same resolution the runner performs); exit 1 if any would be refused here.",
     )
+    validate.add_argument(
+        "--workspace-root",
+        action="append",
+        metavar="DIR",
+        help="Approved workspace root the grants' host paths must resolve under (repeatable); "
+        "implies --check-paths and refuses any grant outside every root.",
+    )
     validate.set_defaults(func=_cmd_validate)
 
     tester = group.add_parser(
@@ -338,6 +355,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     runner.add_argument(
         "--approve", action="store_true", help="Confirm the capability grant (required to run)."
+    )
+    runner.add_argument(
+        "--workspace-root",
+        action="append",
+        metavar="DIR",
+        help="Restrict preopens to directories at or below this operator-approved root "
+        "(repeatable); a grant that resolves outside every root is refused before the tool runs.",
     )
     runner.add_argument(
         "--attest",
