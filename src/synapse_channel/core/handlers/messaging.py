@@ -20,8 +20,12 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.dead_letter_escalation import (
+    crosses_escalation_threshold,
+    escalation_notice,
+)
 from synapse_channel.core.dead_letters import is_directed_target
-from synapse_channel.core.journal import record_chat
+from synapse_channel.core.journal import record_chat, record_dead_letter_escalation
 from synapse_channel.core.protocol import MessageType, is_recipient
 
 if TYPE_CHECKING:
@@ -49,16 +53,24 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
         hub.counters.chat_directed += 1
     else:
         hub.counters.chat_broadcast += 1
+    escalation: tuple[str, int, str] | None = None
     if not recipients and is_directed_target(target):
         # durable but waking nobody - remember the blackhole so the state
         # snapshot can show it instead of a human discovering it by relaying
-        hub.dead_letters.record(target, sender=sender, ts=float(data["timestamp"]))
+        count = hub.dead_letters.record(target, sender=sender, ts=float(data["timestamp"]))
+        if crosses_escalation_threshold(count, hub.dead_letter_escalation_threshold):
+            escalation = (target, count, sender)
     hub.chat_history.append(data.copy())
     if len(hub.chat_history) > hub.max_history:
         del hub.chat_history[0]
     if hub.journal is not None:
         record_chat(hub.journal, data)
     await hub._broadcast(data)
+    if escalation is not None:
+        # After the chat is delivered: escalate the blackhole it added to, as a follow-up signal.
+        await _escalate_dead_letter(
+            hub, target=escalation[0], count=escalation[1], sender=escalation[2]
+        )
     if bool(data.get("receipt_requested")):
         await _send_delivery_receipt(
             hub,
@@ -68,6 +80,39 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
             msg_id=int(data["msg_id"]),
             recipients=recipients,
         )
+
+
+async def _escalate_dead_letter(hub: SynapseHub, *, target: str, count: int, sender: str) -> None:
+    """Escalate a dead-letter blackhole that has crossed its threshold.
+
+    The escalation is an active signal, never a re-delivery (the ledger holds no message bodies):
+    the hub broadcasts a one-line notice to every connected socket — so an operator sees a growing
+    blackhole live — and journals an audit-only event when a durable log is attached, so the
+    escalation is also reviewable after the fact. The named target is almost certainly not
+    connected (that is why its messages are dead-lettering), so the notice reaches the operators and
+    peers who can act, not the missing reader.
+    """
+    # Persist before notifying, so a reader that sees the broadcast can trust the audit is written.
+    if hub.journal is not None:
+        record_dead_letter_escalation(
+            hub.journal,
+            {
+                "target": target,
+                "count": count,
+                "last_sender": sender,
+                "threshold": hub.dead_letter_escalation_threshold,
+            },
+        )
+    notice = escalation_notice(target, count, sender)
+    await hub._broadcast(
+        hub._system(
+            notice,
+            msg_type=MessageType.DEAD_LETTER_ESCALATION,
+            escalation_target=target,
+            escalation_count=count,
+            last_sender=sender,
+        )
+    )
 
 
 async def _route_channel_chat(

@@ -43,6 +43,7 @@ from typing import Any
 
 from synapse_channel.core.acl import AclPolicy
 from synapse_channel.core.auth import TokenAuthenticator
+from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
 from synapse_channel.core.federation import FederationBundle
 from synapse_channel.core.hub import (
     DEFAULT_AUTH_TIMEOUT,
@@ -123,6 +124,7 @@ class HubLimits:
     max_offers_per_agent: int = MAX_OFFERS_PER_AGENT
     max_paths_per_claim: int = MAX_DECLARED_PATHS
     compact_hint_threshold: int = DEFAULT_COMPACT_HINT_THRESHOLD
+    dead_letter_escalation_threshold: int = DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
 
 
 @dataclass(frozen=True, kw_only=True)

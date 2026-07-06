@@ -66,6 +66,7 @@ class EventKind:
     IDEMPOTENCY = "idempotency"
     SANDBOX_RUN = "sandbox_run"
     OPERATOR_RELAY = "operator_relay"
+    DEAD_LETTER_ESCALATION = "dead_letter_escalation"
 
 
 MEMORY_KINDS = frozenset(
@@ -167,6 +168,25 @@ def record_operator_relay(store: EventStore, provenance: Mapping[str, Any]) -> N
         peer and previous owner inbound, or the local requester and destination outbound).
     """
     store.append(EventKind.OPERATOR_RELAY, dict(provenance), durable=True)
+
+
+def record_dead_letter_escalation(store: EventStore, provenance: Mapping[str, Any]) -> None:
+    """Append a durable audit event for a dead-letter blackhole crossing its escalation threshold.
+
+    This kind is **audit-only**: :func:`replay` skips it, because it records no coordination state
+    change — the dead-letter ledger is rebuilt from live sends, not the log — only the durable fact
+    that a target's undelivered count reached an escalation point, so an operator reviewing the log
+    can see when a blackhole was flagged and how large it had grown.
+
+    Parameters
+    ----------
+    store : EventStore
+        The recording hub's durable event store.
+    provenance : Mapping[str, Any]
+        The escalation fields: the target, its undelivered count, the most recent sender, and the
+        threshold that fired.
+    """
+    store.append(EventKind.DEAD_LETTER_ESCALATION, dict(provenance), durable=True)
 
 
 def record_checkpoint(store: EventStore, claim: TaskClaim) -> None:

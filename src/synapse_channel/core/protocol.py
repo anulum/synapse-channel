@@ -187,6 +187,7 @@ class MessageType:
     MULTIHUB_CLAIM_RESULT = "multihub_claim_result"
     OPERATOR_RELAY_RESULT = "operator_relay_result"
     FEDERATION_OFFER = "federation_offer"
+    DEAD_LETTER_ESCALATION = "dead_letter_escalation"
     ERROR = "error"
     NAME_CONFLICT = "name_conflict"
     AUTH_DENIED = "auth_denied"

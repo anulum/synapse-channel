@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Dead-letter blackholes can now escalate. A hub started with a
+  `dead_letter_escalation_threshold` broadcasts a one-line `dead_letter_escalation` notice to every
+  connected socket and journals an audit event when a target's undelivered directed-message count
+  reaches the threshold, and again at each further multiple — turning the ledger's passive
+  visibility into an active signal for a blackhole that keeps growing. It never re-delivers a
+  message (the ledger holds counts and names, not bodies), so escalation points a human or an
+  orchestrator at the problem rather than silently re-sending; the default of `0` disables it,
+  leaving the ledger unchanged. New `core.dead_letter_escalation` holds the threshold policy.
+
 ## [0.98.3] - 2026-07-06
 
 ### Added
