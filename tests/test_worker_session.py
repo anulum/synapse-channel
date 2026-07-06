@@ -185,12 +185,32 @@ def _process_exists(pid: int) -> bool:
 
 
 def _read_json_when_ready(path: Path) -> Any:
+    """Poll until ``path`` holds parseable JSON, not merely until it exists.
+
+    A concurrently-written record can be present on disk before its writer has
+    finished flushing, so parsing on the bare existence check catches an empty or
+    partial file and raises ``JSONDecodeError`` — the create-then-write race that
+    surfaced as a tmux worker-session flake under heavy parallel load. Retrying
+    the parse (not just the existence probe) until the deadline absorbs it, and
+    the two exhaustion messages distinguish "never written" from "written but
+    never valid JSON".
+    """
     deadline = time.monotonic() + 5
-    while not path.exists():
-        if time.monotonic() > deadline:
-            raise AssertionError(f"{path} was not written")
-        time.sleep(0.01)
-    return json.loads(path.read_text(encoding="utf-8"))
+    decode_error: json.JSONDecodeError | None = None
+    while time.monotonic() <= deadline:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            time.sleep(0.01)
+            continue
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as exc:
+            decode_error = exc
+            time.sleep(0.01)
+    if decode_error is not None:
+        raise AssertionError(f"{path} never held valid JSON: {decode_error}")
+    raise AssertionError(f"{path} was not written")
 
 
 def test_worker_session_sets_identity_and_starts_sidecar(tmp_path: Path) -> None:
