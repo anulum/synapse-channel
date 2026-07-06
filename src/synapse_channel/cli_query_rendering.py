@@ -104,6 +104,32 @@ def _render_dead_letters(snapshot: dict[str, Any]) -> None:
     print(f"  drain a name's backlog: syn inbox --as {entries[0].get('target')}")
 
 
+def _render_approvals(snapshot: dict[str, Any]) -> None:
+    """Render the relays awaiting a second operator — the two-person quorum's pending set.
+
+    The two-person approval ledger is per-hub live state with no other query
+    surface, so an enforced quorum was otherwise invisible to an operator. It
+    rides in the same state snapshot the dashboard and cockpit read; this brings
+    the pending set to a terminal, oldest first, naming each pending action and
+    the first requester a second, different operator must join to reach quorum,
+    with the exact remedy. An empty ledger is stated plainly, not left as silence.
+    """
+    entries = list(snapshot.get("pending_relay_approvals", []))
+    if not entries:
+        print("Pending approvals: none — no relay is awaiting a second operator.")
+        return
+    print(f"Pending approvals ({len(entries)}: relays awaiting a second, different operator):")
+    for entry in entries:
+        print(
+            f"  {entry.get('action')} on {entry.get('namespace')}/{entry.get('task_id')}  "
+            f"requested by {entry.get('requester')}  awaiting a different operator"
+        )
+    print(
+        "  approve: a second, different operator re-issues the same "
+        "`synapse federation relay` on the owning hub"
+    )
+
+
 def _print_board(board: dict[str, Any]) -> None:
     """Render a blackboard snapshot as readable lines on stdout."""
     tasks = board.get("tasks", [])

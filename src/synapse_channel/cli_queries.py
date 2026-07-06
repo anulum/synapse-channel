@@ -17,7 +17,9 @@ Existing imports from ``synapse_channel.cli_queries`` remain supported.
 from __future__ import annotations
 
 from synapse_channel.cli_query_commands import (
+    _approvals,
     _board,
+    _cmd_approvals,
     _cmd_board,
     _cmd_dead_letters,
     _cmd_health,
@@ -34,6 +36,7 @@ from synapse_channel.cli_query_parsers import add_parsers
 from synapse_channel.cli_query_rendering import (
     _print_board,
     _print_manifest,
+    _render_approvals,
     _render_dead_letters,
     _render_state,
     _render_who,
@@ -48,7 +51,9 @@ from synapse_channel.cli_query_transport import (
 
 __all__ = [
     "AgentFactory",
+    "_approvals",
     "_board",
+    "_cmd_approvals",
     "_cmd_board",
     "_cmd_dead_letters",
     "_cmd_health",
@@ -63,6 +68,7 @@ __all__ = [
     "_print_board",
     "_print_manifest",
     "_query_hub",
+    "_render_approvals",
     "_render_dead_letters",
     "_render_state",
     "_render_who",

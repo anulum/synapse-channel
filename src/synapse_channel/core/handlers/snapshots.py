@@ -34,7 +34,11 @@ async def handle_state_request(
             "State snapshot",
             msg_type=MessageType.STATE_SNAPSHOT,
             target=sender,
-            snapshot={**hub.state.snapshot(), "dead_letters": hub.dead_letters.snapshot()},
+            snapshot={
+                **hub.state.snapshot(),
+                "dead_letters": hub.dead_letters.snapshot(),
+                "pending_relay_approvals": hub.relay_approvals.pending(),
+            },
         ),
     )
 

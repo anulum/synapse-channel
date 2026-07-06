@@ -143,3 +143,41 @@ def test_capacity_evicts_the_oldest_pending() -> None:
 def test_capacity_below_one_is_rejected() -> None:
     with pytest.raises(ValueError, match="at least 1"):
         RelayApprovalLedger(capacity=0)
+
+
+def test_pending_lists_records_oldest_first() -> None:
+    ledger = RelayApprovalLedger()
+    ledger.submit(_request("alice", task="MY-NS/a"))
+    ledger.submit(_request("carol", task="MY-NS/b"))
+
+    assert ledger.pending() == [
+        {"action": RELAY_RELEASE, "namespace": "MY-NS", "task_id": "MY-NS/a", "requester": "alice"},
+        {"action": RELAY_RELEASE, "namespace": "MY-NS", "task_id": "MY-NS/b", "requester": "carol"},
+    ]
+
+
+def test_pending_is_empty_without_any_awaiting() -> None:
+    assert RelayApprovalLedger().pending() == []
+
+
+def test_pending_records_the_stripped_task_id() -> None:
+    ledger = RelayApprovalLedger()
+    ledger.submit(_request("alice", task="  MY-NS/build  "))
+
+    assert ledger.pending() == [
+        {
+            "action": RELAY_RELEASE,
+            "namespace": "MY-NS",
+            "task_id": "MY-NS/build",
+            "requester": "alice",
+        }
+    ]
+
+
+def test_pending_drops_an_approved_record() -> None:
+    # A completed quorum clears its pending record, so it no longer appears in the pending view.
+    ledger = RelayApprovalLedger()
+    ledger.submit(_request("alice"))
+    ledger.submit(_request("bob"))  # a second, different operator approves → cleared
+
+    assert ledger.pending() == []

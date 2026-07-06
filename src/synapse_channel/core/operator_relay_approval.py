@@ -130,6 +130,33 @@ class RelayApprovalLedger:
         """How many relays are currently awaiting a second operator."""
         return len(self._pending)
 
+    def pending(self) -> list[dict[str, str]]:
+        """Return the relays awaiting a second operator, oldest first.
+
+        A JSON-serialisable view of the quorum's live state — the shape the hub's
+        state snapshot carries to the dashboard, the cockpit, and the ``approvals``
+        query so the enforced-but-otherwise-invisible quorum becomes operable. Each
+        record names the pending action, its namespace and task, and the first
+        operator who requested it — the requester a second, *different* operator
+        must join to reach quorum. It holds only what the ledger holds (never a
+        message body), and insertion order makes the oldest pending relay first.
+
+        Returns
+        -------
+        list of dict
+            One ``{"action", "namespace", "task_id", "requester"}`` record per
+            pending relay, oldest first.
+        """
+        return [
+            {
+                "action": key.action,
+                "namespace": key.namespace,
+                "task_id": key.task_id,
+                "requester": record.requester,
+            }
+            for key, record in self._pending.items()
+        ]
+
     def submit(self, request: RelayActionRequest) -> ApprovalOutcome:
         """Record or approve ``request`` and return the resulting verdict.
 

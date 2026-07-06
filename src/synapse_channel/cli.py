@@ -149,7 +149,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_arm:add_parser", ("arm",)),
     (
         "synapse_channel.cli_queries:add_parsers",
-        ("who", "state", "dead-letters", "board", "manifest", "health"),
+        ("who", "state", "dead-letters", "approvals", "board", "manifest", "health"),
     ),
     ("synapse_channel.cli_status:add_parsers", ("status",)),
     ("synapse_channel.cli_dashboard:add_parsers", ("dashboard",)),
