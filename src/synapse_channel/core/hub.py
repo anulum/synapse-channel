@@ -108,6 +108,14 @@ from synapse_channel.core.state import (
 
 logger = logging.getLogger("synapse.hub")
 
+# The websockets server logs its connection lifecycle here — a descendant of the
+# ``synapse`` logger, so its records reach the app's handler, where
+# HandshakeAbortFilter (installed by configure_logging) quiets only the benign
+# aborted-handshake tracebacks. websockets creates a per-connection *child* of
+# this logger, so the filter must live on the handler (which sees child records),
+# not on this logger (whose filters a child record bypasses).
+ws_server_logger = logging.getLogger("synapse.hub.ws")
+
 __all__ = [
     "FrameDisposition",
     "InsecureBindError",
@@ -1065,6 +1073,7 @@ class SynapseHub:
             close_timeout=self.shutdown_close_timeout,
             process_request=self._process_request if self.enable_metrics else None,
             ssl=ssl_context,
+            logger=ws_server_logger,
         ):
             scheme = "wss" if ssl_context is not None else "ws"
             logger.info("Synapse Hub running on %s://%s:%d", scheme, host, port)
