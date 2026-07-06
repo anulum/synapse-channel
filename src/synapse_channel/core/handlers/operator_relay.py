@@ -31,6 +31,13 @@ reconstruction correct across a restart, and an audit-only ``operator_relay`` ev
 the cross-hub provenance — the verified peer, the asserted operator and origin hub, and the
 previous holder — that a plain release never carries. The hub's own agents are then told the
 lease was revoked, so a former holder does not keep acting on a dropped lease.
+
+A hub configured for two-person approval adds one more gate *after* the authorisation gate: an
+authorised relay is not applied on its own, but recorded pending in the hub's
+:class:`~synapse_channel.core.operator_relay_approval.RelayApprovalLedger` and answered ``pending``;
+only a second, different operator submitting the same action carries it out, and both the pending
+request and the approval are audited, so a governed cross-hub release under this policy leaves a
+trail naming two distinct operators.
 """
 
 from __future__ import annotations
@@ -44,6 +51,7 @@ from synapse_channel.core.journal import (
     record_release,
 )
 from synapse_channel.core.operator_relay import RelayDecision, authorise_relay
+from synapse_channel.core.operator_relay_approval import ApprovalOutcome, ApprovalStatus
 from synapse_channel.core.operator_relay_wire import (
     RelayActionRequest,
     RelayActionResult,
@@ -57,6 +65,15 @@ if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
 
 logger = logging.getLogger(__name__)
+
+RELAY_STATUS_APPLIED = "applied"
+"""Audit status: the relay was carried out (single-operator, or the second-operator approval)."""
+
+RELAY_STATUS_PENDING = "pending"
+"""Audit status: the relay was recorded under two-person policy, awaiting a second operator."""
+
+_PENDING_DETAIL = "recorded; awaiting approval by a second operator"
+_AWAITING_DETAIL = "already recorded by this operator; awaiting a different second operator"
 
 
 async def handle_operator_relay_request(
@@ -117,7 +134,10 @@ async def handle_operator_relay_request(
 
     # An allow decision guarantees the action is registered; the sole registered action is a
     # force-release, so applying it here is exhaustive for this slice.
-    result = _apply_release(hub, sender, request)
+    if hub.require_two_person_relay:
+        result = _apply_with_two_person(hub, sender, request)
+    else:
+        result = _apply_release(hub, sender, request)
     await _send_result(hub, websocket, sender, result)
 
 
@@ -153,7 +173,35 @@ def _authorise(
     )
 
 
-def _apply_release(hub: SynapseHub, sender: str, request: RelayActionRequest) -> RelayActionResult:
+def _apply_with_two_person(
+    hub: SynapseHub, sender: str, request: RelayActionRequest
+) -> RelayActionResult:
+    """Apply a relay only once a second, different operator has approved it.
+
+    The already-authorised request is submitted to the hub's approval ledger. A second, different
+    operator completing the quorum applies the release (recording who approved); a first request or
+    a repeat from the same operator is recorded pending, audited as such, and answered ``pending``
+    so the initiator learns it is waiting on a second operator rather than refused.
+    """
+    outcome = hub.relay_approvals.submit(request)
+    if outcome.status is ApprovalStatus.APPROVED:
+        return _apply_release(hub, sender, request, approver=outcome.approver)
+    _audit_pending(hub, sender, request, outcome)
+    detail = _PENDING_DETAIL if outcome.status is ApprovalStatus.RECORDED else _AWAITING_DETAIL
+    return RelayActionResult(
+        applied=False,
+        action=request.action,
+        namespace=request.namespace,
+        task_id=request.task_id,
+        owner_hub_id=hub.hub_id,
+        detail=detail,
+        pending=True,
+    )
+
+
+def _apply_release(
+    hub: SynapseHub, sender: str, request: RelayActionRequest, *, approver: str = ""
+) -> RelayActionResult:
     """Force-release the targeted lease, audit the relay, and notify this hub's agents.
 
     The previous holder is read before the release so it can be named in the audit and the
@@ -161,6 +209,8 @@ def _apply_release(hub: SynapseHub, sender: str, request: RelayActionRequest) ->
     reconstruction and an ``operator_relay`` for cross-hub provenance — and this hub's agents
     are told the lease was revoked. A task that is not claimed is a no-op: the relay was
     authorised but there was nothing to release, so it is reported unapplied and not journalled.
+    Under two-person approval ``approver`` names the second operator whose approval carried it out,
+    empty for a single-operator relay.
     """
     existing = hub.state.claims.get(request.task_id.strip())
     previous_owner = existing.owner if existing is not None else ""
@@ -174,8 +224,10 @@ def _apply_release(hub: SynapseHub, sender: str, request: RelayActionRequest) ->
                 "namespace": request.namespace,
                 "task_id": request.task_id.strip(),
                 "direction": RELAY_DIRECTION_IN,
+                "status": RELAY_STATUS_APPLIED,
                 "peer": sender,
                 "operator": request.operator,
+                "approver": approver,
                 "origin_hub_id": request.origin_hub_id,
                 "reason": request.reason,
                 "break_glass": request.break_glass,
@@ -191,6 +243,38 @@ def _apply_release(hub: SynapseHub, sender: str, request: RelayActionRequest) ->
         task_id=request.task_id,
         owner_hub_id=hub.hub_id,
         detail=detail,
+    )
+
+
+def _audit_pending(
+    hub: SynapseHub, sender: str, request: RelayActionRequest, outcome: ApprovalOutcome
+) -> None:
+    """Record an audit event for a relay recorded pending a second operator's approval.
+
+    The pending request is journalled as an audit-only ``operator_relay`` event with a
+    ``pending`` status and ``applied`` false — so the durable log shows who asked for a governed
+    action before a second operator carried it out, completing the two-person trail. Nothing is
+    released, so no ``release`` event is written.
+    """
+    if hub.journal is None:
+        return
+    record_operator_relay(
+        hub.journal,
+        {
+            "action": request.action,
+            "namespace": request.namespace,
+            "task_id": request.task_id.strip(),
+            "direction": RELAY_DIRECTION_IN,
+            "status": RELAY_STATUS_PENDING,
+            "peer": sender,
+            "operator": request.operator,
+            "requester": outcome.requester,
+            "origin_hub_id": request.origin_hub_id,
+            "reason": request.reason,
+            "break_glass": request.break_glass,
+            "applied": False,
+            "detail": _PENDING_DETAIL,
+        },
     )
 
 

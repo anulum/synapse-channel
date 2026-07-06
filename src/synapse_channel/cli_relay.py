@@ -60,8 +60,9 @@ def _cmd_relay(args: argparse.Namespace, *, relayer: Relayer = relay_operator_ac
     """Relay a governed action to a peer hub and report the peer's verdict.
 
     Exit codes: ``0`` when the peer applied the action, ``1`` when the peer refused it or it
-    was a no-op (an authorised release of an unclaimed task), and ``2`` on a transport failure
-    — the relay never reached a verdict, the fail-closed case.
+    was a no-op (an authorised release of an unclaimed task), ``2`` on a transport failure — the
+    relay never reached a verdict, the fail-closed case — and ``3`` when the peer recorded the
+    relay pending a second operator's approval under a two-person policy.
     """
     request = RelayActionRequest(
         action=args.action,
@@ -90,6 +91,7 @@ def _cmd_relay(args: argparse.Namespace, *, relayer: Relayer = relay_operator_ac
             json.dumps(
                 {
                     "applied": result.applied,
+                    "pending": result.pending,
                     "action": result.action,
                     "namespace": result.namespace,
                     "task_id": result.task_id,
@@ -100,8 +102,15 @@ def _cmd_relay(args: argparse.Namespace, *, relayer: Relayer = relay_operator_ac
             )
         )
     else:
-        verb = "applied" if result.applied else "refused"
+        if result.applied:
+            verb = "applied"
+        elif result.pending:
+            verb = "recorded pending a second operator for"
+        else:
+            verb = "refused"
         print(f"peer {result.owner_hub_id} {verb} relay {result.action!r}: {result.detail}")
+    if result.pending:
+        return 3
     return 0 if result.applied else 1
 
 

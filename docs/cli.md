@@ -1742,14 +1742,25 @@ scope + it must own the namespace) and audits it with the verified peer, the
 asserting operator, and the previous holder, so a lease revoked across hubs stays
 attributable. `--local-id` must match a serving grant on the peer, `--operator`
 records who asked (default: the OS user), and the exit code is `0` when the peer
-applied the action, `1` when it refused it or there was nothing to release, and
-`2` when the relay never reached the peer — the fail-closed case. Only registered
-actions relay: an unknown action is refused, never smuggled through the wire.
+applied the action, `1` when it refused it or there was nothing to release, `2`
+when the relay never reached the peer — the fail-closed case — and `3` when the
+peer recorded the relay pending a second operator's approval (see two-person
+approval below). Only registered actions relay: an unknown action is refused,
+never smuggled through the wire.
 
 `--reason` records why the action was relayed, in the audit on both hubs; `--break-glass`
 tags it a distinct emergency override. A hub started with reason-required receipts refuses
 a relay that carries no reason, so a team or production deployment can hold every governed
 cross-hub action to an auditable why.
+
+A hub can also require **two-person approval**: an authorised relay is not applied on its
+own but recorded pending, and carried out only when a second, *different* operator relays
+the same action (same namespace and task). The first relay returns exit `3` and a "pending"
+verdict; the same operator repeating it stays pending (no self-approval); a second operator
+completes the quorum and the peer applies it. Both the pending request and the approval are
+audited, so a governed cross-hub release under this policy names two distinct operators in
+the log. The policy is a hub setting (`require_two_person_relay`), off by default; break-glass
+does not bypass it — an emergency still needs a second operator.
 
 The relay can also go **through** the operator's own hub instead of straight to the
 peer: point `--peer` at your local hub, and if that hub is configured with a relay

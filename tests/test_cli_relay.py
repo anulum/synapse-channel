@@ -94,11 +94,40 @@ def test_relay_transport_error_exits_two(capsys: pytest.CaptureFixture[str]) -> 
     assert "could not relay the action: peer unreachable" in capsys.readouterr().err
 
 
+def _pending(detail: str = "recorded; awaiting approval by a second operator") -> RelayActionResult:
+    return RelayActionResult(
+        applied=False,
+        action="release",
+        namespace="SYNAPSE-CHANNEL",
+        task_id="t1",
+        owner_hub_id="syn-peer",
+        detail=detail,
+        pending=True,
+    )
+
+
+def test_relay_pending_exits_three(capsys: pytest.CaptureFixture[str]) -> None:
+    # A two-person hold is neither applied (0) nor refused (1) nor a transport failure (2).
+    rc = cli_relay._cmd_relay(_args("--operator", "alice"), relayer=_relayer(_pending()))
+    assert rc == 3
+    out = capsys.readouterr().out
+    assert "recorded pending a second operator for relay 'release'" in out
+
+
+def test_relay_pending_json_carries_the_pending_flag(capsys: pytest.CaptureFixture[str]) -> None:
+    rc = cli_relay._cmd_relay(_args("--json"), relayer=_relayer(_pending()))
+    assert rc == 3
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["applied"] is False
+    assert payload["pending"] is True
+
+
 def test_relay_json_output(capsys: pytest.CaptureFixture[str]) -> None:
     rc = cli_relay._cmd_relay(_args("--json"), relayer=_relayer(_applied()))
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["applied"] is True
+    assert payload["pending"] is False
     assert payload["owner_hub_id"] == "syn-peer"
 
 

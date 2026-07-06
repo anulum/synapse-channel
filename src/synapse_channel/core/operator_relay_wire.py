@@ -66,6 +66,9 @@ OWNER_HUB_ID_FIELD = "owner_hub_id"
 DETAIL_FIELD = "detail"
 """Result field: the human-readable applied or refused message, possibly empty."""
 
+PENDING_FIELD = "pending"
+"""Result field: whether the action is recorded and awaiting a second operator's approval."""
+
 
 class RelayWireError(ValueError):
     """Raised when an operator-relay wire body is malformed.
@@ -131,6 +134,11 @@ class RelayActionResult:
         The id of the acting hub that produced this answer. Non-empty.
     detail : str
         The human-readable applied or refused message; may be empty.
+    pending : bool, optional
+        Whether the action was recorded and is awaiting a second operator's approval under a
+        two-person policy — distinct from a refusal (``applied`` false, ``pending`` false) and from
+        an applied action (``applied`` true). Defaults false, so a single-operator hub and an older
+        initiator read exactly as before.
     """
 
     applied: bool
@@ -139,6 +147,7 @@ class RelayActionResult:
     task_id: str
     owner_hub_id: str
     detail: str = ""
+    pending: bool = False
 
 
 def encode_relay_request(request: RelayActionRequest) -> dict[str, Any]:
@@ -199,6 +208,7 @@ def encode_relay_result(result: RelayActionResult) -> dict[str, Any]:
         TASK_ID_FIELD: _require_nonempty(result.task_id, TASK_ID_FIELD),
         OWNER_HUB_ID_FIELD: _require_nonempty(result.owner_hub_id, OWNER_HUB_ID_FIELD),
         DETAIL_FIELD: str(result.detail),
+        PENDING_FIELD: bool(result.pending),
     }
 
 
@@ -214,6 +224,7 @@ def decode_relay_result(raw: object) -> RelayActionResult:
     body = _require_mapping(raw, "result")
     raw_detail = body.get(DETAIL_FIELD)
     detail = "" if raw_detail is None else _require_str(raw_detail, DETAIL_FIELD)
+    raw_pending = body.get(PENDING_FIELD)
     return RelayActionResult(
         applied=_require_bool(body.get(APPLIED_FIELD), APPLIED_FIELD),
         action=_require_nonempty(body.get(ACTION_FIELD), ACTION_FIELD),
@@ -221,6 +232,7 @@ def decode_relay_result(raw: object) -> RelayActionResult:
         task_id=_require_nonempty(body.get(TASK_ID_FIELD), TASK_ID_FIELD),
         owner_hub_id=_require_nonempty(body.get(OWNER_HUB_ID_FIELD), OWNER_HUB_ID_FIELD),
         detail=detail,
+        pending=False if raw_pending is None else _require_bool(raw_pending, PENDING_FIELD),
     )
 
 
