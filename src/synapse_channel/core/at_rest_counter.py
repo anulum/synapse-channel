@@ -87,6 +87,16 @@ class PersistentMessageCounter:
     batch_size : int, optional
         Messages reserved per persisted write. Larger trades a bigger post-crash over-count for
         fewer writes. Defaults to :data:`DEFAULT_COUNTER_BATCH`.
+
+    Notes
+    -----
+    This counter is **single-writer**: it holds no inter-process lock, reads the sidecar once at
+    construction, and writes only at batch boundaries. Two processes sharing one key and sidecar
+    would each reserve from a stale view and could seal messages past the safe per-key bound
+    between their writes, defeating the nonce-collision guard. Exactly one live writer per
+    ``(key, sidecar)`` is required — the intended deployment, a single hub process owning its
+    at-rest store. A genuine multi-writer case needs inter-process file locking, a larger change
+    than this class makes.
     """
 
     def __init__(self, path: str | Path, *, batch_size: int = DEFAULT_COUNTER_BATCH) -> None:

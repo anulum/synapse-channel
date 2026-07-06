@@ -132,11 +132,17 @@ AES-GCM with random 96-bit nonces carries a per-key safety bound: after roughly
 threshold, which would weaken confidentiality. `AtRestCipher` counts the messages
 it seals (exposed as `encrypted_count`), logs a one-time warning once it passes
 fifteen-sixteenths of that limit, and raises `AtRestKeyExhausted` rather than
-encrypt beyond it. The correct response is a key rotation (rekey, above). The
-count is held per cipher instance and resets when the process restarts or the key
-is reloaded, so it guards a single long-running hub rather than a key's cumulative
-lifetime — a durable cross-restart counter would need the count persisted beside
-the key and is out of scope for this tranche.
+encrypt beyond it. The correct response is a key rotation (rekey, above).
+
+By default the count lives in memory (`InMemoryMessageCounter`) and resets when
+the process restarts or the key is reloaded, so it guards a single long-running
+hub rather than a key's cumulative lifetime. For a key whose count must survive
+restarts, pass a `PersistentMessageCounter`: it persists the count to a sidecar
+file and is crash-safe by reserving a batch ahead of use, so a crash resumes at
+or above the true count and never under-counts into a nonce collision. That
+counter is **single-writer** — it holds no inter-process lock, so exactly one
+live hub process may own a given key and its sidecar; a genuine multi-writer
+deployment would need inter-process file locking, which is out of scope here.
 
 ## Backup recovery
 
