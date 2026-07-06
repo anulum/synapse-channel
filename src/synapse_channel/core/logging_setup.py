@@ -71,6 +71,52 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False, default=str)
 
 
+_BENIGN_HANDSHAKE_ABORTS = (EOFError, ConnectionError, TimeoutError)
+
+
+def _is_benign_disconnect(exc: BaseException | None) -> bool:
+    """Whether ``exc`` or any exception it chains from is a plain connection abort.
+
+    websockets wraps the underlying cause of a failed handshake in its own
+    exception (e.g. an ``InvalidMessage`` raised ``from`` an ``EOFError`` when a
+    peer drops the connection mid-request), so the benign case must be recognised
+    through the ``__cause__``/``__context__`` chain, not just the top exception.
+    """
+    seen: set[int] = set()
+    while exc is not None and id(exc) not in seen:
+        if isinstance(exc, _BENIGN_HANDSHAKE_ABORTS):
+            return True
+        seen.add(id(exc))
+        exc = exc.__cause__ or exc.__context__
+    return False
+
+
+class HandshakeAbortFilter(logging.Filter):
+    """Drop the websockets server's full-traceback log for a benign aborted handshake.
+
+    A load-balancer TCP health check, a port scan, or a client that drops the
+    connection before completing the WebSocket handshake makes the websockets
+    server log ``opening handshake failed`` at ``ERROR`` with a full traceback. On
+    a production hub these are frequent and benign — a peer disconnected mid-
+    handshake — so the tracebacks are log spam that buries real errors and grows
+    the log without bound. This drops exactly those records (a handshake failure
+    whose cause chain is a plain connection abort) and keeps every other log,
+    including a genuine handshake error from a completed-but-invalid request.
+
+    It is installed on the handler, not a logger, on purpose: websockets logs a
+    connection through a logger whose records must reach the app's single handler
+    regardless of the logger's own filters, and a handler sees every propagated
+    record.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Return ``False`` only for a handshake failed by a benign disconnect."""
+        if record.getMessage() != "opening handshake failed":
+            return True
+        exc = record.exc_info[1] if record.exc_info else None
+        return not _is_benign_disconnect(exc)
+
+
 def configure_logging(
     *,
     log_format: str = DEFAULT_LOG_FORMAT,
@@ -106,6 +152,7 @@ def configure_logging(
     handler.setFormatter(
         JsonFormatter() if log_format == "json" else logging.Formatter(_TEXT_FORMAT)
     )
+    handler.addFilter(HandshakeAbortFilter())
     logger.addHandler(handler)
     logger.propagate = False
     return logger

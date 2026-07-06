@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- The hub no longer floods its log with full ERROR tracebacks for benign aborted handshakes. A
+  load-balancer TCP health check, a port scan, or a client that drops before completing the WebSocket
+  handshake previously logged `opening handshake failed` with a full traceback each time — on a
+  production hub, frequent, benign, and enough noise to bury real errors and grow the log without bound.
+  A `HandshakeAbortFilter` on the log handler now drops exactly those records (a handshake failure whose
+  cause chain is a plain connection abort — EOFError/ConnectionError/TimeoutError, matched through
+  websockets' wrapping exception) while keeping every other log, including a genuine handshake error from
+  a completed-but-invalid request. Found by live fault-injection testing of the hub.
+
 ### Added
 - An **API and wire stability** policy (`docs/api-stability.md`): what counts as a stable surface, the
   test that guards each one against accidental change (the public `__all__`, the complete wire
