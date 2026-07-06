@@ -31,6 +31,17 @@ def test_security_policy_uses_evidence_bounded_a2a_claim_language() -> None:
     assert "not externally validated for full A2A conformance" in prose
 
 
+def test_file_scope_docs_describe_literal_prefix_overlap_not_glob() -> None:
+    # `core/scoping.py` states wildcard-glob algebra is intentionally out of scope and
+    # declared paths are literal files or directory prefixes; SECURITY.md must match the
+    # code and never regress to the stale "glob overlap" wording.
+    prose = _single_spaced(_read_repo_text("SECURITY.md"))
+
+    assert "literal path or directory-prefix overlap" in prose
+    assert "wildcard-glob algebra is intentionally out of scope" in prose
+    assert "glob overlap" not in prose
+
+
 def test_metrics_token_docs_keep_query_tokens_opt_in() -> None:
     combined = "\n".join(
         [
