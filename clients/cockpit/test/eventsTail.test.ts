@@ -44,6 +44,22 @@ describe("parseStoredEvent / parseTail", () => {
 });
 
 describe("mapStoredEvent", () => {
+  it("maps a dead-letter escalation into the risk lane, loud", () => {
+    const event = mapStoredEvent({
+      seq: 9001,
+      ts: 1783.5,
+      kind: "dead_letter_escalation",
+      payload: { target: "CEO", count: 10, last_sender: "a/say", threshold: 5 },
+    });
+    expect(event.kind).toBe("conflict");
+    expect(event.lane).toBe("risk");
+    expect(event.actor).toBe("CEO");
+    expect(event.label).toBe("dead-letter escalation: CEO · 10 undelivered");
+    const bare = mapStoredEvent({ seq: 1, ts: 1, kind: "dead_letter_escalation", payload: { target: "x" } });
+    expect(bare.label).toBe("dead-letter escalation: x");
+  });
+
+
   it("maps every known hub kind with the hub's own seq and ts", () => {
     expect(mapStoredEvent(stored(1, "claim", { task_id: "t1", owner: "a" }))).toMatchObject({
       seq: 1,

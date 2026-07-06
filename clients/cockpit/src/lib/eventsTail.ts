@@ -101,6 +101,15 @@ export function mapStoredEvent(stored: StoredEvent): CockpitEvent {
     kind = "chat";
     actor = asString(payload["sender"]);
     label = trimmed(asString(payload["payload"]));
+  } else if (stored.kind === "dead_letter_escalation") {
+    // The hub's own blackhole alarm (0.98.x): a target's undelivered count
+    // crossed the escalation threshold. Risk lane, loud — not chatter.
+    kind = "conflict";
+    actor = asString(payload["target"]);
+    const count = payload["count"];
+    label = `dead-letter escalation: ${asString(payload["target"])}${
+      typeof count === "number" ? ` · ${count} undelivered` : ""
+    }`;
   } else {
     kind = "chat";
     actor = "";
