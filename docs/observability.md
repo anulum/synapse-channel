@@ -69,6 +69,16 @@ happened. The signals that matter operationally:
   blackholed; the ledger ages quiet names out, so a value that stays above
   zero (the `SynapsePersistentDeadLetters` alert watches it over an hour) is
   a persistent gap, not a passing miss. `synapse dead-letters` lists them.
+  A hub given a `dead_letter_escalation_threshold` turns that passive gauge
+  into an active signal: it broadcasts a notice and journals a
+  `dead_letter_escalation` audit event each time a target's undelivered count
+  crosses the threshold. When the blackholed target's namespace is owned by a
+  peer hub — resolved through the same relay routes an operator relay uses —
+  the escalation also forwards a pointer to that peer (the target and its
+  count, never a message body) and records a `dead_letter_forwarding` audit
+  event, so the hub that can actually reach the missing reader learns of the
+  gap. Query both with `synapse event-query --kind dead_letter_escalation`
+  and `--kind dead_letter_forwarding`.
 - Any movement on `synapse_auth_failures_total` or
   `synapse_federation_denied_total` on a locked-down hub deserves a look
   at `synapse event-query --kind error` — expected during key rotation,

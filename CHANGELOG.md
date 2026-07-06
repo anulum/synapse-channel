@@ -14,6 +14,14 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Dead-letter escalation can now forward across hubs. When a blackholed directed target's
+  namespace is owned by a peer hub — resolved through the same namespace-ownership and relay
+  routes the operator relay uses — an escalation forwards a pointer to that owning hub (the
+  target and its undelivered count, never a message body, so re-delivery stays impossible by
+  construction) and records a durable `dead_letter_forwarding` audit event, so the hub that can
+  actually reach the missing reader learns of the gap. The transmission is a `dead_letter_forwarder`
+  seam that defaults to recording the intent without sending, so the feature is opt-in like the
+  relay routes it reuses. New `core.dead_letter_forwarding` holds the honesty-bound notice.
 - `synapse federation rotate` keeps a domain's own trust bundle fresh: it pushes the expiry
   forward, unions new signing keys or certificate pins alongside the existing ones for a grace
   window (an old key stays valid until a later rotation retires it, so a peer that has not

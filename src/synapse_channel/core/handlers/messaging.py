@@ -17,19 +17,29 @@ uniform dispatch table.
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.dead_letter_escalation import (
     crosses_escalation_threshold,
     escalation_notice,
 )
+from synapse_channel.core.dead_letter_forwarding import DeadLetterForwardError, forwarding_notice
 from synapse_channel.core.dead_letters import is_directed_target
-from synapse_channel.core.journal import record_chat, record_dead_letter_escalation
+from synapse_channel.core.journal import (
+    record_chat,
+    record_dead_letter_escalation,
+    record_dead_letter_forwarding,
+)
+from synapse_channel.core.operator_relay_routing import RelayRouteKind, route_operator_relay
 from synapse_channel.core.protocol import MessageType, is_recipient
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
+
+logger = logging.getLogger("synapse.messaging")
 
 
 async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
@@ -113,6 +123,45 @@ async def _escalate_dead_letter(hub: SynapseHub, *, target: str, count: int, sen
             last_sender=sender,
         )
     )
+    await _forward_dead_letter_to_peer(hub, target=target, count=count)
+
+
+async def _forward_dead_letter_to_peer(hub: SynapseHub, *, target: str, count: int) -> None:
+    """Forward a blackhole signal to the peer hub whose domain owns the target, if any.
+
+    The target's namespace is resolved through the same namespace-ownership and relay-route roster
+    the operator relay uses. When it resolves to a peer this hub does not own, the origin records a
+    durable, audit-only forwarding event (a pointer — the target, its undelivered count, and the
+    origin and owner hub ids; never a message body) and, when a forwarder is configured, transmits
+    that pointer to the owning hub best-effort. A local, unrouted, ungoverned, or partitioned
+    namespace forwards nothing: the local escalation already covers a target this hub owns, and a
+    signal is never sent to a hub the operator did not route to.
+    """
+    if hub.namespace_ownership is None or not hub.relay_peers:
+        return
+    namespace = project_of(target)
+    if not namespace:
+        return
+    asserting = hub.observed_asserting_hubs(namespace) if hub.observed_asserting_hubs else ()
+    decision = hub.namespace_ownership.resolve(namespace, asserting_hubs=asserting)
+    route = route_operator_relay(decision, relay_peers=hub.relay_peers)
+    if route.kind is not RelayRouteKind.FORWARD or route.peer is None:
+        return
+    notice = forwarding_notice(
+        target, count, origin_hub_id=hub.hub_id, owner_hub_id=decision.owner_hub_id or ""
+    )
+    if hub.journal is not None:
+        record_dead_letter_forwarding(hub.journal, notice)
+    if hub.dead_letter_forwarder is None:
+        return
+    try:
+        await hub.dead_letter_forwarder(
+            notice, uri=route.peer.uri, local_id=hub.hub_id, token=route.peer.token
+        )
+    except DeadLetterForwardError as exc:
+        # Best-effort over the already-durable audit: a peer we could not reach degrades to
+        # "recorded but not delivered", never a lost signal or a crashed escalation.
+        logger.warning("Dead-letter forward to %s failed: %s", route.peer.uri, exc)
 
 
 async def _route_channel_chat(
