@@ -69,7 +69,7 @@ def test_peer_from_dict_rejects_bad_inputs() -> None:
     "bad_expires",
     [
         "soon",  # non-numeric string -> raw ValueError before the fix
-        "1e999x",  # numeric-looking but unparseable
+        "1e999x",  # numeric-looking but unparsable
         {},  # mapping -> raw TypeError, which a ValueError-only catch misses
         [1, 2],  # list -> raw TypeError
         float("nan"),  # finite guard: nan defeats the expiry comparison
