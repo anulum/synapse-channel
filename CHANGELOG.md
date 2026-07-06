@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.4] - 2026-07-06
+
 ### Added
 - Dead-letter escalation can now forward across hubs, end to end. When a blackholed directed
   target's namespace is owned by a peer hub — resolved through the same namespace-ownership and
