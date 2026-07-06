@@ -1741,6 +1741,18 @@ moment with `federation import --max-age DAYS`, which warns (the import
 still succeeds — the operator is confirming it explicitly) when the
 incoming bundle never expires or expires further out than the threshold.
 
+`federation rotate` keeps a domain's **own** bundle fresh on the other side of
+that lifecycle. It pushes the expiry to `--lifetime-days` out, unions any
+`--add-signing-key`/`--add-pin` material with the existing sets — the grace
+window: an old key stays valid until a later `--retire-signing-key`/`--retire-pin`
+drops it, so a peer that has not re-fetched keeps verifying — and rewrites the
+bundle in place, saving the prior one as `<bundle>.prev` (or `--backup PATH`).
+Retiring material the bundle does not hold, or a non-positive lifetime, is refused
+before anything is written. The rotation changes the fingerprint, so it is followed
+by the same out-of-band ceremony before peers re-import. It mints no keys of its
+own: the `--add-*` values are ids the domain generated and enrolled through its
+existing signing-key and certificate tooling.
+
 `federation relay` performs a governed operator action **on** a peer hub over the
 same federation transport, rather than managing peerings. The first action is
 `release` — an operator whose domain is granted the `release` verb in a namespace
@@ -1788,6 +1800,8 @@ synapse acl shadow --policy ./acl.json --requests ./requests.json   # non-blocki
 synapse policy-check --policy ./policy.json --receipt-json ./receipt.json   # advisory; --enforce to gate
 synapse federation offer ./my-domain.json                      # validate own material; print fingerprints
 synapse hub --port 8876 --federation-offer ./my-domain.json    # serve it to peer operators (token-gated)
+synapse federation rotate ./my-domain.json --lifetime-days 90 --add-signing-key ed25519:new  # fresh expiry + a new key kept alongside the old for a grace window; backs up the prior bundle
+synapse federation rotate ./my-domain.json --retire-signing-key ed25519:old  # after the grace window, drop the superseded key
 synapse federation fetch ws://peer-hub:8876 --out ./peer-domain.json  # pull + fingerprints; NEVER imports
 synapse federation import ./peer-domain.json --confirmed-by ceo --source ws://peer-hub:8876  # after comparing
 synapse federation list --store ./federation.json              # imported peer domains, provenance, and age

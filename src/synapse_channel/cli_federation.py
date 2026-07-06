@@ -24,6 +24,12 @@ pulls a peer hub's offered material to a file and prints the same fingerprint bl
 never importing. Both sides compare the bundle fingerprint out-of-band, the
 SSH-known-hosts ceremony, and only then run the explicit ``import``.
 
+``rotate`` keeps this domain's own bundle fresh: it pushes the expiry forward, unions new
+signing keys or certificate pins alongside the existing ones for a grace window (an old
+key stays valid until a later rotation retires it, so a peer that has not re-fetched keeps
+verifying), and saves the prior bundle as a backup. Its fingerprint changes, so a rotation
+is followed by the same out-of-band ceremony before peers re-import.
+
 The policy lives in :mod:`synapse_channel.core.federation`, the persistence in
 :mod:`synapse_channel.core.federation_store`, and the exchange halves in
 :mod:`synapse_channel.core.federation_wire` and
@@ -51,6 +57,13 @@ from synapse_channel.core.federation_fetch import (
     FederationFetchError,
     fetch_federation_offer,
 )
+from synapse_channel.core.federation_rotation import (
+    DEFAULT_ROTATION_LIFETIME_DAYS,
+    FederationRotationError,
+    RotationSummary,
+    SetChange,
+    rotate_bundle,
+)
 from synapse_channel.core.federation_store import (
     FederationRecord,
     FederationStoreError,
@@ -64,6 +77,7 @@ from synapse_channel.core.federation_wire import (
     FederationWireError,
     decode_federation_offer,
     encode_federation_offer,
+    render_expiry,
     render_offer_fingerprints,
 )
 
@@ -264,6 +278,104 @@ def _cmd_fetch(args: argparse.Namespace, *, fetcher: Fetcher = fetch_federation_
     return 0
 
 
+def _render_set_change(label: str, change: SetChange) -> list[str]:
+    """Render one credential set's added/retained/retired counts, with the added ids."""
+    line = (
+        f"  {label}: {len(change.added)} added, "
+        f"{len(change.retained)} kept, {len(change.retired)} retired"
+    )
+    lines = [line]
+    for added in change.added:
+        lines.append(f"      + {added}")
+    for retired in change.retired:
+        lines.append(f"      - {retired}")
+    return lines
+
+
+def _render_rotation_summary(summary: RotationSummary) -> str:
+    """Render an operator-facing summary of what a rotation changed."""
+    lines = ["rotated bundle:"]
+    lines.extend(_render_set_change("signing keys", summary.signing_keys))
+    lines.extend(_render_set_change("certificate pins", summary.certificate_pins))
+    lines.append(
+        f"  expiry: {render_expiry(summary.previous_expires_at)} -> "
+        f"{render_expiry(summary.expires_at)}"
+    )
+    return "\n".join(lines)
+
+
+def _cmd_rotate(args: argparse.Namespace, *, clock: Clock = time.time) -> int:
+    """Rotate this domain's own bundle: fresh expiry, new key material, a grace window.
+
+    Reads the domain's own bundle, pushes its expiry to ``--lifetime-days`` days out, unions
+    any ``--add-*`` material with the existing sets (so the old keys stay valid through the
+    grace window) and drops any ``--retire-*`` material, then rewrites the bundle in place —
+    keeping the prior bundle as a backup so it can still be served and compared until every
+    peer has re-imported. Retiring material the bundle does not hold, or a non-positive
+    lifetime, is refused before anything is written.
+    """
+    if args.lifetime_days <= 0:
+        print("--lifetime-days must be a positive number of days", file=sys.stderr)
+        return 2
+    bundle_path = Path(args.bundle).expanduser()
+    try:
+        raw = bundle_path.read_text(encoding="utf-8")
+    except OSError:
+        print(f"could not read bundle file: {args.bundle}", file=sys.stderr)
+        return 2
+    try:
+        peer = decode_federation_offer(json.loads(raw))
+    except (json.JSONDecodeError, FederationWireError) as exc:
+        print(f"invalid federation bundle: {exc}", file=sys.stderr)
+        return 2
+    try:
+        rotated, summary = rotate_bundle(
+            peer,
+            now=clock(),
+            lifetime_seconds=args.lifetime_days * SECONDS_PER_DAY,
+            add_signing_keys=args.add_signing_key or (),
+            add_pins=args.add_pin or (),
+            retire_signing_keys=args.retire_signing_key or (),
+            retire_pins=args.retire_pin or (),
+        )
+    except FederationRotationError as exc:
+        print(f"cannot rotate the bundle: {exc}", file=sys.stderr)
+        return 2
+    backup_path = (
+        Path(args.backup).expanduser()
+        if args.backup
+        else bundle_path.with_name(bundle_path.name + ".prev")
+    )
+    try:
+        backup_path.write_text(raw, encoding="utf-8")
+        bundle_path.write_text(
+            json.dumps(encode_federation_offer(rotated), indent=2) + "\n", encoding="utf-8"
+        )
+    except OSError as exc:
+        print(f"could not write the rotated bundle: {exc}", file=sys.stderr)
+        return 2
+    print(_render_rotation_summary(summary))
+    if not rotated.signing_key_ids:
+        print(
+            "warning: the rotated bundle has no signing keys; it authorises nothing "
+            "until one is added",
+            file=sys.stderr,
+        )
+    if not rotated.certificate_pins:
+        print(
+            "warning: the rotated bundle has no certificate pins; it authorises nothing "
+            "until one is added",
+            file=sys.stderr,
+        )
+    print()
+    print(render_offer_fingerprints(rotated))
+    print()
+    print(f"kept the prior bundle at {backup_path} for the grace window.")
+    print("re-run the exchange ceremony: serve the new bundle and read its fingerprint to")
+    print("each peer operator out-of-band before they re-import.")
+    return 0
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``federation`` command group."""
     parser = subparsers.add_parser(
@@ -325,6 +437,53 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     offer.add_argument("bundle", help="Path to this domain's own peer-bundle JSON file.")
     offer.set_defaults(func=_cmd_offer)
+
+    rotate = group.add_parser(
+        "rotate",
+        help="Rotate this domain's own bundle: fresh expiry and new key material kept "
+        "alongside the old for a grace window; the prior bundle is saved as a backup.",
+    )
+    rotate.add_argument(
+        "bundle", help="Path to this domain's own peer-bundle JSON file (rewritten in place)."
+    )
+    rotate.add_argument(
+        "--lifetime-days",
+        type=float,
+        default=DEFAULT_ROTATION_LIFETIME_DAYS,
+        metavar="DAYS",
+        help="Fresh lifetime for the rotated bundle in days (default: %(default)g).",
+    )
+    rotate.add_argument(
+        "--add-signing-key",
+        action="append",
+        metavar="KEY_ID",
+        help="Signing key id to introduce, kept alongside the existing keys (repeatable).",
+    )
+    rotate.add_argument(
+        "--add-pin",
+        action="append",
+        metavar="PIN",
+        help="Certificate pin to introduce, kept alongside the existing pins (repeatable).",
+    )
+    rotate.add_argument(
+        "--retire-signing-key",
+        action="append",
+        metavar="KEY_ID",
+        help="Signing key id to drop; must be present in the bundle (repeatable).",
+    )
+    rotate.add_argument(
+        "--retire-pin",
+        action="append",
+        metavar="PIN",
+        help="Certificate pin to drop; must be present in the bundle (repeatable).",
+    )
+    rotate.add_argument(
+        "--backup",
+        default=None,
+        metavar="PATH",
+        help="Where to save the prior bundle (default: <bundle>.prev).",
+    )
+    rotate.set_defaults(func=_cmd_rotate)
 
     fetch = group.add_parser(
         "fetch",
