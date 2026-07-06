@@ -74,6 +74,7 @@ def test_peer_from_dict_rejects_bad_inputs() -> None:
         [1, 2],  # list -> raw TypeError
         float("nan"),  # finite guard: nan defeats the expiry comparison
         float("inf"),  # finite guard: a peering that never expires
+        pytest.param(10**400, id="double-overflowing-int"),  # float() raises OverflowError
     ],
 )
 def test_peer_from_dict_rejects_non_numeric_expires_at(bad_expires: object) -> None:

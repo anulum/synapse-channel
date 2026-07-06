@@ -300,15 +300,22 @@ def _require_float(value: object, name: str) -> float:
     non-finite ``nan``/``inf`` is rejected too — ``json.loads`` accepts the
     ``NaN``/``Infinity`` tokens, and a ``nan`` timestamp would compare unequal to
     everything, breaking the deterministic ``(ts, hub_id, seq)`` merge order so
-    two hubs folding the same events could diverge.
+    two hubs folding the same events could diverge. The float conversion runs
+    before the finiteness check because a JSON integer too large for a double
+    raises ``OverflowError`` on conversion (and on ``math.isfinite`` of the raw int).
     """
     if isinstance(value, bool) or not isinstance(value, int | float):
         msg = f"{name} must be a number"
         raise MultiHubWireError(msg)
-    if not math.isfinite(value):
+    try:
+        number = float(value)
+    except OverflowError as exc:  # a JSON integer too large for a double
+        msg = f"{name} must be a finite number"
+        raise MultiHubWireError(msg) from exc
+    if not math.isfinite(number):
         msg = f"{name} must be a finite number"
         raise MultiHubWireError(msg)
-    return float(value)
+    return number
 
 
 def _require_str(value: object, name: str) -> str:

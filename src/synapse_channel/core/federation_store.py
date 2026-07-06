@@ -50,11 +50,12 @@ def _finite_float(field: str, value: Any) -> float:
     malformed field — not escape as a raw ``TypeError``/``ValueError`` that callers,
     which catch only ``FederationStoreError``, would let crash the hub or an import.
     A non-finite ``nan`` is rejected too: it would defeat the ``now >= expires_at``
-    expiry comparison and leave a peering that never expires.
+    expiry comparison and leave a peering that never expires. ``OverflowError`` is
+    caught because a JSON integer too large for a double raises it on conversion.
     """
     try:
         number = float(value)
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, OverflowError) as exc:
         msg = f"federation bundle field {field!r} must be a number"
         raise FederationStoreError(msg) from exc
     if not math.isfinite(number):
