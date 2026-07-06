@@ -65,6 +65,99 @@ def test_generate_wrapped_pkcs11_requires_a_module(
     assert not (tmp_path / "w.key").exists()
 
 
+def test_generate_wrapped_pkcs11_reports_an_existing_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A pre-existing destination is refused by the token wrapper -> a clean exit 1.
+    # PKCS11_PIN set -> the env-PIN branch is taken and the prompt reader stays idle.
+    monkeypatch.setenv("PKCS11_MODULE", "/opt/softhsm/libsofthsm2.so")
+    monkeypatch.setenv("PKCS11_PIN", "1234")
+    from synapse_channel.core import at_rest_pkcs11
+
+    def refuse(*_args: object, **_kwargs: object) -> object:
+        raise FileExistsError("refusing to overwrite existing key file")
+
+    monkeypatch.setattr(at_rest_pkcs11, "generate_wrapped_key_file_pkcs11", refuse)
+
+    def _forbidden_reader(_prompt: str) -> str:
+        raise AssertionError("pin_reader must not run when PKCS11_PIN is set")
+
+    args = cli.build_parser().parse_args(
+        ["encrypt-key", "generate-wrapped-pkcs11", "--token-label", "t", str(tmp_path / "w.key")]
+    )
+    rc = cli_encrypt_key._cmd_generate_wrapped_pkcs11(args, pin_reader=_forbidden_reader)
+    assert rc == 1
+    assert "refusing to overwrite" in capsys.readouterr().out
+
+
+def test_generate_wrapped_pkcs11_reports_a_token_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A token/library failure surfaces as a RuntimeError -> exit 2 naming the command.
+    # PKCS11_PIN unset -> the interactive prompt branch supplies the PIN.
+    monkeypatch.setenv("PKCS11_MODULE", "/opt/softhsm/libsofthsm2.so")
+    monkeypatch.delenv("PKCS11_PIN", raising=False)
+    from synapse_channel.core import at_rest_pkcs11
+
+    def fail(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("token 'synapse' not found on the module")
+
+    monkeypatch.setattr(at_rest_pkcs11, "generate_wrapped_key_file_pkcs11", fail)
+    args = cli.build_parser().parse_args(
+        ["encrypt-key", "generate-wrapped-pkcs11", "--token-label", "t", str(tmp_path / "w.key")]
+    )
+    rc = cli_encrypt_key._cmd_generate_wrapped_pkcs11(args, pin_reader=lambda _p: "1234")
+    assert rc == 2
+    out = capsys.readouterr().out
+    assert "generate-wrapped-pkcs11" in out
+    assert "token 'synapse' not found" in out
+
+
+def test_generate_wrapped_tpm2_reports_an_existing_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A pre-existing destination is refused by the TPM wrapper -> a clean exit 1.
+    from synapse_channel.core import at_rest_tpm2
+
+    def refuse(*_args: object, **_kwargs: object) -> object:
+        raise FileExistsError("refusing to overwrite existing key file")
+
+    monkeypatch.setattr(at_rest_tpm2, "generate_wrapped_key_file_tpm2", refuse)
+    args = cli.build_parser().parse_args(
+        ["encrypt-key", "generate-wrapped-tpm2", str(tmp_path / "w.key")]
+    )
+    rc = cli_encrypt_key._cmd_generate_wrapped_tpm2(args)
+    assert rc == 1
+    assert "refusing to overwrite" in capsys.readouterr().out
+
+
+def test_generate_wrapped_tpm2_reports_a_device_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A TPM/device failure surfaces as a RuntimeError -> exit 2 naming the command.
+    # An explicit --tcti exercises the flag branch of the transport resolution.
+    from synapse_channel.core import at_rest_tpm2
+
+    def fail(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("no TPM device at /dev/tpmrm0")
+
+    monkeypatch.setattr(at_rest_tpm2, "generate_wrapped_key_file_tpm2", fail)
+    args = cli.build_parser().parse_args(
+        [
+            "encrypt-key",
+            "generate-wrapped-tpm2",
+            "--tcti",
+            "device:/dev/tpmrm0",
+            str(tmp_path / "w.key"),
+        ]
+    )
+    rc = cli_encrypt_key._cmd_generate_wrapped_tpm2(args)
+    assert rc == 2
+    out = capsys.readouterr().out
+    assert "generate-wrapped-tpm2" in out
+    assert "no TPM device" in out
+
+
 def test_generate_then_check_round_trip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     key_path = tmp_path / "store.key"
     parser = cli.build_parser()

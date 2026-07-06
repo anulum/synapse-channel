@@ -43,6 +43,25 @@ def test_main_without_command_prints_help() -> None:
     assert cli.main([]) == 1
 
 
+def test_main_with_none_argv_reads_process_argv_and_forces_utf8(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``main(None)`` forces UTF-8 output then dispatches on the real ``sys.argv``.
+
+    Every other test passes an explicit ``argv``; only the ``argv is None`` entry
+    path invokes :func:`~synapse_channel.cli._force_utf8_console` and falls back to
+    ``sys.argv[1:]``. The console guard is spied (its body is exercised directly
+    elsewhere) so the test never mutates the runner's real stream encoding.
+    """
+    import sys
+
+    forced: list[bool] = []
+    monkeypatch.setattr(cli, "_force_utf8_console", lambda: forced.append(True))
+    monkeypatch.setattr(sys, "argv", ["synapse"])  # no subcommand -> help, exit 1
+    assert cli.main(None) == 1
+    assert forced == [True]
+
+
 def test_main_version_exits(capsys: pytest.CaptureFixture[str]) -> None:
     with _env_var("SYNAPSE_NO_UPDATE_CHECK", "1"), pytest.raises(SystemExit):
         cli.main(["--version"])

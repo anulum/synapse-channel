@@ -383,6 +383,29 @@ async def test_quiet_agent_swallows_a_non_refusal_os_error(
     assert capsys.readouterr().out == ""
 
 
+async def test_quiet_agent_swallows_a_refusal_shaped_os_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """verbose=False silences the is-the-hub-running hint for a refusal-shaped OSError.
+
+    The refusal arrives as a bare OSError whose message (not its type) carries
+    ECONNREFUSED — asyncio's "Multiple exceptions" wrapper — so it is classified as
+    a refusal inside the ``OSError`` clause rather than the ``ConnectionRefusedError``
+    one. A quiet agent must still print nothing on that classified-refusal path.
+    """
+    from synapse_channel.client import agent_lifecycle
+
+    def refuse(*_args: object, **_kwargs: object) -> object:
+        raise OSError(
+            f"Multiple exceptions: Connect call failed [Errno {errno.ECONNREFUSED}] 127.0.0.1:1"
+        )
+
+    monkeypatch.setattr(agent_lifecycle, "connect", refuse)
+    agent = SynapseAgent("LONELY", _noop_handler, uri="ws://localhost:1", verbose=False)
+    await agent.connect()
+    assert capsys.readouterr().out == ""
+
+
 def test_start_quiet_keyboard_interrupt(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
