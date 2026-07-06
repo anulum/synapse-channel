@@ -14,6 +14,15 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Fixed
+- The bounded frame decoder now rejects the non-standard `NaN`/`Infinity`/`-Infinity` JSON tokens. RFC
+  8259 has no such literals, but `json.loads` accepts them by default, so a non-finite float could enter
+  through any inbound frame or peer response and then break an ordering comparison (`nan` compares
+  unequal to everything) or overflow an `int()`/`float()` conversion downstream. `loads_bounded` — the
+  single depth-bounded loader every inbound frame, peer sync body, and federation reply passes through —
+  now raises `json.JSONDecodeError` for a non-finite constant, so every consumer's existing malformed-JSON
+  handling fails it closed. This is a defence in depth beneath the per-field guards on the federation
+  bundle, the multi-hub event `ts`, and the finding numbers (below); the hub never emits a non-finite
+  float, so no legitimate frame is affected.
 - A finding with a non-finite number no longer crashes the finding handler. A finding envelope is
   decoded from an untrusted frame and `json.loads` yields `inf`/`nan` from the `Infinity`/`NaN` tokens,
   but the tolerant coercion helpers converted a numeric field with a bare `int()`/`float()`:

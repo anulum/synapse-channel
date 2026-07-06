@@ -147,7 +147,19 @@ def loads_bounded(raw: str | bytes, max_depth: int = MAX_JSON_DEPTH) -> Any:
     text = raw if isinstance(raw, str) else raw.decode("utf-8", "replace")
     if _exceeds_json_depth(text, max_depth):
         raise json.JSONDecodeError(f"JSON nested deeper than {max_depth} levels", text, 0)
-    return json.loads(raw)
+
+    def _reject_non_finite(constant: str) -> float:
+        # RFC 8259 has no NaN/Infinity, but json.loads accepts those tokens by
+        # default. A non-finite float slips past a downstream type check and then
+        # breaks ordering comparisons (nan compares unequal to everything) or
+        # overflows an int()/float() conversion, so reject it at the single decode
+        # boundary every inbound frame passes through — a defence in depth beneath
+        # the per-field guards. The hub never emits a non-finite float, so no
+        # legitimate frame carries one.
+        msg = f"non-finite JSON constant {constant!r} is not permitted"
+        raise json.JSONDecodeError(msg, text, 0)
+
+    return json.loads(raw, parse_constant=_reject_non_finite)
 
 
 class MessageType:

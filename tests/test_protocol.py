@@ -271,6 +271,35 @@ def test_loads_bounded_reraises_malformed_json() -> None:
         loads_bounded("{not json")
 
 
+@pytest.mark.parametrize(
+    "frame",
+    [
+        '{"x": NaN}',
+        '{"x": Infinity}',
+        '{"x": -Infinity}',
+        "[NaN]",
+        '{"a": {"b": Infinity}}',  # nested, still rejected
+    ],
+)
+def test_loads_bounded_rejects_non_finite_constants(frame: str) -> None:
+    # RFC 8259 has no NaN/Infinity; json.loads accepts the tokens by default. A
+    # non-finite float breaks downstream ordering (nan) and int()/float() conversions,
+    # so the single decode boundary rejects it as malformed — a defence in depth
+    # beneath the per-field guards. The hub never emits one, so no legitimate frame loses.
+    with pytest.raises(json.JSONDecodeError, match="non-finite JSON constant"):
+        loads_bounded(frame)
+
+
+def test_loads_bounded_keeps_finite_floats() -> None:
+    # The rejection must not touch ordinary finite numbers, including exponents.
+    assert loads_bounded('{"ts": 123.5, "neg": -3.2, "big": 1e10, "n": 42}') == {
+        "ts": 123.5,
+        "neg": -3.2,
+        "big": 1e10,
+        "n": 42,
+    }
+
+
 def test_exceeds_json_depth_ignores_brackets_inside_strings() -> None:
     # A string value packed with brackets is structurally shallow.
     assert _exceeds_json_depth('{"k": "[[[[[[[[]]]]]]]]"}', 2) is False
