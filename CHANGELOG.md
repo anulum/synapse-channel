@@ -14,6 +14,14 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- The hub advertises a wire-protocol version. `WIRE_PROTOCOL_VERSION` (an integer, baseline `1`,
+  decoupled from the package version so it changes only on a wire-incompatible change) now rides in the
+  `welcome` handshake as `protocol_version` and in `/health`, and a client captures the peer's version
+  as `hub_protocol_version` on connect. This gives a consumer that syncs across possibly version-skewed
+  hubs a compatibility signal to read on connect instead of inferring from a separate query. It is
+  advertise-only: a client records the peer's version but no compatibility policy is enforced yet
+  (the mismatch behaviour is a contract to be agreed with the wire's downstream consumers first). A hub
+  or client that predates the field reads it as absent, so the addition is backward-compatible.
 - `synapse approvals` makes the two-person relay quorum operable. The approval ledger is per-hub live
   state that enforced a second operator but exposed no way to see which relays were pending, so the
   quorum was invisible between the first request and the second approval. The pending set now rides in

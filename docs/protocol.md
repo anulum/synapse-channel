@@ -9,6 +9,15 @@ A state-mutating message may carry an `idem_key` so a retry after a reconnect is
 applied once. On a secured hub, the first message of a connection must carry a
 `token`.
 
+The hub advertises its wire-protocol version in the `welcome` handshake as
+`protocol_version` (an integer; the current wire is baseline version `1`), and it
+is also reported by `/health` as `protocol_version`. It is decoupled from the
+package version on purpose — a patch or feature release that leaves the wire
+shapes unchanged does not bump it, so it is a stable compatibility signal a client
+can read on connect rather than a release counter. A client that predates the
+field, or a hub that does, reads it as absent; it is advertise-only for now, so a
+client captures the peer's version but no compatibility policy is enforced yet.
+
 The [per-message authentication runtime](per-message-authentication.md) keeps
 the same envelope shape and adds an `auth` object for selected mutating frames
 after WebSocket connect authentication. It is opt-in: `--message-auth-key`

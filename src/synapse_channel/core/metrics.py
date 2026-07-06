@@ -248,19 +248,23 @@ def health_snapshot(hub: SynapseHub) -> dict[str, Any]:
     -------
     dict[str, Any]
         ``status`` (``ok`` whenever the hub answers), the package ``version``, the
-        ``hub_id``, the ``config_epoch`` (a fingerprint of the configuration
-        posture the hub was built from — empty for an ad-hoc construction), the
-        ``uptime_seconds`` since start, and the current online-agent and
-        active-claim counts. ``version`` and ``config_epoch`` together are the
-        hub's pinning indicator: a change in either is a deploy or a config drift.
+        ``protocol_version`` (the wire-protocol version, decoupled from the package
+        version), the ``hub_id``, the ``config_epoch`` (a fingerprint of the
+        configuration posture the hub was built from — empty for an ad-hoc
+        construction), the ``uptime_seconds`` since start, and the current
+        online-agent and active-claim counts. ``version`` and ``config_epoch``
+        together are the hub's pinning indicator: a change in either is a deploy or
+        a config drift; ``protocol_version`` changes only on a wire-incompatible one.
     """
     # Imported lazily: the package __init__ imports this module, so a top-level
     # import would be circular; by call time the package is fully initialised.
     from synapse_channel import __version__
+    from synapse_channel.core.protocol import WIRE_PROTOCOL_VERSION
 
     return {
         "status": "ok",
         "version": __version__,
+        "protocol_version": WIRE_PROTOCOL_VERSION,
         "hub_id": hub.hub_id,
         "config_epoch": hub.config_epoch,
         "uptime_seconds": round(hub.uptime_seconds(), 3),

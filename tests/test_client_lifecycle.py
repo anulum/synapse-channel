@@ -205,6 +205,26 @@ async def test_quiet_dispatch_skips_lifecycle_prints(capsys: pytest.CaptureFixtu
     assert agent.hub_id == "h"
 
 
+async def test_welcome_captures_the_hub_protocol_version() -> None:
+    agent = SynapseAgent("A", verbose=False)
+    assert agent.hub_protocol_version is None  # unset before any welcome
+
+    await agent._dispatch(
+        json.dumps({"type": "welcome", "hub_id": "h", "protocol_version": 1})
+    )
+
+    assert agent.hub_protocol_version == 1
+
+
+async def test_welcome_without_a_protocol_version_leaves_it_none() -> None:
+    # An older hub omits the field; the client records None, never a spurious version.
+    agent = SynapseAgent("A", verbose=False)
+
+    await agent._dispatch(json.dumps({"type": "welcome", "hub_id": "h"}))
+
+    assert agent.hub_protocol_version is None
+
+
 async def test_connect_stops_when_running_cleared_by_callback() -> None:
     seen: list[dict[str, Any]] = []
 

@@ -16,11 +16,13 @@ from synapse_channel.core.protocol import (
     MAX_JSON_DEPTH,
     RESOURCE_TYPE_ALIASES,
     SENDER_HUB,
+    WIRE_PROTOCOL_VERSION,
     MessageType,
     _exceeds_json_depth,
     build_envelope,
     is_recipient,
     loads_bounded,
+    read_protocol_version,
     system_message,
 )
 
@@ -282,3 +284,22 @@ def test_exceeds_json_depth_honours_escaped_quotes() -> None:
 def test_exceeds_json_depth_counts_real_nesting() -> None:
     assert _exceeds_json_depth("[[[[]]]]", 3) is True
     assert _exceeds_json_depth("[[[[]]]]", 4) is False
+
+
+def test_wire_protocol_version_is_a_positive_integer() -> None:
+    # A stable compatibility signal, not a release counter — a plain positive int.
+    assert isinstance(WIRE_PROTOCOL_VERSION, int)
+    assert not isinstance(WIRE_PROTOCOL_VERSION, bool)
+    assert WIRE_PROTOCOL_VERSION >= 1
+
+
+def test_read_protocol_version_accepts_a_plain_integer() -> None:
+    assert read_protocol_version(1) == 1
+    assert read_protocol_version(7) == 7
+
+
+@pytest.mark.parametrize("value", [None, True, False, 1.0, "1", "", [1], {"v": 1}])
+def test_read_protocol_version_rejects_non_integer_or_boolean(value: object) -> None:
+    # An absent field (None), a bool (an int subclass but not a version), or any
+    # non-int degrades to None rather than a spurious version a check might act on.
+    assert read_protocol_version(value) is None

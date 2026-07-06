@@ -40,7 +40,7 @@ from websockets.exceptions import ConnectionClosed
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.hub_clients import HubClientRegistry
-from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.protocol import WIRE_PROTOCOL_VERSION, MessageType
 from synapse_channel.core.ratelimit import RateLimiter
 
 logger = logging.getLogger("synapse.hub")
@@ -147,7 +147,7 @@ class HubConnection:
         )
 
     async def send_welcome(self, websocket: Any) -> None:
-        """Send the welcome frame (roster + connection count) to one socket."""
+        """Send the welcome frame (roster, connection count, and wire version) to one socket."""
         await self._send_json(
             websocket,
             self._system(
@@ -156,6 +156,7 @@ class HubConnection:
                 target="self",
                 connected_clients=len(self._clients.connected_clients),
                 online_agents=self._online_agents(),
+                protocol_version=WIRE_PROTOCOL_VERSION,
             ),
         )
 
