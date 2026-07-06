@@ -56,7 +56,7 @@ have shipped; the live command centre is next. Local-first and read-only by defa
 
 - [Installation](installation.md) · [Quick start](quickstart.md)
 - [Coordination model](coordination-model.md) · [Policy engine](policy-engine.md) · [Agent trust graph](agent-trust-graph.md) · [Identity and ACL](identity-and-acl.md)
-- [Wire protocol](protocol.md) · [CLI reference](cli.md) · [Recipes](recipes.md) · [Examples](examples.md)
+- [Wire protocol](protocol.md) · [API and wire stability](api-stability.md) · [CLI reference](cli.md) · [Recipes](recipes.md) · [Examples](examples.md)
 - [Deployment](deployment.md)
 
 SYNAPSE CHANNEL is AGPL-3.0-or-later with a commercial licence available. See the

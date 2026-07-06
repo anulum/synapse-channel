@@ -76,6 +76,7 @@ nav:
   - Coordination model: coordination-model.md
   - Agent Air Traffic Control: agent-air-traffic-control.md
   - Wire protocol: protocol.md
+  - API and wire stability: api-stability.md
   - Bounded streaming responses: streaming.md
   - Declarative workflows: workflows.md
   - Studio: studio.md
