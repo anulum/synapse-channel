@@ -9,7 +9,10 @@
 
 Three operator-facing verbs over the sandbox. ``validate`` loads a capability manifest and
 reports the normalised, deny-by-default grants it declares — a dry check of the policy
-before anything runs. ``test`` pre-flights a ``.wasm`` tool against its manifest *without
+before anything runs; with ``--check-paths`` it also pre-flights each filesystem grant's host
+path against the live filesystem, exactly as the runner would, so an operator sees a symlink
+redirect or a missing directory before an approved run refuses it. ``test`` pre-flights a
+``.wasm`` tool against its manifest *without
 running it*: it compiles the module, checks the entrypoint is exported, and confirms the
 module matches its manifest digest, spending no fuel — a cheap gate before an approved run.
 ``run`` executes a ``.wasm`` tool under that manifest: it binds the manifest to the exact
@@ -21,7 +24,9 @@ report the install hint when it is absent rather than failing obscurely.
 Exit codes: ``0`` success; ``2`` the command could not proceed (unreadable manifest or
 tool, a refused run, or the missing ``[wasm]`` extra); ``test`` additionally returns ``1``
 when the pre-flight completed but the tool is not ready to run (invalid module, missing
-entrypoint, or a digest that does not match its manifest).
+entrypoint, or a digest that does not match its manifest), and ``validate --check-paths``
+returns ``1`` when the manifest is valid but a filesystem grant's host path would be refused
+here (a symlink redirect or a missing directory).
 """
 
 from __future__ import annotations
@@ -30,11 +35,13 @@ import argparse
 import json
 import sqlite3
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from synapse_channel.core.sandbox_paths import PreopenCheck, check_preopen_host
 from synapse_channel.core.sandbox_policy import (
     CapabilityManifest,
+    FilesystemGrant,
     SandboxManifestError,
     SandboxRequest,
     authorise,
@@ -80,21 +87,84 @@ def _load_manifest(path: str) -> CapabilityManifest:
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:
-    """Validate a capability manifest and print its normalised, deny-by-default grants."""
+    """Validate a capability manifest and print its normalised, deny-by-default grants.
+
+    With ``--check-paths`` it additionally pre-flights each filesystem grant's host path against
+    the live filesystem — the same resolution the runner performs before a run — and returns
+    ``1`` when the manifest is structurally valid but a host path would be refused here (a
+    symlink redirect or a missing directory), leaving ``0`` for a manifest whose grants all
+    resolve and ``2`` for an unreadable or malformed manifest. Without the flag the host paths
+    are left untouched, so a manifest authored off-target still validates.
+    """
     try:
         manifest = _load_manifest(args.manifest)
     except SandboxManifestError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    if args.json:
+    if not args.check_paths:
+        _print_manifest(manifest, json_out=args.json)
+        return 0
+    checks = [check_preopen_host(grant.host_path) for grant in manifest.filesystem]
+    _print_validation(manifest, checks, json_out=args.json)
+    return 0 if all(check.ok for check in checks) else 1
+
+
+def _print_manifest(manifest: CapabilityManifest, *, json_out: bool) -> None:
+    """Print a validated manifest, as JSON or a readable one-line grant summary."""
+    if json_out:
         print(json.dumps(manifest.to_dict(), indent=2))
-    else:
+        return
+    print(
+        f"manifest for '{manifest.tool_id}' is valid: "
+        f"{len(manifest.filesystem)} filesystem, {len(manifest.network)} network grant(s), "
+        f"fuel {manifest.resources.fuel}, memory {manifest.resources.memory_bytes} bytes"
+    )
+
+
+def _check_to_dict(grant: FilesystemGrant, check: PreopenCheck) -> dict[str, object]:
+    """Render one filesystem grant and its host-path pre-flight outcome as a mapping."""
+    return {
+        "host_path": grant.host_path,
+        "guest_path": grant.guest_path,
+        "write": grant.write,
+        "ok": check.ok,
+        "resolved": check.resolved,
+        "reason": check.reason,
+    }
+
+
+def _print_validation(
+    manifest: CapabilityManifest,
+    checks: Sequence[PreopenCheck],
+    *,
+    json_out: bool,
+) -> None:
+    """Print a manifest alongside the host-path pre-flight for each filesystem grant."""
+    if json_out:
         print(
-            f"manifest for '{manifest.tool_id}' is valid: "
-            f"{len(manifest.filesystem)} filesystem, {len(manifest.network)} network grant(s), "
-            f"fuel {manifest.resources.fuel}, memory {manifest.resources.memory_bytes} bytes"
+            json.dumps(
+                {
+                    "manifest": manifest.to_dict(),
+                    "host_paths": [
+                        _check_to_dict(grant, check)
+                        for grant, check in zip(manifest.filesystem, checks, strict=True)
+                    ],
+                    "all_paths_ok": all(check.ok for check in checks),
+                },
+                indent=2,
+            )
         )
-    return 0
+        return
+    _print_manifest(manifest, json_out=False)
+    if not checks:
+        print("host paths: none to pre-flight (no filesystem grants)")
+        return
+    print("host paths (pre-flight against the live filesystem):")
+    for grant, check in zip(manifest.filesystem, checks, strict=True):
+        if check.ok:
+            print(f"  OK       {grant.host_path!r} -> {check.resolved!r} ({grant.perms()})")
+        else:
+            print(f"  REFUSED  {grant.host_path!r}: {check.reason}")
 
 
 def _cmd_test(args: argparse.Namespace, *, preflight: Preflighter = preflight_sandboxed) -> int:
@@ -238,6 +308,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     validate.add_argument("manifest", help="Path to the manifest JSON file.")
     validate.add_argument(
         "--json", action="store_true", help="Emit the normalised manifest as JSON."
+    )
+    validate.add_argument(
+        "--check-paths",
+        action="store_true",
+        help="Pre-flight each filesystem grant's host path against the live filesystem "
+        "(the same resolution the runner performs); exit 1 if any would be refused here.",
     )
     validate.set_defaults(func=_cmd_validate)
 
