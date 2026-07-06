@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.3] - 2026-07-06
+
 ### Added
 - The armed auto-action policy is now durable, so the terminal and a live orchestration loop share
   one source of truth. `synapse auto-action arm compact,log` and `disarm log` add or remove
