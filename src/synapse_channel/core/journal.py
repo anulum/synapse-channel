@@ -67,6 +67,7 @@ class EventKind:
     SANDBOX_RUN = "sandbox_run"
     OPERATOR_RELAY = "operator_relay"
     DEAD_LETTER_ESCALATION = "dead_letter_escalation"
+    DEAD_LETTER_FORWARDING = "dead_letter_forwarding"
 
 
 MEMORY_KINDS = frozenset(
@@ -187,6 +188,25 @@ def record_dead_letter_escalation(store: EventStore, provenance: Mapping[str, An
         threshold that fired.
     """
     store.append(EventKind.DEAD_LETTER_ESCALATION, dict(provenance), durable=True)
+
+
+def record_dead_letter_forwarding(store: EventStore, provenance: Mapping[str, Any]) -> None:
+    """Append a durable audit event for a dead-letter blackhole forwarded to its owning peer hub.
+
+    Like :func:`record_dead_letter_escalation` this kind is **audit-only**: :func:`replay` skips
+    it, because it records no coordination state change — only the durable, attributable fact that
+    this hub resolved a blackholed target to a peer's domain and handed the peer a pointer to the
+    gap (never a message body). It is written whether or not a live forwarder delivered the signal,
+    so a forward that could not reach the peer is still reviewable as "recorded but not delivered".
+
+    Parameters
+    ----------
+    store : EventStore
+        The origin hub's durable event store.
+    provenance : Mapping[str, Any]
+        The forwarding fields: the target, its undelivered count, and the origin and owner hub ids.
+    """
+    store.append(EventKind.DEAD_LETTER_FORWARDING, dict(provenance), durable=True)
 
 
 def record_checkpoint(store: EventStore, claim: TaskClaim) -> None:

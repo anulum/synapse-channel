@@ -43,6 +43,7 @@ from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.channels import ChannelRegistry
 from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
+from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
 from synapse_channel.core.dead_letters import DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS, DeadLetterLedger
 from synapse_channel.core.federation import FederationBundle
 from synapse_channel.core.handlers import DISPATCH
@@ -236,6 +237,13 @@ class SynapseHub:
         signal rather than a passive snapshot entry. It never re-delivers a message (the ledger
         holds no bodies). ``0`` (the default) disables escalation, leaving the ledger's visibility
         unchanged, and is the default (``DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD``).
+    dead_letter_forwarder : DeadLetterForwarder or None, optional
+        The seam that hands a dead-letter blackhole signal to the peer hub whose domain owns the
+        target, when an escalation fires for a target this hub's namespace-ownership and relay
+        routes resolve to a peer. The origin always journals an audit-only forwarding event
+        (counts and names, never a message body); with a forwarder set it also transmits the
+        pointer to the owning hub best-effort. ``None`` (the default) records the forwarding intent
+        without transmitting, so the feature is opt-in like the relay routes it reuses.
     authenticator : TokenAuthenticator or None, optional
         When given, a connecting agent must present a valid shared-secret token
         on its first message or the hub refuses and closes the socket. ``None``
@@ -385,6 +393,7 @@ class SynapseHub:
         max_findings_per_agent: int = DEFAULT_MAX_FINDINGS_PER_AGENT,
         compact_hint_threshold: int = DEFAULT_COMPACT_HINT_THRESHOLD,
         dead_letter_escalation_threshold: int = DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD,
+        dead_letter_forwarder: DeadLetterForwarder | None = None,
         authenticator: TokenAuthenticator | None = None,
         max_clients: int = DEFAULT_MAX_CLIENTS,
         max_unauth_clients: int | None = None,
@@ -496,6 +505,7 @@ class SynapseHub:
         self.max_findings_per_agent = max(int(max_findings_per_agent), 1)
         self.compact_hint_threshold = max(1, int(compact_hint_threshold))
         self.dead_letter_escalation_threshold = max(0, int(dead_letter_escalation_threshold))
+        self.dead_letter_forwarder = dead_letter_forwarder
         self.board_task_cap = max(1, int(board_task_cap)) if board_task_cap is not None else None
         self.relay_log = Path(relay_log) if relay_log else None
         self.relay_max_lines = max(int(relay_max_lines), 1)
