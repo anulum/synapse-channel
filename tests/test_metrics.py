@@ -18,6 +18,7 @@ from synapse_channel.core.metrics import (
     health_snapshot,
     render_prometheus,
 )
+from synapse_channel.core.protocol import WIRE_PROTOCOL_VERSION
 
 # -- render_prometheus --------------------------------------------------------
 
@@ -101,6 +102,7 @@ def test_health_snapshot_reports_ok_version_uptime_and_counts() -> None:
     assert snapshot == {
         "status": "ok",
         "version": __version__,
+        "protocol_version": WIRE_PROTOCOL_VERSION,
         "hub_id": "syn-health",
         "config_epoch": "",  # an ad-hoc hub was built without a fingerprinted config
         "uptime_seconds": 5.0,

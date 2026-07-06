@@ -13,7 +13,7 @@ import json
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
-from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.protocol import MessageType, read_protocol_version
 
 MessageCallback = Callable[[dict[str, Any]], Awaitable[None]]
 """Async callback invoked with each decoded inbound message."""
@@ -24,6 +24,7 @@ class _DispatchAgent(Protocol):
 
     callback: MessageCallback | None
     hub_id: str
+    hub_protocol_version: int | None
     name: str
     ready_event: Any
     verbose: bool
@@ -49,6 +50,7 @@ class AgentDispatchMixin:
 
         if data.get("type") == MessageType.WELCOME:
             self.hub_id = str(data.get("hub_id", "unknown"))
+            self.hub_protocol_version = read_protocol_version(data.get("protocol_version"))
             self.ready_event.set()
 
         # Ignore our own chat echoes, but still process system replies.

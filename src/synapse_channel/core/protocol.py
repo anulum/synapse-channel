@@ -27,6 +27,46 @@ from typing import Any
 SENDER_HUB = "SynapseHub"
 """Reserved sender name stamped on every hub-originated message."""
 
+WIRE_PROTOCOL_VERSION = 1
+"""The version of the hub's wire protocol.
+
+Advertised in the ``WELCOME`` handshake so a client — including an out-of-tree
+consumer that syncs across possibly version-skewed hubs during a rolling upgrade
+— can read the peer's wire version on connect rather than infer it from a
+separate query. It is **decoupled from the package version on purpose**: a patch
+or feature release that leaves the wire shapes unchanged does not bump it, and it
+bumps only on a wire-incompatible change, so it is a stable compatibility signal
+rather than a release counter. The current wire is baseline version ``1``.
+
+It is **advertise-only for now**: a client captures the peer's version but no
+compatibility policy is enforced, because the mismatch behaviour (reject, warn,
+or negotiate down) is a contract shared with the downstream consumers the wire
+serves and is decided with them before it is enforced.
+"""
+
+
+def read_protocol_version(value: object) -> int | None:
+    """Return a wire protocol version read from a frame, or ``None`` if absent or malformed.
+
+    A hub that predates the advertised version omits the field, and a boolean is
+    not a version even though ``bool`` is an ``int`` subclass, so both degrade to
+    ``None`` rather than a spurious version a compatibility check might act on.
+
+    Parameters
+    ----------
+    value : object
+        The raw ``protocol_version`` field from a decoded frame, or ``None``.
+
+    Returns
+    -------
+    int or None
+        The version when ``value`` is a non-boolean integer, else ``None``.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
 MAX_JSON_DEPTH = 64
 """Deepest array/object nesting accepted in an inbound wire frame.
 

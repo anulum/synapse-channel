@@ -112,6 +112,7 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         self.last_close_code: int | None = None
         self.last_close_reason: str = ""
         self.hub_id = "unknown"
+        self.hub_protocol_version: int | None = None
         self.verbose = bool(verbose)
         self.token = token
         self.takeover = bool(takeover)

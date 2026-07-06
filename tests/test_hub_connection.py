@@ -17,7 +17,7 @@ from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.hub_clients import HubClientRegistry
 from synapse_channel.core.hub_connection import HubConnection
-from synapse_channel.core.protocol import MessageType, system_message
+from synapse_channel.core.protocol import WIRE_PROTOCOL_VERSION, MessageType, system_message
 from synapse_channel.core.ratelimit import RateLimiter
 
 
@@ -212,6 +212,7 @@ async def test_send_welcome_carries_the_roster_and_count() -> None:
     assert frame["target"] == "self"
     assert frame["connected_clients"] == 1
     assert frame["online_agents"] == ["a", "b"]
+    assert frame["protocol_version"] == WIRE_PROTOCOL_VERSION
 
 
 # -- unregister --------------------------------------------------------------
