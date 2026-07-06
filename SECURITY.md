@@ -88,9 +88,11 @@ When that boundary is crossed, the proportionate controls are:
   cache. The idempotency cache is not a durable identity or replay-protection
   system across arbitrary hub restarts.
 - **Advisory file scopes.** A claim's `paths` are opaque strings the hub compares
-  only for glob overlap — it never reads, opens, or resolves them on the
-  filesystem. A claim on `../../etc/passwd` coordinates nothing and touches nothing
-  on disk, so scope strings are not a path-traversal surface.
+  only for literal path or directory-prefix overlap — wildcard-glob algebra is
+  intentionally out of scope, so a path is treated as a literal file or directory
+  prefix and never expanded. The hub never reads, opens, or resolves the strings
+  on the filesystem. A claim on `../../etc/passwd` coordinates nothing and touches
+  nothing on disk, so scope strings are not a path-traversal surface.
 - **Metrics endpoint.** The optional `synapse hub --metrics` endpoint is off by
   default. Without `--metrics-token`, enabled metrics and health probes carry
   operational metadata unauthenticated, so keep them on a loopback bind. When
