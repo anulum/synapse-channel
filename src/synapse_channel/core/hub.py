@@ -44,6 +44,7 @@ from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.channels import ChannelRegistry
 from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
+from synapse_channel.core.dead_letter_forwarding_transport import forward_dead_letter
 from synapse_channel.core.dead_letters import DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS, DeadLetterLedger
 from synapse_channel.core.federation import FederationBundle
 from synapse_channel.core.handlers import DISPATCH
@@ -241,9 +242,11 @@ class SynapseHub:
         The seam that hands a dead-letter blackhole signal to the peer hub whose domain owns the
         target, when an escalation fires for a target this hub's namespace-ownership and relay
         routes resolve to a peer. The origin always journals an audit-only forwarding event
-        (counts and names, never a message body); with a forwarder set it also transmits the
-        pointer to the owning hub best-effort. ``None`` (the default) records the forwarding intent
-        without transmitting, so the feature is opt-in like the relay routes it reuses.
+        (counts and names, never a message body) and transmits the pointer to the owning hub
+        best-effort. Defaults to
+        :func:`~synapse_channel.core.dead_letter_forwarding_transport.forward_dead_letter`, the
+        websocket transport, so forwarding is wired end-to-end wherever the relay routes it reuses
+        are configured; pass ``None`` to record the forwarding intent without transmitting.
     authenticator : TokenAuthenticator or None, optional
         When given, a connecting agent must present a valid shared-secret token
         on its first message or the hub refuses and closes the socket. ``None``
@@ -393,7 +396,7 @@ class SynapseHub:
         max_findings_per_agent: int = DEFAULT_MAX_FINDINGS_PER_AGENT,
         compact_hint_threshold: int = DEFAULT_COMPACT_HINT_THRESHOLD,
         dead_letter_escalation_threshold: int = DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD,
-        dead_letter_forwarder: DeadLetterForwarder | None = None,
+        dead_letter_forwarder: DeadLetterForwarder | None = forward_dead_letter,
         authenticator: TokenAuthenticator | None = None,
         max_clients: int = DEFAULT_MAX_CLIENTS,
         max_unauth_clients: int | None = None,

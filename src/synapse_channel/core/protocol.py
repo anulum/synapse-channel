@@ -188,6 +188,7 @@ class MessageType:
     OPERATOR_RELAY_RESULT = "operator_relay_result"
     FEDERATION_OFFER = "federation_offer"
     DEAD_LETTER_ESCALATION = "dead_letter_escalation"
+    DEAD_LETTER_FORWARDING = "dead_letter_forwarding"
     ERROR = "error"
     NAME_CONFLICT = "name_conflict"
     AUTH_DENIED = "auth_denied"

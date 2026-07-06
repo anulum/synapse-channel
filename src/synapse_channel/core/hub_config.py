@@ -45,6 +45,7 @@ from synapse_channel.core.acl import AclPolicy
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
+from synapse_channel.core.dead_letter_forwarding_transport import forward_dead_letter
 from synapse_channel.core.federation import FederationBundle
 from synapse_channel.core.hub import (
     DEFAULT_AUTH_TIMEOUT,
@@ -186,7 +187,7 @@ class MultiHubConfig:
     require_relay_reason: bool = False
     require_two_person_relay: bool = False
     observed_asserting_hubs: Callable[[str], Iterable[str]] | None = None
-    dead_letter_forwarder: DeadLetterForwarder | None = None
+    dead_letter_forwarder: DeadLetterForwarder | None = forward_dead_letter
 
 
 @dataclass(frozen=True, kw_only=True)

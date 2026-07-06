@@ -27,7 +27,17 @@ durable origin-side audit are exercised without a live peer.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, Protocol
+
+FORWARDING_FIELD = "forwarding"
+"""The wire envelope field the pointer is nested under.
+
+The pointer is carried under its own field rather than spread across the envelope so its ``target``
+key (the blackholed name) never collides with the envelope's reserved ``target`` (the recipient).
+The transport nests the pointer here; :func:`decode_forwarding_notice` reads it back.
+"""
 
 
 class DeadLetterForwardError(RuntimeError):
@@ -97,3 +107,107 @@ class DeadLetterForwarder(Protocol):
     ) -> None:  # pragma: no cover - structural
         """Transmit ``notice`` to the owning hub at ``uri``."""
         ...
+
+
+class DeadLetterForwardingWireError(ValueError):
+    """Raised when an inbound dead-letter forwarding frame cannot be decoded to a pointer.
+
+    The peer that sent the frame is a trust boundary, so the receiving hub validates every field
+    before acting on it; a frame missing the pointer, or with a malformed target or count, raises
+    this rather than yielding a half-built shape the receiver would journal or broadcast.
+    """
+
+
+@dataclass(frozen=True, slots=True)
+class ForwardingNotice:
+    """The decoded, validated cross-hub dead-letter pointer an owning hub received from a peer.
+
+    The structured counterpart of the dict :func:`forwarding_notice` builds — the same honesty-bound
+    pointer (a blackholed target, its undelivered count, and the origin and owner hub ids), carrying
+    no message body — after the receiving hub has validated it off the wire.
+
+    Attributes
+    ----------
+    target : str
+        The directed-message target the origin hub reports as blackholing.
+    count : int
+        How many of the target's directed messages went undelivered on the origin hub.
+    origin_hub_id : str
+        The id the frame claims as the reporting hub. It is the origin's self-asserted id; the
+        receiving hub cross-checks it against the cryptographically verified sending peer.
+    owner_hub_id : str
+        The id the frame claims owns the target's namespace — this receiving hub.
+    """
+
+    target: str
+    count: int
+    origin_hub_id: str
+    owner_hub_id: str
+
+
+def decode_forwarding_notice(frame: Mapping[str, Any]) -> ForwardingNotice:
+    """Decode and validate the pointer nested in an inbound forwarding ``frame``.
+
+    Parameters
+    ----------
+    frame : Mapping[str, Any]
+        The parsed wire frame, whose :data:`FORWARDING_FIELD` holds the nested pointer.
+
+    Returns
+    -------
+    ForwardingNotice
+        The validated pointer.
+
+    Raises
+    ------
+    DeadLetterForwardingWireError
+        When the pointer is absent or not a mapping, the target is missing or blank, the count is
+        not a non-negative integer, or a hub id is not a string.
+    """
+    pointer = frame.get(FORWARDING_FIELD)
+    if not isinstance(pointer, Mapping):
+        msg = "dead-letter forwarding frame carries no pointer"
+        raise DeadLetterForwardingWireError(msg)
+    return ForwardingNotice(
+        target=_require_nonempty(pointer.get("target"), "target"),
+        count=_require_count(pointer.get("count")),
+        origin_hub_id=_require_str(pointer.get("origin_hub_id"), "origin_hub_id"),
+        owner_hub_id=_require_str(pointer.get("owner_hub_id"), "owner_hub_id"),
+    )
+
+
+def incoming_forwarding_notice(target: str, count: int, origin_hub_id: str) -> str:
+    """Return the one-line operator message for a blackhole a peer reports for a target we own."""
+    return (
+        f"dead-letter forwarding: peer hub {origin_hub_id!r} reports {count} directed messages to "
+        f"{target!r} — a name this domain owns — reached no live connection there; the reader is "
+        f"not draining it on the peer"
+    )
+
+
+def _require_str(value: object, name: str) -> str:
+    """Return ``value`` as a string or raise :class:`DeadLetterForwardingWireError`."""
+    if not isinstance(value, str):
+        msg = f"dead-letter forwarding pointer field {name!r} must be a string"
+        raise DeadLetterForwardingWireError(msg)
+    return value
+
+
+def _require_nonempty(value: object, name: str) -> str:
+    """Return ``value`` as a non-blank string or raise :class:`DeadLetterForwardingWireError`."""
+    text = _require_str(value, name)
+    if not text.strip():
+        msg = f"dead-letter forwarding pointer field {name!r} must not be blank"
+        raise DeadLetterForwardingWireError(msg)
+    return text
+
+
+def _require_count(value: object) -> int:
+    """Return ``value`` as a non-negative integer or raise :class:`DeadLetterForwardingWireError`.
+
+    ``bool`` is rejected though it subclasses ``int``: a count is a cardinality, never a flag.
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        msg = "dead-letter forwarding pointer field 'count' must be a non-negative integer"
+        raise DeadLetterForwardingWireError(msg)
+    return value

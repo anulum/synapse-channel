@@ -92,6 +92,9 @@ def _forwardings(store: EventStore) -> list[dict[str, object]]:
 
 
 _EXPECTED = {"target": _TARGET, "count": 1, "origin_hub_id": _EDGE, "owner_hub_id": _OWNER}
+# The wire pointer handed to the forwarder is the bare four fields; the origin-side audit adds the
+# 'out' direction so it reconciles with the owning hub's inbound record of the same forward.
+_EXPECTED_AUDIT = {**_EXPECTED, "direction": "out"}
 
 
 async def test_a_remote_owned_target_is_forwarded_to_its_peer_and_audited(tmp_path: Path) -> None:
@@ -104,7 +107,7 @@ async def test_a_remote_owned_target_is_forwarded_to_its_peer_and_audited(tmp_pa
 
     forwardings = _forwardings(store)
     store.close()
-    assert forwardings == [_EXPECTED]
+    assert forwardings == [_EXPECTED_AUDIT]
     assert forwarder.calls == [(_EXPECTED, "ws://owner/", _EDGE, "tok")]
     # The honesty bound end to end: the pointer names the target, never its body.
     assert "secret-body" not in json.dumps(forwardings)
@@ -158,7 +161,7 @@ async def test_a_failed_forward_still_records_the_durable_audit(tmp_path: Path) 
             await read_until_type(websocket, "welcome")
             await _dead_letter(websocket, target=_TARGET)  # forward raises; escalation must not
 
-    assert _forwardings(store) == [_EXPECTED]  # recorded but not delivered
+    assert _forwardings(store) == [_EXPECTED_AUDIT]  # recorded but not delivered
     store.close()
     assert len(forwarder.calls) == 1
 
@@ -170,7 +173,7 @@ async def test_without_a_forwarder_the_intent_is_recorded_not_transmitted(tmp_pa
             await read_until_type(websocket, "welcome")
             await _dead_letter(websocket, target=_TARGET)
 
-    assert _forwardings(store) == [_EXPECTED]  # audit written; no transmission attempted
+    assert _forwardings(store) == [_EXPECTED_AUDIT]  # audit written; no transmission attempted
     store.close()
 
 

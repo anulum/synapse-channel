@@ -14,14 +14,18 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
-- Dead-letter escalation can now forward across hubs. When a blackholed directed target's
-  namespace is owned by a peer hub — resolved through the same namespace-ownership and relay
-  routes the operator relay uses — an escalation forwards a pointer to that owning hub (the
+- Dead-letter escalation can now forward across hubs, end to end. When a blackholed directed
+  target's namespace is owned by a peer hub — resolved through the same namespace-ownership and
+  relay routes the operator relay uses — an escalation forwards a pointer to that owning hub (the
   target and its undelivered count, never a message body, so re-delivery stays impossible by
-  construction) and records a durable `dead_letter_forwarding` audit event, so the hub that can
-  actually reach the missing reader learns of the gap. The transmission is a `dead_letter_forwarder`
-  seam that defaults to recording the intent without sending, so the feature is opt-in like the
-  relay routes it reuses. New `core.dead_letter_forwarding` holds the honesty-bound notice.
+  construction) over the federation transport and records a durable `dead_letter_forwarding` audit
+  event. The owning hub, behind the same deny-by-default serving policy and namespace-ownership gate
+  the operator relay uses, records a matching inbound audit (naming the verified sending peer) and
+  broadcasts the pointer to its own operators, so the hub that can actually reach the missing reader
+  learns of the gap. The two audits reconcile through a `direction` field (`out` on the origin, `in`
+  on the owner). New `core.dead_letter_forwarding` holds the honesty-bound notice and its codec,
+  `core.dead_letter_forwarding_transport` the fire-and-forget sender (the hub's default), and
+  `handlers.dead_letter_forwarding` the peer-side receiver.
 - `synapse federation rotate` keeps a domain's own trust bundle fresh: it pushes the expiry
   forward, unions new signing keys or certificate pins alongside the existing ones for a grace
   window (an old key stays valid until a later rotation retires it, so a peer that has not
