@@ -72,8 +72,17 @@ def _receipt(**fields: object) -> RunReceipt:
 def _run(args: argparse.Namespace, **received: object) -> int:
     """Invoke ``_cmd_run`` with a fake runner that records what it was handed."""
 
-    def _runner(manifest: object, wasm: bytes, inputs: bytes, *, entrypoint: str) -> RunReceipt:
-        received.update(wasm=wasm, inputs=inputs, entrypoint=entrypoint)
+    def _runner(
+        manifest: object,
+        wasm: bytes,
+        inputs: bytes,
+        *,
+        entrypoint: str,
+        approved_roots: object = (),
+    ) -> RunReceipt:
+        received.update(
+            wasm=wasm, inputs=inputs, entrypoint=entrypoint, approved_roots=approved_roots
+        )
         return _receipt()
 
     return _cmd_run(args, runner=_runner)
@@ -185,6 +194,57 @@ def test_validate_check_paths_with_no_filesystem_grants(
     assert "none to pre-flight" in capsys.readouterr().out
 
 
+def test_validate_workspace_root_refuses_a_grant_outside_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    manifest = _manifest_file(tmp_path, filesystem=[_fs_grant(str(outside))])
+    # --workspace-root implies the path pre-flight even without --check-paths.
+    args = _args("validate", str(manifest), "--workspace-root", str(root))
+    assert args.func(args) == 1
+    out = capsys.readouterr().out
+    assert "REFUSED" in out and "outside the approved workspace" in out
+
+
+def test_validate_workspace_root_admits_a_grant_under_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = tmp_path / "workspace"
+    inside = root / "in"
+    inside.mkdir(parents=True)
+    manifest = _manifest_file(tmp_path, filesystem=[_fs_grant(str(inside))])
+    args = _args("validate", str(manifest), "--workspace-root", str(root))
+    assert args.func(args) == 0
+    assert "OK" in capsys.readouterr().out
+
+
+def test_run_threads_the_workspace_root_to_the_runner(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    args = _args(
+        "run",
+        str(_tool(tmp_path)),
+        "--manifest",
+        str(_manifest_file(tmp_path)),
+        "--approve",
+        "--workspace-root",
+        str(root),
+    )
+    captured: dict[str, object] = {}
+
+    def _runner(
+        manifest: object, wasm: bytes, inputs: bytes, *, entrypoint: str, **extra: object
+    ) -> RunReceipt:
+        captured.update(extra)
+        return _receipt()
+
+    assert _cmd_run(args, runner=_runner) == 0
+    assert captured["approved_roots"] == (str(root),)
+
+
 def test_validate_rejects_a_broken_manifest(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -256,7 +316,9 @@ def test_run_passes_an_input_file_to_the_tool(tmp_path: Path) -> None:
     )
     captured: dict[str, object] = {}
 
-    def _runner(manifest: object, wasm: bytes, inputs: bytes, *, entrypoint: str) -> RunReceipt:
+    def _runner(
+        manifest: object, wasm: bytes, inputs: bytes, *, entrypoint: str, **_extra: object
+    ) -> RunReceipt:
         captured["inputs"] = inputs
         return _receipt()
 
@@ -310,7 +372,9 @@ def test_run_prints_a_failure_reason(tmp_path: Path, capsys: pytest.CaptureFixtu
         "run", str(_tool(tmp_path)), "--manifest", str(_manifest_file(tmp_path)), "--approve"
     )
 
-    def _runner(manifest: object, wasm: bytes, inputs: bytes, *, entrypoint: str) -> RunReceipt:
+    def _runner(
+        manifest: object, wasm: bytes, inputs: bytes, *, entrypoint: str, **_extra: object
+    ) -> RunReceipt:
         return _receipt(exit="error", reason="entrypoint 'run' is not exported")
 
     assert _cmd_run(args, runner=_runner) == 0
@@ -469,7 +533,9 @@ def test_run_reports_an_unwritable_attestation_target(
         str(blocker / "audit.db"),
     )
 
-    def _runner(manifest: object, wasm: bytes, inputs: bytes, *, entrypoint: str) -> RunReceipt:
+    def _runner(
+        manifest: object, wasm: bytes, inputs: bytes, *, entrypoint: str, **_extra: object
+    ) -> RunReceipt:
         return _receipt()
 
     exit_code = _cmd_run(args, runner=_runner)

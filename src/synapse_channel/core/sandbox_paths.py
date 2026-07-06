@@ -19,11 +19,18 @@ path to its canonical real directory and refuses the grant fail-closed when the 
 from the lexical one — a symlink redirected it — or when it is not an existing directory. The
 resolved path is what the caller preopens and records in the run receipt, so the sandbox reaches
 exactly the directory the operator can see it reached, never a link's moving target.
+
+An operator can narrow the reachable surface further with a set of *approved workspace roots*: when
+one or more roots are supplied, a resolved host path is refused unless it lies at or below one of
+them, so a manifest cannot preopen a directory outside the operator's declared workspace even if
+that directory is a genuine, symlink-free path. With no roots supplied the constraint is inert and
+the symlink and directory checks stand alone, so the policy is opt-in and backward-compatible.
 """
 
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 
@@ -36,7 +43,26 @@ class SandboxPathError(RuntimeError):
     """
 
 
-def resolve_preopen_host(host_path: str) -> str:
+def _within_approved_root(real_path: str, approved_roots: Sequence[str]) -> bool:
+    """Return whether ``real_path`` lies at or below one of the canonicalised approved roots.
+
+    Each root is resolved to its own canonical real path before the containment test, so an
+    approved root given through a symlink still matches the directories genuinely under it.
+    Containment is by whole path component (via :func:`os.path.commonpath`), so ``/work`` covers
+    ``/work/in`` but never the sibling ``/workshop``.
+    """
+    for root in approved_roots:
+        canonical = os.path.realpath(root)
+        try:
+            if os.path.commonpath([real_path, canonical]) == canonical:
+                return True
+        except ValueError:
+            # Mixed absolute/relative or different anchors never share a common path.
+            continue
+    return False
+
+
+def resolve_preopen_host(host_path: str, *, approved_roots: Sequence[str] = ()) -> str:
     """Return the canonical real directory for a preopen host path, or refuse it fail-closed.
 
     The host path must name an existing directory whose real path equals its lexical absolute
@@ -45,10 +71,17 @@ def resolve_preopen_host(host_path: str) -> str:
     operator's literal string) means a symlink swapped in after the manifest was authored cannot
     silently point the sandbox at an ungranted directory.
 
+    When ``approved_roots`` is non-empty the resolved path must also lie at or below one of the
+    roots, so a manifest cannot preopen a directory outside the operator's declared workspace;
+    an empty ``approved_roots`` leaves this constraint inert.
+
     Parameters
     ----------
     host_path : str
         The host directory a filesystem grant names.
+    approved_roots : sequence of str, optional
+        Operator-approved workspace roots the resolved path must fall under. Empty (the default)
+        applies no root constraint.
 
     Returns
     -------
@@ -58,7 +91,8 @@ def resolve_preopen_host(host_path: str) -> str:
     Raises
     ------
     SandboxPathError
-        If the path resolves through a symlink, or is not an existing directory.
+        If the path resolves through a symlink, is not an existing directory, or falls outside
+        every approved workspace root.
     """
     lexical = os.path.abspath(host_path)
     real = os.path.realpath(host_path)
@@ -70,6 +104,13 @@ def resolve_preopen_host(host_path: str) -> str:
         raise SandboxPathError(msg)
     if not os.path.isdir(real):
         msg = f"host path {host_path!r} is not an existing directory"
+        raise SandboxPathError(msg)
+    if approved_roots and not _within_approved_root(real, approved_roots):
+        roots = ", ".join(sorted(os.path.realpath(root) for root in approved_roots))
+        msg = (
+            f"host path {host_path!r} resolves to {real!r}, outside the approved workspace "
+            f"root(s) {roots}; grant a path under an approved root"
+        )
         raise SandboxPathError(msg)
     return real
 
@@ -101,18 +142,21 @@ class PreopenCheck:
     reason: str
 
 
-def check_preopen_host(host_path: str) -> PreopenCheck:
+def check_preopen_host(host_path: str, *, approved_roots: Sequence[str] = ()) -> PreopenCheck:
     """Dry-check a preopen host path, reporting acceptance instead of raising.
 
-    Runs the same resolution as :func:`resolve_preopen_host` but turns a
-    :class:`SandboxPathError` into a :class:`PreopenCheck` with ``ok=False`` and the refusal
-    reason, so a caller (the ``sandbox validate`` pre-flight) can report every grant's fate in
-    one pass rather than stopping at the first unsafe path.
+    Runs the same resolution as :func:`resolve_preopen_host` (including the ``approved_roots``
+    workspace constraint) but turns a :class:`SandboxPathError` into a :class:`PreopenCheck` with
+    ``ok=False`` and the refusal reason, so a caller (the ``sandbox validate`` pre-flight) can
+    report every grant's fate in one pass rather than stopping at the first unsafe path.
 
     Parameters
     ----------
     host_path : str
         The host directory a filesystem grant names.
+    approved_roots : sequence of str, optional
+        Operator-approved workspace roots the resolved path must fall under. Empty (the default)
+        applies no root constraint.
 
     Returns
     -------
@@ -120,7 +164,7 @@ def check_preopen_host(host_path: str) -> PreopenCheck:
         The acceptance outcome, mirroring exactly what the runner would decide at run time.
     """
     try:
-        resolved = resolve_preopen_host(host_path)
+        resolved = resolve_preopen_host(host_path, approved_roots=approved_roots)
     except SandboxPathError as exc:
         return PreopenCheck(host_path=host_path, ok=False, resolved="", reason=str(exc))
     return PreopenCheck(host_path=host_path, ok=True, resolved=resolved, reason="")
@@ -128,11 +172,17 @@ def check_preopen_host(host_path: str) -> PreopenCheck:
 
 def harden_preopens(
     preopens: tuple[tuple[str, str, bool], ...],
+    *,
+    approved_roots: Sequence[str] = (),
 ) -> tuple[tuple[str, str, bool], ...]:
     """Resolve and validate every preopen's host path, preserving the guest path and write flag.
 
     Maps each ``(host, guest, write)`` to ``(resolved_host, guest, write)``. Raises
-    :class:`SandboxPathError` on the first host path that fails validation, so a run with any
-    unsafe grant is refused whole before the tool executes.
+    :class:`SandboxPathError` on the first host path that fails validation — a symlink redirect, a
+    missing directory, or (when ``approved_roots`` is non-empty) a path outside every approved
+    workspace root — so a run with any unsafe grant is refused whole before the tool executes.
     """
-    return tuple((resolve_preopen_host(host), guest, write) for host, guest, write in preopens)
+    return tuple(
+        (resolve_preopen_host(host, approved_roots=approved_roots), guest, write)
+        for host, guest, write in preopens
+    )

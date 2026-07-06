@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import importlib
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Protocol, cast
 
@@ -224,6 +224,7 @@ def run_sandboxed(
     *,
     entrypoint: str = DEFAULT_ENTRYPOINT,
     runtime: WasmRuntime | None = None,
+    approved_roots: Sequence[str] = (),
 ) -> RunReceipt:
     """Execute ``wasm_bytes`` under ``manifest``'s grants and return a bounded run receipt.
 
@@ -232,11 +233,15 @@ def run_sandboxed(
     memory/fuel/wall-clock budget and preopened paths, then its ``entrypoint`` export is
     called. The receipt records how it exited (normal, out-of-fuel, wall-clock interrupt,
     or error), the fuel it burned, and digests of the input and output.
+
+    When ``approved_roots`` is non-empty, every preopen must resolve to a directory at or
+    below one of the operator-approved workspace roots; a grant outside them is refused
+    fail-closed before the tool runs, exactly like a symlinked or missing path.
     """
     wasm = runtime or _require_wasm()
     config = derive_runtime_config(manifest)
     try:
-        hardened = harden_preopens(config.preopens)
+        hardened = harden_preopens(config.preopens, approved_roots=approved_roots)
     except SandboxPathError as exc:
         # A grant whose host path resolves through a symlink, or is not a directory, is
         # refused before the tool runs — the sandbox never preopens a moving target.
