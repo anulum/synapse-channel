@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 
@@ -24,17 +25,34 @@ def _opt_str(raw: Any) -> str | None:
 
 
 def _opt_int(raw: Any) -> int | None:
-    """Return ``raw`` as an int, or ``None`` for a boolean or non-numeric value."""
+    """Return ``raw`` as an int, or ``None`` for a boolean, non-numeric, or non-finite value.
+
+    A finding envelope is decoded from an untrusted frame, and ``json.loads`` yields
+    ``inf``/``nan`` from the ``Infinity``/``NaN`` tokens. ``int(inf)`` raises
+    ``OverflowError`` and ``int(nan)`` raises ``ValueError``, so a non-finite float is
+    rejected as "no usable value" (``None``) rather than crashing the finding handler.
+    """
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return None
+    if isinstance(raw, float) and not math.isfinite(raw):
         return None
     return int(raw)
 
 
 def _opt_float(raw: Any) -> float | None:
-    """Return ``raw`` as a float, or ``None`` for a boolean or non-numeric value."""
+    """Return ``raw`` as a finite float, or ``None`` for a non-numeric or non-finite value.
+
+    Non-finite is rejected for the same reason as :func:`_opt_int`: a ``nan`` confidence or
+    validity bound would compare unequal to everything and corrupt ranking and window checks,
+    and a JSON integer too large for a double raises ``OverflowError`` on conversion.
+    """
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
         return None
-    return float(raw)
+    try:
+        value = float(raw)
+    except OverflowError:  # a JSON integer too large for a double
+        return None
+    return value if math.isfinite(value) else None
 
 
 def _str_tuple(raw: Any) -> tuple[str, ...]:

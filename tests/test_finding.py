@@ -19,6 +19,7 @@ from synapse_channel.core.finding import (
     Validity,
     default_freshness,
 )
+from synapse_channel.core.protocol import loads_bounded
 
 
 def _raw(**overrides: Any) -> dict[str, Any]:
@@ -111,6 +112,34 @@ def test_source_event_seq_rejects_boolean() -> None:
     f = Finding.from_dict(_raw(provenance={"project": "p", "source_event_seq": True}))
     assert f.provenance is not None
     assert f.provenance.source_event_seq is None
+
+
+def test_from_dict_rejects_non_finite_numbers_without_crashing() -> None:
+    # A finding envelope is decoded from an untrusted frame, and json.loads yields
+    # inf/nan from the Infinity/NaN tokens. int(inf) raises OverflowError and int(nan)
+    # raises ValueError, which previously escaped the finding handler; a non-finite
+    # value must instead become None (no usable number) so a single hostile frame
+    # cannot crash the handler and drop the connection.
+    data = loads_bounded(
+        '{"statement": "s", "provenance": {"project": "p", "source_event_seq": Infinity,'
+        ' "ts": NaN}, "validity": {"valid_from": NaN, "valid_to": Infinity},'
+        ' "producer_confidence": -Infinity}'
+    )
+    f = Finding.from_dict(data)  # must not raise
+    assert f.provenance is not None
+    assert f.provenance.source_event_seq is None
+    assert f.provenance.ts is None
+    assert f.validity is not None
+    assert f.validity.valid_from is None
+    assert f.validity.valid_to is None
+    assert f.producer_confidence is None
+
+
+def test_producer_confidence_rejects_a_double_overflowing_integer() -> None:
+    # A JSON integer too large for a double must not raise OverflowError on the
+    # float() conversion; it is not a usable confidence and becomes None.
+    f = Finding.from_dict(_raw(producer_confidence=10**400))
+    assert f.producer_confidence is None
 
 
 # --- freshness default binding --------------------------------------------

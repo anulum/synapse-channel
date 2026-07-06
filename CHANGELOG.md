@@ -14,6 +14,17 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Fixed
+- A finding with a non-finite number no longer crashes the finding handler. A finding envelope is
+  decoded from an untrusted frame and `json.loads` yields `inf`/`nan` from the `Infinity`/`NaN` tokens,
+  but the tolerant coercion helpers converted a numeric field with a bare `int()`/`float()`:
+  `int(inf)` raises `OverflowError`, `int(nan)` raises `ValueError`, and `float()` of a JSON integer too
+  large for a double raises `OverflowError`. A single frame carrying `Infinity` in
+  `provenance.source_event_seq` (or `nan` in a confidence or validity bound) therefore raised an
+  unhandled exception out of the handler, dropping the sender's connection with a traceback. The helpers
+  now treat a non-finite or double-overflowing value as no usable number (`None`) — the same signal they
+  already return for a non-numeric value — so a hostile finding is rejected cleanly and a `nan` can no
+  longer corrupt finding ranking or validity-window checks. Found by fault-injection of the finding
+  decode path.
 - A non-finite timestamp in a peer hub's event no longer breaks the deterministic multi-hub merge. The
   cross-host event codec converted a stored event's `ts` with a type check that accepted any float, but
   `json.loads` parses the `NaN`/`Infinity` tokens, so a peer's wire body could carry a non-finite `ts`.
