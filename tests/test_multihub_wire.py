@@ -108,6 +108,15 @@ def test_decode_stored_event_rejects_non_finite_timestamp(token: str) -> None:
         decode_stored_event(body)
 
 
+def test_decode_stored_event_rejects_a_double_overflowing_timestamp() -> None:
+    # A JSON integer too large for a double is valid JSON (it passes the decoder), but
+    # float()/math.isfinite() of it raise OverflowError. It must be rejected as a
+    # malformed body, not crash the codec.
+    body = {SEQ_FIELD: 1, TS_FIELD: 10**400, KIND_FIELD: "chat", PAYLOAD_FIELD: {}}
+    with pytest.raises(MultiHubWireError, match="ts must be a finite number"):
+        decode_stored_event(body)
+
+
 def test_decode_stored_event_copies_payload() -> None:
     payload = {"text": "shared"}
     decoded = decode_stored_event(

@@ -14,6 +14,13 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Fixed
+- The federation-bundle and multi-hub numeric guards also reject a JSON integer too large for a double.
+  The `NaN`/`Infinity` guards added above convert with `float()` and check `math.isfinite`, but a
+  400-digit integer is finite JSON that passes the decoder yet raises `OverflowError` on the `float()`
+  conversion (and on `math.isfinite` of the raw int). A peer bundle's `expires_at` or a peer event's `ts`
+  set to such an integer therefore still escaped as an unhandled `OverflowError`; both guards now catch it
+  and raise their own malformed-input error (`FederationStoreError` / `MultiHubWireError`). Completes the
+  non-finite-number family below — the finding coercion helper already caught this case.
 - The bounded frame decoder now rejects the non-standard `NaN`/`Infinity`/`-Infinity` JSON tokens. RFC
   8259 has no such literals, but `json.loads` accepts them by default, so a non-finite float could enter
   through any inbound frame or peer response and then break an ordering comparison (`nan` compares
