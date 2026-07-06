@@ -159,6 +159,20 @@ async def _deny(agent: _FakeAgent, target: str, payload: str) -> None:
     )
 
 
+async def _foreign_receipt(agent: _FakeAgent, target: str, payload: str) -> None:
+    """Emit a delivery receipt addressed to a *different* operator."""
+    await agent.collect(
+        {"type": MessageType.DELIVERY_RECEIPT, "target": "operator:OTHER", "delivered": True}
+    )
+
+
+async def _foreign_task_error(agent: _FakeAgent) -> None:
+    """Emit a hub error addressed to a *different* operator."""
+    await agent.collect(
+        {"type": MessageType.ERROR, "target": "operator:OTHER", "payload": "not for this operator"}
+    )
+
+
 async def _confirm_task(agent: _FakeAgent) -> None:
     """Emit the hub confirmation that matches the agent's most recent action."""
     verb, identifier, body, _extra = agent.sent[-1]
@@ -260,6 +274,15 @@ def test_relay_message_unreachable_on_no_outcome_in_time() -> None:
     assert "no delivery outcome" in outcome.detail
 
 
+def test_relay_message_ignores_a_receipt_for_another_operator() -> None:
+    # A delivery receipt whose target is not this operator falls through the
+    # collect guard, so no outcome settles and the bounded wait expires.
+    outcome = asyncio.run(_relay(_factory(on_send=_foreign_receipt)).relay_message("x", "hi"))
+
+    assert outcome.status == UNREACHABLE
+    assert "no delivery outcome" in outcome.detail
+
+
 def test_relay_task_reports_accepted() -> None:
     factory = _factory(on_task=_confirm_task)
     outcome = asyncio.run(
@@ -293,6 +316,15 @@ def test_relay_task_reports_rejected_on_blackboard_error() -> None:
 
 def test_relay_task_unreachable_on_no_outcome_in_time() -> None:
     outcome = asyncio.run(_relay(_factory(on_task=None)).relay_task("T-1", "title"))
+
+    assert outcome.status == UNREACHABLE
+    assert "task declaration" in outcome.detail
+
+
+def test_relay_task_ignores_an_error_for_another_operator() -> None:
+    # A hub error addressed to a different operator is not this relay's denial;
+    # the collect guard falls through and the wait times out unreachable.
+    outcome = asyncio.run(_relay(_factory(on_task=_foreign_task_error)).relay_task("T-1", "title"))
 
     assert outcome.status == UNREACHABLE
     assert "task declaration" in outcome.detail
@@ -342,6 +374,16 @@ def test_relay_task_update_denied_on_acl_error() -> None:
 
 def test_relay_task_update_unreachable_on_no_outcome_in_time() -> None:
     outcome = asyncio.run(_relay(_factory(on_task=None)).relay_task_update("T-1", status="done"))
+
+    assert outcome.status == UNREACHABLE
+    assert "task update" in outcome.detail
+
+
+def test_relay_task_update_ignores_an_error_for_another_operator() -> None:
+    # Same guard on the update path: a foreign-addressed error is not collected.
+    outcome = asyncio.run(
+        _relay(_factory(on_task=_foreign_task_error)).relay_task_update("T-1", status="done")
+    )
 
     assert outcome.status == UNREACHABLE
     assert "task update" in outcome.detail
