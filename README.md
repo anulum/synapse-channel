@@ -1127,6 +1127,27 @@ opt-in and deny-by-default:
 - **One-flag strict mode** — [`synapse hub --paranoid`](https://anulum.github.io/synapse-channel/paranoid-mode/)
   turns the strict set on together.
 
+Beyond the wire, several subsystems harden data at rest and privileged actions, each
+opt-in and documented:
+
+- **At-rest encryption** — an AES-256-GCM envelope over the durable store, with a
+  fail-safe startup, a migration and rekey flow, and a per-key message-limit counter that
+  can persist across restarts (crash-safe by reserving a batch ahead) so a nonce is never
+  reused over a key's lifetime. Key material can sit behind a hardware key-encryption key —
+  a PKCS#11 HSM or a TPM 2.0 — not only a passphrase. See
+  [at-rest encryption](https://anulum.github.io/synapse-channel/at-rest-encryption/).
+- **Capability-limited tool sandbox** — `synapse sandbox` runs a WebAssembly tool under a
+  deny-by-default capability manifest (filesystem, network, and resource grants bound to
+  the module's content digest), refuses a preopen whose host path resolves through a
+  symlink, and returns a bounded, attestable run receipt. Experimental, behind the optional
+  `[wasm]` extra. See
+  [WASM sandbox](https://anulum.github.io/synapse-channel/wasm-sandbox-getting-started/).
+- **Governed cross-hub relay** — a cross-hub force-release requires a reason, is tagged
+  when it is break-glass, and can require two distinct operators (opt-in two-person
+  approval) before it applies.
+- **Durable auto-action arming** — which automatic actions a hub may take is an explicit,
+  operator-managed policy persisted across restarts, not a per-session default.
+
 The supply chain is gated the same way: a gitleaks pre-commit hook on staged changes
 plus a digest-pinned full-tree gitleaks sweep in CI; a hash-locked CI toolchain
 (uv-compiled with `--generate-hashes`, installed with `--require-hashes`) with GitHub
