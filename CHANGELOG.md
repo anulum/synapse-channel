@@ -14,6 +14,22 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `synapse federation rotate` keeps a domain's own trust bundle fresh: it pushes the expiry
+  forward, unions new signing keys or certificate pins alongside the existing ones for a grace
+  window (an old key stays valid until a later rotation retires it, so a peer that has not
+  re-fetched keeps verifying), rewrites the bundle in place, and keeps the prior bundle as a
+  backup. It mints no keys of its own — the added ids are generated through the tooling that
+  already manages the domain's keys. New `core.federation_rotation` holds the rotation policy.
+- The WASM sandbox can be confined to operator-approved workspace roots. `synapse sandbox run
+  --workspace-root DIR` (repeatable) refuses, fail-closed, any preopen that resolves outside every
+  approved root before the tool runs, and `synapse sandbox validate --workspace-root DIR`
+  pre-flights the same verdict without running anything. With no root given the constraint is
+  inert, so the policy is opt-in.
+- `synapse sandbox validate --check-paths` pre-flights a manifest's filesystem grants against the
+  live filesystem — the same host-path resolution the runner performs — and reports each grant as
+  accepted (with its canonical directory) or refused (a symlink redirect or a missing directory)
+  without running the tool, returning exit `1` when the manifest is valid but a grant would be
+  refused here.
 - Dead-letter blackholes can now escalate. A hub started with a
   `dead_letter_escalation_threshold` broadcasts a one-line `dead_letter_escalation` notice to every
   connected socket and journals an audit event when a target's undelivered directed-message count

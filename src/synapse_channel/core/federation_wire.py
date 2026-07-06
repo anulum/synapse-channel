@@ -155,7 +155,7 @@ def render_offer_fingerprints(peer: FederationPeer) -> str:
     namespaces = ", ".join(sorted(peer.namespaces)) or "(none)"
     lines.append(f"namespaces:         {namespaces}")
     lines.append(f"scope grants:       {len(peer.scope_grants)}")
-    lines.append(f"expires:            {_render_expiry(peer.expires_at)}")
+    lines.append(f"expires:            {render_expiry(peer.expires_at)}")
     if peer.revoked:
         lines.append("revoked:            yes")
     lines.append(f"bundle fingerprint: {bundle_fingerprint(peer)}")
@@ -170,8 +170,13 @@ def _labelled_block(label: str, values: list[str]) -> list[str]:
     return [f"{label:<20}{first}", *(f"{'':<20}{value}" for value in rest)]
 
 
-def _render_expiry(expires_at: float | None) -> str:
-    """Return a deterministic UTC rendering of the expiry, or ``never``."""
+def render_expiry(expires_at: float | None) -> str:
+    """Return a deterministic UTC rendering of a bundle expiry, or ``never``.
+
+    Shared by the ceremony fingerprint block and the rotation summary so an expiry reads the
+    same wherever it is shown. ``None`` renders as ``never``; a timestamp renders as an
+    ISO-8601 UTC instant with a ``Z`` suffix.
+    """
     if expires_at is None:
         return "never"
     stamp = datetime.fromtimestamp(expires_at, tz=timezone.utc)

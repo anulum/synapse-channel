@@ -16,7 +16,13 @@ from typing import Any
 
 import pytest
 
-from synapse_channel.cli_federation import SECONDS_PER_DAY, _cmd_import, _cmd_list, add_parsers
+from synapse_channel.cli_federation import (
+    SECONDS_PER_DAY,
+    _cmd_import,
+    _cmd_list,
+    _cmd_rotate,
+    add_parsers,
+)
 from synapse_channel.core.federation import FederationPeer
 from synapse_channel.core.federation_store import load_store
 
@@ -513,3 +519,96 @@ def test_offer_and_fetch_print_the_identical_fingerprint_block(
     block = render_offer_fingerprints(decode_federation_offer(_material()))
     assert block in offer_out
     assert block in fetch_out
+
+
+def _own_bundle(tmp_path: Path, **over: object) -> str:
+    data: dict[str, object] = dict(_BUNDLE)
+    data.update(over)
+    return _write_bundle(tmp_path, data, name="own.json")
+
+
+def test_rotate_rewrites_the_bundle_with_fresh_expiry_and_a_kept_key(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bundle = _own_bundle(tmp_path)
+    args = _args("rotate", bundle, "--lifetime-days", "90", "--add-signing-key", "key-2")
+    assert _cmd_rotate(args, clock=lambda: 1000.0) == 0
+    out = capsys.readouterr().out
+    assert "rotated bundle:" in out and "+ key-2" in out
+    written = json.loads(Path(bundle).read_text(encoding="utf-8"))
+    assert set(written["signing_key_ids"]) == {"key-1", "key-2"}
+    assert written["expires_at"] == 1000.0 + 90 * SECONDS_PER_DAY
+    # The prior bundle is kept for the grace window.
+    prior = json.loads(Path(bundle + ".prev").read_text(encoding="utf-8"))
+    assert set(prior["signing_key_ids"]) == {"key-1"}
+
+
+def test_rotate_refuses_retiring_an_absent_key(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bundle = _own_bundle(tmp_path)
+    args = _args("rotate", bundle, "--retire-signing-key", "key-9")
+    assert _cmd_rotate(args, clock=lambda: 1000.0) == 2
+    assert "does not hold" in capsys.readouterr().err
+
+
+def test_rotate_refuses_a_non_positive_lifetime(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bundle = _own_bundle(tmp_path)
+    args = _args("rotate", bundle, "--lifetime-days", "0")
+    assert _cmd_rotate(args) == 2
+    assert "positive number of days" in capsys.readouterr().err
+
+
+def test_rotate_reports_an_unreadable_bundle(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = _args("rotate", str(tmp_path / "nope.json"))
+    assert _cmd_rotate(args) == 2
+    assert "could not read bundle" in capsys.readouterr().err
+
+
+def test_rotate_reports_an_invalid_bundle(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json", encoding="utf-8")
+    args = _args("rotate", str(bad))
+    assert _cmd_rotate(args) == 2
+    assert "invalid federation bundle" in capsys.readouterr().err
+
+
+def test_rotate_warns_when_no_signing_key_remains(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bundle = _own_bundle(tmp_path)
+    args = _args("rotate", bundle, "--retire-signing-key", "key-1")
+    assert _cmd_rotate(args, clock=lambda: 1000.0) == 0
+    assert "no signing keys" in capsys.readouterr().err
+
+
+def test_rotate_warns_when_no_certificate_pin_remains(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bundle = _own_bundle(tmp_path)
+    args = _args("rotate", bundle, "--retire-pin", "sha256:aa")
+    assert _cmd_rotate(args, clock=lambda: 1000.0) == 0
+    assert "no certificate pins" in capsys.readouterr().err
+
+
+def test_rotate_writes_the_backup_to_a_custom_path(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bundle = _own_bundle(tmp_path)
+    backup = tmp_path / "prior.json"
+    args = _args("rotate", bundle, "--backup", str(backup))
+    assert _cmd_rotate(args, clock=lambda: 1000.0) == 0
+    assert set(json.loads(backup.read_text(encoding="utf-8"))["signing_key_ids"]) == {"key-1"}
+
+
+def test_rotate_reports_a_write_failure(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    bundle = _own_bundle(tmp_path)
+    args = _args("rotate", bundle, "--backup", str(tmp_path / "missing" / "b.json"))
+    assert _cmd_rotate(args, clock=lambda: 1000.0) == 2
+    assert "could not write the rotated bundle" in capsys.readouterr().err
