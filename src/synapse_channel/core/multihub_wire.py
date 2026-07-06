@@ -34,6 +34,7 @@ cursor unadvanced — the fail-closed posture the follower already relies on.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -293,12 +294,19 @@ def _require_int(value: object, name: str) -> int:
 
 
 def _require_float(value: object, name: str) -> float:
-    """Return ``value`` as a float or raise :class:`MultiHubWireError`.
+    """Return ``value`` as a finite float or raise :class:`MultiHubWireError`.
 
-    Accepts an integer (a whole-second timestamp) but rejects a boolean.
+    Accepts an integer (a whole-second timestamp) but rejects a boolean. A
+    non-finite ``nan``/``inf`` is rejected too — ``json.loads`` accepts the
+    ``NaN``/``Infinity`` tokens, and a ``nan`` timestamp would compare unequal to
+    everything, breaking the deterministic ``(ts, hub_id, seq)`` merge order so
+    two hubs folding the same events could diverge.
     """
     if isinstance(value, bool) or not isinstance(value, int | float):
         msg = f"{name} must be a number"
+        raise MultiHubWireError(msg)
+    if not math.isfinite(value):
+        msg = f"{name} must be a finite number"
         raise MultiHubWireError(msg)
     return float(value)
 

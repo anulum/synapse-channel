@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from synapse_channel.core.multihub_wire import (
@@ -92,6 +94,17 @@ def test_decode_stored_event_rejects_bad_fields(mutation: dict[str, object], mat
     body: dict[str, object] = {SEQ_FIELD: 1, TS_FIELD: 1.0, KIND_FIELD: "chat", PAYLOAD_FIELD: {}}
     body.update(mutation)
     with pytest.raises(MultiHubWireError, match=match):
+        decode_stored_event(body)
+
+
+@pytest.mark.parametrize("token", ["NaN", "Infinity", "-Infinity"])
+def test_decode_stored_event_rejects_non_finite_timestamp(token: str) -> None:
+    # json.loads accepts the NaN/Infinity tokens, so a peer's wire body can carry a
+    # non-finite ts. It must be rejected: a nan ts compares unequal to everything and
+    # breaks the deterministic (ts, hub_id, seq) merge order, so two hubs folding the
+    # same events in different receive orders would diverge.
+    body = json.loads(f'{{"seq": 1, "ts": {token}, "kind": "chat", "payload": {{}}}}')
+    with pytest.raises(MultiHubWireError, match="ts must be a finite number"):
         decode_stored_event(body)
 
 

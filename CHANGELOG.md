@@ -14,6 +14,14 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Fixed
+- A non-finite timestamp in a peer hub's event no longer breaks the deterministic multi-hub merge. The
+  cross-host event codec converted a stored event's `ts` with a type check that accepted any float, but
+  `json.loads` parses the `NaN`/`Infinity` tokens, so a peer's wire body could carry a non-finite `ts`.
+  A `nan` compares unequal to everything, so the total-order merge key `(ts, hub_id, seq)` stopped being
+  a total order: two hubs folding the same events in different receive orders could sort them
+  differently and diverge. The codec now rejects a non-finite `ts` as a malformed body
+  (`MultiHubWireError`), the same contract it already applies to every other bad field. Found by
+  fault-injection of the wire codec.
 - A malformed federation peer bundle no longer crashes the import or the hub. A numeric field in an
   out-of-band bundle — a peer's `expires_at` or a record's `provenance.imported_at` — was converted
   with a bare `float()`, so a hostile or corrupt value (a string, a mapping, a list, or a non-finite
