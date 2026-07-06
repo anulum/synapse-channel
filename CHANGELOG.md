@@ -14,6 +14,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Fixed
+- A malformed federation peer bundle no longer crashes the import or the hub. A numeric field in an
+  out-of-band bundle — a peer's `expires_at` or a record's `provenance.imported_at` — was converted
+  with a bare `float()`, so a hostile or corrupt value (a string, a mapping, a list, or a non-finite
+  `nan`/`inf`) raised a raw `TypeError`/`ValueError`. Every caller catches only `FederationStoreError`
+  (a `ValueError` subclass, which never matched the `TypeError` cases), so such a bundle escaped as an
+  unhandled traceback — crashing `synapse federation import` on a peer's bundle and `synapse hub
+  --federation-store` at startup on a corrupt store. Both numeric fields now parse through a guarded
+  conversion that raises `FederationStoreError` naming the field, and rejects `nan`/`inf` (a `nan`
+  expiry would defeat the `now >= expires_at` check and leave a peering that never expires). Found by
+  fault-injection of the federation bundle parser.
 - The hub no longer floods its log with full ERROR tracebacks for benign aborted handshakes. A
   load-balancer TCP health check, a port scan, or a client that drops before completing the WebSocket
   handshake previously logged `opening handshake failed` with a full traceback each time — on a

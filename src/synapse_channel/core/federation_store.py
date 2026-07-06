@@ -26,6 +26,7 @@ the operator adds them.
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +40,27 @@ STORE_VERSION = 1
 
 class FederationStoreError(ValueError):
     """Raised when a federation bundle or store file is malformed."""
+
+
+def _finite_float(field: str, value: Any) -> float:
+    """Return ``value`` as a finite float, or raise :class:`FederationStoreError`.
+
+    Numeric fields arrive from an out-of-band peer bundle, so a hostile or corrupt
+    value must fail the parser's contract (``FederationStoreError``) like every other
+    malformed field — not escape as a raw ``TypeError``/``ValueError`` that callers,
+    which catch only ``FederationStoreError``, would let crash the hub or an import.
+    A non-finite ``nan`` is rejected too: it would defeat the ``now >= expires_at``
+    expiry comparison and leave a peering that never expires.
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        msg = f"federation bundle field {field!r} must be a number"
+        raise FederationStoreError(msg) from exc
+    if not math.isfinite(number):
+        msg = f"federation bundle field {field!r} must be a finite number"
+        raise FederationStoreError(msg)
+    return number
 
 
 @dataclass(frozen=True)
@@ -135,7 +157,7 @@ def peer_from_dict(data: Mapping[str, Any]) -> FederationPeer:
         certificate_pins=frozenset(_str_list(data, "certificate_pins")),
         signing_key_ids=frozenset(_str_list(data, "signing_key_ids")),
         scope_grants=tuple(scope_grants),
-        expires_at=None if expires_raw is None else float(expires_raw),
+        expires_at=None if expires_raw is None else _finite_float("expires_at", expires_raw),
         revoked=bool(data.get("revoked", False)),
     )
 
@@ -173,7 +195,7 @@ def load_store(path: str | Path) -> dict[str, FederationRecord]:
             peer=peer,
             provenance=PeerProvenance(
                 source=str(prov.get("source", "")),
-                imported_at=float(prov.get("imported_at", 0.0)),
+                imported_at=_finite_float("provenance.imported_at", prov.get("imported_at", 0.0)),
                 confirmed_by=str(prov.get("confirmed_by", "")),
             ),
         )
