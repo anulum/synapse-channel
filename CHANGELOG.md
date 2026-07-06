@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse approvals` makes the two-person relay quorum operable. The approval ledger is per-hub live
+  state that enforced a second operator but exposed no way to see which relays were pending, so the
+  quorum was invisible between the first request and the second approval. The pending set now rides in
+  the hub's state snapshot (the same one the dashboard and cockpit read) as `pending_relay_approvals`,
+  and the new read-only `synapse approvals` query prints it — oldest first, naming each pending action,
+  its namespace and task, and the first requester a second, different operator must join to reach
+  quorum. It holds only what the ledger holds (never a message body).
+
 ## [0.98.4] - 2026-07-06
 
 ### Added

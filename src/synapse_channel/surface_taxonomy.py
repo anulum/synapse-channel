@@ -94,6 +94,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "doctor": ANALYSIS,
     "state": ANALYSIS,
     "dead-letters": ANALYSIS,
+    "approvals": ANALYSIS,
     "relay": ANALYSIS,
     "event-query": ANALYSIS,
     "debug": ANALYSIS,

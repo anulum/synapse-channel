@@ -16,6 +16,7 @@ import contextlib
 from synapse_channel.cli_query_rendering import (
     _print_board,
     _print_manifest,
+    _render_approvals,
     _render_dead_letters,
     _render_state,
     _render_who,
@@ -253,6 +254,63 @@ def _cmd_dead_letters(args: argparse.Namespace) -> int:
     """Dispatch the ``dead-letters`` subcommand."""
     return asyncio.run(
         _dead_letters(
+            uri=args.uri,
+            name=args.name,
+            token=args.token,
+            ready_timeout=args.ready_timeout,
+        )
+    )
+
+
+async def _approvals(
+    *,
+    uri: str,
+    name: str,
+    agent_factory: AgentFactory = SynapseAgent,
+    token: str | None = None,
+    ready_timeout: float = 5.0,
+) -> int:
+    """Print the relays awaiting a second operator — the two-person approval quorum.
+
+    The pending set rides in the state snapshot (the same one the dashboard and
+    cockpit read), so this reuses the state request and renders only the
+    ``pending_relay_approvals`` section — making the per-hub quorum operable from a
+    terminal instead of enforced-but-invisible.
+
+    Parameters
+    ----------
+    uri, name : str
+        Hub URI and the requester's display name.
+    agent_factory : AgentFactory, optional
+        Factory for the client agent; injectable for testing.
+    token : str or None, optional
+        Shared-secret token for a secured hub.
+    ready_timeout : float, optional
+        Seconds to wait for the welcome handshake before treating the hub as
+        unreachable. Defaults to ``5.0``.
+
+    Returns
+    -------
+    int
+        ``0`` once the pending set is printed, ``1`` when the hub could not be reached.
+    """
+    return await _query_hub(
+        uri=uri,
+        name=name,
+        token=token,
+        agent_factory=agent_factory,
+        response_type=MessageType.STATE_SNAPSHOT,
+        transform=lambda data: data.get("snapshot", {}),
+        request=lambda agent: agent.request_state(),
+        render=_render_approvals,
+        ready_timeout=ready_timeout,
+    )
+
+
+def _cmd_approvals(args: argparse.Namespace) -> int:
+    """Dispatch the ``approvals`` subcommand."""
+    return asyncio.run(
+        _approvals(
             uri=args.uri,
             name=args.name,
             token=args.token,
