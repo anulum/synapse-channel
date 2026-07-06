@@ -29,6 +29,7 @@ from synapse_channel.core.dead_letter_escalation import (
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwardError, forwarding_notice
 from synapse_channel.core.dead_letters import is_directed_target
 from synapse_channel.core.journal import (
+    DEAD_LETTER_DIRECTION_OUT,
     record_chat,
     record_dead_letter_escalation,
     record_dead_letter_forwarding,
@@ -151,7 +152,12 @@ async def _forward_dead_letter_to_peer(hub: SynapseHub, *, target: str, count: i
         target, count, origin_hub_id=hub.hub_id, owner_hub_id=decision.owner_hub_id or ""
     )
     if hub.journal is not None:
-        record_dead_letter_forwarding(hub.journal, notice)
+        # The wire pointer stays the bare four-field notice; the audit adds the ``out`` direction
+        # so this origin-side record reconciles with the owning hub's inbound record of the same
+        # forward.
+        record_dead_letter_forwarding(
+            hub.journal, {**notice, "direction": DEAD_LETTER_DIRECTION_OUT}
+        )
     if hub.dead_letter_forwarder is None:
         return
     try:

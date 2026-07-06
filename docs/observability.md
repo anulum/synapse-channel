@@ -75,10 +75,14 @@ happened. The signals that matter operationally:
   crosses the threshold. When the blackholed target's namespace is owned by a
   peer hub — resolved through the same relay routes an operator relay uses —
   the escalation also forwards a pointer to that peer (the target and its
-  count, never a message body) and records a `dead_letter_forwarding` audit
-  event, so the hub that can actually reach the missing reader learns of the
-  gap. Query both with `synapse event-query --kind dead_letter_escalation`
-  and `--kind dead_letter_forwarding`.
+  count, never a message body) over the federation transport and records a
+  `dead_letter_forwarding` audit event, so the hub that can actually reach the
+  missing reader learns of the gap. The forward leaves a matching audit on both
+  hubs, distinguished by a `direction` field — `out` on the origin that sent it,
+  `in` on the owning hub that received it (naming the verified sending peer) —
+  and the owning hub broadcasts the incoming pointer to its own operators. Query
+  both with `synapse event-query --kind dead_letter_escalation` and
+  `--kind dead_letter_forwarding`.
 - Any movement on `synapse_auth_failures_total` or
   `synapse_federation_denied_total` on a locked-down hub deserves a look
   at `synapse event-query --kind error` — expected during key rotation,

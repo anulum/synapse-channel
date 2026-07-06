@@ -141,6 +141,12 @@ RELAY_DIRECTION_IN = "in"
 RELAY_DIRECTION_OUT = "out"
 """Audit ``direction`` on the hub that *originates* a relay and forwards it to the owner."""
 
+DEAD_LETTER_DIRECTION_IN = "in"
+"""Audit ``direction`` on the owning hub that *receives* a forwarded dead-letter pointer."""
+
+DEAD_LETTER_DIRECTION_OUT = "out"
+"""Audit ``direction`` on the origin hub that *forwards* a dead-letter pointer to the owner."""
+
 
 def record_operator_relay(store: EventStore, provenance: Mapping[str, Any]) -> None:
     """Append a durable audit event for a governed cross-hub operator relay.
@@ -199,12 +205,19 @@ def record_dead_letter_forwarding(store: EventStore, provenance: Mapping[str, An
     gap (never a message body). It is written whether or not a live forwarder delivered the signal,
     so a forward that could not reach the peer is still reviewable as "recorded but not delivered".
 
+    A forward leaves an audit trail on **both** hubs it touches, distinguished by the ``direction``
+    field: :data:`DEAD_LETTER_DIRECTION_OUT` on the origin hub that resolved the target to a peer
+    and forwarded the pointer, and :data:`DEAD_LETTER_DIRECTION_IN` on the owning hub that received
+    it (recording the verified sending ``peer``), so the two sides of one forward reconcile in the
+    log.
+
     Parameters
     ----------
     store : EventStore
-        The origin hub's durable event store.
+        The recording hub's durable event store.
     provenance : Mapping[str, Any]
-        The forwarding fields: the target, its undelivered count, and the origin and owner hub ids.
+        The forwarding fields: the target, its undelivered count, the origin and owner hub ids, and
+        the ``direction``; plus the verified sending ``peer`` on the owning (inbound) side.
     """
     store.append(EventKind.DEAD_LETTER_FORWARDING, dict(provenance), durable=True)
 
