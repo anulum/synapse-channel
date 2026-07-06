@@ -209,9 +209,7 @@ async def test_welcome_captures_the_hub_protocol_version() -> None:
     agent = SynapseAgent("A", verbose=False)
     assert agent.hub_protocol_version is None  # unset before any welcome
 
-    await agent._dispatch(
-        json.dumps({"type": "welcome", "hub_id": "h", "protocol_version": 1})
-    )
+    await agent._dispatch(json.dumps({"type": "welcome", "hub_id": "h", "protocol_version": 1}))
 
     assert agent.hub_protocol_version == 1
 
