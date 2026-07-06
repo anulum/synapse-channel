@@ -246,7 +246,7 @@ def _recording_hub(
     async def _capture(message: dict[str, Any]) -> None:
         broadcasts.append(message)
 
-    hub._broadcast = _capture  # type: ignore[method-assign]
+    hub._broadcast = _capture  # type: ignore[method-assign, assignment]
     return hub, broadcasts
 
 

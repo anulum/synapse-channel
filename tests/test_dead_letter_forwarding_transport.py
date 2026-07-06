@@ -92,13 +92,13 @@ def _refusing_connector(exc: BaseException) -> Any:
 async def test_forward_sends_the_nested_pointer_and_awaits_no_reply() -> None:
     socket = _FakeSocket()
     opened: list[str] = []
-    result = await forward_dead_letter(
+    # Fire-and-forget: the sender returns nothing (typed ``-> None``); it awaits no verdict.
+    await forward_dead_letter(
         _notice(),
         uri="ws://owner:1/",
         local_id="syn-edge",
         connector=_connector(socket, opened=opened),
     )
-    assert result is None  # fire-and-forget: no verdict is returned
     assert opened == ["ws://owner:1/"]
     assert len(socket.sent) == 1
     frame = json.loads(socket.sent[0])
