@@ -65,6 +65,33 @@ def test_peer_from_dict_rejects_bad_inputs() -> None:
         peer_from_dict({"domain_id": "a", "scope_grants": ["bad"]})
 
 
+@pytest.mark.parametrize(
+    "bad_expires",
+    [
+        "soon",  # non-numeric string -> raw ValueError before the fix
+        "1e999x",  # numeric-looking but unparseable
+        {},  # mapping -> raw TypeError, which a ValueError-only catch misses
+        [1, 2],  # list -> raw TypeError
+        float("nan"),  # finite guard: nan defeats the expiry comparison
+        float("inf"),  # finite guard: a peering that never expires
+    ],
+)
+def test_peer_from_dict_rejects_non_numeric_expires_at(bad_expires: object) -> None:
+    # A hostile or corrupt peer bundle must fail the parser's contract
+    # (FederationStoreError), not escape as a raw TypeError/ValueError that the
+    # import CLI and the hub-startup path — which catch only FederationStoreError —
+    # would let crash with a traceback.
+    with pytest.raises(FederationStoreError, match="'expires_at' must be a"):
+        peer_from_dict({"domain_id": "evil", "expires_at": bad_expires})
+
+
+def test_peer_from_dict_accepts_numeric_expires_at_forms() -> None:
+    assert peer_from_dict({"domain_id": "a", "expires_at": 1200}).expires_at == 1200.0
+    assert peer_from_dict({"domain_id": "a", "expires_at": 1200.5}).expires_at == 1200.5
+    assert peer_from_dict({"domain_id": "a", "expires_at": None}).expires_at is None
+    assert peer_from_dict({"domain_id": "a"}).expires_at is None
+
+
 def test_peer_from_dict_skips_incomplete_scope_grants() -> None:
     peer = peer_from_dict(
         {
@@ -120,6 +147,21 @@ def test_load_rejects_malformed_store(tmp_path: Path) -> None:
     )
     with pytest.raises(FederationStoreError, match="'provenance' must be a mapping"):
         load_store(bad_prov)
+
+
+@pytest.mark.parametrize("bad_imported_at", ['"xyz"', "{}", "[1]", "NaN"])
+def test_load_store_rejects_non_numeric_imported_at(tmp_path: Path, bad_imported_at: str) -> None:
+    # provenance.imported_at rides in the same out-of-band store; a malformed value
+    # must fail as FederationStoreError (not a raw TypeError/ValueError) so a corrupt
+    # store cannot crash `synapse hub --federation-store` at startup.
+    store = tmp_path / "badnum.json"
+    store.write_text(
+        '{"version": 1, "records": [{"domain_id": "a", '
+        f'"provenance": {{"imported_at": {bad_imported_at}}}}}]}}',
+        encoding="utf-8",
+    )
+    with pytest.raises(FederationStoreError, match="'provenance.imported_at' must be a"):
+        load_store(store)
 
 
 def test_record_and_provenance_to_dict() -> None:
