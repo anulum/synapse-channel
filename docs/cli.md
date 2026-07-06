@@ -60,7 +60,7 @@ everything, since they need the whole command table.
 | `synapse accounting` | Record and report opt-in model cost/token usage from a hub SQLite event store. |
 | `synapse approval` | Request, decide, and replay human-in-the-loop approval gates from a hub SQLite event store. |
 | `synapse ttl-advice` | Build read-only lease TTL advice from a hub SQLite event store. |
-| `synapse auto-action` | Introspect the opt-in auto-action reactor: which advisory signals map to which automatic actions, and preview an armed policy (read-only). |
+| `synapse auto-action` | Introspect the opt-in auto-action reactor and manage the durable armed policy the orchestration loop reads (`show`/`arm`/`disarm`/`clear`). |
 | `synapse board` | Print the shared task/progress blackboard. |
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
 | `synapse manifest` | Print the capability manifest of advertised agents. |
@@ -1512,14 +1512,22 @@ change the hub default, and explicit manual TTL values remain the control path.
 
 `synapse auto-action` introspects the opt-in auto-action reactor — the layer that
 turns the session advisor's per-round signals into automatic actions (compact a
-filling context, write a log, hand a run over). It prints which advisory signal
-maps to which action, which signals deliberately map to none (`over-budget` halts
-the loop; `approaching-rate-limit` is steered by the router), and — given `--arm
-compact,log` or `--all` — previews the armed posture a policy would have. The
-reactor is armed in-process by an orchestration loop rather than by a persistent
-hub-side toggle, so this command only reads the static model: it starts nothing
-and fires nothing, and an armed action still fires at runtime only when its signal
-is raised and a handler was supplied. Add `--json` for the machine-readable form.
+filling context, write a log, hand a run over). The bare command previews the
+*static model*: which advisory signal maps to which action, which signals
+deliberately map to none (`over-budget` halts the loop; `approaching-rate-limit` is
+steered by the router), and — given `--arm compact,log` or `--all` — how a
+hypothetical armed set would read. It touches no files and fires nothing.
+
+The reactor is armed in-process by an orchestration loop rather than by a
+hub-side toggle, but which actions are armed is now a *durable policy* the loop can
+read: `synapse auto-action arm compact,log` and `disarm log` add or remove actions,
+`clear` disarms everything, and `show` renders the persisted posture. The policy is
+a JSON file in the coordination home (`$SYN_HOME` or `~/synapse`, overridable with
+`--store PATH`); an orchestration harness loads the same file to build its dispatch,
+so the terminal and the loop agree on one persisted armed set. Persisting a policy
+still fires nothing — an armed action fires at runtime only when its signal is
+raised and a handler was supplied. Add `--json` to `show` or the bare command for
+the machine-readable form.
 
 `synapse multihub` reads a *peer* hub's event log rather than the local one.
 `multihub observe --peer-db ./peer.db` folds a peer's log file offline into its

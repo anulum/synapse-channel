@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- The armed auto-action policy is now durable, so the terminal and a live orchestration loop share
+  one source of truth. `synapse auto-action arm compact,log` and `disarm log` add or remove
+  actions in a JSON policy file in the coordination home (`$SYN_HOME` or `~/synapse`, overridable
+  with `--store PATH`), `clear` disarms everything, and `show` renders the persisted posture; the
+  bare command still previews the static model and touches no files. New `participants.auto_action_store`
+  (`load_policy`, `save_policy`) is the seam an orchestration harness loads to build its dispatch,
+  so what the operator arms is what the loop would fire. Persisting a policy still fires nothing —
+  an armed action fires only when its signal is raised at runtime and a handler was supplied.
+
 ### Security
 - The cross-hub operator relay now carries a `reason` and a `break_glass` tag, recorded in the
   `operator_relay` audit on both the originating and the owning hub, so a governed force-release
