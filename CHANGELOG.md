@@ -14,6 +14,15 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Fixed
+- The federation gate now stays deny-closed when a peer certificate reads but does not parse. The gate
+  already wraps the certificate *read* so a socket in a strange state (or an injected certificate source)
+  cannot crash the frame handler, and refuses a peered key's cross-domain claim it cannot pin. Computing
+  the pin was outside that guard, so a certificate that read as non-empty bytes but did not parse would
+  have raised out of the handler. The pin computation now shares the guard: an unparsable certificate is
+  treated exactly like a failed read — deny-closed for a peered key, degrade-to-local for a local key —
+  never a crash. Defence in depth: the production certificate source returns the TLS-validated peer DER,
+  so this is not reachable on a live mutual-TLS connection, but it completes the gate's "any certificate
+  failure fails closed" invariant. Found by fault-injection of the federation trust gate.
 - The federation-bundle and multi-hub numeric guards also reject a JSON integer too large for a double.
   The `NaN`/`Infinity` guards added above convert with `float()` and check `math.isfinite`, but a
   400-digit integer is finite JSON that passes the decoder yet raises `OverflowError` on the `float()`

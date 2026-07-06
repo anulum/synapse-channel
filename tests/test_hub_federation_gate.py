@@ -202,6 +202,34 @@ async def test_certificate_read_failure_keeps_a_local_key_local(
     assert sink.sent == []
 
 
+async def test_unparsable_certificate_denies_a_peered_key(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # A certificate that reads as non-None bytes but does not parse (a socket in a
+    # strange state, or an injected/custom cert source) must be treated like a failed
+    # read: the pin cannot be computed, so a peered key's cross-domain claim cannot be
+    # bound and is denied deny-closed, never crashing the frame handler.
+    sink = _Sink()
+    gate = _gate(sink, bundle=_bundle(), cert=b"\x00not-a-certificate")
+    with caplog.at_level("WARNING"):
+        disposition = await gate.authorise(_REMOTE, MessageType.CLAIM, _claim(), object())
+    assert disposition is FrameDisposition.DENY
+    assert "certificate read failed" in caplog.text
+    assert sink.sent[0]["federation_reason"] == "peer_certificate_unavailable"
+
+
+async def test_unparsable_certificate_keeps_a_local_key_local() -> None:
+    # The same unparsable certificate degrades a locally signed frame to the local
+    # path rather than crashing it.
+    sink = _Sink()
+    gate = _gate(sink, bundle=_bundle(), cert=b"\x00not-a-certificate")
+    disposition = await gate.authorise(
+        _REMOTE, MessageType.CLAIM, _claim(key_id=_LOCAL_KEY_ID), object()
+    )
+    assert disposition is FrameDisposition.LOCAL
+    assert sink.sent == []
+
+
 async def test_partial_credential_match_warns_and_stays_local(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

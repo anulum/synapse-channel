@@ -151,24 +151,26 @@ class HubFederationGate:
             return FrameDisposition.LOCAL
         try:
             der = self._cert_source(websocket)
+            pin = None if der is None else certificate_sha256_pin_from_der(der)
         except Exception:
             # A certificate read can raise on a socket that has closed or never
-            # finished its TLS handshake, and an injected source is arbitrary code.
-            # A frame signed with a purely local key degrades to the local path
-            # rather than crashing the frame handler; a frame whose key a peering
-            # enrols claims cross-domain authority we cannot pin, so it is denied
-            # outright — an unpinnable peer is suspect, never local.
+            # finished its TLS handshake, and an injected source is arbitrary code;
+            # computing the pin can likewise raise on bytes that do not parse as a
+            # certificate. Either way the claimed authority cannot be bound: a frame
+            # signed with a purely local key degrades to the local path rather than
+            # crashing the frame handler; a frame whose key a peering enrols claims
+            # cross-domain authority we cannot pin, so it is denied outright — an
+            # unpinnable peer is suspect, never local.
             logger.warning(
                 "Federation certificate read failed for %s (%s)",
                 sender,
                 msg_type,
             )
             return await self._refuse_unpinned(sender, msg_type, key_id, websocket)
-        if der is None:
+        if pin is None:
             # A plaintext connection presents no certificate: fine for a locally
             # signed frame, refusal for one claiming a peered key.
             return await self._refuse_unpinned(sender, msg_type, key_id, websocket)
-        pin = certificate_sha256_pin_from_der(der)
         domain_id = resolve_domain(self._bundle, key_id=key_id, certificate_pin=pin)
         if domain_id is None:
             return await self._refuse_unresolved(sender, msg_type, key_id, pin, websocket)
