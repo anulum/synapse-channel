@@ -31,7 +31,9 @@ jobs:
       - name: Generate CycloneDX SBOM for the built wheel
         run: |
           python -m venv .sbom-venv
-          .sbom-venv/bin/python -m pip install --upgrade pip
+          # Use the pip seeded by `python -m venv` on the pinned Python runner as-is: it installs
+          # the locally built wheel for cyclonedx to scan, and pinning-free `pip install --upgrade
+          # pip` is the one unpinned named-package install scorecard flags (Pinned-Dependencies).
           .sbom-venv/bin/python -m pip install dist/*.whl
           python -m pip install --require-hashes -r .github/requirements/requirements-sbom.txt
           cyclonedx-py environment .sbom-venv/bin/python \
