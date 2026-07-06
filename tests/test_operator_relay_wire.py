@@ -103,6 +103,27 @@ def test_refused_result_round_trips() -> None:
     assert decode_relay_result(encode_relay_result(result)) == result
 
 
+def test_pending_result_round_trips() -> None:
+    result = _result(applied=False, pending=True, detail="awaiting a second operator")
+    decoded = decode_relay_result(encode_relay_result(result))
+    assert decoded == result
+    assert decoded.pending is True
+
+
+def test_decode_result_defaults_absent_pending_to_false() -> None:
+    # An older acting hub that never sends the field decodes to the safe default (not pending).
+    body = encode_relay_result(_result())
+    del body["pending"]
+    assert decode_relay_result(body).pending is False
+
+
+def test_decode_result_rejects_a_non_boolean_pending() -> None:
+    body = encode_relay_result(_result())
+    body["pending"] = "maybe"
+    with pytest.raises(RelayWireError, match="pending must be a boolean"):
+        decode_relay_result(body)
+
+
 # --- encode fails closed on an empty identifier ------------------------------------------
 
 

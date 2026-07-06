@@ -83,6 +83,7 @@ from synapse_channel.core.multihub_serving import (
     live_peer_certificate_der,
 )
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
+from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
 from synapse_channel.core.operator_relay_forwarding import OperatorRelayForwarding
 from synapse_channel.core.operator_relay_transport import (
     OperatorRelayPeer,
@@ -327,6 +328,11 @@ class SynapseHub:
         default) records a reason when one is given but does not demand it; a team or production
         hub sets it so every governed cross-hub action leaves an auditable why (reason-required
         receipts).
+    require_two_person_relay : bool, optional
+        Whether an authorised operator relay needs a second, different operator before it applies.
+        ``False`` (the default) applies an authorised relay immediately; a team or production hub
+        sets it so a governed cross-hub force-release is recorded pending and carried out only when
+        a second operator submits the same action, leaving a two-operator audit trail.
     observed_asserting_hubs : Callable[[str], Iterable[str]] or None, optional
         A runtime feed of the hub ids observed asserting authority over a namespace, consulted
         when resolving ownership so a partition — a peer seen owning a namespace this hub also
@@ -403,6 +409,7 @@ class SynapseHub:
         relay_peers: Mapping[str, OperatorRelayPeer] | None = None,
         relay_forwarder: RelayForwarder = relay_operator_action,
         require_relay_reason: bool = False,
+        require_two_person_relay: bool = False,
         observed_asserting_hubs: Callable[[str], Iterable[str]] | None = None,
         federation_bundle: FederationBundle | None = None,
         federation_cert_source: PeerCertificateSource = live_peer_certificate_der,
@@ -436,6 +443,8 @@ class SynapseHub:
         self.relay_peers = dict(relay_peers) if relay_peers else None
         self.relay_forwarder = relay_forwarder
         self.require_relay_reason = bool(require_relay_reason)
+        self.require_two_person_relay = bool(require_two_person_relay)
+        self.relay_approvals = RelayApprovalLedger()
         self.observed_asserting_hubs = observed_asserting_hubs
         self.federation_bundle = federation_bundle
         self.federation_cert_source = federation_cert_source

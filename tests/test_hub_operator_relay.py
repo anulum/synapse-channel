@@ -116,6 +116,7 @@ def _acting_hub(
     ownership: NamespaceOwnership | None,
     journal: EventStore | None = None,
     require_relay_reason: bool = False,
+    require_two_person_relay: bool = False,
 ) -> SynapseHub:
     """Return a hub configured with the given serving policy, ownership map, and journal."""
     return SynapseHub(
@@ -124,6 +125,7 @@ def _acting_hub(
         namespace_ownership=ownership,
         journal=journal,
         require_relay_reason=require_relay_reason,
+        require_two_person_relay=require_two_person_relay,
     )
 
 
@@ -138,12 +140,13 @@ def _request(
     *,
     reason: str = "",
     break_glass: bool = False,
+    operator: str = "ops-admin",
 ) -> RelayActionRequest:
     return RelayActionRequest(
         action=action,
         namespace=_NAMESPACE,
         task_id=task_id,
-        operator="ops-admin",
+        operator=operator,
         origin_hub_id=_DOMAIN,
         reason=reason,
         break_glass=break_glass,
@@ -300,3 +303,79 @@ async def test_a_malformed_relay_request_is_answered_with_an_error(tmp_path: Pat
             )
             message = await read_until_type(ws, MessageType.ERROR)
     assert "Malformed operator relay request" in message["payload"]
+
+
+async def test_two_person_relay_records_pending_then_applies_on_a_second_operator(
+    tmp_path: Path,
+) -> None:
+    pin, der = _write_peer_cert(tmp_path)
+    journal = EventStore(tmp_path / "events.db")
+    hub = _acting_hub(
+        policy=_serving_policy(pin, der),
+        ownership=_owns(),
+        journal=journal,
+        require_two_person_relay=True,
+    )
+    hub.state.claim(_HOLDER, "t1")
+    async with running_hub(hub) as (_, uri):
+        first = await _relay(uri, _request(reason="wedged", operator="alice"))
+        # The first operator's authorised relay is recorded, not applied: the lease is untouched.
+        assert first.applied is False
+        assert first.pending is True
+        assert "awaiting approval by a second operator" in first.detail
+        assert hub.state.claims["t1"].owner == _HOLDER
+
+        second = await _relay(uri, _request(reason="confirmed", operator="bob"))
+        assert second.applied is True
+        assert second.pending is False
+    assert "t1" not in hub.state.claims  # the second, different operator carried it out
+
+    audits = [e.payload for e in journal.read_all() if e.kind == EventKind.OPERATOR_RELAY]
+    pending, applied = audits[0], audits[1]
+    assert pending["status"] == "pending"
+    assert pending["applied"] is False
+    assert pending["requester"] == "alice"
+    assert applied["status"] == "applied"
+    assert applied["applied"] is True
+    assert applied["operator"] == "bob"
+    assert applied["approver"] == "bob"  # the approving second operator is recorded
+
+
+async def test_two_person_relay_pending_without_a_journal_does_not_audit(tmp_path: Path) -> None:
+    # A hub with no journal still records the pending request in memory and answers pending,
+    # it simply writes no audit event (there is nowhere to write it).
+    pin, der = _write_peer_cert(tmp_path)
+    hub = _acting_hub(
+        policy=_serving_policy(pin, der),
+        ownership=_owns(),
+        journal=None,
+        require_two_person_relay=True,
+    )
+    hub.state.claim(_HOLDER, "t1")
+    async with running_hub(hub) as (_, uri):
+        first = await _relay(uri, _request(operator="alice"))
+    assert first.pending is True
+    assert hub.state.claims["t1"].owner == _HOLDER
+    assert hub.relay_approvals.pending_count == 1
+
+
+async def test_two_person_relay_refuses_self_approval(tmp_path: Path) -> None:
+    pin, der = _write_peer_cert(tmp_path)
+    journal = EventStore(tmp_path / "events.db")
+    hub = _acting_hub(
+        policy=_serving_policy(pin, der),
+        ownership=_owns(),
+        journal=journal,
+        require_two_person_relay=True,
+    )
+    hub.state.claim(_HOLDER, "t1")
+    async with running_hub(hub) as (_, uri):
+        first = await _relay(uri, _request(reason="wedged", operator="alice"))
+        repeat = await _relay(uri, _request(reason="again", operator="alice"))
+    # The same operator cannot complete the quorum: the lease stays held.
+    assert first.pending is True
+    assert repeat.pending is True
+    assert "awaiting a different second operator" in repeat.detail
+    assert hub.state.claims["t1"].owner == _HOLDER
+    # Nothing was released, so no release event was journalled.
+    assert EventKind.RELEASE not in [e.kind for e in journal.read_all()]

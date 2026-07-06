@@ -24,6 +24,17 @@ All notable changes to this project are documented here.
   an armed action fires only when its signal is raised at runtime and a handler was supplied.
 
 ### Security
+- The cross-hub operator relay can now require two-person approval: a hub started with
+  `require_two_person_relay` records an authorised relay pending instead of applying it, and
+  carries it out only when a second, different operator relays the same action, namespace, and
+  task. The same operator repeating the request cannot approve their own relay (it stays pending),
+  and both the pending request and the approval are audited, so a governed cross-hub force-release
+  under this policy names two distinct operators in the log. The `RelayActionResult` gains a
+  `pending` field and `synapse federation relay` a new exit code `3` for a recorded-pending
+  verdict; both default off, so a single-operator hub and an older initiator read exactly as
+  before. The quorum lives in the new `core.operator_relay_approval` ledger (bounded, in-memory),
+  completing the operator-relay policy rituals begun with reason-required receipts and break-glass
+  tagging; break-glass does not bypass the quorum.
 - The cross-hub operator relay now carries a `reason` and a `break_glass` tag, recorded in the
   `operator_relay` audit on both the originating and the owning hub, so a governed force-release
   across hubs leaves an auditable why and an emergency override stands apart from routine

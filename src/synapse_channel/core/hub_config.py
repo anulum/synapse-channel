@@ -181,6 +181,7 @@ class MultiHubConfig:
     relay_peers: Mapping[str, OperatorRelayPeer] | None = None
     relay_forwarder: RelayForwarder = relay_operator_action
     require_relay_reason: bool = False
+    require_two_person_relay: bool = False
     observed_asserting_hubs: Callable[[str], Iterable[str]] | None = None
 
 
