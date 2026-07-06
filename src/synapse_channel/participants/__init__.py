@@ -37,6 +37,12 @@ from synapse_channel.participants.auto_action import (
     AutoActionPolicy,
     react_to_advice,
 )
+from synapse_channel.participants.auto_action_store import (
+    POLICY_FILENAME,
+    AutoActionStoreError,
+    load_policy,
+    save_policy,
+)
 from synapse_channel.participants.bus_relay import (
     BusConversation,
     BusConvocation,
@@ -186,6 +192,7 @@ __all__ = [
     "AutoActionContext",
     "AutoActionDispatch",
     "AutoActionPolicy",
+    "AutoActionStoreError",
     "BusConversation",
     "BusConvocation",
     "BusExchange",
@@ -207,6 +214,7 @@ __all__ = [
     "OrchestrationRound",
     "OrchestrationSeat",
     "OrchestrationTranscript",
+    "POLICY_FILENAME",
     "Participant",
     "ParticipantChannel",
     "ParticipantHealth",
@@ -250,6 +258,7 @@ __all__ = [
     "format_session_metric_note",
     "frame_peer_contribution",
     "frame_peer_panel",
+    "load_policy",
     "no_wake",
     "orchestrate_session",
     "parse_claude_stream",
@@ -263,6 +272,7 @@ __all__ = [
     "relay_turn",
     "render_session_metric_report",
     "run_session_metric_report",
+    "save_policy",
     "select_channel",
     "select_mode",
     "select_provider",
