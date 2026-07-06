@@ -35,8 +35,20 @@ _A2A_SPEC.loader.exec_module(a2a_bench)
 
 
 def test_get_encoder_returns_real_tokenizer_when_available() -> None:
+    # tiktoken is a declared benchmark dependency, but ``get_encoding`` downloads its
+    # cl100k_base vocabulary from the network on first use, and ``get_encoder`` swallows
+    # a failed download as its heuristic fallback. Independently confirm tiktoken imports
+    # AND the vocabulary is fetchable before asserting — a download outage on a CI runner
+    # is a network condition to skip on, not a code fault; a None encoder while the
+    # vocabulary IS fetchable would still be a real get_encoder regression and is asserted.
+    tiktoken = pytest.importorskip("tiktoken")
+    try:
+        tiktoken.get_encoding(bench.ENCODING_NAME)
+    except Exception as exc:
+        pytest.skip(f"tiktoken cl100k_base vocabulary unavailable (offline runner): {exc}")
+
     encoder, name = bench.get_encoder()
-    # tiktoken is a declared benchmark dependency and installed in this env.
+
     assert encoder is not None
     assert name == bench.ENCODING_NAME
     assert encoder.encode("hello world")  # a real tokeniser yields tokens
