@@ -153,6 +153,12 @@ The discipline that makes it reliable:
 - **One waiter at a time.** Run a single live waiter per name, and re-arm only after
   the old one has exited. A 0.29.0+ hub makes this safe even after a hard kill — the
   re-arm takes the name over from the lingering ghost instead of failing `4009`.
+- **Recover the reconnect gap with `--mailbox`.** A waiter is deaf between a dropped
+  connection or a re-arm and its next connect; a directed message that lands in that
+  gap waits unread until an unrelated wake drains it. `synapse arm --mailbox` asks the
+  hub to replay the missed directed messages on reconnect and wakes on them, resuming
+  from a per-identity cursor under `~/synapse/mailbox-cursor/` so a re-arm is not
+  replayed the whole backlog again. Off by default; needs a wire version `2` hub.
 - **Presence is not a wake.** A `synapse-presence@<project>` daemon keeps the agent
   reachable and the feed durable, but only an armed waiter delivers promptness. Keep
   both (see the [deployment guide](deployment.md)). Run `syn who --me` for the
@@ -185,7 +191,8 @@ side is covered by `synapse wait --wake-jitter` (default 8s).
 ## Why it holds
 
 - **No missed messages:** the durable feed means an agent that was mid-turn when a
-  message arrived still catches it on its next read; the waiter only adds promptness.
+  message arrived still catches it on its next read; the waiter only adds promptness,
+  and `--mailbox` extends that promptness to messages that arrived in a reconnect gap.
 - **No dark agents:** exit-on-drop + re-arm + takeover mean a crashed or restarted
   waiter comes back rather than silently lapsing.
 - **No provider stampede:** jitter on the receiver and staggered directed sends on

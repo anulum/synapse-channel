@@ -413,7 +413,12 @@ re-invokes the agent when its background task ends — is actually woken. It def
 to `--max-wakes 1` for exactly this reason, yet keeps the self-healing reconnect of
 `syn arm`, so a dropped connection or a hub restart re-arms transparently and only a
 real wake ends the wait. (`syn arm` itself stays persistently armed across many
-wakes, for an interactive terminal that reacts by other means.) `syn reap` is the safe cleanup path for shell-hook waiter sidecars:
+wakes, for an interactive terminal that reacts by other means.) Adding `--mailbox`
+to `synapse arm` also wakes the waiter on directed messages that arrived while it was
+disconnected — the reconnect or re-arm gap — by asking the hub to replay them on
+connect, resuming from a per-identity cursor under `~/synapse/mailbox-cursor/` so a
+re-arm is not replayed the whole backlog again (off by default; needs a wire version
+`2` hub). `syn reap` is the safe cleanup path for shell-hook waiter sidecars:
 it only inspects this resolved identity's pidfile, and it refuses to signal a PID
 unless the live command line verifies as that exact identity's `synapse arm`
 waiter. It never pattern-kills processes. `syn locks` queries the live state

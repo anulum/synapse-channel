@@ -10,13 +10,18 @@ applied once. On a secured hub, the first message of a connection must carry a
 `token`.
 
 The hub advertises its wire-protocol version in the `welcome` handshake as
-`protocol_version` (an integer; the current wire is baseline version `1`), and it
-is also reported by `/health` as `protocol_version`. It is decoupled from the
-package version on purpose — a patch or feature release that leaves the wire
-shapes unchanged does not bump it, so it is a stable compatibility signal a client
-can read on connect rather than a release counter. A client that predates the
-field, or a hub that does, reads it as absent; it is advertise-only for now, so a
-client captures the peer's version but no compatibility policy is enforced yet.
+`protocol_version` (an integer; the current wire is version `2`), and it is also
+reported by `/health` as `protocol_version`. It is decoupled from the package
+version on purpose — a patch or feature release that leaves the wire shapes
+unchanged does not bump it, so it is a stable compatibility signal a client can
+read on connect rather than a release counter. Version `2` added the client → hub
+`ack` verb and the deferred delivery receipt it drives (see
+[Directed delivery and the mailbox](#directed-delivery-and-the-mailbox)); a client
+emits an `ack` only when the peer advertises version `2` or newer, and a hub that
+predates the verb is never sent it, which is what keeps the addition
+backward-compatible. A client that predates the field, or a hub that does, reads it
+as absent; it is advertise-only for now, so a client captures the peer's version
+but no compatibility policy is enforced yet.
 
 The [per-message authentication runtime](per-message-authentication.md) keeps
 the same envelope shape and adds an `auth` object for selected mutating frames
@@ -48,6 +53,9 @@ does not add agent grades to protocol envelopes.
 ## Agent → hub
 
 - **Presence and chat:** `chat`, `heartbeat` (sent automatically by clients).
+- **Directed delivery:** `ack` (acknowledges a replayed directed message by its
+  durable `seq` so the hub can confirm a deferred receipt to its sender; see
+  [Directed delivery and the mailbox](#directed-delivery-and-the-mailbox)).
 - **Claims and leases:** `claim`, `release`, `task_update`, `handoff`,
   `checkpoint`, `wait_request`.
 - **Resources:** `resource`.
@@ -91,6 +99,47 @@ current wire format.
 The envelope builders and the message-type constants live in
 `synapse_channel.core.protocol`; the working agreement is in the repository's
 `TEAM_PROTOCOL.md`.
+
+## Directed delivery and the mailbox
+
+A `chat` addressed to a `target` — one name, a `project/*` group glob, or a
+`project/role` a holder answers to — is still fanned out to every connected socket;
+each client filters for the messages meant for it. The recipient set the hub
+computes is used for delivery accounting, not to gate the broadcast.
+
+**Immediate receipts.** A `chat` sent with `receipt_requested: true` gets a private
+`delivery_receipt` back: `delivered: true` with the matched `recipients` when a live
+connection matched the target, or `delivered: false` when none did. A directed
+message that matched no live connection is a *dead letter* — durable in the journal
+and feed, but woken by nobody at send time.
+
+**Reconnect replay (the mailbox).** A client that missed directed messages while
+offline can ask for them on reconnect. On its *registration* heartbeat it sets:
+
+- `mailbox: true` — request a replay of the directed backlog.
+- `since_seq` — the last durable journal `seq` it has already processed; the hub
+  replays only chat after it. A missing or malformed value degrades to `0` (the
+  whole retained window).
+- `mailbox_for` (optional) — the identity whose backlog to replay, when it differs
+  from the connection name. A wake-listener connects under a receive-only `-rx` name
+  but waits on its bare identity, so it names that identity here; absent or blank,
+  the hub replays for the connection name. Roles are always read from the connection.
+
+The hub re-sends each missed directed message as an ordinary `chat` frame marked
+`replayed: true` and stamped with its durable `seq`. A client dedups on `seq`, not
+`msg_id` — the per-hub `msg_id` counter resets on restart while `seq` never repeats.
+Broadcasts are never replayed, and a hub with no durable journal replays nothing.
+
+**Deferred receipts.** When a `receipt_requested` directed message dead-lettered,
+the hub remembers it in a bounded pending-receipt store keyed by its `seq`. When the
+recipient reconnects, drains the replayed message, and sends `ack: {seq}`, the hub
+re-checks that the sender is a genuine recipient of the original target and then
+sends the *original* sender a second `delivery_receipt` marked
+`delivered: true, deferred: true` — closing the gap where the sender was told "not
+delivered" and never learnt the message arrived. A spoofed ack from a client the
+message was not addressed to neither fabricates a receipt nor drops the pending one.
+The `ack` verb arrived at wire version `2`; a client emits it only when the hub
+advertises that version or newer.
 
 ## Release receipts
 

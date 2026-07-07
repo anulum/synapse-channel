@@ -538,6 +538,21 @@ synapse wait --name api-dev-rx --for api-dev   # blocks; prints + exits on a mes
 synapse wait --for api-dev --timeout 60        # give up after 60s (exit 2) instead of waiting forever
 ```
 
+A waiter is deaf while it is disconnected — the gap between a dropped connection (or
+a re-arm as a fresh process) and the next connect. A directed message that lands in
+that gap is durable, but the waiter is not woken by it and it waits unread until an
+unrelated wake happens to drain it. `synapse arm --mailbox` closes the gap: on each
+connect the waiter asks the hub to replay the directed messages it missed and wakes
+on them as it would on a live message. It resumes from a `since_seq` cursor kept per
+identity under `~/synapse/mailbox-cursor/`, so a re-arm picks up where it left off
+rather than being replayed — and woken by — the whole retained backlog again. It is
+off by default; a plain `arm` is unchanged, and against a hub older than wire version
+`2` the mailbox request is simply ignored.
+
+```bash
+synapse arm --name api-dev-rx --for api-dev --mailbox   # also wake on messages missed while offline
+```
+
 When the shell hook launches an interactive provider command, `worker-session`
 automatically starts or attaches a persistent tmux session and keeps a directed
 wake bridge alive. The user still types the provider command normally, for
