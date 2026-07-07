@@ -236,6 +236,87 @@ def test_wakes_priority_and_ceo_do_not_leak_to_unaddressed_waiters() -> None:
     assert wakes("quantum/*", "quantum/c-1", directed_only=True, sender="CEO")  # CEO to my group
 
 
+# --- role-aware addressing ("answers-to") ------------------------------------
+
+
+def test_is_recipient_reaches_a_held_role() -> None:
+    # An identity that holds a role is an addressee of a message to that role, even
+    # though the role name does not match its instance name.
+    assert is_recipient(
+        "SC/coordinator", "SC/claude-2759", roles=("SC/coordinator",)
+    )
+    # ...while an identity that does NOT hold the role is not addressed by it.
+    assert not is_recipient("SC/coordinator", "SC/claude-2759")
+    assert not is_recipient("SC/coordinator", "SC/fable-ui", roles=("SC/git",))
+
+
+def test_is_recipient_role_matches_via_glob_and_several() -> None:
+    assert is_recipient("SC/coord*", "SC/claude-2759", roles=("SC/coordinator",))
+    assert is_recipient(
+        "other, SC/coordinator", "SC/claude-2759", roles=("SC/coordinator",)
+    )
+    # multiple held roles: any one matching is enough
+    assert is_recipient(
+        "SC/git", "SC/claude-2759", roles=("SC/coordinator", "SC/git")
+    )
+    # a glob resolves against the role's OWN namespace, not the holder's: with a name
+    # that does not match the glob, only a role inside the glob's namespace matches.
+    assert is_recipient("mon/*", "SC/claude-2759", roles=("mon/watcher",))
+    assert not is_recipient("mon/*", "SC/claude-2759", roles=("SC/coordinator",))
+
+
+def test_is_recipient_empty_roles_preserves_plain_matching() -> None:
+    # The default empty roles must not change any existing name/project behaviour.
+    assert is_recipient("SC/claude-2759", "SC/claude-2759", roles=())
+    assert is_recipient("SC", "SC/claude-2759", roles=())
+    assert not is_recipient("SC/other", "SC/claude-2759", roles=())
+
+
+def test_is_directed_wakes_on_a_held_role() -> None:
+    from synapse_channel.core.protocol import is_directed
+
+    assert is_directed("SC/coordinator", "SC/claude-2759", roles=("SC/coordinator",))
+    # a role is a DIRECTED target, so a directed-only waiter treats it as a wake
+    assert not is_directed("SC/coordinator", "SC/claude-2759")
+    # a bare project of the role still does not wake a sub-seat (anti-wake-storm holds)
+    assert not is_directed("SC", "SC/claude-2759", roles=("SC/coordinator",))
+
+
+def test_wakes_directed_only_wakes_on_held_role() -> None:
+    """The coordinator regression: a directed-only waiter must wake on its role.
+
+    A message addressed to ``SC/coordinator`` was silently dropped because the waiter
+    armed as ``SC/claude-2759`` did not answer to the role — it neither woke nor
+    surfaced in the inbox and the hub dead-lettered it. With the role bound, the
+    directed-only waiter wakes promptly on a message to the role it holds.
+    """
+    from synapse_channel.core.protocol import wakes
+
+    roles = ("SC/coordinator",)
+    # the exact failure that was observed: role message now wakes the holder
+    assert wakes("SC/coordinator", "SC/claude-2759", directed_only=True, sender="peer", roles=roles)
+    # without the role bound it stays suppressed (unchanged legacy behaviour)
+    assert not wakes("SC/coordinator", "SC/claude-2759", directed_only=True, sender="peer")
+    # a role addressed to a DIFFERENT role does not wake this holder (no wake storm)
+    assert not wakes("SC/git", "SC/claude-2759", directed_only=True, sender="peer", roles=roles)
+    # normal (non-directed-only) mode also honours the role
+    assert wakes("SC/coordinator", "SC/claude-2759", directed_only=False, sender="peer", roles=roles)
+    # the instance name still wakes regardless of roles
+    assert wakes("SC/claude-2759", "SC/claude-2759", directed_only=True, sender="peer", roles=roles)
+
+
+def test_wakes_role_does_not_leak_across_holders() -> None:
+    from synapse_channel.core.protocol import wakes
+
+    # two instances, only one holds the coordinator role
+    assert wakes(
+        "SC/coordinator", "SC/claude-2759", directed_only=True, sender="p", roles=("SC/coordinator",)
+    )
+    assert not wakes(
+        "SC/coordinator", "SC/fable-ui", directed_only=True, sender="p", roles=("SC/git",)
+    )
+
+
 # --- bounded JSON decode -----------------------------------------------------
 
 

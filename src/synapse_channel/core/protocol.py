@@ -22,6 +22,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import time
+from collections.abc import Iterable
 from typing import Any
 
 SENDER_HUB = "SynapseHub"
@@ -343,12 +344,18 @@ def system_message(
     return msg
 
 
-def is_recipient(target: str, name: str) -> bool:
+def is_recipient(target: str, name: str, roles: Iterable[str] = ()) -> bool:
     """Return whether ``name`` is an addressee of a message sent to ``target``.
 
     The hub broadcasts every chat to every connected client and carries the
     intended recipient in ``target``; a reader uses this predicate to keep only
     the messages meant for it.
+
+    Beyond its own ``name``, an identity may also answer to one or more ``roles``
+    — full ``<project>/<role>`` names it has bound (e.g. ``"quantum/coordinator"``)
+    — so a message addressed to a role reaches whichever instance currently holds
+    it. A role is matched exactly like a name (a case-sensitive glob), so a role
+    target is exact and a group glob still covers it.
 
     Parameters
     ----------
@@ -358,16 +365,20 @@ def is_recipient(target: str, name: str) -> bool:
         agent in the ``quantum`` project) or ``"quantum/claude-*"``.
     name : str
         The reader's own agent name, e.g. ``"quantum/claude-7f3a"``.
+    roles : Iterable[str], optional
+        Additional full ``<project>/<role>`` names this identity answers to. Empty
+        by default, which preserves plain name/project matching.
 
     Returns
     -------
     bool
-        ``True`` for a broadcast or when ``name`` matches one of the target parts
-        (each part is matched as a case-sensitive glob, so a plain name is exact).
-        A bare project target also reaches that project's ``<project>/...`` agents,
-        so a message to ``"quantum"`` addresses ``"quantum/claude-7f3a"`` — keeping
-        this consistent with :func:`addresses_project`, so a sole agent armed under
-        a ``<project>/<id>`` identity still receives project-addressed messages.
+        ``True`` for a broadcast or when ``name``, its bare project, or one of its
+        ``roles`` matches one of the target parts (each part is matched as a
+        case-sensitive glob, so a plain name is exact). A bare project target also
+        reaches that project's ``<project>/...`` agents, so a message to
+        ``"quantum"`` addresses ``"quantum/claude-7f3a"`` — keeping this consistent
+        with :func:`addresses_project`, so a sole agent armed under a
+        ``<project>/<id>`` identity still receives project-addressed messages.
     """
     cleaned = (target or "all").strip()
     if cleaned in ("", "all"):
@@ -375,27 +386,33 @@ def is_recipient(target: str, name: str) -> bool:
     # A ``<project>/<id>`` name is also addressed by its bare project, so a target
     # of the project reaches every agent in it (mirrors ``addresses_project``).
     project = name.split("/", 1)[0]
+    role_names = tuple(roles)
     return any(
-        fnmatch.fnmatchcase(name, part) or fnmatch.fnmatchcase(project, part)
+        fnmatch.fnmatchcase(name, part)
+        or fnmatch.fnmatchcase(project, part)
+        or any(fnmatch.fnmatchcase(role, part) for role in role_names)
         for part in (raw.strip() for raw in cleaned.split(",") if raw.strip())
     )
 
 
-def is_directed(target: str, name: str) -> bool:
+def is_directed(target: str, name: str, roles: Iterable[str] = ()) -> bool:
     """Return whether ``target`` names ``name`` specifically rather than broadcasting.
 
     Stricter than :func:`is_recipient` in two ways: ``"all"`` (and an empty target) is
-    *not* a match, and a target part must match the **full** ``name`` rather than its bare
-    project. So a bare ``<project>`` directs the waiter armed as that project, but is a
-    *routine broadcast* — not a wake — for a ``<project>/<seat>`` sub-seat. A reader uses
-    this to wake only on messages addressed to it, or a group glob it is in, and to treat
-    both ``all`` broadcasts and project-level traffic as read-when-convenient.
+    *not* a match, and a target part must match the **full** ``name`` (or one of its
+    ``roles``) rather than its bare project. So a bare ``<project>`` directs the waiter
+    armed as that project, but is a *routine broadcast* — not a wake — for a
+    ``<project>/<seat>`` sub-seat. A reader uses this to wake only on messages addressed
+    to it, a role it holds, or a group glob it is in, and to treat both ``all`` broadcasts
+    and project-level traffic as read-when-convenient.
 
     This is the WAKE question, deliberately distinct from the INBOX question
     (:func:`is_recipient`): a sub-seat still *receives* a bare-project message, it just is
     not *woken* by one (which is why a multi-seat project's convene traffic no longer wakes
     every seat). A sole agent that wants project-addressed messages to wake it arms
-    ``--for <project>`` (the bare project), not a ``<project>/<id>`` sub-identity.
+    ``--for <project>`` (the bare project), not a ``<project>/<id>`` sub-identity. A message
+    to a role the waiter holds *is* a directed wake, so addressing a role reaches its
+    current holder promptly.
 
     Parameters
     ----------
@@ -403,19 +420,24 @@ def is_directed(target: str, name: str) -> bool:
         The recipient field.
     name : str
         The reader's own agent name.
+    roles : Iterable[str], optional
+        Additional full ``<project>/<role>`` names this identity answers to. A directed
+        target that matches one of them wakes the holder. Empty by default.
 
     Returns
     -------
     bool
-        ``True`` only when a non-broadcast target part matches ``name`` directly (an exact
-        name or a glob covering it); a bare project matches a waiter named exactly that
-        project, not its sub-seats.
+        ``True`` only when a non-broadcast target part matches ``name`` or one of its
+        ``roles`` directly (an exact name/role or a glob covering it); a bare project
+        matches a waiter named exactly that project, not its sub-seats.
     """
     cleaned = (target or "all").strip()
     if cleaned in ("", "all"):
         return False
+    role_names = tuple(roles)
     return any(
         fnmatch.fnmatchcase(name, part)
+        or any(fnmatch.fnmatchcase(role, part) for role in role_names)
         for part in (raw.strip() for raw in cleaned.split(",") if raw.strip())
     )
 
@@ -465,6 +487,7 @@ def wakes(
     directed_only: bool,
     sender: str = "",
     priority: bool = False,
+    roles: Iterable[str] = (),
 ) -> bool:
     """Return whether a chat to ``target`` should wake a waiter listening for ``name``.
 
@@ -477,6 +500,10 @@ def wakes(
     broadcasts stay suppressed — and a priority or CEO message directed to a *different*
     agent does not wake one it was never addressed to. Directed-only means "no
     *routine* broadcast wakes me", not "every priority message anywhere wakes me".
+
+    A message addressed to a ``role`` this waiter holds is a directed wake, so a
+    directed-only waiter still wakes promptly when its role — not just its instance
+    name — is addressed.
 
     Parameters
     ----------
@@ -491,20 +518,24 @@ def wakes(
         The message's sender, matched against :data:`PRIORITY_SENDERS`.
     priority : bool, optional
         Whether the message carries an explicit priority flag.
+    roles : Iterable[str], optional
+        Full ``<project>/<role>`` names this waiter answers to; a directed message to
+        one of them wakes it. Empty by default.
 
     Returns
     -------
     bool
         Whether the waiter should wake on this message.
     """
+    role_names = tuple(roles)
     if not directed_only:
-        return is_recipient(target, name)
+        return is_recipient(target, name, role_names)
     # A directed match always wakes. A priority flag or a priority sender elevates a
     # message that still *reaches* this waiter — a broadcast, or one addressed to it —
     # so a flagged announcement or a CEO directive reaches a quiet waiter promptly. But
     # a priority or CEO message directed to a *different* agent must not wake this one:
     # gating on ``is_recipient`` keeps a targeted nudge from becoming a fleet-wide wake
     # storm across every directed-only waiter that the message was never addressed to.
-    return is_directed(target, name) or (
-        is_recipient(target, name) and (priority or sender in PRIORITY_SENDERS)
+    return is_directed(target, name, role_names) or (
+        is_recipient(target, name, role_names) and (priority or sender in PRIORITY_SENDERS)
     )
