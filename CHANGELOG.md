@@ -56,6 +56,11 @@ All notable changes to this project are documented here.
   backlog where it stopped. Off by default — an ordinary agent's registration and dispatch are
   unchanged, and a mailbox agent talking to a hub that predates the ack verb simply withholds
   the acknowledgement.
+- A mailbox client may declare `mailbox_for` — the identity whose backlog to replay when it
+  differs from the connection name — so a wake-listener connecting under a receive-only `-rx`
+  name receives the messages directed at its bare identity rather than at the `-rx` name it
+  connects under. Absent or blank, the hub replays the backlog for the connection name itself,
+  unchanged; roles are still read from the connection the client bound them to.
 
 ## [0.98.6] - 2026-07-07
 

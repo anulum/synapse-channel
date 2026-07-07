@@ -344,17 +344,23 @@ backlog replay adds promptness, it does not replace the feed as the unbounded re
 
 
 async def _replay_directed_backlog(
-    hub: SynapseHub, name: str, since_seq: int, websocket: Any
+    hub: SynapseHub, name: str, recipient: str, since_seq: int, websocket: Any
 ) -> None:
-    """Push the directed chats ``name`` missed while offline, from the durable journal.
+    """Push the directed chats ``recipient`` missed while offline, from the durable journal.
 
     On a mailbox-capable reconnect the hub resumes from the client's ``since_seq``
     cursor: it reads journalled chat events after it, keeps only those directed at
-    ``name`` (by name, project, glob, or a role it holds) that ``name`` did not send
-    itself, and re-sends each to the reconnecting socket marked ``replayed`` with its
-    durable journal ``seq`` — so the client wakes on and dedups the backlog by ``seq``
-    exactly as it would live traffic. Dedup keys on ``seq``, not ``msg_id``, because
-    the per-hub ``msg_id`` counter resets on restart while ``seq`` never repeats. A
+    ``recipient`` (by name, project, glob, or a role it holds) that ``recipient`` did
+    not send itself, and re-sends each to the reconnecting socket marked ``replayed``
+    with its durable journal ``seq`` — so the client wakes on and dedups the backlog by
+    ``seq`` exactly as it would live traffic. Dedup keys on ``seq``, not ``msg_id``,
+    because the per-hub ``msg_id`` counter resets on restart while ``seq`` never repeats.
+
+    ``recipient`` is the identity whose backlog is wanted; it is the connecting ``name``
+    for an agent that connects under its own identity, but a wake-listener connects under
+    a receive-only ``-rx`` name while waiting on its bare identity, so it declares that
+    identity separately and the replay is filtered by it, not by the socket's name. Roles
+    are still read from the connection (``name``), the socket the roles were bound to. A
     journal-less hub cannot replay and returns silently; a broadcast is never replayed
     (the feed already carries it and re-pushing it would re-storm every reconnect).
     """
@@ -367,9 +373,9 @@ async def _replay_directed_backlog(
     for event in events:
         payload = event.payload
         target = str(payload.get("target") or "all")
-        if str(payload.get("sender") or "") == name or not is_directed_target(target):
+        if str(payload.get("sender") or "") == recipient or not is_directed_target(target):
             continue
-        if not is_recipient(target, name, roles):
+        if not is_recipient(target, recipient, roles):
             continue
         frame = dict(payload)
         frame.pop("receipt_requested", None)
@@ -397,6 +403,12 @@ async def handle_heartbeat(
     literal ``True`` triggers a replay, and a missing or malformed ``since_seq``
     degrades to ``0`` (replay the whole retained window) rather than dropping the
     socket. A keepalive omits ``mailbox``, so it never re-storms the backlog.
+
+    An optional ``mailbox_for`` string names the identity whose backlog is wanted when
+    it differs from the connection ``sender`` — a wake-listener connects under a
+    receive-only ``-rx`` name but waits on its bare identity, so it declares that here
+    and the replay is filtered by it. A missing or blank value falls back to ``sender``,
+    so an agent connecting under its own identity needs no such field.
     """
     raw_roles = data.get("roles")
     if isinstance(raw_roles, list):
@@ -409,4 +421,6 @@ async def handle_heartbeat(
             if isinstance(raw_since, int) and not isinstance(raw_since, bool) and raw_since >= 0
             else 0
         )
-        await _replay_directed_backlog(hub, sender, since_seq, websocket)
+        raw_for = data.get("mailbox_for")
+        recipient = raw_for.strip() if isinstance(raw_for, str) and raw_for.strip() else sender
+        await _replay_directed_backlog(hub, sender, recipient, since_seq, websocket)

@@ -62,6 +62,25 @@ class TestRegistrationDeclaration:
         assert "mailbox" not in heartbeat
         assert "since_seq" not in heartbeat
 
+    async def test_mailbox_for_rides_the_registration_when_set(self) -> None:
+        async with connected_recording_agent("BOB-rx", mailbox=True, mailbox_for="BOB") as (
+            _agent,
+            messages,
+        ):
+            await wait_for_recorded_count(messages, 1)
+            heartbeat = messages[0]
+
+        assert heartbeat["mailbox"] is True
+        assert heartbeat["mailbox_for"] == "BOB"
+
+    async def test_mailbox_for_is_omitted_when_empty(self) -> None:
+        async with connected_recording_agent("A", mailbox=True) as (_agent, messages):
+            await wait_for_recorded_count(messages, 1)
+            heartbeat = messages[0]
+
+        assert heartbeat["mailbox"] is True
+        assert "mailbox_for" not in heartbeat
+
 
 class TestDispatchMailboxTracking:
     async def test_ignores_a_chat_frame_with_no_seq(self) -> None:

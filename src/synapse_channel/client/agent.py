@@ -88,6 +88,13 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         the cursor so a caller that persists it across reconnects resumes from where
         it left off rather than replaying the whole retained window. Floored at ``0``
         (the whole window). Defaults to ``0``.
+    mailbox_for : str, optional
+        The identity whose backlog to replay, when it differs from ``name``. A
+        wake-listener connects under a receive-only ``name`` (an ``-rx`` suffix) but
+        waits on its bare identity, so it sets this to that identity and the hub
+        filters the replay by it rather than by the connection name. Empty (the
+        default) leaves the hub replaying the backlog for ``name`` itself — correct
+        for an agent that connects under its own identity.
     per_message_auth_key_id : str or None, optional
         Key id used to sign mutating frames with per-message authentication.
         ``None`` leaves frame signing off.
@@ -118,6 +125,7 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         roles: tuple[str, ...] = (),
         mailbox: bool = False,
         mailbox_since_seq: int = 0,
+        mailbox_for: str = "",
         per_message_auth_key_id: str | None = None,
         per_message_auth_secret: str | bytes | None = None,
         ping_interval: float = 20.0,
@@ -141,6 +149,7 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         self.roles = tuple(roles)
         self.mailbox = bool(mailbox)
         self._mailbox_since_seq = max(0, int(mailbox_since_seq))
+        self.mailbox_for = str(mailbox_for)
         self._message_auth_key: MessageAuthKey | None = None
         if per_message_auth_key_id is not None and per_message_auth_secret is not None:
             secret = (

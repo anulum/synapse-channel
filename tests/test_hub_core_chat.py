@@ -630,3 +630,90 @@ async def test_a_receipt_requested_broadcast_records_no_pending_receipt(tmp_path
     store.close()
     assert receipt["delivered"] is False
     assert len(hub.pending_receipts) == 0
+
+
+async def test_mailbox_replay_filters_by_a_declared_mailbox_for_identity(tmp_path: Path) -> None:
+    # A wake-listener connects under a receive-only -rx name but declares the bare identity
+    # it waits on; the hub replays the backlog directed at that identity, not at the -rx name.
+    store = EventStore(tmp_path / "events.db")
+    async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
+        async with connect(uri) as alice_ws:
+            await read_until_type(alice_ws, "welcome")
+            await _send_chat_frames(alice_ws, "ALICE", [("BOB", "for-bob")])
+        async with connect(uri) as rx_ws:
+            await read_until_type(rx_ws, "welcome")
+            await rx_ws.send(
+                json.dumps(
+                    {
+                        "sender": "BOB-rx",
+                        "type": "heartbeat",
+                        "target": "System",
+                        "payload": "online",
+                        "mailbox": True,
+                        "since_seq": 0,
+                        "mailbox_for": "BOB",
+                    }
+                )
+            )
+            frame = await read_until_type(rx_ws, "chat")
+    store.close()
+    assert frame["payload"] == "for-bob"
+    assert frame["replayed"] is True
+
+
+async def test_mailbox_for_falls_back_to_the_connection_name_when_not_a_string(
+    tmp_path: Path,
+) -> None:
+    # A non-string mailbox_for is ignored and the replay filters by the connection name,
+    # so an agent connecting under its own identity still gets its own backlog.
+    store = EventStore(tmp_path / "events.db")
+    async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
+        async with connect(uri) as alice_ws:
+            await read_until_type(alice_ws, "welcome")
+            await _send_chat_frames(alice_ws, "ALICE", [("BOB", "own-backlog")])
+        async with connect(uri) as bob_ws:
+            await read_until_type(bob_ws, "welcome")
+            await bob_ws.send(
+                json.dumps(
+                    {
+                        "sender": "BOB",
+                        "type": "heartbeat",
+                        "target": "System",
+                        "payload": "online",
+                        "mailbox": True,
+                        "since_seq": 0,
+                        "mailbox_for": 123,
+                    }
+                )
+            )
+            frame = await read_until_type(bob_ws, "chat")
+    store.close()
+    assert frame["payload"] == "own-backlog"
+
+
+async def test_mailbox_for_falls_back_to_the_connection_name_when_blank(tmp_path: Path) -> None:
+    # A blank mailbox_for string is treated as absent, so the replay filters by the
+    # connection name rather than by an empty identity that matches nothing.
+    store = EventStore(tmp_path / "events.db")
+    async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
+        async with connect(uri) as alice_ws:
+            await read_until_type(alice_ws, "welcome")
+            await _send_chat_frames(alice_ws, "ALICE", [("BOB", "blank-for")])
+        async with connect(uri) as bob_ws:
+            await read_until_type(bob_ws, "welcome")
+            await bob_ws.send(
+                json.dumps(
+                    {
+                        "sender": "BOB",
+                        "type": "heartbeat",
+                        "target": "System",
+                        "payload": "online",
+                        "mailbox": True,
+                        "since_seq": 0,
+                        "mailbox_for": "   ",
+                    }
+                )
+            )
+            frame = await read_until_type(bob_ws, "chat")
+    store.close()
+    assert frame["payload"] == "blank-for"

@@ -76,6 +76,7 @@ class _LifecycleAgent(Protocol):
     last_close_code: int | None
     last_close_reason: str
     mailbox: bool
+    mailbox_for: str
     name: str
     ping_interval: float
     ping_timeout: float
@@ -154,6 +155,10 @@ class AgentLifecycleMixin:
                     # reconnect wakes on its backlog without a keepalive re-storming it.
                     extra["mailbox"] = True
                     extra["since_seq"] = self._mailbox_since_seq
+                    if self.mailbox_for:
+                        # A wake-listener connects under an -rx name but waits on its
+                        # bare identity; name it so the hub filters the replay by it.
+                        extra["mailbox_for"] = self.mailbox_for
                 await self.send_message(
                     MessageType.HEARTBEAT, target="System", payload="online", **extra
                 )
