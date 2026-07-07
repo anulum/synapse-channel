@@ -89,7 +89,7 @@ function MetricsPanelView({ state, sessions }: MetricsPanelProps): JSX.Element {
         {metrics !== null && <span className="panel__count">{metrics.log.totalEvents}</span>}
         <span className="panel__sub">store-attested log pulse</span>
       </div>
-      <div className="panel__body">
+      <div className="panel__body" tabIndex={0}>
         {state.status === "absent" ? (
           <p className="panel__placeholder">
             This hub's dashboard does not serve log metrics yet

@@ -77,7 +77,7 @@ function RiskRailView({
           </span>
         )}
       </div>
-      <div className="panel__body">
+      <div className="panel__body" tabIndex={0}>
         {risk === null ? (
           <p className="panel__placeholder">Waiting for the hub.</p>
         ) : signals.length === 0 ? (

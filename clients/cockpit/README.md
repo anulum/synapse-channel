@@ -109,10 +109,18 @@ first), with the spine kept at every width.
 | `/events.json?since=SEQ\|latest&limit=N` | 2 s incremental | the hub-attested event log (optional; also drives history mode) |
 | `/metrics.json` | 30 s poll | store-attested log metrics: totals, per-kind, trailing windows (optional) |
 | `/state-at.json?seq=N` | on scrub | claims + board reconstructed as of seq N by bounded replay (optional) |
+| `/merkle-proof.json?seq=N` | on verify | RFC 6962 inclusion proof for one event; the root is recomputed in the browser (optional) |
+| `/sessions.json` | 30 s poll | per-session cost/turn/token telemetry with task attribution (optional) |
+| `/waits.json` | 15 s poll | tasks standing behind unmet dependencies — the pending decision queue (optional) |
+| `/health-anomalies.json` | 30 s poll | the hub's causal-graph anomaly report: orphaned / dangling / stale (optional) |
+| `POST /message` | on send | the ONE write: an operator chat relay — 404 unless the dashboard runs `--operator`; answers the `{action, status, detail, ok}` outcome document, and the palette states each status as a fact (`undelivered` never reads as "sent") |
 
 Optional endpoints answer `404` on dashboards that do not serve them; the
 corresponding panel states that plainly and activates the moment the surface
 ships (`synapse dashboard --feeds-db PATH` serves the store-backed feeds).
+The snapshot's `state.pending_relay_approvals` (hubs ≥ 0.98.5) lists relays
+awaiting their second operator; the risk rail names each one, and a hub
+without the field simply shows no section.
 Spine and log events prefer the hub-attested tail (true seq + ts, provenance
 labelled "hub event log"); while it is absent they fall back to diffing
 consecutive snapshot fetches — real transitions, quantised to the poll
@@ -149,8 +157,14 @@ npm run preview    # serves the PRODUCTION build on :8772 with the same proxy
 
 The testable surface is the pure data logic — snapshot parsing, the freshness
 contract, the polling stores, transition derivation, and every panel's data
-shaping — held to full line and branch coverage. React view components are
-exercised by the build and by visual review.
+shaping — held to full line and branch coverage — plus the behavioural
+component layer: jsdom + testing-library drive the palette, drawers, boards,
+rail sections, toasts, and views through their real interactions (the
+canvas-drawing spine and the store-owning app shell stay on build + visual
+review). Accessibility is scanned with axe-core against the live dashboard
+in both themes at desktop and phone widths; the shipped surface measures
+zero violations, and informational text never rides the faint decorative
+tier or a whole-row opacity.
 
 ## Installing on a phone (PWA)
 

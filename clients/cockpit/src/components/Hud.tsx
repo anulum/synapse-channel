@@ -54,7 +54,7 @@ export function Hud({ kpis, live, stamp, onSelect, theme = "dark", onToggleTheme
   return (
     <header className="hud">
       <div className="hud__mark">
-        <b>SYNAPSE</b>
+        <h1>SYNAPSE</h1>
         <span>channel · cockpit</span>
       </div>
 

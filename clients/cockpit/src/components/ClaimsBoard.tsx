@@ -110,7 +110,7 @@ export function ClaimsBoard({ claims, conflicts, connected, lens = "" }: ClaimsB
         {lens !== "" && <span className="panel__sub panel__sub--warn">{`lens: ${lens}`}</span>}
         {staleCount > 0 && <span className="panel__sub panel__sub--warn">{staleCount} stale</span>}
       </div>
-      <div className="panel__body">
+      <div className="panel__body" tabIndex={0}>
         {conflicts.length > 0 && <ConflictBanner conflicts={conflicts} />}
         {!connected ? (
           <p className="panel__placeholder">Waiting for the hub.</p>

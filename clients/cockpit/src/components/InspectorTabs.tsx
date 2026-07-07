@@ -86,7 +86,7 @@ export function InspectorTabs({
   }, [traceRequest, onSelectTask]);
 
   return (
-    <div className="inspector">
+    <div className="inspector" role="region" aria-label="Inspector">
       <div className="inspector__tabs" role="tablist" aria-label="Inspector">
         <button
           type="button"

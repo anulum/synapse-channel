@@ -109,7 +109,7 @@ function FleetRosterView({ roster, waiters, onInspect }: FleetRosterProps): JSX.
         <span className="panel__count">{live}</span>
         {waiters > 0 && <span className="panel__sub">{`${waiters} waiting`}</span>}
       </div>
-      <div className="panel__body">
+      <div className="panel__body" tabIndex={0}>
         {roster.length === 0 ? (
           <p className="panel__placeholder">No agents present. Waiting for the hub.</p>
         ) : (

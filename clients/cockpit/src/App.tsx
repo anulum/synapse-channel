@@ -531,7 +531,7 @@ export function App(): JSX.Element {
         onScrub={onScrubTravel}
       />
       <MobileNav active={mobileSegment} onSelect={setMobileSegment} />
-      <div className={`deck deck--seg-${mobileSegment}`}>
+      <div className={`deck deck--seg-${mobileSegment}`} role="main">
         <div className="deck__stack deck__stack--roster">
           <div className="seg seg--roster">
             <PanelBoundary name="Fleet roster">

@@ -56,7 +56,7 @@ function TopologyViewComponent({
             : "claim edges"}
         </span>
       </div>
-      <div className="panel__body panel__body--flush">
+      <div className="panel__body panel__body--flush" tabIndex={0}>
         {!connected ? (
           <p className="panel__placeholder panel__placeholder--padded">Waiting for the hub.</p>
         ) : layout.agents.length === 0 ? (

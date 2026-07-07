@@ -35,7 +35,7 @@ function FindingsStreamView({ findings, connected }: FindingsStreamProps): JSX.E
         <span>Findings</span>
         <span className="panel__count">{findings.length}</span>
       </div>
-      <div className="panel__body">
+      <div className="panel__body" tabIndex={0}>
         {!connected ? (
           <p className="panel__placeholder">Waiting for the hub.</p>
         ) : findings.length === 0 ? (

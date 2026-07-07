@@ -83,7 +83,7 @@ function ReliabilityPanelView({ state }: ReliabilityPanelProps): JSX.Element {
         {report !== null && <span className="panel__count">{findings.length}</span>}
         <span className="panel__sub">{report?.note !== "" && report !== null ? report.note : "evidence"}</span>
       </div>
-      <div className="panel__body">
+      <div className="panel__body" tabIndex={0}>
         {state.status === "absent" ? (
           <p className="panel__placeholder">
             This hub's dashboard does not serve reliability evidence yet

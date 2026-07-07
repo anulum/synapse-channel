@@ -30,7 +30,7 @@ function FederationRowView({ state, hubVersion = "", configEpoch = "" }: Federat
 
   if (state.status === "absent" || (posture === null && state.status !== "error")) {
     return (
-      <div className="fed-row fed-row--quiet" aria-label="Federation posture">
+      <div className="fed-row fed-row--quiet" role="region" aria-label="Federation posture">
         <span className="fed-row__label">federation</span>
       {(hubVersion !== "" || configEpoch !== "") && (
         <span
@@ -52,7 +52,7 @@ function FederationRowView({ state, hubVersion = "", configEpoch = "" }: Federat
 
   if (posture === null) {
     return (
-      <div className="fed-row fed-row--quiet" aria-label="Federation posture">
+      <div className="fed-row fed-row--quiet" role="region" aria-label="Federation posture">
         <span className="fed-row__label">federation</span>
         <span className="fed-row__note">{`feed failed: ${state.error ?? "unknown"}`}</span>
       </div>
@@ -65,7 +65,7 @@ function FederationRowView({ state, hubVersion = "", configEpoch = "" }: Federat
     <div
       className={`fed-row${contested.length > 0 ? " fed-row--partitioned" : ""}`}
       aria-label="Federation posture"
-      role={contested.length > 0 ? "alert" : undefined}
+      role={contested.length > 0 ? "alert" : "region"}
     >
       <span className="fed-row__label" title={posture.note === "" ? undefined : posture.note}>
         federation

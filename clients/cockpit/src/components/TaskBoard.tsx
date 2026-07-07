@@ -195,7 +195,7 @@ function TaskBoardView({ tasks, connected, truncation, onInspect, lens = "" }: T
           report
         </button>
       </div>
-      <div className="panel__body">
+      <div className="panel__body" tabIndex={0}>
         {!connected ? (
           <p className="panel__placeholder">Waiting for the hub.</p>
         ) : tasks.length === 0 ? (

@@ -23,8 +23,10 @@
   --accent: #e0a93b; /* the live master-clock edge; amber = instrument, not SaaS */
   --signal: #4aa8ff;
   --sev-ok: #3fb77e;
+  --sev-ok-text: #3fb77e; /* the dark fill green already reads as text */
   --sev-warn: #e0a93b;
   --sev-crit: #e5484d;
+  --sev-crit-text: #f0767b; /* crit as TEXT on the dark ground; the fill red sits under AA */
 
   /* Signal, dimmed — for recessed baselines and decayed history. */
   --healthy-trail: rgba(63, 183, 126, 0.28);
@@ -92,8 +94,10 @@
   --accent: #8a6410;
   --signal: #135ba3;
   --sev-ok: #1a7a4d;
+  --sev-ok-text: #14603c; /* ok as TEXT on paper; the fill green sits under AA */
   --sev-warn: #8a6410;
   --sev-crit: #b3261e;
+  --sev-crit-text: #b3261e; /* the light-theme crit already reads as text */
 
   --healthy-trail: rgba(26, 122, 77, 0.3);
   --info-trail: rgba(19, 91, 163, 0.3);

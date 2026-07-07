@@ -471,7 +471,9 @@ function SignalLogView({
           <table className="log">
             <thead>
               <tr>
-                <th scope="col" aria-label="Raw event" />
+                <th scope="col">
+                  <span className="visually-hidden">raw event</span>
+                </th>
                 <th scope="col">time</th>
                 <th scope="col">lane</th>
                 <th scope="col">kind</th>
