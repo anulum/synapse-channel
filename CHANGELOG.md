@@ -13,6 +13,31 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.0] - 2026-07-07
+
+### Added
+- Role-based addressing: an identity can answer to one or more `<project>/<role>` roles in
+  addition to its instance name, so a directed message to a role (for example
+  `SYNAPSE-CHANNEL/coordinator`) reaches whichever instance currently holds it. A waiter,
+  the `arm` keeper, and the relay-log inbox (`synapse relay --for`) take a repeatable
+  `--role <project>/<role>`; the waiter wakes and the per-agent inbox surfaces messages
+  addressed to a role it holds, alongside those to its name. The addressing matchers
+  (`is_recipient`, `is_directed`, `wakes`) gained an optional `roles` argument that is
+  empty by default, so every existing name/project/glob match and the anti-wake-storm
+  behaviour are unchanged. This closes the gap where a message addressed to a role bound to
+  no instance name matched nobody — it neither woke nor inboxed the holder and was counted a
+  dead letter.
+- Hub-side role registry: an agent declares the roles it answers to on its registration
+  heartbeat; the hub binds them (cleared on disconnect) so directed delivery resolves a role
+  to whichever agents hold it. A message to a role with a live holder is no longer counted a
+  dead letter (so it cannot raise a false dead-letter escalation), and the `who` snapshot now
+  carries `agent_roles` showing who holds what. Roles are additive addresses, not exclusive —
+  a role may be held by more than one agent and a message to it reaches every holder. The
+  heartbeat `roles` field is parsed defensively (a non-list is ignored, non-string or blank
+  entries are dropped) so a malformed field degrades to no roles rather than dropping the
+  socket. Roles ride in the heartbeat payload and the `who` snapshot, so the wire protocol
+  version, the reserved envelope keys, and the federation consumer surface are unchanged.
+
 ## [0.98.5] - 2026-07-07
 
 ### Fixed
