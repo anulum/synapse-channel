@@ -39,7 +39,6 @@ from synapse_channel.core.journal import (
 )
 from synapse_channel.core.operator_relay_routing import RelayRouteKind, route_operator_relay
 from synapse_channel.core.protocol import MessageType, is_recipient
-from synapse_channel.waiter_identity import waiter_owner
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
@@ -385,6 +384,13 @@ async def _replay_directed_backlog(
         await hub._send_json(websocket, frame)
 
 
+# The kernel cannot import the top-level ``waiter_identity`` module (the package boundary
+# keeps ``core`` from reaching up into the feature layers), so the ``-rx`` wake-listener
+# suffix is matched here directly. It mirrors ``waiter_identity.WAITER_SUFFIX``, the single
+# definition the non-core layers share; the convention is a stable naming contract.
+_WAITER_SUFFIX = "-rx"
+
+
 def _mailbox_recipient(connection: str, declared: Any) -> str:
     """Resolve whose directed backlog a mailbox heartbeat may replay onto ``connection``.
 
@@ -409,7 +415,7 @@ def _mailbox_recipient(connection: str, declared: Any) -> str:
     requested = declared.strip()
     if not requested or requested == connection:
         return connection
-    if waiter_owner(connection) == requested:
+    if connection == f"{requested}{_WAITER_SUFFIX}":
         return requested
     return connection
 
