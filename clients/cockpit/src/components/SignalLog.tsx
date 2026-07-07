@@ -400,8 +400,11 @@ function SignalLogView({
           </span>
         </div>
       )}
-      {historyOn && (
+      {(historyOn || historyNote !== null) && (
+        // A failed ENTRY leaves history off but must still say why — a click
+        // that silently does nothing would hide the "feed not served" fact.
         <div className="log-scrub">
+          {historyOn && (
           <input
             type="range"
             className="log-scrub__slider"
@@ -411,6 +414,7 @@ function SignalLogView({
             onChange={(change) => scrubTo(Number(change.target.value))}
             aria-label="Scrub position in the hub's event log, by sequence"
           />
+          )}
           <span className="log-scrub__label">
             {historyNote !== null
               ? historyNote
@@ -418,30 +422,34 @@ function SignalLogView({
                 ? "fetching…"
                 : `seq ${historyWindow.fromSeq}–${historyWindow.toSeq} of ${historyLatest} · window ${HISTORY_WINDOW_SIZE}`}
           </span>
-          <button
-            type="button"
-            className={`log-controls__toggle${pinnedWindow !== null ? " log-controls__toggle--paused" : ""}`}
-            onClick={() => {
-              if (pinnedWindow !== null) {
-                setPinnedWindow(null);
-                setDiffOpen(false);
-              } else if (historyWindow !== null) setPinnedWindow(historyWindow);
-            }}
-            disabled={pinnedWindow === null && historyWindow === null}
-            title="Pin the shown window as A, then scrub elsewhere and compare"
-          >
-            {pinnedWindow === null ? "pin A" : `A ${pinnedWindow.fromSeq}–${pinnedWindow.toSeq} ✕`}
-          </button>
-          <button
-            type="button"
-            className={`log-controls__toggle${diffOpen ? " log-controls__toggle--paused" : ""}`}
-            onClick={() => setDiffOpen(!diffOpen)}
-            disabled={pinnedWindow === null || historyWindow === null}
-            aria-pressed={diffOpen}
-            title="Compare the pinned window A with the shown window B"
-          >
-            compare
-          </button>
+          {historyOn && (
+            <>
+              <button
+                type="button"
+                className={`log-controls__toggle${pinnedWindow !== null ? " log-controls__toggle--paused" : ""}`}
+                onClick={() => {
+                  if (pinnedWindow !== null) {
+                    setPinnedWindow(null);
+                    setDiffOpen(false);
+                  } else if (historyWindow !== null) setPinnedWindow(historyWindow);
+                }}
+                disabled={pinnedWindow === null && historyWindow === null}
+                title="Pin the shown window as A, then scrub elsewhere and compare"
+              >
+                {pinnedWindow === null ? "pin A" : `A ${pinnedWindow.fromSeq}–${pinnedWindow.toSeq} ✕`}
+              </button>
+              <button
+                type="button"
+                className={`log-controls__toggle${diffOpen ? " log-controls__toggle--paused" : ""}`}
+                onClick={() => setDiffOpen(!diffOpen)}
+                disabled={pinnedWindow === null || historyWindow === null}
+                aria-pressed={diffOpen}
+                title="Compare the pinned window A with the shown window B"
+              >
+                compare
+              </button>
+            </>
+          )}
         </div>
       )}
       {historyOn && diffOpen && pinnedWindow !== null && historyWindow !== null && (
