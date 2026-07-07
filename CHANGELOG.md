@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.5] - 2026-07-07
+
 ### Fixed
 - The participant turn-result parser and the relay-log reader are now hardened against non-finite and
   double-overflowing numbers. `turn_result_from_payload` reads a participant's `cost_usd`, token counts,
