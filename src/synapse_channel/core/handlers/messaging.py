@@ -18,6 +18,7 @@ uniform dispatch table.
 from __future__ import annotations
 
 import logging
+import math
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -43,6 +44,25 @@ if TYPE_CHECKING:
 logger = logging.getLogger("synapse.messaging")
 
 
+def _client_timestamp(raw: Any, now: float) -> float:
+    """Return the client's send time if it is a usable instant, else the hub clock.
+
+    A chat's ``timestamp`` is advisory metadata the client may stamp. A missing,
+    falsy, non-numeric, non-finite, or double-overflowing value falls back to the
+    hub's authoritative ``now`` — a bare ``float`` would otherwise raise on a
+    string, list, or huge integer (dropping the sender's connection out of the
+    frame handler), or admit ``inf``/``nan`` into the retained history, the
+    broadcast, and the dead-letter ledger's ordering key.
+    """
+    if not raw or isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return now
+    try:
+        value = float(raw)
+    except OverflowError:  # a JSON integer too large for a double
+        return now
+    return value if math.isfinite(value) else now
+
+
 async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
     """Stamp, retain, journal, and broadcast a chat message to every socket.
 
@@ -50,7 +70,7 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
     only to that channel's online members and never broadcast, retained in the
     public history, or mirrored to the relay log.
     """
-    data["timestamp"] = float(data.get("timestamp") or time.time())
+    data["timestamp"] = _client_timestamp(data.get("timestamp"), time.time())
     data["type"] = MessageType.CHAT
     data["hub_id"] = hub.hub_id
     data["msg_id"] = hub._next_msg_id()

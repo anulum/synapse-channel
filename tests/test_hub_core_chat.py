@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 from websockets.asyncio.client import connect
@@ -52,6 +53,39 @@ async def test_chat_preserves_supplied_timestamp_and_increments_seq_end_to_end()
             second = await read_until_type(websocket, "chat")
     assert first["timestamp"] == 1700.0
     assert [first["msg_id"], second["msg_id"]] == [1, 2]
+
+
+async def test_chat_with_a_non_numeric_timestamp_is_stamped_not_crashed_end_to_end() -> None:
+    # A bare float() on a string timestamp used to raise ValueError out of the frame
+    # handler, dropping the sender's connection; the chat must now be broadcast with
+    # the hub's own finite clock instead.
+    async with running_hub() as (_, uri):
+        async with connect(uri) as websocket:
+            await read_until_type(websocket, "welcome")
+            await websocket.send(
+                json.dumps(
+                    {"sender": "A", "type": "chat", "payload": "x", "timestamp": "not-a-number"}
+                )
+            )
+            frame = await read_until_type(websocket, "chat")
+    assert frame["payload"] == "x"
+    assert isinstance(frame["timestamp"], (int, float))
+    assert math.isfinite(frame["timestamp"])
+
+
+async def test_chat_with_an_overflowing_numeric_timestamp_is_stamped_finite_end_to_end() -> None:
+    # ``1e400`` is a valid JSON number literal that decodes to ``inf`` (bypassing the
+    # bareword-constant guard in loads_bounded), so the handler must coerce it to a
+    # finite instant rather than broadcasting and journalling a non-finite timestamp.
+    async with running_hub() as (_, uri):
+        async with connect(uri) as websocket:
+            await read_until_type(websocket, "welcome")
+            raw_frame = '{"sender": "A", "type": "chat", "payload": "y", "timestamp": 1e400}'
+            await websocket.send(raw_frame)
+            frame = await read_until_type(websocket, "chat")
+    assert frame["payload"] == "y"
+    assert isinstance(frame["timestamp"], (int, float))
+    assert math.isfinite(frame["timestamp"])
 
 
 async def test_presence_broadcast_on_first_message_end_to_end() -> None:

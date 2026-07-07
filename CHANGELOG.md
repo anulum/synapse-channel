@@ -14,6 +14,17 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Fixed
+- A chat frame's client-supplied `timestamp` is now coerced to the hub clock when it is not a usable
+  instant, instead of crashing the handler or broadcasting a non-finite time. The handler stamped the
+  message with a bare `float(data.get("timestamp") or time.time())`, so a non-numeric timestamp (a string
+  or a list) raised `ValueError`/`TypeError`, and a double-overflowing integer raised `OverflowError` —
+  none caught by the connection loop (which handles only `ConnectionClosed`), so a single hostile chat
+  dropped the sender's socket with a traceback. A finite-looking `1e400` (or a `"timestamp": "inf"`)
+  instead decoded to `inf` and was retained in history, journalled, broadcast to every socket, and used as
+  the dead-letter ledger's ordering key. The timestamp is advisory client metadata, so a missing, falsy,
+  non-numeric, non-finite, or overflowing value now falls back to the hub's authoritative `time.time()`;
+  a finite client timestamp is still preserved. Found by fault-injection of the chat handler (the hottest
+  untrusted path); part of the non-finite-number family below.
 - The federation gate now stays deny-closed when a peer certificate reads but does not parse. The gate
   already wraps the certificate *read* so a socket in a strange state (or an injected certificate source)
   cannot crash the frame handler, and refuses a peered key's cross-domain claim it cannot pin. Computing
