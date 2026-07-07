@@ -50,7 +50,7 @@ Advisory governance: policy, approvals, access control, and release integrity.
 These express and check intent; they advise and record rather than enforce at the
 transport layer.
 
-`acl`  `approval`  `compact`  `encrypt-key`  `federation`  `merkle`  `policy-check`  `postmortem`  `release`  `reproduce`  `supervisor`  `verify-release`
+`acl`  `approval`  `compact`  `encrypt-key`  `federation`  `merkle`  `policy-check`  `postmortem`  `release`  `reproduce`  `role`  `supervisor`  `verify-release`
 
 ### Experimental — `experimental`
 

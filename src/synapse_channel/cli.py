@@ -176,6 +176,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_policy_check:add_parsers", ("policy-check",)),
     ("synapse_channel.cli_identity:add_parsers", ("identity",)),
     ("synapse_channel.cli_acl_shadow:add_parsers", ("acl",)),
+    ("synapse_channel.cli_role:add_parsers", ("role",)),
     ("synapse_channel.cli_locking:add_parsers", ("lock", "release")),
     ("synapse_channel.cli_streams:add_parsers", ("relay", "ingest", "compact")),
     ("synapse_channel.cli_event_query:add_parsers", ("event-query",)),

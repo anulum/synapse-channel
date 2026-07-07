@@ -117,6 +117,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "reproduce": GOVERNANCE,
     "merkle": GOVERNANCE,
     "acl": GOVERNANCE,
+    "role": GOVERNANCE,
     "federation": GOVERNANCE,
     "verify-release": GOVERNANCE,
     "release": GOVERNANCE,
