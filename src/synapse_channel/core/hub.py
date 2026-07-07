@@ -94,6 +94,7 @@ from synapse_channel.core.operator_relay_transport import (
     RelayForwarder,
     relay_operator_action,
 )
+from synapse_channel.core.pending_receipts import PendingReceipts
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import (
     MessageType,
@@ -522,6 +523,7 @@ class SynapseHub:
         self.relay_log = Path(relay_log) if relay_log else None
         self.relay_max_lines = max(int(relay_max_lines), 1)
         self.dead_letters = DeadLetterLedger(max_age_seconds=DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS)
+        self.pending_receipts = PendingReceipts()
         self._relay = RelayMirror(self.relay_log, self.relay_max_lines)
         self._broadcaster = HubBroadcaster(
             self.clients,

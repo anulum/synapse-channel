@@ -1,15 +1,15 @@
 {
   "metrics": {
     "benchmark_harnesses": 6,
-    "classes": 462,
+    "classes": 464,
     "cli_subcommands": 140,
     "documentation_pages": 49,
     "optional_dependency_groups": 10,
-    "package_modules": 316,
+    "package_modules": 317,
     "public_api_exports": 70,
-    "tests": 5055,
+    "tests": 5075,
     "version": "0.98.6",
-    "wire_message_types": 71,
+    "wire_message_types": 72,
     "workflows": 12
   },
   "project": "SYNAPSE CHANNEL",

@@ -442,3 +442,191 @@ async def test_mailbox_replay_treats_a_malformed_cursor_as_zero(tmp_path: Path) 
             frame = await read_until_type(bob_ws, "chat")
     store.close()
     assert frame["payload"] == "m1"
+
+
+async def test_ack_settles_a_dead_lettered_directed_message_with_a_deferred_receipt(
+    tmp_path: Path,
+) -> None:
+    # ALICE's receipt-requested message to offline BOB is confirmed "not delivered" at once
+    # and remembered under its durable seq. BOB reconnects, replays the backlog, and acks the
+    # seq; the hub then sends ALICE a deferred receipt revising the verdict to delivered.
+    store = EventStore(tmp_path / "events.db")
+    async with running_hub(SynapseHub(journal=store)) as (hub, uri):
+        async with connect(uri) as alice_ws:
+            await read_until_type(alice_ws, "welcome")
+            await alice_ws.send(
+                json.dumps(
+                    {
+                        "sender": "ALICE",
+                        "type": "chat",
+                        "target": "BOB",
+                        "payload": "urgent",
+                        "receipt_requested": True,
+                    }
+                )
+            )
+            sync = await read_until_type(alice_ws, "delivery_receipt")
+            assert sync["delivered"] is False
+            assert len(hub.pending_receipts) == 1
+            async with connect(uri) as bob_ws:
+                await read_until_type(bob_ws, "welcome")
+                await bob_ws.send(
+                    json.dumps(
+                        {
+                            "sender": "BOB",
+                            "type": "heartbeat",
+                            "target": "System",
+                            "payload": "online",
+                            "mailbox": True,
+                            "since_seq": 0,
+                        }
+                    )
+                )
+                replayed = await read_until_type(bob_ws, "chat")
+                seq = replayed["seq"]
+                await bob_ws.send(json.dumps({"sender": "BOB", "type": "ack", "seq": seq}))
+                deferred = await read_until_type(alice_ws, "delivery_receipt")
+    store.close()
+    assert deferred["delivered"] is True
+    assert deferred["deferred"] is True
+    assert deferred["message_seq"] == seq
+    assert deferred["target"] == "ALICE"
+    assert deferred["message_target"] == "BOB"
+    assert deferred["recipients"] == ["BOB"]
+    assert len(hub.pending_receipts) == 0
+
+
+async def test_ack_from_a_non_recipient_leaves_the_pending_receipt_for_the_real_one(
+    tmp_path: Path,
+) -> None:
+    # MALLORY acks a seq addressed to BOB. She is not a recipient, so the hub sends her
+    # nothing and keeps the entry; BOB's genuine ack still settles it for ALICE — proof the
+    # spoof neither fabricated a receipt nor destroyed the one BOB was owed.
+    store = EventStore(tmp_path / "events.db")
+    async with running_hub(SynapseHub(journal=store)) as (hub, uri):
+        async with connect(uri) as alice_ws:
+            await read_until_type(alice_ws, "welcome")
+            await alice_ws.send(
+                json.dumps(
+                    {
+                        "sender": "ALICE",
+                        "type": "chat",
+                        "target": "BOB",
+                        "payload": "urgent",
+                        "receipt_requested": True,
+                    }
+                )
+            )
+            echo = await read_until_type(alice_ws, "chat")
+            seq = echo["seq"]
+            await read_until_type(alice_ws, "delivery_receipt")
+            async with connect(uri) as mallory_ws:
+                await read_until_type(mallory_ws, "welcome")
+                await mallory_ws.send(json.dumps({"sender": "MALLORY", "type": "ack", "seq": seq}))
+                spoofed = await collect_available(mallory_ws)
+            assert not any(m.get("type") == "delivery_receipt" for m in spoofed)
+            assert len(hub.pending_receipts) == 1
+            async with connect(uri) as bob_ws:
+                await read_until_type(bob_ws, "welcome")
+                await bob_ws.send(
+                    json.dumps(
+                        {
+                            "sender": "BOB",
+                            "type": "heartbeat",
+                            "target": "System",
+                            "payload": "online",
+                            "mailbox": True,
+                            "since_seq": 0,
+                        }
+                    )
+                )
+                await read_until_type(bob_ws, "chat")
+                await bob_ws.send(json.dumps({"sender": "BOB", "type": "ack", "seq": seq}))
+                deferred = await read_until_type(alice_ws, "delivery_receipt")
+    store.close()
+    assert deferred["delivered"] is True
+    assert deferred["recipients"] == ["BOB"]
+
+
+async def test_ack_for_an_unknown_seq_sends_no_receipt(tmp_path: Path) -> None:
+    # An ack for a seq that was never pending (or already settled) is a silent no-op.
+    store = EventStore(tmp_path / "events.db")
+    async with running_hub(SynapseHub(journal=store)) as (hub, uri):
+        async with connect(uri) as ws:
+            await read_until_type(ws, "welcome")
+            await ws.send(json.dumps({"sender": "BOB", "type": "ack", "seq": 999}))
+            leftover = await collect_available(ws)
+    store.close()
+    assert not any(m.get("type") == "delivery_receipt" for m in leftover)
+    assert len(hub.pending_receipts) == 0
+
+
+async def test_ack_with_a_malformed_seq_is_ignored(tmp_path: Path) -> None:
+    # A boolean or non-integer seq is dropped without a receipt and without dropping the
+    # socket — a following chat still round-trips.
+    store = EventStore(tmp_path / "events.db")
+    async with running_hub(SynapseHub(journal=store)) as (hub, uri):
+        async with connect(uri) as ws:
+            await read_until_type(ws, "welcome")
+            for bad_seq in (True, "not-a-number"):
+                await ws.send(json.dumps({"sender": "BOB", "type": "ack", "seq": bad_seq}))
+            await ws.send(
+                json.dumps({"sender": "BOB", "type": "chat", "target": "all", "payload": "ping"})
+            )
+            frame = await read_until_type(ws, "chat")
+    store.close()
+    assert frame["payload"] == "ping"
+    assert len(hub.pending_receipts) == 0
+
+
+async def test_a_directed_message_delivered_live_records_no_pending_receipt(
+    tmp_path: Path,
+) -> None:
+    # A receipt-requested directed message that reaches a live recipient is confirmed at
+    # once, so nothing is left pending for a later ack to settle.
+    store = EventStore(tmp_path / "events.db")
+    async with running_hub(SynapseHub(journal=store)) as (hub, uri):
+        bob = await connect_agent("BOB", uri)
+        try:
+            async with connect(uri) as alice_ws:
+                await read_until_type(alice_ws, "welcome")
+                await alice_ws.send(
+                    json.dumps(
+                        {
+                            "sender": "ALICE",
+                            "type": "chat",
+                            "target": "BOB",
+                            "payload": "hi",
+                            "receipt_requested": True,
+                        }
+                    )
+                )
+                receipt = await read_until_type(alice_ws, "delivery_receipt")
+            assert receipt["delivered"] is True
+            assert len(hub.pending_receipts) == 0
+        finally:
+            await close_agents(bob)
+
+
+async def test_a_receipt_requested_broadcast_records_no_pending_receipt(tmp_path: Path) -> None:
+    # A broadcast is an audience, never a directed message, so even when it reaches nobody it
+    # is not a deferred-receipt candidate — only a directed dead letter is.
+    store = EventStore(tmp_path / "events.db")
+    async with running_hub(SynapseHub(journal=store)) as (hub, uri):
+        async with connect(uri) as ws:
+            await read_until_type(ws, "welcome")
+            await ws.send(
+                json.dumps(
+                    {
+                        "sender": "ALICE",
+                        "type": "chat",
+                        "target": "all",
+                        "payload": "hi all",
+                        "receipt_requested": True,
+                    }
+                )
+            )
+            receipt = await read_until_type(ws, "delivery_receipt")
+    store.close()
+    assert receipt["delivered"] is False
+    assert len(hub.pending_receipts) == 0

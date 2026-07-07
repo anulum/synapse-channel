@@ -39,7 +39,7 @@ from synapse_channel.core.handlers.leasing import (
     handle_wait_request,
 )
 from synapse_channel.core.handlers.memory import handle_finding, handle_recall_log
-from synapse_channel.core.handlers.messaging import handle_chat, handle_heartbeat
+from synapse_channel.core.handlers.messaging import handle_ack, handle_chat, handle_heartbeat
 from synapse_channel.core.handlers.multihub import handle_multihub_log_request
 from synapse_channel.core.handlers.multihub_claim import handle_multihub_claim_request
 from synapse_channel.core.handlers.offerings import handle_advertise, handle_resource
@@ -67,6 +67,7 @@ Handler = Callable[["SynapseHub", str, dict[str, Any], Any], Awaitable[None]]
 
 DISPATCH: dict[str, Handler] = {
     MessageType.CHAT: handle_chat,
+    MessageType.ACK: handle_ack,
     MessageType.HEARTBEAT: handle_heartbeat,
     MessageType.CLAIM: handle_claim,
     MessageType.RELEASE: handle_release,

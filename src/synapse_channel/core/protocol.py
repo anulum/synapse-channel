@@ -28,7 +28,7 @@ from typing import Any
 SENDER_HUB = "SynapseHub"
 """Reserved sender name stamped on every hub-originated message."""
 
-WIRE_PROTOCOL_VERSION = 1
+WIRE_PROTOCOL_VERSION = 2
 """The version of the hub's wire protocol.
 
 Advertised in the ``WELCOME`` handshake so a client — including an out-of-tree
@@ -36,13 +36,28 @@ consumer that syncs across possibly version-skewed hubs during a rolling upgrade
 — can read the peer's wire version on connect rather than infer it from a
 separate query. It is **decoupled from the package version on purpose**: a patch
 or feature release that leaves the wire shapes unchanged does not bump it, and it
-bumps only on a wire-incompatible change, so it is a stable compatibility signal
-rather than a release counter. The current wire is baseline version ``1``.
+bumps only on a wire vocabulary change, so it is a stable compatibility signal
+rather than a release counter. Version ``2`` adds the client→hub ``ACK`` verb and
+the deferred delivery receipt it drives; a client gates emitting an ``ACK`` on the
+peer advertising version ``2`` or newer (:data:`MIN_ACK_PROTOCOL_VERSION`), so it
+never sends the verb to a hub that predates it — and an older hub, never taught the
+verb, is never sent it, which is what keeps the addition backward-compatible.
 
-It is **advertise-only for now**: a client captures the peer's version but no
-compatibility policy is enforced, because the mismatch behaviour (reject, warn,
-or negotiate down) is a contract shared with the downstream consumers the wire
-serves and is decided with them before it is enforced.
+It is **advertise-only for now**: a client captures the peer's version and gates
+its own ``ACK`` emission on it, but the hub enforces no cross-version policy,
+because the mismatch behaviour (reject, warn, or negotiate down) is a contract
+shared with the downstream consumers the wire serves and is decided with them
+before it is enforced.
+"""
+
+MIN_ACK_PROTOCOL_VERSION = 2
+"""Lowest advertised wire version at which a client may emit an ``ACK``.
+
+The ``ACK`` verb and its deferred delivery receipt arrived at wire version ``2``, so
+a client only sends an ``ACK`` when the hub advertises this version or newer — a
+fixed capability floor, not the moving :data:`WIRE_PROTOCOL_VERSION`, so a future
+hub at a higher version still qualifies while a pre-``2`` hub that never learnt the
+verb is never sent it.
 """
 
 
@@ -173,6 +188,7 @@ class MessageType:
 
     # Agent -> hub.
     CHAT = "chat"
+    ACK = "ack"
     DELIVERY_RECEIPT = "delivery_receipt"
     HEARTBEAT = "heartbeat"
     CLAIM = "claim"

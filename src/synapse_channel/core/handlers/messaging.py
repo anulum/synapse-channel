@@ -115,6 +115,13 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
             msg_id=int(data["msg_id"]),
             recipients=recipients,
         )
+        if not recipients and is_directed_target(target) and "seq" in data:
+            # Nobody live matched, so the immediate receipt said "not delivered" — but the
+            # journal kept the body, so remember it under its durable seq: when the recipient
+            # reconnects, drains the backlog, and acks that seq, we can revise the verdict to
+            # a deferred "delivered". Only a journalled directed message can be acked, because
+            # only it carries the seq the ack echoes and the durable copy the recipient reads.
+            hub.pending_receipts.remember(int(data["seq"]), sender=sender, target=target)
 
 
 async def _escalate_dead_letter(hub: SynapseHub, *, target: str, count: int, sender: str) -> None:
@@ -280,6 +287,47 @@ async def _send_delivery_receipt(
             message_id=msg_id,
             delivered=delivered,
             recipients=recipients,
+        ),
+    )
+
+
+async def handle_ack(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
+    """Settle a pending directed message with a deferred delivery receipt to its sender.
+
+    A recipient that drained a receipt-requested directed message from its reconnect
+    backlog acks it by its durable journal ``seq``. If that ``seq`` is still awaiting a
+    receipt and ``sender`` is a genuine recipient of the target it was addressed to, the
+    hub finally tells the original sender ``delivered: true, deferred: true`` — the
+    revision of the immediate ``delivered: false`` the sender saw when nobody was live —
+    and forgets the entry.
+
+    The target is re-checked with :func:`is_recipient` before the entry is claimed, so a
+    spoofed ack from a client the message was never addressed to neither fabricates a
+    receipt nor destroys the pending one a genuine recipient will settle. A malformed or
+    non-integer ``seq``, an unknown ``seq`` (never pending, or already settled), and an ack
+    from a non-recipient are all silent no-ops — an ack is a best-effort confirmation, never
+    a frame whose rejection should drop the acking socket.
+    """
+    raw_seq = data.get("seq")
+    if isinstance(raw_seq, bool) or not isinstance(raw_seq, int):
+        return
+    entry = hub.pending_receipts.peek(raw_seq)
+    if entry is None:
+        return
+    if not is_recipient(entry.target, sender, roles=hub.roles_of(sender)):
+        return
+    hub.pending_receipts.claim(raw_seq)
+    await hub._send_to_agent(
+        entry.sender,
+        hub._system(
+            f"delivered to {sender} on reconnect",
+            msg_type=MessageType.DELIVERY_RECEIPT,
+            target=entry.sender,
+            message_target=entry.target,
+            message_seq=raw_seq,
+            delivered=True,
+            deferred=True,
+            recipients=[sender],
         ),
     )
 

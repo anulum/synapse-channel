@@ -34,6 +34,19 @@ All notable changes to this project are documented here.
   never broadcasts, bounded by a per-reconnect scan cap; a hub with no durable journal does not
   replay. Payload-only — no new wire type, so the wire protocol version, the reserved envelope
   keys, and the federation consumer surface are unchanged.
+- Deferred delivery receipts for directed messages that arrive after a reconnect. When a
+  receipt-requested directed message reaches no live recipient, the hub still answers
+  `delivered: false` at once, but now remembers it under its durable journal `seq` in a bounded
+  pending-receipt store. A reconnecting recipient that drains the message from its backlog
+  acknowledges it with the new `ACK` verb (client→hub), and the hub revises the verdict by
+  sending the original sender a second `delivery_receipt` marked `delivered: true, deferred:
+  true` — closing the gap where a sender was told "not delivered" and never learnt the message
+  arrived. The acking client is re-checked as a genuine recipient of the target before the
+  receipt is issued, so a spoofed ack neither fabricates a receipt nor drops the pending one. The
+  wire protocol version is bumped to `2`; the `ACK` verb is additive and backward-compatible by
+  construction — a client emits it only when the hub advertises version `2` or newer, and an
+  older hub is never sent it, so no enforcement is added and the federation consumer surface is
+  unchanged.
 
 ## [0.98.6] - 2026-07-07
 

@@ -23,6 +23,7 @@ class _OutboundAgent(Protocol):
 
     connection: ClientConnection | None
     name: str
+    hub_protocol_version: int | None
     _message_auth_key: MessageAuthKey | None
     _message_auth_sequence: int
 

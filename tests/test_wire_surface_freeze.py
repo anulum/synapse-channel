@@ -36,6 +36,7 @@ from synapse_channel.core.protocol import (
 # peer speaking the old wire and must bump WIRE_PROTOCOL_VERSION; an addition is a
 # reviewed edit (plus a capability-snapshot regen) until 1.0.0 locks the map.
 _FROZEN_WIRE_VALUES: dict[str, str] = {
+    "ACK": "ack",
     "ADVERTISE": "advertise",
     "AUTH_DENIED": "auth_denied",
     "BOARD_REQUEST": "board_request",
@@ -150,6 +151,6 @@ def test_wire_envelope_carries_the_reserved_keys() -> None:
 
 
 def test_wire_protocol_version_is_frozen_at_the_current_baseline() -> None:
-    # The wire is baseline version 1; a bump is a wire-incompatible change and a
-    # deliberate edit, not an accident.
-    assert WIRE_PROTOCOL_VERSION == 1
+    # The wire is at version 2 (the ACK verb and its deferred delivery receipt); a
+    # bump is a wire vocabulary change and a deliberate edit, not an accident.
+    assert WIRE_PROTOCOL_VERSION == 2

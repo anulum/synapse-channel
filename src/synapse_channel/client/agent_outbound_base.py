@@ -15,7 +15,7 @@ from typing import Any
 
 from synapse_channel.client.agent_outbound_types import _OutboundAgent
 from synapse_channel.core.message_auth import DEFAULT_SIGNED_MESSAGE_TYPES, sign_frame
-from synapse_channel.core.protocol import MessageType, build_envelope
+from synapse_channel.core.protocol import MIN_ACK_PROTOCOL_VERSION, MessageType, build_envelope
 
 __all__ = ["AgentSendMixin"]
 
@@ -92,6 +92,33 @@ class AgentSendMixin:
         if channel:
             extra["channel"] = channel
         await self.send_message(MessageType.CHAT, target=target, payload=payload, **extra)
+
+    async def ack(self: _OutboundAgent, seq: int) -> bool:
+        """Acknowledge a delivered directed message by its durable ``seq``.
+
+        When a reconnecting agent drains a receipt-requested directed message from
+        its journal backlog, this tells the hub the message finally arrived, so the
+        hub can send the original sender a deferred delivery receipt. It is emitted
+        only when the hub advertised wire version
+        :data:`~synapse_channel.core.protocol.MIN_ACK_PROTOCOL_VERSION` or newer in
+        its ``WELCOME``, so a client never sends the verb to a hub too old to know
+        it — the check makes the acknowledgement safe to call unconditionally.
+
+        Parameters
+        ----------
+        seq : int
+            The durable journal sequence number carried on the replayed frame.
+
+        Returns
+        -------
+        bool
+            ``True`` when the ack was sent, ``False`` when the hub predates the ack
+            verb (or never advertised a version) and it was withheld.
+        """
+        if (self.hub_protocol_version or 0) < MIN_ACK_PROTOCOL_VERSION:
+            return False
+        await self.send_message(MessageType.ACK, seq=seq)
+        return True
 
     async def channel_create(self: _OutboundAgent, channel: str, *, label: str = "") -> None:
         """Create a private channel owned by this agent (its first member)."""

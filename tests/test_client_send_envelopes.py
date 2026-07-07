@@ -154,3 +154,43 @@ async def test_record_finding_omits_unset_optionals_but_always_sends_envelopes()
     assert msg["provenance"] == {"project": "", "session": "", "source_event_seq": None}
     assert msg["validity"] == {"valid_from": None, "valid_to": None}
     assert msg["verified_at_source"] == {"checked_this_session": False, "source_ref": ""}
+
+
+async def test_ack_emits_the_seq_when_the_hub_advertises_the_ack_version() -> None:
+    async with connected_recording_agent("A") as (agent, messages):
+        agent.hub_protocol_version = 2
+        sent = await agent.ack(7)
+        await wait_for_recorded_count(messages, 2)
+        ack = messages[-1]
+
+    assert sent is True
+    assert ack["type"] == "ack"
+    assert ack["sender"] == "A"
+    assert ack["seq"] == 7
+
+
+async def test_ack_is_withheld_when_the_hub_predates_the_ack_version() -> None:
+    # A hub that advertises wire version 1 does not know the ack verb, so the client must
+    # not send it — the ack is withheld and nothing but the registration heartbeat is sent.
+    async with connected_recording_agent("A") as (agent, messages):
+        agent.hub_protocol_version = 1
+        sent = await agent.ack(7)
+
+    assert sent is False
+    assert all(message.get("type") != "ack" for message in messages)
+
+
+async def test_ack_is_withheld_when_the_hub_version_is_unknown() -> None:
+    # The recording hub's WELCOME carries no protocol_version, so it stays None and the
+    # client cannot tell the hub speaks ack — it withholds the verb rather than risk it.
+    async with connected_recording_agent("A") as (agent, messages):
+        assert agent.hub_protocol_version is None
+        sent = await agent.ack(7)
+
+    assert sent is False
+    assert all(message.get("type") != "ack" for message in messages)
+
+
+async def test_ack_is_withheld_without_a_connection() -> None:
+    agent = SynapseAgent("A")
+    assert await agent.ack(7) is False
