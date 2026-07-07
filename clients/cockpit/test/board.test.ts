@@ -123,17 +123,31 @@ describe("deriveBoard", () => {
 
 describe("boardTruncation", () => {
   it("reads the hub's cap signal and defaults honestly without one", () => {
-    expect(boardTruncation(null)).toEqual({ totalTasks: null, truncated: false });
+    expect(boardTruncation(null)).toEqual({ totalTasks: null, truncated: false, taskCap: null });
     expect(boardTruncation(snapshotOf({ board: {} }))).toEqual({
       totalTasks: null,
       truncated: false,
+      taskCap: null,
     });
     expect(
       boardTruncation(snapshotOf({ board: { total_tasks: 977, truncated: true } })),
-    ).toEqual({ totalTasks: 977, truncated: true });
+    ).toEqual({ totalTasks: 977, truncated: true, taskCap: null });
     expect(
       boardTruncation(snapshotOf({ board: { total_tasks: "junk", truncated: "yes" } })),
-    ).toEqual({ totalTasks: null, truncated: false });
+    ).toEqual({ totalTasks: null, truncated: false, taskCap: null });
+  });
+
+  it("carries the applied cap only while the hub says one is active", () => {
+    expect(
+      boardTruncation(snapshotOf({ board: { total_tasks: 977, truncated: true, task_cap: 500 } })),
+    ).toEqual({ totalTasks: 977, truncated: true, taskCap: 500 });
+    // A malformed or non-positive cap is no cap, never an invented gauge.
+    expect(
+      boardTruncation(snapshotOf({ board: { total_tasks: 3, truncated: false, task_cap: "500" } })),
+    ).toEqual({ totalTasks: 3, truncated: false, taskCap: null });
+    expect(
+      boardTruncation(snapshotOf({ board: { task_cap: 0 } })),
+    ).toEqual({ totalTasks: null, truncated: false, taskCap: null });
   });
 });
 

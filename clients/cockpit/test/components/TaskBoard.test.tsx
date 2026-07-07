@@ -100,7 +100,11 @@ describe("TaskBoard", () => {
 
   it("states the hub's cap signal in the head count", () => {
     render(
-      <TaskBoard connected tasks={[task("t-1", "open")]} truncation={{ totalTasks: 500, truncated: true }} />,
+      <TaskBoard
+        connected
+        tasks={[task("t-1", "open")]}
+        truncation={{ totalTasks: 500, truncated: true, taskCap: null }}
+      />,
     );
     expect(screen.getByText("1 of 500")).toBeTruthy();
     expect(screen.getByText("capped reply")).toBeTruthy();
@@ -121,5 +125,36 @@ describe("TaskBoard", () => {
     expect(click).toHaveBeenCalledTimes(1);
     expect(revoke).toHaveBeenCalledWith("blob:report");
     click.mockRestore();
+  });
+});
+
+describe("TaskBoard cap headroom", () => {
+  it("states the active cap quietly and turns loud from nine tenths full", () => {
+    render(
+      <TaskBoard
+        connected
+        tasks={[task("t-1", "open")]}
+        truncation={{ totalTasks: 100, truncated: false, taskCap: 500 }}
+      />,
+    );
+    expect(screen.getByText("cap 500")).toBeTruthy();
+    expect(screen.queryByText(/near cap/)).toBeNull();
+    cleanup();
+    render(
+      <TaskBoard
+        connected
+        tasks={[task("t-1", "open")]}
+        truncation={{ totalTasks: 450, truncated: false, taskCap: 500 }}
+      />,
+    );
+    expect(screen.getByText("near cap · 450/500").className).toContain("panel__sub--warn");
+    expect(screen.queryByText("cap 500")).toBeNull();
+  });
+
+  it("shows no gauge at all while the board is served uncapped", () => {
+    render(
+      <TaskBoard connected tasks={[task("t-1", "open")]} truncation={{ totalTasks: null, truncated: false, taskCap: null }} />,
+    );
+    expect(screen.queryByText(/cap /)).toBeNull();
   });
 });

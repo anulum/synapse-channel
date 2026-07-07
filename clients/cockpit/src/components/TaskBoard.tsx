@@ -120,6 +120,13 @@ function TaskBoardView({ tasks, connected, truncation, onInspect, lens = "" }: T
   const doneOverflow = done.length - doneShown.length;
   const blocked = active.filter((task) => task.bucket === "blocked").length;
   const capped = truncation?.truncated === true && truncation.totalTasks !== null;
+  // Headroom against the hub's own applied cap — plain arithmetic on two
+  // hub facts, no prediction. Loud from nine tenths full.
+  const taskCap = truncation?.taskCap ?? null;
+  const nearCap =
+    taskCap !== null &&
+    truncation?.totalTasks != null &&
+    truncation.totalTasks >= Math.ceil(taskCap * 0.9);
 
   return (
     <section className="panel" aria-label="Task board">
@@ -136,6 +143,19 @@ function TaskBoardView({ tasks, connected, truncation, onInspect, lens = "" }: T
           <span className="panel__sub">{`${shown.length} of ${tasks.length} shown`}</span>
         )}
         {blocked > 0 && <span className="panel__sub panel__sub--warn">{blocked} blocked</span>}
+        {nearCap && truncation?.totalTasks != null && (
+          <span
+            className="panel__sub panel__sub--warn"
+            title="The full board is within a tenth of the hub's applied task cap; new declarations will start trimming the served page."
+          >
+            {`near cap · ${truncation.totalTasks}/${taskCap}`}
+          </span>
+        )}
+        {taskCap !== null && !nearCap && (
+          <span className="panel__sub" title="The hub serves this board under an active task cap.">
+            {`cap ${taskCap}`}
+          </span>
+        )}
         {capped && blocked === 0 && !constrained && <span className="panel__sub">capped reply</span>}
       </div>
       <div className="board-controls">

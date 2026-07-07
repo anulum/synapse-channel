@@ -111,6 +111,8 @@ export interface BoardTruncation {
   readonly totalTasks: number | null;
   /** Whether the served task list is a capped subset of the full board. */
   readonly truncated: boolean;
+  /** The applied board cap, or null when the board is served uncapped. */
+  readonly taskCap: number | null;
 }
 
 /**
@@ -119,11 +121,14 @@ export interface BoardTruncation {
  * of presenting a capped list as the whole plan.
  */
 export function boardTruncation(snapshot: FleetSnapshot | null): BoardTruncation {
-  if (snapshot === null) return { totalTasks: null, truncated: false };
+  if (snapshot === null) return { totalTasks: null, truncated: false, taskCap: null };
   const total = snapshot.board["total_tasks"];
+  const cap = snapshot.board["task_cap"];
   return {
     totalTasks: typeof total === "number" && Number.isFinite(total) ? Math.trunc(total) : null,
     truncated: snapshot.board["truncated"] === true,
+    // Present only while a cap is ACTIVE (the hub omits it uncapped).
+    taskCap: typeof cap === "number" && Number.isFinite(cap) && cap > 0 ? Math.trunc(cap) : null,
   };
 }
 
