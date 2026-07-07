@@ -56,6 +56,16 @@ def test_encode_lite_defaults_when_id_missing() -> None:
     assert packed["i"] == 0
 
 
+def test_decode_lite_falls_back_on_non_finite_timestamp_and_id() -> None:
+    # A corrupted log entry with a non-finite ``t``/``i`` (``int(inf)`` raises
+    # OverflowError, ``int(nan)`` raises ValueError) decodes to zero rather than
+    # raising out of the reader.
+    message = decode_lite({"t": float("inf"), "i": float("nan"), "s": "A", "p": "hi"})
+    assert message["timestamp"] == 0.0
+    assert message["msg_id"] == 0
+    assert message["sender"] == "A"
+
+
 def test_encode_lite_uses_now_when_timestamp_absent() -> None:
     before_ms = int(__import__("time").time() * 1000.0)
     packed = encode_lite({})

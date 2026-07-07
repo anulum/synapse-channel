@@ -24,6 +24,7 @@ free of any provider-specific parsing.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypedDict
 
@@ -360,20 +361,28 @@ def turn_result_from_payload(payload: str) -> TurnResult | None:
 
 
 def _as_float(value: Any) -> float:
-    """Return ``value`` as a float, defaulting to ``0.0`` on a non-numeric input."""
+    """Return ``value`` as a finite float, defaulting to ``0.0`` on a bad input.
+
+    A non-numeric, non-finite (``inf``/``nan``), or double-overflowing value defaults
+    to zero rather than raising or admitting a non-finite cost into a usage note.
+    """
     try:
-        return float(value)
-    except (TypeError, ValueError):
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
         return 0.0
+    return number if math.isfinite(number) else 0.0
 
 
 def _as_int(value: Any) -> int:
     """Return ``value`` as a non-negative int, defaulting to ``0`` on a bad input.
 
-    A token count off the wire is coerced and clamped at zero so a foreign or negative value
-    cannot later make a usage note malformed.
+    A token count off the wire is coerced and clamped at zero so a foreign, negative,
+    or non-finite value cannot later make a usage note malformed — ``int()`` of a
+    non-finite float raises, so ``inf``/``nan`` is treated as absent before conversion.
     """
     if isinstance(value, bool):
+        return 0
+    if isinstance(value, float) and not math.isfinite(value):
         return 0
     try:
         parsed = int(value)
@@ -383,14 +392,16 @@ def _as_int(value: Any) -> int:
 
 
 def _as_optional_float(value: Any) -> float | None:
-    """Return ``value`` as a float, or ``None`` when it is absent or non-numeric.
+    """Return ``value`` as a finite float, or ``None`` when absent or unusable.
 
-    Used for an optional signal (rate-limit utilisation) where a missing value is meaningful, so
-    ``None`` is preserved rather than coerced to zero; a boolean is rejected.
+    Used for an optional signal (rate-limit utilisation) where a missing value is
+    meaningful, so ``None`` is preserved rather than coerced to zero; a boolean, a
+    non-finite value, or a double-overflowing integer is rejected.
     """
     if value is None or isinstance(value, bool):
         return None
     try:
-        return float(value)
-    except (TypeError, ValueError):
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
         return None
+    return number if math.isfinite(number) else None

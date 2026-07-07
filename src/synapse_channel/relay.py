@@ -124,13 +124,16 @@ def decode_lite(lite: dict[str, Any]) -> dict[str, Any]:
         A full envelope with ``sender``, ``target``, ``type``, ``payload``,
         ``timestamp`` (seconds), ``msg_id``, and ``hub_id``.
     """
+    # A malformed log entry — a non-numeric, non-finite (``int(inf)`` raises
+    # OverflowError), or otherwise unconvertible value — decodes to zero rather
+    # than raising out of the reader.
     try:
         ts_ms = int(lite.get("t", 0))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         ts_ms = 0
     try:
         msg_id_val = int(lite.get("i", 0))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         msg_id_val = 0
 
     message = {

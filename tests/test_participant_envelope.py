@@ -109,6 +109,30 @@ def test_from_payload_coerces_rate_limit_utilisation() -> None:
         assert restored["rate_limit_utilisation"] is None
 
 
+def test_from_payload_coerces_non_finite_and_overflowing_usage_numbers() -> None:
+    # A participant's turn-result payload is untrusted, and bare json.loads accepts the
+    # non-standard Infinity/NaN tokens; a 400-digit integer also overflows float(). The
+    # usage figures must come back finite and sane rather than raise OverflowError out
+    # of the bus message handler that awaits the reply.
+    parsed = turn_result_from_payload(
+        json.dumps(
+            {
+                "kind": ENVELOPE_KIND,
+                "topic_id": "t",
+                "cost_usd": 10**400,
+                "input_tokens": float("nan"),
+                "output_tokens": float("inf"),
+                "rate_limit_utilisation": float("inf"),
+            }
+        )
+    )
+    assert parsed is not None
+    assert parsed["cost_usd"] == 0.0
+    assert parsed["input_tokens"] == 0
+    assert parsed["output_tokens"] == 0
+    assert parsed["rate_limit_utilisation"] is None
+
+
 def test_error_turn_result_echoes_model_with_zero_tokens() -> None:
     request = TurnRequest(topic_id="t", prompt="p", model="gpt-x")
     result = error_turn_result(

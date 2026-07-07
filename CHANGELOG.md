@@ -14,6 +14,15 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Fixed
+- The participant turn-result parser and the relay-log reader are now hardened against non-finite and
+  double-overflowing numbers. `turn_result_from_payload` reads a participant's `cost_usd`, token counts,
+  and rate-limit signal off an untrusted bus payload with a bare `json.loads` (which accepts the
+  non-standard `Infinity`/`NaN` tokens), and its `_as_int` passed a non-finite float straight to `int()`
+  (which raises); a 400-digit integer also overflowed `float()`. The three coercers now default a
+  non-numeric, non-finite, or overflowing value to zero (or `None` for the optional signal) so a malformed
+  turn result cannot crash the bus handler awaiting it. `relay.decode_lite`'s existing tolerance of a
+  malformed log entry (a non-numeric `t`/`i` defaulted to zero) now also covers a non-finite value, whose
+  `int()` conversion raised `OverflowError` outside the caught set. Part of the non-finite-number family.
 - A claim's `ttl_seconds` and a frame's `epoch`/`expected_version` are now guarded against non-finite and
   double-overflowing values. The claim handler converted `ttl_seconds` with a `float()` that caught only
   `TypeError`/`ValueError`, so a 400-digit integer raised an uncaught `OverflowError` out of the frame
