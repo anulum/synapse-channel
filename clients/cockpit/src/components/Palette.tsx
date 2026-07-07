@@ -16,7 +16,14 @@ import {
 } from "../lib/palette";
 
 function sendResultLine(result: OperatorSendResult): string {
-  if (result.kind === "sent") return "sent — the hub authorised and recorded it";
+  if (result.kind === "sent")
+    return result.detail === ""
+      ? "sent — the hub authorised and recorded it"
+      : `sent — ${result.detail}`;
+  if (result.kind === "undelivered")
+    return result.detail === ""
+      ? "relayed, not delivered — no online recipient matched"
+      : `relayed, not delivered — ${result.detail}`;
   if (result.kind === "not-armed")
     return "operator write-path not armed on this dashboard (--operator)";
   if (result.kind === "refused") return `refused: ${result.reason}`;

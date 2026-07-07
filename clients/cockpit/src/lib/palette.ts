@@ -92,17 +92,51 @@ export function matchCommands(commands: readonly Command[], query: string): Comm
 
 /** The outcome of the one write, stated plainly. */
 export type OperatorSendResult =
-  | { readonly kind: "sent" }
+  | { readonly kind: "sent"; readonly detail: string }
+  | { readonly kind: "undelivered"; readonly detail: string }
   | { readonly kind: "not-armed" }
   | { readonly kind: "refused"; readonly reason: string }
   | { readonly kind: "error"; readonly message: string };
 
 const MESSAGE_URL = "/message";
 
+/** The dashboard's write answer: `{action, status, detail, ok}`. */
+interface OutcomeDocument {
+  readonly status: string;
+  readonly detail: string;
+  readonly ok: boolean;
+}
+
+/** Narrow an untrusted body to the outcome document, or null when it is not one. */
+function parseOutcomeDocument(raw: unknown): OutcomeDocument | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  if (typeof record["status"] !== "string" || typeof record["ok"] !== "boolean") return null;
+  return {
+    status: record["status"],
+    detail: typeof record["detail"] === "string" ? record["detail"] : "",
+    ok: record["ok"],
+  };
+}
+
+/**
+ * One plain UI-safe line: the server's own words when they are one short
+ * line, a stated fallback otherwise (HTML-shaped or overlong bodies are
+ * summarised, never pasted into the UI).
+ */
+function plainLine(raw: string, fallback: string): string {
+  const line = raw.trim();
+  return line === "" || line.startsWith("<") || line.length > 140 ? fallback : line;
+}
+
 /**
  * Relay one message through the dashboard's operator write-path. The route
  * 404s on an unarmed dashboard (indistinguishable from an unknown path by
- * design) — that reads as "not armed", never as an error to retry.
+ * design) — that reads as "not armed", never as an error to retry. A current
+ * dashboard answers the `{action, status, detail, ok}` outcome document, and
+ * each status is stated as its own fact — `undelivered` is a 200 whose relay
+ * reached nobody, which must never read as "sent". A pre-document dashboard
+ * answers plain text; that ladder is kept unchanged beneath the document one.
  */
 export async function sendOperatorMessage(
   to: string,
@@ -119,15 +153,27 @@ export async function sendOperatorMessage(
     // 404 = armed-off by design; 501 = a dashboard from before the
     // write-path existed. Both read as "not armed", never as retryable.
     if (response.status === 404 || response.status === 501) return { kind: "not-armed" };
-    if (response.ok) return { kind: "sent" };
     const raw = (await response.text()).trim();
+    let body: unknown = null;
+    try {
+      body = JSON.parse(raw) as unknown;
+    } catch {
+      body = null;
+    }
+    const document = parseOutcomeDocument(body);
+    if (document !== null) {
+      const detail = plainLine(document.detail, "");
+      if (document.status === "undelivered") return { kind: "undelivered", detail };
+      if (document.ok) return { kind: "sent", detail };
+      return {
+        kind: "refused",
+        reason: plainLine(document.detail, `dashboard returned ${response.status}`),
+      };
+    }
+    if (response.ok) return { kind: "sent", detail: "" };
     // The dashboard's refusals are one plain line; anything HTML-shaped or
     // overlong is summarised to its status instead of pasted into the UI.
-    const reason =
-      raw === "" || raw.startsWith("<") || raw.length > 140
-        ? `dashboard returned ${response.status}`
-        : raw;
-    return { kind: "refused", reason };
+    return { kind: "refused", reason: plainLine(raw, `dashboard returned ${response.status}`) };
   } catch (cause) {
     return { kind: "error", message: cause instanceof Error ? cause.message : String(cause) };
   }
