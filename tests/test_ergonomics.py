@@ -742,7 +742,7 @@ def test_aliases_dispatch_to_their_verb() -> None:
     assert ergonomics.alias_ack(["BUILD", "--evidence", "pytest"], dispatcher=dispatch) == 0
     assert ergonomics.alias_commit(["README.md", "-m", "docs"], dispatcher=dispatch) == 0
     assert seen == [
-        ["arm", "--timeout", "5"],
+        ["arm", "--timeout", "5", "--max-wakes", "1"],
         ["say", "CEO", "hi"],
         ["ask", "CEO", "status?"],
         ["name"],
@@ -753,6 +753,43 @@ def test_aliases_dispatch_to_their_verb() -> None:
         ["ack", "BUILD", "--evidence", "pytest"],
         ["commit", "README.md", "-m", "docs"],
     ]
+
+
+def test_alias_arm_defaults_to_a_single_wake() -> None:
+    # syn-wait must exit on the first wake so the harness re-invokes the agent;
+    # a bare arm re-arms forever and the wake never surfaces.
+    seen: list[list[str]] = []
+
+    def dispatch(argv: Sequence[str]) -> int:
+        seen.append(list(argv or []))
+        return 0
+
+    assert ergonomics.alias_arm(["--directed-only"], dispatcher=dispatch) == 0
+    assert seen == [["arm", "--directed-only", "--max-wakes", "1"]]
+
+
+def test_alias_arm_respects_an_explicit_max_wakes() -> None:
+    # A caller who pins their own count keeps it; the default is not appended.
+    seen: list[list[str]] = []
+
+    def dispatch(argv: Sequence[str]) -> int:
+        seen.append(list(argv or []))
+        return 0
+
+    assert ergonomics.alias_arm(["--max-wakes", "5"], dispatcher=dispatch) == 0
+    assert seen == [["arm", "--max-wakes", "5"]]
+
+
+def test_alias_arm_respects_an_explicit_max_wakes_equals_form() -> None:
+    # The ``--max-wakes=N`` spelling is honoured too, so no default is injected.
+    seen: list[list[str]] = []
+
+    def dispatch(argv: Sequence[str]) -> int:
+        seen.append(list(argv or []))
+        return 0
+
+    assert ergonomics.alias_arm(["--max-wakes=3", "--directed-only"], dispatcher=dispatch) == 0
+    assert seen == [["arm", "--max-wakes=3", "--directed-only"]]
 
 
 def test_syn_ask_is_packaged_and_documented() -> None:

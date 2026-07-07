@@ -13,7 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-## [0.98.6] - 2026-07-07
+### Fixed
+- `syn-wait` now waits for a single directed message and then exits, so a harness that
+  re-invokes an agent when its background task ends is actually woken. The alias previously
+  mapped to `synapse arm` with no wake limit, which re-arms internally and never exits: the
+  wake it printed stayed in the process's block-buffered stdout and the agent was never
+  re-invoked — a waiter that held presence but woke nobody. The alias now defaults to
+  `--max-wakes 1` (an explicit `--max-wakes` is still honoured) while keeping `arm`'s
+  self-healing reconnect, so a dropped connection or a hub restart re-arms transparently and
+  only a real wake ends the wait. `syn arm` is unaffected and stays persistently armed.
 
 ### Added
 - Role-based addressing: an identity can answer to one or more `<project>/<role>` roles in

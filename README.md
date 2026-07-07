@@ -407,8 +407,13 @@ it reports the identity's presence separately from its `-rx` waiter because
 presence is not a wake loop.
 
 `syn-name`/`syn-wait`/`syn-say`/`syn-ask`/`syn-inbox`/`syn-board`/`syn-reap`/`syn-locks`/`syn-ack`/`syn-commit`
-aliases are installed too; `syn-wait` uses the same persistent auto-rearming path
-as `syn arm`. `syn reap` is the safe cleanup path for shell-hook waiter sidecars:
+aliases are installed too. `syn-wait` is the agent wake primitive: it waits for a
+single directed message and then *exits*, so the surrounding harness — which
+re-invokes the agent when its background task ends — is actually woken. It defaults
+to `--max-wakes 1` for exactly this reason, yet keeps the self-healing reconnect of
+`syn arm`, so a dropped connection or a hub restart re-arms transparently and only a
+real wake ends the wait. (`syn arm` itself stays persistently armed across many
+wakes, for an interactive terminal that reacts by other means.) `syn reap` is the safe cleanup path for shell-hook waiter sidecars:
 it only inspects this resolved identity's pidfile, and it refuses to signal a PID
 unless the live command line verifies as that exact identity's `synapse arm`
 waiter. It never pattern-kills processes. `syn locks` queries the live state
@@ -1086,7 +1091,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 462 |
 | Wire message types | 71 |
 | CLI subcommands | 140 |
-| Test functions | 5040 |
+| Test functions | 5043 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 49 |
 | GitHub Actions workflows | 12 |

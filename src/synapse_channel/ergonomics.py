@@ -565,8 +565,22 @@ def alias_arm(
     *,
     dispatcher: Callable[[list[str]], int] = main,
 ) -> int:
-    """Entry point for the ``syn-wait`` console alias."""
-    return dispatcher(["arm", *(sys.argv[1:] if argv is None else argv)])
+    """Entry point for the ``syn-wait`` console alias.
+
+    ``syn-wait`` is the agent wake primitive: it is launched as a background task
+    and must *exit* the moment a directed message arrives, because the surrounding
+    harness re-invokes the agent when the background task ends — that exit is the
+    wake. Plain ``arm`` re-arms internally after every wake and never exits, so its
+    printed wake stays in the process's block-buffered stdout and the agent is
+    never re-invoked: a waiter that holds presence but wakes nobody. Default to
+    ``--max-wakes 1`` so the first genuine wake ends the wait, unless the caller
+    pins a count of their own. The self-healing reconnect is preserved — a dropped
+    connection or a hub restart re-arms and keeps waiting; only a real wake exits.
+    """
+    passed = list(sys.argv[1:] if argv is None else argv)
+    if not any(item == "--max-wakes" or item.startswith("--max-wakes=") for item in passed):
+        passed = [*passed, "--max-wakes", "1"]
+    return dispatcher(["arm", *passed])
 
 
 def alias_say(
