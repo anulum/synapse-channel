@@ -130,3 +130,10 @@ def test_optional_int_parsing() -> None:
     assert SynapseHub._optional_int({"epoch": True}, "epoch") is None
     assert SynapseHub._optional_int({"epoch": "x"}, "epoch") is None
     assert SynapseHub._optional_int({}, "epoch") is None
+    # A non-finite float (a JSON 1e400 decodes to inf) is treated as absent: int()
+    # of it raises, which would otherwise escape the frame handler as a crash.
+    assert SynapseHub._optional_int({"epoch": float("inf")}, "epoch") is None
+    assert SynapseHub._optional_int({"epoch": float("-inf")}, "epoch") is None
+    assert SynapseHub._optional_int({"epoch": float("nan")}, "epoch") is None
+    # A large integer is finite and lossless (Python ints are arbitrary precision).
+    assert SynapseHub._optional_int({"epoch": 10**400}, "epoch") == 10**400

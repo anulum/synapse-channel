@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
@@ -49,6 +50,22 @@ async def test_claim_with_invalid_ttl_falls_back_to_default_end_to_end() -> None
             await alpha.agent.send_message("claim", task_id="T1", ttl_seconds="abc")
             await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
             assert hub.state.claims["T1"].owner == "ALPHA"
+        finally:
+            await close_agents(alpha)
+
+
+async def test_claim_with_an_overflowing_integer_ttl_falls_back_to_default_end_to_end() -> None:
+    # A 400-digit ttl is finite JSON, but float() of it raises OverflowError; the old
+    # bare conversion escaped the frame handler and dropped the sender's socket. The
+    # claim must now be granted with the hub's finite default lease instead.
+    async with running_hub() as (hub, uri):
+        alpha = await connect_agent("ALPHA", uri)
+        try:
+            await alpha.agent.send_message("claim", task_id="T1", ttl_seconds=10**400)
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            claim = hub.state.claims["T1"]
+            assert claim.owner == "ALPHA"
+            assert math.isfinite(claim.lease_expires_at)
         finally:
             await close_agents(alpha)
 

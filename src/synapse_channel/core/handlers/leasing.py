@@ -20,6 +20,7 @@ never acted upon.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -114,10 +115,17 @@ def apply_claim(hub: SynapseHub, claimant: str, body: Mapping[str, Any]) -> Clai
     if ttl_seconds is None:
         ttl_val = None
     else:
+        # A non-numeric, non-finite, or double-overflowing ttl falls back to the
+        # hub's default lease duration (``None``) rather than raising out of the
+        # frame handler or planting an ``inf``/``nan`` lease expiry — an ``inf``
+        # lease could never be taken over (a permanent task lock) and a ``nan`` one
+        # would read as instantly expired.
         try:
-            ttl_val = float(ttl_seconds)
-        except (TypeError, ValueError):
+            candidate = float(ttl_seconds)
+        except (TypeError, ValueError, OverflowError):
             ttl_val = None
+        else:
+            ttl_val = candidate if math.isfinite(candidate) else None
 
     ok, message = hub.state.claim(
         claimant,

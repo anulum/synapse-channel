@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import ssl
 import time
 import uuid
@@ -721,7 +722,9 @@ class SynapseHub:
         """Extract an optional integer field from a message, or ``None``.
 
         Booleans and non-numeric values are treated as absent so a stray ``true``
-        is never read as a guard value.
+        is never read as a guard value; a non-finite float (``inf``/``nan``, which a
+        JSON ``1e400`` decodes to) is treated as absent too, since ``int()`` of it
+        raises and would otherwise escape the frame handler as an unhandled error.
 
         Parameters
         ----------
@@ -733,10 +736,13 @@ class SynapseHub:
         Returns
         -------
         int or None
-            The integer value, or ``None`` when the field is absent or not numeric.
+            The integer value, or ``None`` when the field is absent, not numeric,
+            or a non-finite float.
         """
         value = data.get(key)
         if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        if isinstance(value, float) and not math.isfinite(value):
             return None
         return int(value)
 

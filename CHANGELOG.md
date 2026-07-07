@@ -14,6 +14,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Fixed
+- A claim's `ttl_seconds` and a frame's `epoch`/`expected_version` are now guarded against non-finite and
+  double-overflowing values. The claim handler converted `ttl_seconds` with a `float()` that caught only
+  `TypeError`/`ValueError`, so a 400-digit integer raised an uncaught `OverflowError` out of the frame
+  handler (dropping the socket), and a `1e400` (or `"inf"`) became an `inf` lease expiry — a task claimed
+  with an `inf` ttl could never be taken over (a permanent lock), while a `nan` ttl read as instantly
+  expired. `SynapseHub._optional_int`, which reads `epoch`/`expected_version` on the claim/renew/release/
+  checkpoint frames, passed a non-finite float straight to `int()`, which raises. Both now treat a
+  non-numeric, non-finite, or overflowing value as absent: the ttl falls back to the hub's default lease
+  duration and the optional int to `None`. Found by live fault-injection of the claim path; part of the
+  non-finite-number family below.
 - A chat frame's client-supplied `timestamp` is now coerced to the hub clock when it is not a usable
   instant, instead of crashing the handler or broadcasting a non-finite time. The handler stamped the
   message with a bare `float(data.get("timestamp") or time.time())`, so a non-numeric timestamp (a string
