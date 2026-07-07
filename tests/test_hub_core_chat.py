@@ -87,7 +87,7 @@ async def test_declared_role_is_bound_reaches_its_holder_and_shows_in_who() -> N
             assert receipt["delivered"] is True
             assert "proj/claude" in receipt["recipients"]
 
-    assert all(entry.target != "proj/coordinator" for entry in hub.dead_letters.snapshot())
+    assert all(entry["target"] != "proj/coordinator" for entry in hub.dead_letters.snapshot())
 
 
 async def test_chat_preserves_supplied_timestamp_and_increments_seq_end_to_end() -> None:
