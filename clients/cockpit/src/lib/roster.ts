@@ -38,6 +38,8 @@ export interface RosterEntry {
    * the agent is reachable-in-name only and will not wake on messages.
    */
   readonly wakerMissing: boolean;
+  /** Roles the agent answers to, as the hub's registry binds them. */
+  readonly roles: readonly string[];
 }
 
 function conflictOwners(snapshot: FleetSnapshot): ReadonlySet<string> {
@@ -109,6 +111,7 @@ export function deriveRoster(snapshot: FleetSnapshot | null): RosterEntry[] {
       paths,
       inConflict: inConflict.has(agent),
       wakerMissing: missingWaiters.has(`${agent}-rx`),
+      roles: snapshot.agent_roles[agent] ?? [],
     });
   }
 

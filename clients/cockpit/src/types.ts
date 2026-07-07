@@ -153,6 +153,8 @@ export interface RiskView {
  */
 export interface FleetSnapshot {
   readonly online_agents: readonly string[];
+  /** Roles each agent answers to, {} when the hub (or dashboard) predates them. */
+  readonly agent_roles: Readonly<Record<string, readonly string[]>>;
   /** Hub package version, "" when the hub predates the field. */
   readonly hub_version: string;
   /** Configuration-posture fingerprint, "" when unavailable. */

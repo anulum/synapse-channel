@@ -484,6 +484,11 @@ body {
   padding: 0 4px;
 }
 
+.roster-row__tag--role {
+  /* A binding, not a warning: the info edge separates it from the amber tags. */
+  border-color: var(--info);
+}
+
 .roster-row__tag--warn {
   color: var(--ink);
   border-color: var(--warn-trail);

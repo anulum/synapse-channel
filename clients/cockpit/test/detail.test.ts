@@ -50,6 +50,7 @@ function rosterEntry(agent: string): RosterEntry {
     paths: [],
     inConflict: false,
     wakerMissing: false,
+  roles: [],
   };
 }
 

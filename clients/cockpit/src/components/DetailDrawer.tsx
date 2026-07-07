@@ -102,6 +102,10 @@ export function DetailDrawer({ agent, task, onClose, onFilterLog, onTrace }: Det
               <span className={`drawer__fact${agent.entry?.online === true ? " drawer__fact--ok" : " drawer__fact--warn"}`}>
                 {agent.entry === null ? "not in roster" : agent.entry.online ? "online" : "offline"}
               </span>
+              {agent.entry !== null &&
+                agent.entry.roles.map((role) => (
+                  <span key={role} className="drawer__fact">{`role: ${role}`}</span>
+                ))}
               {agent.entry !== null && agent.entry.wakerMissing === true && (
                 <span className="drawer__fact drawer__fact--warn">waker missing</span>
               )}

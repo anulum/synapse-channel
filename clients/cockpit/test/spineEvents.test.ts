@@ -30,6 +30,7 @@ function snapshotOf(overrides: SnapshotOverrides = {}): FleetSnapshot {
     hub_version: "",
     config_epoch: "",
     online_agents: [...(overrides.live ?? [])],
+  agent_roles: {},
     state: {},
     board: overrides.board ?? {},
     manifest: [],

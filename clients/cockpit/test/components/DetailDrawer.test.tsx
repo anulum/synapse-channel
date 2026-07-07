@@ -58,6 +58,7 @@ const AGENT: AgentDetail = {
     paths: [],
     inConflict: true,
     wakerMissing: true,
+    roles: ["reviewer"],
   },
   claims: [claimView("t-1", { paths: ["src/a.py"] }), claimView("t-2", { stale: true })],
   deadLetters: [
@@ -100,6 +101,7 @@ describe("DetailDrawer", () => {
     expect(screen.getByText("online")).toBeTruthy();
     expect(screen.getByText("waker missing")).toBeTruthy();
     expect(screen.getByText("in conflict")).toBeTruthy();
+    expect(screen.getByText("role: reviewer")).toBeTruthy();
     expect(screen.getByText("claims held · 2")).toBeTruthy();
     expect(screen.getByText("held · src/a.py")).toBeTruthy();
     expect(screen.getByText("stale")).toBeTruthy();

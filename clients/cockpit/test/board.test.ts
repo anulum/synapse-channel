@@ -32,6 +32,7 @@ function snapshotOf(options: {
     hub_version: "",
     config_epoch: "",
     online_agents: [],
+  agent_roles: {},
     state: {},
     board: options.board ?? {},
     manifest: [],

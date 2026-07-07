@@ -195,3 +195,17 @@ describe("deriveRoster", () => {
     expect(rows[0]?.status).toBe("holding");
   });
 });
+
+describe("deriveRoster roles", () => {
+  it("binds the hub's roles to their rows and defaults the unbound to none", () => {
+    const snapshot = parseSnapshot({
+      online_agents: ["a", "b"],
+      agent_roles: { a: ["reviewer", 7, "captain"], b: "not-a-list" },
+      fleet: { agents: { live: ["a", "b"] } },
+    });
+    const rows = deriveRoster(snapshot);
+    const byName = new Map(rows.map((row) => [row.agent, row.roles]));
+    expect(byName.get("a")).toEqual(["reviewer", "captain"]);
+    expect(byName.get("b")).toEqual([]);
+  });
+});

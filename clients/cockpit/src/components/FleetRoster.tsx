@@ -72,6 +72,15 @@ function RosterRow({ entry, onInspect }: RosterRowProps): JSX.Element {
         ) : (
           <span className="roster-row__count roster-row__count--none">no claims</span>
         )}
+        {entry.roles.map((role) => (
+          <span
+            key={role}
+            className="roster-row__tag roster-row__tag--role"
+            title={`answers to the role '${role}'`}
+          >
+            {role}
+          </span>
+        ))}
         {entry.wakerMissing && (
           <span className="roster-row__tag roster-row__tag--warn">waker missing</span>
         )}

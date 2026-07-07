@@ -31,6 +31,7 @@ function entry(agent: string, overrides: Partial<RosterEntry> = {}): RosterEntry
     paths: [],
     inConflict: false,
     wakerMissing: false,
+    roles: [],
     ...overrides,
   };
 }
@@ -89,5 +90,18 @@ describe("FleetRoster", () => {
     cleanup();
     render(<FleetRoster roster={[entry("quantum/claude")]} waiters={0} />);
     expect(document.querySelector(".roster-row--link")).toBeNull();
+  });
+});
+
+describe("FleetRoster roles", () => {
+  it("chips each bound role apart from the warning tags", () => {
+    render(
+      <FleetRoster
+        roster={[entry("quantum/claude", { roles: ["reviewer", "release-captain"] })]}
+        waiters={0}
+      />,
+    );
+    expect(screen.getByText("reviewer").className).toContain("roster-row__tag--role");
+    expect(screen.getByText("release-captain")).toBeTruthy();
   });
 });

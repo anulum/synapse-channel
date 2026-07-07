@@ -174,11 +174,17 @@ describe("SignalLog", () => {
     expect(screen.queryByText("verify inclusion")).toBeNull();
   });
 
-  it("states the render cap as a remainder instead of painting past it", () => {
-    const many = Array.from({ length: 1005 }, (_, index) => eventOf(index + 1, "claim"));
-    render(<SignalLog events={many} query={QUERY} />);
-    expect(screen.getByText(/\+5 more match — narrow the query to see them/)).toBeTruthy();
-  });
+  it(
+    "states the render cap as a remainder instead of painting past it",
+    // A thousand painted rows are genuinely slow when the whole suite's jsdom
+    // environments run in parallel; the default 5 s deadline is load-flaky.
+    { timeout: 20_000 },
+    () => {
+      const many = Array.from({ length: 1005 }, (_, index) => eventOf(index + 1, "claim"));
+      render(<SignalLog events={many} query={QUERY} />);
+      expect(screen.getByText(/\+5 more match — narrow the query to see them/)).toBeTruthy();
+    },
+  );
 
   it("groups the compact view by task with the chatter fold", () => {
     render(

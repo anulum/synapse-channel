@@ -161,6 +161,21 @@ function parseSignal(value: unknown): RiskSignal {
   };
 }
 
+/**
+ * Read the hub's role bindings ({agent: [role, ...]}), tolerant field by
+ * field. A dashboard from before the pass-through yields an empty map; a
+ * malformed entry contributes nothing rather than a crash.
+ */
+function parseAgentRoles(value: unknown): Record<string, readonly string[]> {
+  const record = asRecord(value);
+  const roles: Record<string, readonly string[]> = {};
+  for (const [agent, bound] of Object.entries(record)) {
+    if (!Array.isArray(bound)) continue;
+    roles[agent] = bound.filter((role): role is string => typeof role === "string");
+  }
+  return roles;
+}
+
 function parseRisk(value: unknown): RiskView {
   const risk = asRecord(value);
   return {
@@ -180,6 +195,7 @@ export function parseSnapshot(raw: unknown): FleetSnapshot | null {
   const payload = asRecord(raw);
   return {
     online_agents: asStringArray(payload["online_agents"]),
+    agent_roles: parseAgentRoles(payload["agent_roles"]),
     hub_version: typeof payload["hub_version"] === "string" ? payload["hub_version"] : "",
     config_epoch: typeof payload["config_epoch"] === "string" ? payload["config_epoch"] : "",
     state: asRecord(payload["state"]),
