@@ -498,7 +498,8 @@ class Blackboard:
         dict[str, Any]
             Mapping with ``tasks`` (sorted by id), ``ready`` (ready task
             ids), and ``progress`` (the retained notes in order); under a
-            cap also ``total_tasks`` and ``truncated``.
+            cap also ``total_tasks``, ``truncated``, and ``task_cap`` (the
+            applied bound, so a consumer can render a "kept / cap" gauge).
         """
         ordered = sorted(self.tasks.values(), key=lambda t: t.task_id)
         ready = [task.task_id for task in self.ready_tasks()]
@@ -524,4 +525,5 @@ class Blackboard:
             "progress": notes,
             "total_tasks": len(ordered),
             "truncated": len(kept_ordered) < len(ordered),
+            "task_cap": cap,
         }

@@ -312,6 +312,7 @@ def test_snapshot_without_a_cap_carries_no_bound_metadata() -> None:
     snap = board.snapshot()
     assert "total_tasks" not in snap
     assert "truncated" not in snap
+    assert "task_cap" not in snap
 
 
 def test_capped_snapshot_keeps_live_tasks_ahead_of_terminal_ones() -> None:
@@ -326,6 +327,7 @@ def test_capped_snapshot_keeps_live_tasks_ahead_of_terminal_ones() -> None:
     assert [t["task_id"] for t in snap["tasks"]] == ["live-1", "live-2"]
     assert snap["total_tasks"] == 3
     assert snap["truncated"] is True
+    assert snap["task_cap"] == 2
 
 
 def test_capped_snapshot_trims_live_tasks_by_recency() -> None:
@@ -365,6 +367,7 @@ def test_capped_snapshot_under_the_cap_is_complete_and_says_so() -> None:
     assert [t["task_id"] for t in snap["tasks"]] == ["A", "B"]
     assert snap["total_tasks"] == 2
     assert snap["truncated"] is False
+    assert snap["task_cap"] == 10
 
 
 def test_capped_snapshot_always_lists_every_ready_id() -> None:

@@ -13,6 +13,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- The capped board snapshot now carries the applied bound as `task_cap`, alongside the existing
+  `total_tasks` and `truncated`, so a dashboard or cockpit can render a "kept / cap" gauge
+  instead of only knowing the page was trimmed. Absent when the board is served without a cap.
+
 ### Changed
 - `syn-wait` now enables `--mailbox` by default, so every waiter launched through the alias
   recovers the directed messages that arrived while it was disconnected (a reconnect or re-arm
