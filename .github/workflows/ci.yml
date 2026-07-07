@@ -60,8 +60,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
       # SoftHSM2 provides a PKCS#11 module and swtpm a software TPM 2.0, so the at-rest hardware
       # key backends run (not skip); libtss2-dev builds tpm2-pytss (sdist-only, no wheel).
+      # The runner ships Microsoft/Azure apt sources whose signing intermittently breaks
+      # ("repository is no longer signed"), which fails apt-get update; none of the packages below
+      # come from them, so drop those sources first to keep the setup resilient to that flake.
       - run: >-
-          sudo apt-get update && sudo apt-get install -y
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
+          /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/azure-cli.sources
+          && sudo apt-get update && sudo apt-get install -y
           softhsm2 swtpm swtpm-tools tpm2-tools libtss2-dev
       - run: python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
       - run: python -m pip install -e . --no-deps
