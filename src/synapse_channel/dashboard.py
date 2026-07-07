@@ -26,7 +26,7 @@ import secrets
 import threading
 import time
 from collections.abc import Callable, Coroutine, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -109,6 +109,11 @@ class DashboardSnapshot:
     config_epoch : str
         Fingerprint of the hub's configuration posture, for the same indicator.
         Empty when the hub predates the field or was built without a config.
+    agent_roles : dict[str, list[str]]
+        The ``<project>/<role>`` roles each online agent answers to, mirrored from
+        the hub's ``who`` snapshot so the cockpit can show role bindings alongside
+        the roster. Empty for an agent that declared none, or for a hub that
+        predates role addressing.
     """
 
     online_agents: list[str]
@@ -117,6 +122,7 @@ class DashboardSnapshot:
     manifest: ManifestCards
     hub_version: str = ""
     config_epoch: str = ""
+    agent_roles: dict[str, list[str]] = field(default_factory=dict)
 
     def to_dict(self, *, a2a_state_file: str | Path | None = None) -> dict[str, Any]:
         """Return a JSON-serialisable dictionary for HTTP responses.
@@ -252,6 +258,25 @@ def _resolve_dashboard_token(
     return None, False
 
 
+def _agent_roles_from_who(who: Mapping[str, Any]) -> dict[str, list[str]]:
+    """Return the roster's role bindings from a ``who`` snapshot, defensively.
+
+    Each agent name maps to the ``<project>/<role>`` names it answers to. A
+    non-mapping ``agent_roles`` field yields an empty map, a non-list binding for
+    one agent is dropped, and names and roles are string-coerced — so a malformed
+    or version-skewed hub snapshot degrades to an empty or partial map rather than
+    propagating bad types into the served dashboard document.
+    """
+    raw = who.get("agent_roles", {})
+    if not isinstance(raw, Mapping):
+        return {}
+    return {
+        str(name): [str(role) for role in roles]
+        for name, roles in raw.items()
+        if isinstance(roles, list)
+    }
+
+
 async def fetch_dashboard_snapshot(
     *,
     uri: str,
@@ -324,6 +349,7 @@ async def fetch_dashboard_snapshot(
             ],
             hub_version=str(who.get("hub_version", "")),
             config_epoch=str(who.get("config_epoch", "")),
+            agent_roles=_agent_roles_from_who(who),
         )
     finally:
         agent.running = False

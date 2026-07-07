@@ -17,9 +17,16 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import pytest
+from websockets.asyncio.client import connect
 
 import synapse_channel.dashboard as dashboard_module
-from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import (
+    AgentHandle,
+    close_agents,
+    connect_agent,
+    read_until_type,
+    running_hub,
+)
 from synapse_channel import cli
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.hub_config import HubConfig, HubLimits, config_fingerprint
@@ -30,6 +37,7 @@ from synapse_channel.core.persistence import EventStore
 from synapse_channel.dashboard import (
     DashboardServer,
     DashboardSnapshot,
+    _agent_roles_from_who,
     fetch_dashboard_snapshot,
     render_dashboard_html,
     start_dashboard_server,
@@ -2074,3 +2082,68 @@ def test_dashboard_parser_wires_operator_flags() -> None:
     default = parser.parse_args(["dashboard"])
     assert default.operator is False
     assert default.operator_name is None
+
+
+def test_agent_roles_from_who_coerces_and_drops_malformed_bindings() -> None:
+    who = {
+        "agent_roles": {
+            "proj/claude": ["proj/coordinator", "proj/git"],
+            "proj/bob": "not-a-list",  # dropped: a binding must be a list
+            123: [456],  # name and role are string-coerced
+        }
+    }
+    assert _agent_roles_from_who(who) == {
+        "proj/claude": ["proj/coordinator", "proj/git"],
+        "123": ["456"],
+    }
+
+
+def test_agent_roles_from_who_is_empty_for_a_missing_or_non_mapping_field() -> None:
+    assert _agent_roles_from_who({}) == {}
+    assert _agent_roles_from_who({"agent_roles": ["not", "a", "mapping"]}) == {}
+
+
+def test_dashboard_snapshot_to_dict_carries_agent_roles_top_level() -> None:
+    snapshot = DashboardSnapshot(
+        online_agents=["proj/claude"],
+        state={},
+        board={},
+        manifest=[],
+        agent_roles={"proj/claude": ["proj/coordinator"]},
+    )
+    payload = snapshot.to_dict()
+    # top-level, next to online_agents, so the cockpit can join roster to roles
+    assert payload["agent_roles"] == {"proj/claude": ["proj/coordinator"]}
+    assert "proj/claude" in payload["online_agents"]
+
+
+async def test_fetch_dashboard_snapshot_carries_agent_roles_from_who() -> None:
+    # A role-declaring agent's binding reaches the dashboard snapshot (and its JSON
+    # document) via the who snapshot, so the cockpit can show role chips.
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        async with connect(uri) as holder_ws:
+            await read_until_type(holder_ws, "welcome")
+            await holder_ws.send(
+                json.dumps(
+                    {
+                        "sender": "proj/holder",
+                        "type": "heartbeat",
+                        "target": "System",
+                        "payload": "online",
+                        "roles": ["proj/coordinator"],
+                    }
+                )
+            )
+            # confirm the binding is live before querying, so there is no race
+            await holder_ws.send(json.dumps({"sender": "proj/holder", "type": "who_request"}))
+            who = await read_until_type(holder_ws, "who_snapshot")
+            assert who["agent_roles"]["proj/holder"] == ["proj/coordinator"]
+            snapshot = await fetch_dashboard_snapshot(
+                uri=uri,
+                name="SYNAPSE-CHANNEL/dashboard",
+                token=None,
+                ready_timeout=1.0,
+                response_timeout=1.0,
+            )
+    assert snapshot.agent_roles["proj/holder"] == ["proj/coordinator"]
+    assert snapshot.to_dict()["agent_roles"]["proj/holder"] == ["proj/coordinator"]
