@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.7] - 2026-07-07
+
 ### Fixed
 - `syn-wait` now waits for a single directed message and then exits, so a harness that
   re-invokes an agent when its background task ends is actually woken. The alias previously
