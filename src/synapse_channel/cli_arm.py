@@ -14,10 +14,12 @@ import asyncio
 import contextlib
 import os
 from collections.abc import Awaitable, Callable, Coroutine
+from pathlib import Path
 from typing import Any
 
 from synapse_channel.cli_messaging import AgentFactory, _wait
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
+from synapse_channel.mailbox_cursor import cursor_path
 from synapse_channel.waiter_identity import waiter_name
 
 WaitRunner = Callable[..., Awaitable[int]]
@@ -81,6 +83,8 @@ async def _arm(
     owner_pid: int | None = None,
     owner_probe: PidProbe = pid_alive,
     owner_check_interval: float = OWNER_CHECK_INTERVAL_SECONDS,
+    mailbox: bool = False,
+    mailbox_cursor_path: Path | None = None,
 ) -> int:
     """Keep a directed waiter armed until interrupted, displaced, or orphaned.
 
@@ -96,6 +100,12 @@ async def _arm(
     ``roles`` are the full ``<project>/<role>`` names this waiter also answers to,
     threaded into every re-armed wait so a message addressed to a role it holds
     wakes it across reconnects, not only a message to its instance name.
+
+    With ``mailbox`` set, each re-armed wait resumes from a per-identity cursor
+    (``mailbox_cursor_path``) and asks the hub to replay the directed messages that
+    landed while it was disconnected, so a message that arrived in a reconnect or
+    re-arm gap wakes the waiter on the next connect instead of waiting unread — and
+    the shared cursor keeps a re-arm from being replayed the same backlog twice.
     """
     if owner_pid is not None and not owner_probe(owner_pid):
         print(f"[{name}] owner pid {owner_pid} is already gone; not arming.")
@@ -113,6 +123,8 @@ async def _arm(
                 wake_jitter=wake_jitter,
                 agent_factory=agent_factory,
                 token=token,
+                mailbox=mailbox,
+                mailbox_cursor_path=mailbox_cursor_path,
             )
         )
         if owner_pid is None:
@@ -158,6 +170,10 @@ def _cmd_arm(
     for_name = args.for_name or args.name
     connect_name = args.name if args.name != for_name else waiter_name(args.name)
     roles = tuple(r.strip() for r in (getattr(args, "role", None) or ()) if r.strip())
+    # In mailbox mode the cursor is keyed by the identity the waiter waits on (for_name),
+    # not the -rx connection name, so every re-arm of the same identity shares one cursor.
+    mailbox = bool(getattr(args, "mailbox", False))
+    mailbox_cursor_path = cursor_path(for_name) if mailbox else None
     try:
         return async_runner(
             arm_runner(
@@ -171,6 +187,8 @@ def _cmd_arm(
                 max_wakes=args.max_wakes,
                 token=args.token,
                 owner_pid=args.owner_pid,
+                mailbox=mailbox,
+                mailbox_cursor_path=mailbox_cursor_path,
             )
         )
     except KeyboardInterrupt:
@@ -211,6 +229,14 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
         metavar="PROJECT/ROLE",
         help="A <project>/<role> name you also answer to (repeatable), so a message "
         "addressed to the role wakes you across reconnects, not only your instance name.",
+    )
+    arm.add_argument(
+        "--mailbox",
+        action="store_true",
+        default=False,
+        help="Also wake on directed messages that arrived while disconnected (a reconnect or "
+        "re-arm gap): the hub replays them on connect. The resume cursor is persisted per "
+        "identity so a re-arm is not replayed the whole backlog again.",
     )
     arm.add_argument(
         "--wake-jitter",

@@ -11,12 +11,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 from contextlib import AbstractAsyncContextManager
+from pathlib import Path
 
 import pytest
 
 from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli_messaging
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.persistence import EventStore
+from synapse_channel.mailbox_cursor import load_cursor
 
 
 async def _wait_for_presence(observer: AgentHandle, name: str) -> None:
@@ -479,3 +482,60 @@ async def test_takeover_refused_at_handshake_yields(
     )
     assert code == 4
     assert "takeover" in capsys.readouterr().out
+
+
+async def test_wait_mailbox_replays_a_gap_message_and_persists_the_cursor(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A directed message to BOB lands while no BOB waiter is connected (the reconnect gap).
+    # A mailbox waiter connecting as BOB-rx is replayed the message, wakes on it, and writes
+    # the advanced cursor — the gap message is not lost until an unrelated wake drains it.
+    store = EventStore(tmp_path / "events.db")
+    cursor = tmp_path / "cursor"
+    async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
+        await _send_chat(uri, "SENDER", "BOB", "gap-message")
+        code = await cli_messaging._wait(
+            uri=uri,
+            name="BOB-rx",
+            for_name="BOB",
+            timeout=2.0,
+            directed_only=True,
+            mailbox=True,
+            mailbox_cursor_path=cursor,
+        )
+    store.close()
+    assert code == 0
+    assert "gap-message" in capsys.readouterr().out
+    assert load_cursor(cursor) > 0
+
+
+async def test_wait_mailbox_resumes_from_the_persisted_cursor(tmp_path: Path) -> None:
+    # After a first mailbox waiter consumes the gap message and persists its cursor, a second
+    # waiter seeded from that cursor is not replayed the same message again — it times out with
+    # nothing new rather than waking on stale backlog, which is what stops a re-arm wake storm.
+    store = EventStore(tmp_path / "events.db")
+    cursor = tmp_path / "cursor"
+    async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
+        await _send_chat(uri, "SENDER", "BOB", "old-gap")
+        first = await cli_messaging._wait(
+            uri=uri,
+            name="BOB-rx",
+            for_name="BOB",
+            timeout=2.0,
+            directed_only=True,
+            mailbox=True,
+            mailbox_cursor_path=cursor,
+        )
+        assert first == 0
+        assert load_cursor(cursor) > 0
+        second = await cli_messaging._wait(
+            uri=uri,
+            name="BOB-rx",
+            for_name="BOB",
+            timeout=0.5,
+            directed_only=True,
+            mailbox=True,
+            mailbox_cursor_path=cursor,
+        )
+    store.close()
+    assert second == 2

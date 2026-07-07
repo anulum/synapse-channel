@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import random
+from pathlib import Path
 from typing import Any
 
 from synapse_channel.cli_messaging_types import AgentFactory, JitterFunction
@@ -22,6 +23,7 @@ from synapse_channel.connect_failures import (
     is_takeover_refused_close,
 )
 from synapse_channel.core.protocol import MessageType, wakes
+from synapse_channel.mailbox_cursor import load_cursor, save_cursor
 from synapse_channel.waiter_identity import waiter_name
 
 
@@ -39,6 +41,8 @@ async def _wait(
     token: str | None = None,
     ready_timeout: float = 5.0,
     poll_interval: float = 0.1,
+    mailbox: bool = False,
+    mailbox_cursor_path: Path | None = None,
 ) -> int:
     """Block until one message addressed to ``for_name`` arrives, print it, and exit.
 
@@ -80,6 +84,17 @@ async def _wait(
         Seconds to wait for the hub connection readiness event.
     poll_interval : float, optional
         Seconds to wait between wake checks.
+    mailbox : bool, optional
+        When ``True``, the waiter runs in mailbox mode: it declares ``for_name`` as
+        the identity to replay for, so a directed message that arrived while it was
+        disconnected (a reconnect or re-arm gap) is replayed on connect and wakes it,
+        instead of sitting unread until an unrelated wake. Off by default.
+    mailbox_cursor_path : pathlib.Path or None, optional
+        File holding the ``since_seq`` cursor to resume the mailbox from, read on
+        entry and rewritten from the agent's advanced cursor on exit. Persisting it
+        across re-arms is what stops each fresh waiter process from being replayed —
+        and waking on — the whole retained backlog again. ``None`` disables
+        persistence (the mailbox replays the whole window each connect).
 
     Returns
     -------
@@ -111,9 +126,23 @@ async def _wait(
             received.append(data)
 
     # A re-arming waiter takes over its own name, evicting a ghost holder of
-    # ``<name>-rx`` instead of failing with a name conflict.
+    # ``<name>-rx`` instead of failing with a name conflict. In mailbox mode it
+    # resumes from the persisted cursor and declares ``for_name`` as the identity to
+    # replay for, since it connects under an ``-rx`` name but waits on the bare one.
+    since_seq = (
+        load_cursor(mailbox_cursor_path) if mailbox and mailbox_cursor_path is not None else 0
+    )
     agent = agent_factory(
-        name, collect, uri=uri, verbose=False, token=token, takeover=True, roles=roles
+        name,
+        collect,
+        uri=uri,
+        verbose=False,
+        token=token,
+        takeover=True,
+        roles=roles,
+        mailbox=mailbox,
+        mailbox_since_seq=since_seq,
+        mailbox_for=for_name if mailbox else "",
     )
     conn_task = asyncio.create_task(agent.connect())
     try:
@@ -167,6 +196,10 @@ async def _wait(
     finally:
         agent.running = False
         conn_task.cancel()
+        if mailbox and mailbox_cursor_path is not None:
+            # Persist the cursor the agent advanced (past any replayed or live frames)
+            # so the next re-arm resumes from here instead of re-replaying the backlog.
+            save_cursor(mailbox_cursor_path, agent.mailbox_cursor)
 
 
 def _cmd_wait(args: argparse.Namespace) -> int:

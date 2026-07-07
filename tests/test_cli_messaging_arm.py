@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from collections.abc import Coroutine
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -365,3 +366,92 @@ def test_cmd_arm_forwards_the_owner_pid() -> None:
     )
     assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=run_once) == 0
     assert captured["owner_pid"] == 4321
+
+
+def test_cmd_arm_mailbox_derives_a_cursor_keyed_by_for_name() -> None:
+    captured: dict[str, Any] = {}
+
+    async def arm_once(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 0
+
+    def run_once(coro: Coroutine[Any, Any, int]) -> int:
+        return asyncio.run(coro)
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="proj/agent",
+        for_name=None,
+        directed_only=True,
+        wake_jitter=0.0,
+        reconnect_delay=0.0,
+        max_wakes=None,
+        token=None,
+        owner_pid=None,
+        mailbox=True,
+    )
+    assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=run_once) == 0
+    assert captured["mailbox"] is True
+    # The cursor is keyed by for_name (the waited-on identity), not the -rx connection name.
+    assert captured["mailbox_cursor_path"] is not None
+    assert captured["mailbox_cursor_path"].name == "proj%2Fagent"
+
+
+def test_cmd_arm_without_mailbox_threads_no_cursor() -> None:
+    captured: dict[str, Any] = {}
+
+    async def arm_once(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 0
+
+    def run_once(coro: Coroutine[Any, Any, int]) -> int:
+        return asyncio.run(coro)
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="B",
+        for_name=None,
+        directed_only=True,
+        wake_jitter=0.0,
+        reconnect_delay=0.0,
+        max_wakes=None,
+        token=None,
+        owner_pid=None,
+        mailbox=False,
+    )
+    assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=run_once) == 0
+    assert captured["mailbox"] is False
+    assert captured["mailbox_cursor_path"] is None
+
+
+async def test_arm_passes_mailbox_and_cursor_to_each_wait(tmp_path: Path) -> None:
+    captured: dict[str, Any] = {}
+    cursor = tmp_path / "cursor"
+
+    async def wait_once(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 4  # a takeover ends the loop after one wait
+
+    code = await cli_arm._arm(
+        uri="ws://h",
+        name="B-rx",
+        for_name="B",
+        reconnect_delay=0.0,
+        wait_runner=wait_once,
+        mailbox=True,
+        mailbox_cursor_path=cursor,
+    )
+    assert code == 0
+    assert captured["mailbox"] is True
+    assert captured["mailbox_cursor_path"] == cursor
+
+
+def test_add_parser_registers_the_mailbox_flag() -> None:
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers()
+    cli_arm.add_parser(sub)
+    armed = parser.parse_args(["arm", "--name", "proj/agent", "--mailbox", "--max-wakes", "1"])
+    assert armed.mailbox is True
+    assert armed.func is cli_arm._cmd_arm
+    plain = parser.parse_args(["arm", "--name", "X"])
+    assert plain.mailbox is False

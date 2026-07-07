@@ -61,6 +61,13 @@ All notable changes to this project are documented here.
   name receives the messages directed at its bare identity rather than at the `-rx` name it
   connects under. Absent or blank, the hub replays the backlog for the connection name itself,
   unchanged; roles are still read from the connection the client bound them to.
+- `synapse arm --mailbox` wakes a persistent waiter on directed messages that arrived while it
+  was disconnected. On each connect the waiter resumes from a per-identity `since_seq` cursor
+  and asks the hub to replay the directed messages it missed during a reconnect or re-arm gap,
+  so a message that landed in that gap wakes it on the next connect instead of waiting unread
+  until an unrelated wake. The cursor is persisted under `~/synapse/mailbox-cursor/`, keyed by
+  the waited-on identity, so a re-arm resumes where it stopped rather than being replayed — and
+  woken by — the whole retained backlog again. Off by default; a plain `arm` is unchanged.
 
 ## [0.98.6] - 2026-07-07
 
