@@ -112,8 +112,8 @@ class EventStore:
         *,
         ts: float | None = None,
         durable: bool = False,
-    ) -> None:
-        """Append one event to the log.
+    ) -> int:
+        """Append one event to the log and return its assigned sequence number.
 
         Parameters
         ----------
@@ -127,17 +127,26 @@ class EventStore:
             When ``True`` the commit is synced at ``synchronous=FULL`` so it
             survives an OS crash; when ``False`` it commits at ``NORMAL`` (durable
             only against an application crash). Defaults to ``False``.
+
+        Returns
+        -------
+        int
+            The monotonic ``seq`` the row was assigned (the autoincrement primary
+            key). It is durable and never reused across restarts — unlike the
+            in-memory per-hub ``msg_id`` — so it is the stable cursor a reconnecting
+            client resumes a directed-message backlog from.
         """
         stamp = time.time() if ts is None else float(ts)
         raw = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
         if durable:
             self._conn.execute("PRAGMA synchronous=FULL")
-        self._conn.execute(
+        cursor = self._conn.execute(
             "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)", (stamp, kind, raw)
         )
         self._conn.commit()
         if durable:
             self._conn.execute("PRAGMA synchronous=NORMAL")
+        return int(cursor.lastrowid or 0)
 
     def read_all(self) -> list[StoredEvent]:
         """Return every event in insertion order.

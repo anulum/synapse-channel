@@ -32,6 +32,7 @@ from synapse_channel.core.dead_letter_forwarding import DeadLetterForwardError, 
 from synapse_channel.core.dead_letters import is_directed_target
 from synapse_channel.core.journal import (
     DEAD_LETTER_DIRECTION_OUT,
+    EventKind,
     record_chat,
     record_dead_letter_escalation,
     record_dead_letter_forwarding,
@@ -96,7 +97,9 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
     if len(hub.chat_history) > hub.max_history:
         del hub.chat_history[0]
     if hub.journal is not None:
-        record_chat(hub.journal, data)
+        # Stamp the durable journal seq on the outgoing frame so a client can track
+        # it as the cursor it resumes a missed directed backlog from on reconnect.
+        data["seq"] = record_chat(hub.journal, data)
     await hub._broadcast(data)
     if escalation is not None:
         # After the chat is delivered: escalate the blackhole it added to, as a follow-up signal.
@@ -281,10 +284,56 @@ async def _send_delivery_receipt(
     )
 
 
+MAILBOX_REPLAY_READ_CAP = 1000
+"""Upper bound on journal chat events scanned for one reconnect backlog replay.
+
+A briefly-offline recipient's missed directed messages sit within a bounded window
+of recent chat, so scanning at most this many keeps a reconnect cheap and bounds a
+mailbox heartbeat's cost. A gap so long that a recipient's messages fall beyond the
+window degrades to the durable feed (``syn-inbox``), which has no such bound — the
+backlog replay adds promptness, it does not replace the feed as the unbounded record.
+"""
+
+
+async def _replay_directed_backlog(
+    hub: SynapseHub, name: str, since_seq: int, websocket: Any
+) -> None:
+    """Push the directed chats ``name`` missed while offline, from the durable journal.
+
+    On a mailbox-capable reconnect the hub resumes from the client's ``since_seq``
+    cursor: it reads journalled chat events after it, keeps only those directed at
+    ``name`` (by name, project, glob, or a role it holds) that ``name`` did not send
+    itself, and re-sends each to the reconnecting socket marked ``replayed`` with its
+    durable journal ``seq`` — so the client wakes on and dedups the backlog by ``seq``
+    exactly as it would live traffic. Dedup keys on ``seq``, not ``msg_id``, because
+    the per-hub ``msg_id`` counter resets on restart while ``seq`` never repeats. A
+    journal-less hub cannot replay and returns silently; a broadcast is never replayed
+    (the feed already carries it and re-pushing it would re-storm every reconnect).
+    """
+    if hub.journal is None:
+        return
+    roles = hub.roles_of(name)
+    events = hub.journal.read_since(
+        since_seq, kinds=(EventKind.CHAT,), limit=MAILBOX_REPLAY_READ_CAP
+    )
+    for event in events:
+        payload = event.payload
+        target = str(payload.get("target") or "all")
+        if str(payload.get("sender") or "") == name or not is_directed_target(target):
+            continue
+        if not is_recipient(target, name, roles):
+            continue
+        frame = dict(payload)
+        frame.pop("receipt_requested", None)
+        frame["replayed"] = True
+        frame["seq"] = event.seq
+        await hub._send_json(websocket, frame)
+
+
 async def handle_heartbeat(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
-    """Register any declared roles; the liveness update already ran before dispatch.
+    """Register any declared roles and replay a missed directed backlog on request.
 
     The registration heartbeat may carry a ``roles`` list of ``<project>/<role>``
     names this identity answers to. Binding them here lets a directed message to a
@@ -292,8 +341,24 @@ async def handle_heartbeat(
     Only a list is honoured, and non-string or blank entries are dropped rather than
     rejected, so a malformed field degrades to no roles instead of dropping the socket.
     A keepalive with no ``roles`` field leaves an earlier binding untouched.
+
+    A mailbox-capable client also sets ``mailbox: true`` and ``since_seq`` (the last
+    durable chat ``seq`` it processed) on its *registration* heartbeat, and the hub
+    replays the directed messages it missed while offline from the journal — turning
+    the pull-based ``syn-inbox`` catch-up into an automatic push on reconnect. Only a
+    literal ``True`` triggers a replay, and a missing or malformed ``since_seq``
+    degrades to ``0`` (replay the whole retained window) rather than dropping the
+    socket. A keepalive omits ``mailbox``, so it never re-storms the backlog.
     """
     raw_roles = data.get("roles")
     if isinstance(raw_roles, list):
         cleaned = (item.strip() for item in raw_roles if isinstance(item, str) and item.strip())
         hub.set_agent_roles(sender, tuple(dict.fromkeys(cleaned)))
+    if data.get("mailbox") is True:
+        raw_since = data.get("since_seq")
+        since_seq = (
+            raw_since
+            if isinstance(raw_since, int) and not isinstance(raw_since, bool) and raw_since >= 0
+            else 0
+        )
+        await _replay_directed_backlog(hub, sender, since_seq, websocket)

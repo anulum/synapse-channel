@@ -317,3 +317,15 @@ def test_iter_events_combines_kind_filter_with_the_ceiling(tmp_path: Path) -> No
     events = list(store.iter_events(through_seq=2, kinds=("claim",)))
     assert [(event.seq, event.kind) for event in events] == [(1, "claim")]
     store.close()
+
+
+def test_append_returns_the_monotonic_seq_it_assigned(tmp_path: Path) -> None:
+    # The returned seq is the durable cursor a reconnecting client resumes from, so
+    # it must match the row's persisted sequence and strictly increase per append.
+    store = EventStore(tmp_path / "events.db")
+    first = store.append("chat", {"p": "a"})
+    second = store.append("chat", {"p": "b"})
+    events = store.read_all()
+    store.close()
+    assert second == first + 1
+    assert [event.seq for event in events] == [first, second]

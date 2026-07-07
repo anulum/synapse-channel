@@ -402,3 +402,15 @@ def test_replay_up_to_seq_none_is_the_whole_log(tmp_path: Path) -> None:
         replay(store, up_to_seq=None, now=1000.0).state.claims
         == replay(store, now=1000.0).state.claims
     )
+
+
+def test_record_chat_returns_the_journalled_seq(tmp_path: Path) -> None:
+    # The hub stamps this seq on the outgoing chat frame as the backlog cursor, so
+    # record_chat must surface the durable sequence the chat was persisted under.
+    store = _store(tmp_path)
+    first = record_chat(store, {"type": "chat", "payload": "a", "msg_id": 1})
+    second = record_chat(store, {"type": "chat", "payload": "b", "msg_id": 2})
+    events = store.read_all()
+    store.close()
+    assert second == first + 1
+    assert [event.seq for event in events] == [first, second]

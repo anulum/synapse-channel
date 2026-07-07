@@ -24,6 +24,20 @@ All notable changes to this project are documented here.
   only a real wake ends the wait. `syn arm` is unaffected and stays persistently armed.
 
 ### Added
+- Directed-message backlog replay on reconnect: a client that declares `mailbox: true` and a
+  `since_seq` cursor on its registration heartbeat is delivered the directed messages it missed
+  while offline, replayed from the durable journal as ordinary chat frames marked `replayed` —
+  turning the manual `syn-inbox` catch-up into an automatic push on reconnect. Every chat frame
+  now carries its durable journal `seq`, the stable cross-restart cursor a client resumes from
+  and dedups on (the per-hub `msg_id` resets on restart, so it is not a durable cursor). Only
+  messages directed at the client (by name, project, glob, or a role it holds) are replayed,
+  never broadcasts, bounded by a per-reconnect scan cap; a hub with no durable journal does not
+  replay. Payload-only — no new wire type, so the wire protocol version, the reserved envelope
+  keys, and the federation consumer surface are unchanged.
+
+## [0.98.6] - 2026-07-07
+
+### Added
 - Role-based addressing: an identity can answer to one or more `<project>/<role>` roles in
   addition to its instance name, so a directed message to a role (for example
   `SYNAPSE-CHANNEL/coordinator`) reaches whichever instance currently holds it. A waiter,

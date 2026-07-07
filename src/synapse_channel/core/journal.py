@@ -275,9 +275,14 @@ def record_sandbox_run(store: EventStore, receipt: dict[str, Any]) -> None:
     store.append(EventKind.SANDBOX_RUN, dict(receipt), durable=True)
 
 
-def record_chat(store: EventStore, message: dict[str, Any]) -> None:
-    """Append a (non-durable) event capturing a broadcast chat message."""
-    store.append(EventKind.CHAT, message)
+def record_chat(store: EventStore, message: dict[str, Any]) -> int:
+    """Append a (non-durable) event capturing a broadcast chat message.
+
+    Returns the durable ``seq`` the chat was journalled under, so the hub can
+    stamp it on the outgoing frame as the resume cursor a reconnecting client
+    replays its missed directed backlog from.
+    """
+    return store.append(EventKind.CHAT, message)
 
 
 def record_ledger_task(store: EventStore, task: LedgerTask) -> None:
