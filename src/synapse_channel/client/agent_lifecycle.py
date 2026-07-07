@@ -75,6 +75,7 @@ class _LifecycleAgent(Protocol):
     heartbeat_interval: float
     last_close_code: int | None
     last_close_reason: str
+    mailbox: bool
     name: str
     ping_interval: float
     ping_timeout: float
@@ -86,6 +87,7 @@ class _LifecycleAgent(Protocol):
     uri: str
     verbose: bool
     _heartbeat_task: asyncio.Task[None] | None
+    _mailbox_since_seq: int
 
     async def _dispatch(self, raw: str | bytes) -> None:
         """Dispatch a raw frame received from the hub."""
@@ -145,6 +147,13 @@ class AgentLifecycleMixin:
                     # to this socket: /who shows them and a directed message to a role
                     # is delivered to its holder instead of counted a dead letter.
                     extra["roles"] = list(self.roles)
+                if self.mailbox:
+                    # Ask the hub to replay the directed messages this identity missed
+                    # while offline, resuming from the cursor it has already processed —
+                    # only on this registration heartbeat, never a keepalive tick, so a
+                    # reconnect wakes on its backlog without a keepalive re-storming it.
+                    extra["mailbox"] = True
+                    extra["since_seq"] = self._mailbox_since_seq
                 await self.send_message(
                     MessageType.HEARTBEAT, target="System", payload="online", **extra
                 )

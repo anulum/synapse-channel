@@ -47,6 +47,15 @@ All notable changes to this project are documented here.
   construction — a client emits it only when the hub advertises version `2` or newer, and an
   older hub is never sent it, so no enforcement is added and the federation consumer surface is
   unchanged.
+- Client mailbox mode on the reusable `SynapseAgent`. Constructed with `mailbox=True`, the
+  agent declares its `since_seq` cursor on every registration heartbeat so a mailbox-capable
+  hub replays the directed backlog it missed while offline; it advances the cursor on each chat
+  frame it sees and acknowledges every replayed frame, so the hub can confirm a deferred
+  delivery receipt to the original sender. A seeded `mailbox_since_seq` and the read-only
+  `mailbox_cursor` property let a caller persist the cursor across reconnects and resume the
+  backlog where it stopped. Off by default — an ordinary agent's registration and dispatch are
+  unchanged, and a mailbox agent talking to a hub that predates the ack verb simply withholds
+  the acknowledgement.
 
 ## [0.98.6] - 2026-07-07
 

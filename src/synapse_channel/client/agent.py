@@ -76,6 +76,18 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         Full ``<project>/<role>`` names this identity also answers to, declared on
         the registration heartbeat so the hub binds them — a directed message to a
         role then reaches this agent and the role shows in ``/who``. Empty by default.
+    mailbox : bool, optional
+        When ``True``, the registration heartbeat declares ``mailbox: true`` and the
+        agent's ``since_seq`` cursor, so a mailbox-capable hub replays the directed
+        messages missed while offline; the agent then advances its cursor on every
+        chat frame it sees and acknowledges each replayed frame (which lets the hub
+        confirm a deferred delivery receipt to the original sender). Defaults to
+        ``False`` — an ordinary agent neither asks for a replay nor acks.
+    mailbox_since_seq : int, optional
+        The durable journal ``seq`` the agent has already processed, used to seed
+        the cursor so a caller that persists it across reconnects resumes from where
+        it left off rather than replaying the whole retained window. Floored at ``0``
+        (the whole window). Defaults to ``0``.
     per_message_auth_key_id : str or None, optional
         Key id used to sign mutating frames with per-message authentication.
         ``None`` leaves frame signing off.
@@ -104,6 +116,8 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         token: str | None = None,
         takeover: bool = False,
         roles: tuple[str, ...] = (),
+        mailbox: bool = False,
+        mailbox_since_seq: int = 0,
         per_message_auth_key_id: str | None = None,
         per_message_auth_secret: str | bytes | None = None,
         ping_interval: float = 20.0,
@@ -125,6 +139,8 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         self.token = token
         self.takeover = bool(takeover)
         self.roles = tuple(roles)
+        self.mailbox = bool(mailbox)
+        self._mailbox_since_seq = max(0, int(mailbox_since_seq))
         self._message_auth_key: MessageAuthKey | None = None
         if per_message_auth_key_id is not None and per_message_auth_secret is not None:
             secret = (
@@ -138,3 +154,14 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         self._message_auth_sequence = 0
         self.ping_interval = float(ping_interval)
         self.ping_timeout = float(ping_timeout)
+
+    @property
+    def mailbox_cursor(self) -> int:
+        """Return the highest durable journal ``seq`` this agent has processed.
+
+        Starts at the seeded ``mailbox_since_seq`` and advances as the agent sees
+        chat frames, so a caller that persists it across reconnects — a waiter
+        re-armed as a fresh process — can seed the next agent's ``mailbox_since_seq``
+        and resume the backlog from where this one stopped rather than from zero.
+        """
+        return self._mailbox_since_seq
