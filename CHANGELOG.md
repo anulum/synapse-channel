@@ -13,7 +13,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-## [0.99.0] - 2026-07-07
+## [0.98.6] - 2026-07-07
 
 ### Added
 - Role-based addressing: an identity can answer to one or more `<project>/<role>` roles in
