@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+- `syn-wait` now enables `--mailbox` by default, so every waiter launched through the alias
+  recovers the directed messages that arrived while it was disconnected (a reconnect or re-arm
+  gap) instead of leaving them unread until an unrelated wake. Pass `--no-mailbox` to opt a
+  waiter out; a bare `synapse arm` is unchanged (mailbox off). Against a hub older than wire
+  version 2 the request is ignored, so the default is safe on a mixed-version fleet.
+
 ## [0.98.7] - 2026-07-07
 
 ### Fixed

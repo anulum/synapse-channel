@@ -239,6 +239,13 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
         "identity so a re-arm is not replayed the whole backlog again.",
     )
     arm.add_argument(
+        "--no-mailbox",
+        dest="mailbox",
+        action="store_false",
+        help="Do not replay the reconnect-gap backlog. The `syn-wait` alias enables mailbox by "
+        "default, so use this to opt a waiter out; a bare `synapse arm` is already off.",
+    )
+    arm.add_argument(
         "--wake-jitter",
         type=float,
         default=8.0,

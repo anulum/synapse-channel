@@ -742,7 +742,7 @@ def test_aliases_dispatch_to_their_verb() -> None:
     assert ergonomics.alias_ack(["BUILD", "--evidence", "pytest"], dispatcher=dispatch) == 0
     assert ergonomics.alias_commit(["README.md", "-m", "docs"], dispatcher=dispatch) == 0
     assert seen == [
-        ["arm", "--timeout", "5", "--max-wakes", "1"],
+        ["arm", "--timeout", "5", "--max-wakes", "1", "--mailbox"],
         ["say", "CEO", "hi"],
         ["ask", "CEO", "status?"],
         ["name"],
@@ -765,7 +765,7 @@ def test_alias_arm_defaults_to_a_single_wake() -> None:
         return 0
 
     assert ergonomics.alias_arm(["--directed-only"], dispatcher=dispatch) == 0
-    assert seen == [["arm", "--directed-only", "--max-wakes", "1"]]
+    assert seen == [["arm", "--directed-only", "--max-wakes", "1", "--mailbox"]]
 
 
 def test_alias_arm_respects_an_explicit_max_wakes() -> None:
@@ -777,7 +777,7 @@ def test_alias_arm_respects_an_explicit_max_wakes() -> None:
         return 0
 
     assert ergonomics.alias_arm(["--max-wakes", "5"], dispatcher=dispatch) == 0
-    assert seen == [["arm", "--max-wakes", "5"]]
+    assert seen == [["arm", "--max-wakes", "5", "--mailbox"]]
 
 
 def test_alias_arm_respects_an_explicit_max_wakes_equals_form() -> None:
@@ -789,7 +789,43 @@ def test_alias_arm_respects_an_explicit_max_wakes_equals_form() -> None:
         return 0
 
     assert ergonomics.alias_arm(["--max-wakes=3", "--directed-only"], dispatcher=dispatch) == 0
-    assert seen == [["arm", "--max-wakes=3", "--directed-only"]]
+    assert seen == [["arm", "--max-wakes=3", "--directed-only", "--mailbox"]]
+
+
+def test_alias_arm_defaults_to_mailbox() -> None:
+    # syn-wait defaults to --mailbox so a waiter recovers directed messages that arrived
+    # during a reconnect or re-arm gap; a bare arm leaves it off.
+    seen: list[list[str]] = []
+
+    def dispatch(argv: Sequence[str]) -> int:
+        seen.append(list(argv or []))
+        return 0
+
+    assert ergonomics.alias_arm([], dispatcher=dispatch) == 0
+    assert seen == [["arm", "--max-wakes", "1", "--mailbox"]]
+
+
+def test_alias_arm_does_not_double_an_explicit_mailbox() -> None:
+    seen: list[list[str]] = []
+
+    def dispatch(argv: Sequence[str]) -> int:
+        seen.append(list(argv or []))
+        return 0
+
+    assert ergonomics.alias_arm(["--mailbox"], dispatcher=dispatch) == 0
+    assert seen == [["arm", "--mailbox", "--max-wakes", "1"]]
+
+
+def test_alias_arm_honours_an_explicit_no_mailbox_opt_out() -> None:
+    # A caller can opt a syn-wait waiter out of mailbox mode; the default is not injected.
+    seen: list[list[str]] = []
+
+    def dispatch(argv: Sequence[str]) -> int:
+        seen.append(list(argv or []))
+        return 0
+
+    assert ergonomics.alias_arm(["--no-mailbox"], dispatcher=dispatch) == 0
+    assert seen == [["arm", "--no-mailbox", "--max-wakes", "1"]]
 
 
 def test_syn_ask_is_packaged_and_documented() -> None:

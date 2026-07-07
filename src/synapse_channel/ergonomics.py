@@ -576,10 +576,18 @@ def alias_arm(
     ``--max-wakes 1`` so the first genuine wake ends the wait, unless the caller
     pins a count of their own. The self-healing reconnect is preserved — a dropped
     connection or a hub restart re-arms and keeps waiting; only a real wake exits.
+
+    ``syn-wait`` also defaults to ``--mailbox`` so the waiter wakes on directed
+    messages that arrived while it was disconnected (a reconnect or re-arm gap),
+    which a bare ``arm`` leaves off. A caller that passes ``--mailbox`` or
+    ``--no-mailbox`` keeps its own choice; against a hub older than wire version
+    ``2`` the request is simply ignored, so the default is safe on a mixed fleet.
     """
     passed = list(sys.argv[1:] if argv is None else argv)
     if not any(item == "--max-wakes" or item.startswith("--max-wakes=") for item in passed):
         passed = [*passed, "--max-wakes", "1"]
+    if not any(item in ("--mailbox", "--no-mailbox") for item in passed):
+        passed = [*passed, "--mailbox"]
     return dispatcher(["arm", *passed])
 
 

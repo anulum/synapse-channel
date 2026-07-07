@@ -455,3 +455,5 @@ def test_add_parser_registers_the_mailbox_flag() -> None:
     assert armed.func is cli_arm._cmd_arm
     plain = parser.parse_args(["arm", "--name", "X"])
     assert plain.mailbox is False
+    opted_out = parser.parse_args(["arm", "--name", "X", "--no-mailbox"])
+    assert opted_out.mailbox is False
