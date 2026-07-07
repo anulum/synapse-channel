@@ -8,14 +8,16 @@
 
 import { defineConfig } from "vitest/config";
 
-// The cockpit's testable surface is its pure data logic — snapshot parsing, the
-// freshness contract, the polling store, and roster derivation. React view
-// components are exercised by the build and by visual review (the host cannot
-// render loopback pages for headless screenshots), so coverage is scoped to the
-// logic modules, which are held to a full-coverage bar.
+// The cockpit's testable surface is its pure data logic AND its behavioural
+// component layer. Logic tests run in the default node environment; component
+// tests declare `// @vitest-environment jsdom` per file and render through
+// @testing-library/react. The threshold gate stays on the logic modules, which
+// are held to a full-coverage bar; components are asserted behaviourally (the
+// canvas-drawing spine and the store-owning app shell keep paths jsdom cannot
+// reach honestly, so a numeric gate there would invite performative tests).
 export default defineConfig({
   test: {
-    include: ["test/**/*.test.ts"],
+    include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
     coverage: {
       provider: "v8",
       include: ["src/lib/**"],

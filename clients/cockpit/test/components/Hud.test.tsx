@@ -1,0 +1,95 @@
+// @vitest-environment jsdom
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Commercial license available
+// © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+// © Code 2020–2026 Miroslav Šotek. All rights reserved.
+// ORCID: 0009-0009-3560-0851
+// Contact: www.anulum.li | protoscience@anulum.li
+// SYNAPSE_CHANNEL — HUD behaviour tests
+
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { Hud, type Kpi } from "../../src/components/Hud";
+
+afterEach(cleanup);
+
+const KPIS: readonly Kpi[] = [
+  { label: "agents online", value: 6, delta: 1 },
+  { label: "claims held", value: 4, delta: -2 },
+  { label: "risk signals", value: 0, delta: 0 },
+];
+
+describe("Hud", () => {
+  it("codes each delta redundantly — arrow, sign, and class, never colour alone", () => {
+    render(<Hud kpis={KPIS} live stamp="12:00:00" />);
+    expect(screen.getByText("▲ +1").className).toContain("kpi__delta--up");
+    expect(screen.getByText("▼ -2").className).toContain("kpi__delta--down");
+    expect(screen.getByText("• 0").className).toContain("kpi__delta--flat");
+    expect(screen.getByText("live")).toBeTruthy();
+    expect(screen.getByText("12:00:00")).toBeTruthy();
+  });
+
+  it("says stale when the feed is stale", () => {
+    render(<Hud kpis={[]} live={false} stamp="—" />);
+    expect(screen.getByText("stale")).toBeTruthy();
+  });
+
+  it("drills a KPI down into the log filter only when a handler exists", async () => {
+    const onSelect = vi.fn();
+    render(<Hud kpis={KPIS} live stamp="12:00:00" onSelect={onSelect} />);
+    await userEvent.click(screen.getByText("claims held"));
+    expect(onSelect).toHaveBeenCalledWith("claims held");
+    cleanup();
+    render(<Hud kpis={KPIS} live stamp="12:00:00" />);
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("drives the focus lens through the picker and its clear affordance", async () => {
+    const onFocusChange = vi.fn();
+    render(
+      <Hud
+        kpis={[]}
+        live
+        stamp="—"
+        focus="quantum/claude"
+        onFocusChange={onFocusChange}
+        rosterNames={["quantum/claude", "fusion/codex"]}
+      />,
+    );
+    const input = screen.getByLabelText("Focus the claims and board on one identity");
+    expect((input as HTMLInputElement).value).toBe("quantum/claude");
+    expect(document.querySelectorAll("#hud-focus-roster option")).toHaveLength(2);
+    await userEvent.click(screen.getByLabelText("Clear the focus lens"));
+    expect(onFocusChange).toHaveBeenCalledWith("");
+  });
+
+  it("labels the theme and density toggles by what they switch TO", async () => {
+    const onToggleTheme = vi.fn();
+    const onToggleDensity = vi.fn();
+    render(
+      <Hud
+        kpis={[]}
+        live
+        stamp="—"
+        theme="dark"
+        onToggleTheme={onToggleTheme}
+        density="cozy"
+        onToggleDensity={onToggleDensity}
+      />,
+    );
+    await userEvent.click(screen.getByLabelText("Switch to light theme"));
+    expect(onToggleTheme).toHaveBeenCalled();
+    const density = screen.getByLabelText("Toggle display density");
+    expect(density.textContent).toBe("compact");
+    await userEvent.click(density);
+    expect(onToggleDensity).toHaveBeenCalled();
+    cleanup();
+    render(
+      <Hud kpis={[]} live stamp="—" theme="light" onToggleTheme={() => {}} density="compact" onToggleDensity={() => {}} />,
+    );
+    expect(screen.getByLabelText("Switch to dark theme").textContent).toBe("dark");
+    expect(screen.getByLabelText("Toggle display density").textContent).toBe("cozy");
+  });
+});
