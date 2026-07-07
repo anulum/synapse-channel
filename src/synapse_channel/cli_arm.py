@@ -70,6 +70,7 @@ async def _arm(
     name: str,
     for_name: str,
     directed_only: bool = True,
+    roles: tuple[str, ...] = (),
     wake_jitter: float = 0.0,
     reconnect_delay: float = 1.0,
     max_wakes: int | None = None,
@@ -91,6 +92,10 @@ async def _arm(
     A wait that reports a takeover (exit ``4``) also ends the loop: a newer
     waiter owns the name now, and re-arming would take it back and leave the
     two stealing the identity from each other until the hub quarantines it.
+
+    ``roles`` are the full ``<project>/<role>`` names this waiter also answers to,
+    threaded into every re-armed wait so a message addressed to a role it holds
+    wakes it across reconnects, not only a message to its instance name.
     """
     if owner_pid is not None and not owner_probe(owner_pid):
         print(f"[{name}] owner pid {owner_pid} is already gone; not arming.")
@@ -104,6 +109,7 @@ async def _arm(
                 for_name=for_name,
                 timeout=0.0,
                 directed_only=directed_only,
+                roles=roles,
                 wake_jitter=wake_jitter,
                 agent_factory=agent_factory,
                 token=token,
@@ -151,6 +157,7 @@ def _cmd_arm(
     """Dispatch the persistent ``arm`` subcommand."""
     for_name = args.for_name or args.name
     connect_name = args.name if args.name != for_name else waiter_name(args.name)
+    roles = tuple(r.strip() for r in (getattr(args, "role", None) or ()) if r.strip())
     try:
         return async_runner(
             arm_runner(
@@ -158,6 +165,7 @@ def _cmd_arm(
                 name=connect_name,
                 for_name=for_name,
                 directed_only=args.directed_only,
+                roles=roles,
                 wake_jitter=args.wake_jitter,
                 reconnect_delay=args.reconnect_delay,
                 max_wakes=args.max_wakes,
@@ -195,6 +203,14 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
         dest="directed_only",
         action="store_false",
         help="Also wake on routine broadcasts to all.",
+    )
+    arm.add_argument(
+        "--role",
+        action="append",
+        default=None,
+        metavar="PROJECT/ROLE",
+        help="A <project>/<role> name you also answer to (repeatable), so a message "
+        "addressed to the role wakes you across reconnects, not only your instance name.",
     )
     arm.add_argument(
         "--wake-jitter",

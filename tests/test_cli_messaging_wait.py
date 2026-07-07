@@ -91,6 +91,76 @@ def test_cmd_wait_dispatches_with_for_default(capsys: pytest.CaptureFixture[str]
     assert "[X-rx] Could not reach hub" in capsys.readouterr().out
 
 
+async def test_wait_wakes_on_a_held_role(capsys: pytest.CaptureFixture[str]) -> None:
+    # A directed-only waiter armed for its instance name plus a role wakes on a
+    # message addressed to the role — the fix for a role-addressed message being
+    # silently dropped when it matched no instance name.
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        wait_task = asyncio.create_task(
+            cli_messaging._wait(
+                uri=uri,
+                name="proj-claude-rx",
+                for_name="proj/claude",
+                timeout=2.0,
+                directed_only=True,
+                roles=("proj/coordinator",),
+            )
+        )
+        try:
+            await _wait_for_presence(observer, "proj-claude-rx")
+            await _send_chat(uri, "peer", "proj/coordinator", "role ping")
+            code = await wait_task
+        finally:
+            await close_agents(observer)
+
+    assert code == 0
+    assert "peer: role ping" in capsys.readouterr().out
+
+
+async def test_wait_directed_only_ignores_a_role_it_does_not_hold() -> None:
+    # A message to a role this waiter does NOT hold must not wake it (no wake storm).
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        wait_task = asyncio.create_task(
+            cli_messaging._wait(
+                uri=uri,
+                name="proj-claude-rx",
+                for_name="proj/claude",
+                timeout=0.2,
+                poll_interval=0.01,
+                directed_only=True,
+                roles=("proj/git",),
+            )
+        )
+        try:
+            await _wait_for_presence(observer, "proj-claude-rx")
+            await _send_chat(uri, "peer", "proj/coordinator", "not yours")
+            code = await wait_task
+        finally:
+            await close_agents(observer)
+
+    assert code == 2
+
+
+def test_cmd_wait_dispatches_with_roles(capsys: pytest.CaptureFixture[str]) -> None:
+    # Role flags are normalised (blanks dropped) and threaded through; an
+    # unreachable hub still returns 1 but exercises the role-parsing path.
+    ns = argparse.Namespace(
+        uri=f"ws://127.0.0.1:{_free_port()}",
+        name="X",
+        for_name=None,
+        timeout=0.0,
+        directed_only=True,
+        role=["proj/coordinator", "  ", "proj/git"],
+        wake_jitter=0.0,
+        token=None,
+        ready_timeout=0.1,
+    )
+    assert cli_messaging._cmd_wait(ns) == 1
+    assert "Could not reach hub" in capsys.readouterr().out
+
+
 async def test_wait_ignores_own_messages() -> None:
     async with running_hub(SynapseHub()) as (_hub, uri):
         observer = await connect_agent("OBSERVER", uri)

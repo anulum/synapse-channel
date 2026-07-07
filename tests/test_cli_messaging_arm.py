@@ -144,6 +144,51 @@ def test_cmd_arm_derives_rx_name_for_bare_identity() -> None:
     assert captured["for_name"] == "B"
 
 
+def test_cmd_arm_threads_roles_dropping_blanks() -> None:
+    captured: dict[str, Any] = {}
+
+    async def arm_once(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 0
+
+    def run_once(coro: Coroutine[Any, Any, int]) -> int:
+        return asyncio.run(coro)
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="B-rx",
+        for_name="B",
+        directed_only=True,
+        role=["proj/coordinator", "  ", "proj/git"],
+        wake_jitter=0.0,
+        reconnect_delay=0.0,
+        max_wakes=None,
+        token=None,
+        owner_pid=None,
+    )
+    assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=run_once) == 0
+    assert captured["roles"] == ("proj/coordinator", "proj/git")
+
+
+async def test_arm_passes_roles_to_each_wait() -> None:
+    captured: dict[str, Any] = {}
+
+    async def wait_once(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 4  # a takeover ends the loop after one wait
+
+    code = await cli_arm._arm(
+        uri="ws://h",
+        name="B-rx",
+        for_name="B",
+        roles=("proj/coordinator",),
+        reconnect_delay=0.0,
+        wait_runner=wait_once,
+    )
+    assert code == 0
+    assert captured["roles"] == ("proj/coordinator",)
+
+
 def test_cmd_arm_handles_keyboard_interrupt(capsys: pytest.CaptureFixture[str]) -> None:
     def stop(coro: Coroutine[Any, Any, int]) -> int:
         coro.close()

@@ -89,6 +89,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Wake only on messages that name you (or a group you are in), not broadcasts.",
     )
     wait.add_argument(
+        "--role",
+        action="append",
+        default=None,
+        metavar="PROJECT/ROLE",
+        help="A <project>/<role> name you also answer to (repeatable), so a message "
+        "addressed to the role wakes you, not only your instance name.",
+    )
+    wait.add_argument(
         "--wake-jitter",
         type=float,
         default=8.0,

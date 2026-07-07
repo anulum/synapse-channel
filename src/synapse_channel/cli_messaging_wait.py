@@ -32,6 +32,7 @@ async def _wait(
     for_name: str,
     timeout: float,
     directed_only: bool = False,
+    roles: tuple[str, ...] = (),
     wake_jitter: float = 0.0,
     agent_factory: AgentFactory = SynapseAgent,
     jitter_func: JitterFunction = random.uniform,
@@ -58,6 +59,10 @@ async def _wait(
     directed_only : bool, optional
         When ``True``, wake only on messages that name ``for_name`` (or a group it
         is in), not on broadcasts — broadcasts are left for a later ``syn-inbox``.
+    roles : tuple[str, ...], optional
+        Full ``<project>/<role>`` names this waiter also answers to, so a message
+        addressed to a role it holds wakes it as if addressed by name. Empty by
+        default.
     wake_jitter : float, optional
         Seconds of random delay added before exiting on a *broadcast* wake (a
         message to ``all`` or a glob/list that reaches many waiters). A broadcast
@@ -100,6 +105,7 @@ async def _wait(
                 directed_only=directed_only,
                 sender=sender,
                 priority=bool(data.get("priority")),
+                roles=roles,
             )
         ):
             received.append(data)
@@ -171,6 +177,7 @@ def _cmd_wait(args: argparse.Namespace) -> int:
     """
     for_name = args.for_name or args.name
     connect_name = args.name if args.name != for_name else waiter_name(args.name)
+    roles = tuple(r.strip() for r in (getattr(args, "role", None) or ()) if r.strip())
     return asyncio.run(
         _wait(
             uri=args.uri,
@@ -178,6 +185,7 @@ def _cmd_wait(args: argparse.Namespace) -> int:
             for_name=for_name,
             timeout=args.timeout,
             directed_only=args.directed_only,
+            roles=roles,
             wake_jitter=args.wake_jitter,
             token=args.token,
             ready_timeout=args.ready_timeout,

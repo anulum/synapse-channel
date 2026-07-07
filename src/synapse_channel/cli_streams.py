@@ -63,6 +63,7 @@ def _cmd_relay(args: argparse.Namespace) -> int:
     """
     start = load_offset(args.cursor) if args.cursor else max(int(args.since), 0)
     events, cursor = read_jsonl_since(args.relay_log, start)
+    roles = tuple(r.strip() for r in (getattr(args, "role", None) or ()) if r.strip())
     for lite in events:
         message = decode_lite(lite)
         channel = str(message.get("channel") or "")
@@ -70,13 +71,15 @@ def _cmd_relay(args: argparse.Namespace) -> int:
             continue
         if args.public_only and channel:
             continue
-        if args.for_name or args.project:
+        if args.for_name or args.project or roles:
             is_chat = message.get("type") == MessageType.CHAT
             target = str(message.get("target", "all"))
             if args.project:
                 keep = is_chat and addresses_project(target, args.project)
             else:
-                keep = is_chat and is_recipient(target, args.for_name)
+                # A role the reader holds also addresses it, so a per-agent inbox
+                # surfaces messages sent to <project>/<role>, not only to its name.
+                keep = is_chat and is_recipient(target, args.for_name or "", roles=roles)
             if not keep:
                 continue
         print(_format_relay_line(message, hide_channel_body=bool(args.channel_metadata)))
@@ -216,6 +219,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=None,
         help="Show chats addressing any agent in this project (the name, 'project/...', "
         "or a broadcast) — a project-stable inbox that survives changing instance ids.",
+    )
+    relay.add_argument(
+        "--role",
+        action="append",
+        default=None,
+        metavar="PROJECT/ROLE",
+        help="Also show chats addressed to this <project>/<role> you hold (repeatable), so "
+        "a role-addressed message lands in your inbox alongside your name; combine with --for.",
     )
     channel_group = relay.add_mutually_exclusive_group()
     channel_group.add_argument(

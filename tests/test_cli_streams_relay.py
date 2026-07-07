@@ -25,6 +25,7 @@ def _relay_ns(**overrides: Any) -> argparse.Namespace:
         "cursor": None,
         "for_name": None,
         "project": None,
+        "role": None,
         "channel": None,
         "public_only": False,
         "channel_metadata": False,
@@ -130,6 +131,83 @@ def test_cmd_relay_filters_by_recipient(tmp_path: Path, capsys: pytest.CaptureFi
     assert "you two" in out  # B is one of several named recipients
     assert "just C" not in out  # addressed only to C
     assert "noise" not in out  # non-chat presence is dropped in the inbox view
+
+
+def test_parser_relay_accepts_roles() -> None:
+    args = cli.build_parser().parse_args(
+        ["relay", "feed.ndjson", "--for", "SC/claude"]
+        + ["--role", "SC/coordinator", "--role", "SC/git"]
+    )
+    assert args.role == ["SC/coordinator", "SC/git"]
+
+
+def test_cmd_relay_surfaces_role_addressed_messages(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A role the reader holds lands in its per-agent inbox alongside its instance name.
+    log = tmp_path / "feed.ndjson"
+    rows = [
+        ("SC/claude", "to my name", 1),
+        ("SC/coordinator", "to my role", 2),
+        ("SC/git", "a role I do not hold", 3),
+        ("SC/other", "someone else", 4),
+    ]
+    for target, payload, mid in rows:
+        append_jsonl(
+            log,
+            encode_lite(
+                {
+                    "sender": "peer",
+                    "target": target,
+                    "type": "chat",
+                    "payload": payload,
+                    "timestamp": 2.0,
+                    "msg_id": mid,
+                }
+            ),
+        )
+    assert (
+        cli_streams._cmd_relay(
+            _relay_ns(relay_log=str(log), for_name="SC/claude", role=["SC/coordinator"])
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "to my name" in out  # instance name
+    assert "to my role" in out  # a role held
+    assert "a role I do not hold" not in out
+    assert "someone else" not in out
+
+
+def test_cmd_relay_role_only_inbox_without_for(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # --role alone (no --for) still builds an inbox: broadcasts plus the held role.
+    log = tmp_path / "feed.ndjson"
+    rows = [
+        ("all", "broadcast", 1),
+        ("SC/coordinator", "role message", 2),
+        ("SC/other", "not for me", 3),
+    ]
+    for target, payload, mid in rows:
+        append_jsonl(
+            log,
+            encode_lite(
+                {
+                    "sender": "peer",
+                    "target": target,
+                    "type": "chat",
+                    "payload": payload,
+                    "timestamp": 2.0,
+                    "msg_id": mid,
+                }
+            ),
+        )
+    assert cli_streams._cmd_relay(_relay_ns(relay_log=str(log), role=["SC/coordinator"])) == 0
+    out = capsys.readouterr().out
+    assert "broadcast" in out
+    assert "role message" in out
+    assert "not for me" not in out
 
 
 def test_cmd_relay_filters_by_project(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
