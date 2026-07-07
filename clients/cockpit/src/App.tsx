@@ -25,6 +25,7 @@ import { TimeTravelBar } from "./components/TimeTravelBar";
 import { ToastStack } from "./components/ToastStack";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { deriveAnomalies } from "./lib/anomalies";
+import { parsePendingApprovals } from "./lib/approvals";
 import { agentDetail, taskDetail } from "./lib/detail";
 import { boardTruncation, deriveBoard, deriveFindings } from "./lib/board";
 import { parseDeadLetters } from "./lib/deadLetters";
@@ -427,6 +428,7 @@ export function App(): JSX.Element {
   const findings = useMemo(() => deriveFindings(snap.snapshot), [snap.snapshot]);
   const anomalies = useMemo(() => deriveAnomalies(log), [log]);
   const deadLetters = useMemo(() => parseDeadLetters(snap.snapshot), [snap.snapshot]);
+  const approvals = useMemo(() => parsePendingApprovals(snap.snapshot), [snap.snapshot]);
   const connected = snap.snapshot !== null;
 
   // Toasts mark transitions between polls — computed from LIVE facts only
@@ -589,6 +591,7 @@ export function App(): JSX.Element {
                 deadLetters={deadLetters}
                 waits={waits}
                 anomalyReport={anomalyReport}
+                approvals={approvals}
               />
             </PanelBoundary>
           </div>

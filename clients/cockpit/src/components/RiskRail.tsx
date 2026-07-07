@@ -9,6 +9,7 @@
 import { memo } from "react";
 
 import type { AnomalyFlag } from "../lib/anomalies";
+import type { PendingApprovalView } from "../lib/approvals";
 import type { DeadLetterView } from "../lib/deadLetters";
 import type { HealthAnomaliesState } from "../lib/healthAnomalies";
 import type { WaitsState } from "../lib/waits";
@@ -46,12 +47,21 @@ interface RiskRailProps {
   readonly waits?: WaitsState | undefined;
   /** The hub's causal-graph anomaly report (/health-anomalies.json). */
   readonly anomalyReport?: HealthAnomaliesState | undefined;
+  /** Relays awaiting a second operator (state.pending_relay_approvals). */
+  readonly approvals?: readonly PendingApprovalView[];
 }
 
 /** How many safe-next-work rows show before the tail collapses into a count. */
 const SAFE_WORK_SHOWN = 14;
 
-function RiskRailView({ risk, anomalies = [], deadLetters = [], waits, anomalyReport }: RiskRailProps): JSX.Element {
+function RiskRailView({
+  risk,
+  anomalies = [],
+  deadLetters = [],
+  waits,
+  anomalyReport,
+  approvals = [],
+}: RiskRailProps): JSX.Element {
   const signals = risk === null ? [] : orderSignals(risk.signals);
   const safeWork = risk?.safe_next_work ?? [];
   const safeShown = safeWork.slice(0, SAFE_WORK_SHOWN);
@@ -178,6 +188,37 @@ function RiskRailView({ risk, anomalies = [], deadLetters = [], waits, anomalyRe
                   </span>
                 </li>
               )}
+            </ul>
+          </div>
+        )}
+        {approvals.length > 0 && (
+          <div className="risk-heuristics">
+            <span
+              className="risk-safe__head"
+              title="The hub's two-person relay quorum: the first operator requested; a second, different operator must approve before anything applies."
+            >
+              pending approvals · awaiting a second operator
+            </span>
+            <ul className="risk-list">
+              {approvals.map((approval, index) => (
+                <li
+                  key={`${approval.action}:${approval.namespace}:${approval.taskId}:${index}`}
+                  className="risk-row risk-row--amber"
+                >
+                  <span className="risk-row__glyph" aria-hidden="true">
+                    ✍
+                  </span>
+                  <span className="risk-row__body">
+                    <span className="risk-row__subject">
+                      <span className="risk-row__category">{approval.action === "" ? "relay" : approval.action}</span>
+                      {approval.taskId === "" ? "—" : approval.taskId}
+                    </span>
+                    <span className="risk-row__detail">
+                      {`in ${approval.namespace === "" ? "—" : approval.namespace} · requested by ${approval.requester === "" ? "—" : approval.requester}`}
+                    </span>
+                  </span>
+                </li>
+              ))}
             </ul>
           </div>
         )}
