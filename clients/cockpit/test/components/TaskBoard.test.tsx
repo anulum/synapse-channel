@@ -7,7 +7,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — task board behaviour tests
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -38,7 +38,8 @@ describe("TaskBoard", () => {
     cleanup();
     render(<TaskBoard tasks={[task("t-1", "open")]} connected />);
     await userEvent.type(screen.getByLabelText("Find a task by id or title"), "nothing-matches");
-    expect(screen.getByText("No task matches the query.")).toBeTruthy();
+    // Typed input lands keystroke by keystroke; wait out the last render.
+    await waitFor(() => expect(screen.getByText("No task matches the query.")).toBeTruthy());
     expect(screen.getByText("0 of 1 shown")).toBeTruthy();
     await userEvent.click(screen.getByText("reset"));
     expect(screen.queryByText("No task matches the query.")).toBeNull();
