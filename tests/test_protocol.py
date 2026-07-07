@@ -242,9 +242,7 @@ def test_wakes_priority_and_ceo_do_not_leak_to_unaddressed_waiters() -> None:
 def test_is_recipient_reaches_a_held_role() -> None:
     # An identity that holds a role is an addressee of a message to that role, even
     # though the role name does not match its instance name.
-    assert is_recipient(
-        "SC/coordinator", "SC/claude-2759", roles=("SC/coordinator",)
-    )
+    assert is_recipient("SC/coordinator", "SC/claude-2759", roles=("SC/coordinator",))
     # ...while an identity that does NOT hold the role is not addressed by it.
     assert not is_recipient("SC/coordinator", "SC/claude-2759")
     assert not is_recipient("SC/coordinator", "SC/fable-ui", roles=("SC/git",))
@@ -252,13 +250,9 @@ def test_is_recipient_reaches_a_held_role() -> None:
 
 def test_is_recipient_role_matches_via_glob_and_several() -> None:
     assert is_recipient("SC/coord*", "SC/claude-2759", roles=("SC/coordinator",))
-    assert is_recipient(
-        "other, SC/coordinator", "SC/claude-2759", roles=("SC/coordinator",)
-    )
+    assert is_recipient("other, SC/coordinator", "SC/claude-2759", roles=("SC/coordinator",))
     # multiple held roles: any one matching is enough
-    assert is_recipient(
-        "SC/git", "SC/claude-2759", roles=("SC/coordinator", "SC/git")
-    )
+    assert is_recipient("SC/git", "SC/claude-2759", roles=("SC/coordinator", "SC/git"))
     # a glob resolves against the role's OWN namespace, not the holder's: with a name
     # that does not match the glob, only a role inside the glob's namespace matches.
     assert is_recipient("mon/*", "SC/claude-2759", roles=("mon/watcher",))
@@ -300,7 +294,9 @@ def test_wakes_directed_only_wakes_on_held_role() -> None:
     # a role addressed to a DIFFERENT role does not wake this holder (no wake storm)
     assert not wakes("SC/git", "SC/claude-2759", directed_only=True, sender="peer", roles=roles)
     # normal (non-directed-only) mode also honours the role
-    assert wakes("SC/coordinator", "SC/claude-2759", directed_only=False, sender="peer", roles=roles)
+    assert wakes(
+        "SC/coordinator", "SC/claude-2759", directed_only=False, sender="peer", roles=roles
+    )
     # the instance name still wakes regardless of roles
     assert wakes("SC/claude-2759", "SC/claude-2759", directed_only=True, sender="peer", roles=roles)
 
@@ -310,7 +306,11 @@ def test_wakes_role_does_not_leak_across_holders() -> None:
 
     # two instances, only one holds the coordinator role
     assert wakes(
-        "SC/coordinator", "SC/claude-2759", directed_only=True, sender="p", roles=("SC/coordinator",)
+        "SC/coordinator",
+        "SC/claude-2759",
+        directed_only=True,
+        sender="p",
+        roles=("SC/coordinator",),
     )
     assert not wakes(
         "SC/coordinator", "SC/fable-ui", directed_only=True, sender="p", roles=("SC/git",)
