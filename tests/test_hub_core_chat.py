@@ -717,3 +717,56 @@ async def test_mailbox_for_falls_back_to_the_connection_name_when_blank(tmp_path
             frame = await read_until_type(bob_ws, "chat")
     store.close()
     assert frame["payload"] == "blank-for"
+
+
+def test_mailbox_recipient_honours_only_self_or_an_own_sidecar() -> None:
+    # The replay-authorisation predicate: a mailbox heartbeat may replay its own backlog
+    # or, for an -rx wake-listener, the backlog of the identity it is the sidecar of —
+    # never an arbitrary named identity, and never on a non-string/blank declaration.
+    from synapse_channel.core.handlers.messaging import _mailbox_recipient
+
+    # An agent under its own identity replays its own backlog.
+    assert _mailbox_recipient("BOB", "BOB") == "BOB"
+    # BOB's -rx sidecar may replay BOB's backlog (the documented wake-listener contract).
+    assert _mailbox_recipient("BOB-rx", "BOB") == "BOB"
+    # An unrelated socket naming another identity is refused: the declaration is dropped
+    # and the replay falls back to the connection's own (here different) backlog.
+    assert _mailbox_recipient("EVE", "BOB") == "EVE"
+    # An -rx sidecar of one identity cannot claim a different identity's backlog either.
+    assert _mailbox_recipient("EVE-rx", "BOB") == "EVE-rx"
+    # A blank/whitespace declaration is treated as absent.
+    assert _mailbox_recipient("BOB", "   ") == "BOB"
+    # Non-string declarations are ignored rather than dropping the socket.
+    assert _mailbox_recipient("BOB", 123) == "BOB"
+    assert _mailbox_recipient("BOB", None) == "BOB"
+
+
+async def test_mailbox_for_refuses_an_unrelated_identitys_backlog(tmp_path: Path) -> None:
+    # The confidentiality boundary: a socket that is neither BOB nor BOB's -rx sidecar
+    # cannot pull BOB's directed backlog by naming it in mailbox_for. The declared identity
+    # is dropped and the replay falls back to the connection's own (empty) backlog, so no
+    # message directed at BOB is ever replayed to EVE.
+    store = EventStore(tmp_path / "events.db")
+    async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
+        async with connect(uri) as alice_ws:
+            await read_until_type(alice_ws, "welcome")
+            await _send_chat_frames(alice_ws, "ALICE", [("BOB", "for-bob")])
+        async with connect(uri) as eve_ws:
+            await read_until_type(eve_ws, "welcome")
+            await eve_ws.send(
+                json.dumps(
+                    {
+                        "sender": "EVE",
+                        "type": "heartbeat",
+                        "target": "System",
+                        "payload": "online",
+                        "mailbox": True,
+                        "since_seq": 0,
+                        "mailbox_for": "BOB",
+                    }
+                )
+            )
+            replayed = await collect_available(eve_ws)
+    store.close()
+    assert not any(m.get("type") == "chat" for m in replayed)
+    assert all(m.get("payload") != "for-bob" for m in replayed)

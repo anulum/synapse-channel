@@ -39,6 +39,7 @@ from synapse_channel.core.journal import (
 )
 from synapse_channel.core.operator_relay_routing import RelayRouteKind, route_operator_relay
 from synapse_channel.core.protocol import MessageType, is_recipient
+from synapse_channel.waiter_identity import waiter_owner
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
@@ -384,6 +385,35 @@ async def _replay_directed_backlog(
         await hub._send_json(websocket, frame)
 
 
+def _mailbox_recipient(connection: str, declared: Any) -> str:
+    """Resolve whose directed backlog a mailbox heartbeat may replay onto ``connection``.
+
+    A mailbox client may name, in ``declared`` (the heartbeat's ``mailbox_for``), an
+    identity other than its connection name — a wake-listener connects under a
+    receive-only ``<identity>-rx`` name while waiting on the bare ``<identity>``. But
+    replaying an *arbitrary* named identity's directed backlog on an unauthenticated
+    assertion would let any socket pull another identity's missed directed messages
+    from the journal. So a declared identity is honoured only when it is the connection
+    itself or the identity this connection is the ``-rx`` sidecar of; any other value
+    (including a blank or non-string one) falls back to the connection's own backlog
+    rather than dropping the socket.
+
+    This enforces the documented ``-rx`` sidecar contract structurally; it is not by
+    itself proof the socket is genuinely that sidecar — absent hub authentication a
+    hostile socket can still connect under a ``<victim>-rx`` name. Binding the
+    connection identity (per-message auth / an ACL grant) is the deeper control, tracked
+    with the wider identity-authenticity work, not resolved by a naming convention.
+    """
+    if not isinstance(declared, str):
+        return connection
+    requested = declared.strip()
+    if not requested or requested == connection:
+        return connection
+    if waiter_owner(connection) == requested:
+        return requested
+    return connection
+
+
 async def handle_heartbeat(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
@@ -407,8 +437,11 @@ async def handle_heartbeat(
     An optional ``mailbox_for`` string names the identity whose backlog is wanted when
     it differs from the connection ``sender`` — a wake-listener connects under a
     receive-only ``-rx`` name but waits on its bare identity, so it declares that here
-    and the replay is filtered by it. A missing or blank value falls back to ``sender``,
-    so an agent connecting under its own identity needs no such field.
+    and the replay is filtered by it. It is honoured only when it names ``sender`` or
+    the identity ``sender`` is the ``-rx`` sidecar of (see :func:`_mailbox_recipient`);
+    a missing, blank, or unrelated value falls back to ``sender``, so an agent
+    connecting under its own identity needs no such field and no socket can pull an
+    arbitrary identity's directed backlog by naming it.
     """
     raw_roles = data.get("roles")
     if isinstance(raw_roles, list):
@@ -421,6 +454,5 @@ async def handle_heartbeat(
             if isinstance(raw_since, int) and not isinstance(raw_since, bool) and raw_since >= 0
             else 0
         )
-        raw_for = data.get("mailbox_for")
-        recipient = raw_for.strip() if isinstance(raw_for, str) and raw_for.strip() else sender
+        recipient = _mailbox_recipient(sender, data.get("mailbox_for"))
         await _replay_directed_backlog(hub, sender, recipient, since_seq, websocket)
