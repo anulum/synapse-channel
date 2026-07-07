@@ -79,6 +79,7 @@ class _LifecycleAgent(Protocol):
     ping_interval: float
     ping_timeout: float
     ready_event: Any
+    roles: tuple[str, ...]
     running: bool
     takeover: bool
     token: str | None
@@ -139,6 +140,11 @@ class AgentLifecycleMixin:
                     extra["token"] = self.token
                 if self.takeover:
                     extra["takeover"] = True
+                if self.roles:
+                    # Declare the roles this identity answers to so the hub binds them
+                    # to this socket: /who shows them and a directed message to a role
+                    # is delivered to its holder instead of counted a dead letter.
+                    extra["roles"] = list(self.roles)
                 await self.send_message(
                     MessageType.HEARTBEAT, target="System", payload="online", **extra
                 )

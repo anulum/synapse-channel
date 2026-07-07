@@ -54,6 +54,7 @@ class HubClientRegistry:
         self.unauth_clients: set[Any] = set()
         self.agent_sockets: dict[str, Any] = {}
         self.socket_agent: dict[Any, str] = {}
+        self.agent_roles: dict[str, tuple[str, ...]] = {}
         self._socket_hosts: dict[Any, str] = {}
         self._host_counts: dict[str, int] = {}
 
@@ -93,6 +94,7 @@ class HubClientRegistry:
         name = self.socket_agent.pop(websocket, None)
         if name is not None and self.agent_sockets.get(name) == websocket:
             self.agent_sockets.pop(name, None)
+            self.agent_roles.pop(name, None)
             return name
         return None
 
@@ -117,6 +119,22 @@ class HubClientRegistry:
         is_new_agent = sender not in self.agent_sockets
         self.agent_sockets[sender] = websocket
         return is_new_agent
+
+    def set_roles(self, name: str, roles: tuple[str, ...]) -> None:
+        """Bind the roles ``name`` answers to, replacing any previous set.
+
+        An empty tuple clears the binding, so a re-register that drops a role removes
+        it. Roles are additional ``<project>/<role>`` addresses, not exclusive — a role
+        may be held by more than one agent, and a message to it reaches every holder.
+        """
+        if roles:
+            self.agent_roles[name] = roles
+        else:
+            self.agent_roles.pop(name, None)
+
+    def roles_of(self, name: str) -> tuple[str, ...]:
+        """Return the roles ``name`` currently answers to (empty tuple if none)."""
+        return self.agent_roles.get(name, ())
 
     def _classify_takeover(self, sender: str, now: float) -> str:
         """Decide a takeover request: ``accept``, ``cooldown``, or quarantine.

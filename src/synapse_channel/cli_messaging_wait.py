@@ -112,7 +112,9 @@ async def _wait(
 
     # A re-arming waiter takes over its own name, evicting a ghost holder of
     # ``<name>-rx`` instead of failing with a name conflict.
-    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token, takeover=True)
+    agent = agent_factory(
+        name, collect, uri=uri, verbose=False, token=token, takeover=True, roles=roles
+    )
     conn_task = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):

@@ -69,6 +69,13 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         Shared-secret token presented on the registration message when the hub
         requires authentication. ``None`` sends no token (the default for an
         open, loopback hub).
+    takeover : bool, optional
+        When ``True``, the registration asks the hub to evict a stale holder of
+        ``name`` instead of failing with a name conflict. Defaults to ``False``.
+    roles : tuple of str, optional
+        Full ``<project>/<role>`` names this identity also answers to, declared on
+        the registration heartbeat so the hub binds them — a directed message to a
+        role then reaches this agent and the role shows in ``/who``. Empty by default.
     per_message_auth_key_id : str or None, optional
         Key id used to sign mutating frames with per-message authentication.
         ``None`` leaves frame signing off.
@@ -96,6 +103,7 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         verbose: bool = True,
         token: str | None = None,
         takeover: bool = False,
+        roles: tuple[str, ...] = (),
         per_message_auth_key_id: str | None = None,
         per_message_auth_secret: str | bytes | None = None,
         ping_interval: float = 20.0,
@@ -116,6 +124,7 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         self.verbose = bool(verbose)
         self.token = token
         self.takeover = bool(takeover)
+        self.roles = tuple(roles)
         self._message_auth_key: MessageAuthKey | None = None
         if per_message_auth_key_id is not None and per_message_auth_secret is not None:
             secret = (

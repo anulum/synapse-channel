@@ -41,6 +41,55 @@ async def test_chat_is_broadcast_and_recorded_end_to_end() -> None:
             await close_agents(alpha, beta)
 
 
+async def test_declared_role_is_bound_reaches_its_holder_and_shows_in_who() -> None:
+    # A declares the coordinator role on its registration heartbeat; a directed chat to
+    # the role must reach A (delivered, not dead-lettered) and /who must show the binding.
+    async with running_hub(SynapseHub(hub_id="syn-test")) as (hub, uri):
+        async with connect(uri) as a_ws, connect(uri) as b_ws:
+            await read_until_type(a_ws, "welcome")
+            await read_until_type(b_ws, "welcome")
+            await a_ws.send(
+                json.dumps(
+                    {
+                        "sender": "proj/claude",
+                        "type": "heartbeat",
+                        "target": "System",
+                        "payload": "online",
+                        "roles": ["proj/coordinator", "  ", "proj/coordinator"],
+                    }
+                )
+            )
+            await a_ws.send(json.dumps({"sender": "proj/claude", "type": "who_request"}))
+            who = await read_until_type(a_ws, "who_snapshot")
+            # deduplicated, blanks dropped, bound to the declaring identity
+            assert who["agent_roles"]["proj/claude"] == ["proj/coordinator"]
+
+            await b_ws.send(
+                json.dumps(
+                    {"sender": "B", "type": "heartbeat", "target": "System", "payload": "online"}
+                )
+            )
+            await b_ws.send(
+                json.dumps(
+                    {
+                        "sender": "B",
+                        "type": "chat",
+                        "target": "proj/coordinator",
+                        "payload": "role ping",
+                        "receipt_requested": True,
+                    }
+                )
+            )
+            got = await read_until_type(a_ws, "chat")
+            assert got["payload"] == "role ping"
+            receipt = await read_until_type(b_ws, "delivery_receipt")
+            # a live recipient matched via the role, so it was delivered, not dead-lettered
+            assert receipt["delivered"] is True
+            assert "proj/claude" in receipt["recipients"]
+
+    assert all(entry.target != "proj/coordinator" for entry in hub.dead_letters.snapshot())
+
+
 async def test_chat_preserves_supplied_timestamp_and_increments_seq_end_to_end() -> None:
     async with running_hub() as (_, uri):
         async with connect(uri) as websocket:

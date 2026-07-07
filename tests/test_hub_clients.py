@@ -117,6 +117,37 @@ def test_drop_client_removes_only_active_agent_bindings() -> None:
     registry.socket_agent[current_socket] = "agent"
 
     assert registry.drop_client(current_socket) == "agent"
+
+
+def test_set_roles_binds_replaces_and_clears() -> None:
+    registry = _registry()
+    assert registry.roles_of("agent") == ()
+
+    registry.set_roles("agent", ("proj/coordinator", "proj/git"))
+    assert registry.roles_of("agent") == ("proj/coordinator", "proj/git")
+
+    # a new set replaces the previous roles rather than merging
+    registry.set_roles("agent", ("proj/reviewer",))
+    assert registry.roles_of("agent") == ("proj/reviewer",)
+
+    # an empty set clears the binding entirely
+    registry.set_roles("agent", ())
+    assert registry.roles_of("agent") == ()
+    assert "agent" not in registry.agent_roles
+
+
+def test_drop_client_releases_role_bindings() -> None:
+    registry = _registry()
+    socket = _Socket()
+    registry.add_client(socket)
+    registry.socket_agent[socket] = "agent"
+    registry.agent_sockets["agent"] = socket
+    registry.set_roles("agent", ("proj/coordinator",))
+
+    assert registry.roles_of("agent") == ("proj/coordinator",)
+    assert registry.drop_client(socket) == "agent"
+    # the role binding is released together with the socket
+    assert registry.roles_of("agent") == ()
     assert "agent" not in registry.agent_sockets
 
 

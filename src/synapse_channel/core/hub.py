@@ -547,6 +547,7 @@ class SynapseHub:
         self.connected_clients = self.clients.connected_clients
         self.unauth_clients = self.clients.unauth_clients
         self.agent_sockets = self.clients.agent_sockets
+        self.agent_roles = self.clients.agent_roles
         self.socket_agent = self.clients.socket_agent
         self._waits: dict[str, str] = {}
         self.capabilities = CapabilityRegistry()
@@ -687,6 +688,14 @@ class SynapseHub:
     def online_agents(self) -> list[str]:
         """Return the sorted names of currently registered agents."""
         return sorted(self.agent_sockets.keys())
+
+    def set_agent_roles(self, name: str, roles: tuple[str, ...]) -> None:
+        """Bind the roles an agent answers to, as declared on its registration heartbeat."""
+        self.clients.set_roles(name, roles)
+
+    def roles_of(self, name: str) -> tuple[str, ...]:
+        """Return the roles ``name`` currently answers to (empty tuple if none)."""
+        return self.clients.roles_of(name)
 
     def uptime_seconds(self) -> float:
         """Return seconds elapsed since the hub was constructed."""

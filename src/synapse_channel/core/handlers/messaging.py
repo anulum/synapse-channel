@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import math
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.acl_enforcement import project_of
@@ -79,7 +80,7 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
         await _route_channel_chat(hub, sender, data, websocket, channel)
         return
     target = str(data.get("target") or "all")
-    recipients = _matching_online_recipients(target, sender, hub.online_agents())
+    recipients = _matching_online_recipients(target, sender, hub.online_agents(), hub.roles_of)
     if is_directed_target(target):
         hub.counters.chat_directed += 1
     else:
@@ -232,9 +233,23 @@ async def _route_channel_chat(
         )
 
 
-def _matching_online_recipients(target: str, sender: str, online_agents: list[str]) -> list[str]:
-    """Return online recipients reached by ``target``, excluding the sender socket."""
-    return sorted(name for name in online_agents if name != sender and is_recipient(target, name))
+def _matching_online_recipients(
+    target: str,
+    sender: str,
+    online_agents: list[str],
+    roles_of: Callable[[str], tuple[str, ...]],
+) -> list[str]:
+    """Return online recipients reached by ``target``, excluding the sender socket.
+
+    A recipient is reached when ``target`` addresses its name, its bare project, or
+    one of the roles it holds (looked up through ``roles_of``) — so a directed message
+    to a ``<project>/<role>`` resolves to whichever agents currently answer to it.
+    """
+    return sorted(
+        name
+        for name in online_agents
+        if name != sender and is_recipient(target, name, roles=roles_of(name))
+    )
 
 
 async def _send_delivery_receipt(
@@ -269,4 +284,16 @@ async def _send_delivery_receipt(
 async def handle_heartbeat(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
-    """Acknowledge a keepalive; the liveness update already ran before dispatch."""
+    """Register any declared roles; the liveness update already ran before dispatch.
+
+    The registration heartbeat may carry a ``roles`` list of ``<project>/<role>``
+    names this identity answers to. Binding them here lets a directed message to a
+    role reach its holder and show in ``/who`` instead of being counted a dead letter.
+    Only a list is honoured, and non-string or blank entries are dropped rather than
+    rejected, so a malformed field degrades to no roles instead of dropping the socket.
+    A keepalive with no ``roles`` field leaves an earlier binding untouched.
+    """
+    raw_roles = data.get("roles")
+    if isinstance(raw_roles, list):
+        cleaned = (item.strip() for item in raw_roles if isinstance(item, str) and item.strip())
+        hub.set_agent_roles(sender, tuple(dict.fromkeys(cleaned)))

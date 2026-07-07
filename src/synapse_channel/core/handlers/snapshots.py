@@ -58,6 +58,7 @@ async def handle_who_request(
             msg_type=MessageType.WHO_SNAPSHOT,
             target=sender,
             online_agents=hub.online_agents(),
+            agent_roles={name: list(roles) for name, roles in hub.agent_roles.items()},
             connected_clients=len(hub.connected_clients),
             hub_version=__version__,
             config_epoch=hub.config_epoch,
