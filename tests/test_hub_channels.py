@@ -200,3 +200,20 @@ async def test_channel_history_defaults_an_unparsable_limit() -> None:
             history = await read_until_type(alpha, "channel_history")
             assert [m.get("payload") for m in history.get("messages", [])] == ["one"]
             assert history["retention"] == {"max_messages": _hub.max_history}
+
+
+async def test_channel_history_defaults_an_overflowing_limit() -> None:
+    """A JSON ``1e400`` limit decodes to inf; ``int(inf)`` raises OverflowError, which the
+    handler must catch so the request degrades to the default rather than dropping the socket."""
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        async with connect(uri) as alpha:
+            await _bind(alpha, "ALPHA")
+            await send_json(alpha, sender="ALPHA", type="channel_create", channel="c", label="C")
+            await read_until_type(alpha, "channel_result")
+            await send_json(alpha, sender="ALPHA", type="chat", channel="c", payload="one")
+            await alpha.send(
+                '{"sender": "ALPHA", "type": "channel_history_request",'
+                ' "channel": "c", "limit": 1e400}'
+            )
+            history = await read_until_type(alpha, "channel_history")
+            assert [m.get("payload") for m in history.get("messages", [])] == ["one"]

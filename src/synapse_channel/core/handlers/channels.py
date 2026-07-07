@@ -109,7 +109,9 @@ async def handle_channel_history_request(
     channel = str(data.get("channel") or "").strip()
     try:
         limit = max(0, int(data.get("limit", 20)))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError guards a JSON ``1e400`` that decodes to ``inf``: ``int(inf)``
+        # raises it, and an uncaught raise here would drop the requester's socket.
         limit = 20
     if not hub.channels.is_member(channel, sender):
         await _reply(

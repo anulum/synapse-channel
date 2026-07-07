@@ -77,7 +77,9 @@ async def handle_history_request(
     else:
         try:
             limit = int(raw_limit)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            # OverflowError guards a JSON ``1e400`` that decodes to ``inf``: ``int(inf)``
+            # raises it, and an uncaught raise here would drop the requester's socket.
             limit = None
     if limit is None:
         history = list(hub.chat_history)
@@ -121,7 +123,9 @@ async def handle_resume_request(
     raw_since = data.get("since", 0)
     try:
         since = int(raw_since)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError guards a JSON ``1e400`` that decodes to ``inf``: ``int(inf)``
+        # raises it, and an uncaught raise here would drop the requester's socket.
         since = 0
     tail = [m for m in hub.chat_history if int(m.get("msg_id", 0)) > since]
     await hub._send_json(
