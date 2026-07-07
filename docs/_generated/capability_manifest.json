@@ -5,9 +5,9 @@
     "cli_subcommands": 140,
     "documentation_pages": 49,
     "optional_dependency_groups": 10,
-    "package_modules": 318,
+    "package_modules": 319,
     "public_api_exports": 70,
-    "tests": 5109,
+    "tests": 5136,
     "version": "0.98.8",
     "wire_message_types": 72,
     "workflows": 12

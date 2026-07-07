@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
@@ -70,17 +71,8 @@ async def handle_history_request(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Send the requesting agent recent (or full) chat history."""
-    raw_limit = data.get("limit")
-    limit: int | None
-    if raw_limit is None:
-        limit = None
-    else:
-        try:
-            limit = int(raw_limit)
-        except (TypeError, ValueError, OverflowError):
-            # OverflowError guards a JSON ``1e400`` that decodes to ``inf``: ``int(inf)``
-            # raises it, and an uncaught raise here would drop the requester's socket.
-            limit = None
+    # An absent, non-numeric, or overflowing limit all read as "all" (None).
+    limit = safe_int(data.get("limit"))
     if limit is None:
         history = list(hub.chat_history)
         requested_limit: int | str = "all"
@@ -120,13 +112,8 @@ async def handle_resume_request(
     websocket : Any
         The requesting socket.
     """
-    raw_since = data.get("since", 0)
-    try:
-        since = int(raw_since)
-    except (TypeError, ValueError, OverflowError):
-        # OverflowError guards a JSON ``1e400`` that decodes to ``inf``: ``int(inf)``
-        # raises it, and an uncaught raise here would drop the requester's socket.
-        since = 0
+    # An absent, non-numeric, or overflowing cursor resumes from the start (0).
+    since = safe_int(data.get("since"), default=0)
     tail = [m for m in hub.chat_history if int(m.get("msg_id", 0)) > since]
     await hub._send_json(
         websocket,

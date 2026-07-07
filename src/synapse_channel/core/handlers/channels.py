@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
@@ -107,12 +108,8 @@ async def handle_channel_history_request(
 ) -> None:
     """Return retained channel history visible to the requester."""
     channel = str(data.get("channel") or "").strip()
-    try:
-        limit = max(0, int(data.get("limit", 20)))
-    except (TypeError, ValueError, OverflowError):
-        # OverflowError guards a JSON ``1e400`` that decodes to ``inf``: ``int(inf)``
-        # raises it, and an uncaught raise here would drop the requester's socket.
-        limit = 20
+    # A non-numeric or overflowing limit falls back to the default; negatives clamp to 0.
+    limit = safe_int(data.get("limit", 20), default=20, min_value=0)
     if not hub.channels.is_member(channel, sender):
         await _reply(
             hub,
