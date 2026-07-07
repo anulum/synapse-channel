@@ -8,7 +8,11 @@
 
 from __future__ import annotations
 
+import stat
 from pathlib import Path
+from unittest import mock
+
+import pytest
 
 from synapse_channel.mailbox_cursor import cursor_path, load_cursor, save_cursor
 
@@ -67,3 +71,28 @@ class TestSave:
         path = cursor_path("proj/agent-1", base=tmp_path)
         save_cursor(path, 15)
         assert load_cursor(cursor_path("proj/agent-1", base=tmp_path)) == 15
+
+
+class TestSaveDurability:
+    def test_writes_an_owner_only_file(self, tmp_path: Path) -> None:
+        path = tmp_path / "cur"
+        save_cursor(path, 5)
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+    def test_leaves_no_temporary_file_behind(self, tmp_path: Path) -> None:
+        path = tmp_path / "cur"
+        save_cursor(path, 5)
+        # The atomic write renames a temp into place; nothing but the cursor remains.
+        assert [entry.name for entry in tmp_path.iterdir()] == ["cur"]
+
+    def test_a_failed_replace_removes_the_temp_and_reraises(self, tmp_path: Path) -> None:
+        path = tmp_path / "cur"
+        # A replace that fails must not leave a half-written temp behind, and the error
+        # must propagate rather than silently losing the cursor.
+        with mock.patch(
+            "synapse_channel.mailbox_cursor.os.replace", side_effect=OSError("no rename")
+        ):
+            with pytest.raises(OSError, match="no rename"):
+                save_cursor(path, 5)
+        assert not path.exists()
+        assert list(tmp_path.iterdir()) == []

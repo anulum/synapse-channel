@@ -23,8 +23,12 @@ dedups the replay by ``seq`` regardless.
 
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 from urllib.parse import quote
+
+CURSOR_FILE_MODE = 0o600
 
 
 def cursor_path(identity: str, *, base: Path | None = None) -> Path:
@@ -77,6 +81,14 @@ def load_cursor(path: str | Path) -> int:
 def save_cursor(path: str | Path, seq: int) -> None:
     """Persist a ``since_seq`` cursor (clamped non-negative), creating parents.
 
+    The write is atomic and owner-only: the value is written to a temporary file
+    in the destination directory (created ``0o600`` by :func:`tempfile.mkstemp`),
+    flushed to disk, then renamed onto the cursor path with :func:`os.replace`. A
+    crash or a concurrent reader therefore never observes a half-written cursor — a
+    torn value would read back as a smaller (or corrupt) ``since_seq`` and replay a
+    slice of the backlog again, the very wake storm the persisted cursor exists to
+    prevent. The temporary file is removed if the replace never happens.
+
     Parameters
     ----------
     path : str or pathlib.Path
@@ -86,4 +98,14 @@ def save_cursor(path: str | Path, seq: int) -> None:
     """
     marker = Path(path)
     marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(str(max(int(seq), 0)), encoding="utf-8")
+    fd, tmp_name = tempfile.mkstemp(dir=marker.parent, prefix=f"{marker.name}.", suffix=".tmp")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(str(max(int(seq), 0)))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, marker)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
