@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.8] - 2026-07-07
+
 ### Added
 - The capped board snapshot now carries the applied bound as `task_cap`, alongside the existing
   `total_tasks` and `truncated`, so a dashboard or cockpit can render a "kept / cap" gauge
