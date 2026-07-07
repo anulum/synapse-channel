@@ -40,6 +40,7 @@ import websockets
 from websockets.http11 import Request, Response
 
 from synapse_channel.core.acl import AclPolicy
+from synapse_channel.core.role_grants import RoleGrants
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.channels import ChannelRegistry
@@ -433,6 +434,8 @@ class SynapseHub:
         signed_event_trust_bundle: EventSignatureTrustBundle | None = None,
         acl_policy: AclPolicy | None = None,
         require_acl: bool = False,
+        role_grants: RoleGrants | None = None,
+        require_role_claim: bool = False,
         multihub_serving_policy: MultiHubServingPolicy | None = None,
         namespace_ownership: NamespaceOwnership | None = None,
         claim_peers: Mapping[str, ClaimForwardPeer] | None = None,
@@ -467,6 +470,8 @@ class SynapseHub:
         self.signed_event_trust_bundle = signed_event_trust_bundle
         self.acl_policy = acl_policy
         self.require_acl = bool(require_acl)
+        self.role_grants = role_grants
+        self.require_role_claim = bool(require_role_claim)
         self.multihub_serving_policy = multihub_serving_policy
         self.namespace_ownership = namespace_ownership
         self.claim_peers = dict(claim_peers) if claim_peers else None
@@ -694,6 +699,29 @@ class SynapseHub:
     def set_agent_roles(self, name: str, roles: tuple[str, ...]) -> None:
         """Bind the roles an agent answers to, as declared on its registration heartbeat."""
         self.clients.set_roles(name, roles)
+
+    def permitted_role_claims(self, name: str, roles: tuple[str, ...]) -> tuple[str, ...]:
+        """Return the subset of declared ``roles`` ``name`` is permitted to bind.
+
+        With role-claim enforcement off — the default open/loopback posture — every
+        declared role is permitted, so a single-user dev hub binds roles exactly as
+        before. With ``--require-role-claim`` on, only roles the role-grant store
+        authorises for ``name`` pass; an unauthorised role is dropped and logged as a
+        squatting attempt rather than dropping the socket, the same forgiving
+        degradation the heartbeat applies to a malformed role field. Enforcement with
+        no store configured denies every claim (fail closed). The gate keys off the
+        self-reported ``name``, so it is only as strong as the sender binding — pair
+        it with a connect token, and with connection-identity binding, to be a real
+        boundary.
+        """
+        if not self.require_role_claim:
+            return roles
+        grants = self.role_grants or RoleGrants({})
+        permitted = grants.authorised_roles(name, roles)
+        denied = tuple(role for role in roles if role not in permitted)
+        if denied:
+            logger.warning("role-claim denied for %s: %s", name, ", ".join(denied))
+        return permitted
 
     def roles_of(self, name: str) -> tuple[str, ...]:
         """Return the roles ``name`` currently answers to (empty tuple if none)."""

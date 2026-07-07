@@ -430,7 +430,11 @@ async def handle_heartbeat(
     role reach its holder and show in ``/who`` instead of being counted a dead letter.
     Only a list is honoured, and non-string or blank entries are dropped rather than
     rejected, so a malformed field degrades to no roles instead of dropping the socket.
-    A keepalive with no ``roles`` field leaves an earlier binding untouched.
+    When role-claim enforcement is on (``--require-role-claim``), a declared role the
+    role-grant store does not authorise for this identity is dropped the same forgiving
+    way (see :meth:`~synapse_channel.core.hub.SynapseHub.permitted_role_claims`), so a
+    socket cannot squat a role no operator granted it. A keepalive with no ``roles``
+    field leaves an earlier binding untouched.
 
     A mailbox-capable client also sets ``mailbox: true`` and ``since_seq`` (the last
     durable chat ``seq`` it processed) on its *registration* heartbeat, and the hub
@@ -452,7 +456,8 @@ async def handle_heartbeat(
     raw_roles = data.get("roles")
     if isinstance(raw_roles, list):
         cleaned = (item.strip() for item in raw_roles if isinstance(item, str) and item.strip())
-        hub.set_agent_roles(sender, tuple(dict.fromkeys(cleaned)))
+        declared = tuple(dict.fromkeys(cleaned))
+        hub.set_agent_roles(sender, hub.permitted_role_claims(sender, declared))
     if data.get("mailbox") is True:
         raw_since = data.get("since_seq")
         since_seq = (

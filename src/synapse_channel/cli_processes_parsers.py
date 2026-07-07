@@ -302,6 +302,23 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "with --token and --require-message-auth on an exposed hub.",
     )
     hub.add_argument(
+        "--role-grants",
+        default="",
+        metavar="FILE",
+        help="Deny-by-default role-grant store JSON (written by `synapse role`) naming "
+        "which identities may claim which roles. Loaded but not enforced unless "
+        "--require-role-claim is set.",
+    )
+    hub.add_argument(
+        "--require-role-claim",
+        action="store_true",
+        help="Bind a heartbeat's declared role only when --role-grants authorises the "
+        "identity for it; an unauthorised role is dropped instead of squatted. Off by "
+        "default, so an open hub binds declared roles unchanged. The gate keys off the "
+        "self-reported identity, so pair this with --token and --require-message-auth on "
+        "an exposed hub.",
+    )
+    hub.add_argument(
         "--federation-store",
         default="",
         metavar="FILE",

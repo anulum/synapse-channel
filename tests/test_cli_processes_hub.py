@@ -812,3 +812,55 @@ def test_parse_message_auth_keys_rejects_empty_fields() -> None:
         _parse_message_auth_keys([":secret:ALPHA"])
     with pytest.raises(ValueError, match="KEY_ID:SECRET:SENDER"):
         _parse_message_auth_keys(["main:secret:  ,  "])
+
+
+def test_cmd_hub_no_role_grants_by_default() -> None:
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert cli_processes._cmd_hub(_hub_ns(), runner=_close_runner, hub_factory=build_hub) == 0
+    assert captured["role_grants"] is None
+    assert captured["require_role_claim"] is False
+
+
+def test_cmd_hub_threads_role_grants(tmp_path: Path) -> None:
+    store = tmp_path / "role-grants.json"
+    store.write_text(
+        json.dumps({"grants": {"proj/coordinator": ["proj/claude"]}}), encoding="utf-8"
+    )
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(role_grants=str(store), require_role_claim=True, token="t"),
+            runner=_close_runner,
+            hub_factory=build_hub,
+        )
+        == 0
+    )
+    assert captured["require_role_claim"] is True
+    assert captured["role_grants"].may_claim("proj/claude", "proj/coordinator")
+
+
+def test_cmd_hub_rejects_a_malformed_role_grants_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = tmp_path / "role-grants.json"
+    store.write_text("{not json", encoding="utf-8")
+
+    assert cli_processes._cmd_hub(_hub_ns(role_grants=str(store)), runner=_close_runner) == 2
+    assert "not valid JSON" in capsys.readouterr().err
+
+
+def test_cmd_hub_warns_on_require_role_claim_without_token(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert cli_processes._cmd_hub(_hub_ns(require_role_claim=True), runner=_close_runner) == 0
+    assert "--require-role-claim without --token" in capsys.readouterr().err

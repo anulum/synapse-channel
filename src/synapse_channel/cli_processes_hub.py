@@ -22,6 +22,7 @@ from typing import Any
 
 from synapse_channel.cli_processes_runtime import _run
 from synapse_channel.core.acl import AclError, load_acl_policy
+from synapse_channel.core.role_grants import RoleGrantError, load_role_grants
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.federation import FederationBundle, bundle_can_authorise
 from synapse_channel.core.federation_store import FederationStoreError, bundle_from_store
@@ -138,6 +139,19 @@ def _cmd_hub(
             "sender; namespace ACL rules give no protection on an unauthenticated hub. "
             "Pair --require-acl with --token, and with --require-message-auth so the sender "
             "is cryptographically bound, before relying on enforcement.",
+            file=sys.stderr,
+        )
+    try:
+        role_grants = load_role_grants(args.role_grants) if args.role_grants else None
+    except RoleGrantError as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        return 2
+    if args.require_role_claim and authenticator is None:
+        print(
+            "synapse hub: WARNING --require-role-claim without --token gates on a "
+            "self-reported identity; role grants give no protection on an unauthenticated "
+            "hub. Pair --require-role-claim with --token, and with --require-message-auth so "
+            "the identity is cryptographically bound, before relying on enforcement.",
             file=sys.stderr,
         )
     federation_bundle: FederationBundle | None = None
@@ -263,6 +277,8 @@ def _cmd_hub(
         "per_message_auth_replay_capacity": args.message_auth_replay_capacity,
         "acl_policy": acl_policy,
         "require_acl": args.require_acl,
+        "role_grants": role_grants,
+        "require_role_claim": args.require_role_claim,
         "federation_bundle": federation_bundle,
         "federation_offer_path": args.federation_offer or None,
         "hub_id": args.hub_id,

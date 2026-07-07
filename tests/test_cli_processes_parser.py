@@ -23,6 +23,16 @@ def test_parser_hub_defaults() -> None:
     assert args.host == "localhost"
     assert args.db is None
     assert args.func is cli_processes._cmd_hub
+    assert args.role_grants == ""
+    assert args.require_role_claim is False
+
+
+def test_parser_hub_role_claim_flags() -> None:
+    args = cli.build_parser().parse_args(
+        ["hub", "--role-grants", "/tmp/rg.json", "--require-role-claim"]
+    )
+    assert args.role_grants == "/tmp/rg.json"
+    assert args.require_role_claim is True
 
 
 def test_parser_worker_custom() -> None:

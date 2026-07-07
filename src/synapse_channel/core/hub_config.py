@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.acl import AclPolicy
+from synapse_channel.core.role_grants import RoleGrants
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
@@ -163,6 +164,8 @@ class HubAuthConfig:
     signed_event_trust_bundle: EventSignatureTrustBundle | None = None
     acl_policy: AclPolicy | None = None
     require_acl: bool = False
+    role_grants: RoleGrants | None = None
+    require_role_claim: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
