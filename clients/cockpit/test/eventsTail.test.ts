@@ -59,6 +59,28 @@ describe("mapStoredEvent", () => {
     expect(bare.label).toBe("dead-letter escalation: x");
   });
 
+  it("maps a dead-letter forward as an audit finding, direction and hubs named", () => {
+    const event = mapStoredEvent({
+      seq: 9002,
+      ts: 1784.5,
+      kind: "dead_letter_forwarding",
+      payload: { target: "CEO", count: 10, origin_hub_id: "hub-a", owner_hub_id: "hub-b", direction: "out" },
+    });
+    expect(event.kind).toBe("finding");
+    expect(event.actor).toBe("CEO");
+    expect(event.label).toBe("dead-letter forward (out): CEO · 10 undelivered · hub-a → hub-b");
+    // A record missing the optional trimmings still states the core fact.
+    const bare = mapStoredEvent({ seq: 1, ts: 1, kind: "dead_letter_forwarding", payload: { target: "x" } });
+    expect(bare.label).toBe("dead-letter forward: x");
+    const half = mapStoredEvent({
+      seq: 2,
+      ts: 2,
+      kind: "dead_letter_forwarding",
+      payload: { target: "y", count: "many", origin_hub_id: "hub-a", direction: "in" },
+    });
+    expect(half.label).toBe("dead-letter forward (in): y");
+  });
+
 
   it("maps every known hub kind with the hub's own seq and ts", () => {
     expect(mapStoredEvent(stored(1, "claim", { task_id: "t1", owner: "a" }))).toMatchObject({

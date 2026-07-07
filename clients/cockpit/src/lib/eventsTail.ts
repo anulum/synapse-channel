@@ -110,6 +110,21 @@ export function mapStoredEvent(stored: StoredEvent): CockpitEvent {
     label = `dead-letter escalation: ${asString(payload["target"])}${
       typeof count === "number" ? ` · ${count} undelivered` : ""
     }`;
+  } else if (stored.kind === "dead_letter_forwarding") {
+    // The cross-hub follow-up of an escalated blackhole (0.98.x): the origin
+    // forwards a pointer (never a body) to the hub owning the target's
+    // namespace, direction `out` on the origin and `in` on the owner. An
+    // audit fact worth seeing — the alarm itself already fired as the
+    // escalation — so it maps at finding volume, not conflict volume.
+    kind = "finding";
+    actor = asString(payload["target"]);
+    const forwarded = payload["count"];
+    const origin = asString(payload["origin_hub_id"]);
+    const owner = asString(payload["owner_hub_id"]);
+    const direction = asString(payload["direction"]);
+    label = `dead-letter forward${direction === "" ? "" : ` (${direction})`}: ${asString(payload["target"])}${
+      typeof forwarded === "number" ? ` · ${forwarded} undelivered` : ""
+    }${origin !== "" && owner !== "" ? ` · ${origin} → ${owner}` : ""}`;
   } else {
     kind = "chat";
     actor = "";
