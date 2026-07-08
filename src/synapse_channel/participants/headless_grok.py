@@ -197,7 +197,8 @@ class GrokParticipant:
         -------
         ParticipantHealth
             ``available`` is true when the configured binary is found. The binary resolving
-            says nothing about whether a turn will run (Grok participant real smoke is schema-gated; prior CLI reliability issues resolved).
+            says nothing about whether a turn will run: Grok participant real smoke
+            is schema-gated, and prior CLI reliability issues are resolved.
         """
         resolved = shutil.which(self._binary)
         return ParticipantHealth(
