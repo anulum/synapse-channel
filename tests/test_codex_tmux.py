@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from synapse_channel import agent_tmux, codex_tmux
@@ -32,8 +32,9 @@ def _runner(*results: subprocess.CompletedProcess[str]) -> object:
         capture_output: bool = False,
         text: bool = False,
         check: bool = False,
+        env: Mapping[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        del capture_output, text, check
+        del capture_output, text, check, env
         if queue:
             return queue.pop(0)
         return subprocess.CompletedProcess(list(args), 0, "", "")
@@ -71,8 +72,9 @@ def test_inject_wake_through_codex_surface_still_two_steps(tmp_path: Path) -> No
         capture_output: bool = False,
         text: bool = False,
         check: bool = False,
+        env: Mapping[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        del capture_output, text, check
+        del capture_output, text, check, env
         calls.append(list(args))
         return subprocess.CompletedProcess(list(args), 0, "", "")
 

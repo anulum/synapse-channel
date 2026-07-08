@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import shutil
 import subprocess
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -119,7 +119,9 @@ class _Harness:
         capture_output: bool = False,
         text: bool = False,
         check: bool = False,
+        env: Mapping[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
+        del capture_output, text, check, env
         self.tmux_calls.append(list(args))
         # returncode 0 to has-session means start_session finds the session and does not
         # create one; send-keys also succeeds so inject reports injected.
