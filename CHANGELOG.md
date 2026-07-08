@@ -13,6 +13,26 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.10] - 2026-07-08
+
+### Added
+- Receiver wake capability is now explicit in roster and receipt surfaces: direct agents, passive
+  socket waiters, and pane-bridge waiters are distinguished so operators can tell "socket
+  delivered" apart from an agent pane that can actually be woken.
+- Tmux-backed provider sessions now export `SYN_TMUX_PROVIDER=1` alongside `SYN_PROJECT` and
+  `SYN_IDENTITY`, giving inner agent shells a stable marker that the session's `agent-tmux wait`
+  owns the long-lived `-rx` listener for the identity.
+
+### Fixed
+- Directed delivery receipts now count a live `identity-rx` waiter as delivery to the logical
+  `identity`, closing the gap where a message reached the sidecar but was still reported as
+  undelivered to the sender.
+- Passive `synapse wait`/`synapse arm` instances now yield when an active tmux pane-bridge provider
+  already owns that identity's receiver, avoiding repeated supersession churn, name instability, and
+  duplicate plain waiters in provider-backed sessions.
+- Grok CLI participant status text and source warnings now match the more stable CLI launch path and
+  keep the smoke-test status output within the repository's formatting gate.
+
 ## [0.98.9] - 2026-07-08
 
 ### Added
