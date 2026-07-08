@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import json
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 from synapse_channel.agent_tmux import (
     AgentTmuxConfig,
@@ -42,6 +43,7 @@ class RecordingRunner:
 
     def __init__(self, results: Sequence[subprocess.CompletedProcess[str]] = ()) -> None:
         self.calls: list[list[str]] = []
+        self.envs: list[Mapping[str, str] | None] = []
         self.results = list(results)
 
     def __call__(
@@ -51,9 +53,11 @@ class RecordingRunner:
         capture_output: bool = False,
         text: bool = False,
         check: bool = False,
+        env: Mapping[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         del capture_output, text, check
         self.calls.append(list(args))
+        self.envs.append(env)
         if self.results:
             return self.results.pop(0)
         return subprocess.CompletedProcess(list(args), 0, "", "")
@@ -286,6 +290,30 @@ def test_wait_and_wake_injects_after_successful_wait(tmp_path: Path) -> None:
     ]
     assert runner.calls[1][:5] == ["tmux", "send-keys", "-t", "synapse-codex-main", "-l"]
     assert runner.calls[2] == ["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]
+
+
+def test_wait_and_wake_strips_provider_marker_from_wait_child(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("SYN_TMUX_PROVIDER", "1")
+    monkeypatch.setenv("SYNAPSE_AUTO_CONNECT", "0")
+    config = _config(tmp_path)
+    runner = RecordingRunner(
+        [
+            _result(["synapse", "wait"], 0, "sender: wake\n"),
+            _result(["tmux", "send-keys"], 0),
+            _result(["tmux", "send-keys"], 0),
+        ]
+    )
+
+    result = wait_and_wake(config, runner=runner, max_wakes=1, sleeper=RecordingSleeper())
+
+    assert result == 0
+    assert runner.calls[0][:2] == ["synapse", "wait"]
+    wait_env = runner.envs[0]
+    assert wait_env is not None
+    assert "SYN_TMUX_PROVIDER" not in wait_env
+    assert wait_env["SYNAPSE_AUTO_CONNECT"] == "0"
 
 
 def test_wait_and_wake_stops_after_bounded_consecutive_failures(tmp_path: Path) -> None:

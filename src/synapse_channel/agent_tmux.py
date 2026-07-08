@@ -34,7 +34,7 @@ import shlex
 # Tmux and synapse subprocesses are this module's controlled process boundary.
 import subprocess  # nosec B404
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import gettempdir
@@ -95,6 +95,7 @@ class CommandRunner(Protocol):
         capture_output: bool = False,
         text: bool = False,
         check: bool = False,
+        env: Mapping[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         """Run ``args`` and return the completed process."""
 
@@ -527,6 +528,16 @@ def _backoff_delay(
     return capped * (1.0 + jitter * rng())
 
 
+def _wait_process_env() -> dict[str, str]:
+    """Return the sanitized environment for the one-shot wait subprocess."""
+    env = dict(os.environ)
+    # This marker is for provider panes and shell hooks. If the bridge's own
+    # `synapse wait` inherits it, cli_messaging_wait yields immediately with a
+    # success code and the bridge mistakes that yield for a real wake.
+    env.pop("SYN_TMUX_PROVIDER", None)
+    return env
+
+
 def wait_and_wake(
     config: AgentTmuxConfig,
     *,
@@ -580,7 +591,13 @@ def wait_and_wake(
     wakes = 0
     consecutive_failures = 0
     while max_wakes is None or wakes < max_wakes:
-        wait_proc = runner(_wait_command(config), capture_output=True, text=True, check=False)
+        wait_proc = runner(
+            _wait_command(config),
+            capture_output=True,
+            text=True,
+            check=False,
+            env=_wait_process_env(),
+        )
         if wait_proc.returncode != 0:
             consecutive_failures += 1
             if max_wait_failures is not None and consecutive_failures >= max_wait_failures:

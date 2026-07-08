@@ -13,6 +13,14 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.14] - 2026-07-09
+
+### Fixed
+- `agent-tmux` now strips the provider-only `SYN_TMUX_PROVIDER` marker from its
+  one-shot `synapse wait` subprocess. Without this, the wait child took the
+  shell-hook provider-yield path, exited successfully without a real message,
+  and the bridge interpreted that yield as a wake to inject into Grok/Kimi panes.
+
 ## [0.98.13] - 2026-07-08
 
 ### Fixed
