@@ -184,12 +184,12 @@ def test_cmd_arm_yields_when_tmux_provider_is_live(
     assert "Yielding plain passive arm" in out
 
 
-def test_cmd_arm_yields_for_legacy_project_scoped_terminal_waiter(
+def test_cmd_arm_refuses_legacy_project_scoped_terminal_waiter_before_provider_probe(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """A legacy ``--for user`` terminal sidecar still yields to its pane bridge."""
+    """A legacy ``--for user`` terminal sidecar refuses before checking providers."""
     runtime = tmp_path / "runtime"
     runtime.mkdir()
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
@@ -217,8 +217,39 @@ def test_cmd_arm_yields_for_legacy_project_scoped_terminal_waiter(
     assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=lambda c: asyncio.run(c)) == 0
     assert not calls
     out = capsys.readouterr().out
-    assert "active tmux provider detected for user/terminal-38253" in out
-    assert "Yielding plain passive arm" in out
+    assert "legacy broad project wait for user" in out
+    assert "user/terminal-38253" in out
+
+
+def test_cmd_arm_refuses_legacy_project_scoped_terminal_sidecar(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Old shell functions cannot recreate a broad project wake loop."""
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    calls: list[Any] = []
+
+    async def arm_once(**kwargs: Any) -> int:
+        calls.append(kwargs)
+        return 0
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="user/terminal-15627-rx",
+        for_name="user",
+        directed_only=True,
+        wake_jitter=0.0,
+        reconnect_delay=0.0,
+        max_wakes=None,
+        token=None,
+        owner_pid=None,
+    )
+    assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=lambda c: asyncio.run(c)) == 0
+    assert not calls
+    out = capsys.readouterr().out
+    assert "legacy broad project wait for user" in out
+    assert "user/terminal-15627" in out
 
 
 def test_cmd_arm_arms_when_tmux_provider_pidfile_is_dead(

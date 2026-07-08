@@ -123,12 +123,12 @@ def test_cmd_wait_defaults_to_passive_wake_capability() -> None:
     assert captured["wake_capability"] == WAKE_PASSIVE
 
 
-def test_cmd_wait_yields_for_legacy_project_scoped_terminal_waiter(
+def test_cmd_wait_refuses_legacy_project_scoped_terminal_waiter_before_provider_probe(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """A legacy ``--for user`` terminal sidecar still yields to its pane bridge."""
+    """A legacy ``--for user`` terminal sidecar refuses before checking providers."""
     runtime = tmp_path / "runtime"
     runtime.mkdir()
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
@@ -161,8 +161,44 @@ def test_cmd_wait_yields_for_legacy_project_scoped_terminal_waiter(
     )
     assert not calls
     out = capsys.readouterr().out
-    assert "provider-backed session for user/terminal-38253" in out
-    assert "Yielding plain passive" in out
+    assert "legacy broad project wait for user" in out
+    assert "user/terminal-38253" in out
+
+
+def test_cmd_wait_refuses_legacy_project_scoped_terminal_sidecar(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Old shell functions cannot recreate a broad project wake loop."""
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    calls: list[object] = []
+
+    async def wait_once(**kwargs: object) -> int:
+        calls.append(kwargs)
+        return 1
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="user/terminal-15627-rx",
+        for_name="user",
+        timeout=0.0,
+        directed_only=True,
+        wake_jitter=0.0,
+        token=None,
+        ready_timeout=0.1,
+    )
+
+    assert (
+        cli_messaging._cmd_wait(
+            ns, wait_runner=wait_once, async_runner=lambda coro: asyncio.run(coro)
+        )
+        == 0
+    )
+    assert not calls
+    out = capsys.readouterr().out
+    assert "legacy broad project wait for user" in out
+    assert "user/terminal-15627" in out
 
 
 async def test_wait_wakes_on_a_held_role(capsys: pytest.CaptureFixture[str]) -> None:

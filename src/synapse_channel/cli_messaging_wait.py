@@ -34,6 +34,14 @@ WaitRunner = Callable[..., Coroutine[Any, Any, int]]
 AsyncRunner = Callable[[Coroutine[Any, Any, int]], int]
 
 
+def _legacy_project_scoped_terminal_sidecar(connect_name: str, for_name: str) -> str | None:
+    """Return the terminal identity for an old broad project-sidecar wait, if any."""
+    owner = waiter_owner(connect_name)
+    if owner != connect_name and owner.startswith(f"{for_name}/terminal-"):
+        return owner
+    return None
+
+
 async def _wait(
     *,
     uri: str,
@@ -230,6 +238,13 @@ def _cmd_wait(
     for_name = args.for_name or args.name
     connect_name = args.name if args.name != for_name else waiter_name(args.name)
     roles = tuple(r.strip() for r in (getattr(args, "role", None) or ()) if r.strip())
+    legacy_terminal = _legacy_project_scoped_terminal_sidecar(connect_name, for_name)
+    if legacy_terminal is not None:
+        print(
+            f"[{connect_name}] legacy broad project wait for {for_name} would wake "
+            f"on every project message; re-run for exact identity {legacy_terminal} instead."
+        )
+        return 0
     provider_identities = (for_name, waiter_owner(connect_name))
 
     # Provider-aware early yield for stable session identity inheritance.

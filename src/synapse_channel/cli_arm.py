@@ -33,6 +33,14 @@ PidProbe = Callable[[int], bool]
 OWNER_CHECK_INTERVAL_SECONDS = 5.0
 
 
+def _legacy_project_scoped_terminal_sidecar(connect_name: str, for_name: str) -> str | None:
+    """Return the terminal identity for an old broad project-sidecar arm, if any."""
+    owner = waiter_owner(connect_name)
+    if owner != connect_name and owner.startswith(f"{for_name}/terminal-"):
+        return owner
+    return None
+
+
 def pid_alive(pid: int) -> bool:
     """Return whether a process with ``pid`` exists (signal 0 probe).
 
@@ -176,6 +184,13 @@ def _cmd_arm(
     """Dispatch the persistent ``arm`` subcommand."""
     for_name = args.for_name or args.name
     connect_name = args.name if args.name != for_name else waiter_name(args.name)
+    legacy_terminal = _legacy_project_scoped_terminal_sidecar(connect_name, for_name)
+    if legacy_terminal is not None:
+        print(
+            f"[{connect_name}] legacy broad project wait for {for_name} would wake "
+            f"on every project message; re-arm for exact identity {legacy_terminal} instead."
+        )
+        return 0
     provider_identities = (for_name, waiter_owner(connect_name))
 
     # Provider-aware early yield: an active tmux provider (worker-session +
