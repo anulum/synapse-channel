@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from synapse_channel.core.identity_binding import (
     IdentityBindingError,
+    enroll_identity_key,
     load_identity_trust_bundle,
     verify_registration,
 )
@@ -309,3 +311,118 @@ class TestVerifyRegistration:
         )
 
         assert result is SignedEventVerificationResult.UNKNOWN_KEY
+
+
+class TestEnroll:
+    def test_creates_a_new_bundle(self, tmp_path: Path) -> None:
+        path = tmp_path / "trust.json"
+        private_key = Ed25519PrivateKey.generate()
+
+        enroll_identity_key(
+            path, key_id=_KEY_ID, public_key_b64=_public_b64(private_key), senders=[_SENDER]
+        )
+
+        assert load_identity_trust_bundle(path).keys[_KEY_ID].senders == frozenset({_SENDER})
+
+    def test_appends_to_an_existing_bundle(self, tmp_path: Path) -> None:
+        path = tmp_path / "trust.json"
+        first = Ed25519PrivateKey.generate()
+        second = Ed25519PrivateKey.generate()
+        enroll_identity_key(path, key_id="k1", public_key_b64=_public_b64(first), senders=["a/one"])
+
+        enroll_identity_key(
+            path, key_id="k2", public_key_b64=_public_b64(second), senders=["a/two"]
+        )
+
+        assert set(load_identity_trust_bundle(path).keys) == {"k1", "k2"}
+
+    def test_carries_expiry(self, tmp_path: Path) -> None:
+        path = tmp_path / "trust.json"
+        private_key = Ed25519PrivateKey.generate()
+
+        enroll_identity_key(
+            path,
+            key_id=_KEY_ID,
+            public_key_b64=_public_b64(private_key),
+            senders=[_SENDER],
+            expires_at=1900000000.0,
+        )
+
+        assert load_identity_trust_bundle(path).keys[_KEY_ID].expires_at == 1900000000.0
+
+    def test_duplicate_key_id_raises(self, tmp_path: Path) -> None:
+        path = tmp_path / "trust.json"
+        private_key = Ed25519PrivateKey.generate()
+        enroll_identity_key(
+            path, key_id=_KEY_ID, public_key_b64=_public_b64(private_key), senders=[_SENDER]
+        )
+
+        with pytest.raises(IdentityBindingError, match="already enrolled"):
+            enroll_identity_key(
+                path,
+                key_id=_KEY_ID,
+                public_key_b64=_public_b64(Ed25519PrivateKey.generate()),
+                senders=["a/other"],
+            )
+
+    def test_invalid_public_key_raises(self, tmp_path: Path) -> None:
+        path = tmp_path / "trust.json"
+
+        with pytest.raises(IdentityBindingError, match="raw Ed25519 bytes"):
+            enroll_identity_key(path, key_id="k", public_key_b64="AA==", senders=["a/b"])
+
+    def test_malformed_existing_bundle_raises(self, tmp_path: Path) -> None:
+        path = tmp_path / "trust.json"
+        path.write_text("{bad", encoding="utf-8")
+
+        with pytest.raises(IdentityBindingError, match="invalid identity trust JSON"):
+            enroll_identity_key(
+                path,
+                key_id="k",
+                public_key_b64=_public_b64(Ed25519PrivateKey.generate()),
+                senders=["a/b"],
+            )
+
+    def test_shape_guard_on_existing_bundle(self, tmp_path: Path) -> None:
+        path = tmp_path / "trust.json"
+        path.write_text('{"keys": {}}', encoding="utf-8")
+
+        with pytest.raises(IdentityBindingError, match="mapping with a 'keys' list"):
+            enroll_identity_key(
+                path,
+                key_id="k",
+                public_key_b64=_public_b64(Ed25519PrivateKey.generate()),
+                senders=["a/b"],
+            )
+
+    def test_unwritable_parent_raises(self, tmp_path: Path) -> None:
+        blocker = tmp_path / "afile"
+        blocker.write_text("x", encoding="utf-8")
+
+        with pytest.raises(IdentityBindingError, match="cannot write identity trust bundle"):
+            enroll_identity_key(
+                blocker / "sub" / "trust.json",
+                key_id="k",
+                public_key_b64=_public_b64(Ed25519PrivateKey.generate()),
+                senders=["a/b"],
+            )
+
+    def test_replace_failure_cleans_up_temp_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        path = tmp_path / "trust.json"
+
+        def _boom(src: object, dst: object) -> None:
+            raise RuntimeError("replace failed")
+
+        monkeypatch.setattr(os, "replace", _boom)
+
+        with pytest.raises(RuntimeError, match="replace failed"):
+            enroll_identity_key(
+                path,
+                key_id="k",
+                public_key_b64=_public_b64(Ed25519PrivateKey.generate()),
+                senders=["a/b"],
+            )
+
+        assert list(tmp_path.glob("*.tmp")) == []

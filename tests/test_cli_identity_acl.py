@@ -79,6 +79,137 @@ def test_identity_audit_malformed_returns_two(
     assert "identity error" in capsys.readouterr().out
 
 
+# --- identity keygen -------------------------------------------------------
+
+
+def test_identity_keygen_parser_registered() -> None:
+    args = cli.build_parser().parse_args(
+        ["identity", "keygen", "--sender", "P/a", "--key-id", "k", "--private-out", "x.pem"]
+    )
+    assert args.func is cli_identity._cmd_identity_keygen
+
+
+def test_identity_keygen_writes_key_and_prints_trust_entry(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    key = tmp_path / "id.pem"
+    code = _run(
+        ["identity", "keygen", "--sender", "P/a", "--key-id", "k", "--private-out", str(key)]
+    )
+    out = capsys.readouterr().out
+
+    assert code == 0
+    assert key.is_file()
+    entry = json.loads(out[out.index("{") :])
+    assert entry["keys"][0]["key_id"] == "k"
+    assert entry["keys"][0]["senders"] == ["P/a"]
+
+
+def test_identity_keygen_enrols_into_a_trust_bundle(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from synapse_channel.core.identity_binding import load_identity_trust_bundle
+
+    key = tmp_path / "id.pem"
+    trust = tmp_path / "trust.json"
+    code = _run(
+        [
+            "identity",
+            "keygen",
+            "--sender",
+            "P/a",
+            "--key-id",
+            "k",
+            "--private-out",
+            str(key),
+            "--trust",
+            str(trust),
+        ]
+    )
+
+    assert code == 0
+    assert "enrolled k" in capsys.readouterr().out
+    assert "k" in load_identity_trust_bundle(trust).keys
+
+
+def test_identity_keygen_entry_carries_expiry_when_requested(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    key = tmp_path / "id.pem"
+    code = _run(
+        [
+            "identity",
+            "keygen",
+            "--sender",
+            "P/a",
+            "--key-id",
+            "k",
+            "--private-out",
+            str(key),
+            "--expires-at",
+            "1900000000",
+        ]
+    )
+    out = capsys.readouterr().out
+
+    assert code == 0
+    entry = json.loads(out[out.index("{") :])
+    assert entry["keys"][0]["expires_at"] == 1900000000.0
+
+
+def test_identity_keygen_refuses_an_existing_key_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    key = tmp_path / "id.pem"
+    key.write_text("existing", encoding="utf-8")
+
+    code = _run(
+        ["identity", "keygen", "--sender", "P/a", "--key-id", "k", "--private-out", str(key)]
+    )
+
+    assert code == 2
+    assert "identity keygen error" in capsys.readouterr().out
+
+
+def test_identity_keygen_duplicate_enrollment_returns_two(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    trust = tmp_path / "trust.json"
+    _run(
+        [
+            "identity",
+            "keygen",
+            "--sender",
+            "P/a",
+            "--key-id",
+            "k",
+            "--private-out",
+            str(tmp_path / "a.pem"),
+            "--trust",
+            str(trust),
+        ]
+    )
+    capsys.readouterr()
+
+    code = _run(
+        [
+            "identity",
+            "keygen",
+            "--sender",
+            "P/b",
+            "--key-id",
+            "k",
+            "--private-out",
+            str(tmp_path / "b.pem"),
+            "--trust",
+            str(trust),
+        ]
+    )
+
+    assert code == 2
+    assert "already enrolled" in capsys.readouterr().out
+
+
 # --- acl shadow ------------------------------------------------------------
 
 

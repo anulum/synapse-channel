@@ -33,8 +33,11 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import Mapping
+import os
+import tempfile
+from collections.abc import Iterable, Mapping
 from pathlib import Path
+from typing import Any
 
 from synapse_channel.core.message_auth import (
     DEFAULT_MESSAGE_AUTH_FUTURE_SKEW_SECONDS,
@@ -200,3 +203,74 @@ def verify_registration(
         now=now,
         required_sender=required_sender,
     )
+
+
+def _load_raw_keys(file: Path) -> list[Any]:
+    """Return the raw ``keys`` list of an existing bundle file, or ``[]`` when absent."""
+    if not file.is_file():
+        return []
+    try:
+        data = json.loads(file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise IdentityBindingError(f"invalid identity trust JSON: {exc}") from exc
+    if not isinstance(data, Mapping) or not isinstance(data.get("keys"), list):
+        raise IdentityBindingError("identity trust bundle must be a mapping with a 'keys' list")
+    return list(data["keys"])
+
+
+def enroll_identity_key(
+    path: str | Path,
+    *,
+    key_id: str,
+    public_key_b64: str,
+    senders: Iterable[str],
+    expires_at: float | None = None,
+) -> None:
+    """Add one public key to an identity trust bundle file, creating it if absent.
+
+    The new entry is appended to the bundle's ``keys`` list, then the whole file is
+    validated (every key re-parsed) before it is written atomically, so a bad entry
+    never lands and a torn write is never observed. A key id already present is an
+    error — rotation replaces the file rather than silently shadowing a key.
+
+    Raises
+    ------
+    IdentityBindingError
+        When the file is malformed, the key id is already enrolled, or the new entry
+        is invalid (bad base64, wrong key length, no senders).
+    """
+    file = Path(path).expanduser()
+    keys = _load_raw_keys(file)
+    if any(isinstance(k, Mapping) and str(k.get("key_id", "")).strip() == key_id for k in keys):
+        raise IdentityBindingError(f"key id {key_id!r} already enrolled in {file}")
+    entry: dict[str, Any] = {
+        "key_id": key_id,
+        "public_key": public_key_b64,
+        "senders": list(senders),
+    }
+    if expires_at is not None:
+        entry["expires_at"] = expires_at
+    keys.append(entry)
+    for index, candidate in enumerate(keys):
+        _parse_key(candidate, index)
+    _write_bundle(file, {"keys": keys})
+
+
+def _write_bundle(file: Path, payload: Mapping[str, Any]) -> None:
+    """Write a trust bundle atomically (temp file then :func:`os.replace`)."""
+    text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    try:
+        file.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(dir=file.parent, prefix=f"{file.name}.", suffix=".tmp")
+    except OSError as exc:
+        raise IdentityBindingError(f"cannot write identity trust bundle {file}: {exc}") from exc
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, file)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
