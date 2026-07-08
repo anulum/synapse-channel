@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel.core.dead_letters import (
     DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS,
@@ -73,6 +75,16 @@ class TestLedger:
     def test_default_bound_is_the_documented_value(self) -> None:
         assert DeadLetterLedger().max_targets == DEFAULT_DEAD_LETTER_TARGETS
         assert DeadLetterLedger(max_targets=0).max_targets == 1
+
+    def test_non_finite_bound_and_timestamp_degrade_to_finite_values(self) -> None:
+        ledger = DeadLetterLedger(max_targets=cast(int, float("inf")))
+
+        count = ledger.record("A", sender="X", ts=float("nan"))
+        snapshot = ledger.snapshot(now=0.0)
+
+        assert ledger.max_targets == DEFAULT_DEAD_LETTER_TARGETS
+        assert count == 1
+        assert isinstance(snapshot[0]["last_ts"], float)
 
 
 class TestLedgerAgeBound:

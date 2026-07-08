@@ -30,6 +30,10 @@ class TestSafeInt:
         assert safe_int(True) == 1
         assert safe_int(False) == 0
 
+    def test_can_treat_bool_as_absent(self) -> None:
+        assert safe_int(True, default=9, allow_bool=False) == 9
+        assert safe_int(False, default=9, allow_bool=False) == 9
+
     def test_missing_value_returns_the_default(self) -> None:
         assert safe_int(None) is None
         assert safe_int(None, default=7) == 7
@@ -89,3 +93,7 @@ class TestSafeFloat:
     def test_non_finite_kept_when_finite_false(self) -> None:
         assert safe_float(float("inf"), default=0.0, finite=False) == float("inf")
         assert math.isnan(safe_float(float("nan"), default=0.0, finite=False))
+
+    def test_can_treat_bool_as_absent(self) -> None:
+        assert safe_float(True, default=2.5, allow_bool=False) == 2.5
+        assert safe_float(False, default=2.5, allow_bool=False) == 2.5

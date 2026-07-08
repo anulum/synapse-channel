@@ -10,12 +10,20 @@ from __future__ import annotations
 
 import dataclasses
 import inspect
+import math
 from collections import Counter
+from typing import cast
 
 import pytest
 
 from synapse_channel.core.auth import TokenAuthenticator
-from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.hub import (
+    DEFAULT_AUTH_TIMEOUT,
+    DEFAULT_MAX_HISTORY,
+    DEFAULT_MAX_MSG_BYTES,
+    DEFAULT_RELAY_MAX_LINES,
+    SynapseHub,
+)
 from synapse_channel.core.hub_config import (
     _FAMILY_FIELDS,
     FederationConfig,
@@ -155,6 +163,24 @@ def test_from_config_accepts_an_explicit_record() -> None:
     hub = SynapseHub.from_config(HubConfig(hub_id="explicit"))
     assert isinstance(hub, SynapseHub)
     assert hub.hub_id == "explicit"
+
+
+def test_hub_construction_coerces_non_finite_numeric_bounds() -> None:
+    hub = SynapseHub(
+        max_history=cast(int, float("inf")),
+        max_msg_bytes=cast(int, float("inf")),
+        relay_max_lines=cast(int, float("nan")),
+        auth_timeout=float("nan"),
+        recipient_liveness_window=float("inf"),
+        waiter_liveness_window=cast(float, 10**400),
+    )
+
+    assert hub.max_history == DEFAULT_MAX_HISTORY
+    assert hub.max_msg_bytes == DEFAULT_MAX_MSG_BYTES
+    assert hub.relay_max_lines == DEFAULT_RELAY_MAX_LINES
+    assert hub.auth_timeout == DEFAULT_AUTH_TIMEOUT
+    assert math.isfinite(hub.recipient_liveness_window)
+    assert math.isfinite(hub.waiter_liveness_window)
 
 
 class TestConfigFingerprint:

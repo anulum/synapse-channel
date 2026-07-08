@@ -422,3 +422,13 @@ def test_rate_limiter_floors_max_calls_at_one(max_calls: int) -> None:
 
     assert limiter.allow(now=0.0) is True
     assert limiter.allow(now=0.0) is False
+
+
+def test_rate_limiter_coerces_non_finite_configuration() -> None:
+    limiter = WriteRateLimiter(
+        max_calls=cast(int, float("inf")),
+        window_seconds=float("nan"),
+    )
+
+    assert limiter.allow(now=0.0) is True
+    assert limiter.allow(now=0.0) is False

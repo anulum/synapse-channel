@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 from synapse_channel.core.capability_directory import (
     DISCOVERY_TRUST_BOUNDARY,
@@ -121,6 +122,22 @@ def test_build_capability_directory_ignores_malformed_entries() -> None:
     assert directory.entries[0].skills == ("one",)
     assert directory.entries[0].contracts == 0
     assert directory.entries[1].meta == {}
+
+
+def test_build_capability_directory_coerces_non_finite_resource_capacity() -> None:
+    directory = build_capability_directory(
+        manifest=[],
+        resources=[
+            {
+                "agent": "FAST",
+                "kind": "gpu",
+                "name": "a100",
+                "capacity": cast(int, float("inf")),
+            }
+        ],
+    )
+
+    assert directory.entries[0].capacity == 1
 
 
 def test_directory_docs_are_wired() -> None:

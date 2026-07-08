@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- Numeric input coercion now uses the shared `safe_int`/`safe_float` helpers across hub config,
+  channel history limits, mailbox cursors, claim TTLs, resource/capability bounds, semantic and
+  memory query limits, dead-letter snapshots, and dashboard write-rate windows. Non-finite,
+  overflowing, and malformed values now preserve the existing fallback or clamp semantics at each
+  call site instead of escaping through local ad-hoc conversions.
+
 ## [0.98.14] - 2026-07-09
 
 ### Fixed

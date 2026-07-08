@@ -21,6 +21,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from synapse_channel.core.numeric_coercion import safe_int
+
 DISCOVERY_TRUST_BOUNDARY = (
     "Capability directory entries are discovery metadata only; they do not grant "
     "execution rights, reserve capacity, or certify agent/tool trust."
@@ -186,7 +188,7 @@ def _resource_entry(resource: JsonMap) -> CapabilityDirectoryEntry | None:
         label=f"{kind}/{name}",
         resource_kind=kind,
         resource_name=name,
-        capacity=max(1, int(resource.get("capacity") or 1)),
+        capacity=safe_int(resource.get("capacity") or 1, default=1, min_value=1),
         meta=_meta(resource.get("meta")),
     )
 

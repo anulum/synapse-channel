@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.state_models import ResourceOffer
 
 DEFAULT_RESOURCE_TTL_SECONDS = 300.0
@@ -29,7 +30,9 @@ class ResourceRegistry:
         max_offers_per_agent: int = MAX_OFFERS_PER_AGENT,
         resources: dict[str, ResourceOffer] | None = None,
     ) -> None:
-        self.max_offers_per_agent = max(1, int(max_offers_per_agent))
+        self.max_offers_per_agent = safe_int(
+            max_offers_per_agent, default=MAX_OFFERS_PER_AGENT, min_value=1
+        )
         self.resources: dict[str, ResourceOffer] = {} if resources is None else resources
 
     def offers_by(self, agent: str) -> int:
@@ -54,7 +57,7 @@ class ResourceRegistry:
             agent=agent,
             kind=kind,
             name=name,
-            capacity=max(1, int(capacity)),
+            capacity=safe_int(capacity, default=1, min_value=1),
             meta=meta or {},
             offered_at=now,
         )

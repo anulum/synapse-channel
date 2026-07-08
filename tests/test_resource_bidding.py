@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 from synapse_channel.core.capability_directory import (
     CapabilityDirectory,
@@ -98,6 +99,17 @@ def test_resource_bids_can_include_zero_score_diagnostics() -> None:
     assert [candidate.resource_kind for candidate in report.candidates] == ["gpu", "cpu"]
     assert report.candidates[1].score == 1
     assert report.candidates[1].reasons == ("capacity:1",)
+
+
+def test_resource_bids_malformed_limit_falls_back_to_default_bound() -> None:
+    report = recommend_resource_bids(
+        {"task_id": "TRAIN", "title": "gpu cpu docs training"},
+        _directory(),
+        include_zero=True,
+        limit=cast(int, float("inf")),
+    )
+
+    assert [candidate.resource_kind for candidate in report.candidates] == ["gpu", "cpu"]
 
 
 def test_resource_bids_report_fallbacks_for_missing_inputs() -> None:

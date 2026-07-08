@@ -8,7 +8,9 @@
 
 from __future__ import annotations
 
-from synapse_channel.core.channels import MAX_CHANNEL_ID_LENGTH, ChannelRegistry
+from typing import cast
+
+from synapse_channel.core.channels import MAX_CHANNEL_ID_LENGTH, MAX_CHANNELS, ChannelRegistry
 
 
 def test_create_makes_the_owner_the_first_member() -> None:
@@ -44,6 +46,12 @@ def test_create_is_bounded_by_max_channels() -> None:
     full_ok, full_msg = registry.create("c", owner="o")
     assert full_ok is False
     assert "full" in full_msg
+
+
+def test_non_finite_max_channels_falls_back_to_the_default() -> None:
+    registry = ChannelRegistry(max_channels=cast(int, float("inf")))
+
+    assert registry.max_channels == MAX_CHANNELS
 
 
 def test_join_and_leave_change_membership() -> None:
@@ -138,6 +146,18 @@ def test_channel_history_is_member_visible_and_bounded() -> None:
     ]
     assert registry.history_for("ops", "carol") == []
     assert registry.history_for("ops", "alice", limit=1)[0]["payload"] == "note-3"
+
+
+def test_channel_history_non_finite_bounds_degrade_safely() -> None:
+    registry = ChannelRegistry()
+    registry.create("ops", owner="alice")
+    registry.retain_message(
+        "ops",
+        {"type": "chat", "payload": "note-1", "channel": "ops"},
+        max_messages=cast(int, float("inf")),
+    )
+
+    assert registry.history_for("ops", "alice", limit=cast(int, float("nan"))) == []
 
 
 def test_channel_history_returns_copies() -> None:

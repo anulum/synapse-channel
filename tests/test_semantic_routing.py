@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+from typing import cast
 
 from synapse_channel.core.capability_directory import build_capability_directory
 from synapse_channel.core.capability_observations import (
@@ -146,6 +147,23 @@ def test_recommend_agents_orders_ties_deterministically_and_can_include_zero() -
     ]
     assert recommendation.fallback_reason == ""
     assert recommendation.candidates[2].reasons == ("no local signal match",)
+
+
+def test_recommend_agents_malformed_limit_falls_back_to_default_bound() -> None:
+    directory = build_capability_directory(
+        manifest=[
+            {"agent": "A", "skills": ["python"], "task_classes": ["code"]},
+            {"agent": "B", "skills": ["python"], "task_classes": ["code"]},
+        ],
+    )
+
+    recommendation = recommend_agents_for_task(
+        {"task_id": "T", "title": "Python code"},
+        directory,
+        limit=cast(int, float("inf")),
+    )
+
+    assert [candidate.agent for candidate in recommendation.candidates] == ["A", "B"]
 
 
 def test_recommend_agents_reports_empty_directory_and_no_matches() -> None:

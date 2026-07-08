@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 from synapse_channel.core.state import (
     LEASE_HEAP_COMPACT_FLOOR,
@@ -66,6 +68,20 @@ def test_quota_limits_clamp_up_to_one() -> None:
     assert state.offer_resource("A", kind="llm", name="m1", now=0.0) is None
 
 
+def test_non_finite_state_configuration_falls_back_to_defaults() -> None:
+    state = SynapseState(
+        default_ttl_seconds=float("inf"),
+        max_claims_per_agent=cast(int, float("inf")),
+        max_offers_per_agent=cast(int, float("nan")),
+        max_paths_per_claim=cast(int, float("inf")),
+    )
+
+    assert state.default_ttl_seconds == 3600.0
+    assert state.max_claims_per_agent == MAX_CLAIMS_PER_AGENT
+    assert state.max_offers_per_agent == MAX_OFFERS_PER_AGENT
+    assert state.max_paths_per_claim == MAX_DECLARED_PATHS
+
+
 def test_quota_limits_default_to_module_constants() -> None:
     state = SynapseState()
     assert state.max_claims_per_agent == MAX_CLAIMS_PER_AGENT
@@ -99,6 +115,14 @@ def test_max_paths_per_claim_clamps_up_to_one() -> None:
     granted, _ = state.claim("A", "T0", now=0.0, worktree="wt", paths=["a/f", "b/f"])
     assert granted is True
     assert state.claims["T0"].paths == ("",)
+
+
+def test_non_finite_claim_ttl_falls_back_to_default() -> None:
+    state = SynapseState(default_ttl_seconds=100.0)
+
+    assert state.claim("A", "T", ttl_seconds=float("nan"), now=0.0)[0] is True
+
+    assert state.claims["T"].lease_expires_at == 100.0
 
 
 # --- lease-expiry heap -------------------------------------------------------

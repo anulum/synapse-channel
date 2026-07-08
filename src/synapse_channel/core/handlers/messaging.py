@@ -18,7 +18,6 @@ uniform dispatch table.
 from __future__ import annotations
 
 import logging
-import math
 import time
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any
@@ -37,6 +36,7 @@ from synapse_channel.core.journal import (
     record_dead_letter_escalation,
     record_dead_letter_forwarding,
 )
+from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.operator_relay_routing import RelayRouteKind, route_operator_relay
 from synapse_channel.core.protocol import MessageType, is_recipient
 from synapse_channel.core.wake_capability import (
@@ -64,11 +64,7 @@ def _client_timestamp(raw: Any, now: float) -> float:
     """
     if not raw or isinstance(raw, bool) or not isinstance(raw, (int, float)):
         return now
-    try:
-        value = float(raw)
-    except OverflowError:  # a JSON integer too large for a double
-        return now
-    return value if math.isfinite(value) else now
+    return safe_float(raw, default=now, allow_bool=False)
 
 
 async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
@@ -596,11 +592,6 @@ async def handle_heartbeat(
     if "wake_capability" in data:
         hub.set_wake_capability(sender, normalize_wake_capability(data.get("wake_capability")))
     if data.get("mailbox") is True:
-        raw_since = data.get("since_seq")
-        since_seq = (
-            raw_since
-            if isinstance(raw_since, int) and not isinstance(raw_since, bool) and raw_since >= 0
-            else 0
-        )
+        since_seq = safe_int(data.get("since_seq"), default=0, min_value=0, allow_bool=False)
         recipient = _mailbox_recipient(sender, data.get("mailbox_for"))
         await _replay_directed_backlog(hub, sender, recipient, since_seq, websocket)

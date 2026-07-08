@@ -24,6 +24,7 @@ from typing import Any
 
 from synapse_channel.core.capability_directory import CapabilityDirectory, CapabilityDirectoryEntry
 from synapse_channel.core.capability_observations import ObservedCapabilityIndex
+from synapse_channel.core.numeric_coercion import safe_int
 
 ROUTING_TRUST_BOUNDARY = (
     "Semantic routing recommendations are advisory only; they do not claim tasks, "
@@ -325,7 +326,7 @@ def recommend_agents_for_task(
     if not include_zero:
         candidates = [candidate for candidate in candidates if candidate.score > 0]
     candidates.sort(key=lambda candidate: (-candidate.score, candidate.agent))
-    selected = tuple(candidates[: max(1, int(limit))])
+    selected = tuple(candidates[: safe_int(limit, default=5, min_value=1)])
     fallback = "" if selected else "no capability card matched the task text"
     return RoutingRecommendation(
         task_id=task_id,

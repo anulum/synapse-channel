@@ -25,7 +25,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import math
 import ssl
 import time
 import uuid
@@ -101,6 +100,7 @@ from synapse_channel.core.multihub_serving import (
     live_peer_certificate_der,
 )
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
+from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
 from synapse_channel.core.operator_relay_forwarding import OperatorRelayForwarding
 from synapse_channel.core.operator_relay_transport import (
@@ -471,7 +471,7 @@ class SynapseHub:
     ) -> None:
         self.journal = journal
         self.enable_metrics = bool(enable_metrics)
-        self.auth_timeout = max(float(auth_timeout), 0.1)
+        self.auth_timeout = max(safe_float(auth_timeout, default=DEFAULT_AUTH_TIMEOUT), 0.1)
         self.metrics_token = metrics_token or None
         self.metrics_query_token_ok = bool(metrics_query_token_ok)
         self.insecure_off_loopback = bool(insecure_off_loopback)
@@ -484,8 +484,10 @@ class SynapseHub:
             self.per_message_auth_keys = {key.key_id: key for key in (per_message_auth_keys or [])}
         self.require_per_message_auth = bool(require_per_message_auth)
         self._message_replay = MessageReplayCache(
-            window_seconds=per_message_auth_window_seconds,
-            max_entries=per_message_auth_replay_capacity,
+            window_seconds=safe_float(
+                per_message_auth_window_seconds, default=DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS
+            ),
+            max_entries=safe_int(per_message_auth_replay_capacity, default=4096, min_value=1),
         )
         self.signed_event_trust_bundle = signed_event_trust_bundle
         self.acl_policy = acl_policy
@@ -496,8 +498,17 @@ class SynapseHub:
         self.require_identity_binding = bool(require_identity_binding)
         self.private_directed_messages = bool(private_directed_messages)
         self.warn_stale_recipients = bool(warn_stale_recipients)
-        self.recipient_liveness_window = max(float(recipient_liveness_window), 0.0)
-        self.waiter_liveness_window = max(float(waiter_liveness_window), 0.0)
+        self.recipient_liveness_window = max(
+            safe_float(
+                recipient_liveness_window,
+                default=DEFAULT_RECIPIENT_LIVENESS_WINDOW,
+            ),
+            0.0,
+        )
+        self.waiter_liveness_window = max(
+            safe_float(waiter_liveness_window, default=DEFAULT_WAITER_LIVENESS_WINDOW),
+            0.0,
+        )
         self._recipient_liveness = RecipientLiveness(window_seconds=self.recipient_liveness_window)
         self.multihub_serving_policy = multihub_serving_policy
         self.namespace_ownership = namespace_ownership
@@ -523,7 +534,7 @@ class SynapseHub:
             send_json=self._send_json,
         )
         self.channels = ChannelRegistry()
-        self.max_msg_bytes = max(int(max_msg_bytes), 1)
+        self.max_msg_bytes = safe_int(max_msg_bytes, default=DEFAULT_MAX_MSG_BYTES, min_value=1)
         self._clock = clock or time.monotonic
         self._started = self._clock()
         self.counters = HubCounters()
@@ -545,15 +556,29 @@ class SynapseHub:
         self.takeover_oscillation_window = self.clients.takeover_oscillation_window
         self.takeover_oscillation_threshold = self.clients.takeover_oscillation_threshold
         self.takeover_quarantine = self.clients.takeover_quarantine
-        self.shutdown_close_timeout = max(float(shutdown_close_timeout), 0.1)
-        self.max_history = max(int(max_history), 1)
-        self.max_findings_per_agent = max(int(max_findings_per_agent), 1)
-        self.compact_hint_threshold = max(1, int(compact_hint_threshold))
-        self.dead_letter_escalation_threshold = max(0, int(dead_letter_escalation_threshold))
+        self.shutdown_close_timeout = max(
+            safe_float(shutdown_close_timeout, default=DEFAULT_SHUTDOWN_CLOSE_TIMEOUT), 0.1
+        )
+        self.max_history = safe_int(max_history, default=DEFAULT_MAX_HISTORY, min_value=1)
+        self.max_findings_per_agent = safe_int(
+            max_findings_per_agent, default=DEFAULT_MAX_FINDINGS_PER_AGENT, min_value=1
+        )
+        self.compact_hint_threshold = safe_int(
+            compact_hint_threshold, default=DEFAULT_COMPACT_HINT_THRESHOLD, min_value=1
+        )
+        self.dead_letter_escalation_threshold = safe_int(
+            dead_letter_escalation_threshold,
+            default=DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD,
+            min_value=0,
+        )
         self.dead_letter_forwarder = dead_letter_forwarder
-        self.board_task_cap = max(1, int(board_task_cap)) if board_task_cap is not None else None
+        self.board_task_cap = (
+            safe_int(board_task_cap, default=1, min_value=1) if board_task_cap is not None else None
+        )
         self.relay_log = Path(relay_log) if relay_log else None
-        self.relay_max_lines = max(int(relay_max_lines), 1)
+        self.relay_max_lines = safe_int(
+            relay_max_lines, default=DEFAULT_RELAY_MAX_LINES, min_value=1
+        )
         self.dead_letters = DeadLetterLedger(max_age_seconds=DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS)
         self.pending_receipts = PendingReceipts()
         self._relay = RelayMirror(self.relay_log, self.relay_max_lines)
@@ -886,9 +911,7 @@ class SynapseHub:
         value = data.get(key)
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             return None
-        if isinstance(value, float) and not math.isfinite(value):
-            return None
-        return int(value)
+        return safe_int(value, default=None, allow_bool=False)
 
     def _drop_waits(self, agent: str) -> None:
         """Remove an agent's wait edge and any waits pointing at it."""

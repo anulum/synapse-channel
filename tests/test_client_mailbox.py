@@ -184,6 +184,34 @@ class TestReplayAckAndCursor:
         assert replayed["payload"] == "second"
         assert replayed["seq"] == seqs[1]
 
+    async def test_overflowing_mailbox_cursor_replays_from_zero(self, tmp_path: Path) -> None:
+        store = EventStore(tmp_path / "events.db")
+        async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
+            async with connect(uri) as sender_ws:
+                await read_until_type(sender_ws, "welcome")
+                await sender_ws.send(
+                    json.dumps(
+                        {
+                            "sender": "SENDER",
+                            "type": "chat",
+                            "target": "RECIPIENT",
+                            "payload": "retained",
+                        }
+                    )
+                )
+                await read_until_type(sender_ws, "chat")
+
+            async with connect(uri) as recipient_ws:
+                await read_until_type(recipient_ws, "welcome")
+                await recipient_ws.send(
+                    '{"sender":"RECIPIENT","type":"heartbeat","mailbox":true,"since_seq":1e400}'
+                )
+                replayed = await read_until_type(recipient_ws, "chat")
+
+        store.close()
+        assert replayed["payload"] == "retained"
+        assert replayed["replayed"] is True
+
     async def test_non_mailbox_agent_is_never_replayed_a_backlog(self, tmp_path: Path) -> None:
         # A plain (non-mailbox) agent connecting after a directed message dead-lettered
         # asks for no replay: the first chat it sees is a live broadcast, not the backlog,

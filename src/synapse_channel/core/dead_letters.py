@@ -28,6 +28,8 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
+from synapse_channel.core.numeric_coercion import safe_float, safe_int
+
 DEFAULT_DEAD_LETTER_TARGETS = 200
 """Bounded number of distinct targets retained; the stalest entry is evicted."""
 
@@ -101,8 +103,10 @@ class DeadLetterLedger:
         *,
         max_age_seconds: float | None = None,
     ) -> None:
-        self.max_targets = max(1, int(max_targets))
-        self.max_age_seconds = None if max_age_seconds is None else float(max_age_seconds)
+        self.max_targets = safe_int(max_targets, default=DEFAULT_DEAD_LETTER_TARGETS, min_value=1)
+        self.max_age_seconds = (
+            None if max_age_seconds is None else safe_float(max_age_seconds, default=None)
+        )
         self._entries: dict[str, DeadLetter] = {}
 
     def _expire_stale(self, now: float) -> None:
@@ -125,9 +129,12 @@ class DeadLetterLedger:
         known = self._entries.get(target)
         count = known.count + 1 if known is not None else 1
         self._entries[target] = DeadLetter(
-            target=target, count=count, last_ts=float(ts), last_sender=sender
+            target=target,
+            count=count,
+            last_ts=safe_float(ts, default=time.time()),
+            last_sender=sender,
         )
-        self._expire_stale(float(ts))
+        self._expire_stale(self._entries[target].last_ts)
         if len(self._entries) > self.max_targets:
             stalest = min(self._entries.values(), key=lambda entry: entry.last_ts)
             del self._entries[stalest.target]

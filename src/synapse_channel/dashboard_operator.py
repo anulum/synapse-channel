@@ -35,6 +35,7 @@ from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.connect_failures import closed_after_ready
+from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.protocol import MessageType
 
 
@@ -54,8 +55,11 @@ class WriteRateLimiter:
     """
 
     def __init__(self, *, max_calls: int, window_seconds: float) -> None:
-        self._max_calls = max(1, int(max_calls))
-        self._window_seconds = max(0.0, float(window_seconds))
+        self._max_calls = safe_int(max_calls, default=1, min_value=1)
+        self._window_seconds = max(
+            0.0,
+            safe_float(window_seconds, default=DEFAULT_WRITE_RATE_WINDOW_SECONDS),
+        )
         self._calls: deque[float] = deque()
         self._lock = threading.Lock()
 
@@ -106,6 +110,10 @@ AgentFactory = Callable[..., SynapseAgent]
 #: A sync resolver polled after sending: it returns a settled outcome, or ``None``
 #: to keep waiting until the response bound expires.
 OutcomeResolver = Callable[[], "RelayOutcome | None"]
+
+
+DEFAULT_WRITE_RATE_WINDOW_SECONDS = 60.0
+"""Fallback sliding-window length for malformed dashboard write limiter configuration."""
 
 
 def _task_confirms(message: dict[str, Any], task_id: str) -> bool:

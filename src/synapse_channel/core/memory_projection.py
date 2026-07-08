@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.journal import MEMORY_KINDS, EventKind
+from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.persistence import EventStore, StoredEvent
 
 MEMORY_RECALL_TRUST_BOUNDARY = (
@@ -193,12 +194,14 @@ def recall_memory(
         Deterministic recall report with matched-token explanations.
     """
     query_tokens = _tokens(query)
-    if not query_tokens or limit <= 0:
+    safe_since_seq = safe_int(since_seq, default=0, min_value=0, allow_bool=False)
+    safe_limit = safe_int(limit, default=0, min_value=0, allow_bool=False)
+    if not query_tokens or safe_limit <= 0:
         return MemoryRecallReport(
             query=query,
             query_tokens=query_tokens,
-            since_seq=max(0, int(since_seq)),
-            limit=max(0, int(limit)),
+            since_seq=safe_since_seq,
+            limit=safe_limit,
             trust_boundary=MEMORY_RECALL_TRUST_BOUNDARY,
             hits=(),
         )
@@ -227,10 +230,10 @@ def recall_memory(
     return MemoryRecallReport(
         query=query,
         query_tokens=query_tokens,
-        since_seq=max(0, int(since_seq)),
-        limit=max(0, int(limit)),
+        since_seq=safe_since_seq,
+        limit=safe_limit,
         trust_boundary=MEMORY_RECALL_TRUST_BOUNDARY,
-        hits=tuple(scored[: max(0, int(limit))]),
+        hits=tuple(scored[:safe_limit]),
     )
 
 
@@ -267,7 +270,7 @@ def read_memory_recall(
     path = Path(db_path)
     if not path.exists():
         raise MemoryRecallInputError(f"missing event store: {path}")
-    start = max(0, int(since_seq))
+    start = safe_int(since_seq, default=0, min_value=0, allow_bool=False)
     store = EventStore(path)
     try:
         events = store.read_since(start, kinds=MEMORY_KINDS)

@@ -23,6 +23,7 @@ import time
 from typing import Any
 
 from synapse_channel.core.lifecycle import can_transition
+from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.scoping import (
     DEFAULT_WORKTREE,
     MAX_DECLARED_PATHS,
@@ -95,13 +96,22 @@ class SynapseState:
         max_offers_per_agent: int = MAX_OFFERS_PER_AGENT,
         max_paths_per_claim: int = MAX_DECLARED_PATHS,
     ) -> None:
-        self.default_ttl_seconds = max(float(default_ttl_seconds), MINIMUM_TTL_SECONDS)
-        self.max_claims_per_agent = max(1, int(max_claims_per_agent))
-        self.max_offers_per_agent = max(1, int(max_offers_per_agent))
-        self.max_paths_per_claim = max(1, int(max_paths_per_claim))
+        self.default_ttl_seconds = max(
+            safe_float(default_ttl_seconds, default=3600.0),
+            MINIMUM_TTL_SECONDS,
+        )
+        self.max_claims_per_agent = safe_int(
+            max_claims_per_agent, default=MAX_CLAIMS_PER_AGENT, min_value=1
+        )
+        self.max_offers_per_agent = safe_int(
+            max_offers_per_agent, default=MAX_OFFERS_PER_AGENT, min_value=1
+        )
+        self.max_paths_per_claim = safe_int(
+            max_paths_per_claim, default=MAX_DECLARED_PATHS, min_value=1
+        )
         self.last_seen: dict[str, float] = {}
         self.claims: dict[str, TaskClaim] = {}
-        self._resource_registry = ResourceRegistry(max_offers_per_agent=max_offers_per_agent)
+        self._resource_registry = ResourceRegistry(max_offers_per_agent=self.max_offers_per_agent)
         self.resources: dict[str, ResourceOffer] = self._resource_registry.resources
         self.max_offers_per_agent = self._resource_registry.max_offers_per_agent
         self.expired_checkpoints: dict[str, str] = {}
@@ -218,7 +228,10 @@ class SynapseState:
         ttl = (
             self.default_ttl_seconds
             if ttl_seconds is None
-            else max(float(ttl_seconds), MINIMUM_TTL_SECONDS)
+            else max(
+                safe_float(ttl_seconds, default=self.default_ttl_seconds, allow_bool=False),
+                MINIMUM_TTL_SECONDS,
+            )
         )
         self.heartbeat(agent, ts)
         norm_paths = normalize_paths(paths, self.max_paths_per_claim)

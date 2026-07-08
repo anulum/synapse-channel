@@ -20,7 +20,6 @@ never acted upon.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -34,6 +33,7 @@ from synapse_channel.core.journal import (
     record_release,
     record_task_update,
 )
+from synapse_channel.core.numeric_coercion import safe_float
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.receipts import (
     ReleaseReceipt,
@@ -111,21 +111,10 @@ def apply_claim(hub: SynapseHub, claimant: str, body: Mapping[str, Any]) -> Clai
     raw_git = body.get("git")
     git = GitContext.from_dict(raw_git) if isinstance(raw_git, dict) else None
 
-    ttl_val: float | None
-    if ttl_seconds is None:
-        ttl_val = None
-    else:
-        # A non-numeric, non-finite, or double-overflowing ttl falls back to the
-        # hub's default lease duration (``None``) rather than raising out of the
-        # frame handler or planting an ``inf``/``nan`` lease expiry — an ``inf``
-        # lease could never be taken over (a permanent task lock) and a ``nan`` one
-        # would read as instantly expired.
-        try:
-            candidate = float(ttl_seconds)
-        except (TypeError, ValueError, OverflowError):
-            ttl_val = None
-        else:
-            ttl_val = candidate if math.isfinite(candidate) else None
+    # A non-numeric, non-finite, boolean, or double-overflowing ttl falls back to
+    # the hub's default lease duration (``None``) rather than raising out of the
+    # frame handler or planting an ``inf``/``nan`` lease expiry.
+    ttl_val = safe_float(ttl_seconds, default=None, allow_bool=False)
 
     ok, message = hub.state.claim(
         claimant,

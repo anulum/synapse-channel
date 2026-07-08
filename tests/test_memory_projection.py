@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -127,6 +128,28 @@ def test_recall_memory_handles_empty_query_and_limit() -> None:
 
     assert recall_memory(events, "and the", limit=5).hits == ()
     assert recall_memory(events, "transport", limit=0).hits == ()
+
+
+def test_recall_memory_coerces_malformed_cursor_and_limit() -> None:
+    events = [
+        StoredEvent(
+            seq=3,
+            ts=3.0,
+            kind=EventKind.FINDING,
+            payload={"statement": "Durable transport memory"},
+        )
+    ]
+
+    report = recall_memory(
+        events,
+        "transport",
+        since_seq=cast(int, float("inf")),
+        limit=cast(int, float("inf")),
+    )
+
+    assert report.since_seq == 0
+    assert report.limit == 0
+    assert report.hits == ()
 
 
 def test_projection_drops_empty_records_and_uses_payload_actor_fallbacks() -> None:

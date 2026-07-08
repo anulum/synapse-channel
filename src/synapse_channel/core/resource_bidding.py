@@ -26,6 +26,7 @@ from synapse_channel.core.capability_directory import (
     CapabilityDirectory,
     CapabilityDirectoryEntry,
 )
+from synapse_channel.core.numeric_coercion import safe_int
 
 RESOURCE_BID_TRUST_BOUNDARY = (
     "Resource bids are advisory directory hints only; they do not reserve capacity, "
@@ -226,7 +227,7 @@ def recommend_resource_bids(
             candidate.resource_name,
         )
     )
-    selected = tuple(candidates[: max(1, int(limit))])
+    selected = tuple(candidates[: safe_int(limit, default=5, min_value=1)])
     fallback = "" if selected else "no resource offer matched the task text"
     return _report(task, query, requested_kind, selected, fallback, task_id=task_id)
 

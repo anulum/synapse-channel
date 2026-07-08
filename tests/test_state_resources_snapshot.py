@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from synapse_channel.core.state import (
     SynapseState,
 )
@@ -19,6 +21,20 @@ def test_offer_resource_returns_key_and_clamps_capacity() -> None:
     assert key == "A:llm:m"
     assert state.resources[key].capacity == 1
     assert state.resources[key].meta == {}
+
+
+def test_offer_resource_non_finite_capacity_clamps_to_one() -> None:
+    state = SynapseState()
+    key = state.offer_resource(
+        "A",
+        kind="llm",
+        name="m",
+        capacity=cast(int, float("inf")),
+        now=1000.0,
+    )
+
+    assert key == "A:llm:m"
+    assert state.resources[key].capacity == 1
 
 
 def test_offer_resource_keeps_meta_and_refreshes() -> None:

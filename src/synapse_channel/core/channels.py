@@ -28,6 +28,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from synapse_channel.core.numeric_coercion import safe_int
+
 MAX_CHANNEL_ID_LENGTH = 200
 """Largest accepted channel id, bounding registry keys."""
 
@@ -69,7 +71,7 @@ class ChannelRegistry:
     """
 
     def __init__(self, *, max_channels: int = MAX_CHANNELS) -> None:
-        self.max_channels = max(int(max_channels), 1)
+        self.max_channels = safe_int(max_channels, default=MAX_CHANNELS, min_value=1)
         self._channels: dict[str, Channel] = {}
 
     @staticmethod
@@ -193,7 +195,7 @@ class ChannelRegistry:
         if channel is None:
             return
         channel.history.append(dict(message))
-        keep = max(int(max_messages), 1)
+        keep = safe_int(max_messages, default=1, min_value=1)
         if len(channel.history) > keep:
             del channel.history[: len(channel.history) - keep]
 
@@ -221,7 +223,7 @@ class ChannelRegistry:
         channel = self._channels.get(self._normalise_id(channel_id))
         if channel is None or str(member or "").strip() not in channel.members:
             return []
-        keep = len(channel.history) if limit is None else max(int(limit), 0)
+        keep = len(channel.history) if limit is None else safe_int(limit, default=0, min_value=0)
         selected = channel.history[-keep:] if keep else []
         return [dict(message) for message in selected]
 

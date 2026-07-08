@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -72,6 +72,22 @@ def test_capacity_predicates_clamp_limits_and_track_unauthenticated_clients() ->
     registry.discard_unauthenticated(socket)
 
     assert not registry.unauthenticated_at_capacity()
+
+
+def test_capacity_predicates_reject_non_finite_limits() -> None:
+    registry = _registry(
+        max_clients=cast(int, float("inf")),
+        max_unauth_clients=cast(int, float("nan")),
+        max_connections_per_host=cast(int, float("inf")),
+    )
+    socket = _Socket()
+
+    assert registry.max_clients == 1
+    assert registry.max_unauth_clients == 1
+    assert registry.max_connections_per_host == 1
+    assert not registry.at_capacity()
+    registry.add_client(socket)
+    assert registry.at_capacity()
 
 
 def test_host_capacity_can_be_disabled_or_enforced_per_remote_host() -> None:

@@ -14,6 +14,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from synapse_channel.core.hub_counters import HubCounters
+from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.wake_capability import WAKE_UNKNOWN, normalize_wake_capability
 
 logger = logging.getLogger("synapse.hub")
@@ -35,17 +36,25 @@ class HubClientRegistry:
         takeover_oscillation_threshold: int = 5,
         takeover_quarantine: float = 60.0,
     ) -> None:
-        self.max_clients = max(int(max_clients), 1)
+        self.max_clients = safe_int(max_clients, default=1, min_value=1)
         self.max_unauth_clients = (
-            self.max_clients if max_unauth_clients is None else max(int(max_unauth_clients), 1)
+            self.max_clients
+            if max_unauth_clients is None
+            else safe_int(max_unauth_clients, default=self.max_clients, min_value=1)
         )
         self.max_connections_per_host = (
-            None if max_connections_per_host is None else max(int(max_connections_per_host), 1)
+            None
+            if max_connections_per_host is None
+            else safe_int(max_connections_per_host, default=1, min_value=1)
         )
-        self.takeover_cooldown = max(float(takeover_cooldown), 0.0)
-        self.takeover_oscillation_window = max(float(takeover_oscillation_window), 0.0)
-        self.takeover_oscillation_threshold = max(int(takeover_oscillation_threshold), 2)
-        self.takeover_quarantine = max(float(takeover_quarantine), 0.0)
+        self.takeover_cooldown = max(safe_float(takeover_cooldown, default=0.0), 0.0)
+        self.takeover_oscillation_window = max(
+            safe_float(takeover_oscillation_window, default=30.0), 0.0
+        )
+        self.takeover_oscillation_threshold = safe_int(
+            takeover_oscillation_threshold, default=5, min_value=2
+        )
+        self.takeover_quarantine = max(safe_float(takeover_quarantine, default=60.0), 0.0)
         self.counters = counters if counters is not None else HubCounters()
         self._clock = clock
         self._last_takeover: dict[str, float] = {}
