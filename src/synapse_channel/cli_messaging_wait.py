@@ -26,6 +26,7 @@ from synapse_channel.connect_failures import (
 from synapse_channel.core.protocol import MessageType, wakes
 from synapse_channel.core.wake_capability import WAKE_PASSIVE
 from synapse_channel.mailbox_cursor import load_cursor, save_cursor
+from synapse_channel.shell_integration import has_active_tmux_provider
 from synapse_channel.waiter_identity import waiter_name
 
 WaitRunner = Callable[..., Coroutine[Any, Any, int]]
@@ -228,6 +229,19 @@ def _cmd_wait(
     for_name = args.for_name or args.name
     connect_name = args.name if args.name != for_name else waiter_name(args.name)
     roles = tuple(r.strip() for r in (getattr(args, "role", None) or ()) if r.strip())
+
+    # Provider-aware early yield: if an active tmux provider (worker-session +
+    # agent-tm ux) is live for this identity, it owns the -rx for pane injection
+    # (WAKE_PANE_BRIDGE). A plain passive arm will be superseded or cause 4009
+    # churn. Yield immediately so the harness can use the provider path instead.
+    if has_active_tmux_provider(for_name):
+        print(
+            f"[{connect_name}] active tmux provider detected for {for_name}; "
+            "pane_bridge / agent_tmux is the live waker for injection. "
+            "Yielding plain passive arm to avoid supersession/name collision."
+        )
+        return 0
+
     return async_runner(
         wait_runner(
             uri=args.uri,

@@ -30,6 +30,30 @@ END_MARKER = "# <<< synapse-channel shell integration <<<"
 SUPPORTED_SHELLS = frozenset({"bash", "fish", "zsh"})
 
 
+def has_active_tmux_provider(identity: str) -> bool:
+    """Return True if an active tmux provider (worker-session + agent-tm ux) holds the live waker for this identity.
+
+    Used by passive arm/wait logic and harnesses to yield early and avoid name
+    collisions on the *-rx sidecar. The provider owns the name for pane injection
+    (WAKE_PANE_BRIDGE / receiver wake capability). Mirrors the pidfile check in the
+    generated shell hooks (XDG_RUNTIME_DIR/synapse-provider-tmux/*.pid).
+    """
+    runtime = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "synapse-provider-tmux"
+    key = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in identity)
+    pidfile = runtime / f"{key}.pid"
+    if not pidfile.is_file():
+        return False
+    try:
+        pid = int(pidfile.read_text().strip())
+        if pid <= 0:
+            return False
+        os.kill(pid, 0)  # existence check (signal 0); raises if dead
+        return True
+    except (ValueError, ProcessLookupError, PermissionError, OSError):
+        return False
+
+
+
 def normalise_shell(shell: str, *, env_shell: str | None = None) -> str:
     """Return a supported shell name.
 
