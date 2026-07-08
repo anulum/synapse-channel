@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.13] - 2026-07-08
+
+### Fixed
+- Provider tmux sessions now pass `SYN_PROJECT`, `SYN_IDENTITY`,
+  `SYN_TMUX_PROVIDER`, and `SYNAPSE_AUTO_CONNECT` through tmux `new-session -e`
+  flags before the pane shell starts. This prevents Fish startup hooks from
+  auto-arming a second passive receiver before the later `env ... grok` command
+  applies the provider environment.
+
 ## [0.98.12] - 2026-07-08
 
 ### Fixed

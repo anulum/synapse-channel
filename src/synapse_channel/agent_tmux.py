@@ -302,16 +302,13 @@ def start_session(
             detail=f"tmux session {config.session} already exists",
         )
 
-    command = shlex.join(
-        [
-            "env",
-            f"SYN_PROJECT={_project_from_identity(config.identity)}",
-            f"SYN_IDENTITY={config.identity}",
-            "SYN_TMUX_PROVIDER=1",
-            "SYNAPSE_AUTO_CONNECT=0",
-            *config.agent_command,
-        ]
-    )
+    provider_env = [
+        f"SYN_PROJECT={_project_from_identity(config.identity)}",
+        f"SYN_IDENTITY={config.identity}",
+        "SYN_TMUX_PROVIDER=1",
+        "SYNAPSE_AUTO_CONNECT=0",
+    ]
+    command = shlex.join(["env", *provider_env, *config.agent_command])
     proc = runner(
         [
             config.tmux_bin,
@@ -319,6 +316,7 @@ def start_session(
             "-d",
             "-s",
             config.session,
+            *(arg for item in provider_env for arg in ("-e", item)),
             "-c",
             str(config.cwd),
             command,
