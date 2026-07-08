@@ -13,6 +13,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- `synapse doctor` now suggests exact-identity waiter arming for missing `-rx`
+  waiters, so terminal/provider identities no longer see a broad-project
+  `--for <project>` hint after the wake-loop hotfix.
+
 ## [0.98.11] - 2026-07-08
 
 ### Fixed

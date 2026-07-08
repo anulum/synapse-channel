@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse
 
 from synapse_channel.core.hub import is_loopback_host
+from synapse_channel.waiter_identity import waiter_owner
 
 if TYPE_CHECKING:
     # Import-time-only: keeps the ``Identity`` type annotation without importing
@@ -240,13 +241,14 @@ def check_waiter(roster: list[str] | None, waiter_name: str) -> Diagnosis:
             status="pass",
             detail=f"waiter {waiter_name!r} is live on the bus",
         )
+    owner = waiter_owner(waiter_name)
     return Diagnosis(
         check="waiter",
         status="warn",
         detail=f"no waiter {waiter_name!r} on the bus — directed messages will not wake you",
         remedy=(
             f"arm one in the background: synapse wait --name {waiter_name} "
-            "--for <project> --directed-only"
+            f"--for {owner} --directed-only"
         ),
     )
 

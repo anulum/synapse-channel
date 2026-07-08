@@ -159,6 +159,14 @@ def test_check_waiter_warns_when_absent() -> None:
     diagnosis = check_waiter(["other"], "demorepo-rx")
     assert diagnosis.status == "warn"
     assert "will not wake you" in diagnosis.detail
+    assert "--for demorepo" in diagnosis.remedy
+
+
+def test_check_waiter_hints_exact_terminal_identity_when_absent() -> None:
+    diagnosis = check_waiter(["other"], "user/terminal-14753-rx")
+    assert diagnosis.status == "warn"
+    assert "--name user/terminal-14753-rx" in diagnosis.remedy
+    assert "--for user/terminal-14753 --directed-only" in diagnosis.remedy
 
 
 # --- summarise ---------------------------------------------------------------
