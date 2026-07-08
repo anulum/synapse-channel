@@ -14,6 +14,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from synapse_channel.core.hub_counters import HubCounters
+from synapse_channel.core.wake_capability import WAKE_UNKNOWN, normalize_wake_capability
 
 logger = logging.getLogger("synapse.hub")
 
@@ -55,6 +56,7 @@ class HubClientRegistry:
         self.agent_sockets: dict[str, Any] = {}
         self.socket_agent: dict[Any, str] = {}
         self.agent_roles: dict[str, tuple[str, ...]] = {}
+        self.agent_wake_capabilities: dict[str, str] = {}
         self._socket_hosts: dict[Any, str] = {}
         self._host_counts: dict[str, int] = {}
 
@@ -95,6 +97,7 @@ class HubClientRegistry:
         if name is not None and self.agent_sockets.get(name) == websocket:
             self.agent_sockets.pop(name, None)
             self.agent_roles.pop(name, None)
+            self.agent_wake_capabilities.pop(name, None)
             return name
         return None
 
@@ -135,6 +138,18 @@ class HubClientRegistry:
     def roles_of(self, name: str) -> tuple[str, ...]:
         """Return the roles ``name`` currently answers to (empty tuple if none)."""
         return self.agent_roles.get(name, ())
+
+    def set_wake_capability(self, name: str, capability: str) -> None:
+        """Bind ``name`` to a declared receiver wake capability."""
+        normalized = normalize_wake_capability(capability)
+        if normalized == WAKE_UNKNOWN:
+            self.agent_wake_capabilities.pop(name, None)
+        else:
+            self.agent_wake_capabilities[name] = normalized
+
+    def wake_capability_of(self, name: str) -> str:
+        """Return ``name``'s declared wake capability, or ``unknown`` if absent."""
+        return self.agent_wake_capabilities.get(name, WAKE_UNKNOWN)
 
     def _classify_takeover(self, sender: str, now: float) -> str:
         """Decide a takeover request: ``accept``, ``cooldown``, or quarantine.

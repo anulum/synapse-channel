@@ -20,6 +20,7 @@ from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli_messaging
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -266,7 +267,9 @@ async def test_send_require_recipient_counts_live_waiter_for_logical_identity(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     async with running_hub(SynapseHub(private_directed_messages=True)) as (_hub, uri):
-        waiter = await connect_agent("user/terminal-38253-rx", uri)
+        waiter = await connect_agent(
+            "user/terminal-38253-rx", uri, wake_capability=WAKE_PANE_BRIDGE
+        )
         try:
             code = await cli_messaging._send(
                 uri=uri,
@@ -284,14 +287,16 @@ async def test_send_require_recipient_counts_live_waiter_for_logical_identity(
 
     assert code == 0
     assert message["target"] == "user/terminal-38253"
-    assert "delivered to user/terminal-38253" in capsys.readouterr().out
+    assert "delivered to user/terminal-38253 (pane bridge)" in capsys.readouterr().out
 
 
 async def test_send_require_recipient_counts_project_waiter_as_logical_seat(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     async with running_hub(SynapseHub(private_directed_messages=True)) as (_hub, uri):
-        waiter = await connect_agent("SYNAPSE-CHANNEL/kimi-3dcd-rx", uri)
+        waiter = await connect_agent(
+            "SYNAPSE-CHANNEL/kimi-3dcd-rx", uri, wake_capability=WAKE_PASSIVE
+        )
         try:
             code = await cli_messaging._send(
                 uri=uri,
@@ -309,7 +314,7 @@ async def test_send_require_recipient_counts_project_waiter_as_logical_seat(
 
     assert code == 0
     assert message["target"] == "SYNAPSE-CHANNEL"
-    assert "delivered to SYNAPSE-CHANNEL/kimi-3dcd" in capsys.readouterr().out
+    assert "delivered to SYNAPSE-CHANNEL/kimi-3dcd (passive receiver)" in capsys.readouterr().out
 
 
 async def test_send_require_recipient_fails_without_online_recipient(

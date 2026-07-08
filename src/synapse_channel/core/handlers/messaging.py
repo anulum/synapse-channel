@@ -39,6 +39,12 @@ from synapse_channel.core.journal import (
 )
 from synapse_channel.core.operator_relay_routing import RelayRouteKind, route_operator_relay
 from synapse_channel.core.protocol import MessageType, is_recipient
+from synapse_channel.core.wake_capability import (
+    WAKE_PASSIVE,
+    WAKE_UNKNOWN,
+    normalize_wake_capability,
+    wake_capability_label,
+)
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
@@ -311,6 +317,26 @@ def _matching_online_recipients(
     return sorted(recipients)
 
 
+def _recipient_wake_capability(hub: SynapseHub, recipient: str) -> str:
+    """Return the best declared wake capability for a logical recipient."""
+    direct = hub.wake_capability_of(recipient)
+    if direct != WAKE_UNKNOWN:
+        return direct
+    return hub.wake_capability_of(f"{recipient}{_WAITER_SUFFIX}")
+
+
+def _recipient_wake_capabilities(hub: SynapseHub, recipients: Iterable[str]) -> dict[str, str]:
+    """Return normalized wake capabilities keyed by logical recipient name."""
+    return {recipient: _recipient_wake_capability(hub, recipient) for recipient in recipients}
+
+
+def _render_recipient_with_capability(recipient: str, capability: str) -> str:
+    """Render one receipt recipient with its declared wake-capability label."""
+    if capability == WAKE_UNKNOWN:
+        return recipient
+    return f"{recipient} ({wake_capability_label(capability)})"
+
+
 async def _warn_stale_recipients(
     hub: SynapseHub,
     websocket: Any,
@@ -332,19 +358,35 @@ async def _warn_stale_recipients(
     of liveness the sender is told nothing, so the signal stays rare enough to mean
     something.
     """
+    capabilities = _recipient_wake_capabilities(hub, recipients)
     stale = hub.recipients_without_live_waiter(recipients)
-    if not stale:
+    passive = tuple(
+        recipient for recipient, capability in capabilities.items() if capability == WAKE_PASSIVE
+    )
+    if not stale and not passive:
         return
+    clauses: list[str] = []
+    if stale:
+        clauses.append(
+            f"{', '.join(stale)} present but not proven live — no armed waiter and no "
+            "recent reaction"
+        )
+    if passive:
+        clauses.append(
+            f"{', '.join(passive)} reached only a passive receiver — socket delivery does "
+            "not prove an agent pane was woken"
+        )
     await hub._send_json(
         websocket,
         hub._system(
-            f"{', '.join(stale)} present but not proven live — no armed waiter and no "
-            "recent reaction; a directed message may sit unread",
+            "; ".join(clauses) + "; a directed message may sit unread",
             msg_type=MessageType.RECIPIENT_LIVENESS_WARNING,
             target=sender,
             message_target=target,
             message_id=msg_id,
             stale_recipients=list(stale),
+            passive_recipients=list(passive),
+            recipient_wake_capabilities=capabilities,
         ),
     )
 
@@ -360,8 +402,13 @@ async def _send_delivery_receipt(
 ) -> None:
     """Send a private delivery receipt for a receipt-requested chat."""
     delivered = bool(recipients)
+    capabilities = _recipient_wake_capabilities(hub, recipients)
     if delivered:
-        payload = f"delivered to {', '.join(recipients)}"
+        rendered = (
+            _render_recipient_with_capability(recipient, capabilities[recipient])
+            for recipient in recipients
+        )
+        payload = f"delivered to {', '.join(rendered)}"
     else:
         payload = f"delivery failed: no online recipient matched {target}"
     await hub._send_json(
@@ -374,6 +421,7 @@ async def _send_delivery_receipt(
             message_id=msg_id,
             delivered=delivered,
             recipients=recipients,
+            recipient_wake_capabilities=capabilities,
         ),
     )
 
@@ -545,6 +593,8 @@ async def handle_heartbeat(
         cleaned = (item.strip() for item in raw_roles if isinstance(item, str) and item.strip())
         declared = tuple(dict.fromkeys(cleaned))
         hub.set_agent_roles(sender, hub.permitted_role_claims(sender, declared))
+    if "wake_capability" in data:
+        hub.set_wake_capability(sender, normalize_wake_capability(data.get("wake_capability")))
     if data.get("mailbox") is True:
         raw_since = data.get("since_seq")
         since_seq = (

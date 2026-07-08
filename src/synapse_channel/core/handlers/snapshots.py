@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.wake_capability import WAKE_UNKNOWN
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
@@ -59,6 +60,13 @@ async def handle_who_request(
     liveness = hub.roster_liveness()
     if liveness:
         extra["agent_liveness"] = liveness
+    wake_capabilities = {
+        name: capability
+        for name in hub.online_agents()
+        if (capability := hub.wake_capability_of(name)) != WAKE_UNKNOWN
+    }
+    if wake_capabilities:
+        extra["wake_capabilities"] = wake_capabilities
 
     await hub._send_json(
         websocket,

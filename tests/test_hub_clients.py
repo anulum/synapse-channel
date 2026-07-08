@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 
 from synapse_channel.core.hub_clients import HubClientRegistry
+from synapse_channel.core.wake_capability import WAKE_DIRECT, WAKE_UNKNOWN
 
 
 class _Socket:
@@ -117,6 +118,27 @@ def test_drop_client_removes_only_active_agent_bindings() -> None:
     registry.socket_agent[current_socket] = "agent"
 
     assert registry.drop_client(current_socket) == "agent"
+
+
+def test_drop_client_releases_wake_capability_binding() -> None:
+    registry = _registry()
+    socket = _Socket()
+    registry.add_client(socket)
+    registry.socket_agent[socket] = "agent"
+    registry.agent_sockets["agent"] = socket
+    registry.set_wake_capability("agent", WAKE_DIRECT)
+
+    assert registry.wake_capability_of("agent") == WAKE_DIRECT
+    assert registry.drop_client(socket) == "agent"
+    assert registry.wake_capability_of("agent") == WAKE_UNKNOWN
+
+
+def test_unknown_wake_capability_is_not_bound() -> None:
+    registry = _registry()
+
+    registry.set_wake_capability("agent", "nonsense")
+
+    assert registry.wake_capability_of("agent") == WAKE_UNKNOWN
 
 
 def test_set_roles_binds_replaces_and_clears() -> None:

@@ -194,6 +194,7 @@ async def test_chat_delivery_receipt_reports_matching_online_recipient() -> None
     assert receipt["target"] == "ALPHA"
     assert receipt["message_target"] == "BETA"
     assert receipt["recipients"] == ["BETA"]
+    assert receipt["recipient_wake_capabilities"] == {"BETA": "direct"}
     assert receipt["message_id"] == 1
 
 

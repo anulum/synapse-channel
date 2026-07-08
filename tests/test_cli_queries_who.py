@@ -16,6 +16,7 @@ import pytest
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli_queries
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -211,6 +212,22 @@ def test_render_who_without_liveness_renders_the_plain_roster(
     assert "(deaf" not in out
 
 
+def test_render_who_marks_receiver_capabilities(capsys: pytest.CaptureFixture[str]) -> None:
+    cli_queries._render_who(
+        ["DIRECT", "GROK-rx", "KIMI-rx"],
+        wake_capabilities={
+            "DIRECT": "direct",
+            "GROK-rx": WAKE_PANE_BRIDGE,
+            "KIMI-rx": WAKE_PASSIVE,
+        },
+    )
+
+    out = capsys.readouterr().out
+    assert "DIRECT  (direct agent)" in out
+    assert "GROK-rx  (pane bridge)" in out
+    assert "KIMI-rx  (passive receiver)" in out
+
+
 def test_render_who_formats_the_silence_age_in_seconds_minutes_and_hours(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -290,6 +307,27 @@ async def test_who_has_no_liveness_marker_when_tracking_is_off(
 
     assert code == 0
     assert "(deaf" not in capsys.readouterr().out
+
+
+async def test_who_shows_passive_and_pane_bridge_waiters(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async with running_hub(SynapseHub()) as (_, uri):
+        passive = await connect_agent(
+            "SYNAPSE-CHANNEL/kimi-3dcd-rx", uri, wake_capability=WAKE_PASSIVE
+        )
+        bridge = await connect_agent(
+            "user/terminal-38253-rx", uri, wake_capability=WAKE_PANE_BRIDGE
+        )
+        try:
+            code = await cli_queries._who(uri=uri, name="U")
+        finally:
+            await close_agents(passive, bridge)
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "SYNAPSE-CHANNEL/kimi-3dcd-rx  (passive receiver)" in out
+    assert "user/terminal-38253-rx  (pane bridge)" in out
 
 
 def test_public_docs_explain_who_me_presence_and_waiter_distinction() -> None:

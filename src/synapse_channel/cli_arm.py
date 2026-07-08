@@ -19,6 +19,7 @@ from typing import Any
 
 from synapse_channel.cli_messaging import AgentFactory, _wait
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
+from synapse_channel.core.wake_capability import WAKE_PASSIVE
 from synapse_channel.mailbox_cursor import cursor_path
 from synapse_channel.waiter_identity import waiter_name
 
@@ -85,6 +86,7 @@ async def _arm(
     owner_check_interval: float = OWNER_CHECK_INTERVAL_SECONDS,
     mailbox: bool = False,
     mailbox_cursor_path: Path | None = None,
+    wake_capability: str = WAKE_PASSIVE,
 ) -> int:
     """Keep a directed waiter armed until interrupted, displaced, or orphaned.
 
@@ -106,6 +108,9 @@ async def _arm(
     landed while it was disconnected, so a message that arrived in a reconnect or
     re-arm gap wakes the waiter on the next connect instead of waiting unread — and
     the shared cursor keeps a re-arm from being replayed the same backlog twice.
+
+    ``wake_capability`` is forwarded into each one-shot wait; the arm command
+    defaults to ``passive`` because a socket wake alone does not force a provider pane.
     """
     if owner_pid is not None and not owner_probe(owner_pid):
         print(f"[{name}] owner pid {owner_pid} is already gone; not arming.")
@@ -125,6 +130,7 @@ async def _arm(
                 token=token,
                 mailbox=mailbox,
                 mailbox_cursor_path=mailbox_cursor_path,
+                wake_capability=wake_capability,
             )
         )
         if owner_pid is None:
@@ -189,6 +195,7 @@ def _cmd_arm(
                 owner_pid=args.owner_pid,
                 mailbox=mailbox,
                 mailbox_cursor_path=mailbox_cursor_path,
+                wake_capability=getattr(args, "wake_capability", WAKE_PASSIVE),
             )
         )
     except KeyboardInterrupt:
@@ -264,6 +271,12 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
         help="Stop after N wakes; primarily useful for smoke tests and scripts.",
     )
     arm.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    arm.add_argument(
+        "--wake-capability",
+        default=WAKE_PASSIVE,
+        choices=("direct", "passive", "pane_bridge"),
+        help=argparse.SUPPRESS,
+    )
     arm.add_argument(
         "--owner-pid",
         type=int,

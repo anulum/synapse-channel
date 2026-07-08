@@ -124,12 +124,22 @@ async def _who(
         transform=lambda data: (
             [str(agent) for agent in data.get("online_agents", [])],
             data.get("agent_liveness") if isinstance(data.get("agent_liveness"), dict) else None,
+            data.get("wake_capabilities")
+            if isinstance(data.get("wake_capabilities"), dict)
+            else None,
         ),
         request=lambda agent: agent.request_who(),
         render=(
             (lambda result: _render_who_me(result[0], name=name))
             if me
-            else (lambda result: _render_who(result[0], project=project, liveness=result[1]))
+            else (
+                lambda result: _render_who(
+                    result[0],
+                    project=project,
+                    liveness=result[1],
+                    wake_capabilities=result[2],
+                )
+            )
         ),
         ready_timeout=ready_timeout,
     )

@@ -123,17 +123,30 @@ async def connect_agent(
     wait_presence: bool = True,
     token: str | None = None,
     takeover: bool = False,
+    wake_capability: str | None = None,
 ) -> AgentHandle:
     recorder = Recorder()
-    agent = SynapseAgent(
-        name,
-        recorder,
-        uri=uri,
-        heartbeat_interval=60.0,
-        verbose=False,
-        token=token,
-        takeover=takeover,
-    )
+    if wake_capability is None:
+        agent = SynapseAgent(
+            name,
+            recorder,
+            uri=uri,
+            heartbeat_interval=60.0,
+            verbose=False,
+            token=token,
+            takeover=takeover,
+        )
+    else:
+        agent = SynapseAgent(
+            name,
+            recorder,
+            uri=uri,
+            heartbeat_interval=60.0,
+            verbose=False,
+            token=token,
+            takeover=takeover,
+            wake_capability=wake_capability,
+        )
     task = asyncio.create_task(agent.connect())
     handle = AgentHandle(agent=agent, recorder=recorder, task=task)
     if not await agent.wait_until_ready(3.0):

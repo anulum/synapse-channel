@@ -87,6 +87,7 @@ class _LifecycleAgent(Protocol):
     token: str | None
     uri: str
     verbose: bool
+    wake_capability: str
     _heartbeat_task: asyncio.Task[None] | None
     _mailbox_since_seq: int
 
@@ -143,6 +144,7 @@ class AgentLifecycleMixin:
                     extra["token"] = self.token
                 if self.takeover:
                     extra["takeover"] = True
+                extra["wake_capability"] = self.wake_capability
                 if self.roles:
                     # Declare the roles this identity answers to so the hub binds them
                     # to this socket: /who shows them and a directed message to a role

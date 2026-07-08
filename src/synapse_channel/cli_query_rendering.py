@@ -12,6 +12,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from synapse_channel.core.wake_capability import WAKE_UNKNOWN, wake_capability_label
 from synapse_channel.waiter_identity import split_roster, waiter_name
 
 
@@ -40,11 +41,22 @@ def _liveness_suffix(info: dict[str, Any]) -> str:
     return f"  (deaf {_format_reaction_age(float(age))})"
 
 
+def _wake_capability_suffix(name: str, capabilities: dict[str, str] | None) -> str:
+    """Return the wake-capability marker for one roster entry."""
+    if not capabilities:
+        return ""
+    capability = capabilities.get(name, WAKE_UNKNOWN)
+    if capability == WAKE_UNKNOWN:
+        return ""
+    return f"  ({wake_capability_label(capability)})"
+
+
 def _render_who(
     roster: list[str],
     *,
     project: str | None = None,
     liveness: dict[str, dict[str, Any]] | None = None,
+    wake_capabilities: dict[str, str] | None = None,
 ) -> None:
     """Render an online roster split into agents and waiter sidecars.
 
@@ -70,11 +82,13 @@ def _render_who(
     print(f"Online{scope} ({len(agents)} agents · {len(waiters)} waiters):")
     marks = liveness or {}
     for agent_name in agents:
-        print(f"  {agent_name}{_liveness_suffix(marks[agent_name]) if agent_name in marks else ''}")
+        capability = _wake_capability_suffix(agent_name, wake_capabilities)
+        liveness_mark = _liveness_suffix(marks[agent_name]) if agent_name in marks else ""
+        print(f"  {agent_name}{capability}{liveness_mark}")
     if waiters:
         print(f"Waiters ({len(waiters)}):")
         for waiter in waiters:
-            print(f"  {waiter}")
+            print(f"  {waiter}{_wake_capability_suffix(waiter, wake_capabilities)}")
     unarmed = [
         agent_name
         for agent_name in agents

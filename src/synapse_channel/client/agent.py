@@ -35,6 +35,7 @@ from synapse_channel.client.agent_outbound import AgentOutboundMixin
 from synapse_channel.client.agent_queries import AgentQueryMixin
 from synapse_channel.core.identity_keys import load_signing_key
 from synapse_channel.core.message_auth import MessageAuthKey
+from synapse_channel.core.wake_capability import WAKE_DIRECT, normalize_wake_capability
 
 logging.basicConfig(level=logging.ERROR)
 
@@ -96,6 +97,9 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         filters the replay by it rather than by the connection name. Empty (the
         default) leaves the hub replaying the backlog for ``name`` itself — correct
         for an agent that connects under its own identity.
+    wake_capability : str, optional
+        Receiver capability declared on the registration heartbeat. Ordinary agents
+        default to ``direct``; passive wait sockets and pane bridges override it.
     per_message_auth_key_id : str or None, optional
         Key id used to sign mutating frames with per-message authentication.
         ``None`` leaves frame signing off.
@@ -127,6 +131,7 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         mailbox: bool = False,
         mailbox_since_seq: int = 0,
         mailbox_for: str = "",
+        wake_capability: str = WAKE_DIRECT,
         per_message_auth_key_id: str | None = None,
         per_message_auth_secret: str | bytes | None = None,
         identity_key_path: str | None = None,
@@ -153,6 +158,7 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         self.mailbox = bool(mailbox)
         self._mailbox_since_seq = max(0, int(mailbox_since_seq))
         self.mailbox_for = str(mailbox_for)
+        self.wake_capability = normalize_wake_capability(wake_capability, default=WAKE_DIRECT)
         self._message_auth_key: MessageAuthKey | None = None
         if per_message_auth_key_id is not None and per_message_auth_secret is not None:
             secret = (

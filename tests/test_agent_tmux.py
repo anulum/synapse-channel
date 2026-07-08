@@ -269,6 +269,8 @@ def test_wait_and_wake_injects_after_successful_wait(tmp_path: Path) -> None:
         "--timeout",
         "0",
         "--directed-only",
+        "--wake-capability",
+        "pane_bridge",
     ]
     assert runner.calls[1][:5] == ["tmux", "send-keys", "-t", "synapse-codex-main", "-l"]
     assert runner.calls[2] == ["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]
@@ -382,6 +384,8 @@ def test_wait_command_threads_a_custom_uri_and_token(tmp_path: Path) -> None:
     config = _config(tmp_path)
     custom = replace(config, uri="ws://coordinator:9999", token="secret-token")
     command = _wait_command(custom)
+    assert "--wake-capability" in command
+    assert command[command.index("--wake-capability") + 1] == "pane_bridge"
     assert command[-4:] == ["--uri", "ws://coordinator:9999", "--token", "secret-token"]
     # the default-hub command carries neither flag
     assert "--uri" not in _wait_command(config)

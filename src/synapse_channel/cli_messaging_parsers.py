@@ -15,6 +15,7 @@ from synapse_channel.cli_messaging_listen import _cmd_listen
 from synapse_channel.cli_messaging_send import _cmd_send
 from synapse_channel.cli_messaging_wait import _cmd_wait
 from synapse_channel.client.agent import default_hub_uri
+from synapse_channel.core.wake_capability import WAKE_PASSIVE
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -104,6 +105,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "terminals do not re-invoke at once and trip the provider rate limit; 0 disables.",
     )
     wait.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    wait.add_argument(
+        "--wake-capability",
+        default=WAKE_PASSIVE,
+        choices=("direct", "passive", "pane_bridge"),
+        help=argparse.SUPPRESS,
+    )
     wait.add_argument(
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
     )

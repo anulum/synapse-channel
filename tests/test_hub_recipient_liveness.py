@@ -14,6 +14,7 @@ from typing import Any
 
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
 
 
 class _Clock:
@@ -43,10 +44,16 @@ class _FakeSocket:
         return [message for message in self.sent if message.get("type") == msg_type]
 
 
-def _register(name: str) -> str:
-    return json.dumps(
-        {"sender": name, "type": MessageType.HEARTBEAT, "target": "System", "payload": "online"}
-    )
+def _register(name: str, *, wake_capability: str | None = None) -> str:
+    frame: dict[str, object] = {
+        "sender": name,
+        "type": MessageType.HEARTBEAT,
+        "target": "System",
+        "payload": "online",
+    }
+    if wake_capability is not None:
+        frame["wake_capability"] = wake_capability
+    return json.dumps(frame)
 
 
 def _keepalive(name: str) -> str:
@@ -175,6 +182,31 @@ class TestStaleRecipientWarning:
 
         assert alpha.messages_of_type(MessageType.RECIPIENT_LIVENESS_WARNING) == []
 
+    async def test_passive_project_waiter_warns_even_when_socket_is_live(self) -> None:
+        clock = _Clock()
+        hub = SynapseHub(warn_stale_recipients=True, recipient_liveness_window=10.0, clock=clock)
+        kimi = _FakeSocket()
+        alpha = _FakeSocket()
+        hub.clients.add_client(kimi)
+        await hub.handle_message(
+            _register("SYNAPSE-CHANNEL/kimi-3dcd-rx", wake_capability=WAKE_PASSIVE),
+            kimi,
+        )
+        hub.state.last_seen["SYNAPSE-CHANNEL/kimi-3dcd-rx"] = time.time()
+        hub.clients.add_client(alpha)
+        await hub.handle_message(_register("ALPHA"), alpha)
+
+        await hub.handle_message(_chat("ALPHA", "SYNAPSE-CHANNEL", "wake kimi"), alpha)
+
+        warnings = alpha.messages_of_type(MessageType.RECIPIENT_LIVENESS_WARNING)
+        assert len(warnings) == 1
+        assert warnings[0]["stale_recipients"] == []
+        assert warnings[0]["passive_recipients"] == ["SYNAPSE-CHANNEL/kimi-3dcd"]
+        assert warnings[0]["recipient_wake_capabilities"] == {
+            "SYNAPSE-CHANNEL/kimi-3dcd": WAKE_PASSIVE
+        }
+        assert "passive receiver" in warnings[0]["payload"]
+
 
 class TestWhoSnapshotLiveness:
     async def test_who_snapshot_carries_liveness_when_enabled(self) -> None:
@@ -207,3 +239,21 @@ class TestWhoSnapshotLiveness:
 
         snap = querier.messages_of_type(MessageType.WHO_SNAPSHOT)[-1]
         assert "agent_liveness" not in snap
+
+    async def test_who_snapshot_carries_wake_capabilities_for_receiver_kinds(self) -> None:
+        hub = SynapseHub()
+        passive = _FakeSocket()
+        bridge = _FakeSocket()
+        querier = _FakeSocket()
+        hub.clients.add_client(passive)
+        await hub.handle_message(_register("kimi-rx", wake_capability=WAKE_PASSIVE), passive)
+        hub.clients.add_client(bridge)
+        await hub.handle_message(_register("grok-rx", wake_capability=WAKE_PANE_BRIDGE), bridge)
+        hub.clients.add_client(querier)
+        await hub.handle_message(_register("U"), querier)
+
+        await hub.handle_message(_who_request("U"), querier)
+
+        snap = querier.messages_of_type(MessageType.WHO_SNAPSHOT)[-1]
+        assert snap["wake_capabilities"]["kimi-rx"] == WAKE_PASSIVE
+        assert snap["wake_capabilities"]["grok-rx"] == WAKE_PANE_BRIDGE

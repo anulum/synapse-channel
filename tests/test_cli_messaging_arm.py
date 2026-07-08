@@ -19,6 +19,7 @@ import pytest
 from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
 from synapse_channel import cli_arm
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.wake_capability import WAKE_PASSIVE
 
 
 async def _wait_for_presence_count(observer: AgentHandle, name: str, count: int) -> None:
@@ -188,6 +189,24 @@ async def test_arm_passes_roles_to_each_wait() -> None:
     )
     assert code == 0
     assert captured["roles"] == ("proj/coordinator",)
+
+
+async def test_arm_passes_passive_wake_capability_to_each_wait() -> None:
+    captured: dict[str, Any] = {}
+
+    async def wait_once(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 4
+
+    code = await cli_arm._arm(
+        uri="ws://h",
+        name="B-rx",
+        for_name="B",
+        reconnect_delay=0.0,
+        wait_runner=wait_once,
+    )
+    assert code == 0
+    assert captured["wake_capability"] == WAKE_PASSIVE
 
 
 def test_cmd_arm_handles_keyboard_interrupt(capsys: pytest.CaptureFixture[str]) -> None:

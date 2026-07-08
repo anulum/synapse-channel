@@ -480,6 +480,8 @@ def _wait_command(config: AgentTmuxConfig) -> list[str]:
         "--timeout",
         "0",
         "--directed-only",
+        "--wake-capability",
+        "pane_bridge",
     ]
     if config.uri != DEFAULT_HUB_URI:
         command.extend(["--uri", config.uri])

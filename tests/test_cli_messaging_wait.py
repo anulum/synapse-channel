@@ -19,6 +19,7 @@ from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent
 from synapse_channel import cli_messaging
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.wake_capability import WAKE_PASSIVE
 from synapse_channel.mailbox_cursor import load_cursor
 
 
@@ -92,6 +93,33 @@ def test_cmd_wait_dispatches_with_for_default(capsys: pytest.CaptureFixture[str]
     )
     assert cli_messaging._cmd_wait(ns) == 1
     assert "[X-rx] Could not reach hub" in capsys.readouterr().out
+
+
+def test_cmd_wait_defaults_to_passive_wake_capability() -> None:
+    captured: dict[str, object] = {}
+
+    async def wait_once(**kwargs: object) -> int:
+        captured.update(kwargs)
+        return 0
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="X",
+        for_name=None,
+        timeout=0.0,
+        directed_only=False,
+        wake_jitter=0.0,
+        token=None,
+        ready_timeout=0.1,
+    )
+
+    assert (
+        cli_messaging._cmd_wait(
+            ns, wait_runner=wait_once, async_runner=lambda coro: asyncio.run(coro)
+        )
+        == 0
+    )
+    assert captured["wake_capability"] == WAKE_PASSIVE
 
 
 async def test_wait_wakes_on_a_held_role(capsys: pytest.CaptureFixture[str]) -> None:

@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import random
+from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
 
@@ -23,8 +24,12 @@ from synapse_channel.connect_failures import (
     is_takeover_refused_close,
 )
 from synapse_channel.core.protocol import MessageType, wakes
+from synapse_channel.core.wake_capability import WAKE_PASSIVE
 from synapse_channel.mailbox_cursor import load_cursor, save_cursor
 from synapse_channel.waiter_identity import waiter_name
+
+WaitRunner = Callable[..., Coroutine[Any, Any, int]]
+AsyncRunner = Callable[[Coroutine[Any, Any, int]], int]
 
 
 async def _wait(
@@ -43,6 +48,7 @@ async def _wait(
     poll_interval: float = 0.1,
     mailbox: bool = False,
     mailbox_cursor_path: Path | None = None,
+    wake_capability: str = WAKE_PASSIVE,
 ) -> int:
     """Block until one message addressed to ``for_name`` arrives, print it, and exit.
 
@@ -95,6 +101,9 @@ async def _wait(
         across re-arms is what stops each fresh waiter process from being replayed —
         and waking on — the whole retained backlog again. ``None`` disables
         persistence (the mailbox replays the whole window each connect).
+    wake_capability : str, optional
+        Receiver capability declared to the hub. A bare wait socket defaults to
+        ``passive`` because receiving a frame does not prove an agent pane was woken.
 
     Returns
     -------
@@ -143,6 +152,7 @@ async def _wait(
         mailbox=mailbox,
         mailbox_since_seq=since_seq,
         mailbox_for=for_name if mailbox else "",
+        wake_capability=wake_capability,
     )
     conn_task = asyncio.create_task(agent.connect())
     try:
@@ -202,7 +212,12 @@ async def _wait(
             save_cursor(mailbox_cursor_path, agent.mailbox_cursor)
 
 
-def _cmd_wait(args: argparse.Namespace) -> int:
+def _cmd_wait(
+    args: argparse.Namespace,
+    *,
+    wait_runner: WaitRunner = _wait,
+    async_runner: AsyncRunner = asyncio.run,
+) -> int:
     """Dispatch the ``wait`` subcommand.
 
     The waiter connects only to *receive*, so its connection name must never be the
@@ -213,8 +228,8 @@ def _cmd_wait(args: argparse.Namespace) -> int:
     for_name = args.for_name or args.name
     connect_name = args.name if args.name != for_name else waiter_name(args.name)
     roles = tuple(r.strip() for r in (getattr(args, "role", None) or ()) if r.strip())
-    return asyncio.run(
-        _wait(
+    return async_runner(
+        wait_runner(
             uri=args.uri,
             name=connect_name,
             for_name=for_name,
@@ -224,5 +239,6 @@ def _cmd_wait(args: argparse.Namespace) -> int:
             wake_jitter=args.wake_jitter,
             token=args.token,
             ready_timeout=args.ready_timeout,
+            wake_capability=getattr(args, "wake_capability", WAKE_PASSIVE),
         )
     )

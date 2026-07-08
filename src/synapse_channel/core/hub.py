@@ -774,6 +774,14 @@ class SynapseHub:
         """Return the roles ``name`` currently answers to (empty tuple if none)."""
         return self.clients.roles_of(name)
 
+    def set_wake_capability(self, name: str, capability: str) -> None:
+        """Bind the receiver wake capability declared on an identity's registration."""
+        self.clients.set_wake_capability(name, capability)
+
+    def wake_capability_of(self, name: str) -> str:
+        """Return the declared receiver wake capability for ``name``."""
+        return self.clients.wake_capability_of(name)
+
     def observing_identities(self, target: str) -> tuple[str, ...]:
         """Return connected identities the ACL policy grants ``observe`` on ``target``.
 
