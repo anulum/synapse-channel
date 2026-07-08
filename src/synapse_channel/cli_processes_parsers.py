@@ -24,7 +24,10 @@ from synapse_channel.client.supervisor import (
     DEFAULT_MIN_HISTORY_SAMPLES,
     DEFAULT_MIN_PREDICTIVE_IDLE_SECONDS,
 )
-from synapse_channel.core.agent_liveness import DEFAULT_RECIPIENT_LIVENESS_WINDOW
+from synapse_channel.core.agent_liveness import (
+    DEFAULT_RECIPIENT_LIVENESS_WINDOW,
+    DEFAULT_WAITER_LIVENESS_WINDOW,
+)
 from synapse_channel.core.hub import (
     DEFAULT_AUTH_TIMEOUT,
     DEFAULT_COMPACT_HINT_THRESHOLD,
@@ -360,6 +363,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="How long after its last genuine reaction a recipient stays judged live for "
         "--warn-stale-recipients. A just-connected or briefly quiet agent is inside the "
         f"window and never flagged. Defaults to {DEFAULT_RECIPIENT_LIVENESS_WINDOW:g}s.",
+    )
+    hub.add_argument(
+        "--waiter-liveness-window",
+        type=float,
+        default=DEFAULT_WAITER_LIVENESS_WINDOW,
+        metavar="SECONDS",
+        help="How long a waiter's -rx sidecar may go silent (no keepalive) before it stops "
+        "counting as a live waiter for --warn-stale-recipients, so a hung or exiting waiter no "
+        f"longer vouches for its agent. Defaults to {DEFAULT_WAITER_LIVENESS_WINDOW:g}s.",
     )
     hub.add_argument(
         "--federation-store",

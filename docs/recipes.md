@@ -164,6 +164,15 @@ The discipline that makes it reliable:
   both (see the [deployment guide](deployment.md)). Run `syn who --me` for the
   resolved identity, or `synapse who --name <identity> --me` explicitly, to see
   presence and `-rx` waiter status separately; presence is not a wake loop.
+- **Prefer a self-healing waiter.** Re-arming by hand is fragile — a missed re-arm
+  leaves the agent present but deaf. `synapse init --install-user-services` writes a
+  `synapse-arm@<identity>` systemd user unit that re-arms the waiter and, with
+  `Restart=always`, is brought back by systemd if it ever dies — so the waiter cannot
+  silently lapse. Reserve the manual `--max-wakes 1` re-arm loop for a harness that
+  re-invokes on each wake. To catch a lapse when it does happen, run the hub with
+  `--warn-stale-recipients`: a directed message to a present-but-deaf recipient warns
+  the sender, and `synapse who` marks such agents `(deaf …)` and lists any present
+  agent with no live waiter under `Unarmed (present, no live waiter)`.
 - **Clean up by identity and PID only.** Use `syn reap` to list the resolved
   identity's shell-hook waiter pidfile, then `syn reap --pid <pid>` when that
   exact PID needs cleanup. It removes dead pidfiles and signals only a verified

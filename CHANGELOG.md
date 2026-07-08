@@ -15,12 +15,20 @@ All notable changes to this project are documented here.
 
 ### Added
 - Opt-in stale-recipient warning (`synapse hub --warn-stale-recipients`): a directed message to a
-  recipient that is present but not proven wake-capable — no armed `-rx` waiter sidecar and no
+  recipient that is present but not proven wake-capable — no live `-rx` waiter sidecar and no
   genuine reaction within `--recipient-liveness-window` seconds (default 90) — draws a private
   `recipient_liveness_warning` back to the sender, so a reply that never comes is surfaced instead
   of silently waited on. Off by default, so an open hub tracks no reactions and warns nobody; the
   message is still delivered and journalled unchanged. Closes the "online but deaf agent"
   coordination gap where presence outlived liveness.
+- `synapse who` roster liveness (same opt-in): a present-but-deaf agent is marked `(deaf …)`, and a
+  trailing `Unarmed (present, no live waiter)` line names the agents an operator should re-arm. The
+  who snapshot carries an additive `agent_liveness` field when the warning is on.
+- Waiter liveness now requires a *live* sidecar, not merely a present one: a `-rx` socket counts as a
+  waiter only while its keepalive is fresh within `--waiter-liveness-window` seconds (default 20), so
+  a hung or exiting waiter no longer vouches for its agent. A `synapse-arm@` systemd unit
+  (`synapse init --install-user-services`, `Restart=always`) is the documented self-healing waiter
+  path; `docs/recipes.md` covers it.
 
 ## [0.98.8] - 2026-07-07
 

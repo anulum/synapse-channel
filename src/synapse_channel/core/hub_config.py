@@ -43,7 +43,10 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.acl import AclPolicy
-from synapse_channel.core.agent_liveness import DEFAULT_RECIPIENT_LIVENESS_WINDOW
+from synapse_channel.core.agent_liveness import (
+    DEFAULT_RECIPIENT_LIVENESS_WINDOW,
+    DEFAULT_WAITER_LIVENESS_WINDOW,
+)
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
@@ -189,13 +192,15 @@ class HubLiveness:
 
     Off by default: the open hub never tracks per-agent reactions or warns a
     sender. With ``warn_stale_recipients`` on, a directed message to a recipient
-    that is present but has no proof of liveness — no armed ``-rx`` waiter sidecar
-    and no genuine reaction within ``recipient_liveness_window`` seconds — draws a
-    private warning to the sender.
+    that is present but has no proof of liveness — no ``-rx`` waiter sidecar whose
+    keepalive is fresh within ``waiter_liveness_window`` seconds, and no genuine
+    reaction within ``recipient_liveness_window`` seconds — draws a private warning
+    to the sender, and ``/who`` marks it distinctly.
     """
 
     warn_stale_recipients: bool = False
     recipient_liveness_window: float = DEFAULT_RECIPIENT_LIVENESS_WINDOW
+    waiter_liveness_window: float = DEFAULT_WAITER_LIVENESS_WINDOW
 
 
 @dataclass(frozen=True, kw_only=True)

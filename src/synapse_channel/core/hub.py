@@ -49,7 +49,7 @@ from synapse_channel.core.acl import (
 from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.agent_liveness import (
     DEFAULT_RECIPIENT_LIVENESS_WINDOW,
-    WAITER_SUFFIX,
+    DEFAULT_WAITER_LIVENESS_WINDOW,
     RecipientLiveness,
 )
 from synapse_channel.core.auth import TokenAuthenticator
@@ -76,6 +76,7 @@ from synapse_channel.core.hub_http import http_endpoint_response
 from synapse_channel.core.hub_identity_gate import HubIdentityGate
 from synapse_channel.core.hub_ingress import HubIngress
 from synapse_channel.core.hub_ledger_guard import HubLedgerGuard
+from synapse_channel.core.hub_liveness import HubLivenessView
 from synapse_channel.core.hub_relay import RelayMirror
 from synapse_channel.core.hub_state_seed import seed_hub_state
 from synapse_channel.core.ledger import (
@@ -454,6 +455,7 @@ class SynapseHub:
         private_directed_messages: bool = False,
         warn_stale_recipients: bool = False,
         recipient_liveness_window: float = DEFAULT_RECIPIENT_LIVENESS_WINDOW,
+        waiter_liveness_window: float = DEFAULT_WAITER_LIVENESS_WINDOW,
         multihub_serving_policy: MultiHubServingPolicy | None = None,
         namespace_ownership: NamespaceOwnership | None = None,
         claim_peers: Mapping[str, ClaimForwardPeer] | None = None,
@@ -495,6 +497,7 @@ class SynapseHub:
         self.private_directed_messages = bool(private_directed_messages)
         self.warn_stale_recipients = bool(warn_stale_recipients)
         self.recipient_liveness_window = max(float(recipient_liveness_window), 0.0)
+        self.waiter_liveness_window = max(float(waiter_liveness_window), 0.0)
         self._recipient_liveness = RecipientLiveness(window_seconds=self.recipient_liveness_window)
         self.multihub_serving_policy = multihub_serving_policy
         self.namespace_ownership = namespace_ownership
@@ -643,6 +646,19 @@ class SynapseHub:
             compact_hint_threshold=self.compact_hint_threshold,
         )
         self.state = seeded.state
+        # The liveness query view combines the reaction store with the live roster and
+        # the last-seen map (built with ``state`` above), so it is wired here, after
+        # ``state`` exists. The store itself is created earlier so the connection's
+        # forget hook and the frame handler's touch can reference it.
+        self._liveness = HubLivenessView(
+            self._recipient_liveness,
+            enabled=self.warn_stale_recipients,
+            waiter_window_seconds=self.waiter_liveness_window,
+            online_agents=self.online_agents,
+            agent_sockets=self.agent_sockets,
+            last_seen=self.state.last_seen,
+            clock=self._clock,
+        )
         self.chat_history = seeded.chat_history
         self.blackboard = seeded.blackboard
         self._ledger = HubLedgerGuard(
@@ -785,63 +801,22 @@ class SynapseHub:
         )
 
     def recipients_without_live_waiter(self, recipients: Iterable[str]) -> tuple[str, ...]:
-        """Return present recipients that are neither waiter-armed nor recently reacting.
+        """Present recipients with no proof of liveness — the ones to warn about.
 
-        A directed message reaches only agents that are online, but online is not the
-        same as reachable-in-practice: an agent can hold the roster while the terminal
-        behind it never wakes to a directed message. This returns the subset of
-        ``recipients`` a sender should be warned about — each is present but has *no
-        independent proof of liveness*: no live ``-rx`` waiter sidecar is connected for
-        it, and it has not produced a genuine reaction within the liveness window. An
-        agent with either proof is omitted, so an armed-but-idle agent (reachable, just
-        quiet) and an actively-reacting one are never flagged.
-
-        Returns an empty tuple when the stale-recipient warning is disabled — the
-        default posture, in which the liveness store is never written — so the check
-        costs nothing on an open hub.
+        Thin wrapper over
+        :meth:`~synapse_channel.core.hub_liveness.HubLivenessView.recipients_without_live_waiter`,
+        kept because the chat handler and tests call ``hub.recipients_without_live_waiter``.
         """
-        if not self.warn_stale_recipients:
-            return ()
-        now = self._clock()
-        online = self.agent_sockets
-        return tuple(
-            name
-            for name in recipients
-            if f"{name}{WAITER_SUFFIX}" not in online
-            and self._recipient_liveness.is_stale(name, now)
-        )
+        return self._liveness.recipients_without_live_waiter(recipients)
 
     def roster_liveness(self) -> dict[str, dict[str, Any]]:
-        """Return a per-agent liveness annotation for the ``/who`` roster.
+        """Per-agent liveness annotation for the ``/who`` roster (handler surface).
 
-        For each online *agent* (a ``-rx`` waiter sidecar is presence plumbing, not
-        an agent, and is skipped) this reports whether it is *proven live* — a live
-        ``-rx`` waiter is armed for it, or it produced a genuine reaction within the
-        liveness window — and how long ago it last reacted (``None`` if it never has).
-        A present agent that is not proven live is the "online but deaf" case a roster
-        should surface distinctly from a merely-connected one.
-
-        Returns an empty mapping when the stale-recipient warning is disabled — the
-        default posture, in which no reactions are tracked — so the ``/who`` snapshot
-        is byte-for-byte unchanged on an open hub. It shares the ``warn_stale_recipients``
-        opt-in because both surfaces read the same reaction store.
+        Thin wrapper over
+        :meth:`~synapse_channel.core.hub_liveness.HubLivenessView.roster_liveness`, kept
+        because the who-snapshot handler and tests call ``hub.roster_liveness``.
         """
-        if not self.warn_stale_recipients:
-            return {}
-        now = self._clock()
-        online = self.agent_sockets
-        annotation: dict[str, dict[str, Any]] = {}
-        for name in self.online_agents():
-            if name.endswith(WAITER_SUFFIX):
-                continue
-            has_waiter = f"{name}{WAITER_SUFFIX}" in online
-            last = self._recipient_liveness.last_reaction_at(name)
-            annotation[name] = {
-                "proven_live": has_waiter or not self._recipient_liveness.is_stale(name, now),
-                "has_waiter": has_waiter,
-                "last_reaction_age": None if last is None else max(0.0, now - last),
-            }
-        return annotation
+        return self._liveness.roster_liveness()
 
     def uptime_seconds(self) -> float:
         """Return seconds elapsed since the hub was constructed."""

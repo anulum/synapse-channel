@@ -981,7 +981,11 @@ def test_cmd_hub_threads_stale_recipient_warning() -> None:
 
     assert (
         cli_processes._cmd_hub(
-            _hub_ns(warn_stale_recipients=True, recipient_liveness_window=30.0),
+            _hub_ns(
+                warn_stale_recipients=True,
+                recipient_liveness_window=30.0,
+                waiter_liveness_window=15.0,
+            ),
             runner=_close_runner,
             hub_factory=build_hub,
         )
@@ -989,6 +993,7 @@ def test_cmd_hub_threads_stale_recipient_warning() -> None:
     )
     assert captured["warn_stale_recipients"] is True
     assert captured["recipient_liveness_window"] == 30.0
+    assert captured["waiter_liveness_window"] == 15.0
 
 
 def test_cmd_hub_stale_recipient_warning_off_by_default() -> None:

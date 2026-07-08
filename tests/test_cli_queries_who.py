@@ -177,8 +177,8 @@ def test_render_who_marks_a_deaf_agent_and_leaves_a_live_one_plain(
     cli_queries._render_who(
         ["BETA", "GAMMA"],
         liveness={
-            "BETA": {"proven_live": False, "has_waiter": False, "last_reaction_age": 245.0},
-            "GAMMA": {"proven_live": True, "has_waiter": True, "last_reaction_age": 3.0},
+            "BETA": {"proven_live": False, "has_live_waiter": False, "last_reaction_age": 245.0},
+            "GAMMA": {"proven_live": True, "has_live_waiter": True, "last_reaction_age": 3.0},
         },
     )
 
@@ -193,7 +193,9 @@ def test_render_who_flags_an_agent_that_never_reacted(
 ) -> None:
     cli_queries._render_who(
         ["BETA"],
-        liveness={"BETA": {"proven_live": False, "has_waiter": False, "last_reaction_age": None}},
+        liveness={
+            "BETA": {"proven_live": False, "has_live_waiter": False, "last_reaction_age": None}
+        },
     )
 
     assert "(deaf — no reaction seen)" in capsys.readouterr().out
@@ -225,6 +227,38 @@ def test_render_who_formats_the_silence_age_in_seconds_minutes_and_hours(
     assert "(deaf ~45s)" in out
     assert "(deaf ~10m)" in out
     assert "(deaf ~2h)" in out
+
+
+def test_render_who_lists_the_unarmed_present_agents(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_queries._render_who(
+        ["ARMED", "UNARMED"],
+        liveness={
+            # ARMED is reacting AND has a live waiter; UNARMED is reacting but has none.
+            "ARMED": {"proven_live": True, "has_live_waiter": True, "last_reaction_age": 2.0},
+            "UNARMED": {"proven_live": True, "has_live_waiter": False, "last_reaction_age": 3.0},
+        },
+    )
+
+    out = capsys.readouterr().out
+    unarmed_line = next(line for line in out.splitlines() if line.startswith("Unarmed"))
+    listed = unarmed_line.split(": ", 1)[1].split(", ")
+    # ARMED has a live waiter, so only UNARMED is named on the unarmed line.
+    assert listed == ["UNARMED"]
+
+
+def test_render_who_has_no_unarmed_line_when_every_agent_is_armed(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_queries._render_who(
+        ["ARMED"],
+        liveness={
+            "ARMED": {"proven_live": True, "has_live_waiter": True, "last_reaction_age": 1.0}
+        },
+    )
+
+    assert "Unarmed" not in capsys.readouterr().out
 
 
 async def test_who_marks_a_deaf_agent_end_to_end(capsys: pytest.CaptureFixture[str]) -> None:

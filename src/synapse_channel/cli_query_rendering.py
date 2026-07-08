@@ -56,8 +56,10 @@ def _render_who(
 
     When the hub reports per-agent liveness (only under ``--warn-stale-recipients``),
     an agent that is present but not proven wake-capable is marked ``(deaf …)`` so a
-    connected-but-deaf terminal is told apart from a live one; without that data the
-    roster renders exactly as before.
+    connected-but-deaf terminal is told apart from a live one, and a trailing
+    ``Unarmed`` line names the present agents that have no live ``-rx`` waiter — the
+    ones an operator should re-arm before they go quiet. Without that data the roster
+    renders exactly as before.
     """
     names = roster
     if project:
@@ -73,6 +75,13 @@ def _render_who(
         print(f"Waiters ({len(waiters)}):")
         for waiter in waiters:
             print(f"  {waiter}")
+    unarmed = [
+        agent_name
+        for agent_name in agents
+        if marks.get(agent_name, {}).get("has_live_waiter") is False
+    ]
+    if unarmed:
+        print(f"Unarmed (present, no live waiter): {', '.join(unarmed)}")
 
 
 def _render_who_me(roster: list[str], *, name: str) -> None:

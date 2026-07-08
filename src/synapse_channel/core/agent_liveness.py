@@ -34,6 +34,17 @@ is not flagged the instant it registers; short enough that an agent deaf for
 minutes is surfaced to the next sender rather than discovered by hand hours later.
 """
 
+DEFAULT_WAITER_LIVENESS_WINDOW = 20.0
+"""Seconds a waiter's ``-rx`` sidecar may go silent before it stops vouching for its agent.
+
+An armed waiter's connection sends a keepalive every few seconds (its client's
+heartbeat loop), so a live waiter refreshes the hub's last-seen for its ``-rx``
+socket continuously. A window a few keepalives wide (≈ the hub's ping-reap) lets a
+single missed keepalive slide without flapping, while a socket that has gone quiet —
+a hung or exiting waiter process still holding the socket before the transport reaps
+it — stops counting as a live waiter rather than falsely vouching for its agent.
+"""
+
 WAITER_SUFFIX = "-rx"
 """Suffix of the receive-only wake-listener sidecar an armed waiter connects under.
 

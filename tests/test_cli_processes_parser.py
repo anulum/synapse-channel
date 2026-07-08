@@ -9,7 +9,10 @@
 from __future__ import annotations
 
 from synapse_channel import cli, cli_processes
-from synapse_channel.core.agent_liveness import DEFAULT_RECIPIENT_LIVENESS_WINDOW
+from synapse_channel.core.agent_liveness import (
+    DEFAULT_RECIPIENT_LIVENESS_WINDOW,
+    DEFAULT_WAITER_LIVENESS_WINDOW,
+)
 from synapse_channel.core.hub import (
     DEFAULT_COMPACT_HINT_THRESHOLD,
     DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
@@ -58,12 +61,21 @@ def test_parser_hub_stale_recipient_warning_flags() -> None:
     defaults = cli.build_parser().parse_args(["hub"])
     assert defaults.warn_stale_recipients is False
     assert defaults.recipient_liveness_window == DEFAULT_RECIPIENT_LIVENESS_WINDOW
+    assert defaults.waiter_liveness_window == DEFAULT_WAITER_LIVENESS_WINDOW
 
     args = cli.build_parser().parse_args(
-        ["hub", "--warn-stale-recipients", "--recipient-liveness-window", "45"]
+        [
+            "hub",
+            "--warn-stale-recipients",
+            "--recipient-liveness-window",
+            "45",
+            "--waiter-liveness-window",
+            "12",
+        ]
     )
     assert args.warn_stale_recipients is True
     assert args.recipient_liveness_window == 45.0
+    assert args.waiter_liveness_window == 12.0
 
 
 def test_parser_worker_custom() -> None:
