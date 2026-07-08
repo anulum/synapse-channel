@@ -258,6 +258,7 @@ class MessageType:
     FEDERATION_OFFER = "federation_offer"
     DEAD_LETTER_ESCALATION = "dead_letter_escalation"
     DEAD_LETTER_FORWARDING = "dead_letter_forwarding"
+    RECIPIENT_LIVENESS_WARNING = "recipient_liveness_warning"
     ERROR = "error"
     NAME_CONFLICT = "name_conflict"
     AUTH_DENIED = "auth_denied"

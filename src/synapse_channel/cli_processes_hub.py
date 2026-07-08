@@ -297,6 +297,8 @@ def _cmd_hub(
         "identity_trust_bundle": identity_trust_bundle,
         "require_identity_binding": args.require_identity_binding,
         "private_directed_messages": args.private_directed_messages,
+        "warn_stale_recipients": args.warn_stale_recipients,
+        "recipient_liveness_window": args.recipient_liveness_window,
         "federation_bundle": federation_bundle,
         "federation_offer_path": args.federation_offer or None,
         "hub_id": args.hub_id,

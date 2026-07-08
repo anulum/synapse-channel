@@ -84,6 +84,10 @@ class HubConnection:
     drop_waits : Callable[[str], None]
         The hub's wait-graph pruning (``hub._drop_waits``), used to remove a
         departing agent's wait edges.
+    forget_liveness : Callable[[str], None]
+        The hub's recipient-liveness pruning (``hub._recipient_liveness.forget``),
+        used to drop a departing agent's last-reaction record so the store stays
+        bounded to currently connected identities.
     """
 
     def __init__(
@@ -100,6 +104,7 @@ class HubConnection:
         online_agents: Callable[[], list[str]],
         broadcast_presence: Callable[[str, str | None], Awaitable[None]],
         drop_waits: Callable[[str], None],
+        forget_liveness: Callable[[str], None],
     ) -> None:
         self._clients = clients
         self._capabilities = capabilities
@@ -112,6 +117,7 @@ class HubConnection:
         self._online_agents = online_agents
         self._broadcast_presence = broadcast_presence
         self._drop_waits = drop_waits
+        self._forget_liveness = forget_liveness
 
     async def register(self, websocket: Any) -> None:
         """Record a new socket; welcome it now only on an open hub.
@@ -137,6 +143,7 @@ class HubConnection:
         if name is not None:
             self._drop_waits(name)
             self._capabilities.forget(name)
+            self._forget_liveness(name)
             if self._rate_limiter is not None:
                 self._rate_limiter.forget(name)
             await self._broadcast_presence("left", name)

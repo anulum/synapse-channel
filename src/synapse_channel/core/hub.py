@@ -47,6 +47,11 @@ from synapse_channel.core.acl import (
     evaluate_access,
 )
 from synapse_channel.core.acl_enforcement import project_of
+from synapse_channel.core.agent_liveness import (
+    DEFAULT_RECIPIENT_LIVENESS_WINDOW,
+    WAITER_SUFFIX,
+    RecipientLiveness,
+)
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.channels import ChannelRegistry
@@ -447,6 +452,8 @@ class SynapseHub:
         identity_trust_bundle: EventSignatureTrustBundle | None = None,
         require_identity_binding: bool = False,
         private_directed_messages: bool = False,
+        warn_stale_recipients: bool = False,
+        recipient_liveness_window: float = DEFAULT_RECIPIENT_LIVENESS_WINDOW,
         multihub_serving_policy: MultiHubServingPolicy | None = None,
         namespace_ownership: NamespaceOwnership | None = None,
         claim_peers: Mapping[str, ClaimForwardPeer] | None = None,
@@ -486,6 +493,9 @@ class SynapseHub:
         self.identity_trust_bundle = identity_trust_bundle
         self.require_identity_binding = bool(require_identity_binding)
         self.private_directed_messages = bool(private_directed_messages)
+        self.warn_stale_recipients = bool(warn_stale_recipients)
+        self.recipient_liveness_window = max(float(recipient_liveness_window), 0.0)
+        self._recipient_liveness = RecipientLiveness(window_seconds=self.recipient_liveness_window)
         self.multihub_serving_policy = multihub_serving_policy
         self.namespace_ownership = namespace_ownership
         self.claim_peers = dict(claim_peers) if claim_peers else None
@@ -590,6 +600,7 @@ class SynapseHub:
             online_agents=self.online_agents,
             broadcast_presence=self._broadcast_presence,
             drop_waits=self._drop_waits,
+            forget_liveness=self._recipient_liveness.forget,
         )
         self._frame_gates = HubFrameGates(
             require_per_message_auth=self.require_per_message_auth,
@@ -771,6 +782,33 @@ class SynapseHub:
                 policy=policy,
             ).decision
             == WOULD_ALLOW
+        )
+
+    def recipients_without_live_waiter(self, recipients: Iterable[str]) -> tuple[str, ...]:
+        """Return present recipients that are neither waiter-armed nor recently reacting.
+
+        A directed message reaches only agents that are online, but online is not the
+        same as reachable-in-practice: an agent can hold the roster while the terminal
+        behind it never wakes to a directed message. This returns the subset of
+        ``recipients`` a sender should be warned about — each is present but has *no
+        independent proof of liveness*: no live ``-rx`` waiter sidecar is connected for
+        it, and it has not produced a genuine reaction within the liveness window. An
+        agent with either proof is omitted, so an armed-but-idle agent (reachable, just
+        quiet) and an actively-reacting one are never flagged.
+
+        Returns an empty tuple when the stale-recipient warning is disabled — the
+        default posture, in which the liveness store is never written — so the check
+        costs nothing on an open hub.
+        """
+        if not self.warn_stale_recipients:
+            return ()
+        now = self._clock()
+        online = self.agent_sockets
+        return tuple(
+            name
+            for name in recipients
+            if f"{name}{WAITER_SUFFIX}" not in online
+            and self._recipient_liveness.is_stale(name, now)
         )
 
     def uptime_seconds(self) -> float:
@@ -961,6 +999,14 @@ class SynapseHub:
         self.dead_letters.clear(sender)
         if is_new_agent:
             await self._broadcast_presence("joined", sender)
+        if self.warn_stale_recipients and (is_new_agent or msg_type != MessageType.HEARTBEAT):
+            # Seed the grace window on registration, then refresh on every genuine
+            # reaction — any non-heartbeat frame — so a directed sender can be warned
+            # about a recipient that is present but has gone deaf. A keepalive
+            # heartbeat is deliberately not a reaction: it proves the socket, not the
+            # agent. Only written when the warning is enabled, so the default open hub
+            # keeps no per-frame liveness state.
+            self._recipient_liveness.touch(sender, self._clock())
         # A channel-scoped frame is audience-restricted, so its body must not land
         # in the hub log either — log the channel id and length, never the content.
         channel_id = str(data.get("channel") or "").strip()

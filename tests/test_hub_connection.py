@@ -148,10 +148,12 @@ def _connection(
     recorder: _Recorder | None = None,
     presence: _Presence | None = None,
     dropped: list[str] | None = None,
+    forgotten: list[str] | None = None,
 ) -> HubConnection:
     rec = recorder or _Recorder()
     pres = presence or _Presence()
     drop_sink = dropped if dropped is not None else []
+    forget_sink = forgotten if forgotten is not None else []
     return HubConnection(
         clients,
         capabilities or CapabilityRegistry(),
@@ -164,6 +166,7 @@ def _connection(
         online_agents=lambda: ["a", "b"],
         broadcast_presence=pres.broadcast_presence,
         drop_waits=drop_sink.append,
+        forget_liveness=forget_sink.append,
     )
 
 
@@ -229,12 +232,14 @@ async def test_unregister_releases_a_bound_name_and_announces_departure() -> Non
     limiter = _RecordingRateLimiter()
     presence = _Presence()
     dropped: list[str] = []
+    forgotten: list[str] = []
     conn = _connection(
         clients,
         rate_limiter=cast(RateLimiter, limiter),
         capabilities=capabilities,
         presence=presence,
         dropped=dropped,
+        forgotten=forgotten,
     )
 
     await conn.unregister(socket)
@@ -243,6 +248,7 @@ async def test_unregister_releases_a_bound_name_and_announces_departure() -> Non
     assert dropped == ["a"]
     assert capabilities.get("a") is None
     assert limiter.forgotten == ["a"]
+    assert forgotten == ["a"]
     assert presence.calls == [("left", "a")]
 
 
@@ -266,12 +272,14 @@ async def test_unregister_of_an_unnamed_socket_is_silent() -> None:
     clients.add_client(socket)
     presence = _Presence()
     dropped: list[str] = []
-    conn = _connection(clients, presence=presence, dropped=dropped)
+    forgotten: list[str] = []
+    conn = _connection(clients, presence=presence, dropped=dropped, forgotten=forgotten)
 
     await conn.unregister(socket)
 
     assert presence.calls == []
     assert dropped == []
+    assert forgotten == []
 
 
 # -- authenticate_or_close ---------------------------------------------------

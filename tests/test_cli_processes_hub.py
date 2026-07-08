@@ -970,3 +970,33 @@ def test_cmd_hub_private_directed_messages_off_by_default() -> None:
 
     assert cli_processes._cmd_hub(_hub_ns(), runner=_close_runner, hub_factory=build_hub) == 0
     assert captured["private_directed_messages"] is False
+
+
+def test_cmd_hub_threads_stale_recipient_warning() -> None:
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(warn_stale_recipients=True, recipient_liveness_window=30.0),
+            runner=_close_runner,
+            hub_factory=build_hub,
+        )
+        == 0
+    )
+    assert captured["warn_stale_recipients"] is True
+    assert captured["recipient_liveness_window"] == 30.0
+
+
+def test_cmd_hub_stale_recipient_warning_off_by_default() -> None:
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert cli_processes._cmd_hub(_hub_ns(), runner=_close_runner, hub_factory=build_hub) == 0
+    assert captured["warn_stale_recipients"] is False

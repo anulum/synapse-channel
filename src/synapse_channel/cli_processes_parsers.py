@@ -24,6 +24,7 @@ from synapse_channel.client.supervisor import (
     DEFAULT_MIN_HISTORY_SAMPLES,
     DEFAULT_MIN_PREDICTIVE_IDLE_SECONDS,
 )
+from synapse_channel.core.agent_liveness import DEFAULT_RECIPIENT_LIVENESS_WINDOW
 from synapse_channel.core.hub import (
     DEFAULT_AUTH_TIMEOUT,
     DEFAULT_COMPACT_HINT_THRESHOLD,
@@ -341,6 +342,24 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "broadcasting it to every socket. Off by default. The relay log and journal still "
         "retain every message, so a feeds-backed dashboard and the federation follower keep "
         "full visibility.",
+    )
+    hub.add_argument(
+        "--warn-stale-recipients",
+        action="store_true",
+        help="Privately warn a sender when a directed message reaches a recipient that is "
+        "present but not proven wake-capable — no armed -rx waiter sidecar and no genuine "
+        "reaction within --recipient-liveness-window seconds — so a reply that never comes is "
+        "not silently waited on. Off by default, so an open hub tracks nothing and warns "
+        "nobody.",
+    )
+    hub.add_argument(
+        "--recipient-liveness-window",
+        type=float,
+        default=DEFAULT_RECIPIENT_LIVENESS_WINDOW,
+        metavar="SECONDS",
+        help="How long after its last genuine reaction a recipient stays judged live for "
+        "--warn-stale-recipients. A just-connected or briefly quiet agent is inside the "
+        f"window and never flagged. Defaults to {DEFAULT_RECIPIENT_LIVENESS_WINDOW:g}s.",
     )
     hub.add_argument(
         "--federation-store",

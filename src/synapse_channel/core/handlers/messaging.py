@@ -114,6 +114,19 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
         await _escalate_dead_letter(
             hub, target=escalation[0], count=escalation[1], sender=escalation[2]
         )
+    if hub.warn_stale_recipients and is_directed_target(target) and recipients:
+        # The message was delivered to present recipients, but present is not the
+        # same as reachable-in-practice: warn the sender about any recipient that is
+        # online yet has no proof it is wake-capable, so a reply that never comes is
+        # not silently waited on. Off by default, so the open hub never sends this.
+        await _warn_stale_recipients(
+            hub,
+            websocket,
+            sender=sender,
+            target=target,
+            msg_id=int(data["msg_id"]),
+            recipients=recipients,
+        )
     if bool(data.get("receipt_requested")):
         await _send_delivery_receipt(
             hub,
@@ -283,6 +296,44 @@ def _matching_online_recipients(
         name
         for name in online_agents
         if name != sender and is_recipient(target, name, roles=roles_of(name))
+    )
+
+
+async def _warn_stale_recipients(
+    hub: SynapseHub,
+    websocket: Any,
+    *,
+    sender: str,
+    target: str,
+    msg_id: int,
+    recipients: list[str],
+) -> None:
+    """Privately warn ``sender`` about directed recipients that are present but deaf.
+
+    A recipient is flagged when it is online yet has no independent proof of
+    liveness — no armed ``-rx`` waiter sidecar and no genuine reaction within the
+    liveness window (see
+    :meth:`~synapse_channel.core.hub.SynapseHub.recipients_without_live_waiter`). The
+    warning names those recipients and is delivered only to the sender's own socket,
+    the way a delivery receipt is; it is advisory (the message was still delivered
+    and journalled) so it is not itself journalled. When every recipient has a proof
+    of liveness the sender is told nothing, so the signal stays rare enough to mean
+    something.
+    """
+    stale = hub.recipients_without_live_waiter(recipients)
+    if not stale:
+        return
+    await hub._send_json(
+        websocket,
+        hub._system(
+            f"{', '.join(stale)} present but not proven live — no armed waiter and no "
+            "recent reaction; a directed message may sit unread",
+            msg_type=MessageType.RECIPIENT_LIVENESS_WARNING,
+            target=sender,
+            message_target=target,
+            message_id=msg_id,
+            stale_recipients=list(stale),
+        ),
     )
 
 

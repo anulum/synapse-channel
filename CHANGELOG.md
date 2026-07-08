@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Opt-in stale-recipient warning (`synapse hub --warn-stale-recipients`): a directed message to a
+  recipient that is present but not proven wake-capable — no armed `-rx` waiter sidecar and no
+  genuine reaction within `--recipient-liveness-window` seconds (default 90) — draws a private
+  `recipient_liveness_warning` back to the sender, so a reply that never comes is surfaced instead
+  of silently waited on. Off by default, so an open hub tracks no reactions and warns nobody; the
+  message is still delivered and journalled unchanged. Closes the "online but deaf agent"
+  coordination gap where presence outlived liveness.
+
 ## [0.98.8] - 2026-07-07
 
 ### Added

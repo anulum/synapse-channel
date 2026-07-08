@@ -14,7 +14,8 @@ parameters belong together. :class:`HubConfig` groups them into their opt-in
 families — ceilings (:class:`HubLimits`), name-takeover damping
 (:class:`TakeoverDamping`), authentication and access control
 (:class:`HubAuthConfig`), the HTTP metrics endpoint
-(:class:`HubMetricsConfig`), multi-hub claim routing (:class:`MultiHubConfig`),
+(:class:`HubMetricsConfig`), the stale-recipient warning
+(:class:`HubLiveness`), multi-hub claim routing (:class:`MultiHubConfig`),
 and cross-domain federation (:class:`FederationConfig`) — while
 :meth:`HubConfig.to_kwargs` flattens the record back into exactly the keyword
 arguments ``SynapseHub.__init__`` accepts. Behaviour is identical by
@@ -42,6 +43,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.acl import AclPolicy
+from synapse_channel.core.agent_liveness import DEFAULT_RECIPIENT_LIVENESS_WINDOW
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
@@ -98,6 +100,7 @@ __all__ = [
     "HubAuthConfig",
     "HubConfig",
     "HubLimits",
+    "HubLiveness",
     "HubMetricsConfig",
     "MultiHubConfig",
     "TakeoverDamping",
@@ -181,6 +184,21 @@ class HubMetricsConfig:
 
 
 @dataclass(frozen=True, kw_only=True)
+class HubLiveness:
+    """The opt-in stale-recipient warning that tells a present agent from a deaf one.
+
+    Off by default: the open hub never tracks per-agent reactions or warns a
+    sender. With ``warn_stale_recipients`` on, a directed message to a recipient
+    that is present but has no proof of liveness — no armed ``-rx`` waiter sidecar
+    and no genuine reaction within ``recipient_liveness_window`` seconds — draws a
+    private warning to the sender.
+    """
+
+    warn_stale_recipients: bool = False
+    recipient_liveness_window: float = DEFAULT_RECIPIENT_LIVENESS_WINDOW
+
+
+@dataclass(frozen=True, kw_only=True)
 class MultiHubConfig:
     """Multi-hub routing: serving policy, namespace ownership, claim and relay forwarding."""
 
@@ -211,6 +229,7 @@ _FAMILY_TYPES: dict[str, type[Any]] = {
     "takeover": TakeoverDamping,
     "auth": HubAuthConfig,
     "metrics": HubMetricsConfig,
+    "liveness": HubLiveness,
     "multihub": MultiHubConfig,
     "federation": FederationConfig,
 }
@@ -241,6 +260,7 @@ class HubConfig:
     takeover: TakeoverDamping = field(default_factory=TakeoverDamping)
     auth: HubAuthConfig = field(default_factory=HubAuthConfig)
     metrics: HubMetricsConfig = field(default_factory=HubMetricsConfig)
+    liveness: HubLiveness = field(default_factory=HubLiveness)
     multihub: MultiHubConfig = field(default_factory=MultiHubConfig)
     federation: FederationConfig = field(default_factory=FederationConfig)
 

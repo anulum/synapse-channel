@@ -13,6 +13,7 @@ from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.client.llm_worker import DEFAULT_OLLAMA_BASE_URL
+from synapse_channel.core.agent_liveness import DEFAULT_RECIPIENT_LIVENESS_WINDOW
 from synapse_channel.core.hub import (
     DEFAULT_COMPACT_HINT_THRESHOLD,
     DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
@@ -69,6 +70,8 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "identity_trust": "",
         "require_identity_binding": False,
         "private_directed_messages": False,
+        "warn_stale_recipients": False,
+        "recipient_liveness_window": DEFAULT_RECIPIENT_LIVENESS_WINDOW,
         "federation_store": "",
         "federation_offer": "",
         "federation_observe_only": False,
