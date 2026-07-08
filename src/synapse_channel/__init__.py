@@ -26,7 +26,7 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING, Any
 
-__version__ = "0.98.10"
+__version__ = "0.98.11"
 
 if TYPE_CHECKING:
     from synapse_channel.client.agent import (

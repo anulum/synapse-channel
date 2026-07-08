@@ -28,7 +28,7 @@ from synapse_channel.core.protocol import MessageType, wakes
 from synapse_channel.core.wake_capability import WAKE_PASSIVE
 from synapse_channel.mailbox_cursor import load_cursor, save_cursor
 from synapse_channel.shell_integration import has_active_tmux_provider
-from synapse_channel.waiter_identity import waiter_name
+from synapse_channel.waiter_identity import waiter_name, waiter_owner
 
 WaitRunner = Callable[..., Coroutine[Any, Any, int]]
 AsyncRunner = Callable[[Coroutine[Any, Any, int]], int]
@@ -230,6 +230,7 @@ def _cmd_wait(
     for_name = args.for_name or args.name
     connect_name = args.name if args.name != for_name else waiter_name(args.name)
     roles = tuple(r.strip() for r in (getattr(args, "role", None) or ()) if r.strip())
+    provider_identities = (for_name, waiter_owner(connect_name))
 
     # Provider-aware early yield for stable session identity inheritance.
     # When a tmux provider (worker-session + agent-tmux wait) is active for the
@@ -237,9 +238,14 @@ def _cmd_wait(
     # provider owns the long-lived -rx with pane_bridge. Plain passive arms
     # cause supersession churn and are not needed (the provider injects wake
     # prompt; inner agent does inbox on prompt). Yield immediately.
-    if os.environ.get("SYN_TMUX_PROVIDER") == "1" or has_active_tmux_provider(for_name):
+    live_provider_identity = next(
+        (identity for identity in provider_identities if has_active_tmux_provider(identity)),
+        None,
+    )
+    if os.environ.get("SYN_TMUX_PROVIDER") == "1" or live_provider_identity is not None:
+        provider_label = live_provider_identity or for_name
         print(
-            f"[{connect_name}] provider-backed session for {for_name}; "
+            f"[{connect_name}] provider-backed session for {provider_label}; "
             "agent-tmux wait is the canonical long-lived listener. "
             "Yielding plain passive to preserve identity inheritance for the session."
         )

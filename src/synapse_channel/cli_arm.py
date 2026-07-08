@@ -22,7 +22,7 @@ from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.core.wake_capability import WAKE_PASSIVE
 from synapse_channel.mailbox_cursor import cursor_path
 from synapse_channel.shell_integration import has_active_tmux_provider
-from synapse_channel.waiter_identity import waiter_name
+from synapse_channel.waiter_identity import waiter_name, waiter_owner
 
 WaitRunner = Callable[..., Awaitable[int]]
 SleepRunner = Callable[[float], Awaitable[None]]
@@ -176,14 +176,19 @@ def _cmd_arm(
     """Dispatch the persistent ``arm`` subcommand."""
     for_name = args.for_name or args.name
     connect_name = args.name if args.name != for_name else waiter_name(args.name)
+    provider_identities = (for_name, waiter_owner(connect_name))
 
     # Provider-aware early yield: an active tmux provider (worker-session +
     # agent-tmux) already owns the -rx pane bridge for this identity. A passive
     # arm would be superseded every few seconds and churn the hub roster. Leave
     # waking to the pane bridge; passive arms are for headless/non-tmux cases.
-    if has_active_tmux_provider(for_name):
+    live_provider_identity = next(
+        (identity for identity in provider_identities if has_active_tmux_provider(identity)),
+        None,
+    )
+    if live_provider_identity is not None:
         print(
-            f"[{connect_name}] active tmux provider detected for {for_name}; "
+            f"[{connect_name}] active tmux provider detected for {live_provider_identity}; "
             "pane_bridge / agent-tmux is the live waker. "
             "Yielding plain passive arm to avoid supersession/name collision."
         )

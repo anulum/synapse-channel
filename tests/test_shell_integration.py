@@ -43,7 +43,7 @@ def _write_fake_synapse(tmp_path: Path) -> Path:
 
 def test_render_shell_hook_auto_arms_and_wraps_default_providers() -> None:
     hook = render_shell_hook(shell="bash")
-    assert 'synapse arm --name "$identity-rx" --for "$project" --directed-only' in hook
+    assert 'synapse arm --name "$identity-rx" --for "$identity" --directed-only' in hook
     # the waiter is leashed to the arming shell so it cannot outlive the terminal
     assert "--owner-pid $$" in hook
     assert 'synapse worker-session --project "$SYN_PROJECT"' in hook
@@ -178,7 +178,7 @@ def test_bash_shell_hook_uses_neutral_project_without_marker(tmp_path: Path) -> 
     assert proc.returncode == 0, proc.stderr
     text = record.read_text(encoding="utf-8")
     assert "arm --name user/terminal-" in text
-    assert "--for user" in text
+    assert "--for user/terminal-" in text
     assert "repo" not in text
 
 

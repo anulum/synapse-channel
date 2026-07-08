@@ -114,6 +114,18 @@ def test_arm_argv_is_directed_only_and_distinct_by_default() -> None:
     assert argv == ["arm", "--name", "SCPN-CONTROL-rx", "--for", "SCPN-CONTROL", "--directed-only"]
 
 
+def test_arm_argv_waits_on_exact_identity_not_broad_project() -> None:
+    argv = arm_argv(_ident(project="user", identity="user/terminal-38253"))
+    assert argv == [
+        "arm",
+        "--name",
+        "user/terminal-38253-rx",
+        "--for",
+        "user/terminal-38253",
+        "--directed-only",
+    ]
+
+
 def test_arm_argv_broadcasts_drops_directed_only_and_keeps_extra() -> None:
     argv = arm_argv(_ident(), directed_only=False, extra=["--timeout", "5"])
     assert "--directed-only" not in argv

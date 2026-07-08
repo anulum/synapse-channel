@@ -199,7 +199,10 @@ def _is_verified_waiter(argv: Sequence[str], identity: ReapIdentity) -> bool:
         "arm" in argv
         and _looks_like_synapse_entrypoint(argv)
         and _has_arg_pair(argv, "--name", identity.waiter_name)
-        and _has_arg_pair(argv, "--for", identity.project)
+        and (
+            _has_arg_pair(argv, "--for", identity.identity)
+            or _has_arg_pair(argv, "--for", identity.project)
+        )
     )
 
 

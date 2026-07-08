@@ -197,7 +197,7 @@ def arm_argv(
     identity: Identity, *, directed_only: bool = True, extra: Sequence[str] = ()
 ) -> list[str]:
     """Build the ``synapse arm`` argv for ``syn arm`` (persistent, distinct ``-rx``)."""
-    argv = ["arm", "--name", identity.waiter_name, "--for", identity.project]
+    argv = ["arm", "--name", identity.waiter_name, "--for", identity.identity]
     if directed_only:
         argv.append("--directed-only")
     argv.extend(extra)

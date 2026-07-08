@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.11] - 2026-07-08
+
+### Fixed
+- Shell-hook and `syn arm` generated receivers now wait on the exact terminal identity rather than
+  the broad project lane, preventing `user/*` traffic from waking every terminal-side passive
+  receiver.
+- Passive `synapse wait`/`synapse arm` also derive the terminal identity from an explicit `*-rx`
+  connection name before yielding to a live tmux pane bridge, so legacy broad `--for user` waiters
+  for provider-backed terminals stop instead of competing with the pane bridge.
+
 ## [0.98.10] - 2026-07-08
 
 ### Added

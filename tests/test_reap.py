@@ -58,7 +58,7 @@ def test_discover_waiters_lists_identity_scoped_pidfiles(tmp_path: Path) -> None
         identity,
         runtime=tmp_path,
         cmdline_reader=lambda pid: (
-            ["synapse", "arm", "--name", identity.waiter_name, "--for", identity.project]
+            ["synapse", "arm", "--name", identity.waiter_name, "--for", identity.identity]
             if pid == 1234
             else None
         ),
@@ -71,11 +71,33 @@ def test_discover_waiters_lists_identity_scoped_pidfiles(tmp_path: Path) -> None
             waiter_name=identity.waiter_name,
             project=identity.project,
             pidfile=pidfile,
-            argv=("synapse", "arm", "--name", identity.waiter_name, "--for", identity.project),
+            argv=("synapse", "arm", "--name", identity.waiter_name, "--for", identity.identity),
             live=True,
             verified=True,
         )
     ]
+
+
+def test_discover_waiters_still_verifies_legacy_project_scoped_hook(tmp_path: Path) -> None:
+    identity = _identity()
+    pidfile = tmp_path / "SYNAPSE-CHANNEL_codex-1.pid"
+    pidfile.write_text("1234\n", encoding="utf-8")
+
+    found = discover_waiters(
+        identity,
+        runtime=tmp_path,
+        cmdline_reader=lambda _pid: [
+            "synapse",
+            "arm",
+            "--name",
+            identity.waiter_name,
+            "--for",
+            identity.project,
+        ],
+    )
+
+    assert found[0].live is True
+    assert found[0].verified is True
 
 
 def test_discover_waiters_marks_stale_dead_pidfiles(tmp_path: Path) -> None:
