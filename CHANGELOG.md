@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.9] - 2026-07-08
+
 ### Added
 - Opt-in stale-recipient warning (`synapse hub --warn-stale-recipients`): a directed message to a
   recipient that is present but not proven wake-capable — no live `-rx` waiter sidecar and no
