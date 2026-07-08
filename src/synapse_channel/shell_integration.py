@@ -31,7 +31,7 @@ SUPPORTED_SHELLS = frozenset({"bash", "fish", "zsh"})
 
 
 def has_active_tmux_provider(identity: str) -> bool:
-    """Return True if an active tmux provider (worker-session + agent-tm ux) holds the live waker for this identity.
+    """Return True if an active tmux provider holds this identity's live waker.
 
     Used by passive arm/wait logic and harnesses to yield early and avoid name
     collisions on the *-rx sidecar. The provider owns the name for pane injection
@@ -51,7 +51,6 @@ def has_active_tmux_provider(identity: str) -> bool:
         return True
     except (ValueError, ProcessLookupError, PermissionError, OSError):
         return False
-
 
 
 def normalise_shell(shell: str, *, env_shell: str | None = None) -> str:
