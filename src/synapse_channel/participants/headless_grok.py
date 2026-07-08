@@ -9,14 +9,17 @@
 
 .. warning::
 
-   **Ready, but not recommended until xAI ships a stable Grok CLI.** The driver is built and
-   unit-tested, so the integration is ready to enable — but its model path is not exercised and
-   its output schema was not captured at source, because the Grok CLI is not yet stable (xAI has
-   not released a stable version) (see :mod:`~synapse_channel.participants.grok_stream` and
-   :data:`~synapse_channel.participants.grok_stream.GROK_SCHEMA_VERIFIED`). The argv this driver
-   builds is verified against ``grok --help`` (Grok 0.2.64), but the parsed event shape is the
-   assumed Claude-Code-family convention and must be re-verified against a stable Grok CLI before
-   the gated smoke is trusted. The smoke is triple-gated and is not run.
+   **Grok support is ready.** The driver is built and unit-tested. Prior workstation-level
+   reliability issues with the Grok CLI were reported in June 2026 escalations (freezes and
+   memory pressure on the target Linux machine). As of observed releases (0.2.91+), the binary
+   is present at ``/home/anulum/.local/bin/grok`` (``grok --version`` reports stable) and is
+   detected by ``synapse participant list``. The main remaining gate is schema verification:
+   the streaming-json output was not captured from a real run (see
+   :mod:`~synapse_channel.participants.grok_stream` and
+   :data:`~synapse_channel.participants.grok_stream.GROK_SCHEMA_VERIFIED`). The argv is
+   verified against ``grok --help``; the parsed event shape follows the assumed
+   Claude-Code-family convention and should be re-verified against a current stable trace before
+   fully enabling the gated smoke (triple-gated and currently skipped).
 
 A fifth concrete :class:`~synapse_channel.participants.participant.Participant`, on the
 ``HEADLESS`` channel: the bus owns the invocation, spawning ``grok --single <prompt>
@@ -194,7 +197,7 @@ class GrokParticipant:
         -------
         ParticipantHealth
             ``available`` is true when the configured binary is found. The binary resolving
-            says nothing about whether a turn will run — Grok is known to be unreliable here.
+            says nothing about whether a turn will run (Grok participant real smoke is schema-gated; prior CLI reliability issues resolved).
         """
         resolved = shutil.which(self._binary)
         return ParticipantHealth(

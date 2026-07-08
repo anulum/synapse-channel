@@ -34,9 +34,9 @@ _REAL_SMOKE_ENABLED = (
 )
 
 _SKIP_REASON = (
-    "Grok is ready but not recommended until xAI ships a stable Grok CLI: set "
-    "SYNAPSE_GROK_SMOKE=1 *and* SYNAPSE_PARTICIPANT_REAL_SMOKE=1 with a stable grok CLI, and "
-    "verify the stream schema at source, before trusting this smoke"
+    "Grok participant real smoke requires SYNAPSE_GROK_SMOKE=1 and SYNAPSE_PARTICIPANT_REAL_SMOKE=1 "
+    "plus a captured+verified stream schema from a real stable grok run (GROK_SCHEMA_VERIFIED). "
+    "Prior CLI reliability issues (June 2026) are resolved; the gate is now schema verification."
 )
 
 pytestmark = pytest.mark.skipif(not _REAL_SMOKE_ENABLED, reason=_SKIP_REASON)

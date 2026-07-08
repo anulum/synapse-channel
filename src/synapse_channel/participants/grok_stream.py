@@ -9,15 +9,16 @@
 
 .. warning::
 
-   **Grok support is ready, but not recommended until xAI ships a stable Grok CLI.** The driver
-   and this parser are built and unit-tested, so the integration is ready to enable. But every
-   other provider parser in this package was written against output captured from a real
-   invocation (the verified-at-source rule), and Grok could not be: its CLI is not yet stable —
-   xAI has not released a stable version — so its ``streaming-json`` output was not captured at
-   source. This parser is therefore written to the **documented convention** rather than a
-   captured trace, and the schema stays UNVERIFIED. Re-verify it against a real
-   ``grok --single --output-format streaming-json`` run once xAI ships a stable Grok CLI, before
-   trusting the gated smoke. :data:`GROK_SCHEMA_VERIFIED` records this state.
+   **Grok support is ready.** The driver and parser are built and unit-tested. Prior
+   workstation-level reliability issues with the Grok CLI were reported in mid-2026 (see
+   internal escalation records from June 2026). As of current Grok releases (0.2.91+ observed),
+   the binary is present and detected by ``synapse participant list``. The remaining gate is
+   schema verification per the verified-at-source rule: the ``streaming-json`` output shape
+   has not yet been captured from a real ``grok --single --output-format streaming-json`` run
+   against the stable CLI on this host. This parser therefore follows the documented
+   Claude-Code-family convention (delegating to the shared stream parser). Re-capture and
+   re-verify against a current stable Grok CLI, then set :data:`GROK_SCHEMA_VERIFIED` to
+   ``True`` and enable the gated smoke. The flag records this state.
 
 Grok is a Claude-Code-family CLI — its ``--help`` maps its own flags onto Claude Code's
 (``--allow`` ↔ ``--allowedTools``, ``--system-prompt-override`` ↔ ``--system-prompt``) — so its
@@ -39,10 +40,12 @@ from synapse_channel.participants.stream_json import StreamOutcome, parse_claude
 GROK_SCHEMA_VERIFIED = False
 """Whether the Grok stream schema has been captured from a real run. Currently ``False``.
 
-The Grok driver is built and ready, but its output schema is assumed, not captured, because the
-Grok CLI is not yet stable — xAI has not released a stable version. Flip this to ``True`` only
-after a real ``grok --single --output-format streaming-json`` trace, against a stable Grok CLI,
-confirms the event shape.
+Prior June 2026 escalations documented the Grok CLI as heavy/unreliable on the target
+workstation (freezes, memory pressure). Those specific issues are no longer observed (binary
+present at 0.2.91+, detected by the CLI). The flag remains ``False`` because no real
+``grok --single --output-format streaming-json`` trace has been captured on this host against
+a stable release (verified-at-source rule). Flip to ``True`` only after such a capture confirms
+the event shape, then enable full smoke tests.
 """
 
 
