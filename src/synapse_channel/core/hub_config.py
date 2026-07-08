@@ -168,6 +168,7 @@ class HubAuthConfig:
     require_role_claim: bool = False
     identity_trust_bundle: EventSignatureTrustBundle | None = None
     require_identity_binding: bool = False
+    private_directed_messages: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)

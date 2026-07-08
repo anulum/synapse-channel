@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from synapse_channel.core.hub_clients import HubClientRegistry
@@ -101,3 +101,30 @@ class HubBroadcaster:
             return True
         except Exception:  # pragma: no cover - defensive half-closed socket guard.
             return False
+
+    async def send_directed(
+        self, data: dict[str, Any], *, names: Iterable[str], sender_socket: Any = None
+    ) -> None:
+        """Send one directed message to a named audience only, never the whole hub.
+
+        The message is mirrored to the relay log first — exactly as
+        :meth:`broadcast` does — so the durable feed still captures every directed
+        message for the journal, a feeds-backed dashboard, and the federation
+        follower; only the *live socket* fan-out is narrowed. It is delivered to the
+        socket of each name in ``names`` that is online (recipients, their ``-rx``
+        waiter sidecars, and any granted observers, resolved by the caller) and, when
+        given, back to ``sender_socket`` so the sender still sees its own message.
+        Each socket is sent at most once, and a name with no live socket is skipped.
+        """
+        self._relay.mirror(data)
+        sockets: set[Any] = set()
+        if sender_socket is not None:
+            sockets.add(sender_socket)
+        for name in names:
+            websocket = self._clients.agent_sockets.get(name)
+            if websocket is not None:
+                sockets.add(websocket)
+        if not sockets:
+            return
+        raw = json.dumps(data)
+        await asyncio.gather(*(socket.send(raw) for socket in sockets), return_exceptions=True)

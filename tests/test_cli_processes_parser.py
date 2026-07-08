@@ -47,6 +47,12 @@ def test_parser_hub_identity_binding_flags() -> None:
     assert args.require_identity_binding is True
 
 
+def test_parser_hub_private_directed_messages_flag() -> None:
+    assert cli.build_parser().parse_args(["hub"]).private_directed_messages is False
+    args = cli.build_parser().parse_args(["hub", "--private-directed-messages"])
+    assert args.private_directed_messages is True
+
+
 def test_parser_worker_custom() -> None:
     args = cli.build_parser().parse_args(
         ["worker", "--name", "REASON", "--provider", "rule", "--min-reply-interval", "1.5"]

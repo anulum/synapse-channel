@@ -113,3 +113,63 @@ async def test_send_to_agent_delivers_and_reports_success() -> None:
 
     assert delivered is True
     assert socket.sent == [json.dumps({"type": "chat", "payload": "x"})]
+
+
+async def test_send_directed_reaches_named_and_sender_not_others(tmp_path: Path) -> None:
+    log = tmp_path / "relay.ndjson"
+    clients = _registry()
+    broadcaster = _broadcaster(clients, RelayMirror(log, 8))
+    sender_sock, beta, gamma = _RecordingSocket(), _RecordingSocket(), _RecordingSocket()
+    clients.agent_sockets["BETA"] = beta
+    clients.agent_sockets["GAMMA"] = gamma
+
+    await broadcaster.send_directed(
+        {"type": "chat", "payload": "hi"}, names=["BETA"], sender_socket=sender_sock
+    )
+
+    raw = json.dumps({"type": "chat", "payload": "hi"})
+    assert beta.sent == [raw]  # recipient reached
+    assert sender_sock.sent == [raw]  # sender echo (wire parity with broadcast)
+    assert gamma.sent == []  # uninvolved socket not reached
+    events, _ = read_jsonl_since(log, 0)
+    assert [decode_lite(event)["payload"] for event in events] == ["hi"]  # still mirrored
+
+
+async def test_send_directed_deduplicates_a_socket_named_twice() -> None:
+    clients = _registry()
+    broadcaster = _broadcaster(clients, RelayMirror(None, 8))
+    beta = _RecordingSocket()
+    clients.agent_sockets["BETA"] = beta
+
+    # BETA is both a named recipient and the sender socket — it is sent to once.
+    await broadcaster.send_directed(
+        {"type": "chat", "payload": "x"}, names=["BETA"], sender_socket=beta
+    )
+
+    assert len(beta.sent) == 1
+
+
+async def test_send_directed_skips_a_name_with_no_live_socket() -> None:
+    clients = _registry()
+    broadcaster = _broadcaster(clients, RelayMirror(None, 8))
+    beta = _RecordingSocket()
+    clients.agent_sockets["BETA"] = beta
+
+    await broadcaster.send_directed(
+        {"type": "chat", "payload": "x"}, names=["BETA", "GHOST"], sender_socket=None
+    )
+
+    assert beta.sent == [json.dumps({"type": "chat", "payload": "x"})]
+
+
+async def test_send_directed_with_no_live_targets_still_mirrors(tmp_path: Path) -> None:
+    log = tmp_path / "relay.ndjson"
+    clients = _registry()
+    broadcaster = _broadcaster(clients, RelayMirror(log, 8))
+
+    await broadcaster.send_directed(
+        {"type": "chat", "payload": "void"}, names=["GHOST"], sender_socket=None
+    )
+
+    events, _ = read_jsonl_since(log, 0)
+    assert [decode_lite(event)["payload"] for event in events] == ["void"]

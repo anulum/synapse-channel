@@ -334,6 +334,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "closed. Off by default, so an open hub is unchanged. Requires --identity-trust.",
     )
     hub.add_argument(
+        "--private-directed-messages",
+        action="store_true",
+        help="Route a directed message only to its recipients (and their -rx waiter "
+        "sidecars) plus any identity granted the 'observe' ACL verb, instead of "
+        "broadcasting it to every socket. Off by default. The relay log and journal still "
+        "retain every message, so a feeds-backed dashboard and the federation follower keep "
+        "full visibility.",
+    )
+    hub.add_argument(
         "--federation-store",
         default="",
         metavar="FILE",

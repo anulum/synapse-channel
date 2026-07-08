@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import math
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.acl_enforcement import project_of
@@ -100,7 +100,15 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
         # Stamp the durable journal seq on the outgoing frame so a client can track
         # it as the cursor it resumes a missed directed backlog from on reconnect.
         data["seq"] = record_chat(hub.journal, data)
-    await hub._broadcast(data)
+    if hub.private_directed_messages and is_directed_target(target):
+        # Recipient routing: a directed message reaches only its recipients (and their
+        # -rx waiter sidecars) plus any granted observers — never every socket. It is
+        # still mirrored to the relay and journalled above, so the durable feed keeps
+        # full visibility for dashboards and the federation follower.
+        audience = _directed_audience(recipients, hub.observing_identities(target))
+        await hub._broadcast_directed(data, names=audience, sender_socket=websocket)
+    else:
+        await hub._broadcast(data)
     if escalation is not None:
         # After the chat is delivered: escalate the blackhole it added to, as a follow-up signal.
         await _escalate_dead_letter(
@@ -241,6 +249,22 @@ async def _route_channel_chat(
             msg_id=int(data["msg_id"]),
             recipients=recipients,
         )
+
+
+def _directed_audience(recipients: list[str], observers: Iterable[str]) -> list[str]:
+    """Return the live delivery names for a directed message under recipient routing.
+
+    Each recipient is reached on its own socket and on its ``-rx`` waiter sidecar (so a
+    reconnecting waiter is still woken), and any granted observers are appended. The
+    broadcaster deduplicates by socket, so an observer that is also a recipient, or a
+    recipient with no live sidecar, is handled without special-casing here.
+    """
+    names: list[str] = []
+    for name in recipients:
+        names.append(name)
+        names.append(f"{name}{_WAITER_SUFFIX}")
+    names.extend(observers)
+    return names
 
 
 def _matching_online_recipients(

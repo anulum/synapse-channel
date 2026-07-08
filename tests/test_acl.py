@@ -17,6 +17,8 @@ from synapse_channel.core.acl import (
     CLAIM,
     MESSAGE,
     METRICS,
+    OBSERVE,
+    PERMISSIONS,
     WOULD_ALLOW,
     WOULD_DENY,
     AclError,
@@ -51,6 +53,20 @@ def test_allow_when_a_rule_matches_permission_kind_pattern_and_namespace() -> No
 def test_deny_by_default_when_no_rule_matches() -> None:
     policy = AclPolicy([AclRule(CLAIM, "path", "src/*")])
     assert _eval(policy, METRICS, Target("metrics", "live")) == WOULD_DENY
+
+
+def test_observe_is_part_of_the_permission_vocabulary() -> None:
+    assert OBSERVE in PERMISSIONS
+
+
+def test_observe_grant_allows_within_its_namespace() -> None:
+    policy = AclPolicy([AclRule(OBSERVE, "agent", "*", "OPS", "live monitor")])
+    assert _eval(policy, OBSERVE, Target("agent", "BETA"), project="OPS") == WOULD_ALLOW
+
+
+def test_observe_grant_is_denied_outside_its_namespace() -> None:
+    policy = AclPolicy([AclRule(OBSERVE, "agent", "*", "OPS")])
+    assert _eval(policy, OBSERVE, Target("agent", "BETA"), project="X") == WOULD_DENY
 
 
 def test_pattern_must_match_target_value() -> None:

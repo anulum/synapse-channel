@@ -941,3 +941,32 @@ def test_cmd_hub_require_identity_binding_without_trust_errors(
 ) -> None:
     assert cli_processes._cmd_hub(_hub_ns(require_identity_binding=True), runner=_close_runner) == 2
     assert "--require-identity-binding requires --identity-trust" in capsys.readouterr().err
+
+
+def test_cmd_hub_threads_private_directed_messages() -> None:
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(private_directed_messages=True),
+            runner=_close_runner,
+            hub_factory=build_hub,
+        )
+        == 0
+    )
+    assert captured["private_directed_messages"] is True
+
+
+def test_cmd_hub_private_directed_messages_off_by_default() -> None:
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert cli_processes._cmd_hub(_hub_ns(), runner=_close_runner, hub_factory=build_hub) == 0
+    assert captured["private_directed_messages"] is False

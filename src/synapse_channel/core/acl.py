@@ -36,15 +36,22 @@ DASHBOARD = "dashboard"
 A2A = "a2a"
 NAMESPACE = "namespace"
 SANDBOX = "sandbox"
+OBSERVE = "observe"
 
 PERMISSIONS = frozenset(
-    {MESSAGE, CLAIM, RELEASE, BOARD, METRICS, DASHBOARD, A2A, NAMESPACE, SANDBOX}
+    {MESSAGE, CLAIM, RELEASE, BOARD, METRICS, DASHBOARD, A2A, NAMESPACE, SANDBOX, OBSERVE}
 )
 """The auditable permission vocabulary an ACL rule may grant.
 
 ``SANDBOX`` grants a sandboxed tool one capability — a filesystem or network target — so
 a tool's grants are evaluated through the same deny-by-default path as any other access,
 not a parallel one. See :mod:`synapse_channel.core.sandbox_policy`.
+
+``OBSERVE`` grants an identity the right to *receive* directed messages it is not a party
+to — a live monitor or auditor. It is only consulted when directed-message routing is on
+(``--private-directed-messages``); with routing off every socket sees all traffic and the
+grant is moot. Durable consumers (the relay log, the journal, a feeds-backed dashboard,
+the federation follower) read the retained feed and never need it.
 """
 
 WOULD_ALLOW = "would_allow"

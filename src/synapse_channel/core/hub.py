@@ -39,7 +39,14 @@ if TYPE_CHECKING:
 import websockets
 from websockets.http11 import Request, Response
 
-from synapse_channel.core.acl import AclPolicy
+from synapse_channel.core.acl import (
+    OBSERVE,
+    WOULD_ALLOW,
+    AclPolicy,
+    Target,
+    evaluate_access,
+)
+from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.channels import ChannelRegistry
@@ -439,6 +446,7 @@ class SynapseHub:
         require_role_claim: bool = False,
         identity_trust_bundle: EventSignatureTrustBundle | None = None,
         require_identity_binding: bool = False,
+        private_directed_messages: bool = False,
         multihub_serving_policy: MultiHubServingPolicy | None = None,
         namespace_ownership: NamespaceOwnership | None = None,
         claim_peers: Mapping[str, ClaimForwardPeer] | None = None,
@@ -477,6 +485,7 @@ class SynapseHub:
         self.require_role_claim = bool(require_role_claim)
         self.identity_trust_bundle = identity_trust_bundle
         self.require_identity_binding = bool(require_identity_binding)
+        self.private_directed_messages = bool(private_directed_messages)
         self.multihub_serving_policy = multihub_serving_policy
         self.namespace_ownership = namespace_ownership
         self.claim_peers = dict(claim_peers) if claim_peers else None
@@ -738,6 +747,32 @@ class SynapseHub:
         """Return the roles ``name`` currently answers to (empty tuple if none)."""
         return self.clients.roles_of(name)
 
+    def observing_identities(self, target: str) -> tuple[str, ...]:
+        """Return connected identities the ACL policy grants ``observe`` on ``target``.
+
+        Under directed-message routing an observer (a live monitor or auditor) still
+        receives a directed message it is not a party to only when it holds an
+        ``observe`` grant. With no ACL policy configured there are no observers, so
+        directed routing narrows to the recipients alone; the grant is scoped to the
+        observer's own namespace, so an operator designates observers without opening
+        the traffic to everyone.
+        """
+        policy = self.acl_policy
+        if policy is None:
+            return ()
+        return tuple(
+            name
+            for name in self.online_agents()
+            if evaluate_access(
+                subject=name,
+                project=project_of(name),
+                permission=OBSERVE,
+                target=Target("agent", target),
+                policy=policy,
+            ).decision
+            == WOULD_ALLOW
+        )
+
     def uptime_seconds(self) -> float:
         """Return seconds elapsed since the hub was constructed."""
         return max(0.0, self._clock() - self._started)
@@ -758,6 +793,12 @@ class SynapseHub:
     async def _broadcast(self, data: dict[str, Any]) -> None:
         """Send one message to every connected socket, ignoring failures."""
         await self._broadcaster.broadcast(data)
+
+    async def _broadcast_directed(
+        self, data: dict[str, Any], *, names: Iterable[str], sender_socket: Any
+    ) -> None:
+        """Deliver a directed message to its recipients (and granted observers) only."""
+        await self._broadcaster.send_directed(data, names=names, sender_socket=sender_socket)
 
     async def _broadcast_presence(self, event: str, agent: str | None = None) -> None:
         """Broadcast a presence update naming who joined or left."""

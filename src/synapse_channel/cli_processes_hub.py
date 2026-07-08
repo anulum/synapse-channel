@@ -296,6 +296,7 @@ def _cmd_hub(
         "require_role_claim": args.require_role_claim,
         "identity_trust_bundle": identity_trust_bundle,
         "require_identity_binding": args.require_identity_binding,
+        "private_directed_messages": args.private_directed_messages,
         "federation_bundle": federation_bundle,
         "federation_offer_path": args.federation_offer or None,
         "hub_id": args.hub_id,
