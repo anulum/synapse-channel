@@ -160,7 +160,11 @@ class AgentLifecycleMixin:
                         # bare identity; name it so the hub filters the replay by it.
                         extra["mailbox_for"] = self.mailbox_for
                 await self.send_message(
-                    MessageType.HEARTBEAT, target="System", payload="online", **extra
+                    MessageType.HEARTBEAT,
+                    target="System",
+                    payload="online",
+                    sign_identity=True,
+                    **extra,
                 )
                 self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 

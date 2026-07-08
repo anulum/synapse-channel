@@ -9,11 +9,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from websockets.asyncio.client import ClientConnection
 
 from synapse_channel.core.message_auth import MessageAuthKey
+
+if TYPE_CHECKING:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 __all__ = ["_OutboundAgent"]
 
@@ -26,6 +29,9 @@ class _OutboundAgent(Protocol):
     hub_protocol_version: int | None
     _message_auth_key: MessageAuthKey | None
     _message_auth_sequence: int
+    _identity_key: Ed25519PrivateKey | None
+    _identity_key_id: str
+    _identity_sequence: int
 
     async def send_message(
         self,

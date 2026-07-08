@@ -33,6 +33,7 @@ from synapse_channel.client.agent_lifecycle import (
 )
 from synapse_channel.client.agent_outbound import AgentOutboundMixin
 from synapse_channel.client.agent_queries import AgentQueryMixin
+from synapse_channel.core.identity_keys import load_signing_key
 from synapse_channel.core.message_auth import MessageAuthKey
 
 logging.basicConfig(level=logging.ERROR)
@@ -128,6 +129,8 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         mailbox_for: str = "",
         per_message_auth_key_id: str | None = None,
         per_message_auth_secret: str | bytes | None = None,
+        identity_key_path: str | None = None,
+        identity_key_id: str = "",
         ping_interval: float = 20.0,
         ping_timeout: float = 20.0,
     ) -> None:
@@ -161,6 +164,9 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
                 key_id=str(per_message_auth_key_id), secret=secret, senders=frozenset({name})
             )
         self._message_auth_sequence = 0
+        self._identity_key = load_signing_key(identity_key_path) if identity_key_path else None
+        self._identity_key_id = str(identity_key_id)
+        self._identity_sequence = 0
         self.ping_interval = float(ping_interval)
         self.ping_timeout = float(ping_timeout)
 

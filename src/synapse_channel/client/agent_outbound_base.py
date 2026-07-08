@@ -14,6 +14,7 @@ import secrets
 from typing import Any
 
 from synapse_channel.client.agent_outbound_types import _OutboundAgent
+from synapse_channel.core.identity_keys import sign_registration
 from synapse_channel.core.message_auth import DEFAULT_SIGNED_MESSAGE_TYPES, sign_frame
 from synapse_channel.core.protocol import MIN_ACK_PROTOCOL_VERSION, MessageType, build_envelope
 
@@ -29,6 +30,7 @@ class AgentSendMixin:
         *,
         target: str = "all",
         payload: str = "",
+        sign_identity: bool = False,
         **extra: Any,
     ) -> None:
         """Serialise and send one message envelope to the hub.
@@ -41,6 +43,11 @@ class AgentSendMixin:
             Recipient agent name, or ``"all"``. Defaults to ``"all"``.
         payload : str, optional
             Free-form text body.
+        sign_identity : bool, optional
+            When ``True`` and an identity signing key is configured, attach an Ed25519
+            identity signature so a hub that requires connection-identity binding admits
+            this socket. Used only for the registration heartbeat — a keepalive tick
+            leaves it ``False`` — so exactly the name-binding frame is proven.
         **extra : Any
             Additional protocol fields merged into the envelope.
         """
@@ -55,6 +62,15 @@ class AgentSendMixin:
                 key=self._message_auth_key,
                 nonce=secrets.token_urlsafe(18),
                 sequence=self._message_auth_sequence,
+            )
+        if sign_identity and self._identity_key is not None:
+            self._identity_sequence += 1
+            msg = sign_registration(
+                msg,
+                private_key=self._identity_key,
+                key_id=self._identity_key_id,
+                nonce=secrets.token_urlsafe(18),
+                sequence=self._identity_sequence,
             )
         await self.connection.send(json.dumps(msg))
 
