@@ -114,7 +114,7 @@ def test_start_session_launches_the_configured_agent_command(tmp_path: Path) -> 
         "synapse-codex-main",
         "-c",
         str(tmp_path),
-        "env SYN_PROJECT=SYNAPSE-CHANNEL SYN_IDENTITY=SYNAPSE-CHANNEL/codex-main kimi",
+        "env SYN_PROJECT=SYNAPSE-CHANNEL SYN_IDENTITY=SYNAPSE-CHANNEL/codex-main SYN_TMUX_PROVIDER=1 kimi",
     ]
     payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
     assert payload["last_start_returncode"] == 0
