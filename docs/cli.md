@@ -1894,7 +1894,9 @@ is the operator surface over the Participant Fabric — `list` probes each
 registered provider driver (claude, codex, kimi, ollama, ollama-api, grok)
 without taking a turn, and `ask` runs exactly one turn against one provider and
 prints the answer, or the full typed turn result with `--json`. Grok turns stay
-refused while its stream schema is unverified against a real binary. `--model`
+refused while `GROK_SCHEMA_VERIFIED` is false (stream schema not yet captured from a real
+binary on this host; prior June 2026 CLI reliability issues are no longer observed).
+`--model`
 is required for `ollama` and `ollama-api` (their drivers configure no default).
 
 The deliberation subcommands drive the Fabric's multi-party layers from the same

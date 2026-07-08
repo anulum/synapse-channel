@@ -1707,6 +1707,10 @@ All notable changes to this project are documented here.
   The CLI is not yet stable, so its streaming-json output schema could not be captured at source
   and stays unverified; the schema must be re-verified against a stable Grok CLI before the
   gated real smoke is trusted.
+  (Note, 2026-07 update: June 2026 escalations documented the Grok CLI as heavy/unreliable on
+  the target workstation with repeated freezes and memory pressure. As of 0.2.91+ the binary
+  is present and reported stable; those specific workstation issues are no longer observed.
+  The schema-verification gate remains.)
 
 ### Fixed
 - Fixed the multi-hub network fetcher not catching a fetch timeout on Python 3.10, where the
@@ -1820,12 +1824,8 @@ All notable changes to this project are documented here.
   not run here. `GrokParticipant` builds `grok --single <prompt> --output-format streaming-json
   --permission-mode plan`, routing shared context through Grok's `--rules` system-prompt append
   and resuming a session via `--resume`. The argv is verified against `grok --help` (Grok
-  0.2.64); the *stream schema* is not, because the Grok CLI is heavy and unreliable on this
-  machine and its output was not captured at source. The parser therefore targets the assumed
-  Claude-Code-family streaming-json convention (it delegates to the Claude parser) and is
-  flagged as such by `GROK_SCHEMA_VERIFIED = False`; the real smoke is triple-gated and stays
-  skipped until the schema can be verified against a usable Grok. 100% line+branch on both new
-  modules under that assumption.
+  0.2.64); the *stream schema* was not captured at source at addition time (GROK_SCHEMA_VERIFIED=False).
+  Parser targets assumed Claude-Code-family convention. Real smoke gated pending capture+verification against stable grok. (Note 2026-07: prior CLI reliability issues resolved per operator reports; grok 0.2.91+ stable and detected; remaining gate is schema verification.) 100% line+branch.
 - Added the bus-mediated turn relay, the foundation for the Participant Fabric's PTY and MCP
   channels. Where a headless participant spawns a fresh process and reads its stdout, a
   long-lived peer instead receives the turn over the bus and answers over the bus; `relay_turn`

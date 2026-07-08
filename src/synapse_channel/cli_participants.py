@@ -59,7 +59,7 @@ PROVIDERS: dict[str, ParticipantBuilder] = {
 """Registered provider drivers, keyed by the name the operator selects."""
 
 _GROK_REFUSAL = (
-    "grok turns are disabled: the Grok CLI stream schema is documented but not "
+    "grok turns are disabled: GROK_SCHEMA_VERIFIED=False (stream schema not captured/verified from real stable run; prior CLI issues resolved) "
     "verified against a real binary (GROK_SCHEMA_VERIFIED is false), so a turn "
     "could silently misparse. Use another provider, or verify the schema first."
 )
