@@ -90,6 +90,7 @@ _FROZEN_WIRE_VALUES: dict[str, str] = {
     "PRESENCE_UPDATE": "presence_update",
     "RECALL_LOG": "recall_log",
     "RECALL_LOGGED": "recall_logged",
+    "RECIPIENT_LIVENESS_WARNING": "recipient_liveness_warning",
     "RELEASE": "release",
     "RELEASE_DENIED": "release_denied",
     "RELEASE_GRANTED": "release_granted",
