@@ -305,6 +305,7 @@ def start_session(
             "env",
             f"SYN_PROJECT={_project_from_identity(config.identity)}",
             f"SYN_IDENTITY={config.identity}",
+            "SYN_TMUX_PROVIDER=1",
             *config.agent_command,
         ]
     )

@@ -239,6 +239,7 @@ def run_worker_session(
     env["SYN_PROJECT"] = resolved_project
     env["SYN_IDENTITY"] = identity.strip()
     if _terminal_tmux_enabled(command=command, mode=terminal_tmux, env=env):
+        env["SYN_TMUX_PROVIDER"] = "1"
         return _run_terminal_tmux_session(
             identity=env["SYN_IDENTITY"],
             command=command,

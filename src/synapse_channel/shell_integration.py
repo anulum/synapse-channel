@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import shlex
 from pathlib import Path
+from tempfile import gettempdir
 
 DEFAULT_PROVIDER_COMMANDS = (
     "codex",
@@ -37,8 +38,11 @@ def has_active_tmux_provider(identity: str) -> bool:
     collisions on the *-rx sidecar. The provider owns the name for pane injection
     (WAKE_PANE_BRIDGE / receiver wake capability). Mirrors the pidfile check in the
     generated shell hooks (XDG_RUNTIME_DIR/synapse-provider-tmux/*.pid).
+    Also true if SYN_TMUX_PROVIDER=1 (explicitly running as inner agent in provider session).
     """
-    runtime = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "synapse-provider-tmux"
+    if os.environ.get("SYN_TMUX_PROVIDER") == "1":
+        return True
+    runtime = Path(os.environ.get("XDG_RUNTIME_DIR") or gettempdir()) / "synapse-provider-tmux"
     key = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in identity)
     pidfile = runtime / f"{key}.pid"
     if not pidfile.is_file():
@@ -241,9 +245,12 @@ function __synapse_auto_arm --on-event fish_prompt
       return 0
     end
   end
-  # Yield to an active worker-session tmux waker: it owns "$identity-rx" and can
-  # actually wake the agent's pane, so a second passive waiter on the same name
-  # would only collide and lock the injecting waker out.
+  # Yield to an active worker-session tmux waker (or explicit provider session):
+  # it owns "$identity-rx" for the session lifetime and injects wake prompts.
+  # A second passive waiter would collide. SYN_TMUX_PROVIDER=1 marks inner agent.
+  if test "$SYN_TMUX_PROVIDER" = "1"
+    return 0
+  end
   set -l provider_runtime "$XDG_RUNTIME_DIR/synapse-provider-tmux"
   if test -z "$XDG_RUNTIME_DIR"
     set provider_runtime "/tmp/synapse-provider-tmux"
@@ -403,9 +410,11 @@ __synapse_auto_arm() {{
       return 0
     fi
   fi
-  # Yield to an active worker-session tmux waker: it owns "$identity-rx" and can
-  # actually wake the agent's pane, so a second passive waiter on the same name
-  # would only collide and lock the injecting waker out.
+  # Yield to an active worker-session tmux waker (or SYN_TMUX_PROVIDER=1 session):
+  # it owns "$identity-rx" for the session lifetime. Plain passive would collide.
+  if [ "${{SYN_TMUX_PROVIDER:-}}" = "1" ]; then
+    return 0
+  fi
   provider_pidfile="${{XDG_RUNTIME_DIR:-/tmp}}/synapse-provider-tmux/$key.pid"
   if [ -r "$provider_pidfile" ]; then
     pid="$(cat "$provider_pidfile" 2>/dev/null || true)"

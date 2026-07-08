@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import random
 from collections.abc import Callable, Coroutine
 from pathlib import Path
@@ -230,15 +231,17 @@ def _cmd_wait(
     connect_name = args.name if args.name != for_name else waiter_name(args.name)
     roles = tuple(r.strip() for r in (getattr(args, "role", None) or ()) if r.strip())
 
-    # Provider-aware early yield: if an active tmux provider (worker-session +
-    # agent-tm ux) is live for this identity, it owns the -rx for pane injection
-    # (WAKE_PANE_BRIDGE). A plain passive arm will be superseded or cause 4009
-    # churn. Yield immediately so the harness can use the provider path instead.
-    if has_active_tmux_provider(for_name):
+    # Provider-aware early yield for stable session identity inheritance.
+    # When a tmux provider (worker-session + agent-tmux wait) is active for the
+    # identity (or SYN_TMUX_PROVIDER=1 explicitly set for the session), that
+    # provider owns the long-lived -rx with pane_bridge. Plain passive arms
+    # cause supersession churn and are not needed (the provider injects wake
+    # prompt; inner agent does inbox on prompt). Yield immediately.
+    if os.environ.get("SYN_TMUX_PROVIDER") == "1" or has_active_tmux_provider(for_name):
         print(
-            f"[{connect_name}] active tmux provider detected for {for_name}; "
-            "pane_bridge / agent_tmux is the live waker for injection. "
-            "Yielding plain passive arm to avoid supersession/name collision."
+            f"[{connect_name}] provider-backed session for {for_name}; "
+            "agent-tmux wait is the canonical long-lived listener. "
+            "Yielding plain passive to preserve identity inheritance for the session."
         )
         return 0
 
