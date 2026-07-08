@@ -141,6 +141,14 @@ message was not addressed to neither fabricates a receipt nor drops the pending 
 The `ack` verb arrived at wire version `2`; a client emits it only when the hub
 advertises that version or newer.
 
+**Durable receipt ledger.** A hub with a SQLite journal records the delivery-receipt
+lifecycle as audit-only events:
+`delivery_receipt_requested`, `delivery_receipt_immediate`,
+`delivery_receipt_deferred`, and `delivery_receipt_expired`. On restart, unsettled
+immediate failures re-seed the bounded pending-receipt store, so a later mailbox
+`ack` can still journal the deferred verdict even if the original sender is offline.
+Operators can query the ledger with `synapse event-query <db> "receipts <agent>"`.
+
 ## Release receipts
 
 A successful `release` may carry closeout evidence. The hub echoes a

@@ -23,6 +23,7 @@ from hub_e2e_helpers import (
     running_hub,
 )
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
 
 
@@ -247,7 +248,11 @@ async def test_chat_delivery_receipt_preserves_history_bound_and_journal(
     events = store.read_all()
     store.close()
     assert [message["payload"] for message in hub.chat_history] == ["two"]
-    assert [event.kind for event in events] == ["chat", "chat"]
+    assert [event.kind for event in events if event.kind == EventKind.CHAT] == ["chat", "chat"]
+    assert [event.kind for event in events if event.kind.startswith("delivery_receipt_")] == [
+        EventKind.DELIVERY_RECEIPT_REQUESTED,
+        EventKind.DELIVERY_RECEIPT_IMMEDIATE,
+    ]
 
 
 async def _send_chat_frames(websocket: Any, sender: str, items: list[tuple[str, str]]) -> None:
@@ -487,14 +492,80 @@ async def test_ack_settles_a_dead_lettered_directed_message_with_a_deferred_rece
                 seq = replayed["seq"]
                 await bob_ws.send(json.dumps({"sender": "BOB", "type": "ack", "seq": seq}))
                 deferred = await read_until_type(alice_ws, "delivery_receipt")
+        receipt_events = [
+            event for event in store.read_all() if event.kind.startswith("delivery_receipt_")
+        ]
     store.close()
     assert deferred["delivered"] is True
     assert deferred["deferred"] is True
+    assert deferred["message_id"] == 1
     assert deferred["message_seq"] == seq
     assert deferred["target"] == "ALICE"
     assert deferred["message_target"] == "BOB"
     assert deferred["recipients"] == ["BOB"]
     assert len(hub.pending_receipts) == 0
+    assert [event.kind for event in receipt_events] == [
+        EventKind.DELIVERY_RECEIPT_REQUESTED,
+        EventKind.DELIVERY_RECEIPT_IMMEDIATE,
+        EventKind.DELIVERY_RECEIPT_DEFERRED,
+    ]
+    assert receipt_events[1].payload["delivered"] is False
+    assert receipt_events[2].payload["delivered"] is True
+    assert receipt_events[2].payload["message_seq"] == seq
+
+
+async def test_pending_delivery_receipt_survives_restart_and_offline_sender(
+    tmp_path: Path,
+) -> None:
+    # The receipt ledger re-seeds pending deferred receipts on restart. BOB can ack
+    # ALICE's replayed message after ALICE has disconnected; the live frame is not
+    # delivered, but the final deferred verdict is durable and queryable.
+    db = tmp_path / "events.db"
+    store = EventStore(db)
+    async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
+        async with connect(uri) as alice_ws:
+            await read_until_type(alice_ws, "welcome")
+            await alice_ws.send(
+                json.dumps(
+                    {
+                        "sender": "ALICE",
+                        "type": "chat",
+                        "target": "BOB",
+                        "payload": "restart-safe",
+                        "receipt_requested": True,
+                    }
+                )
+            )
+            assert (await read_until_type(alice_ws, "delivery_receipt"))["delivered"] is False
+
+    async with running_hub(SynapseHub(journal=store)) as (hub, uri):
+        assert len(hub.pending_receipts) == 1
+        async with connect(uri) as bob_ws:
+            await read_until_type(bob_ws, "welcome")
+            await bob_ws.send(
+                json.dumps(
+                    {
+                        "sender": "BOB",
+                        "type": "heartbeat",
+                        "target": "System",
+                        "payload": "online",
+                        "mailbox": True,
+                        "since_seq": 0,
+                    }
+                )
+            )
+            replayed = await read_until_type(bob_ws, "chat")
+            await bob_ws.send(json.dumps({"sender": "BOB", "type": "ack", "seq": replayed["seq"]}))
+            await collect_available(bob_ws)
+        assert len(hub.pending_receipts) == 0
+
+    receipt_events = [
+        event for event in store.read_all() if event.kind.startswith("delivery_receipt_")
+    ]
+    store.close()
+    assert receipt_events[-1].kind == EventKind.DELIVERY_RECEIPT_DEFERRED
+    assert receipt_events[-1].payload["acked_by"] == "BOB"
+    assert receipt_events[-1].payload["sender"] == "ALICE"
 
 
 async def test_ack_from_a_non_recipient_leaves_the_pending_receipt_for_the_real_one(

@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from synapse_channel import cli
+from synapse_channel.core.delivery_receipts import immediate_receipt_payload
 from synapse_channel.core.journal import EventKind, record_claim
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.state import TaskClaim
@@ -114,6 +115,35 @@ def test_cli_event_query_channel_filter_redacts_payload(
     assert payload["kind"] == "channel_events"
     assert payload["records"][0]["channel"] == "ops"
     assert "private body" not in str(payload)
+
+
+def test_cli_event_query_delivery_receipts_json(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db = tmp_path / "events.db"
+    store = EventStore(db)
+    store.append(
+        EventKind.DELIVERY_RECEIPT_IMMEDIATE,
+        immediate_receipt_payload(
+            sender="ALICE",
+            target="BOB",
+            message_id=1,
+            message_seq=10,
+            delivered=False,
+            recipients=(),
+        ),
+        ts=10.0,
+        durable=True,
+    )
+    store.close()
+
+    exit_code = cli.main(["event-query", str(db), "receipts ALICE", "--json"])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["kind"] == "delivery_receipts"
+    assert payload["receipts"][0]["sender"] == "ALICE"
 
 
 def test_cli_event_query_reports_query_errors(

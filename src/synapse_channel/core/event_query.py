@@ -20,6 +20,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.core.delivery_receipts import (
+    DELIVERY_RECEIPT_EVENT_KINDS,
+    format_receipt_event,
+    receipt_event_matches,
+    receipt_event_to_json,
+)
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore, StoredEvent
 
@@ -87,6 +93,10 @@ _DATALOG_CHANNEL_RE = re.compile(
     r"(?P<upper>[^,\s)]+)\s*\)\.?$",
     re.IGNORECASE,
 )
+_DATALOG_RECEIPTS_RE = re.compile(
+    rf"^receipts\(\s*{_ATOM_VALUE.format(name='participant')}\s*\)\.?$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -104,6 +114,8 @@ class EventQuery:
         Path for path-touch queries.
     channel_id : str
         Private-channel id for channel-event queries.
+    participant : str
+        Agent, target, or ``all`` selector for delivery-receipt ledger queries.
     lower : float
         Inclusive lower timestamp for path-touch queries.
     upper : float
@@ -120,6 +132,7 @@ class EventQuery:
     task_id: str = ""
     path: str = ""
     channel_id: str = ""
+    participant: str = ""
     lower: float = 0.0
     upper: float = 0.0
     cutoff_kind: str = ""
@@ -148,6 +161,7 @@ class QueryResult:
     records: tuple[QueryRecord, ...] = ()
     state: dict[str, object] | None = None
     conflicts: list[dict[str, object]] | None = None
+    receipt_events: tuple[StoredEvent, ...] = ()
 
 
 def parse_query(query: str) -> EventQuery:
@@ -214,6 +228,8 @@ def parse_query(query: str) -> EventQuery:
             cutoff=_parse_cutoff_value(cutoff_kind, tokens[3]),
             raw=query,
         )
+    if len(tokens) == 2 and tokens[0] == "receipts":
+        return EventQuery(kind="delivery_receipts", participant=tokens[1], raw=query)
     parsed_alias = _parse_cypher_like_query(query)
     if parsed_alias is not None:
         return parsed_alias
@@ -291,6 +307,8 @@ def _selective_read_args(query: EventQuery) -> dict[str, Any]:
             **_range_window(query.cutoff_kind, query.lower, query.upper),
             "kinds": (EventKind.CHAT,),
         }
+    if query.kind == "delivery_receipts":
+        return {"kinds": DELIVERY_RECEIPT_EVENT_KINDS}
     msg = f"unsupported event query kind: {query.kind}"
     raise ValueError(msg)
 
@@ -323,6 +341,7 @@ def _cap_result(result: QueryResult, limit: int) -> QueryResult:
         records=records,
         state=result.state,
         conflicts=conflicts,
+        receipt_events=tuple(result.receipt_events[-keep:]) if keep else (),
     )
 
 
@@ -374,6 +393,14 @@ def execute_query(events: Sequence[StoredEvent], query: EventQuery) -> QueryResu
                 and _event_is_in_range(event, query.cutoff_kind, query.lower, query.upper)
             ),
         )
+    if query.kind == "delivery_receipts":
+        return QueryResult(
+            kind=query.kind,
+            query=query.raw,
+            receipt_events=tuple(
+                event for event in events if receipt_event_matches(event, query.participant)
+            ),
+        )
     msg = f"unsupported event query kind: {query.kind}"
     raise ValueError(msg)
 
@@ -391,6 +418,8 @@ def result_to_json(result: QueryResult) -> dict[str, object]:
         payload["state"] = result.state
     if result.conflicts is not None:
         payload["conflicts"] = [dict(conflict) for conflict in result.conflicts]
+    if result.receipt_events:
+        payload["receipts"] = [receipt_event_to_json(event) for event in result.receipt_events]
     return payload
 
 
@@ -421,6 +450,11 @@ def render_human(result: QueryResult) -> str:
         channel = _query_channel_label(result.query)
         lines = [f"channel {channel}: {len(result.records)} event(s)"]
         lines.extend(_format_channel_record(record) for record in result.records)
+        return "\n".join(lines)
+    if result.kind == "delivery_receipts":
+        participant = _query_receipt_label(result.query)
+        lines = [f"delivery receipts {participant}: {len(result.receipt_events)} event(s)"]
+        lines.extend(format_receipt_event(event) for event in result.receipt_events)
         return "\n".join(lines)
     return f"{result.kind}: no renderer"
 
@@ -537,6 +571,13 @@ def _parse_datalog_like_query(query: str) -> EventQuery | None:
             cutoff_kind=cutoff_kind,
             lower=_parse_cutoff_value(cutoff_kind, channel.group("lower")),
             upper=_parse_cutoff_value(cutoff_kind, channel.group("upper")),
+            raw=query,
+        )
+    receipts = _DATALOG_RECEIPTS_RE.match(query)
+    if receipts is not None:
+        return EventQuery(
+            kind="delivery_receipts",
+            participant=_unquote_atom(receipts.group("participant")),
             raw=query,
         )
     return None
@@ -778,5 +819,17 @@ def _query_channel_label(query: str) -> str:
         parsed = None
     if parsed is not None and parsed.channel_id:
         return parsed.channel_id
+    tokens = query.split()
+    return tokens[1] if len(tokens) >= 2 else "?"
+
+
+def _query_receipt_label(query: str) -> str:
+    """Return the participant label from a supported receipt query string."""
+    try:
+        parsed = parse_query(query)
+    except ValueError:
+        parsed = None
+    if parsed is not None and parsed.participant:
+        return parsed.participant
     tokens = query.split()
     return tokens[1] if len(tokens) >= 2 else "?"

@@ -9,10 +9,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
 from synapse_channel.core import event_query
+from synapse_channel.core.delivery_receipts import immediate_receipt_payload
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.state import TaskClaim
@@ -355,6 +357,55 @@ def test_channel_query_aliases_parse() -> None:
         lower=1.0,
         upper=3.0,
         raw='channel("ops", seq, 1, 3).',
+    )
+
+
+def test_delivery_receipt_query_filters_by_participant(tmp_path: Path) -> None:
+    db = tmp_path / "events.db"
+    store = EventStore(db)
+    store.append(
+        EventKind.DELIVERY_RECEIPT_IMMEDIATE,
+        immediate_receipt_payload(
+            sender="ALICE",
+            target="BOB",
+            message_id=1,
+            message_seq=10,
+            delivered=False,
+            recipients=(),
+        ),
+        ts=10.0,
+        durable=True,
+    )
+    store.append(
+        EventKind.DELIVERY_RECEIPT_IMMEDIATE,
+        immediate_receipt_payload(
+            sender="CAROL",
+            target="DAVE",
+            message_id=2,
+            message_seq=11,
+            delivered=True,
+            recipients=("DAVE",),
+        ),
+        ts=11.0,
+        durable=True,
+    )
+    store.close()
+
+    result = event_query.run_query(db, "receipts ALICE")
+
+    assert result.kind == "delivery_receipts"
+    assert [event.payload["sender"] for event in result.receipt_events] == ["ALICE"]
+    payload = event_query.result_to_json(result)
+    receipts = cast(list[dict[str, Any]], payload["receipts"])
+    assert receipts[0]["phase"] == "immediate"
+    assert "delivery receipts ALICE: 1 event(s)" in event_query.render_human(result)
+
+
+def test_delivery_receipt_query_alias_parses() -> None:
+    assert event_query.parse_query('receipts("ALICE").') == event_query.EventQuery(
+        kind="delivery_receipts",
+        participant="ALICE",
+        raw='receipts("ALICE").',
     )
 
 

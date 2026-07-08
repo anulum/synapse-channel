@@ -19,6 +19,10 @@ All notable changes to this project are documented here.
   memory query limits, dead-letter snapshots, and dashboard write-rate windows. Non-finite,
   overflowing, and malformed values now preserve the existing fallback or clamp semantics at each
   call site instead of escaping through local ad-hoc conversions.
+- Delivery receipt requests, immediate verdicts, deferred mailbox-ack verdicts, and pending-window
+  expiries are now journaled as audit-only receipt events. Unsettled immediate failures re-seed the
+  pending receipt map on hub restart, and `synapse event-query <db> "receipts <agent>"` exposes the
+  durable ledger even when the original sender is offline.
 
 ## [0.98.14] - 2026-07-09
 

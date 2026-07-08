@@ -25,6 +25,7 @@ best-effort upgrade of the immediate ``delivered: false``, never a guarantee.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 DEFAULT_PENDING_RECEIPTS = 1024
@@ -49,10 +50,15 @@ class ReceiptEntry:
     target : str
         The name, project, or role the message was addressed to — checked against
         an acking client so only a genuine recipient can trigger the receipt.
+    message_id : int
+        The original per-hub message id the sender saw on the chat and immediate
+        receipt. The deferred receipt uses it to link the later acknowledgement to
+        the same logical message, while ``seq`` remains the durable resume cursor.
     """
 
     sender: str
     target: str
+    message_id: int
 
 
 class PendingReceipts:
@@ -74,7 +80,13 @@ class PendingReceipts:
         """Return how many directed messages are currently awaiting a deferred receipt."""
         return len(self._entries)
 
-    def remember(self, seq: int, *, sender: str, target: str) -> None:
+    def entries(self) -> tuple[tuple[int, ReceiptEntry], ...]:
+        """Return pending entries in oldest-first eviction order."""
+        return tuple(self._entries.items())
+
+    def remember(
+        self, seq: int, *, sender: str, target: str, message_id: int
+    ) -> tuple[int, ReceiptEntry] | None:
         """Record that the directed message at ``seq`` awaits a deferred receipt.
 
         Re-remembering a known ``seq`` refreshes it to newest so the pair stays
@@ -89,12 +101,39 @@ class PendingReceipts:
             Who sent it and awaits confirmation.
         target : str
             The name, project, or role it was addressed to.
+        message_id : int
+            Original per-hub message id stamped on the chat.
+
+        Returns
+        -------
+        tuple[int, ReceiptEntry] or None
+            The evicted pending receipt, if the bounded store had to drop one.
         """
         self._entries.pop(seq, None)
-        self._entries[seq] = ReceiptEntry(sender=sender, target=target)
+        self._entries[seq] = ReceiptEntry(sender=sender, target=target, message_id=message_id)
         if len(self._entries) > self.max_entries:
             oldest = next(iter(self._entries))
-            del self._entries[oldest]
+            evicted = self._entries.pop(oldest)
+            return oldest, evicted
+        return None
+
+    def restore(self, entries: Iterable[tuple[int, ReceiptEntry]]) -> None:
+        """Restore pending receipts from an oldest-first durable projection.
+
+        Parameters
+        ----------
+        entries : iterable of tuple[int, ReceiptEntry]
+            Sequence-number/entry pairs reconstructed from the receipt ledger.
+            They are fed through :meth:`remember`, so the live bound is enforced
+            exactly as it is for newly observed pending receipts.
+        """
+        for seq, entry in entries:
+            self.remember(
+                seq,
+                sender=entry.sender,
+                target=entry.target,
+                message_id=entry.message_id,
+            )
 
     def peek(self, seq: int) -> ReceiptEntry | None:
         """Return the pending entry for ``seq`` without removing it, or ``None``.

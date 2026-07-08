@@ -29,8 +29,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from synapse_channel.core.delivery_receipts import (
+    DELIVERY_RECEIPT_EVENT_KINDS,
+    restore_pending_receipts,
+)
 from synapse_channel.core.journal import replay
 from synapse_channel.core.ledger import Blackboard
+from synapse_channel.core.pending_receipts import ReceiptEntry
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.state import SynapseState
 
@@ -56,6 +61,9 @@ class SeededHubState:
     idempotency_seed : tuple[tuple[str, dict], ...]
         Applied-mutation responses (oldest first) to reseed the at-most-once cache
         (empty when fresh).
+    pending_receipts : tuple[tuple[int, ReceiptEntry], ...]
+        Unsettled deferred-delivery receipts reconstructed from the receipt
+        ledger, oldest first, ready to seed the live bounded pending store.
     """
 
     state: SynapseState
@@ -64,6 +72,7 @@ class SeededHubState:
     message_seq: int
     finding_counts: Mapping[str, int]
     idempotency_seed: tuple[tuple[str, dict[str, Any]], ...]
+    pending_receipts: tuple[tuple[int, ReceiptEntry], ...]
 
 
 def seed_hub_state(
@@ -135,6 +144,9 @@ def seed_hub_state(
             message_seq=replayed.message_seq,
             finding_counts=replayed.finding_counts_by_actor,
             idempotency_seed=tuple(replayed.idempotency),
+            pending_receipts=restore_pending_receipts(
+                journal.read_window(kinds=DELIVERY_RECEIPT_EVENT_KINDS)
+            ),
         )
     return SeededHubState(
         state=SynapseState(
@@ -152,4 +164,5 @@ def seed_hub_state(
         message_seq=0,
         finding_counts={},
         idempotency_seed=(),
+        pending_receipts=(),
     )

@@ -802,6 +802,7 @@ synapse compact ./synapse.db --all --max-checkpoints-per-task 3 --archive-report
 synapse event-query ./synapse.db "task TASK-1 timeline"
 synapse event-query ./synapse.db "conflicts at seq 120" --json
 synapse event-query ./synapse.db "channel ops between seq 1 999999"
+synapse event-query ./synapse.db "receipts ALICE" --json
 synapse event-query ./synapse.db 'timeline("TASK-1").'
 synapse event-query ./synapse.db 'MATCH (task:TASK {id:"TASK-1"}) RETURN timeline'
 synapse postmortem ./synapse.db TASK-1
@@ -901,12 +902,15 @@ counts, board tasks, release receipt notes, and a bounded coordination timeline;
 `synapse event-query` is a temporal event-log query command for the same SQLite
 event store. It supports `task <id> timeline`, `task <id> at seq <n>`,
 `task <id> at time <seconds>`, `path <path> between <start> <end>`,
-`channel <id> between seq|time <start> <end>`, and `conflicts at seq|time <n>`.
+`channel <id> between seq|time <start> <end>`, `conflicts at seq|time <n>`, and
+`receipts <agent|target|all>` for the durable delivery-receipt ledger.
 Channel queries return metadata-only records so private-channel bodies are not
-printed by this forensic path. It also accepts prototype aliases over the same
+printed by this forensic path. Receipt queries return the requested, immediate,
+deferred, and expired delivery-receipt audit events that involve the selected
+participant. It also accepts prototype aliases over the same
 model: Datalog-like `timeline("TASK").`, `state("TASK", seq, 120).`,
 `touches("src/auth.py", 0, 9999999999).`, `channel("ops", seq, 1, 99).`,
-`conflicts(seq, 120).`, plus
+`receipts("AGENT").`, `conflicts(seq, 120).`, plus
 Cypher-like `MATCH (task:TASK {id:"TASK"}) RETURN timeline` and related
 `AT`/`BETWEEN` forms. It is read-only forensic evidence: it reconstructs what
 the event log said at a sequence or timestamp, but it does not contact the live

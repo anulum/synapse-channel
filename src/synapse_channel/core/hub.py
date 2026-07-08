@@ -685,6 +685,7 @@ class SynapseHub:
             clock=self._clock,
         )
         self.chat_history = seeded.chat_history
+        self.pending_receipts.restore(seeded.pending_receipts)
         self.blackboard = seeded.blackboard
         self._ledger = HubLedgerGuard(
             max_findings_per_agent=self.max_findings_per_agent,

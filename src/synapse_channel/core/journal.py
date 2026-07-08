@@ -68,6 +68,10 @@ class EventKind:
     OPERATOR_RELAY = "operator_relay"
     DEAD_LETTER_ESCALATION = "dead_letter_escalation"
     DEAD_LETTER_FORWARDING = "dead_letter_forwarding"
+    DELIVERY_RECEIPT_REQUESTED = "delivery_receipt_requested"
+    DELIVERY_RECEIPT_IMMEDIATE = "delivery_receipt_immediate"
+    DELIVERY_RECEIPT_DEFERRED = "delivery_receipt_deferred"
+    DELIVERY_RECEIPT_EXPIRED = "delivery_receipt_expired"
 
 
 MEMORY_KINDS = frozenset(
@@ -220,6 +224,31 @@ def record_dead_letter_forwarding(store: EventStore, provenance: Mapping[str, An
         the ``direction``; plus the verified sending ``peer`` on the owning (inbound) side.
     """
     store.append(EventKind.DEAD_LETTER_FORWARDING, dict(provenance), durable=True)
+
+
+def record_delivery_receipt_requested(store: EventStore, receipt: Mapping[str, Any]) -> None:
+    """Append the durable fact that a sender requested a delivery receipt.
+
+    The payload names the sender, addressed target, per-hub message id, and durable
+    chat sequence. It is audit-only — replay skips it — but it gives operators the
+    first edge in the receipt lifecycle before the immediate or deferred verdicts.
+    """
+    store.append(EventKind.DELIVERY_RECEIPT_REQUESTED, dict(receipt), durable=True)
+
+
+def record_delivery_receipt_immediate(store: EventStore, receipt: Mapping[str, Any]) -> None:
+    """Append the immediate delivery receipt verdict returned to the sender."""
+    store.append(EventKind.DELIVERY_RECEIPT_IMMEDIATE, dict(receipt), durable=True)
+
+
+def record_delivery_receipt_deferred(store: EventStore, receipt: Mapping[str, Any]) -> None:
+    """Append a deferred receipt emitted when a mailbox replay is acked."""
+    store.append(EventKind.DELIVERY_RECEIPT_DEFERRED, dict(receipt), durable=True)
+
+
+def record_delivery_receipt_expired(store: EventStore, receipt: Mapping[str, Any]) -> None:
+    """Append a pending receipt expiry when the bounded live window evicts it."""
+    store.append(EventKind.DELIVERY_RECEIPT_EXPIRED, dict(receipt), durable=True)
 
 
 def record_checkpoint(store: EventStore, claim: TaskClaim) -> None:

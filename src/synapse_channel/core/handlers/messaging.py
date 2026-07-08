@@ -29,12 +29,22 @@ from synapse_channel.core.dead_letter_escalation import (
 )
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwardError, forwarding_notice
 from synapse_channel.core.dead_letters import is_directed_target
+from synapse_channel.core.delivery_receipts import (
+    deferred_receipt_payload,
+    expired_receipt_payload,
+    immediate_receipt_payload,
+    requested_receipt_payload,
+)
 from synapse_channel.core.journal import (
     DEAD_LETTER_DIRECTION_OUT,
     EventKind,
     record_chat,
     record_dead_letter_escalation,
     record_dead_letter_forwarding,
+    record_delivery_receipt_deferred,
+    record_delivery_receipt_expired,
+    record_delivery_receipt_immediate,
+    record_delivery_receipt_requested,
 )
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.operator_relay_routing import RelayRouteKind, route_operator_relay
@@ -130,21 +140,48 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
             recipients=recipients,
         )
     if bool(data.get("receipt_requested")):
+        message_seq = int(data["seq"]) if "seq" in data else None
+        if hub.journal is not None and message_seq is not None:
+            record_delivery_receipt_requested(
+                hub.journal,
+                requested_receipt_payload(
+                    sender=sender,
+                    target=target,
+                    message_id=int(data["msg_id"]),
+                    message_seq=message_seq,
+                ),
+            )
         await _send_delivery_receipt(
             hub,
             websocket,
             sender=sender,
             target=target,
             msg_id=int(data["msg_id"]),
+            message_seq=message_seq,
             recipients=recipients,
         )
-        if not recipients and is_directed_target(target) and "seq" in data:
+        if not recipients and is_directed_target(target) and message_seq is not None:
             # Nobody live matched, so the immediate receipt said "not delivered" — but the
             # journal kept the body, so remember it under its durable seq: when the recipient
             # reconnects, drains the backlog, and acks that seq, we can revise the verdict to
             # a deferred "delivered". Only a journalled directed message can be acked, because
             # only it carries the seq the ack echoes and the durable copy the recipient reads.
-            hub.pending_receipts.remember(int(data["seq"]), sender=sender, target=target)
+            evicted = hub.pending_receipts.remember(
+                message_seq,
+                sender=sender,
+                target=target,
+                message_id=int(data["msg_id"]),
+            )
+            if evicted is not None and hub.journal is not None:
+                evicted_seq, evicted_entry = evicted
+                record_delivery_receipt_expired(
+                    hub.journal,
+                    expired_receipt_payload(
+                        entry=evicted_entry,
+                        message_seq=evicted_seq,
+                        reason="pending_window_evicted",
+                    ),
+                )
 
 
 async def _escalate_dead_letter(hub: SynapseHub, *, target: str, count: int, sender: str) -> None:
@@ -394,6 +431,7 @@ async def _send_delivery_receipt(
     sender: str,
     target: str,
     msg_id: int,
+    message_seq: int | None = None,
     recipients: list[str],
 ) -> None:
     """Send a private delivery receipt for a receipt-requested chat."""
@@ -407,6 +445,19 @@ async def _send_delivery_receipt(
         payload = f"delivered to {', '.join(rendered)}"
     else:
         payload = f"delivery failed: no online recipient matched {target}"
+    if hub.journal is not None and message_seq is not None:
+        record_delivery_receipt_immediate(
+            hub.journal,
+            immediate_receipt_payload(
+                sender=sender,
+                target=target,
+                message_id=msg_id,
+                message_seq=message_seq,
+                delivered=delivered,
+                recipients=recipients,
+                recipient_wake_capabilities=capabilities,
+            ),
+        )
     await hub._send_json(
         websocket,
         hub._system(
@@ -448,6 +499,11 @@ async def handle_ack(hub: SynapseHub, sender: str, data: dict[str, Any], websock
     if not is_recipient(entry.target, sender, roles=hub.roles_of(sender)):
         return
     hub.pending_receipts.claim(raw_seq)
+    if hub.journal is not None:
+        record_delivery_receipt_deferred(
+            hub.journal,
+            deferred_receipt_payload(entry=entry, message_seq=raw_seq, recipient=sender),
+        )
     await hub._send_to_agent(
         entry.sender,
         hub._system(
@@ -455,6 +511,7 @@ async def handle_ack(hub: SynapseHub, sender: str, data: dict[str, Any], websock
             msg_type=MessageType.DELIVERY_RECEIPT,
             target=entry.sender,
             message_target=entry.target,
+            message_id=entry.message_id,
             message_seq=raw_seq,
             delivered=True,
             deferred=True,
