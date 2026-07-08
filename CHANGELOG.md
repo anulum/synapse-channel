@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.12] - 2026-07-08
+
 ### Fixed
 - `synapse doctor` now suggests exact-identity waiter arming for missing `-rx`
   waiters, so terminal/provider identities no longer see a broad-project
@@ -21,6 +23,9 @@ All notable changes to this project are documented here.
   reply once only for actionable directed work and stay quiet for peer-status
   chatter or empty inbox wakeups, preventing restarted Grok/Kimi sessions from
   re-entering a status-broadcast loop.
+- Provider wrappers and tmux-launched provider panes now force
+  `SYNAPSE_AUTO_CONNECT=0`, preventing an inner Fish/Bash shell from auto-arming
+  a second passive receiver under a different `user/terminal-*` identity.
 
 ## [0.98.11] - 2026-07-08
 

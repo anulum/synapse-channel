@@ -392,6 +392,7 @@ pathlib.Path({str(provider_record)!r}).write_text("direct provider ran", encodin
     assert tmux_calls[1][:5] == ["new-session", "-d", "-s", "synapse-repo_codex-main", "-c"]
     assert "SYN_PROJECT=repo" in tmux_calls[1][-1]
     assert "SYN_IDENTITY=repo/codex-main" in tmux_calls[1][-1]
+    assert "SYNAPSE_AUTO_CONNECT=0" in tmux_calls[1][-1]
     assert str(provider) in tmux_calls[1][-1]
     assert tmux_calls[-1] == ["attach-session", "-t", "synapse-repo_codex-main"]
     assert synapse_calls == [

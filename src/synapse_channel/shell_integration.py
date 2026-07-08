@@ -115,7 +115,7 @@ def _provider_function(command: str) -> str:
         "  __synapse_auto_arm || true\n"
         f"  if command -v synapse >/dev/null 2>&1; then\n"
         "    __synapse_release_waiter || true\n"
-        '    synapse worker-session --project "$SYN_PROJECT" '
+        '    SYNAPSE_AUTO_CONNECT=0 synapse worker-session --project "$SYN_PROJECT" '
         f'--identity "$SYN_IDENTITY" -- {quoted} "$@"\n'
         "  else\n"
         f'    command {quoted} "$@"\n'
@@ -133,7 +133,7 @@ def _fish_provider_function(command: str) -> str:
         "  __synapse_auto_arm >/dev/null 2>&1; or true\n"
         "  if command -q synapse\n"
         "    __synapse_release_waiter >/dev/null 2>&1; or true\n"
-        '    synapse worker-session --project "$SYN_PROJECT" '
+        '    env SYNAPSE_AUTO_CONNECT=0 synapse worker-session --project "$SYN_PROJECT" '
         f'--identity "$SYN_IDENTITY" -- {quoted} $argv\n'
         "  else\n"
         f"    command {quoted} $argv\n"
@@ -293,8 +293,8 @@ function __synapse_run_provider
   __synapse_auto_arm >/dev/null 2>&1; or true
   if command -q synapse
     __synapse_release_waiter >/dev/null 2>&1; or true
-    synapse worker-session --project "$SYN_PROJECT" --identity "$SYN_IDENTITY" -- \
-      "$command_name" $argv
+    env SYNAPSE_AUTO_CONNECT=0 synapse worker-session --project "$SYN_PROJECT" \
+      --identity "$SYN_IDENTITY" -- "$command_name" $argv
   else
     command "$command_name" $argv
   end
@@ -449,8 +449,8 @@ __synapse_run_provider() {{
   __synapse_auto_arm || true
   if command -v synapse >/dev/null 2>&1; then
     __synapse_release_waiter || true
-    synapse worker-session --project "$SYN_PROJECT" --identity "$SYN_IDENTITY" -- \
-      "$command_name" "$@"
+    SYNAPSE_AUTO_CONNECT=0 synapse worker-session --project "$SYN_PROJECT" \
+      --identity "$SYN_IDENTITY" -- "$command_name" "$@"
   else
     command "$command_name" "$@"
   fi

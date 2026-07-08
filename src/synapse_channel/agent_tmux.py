@@ -308,6 +308,7 @@ def start_session(
             f"SYN_PROJECT={_project_from_identity(config.identity)}",
             f"SYN_IDENTITY={config.identity}",
             "SYN_TMUX_PROVIDER=1",
+            "SYNAPSE_AUTO_CONNECT=0",
             *config.agent_command,
         ]
     )
