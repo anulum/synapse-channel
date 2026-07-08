@@ -41,8 +41,8 @@ from synapse_channel.dashboard import (
     fetch_dashboard_snapshot,
     render_dashboard_html,
     start_dashboard_server,
-    validate_dashboard_bind,
 )
+from synapse_channel.dashboard_bind import validate_dashboard_bind
 from synapse_channel.dashboard_operator import (
     ACCEPTED,
     DELIVERED,
@@ -1699,6 +1699,24 @@ def _http_post(
         return exc.code, exc.headers.get_content_type(), exc.read().decode("utf-8")
 
 
+# The operator write-path now always has a token (generated if none is supplied, even
+# on loopback), so the write-path tests authenticate with a known one; auth itself is
+# exercised separately by test_operator_write_requires_bearer_when_token_set.
+_OP_TOKEN = "op-token"
+_OP_BEARER = f"Bearer {_OP_TOKEN}"
+
+
+def _operator_post(
+    url: str,
+    body: bytes | str,
+    *,
+    authorization: str | None = _OP_BEARER,
+    content_type: str = "application/json",
+) -> tuple[int, str, str]:
+    """POST to an operator route, carrying the known bearer token by default."""
+    return _http_post(url, body, authorization=authorization, content_type=content_type)
+
+
 def _stub_relay_class(outcome: RelayOutcome) -> type:
     """Return a drop-in OperatorRelay that yields ``outcome`` without a hub."""
 
@@ -1722,7 +1740,7 @@ def _stub_relay_class(outcome: RelayOutcome) -> type:
     return _StubRelay
 
 
-def _operator_server(*, dashboard_token: str | None = None) -> DashboardServer:
+def _operator_server(*, dashboard_token: str | None = _OP_TOKEN) -> DashboardServer:
     return start_dashboard_server(
         host="127.0.0.1",
         port=0,
@@ -1777,13 +1795,13 @@ def test_operator_write_requires_bearer_when_token_set() -> None:
 def test_operator_write_rejects_bad_bodies() -> None:
     server = _operator_server()
     try:
-        non_json, _, _ = _http_post(server.url("/message"), "not json at all")
-        missing_to, _, _ = _http_post(server.url("/message"), json.dumps({"text": "hi"}))
-        empty_text, _, _ = _http_post(
+        non_json, _, _ = _operator_post(server.url("/message"), "not json at all")
+        missing_to, _, _ = _operator_post(server.url("/message"), json.dumps({"text": "hi"}))
+        empty_text, _, _ = _operator_post(
             server.url("/message"), json.dumps({"to": "x", "text": "   "})
         )
-        not_object, _, _ = _http_post(server.url("/message"), json.dumps(["to", "text"]))
-        unknown_route, _, _ = _http_post(
+        not_object, _, _ = _operator_post(server.url("/message"), json.dumps(["to", "text"]))
+        unknown_route, _, _ = _operator_post(
             server.url("/other"), json.dumps({"to": "x", "text": "hi"})
         )
     finally:
@@ -1803,12 +1821,12 @@ def test_operator_write_rejects_a_non_json_content_type() -> None:
     # even though the body is valid JSON, so a web page cannot drive a write.
     server = _operator_server()
     try:
-        text_plain, _, body = _http_post(
+        text_plain, _, body = _operator_post(
             server.url("/message"),
             json.dumps({"to": "x", "text": "hi"}),
             content_type="text/plain",
         )
-        form, _, _ = _http_post(
+        form, _, _ = _operator_post(
             server.url("/message"),
             json.dumps({"to": "x", "text": "hi"}),
             content_type="application/x-www-form-urlencoded",
@@ -1833,7 +1851,7 @@ def test_operator_write_accepts_json_with_a_charset_parameter(
     )
     server = _operator_server()
     try:
-        status, _, _ = _http_post(
+        status, _, _ = _operator_post(
             server.url("/message"),
             json.dumps({"to": "x", "text": "hi"}),
             content_type="application/json; charset=utf-8",
@@ -1859,7 +1877,7 @@ def test_operator_write_maps_relay_outcome_to_status(
     monkeypatch.setattr(dashboard_module, "OperatorRelay", _stub_relay_class(outcome))
     server = _operator_server()
     try:
-        status, content_type, body = _http_post(
+        status, content_type, body = _operator_post(
             server.url("/message"), json.dumps({"to": "SC-NEUROCORE", "text": "ship it"})
         )
     finally:
@@ -1883,8 +1901,10 @@ def test_operator_write_is_rate_limited(monkeypatch: pytest.MonkeyPatch) -> None
     )
     server = _operator_server()
     try:
-        first, _, _ = _http_post(server.url("/message"), json.dumps({"to": "x", "text": "hi"}))
-        second, _, body = _http_post(server.url("/message"), json.dumps({"to": "x", "text": "hi"}))
+        first, _, _ = _operator_post(server.url("/message"), json.dumps({"to": "x", "text": "hi"}))
+        second, _, body = _operator_post(
+            server.url("/message"), json.dumps({"to": "x", "text": "hi"})
+        )
     finally:
         server.close()
 
@@ -1896,11 +1916,11 @@ def test_operator_write_is_rate_limited(monkeypatch: pytest.MonkeyPatch) -> None
 def test_operator_task_rejects_bad_bodies() -> None:
     server = _operator_server()
     try:
-        missing_id, _, _ = _http_post(server.url("/task"), json.dumps({"title": "Ship"}))
-        empty_title, _, _ = _http_post(
+        missing_id, _, _ = _operator_post(server.url("/task"), json.dumps({"title": "Ship"}))
+        empty_title, _, _ = _operator_post(
             server.url("/task"), json.dumps({"id": "T-1", "title": "  "})
         )
-        bad_deps, _, _ = _http_post(
+        bad_deps, _, _ = _operator_post(
             server.url("/task"),
             json.dumps({"id": "T-1", "title": "Ship", "depends_on": [1, 2]}),
         )
@@ -1915,15 +1935,17 @@ def test_operator_task_rejects_bad_bodies() -> None:
 def test_operator_task_update_rejects_bad_bodies() -> None:
     server = _operator_server()
     try:
-        missing_id, _, _ = _http_post(server.url("/task/update"), json.dumps({"status": "done"}))
-        neither, _, _ = _http_post(server.url("/task/update"), json.dumps({"id": "T-1"}))
-        bad_status, _, _ = _http_post(
+        missing_id, _, _ = _operator_post(
+            server.url("/task/update"), json.dumps({"status": "done"})
+        )
+        neither, _, _ = _operator_post(server.url("/task/update"), json.dumps({"id": "T-1"}))
+        bad_status, _, _ = _operator_post(
             server.url("/task/update"), json.dumps({"id": "T-1", "status": 7})
         )
-        bad_note_type, _, _ = _http_post(
+        bad_note_type, _, _ = _operator_post(
             server.url("/task/update"), json.dumps({"id": "T-1", "note": 7})
         )
-        empty_note, _, _ = _http_post(
+        empty_note, _, _ = _operator_post(
             server.url("/task/update"), json.dumps({"id": "T-1", "note": "   "})
         )
     finally:
@@ -1951,7 +1973,7 @@ def test_operator_task_maps_relay_outcome_to_status(
     monkeypatch.setattr(dashboard_module, "OperatorRelay", _stub_relay_class(outcome))
     server = _operator_server()
     try:
-        status, content_type, body = _http_post(
+        status, content_type, body = _operator_post(
             server.url("/task"),
             json.dumps({"id": "T-1", "title": "Ship", "depends_on": ["T-0"]}),
         )
@@ -1982,7 +2004,7 @@ def test_operator_task_update_maps_relay_outcome_to_status(
     monkeypatch.setattr(dashboard_module, "OperatorRelay", _stub_relay_class(outcome))
     server = _operator_server()
     try:
-        status, content_type, body = _http_post(
+        status, content_type, body = _operator_post(
             server.url("/task/update"),
             json.dumps({"id": "T-1", "status": "done", "note": "shipped"}),
         )
@@ -2019,7 +2041,9 @@ def test_operator_write_maps_a_relay_exception_to_503(monkeypatch: pytest.Monkey
     )
     server = _operator_server()
     try:
-        status, _, body = _http_post(server.url("/message"), json.dumps({"to": "x", "text": "hi"}))
+        status, _, body = _operator_post(
+            server.url("/message"), json.dumps({"to": "x", "text": "hi"})
+        )
     finally:
         server.close()
 
@@ -2034,7 +2058,7 @@ def test_operator_write_refuses_an_oversize_body() -> None:
     server = _operator_server()
     oversize = json.dumps({"to": "x", "text": "z" * (64 * 1024 + 16)})
     try:
-        status, _, body = _http_post(server.url("/message"), oversize)
+        status, _, body = _operator_post(server.url("/message"), oversize)
     finally:
         server.close()
 
@@ -2052,6 +2076,7 @@ def test_operator_write_refuses_a_non_numeric_content_length() -> None:
     raw = (
         "POST /message HTTP/1.1\r\n"
         f"Host: {host}:{port}\r\n"
+        f"Authorization: {_OP_BEARER}\r\n"
         "Content-Type: application/json\r\n"
         "Content-Length: not-a-number\r\n"
         "Connection: close\r\n"
