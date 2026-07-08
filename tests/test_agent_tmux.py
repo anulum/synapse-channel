@@ -316,6 +316,38 @@ def test_wait_and_wake_strips_provider_marker_from_wait_child(
     assert wait_env["SYNAPSE_AUTO_CONNECT"] == "0"
 
 
+def test_wait_and_wake_does_not_inject_on_provider_yield_stdout(tmp_path: Path) -> None:
+    """A self-yield from wait (rc=0 + Yielding plain passive) must not inject."""
+    config = _config(tmp_path)
+    yield_out = (
+        "[id-rx] provider-backed session for id; "
+        "agent-tmux wait is the canonical long-lived listener. "
+        "Yielding plain passive to preserve identity inheritance for the session.\n"
+    )
+    runner = RecordingRunner(
+        [
+            _result(["synapse", "wait"], 0, yield_out),
+            _result(["synapse", "wait"], 0, "sender: real wake\n"),
+            _result(["tmux", "send-keys"], 0),
+            _result(["tmux", "send-keys"], 0),
+        ]
+    )
+    sleeper = RecordingSleeper()
+
+    result = wait_and_wake(
+        config, runner=runner, max_wakes=1, sleeper=sleeper, max_wait_failures=None, rng=lambda: 0.0
+    )
+
+    assert result == 0
+    # First wait was a false yield → backoff sleep (not inject); second wait injects
+    # (submit_delay is also recorded on the sleeper).
+    assert sleeper.delays[0] == 1.0
+    assert runner.calls[0][:2] == ["synapse", "wait"]
+    assert runner.calls[1][:2] == ["synapse", "wait"]
+    assert runner.calls[2][:2] == ["tmux", "send-keys"]
+    assert runner.calls[3] == ["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]
+
+
 def test_wait_and_wake_stops_after_bounded_consecutive_failures(tmp_path: Path) -> None:
     config = _config(tmp_path)
     runner = RecordingRunner([_result(["synapse", "wait"], 2)])

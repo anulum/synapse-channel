@@ -20,7 +20,7 @@ from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent
 from synapse_channel import cli_messaging
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
-from synapse_channel.core.wake_capability import WAKE_PASSIVE
+from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
 from synapse_channel.mailbox_cursor import load_cursor
 
 
@@ -96,7 +96,13 @@ def test_cmd_wait_dispatches_with_for_default(capsys: pytest.CaptureFixture[str]
     assert "[X-rx] Could not reach hub" in capsys.readouterr().out
 
 
-def test_cmd_wait_defaults_to_passive_wake_capability() -> None:
+def test_cmd_wait_defaults_to_passive_wake_capability(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Isolation: an outer provider pane sets SYN_TMUX_PROVIDER=1; without
+    # clearing it this test would early-yield and never call wait_runner.
+    monkeypatch.delenv("SYN_TMUX_PROVIDER", raising=False)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
     captured: dict[str, object] = {}
 
     async def wait_once(**kwargs: object) -> int:
@@ -121,6 +127,100 @@ def test_cmd_wait_defaults_to_passive_wake_capability() -> None:
         == 0
     )
     assert captured["wake_capability"] == WAKE_PASSIVE
+
+
+def test_cmd_wait_pane_bridge_does_not_yield_to_own_provider_pidfile(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The agent-tmux wait child must not yield to its own provider pidfile.
+
+    worker-session writes synapse-provider-tmux/<identity>.pid for agent-tmux,
+    then agent-tmux runs ``synapse wait --wake-capability pane_bridge``. Yielding
+    on that pidfile is a self-yield that returns rc=0 and drives a false-wake
+    inject loop.
+    """
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    monkeypatch.delenv("SYN_TMUX_PROVIDER", raising=False)
+    provider_dir = runtime / "synapse-provider-tmux"
+    provider_dir.mkdir()
+    (provider_dir / "user_terminal-1791396.pid").write_text(
+        f"{os.getpid()}\n", encoding="utf-8"
+    )
+
+    captured: dict[str, object] = {}
+
+    async def wait_once(**kwargs: object) -> int:
+        captured.update(kwargs)
+        return 7
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="user/terminal-1791396-rx",
+        for_name="user/terminal-1791396",
+        timeout=0.0,
+        directed_only=True,
+        wake_jitter=0.0,
+        token=None,
+        ready_timeout=0.1,
+        wake_capability=WAKE_PANE_BRIDGE,
+    )
+
+    assert (
+        cli_messaging._cmd_wait(
+            ns, wait_runner=wait_once, async_runner=lambda coro: asyncio.run(coro)
+        )
+        == 7
+    )
+    assert captured["wake_capability"] == WAKE_PANE_BRIDGE
+    assert "Yielding plain passive" not in capsys.readouterr().out
+
+
+def test_cmd_wait_passive_still_yields_when_provider_is_live(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Plain passive waiters still yield to a live pane-bridge provider."""
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    monkeypatch.delenv("SYN_TMUX_PROVIDER", raising=False)
+    provider_dir = runtime / "synapse-provider-tmux"
+    provider_dir.mkdir()
+    (provider_dir / "user_terminal-1791396.pid").write_text(
+        f"{os.getpid()}\n", encoding="utf-8"
+    )
+
+    calls: list[object] = []
+
+    async def wait_once(**kwargs: object) -> int:
+        calls.append(kwargs)
+        return 1
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="user/terminal-1791396-rx",
+        for_name="user/terminal-1791396",
+        timeout=0.0,
+        directed_only=True,
+        wake_jitter=0.0,
+        token=None,
+        ready_timeout=0.1,
+        wake_capability=WAKE_PASSIVE,
+    )
+
+    assert (
+        cli_messaging._cmd_wait(
+            ns, wait_runner=wait_once, async_runner=lambda coro: asyncio.run(coro)
+        )
+        == 0
+    )
+    assert not calls
+    assert "Yielding plain passive" in capsys.readouterr().out
 
 
 def test_cmd_wait_refuses_legacy_project_scoped_terminal_waiter_before_provider_probe(

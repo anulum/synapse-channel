@@ -25,7 +25,7 @@ from synapse_channel.connect_failures import (
     is_takeover_refused_close,
 )
 from synapse_channel.core.protocol import MessageType, wakes
-from synapse_channel.core.wake_capability import WAKE_PASSIVE
+from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
 from synapse_channel.mailbox_cursor import load_cursor, save_cursor
 from synapse_channel.shell_integration import has_active_tmux_provider
 from synapse_channel.waiter_identity import waiter_name, waiter_owner
@@ -246,6 +246,7 @@ def _cmd_wait(
         )
         return 0
     provider_identities = (for_name, waiter_owner(connect_name))
+    wake_capability = getattr(args, "wake_capability", WAKE_PASSIVE)
 
     # Provider-aware early yield for stable session identity inheritance.
     # When a tmux provider (worker-session + agent-tmux wait) is active for the
@@ -253,18 +254,26 @@ def _cmd_wait(
     # provider owns the long-lived -rx with pane_bridge. Plain passive arms
     # cause supersession churn and are not needed (the provider injects wake
     # prompt; inner agent does inbox on prompt). Yield immediately.
-    live_provider_identity = next(
-        (identity for identity in provider_identities if has_active_tmux_provider(identity)),
-        None,
-    )
-    if os.environ.get("SYN_TMUX_PROVIDER") == "1" or live_provider_identity is not None:
-        provider_label = live_provider_identity or for_name
-        print(
-            f"[{connect_name}] provider-backed session for {provider_label}; "
-            "agent-tmux wait is the canonical long-lived listener. "
-            "Yielding plain passive to preserve identity inheritance for the session."
+    #
+    # Critical exception: the pane_bridge wait *is* that provider. worker-session
+    # writes the provider pidfile for agent-tmux, then agent-tmux runs
+    # ``synapse wait --wake-capability pane_bridge``. If this early-yield also
+    # fired for pane_bridge, wait would return 0 immediately, agent-tmux would
+    # treat that as a real wake, inject forever, and burn the agent pane.
+    # Do not yield the bridge to itself.
+    if wake_capability != WAKE_PANE_BRIDGE:
+        live_provider_identity = next(
+            (identity for identity in provider_identities if has_active_tmux_provider(identity)),
+            None,
         )
-        return 0
+        if os.environ.get("SYN_TMUX_PROVIDER") == "1" or live_provider_identity is not None:
+            provider_label = live_provider_identity or for_name
+            print(
+                f"[{connect_name}] provider-backed session for {provider_label}; "
+                "agent-tmux wait is the canonical long-lived listener. "
+                "Yielding plain passive to preserve identity inheritance for the session."
+            )
+            return 0
 
     return async_runner(
         wait_runner(
@@ -277,6 +286,6 @@ def _cmd_wait(
             wake_jitter=args.wake_jitter,
             token=args.token,
             ready_timeout=args.ready_timeout,
-            wake_capability=getattr(args, "wake_capability", WAKE_PASSIVE),
+            wake_capability=wake_capability,
         )
     )

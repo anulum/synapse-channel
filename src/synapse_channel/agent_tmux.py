@@ -528,6 +528,11 @@ def _backoff_delay(
     return capped * (1.0 + jitter * rng())
 
 
+# Substring of the plain-passive yield line from cli_messaging_wait._cmd_wait.
+# agent-tmux must never treat that exit as a directed wake.
+_PROVIDER_YIELD_MARKER = "Yielding plain passive"
+
+
 def _wait_process_env() -> dict[str, str]:
     """Return the sanitized environment for the one-shot wait subprocess."""
     env = dict(os.environ)
@@ -536,6 +541,11 @@ def _wait_process_env() -> dict[str, str]:
     # success code and the bridge mistakes that yield for a real wake.
     env.pop("SYN_TMUX_PROVIDER", None)
     return env
+
+
+def _is_provider_yield_stdout(stdout: str | None) -> bool:
+    """Return whether ``stdout`` is the plain-passive yield, not a real wake."""
+    return bool(stdout) and _PROVIDER_YIELD_MARKER in stdout
 
 
 def wait_and_wake(
@@ -598,10 +608,14 @@ def wait_and_wake(
             check=False,
             env=_wait_process_env(),
         )
-        if wait_proc.returncode != 0:
+        # A provider-yield exit is rc=0 with the plain-passive message. Treating
+        # that as a wake re-injects forever (false-wake loop). Count it as a
+        # failed wait so backoff applies and the pane stays quiet.
+        false_wake = wait_proc.returncode == 0 and _is_provider_yield_stdout(wait_proc.stdout)
+        if wait_proc.returncode != 0 or false_wake:
             consecutive_failures += 1
             if max_wait_failures is not None and consecutive_failures >= max_wait_failures:
-                return wait_proc.returncode
+                return 3 if false_wake else wait_proc.returncode
             sleeper(
                 _backoff_delay(
                     consecutive_failures,

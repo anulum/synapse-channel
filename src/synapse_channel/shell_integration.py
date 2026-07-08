@@ -31,6 +31,33 @@ END_MARKER = "# <<< synapse-channel shell integration <<<"
 SUPPORTED_SHELLS = frozenset({"bash", "fish", "zsh"})
 
 
+def pid_is_live_process(pid: int) -> bool:
+    """Return whether ``pid`` is a non-zombie process.
+
+    ``os.kill(pid, 0)`` succeeds for zombie entries still in the process table,
+    so a defunct agent-tmux would look "active" forever and keep plain waiters
+    yielding (or block waiter restart). Read ``/proc/<pid>/stat`` and reject
+    state ``Z``.
+    """
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, PermissionError, OSError):
+        return False
+    try:
+        # /proc/<pid>/stat: pid (comm) state ... — state is the field after the
+        # closing paren of the comm, which may itself contain spaces/parens.
+        stat_text = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    close = stat_text.rfind(")")
+    if close < 0 or close + 2 >= len(stat_text):
+        return False
+    state = stat_text[close + 2 : close + 3]
+    return state != "Z"
+
+
 def has_active_tmux_provider(identity: str) -> bool:
     """Return True if an active tmux provider holds this identity's live waker.
 
@@ -49,12 +76,9 @@ def has_active_tmux_provider(identity: str) -> bool:
         return False
     try:
         pid = int(pidfile.read_text().strip())
-        if pid <= 0:
-            return False
-        os.kill(pid, 0)  # existence check (signal 0); raises if dead
-        return True
-    except (ValueError, ProcessLookupError, PermissionError, OSError):
+    except (ValueError, OSError):
         return False
+    return pid_is_live_process(pid)
 
 
 def normalise_shell(shell: str, *, env_shell: str | None = None) -> str:

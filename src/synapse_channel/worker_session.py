@@ -94,7 +94,7 @@ def _waiter_paths(identity: str, env: Mapping[str, str]) -> tuple[Path, Path]:
 
 
 def _pid_is_alive(pidfile: Path) -> bool:
-    """Return whether ``pidfile`` points at a live process."""
+    """Return whether ``pidfile`` points at a live non-zombie process."""
     try:
         pid_text = pidfile.read_text(encoding="utf-8").strip()
     except FileNotFoundError:
@@ -102,10 +102,14 @@ def _pid_is_alive(pidfile: Path) -> bool:
     if not pid_text:
         return False
     try:
-        os.kill(int(pid_text), 0)
-    except (OSError, ValueError):
+        pid = int(pid_text)
+    except ValueError:
         return False
-    return True
+    # Shared with shell_integration: reject zombies so a defunct agent-tmux does
+    # not block waiter restart (kill(pid,0) is true for zombies).
+    from synapse_channel.shell_integration import pid_is_live_process
+
+    return pid_is_live_process(pid)
 
 
 def _start_tmux_waiter(
