@@ -15,7 +15,37 @@ from typing import Any
 from synapse_channel.waiter_identity import split_roster, waiter_name
 
 
-def _render_who(roster: list[str], *, project: str | None = None) -> None:
+def _format_reaction_age(seconds: float) -> str:
+    """Render an elapsed-since-last-reaction duration coarsely (``~4m``, ``~2h``)."""
+    if seconds < 60:
+        return f"~{int(seconds)}s"
+    if seconds < 3600:
+        return f"~{int(seconds // 60)}m"
+    return f"~{int(seconds // 3600)}h"
+
+
+def _liveness_suffix(info: dict[str, Any]) -> str:
+    """Return the deaf marker for one agent's liveness record, or empty if proven live.
+
+    A proven-live agent — one with an armed ``-rx`` waiter or a recent reaction — gets
+    no marker, so the roster stays quiet and only the "online but deaf" agents stand
+    out. A stale agent is flagged with how long it has been silent, or that no reaction
+    has ever been seen from it.
+    """
+    if info.get("proven_live"):
+        return ""
+    age = info.get("last_reaction_age")
+    if age is None:
+        return "  (deaf — no reaction seen)"
+    return f"  (deaf {_format_reaction_age(float(age))})"
+
+
+def _render_who(
+    roster: list[str],
+    *,
+    project: str | None = None,
+    liveness: dict[str, dict[str, Any]] | None = None,
+) -> None:
     """Render an online roster split into agents and waiter sidecars.
 
     Every name in the roster holds a live socket, but only the non-``-rx``
@@ -23,6 +53,11 @@ def _render_who(roster: list[str], *, project: str | None = None) -> None:
     plumbing. Counting the two apart keeps the headline honest: a workstation
     with 30 terminals must never read as 200 agents. The optional ``project``
     filter applies to both sections.
+
+    When the hub reports per-agent liveness (only under ``--warn-stale-recipients``),
+    an agent that is present but not proven wake-capable is marked ``(deaf …)`` so a
+    connected-but-deaf terminal is told apart from a live one; without that data the
+    roster renders exactly as before.
     """
     names = roster
     if project:
@@ -31,8 +66,9 @@ def _render_who(roster: list[str], *, project: str | None = None) -> None:
     agents, waiters = split_roster(names)
     scope = f" in {project}" if project else ""
     print(f"Online{scope} ({len(agents)} agents · {len(waiters)} waiters):")
+    marks = liveness or {}
     for agent_name in agents:
-        print(f"  {agent_name}")
+        print(f"  {agent_name}{_liveness_suffix(marks[agent_name]) if agent_name in marks else ''}")
     if waiters:
         print(f"Waiters ({len(waiters)}):")
         for waiter in waiters:

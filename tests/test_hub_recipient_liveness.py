@@ -60,6 +60,12 @@ def _chat(sender: str, target: str, payload: str = "hi") -> str:
     )
 
 
+def _who_request(name: str) -> str:
+    return json.dumps(
+        {"sender": name, "type": MessageType.WHO_REQUEST, "target": "System", "payload": "who"}
+    )
+
+
 class TestRecipientsWithoutLiveWaiter:
     def test_disabled_flags_nobody_even_with_a_stale_record(self) -> None:
         hub = SynapseHub()  # warning off by default
@@ -223,3 +229,103 @@ class TestStaleRecipientWarning:
         await hub.handle_message(_chat("ALPHA", "all", "hello everyone"), alpha)
 
         assert alpha.messages_of_type(MessageType.RECIPIENT_LIVENESS_WARNING) == []
+
+
+class TestRosterLiveness:
+    def test_disabled_returns_an_empty_map(self) -> None:
+        hub = SynapseHub()  # off by default
+        hub.clients.set_agent_socket("BETA", object())
+
+        assert hub.roster_liveness() == {}
+
+    def test_a_recent_reaction_is_proven_live_with_its_age(self) -> None:
+        clock = _Clock()
+        hub = SynapseHub(warn_stale_recipients=True, recipient_liveness_window=10.0, clock=clock)
+        hub.clients.set_agent_socket("BETA", object())
+        hub._recipient_liveness.touch("BETA", 5.0)
+        clock.t = 10.0
+
+        assert hub.roster_liveness()["BETA"] == {
+            "proven_live": True,
+            "has_waiter": False,
+            "last_reaction_age": 5.0,
+        }
+
+    def test_a_live_waiter_is_proven_live_even_when_stale(self) -> None:
+        clock = _Clock()
+        hub = SynapseHub(warn_stale_recipients=True, recipient_liveness_window=10.0, clock=clock)
+        hub.clients.set_agent_socket("BETA", object())
+        hub.clients.set_agent_socket("BETA-rx", object())
+        hub._recipient_liveness.touch("BETA", 0.0)
+        clock.t = 100.0
+
+        info = hub.roster_liveness()["BETA"]
+        assert info["proven_live"] is True
+        assert info["has_waiter"] is True
+
+    def test_a_deaf_agent_is_not_proven_live_and_reports_its_silence(self) -> None:
+        clock = _Clock()
+        hub = SynapseHub(warn_stale_recipients=True, recipient_liveness_window=10.0, clock=clock)
+        hub.clients.set_agent_socket("BETA", object())
+        hub._recipient_liveness.touch("BETA", 0.0)
+        clock.t = 50.0
+
+        assert hub.roster_liveness()["BETA"] == {
+            "proven_live": False,
+            "has_waiter": False,
+            "last_reaction_age": 50.0,
+        }
+
+    def test_an_agent_that_never_reacted_has_a_none_age(self) -> None:
+        clock = _Clock()
+        hub = SynapseHub(warn_stale_recipients=True, recipient_liveness_window=10.0, clock=clock)
+        hub.clients.set_agent_socket("BETA", object())  # present but never touched
+        clock.t = 3.0
+
+        assert hub.roster_liveness()["BETA"] == {
+            "proven_live": False,
+            "has_waiter": False,
+            "last_reaction_age": None,
+        }
+
+    def test_waiter_sidecars_are_not_annotated_as_agents(self) -> None:
+        hub = SynapseHub(warn_stale_recipients=True, recipient_liveness_window=10.0)
+        hub.clients.set_agent_socket("BETA", object())
+        hub.clients.set_agent_socket("BETA-rx", object())
+
+        result = hub.roster_liveness()
+        assert "BETA" in result
+        assert "BETA-rx" not in result
+
+
+class TestWhoSnapshotLiveness:
+    async def test_who_snapshot_carries_liveness_when_enabled(self) -> None:
+        clock = _Clock()
+        hub = SynapseHub(warn_stale_recipients=True, recipient_liveness_window=10.0, clock=clock)
+        beta = _FakeSocket()
+        hub.clients.add_client(beta)
+        await hub.handle_message(_register("BETA"), beta)  # seeds BETA at t=0, then it goes deaf
+        querier = _FakeSocket()
+        hub.clients.add_client(querier)
+        await hub.handle_message(_register("U"), querier)
+        clock.t = 100.0
+
+        await hub.handle_message(_who_request("U"), querier)
+
+        snap = querier.messages_of_type(MessageType.WHO_SNAPSHOT)[-1]
+        assert "agent_liveness" in snap
+        assert snap["agent_liveness"]["BETA"]["proven_live"] is False
+
+    async def test_who_snapshot_omits_liveness_when_disabled(self) -> None:
+        hub = SynapseHub()  # off by default
+        beta = _FakeSocket()
+        hub.clients.add_client(beta)
+        await hub.handle_message(_register("BETA"), beta)
+        querier = _FakeSocket()
+        hub.clients.add_client(querier)
+        await hub.handle_message(_register("U"), querier)
+
+        await hub.handle_message(_who_request("U"), querier)
+
+        snap = querier.messages_of_type(MessageType.WHO_SNAPSHOT)[-1]
+        assert "agent_liveness" not in snap

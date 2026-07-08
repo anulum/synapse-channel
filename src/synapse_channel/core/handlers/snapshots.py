@@ -52,6 +52,14 @@ async def handle_who_request(
     # import of __version__ would be circular; by call time it is initialised.
     from synapse_channel import __version__
 
+    # A per-agent liveness annotation is added only when the hub tracks reactions
+    # (--warn-stale-recipients); otherwise the field is omitted so the who snapshot
+    # is byte-for-byte unchanged on an open hub.
+    extra: dict[str, Any] = {}
+    liveness = hub.roster_liveness()
+    if liveness:
+        extra["agent_liveness"] = liveness
+
     await hub._send_json(
         websocket,
         hub._system(
@@ -63,6 +71,7 @@ async def handle_who_request(
             connected_clients=len(hub.connected_clients),
             hub_version=__version__,
             config_epoch=hub.config_epoch,
+            **extra,
         ),
     )
 

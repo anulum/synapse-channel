@@ -811,6 +811,38 @@ class SynapseHub:
             and self._recipient_liveness.is_stale(name, now)
         )
 
+    def roster_liveness(self) -> dict[str, dict[str, Any]]:
+        """Return a per-agent liveness annotation for the ``/who`` roster.
+
+        For each online *agent* (a ``-rx`` waiter sidecar is presence plumbing, not
+        an agent, and is skipped) this reports whether it is *proven live* — a live
+        ``-rx`` waiter is armed for it, or it produced a genuine reaction within the
+        liveness window — and how long ago it last reacted (``None`` if it never has).
+        A present agent that is not proven live is the "online but deaf" case a roster
+        should surface distinctly from a merely-connected one.
+
+        Returns an empty mapping when the stale-recipient warning is disabled — the
+        default posture, in which no reactions are tracked — so the ``/who`` snapshot
+        is byte-for-byte unchanged on an open hub. It shares the ``warn_stale_recipients``
+        opt-in because both surfaces read the same reaction store.
+        """
+        if not self.warn_stale_recipients:
+            return {}
+        now = self._clock()
+        online = self.agent_sockets
+        annotation: dict[str, dict[str, Any]] = {}
+        for name in self.online_agents():
+            if name.endswith(WAITER_SUFFIX):
+                continue
+            has_waiter = f"{name}{WAITER_SUFFIX}" in online
+            last = self._recipient_liveness.last_reaction_at(name)
+            annotation[name] = {
+                "proven_live": has_waiter or not self._recipient_liveness.is_stale(name, now),
+                "has_waiter": has_waiter,
+                "last_reaction_age": None if last is None else max(0.0, now - last),
+            }
+        return annotation
+
     def uptime_seconds(self) -> float:
         """Return seconds elapsed since the hub was constructed."""
         return max(0.0, self._clock() - self._started)

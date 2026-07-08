@@ -171,6 +171,93 @@ def test_cmd_who_dispatches_real_query() -> None:
     assert cli_queries._cmd_who(ns) == 1
 
 
+def test_render_who_marks_a_deaf_agent_and_leaves_a_live_one_plain(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_queries._render_who(
+        ["BETA", "GAMMA"],
+        liveness={
+            "BETA": {"proven_live": False, "has_waiter": False, "last_reaction_age": 245.0},
+            "GAMMA": {"proven_live": True, "has_waiter": True, "last_reaction_age": 3.0},
+        },
+    )
+
+    out = capsys.readouterr().out
+    assert "BETA  (deaf ~4m)" in out  # 245s rounds to ~4m
+    gamma_line = next(line for line in out.splitlines() if "GAMMA" in line)
+    assert "(deaf" not in gamma_line  # a proven-live agent gets no marker
+
+
+def test_render_who_flags_an_agent_that_never_reacted(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_queries._render_who(
+        ["BETA"],
+        liveness={"BETA": {"proven_live": False, "has_waiter": False, "last_reaction_age": None}},
+    )
+
+    assert "(deaf — no reaction seen)" in capsys.readouterr().out
+
+
+def test_render_who_without_liveness_renders_the_plain_roster(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_queries._render_who(["BETA"])
+
+    out = capsys.readouterr().out
+    assert "  BETA" in out
+    assert "(deaf" not in out
+
+
+def test_render_who_formats_the_silence_age_in_seconds_minutes_and_hours(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_queries._render_who(
+        ["S", "M", "H"],
+        liveness={
+            "S": {"proven_live": False, "last_reaction_age": 45.0},
+            "M": {"proven_live": False, "last_reaction_age": 600.0},
+            "H": {"proven_live": False, "last_reaction_age": 7200.0},
+        },
+    )
+
+    out = capsys.readouterr().out
+    assert "(deaf ~45s)" in out
+    assert "(deaf ~10m)" in out
+    assert "(deaf ~2h)" in out
+
+
+async def test_who_marks_a_deaf_agent_end_to_end(capsys: pytest.CaptureFixture[str]) -> None:
+    # A present agent with no waiter and no reaction, under a zero-second window, is deaf
+    # the instant after it registers, so the roster flags it.
+    hub = SynapseHub(warn_stale_recipients=True, recipient_liveness_window=0.0)
+    async with running_hub(hub) as (_, uri):
+        beta = await connect_agent("BETA", uri)
+        try:
+            code = await cli_queries._who(uri=uri, name="U")
+        finally:
+            await close_agents(beta)
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "BETA" in out
+    assert "(deaf" in out
+
+
+async def test_who_has_no_liveness_marker_when_tracking_is_off(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async with running_hub(SynapseHub()) as (_, uri):
+        beta = await connect_agent("BETA", uri)
+        try:
+            code = await cli_queries._who(uri=uri, name="U")
+        finally:
+            await close_agents(beta)
+
+    assert code == 0
+    assert "(deaf" not in capsys.readouterr().out
+
+
 def test_public_docs_explain_who_me_presence_and_waiter_distinction() -> None:
     combined = _single_spaced(
         "\n".join(

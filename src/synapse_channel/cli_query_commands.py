@@ -121,12 +121,15 @@ async def _who(
         token=token,
         agent_factory=agent_factory,
         response_type=MessageType.WHO_SNAPSHOT,
-        transform=lambda data: [str(agent) for agent in data.get("online_agents", [])],
+        transform=lambda data: (
+            [str(agent) for agent in data.get("online_agents", [])],
+            data.get("agent_liveness") if isinstance(data.get("agent_liveness"), dict) else None,
+        ),
         request=lambda agent: agent.request_who(),
         render=(
-            (lambda roster: _render_who_me(roster, name=name))
+            (lambda result: _render_who_me(result[0], name=name))
             if me
-            else (lambda roster: _render_who(roster, project=project))
+            else (lambda result: _render_who(result[0], project=project, liveness=result[1]))
         ),
         ready_timeout=ready_timeout,
     )
