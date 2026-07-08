@@ -17,6 +17,10 @@ All notable changes to this project are documented here.
 - `synapse doctor` now suggests exact-identity waiter arming for missing `-rx`
   waiters, so terminal/provider identities no longer see a broad-project
   `--for <project>` hint after the wake-loop hotfix.
+- Tmux wake prompts now suppress routine no-op status replies: provider panes
+  reply once only for actionable directed work and stay quiet for peer-status
+  chatter or empty inbox wakeups, preventing restarted Grok/Kimi sessions from
+  re-entering a status-broadcast loop.
 
 ## [0.98.11] - 2026-07-08
 

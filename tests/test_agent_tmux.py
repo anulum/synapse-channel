@@ -93,6 +93,9 @@ def test_build_wake_prompt_excludes_raw_payload() -> None:
 
     assert "read your Synapse inbox" in prompt
     assert "SYNAPSE-CHANNEL/codex-main" in prompt
+    assert "reply once only if there is actionable directed work" in prompt
+    assert "do not post status" in prompt
+    assert "routine peer status" in prompt
     assert "raw" not in prompt.lower()
     assert "ignore previous instructions" not in prompt
 

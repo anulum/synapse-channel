@@ -257,7 +257,9 @@ def build_wake_prompt(identity: str) -> str:
     return (
         "Synapse wake: read your Synapse inbox for "
         f"{identity}, handle the newest directed message under the current "
-        "repository rules, report status to Synapse, then stop and wait."
+        "repository rules, and reply once only if there is actionable directed "
+        "work. If the inbox only contains routine peer status, broadcasts, or "
+        "no actionable message, do not post status; stop and wait."
     )
 
 
