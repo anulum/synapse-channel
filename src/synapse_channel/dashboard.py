@@ -577,6 +577,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     refresh_seconds: ClassVar[int]
     a2a_state_file: ClassVar[Path | None]
     dashboard_token: ClassVar[str | None]
+    token_protects_reads: ClassVar[bool]
     reliability_db: ClassVar[Path | None]
     federation_store: ClassVar[Path | None]
     cockpit_dist: ClassVar[Path | None]
@@ -586,7 +587,13 @@ class _DashboardHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         """Serve the dashboard HTML page, JSON snapshot, or a 404 response."""
-        if self.dashboard_token is not None and not self._authorized():
+        # Reads are gated only when the token protects reads — a caller-supplied token
+        # or one generated for an exposed bind. A token generated solely to gate
+        # operator writes on loopback leaves reads open, so the read-only browser
+        # cockpit still loads (a browser cannot send an Authorization header on
+        # navigation, and the write-path is protected by do_POST regardless).
+        reads_gated = self.dashboard_token is not None and self.token_protects_reads
+        if reads_gated and not self._authorized():
             self._write(
                 HTTPStatus.UNAUTHORIZED,
                 b"dashboard authorization required\n",
@@ -707,9 +714,11 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         CORS "simple" content type without a preflight, and this surface answers
         no preflight, so requiring JSON blocks a browser on another origin from
         driving an operator write (a local CSRF). A write also carries the
-        dashboard bearer token when one is configured (always, on an exposed
-        bind), is rate-limited, and is authorised and audited by the hub — this
-        handler only validates the body and relays the frame.
+        dashboard bearer token, which is always present under operator mode (a
+        token is generated for the write-path even on loopback, so a same-host
+        non-browser process cannot write unauthenticated), is rate-limited, and is
+        authorised and audited by the hub — this handler only validates the body
+        and relays the frame.
         """
         if not self.operator_enabled:
             self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
@@ -1314,6 +1323,7 @@ def _handler_class(
     refresh_seconds: int,
     a2a_state_file: Path | None,
     dashboard_token: str | None,
+    token_protects_reads: bool,
     reliability_db: Path | None,
     federation_store: Path | None,
     cockpit_dist: Path | None,
@@ -1330,6 +1340,7 @@ def _handler_class(
     bound_refresh_seconds = refresh_seconds
     bound_a2a_state_file = a2a_state_file
     bound_dashboard_token = dashboard_token
+    bound_token_protects_reads = token_protects_reads
     bound_reliability_db = reliability_db
     bound_federation_store = federation_store
     bound_cockpit_dist = cockpit_dist
@@ -1348,6 +1359,7 @@ def _handler_class(
         refresh_seconds = bound_refresh_seconds
         a2a_state_file = bound_a2a_state_file
         dashboard_token = bound_dashboard_token
+        token_protects_reads = bound_token_protects_reads
         reliability_db = bound_reliability_db
         federation_store = bound_federation_store
         cockpit_dist = bound_cockpit_dist
@@ -1422,11 +1434,13 @@ def start_dashboard_server(
         Handle with URL helpers and a close method.
     """
     validate_dashboard_bind(host, allow_non_loopback=allow_non_loopback)
-    effective_dashboard_token, dashboard_token_generated = _resolve_dashboard_token(
-        host,
-        allow_non_loopback=allow_non_loopback,
-        dashboard_token=dashboard_token,
-        operator=operator,
+    effective_dashboard_token, dashboard_token_generated, token_protects_reads = (
+        _resolve_dashboard_token(
+            host,
+            allow_non_loopback=allow_non_loopback,
+            dashboard_token=dashboard_token,
+            operator=operator,
+        )
     )
     handler = _handler_class(
         uri=uri,
@@ -1437,6 +1451,7 @@ def start_dashboard_server(
         refresh_seconds=max(1, int(refresh_seconds)),
         a2a_state_file=Path(a2a_state_file) if a2a_state_file is not None else None,
         dashboard_token=effective_dashboard_token,
+        token_protects_reads=token_protects_reads,
         reliability_db=Path(reliability_db) if reliability_db is not None else None,
         federation_store=Path(federation_store) if federation_store is not None else None,
         cockpit_dist=Path(cockpit_dist) if cockpit_dist is not None else None,
