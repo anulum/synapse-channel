@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 from collections.abc import Coroutine
 from pathlib import Path
 from typing import Any
@@ -144,6 +145,110 @@ def test_cmd_arm_derives_rx_name_for_bare_identity() -> None:
     assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=run_once) == 0
     assert captured["name"] == "B-rx"
     assert captured["for_name"] == "B"
+
+
+def test_cmd_arm_yields_when_tmux_provider_is_live(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A passive arm must not compete with an active tmux pane-bridge waker."""
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    provider_dir = runtime / "synapse-provider-tmux"
+    provider_dir.mkdir()
+    (provider_dir / "B.pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
+
+    calls: list[Any] = []
+
+    async def arm_once(**kwargs: Any) -> int:
+        calls.append(kwargs)
+        return 0
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="B",
+        for_name=None,
+        directed_only=True,
+        wake_jitter=0.0,
+        reconnect_delay=0.0,
+        max_wakes=None,
+        token=None,
+        owner_pid=None,
+    )
+    assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=lambda c: asyncio.run(c)) == 0
+    assert not calls
+    out = capsys.readouterr().out
+    assert "active tmux provider detected for B" in out
+    assert "Yielding plain passive arm" in out
+
+
+def test_cmd_arm_arms_when_tmux_provider_pidfile_is_dead(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A stale pidfile with no live process does not block passive arming."""
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    provider_dir = runtime / "synapse-provider-tmux"
+    provider_dir.mkdir()
+    (provider_dir / "B.pid").write_text("999999999\n", encoding="utf-8")
+
+    captured: dict[str, Any] = {}
+
+    async def arm_once(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 0
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="B",
+        for_name=None,
+        directed_only=True,
+        wake_jitter=0.0,
+        reconnect_delay=0.0,
+        max_wakes=None,
+        token=None,
+        owner_pid=None,
+    )
+    assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=lambda c: asyncio.run(c)) == 0
+    assert captured["name"] == "B-rx"
+    assert captured["for_name"] == "B"
+    assert "active tmux provider detected" not in capsys.readouterr().out
+
+
+def test_cmd_arm_arms_when_no_tmux_provider(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Headless identities arm normally when no tmux provider owns the -rx."""
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+
+    captured: dict[str, Any] = {}
+
+    async def arm_once(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 0
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="B",
+        for_name=None,
+        directed_only=True,
+        wake_jitter=0.0,
+        reconnect_delay=0.0,
+        max_wakes=None,
+        token=None,
+        owner_pid=None,
+    )
+    assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=lambda c: asyncio.run(c)) == 0
+    assert captured["name"] == "B-rx"
+    assert captured["for_name"] == "B"
+    assert "active tmux provider detected" not in capsys.readouterr().out
 
 
 def test_cmd_arm_threads_roles_dropping_blanks() -> None:

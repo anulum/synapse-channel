@@ -21,6 +21,7 @@ from synapse_channel.cli_messaging import AgentFactory, _wait
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.core.wake_capability import WAKE_PASSIVE
 from synapse_channel.mailbox_cursor import cursor_path
+from synapse_channel.shell_integration import has_active_tmux_provider
 from synapse_channel.waiter_identity import waiter_name
 
 WaitRunner = Callable[..., Awaitable[int]]
@@ -175,6 +176,19 @@ def _cmd_arm(
     """Dispatch the persistent ``arm`` subcommand."""
     for_name = args.for_name or args.name
     connect_name = args.name if args.name != for_name else waiter_name(args.name)
+
+    # Provider-aware early yield: an active tmux provider (worker-session +
+    # agent-tmux) already owns the -rx pane bridge for this identity. A passive
+    # arm would be superseded every few seconds and churn the hub roster. Leave
+    # waking to the pane bridge; passive arms are for headless/non-tmux cases.
+    if has_active_tmux_provider(for_name):
+        print(
+            f"[{connect_name}] active tmux provider detected for {for_name}; "
+            "pane_bridge / agent-tmux is the live waker. "
+            "Yielding plain passive arm to avoid supersession/name collision."
+        )
+        return 0
+
     roles = tuple(r.strip() for r in (getattr(args, "role", None) or ()) if r.strip())
     # In mailbox mode the cursor is keyed by the identity the waiter waits on (for_name),
     # not the -rx connection name, so every re-arm of the same identity shares one cursor.
