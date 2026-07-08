@@ -262,6 +262,56 @@ async def test_send_require_recipient_succeeds_with_receipt(
     assert "delivered to OBSERVER" in capsys.readouterr().out
 
 
+async def test_send_require_recipient_counts_live_waiter_for_logical_identity(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async with running_hub(SynapseHub(private_directed_messages=True)) as (_hub, uri):
+        waiter = await connect_agent("user/terminal-38253-rx", uri)
+        try:
+            code = await cli_messaging._send(
+                uri=uri,
+                name="COORDINATOR",
+                target="user/terminal-38253",
+                message="wake",
+                wait_seconds=0.0,
+                require_recipient=True,
+            )
+            message = await waiter.recorder.wait_for(
+                lambda item: item.get("type") == "chat" and item.get("payload") == "wake"
+            )
+        finally:
+            await close_agents(waiter)
+
+    assert code == 0
+    assert message["target"] == "user/terminal-38253"
+    assert "delivered to user/terminal-38253" in capsys.readouterr().out
+
+
+async def test_send_require_recipient_counts_project_waiter_as_logical_seat(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async with running_hub(SynapseHub(private_directed_messages=True)) as (_hub, uri):
+        waiter = await connect_agent("SYNAPSE-CHANNEL/kimi-3dcd-rx", uri)
+        try:
+            code = await cli_messaging._send(
+                uri=uri,
+                name="COORDINATOR",
+                target="SYNAPSE-CHANNEL",
+                message="wake",
+                wait_seconds=0.0,
+                require_recipient=True,
+            )
+            message = await waiter.recorder.wait_for(
+                lambda item: item.get("type") == "chat" and item.get("payload") == "wake"
+            )
+        finally:
+            await close_agents(waiter)
+
+    assert code == 0
+    assert message["target"] == "SYNAPSE-CHANNEL"
+    assert "delivered to SYNAPSE-CHANNEL/kimi-3dcd" in capsys.readouterr().out
+
+
 async def test_send_require_recipient_fails_without_online_recipient(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

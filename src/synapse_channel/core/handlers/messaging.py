@@ -291,12 +291,24 @@ def _matching_online_recipients(
     A recipient is reached when ``target`` addresses its name, its bare project, or
     one of the roles it holds (looked up through ``roles_of``) — so a directed message
     to a ``<project>/<role>`` resolves to whichever agents currently answer to it.
+    A receive-only waiter socket (``<identity>-rx``) also proves the logical
+    ``<identity>`` is reachable for wake delivery. The logical name is what senders
+    address and what waiters filter on; the socket name is only transport plumbing.
     """
-    return sorted(
-        name
-        for name in online_agents
-        if name != sender and is_recipient(target, name, roles=roles_of(name))
-    )
+    recipients: set[str] = set()
+    for name in online_agents:
+        if name == sender:
+            continue
+        roles = roles_of(name)
+        if name.endswith(_WAITER_SUFFIX):
+            logical = name[: -len(_WAITER_SUFFIX)]
+            logical_roles = tuple(dict.fromkeys((*roles, *roles_of(logical))))
+            if logical != sender and is_recipient(target, logical, roles=logical_roles):
+                recipients.add(logical)
+                continue
+        if is_recipient(target, name, roles=roles):
+            recipients.add(name)
+    return sorted(recipients)
 
 
 async def _warn_stale_recipients(
