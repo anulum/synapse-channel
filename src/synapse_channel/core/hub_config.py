@@ -42,7 +42,6 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.acl import AclPolicy
-from synapse_channel.core.role_grants import RoleGrants
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
@@ -90,6 +89,7 @@ from synapse_channel.core.operator_relay_transport import (
 )
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
+from synapse_channel.core.role_grants import RoleGrants
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 from synapse_channel.core.state import MAX_CLAIMS_PER_AGENT, MAX_OFFERS_PER_AGENT
 
@@ -166,6 +166,8 @@ class HubAuthConfig:
     require_acl: bool = False
     role_grants: RoleGrants | None = None
     require_role_claim: bool = False
+    identity_trust_bundle: EventSignatureTrustBundle | None = None
+    require_identity_binding: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)

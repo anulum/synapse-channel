@@ -319,6 +319,21 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "an exposed hub.",
     )
     hub.add_argument(
+        "--identity-trust",
+        default="",
+        metavar="FILE",
+        help="Identity trust bundle JSON (Ed25519 public keys bound to audit subjects) "
+        "used to verify a socket's signed registration. Separate key material from "
+        "federation and signed-event trust. Enforced only with --require-identity-binding.",
+    )
+    hub.add_argument(
+        "--require-identity-binding",
+        action="store_true",
+        help="Require a socket's first frame to carry a valid identity signature verified "
+        "against --identity-trust before the name binds; an unproven socket is refused and "
+        "closed. Off by default, so an open hub is unchanged. Requires --identity-trust.",
+    )
+    hub.add_argument(
         "--federation-store",
         default="",
         metavar="FILE",

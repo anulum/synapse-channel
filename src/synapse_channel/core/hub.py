@@ -40,7 +40,6 @@ import websockets
 from websockets.http11 import Request, Response
 
 from synapse_channel.core.acl import AclPolicy
-from synapse_channel.core.role_grants import RoleGrants
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.channels import ChannelRegistry
@@ -62,6 +61,7 @@ from synapse_channel.core.hub_exposure import (
 from synapse_channel.core.hub_federation_gate import FrameDisposition, HubFederationGate
 from synapse_channel.core.hub_frame_gates import HubFrameGates
 from synapse_channel.core.hub_http import http_endpoint_response
+from synapse_channel.core.hub_identity_gate import HubIdentityGate
 from synapse_channel.core.hub_ingress import HubIngress
 from synapse_channel.core.hub_ledger_guard import HubLedgerGuard
 from synapse_channel.core.hub_relay import RelayMirror
@@ -103,6 +103,7 @@ from synapse_channel.core.protocol import (
     system_message,
 )
 from synapse_channel.core.ratelimit import RateLimiter
+from synapse_channel.core.role_grants import RoleGrants
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 from synapse_channel.core.state import (
     MAX_CLAIMS_PER_AGENT,
@@ -436,6 +437,8 @@ class SynapseHub:
         require_acl: bool = False,
         role_grants: RoleGrants | None = None,
         require_role_claim: bool = False,
+        identity_trust_bundle: EventSignatureTrustBundle | None = None,
+        require_identity_binding: bool = False,
         multihub_serving_policy: MultiHubServingPolicy | None = None,
         namespace_ownership: NamespaceOwnership | None = None,
         claim_peers: Mapping[str, ClaimForwardPeer] | None = None,
@@ -472,6 +475,8 @@ class SynapseHub:
         self.require_acl = bool(require_acl)
         self.role_grants = role_grants
         self.require_role_claim = bool(require_role_claim)
+        self.identity_trust_bundle = identity_trust_bundle
+        self.require_identity_binding = bool(require_identity_binding)
         self.multihub_serving_policy = multihub_serving_policy
         self.namespace_ownership = namespace_ownership
         self.claim_peers = dict(claim_peers) if claim_peers else None
@@ -548,6 +553,12 @@ class SynapseHub:
             metrics_token=self.metrics_token,
             metrics_query_token_ok=self.metrics_query_token_ok,
             insecure_off_loopback=self.insecure_off_loopback,
+            send_json=self._send_json,
+            system=self._system,
+        )
+        self._identity_gate = HubIdentityGate(
+            require_identity_binding=self.require_identity_binding,
+            identity_trust_bundle=self.identity_trust_bundle,
             send_json=self._send_json,
             system=self._system,
         )
@@ -887,6 +898,12 @@ class SynapseHub:
         # secured hub can send the withheld welcome the moment it first authenticates.
         was_bound = self.clients.is_bound(websocket)
         if not await self._authorise(sender, data, websocket):
+            return
+
+        # On the first (name-binding) frame, resolve the connection credential to the
+        # claimed identity before the name is trusted, so a -rx mailbox or role claim
+        # rests on a proven identity. A socket that cannot prove it is refused and closed.
+        if not was_bound and not await self._identity_gate.verify_identity(sender, data, websocket):
             return
 
         resolved = await self._resolve_sender(

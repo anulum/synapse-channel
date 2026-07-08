@@ -66,6 +66,8 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "require_acl": False,
         "role_grants": "",
         "require_role_claim": False,
+        "identity_trust": "",
+        "require_identity_binding": False,
         "federation_store": "",
         "federation_offer": "",
         "federation_observe_only": False,

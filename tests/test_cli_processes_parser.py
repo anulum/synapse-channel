@@ -35,6 +35,18 @@ def test_parser_hub_role_claim_flags() -> None:
     assert args.require_role_claim is True
 
 
+def test_parser_hub_identity_binding_flags() -> None:
+    defaults = cli.build_parser().parse_args(["hub"])
+    assert defaults.identity_trust == ""
+    assert defaults.require_identity_binding is False
+
+    args = cli.build_parser().parse_args(
+        ["hub", "--identity-trust", "/tmp/id.json", "--require-identity-binding"]
+    )
+    assert args.identity_trust == "/tmp/id.json"
+    assert args.require_identity_binding is True
+
+
 def test_parser_worker_custom() -> None:
     args = cli.build_parser().parse_args(
         ["worker", "--name", "REASON", "--provider", "rule", "--min-reply-interval", "1.5"]

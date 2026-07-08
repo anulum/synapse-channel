@@ -22,13 +22,13 @@ from typing import Any
 
 from synapse_channel.cli_processes_runtime import _run
 from synapse_channel.core.acl import AclError, load_acl_policy
-from synapse_channel.core.role_grants import RoleGrantError, load_role_grants
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.federation import FederationBundle, bundle_can_authorise
 from synapse_channel.core.federation_store import FederationStoreError, bundle_from_store
 from synapse_channel.core.federation_wire import FederationWireError, decode_federation_offer
 from synapse_channel.core.hub import InsecureBindError, SynapseHub
 from synapse_channel.core.hub_config import HubConfig, config_fingerprint
+from synapse_channel.core.identity_binding import IdentityBindingError, load_identity_trust_bundle
 from synapse_channel.core.logging_setup import configure_logging
 from synapse_channel.core.message_auth import MessageAuthKey
 from synapse_channel.core.multihub_watch import MultiHubWatch, parse_watch_peers
@@ -36,6 +36,7 @@ from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.paranoid import ParanoidModeError, apply_paranoid_hub_profile
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
+from synapse_channel.core.role_grants import RoleGrantError, load_role_grants
 from synapse_channel.core.tls import HubTLSConfigError, build_server_ssl_context
 
 
@@ -154,6 +155,20 @@ def _cmd_hub(
             "the identity is cryptographically bound, before relying on enforcement.",
             file=sys.stderr,
         )
+    try:
+        identity_trust_bundle = (
+            load_identity_trust_bundle(args.identity_trust) if args.identity_trust else None
+        )
+    except IdentityBindingError as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        return 2
+    if args.require_identity_binding and identity_trust_bundle is None:
+        print(
+            "synapse hub: --require-identity-binding requires --identity-trust; there is no "
+            "identity key material to verify a registration against.",
+            file=sys.stderr,
+        )
+        return 2
     federation_bundle: FederationBundle | None = None
     if args.federation_observe_only and not args.federation_store:
         print(
@@ -279,6 +294,8 @@ def _cmd_hub(
         "require_acl": args.require_acl,
         "role_grants": role_grants,
         "require_role_claim": args.require_role_claim,
+        "identity_trust_bundle": identity_trust_bundle,
+        "require_identity_binding": args.require_identity_binding,
         "federation_bundle": federation_bundle,
         "federation_offer_path": args.federation_offer or None,
         "hub_id": args.hub_id,

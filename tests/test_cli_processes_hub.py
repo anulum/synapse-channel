@@ -864,3 +864,80 @@ def test_cmd_hub_warns_on_require_role_claim_without_token(
 ) -> None:
     assert cli_processes._cmd_hub(_hub_ns(require_role_claim=True), runner=_close_runner) == 0
     assert "--require-role-claim without --token" in capsys.readouterr().err
+
+
+def _write_identity_trust(path: Path) -> None:
+    import base64
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    raw = (
+        Ed25519PrivateKey.generate()
+        .public_key()
+        .public_bytes(encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw)
+    )
+    path.write_text(
+        json.dumps(
+            {
+                "keys": [
+                    {
+                        "key_id": "k",
+                        "public_key": base64.b64encode(raw).decode("ascii"),
+                        "senders": ["proj/claude"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_cmd_hub_no_identity_binding_by_default() -> None:
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert cli_processes._cmd_hub(_hub_ns(), runner=_close_runner, hub_factory=build_hub) == 0
+    assert captured["identity_trust_bundle"] is None
+    assert captured["require_identity_binding"] is False
+
+
+def test_cmd_hub_threads_identity_trust(tmp_path: Path) -> None:
+    trust = tmp_path / "identity-trust.json"
+    _write_identity_trust(trust)
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(identity_trust=str(trust), require_identity_binding=True, token="t"),
+            runner=_close_runner,
+            hub_factory=build_hub,
+        )
+        == 0
+    )
+    assert captured["require_identity_binding"] is True
+    assert "k" in captured["identity_trust_bundle"].keys
+
+
+def test_cmd_hub_rejects_malformed_identity_trust(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    trust = tmp_path / "identity-trust.json"
+    trust.write_text("{not json", encoding="utf-8")
+
+    assert cli_processes._cmd_hub(_hub_ns(identity_trust=str(trust)), runner=_close_runner) == 2
+    assert "invalid identity trust JSON" in capsys.readouterr().err
+
+
+def test_cmd_hub_require_identity_binding_without_trust_errors(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert cli_processes._cmd_hub(_hub_ns(require_identity_binding=True), runner=_close_runner) == 2
+    assert "--require-identity-binding requires --identity-trust" in capsys.readouterr().err
