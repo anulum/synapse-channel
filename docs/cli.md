@@ -134,6 +134,16 @@ repair, and it composes with `--json` (stdout stays one document). Same
 contract as `cross-repo --notify-cmd`: split without a shell (wrap in
 `sh -c '…'` for pipes), best-effort, a failing sink never changes the exit
 code.
+Federated deployments can opt into peer checks without inferring ambient trust
+state: repeat `--federation-peer PEER=URI` for the hubs to probe, add
+`--federation-cursor PEER=SEQ` for the local consumed cursor when known, and
+optionally pass `--federation-store PATH` to inspect imported bundle expiry and
+revocation state. The peer probe uses the multi-hub log request path and reports
+reachability, cursor lag (`log_end_seq - cursor` when the peer supports it),
+measured clock skew from the peer welcome timestamp, and TLS certificate expiry
+warnings. `--federation-token TOKEN` is sent only on these peer probes;
+`--federation-skew-warn-seconds` and `--federation-cert-warn-days` tune the
+warning thresholds.
 `synapse status --watch` refreshes the line every `--interval` seconds (default
 2) as an operator dashboard: each refresh opens its own probe connection so a
 hub restart shows as an honest offline line, a TTY rewrites the line in place
@@ -274,7 +284,8 @@ same dashboard bearer token as every other path:
   sequences, explicitly "audit signals, not scores"), which the cockpit's
   reliability panel consumes;
 - `/events.json?since=SEQ&limit=N` — the raw event-log tail past a
-  cursor, in the exact multihub snapshot shape (`events` + `next_cursor`),
+  cursor, in the exact multihub snapshot shape (`events`, `next_cursor`,
+  and `log_end_seq`),
   so a polling client walks the log forward without loss or duplication;
   `since=latest` starts at the log's end — the tail shortcut that spares
   a client the full history walk on a large log;

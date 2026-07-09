@@ -97,6 +97,7 @@ class TestEventsTail:
         assert events[0]["kind"] == EventKind.CLAIM
         assert events[0]["payload"]["task_id"] == "X"
         assert document["next_cursor"] == 5
+        assert document["log_end_seq"] == 5
 
     def test_limit_bounds_the_batch_and_cursor_resumes_it(self, tmp_path: Path) -> None:
         db = tmp_path / "hub.db"
@@ -107,11 +108,13 @@ class TestEventsTail:
         assert isinstance(first_events, list)
         assert [event["seq"] for event in first_events] == [1, 2]
         assert first["next_cursor"] == 2
+        assert first["log_end_seq"] == 5
 
         second = build_events_tail(db, since=int(str(first["next_cursor"])), limit=2)
         second_events = second["events"]
         assert isinstance(second_events, list)
         assert [event["seq"] for event in second_events] == [3, 4]
+        assert second["log_end_seq"] == 5
 
     def test_caught_up_tail_is_empty_and_keeps_the_cursor(self, tmp_path: Path) -> None:
         db = tmp_path / "hub.db"
@@ -121,6 +124,7 @@ class TestEventsTail:
 
         assert document["events"] == []
         assert document["next_cursor"] == 99
+        assert document["log_end_seq"] == 5
 
     def test_limit_is_clamped_to_the_ceiling_and_floor(self, tmp_path: Path) -> None:
         db = tmp_path / "hub.db"

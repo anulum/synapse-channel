@@ -17,6 +17,7 @@ from synapse_channel.core.multihub_wire import (
     EVENTS_FIELD,
     KIND_FIELD,
     LIMIT_FIELD,
+    LOG_END_SEQ_FIELD,
     NEXT_CURSOR_FIELD,
     PAYLOAD_FIELD,
     SEQ_FIELD,
@@ -186,12 +187,18 @@ def test_encode_log_snapshot_emits_events_and_cursor() -> None:
     snapshot = LogSnapshot(events=(_event(1), _event(2)), next_cursor=2)
     body = encode_log_snapshot(snapshot)
     assert body[NEXT_CURSOR_FIELD] == 2
+    assert body[LOG_END_SEQ_FIELD] is None
     assert [event[SEQ_FIELD] for event in body[EVENTS_FIELD]] == [1, 2]
 
 
 def test_log_snapshot_round_trips() -> None:
-    snapshot = LogSnapshot(events=(_event(4), _event(5), _event(6)), next_cursor=6)
+    snapshot = LogSnapshot(events=(_event(4), _event(5), _event(6)), next_cursor=6, log_end_seq=9)
     assert decode_log_snapshot(encode_log_snapshot(snapshot)) == snapshot
+
+
+def test_decode_log_snapshot_accepts_older_snapshots_without_log_end() -> None:
+    snapshot = decode_log_snapshot({EVENTS_FIELD: [], NEXT_CURSOR_FIELD: 3})
+    assert snapshot == LogSnapshot(events=(), next_cursor=3)
 
 
 def test_empty_log_snapshot_round_trips() -> None:
@@ -202,6 +209,11 @@ def test_empty_log_snapshot_round_trips() -> None:
 def test_encode_log_snapshot_rejects_negative_cursor() -> None:
     with pytest.raises(MultiHubWireError, match="next_cursor must not be negative"):
         encode_log_snapshot(LogSnapshot(events=(), next_cursor=-1))
+
+
+def test_encode_log_snapshot_rejects_negative_log_end() -> None:
+    with pytest.raises(MultiHubWireError, match="log_end_seq must not be negative"):
+        encode_log_snapshot(LogSnapshot(events=(), next_cursor=0, log_end_seq=-1))
 
 
 def test_decode_log_snapshot_rejects_non_mapping() -> None:
@@ -223,3 +235,8 @@ def test_decode_log_snapshot_propagates_bad_event() -> None:
 def test_decode_log_snapshot_rejects_missing_cursor() -> None:
     with pytest.raises(MultiHubWireError, match="next_cursor must be an integer"):
         decode_log_snapshot({EVENTS_FIELD: []})
+
+
+def test_decode_log_snapshot_rejects_bad_log_end() -> None:
+    with pytest.raises(MultiHubWireError, match="log_end_seq must be an integer"):
+        decode_log_snapshot({EVENTS_FIELD: [], NEXT_CURSOR_FIELD: 0, LOG_END_SEQ_FIELD: "later"})

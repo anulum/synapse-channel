@@ -112,11 +112,14 @@ def build_events_tail(
     bounded = max(1, min(int(limit), MAX_EVENTS_LIMIT))
     store = EventStore(path)
     try:
+        log_end_seq = store.max_seq()
         events = store.read_since(max(0, int(since)), limit=bounded)
     finally:
         store.close()
     next_cursor = events[-1].seq if events else max(0, int(since))
-    return encode_log_snapshot(LogSnapshot(events=tuple(events), next_cursor=next_cursor))
+    return encode_log_snapshot(
+        LogSnapshot(events=tuple(events), next_cursor=next_cursor, log_end_seq=log_end_seq)
+    )
 
 
 METRIC_WINDOWS_SECONDS = {"last_hour": 3600.0, "last_day": 86400.0}

@@ -130,6 +130,7 @@ def _read_snapshot(hub: SynapseHub, request: LogRequest) -> LogSnapshot:
     """
     if hub.journal is None:
         return LogSnapshot(events=(), next_cursor=request.after_seq)
+    log_end_seq = hub.journal.max_seq()
     events = tuple(hub.journal.read_since(request.after_seq, limit=request.limit))
     next_cursor = events[-1].seq if events else request.after_seq
-    return LogSnapshot(events=events, next_cursor=next_cursor)
+    return LogSnapshot(events=events, next_cursor=next_cursor, log_end_seq=log_end_seq)

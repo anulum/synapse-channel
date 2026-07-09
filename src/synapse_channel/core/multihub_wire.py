@@ -53,6 +53,9 @@ EVENTS_FIELD = "events"
 NEXT_CURSOR_FIELD = "next_cursor"
 """Snapshot field: the high-water ``seq`` the caller resumes the next request from."""
 
+LOG_END_SEQ_FIELD = "log_end_seq"
+"""Snapshot field: the peer log's current high-water, for lag diagnostics."""
+
 SEQ_FIELD = "seq"
 """Event field: the monotonic sequence number."""
 
@@ -103,10 +106,14 @@ class LogSnapshot:
     next_cursor : int
         The ``seq`` the caller resumes from: the last event's ``seq`` when the batch is
         non-empty, otherwise the request cursor itself (an empty batch does not move it).
+    log_end_seq : int or None, optional
+        Peer log maximum sequence when the serving hub can report it. Older peers omit it,
+        so ``None`` means exact lag is unavailable.
     """
 
     events: tuple[StoredEvent, ...]
     next_cursor: int
+    log_end_seq: int | None = None
 
 
 def encode_stored_event(event: StoredEvent) -> dict[str, Any]:
@@ -229,7 +236,8 @@ def encode_log_snapshot(snapshot: LogSnapshot) -> dict[str, Any]:
     Returns
     -------
     dict[str, Any]
-        A mapping with ``events`` (a list of encoded events) and ``next_cursor``.
+        A mapping with ``events`` (a list of encoded events), ``next_cursor``, and
+        ``log_end_seq`` when known.
 
     Raises
     ------
@@ -239,6 +247,11 @@ def encode_log_snapshot(snapshot: LogSnapshot) -> dict[str, Any]:
     return {
         EVENTS_FIELD: [encode_stored_event(event) for event in snapshot.events],
         NEXT_CURSOR_FIELD: _non_negative(snapshot.next_cursor, NEXT_CURSOR_FIELD),
+        LOG_END_SEQ_FIELD: (
+            None
+            if snapshot.log_end_seq is None
+            else _non_negative(snapshot.log_end_seq, LOG_END_SEQ_FIELD)
+        ),
     }
 
 
@@ -259,7 +272,7 @@ def decode_log_snapshot(raw: object) -> LogSnapshot:
     ------
     MultiHubWireError
         If the body is not a mapping, ``events`` is missing or not a list, any event is
-        malformed, or ``next_cursor`` is missing/non-integer/negative.
+        malformed, or ``next_cursor``/``log_end_seq`` is malformed.
     """
     body = _require_mapping(raw, "snapshot")
     raw_events = body.get(EVENTS_FIELD)
@@ -267,9 +280,11 @@ def decode_log_snapshot(raw: object) -> LogSnapshot:
         msg = f"snapshot {EVENTS_FIELD!r} must be a list of events"
         raise MultiHubWireError(msg)
     events = tuple(decode_stored_event(item) for item in raw_events)
+    raw_log_end = body.get(LOG_END_SEQ_FIELD)
     return LogSnapshot(
         events=events,
         next_cursor=_require_int(body.get(NEXT_CURSOR_FIELD), NEXT_CURSOR_FIELD),
+        log_end_seq=None if raw_log_end is None else _require_int(raw_log_end, LOG_END_SEQ_FIELD),
     )
 
 

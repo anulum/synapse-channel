@@ -36,6 +36,9 @@ All notable changes to this project are documented here.
 - Forwarded multi-hub claims now distinguish owner timeouts from generic ownership refusals,
   expose forwarded/granted/denied/timeout counters on `/metrics`, and treat duplicate owner-side
   `(task_id, claimant)` retries as idempotent relays of the existing lease.
+- `synapse doctor` now has opt-in federation checks for named peers: reachability through the
+  multi-hub log request path, cursor lag via `log_end_seq`, measured welcome-frame clock skew, TLS
+  certificate expiry warnings, and imported bundle expiry/revocation state from a federation store.
 
 ## [0.98.14] - 2026-07-09
 

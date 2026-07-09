@@ -47,6 +47,32 @@ def test_parser_doctor_fix_flags() -> None:
     assert args.identity == "repo/ux"
 
 
+def test_parser_accepts_doctor_federation_flags() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "doctor",
+            "--federation-peer",
+            "alpha=ws://peer-a",
+            "--federation-cursor",
+            "alpha=42",
+            "--federation-store",
+            "/tmp/federation.json",
+            "--federation-token",
+            "secret",
+            "--federation-skew-warn-seconds",
+            "2.5",
+            "--federation-cert-warn-days",
+            "14",
+        ]
+    )
+    assert args.federation_peer == ["alpha=ws://peer-a"]
+    assert args.federation_cursor == ["alpha=42"]
+    assert args.federation_store == "/tmp/federation.json"
+    assert args.federation_token == "secret"
+    assert args.federation_skew_warn_seconds == 2.5
+    assert args.federation_cert_warn_days == 14
+
+
 # --- _diagnose logic ---------------------------------------------------------
 
 
@@ -138,6 +164,46 @@ async def test_diagnose_warns_on_hyphen_send_identity() -> None:
             send_name="demorepo-keeper",
         )
     assert any("hyphen child" in line for line in lines)
+
+
+async def test_diagnose_appends_federation_diagnoses(tmp_path: Path) -> None:
+    captured: dict[str, Any] = {}
+
+    async def no_roster(**_: Any) -> list[str] | None:
+        return []
+
+    async def federation_runner(**kwargs: Any) -> list[Diagnosis]:
+        captured.update(kwargs)
+        return [Diagnosis(check="federation-peer:alpha", status="warn", detail="lag=2")]
+
+    code, lines, diagnoses = await cli_doctor._diagnose(
+        feed_tail_reader=lambda _env: [],
+        cursor_names_reader=lambda _env: [],
+        uri="ws://127.0.0.1:8876",
+        project="demorepo",
+        agent_id="coordinator",
+        token="main-token",
+        roster_probe=no_roster,
+        federation_peers=("alpha=ws://peer",),
+        federation_cursors=("alpha=3",),
+        federation_store=tmp_path / "federation.json",
+        federation_token="peer-token",
+        federation_skew_warn_seconds=2.0,
+        federation_cert_warn_days=9,
+        federation_diagnose_runner=federation_runner,
+    )
+
+    assert code == 0
+    assert any("[warn] federation-peer:alpha: lag=2" in line for line in lines)
+    assert diagnoses[-1].check == "federation-peer:alpha"
+    assert captured["peer_specs"] == ("alpha=ws://peer",)
+    assert captured["cursor_specs"] == ("alpha=3",)
+    assert captured["local_id"].startswith("demorepo/")
+    assert captured["local_id"].endswith("coordinator-doctor")
+    assert captured["token"] == "peer-token"
+    assert captured["store_path"] == tmp_path / "federation.json"
+    assert captured["skew_warn_seconds"] == 2.0
+    assert captured["cert_warn_days"] == 9
 
 
 # --- dispatch ----------------------------------------------------------------

@@ -32,6 +32,11 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from synapse_channel.cli_cross_repo import NOTIFY_TIMEOUT_SECONDS
+from synapse_channel.cli_doctor_federation import (
+    DEFAULT_FEDERATION_CERT_WARN_DAYS,
+    DEFAULT_FEDERATION_SKEW_WARN_SECONDS,
+    diagnose_federation,
+)
 from synapse_channel.cli_queries import AgentFactory, _query_hub
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.client.diagnostics import (
@@ -51,6 +56,9 @@ from synapse_channel.service_setup import install_user_services, service_suggest
 
 RosterProbe = Callable[..., Awaitable[list[str] | None]]
 """Async callable that returns the live hub roster for doctor diagnostics."""
+
+FederationDiagnoseRunner = Callable[..., Awaitable[list[Diagnosis]]]
+"""Async callable that returns opt-in federation doctor diagnoses."""
 
 DiagnoseRunner = Callable[..., Coroutine[Any, Any, tuple[int, list[str], list[Diagnosis]]]]
 """Async callable used by the doctor CLI dispatcher."""
@@ -239,6 +247,13 @@ async def _diagnose(
     disk_usage_probe: DiskUsageProbe = _disk_usage,
     feed_tail_reader: Callable[[Mapping[str, str]], list[str]] | None = None,
     cursor_names_reader: Callable[[Mapping[str, str]], list[str]] | None = None,
+    federation_peers: tuple[str, ...] = (),
+    federation_cursors: tuple[str, ...] = (),
+    federation_store: Path | None = None,
+    federation_token: str | None = None,
+    federation_skew_warn_seconds: float = DEFAULT_FEDERATION_SKEW_WARN_SECONDS,
+    federation_cert_warn_days: int = DEFAULT_FEDERATION_CERT_WARN_DAYS,
+    federation_diagnose_runner: FederationDiagnoseRunner = diagnose_federation,
 ) -> tuple[int, list[str], list[Diagnosis]]:
     """Resolve the identity, run every check, and return the summarised verdicts.
 
@@ -291,6 +306,17 @@ async def _diagnose(
             feed_lines=feed_tail_reader(env),
             cursor_names=cursor_names_reader(env),
             roster=roster,
+        )
+    )
+    diagnoses.extend(
+        await federation_diagnose_runner(
+            peer_specs=federation_peers,
+            cursor_specs=federation_cursors,
+            local_id=f"{identity.identity}-doctor",
+            token=federation_token,
+            store_path=federation_store,
+            skew_warn_seconds=federation_skew_warn_seconds,
+            cert_warn_days=federation_cert_warn_days,
         )
     )
     code, lines = summarise(diagnoses)
@@ -389,6 +415,24 @@ def _cmd_doctor(
                 disk_path=Path(getattr(args, "disk_path", os.path.abspath(os.sep))),
                 disk_warn_used_percent=getattr(args, "disk_warn_used_percent", 95.0),
                 disk_warn_free_mib=getattr(args, "disk_warn_free_mib", 1024),
+                federation_peers=tuple(getattr(args, "federation_peer", ())),
+                federation_cursors=tuple(getattr(args, "federation_cursor", ())),
+                federation_store=(
+                    None
+                    if getattr(args, "federation_store", None) is None
+                    else Path(args.federation_store)
+                ),
+                federation_token=getattr(args, "federation_token", None),
+                federation_skew_warn_seconds=getattr(
+                    args,
+                    "federation_skew_warn_seconds",
+                    DEFAULT_FEDERATION_SKEW_WARN_SECONDS,
+                ),
+                federation_cert_warn_days=getattr(
+                    args,
+                    "federation_cert_warn_days",
+                    DEFAULT_FEDERATION_CERT_WARN_DAYS,
+                ),
             )
         )
 
@@ -572,6 +616,43 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Also pipe any warn/fail findings (one line each, remedy attached) "
         "to this command's stdin — split without a shell, hub URI in "
         "SYNAPSE_DOCTOR_URI, best-effort. A healthy run sends nothing.",
+    )
+    doctor.add_argument(
+        "--federation-peer",
+        action="append",
+        default=[],
+        metavar="PEER=URI",
+        help="Probe a federated peer with a multi-hub log request. Repeat for each peer.",
+    )
+    doctor.add_argument(
+        "--federation-cursor",
+        action="append",
+        default=[],
+        metavar="PEER=SEQ",
+        help="Local consumed cursor for a named federation peer; defaults to 0.",
+    )
+    doctor.add_argument(
+        "--federation-store",
+        default=None,
+        metavar="PATH",
+        help="Inspect an imported federation store for revocation and bundle expiry state.",
+    )
+    doctor.add_argument(
+        "--federation-token",
+        default=None,
+        help="Token sent only on federation peer log probes.",
+    )
+    doctor.add_argument(
+        "--federation-skew-warn-seconds",
+        type=float,
+        default=DEFAULT_FEDERATION_SKEW_WARN_SECONDS,
+        help="Warn when measured peer clock skew exceeds this threshold.",
+    )
+    doctor.add_argument(
+        "--federation-cert-warn-days",
+        type=int,
+        default=DEFAULT_FEDERATION_CERT_WARN_DAYS,
+        help="Warn when peer TLS certificates or federation bundles expire within this many days.",
     )
     doctor.add_argument(
         "--redeploy-checklist",
