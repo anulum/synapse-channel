@@ -348,7 +348,7 @@ def test_live_certificate_pin_rejects_absent_peer_certificate() -> None:
         _live_certificate_pin(cast(Any, _FakePinnedSocket(_FakePeerCertificate(None))))
 
 
-def test_live_certificate_pin_rejects_unparseable_peer_certificate() -> None:
+def test_live_certificate_pin_rejects_unparsable_peer_certificate() -> None:
     with pytest.raises(FederationFetchError, match="cannot be pinned"):
         _live_certificate_pin(
             cast(Any, _FakePinnedSocket(_FakePeerCertificate(b"not a certificate")))
