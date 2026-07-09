@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.17] - 2026-07-09
+
 ### Changed
 - The A2A bridge now carries `a2aTaskId` and `a2aContextId` in structured
   SYNAPSE chat metadata instead of appending inline `[A2A-TASK:...]` markers to
