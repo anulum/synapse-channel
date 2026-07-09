@@ -33,6 +33,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "host": "localhost",
         "port": 8876,
         "db": None,
+        "db_key_file": None,
         "rate": 0.0,
         "burst": 20.0,
         "host_rate": 0.0,

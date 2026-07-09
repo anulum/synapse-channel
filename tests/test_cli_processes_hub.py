@@ -96,6 +96,47 @@ def test_cmd_hub_with_db_opens_and_closes_event_store(tmp_path: Path) -> None:
     assert db.exists()
 
 
+def test_cmd_hub_db_key_file_requires_db(capsys: pytest.CaptureFixture[str]) -> None:
+    """Production CLI refuses --db-key-file without --db."""
+    assert (
+        cli_processes._cmd_hub(_hub_ns(db=None, db_key_file="/tmp/nope.key"), runner=_close_runner)
+        == 2
+    )
+    assert "--db-key-file requires --db" in capsys.readouterr().err
+
+
+def test_cmd_hub_with_db_key_file_opens_sqlcipher_store(tmp_path: Path) -> None:
+    """Hub CLI opens a real SQLCipher EventStore when --db-key-file is set."""
+    pytest.importorskip("sqlcipher3")
+    from synapse_channel.core.at_rest import generate_key_file
+    from synapse_channel.core.persistence import EventStore
+
+    key = generate_key_file(tmp_path / "hub.key")
+    db = tmp_path / "enc.db"
+    opened: list[EventStore] = []
+
+    def store_factory(path: str, *, key_file: str | None = None) -> EventStore:
+        store = EventStore(path, key_file=key_file)
+        opened.append(store)
+        return store
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(db=str(db), db_key_file=str(key)),
+            runner=_close_runner,
+            store_factory=store_factory,
+        )
+        == 0
+    )
+    assert opened and opened[0].encrypted is True
+    assert db.exists()
+    # reopen without key must fail closed
+    from synapse_channel.core.persistence_sqlcipher import SqlCipherKeyError
+
+    with pytest.raises(SqlCipherKeyError):
+        EventStore(db)
+
+
 def test_cmd_hub_with_rate_limit_builds_limiter() -> None:
     captured: dict[str, Any] = {}
 

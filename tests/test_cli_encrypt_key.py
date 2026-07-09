@@ -583,3 +583,84 @@ def test_runtime_commands_report_key_or_manifest_failures(
     )
     assert restore.func(restore) == 1
     assert "at-rest restore problem" in capsys.readouterr().out
+
+
+def test_parser_registers_migrate_sqlcipher() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        [
+            "encrypt-key",
+            "migrate-sqlcipher",
+            "--key",
+            "/tmp/k",
+            "--source",
+            "/tmp/s.db",
+            "--destination",
+            "/tmp/d.db",
+        ]
+    )
+    assert args.func is cli_encrypt_key._cmd_migrate_sqlcipher
+
+
+def test_migrate_sqlcipher_cli_copies_real_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Production encrypt-key migrate-sqlcipher path on a real EventStore."""
+    pytest.importorskip("sqlcipher3")
+    from synapse_channel.core.at_rest import generate_key_file
+    from synapse_channel.core.persistence import EventStore
+
+    key = generate_key_file(tmp_path / "hub.key")
+    source = tmp_path / "plain.db"
+    dest = tmp_path / "enc.db"
+    plain = EventStore(source)
+    plain.append("chat", {"via": "cli-migrate"})
+    plain.append("claim", {"task_id": "M1"})
+    plain.close()
+
+    args = cli.build_parser().parse_args(
+        [
+            "encrypt-key",
+            "migrate-sqlcipher",
+            "--key",
+            str(key),
+            "--source",
+            str(source),
+            "--destination",
+            str(dest),
+        ]
+    )
+    assert args.func(args) == 0
+    out = capsys.readouterr().out
+    assert "migrated 2 event" in out
+    assert "--db-key-file" in out
+
+    enc = EventStore(dest, key_file=key)
+    events = enc.read_all()
+    enc.close()
+    assert [e.seq for e in events] == [1, 2]
+    assert events[0].payload == {"via": "cli-migrate"}
+    assert b"cli-migrate" not in dest.read_bytes()
+
+
+def test_migrate_sqlcipher_cli_refuses_missing_source(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pytest.importorskip("sqlcipher3")
+    from synapse_channel.core.at_rest import generate_key_file
+
+    key = generate_key_file(tmp_path / "hub.key")
+    args = cli.build_parser().parse_args(
+        [
+            "encrypt-key",
+            "migrate-sqlcipher",
+            "--key",
+            str(key),
+            "--source",
+            str(tmp_path / "absent.db"),
+            "--destination",
+            str(tmp_path / "out.db"),
+        ]
+    )
+    assert args.func(args) == 1
+    assert "sqlcipher migrate problem" in capsys.readouterr().out

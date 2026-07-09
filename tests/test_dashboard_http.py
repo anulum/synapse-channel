@@ -526,3 +526,50 @@ def test_dashboard_handler_authorizes_everything_without_a_token() -> None:
     assert _DashboardHandler._authorized(bearer) is True
     wrong = cast("_DashboardHandler", types.SimpleNamespace(dashboard_token="secret", headers={}))
     assert _DashboardHandler._authorized(wrong) is False
+
+
+async def test_dashboard_studio_json_includes_observed_fleet_from_live_peer() -> None:
+    """``/studio.json`` projects real observed-peer fetch into observed_fleet."""
+    from synapse_channel.observed_peers import ObservedPeerSpec
+
+    async with running_hub(SynapseHub(hub_id="soak-peer")) as (_peer, peer_uri):
+        async with running_hub(SynapseHub(hub_id="local-main")) as (_hub, uri):
+            handle = await _prepare_dashboard_hub(uri)
+            server = start_dashboard_server(
+                host="127.0.0.1",
+                port=0,
+                uri=uri,
+                name="SYNAPSE-CHANNEL/dashboard",
+                token=None,
+                ready_timeout=2.0,
+                response_timeout=3.0,
+                refresh_seconds=5,
+                allow_non_loopback=False,
+                observed_peers=(ObservedPeerSpec(hub_id="soak-peer", uri=peer_uri),),
+                observed_timeout=3.0,
+            )
+            try:
+                status, content_type, body = await asyncio.to_thread(
+                    _http_get, server.url("/studio.json")
+                )
+                command_status, _, command_body = await asyncio.to_thread(
+                    _http_get, server.url("/studio/command")
+                )
+            finally:
+                server.close()
+                await close_agents(handle)
+
+    assert status == 200
+    assert content_type == "application/json"
+    studio = json.loads(body)
+    assert "observed_fleet" in studio
+    fleet = studio["observed_fleet"]
+    assert fleet["configured"] is True
+    assert fleet["peers_total"] >= 1
+    # reachable peer from live hub, or at least a row for soak-peer
+    peer_ids = {row.get("hub_id") for row in fleet.get("peers") or []}
+    assert "soak-peer" in peer_ids
+    assert studio["headline"]["peers_total"] >= 1
+    assert command_status == 200
+    assert 'id="cc-peers"' in command_body
+    assert "observed peers (advisory)" in command_body
