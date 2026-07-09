@@ -189,7 +189,10 @@ def _cmd_causality(args: argparse.Namespace) -> int:
         return 2
     try:
         query = run_causality(
-            args.db, args.direction, seq, max_nodes=args.max_nodes,
+            args.db,
+            args.direction,
+            seq,
+            max_nodes=args.max_nodes,
             key_file=getattr(args, "db_key_file", None),
         )
     except ValueError as exc:
@@ -446,7 +449,10 @@ def _cmd_health(args: argparse.Namespace) -> int:
             return 0
     try:
         report = run_causal_health(
-            args.db, max_nodes=args.max_nodes, stale_after=stale_after, since=args.since,
+            args.db,
+            max_nodes=args.max_nodes,
+            stale_after=stale_after,
+            since=args.since,
             key_file=getattr(args, "db_key_file", None),
         )
     except ValueError as exc:
@@ -537,7 +543,8 @@ def _cmd_contention(args: argparse.Namespace) -> int:
     """
     try:
         recommendations = run_yield_advice(
-            args.db, max_nodes=args.max_nodes,
+            args.db,
+            max_nodes=args.max_nodes,
             key_file=getattr(args, "db_key_file", None),
         )
     except ValueError as exc:

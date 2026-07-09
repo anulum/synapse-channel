@@ -346,9 +346,7 @@ def run_proof(
     ValueError
         If the event store does not exist.
     """
-    return build_proof(
-        _load_events(db_path, key_file=key_file), seq, through_seq=through_seq
-    )
+    return build_proof(_load_events(db_path, key_file=key_file), seq, through_seq=through_seq)
 
 
 def root_to_json(root: MerkleRoot) -> dict[str, object]:

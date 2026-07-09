@@ -38,9 +38,7 @@ from synapse_channel.participants.session_metric_report import (
 def _cmd_costs(args: argparse.Namespace) -> int:
     """Aggregate session telemetry from an event store and print it."""
     try:
-        report = run_session_metric_report(
-            args.db, key_file=getattr(args, "db_key_file", None)
-        )
+        report = run_session_metric_report(args.db, key_file=getattr(args, "db_key_file", None))
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2

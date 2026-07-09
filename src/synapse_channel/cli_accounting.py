@@ -122,7 +122,9 @@ def _cmd_report(args: argparse.Namespace) -> int:
         pricing = load_pricing_table(args.pricing)
         budgets = _load_budgets(args.budget)
         report = run_accounting_report(
-            args.db, pricing=pricing, budgets=budgets,
+            args.db,
+            pricing=pricing,
+            budgets=budgets,
             key_file=getattr(args, "db_key_file", None),
         )
     except ValueError as exc:

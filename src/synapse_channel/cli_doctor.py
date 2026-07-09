@@ -313,9 +313,7 @@ async def _diagnose(
     diagnoses.append(check_reachable(roster is not None, uri))
     diagnoses.append(check_waiter(roster, identity.waiter_name))
     diagnoses.append(check_deaf_agents(roster))
-    diagnoses.append(
-        check_sqlcipher_event_store(event_store_path, event_store_key_file)
-    )
+    diagnoses.append(check_sqlcipher_event_store(event_store_path, event_store_key_file))
     diagnoses.append(
         check_multi_seat_posture(
             roster=roster,

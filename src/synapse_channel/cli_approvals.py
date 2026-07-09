@@ -122,9 +122,7 @@ def _cmd_decide(args: argparse.Namespace) -> int:
 def _cmd_status(args: argparse.Namespace) -> int:
     """Print replayed approval state for one or all subjects."""
     try:
-        report = run_approval_report(
-            args.db, key_file=getattr(args, "db_key_file", None)
-        )
+        report = run_approval_report(args.db, key_file=getattr(args, "db_key_file", None))
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2

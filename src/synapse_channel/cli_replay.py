@@ -76,7 +76,10 @@ def _cmd_debug(args: argparse.Namespace) -> int:
             )
             return 2
         plan = run_fork(
-            args.db, task_id, fork_seq=args.fork_at, overrides=overrides,
+            args.db,
+            task_id,
+            fork_seq=args.fork_at,
+            overrides=overrides,
             key_file=getattr(args, "db_key_file", None),
         )
     except ValueError as exc:
