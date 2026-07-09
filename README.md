@@ -55,6 +55,21 @@ The hub itself stays protocol-agnostic and the core install keeps its single
 dependency — the MCP and A2A adapters are optional extras (`pip install
 'synapse-channel[mcp]'`). See the [MCP guide](docs/mcp.md).
 
+## Coordinate. Observe. Govern.
+
+Synapse's daily promise is three explicit loops:
+
+- **Coordinate** before agents collide: `synapse git-init`, `synapse git-claim`,
+  `synapse task`, and `syn ack` turn work scope, dependencies, and evidence into
+  shared state instead of side-channel notes.
+- **Observe** the fleet from durable state: `synapse who`, `synapse state`,
+  `synapse dashboard`, `synapse event-query`, and observed peer rows show who is
+  present, what is claimed, what changed, and which peer-hub facts are advisory.
+- **Govern** risky actions with evidence: policy checks, approvals, release
+  receipts, Merkle roots, ACL surfaces, federation, and encryption-key commands
+  make operator decisions auditable. Governance surfaces report by default;
+  operators decide what blocks a merge, release, or cross-hub action.
+
 ## At a glance
 
 <p align="center">
@@ -1119,7 +1134,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 490 |
 | Wire message types | 73 |
 | CLI subcommands | 145 |
-| Test functions | 5473 |
+| Test functions | 5474 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 49 |
 | GitHub Actions workflows | 12 |

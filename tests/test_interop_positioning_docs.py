@@ -93,6 +93,32 @@ def test_readme_surfaces_mcp_in_the_lead_not_only_deep_in_the_body() -> None:
     assert "synapse mcp" in lead
 
 
+def test_readme_lead_names_coordinate_observe_govern_promises() -> None:
+    """The README lead must anchor the promise headers to shipped surfaces."""
+    readme = _read(ROOT / "README.md")
+    lead, _, _ = readme.partition("## At a glance")
+    collapsed_lead = _collapse_whitespace(lead)
+    assert "## Coordinate. Observe. Govern." in lead
+
+    expected_terms = (
+        "**Coordinate**",
+        "synapse git-claim",
+        "synapse task",
+        "syn ack",
+        "**Observe**",
+        "synapse who",
+        "synapse state",
+        "synapse dashboard",
+        "synapse event-query",
+        "**Govern**",
+        "policy checks",
+        "release receipts",
+        "operators decide what blocks",
+    )
+    for term in expected_terms:
+        assert term in collapsed_lead
+
+
 def test_comparison_doc_lists_verifiable_differences() -> None:
     """Comparison docs must anchor each differentiator to a real local surface."""
     text = _collapse_whitespace(_read(COMPARISON_DOC))

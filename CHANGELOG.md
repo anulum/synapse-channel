@@ -18,6 +18,9 @@ All notable changes to this project are documented here.
   core, adapter, analysis, governance, and experimental layers using the
   `surface_taxonomy` tiers, making the lean coordination core explicit without
   implying a package split.
+- README now folds the Coordinate / Observe / Govern promise into the lead and
+  anchors each loop to shipped coordination, observation, and governance
+  surfaces.
 
 ## [0.98.16] - 2026-07-09
 
