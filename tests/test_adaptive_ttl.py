@@ -217,3 +217,30 @@ def test_missing_ttl_advice_store_reports_error(tmp_path: Path) -> None:
         assert "missing event store" in str(exc)
     else:
         raise AssertionError("missing TTL advice store was accepted")
+
+
+def test_ttl_advice_survives_hostile_claim_timestamps(tmp_path: Path) -> None:
+    """Junk claim timestamps in the log fall back instead of crashing the advisor."""
+    db = tmp_path / "events.db"
+    store = EventStore(db)
+    for task_id, start, release in (("TASK-A", 0.0, 100.0), ("TASK-B", 10.0, 210.0)):
+        store.append(
+            EventKind.CLAIM,
+            _claim(task_id=task_id, owner="alpha", claimed_at=start).as_dict(),
+            ts=start,
+            durable=True,
+        )
+        store.append(EventKind.RELEASE, {"task_id": task_id}, ts=release, durable=True)
+    poisoned = _claim(task_id="TASK-X", owner="alpha", claimed_at=20.0).as_dict()
+    poisoned["claimed_at"] = "junk"
+    poisoned["lease_expires_at"] = float("inf")
+    store.append(EventKind.CLAIM, poisoned, ts=20.0, durable=True)
+    store.append(EventKind.RELEASE, {"task_id": "TASK-X"}, ts=440.0, durable=True)
+    store.close()
+
+    report = run_ttl_advice(db, min_samples=3, current_default_seconds=1200.0)
+
+    # The poisoned claim still contributes a duration measured from its event
+    # timestamp fallback, so the advisor keeps working with three samples.
+    assert report.sample_count == 3
+    assert report.confidence != ""

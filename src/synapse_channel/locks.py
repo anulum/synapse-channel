@@ -26,6 +26,7 @@ from typing import Any, Protocol
 
 from synapse_channel.cli_query_transport import AgentFactory, _query_hub
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent, default_hub_uri
+from synapse_channel.core.numeric_coercion import safe_float
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.scoping import DEFAULT_WORKTREE
 
@@ -176,8 +177,8 @@ def build_rows(
             continue
         task_id = str(claim.get("task_id", ""))
         holder = str(claim.get("owner", ""))
-        claimed_at = float(claim.get("claimed_at", ts) or ts)
-        lease_expires_at = float(claim.get("lease_expires_at", ts) or ts)
+        claimed_at = safe_float(claim.get("claimed_at", ts) or ts, default=ts)
+        lease_expires_at = safe_float(claim.get("lease_expires_at", ts) or ts, default=ts)
         rows.append(
             LeaseRow(
                 task_id=task_id,

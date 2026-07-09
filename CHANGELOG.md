@@ -25,6 +25,16 @@ All notable changes to this project are documented here.
 - CI installs `sqlcipher3-binary` in the test matrix so the SQLCipher at-rest
   suite runs instead of skipping.
 
+### Fixed
+- Remaining ad-hoc numeric coercions on untrusted fields moved to
+  `safe_int`/`safe_float` with each site's fallback semantics preserved: A2A
+  task-timeout sweep and store retention stamps (a hostile `updatedAt` mapping,
+  a JSON integer too large for a double, or NaN no longer crashes the sweep or
+  poisons retention ordering), replay claim reconstruction `epoch`/`version`,
+  adaptive-TTL claim timestamps, lease-table rendering, and the relay resource
+  `capacity` (now failing with the command's `ValueError` contract instead of a
+  raw `OverflowError`/`TypeError`).
+
 ## [0.98.23] - 2026-07-09
 
 ### Added

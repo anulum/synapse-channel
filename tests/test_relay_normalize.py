@@ -83,3 +83,28 @@ def test_normalize_resource_with_and_without_meta() -> None:
         "name": "disk",
         "capacity": 1,
     }
+
+
+def test_normalize_resource_rejects_a_non_integer_capacity() -> None:
+    """Any unusable capacity fails with the module's ValueError contract, never a raw crash."""
+    for hostile in (float("inf"), float("nan"), "many", {"vram": 1}, None):
+        with pytest.raises(ValueError, match="capacity is not an integer"):
+            normalize_core_command(
+                {"k": "resource", "kind": "llm", "name": "m", "capacity": hostile}
+            )
+
+
+def test_normalize_resource_keeps_lenient_numeric_capacity() -> None:
+    """Numeric strings and truncating floats keep their historical int() coercion."""
+    assert (
+        normalize_core_command({"k": "resource", "kind": "llm", "name": "m", "capacity": "3"})[
+            "capacity"
+        ]
+        == 3
+    )
+    assert (
+        normalize_core_command({"k": "resource", "kind": "llm", "name": "m", "capacity": 2.9})[
+            "capacity"
+        ]
+        == 2
+    )

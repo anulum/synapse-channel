@@ -19,6 +19,7 @@ from pathlib import Path
 
 from synapse_channel.a2a import JsonMap
 from synapse_channel.a2a_validation import TERMINAL_TASK_STATES
+from synapse_channel.core.numeric_coercion import safe_float
 
 STALE_INFLIGHT_MESSAGE = "Recovered from stale in-flight task state after restart"
 STATE_FILE_MODE = 0o600
@@ -146,10 +147,12 @@ class A2ATaskStore:
         metadata = task.get("metadata")
         if not isinstance(metadata, dict):
             return 0.0
-        try:
-            return float(metadata.get("updatedAt") or metadata.get("createdAt") or 0.0)
-        except (TypeError, ValueError):
-            return 0.0
+        # safe_float also absorbs OverflowError (a JSON integer too large for a
+        # double) and rejects non-finite stamps, so retention ordering never sees
+        # a NaN sort key.
+        return safe_float(
+            metadata.get("updatedAt") or metadata.get("createdAt") or 0.0, default=0.0
+        )
 
     def _is_terminal_task(self, task: JsonMap) -> bool:
         """Return whether ``task`` is in a terminal A2A state."""

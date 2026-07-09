@@ -268,3 +268,17 @@ def test_load_task_for_seq_reads_store(tmp_path: Path) -> None:
 
     assert load_task_for_seq(db, 4) == "T1"
     assert load_task_for_seq(db, 999) is None
+
+
+def test_reconstruct_claim_survives_hostile_epoch_and_version() -> None:
+    """Poisoned epoch/version payload fields read as zero instead of crashing the fold."""
+    payload = _claim()
+    payload["epoch"] = {"bad": 1}
+    payload["version"] = float("inf")
+    events = (StoredEvent(seq=1, ts=10.0, kind=EventKind.CLAIM, payload=payload),)
+
+    claim = reconstruct_claim("T1", events)
+
+    assert claim is not None
+    assert claim.epoch == 0
+    assert claim.version == 0

@@ -18,7 +18,14 @@ import pytest
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.ergonomics import Identity
-from synapse_channel.locks import LeaseRow, build_rows, main, query_locks, render_locks
+from synapse_channel.locks import (
+    LeaseRow,
+    _duration,
+    build_rows,
+    main,
+    query_locks,
+    render_locks,
+)
 
 
 def _identity() -> Identity:
@@ -192,3 +199,18 @@ def test_syn_locks_alias_is_packaged() -> None:
 @pytest.mark.parametrize("path", [Path("README.md"), Path("docs/cli.md"), Path("docs/recipes.md")])
 def test_syn_locks_is_documented(path: Path) -> None:
     assert "syn locks" in path.read_text(encoding="utf-8")
+
+
+def test_build_rows_survives_hostile_claim_timestamps() -> None:
+    """A claim carrying unusable timestamps renders as a zero-age row, never a crash."""
+    snapshot = _snapshot()
+    hostile = snapshot["active_claims"][0]
+    hostile["claimed_at"] = {"bad": 1}
+    hostile["lease_expires_at"] = float("nan")
+
+    rows = build_rows(snapshot, project="SYNAPSE-CHANNEL", owner=None, now=220.0)
+
+    row = rows[0]
+    assert row.task_id == "SYNAPSE-CHANNEL:git"
+    assert row.age == _duration(0.0)
+    assert row.remaining == _duration(0.0)

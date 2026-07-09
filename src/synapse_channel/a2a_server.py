@@ -34,6 +34,7 @@ from synapse_channel.a2a_validation import (
     validate_webhook_url,
 )
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.core.numeric_coercion import safe_float
 
 
 def _rpc_success(rpc_id: object, result: object) -> JsonMap:
@@ -449,7 +450,13 @@ class A2ABridge:
             metadata = task.get("metadata", {})
             updated_at = 0.0
             if isinstance(metadata, dict):
-                updated_at = float(metadata.get("updatedAt") or metadata.get("createdAt") or 0.0)
+                # A hostile or malformed timestamp (mapping, huge int, NaN) must not
+                # crash the sweep or park the task forever; unusable stamps read as
+                # stale so the timeout still fires.
+                updated_at = safe_float(
+                    metadata.get("updatedAt") or metadata.get("createdAt") or 0.0,
+                    default=0.0,
+                )
             if now - updated_at < self.task_timeout_seconds:
                 continue
             task_id = str(task["id"])

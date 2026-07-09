@@ -34,6 +34,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.core.numeric_coercion import safe_int
+
 # -- lite/heavy relay codec ---------------------------------------------------
 
 LITE_VERSION = 1
@@ -416,7 +418,10 @@ def normalize_core_command(data: dict[str, Any]) -> dict[str, Any]:
     if kind in {"resource", "resource_offer"}:
         out["kind"] = str(data.get("kind") or data.get("resource_kind") or "").strip()
         out["name"] = str(data.get("name") or data.get("resource_name") or "").strip()
-        out["capacity"] = int(data.get("capacity", 1))
+        capacity = safe_int(data.get("capacity", 1))
+        if capacity is None:
+            raise ValueError("Resource capacity is not an integer.")
+        out["capacity"] = capacity
         if data.get("meta"):
             out["meta"] = data.get("meta")
         return out

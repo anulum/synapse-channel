@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.journal import EventKind
+from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.persistence import EventStore, StoredEvent
 
 SNAPSHOT_KINDS = frozenset(
@@ -452,8 +453,8 @@ def _claim_from_event(event: StoredEvent) -> ReconstructedClaim:
         data_ref=str(payload.get("data_ref", "")),
         worktree=str(payload.get("worktree", "")),
         paths=tuple(str(path) for path in payload.get("paths", ())),
-        epoch=int(payload.get("epoch", 0)),
-        version=int(payload.get("version", 0)),
+        epoch=safe_int(payload.get("epoch", 0), default=0),
+        version=safe_int(payload.get("version", 0), default=0),
         source_seq=event.seq,
         source_kind=event.kind,
         source_ts=event.ts,

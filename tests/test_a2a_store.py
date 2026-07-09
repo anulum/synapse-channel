@@ -408,3 +408,25 @@ def test_a2a_task_store_rolls_back_push_config_delete_when_save_fails(tmp_path: 
         store.delete_push_config("task-a", "cfg-a")
 
     assert store.list_push_configs("task-a") == [stored]
+
+
+def test_a2a_task_store_prunes_overflow_and_nan_retention_timestamps() -> None:
+    """A JSON-integer-too-large or NaN stamp reads as expired, never a crash or NaN sort key."""
+    store = A2ATaskStore(retention_seconds=1.0)
+    store.put(
+        {
+            "id": "huge-stamp",
+            "status": {"state": "TASK_STATE_COMPLETED"},
+            "metadata": {"updatedAt": 10**400},
+        }
+    )
+    store.put(
+        {
+            "id": "nan-stamp",
+            "status": {"state": "TASK_STATE_COMPLETED"},
+            "metadata": {"updatedAt": float("nan")},
+        }
+    )
+
+    assert store.prune_expired(now=2.0) == ["huge-stamp", "nan-stamp"]
+    assert store.list_tasks() == []

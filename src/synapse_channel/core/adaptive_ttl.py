@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from synapse_channel.core.journal import EventKind
+from synapse_channel.core.numeric_coercion import safe_float
 from synapse_channel.core.persistence import EventStore, StoredEvent
 
 SNAPSHOT_KINDS = frozenset(
@@ -346,12 +347,12 @@ def _owner(event: StoredEvent) -> str:
 
 def _claimed_at(event: StoredEvent, fallback: float) -> float:
     """Return the claim start timestamp carried by a task snapshot."""
-    return float(event.payload.get("claimed_at", fallback))
+    return safe_float(event.payload.get("claimed_at", fallback), default=fallback)
 
 
 def _lease_expires_at(event: StoredEvent) -> float:
     """Return the lease expiry timestamp carried by a task snapshot."""
-    return float(event.payload.get("lease_expires_at", 0.0))
+    return safe_float(event.payload.get("lease_expires_at", 0.0), default=0.0)
 
 
 def _positive_float(value: float, fallback: float) -> float:

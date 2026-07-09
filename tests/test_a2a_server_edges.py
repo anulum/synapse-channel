@@ -622,3 +622,24 @@ def test_non_negative_int_falls_back_on_unparsable_values() -> None:
     assert non_negative_int(None, default=3) == 3
     assert non_negative_int("-4") == 0  # clamped, not negative
     assert non_negative_int("12") == 12
+
+
+def test_timeout_sweep_survives_hostile_metadata_stamps() -> None:
+    """Unusable ``updatedAt`` stamps read as stale: the sweep neither crashes nor parks a task."""
+    bridge = _bridge(task_timeout_seconds=10.0)
+    poisoned = bridge.create_working_task(_message())
+    poisoned["metadata"]["updatedAt"] = {"bad": 1}
+    bridge.store.put(poisoned)
+    huge = bridge.create_working_task(_message("task-b"))
+    huge["metadata"]["updatedAt"] = 10**400
+    bridge.store.put(huge)
+    fresh = bridge.create_working_task(_message("task-c"))
+    fresh["metadata"]["updatedAt"] = 100.0
+    bridge.store.put(fresh)
+
+    failed = bridge.expire_timed_out_tasks(now=105.0)
+
+    assert sorted(str(task["id"]) for task in failed) == ["task-a", "task-b"]
+    stored_fresh = bridge.store.get("task-c")
+    assert stored_fresh is not None
+    assert stored_fresh["status"]["state"] == "TASK_STATE_WORKING"
