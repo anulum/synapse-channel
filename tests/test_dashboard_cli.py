@@ -341,3 +341,14 @@ def test_dashboard_parser_wires_operator_flags() -> None:
     default = parser.parse_args(["dashboard"])
     assert default.operator is False
     assert default.operator_name is None
+
+
+def test_cmd_dashboard_refuses_a_stray_observed_pin(capsys: pytest.CaptureFixture[str]) -> None:
+    """A pin without a matching --observed-peer exits 2 instead of starting the server."""
+    args = cli.build_parser().parse_args(
+        ["dashboard", "--observed-pin", "ghost=sha256:" + "a" * 64]
+    )
+    from synapse_channel import cli_dashboard
+
+    assert cli_dashboard._cmd_dashboard(args) == 2
+    assert "does not fetch" in capsys.readouterr().out + capsys.readouterr().err

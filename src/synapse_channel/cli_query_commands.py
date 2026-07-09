@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import sys
 
 from synapse_channel.cli_query_rendering import (
     _print_board,
@@ -29,6 +30,7 @@ from synapse_channel.observed_peers import (
     ObservedPeerSpec,
     fetch_observed_peers,
     network_observed_fetcher_factory,
+    resolve_observed_pins,
 )
 
 
@@ -92,6 +94,7 @@ async def _who(
     observed_peers: tuple[ObservedPeerSpec, ...] = (),
     observed_token: str | None = None,
     observed_timeout: float = 10.0,
+    observed_pins: dict[str, str] | None = None,
 ) -> int:
     """Connect, print the online roster (optionally one project's agents), and exit.
 
@@ -129,6 +132,7 @@ async def _who(
             local_id=f"{name}-observed",
             token=observed_token,
             timeout=observed_timeout,
+            pins=observed_pins,
         ),
     )
     return await _query_hub(
@@ -164,6 +168,12 @@ async def _who(
 
 def _cmd_who(args: argparse.Namespace) -> int:
     """Dispatch the ``who`` subcommand."""
+    observed_specs = tuple(getattr(args, "observed_peers", ()))
+    try:
+        observed_pins = resolve_observed_pins(getattr(args, "observed_pins", ()), observed_specs)
+    except ValueError as exc:
+        print(f"synapse who: {exc}", file=sys.stderr)
+        return 2
     return asyncio.run(
         _who(
             uri=args.uri,
@@ -172,9 +182,10 @@ def _cmd_who(args: argparse.Namespace) -> int:
             me=args.me,
             token=args.token,
             ready_timeout=args.ready_timeout,
-            observed_peers=tuple(getattr(args, "observed_peers", ())),
+            observed_peers=observed_specs,
             observed_token=getattr(args, "observed_token", None),
             observed_timeout=float(getattr(args, "observed_timeout", 10.0)),
+            observed_pins=observed_pins,
         )
     )
 
@@ -190,6 +201,7 @@ async def _state(
     observed_peers: tuple[ObservedPeerSpec, ...] = (),
     observed_token: str | None = None,
     observed_timeout: float = 10.0,
+    observed_pins: dict[str, str] | None = None,
 ) -> int:
     """Print the live claims and their checkpoints — the "where was I" recovery view.
 
@@ -221,6 +233,7 @@ async def _state(
             local_id=f"{name}-observed",
             token=observed_token,
             timeout=observed_timeout,
+            pins=observed_pins,
         ),
     )
     return await _query_hub(
@@ -238,6 +251,12 @@ async def _state(
 
 def _cmd_state(args: argparse.Namespace) -> int:
     """Dispatch the ``state`` subcommand."""
+    observed_specs = tuple(getattr(args, "observed_peers", ()))
+    try:
+        observed_pins = resolve_observed_pins(getattr(args, "observed_pins", ()), observed_specs)
+    except ValueError as exc:
+        print(f"synapse state: {exc}", file=sys.stderr)
+        return 2
     return asyncio.run(
         _state(
             uri=args.uri,
@@ -245,9 +264,10 @@ def _cmd_state(args: argparse.Namespace) -> int:
             owner=args.owner,
             token=args.token,
             ready_timeout=args.ready_timeout,
-            observed_peers=tuple(getattr(args, "observed_peers", ())),
+            observed_peers=observed_specs,
             observed_token=getattr(args, "observed_token", None),
             observed_timeout=float(getattr(args, "observed_timeout", 10.0)),
+            observed_pins=observed_pins,
         )
     )
 

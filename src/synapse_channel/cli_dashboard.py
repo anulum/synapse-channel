@@ -15,7 +15,11 @@ from pathlib import Path
 
 from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.dashboard import start_dashboard_server
-from synapse_channel.observed_peers import parse_observed_peer
+from synapse_channel.observed_peers import (
+    parse_observed_peer,
+    parse_observed_pin,
+    resolve_observed_pins,
+)
 
 
 def _cmd_dashboard(args: argparse.Namespace) -> int:
@@ -42,6 +46,9 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
             observed_peers=tuple(args.observed_peers),
             observed_token=args.observed_token,
             observed_timeout=args.observed_timeout,
+            observed_pins=resolve_observed_pins(
+                getattr(args, "observed_pins", ()), tuple(args.observed_peers)
+            ),
         )
     except ValueError as exc:
         print(str(exc))
@@ -208,6 +215,18 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--observed-token",
         default=None,
         help="Shared-secret token used for every --observed-peer pull.",
+    )
+    dashboard.add_argument(
+        "--observed-pin",
+        action="append",
+        default=[],
+        type=parse_observed_pin,
+        dest="observed_pins",
+        metavar="HUB=sha256:HEX",
+        help=(
+            "Accept the named observed peer's wss:// certificate only by this SHA-256 "
+            "pin (repeatable). The hub must also be named by --observed-peer."
+        ),
     )
     dashboard.add_argument(
         "--observed-timeout",

@@ -23,6 +23,9 @@ All notable changes to this project are documented here.
 - `synapse hub --multihub-watch-pin PEER=sha256:<hex>` (repeatable): the
   standing watch pulls a pinned self-signed `wss://` peer through the same
   pinned connector; a pin naming an unwatched peer is refused at startup.
+- `--observed-pin HUB=sha256:<hex>` (repeatable) on `synapse who`, `state`,
+  `status`, and `dashboard`: advisory observed-peer pulls accept a self-signed
+  `wss://` peer by certificate pin; a pin naming an unfetched hub is refused.
 
 ### Changed
 - CI installs `sqlcipher3-binary` in the test matrix so the SQLCipher at-rest

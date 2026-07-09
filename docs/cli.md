@@ -253,7 +253,9 @@ URI is pulled through the same multi-hub event-log request path as
 `synapse multihub follow`, then folded locally and marked `observed@HUB` wherever
 it appears. Observed rows are advisory: they never grant local claims, never
 change the local hub's roster, and peer failures render as unreachable peer rows.
-Use `--observed-token` for secured peer hubs and `--observed-timeout` to bound
+Use `--observed-token` for secured peer hubs, `--observed-pin HUB=sha256:<hex>`
+to pin a self-signed `wss://` peer's certificate (a pin naming an unfetched hub
+is refused), and `--observed-timeout` to bound
 each peer pull. When a peer welcome frame carries a usable timestamp,
 observed-peer output also carries local-minus-peer clock skew: `who` prints
 `skew=+/-Ns`, `status` includes the largest absolute skew, and JSON uses

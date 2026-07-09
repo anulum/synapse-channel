@@ -17,14 +17,18 @@ peer row with the error; it never blocks or mutates the local state snapshot.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol, cast
 
 from synapse_channel.core.clock_skew import ClockSkew
 from synapse_channel.core.multihub_fold import ObservedState, fold_observed_state
 from synapse_channel.core.multihub_merge import tag_events
-from synapse_channel.core.multihub_transport import MultiHubFetchError, network_fetcher
+from synapse_channel.core.multihub_transport import (
+    MultiHubFetchError,
+    network_fetcher,
+    pinned_connector,
+)
 from synapse_channel.core.persistence import StoredEvent
 
 
@@ -148,21 +152,87 @@ def parse_observed_peers(values: Sequence[str] | None) -> tuple[ObservedPeerSpec
     return tuple(parse_observed_peer(value) for value in (values or ()))
 
 
+def parse_observed_pin(value: str) -> tuple[str, str]:
+    """Parse a ``HUB=sha256:<hex>`` observed-peer pin CLI argument.
+
+    Raises
+    ------
+    ValueError
+        If the hub id or pin is missing, or the pin is not ``sha256:<hex>``.
+    """
+    hub_id, sep, pin = value.partition("=")
+    hub_id = hub_id.strip()
+    pin = pin.strip()
+    if not sep or not hub_id or not pin:
+        raise ValueError("observed pin must be HUB=sha256:<hex>")
+    if not pin.lower().startswith("sha256:"):
+        raise ValueError(f"observed pin must be sha256:<hex>, got {pin!r}")
+    return hub_id, pin
+
+
+def resolve_observed_pins(
+    pairs: Sequence[tuple[str, str]] | None,
+    specs: Sequence[ObservedPeerSpec],
+) -> dict[str, str]:
+    """Match parsed ``--observed-pin`` pairs against the observed-peer specs.
+
+    A pin naming a hub that ``--observed-peer`` does not fetch is an operator
+    mistake (most likely a typo that would otherwise silently leave the real
+    peer unpinned), so it is refused rather than ignored.
+
+    Raises
+    ------
+    ValueError
+        If a pin names an unknown hub or repeats a hub.
+    """
+    known = {spec.hub_id for spec in specs}
+    pins: dict[str, str] = {}
+    for hub_id, pin in pairs or ():
+        if hub_id not in known:
+            msg = f"--observed-pin names {hub_id!r}, which --observed-peer does not fetch"
+            raise ValueError(msg)
+        if hub_id in pins:
+            msg = f"--observed-pin names hub {hub_id!r} twice"
+            raise ValueError(msg)
+        pins[hub_id] = pin
+    return pins
+
+
 def network_observed_fetcher_factory(
     *,
     local_id: str,
     token: str | None = None,
     timeout: float = 10.0,
+    pins: Mapping[str, str] | None = None,
 ) -> ObservedFetcherFactory:
-    """Return a factory that fetches peers through the multi-hub network transport."""
+    """Return a factory that fetches peers through the multi-hub network transport.
+
+    Parameters
+    ----------
+    local_id : str
+        Identity stamped on each pull request.
+    token : str or None, optional
+        Shared-secret token for secured peers.
+    timeout : float, optional
+        Seconds to wait for each pull.
+    pins : Mapping[str, str] or None, optional
+        Per-hub ``sha256:<hex>`` certificate pins (see
+        :func:`resolve_observed_pins`). A pinned hub's ``wss://`` pull is trusted
+        by live certificate pin instead of CA chain and fails closed on mismatch;
+        hubs absent from the map use the default transport.
+    """
 
     def build(spec: ObservedPeerSpec) -> ObservedFetcher:
-        fetcher = network_fetcher(
-            spec.uri,
-            local_id=local_id,
-            token=token,
-            timeout=timeout,
-        )
+        if pins and spec.hub_id in pins:
+            fetcher = network_fetcher(
+                spec.uri,
+                local_id=local_id,
+                token=token,
+                timeout=timeout,
+                connector=pinned_connector(pins[spec.hub_id]),
+            )
+        else:
+            fetcher = network_fetcher(spec.uri, local_id=local_id, token=token, timeout=timeout)
         return cast(ObservedFetcher, fetcher)
 
     return build

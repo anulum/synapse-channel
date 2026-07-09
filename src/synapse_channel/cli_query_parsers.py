@@ -21,7 +21,7 @@ from synapse_channel.cli_query_commands import (
     _cmd_who,
 )
 from synapse_channel.client.agent import default_hub_uri
-from synapse_channel.observed_peers import parse_observed_peer
+from synapse_channel.observed_peers import parse_observed_peer, parse_observed_pin
 
 
 def _add_observed_peer_flags(parser: argparse.ArgumentParser) -> None:
@@ -36,6 +36,19 @@ def _add_observed_peer_flags(parser: argparse.ArgumentParser) -> None:
         help=(
             "Fetch a peer hub's multi-hub event log and render its folded state as "
             "observed@HUB advisory data. Repeat for multiple peers."
+        ),
+    )
+    parser.add_argument(
+        "--observed-pin",
+        action="append",
+        default=[],
+        type=parse_observed_pin,
+        dest="observed_pins",
+        metavar="HUB=sha256:HEX",
+        help=(
+            "Accept the named observed peer's wss:// certificate only by this SHA-256 "
+            "pin (repeatable; self-signed or private-CA peers, no CA needed). The hub "
+            "must also be named by --observed-peer."
         ),
     )
     parser.add_argument(

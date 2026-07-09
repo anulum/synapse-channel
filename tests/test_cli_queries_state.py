@@ -177,3 +177,23 @@ def test_state_parser_accepts_observed_peer_flags() -> None:
     assert args.observed_peers[0].uri == "ws://127.0.0.1:8877"
     assert args.observed_token == "secret"
     assert args.observed_timeout == 3.5
+
+
+def test_parsers_accept_observed_pin_and_commands_refuse_a_stray_pin(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``--observed-pin`` parses fail-fast and a pin for an unfetched hub exits 2."""
+    pin = "sha256:" + "a" * 64
+    args = cli.build_parser().parse_args(
+        ["state", "--observed-peer", "east=wss://e:8877", "--observed-pin", f"east={pin}"]
+    )
+    assert args.observed_pins == [("east", pin)]
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.build_parser().parse_args(["who", "--observed-pin", "east=md5:aa"])
+    assert excinfo.value.code == 2
+
+    for command in ("who", "state"):
+        stray = cli.build_parser().parse_args([command, "--observed-pin", f"ghost={pin}"])
+        assert stray.func(stray) == 2
+        assert "does not fetch" in capsys.readouterr().err

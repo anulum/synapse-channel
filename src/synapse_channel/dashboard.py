@@ -234,6 +234,7 @@ async def fetch_dashboard_snapshot(
     observed_peers: tuple[ObservedPeerSpec, ...] = (),
     observed_token: str | None = None,
     observed_timeout: float = 10.0,
+    observed_pins: dict[str, str] | None = None,
 ) -> DashboardSnapshot:
     """Fetch roster, state, board, and manifest snapshots from a live hub.
 
@@ -250,6 +251,9 @@ async def fetch_dashboard_snapshot(
     observed_peers : tuple[ObservedPeerSpec, ...], optional
         Peer hubs to fetch through the multi-hub log path and render as
         advisory observed state.
+    observed_pins : dict[str, str] or None, optional
+        Per-hub ``sha256:<hex>`` certificate pins for self-signed ``wss://``
+        observed peers; a pinned pull fails closed on any mismatch.
 
     Returns
     -------
@@ -297,6 +301,7 @@ async def fetch_dashboard_snapshot(
                 local_id=f"{name}-observed",
                 token=observed_token,
                 timeout=observed_timeout,
+                pins=observed_pins,
             ),
         )
         return DashboardSnapshot(
@@ -487,6 +492,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     observed_peers: ClassVar[tuple[ObservedPeerSpec, ...]]
     observed_token: ClassVar[str | None]
     observed_timeout: ClassVar[float]
+    observed_pins: ClassVar[dict[str, str] | None]
 
     def do_GET(self) -> None:
         """Serve the dashboard HTML page, JSON snapshot, or a 404 response."""
@@ -596,6 +602,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                     observed_peers=self.observed_peers,
                     observed_token=self.observed_token,
                     observed_timeout=self.observed_timeout,
+                    observed_pins=self.observed_pins,
                 )
             )
         except DashboardUnavailable as exc:
@@ -1331,6 +1338,7 @@ def _handler_class(
     observed_peers: tuple[ObservedPeerSpec, ...],
     observed_token: str | None,
     observed_timeout: float,
+    observed_pins: dict[str, str] | None,
 ) -> type[_DashboardHandler]:
     """Create an isolated handler class for one dashboard server."""
     bound_uri = uri
@@ -1351,6 +1359,7 @@ def _handler_class(
     bound_operator_rate_limiter = operator_rate_limiter
     bound_observed_peers = observed_peers
     bound_observed_token = observed_token
+    bound_observed_pins = observed_pins
     bound_observed_timeout = observed_timeout
 
     class BoundDashboardHandler(_DashboardHandler):
@@ -1375,6 +1384,7 @@ def _handler_class(
         observed_peers = bound_observed_peers
         observed_token = bound_observed_token
         observed_timeout = bound_observed_timeout
+        observed_pins = bound_observed_pins
 
     return BoundDashboardHandler
 
@@ -1401,6 +1411,7 @@ def start_dashboard_server(
     observed_peers: tuple[ObservedPeerSpec, ...] = (),
     observed_token: str | None = None,
     observed_timeout: float = 10.0,
+    observed_pins: dict[str, str] | None = None,
 ) -> DashboardServer:
     """Start a background dashboard HTTP server (read-only unless armed).
 
@@ -1480,6 +1491,7 @@ def start_dashboard_server(
         observed_peers=observed_peers,
         observed_token=observed_token,
         observed_timeout=observed_timeout,
+        observed_pins=observed_pins,
     )
     server = ThreadingHTTPServer((host, int(port)), handler)
     thread = threading.Thread(target=server.serve_forever, name="synapse-dashboard", daemon=True)

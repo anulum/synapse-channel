@@ -213,7 +213,10 @@ Each command fetches the peer with the multi-hub log request path, folds the
 events locally, and labels output `observed@west`. A peer outage renders an
 unreachable peer row; it does not make the local hub unhealthy and does not
 grant, revoke, or route a local claim. Use `--observed-token` for secured peers
-and `--observed-timeout` to bound each pull. When the peer's welcome frame
+and `--observed-timeout` to bound each pull. For a self-signed `wss://` peer, add
+`--observed-pin HUB=sha256:<hex>` (repeatable) — the same pull-side certificate
+pin as `multihub follow --pin`; a pin naming a hub that `--observed-peer` does
+not fetch is refused, so a typo cannot silently leave the real peer unpinned. When the peer's welcome frame
 carries a finite timestamp, `who` rows include `skew=+/-Ns`, `status` includes
 the largest observed absolute skew, and JSON outputs carry
 `clock_skew_seconds`.

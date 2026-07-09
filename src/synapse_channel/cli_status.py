@@ -39,6 +39,8 @@ from synapse_channel.observed_peers import (
     observed_max_lag,
     observed_peers_to_dict,
     parse_observed_peer,
+    parse_observed_pin,
+    resolve_observed_pins,
 )
 from synapse_channel.waiter_identity import split_roster
 
@@ -132,6 +134,7 @@ async def query_status(
     observed_peers: tuple[ObservedPeerSpec, ...] = (),
     observed_token: str | None = None,
     observed_timeout: float = 10.0,
+    observed_pins: dict[str, str] | None = None,
 ) -> HubStatus:
     """Connect once, request the roster and the state, and return the status counts.
 
@@ -184,6 +187,7 @@ async def query_status(
                 local_id=f"{name}-observed",
                 token=observed_token,
                 timeout=observed_timeout,
+                pins=observed_pins,
             ),
         )
         return _tally(seen, probe=probe, observed_peers=observed)
@@ -256,6 +260,7 @@ async def watch_status(
     observed_peers: tuple[ObservedPeerSpec, ...] = (),
     observed_token: str | None = None,
     observed_timeout: float = 10.0,
+    observed_pins: dict[str, str] | None = None,
 ) -> int:
     """Refresh the status every ``interval`` seconds — a watch-style dashboard.
 
@@ -304,6 +309,7 @@ async def watch_status(
                 observed_peers=observed_peers,
                 observed_token=observed_token,
                 observed_timeout=observed_timeout,
+                observed_pins=observed_pins,
             )
             if as_json:
                 stream.write(json.dumps(status_to_json(status), sort_keys=True) + "\n")
@@ -330,6 +336,12 @@ def _cmd_status(args: argparse.Namespace) -> int:
     ``--count`` refreshes ran or the operator interrupts; Ctrl-C is the normal
     way to stop a watch, so it exits ``0`` rather than tracing.
     """
+    observed_specs = tuple(getattr(args, "observed_peers", ()))
+    try:
+        observed_pins = resolve_observed_pins(getattr(args, "observed_pins", ()), observed_specs)
+    except ValueError as exc:
+        print(f"synapse status: {exc}", file=sys.stderr)
+        return 2
     if args.watch:
         if args.interval <= 0:
             print("--interval must be positive", file=sys.stderr)
@@ -345,9 +357,10 @@ def _cmd_status(args: argparse.Namespace) -> int:
                     count=args.count,
                     as_json=args.json,
                     plain=args.plain,
-                    observed_peers=tuple(getattr(args, "observed_peers", ())),
+                    observed_peers=observed_specs,
                     observed_token=getattr(args, "observed_token", None),
                     observed_timeout=float(getattr(args, "observed_timeout", 10.0)),
+                    observed_pins=observed_pins,
                 )
             )
         except KeyboardInterrupt:
@@ -358,9 +371,10 @@ def _cmd_status(args: argparse.Namespace) -> int:
             name=args.name,
             token=args.token,
             ready_timeout=args.ready_timeout,
-            observed_peers=tuple(getattr(args, "observed_peers", ())),
+            observed_peers=observed_specs,
             observed_token=getattr(args, "observed_token", None),
             observed_timeout=float(getattr(args, "observed_timeout", 10.0)),
+            observed_pins=observed_pins,
         )
     )
     if args.json:
@@ -422,6 +436,18 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--observed-token",
         default=None,
         help="Shared-secret token used for every --observed-peer pull.",
+    )
+    status.add_argument(
+        "--observed-pin",
+        action="append",
+        default=[],
+        type=parse_observed_pin,
+        dest="observed_pins",
+        metavar="HUB=sha256:HEX",
+        help=(
+            "Accept the named observed peer's wss:// certificate only by this SHA-256 "
+            "pin (repeatable). The hub must also be named by --observed-peer."
+        ),
     )
     status.add_argument(
         "--observed-timeout",

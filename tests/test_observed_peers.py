@@ -8,7 +8,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -31,6 +33,8 @@ from synapse_channel.observed_peers import (
     observed_peers_to_dict,
     parse_observed_peer,
     parse_observed_peers,
+    parse_observed_pin,
+    resolve_observed_pins,
 )
 
 
@@ -156,3 +160,91 @@ def test_observed_peer_summary_helpers() -> None:
     assert observed_claim_count((ObservedPeerSnapshot("down", "ws://down", False),)) == 0
     assert observed_max_lag(()) is None
     assert observed_max_abs_clock_skew(()) is None
+
+
+def test_parse_observed_pin_validates_shape() -> None:
+    pin = "sha256:" + "a" * 64
+    assert parse_observed_pin(f"east={pin}") == ("east", pin)
+    assert parse_observed_pin(" east = SHA256:BB ") == ("east", "SHA256:BB")
+    for bad in ("east", "=sha256:aa", "east=", "east=md5:aa"):
+        with pytest.raises(ValueError, match="observed pin"):
+            parse_observed_pin(bad)
+
+
+def test_resolve_observed_pins_matches_specs_and_refuses_strays() -> None:
+    specs = (
+        ObservedPeerSpec("east", "wss://east:8877"),
+        ObservedPeerSpec("west", "wss://west:8877"),
+    )
+    assert resolve_observed_pins([("east", "sha256:aa")], specs) == {"east": "sha256:aa"}
+    assert resolve_observed_pins(None, specs) == {}
+    assert resolve_observed_pins((), ()) == {}
+    with pytest.raises(ValueError, match="does not fetch"):
+        resolve_observed_pins([("ghost", "sha256:aa")], specs)
+    with pytest.raises(ValueError, match="twice"):
+        resolve_observed_pins([("east", "sha256:aa"), ("east", "sha256:bb")], specs)
+
+
+async def test_pinned_observed_peer_pulls_a_self_signed_tls_hub(tmp_path: Path) -> None:
+    """The pinned observed pull works end to end against a real self-signed TLS hub.
+
+    The right pin folds the peer reachable; a wrong pin fails that peer closed as an
+    unreachable advisory row naming the mismatch, never an exception.
+    """
+    import subprocess
+
+    from hub_e2e_helpers import _await_listening, _free_port
+    from synapse_channel.core.hub import SynapseHub
+    from synapse_channel.core.persistence import EventStore
+    from synapse_channel.core.tls import build_server_ssl_context, certificate_sha256_pin
+
+    certfile = tmp_path / "hub-cert.pem"
+    keyfile = tmp_path / "hub-key.pem"
+    subprocess.run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-days",
+            "1",
+            "-subj",
+            "/CN=localhost",
+            "-addext",
+            "subjectAltName=DNS:localhost,IP:127.0.0.1",
+            "-keyout",
+            str(keyfile),
+            "-out",
+            str(certfile),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    store = EventStore(tmp_path / "events.db")
+    hub = SynapseHub(hub_id="syn-pinned", journal=store)
+    port = _free_port()
+    server_context = build_server_ssl_context(certfile=certfile, keyfile=keyfile)
+    task = asyncio.create_task(hub.serve("localhost", port, ssl_context=server_context))
+    try:
+        await _await_listening(port)
+        spec = ObservedPeerSpec("pinned", f"wss://localhost:{port}")
+        good = network_observed_fetcher_factory(
+            local_id="observer", pins={"pinned": certificate_sha256_pin(certfile)}
+        )
+        reachable = await fetch_observed_peer(spec, fetcher_factory=good)
+        bad = network_observed_fetcher_factory(
+            local_id="observer", pins={"pinned": "sha256:" + "0" * 64}
+        )
+        refused = await fetch_observed_peer(spec, fetcher_factory=bad)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        store.close()
+
+    assert reachable.reachable is True
+    assert refused.reachable is False
+    assert "pin mismatch" in refused.error

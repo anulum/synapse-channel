@@ -499,3 +499,12 @@ def test_parser_accepts_watch_flags() -> None:
     assert args.watch is True
     assert args.interval == 0.5
     assert args.count == 3
+
+
+def test_cmd_status_refuses_a_stray_observed_pin(capsys: pytest.CaptureFixture[str]) -> None:
+    """A pin naming a hub that --observed-peer does not fetch exits 2 before connecting."""
+    args = cli.build_parser().parse_args(
+        ["status", "--uri", "ws://127.0.0.1:1", "--observed-pin", "ghost=sha256:" + "a" * 64]
+    )
+    assert cli_status._cmd_status(args) == 2
+    assert "does not fetch" in capsys.readouterr().err
