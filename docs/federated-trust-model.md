@@ -143,10 +143,12 @@ key-signing exchange) and import them explicitly. `synapse federation import`
 operator confirmed it (a required `--confirmed-by`) — so every federated trust
 relationship is auditable back to a human decision, not auto-discovered from the
 network; `synapse federation list` shows the imported peerings with each peering's
-age (an expired bundle renders as such, and `--max-age` flags active peerings whose
-ceremony has gone stale, exiting `1` for scheduled checks), and `synapse federation
-revoke` retires one while keeping its audit record. There is no automatic
-trust-on-first-use and no network-driven trust root.
+age, expiry distance, and rotation state. A peering in an add-new-before-retire
+grace window renders as `rotation=overlap`, an expired bundle renders as
+expired, and `--max-age` flags active peerings whose ceremony has gone stale,
+exiting `1` for scheduled checks. `synapse federation revoke` retires one while
+keeping its audit record. There is no automatic trust-on-first-use and no
+network-driven trust root.
 
 The bundle *bytes* may move over the wire (shipped): a hub started with
 `--federation-offer FILE` answers a peer operator's `synapse federation fetch` with its
@@ -227,7 +229,7 @@ imported peering with domain 'atelier.example' (1 namespaces, 1 keys, 1 pins), c
 
 brioni$ synapse federation list --max-age 90
 1 peer domain(s):
-  atelier.example [active] namespaces=atelier/shared-docs keys=1 pins=1 scope=1 — confirmed by brioni-ops from ws://atelier-hub:8951, imported 0 day(s) ago
+  atelier.example [active] namespaces=atelier/shared-docs keys=1 pins=1 scope=1 expires=2026-10-03T04:00:00Z (in 90.0d) rotation=steady — confirmed by brioni-ops from ws://atelier-hub:8951, imported 0 day(s) ago
 ```
 
 The mirror-image run — brioni offering, atelier fetching — completes the pair.
@@ -262,11 +264,12 @@ the evidence proves.
 
 Revocation is domain-scoped and explicit. A domain revokes its own keys, pins,
 or peerings; federated peers learn of revocation through the same out-of-band
-exchange that established the peering, and a future runtime would surface a
-revoked peering the way the local trust bundles already surface revoked keys and
-peers. Because every federated statement is attributable to one issuing domain,
-incident response can scope blast radius to a single domain and its explicit
-peerings rather than an implicit transitive web.
+exchange that established the peering. A bundle re-import propagates new key and
+pin material, and a revoked imported peering is refused on the next runtime
+authorisation check while the audit record remains listed. Because every
+federated statement is attributable to one issuing domain, incident response can
+scope blast radius to a single domain and its explicit peerings rather than an
+implicit transitive web.
 
 ## Relationship to other designs
 

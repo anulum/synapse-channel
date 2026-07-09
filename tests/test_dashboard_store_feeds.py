@@ -212,6 +212,7 @@ def _peer(domain: str, *, revoked: bool = False, expires_at: float | None = None
     return FederationPeer(
         domain_id=domain,
         namespaces=frozenset({f"{domain}/shared"}),
+        certificate_pins=frozenset({f"sha256:{domain}"}),
         signing_key_ids=frozenset({f"{domain}-key"}),
         revoked=revoked,
         expires_at=expires_at,
@@ -253,8 +254,12 @@ class TestFederationFeed:
         assert peerings["mallory.example"]["state"] == "revoked"
         assert peerings["stale.example"]["state"] == "expired"
         assert peerings["atelier.example"]["imported_at"] == 10.0
+        assert peerings["atelier.example"]["imported_age_days"] == pytest.approx(90.0 / 86_400.0)
         assert peerings["atelier.example"]["confirmed_by"] == "ops"
         assert peerings["atelier.example"]["fingerprint"] == bundle_fingerprint(active)
+        assert peerings["atelier.example"]["rotation_state"] == "steady"
+        assert peerings["atelier.example"]["expires_in_days"] == pytest.approx(800.0 / 86_400.0)
+        assert peerings["atelier.example"]["expiry_note"] == "in 0.0d"
 
     def test_namespace_outcomes_are_absent_with_the_reason_stated(self, tmp_path: Path) -> None:
         store = tmp_path / "federation.json"

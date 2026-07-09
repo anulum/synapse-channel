@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse federation list` now shows each imported peering's bundle expiry
+  distance and credential rotation state (`steady`, `overlap`, or
+  `incomplete`). The dashboard federation feed exposes the same lifecycle fields
+  so operator surfaces distinguish active, expired, revoked, stale, and
+  add-new-before-retire rotation windows consistently.
+
 ## [0.98.18] - 2026-07-09
 
 ### Added

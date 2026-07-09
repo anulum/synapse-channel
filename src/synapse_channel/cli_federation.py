@@ -58,6 +58,7 @@ from synapse_channel.core.federation_fetch import (
     fetch_federation_offer,
     pinned_connector,
 )
+from synapse_channel.core.federation_lifecycle import classify_federation_lifecycle
 from synapse_channel.core.federation_rotation import (
     DEFAULT_ROTATION_LIFETIME_DAYS,
     FederationRotationError,
@@ -160,24 +161,21 @@ def _cmd_list(args: argparse.Namespace, *, clock: Clock = time.time) -> int:
     for domain_id in sorted(records):
         record = records[domain_id]
         peer = record.peer
-        if peer.revoked:
-            state = "revoked"
-        elif peer.expires_at is not None and now >= peer.expires_at:
-            state = "expired"
-        else:
-            state = "active"
-        age_days = max(0.0, now - record.provenance.imported_at) / SECONDS_PER_DAY
+        lifecycle = classify_federation_lifecycle(record, now=now, max_age_days=args.max_age)
         marker = ""
-        if args.max_age is not None and state == "active" and age_days > args.max_age:
+        if args.max_age is not None and lifecycle.stale:
             stale += 1
-            marker = f" [stale: imported {age_days:.0f} days ago > {args.max_age:g}]"
+            marker = (
+                f" [stale: imported {lifecycle.imported_age_days:.0f} days ago > {args.max_age:g}]"
+            )
         namespaces = ", ".join(sorted(peer.namespaces)) or "(none)"
         print(
-            f"  {domain_id} [{state}]{marker} namespaces={namespaces} "
+            f"  {domain_id} [{lifecycle.state}]{marker} namespaces={namespaces} "
             f"keys={len(peer.signing_key_ids)} pins={len(peer.certificate_pins)} "
-            f"scope={len(peer.scope_grants)} "
+            f"scope={len(peer.scope_grants)} expires={lifecycle.expires_label} "
+            f"({lifecycle.expiry_note}) rotation={lifecycle.rotation_state} "
             f"— confirmed by {record.provenance.confirmed_by} from {record.provenance.source}, "
-            f"imported {age_days:.0f} day(s) ago"
+            f"imported {lifecycle.imported_age_days:.0f} day(s) ago"
         )
     if stale:
         print(

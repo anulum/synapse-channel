@@ -53,6 +53,7 @@ from synapse_channel.core.causality_health import (
     health_to_json,
     run_causal_health,
 )
+from synapse_channel.core.federation_lifecycle import classify_federation_lifecycle
 from synapse_channel.core.federation_store import load_store
 from synapse_channel.core.federation_wire import bundle_fingerprint
 from synapse_channel.core.journal import EventKind, replay
@@ -625,21 +626,20 @@ def build_federation_feed(store_path: str | Path, *, clock: Clock = time.time) -
     for domain_id in sorted(records):
         record = records[domain_id]
         peer = record.peer
-        if peer.revoked:
-            state = "revoked"
-        elif peer.expires_at is not None and now >= peer.expires_at:
-            state = "expired"
-        else:
-            state = "active"
+        lifecycle = classify_federation_lifecycle(record, now=now)
         peerings.append(
             {
                 "domain": domain_id,
-                "state": state,
+                "state": lifecycle.state,
+                "rotation_state": lifecycle.rotation_state,
                 "imported_at": record.provenance.imported_at,
+                "imported_age_days": lifecycle.imported_age_days,
                 "confirmed_by": record.provenance.confirmed_by,
                 "source": record.provenance.source,
                 "fingerprint": bundle_fingerprint(peer),
                 "expires_at": peer.expires_at,
+                "expires_in_days": lifecycle.expires_in_days,
+                "expiry_note": lifecycle.expiry_note,
             }
         )
     return {

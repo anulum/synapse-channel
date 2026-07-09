@@ -198,6 +198,7 @@ def test_list_expired_peering_shows_expired_and_is_not_stale(
 
     captured = capsys.readouterr()
     assert "acme [expired]" in captured.out
+    assert "expires=1970-01-03T00:00:00Z (expired 3.0d ago)" in captured.out
     assert "[stale" not in captured.out
     assert captured.err == ""
 
@@ -217,6 +218,27 @@ def test_list_revoked_peering_shows_revoked_and_is_not_stale(
     assert "acme [revoked]" in captured.out
     assert "[stale" not in captured.out
     assert captured.err == ""
+
+
+def test_list_shows_expiry_and_rotation_state(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    overlap = dict(
+        _BUNDLE,
+        expires_at=7 * SECONDS_PER_DAY,
+        signing_key_ids=["key-1", "key-2"],
+        certificate_pins=["sha256:aa", "sha256:bb"],
+    )
+    store = _imported_store(tmp_path, bundle=overlap)
+    capsys.readouterr()
+
+    args = _args("list", "--store", store)
+    assert _cmd_list(args, clock=lambda: 5 * SECONDS_PER_DAY) == 0
+
+    out = capsys.readouterr().out
+    assert "keys=2 pins=2 scope=1" in out
+    assert "expires=1970-01-08T00:00:00Z (in 2.0d)" in out
+    assert "rotation=overlap" in out
 
 
 def test_list_rejects_a_non_positive_max_age(
