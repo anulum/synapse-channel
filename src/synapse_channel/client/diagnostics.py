@@ -21,11 +21,12 @@ import json
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from os import PathLike
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse
 
 from synapse_channel.core.hub import is_loopback_host
-from synapse_channel.waiter_identity import waiter_owner
+from synapse_channel.waiter_identity import split_roster, waiter_name, waiter_owner
 
 if TYPE_CHECKING:
     # Import-time-only: keeps the ``Identity`` type annotation without importing
@@ -249,6 +250,115 @@ def check_waiter(roster: list[str] | None, waiter_name: str) -> Diagnosis:
         remedy=(
             f"arm one in the background: synapse wait --name {waiter_name} "
             f"--for {owner} --directed-only"
+        ),
+    )
+
+
+def check_multi_seat_posture(
+    *,
+    roster: list[str] | None,
+    token: str | None,
+    identity_trust: str | PathLike[str] | None = None,
+    role_grants: str | PathLike[str] | None = None,
+    force: bool = False,
+) -> Diagnosis:
+    """Advise multi-seat trust materials when more than one seat is live.
+
+    A multi-seat fleet (several agents, or several waiters, or ``force=True``)
+    should use a connect token and the ``--team-secure`` materials (identity trust
+    bundle + role-grant store). Solo loopback remains a pass so everyday single-
+    agent use is not noisy. Missing materials are warnings, not failures — the
+    operator may still be on open loopback deliberately.
+    """
+    if roster is None:
+        return Diagnosis(
+            check="multi-seat",
+            status="warn",
+            detail="could not assess multi-seat posture — the hub is unreachable",
+            remedy="bring the hub up, then re-run (or pass --multi-seat to force the checklist)",
+        )
+    agents, waiters = split_roster(roster)
+    multi = force or len(agents) >= 2 or (len(agents) >= 1 and len(waiters) >= 2)
+    if not multi:
+        return Diagnosis(
+            check="multi-seat",
+            status="pass",
+            detail=(
+                f"single-seat roster ({len(agents)} agent(s), {len(waiters)} waiter(s)); "
+                "multi-seat trust checklist skipped"
+            ),
+            remedy="pass --multi-seat to force the team-secure checklist",
+        )
+    gaps: list[str] = []
+    if not token:
+        gaps.append("no connect token")
+    trust_path = Path(identity_trust) if identity_trust else None
+    roles_path = Path(role_grants) if role_grants else None
+    if trust_path is None or not trust_path.is_file():
+        gaps.append("identity trust bundle missing")
+    if roles_path is None or not roles_path.is_file():
+        gaps.append("role-grants store missing")
+    detail = (
+        f"multi-seat roster ({len(agents)} agent(s), {len(waiters)} waiter(s))"
+        + (f": {'; '.join(gaps)}" if gaps else ": token + trust + role-grants present")
+    )
+    if gaps:
+        return Diagnosis(
+            check="multi-seat",
+            status="warn",
+            detail=detail,
+            remedy=(
+                "for multi-seat trust: set --token, enrol keys "
+                "(`synapse identity keygen … --enroll`), grant roles "
+                "(`synapse role grant …`), then start "
+                "`synapse hub --team-secure --identity-trust … --role-grants …` "
+                "(see docs/team-secure.md and the multi-seat golden path)"
+            ),
+        )
+    return Diagnosis(
+        check="multi-seat",
+        status="pass",
+        detail=detail,
+        remedy=(
+            "start the hub with --team-secure (and the trust/role paths) if it is "
+            "not already; private directed messages require that profile"
+        ),
+    )
+
+
+def check_deaf_agents(roster: list[str] | None) -> Diagnosis:
+    """Warn when live agents have no matching ``-rx`` wake waiter on the bus.
+
+    Presence without a waiter is the "online but deaf" failure: directed messages
+    land in the feed and never wake the seat. Passive ``-rx`` names are ignored as
+    agents (they are waiters themselves).
+    """
+    if roster is None:
+        return Diagnosis(
+            check="deaf-agents",
+            status="warn",
+            detail="could not check for deaf agents — the hub is unreachable",
+            remedy="bring the hub up, then re-run",
+        )
+    agents, _waiters = split_roster(roster)
+    live = set(roster)
+    deaf = [agent for agent in agents if waiter_name(agent) not in live]
+    if not deaf:
+        return Diagnosis(
+            check="deaf-agents",
+            status="pass",
+            detail=f"every live agent has a -rx waiter ({len(agents)} agent(s))",
+        )
+    listing = ", ".join(deaf[:3])
+    more = f" and {len(deaf) - 3} more" if len(deaf) > 3 else ""
+    sample = deaf[0]
+    return Diagnosis(
+        check="deaf-agents",
+        status="warn",
+        detail=f"agents present without a wake waiter: {listing}{more}",
+        remedy=(
+            f"arm waiters: synapse wait --name {waiter_name(sample)} "
+            f"--for {sample} --directed-only (repeat per deaf agent)"
         ),
     )
 

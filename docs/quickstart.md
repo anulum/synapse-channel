@@ -121,6 +121,17 @@ synapse dashboard --port 8765 --feeds-db ~/synapse/hub.db
 Success looks like: `synapse who` shows agents and waiters; Studio shows a live
 verdict and claim segments; a second agent cannot claim the same file scope.
 
+Check multi-seat trust and deaf agents (present without a `-rx` waiter):
+
+```bash
+synapse doctor --multi-seat \
+  --identity-trust ~/synapse/trust.json \
+  --role-grants ~/synapse/roles.json
+```
+
+A multi-seat roster without a token/trust/role materials warns with a
+`--team-secure` remedy; agents online without waiters warn under `deaf-agents`.
+
 See [team-secure mode](team-secure.md) and [Studio](studio.md).
 
 ## Or run the pieces individually

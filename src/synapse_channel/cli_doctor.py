@@ -41,9 +41,11 @@ from synapse_channel.cli_queries import AgentFactory, _query_hub
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.client.diagnostics import (
     Diagnosis,
+    check_deaf_agents,
     check_disk_space,
     check_exposure,
     check_identity,
+    check_multi_seat_posture,
     check_reachable,
     check_send_identity,
     check_unread_addressees,
@@ -255,13 +257,18 @@ async def _diagnose(
     federation_skew_warn_seconds: float = DEFAULT_FEDERATION_SKEW_WARN_SECONDS,
     federation_cert_warn_days: int = DEFAULT_FEDERATION_CERT_WARN_DAYS,
     federation_diagnose_runner: FederationDiagnoseRunner = diagnose_federation,
+    multi_seat: bool = False,
+    identity_trust: str | Path | None = None,
+    role_grants: str | Path | None = None,
 ) -> tuple[int, list[str], list[Diagnosis]]:
     """Resolve the identity, run every check, and return the summarised verdicts.
 
     ``send_name`` checks a specific send identity for project-routable replies
     (the ``<project>-<suffix>`` footgun); it defaults to the resolved identity.
-    The structured diagnoses ride along with the exit code and report lines so
-    ``--fix`` can decide which findings the local service install repairs.
+    Multi-seat trust materials (``--multi-seat``, identity-trust and role-grants
+    paths) feed the team-secure checklist; deaf-agent detection uses the live
+    roster. The structured diagnoses ride along with the exit code and report
+    lines so ``--fix`` can decide which findings the local service install repairs.
     """
     from synapse_channel.ergonomics import resolve_identity
 
@@ -302,6 +309,16 @@ async def _diagnose(
     )
     diagnoses.append(check_reachable(roster is not None, uri))
     diagnoses.append(check_waiter(roster, identity.waiter_name))
+    diagnoses.append(check_deaf_agents(roster))
+    diagnoses.append(
+        check_multi_seat_posture(
+            roster=roster,
+            token=token,
+            identity_trust=identity_trust,
+            role_grants=role_grants,
+            force=multi_seat,
+        )
+    )
     diagnoses.append(
         check_unread_addressees(
             feed_lines=feed_tail_reader(env),
@@ -436,6 +453,9 @@ def _cmd_doctor(
                     "federation_cert_warn_days",
                     DEFAULT_FEDERATION_CERT_WARN_DAYS,
                 ),
+                multi_seat=bool(getattr(args, "multi_seat", False)),
+                identity_trust=getattr(args, "identity_trust", None) or None,
+                role_grants=getattr(args, "role_grants", None) or None,
             )
         )
 
@@ -666,6 +686,26 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=int,
         default=DEFAULT_FEDERATION_CERT_WARN_DAYS,
         help="Warn when peer TLS certificates or federation bundles expire within this many days.",
+    )
+    doctor.add_argument(
+        "--multi-seat",
+        action="store_true",
+        help="Force the multi-seat trust checklist even when the live roster looks "
+        "single-seat (token, identity-trust, role-grants → --team-secure).",
+    )
+    doctor.add_argument(
+        "--identity-trust",
+        default="",
+        metavar="FILE",
+        help="Path to an identity trust bundle for the multi-seat checklist "
+        "(same file as synapse hub --identity-trust).",
+    )
+    doctor.add_argument(
+        "--role-grants",
+        default="",
+        metavar="FILE",
+        help="Path to a role-grant store for the multi-seat checklist "
+        "(same file as synapse hub --role-grants).",
     )
     doctor.add_argument(
         "--redeploy-checklist",

@@ -9,13 +9,16 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from synapse_channel.client.diagnostics import (
     Diagnosis,
+    check_deaf_agents,
     check_disk_space,
     check_exposure,
     check_identity,
+    check_multi_seat_posture,
     check_reachable,
     check_send_identity,
     check_unread_addressees,
@@ -265,3 +268,104 @@ class TestUnreadAddressees:
 
         assert verdict.status == "warn"
         assert "and 2 more" in verdict.detail
+
+
+# --- check_multi_seat_posture -------------------------------------------------
+
+
+def test_multi_seat_skips_single_seat_roster() -> None:
+    diagnosis = check_multi_seat_posture(
+        roster=["solo", "solo-rx"],
+        token=None,
+    )
+    assert diagnosis.status == "pass"
+    assert "single-seat" in diagnosis.detail
+    assert "--multi-seat" in diagnosis.remedy
+
+
+def test_multi_seat_warns_when_hub_unreachable() -> None:
+    diagnosis = check_multi_seat_posture(roster=None, token="t")
+    assert diagnosis.status == "warn"
+    assert "unreachable" in diagnosis.detail
+
+
+def test_multi_seat_detects_multiple_agents_without_materials() -> None:
+    diagnosis = check_multi_seat_posture(
+        roster=["a/one", "a/two", "a/one-rx"],
+        token=None,
+    )
+    assert diagnosis.status == "warn"
+    assert "multi-seat" in diagnosis.detail
+    assert "no connect token" in diagnosis.detail
+    assert "identity trust" in diagnosis.detail
+    assert "role-grants" in diagnosis.detail
+    assert "--team-secure" in diagnosis.remedy
+
+
+def test_multi_seat_force_single_agent_with_materials(tmp_path: Path) -> None:
+    trust = tmp_path / "trust.json"
+    roles = tmp_path / "roles.json"
+    trust.write_text("{}", encoding="utf-8")
+    roles.write_text("{}", encoding="utf-8")
+    diagnosis = check_multi_seat_posture(
+        roster=["solo"],
+        token="secret",
+        identity_trust=trust,
+        role_grants=roles,
+        force=True,
+    )
+    assert diagnosis.status == "pass"
+    assert "token + trust + role-grants present" in diagnosis.detail
+    assert "--team-secure" in diagnosis.remedy
+
+
+def test_multi_seat_token_but_missing_files_is_warn() -> None:
+    diagnosis = check_multi_seat_posture(
+        roster=["a/x", "a/y"],
+        token="t",
+        identity_trust="/no/such/trust.json",
+        role_grants="/no/such/roles.json",
+    )
+    assert diagnosis.status == "warn"
+    assert "identity trust bundle missing" in diagnosis.detail
+    assert "role-grants store missing" in diagnosis.detail
+    assert "no connect token" not in diagnosis.detail
+
+
+def test_multi_seat_two_waiters_counts_as_multi() -> None:
+    diagnosis = check_multi_seat_posture(
+        roster=["agent", "agent-rx", "other-rx"],
+        token=None,
+    )
+    assert diagnosis.status == "warn"
+    assert "multi-seat" in diagnosis.detail
+
+
+# --- check_deaf_agents -------------------------------------------------------
+
+
+def test_deaf_agents_warns_when_hub_unreachable() -> None:
+    diagnosis = check_deaf_agents(None)
+    assert diagnosis.status == "warn"
+    assert "unreachable" in diagnosis.detail
+
+
+def test_deaf_agents_passes_when_every_agent_has_rx() -> None:
+    diagnosis = check_deaf_agents(["proj/a", "proj/a-rx", "proj/b", "proj/b-rx"])
+    assert diagnosis.status == "pass"
+    assert "every live agent" in diagnosis.detail
+
+
+def test_deaf_agents_warns_on_arm_without_waiter() -> None:
+    diagnosis = check_deaf_agents(["FLUCTARA/codex-arm", "SCPN/CORE", "SCPN/CORE-rx"])
+    assert diagnosis.status == "warn"
+    assert "FLUCTARA/codex-arm" in diagnosis.detail
+    assert "SCPN/CORE" not in diagnosis.detail
+    assert "synapse wait --name FLUCTARA/codex-arm-rx" in diagnosis.remedy
+
+
+def test_deaf_agents_lists_bound_and_counts_rest() -> None:
+    roster = [f"p/a{i}" for i in range(5)]
+    diagnosis = check_deaf_agents(roster)
+    assert diagnosis.status == "warn"
+    assert "and 2 more" in diagnosis.detail

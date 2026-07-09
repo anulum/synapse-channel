@@ -20,6 +20,11 @@ All notable changes to this project are documented here.
   gains a multi-seat golden path ending in Studio.
 
 ### Added
+- `synapse doctor` multi-seat trust checklist: `--multi-seat`,
+  `--identity-trust`, and `--role-grants` feed `check_multi_seat_posture`
+  (token + trust + role materials → `--team-secure` remedy). Auto-detects a
+  multi-seat roster. New `deaf-agents` check warns when live agents lack a
+  matching `-rx` waiter.
 - ACL permission verbs `mailbox` and `role-claim`: a policy can grant mailbox
   backlog replay for a non-self/non-`-rx` monitor (target kind `agent`) and
   authorise heartbeat role bindings alongside the role-grant store (target kind

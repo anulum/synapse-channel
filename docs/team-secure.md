@@ -59,8 +59,22 @@ broadcast to every connected socket. A trusted monitor may replay another
 identity's mailbox only with an ACL `mailbox` rule (self and `-rx` still work
 without one).
 
+## Doctor checklist
+
+```bash
+synapse doctor --multi-seat \
+  --token-file ~/synapse/token \
+  --identity-trust trust.json \
+  --role-grants role-grants.json
+```
+
+With a multi-seat roster (or `--multi-seat`), doctor warns when the connect
+token, trust bundle, or role-grant store is missing, and points at this profile.
+It also flags **deaf agents** (live seats without a matching `-rx` waiter).
+
 ## Related
 
 - [Identity and ACL](identity-and-acl.md)
 - [Paranoid mode](paranoid-mode.md) (production / exposed bind preset)
 - [Deployment](deployment.md)
+- [Quick start — multi-seat golden path](quickstart.md)
