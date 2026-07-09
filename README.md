@@ -69,6 +69,10 @@ Synapse's daily promise is three explicit loops:
   receipts, Merkle roots, ACL surfaces, federation, and encryption-key commands
   make operator decisions auditable. Governance surfaces report by default;
   operators decide what blocks a merge, release, or cross-hub action.
+- **Protect the durable log at rest** with optional **SQLCipher** page encryption
+  for the live hub event store (plus whole-file AES-GCM envelopes for relay
+  logs, A2A state, cursors, and archives). See
+  [SQLCipher live event store](#sqlcipher-live-event-store-at-rest) below.
 
 ## At a glance
 
@@ -85,7 +89,7 @@ graph LR
     H["SynapseHub<br/>single source of truth"] --> CL["Claims & leases<br/>scope · epoch · checkpoint"]
     H --> BB["Blackboard<br/>plan + progress"]
     H --> CAP["Capabilities<br/>cards + routing"]
-    H --> LOG["Event log (SQLite WAL)<br/>durable · replayed on restart"]
+    H --> LOG["Event log (SQLite WAL)<br/>durable · optional SQLCipher at rest"]
 ```
 
 A claim leases a unit of work with a file scope, so two agents never edit the
@@ -103,7 +107,7 @@ tiered so the lean bus stays clear:
 | Local coordination core | `stable` | The hub, send/wait/listen/arm, claims, tasks, locks, status, board, init, and fleet bootstrap commands used for daily coordination. |
 | Edge adapters | `adapter` | MCP, A2A, git hooks, tmux/provider bridges, shell hooks, ingestion, and worker seats that connect existing tools to the bus. |
 | Read-only operator views | `analysis` | Doctor, state, dashboard, causality, multihub, reliability, trust graph, directory, accounting, manifests, and event queries. |
-| Governance and integrity | `governance` | Policy checks, approvals, ACL/role surfaces, federation, Merkle roots, release receipts, reproduction, compaction, and encryption-key operations. |
+| Governance and integrity | `governance` | Policy checks, approvals, ACL/role surfaces, federation, Merkle roots, release receipts, reproduction, compaction, encrypt-key / SQLCipher key operations. |
 | Lab surfaces | `experimental` | Benchmarking, participant fabric, route-task, sandbox, workflow, TTL advice, memory recall, auto-action, and resource bidding. |
 
 The authoritative map is [`synapse_channel.surface_taxonomy`](src/synapse_channel/surface_taxonomy.py)
@@ -123,6 +127,10 @@ they do not change the single-dependency local core.
 ```bash
 python -m pip install synapse-channel       # the release from PyPI
 python -m pip install -e ".[dev]"           # or an editable dev checkout
+# optional: live hub event-store page encryption (SQLCipher)
+python -m pip install 'synapse-channel[sqlcipher]'
+# optional: whole-file AES-GCM envelope helpers (encrypt-key profile/migrate/rekey)
+python -m pip install 'synapse-channel[encryption]'
 ```
 
 For an editable checkout, keep the local `.venv` aligned with the repository's
@@ -528,6 +536,67 @@ checkpoint/finding removal counts, board tasks, release receipt notes, and a
 bounded coordination timeline. It is an audit aid for a local event store; it
 does not certify that release evidence is sufficient.
 
+### SQLCipher live event store (at rest)
+
+**SQLCipher completes the at-rest encryption story for the live hub.** The
+default install stays dependency-free and uses ordinary SQLite. When you need
+page-level confidentiality for the durable coordination log while the hub holds
+it open, install the optional extra and pass an owner-only key file:
+
+```bash
+python -m pip install 'synapse-channel[sqlcipher]'
+synapse encrypt-key generate ~/synapse/hub.key
+chmod 600 ~/synapse/hub.key
+
+# New encrypted store (main DB + WAL stay ciphertext on disk):
+synapse hub --db ~/synapse/hub.db --db-key-file ~/synapse/hub.key
+
+# Plaintext → encrypted offline migration (hub stopped; destination must not exist):
+synapse encrypt-key migrate-sqlcipher \
+  --key ~/synapse/hub.key \
+  --source ~/synapse/hub-plain.db \
+  --destination ~/synapse/hub.db
+
+# In-place key rotation (hub stopped):
+synapse encrypt-key rekey-sqlcipher \
+  --db ~/synapse/hub.db \
+  --old-key ~/synapse/hub.key \
+  --new-key ~/synapse/hub.key.new
+```
+
+**Operators and analysis CLIs** open the same store with the same key material —
+missing or wrong keys **fail closed** (no silent empty report):
+
+```bash
+synapse doctor --db-path ~/synapse/hub.db --db-key-file ~/synapse/hub.key
+synapse event-query ~/synapse/hub.db --db-key-file ~/synapse/hub.key 'task T timeline'
+synapse postmortem ~/synapse/hub.db --db-key-file ~/synapse/hub.key T
+synapse reliability ~/synapse/hub.db --db-key-file ~/synapse/hub.key
+synapse causality contention ~/synapse/hub.db --db-key-file ~/synapse/hub.key
+synapse dashboard --feeds-db ~/synapse/hub.db --feeds-db-key-file ~/synapse/hub.key
+synapse multihub observe --peer-db ~/peer/hub.db --db-key-file ~/peer/hub.key
+```
+
+| Surface | What SQLCipher covers |
+|---|---|
+| **Live hub** | `synapse hub --db … --db-key-file` — page encryption for main DB + WAL while open |
+| **Doctor** | `synapse doctor --db-path … --db-key-file` — verify the key opens the store |
+| **Readers / analysis** | `event-query`, `postmortem`, `merkle`, `causality`, `accounting`, `reliability`, `trust-graph`, `memory-recall`, `debug`/`reproduce`, `approval status`, `ttl-advice`, `workflow contention`, `participant costs`, `cross-repo --db`, … |
+| **Operator UI** | Dashboard store feeds via `--feeds-db-key-file` |
+| **Multi-hub / MCP** | `multihub observe --db-key-file`; MCP tools take `event_store_key_file` for route observations and memory recall |
+
+**Complementary whole-file envelopes** (optional `[encryption]` extra) protect
+relay logs, A2A state files, cursors, and archives with AES-256-GCM via
+`synapse encrypt-key profile|migrate|rekey|backup|restore`. They do **not**
+replace page encryption for a live open SQLite database — that is SQLCipher's
+job.
+
+Honest limits: SQLCipher does not protect hub RAM, does not replace filesystem
+permissions or connect authentication, and is not multi-tenant isolation. Stock
+installs without `[sqlcipher]` refuse `--db-key-file` with an install hint.
+
+Full operator profile, key handling, and rotation: **[at-rest encryption](docs/at-rest-encryption.md)**.
+
 ### Token-thrifty observation
 
 `--relay-log` mirrors every broadcast to a newline-delimited file in a compact
@@ -675,11 +744,14 @@ frames, ACL + native WSS, metrics bearer-token auth, disabled metrics query
 tokens, and clear remaining gaps. The two compose for multi-seat + exposed
 binds.
 
-The planned [at-rest encryption](docs/at-rest-encryption.md) profile scopes
-optional protection for SQLite event stores, relay logs, A2A state, cursor files,
-archive reports, temporary files, and backups, with key storage, key derivation,
-rotation, backup recovery, and lost-key recovery boundaries documented before
-any encryption flag ships.
+[At-rest encryption](docs/at-rest-encryption.md) is **implemented** in two
+complementary layers: **SQLCipher page encryption** for the live hub event store
+(`hub --db-key-file`, migrate/rekey-sqlcipher, analysis and doctor readers — see
+[SQLCipher live event store](#sqlcipher-live-event-store-at-rest)), and
+**whole-file AES-256-GCM envelopes** for relay logs, A2A state, cursors, and
+archives (`synapse encrypt-key` profile/migrate/rekey/backup/restore, optional
+passphrase/PKCS#11/TPM2 key wrapping). Both are opt-in extras; neither claims
+RAM protection or multi-tenant isolation.
 
 The [end-to-end encrypted channels](docs/end-to-end-encrypted-channels.md)
 runtime encrypts selected chat payloads with `synapse send --encrypt-key-file`
@@ -1198,12 +1270,17 @@ opt-in and deny-by-default:
 Beyond the wire, several subsystems harden data at rest and privileged actions, each
 opt-in and documented:
 
-- **At-rest encryption** — an AES-256-GCM envelope over the durable store, with a
-  fail-safe startup, a migration and rekey flow, and a per-key message-limit counter that
-  can persist across restarts (crash-safe by reserving a batch ahead) so a nonce is never
-  reused over a key's lifetime. Key material can sit behind a hardware key-encryption key —
-  a PKCS#11 HSM or a TPM 2.0 — not only a passphrase. See
-  [at-rest encryption](https://anulum.github.io/synapse-channel/at-rest-encryption/).
+- **At-rest encryption (complete dual profile)** —
+  - **SQLCipher** — optional page encryption for the **live** hub event store
+    (`pip install 'synapse-channel[sqlcipher]'`, `synapse hub --db-key-file`,
+    migrate/rekey-sqlcipher, doctor and analysis readers with the same key).
+    Completes the story for a database that stays open under WAL. See
+    [SQLCipher live event store](#sqlcipher-live-event-store-at-rest).
+  - **Whole-file AES-256-GCM envelopes** — relay logs, A2A state, cursors, and
+    archives via `synapse encrypt-key`, with fail-safe profile checks, migrate/
+    rekey/backup/restore, and optional passphrase / PKCS#11 / TPM 2.0 key
+    wrapping (`[encryption]` extra). See
+    [at-rest encryption](docs/at-rest-encryption.md).
 - **Capability-limited tool sandbox** — `synapse sandbox` runs a WebAssembly tool under a
   deny-by-default capability manifest (filesystem, network, and resource grants bound to
   the module's content digest), refuses a preopen whose host path resolves through a

@@ -13,6 +13,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Documentation
+- README documents SQLCipher as a first-class at-rest feature: install extra,
+  hub `--db-key-file`, migrate/rekey, analysis/doctor readers, complementary
+  whole-file AES-GCM envelopes, and honest limits (replaces “planned” wording).
+
 ### Added
 - SQLCipher `--db-key-file` on `reliability` and `workflow contention`
   (core `run_reliability_report` / `run_yield_advice` already accepted
