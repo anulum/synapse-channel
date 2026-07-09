@@ -100,6 +100,32 @@ def test_multihub_observe_without_key_fails_closed(
     )
 
 
+def test_multihub_observe_wrong_key_fails_closed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Wrong SQLCipher key must fail closed (not return empty observed state)."""
+    db, _key = _encrypted_claim_store(tmp_path)
+    wrong = generate_key_file(tmp_path / "wrong.key")
+    code = cli.main(
+        [
+            "multihub",
+            "observe",
+            "--peer-db",
+            str(db),
+            "--db-key-file",
+            str(wrong),
+            "--json",
+        ]
+    )
+    assert code != 0
+    err = capsys.readouterr().err.lower()
+    assert "t-peer" not in err
+    assert any(
+        token in err
+        for token in ("key", "sqlcipher", "encrypt", "cipher", "db-key-file", "database")
+    )
+
+
 @pytest.mark.asyncio
 async def test_mcp_memory_recall_reads_encrypted_store(tmp_path: Path) -> None:
     db, key = _encrypted_claim_store(tmp_path)
@@ -139,12 +165,28 @@ async def test_mcp_memory_recall_without_key_fails_closed(tmp_path: Path) -> Non
 
 
 @pytest.mark.asyncio
-async def test_mcp_route_task_observation_store_without_key_fails_closed(
-    tmp_path: Path,
-) -> None:
-    """Encrypted observation store without key returns an error string, not empty ranks."""
+async def test_mcp_memory_recall_wrong_key_fails_closed(tmp_path: Path) -> None:
     db, _key = _encrypted_claim_store(tmp_path)
+    wrong = generate_key_file(tmp_path / "wrong-mem.key")
+    bridge = SynapseHubBridge.__new__(SynapseHubBridge)
+    out = await SynapseHubBridge.memory_recall(
+        bridge,
+        str(db),
+        "packaging",
+        limit=5,
+        since_seq=0,
+        event_store_key_file=str(wrong),
+    )
+    text = out.lower()
+    assert "packaging release notes" not in text
+    assert any(
+        token in text
+        for token in ("key", "sqlcipher", "encrypt", "cipher", "db-key-file", "database")
+    )
 
+
+def _stub_bridge_for_route_task() -> SynapseHubBridge:
+    """Shipped bridge with hub snapshot replies faked (store open still real)."""
     from synapse_channel.core.protocol import MessageType
 
     task = {
@@ -183,6 +225,16 @@ async def test_mcp_route_task_observation_store_without_key_fails_closed(
         return item if predicate(item) else None
 
     bridge._await_reply = _await_reply  # type: ignore[method-assign]
+    return bridge
+
+
+@pytest.mark.asyncio
+async def test_mcp_route_task_observation_store_without_key_fails_closed(
+    tmp_path: Path,
+) -> None:
+    """Encrypted observation store without key returns an error string, not empty ranks."""
+    db, _key = _encrypted_claim_store(tmp_path)
+    bridge = _stub_bridge_for_route_task()
     out = await bridge.route_task("T1", event_store=str(db))
     text = out.lower()
     # Must not silently rank as if observations were empty success.
@@ -193,46 +245,31 @@ async def test_mcp_route_task_observation_store_without_key_fails_closed(
 
 
 @pytest.mark.asyncio
+async def test_mcp_route_task_observation_store_wrong_key_fails_closed(
+    tmp_path: Path,
+) -> None:
+    """Wrong SQLCipher key on observation store must fail closed."""
+    db, _key = _encrypted_claim_store(tmp_path)
+    wrong = generate_key_file(tmp_path / "wrong-route.key")
+    bridge = _stub_bridge_for_route_task()
+    out = await bridge.route_task(
+        "T1", event_store=str(db), event_store_key_file=str(wrong)
+    )
+    text = out.lower()
+    assert "candidates" not in text or any(
+        token in text
+        for token in ("key", "sqlcipher", "encrypt", "cipher", "db-key-file", "database")
+    )
+    assert any(
+        token in text
+        for token in ("key", "sqlcipher", "encrypt", "cipher", "db-key-file", "database")
+    )
+
+
+@pytest.mark.asyncio
 async def test_mcp_route_task_observation_store_with_key_succeeds(tmp_path: Path) -> None:
     db, key = _encrypted_claim_store(tmp_path)
-    from synapse_channel.core.protocol import MessageType
-
-    task = {
-        "task_id": "T1",
-        "title": "Python routing cleanup",
-        "description": "Improve deterministic route fallback.",
-        "status": "open",
-    }
-    replies = [
-        {
-            "type": MessageType.BOARD_SNAPSHOT,
-            "board": {"tasks": [task]},
-        },
-        {"type": MessageType.MANIFEST_SNAPSHOT, "manifest": []},
-        {"type": MessageType.STATE_SNAPSHOT, "snapshot": {"resources": []}},
-    ]
-
-    class _Agent:
-        async def request_board(self) -> None:
-            return None
-
-        async def request_manifest(self) -> None:
-            return None
-
-        async def request_state(self) -> None:
-            return None
-
-    bridge = SynapseHubBridge.__new__(SynapseHubBridge)
-    bridge.agent = _Agent()  # type: ignore[assignment]
-    idx = {"i": 0}
-
-    async def _await_reply(predicate, request) -> dict[str, object] | None:  # noqa: ANN001
-        await request()
-        item = replies[idx["i"]]
-        idx["i"] += 1
-        return item if predicate(item) else None
-
-    bridge._await_reply = _await_reply  # type: ignore[method-assign]
+    bridge = _stub_bridge_for_route_task()
     out = await bridge.route_task(
         "T1", event_store=str(db), event_store_key_file=str(key)
     )
