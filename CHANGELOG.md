@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.16] - 2026-07-09
+
 ### Added
 - `synapse who`, `synapse status`, `synapse state`, and `synapse dashboard` now accept
   repeatable `--observed-peer HUB=URI` flags. Each peer is fetched through the existing
