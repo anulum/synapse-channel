@@ -14,6 +14,9 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- SQLCipher `--db-key-file` on `reliability` and `workflow contention`
+  (core `run_reliability_report` / `run_yield_advice` already accepted
+  `key_file`; CLIs now pass it through).
 - SQLCipher key material for multihub offline observe and MCP store joins:
   `multihub observe --db-key-file`, MCP `event_store_key_file` on
   `synapse_route_task` / `synapse_memory_recall` (bridge + registration).

@@ -217,7 +217,11 @@ def _cmd_contention(args: argparse.Namespace) -> int:
     """
     try:
         tasks = compile_to_tasks(parse_workflow(_load_workflow_file(args.file)))
-        recommendations = run_yield_advice(args.db, max_nodes=args.max_nodes)
+        recommendations = run_yield_advice(
+            args.db,
+            max_nodes=args.max_nodes,
+            key_file=getattr(args, "db_key_file", None),
+        )
     except (WorkflowError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -475,6 +479,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     contention.add_argument("file", help="Path to the workflow JSON file.")
     contention.add_argument("db", help="Path to the hub event store, e.g. ~/synapse/hub.db.")
+    contention.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted event store.",
+    )
     contention.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     contention.add_argument(
         "--max-nodes",

@@ -96,6 +96,9 @@ synapse cross-repo ~/repos --db ~/synapse/hub.db --db-key-file ~/synapse/hub.key
 synapse participant costs ~/synapse/hub.db --db-key-file ~/synapse/hub.key
 synapse route-task T --event-store ~/synapse/hub.db --db-key-file ~/synapse/hub.key
 synapse multihub observe --peer-db ~/peer/hub.db --db-key-file ~/peer/hub.key
+synapse reliability ~/synapse/hub.db --db-key-file ~/synapse/hub.key
+synapse workflow contention wf.json ~/synapse/hub.db --db-key-file ~/synapse/hub.key
+synapse causality contention ~/synapse/hub.db --db-key-file ~/synapse/hub.key
 # MCP: synapse_route_task(..., event_store=..., event_store_key_file=...)
 # MCP: synapse_memory_recall(event_store=..., event_store_key_file=..., query=...)
 synapse sandbox run tool.wasm --manifest m.json --approve \

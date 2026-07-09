@@ -25,7 +25,11 @@ from synapse_channel.observability_textfile import render_reliability_textfile
 def _cmd_reliability(args: argparse.Namespace) -> int:
     """Run one reliability memory report and print it."""
     try:
-        report = run_reliability_report(args.db, as_of=args.as_of)
+        report = run_reliability_report(
+            args.db,
+            as_of=args.as_of,
+            key_file=getattr(args, "db_key_file", None),
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -53,6 +57,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Build evidence-only reliability memory from a hub SQLite event store.",
     )
     parser.add_argument("db", help="Path to the hub event store, e.g. ~/synapse/hub.db.")
+    parser.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted event store.",
+    )
     parser.add_argument(
         "--as-of",
         type=float,
