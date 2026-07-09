@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.15] - 2026-07-09
+
 ### Fixed
 - Numeric input coercion now uses the shared `safe_int`/`safe_float` helpers across hub config,
   channel history limits, mailbox cursors, claim TTLs, resource/capability bounds, semantic and
