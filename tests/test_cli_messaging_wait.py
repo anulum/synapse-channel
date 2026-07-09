@@ -147,9 +147,7 @@ def test_cmd_wait_pane_bridge_does_not_yield_to_own_provider_pidfile(
     monkeypatch.delenv("SYN_TMUX_PROVIDER", raising=False)
     provider_dir = runtime / "synapse-provider-tmux"
     provider_dir.mkdir()
-    (provider_dir / "user_terminal-1791396.pid").write_text(
-        f"{os.getpid()}\n", encoding="utf-8"
-    )
+    (provider_dir / "user_terminal-1791396.pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
 
     captured: dict[str, object] = {}
 
@@ -191,9 +189,7 @@ def test_cmd_wait_passive_still_yields_when_provider_is_live(
     monkeypatch.delenv("SYN_TMUX_PROVIDER", raising=False)
     provider_dir = runtime / "synapse-provider-tmux"
     provider_dir.mkdir()
-    (provider_dir / "user_terminal-1791396.pid").write_text(
-        f"{os.getpid()}\n", encoding="utf-8"
-    )
+    (provider_dir / "user_terminal-1791396.pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
 
     calls: list[object] = []
 
