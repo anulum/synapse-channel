@@ -27,6 +27,7 @@ from typing import Any, TextIO
 
 from synapse_channel.cli_query_transport import AgentFactory
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
+from synapse_channel.core.clock_skew import format_clock_skew
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.observed_peers import (
     ObservedPeerSnapshot,
@@ -34,6 +35,7 @@ from synapse_channel.observed_peers import (
     fetch_observed_peers,
     network_observed_fetcher_factory,
     observed_claim_count,
+    observed_max_abs_clock_skew,
     observed_max_lag,
     observed_peers_to_dict,
     parse_observed_peer,
@@ -111,6 +113,9 @@ def render_status_line(status: HubStatus, *, plain: bool = False) -> str:
         max_lag = observed_max_lag(status.observed_peers)
         if max_lag is not None:
             segments.append(f"max lag {max_lag}")
+        max_skew = observed_max_abs_clock_skew(status.observed_peers)
+        if max_skew is not None:
+            segments.append(f"max skew {format_clock_skew(max_skew)}")
     if plain:
         return "synapse online " + " ".join(segments)
     return "synapse ● " + " · ".join(segments)
@@ -232,6 +237,7 @@ def status_to_json(status: HubStatus) -> dict[str, object]:
         "observed_peers": observed_peers_to_dict(status.observed_peers),
         "observed_claims": observed_claim_count(status.observed_peers),
         "observed_max_lag": observed_max_lag(status.observed_peers),
+        "observed_max_clock_skew_seconds": observed_max_abs_clock_skew(status.observed_peers),
     }
 
 

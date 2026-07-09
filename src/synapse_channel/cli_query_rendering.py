@@ -12,6 +12,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from synapse_channel.core.clock_skew import format_clock_skew
 from synapse_channel.core.wake_capability import WAKE_UNKNOWN, wake_capability_label
 from synapse_channel.observed_peers import ObservedPeerSnapshot
 from synapse_channel.waiter_identity import split_roster, waiter_name
@@ -167,8 +168,13 @@ def _render_observed_peers(
             if project is None or agent == project or agent.startswith(f"{project}/")
         ]
         lag = "unknown" if peer.lag is None else str(peer.lag)
+        skew = (
+            ""
+            if peer.clock_skew_seconds is None
+            else f" skew={format_clock_skew(peer.clock_skew_seconds)}"
+        )
         agent_text = ", ".join(agents) if agents else "no observed claim owners"
-        print(f"  observed@{peer.hub_id} online cursor={peer.cursor} lag={lag}: {agent_text}")
+        print(f"  observed@{peer.hub_id} online cursor={peer.cursor} lag={lag}{skew}: {agent_text}")
 
 
 def _render_observed_claims(

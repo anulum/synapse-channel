@@ -21,6 +21,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol, cast
 
+from synapse_channel.core.clock_skew import ClockSkew
 from synapse_channel.core.multihub_fold import ObservedState, fold_observed_state
 from synapse_channel.core.multihub_merge import tag_events
 from synapse_channel.core.multihub_transport import MultiHubFetchError, network_fetcher
@@ -62,6 +63,8 @@ class ObservedPeerSnapshot:
         Folded advisory board/progress/claim view. Empty when unreachable.
     error : str
         Human-readable failure detail for an unreachable peer.
+    clock_skew_seconds : float or None
+        Local-minus-peer clock skew measured from the peer welcome timestamp.
     """
 
     hub_id: str
@@ -71,6 +74,7 @@ class ObservedPeerSnapshot:
     log_end_seq: int | None = None
     state: ObservedState = field(default_factory=ObservedState)
     error: str = ""
+    clock_skew_seconds: float | None = None
 
     @property
     def lag(self) -> int | None:
@@ -102,6 +106,7 @@ class ObservedPeerSnapshot:
             "log_end_seq": self.log_end_seq,
             "lag": self.lag,
             "observed_agents": list(self.observed_agents),
+            "clock_skew_seconds": self.clock_skew_seconds,
             "state": self.state.to_dict(),
             "error": self.error,
         }
@@ -111,6 +116,7 @@ class ObservedFetcher(Protocol):
     """Fetches a peer event batch and may expose the peer's log high-water."""
 
     last_log_end_seq: int | None
+    last_clock_skew: ClockSkew | None
 
     async def __call__(self, after_seq: int) -> Sequence[StoredEvent]:
         """Fetch events after ``after_seq``."""
@@ -186,6 +192,9 @@ async def fetch_observed_peer(
         reachable=True,
         cursor=cursor,
         log_end_seq=fetcher.last_log_end_seq,
+        clock_skew_seconds=None
+        if fetcher.last_clock_skew is None
+        else fetcher.last_clock_skew.seconds,
         state=state,
     )
 
@@ -219,3 +228,13 @@ def observed_max_lag(peers: Sequence[ObservedPeerSnapshot]) -> int | None:
     """Return the maximum known cursor lag across reachable peers."""
     lags = [peer.lag for peer in peers if peer.reachable and peer.lag is not None]
     return max(lags) if lags else None
+
+
+def observed_max_abs_clock_skew(peers: Sequence[ObservedPeerSnapshot]) -> float | None:
+    """Return the largest absolute known clock skew across reachable peers."""
+    skews = [
+        peer.clock_skew_seconds
+        for peer in peers
+        if peer.reachable and peer.clock_skew_seconds is not None
+    ]
+    return max(skews, key=abs) if skews else None

@@ -31,6 +31,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Protocol
 
+from synapse_channel.core.clock_skew import ClockSkew
 from synapse_channel.core.multihub_fold import ObservedState, fold_observed_state
 from synapse_channel.core.multihub_merge import HubEvent, hub_cursors, merge_event_logs, tag_events
 from synapse_channel.core.persistence import EventStore, StoredEvent
@@ -41,10 +42,13 @@ EventFetcher = Callable[[int], Awaitable[Sequence[StoredEvent]]]
 
 
 class ProtocolAwareEventFetcher(Protocol):
-    """Optional fetcher metadata surface for wire-version negotiation."""
+    """Optional fetcher metadata surface for peer transport observations."""
 
     last_protocol_negotiation: ProtocolNegotiation | None
     """Most recent peer wire-version negotiation observed by the fetcher."""
+
+    last_clock_skew: ClockSkew | None
+    """Most recent peer clock-skew observation exposed by the fetcher."""
 
 
 def store_fetcher(store: EventStore) -> EventFetcher:
@@ -68,6 +72,7 @@ class MultiHubFollower:
         self._events: dict[tuple[str, int], HubEvent] = {}
         self._cursors: dict[str, int] = {}
         self._protocol_negotiations: dict[str, ProtocolNegotiation] = {}
+        self._clock_skews: dict[str, ClockSkew] = {}
 
     async def poll(self, peer_id: str, fetch: EventFetcher) -> ObservedState:
         """Fetch a peer's new events past its cursor, fold the union, and return the view.
@@ -88,6 +93,9 @@ class MultiHubFollower:
         negotiation = _fetcher_protocol_negotiation(fetch)
         if negotiation is not None:
             self._protocol_negotiations[peer_id] = negotiation
+        skew = _fetcher_clock_skew(fetch)
+        if skew is not None:
+            self._clock_skews[peer_id] = skew
         for event in tag_events(peer_id, fetched):
             self._events.setdefault(event.identity, event)
         self._cursors.update(hub_cursors(self._events.values()))
@@ -109,10 +117,22 @@ class MultiHubFollower:
         """Return the last wire-version negotiation observed for ``peer_id``."""
         return self._protocol_negotiations.get(peer_id)
 
+    def clock_skew(self, peer_id: str) -> ClockSkew | None:
+        """Return the last local-minus-peer clock skew observed for ``peer_id``."""
+        return self._clock_skews.get(peer_id)
+
 
 def _fetcher_protocol_negotiation(fetch: EventFetcher) -> ProtocolNegotiation | None:
     """Return optional protocol metadata exposed by a network fetcher."""
     candidate = getattr(fetch, "last_protocol_negotiation", None)
     if isinstance(candidate, ProtocolNegotiation):
+        return candidate
+    return None
+
+
+def _fetcher_clock_skew(fetch: EventFetcher) -> ClockSkew | None:
+    """Return optional clock-skew metadata exposed by a network fetcher."""
+    candidate = getattr(fetch, "last_clock_skew", None)
+    if isinstance(candidate, ClockSkew):
         return candidate
     return None

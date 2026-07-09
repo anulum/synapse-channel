@@ -300,6 +300,7 @@ def test_cmd_status_json_offline_reports_unreachable(
         "observed_peers": [],
         "observed_claims": 0,
         "observed_max_lag": None,
+        "observed_max_clock_skew_seconds": None,
     }
 
 
@@ -354,6 +355,7 @@ def test_status_line_and_json_include_observed_peer_counts() -> None:
         reachable=True,
         cursor=2,
         log_end_seq=3,
+        clock_skew_seconds=-6.5,
         state=fold_observed_state(
             [HubEvent("east", 2, 2.0, EventKind.CLAIM, {"task_id": "T", "owner": "a"})]
         ),
@@ -362,9 +364,11 @@ def test_status_line_and_json_include_observed_peer_counts() -> None:
 
     assert "1 observed peer" in render_status_line(status, plain=True)
     assert "1 observed claim" in render_status_line(status, plain=True)
+    assert "max skew -6.500s" in render_status_line(status, plain=True)
     payload = status_to_json(status)
     assert payload["observed_claims"] == 1
     assert payload["observed_max_lag"] == 1
+    assert payload["observed_max_clock_skew_seconds"] == -6.5
 
 
 # --- watch mode -----------------------------------------------------------------

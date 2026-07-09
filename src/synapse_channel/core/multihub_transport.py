@@ -33,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from typing import Any, Protocol, cast
@@ -40,6 +41,7 @@ from typing import Any, Protocol, cast
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
+from synapse_channel.core.clock_skew import ClockSkew, measure_clock_skew
 from synapse_channel.core.multihub_federation import MultiHubAuthoriser
 from synapse_channel.core.multihub_follower import EventFetcher
 from synapse_channel.core.multihub_wire import (
@@ -115,6 +117,7 @@ def network_fetcher(
     authoriser: MultiHubAuthoriser | None = None,
     connector: _Connector = _default_connector,
     protocol_warning_sink: Callable[[ProtocolNegotiation], None] | None = None,
+    clock: Callable[[], float] = time.time,
 ) -> EventFetcher:
     """Return an :data:`~synapse_channel.core.multihub_follower.EventFetcher` over a connection.
 
@@ -143,6 +146,9 @@ def network_fetcher(
     protocol_warning_sink : Callable[[ProtocolNegotiation], None] or None, optional
         Observer called when the peer advertises an older, newer, or absent wire
         version. The fetch still proceeds at the lowest common compatibility level.
+    clock : Callable[[], float], optional
+        Wall-clock source used to measure local-minus-peer skew from the peer
+        welcome timestamp. Injected by tests; defaults to :func:`time.time`.
 
     Returns
     -------
@@ -159,6 +165,7 @@ def network_fetcher(
         authoriser=authoriser,
         connector=connector,
         protocol_warning_sink=protocol_warning_sink,
+        clock=clock,
     )
 
 
@@ -176,6 +183,7 @@ class _NetworkFetcher:
         authoriser: MultiHubAuthoriser | None,
         connector: _Connector,
         protocol_warning_sink: Callable[[ProtocolNegotiation], None] | None,
+        clock: Callable[[], float],
     ) -> None:
         self._uri = uri
         self._local_id = local_id
@@ -185,8 +193,10 @@ class _NetworkFetcher:
         self._authoriser = authoriser
         self._connector = connector
         self._protocol_warning_sink = protocol_warning_sink
+        self._clock = clock
         self.last_protocol_negotiation: ProtocolNegotiation | None = None
         self.last_log_end_seq: int | None = None
+        self.last_clock_skew: ClockSkew | None = None
 
     async def __call__(self, after_seq: int) -> Sequence[StoredEvent]:
         """Fetch peer events after ``after_seq`` and capture wire-version metadata."""
@@ -205,7 +215,13 @@ class _NetworkFetcher:
             async with self._connector(self._uri) as socket:
                 await socket.send(json.dumps(request))
                 frame = await asyncio.wait_for(
-                    _await_snapshot(socket, self._record_protocol_negotiation), self._timeout
+                    _await_snapshot(
+                        socket,
+                        self._record_protocol_negotiation,
+                        self._record_clock_skew,
+                        clock=self._clock,
+                    ),
+                    self._timeout,
                 )
             snapshot = decode_log_snapshot(frame)
             self.last_log_end_seq = snapshot.log_end_seq
@@ -231,9 +247,17 @@ class _NetworkFetcher:
         if self._protocol_warning_sink is not None:
             self._protocol_warning_sink(negotiation)
 
+    def _record_clock_skew(self, skew: ClockSkew) -> None:
+        """Store the peer clock skew observed from a welcome frame."""
+        self.last_clock_skew = skew
+
 
 async def _await_snapshot(
-    socket: _Socket, protocol_observer: Callable[[ProtocolNegotiation], None] | None = None
+    socket: _Socket,
+    protocol_observer: Callable[[ProtocolNegotiation], None] | None = None,
+    clock_skew_observer: Callable[[ClockSkew], None] | None = None,
+    *,
+    clock: Callable[[], float] = time.time,
 ) -> dict[str, Any]:
     """Read frames from ``socket`` until the log snapshot arrives.
 
@@ -263,6 +287,10 @@ async def _await_snapshot(
             protocol_observer(
                 negotiate_protocol_version(read_protocol_version(frame.get("protocol_version")))
             )
+        if frame_type == MessageType.WELCOME and clock_skew_observer is not None:
+            skew = measure_clock_skew(frame.get("timestamp"), observed_at=clock())
+            if skew is not None:
+                clock_skew_observer(skew)
         if frame_type == MessageType.MULTIHUB_LOG_SNAPSHOT:
             return frame
         if frame_type == MessageType.ERROR:

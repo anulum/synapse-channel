@@ -13,6 +13,7 @@ from typing import cast
 
 import pytest
 
+from synapse_channel.core.clock_skew import ClockSkew
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.multihub_fold import fold_observed_state
 from synapse_channel.core.multihub_merge import HubEvent
@@ -25,6 +26,7 @@ from synapse_channel.observed_peers import (
     fetch_observed_peers,
     network_observed_fetcher_factory,
     observed_claim_count,
+    observed_max_abs_clock_skew,
     observed_max_lag,
     observed_peers_to_dict,
     parse_observed_peer,
@@ -43,6 +45,7 @@ class _Fetcher:
     def __init__(self, events: Sequence[StoredEvent], *, log_end_seq: int | None = None) -> None:
         self.events = tuple(events)
         self.last_log_end_seq = log_end_seq
+        self.last_clock_skew: ClockSkew | None = None
         self.cursors: list[int] = []
 
     async def __call__(self, after_seq: int) -> Sequence[StoredEvent]:
@@ -94,6 +97,7 @@ async def test_fetch_observed_peer_folds_claims_and_lag() -> None:
         ],
         log_end_seq=5,
     )
+    fetcher.last_clock_skew = ClockSkew(peer_timestamp=90.0, observed_at=100.0, seconds=10.0)
     spec = ObservedPeerSpec("east", "ws://east")
     snapshot = await fetch_observed_peer(spec, fetcher_factory=lambda _spec: fetcher)
 
@@ -101,6 +105,7 @@ async def test_fetch_observed_peer_folds_claims_and_lag() -> None:
     assert snapshot.cursor == 2
     assert snapshot.log_end_seq == 5
     assert snapshot.lag == 3
+    assert snapshot.clock_skew_seconds == 10.0
     assert snapshot.observed_agents == ("REMOTE/agent",)
     assert snapshot.state.observed_claims["T"].hub_id == "east"
     assert fetcher.cursors == [0]
@@ -110,6 +115,7 @@ async def test_fetch_observed_peers_preserves_unreachable_peer_rows() -> None:
     class _FailingFetcher:
         def __init__(self) -> None:
             self.last_log_end_seq: int | None = None
+            self.last_clock_skew: ClockSkew | None = None
 
         async def __call__(self, _after_seq: int) -> Sequence[StoredEvent]:
             raise OSError("offline")
@@ -138,10 +144,15 @@ def test_observed_peer_summary_helpers() -> None:
         state=fold_observed_state(
             [HubEvent("east", 2, 2.0, EventKind.CLAIM, {"task_id": "T", "owner": "a"})]
         ),
+        clock_skew_seconds=-6.0,
     )
     assert observed_claim_count((snapshot,)) == 1
     assert observed_max_lag((snapshot,)) == 2
-    assert observed_peers_to_dict((snapshot,))[0]["hub_id"] == "east"
+    assert observed_max_abs_clock_skew((snapshot,)) == -6.0
+    payload = observed_peers_to_dict((snapshot,))[0]
+    assert payload["hub_id"] == "east"
+    assert payload["clock_skew_seconds"] == -6.0
     assert ObservedPeerSnapshot("empty", "ws://empty", True).lag is None
     assert observed_claim_count((ObservedPeerSnapshot("down", "ws://down", False),)) == 0
     assert observed_max_lag(()) is None
+    assert observed_max_abs_clock_skew(()) is None

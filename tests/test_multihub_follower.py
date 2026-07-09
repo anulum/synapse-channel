@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from synapse_channel.core.clock_skew import ClockSkew
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.multihub_follower import MultiHubFollower, store_fetcher
 from synapse_channel.core.persistence import EventStore, StoredEvent
@@ -32,6 +33,18 @@ class _FakePeer:
         return [event for event in self.events if event.seq > after_seq]
 
 
+class _SkewAwarePeer(_FakePeer):
+    """Fake peer exposing network metadata captured by the real fetcher."""
+
+    def __init__(self, events: list[StoredEvent]) -> None:
+        super().__init__(events)
+        self.last_clock_skew = ClockSkew(peer_timestamp=90.0, observed_at=100.0, seconds=10.0)
+
+    async def __call__(self, after_seq: int) -> Sequence[StoredEvent]:
+        """Fetch events while exposing clock metadata on the callable object."""
+        return await self.fetch(after_seq)
+
+
 async def test_poll_folds_a_peer_log_into_the_observed_view() -> None:
     peer = _FakePeer(
         [
@@ -48,6 +61,17 @@ async def test_poll_folds_a_peer_log_into_the_observed_view() -> None:
     assert peer.cursors == [0]  # first poll starts from the beginning
     assert follower.cursor("east") == 2
     assert follower.peers() == ("east",)
+
+
+async def test_poll_records_fetcher_clock_skew_metadata() -> None:
+    peer = _SkewAwarePeer([_stored(1, 1.0, EventKind.LEDGER_TASK, task_id="T")])
+    follower = MultiHubFollower()
+
+    await follower.poll("east", peer)
+
+    skew = follower.clock_skew("east")
+    assert skew is not None
+    assert skew.seconds == 10.0
 
 
 async def test_poll_is_incremental_and_idempotent() -> None:

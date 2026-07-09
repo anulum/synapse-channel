@@ -61,9 +61,12 @@ contested namespace, have shipped:
 - `core/multihub_follower.py` — a read-only `MultiHubFollower` that tracks a per-peer
   `seq` cursor, fetches a peer's events past it through an injected transport
   (`store_fetcher` reads a peer `EventStore` over its `read_since` seam), folds the union,
-  and returns the observed view. Observe-only by construction: it grants no claim and,
-  losing a peer, simply stops advancing that peer's cursor — the fail-closed posture. It
-  is exposed to operators as `synapse multihub observe` (the walkthrough below).
+  and returns the observed view. Network fetchers also expose the peer's latest
+  wire-version negotiation and welcome-frame clock skew, so a follower can report
+  whether timestamp-ordered evidence is being read across materially skewed hubs.
+  Observe-only by construction: it grants no claim and, losing a peer, simply stops
+  advancing that peer's cursor — the fail-closed posture. It is exposed to operators
+  as `synapse multihub observe` (the walkthrough below).
 - `core/multihub_wire.py`, `core/handlers/multihub.py`, and `core/multihub_transport.py` —
   the cross-host pull: a request/snapshot message pair on the hub server lets a peer ask for
   the events past a cursor, and `network_fetcher` drops a network reader into the same
@@ -85,7 +88,9 @@ contested namespace, have shipped:
 - `observed_peers.py` — the operator-surface adapter for the same read-only pull:
   `synapse who`, `synapse status`, `synapse state`, and `synapse dashboard` accept
   repeatable `--observed-peer HUB=URI` flags, fold each peer locally, and render
-  the result as `observed@HUB` advisory state without changing the local hub.
+  the result as `observed@HUB` advisory state without changing the local hub. When
+  the peer advertises a usable welcome timestamp, the row and JSON payload include
+  local-minus-peer clock skew alongside cursor lag.
 
 ## Observing a peer — a two-hub walkthrough
 
@@ -192,7 +197,10 @@ Each command fetches the peer with the multi-hub log request path, folds the
 events locally, and labels output `observed@west`. A peer outage renders an
 unreachable peer row; it does not make the local hub unhealthy and does not
 grant, revoke, or route a local claim. Use `--observed-token` for secured peers
-and `--observed-timeout` to bound each pull.
+and `--observed-timeout` to bound each pull. When the peer's welcome frame
+carries a finite timestamp, `who` rows include `skew=+/-Ns`, `status` includes
+the largest observed absolute skew, and JSON outputs carry
+`clock_skew_seconds`.
 
 ### 5. Trace causality across the hubs
 
@@ -206,6 +214,22 @@ same honesty boundary as the fold applies: cross-hub precedence is ordered by ev
 timestamps across the hubs' clocks (there is no shared sequence), so a federation edge is
 clock-ordered evidence, and the query observes and grants nothing. See
 [the CLI guide](cli.md) for a worked cross-hub example.
+
+If the operator has measured peer skew from `synapse doctor --federation-peer`
+or an observed-peer pull, pass it into the offline causality report:
+
+```bash
+synapse causality causes ./east.db west:9 \
+  --peer west=./west.db \
+  --clock-skew west=-6.4 \
+  --skew-warn-seconds 5
+```
+
+The report then adds a clock-skew warning when the absolute skew exceeds the
+threshold; `--json` carries the same warning in `clock_skew`, and `--dot` emits
+it as a Graphviz comment. The warning does not change the graph. It tells the
+operator that cross-hub ordering is timestamp evidence outside the configured
+clock-agreement bound.
 
 ### Where this stops
 

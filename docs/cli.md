@@ -249,7 +249,10 @@ URI is pulled through the same multi-hub event-log request path as
 it appears. Observed rows are advisory: they never grant local claims, never
 change the local hub's roster, and peer failures render as unreachable peer rows.
 Use `--observed-token` for secured peer hubs and `--observed-timeout` to bound
-each peer pull.
+each peer pull. When a peer welcome frame carries a usable timestamp,
+observed-peer output also carries local-minus-peer clock skew: `who` prints
+`skew=+/-Ns`, `status` includes the largest absolute skew, and JSON uses
+`clock_skew_seconds` / `observed_max_clock_skew_seconds`.
 
 `synapse dashboard` binds to `127.0.0.1` by default and reads roster, state,
 board, and manifest snapshots from the live hub. The state snapshot carries
@@ -839,6 +842,7 @@ synapse causality effects ./synapse.db 118 --json
 synapse causality counterfactual ./synapse.db 96
 synapse causality contention ./synapse.db      # who should yield on overlapping live claims
 synapse causality causes ./hub.db peer:96 --peer peer=./peer-hub.db   # federated, HUB:SEQ refs
+synapse causality causes ./hub.db peer:96 --peer peer=./peer-hub.db --clock-skew peer=-6.4
 synapse causality causes ./hub.db peer:96 --peer peer=./peer-hub.db --dot  # Graphviz, cluster per hub
 synapse causality otel ./synapse.db --out spans.json                  # OpenTelemetry projection
 synapse causality otel ./synapse.db --endpoint http://127.0.0.1:4318/v1/traces  # OTLP push [otel]
@@ -1048,6 +1052,14 @@ authoritative; across hubs there is no shared sequence, so the merged order
 falls back to event timestamps, and a federation edge is clock-ordered
 evidence, only as good as the hubs' clock agreement. Like the multi-hub fold,
 the query observes and grants nothing.
+
+When a live probe has measured clock skew for a hub, annotate the offline
+causality report with `--clock-skew HUB=SECONDS`. Values are local-minus-peer
+seconds; positive means the local clock was ahead of that hub. The default
+warning threshold is 5 seconds and can be changed with `--skew-warn-seconds`.
+Warnings appear as a `## Clock skew warnings` section in Markdown, a
+`clock_skew` object in `--json`, and comments in `--dot`; they do not alter the
+graph, they mark the timestamp evidence as outside the operator's bound.
 
 A worked cross-hub example: `eu-hub` completes and releases
 `schema-migration`; `us-hub` declares `api-rollout` depending on it and

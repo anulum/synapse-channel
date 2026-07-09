@@ -13,6 +13,14 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Multi-hub peer pulls now measure local-minus-peer clock skew from the peer
+  `welcome` timestamp and carry it through `network_fetcher`,
+  `MultiHubFollower`, observed-peer snapshots, `who`, and `status` JSON/human
+  output. Federated causality queries accept `--clock-skew HUB=SECONDS` plus
+  `--skew-warn-seconds` so offline merged-log reports can flag when their
+  timestamp-ordered cross-hub evidence exceeds the operator's skew threshold.
+
 ## [0.98.17] - 2026-07-09
 
 ### Changed

@@ -889,9 +889,10 @@ causality *across federated hubs*: the logs merge in the deterministic
 multi-hub order, events are addressed as `HUB:SEQ`, and an edge whose endpoints
 two different hubs authored is tagged `federation` — clock-ordered evidence,
 since hubs share no sequence, and observe-only like the multi-hub read side;
-`--dot` renders the federated answer as a Graphviz digraph, one cluster per
-hub with federation edges coloured, so the cross-hub topology is visible at a
-glance.
+`--clock-skew HUB=SECONDS` annotates offline federated reports with measured
+local-minus-peer skew warnings, and `--dot` renders the federated answer as a
+Graphviz digraph, one cluster per hub with federation edges coloured, so the
+cross-hub topology is visible at a glance.
 `synapse causality otel` projects the graph onto OpenTelemetry spans — one
 trace per task, cross-task dependency/contention edges as span links, ids
 deterministic — written as JSON (`--out`) or pushed as real OTLP over HTTP
@@ -974,7 +975,10 @@ conflict-free, but claims are mutual exclusion and **not** a CRDT — they are
 routed by single-owner-per-namespace and fail closed on a partition. The shipped
 surface is operator-managed peering: `synapse multihub follow` and
 `--observed-peer HUB=URI` views observe peer logs as advisory `observed@HUB`
-state; local claim authority remains local or explicitly routed to the owning hub.
+state; local claim authority remains local or explicitly routed to the owning
+hub. Network observed-peer pulls also carry cursor lag and peer welcome-frame
+clock skew, so operators can see when timestamp-ordered cross-hub evidence
+depends on clocks outside their configured agreement.
 
 The [sandboxed tools and marketplace research](docs/sandboxed-tools-and-marketplace.md)
 asks what it would take to run untrusted tool code safely — a capability-limited
@@ -1138,7 +1142,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 490 |
 | Wire message types | 73 |
 | CLI subcommands | 145 |
-| Test functions | 5474 |
+| Test functions | 5482 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 49 |
 | GitHub Actions workflows | 12 |

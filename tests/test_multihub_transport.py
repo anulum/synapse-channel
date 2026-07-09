@@ -19,6 +19,7 @@ import pytest
 from websockets.exceptions import ConnectionClosed
 
 from hub_e2e_helpers import read_until_type, running_hub, send_json
+from synapse_channel.core.clock_skew import ClockSkew
 from synapse_channel.core.multihub_federation import MultiHubAuthorisation
 from synapse_channel.core.multihub_follower import MultiHubFollower
 from synapse_channel.core.multihub_transport import (
@@ -49,6 +50,7 @@ class _ProtocolAwareFetcher(Protocol):
     """Test-side surface exposed by the network fetcher object."""
 
     last_protocol_negotiation: ProtocolNegotiation | None
+    last_clock_skew: ClockSkew | None
 
 
 def _event(seq: int) -> StoredEvent:
@@ -120,6 +122,11 @@ def _last_negotiation(fetch: object) -> ProtocolNegotiation | None:
     return cast(_ProtocolAwareFetcher, fetch).last_protocol_negotiation
 
 
+def _last_clock_skew(fetch: object) -> ClockSkew | None:
+    """Return a network fetcher's last clock-skew observation for assertions."""
+    return cast(_ProtocolAwareFetcher, fetch).last_clock_skew
+
+
 # --- happy path --------------------------------------------------------------------------
 
 
@@ -162,6 +169,46 @@ async def test_fetch_records_matching_protocol_without_warning(
     assert negotiation.effective_version == WIRE_PROTOCOL_VERSION
     assert negotiation.warning is None
     assert "protocol mismatch" not in caplog.text
+
+
+async def test_fetch_records_peer_clock_skew_from_welcome_timestamp() -> None:
+    socket = _FakeSocket(
+        [
+            _wire({"type": "welcome", "timestamp": 90.0}),
+            _snapshot_frame([_event(1)], 1),
+        ]
+    )
+    fetch = network_fetcher(
+        "ws://peer/",
+        local_id="f",
+        connector=_connector(socket),
+        clock=lambda: 100.0,
+    )
+
+    await fetch(0)
+
+    skew = _last_clock_skew(fetch)
+    assert skew is not None
+    assert skew.seconds == 10.0
+
+
+async def test_fetch_ignores_unusable_welcome_timestamp() -> None:
+    socket = _FakeSocket(
+        [
+            _wire({"type": "welcome", "timestamp": True}),
+            _snapshot_frame([_event(1)], 1),
+        ]
+    )
+    fetch = network_fetcher(
+        "ws://peer/",
+        local_id="f",
+        connector=_connector(socket),
+        clock=lambda: 100.0,
+    )
+
+    await fetch(0)
+
+    assert _last_clock_skew(fetch) is None
 
 
 async def test_fetch_warns_and_degrades_for_an_older_peer(

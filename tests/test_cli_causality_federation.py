@@ -32,12 +32,18 @@ def test_parser_accepts_repeated_peers_and_a_primary_hub_id() -> None:
             "peer-b=b.db",
             "--hub-id",
             "primary",
+            "--clock-skew",
+            "peer-a=6.25",
+            "--skew-warn-seconds",
+            "5",
         ]
     )
 
     assert args.peer == ["peer-a=a.db", "peer-b=b.db"]
     assert args.hub_id == "primary"
     assert args.seq == "peer-a:6"
+    assert args.clock_skew == ["peer-a=6.25"]
+    assert args.skew_warn_seconds == 5.0
 
 
 def test_cli_federated_causes_cross_the_hub_boundary(
@@ -52,6 +58,32 @@ def test_cli_federated_causes_cross_the_hub_boundary(
     assert "# Federated causality (causes): peer:2" in out
     assert "- Hubs: hub, peer" in out
     assert "[federation:dependency] hub:4" in out
+
+
+def test_cli_federated_markdown_warns_on_large_clock_skew(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db, peer = _federated_pair(tmp_path)
+
+    exit_code = cli.main(
+        [
+            "causality",
+            "causes",
+            str(db),
+            "peer:2",
+            "--peer",
+            f"peer={peer}",
+            "--clock-skew",
+            "peer=-6.5",
+            "--skew-warn-seconds",
+            "5",
+        ]
+    )
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "## Clock skew warnings" in out
+    assert "peer: -6.500s exceeds 5s" in out
 
 
 def test_cli_federated_json_carries_relation_and_basis(
@@ -70,6 +102,32 @@ def test_cli_federated_json_carries_relation_and_basis(
     assert federated
     assert federated[0]["basis"] == "dependency"
     assert federated[0]["src"] == {"hub_id": "hub", "seq": 4}
+    assert payload["clock_skew"] == {"measurements": {}, "warnings": []}
+
+
+def test_cli_federated_json_carries_clock_skew_warnings(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db, peer = _federated_pair(tmp_path)
+
+    exit_code = cli.main(
+        [
+            "causality",
+            "causes",
+            str(db),
+            "peer:2",
+            "--peer",
+            f"peer={peer}",
+            "--clock-skew",
+            "peer=6.5",
+            "--json",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["clock_skew"]["measurements"] == {"peer": 6.5}
+    assert payload["clock_skew"]["warnings"][0]["hub_id"] == "peer"
 
 
 def test_cli_federated_dot_renders_clusters_and_coloured_federation_edges(
@@ -87,6 +145,29 @@ def test_cli_federated_dot_renders_clusters_and_coloured_federation_edges(
     assert 'label="hub";' in out
     assert 'label="peer";' in out
     assert 'label="federation:dependency", color=blue];' in out
+
+
+def test_cli_federated_dot_carries_clock_skew_comment(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db, peer = _federated_pair(tmp_path)
+
+    exit_code = cli.main(
+        [
+            "causality",
+            "causes",
+            str(db),
+            "peer:2",
+            "--peer",
+            f"peer={peer}",
+            "--dot",
+            "--clock-skew",
+            "peer=6.5",
+        ]
+    )
+
+    assert exit_code == 0
+    assert "// clock-skew peer: +6.500s exceeds 5s" in capsys.readouterr().out
 
 
 def test_cli_dot_requires_a_federated_query(
@@ -156,6 +237,42 @@ def test_cli_hub_id_without_peer_is_refused(
 
     assert exit_code == 2
     assert "requires --peer" in capsys.readouterr().err
+
+
+def test_cli_clock_skew_without_peer_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "hub.db"
+    _seed(db)
+
+    exit_code = cli.main(["causality", "causes", str(db), "4", "--clock-skew", "peer=1"])
+
+    assert exit_code == 2
+    assert "requires --peer" in capsys.readouterr().err
+
+
+def test_cli_federated_duplicate_clock_skew_hub_id_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db, peer = _federated_pair(tmp_path)
+
+    exit_code = cli.main(
+        [
+            "causality",
+            "causes",
+            str(db),
+            "peer:2",
+            "--peer",
+            f"peer={peer}",
+            "--clock-skew",
+            "peer=1",
+            "--clock-skew",
+            "peer=2",
+        ]
+    )
+
+    assert exit_code == 2
+    assert "duplicate clock-skew hub id 'peer'" in capsys.readouterr().err
 
 
 def test_cli_federated_malformed_peer_spec_is_refused(

@@ -86,6 +86,12 @@ from synapse_channel.core.causality_otel import (
     projection_to_json,
     run_otel_projection,
 )
+from synapse_channel.core.clock_skew import (
+    ClockSkewWarning,
+    clock_skew_warnings,
+    format_clock_skew,
+    parse_clock_skew_spec,
+)
 from synapse_channel.core.yield_advice import (
     advice_to_json,
     render_advice_markdown,
@@ -140,6 +146,9 @@ def _cmd_causality(args: argparse.Namespace) -> int:
         return 2
     if args.direction != HEALTH_MODE and args.textfile is not None:
         print("--textfile belongs to the health mode", file=sys.stderr)
+        return 2
+    if args.clock_skew and not args.peer:
+        print("--clock-skew annotates federated queries; it requires --peer", file=sys.stderr)
         return 2
     if args.textfile is not None and args.watch:
         print("--textfile writes one report; it does not compose with --watch", file=sys.stderr)
@@ -301,17 +310,22 @@ def _cmd_federated(args: argparse.Namespace) -> int:
     primary = args.hub_id or Path(args.db).stem
     try:
         stores = _federated_stores(primary, args.db, args.peer)
+        skews = _clock_skews(args.clock_skew)
+        warnings = clock_skew_warnings(skews, threshold=float(args.skew_warn_seconds))
         ref = parse_hub_ref(args.seq, primary)
         query = run_federated_causality(stores, args.direction, ref, max_nodes=args.max_nodes)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
     if args.json:
-        print(json.dumps(federated_to_json(query), indent=2, sort_keys=True))
+        payload = federated_to_json(query)
+        payload["clock_skew"] = _clock_skew_json(skews, warnings)
+        print(json.dumps(payload, indent=2, sort_keys=True))
     elif args.dot:
-        print(render_federated_dot(query))
+        dot = render_federated_dot(query)
+        print(_append_clock_skew_dot(dot, warnings))
     else:
-        print(render_federated_markdown(query))
+        print(_append_clock_skew_markdown(render_federated_markdown(query), warnings))
     return 0 if query.present else 1
 
 
@@ -337,6 +351,63 @@ def _federated_stores(primary: str, db: str, peers: list[str]) -> dict[str, str]
             raise ValueError(msg)
         stores[hub] = path
     return stores
+
+
+def _clock_skews(specs: list[str]) -> dict[str, float]:
+    """Parse repeated ``--clock-skew HUB=SECONDS`` values."""
+    skews: dict[str, float] = {}
+    for spec in specs:
+        hub_id, seconds = parse_clock_skew_spec(spec)
+        if hub_id in skews:
+            msg = f"duplicate clock-skew hub id '{hub_id}'"
+            raise ValueError(msg)
+        skews[hub_id] = seconds
+    return skews
+
+
+def _clock_skew_json(
+    skews: dict[str, float],
+    warnings: tuple[ClockSkewWarning, ...],
+) -> dict[str, object]:
+    """Return the federated causality clock-skew annotation."""
+    return {
+        "measurements": dict(sorted(skews.items())),
+        "warnings": [
+            {
+                "hub_id": warning.hub_id,
+                "seconds": warning.seconds,
+                "threshold": warning.threshold,
+            }
+            for warning in warnings
+        ],
+    }
+
+
+def _append_clock_skew_markdown(text: str, warnings: tuple[ClockSkewWarning, ...]) -> str:
+    """Append human clock-skew warnings to a federated causality report."""
+    if not warnings:
+        return text
+    lines = [text.rstrip(), "", "## Clock skew warnings"]
+    for warning in warnings:
+        lines.append(
+            f"- {warning.hub_id}: {format_clock_skew(warning.seconds)} exceeds "
+            f"{warning.threshold:g}s; cross-hub order is timestamp-based evidence."
+        )
+    return "\n".join(lines)
+
+
+def _append_clock_skew_dot(dot: str, warnings: tuple[ClockSkewWarning, ...]) -> str:
+    """Append Graphviz comments for clock-skew warnings."""
+    if not warnings:
+        return dot
+    lines = dot.rstrip().splitlines()
+    insert = max(0, len(lines) - 1)
+    comments = [
+        f"  // clock-skew {warning.hub_id}: {format_clock_skew(warning.seconds)} "
+        f"exceeds {warning.threshold:g}s"
+        for warning in warnings
+    ]
+    return "\n".join([*lines[:insert], *comments, *lines[insert:]])
 
 
 def _cmd_health(args: argparse.Namespace) -> int:
@@ -505,6 +576,19 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--hub-id",
         default=None,
         help="Hub id of the primary DB in a federated query; defaults to the DB file name.",
+    )
+    causality.add_argument(
+        "--clock-skew",
+        action="append",
+        default=[],
+        metavar="HUB=SECONDS",
+        help="Federated queries: annotate known local-minus-peer clock skew for a hub.",
+    )
+    causality.add_argument(
+        "--skew-warn-seconds",
+        type=float,
+        default=5.0,
+        help="Federated queries: warn when |--clock-skew| exceeds this threshold.",
     )
     causality.add_argument(
         "--out",
