@@ -37,9 +37,24 @@ A2A = "a2a"
 NAMESPACE = "namespace"
 SANDBOX = "sandbox"
 OBSERVE = "observe"
+MAILBOX = "mailbox"
+ROLE_CLAIM = "role-claim"
 
 PERMISSIONS = frozenset(
-    {MESSAGE, CLAIM, RELEASE, BOARD, METRICS, DASHBOARD, A2A, NAMESPACE, SANDBOX, OBSERVE}
+    {
+        MESSAGE,
+        CLAIM,
+        RELEASE,
+        BOARD,
+        METRICS,
+        DASHBOARD,
+        A2A,
+        NAMESPACE,
+        SANDBOX,
+        OBSERVE,
+        MAILBOX,
+        ROLE_CLAIM,
+    }
 )
 """The auditable permission vocabulary an ACL rule may grant.
 
@@ -52,6 +67,16 @@ to — a live monitor or auditor. It is only consulted when directed-message rou
 (``--private-directed-messages``); with routing off every socket sees all traffic and the
 grant is moot. Durable consumers (the relay log, the journal, a feeds-backed dashboard,
 the federation follower) read the retained feed and never need it.
+
+``MAILBOX`` grants an identity the right to replay another identity's directed backlog
+via a mailbox heartbeat (``mailbox_for``). Target kind is ``agent``; the pattern matches
+the identity whose backlog is requested. Self and ``-rx`` sidecar naming still work
+without a grant; this verb is the policy-file path for a trusted monitor that is neither.
+
+``ROLE_CLAIM`` grants an identity the right to bind a role on its heartbeat when
+``--require-role-claim`` is on. Target kind is ``role``; the pattern matches
+``<project>/<role>``. Complements the role-grant store (``synapse role``): either the
+store or an ACL rule may authorise a claim.
 """
 
 WOULD_ALLOW = "would_allow"

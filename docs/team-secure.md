@@ -54,7 +54,10 @@ synapse hub --db ~/synapse/hub.db --token-file ~/synapse/token \
 
 Agents that connect must use the shared token **and** sign registration under a
 key enrolled in the trust bundle. Role heartbeats only stick when the grant store
-allows them. Directed chat is no longer a broadcast to every connected socket.
+**or** an ACL `role-claim` rule allows them. Directed chat is no longer a
+broadcast to every connected socket. A trusted monitor may replay another
+identity's mailbox only with an ACL `mailbox` rule (self and `-rx` still work
+without one).
 
 ## Related
 

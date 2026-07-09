@@ -15,6 +15,7 @@ import pytest
 from websockets.asyncio.client import connect
 
 from hub_e2e_helpers import read_until_type, running_hub
+from synapse_channel.core.acl import ROLE_CLAIM, AclPolicy, AclRule
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.role_grants import RoleGrants
 
@@ -64,6 +65,25 @@ class TestPermittedRoleClaims:
             hub.permitted_role_claims("proj/claude", ("proj/coordinator",))
 
         assert not [r for r in caplog.records if "role-claim denied" in r.getMessage()]
+
+    def test_acl_role_claim_grant_permits_without_store_entry(self) -> None:
+        # ACL role-claim is an alternate authoriser to the role-grant store.
+        policy = AclPolicy(
+            [AclRule(ROLE_CLAIM, "role", "proj/coordinator", "proj", "acl coord")]
+        )
+        hub = SynapseHub(role_grants=None, require_role_claim=True, acl_policy=policy)
+
+        assert hub.permitted_role_claims("proj/claude", ("proj/coordinator", "proj/reviewer")) == (
+            "proj/coordinator",
+        )
+
+    def test_store_and_acl_either_path_permits(self) -> None:
+        policy = AclPolicy([AclRule(ROLE_CLAIM, "role", "proj/reviewer", "proj", "acl rev")])
+        hub = SynapseHub(role_grants=_GRANTS, require_role_claim=True, acl_policy=policy)
+
+        assert hub.permitted_role_claims(
+            "proj/claude", ("proj/coordinator", "proj/reviewer", "proj/other")
+        ) == ("proj/coordinator", "proj/reviewer")
 
 
 async def test_granted_role_binds_under_enforcement_end_to_end() -> None:

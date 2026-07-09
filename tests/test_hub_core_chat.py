@@ -791,11 +791,14 @@ async def test_mailbox_for_falls_back_to_the_connection_name_when_blank(tmp_path
     assert frame["payload"] == "blank-for"
 
 
-def test_mailbox_recipient_honours_only_self_or_an_own_sidecar() -> None:
+def test_mailbox_recipient_honours_self_sidecar_or_acl_grant() -> None:
     # The replay-authorisation predicate: a mailbox heartbeat may replay its own backlog
     # or, for an -rx wake-listener, the backlog of the identity it is the sidecar of —
-    # never an arbitrary named identity, and never on a non-string/blank declaration.
+    # or when the ACL policy grants the mailbox permission on that agent — never an
+    # arbitrary named identity without a grant, and never on a non-string/blank declaration.
+    from synapse_channel.core.acl import MAILBOX, AclPolicy, AclRule
     from synapse_channel.core.handlers.messaging import _mailbox_recipient
+    from synapse_channel.core.hub import SynapseHub
 
     # An agent under its own identity replays its own backlog.
     assert _mailbox_recipient("BOB", "BOB") == "BOB"
@@ -811,6 +814,12 @@ def test_mailbox_recipient_honours_only_self_or_an_own_sidecar() -> None:
     # Non-string declarations are ignored rather than dropping the socket.
     assert _mailbox_recipient("BOB", 123) == "BOB"
     assert _mailbox_recipient("BOB", None) == "BOB"
+    # An ACL mailbox grant on the requested agent is the policy-file path for a monitor.
+    policy = AclPolicy([AclRule(MAILBOX, "agent", "BOB", "", "monitor bob")])
+    hub = SynapseHub(acl_policy=policy)
+    assert _mailbox_recipient("EVE", "BOB", hub=hub) == "BOB"
+    # Without a matching grant the same hub still refuses.
+    assert _mailbox_recipient("EVE", "ALICE", hub=hub) == "EVE"
 
 
 async def test_mailbox_for_refuses_an_unrelated_identitys_backlog(tmp_path: Path) -> None:

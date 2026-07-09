@@ -40,6 +40,7 @@ from websockets.http11 import Request, Response
 
 from synapse_channel.core.acl import (
     OBSERVE,
+    ROLE_CLAIM,
     WOULD_ALLOW,
     AclPolicy,
     Target,
@@ -779,23 +780,45 @@ class SynapseHub:
 
         With role-claim enforcement off — the default open/loopback posture — every
         declared role is permitted, so a single-user dev hub binds roles exactly as
-        before. With ``--require-role-claim`` on, only roles the role-grant store
-        authorises for ``name`` pass; an unauthorised role is dropped and logged as a
-        squatting attempt rather than dropping the socket, the same forgiving
-        degradation the heartbeat applies to a malformed role field. Enforcement with
-        no store configured denies every claim (fail closed). The gate keys off the
-        self-reported ``name``, so it is only as strong as the sender binding — pair
-        it with a connect token, and with connection-identity binding, to be a real
+        before. With ``--require-role-claim`` on, a role is kept when either:
+
+        - the role-grant store (``synapse role`` / ``--role-grants``) authorises
+          ``name`` for it, or
+        - the loaded ACL policy grants ``role-claim`` on target kind ``role`` for
+          that role value (namespace-scoped like every other ACL rule).
+
+        An unauthorised role is dropped and logged as a squatting attempt rather
+        than dropping the socket. Enforcement with no store and no matching ACL
+        rule denies the claim (fail closed). The gate keys off the self-reported
+        ``name``, so pair it with a connect token and identity binding to be a real
         boundary.
         """
         if not self.require_role_claim:
             return roles
         grants = self.role_grants or RoleGrants({})
-        permitted = grants.authorised_roles(name, roles)
+        store_permitted = set(grants.authorised_roles(name, roles))
+        permitted: list[str] = []
+        for role in roles:
+            if role in store_permitted or self._acl_allows_role_claim(name, role):
+                permitted.append(role)
         denied = tuple(role for role in roles if role not in permitted)
         if denied:
             logger.warning("role-claim denied for %s: %s", name, ", ".join(denied))
-        return permitted
+        return tuple(permitted)
+
+    def _acl_allows_role_claim(self, name: str, role: str) -> bool:
+        """Return whether the ACL policy grants ``name`` the ``role-claim`` on ``role``."""
+        policy = self.acl_policy
+        if policy is None:
+            return False
+        decision = evaluate_access(
+            subject=name,
+            project=project_of(name),
+            permission=ROLE_CLAIM,
+            target=Target("role", role),
+            policy=policy,
+        )
+        return decision.decision == WOULD_ALLOW
 
     def roles_of(self, name: str) -> tuple[str, ...]:
         """Return the roles ``name`` currently answers to (empty tuple if none)."""

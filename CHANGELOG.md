@@ -14,6 +14,11 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- ACL permission verbs `mailbox` and `role-claim`: a policy can grant mailbox
+  backlog replay for a non-self/non-`-rx` monitor (target kind `agent`) and
+  authorise heartbeat role bindings alongside the role-grant store (target kind
+  `role`). Wired into `_mailbox_recipient` and `permitted_role_claims`. See
+  `docs/identity-and-acl.md`.
 - `synapse hub --team-secure` multi-seat trust profile: requires a connect
   token, `--identity-trust` (forces identity binding), `--role-grants` (forces
   role-claim enforcement), and private directed messages. Prints recommended

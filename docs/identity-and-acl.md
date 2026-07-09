@@ -94,6 +94,9 @@ permission vocabulary should stay small and auditable:
 | `dashboard` | Read dashboard snapshots; this is the dashboard permission. |
 | `a2a` | Serve or consume Agent-to-Agent bridge data; this is the A2A permission. |
 | `namespace` | Administer project namespace membership and trust material; this is the namespace permission. |
+| `observe` | Receive directed messages the identity is not a party to (when private directed routing is on). Target kind `agent`. |
+| `mailbox` | Replay another identity's directed backlog via a mailbox heartbeat (`mailbox_for`). Target kind `agent`. Self and `-rx` sidecars do not need a grant. |
+| `role-claim` | Bind a role on the heartbeat when `--require-role-claim` is on. Target kind `role` (`<project>/<role>`). Complements the role-grant store. |
 
 Each rule should include an allowed verb, a target pattern, an optional channel
 or project namespace constraint, and a decision reason suitable for receipts and

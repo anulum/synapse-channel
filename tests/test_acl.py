@@ -15,10 +15,12 @@ import pytest
 
 from synapse_channel.core.acl import (
     CLAIM,
+    MAILBOX,
     MESSAGE,
     METRICS,
     OBSERVE,
     PERMISSIONS,
+    ROLE_CLAIM,
     WOULD_ALLOW,
     WOULD_DENY,
     AclError,
@@ -59,6 +61,11 @@ def test_observe_is_part_of_the_permission_vocabulary() -> None:
     assert OBSERVE in PERMISSIONS
 
 
+def test_mailbox_and_role_claim_are_part_of_the_permission_vocabulary() -> None:
+    assert MAILBOX in PERMISSIONS
+    assert ROLE_CLAIM in PERMISSIONS
+
+
 def test_observe_grant_allows_within_its_namespace() -> None:
     policy = AclPolicy([AclRule(OBSERVE, "agent", "*", "OPS", "live monitor")])
     assert _eval(policy, OBSERVE, Target("agent", "BETA"), project="OPS") == WOULD_ALLOW
@@ -67,6 +74,23 @@ def test_observe_grant_allows_within_its_namespace() -> None:
 def test_observe_grant_is_denied_outside_its_namespace() -> None:
     policy = AclPolicy([AclRule(OBSERVE, "agent", "*", "OPS")])
     assert _eval(policy, OBSERVE, Target("agent", "BETA"), project="X") == WOULD_DENY
+
+
+def test_mailbox_grant_allows_agent_target_in_namespace() -> None:
+    policy = AclPolicy([AclRule(MAILBOX, "agent", "proj/*", "proj", "monitor backlog")])
+    assert _eval(policy, MAILBOX, Target("agent", "proj/claude"), project="proj") == WOULD_ALLOW
+    assert _eval(policy, MAILBOX, Target("agent", "other/claude"), project="proj") == WOULD_DENY
+
+
+def test_role_claim_grant_allows_role_target() -> None:
+    policy = AclPolicy([AclRule(ROLE_CLAIM, "role", "proj/coordinator", "proj", "coord")])
+    assert (
+        _eval(policy, ROLE_CLAIM, Target("role", "proj/coordinator"), project="proj")
+        == WOULD_ALLOW
+    )
+    assert (
+        _eval(policy, ROLE_CLAIM, Target("role", "proj/reviewer"), project="proj") == WOULD_DENY
+    )
 
 
 def test_pattern_must_match_target_value() -> None:

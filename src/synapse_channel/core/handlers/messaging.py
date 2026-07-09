@@ -22,6 +22,12 @@ import time
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.acl import (
+    MAILBOX,
+    WOULD_ALLOW,
+    Target,
+    evaluate_access,
+)
 from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.dead_letter_escalation import (
     crosses_escalation_threshold,
@@ -579,7 +585,29 @@ async def _replay_directed_backlog(
 _WAITER_SUFFIX = "-rx"
 
 
-def _mailbox_recipient(connection: str, declared: Any) -> str:
+def _mailbox_acl_allows(hub: SynapseHub, connection: str, requested: str) -> bool:
+    """Return whether the ACL policy grants ``connection`` mailbox access to ``requested``.
+
+    Consulted only when a policy is loaded. The grant is the policy-file finish of the
+    mailbox conditions: self and ``-rx`` sidecars do not need it; a trusted monitor that
+    is neither still may, via a ``mailbox`` rule on target kind ``agent``.
+    """
+    policy = hub.acl_policy
+    if policy is None:
+        return False
+    decision = evaluate_access(
+        subject=connection,
+        project=project_of(connection),
+        permission=MAILBOX,
+        target=Target("agent", requested),
+        policy=policy,
+    )
+    return decision.decision == WOULD_ALLOW
+
+
+def _mailbox_recipient(
+    connection: str, declared: Any, hub: SynapseHub | None = None
+) -> str:
     """Resolve whose directed backlog a mailbox heartbeat may replay onto ``connection``.
 
     A mailbox client may name, in ``declared`` (the heartbeat's ``mailbox_for``), an
@@ -587,16 +615,17 @@ def _mailbox_recipient(connection: str, declared: Any) -> str:
     receive-only ``<identity>-rx`` name while waiting on the bare ``<identity>``. But
     replaying an *arbitrary* named identity's directed backlog on an unauthenticated
     assertion would let any socket pull another identity's missed directed messages
-    from the journal. So a declared identity is honoured only when it is the connection
-    itself or the identity this connection is the ``-rx`` sidecar of; any other value
-    (including a blank or non-string one) falls back to the connection's own backlog
-    rather than dropping the socket.
+    from the journal. A declared identity is honoured when:
 
-    This enforces the documented ``-rx`` sidecar contract structurally; it is not by
-    itself proof the socket is genuinely that sidecar — absent hub authentication a
-    hostile socket can still connect under a ``<victim>-rx`` name. Binding the
-    connection identity (per-message auth / an ACL grant) is the deeper control, tracked
-    with the wider identity-authenticity work, not resolved by a naming convention.
+    1. it is the connection itself, or
+    2. the connection is the ``-rx`` sidecar of that identity, or
+    3. the loaded ACL policy grants the connection the ``mailbox`` permission on
+       that identity (target kind ``agent``).
+
+    Any other value (including blank or non-string) falls back to the connection's own
+    backlog rather than dropping the socket. Structural self/``-rx`` is not by itself
+    proof the socket is genuine — pair with connect token and identity binding; the
+    ACL grant is the policy-file path for a trusted non-sidecar monitor.
     """
     if not isinstance(declared, str):
         return connection
@@ -604,6 +633,8 @@ def _mailbox_recipient(connection: str, declared: Any) -> str:
     if not requested or requested == connection:
         return connection
     if connection == f"{requested}{_WAITER_SUFFIX}":
+        return requested
+    if hub is not None and _mailbox_acl_allows(hub, connection, requested):
         return requested
     return connection
 
@@ -635,11 +666,12 @@ async def handle_heartbeat(
     An optional ``mailbox_for`` string names the identity whose backlog is wanted when
     it differs from the connection ``sender`` — a wake-listener connects under a
     receive-only ``-rx`` name but waits on its bare identity, so it declares that here
-    and the replay is filtered by it. It is honoured only when it names ``sender`` or
-    the identity ``sender`` is the ``-rx`` sidecar of (see :func:`_mailbox_recipient`);
-    a missing, blank, or unrelated value falls back to ``sender``, so an agent
-    connecting under its own identity needs no such field and no socket can pull an
-    arbitrary identity's directed backlog by naming it.
+    and the replay is filtered by it. It is honoured when it names ``sender``, the
+    identity ``sender`` is the ``-rx`` sidecar of, or an ACL ``mailbox`` grant on that
+    identity (see :func:`_mailbox_recipient`); a missing, blank, or unauthorised value
+    falls back to ``sender``, so an agent connecting under its own identity needs no
+    such field and no socket can pull an arbitrary identity's directed backlog by
+    naming it without a grant.
     """
     raw_roles = data.get("roles")
     if isinstance(raw_roles, list):
@@ -650,5 +682,5 @@ async def handle_heartbeat(
         hub.set_wake_capability(sender, normalize_wake_capability(data.get("wake_capability")))
     if data.get("mailbox") is True:
         since_seq = safe_int(data.get("since_seq"), default=0, min_value=0, allow_bool=False)
-        recipient = _mailbox_recipient(sender, data.get("mailbox_for"))
+        recipient = _mailbox_recipient(sender, data.get("mailbox_for"), hub=hub)
         await _replay_directed_backlog(hub, sender, recipient, since_seq, websocket)
