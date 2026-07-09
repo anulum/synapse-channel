@@ -43,7 +43,9 @@ The encryption primitive, key-file management, and operator runtime profile are 
 
 The implemented profile is whole-file operator encryption. It is intended for
 cold migration, rekey, backup, restore, and fail-safe startup checks around the
-real files Synapse already writes.
+real files Synapse already writes. Transparent live database opening is not
+implemented for this whole-file profile because SQLite must keep a database file
+open while it writes pages and WAL frames.
 
 ### Live hub event store (SQLCipher)
 

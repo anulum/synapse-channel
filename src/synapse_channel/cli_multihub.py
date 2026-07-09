@@ -41,6 +41,7 @@ from synapse_channel.core.multihub_fold import ObservedState
 from synapse_channel.core.multihub_follower import EventFetcher, MultiHubFollower, store_fetcher
 from synapse_channel.core.multihub_transport import MultiHubFetchError, network_fetcher
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence_sqlcipher import SqlCipherKeyError
 
 StoreFactory = Callable[[str], EventStore]
 FetcherFactory = Callable[..., EventFetcher]
@@ -78,12 +79,12 @@ def _cmd_observe(args: argparse.Namespace, *, store_factory: StoreFactory = Even
     peer_id = args.peer_id or Path(args.peer_db).stem
     try:
         store = store_factory(args.peer_db)
-    except sqlite3.Error as exc:
+    except (sqlite3.Error, SqlCipherKeyError) as exc:
         print(f"could not read peer event store: {exc}", file=sys.stderr)
         return 2
     try:
         state = asyncio.run(MultiHubFollower().poll(peer_id, store_fetcher(store)))
-    except sqlite3.Error as exc:
+    except (sqlite3.Error, SqlCipherKeyError) as exc:
         print(f"could not read peer event store: {exc}", file=sys.stderr)
         return 2
     finally:
