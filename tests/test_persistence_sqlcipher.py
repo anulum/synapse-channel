@@ -18,6 +18,7 @@ from synapse_channel.core.persistence_sqlcipher import (
     SqlCipherKeyError,
     migrate_plaintext_to_sqlcipher,
     pragma_key_literal,
+    rekey_sqlcipher_store,
     sqlcipher_available,
 )
 
@@ -127,3 +128,30 @@ def test_plaintext_open_of_encrypted_store_hints_key_file(tmp_path: Path) -> Non
     store.close()
     with pytest.raises(SqlCipherKeyError, match="--db-key-file"):
         EventStore(db)
+
+
+def test_rekey_sqlcipher_store_rotates_key(tmp_path: Path) -> None:
+    """PRAGMA rekey: old key fails closed; new key reads prior events."""
+    old = generate_key_file(tmp_path / "old.key")
+    new = generate_key_file(tmp_path / "new.key")
+    db = tmp_path / "hub.db"
+    store = EventStore(db, key_file=old)
+    store.append("chat", {"text": "before-rekey"})
+    store.close()
+
+    result = rekey_sqlcipher_store(db, old_key_file=old, new_key_file=new)
+    assert result["status"] == "rekeyed"
+
+    with pytest.raises(SqlCipherKeyError):
+        EventStore(db, key_file=old)
+    reopened = EventStore(db, key_file=new)
+    assert reopened.read_all()[0].payload == {"text": "before-rekey"}
+    reopened.close()
+
+
+def test_rekey_sqlcipher_refuses_identical_keys(tmp_path: Path) -> None:
+    key = generate_key_file(tmp_path / "k.key")
+    db = tmp_path / "hub.db"
+    EventStore(db, key_file=key).close()
+    with pytest.raises(ValueError, match="must differ"):
+        rekey_sqlcipher_store(db, old_key_file=key, new_key_file=key)

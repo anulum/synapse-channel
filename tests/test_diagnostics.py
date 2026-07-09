@@ -12,6 +12,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from synapse_channel.client.diagnostics import (
     Diagnosis,
     check_deaf_agents,
@@ -21,6 +23,7 @@ from synapse_channel.client.diagnostics import (
     check_multi_seat_posture,
     check_reachable,
     check_send_identity,
+    check_sqlcipher_event_store,
     check_unread_addressees,
     check_waiter,
     summarise,
@@ -369,3 +372,33 @@ def test_deaf_agents_lists_bound_and_counts_rest() -> None:
     diagnosis = check_deaf_agents(roster)
     assert diagnosis.status == "warn"
     assert "and 2 more" in diagnosis.detail
+
+
+# --- check_sqlcipher_event_store ---------------------------------------------
+
+
+def test_sqlcipher_check_passes_when_key_not_configured() -> None:
+    diagnosis = check_sqlcipher_event_store("~/synapse/hub.db", None)
+    assert diagnosis.status == "pass"
+    assert diagnosis.check == "sqlcipher-store"
+
+
+def test_sqlcipher_check_fails_when_key_file_missing(tmp_path: Path) -> None:
+    diagnosis = check_sqlcipher_event_store(tmp_path / "hub.db", tmp_path / "absent.key")
+    assert diagnosis.status == "fail"
+    assert "missing" in diagnosis.detail
+
+
+def test_sqlcipher_check_opens_real_encrypted_store(tmp_path: Path) -> None:
+    pytest.importorskip("sqlcipher3")
+    from synapse_channel.core.at_rest import generate_key_file
+    from synapse_channel.core.persistence import EventStore
+
+    key = generate_key_file(tmp_path / "hub.key")
+    db = tmp_path / "hub.db"
+    store = EventStore(db, key_file=key)
+    store.append("chat", {"n": 1})
+    store.close()
+    diagnosis = check_sqlcipher_event_store(db, key)
+    assert diagnosis.status == "pass"
+    assert "max_seq=1" in diagnosis.detail

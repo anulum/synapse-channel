@@ -325,6 +325,94 @@ def check_multi_seat_posture(
     )
 
 
+def check_sqlcipher_event_store(
+    db_path: str | PathLike[str] | None,
+    key_file: str | PathLike[str] | None,
+) -> Diagnosis:
+    """Verify an encrypted hub event store opens with the supplied key file.
+
+    When ``key_file`` is omitted the check is a soft pass — SQLCipher is opt-in.
+    When a key file is supplied, the store must open through SQLCipher or the
+    check fails closed with a concrete remedy.
+    """
+    if not key_file:
+        return Diagnosis(
+            check="sqlcipher-store",
+            status="pass",
+            detail="SQLCipher key not configured (plaintext or unset --db-key-file)",
+            remedy="",
+        )
+    key_path = Path(key_file).expanduser()
+    if not key_path.is_file():
+        return Diagnosis(
+            check="sqlcipher-store",
+            status="fail",
+            detail=f"SQLCipher key file missing: {key_path}",
+            remedy="synapse encrypt-key generate <path> && chmod 600 <path>",
+        )
+    if not db_path:
+        return Diagnosis(
+            check="sqlcipher-store",
+            status="fail",
+            detail="--db-key-file set without an event-store path",
+            remedy="pass --db-path to the hub store (same path as synapse hub --db)",
+        )
+    store_path = Path(db_path).expanduser()
+    if not store_path.is_file():
+        return Diagnosis(
+            check="sqlcipher-store",
+            status="warn",
+            detail=f"event store not found yet: {store_path}",
+            remedy=(
+                "start the hub once with --db and --db-key-file so the encrypted "
+                "store is created, then re-run doctor"
+            ),
+        )
+    from synapse_channel.core.persistence import EventStore
+    from synapse_channel.core.persistence_sqlcipher import (
+        SqlCipherKeyError,
+        SqlCipherUnavailableError,
+    )
+
+    try:
+        store = EventStore(store_path, key_file=key_path)
+    except SqlCipherUnavailableError:
+        return Diagnosis(
+            check="sqlcipher-store",
+            status="fail",
+            detail="SQLCipher driver not installed",
+            remedy="pip install 'synapse-channel[sqlcipher]'",
+        )
+    except (SqlCipherKeyError, ValueError, OSError) as exc:
+        return Diagnosis(
+            check="sqlcipher-store",
+            status="fail",
+            detail=f"cannot open encrypted event store with key file: {exc}",
+            remedy=(
+                "confirm --db-path matches hub --db and the key is the current "
+                "SQLCipher key (rekey with synapse encrypt-key rekey-sqlcipher if rotated)"
+            ),
+        )
+    encrypted = store.encrypted
+    try:
+        seq = store.max_seq()
+    finally:
+        store.close()
+    if not encrypted:
+        return Diagnosis(
+            check="sqlcipher-store",
+            status="fail",
+            detail=f"{store_path} opened without SQLCipher despite a key file",
+            remedy="migrate with synapse encrypt-key migrate-sqlcipher, then use --db-key-file",
+        )
+    return Diagnosis(
+        check="sqlcipher-store",
+        status="pass",
+        detail=f"SQLCipher event store opens with key file (max_seq={seq})",
+        remedy="",
+    )
+
+
 def check_deaf_agents(roster: list[str] | None) -> Diagnosis:
     """Warn when live agents have no matching ``-rx`` wake waiter on the bus.
 

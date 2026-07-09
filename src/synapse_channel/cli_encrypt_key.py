@@ -337,6 +337,33 @@ def _cmd_migrate_sqlcipher(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_rekey_sqlcipher(args: argparse.Namespace) -> int:
+    """Rotate the SQLCipher page key for a live event-store file (hub stopped)."""
+    from synapse_channel.core.persistence_sqlcipher import (
+        SqlCipherKeyError,
+        SqlCipherUnavailableError,
+        rekey_sqlcipher_store,
+    )
+
+    try:
+        result = rekey_sqlcipher_store(
+            args.db,
+            old_key_file=args.old_key,
+            new_key_file=args.new_key,
+        )
+    except (
+        ValueError,
+        FileNotFoundError,
+        SqlCipherUnavailableError,
+        SqlCipherKeyError,
+    ) as exc:
+        print(f"sqlcipher rekey problem: {exc}")
+        return 1
+    print(f"sqlcipher rekeyed: {result['path']}")
+    print(f"start the hub with: synapse hub --db {args.db} --db-key-file {args.new_key}")
+    return 0
+
+
 def _add_scrypt_args(parser: argparse.ArgumentParser) -> None:
     """Register the shared scrypt cost selectors for passphrase-based key commands."""
     parser.add_argument(
@@ -541,3 +568,27 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="New encrypted database path (must not already exist).",
     )
     migrate_sqlcipher.set_defaults(func=_cmd_migrate_sqlcipher)
+
+    rekey_sqlcipher = nested.add_parser(
+        "rekey-sqlcipher",
+        help=(
+            "Rotate the SQLCipher page key for an existing encrypted hub --db "
+            "(requires synapse-channel[sqlcipher]; hub must be stopped)."
+        ),
+    )
+    rekey_sqlcipher.add_argument(
+        "--db",
+        required=True,
+        help="Existing encrypted event-store path (synapse hub --db).",
+    )
+    rekey_sqlcipher.add_argument(
+        "--old-key",
+        required=True,
+        help="Current owner-only raw key file that opens the store.",
+    )
+    rekey_sqlcipher.add_argument(
+        "--new-key",
+        required=True,
+        help="Replacement owner-only raw key file (must differ from --old-key).",
+    )
+    rekey_sqlcipher.set_defaults(func=_cmd_rekey_sqlcipher)

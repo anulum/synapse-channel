@@ -211,6 +211,94 @@ def connect_event_store(
     return connect_sqlcipher(path, material), True
 
 
+def rekey_sqlcipher_store(
+    path: str | Path,
+    *,
+    old_key: bytes | None = None,
+    old_key_file: str | Path | None = None,
+    new_key: bytes | None = None,
+    new_key_file: str | Path | None = None,
+) -> Mapping[str, str]:
+    """Rotate the SQLCipher page key for an existing encrypted event store.
+
+    Uses SQLCipher ``PRAGMA rekey`` so pages are re-encrypted in place. The hub
+    (and every other writer) must be stopped. After success, only the new key
+    opens the store.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path
+        Existing encrypted event-store path.
+    old_key, new_key : bytes or None, optional
+        Raw key material; takes precedence over the matching key-file argument.
+    old_key_file, new_key_file : str or pathlib.Path or None, optional
+        Owner-only key files when raw keys are not supplied.
+
+    Returns
+    -------
+    Mapping[str, str]
+        ``{"path": ..., "status": "rekeyed"}`` on success.
+
+    Raises
+    ------
+    FileNotFoundError
+        When ``path`` is missing.
+    ValueError
+        When keys are missing or identical.
+    SqlCipherUnavailableError
+        When the SQLCipher driver is not installed.
+    SqlCipherKeyError
+        When the old key is rejected or rekey verification fails.
+    """
+    target = Path(path)
+    if not target.is_file() and str(target) != ":memory:":
+        raise FileNotFoundError(f"encrypted event store not found: {target}")
+    old_material = old_key if old_key is not None else None
+    if old_material is None:
+        if old_key_file is None:
+            raise ValueError("rekey_sqlcipher_store requires old_key or old_key_file")
+        old_material = load_key_file(old_key_file)
+    new_material = new_key if new_key is not None else None
+    if new_material is None:
+        if new_key_file is None:
+            raise ValueError("rekey_sqlcipher_store requires new_key or new_key_file")
+        new_material = load_key_file(new_key_file)
+    if old_material == new_material:
+        raise ValueError("old and new SQLCipher keys must differ")
+
+    conn = connect_sqlcipher(target, old_material)
+    try:
+        literal = pragma_key_literal(new_material)
+        conn.execute(f'PRAGMA rekey = "{literal}"')
+        # Verify the connection still reads after rekey (same connection is rekeyed).
+        conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
+        conn.commit()
+    except Exception as exc:
+        conn.close()
+        if isinstance(exc, (SqlCipherKeyError, SqlCipherUnavailableError, ValueError)):
+            raise
+        raise SqlCipherKeyError(f"SQLCipher rekey failed for {target}: {exc}") from exc
+    conn.close()
+
+    # Fail closed: reopen with the new key and refuse the old key.
+    verify = connect_sqlcipher(target, new_material)
+    try:
+        verify.execute("SELECT count(*) FROM sqlite_master").fetchone()
+    finally:
+        verify.close()
+    try:
+        leftover = connect_sqlcipher(target, old_material)
+    except SqlCipherKeyError:
+        pass
+    else:
+        leftover.close()
+        raise SqlCipherKeyError(
+            f"SQLCipher rekey for {target} left the old key usable — refusing"
+        )
+    _restrict_owner(target)
+    return {"path": str(target), "status": "rekeyed"}
+
+
 def migrate_plaintext_to_sqlcipher(
     source: str | Path,
     destination: str | Path,

@@ -664,3 +664,60 @@ def test_migrate_sqlcipher_cli_refuses_missing_source(
     )
     assert args.func(args) == 1
     assert "sqlcipher migrate problem" in capsys.readouterr().out
+
+
+def test_parser_registers_rekey_sqlcipher() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        [
+            "encrypt-key",
+            "rekey-sqlcipher",
+            "--db",
+            "/tmp/h.db",
+            "--old-key",
+            "/tmp/old",
+            "--new-key",
+            "/tmp/new",
+        ]
+    )
+    assert args.func is cli_encrypt_key._cmd_rekey_sqlcipher
+
+
+def test_rekey_sqlcipher_cli_rotates_real_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Production encrypt-key rekey-sqlcipher path on a real EventStore."""
+    pytest.importorskip("sqlcipher3")
+    from synapse_channel.core.at_rest import generate_key_file
+    from synapse_channel.core.persistence import EventStore
+    from synapse_channel.core.persistence_sqlcipher import SqlCipherKeyError
+
+    old = generate_key_file(tmp_path / "old.key")
+    new = generate_key_file(tmp_path / "new.key")
+    db = tmp_path / "hub.db"
+    store = EventStore(db, key_file=old)
+    store.append("chat", {"via": "cli-rekey"})
+    store.close()
+
+    args = cli.build_parser().parse_args(
+        [
+            "encrypt-key",
+            "rekey-sqlcipher",
+            "--db",
+            str(db),
+            "--old-key",
+            str(old),
+            "--new-key",
+            str(new),
+        ]
+    )
+    assert args.func(args) == 0
+    out = capsys.readouterr().out
+    assert "rekeyed" in out
+    assert "--db-key-file" in out
+
+    with pytest.raises(SqlCipherKeyError):
+        EventStore(db, key_file=old)
+    enc = EventStore(db, key_file=new)
+    assert enc.read_all()[0].payload == {"via": "cli-rekey"}
+    enc.close()

@@ -65,6 +65,24 @@ synapse encrypt-key migrate-sqlcipher \
   --destination ~/synapse/hub.db
 ```
 
+Rotate an existing encrypted store (hub stopped):
+
+```bash
+synapse encrypt-key generate ~/synapse/hub.key.new
+synapse encrypt-key rekey-sqlcipher \
+  --db ~/synapse/hub.db \
+  --old-key ~/synapse/hub.key \
+  --new-key ~/synapse/hub.key.new
+mv ~/synapse/hub.key.new ~/synapse/hub.key
+synapse hub --db ~/synapse/hub.db --db-key-file ~/synapse/hub.key
+```
+
+Doctor can verify the key opens the store:
+
+```bash
+synapse doctor --db-path ~/synapse/hub.db --db-key-file ~/synapse/hub.key
+```
+
 Without `[sqlcipher]` the stock install stays dependency-free and `--db-key-file`
 fails closed with an install hint. Whole-file AES-GCM envelopes still apply to
 relay logs, A2A state, cursors, and archives — they are complementary, not a

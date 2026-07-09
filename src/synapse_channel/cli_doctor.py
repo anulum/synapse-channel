@@ -48,6 +48,7 @@ from synapse_channel.client.diagnostics import (
     check_multi_seat_posture,
     check_reachable,
     check_send_identity,
+    check_sqlcipher_event_store,
     check_unread_addressees,
     check_waiter,
     summarise,
@@ -260,6 +261,8 @@ async def _diagnose(
     multi_seat: bool = False,
     identity_trust: str | Path | None = None,
     role_grants: str | Path | None = None,
+    event_store_path: str | Path | None = None,
+    event_store_key_file: str | Path | None = None,
 ) -> tuple[int, list[str], list[Diagnosis]]:
     """Resolve the identity, run every check, and return the summarised verdicts.
 
@@ -310,6 +313,9 @@ async def _diagnose(
     diagnoses.append(check_reachable(roster is not None, uri))
     diagnoses.append(check_waiter(roster, identity.waiter_name))
     diagnoses.append(check_deaf_agents(roster))
+    diagnoses.append(
+        check_sqlcipher_event_store(event_store_path, event_store_key_file)
+    )
     diagnoses.append(
         check_multi_seat_posture(
             roster=roster,
@@ -456,6 +462,8 @@ def _cmd_doctor(
                 multi_seat=bool(getattr(args, "multi_seat", False)),
                 identity_trust=getattr(args, "identity_trust", None) or None,
                 role_grants=getattr(args, "role_grants", None) or None,
+                event_store_path=getattr(args, "db_path", None),
+                event_store_key_file=getattr(args, "db_key_file", None),
             )
         )
 
@@ -715,6 +723,17 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     doctor.add_argument(
         "--db-path",
         default="~/synapse/hub.db",
-        help="Hub SQLite event-store path to include in --redeploy-checklist.",
+        help=(
+            "Hub SQLite event-store path for --redeploy-checklist and for "
+            "SQLCipher doctor checks (same path as synapse hub --db)."
+        ),
+    )
+    doctor.add_argument(
+        "--db-key-file",
+        default=None,
+        help=(
+            "Owner-only SQLCipher key file for the event store; when set, doctor "
+            "opens --db-path with the key (requires synapse-channel[sqlcipher])."
+        ),
     )
     doctor.set_defaults(func=_cmd_doctor)
