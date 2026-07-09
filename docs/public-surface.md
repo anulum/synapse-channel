@@ -53,7 +53,7 @@ Bridges to other ecosystems and tools; optional extras, not core. These integrat
 Synapse with A2A, MCP, git, tmux-driven agents, and model workers; some require
 optional extras and none belongs to the single-dependency local core.
 
-`a2a-card`  `a2a-conformance`  `a2a-serve`  `adapters`  `agent-tmux`  `codex-tmux`  `git-claim`  `git-hook`  `git-init`  `git-release`  `ingest`  `install-shell-hook`  `mcp`  `mcp-call`  `mcp-tools`  `shell-hook`  `worker`  `worker-session`
+`a2a-card`  `a2a-conformance`  `a2a-interop-trace`  `a2a-serve`  `adapters`  `agent-tmux`  `codex-tmux`  `git-claim`  `git-hook`  `git-init`  `git-release`  `ingest`  `install-shell-hook`  `mcp`  `mcp-call`  `mcp-tools`  `shell-hook`  `worker`  `worker-session`
 
 ### Read-only analysis — `analysis`
 
