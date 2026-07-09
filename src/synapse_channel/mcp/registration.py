@@ -133,9 +133,16 @@ def build_mcp_server(
         limit: int = 5,
         include_zero: bool = False,
         event_store: str | None = None,
+        event_store_key_file: str | None = None,
     ) -> str:
         """Return advisory route recommendations for a board task as JSON."""
-        return await bridge.route_task(task_id, limit, include_zero, event_store)
+        return await bridge.route_task(
+            task_id,
+            limit,
+            include_zero,
+            event_store,
+            event_store_key_file=event_store_key_file,
+        )
 
     @server.tool()
     async def synapse_resource_bids(
@@ -153,9 +160,16 @@ def build_mcp_server(
         query: str,
         limit: int = 5,
         since_seq: int = 0,
+        event_store_key_file: str | None = None,
     ) -> str:
         """Return deterministic local memory recall hits as JSON."""
-        return await bridge.memory_recall(event_store, query, limit, since_seq)
+        return await bridge.memory_recall(
+            event_store,
+            query,
+            limit,
+            since_seq,
+            event_store_key_file=event_store_key_file,
+        )
 
     @server.resource("synapse://board")
     async def board_resource() -> str:

@@ -77,14 +77,19 @@ def _cmd_observe(args: argparse.Namespace, *, store_factory: StoreFactory = Even
         print(f"peer database not found: {args.peer_db}", file=sys.stderr)
         return 2
     peer_id = args.peer_id or Path(args.peer_db).stem
+    key_file = getattr(args, "db_key_file", None)
     try:
-        store = store_factory(args.peer_db)
-    except (sqlite3.Error, SqlCipherKeyError) as exc:
+        # Production opens honour SQLCipher; test injectables take path only.
+        if store_factory is EventStore:
+            store = EventStore(args.peer_db, key_file=key_file)
+        else:
+            store = store_factory(args.peer_db)
+    except (sqlite3.Error, SqlCipherKeyError, ValueError) as exc:
         print(f"could not read peer event store: {exc}", file=sys.stderr)
         return 2
     try:
         state = asyncio.run(MultiHubFollower().poll(peer_id, store_fetcher(store)))
-    except (sqlite3.Error, SqlCipherKeyError) as exc:
+    except (sqlite3.Error, SqlCipherKeyError, ValueError) as exc:
         print(f"could not read peer event store: {exc}", file=sys.stderr)
         return 2
     finally:
@@ -126,6 +131,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "observe", help="Fold a peer hub's event-log file and print its observed board and claims."
     )
     observe.add_argument("--peer-db", required=True, help="Path to the peer hub's event-store db.")
+    observe.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted peer event store.",
+    )
     observe.add_argument(
         "--peer-id", default=None, help="Id to tag the peer's events with; defaults to the db name."
     )

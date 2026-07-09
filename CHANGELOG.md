@@ -14,6 +14,9 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- SQLCipher key material for multihub offline observe and MCP store joins:
+  `multihub observe --db-key-file`, MCP `event_store_key_file` on
+  `synapse_route_task` / `synapse_memory_recall` (bridge + registration).
 - SQLCipher `--db-key-file` on session metrics and semantic routing store
   joins: `participant costs`, `route-task --event-store`, dashboard sessions
   feed (via `--feeds-db-key-file` context), and core

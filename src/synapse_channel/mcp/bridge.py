@@ -488,6 +488,7 @@ class SynapseHubBridge:
         limit: int = 5,
         include_zero: bool = False,
         event_store: str | None = None,
+        event_store_key_file: str | None = None,
     ) -> str:
         """Return advisory semantic route recommendations for a board task.
 
@@ -501,6 +502,8 @@ class SynapseHubBridge:
             Include zero-score agents for diagnostics. Defaults to ``False``.
         event_store : str or None, optional
             Optional hub event-store path used for observed capability evidence.
+        event_store_key_file : str or None, optional
+            Owner-only SQLCipher key when ``event_store`` is encrypted.
 
         Returns
         -------
@@ -540,7 +543,9 @@ class SynapseHubBridge:
         observations = None
         if event_store is not None:
             try:
-                observations = read_observed_capability_index(event_store)
+                observations = read_observed_capability_index(
+                    event_store, key_file=event_store_key_file
+                )
             except ValueError as exc:
                 return str(exc)
         recommendation = recommend_agents_for_task(
@@ -622,6 +627,7 @@ class SynapseHubBridge:
         query: str,
         limit: int = 5,
         since_seq: int = 0,
+        event_store_key_file: str | None = None,
     ) -> str:
         """Return deterministic local memory recall hits as JSON.
 
@@ -635,6 +641,8 @@ class SynapseHubBridge:
             Maximum recall hits. Defaults to ``5``.
         since_seq : int, optional
             Exclusive lower event-store sequence bound. Defaults to ``0``.
+        event_store_key_file : str or None, optional
+            Owner-only SQLCipher key when ``event_store`` is encrypted.
 
         Returns
         -------
@@ -642,7 +650,14 @@ class SynapseHubBridge:
             Recall report JSON, or a local input error string.
         """
         try:
-            report = read_memory_recall(event_store, query, since_seq=since_seq, limit=limit)
-        except MemoryRecallInputError as exc:
+            report = read_memory_recall(
+                event_store,
+                query,
+                since_seq=since_seq,
+                limit=limit,
+                key_file=event_store_key_file,
+            )
+        except (MemoryRecallInputError, ValueError, OSError) as exc:
+            # ValueError covers SqlCipherKeyError on encrypted stores.
             return str(exc)
         return memory_recall_to_json(report)
