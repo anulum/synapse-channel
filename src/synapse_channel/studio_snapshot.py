@@ -26,6 +26,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from synapse_channel.dashboard_observed_health import build_observed_fleet_health
 from synapse_channel.dashboard_security_posture import build_security_posture
 
 STUDIO_SNAPSHOT_PATH = "/studio.json"
@@ -63,15 +64,16 @@ def build_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
     -------
     dict[str, Any]
         ``verdict``, ``generated_at``, a ``headline`` counter row, and the ``agents``,
-        ``hub``, ``claims``, ``tasks``, ``conflicts``, ``security_posture``, and ``risk``
-        sections behind it. Counts are derived from the same lists the sections carry, so
-        they cannot drift apart.
+        ``hub``, ``claims``, ``tasks``, ``conflicts``, ``security_posture``,
+        ``observed_fleet``, and ``risk`` sections behind it. Counts are derived from the
+        same lists the sections carry, so they cannot drift apart.
     """
     fleet = _mapping(dashboard.get("fleet"))
     risk = _mapping(dashboard.get("risk"))
     agents = _mapping(fleet.get("agents"))
     claims = _mapping(fleet.get("claims"))
     tasks = _mapping(fleet.get("tasks"))
+    observed_fleet = build_observed_fleet_health(dashboard)
 
     live = _list(agents.get("live"))
     waiters = _list(agents.get("waiters"))
@@ -101,12 +103,15 @@ def build_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
             "tasks_blocked": len(blocked),
             "branch_conflicts": len(conflicts),
             "risk_signals": len(signals),
+            "peers_reachable": _int(observed_fleet.get("peers_reachable")),
+            "peers_total": _int(observed_fleet.get("peers_total")),
         },
         "agents": {"live": live, "waiters": waiters, "missing_waiters": missing_waiters},
         "claims": {"active": active_claims, "stale": stale_claims},
         "tasks": {"ready": ready, "blocked": blocked, "graph": fleet.get("task_graph")},
         "conflicts": conflicts,
         "security_posture": build_security_posture(dashboard),
+        "observed_fleet": observed_fleet,
         "risk": {
             "level": verdict,
             "signals": signals,

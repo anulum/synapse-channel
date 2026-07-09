@@ -62,8 +62,11 @@ def test_projection_foregrounds_the_verdict_and_sections() -> None:
         "tasks",
         "conflicts",
         "security_posture",
+        "observed_fleet",
         "risk",
     }
+    assert studio["observed_fleet"]["configured"] is False
+    assert studio["headline"]["peers_total"] == 0
     assert studio["agents"]["live"] == ["A/claude-1", "B/codex-2"]
     assert studio["hub"] == {"id": "", "version": "", "config_epoch": ""}
     assert studio["claims"]["active"] == [{"owner": "A/claude-1", "scope": "src/"}]
@@ -113,4 +116,21 @@ def test_frozen_snapshot_is_a_valid_representative_sample() -> None:
     assert studio["hub"]["version"] == "0.98.21"
     assert studio["headline"]["agents_live"] == 2
     assert studio["security_posture"]["level"] == "green"
+    assert studio["observed_fleet"]["configured"] is True
+    assert studio["observed_fleet"]["peers_total"] == 1
+    assert studio["headline"]["peers_reachable"] == 1
     assert frozen_studio_snapshot() == studio  # deterministic
+
+
+def test_observed_fleet_projects_from_dashboard_peers() -> None:
+    studio = build_studio_snapshot(
+        {
+            **_DASHBOARD,
+            "observed_peers": [
+                {"hub_id": "soak", "reachable": False, "error": "timeout"},
+            ],
+        }
+    )
+    assert studio["observed_fleet"]["level"] == "red"
+    assert studio["headline"]["peers_total"] == 1
+    assert studio["headline"]["peers_reachable"] == 0

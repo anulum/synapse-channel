@@ -41,16 +41,19 @@ def test_page_carries_every_instrument_hook() -> None:
         'id="cc-conflicts"',
         'id="cc-signals"',
         'id="cc-posture"',
+        'id="cc-peers"',
         'id="cc-connection"',
         'id="cc-hub"',
         'id="cc-version"',
         'id="cc-offline"',
         'id="cc-fallback-body"',
         'id="cc-posture-list"',
+        'id="cc-peers-list"',
         'id="cc-livefeed-list"',
         "Coordination clock",
         "coordination clock",  # the panel label
         "security posture",
+        "observed peers (advisory)",
         "live feed",
     ):
         assert hook in html, hook
@@ -61,6 +64,7 @@ def test_page_navigates_between_command_and_design() -> None:
     assert f'href="{STUDIO_COMMAND_PATH}" aria-current="page"' in html
     assert f'href="{STUDIO_REFERENCE_PATH}"' in html
     assert 'href="#cc-livefeed-list"' in html
+    assert 'href="#cc-peers-list"' in html
     assert 'aria-label="Studio navigation"' in html
 
 

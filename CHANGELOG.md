@@ -20,6 +20,9 @@ All notable changes to this project are documented here.
   gains a multi-seat golden path ending in Studio.
 
 ### Added
+- Studio `observed_fleet` section on `/studio.json`: multi-hub / FLEET advisory
+  peer health (reachable, lagging, unreachable) from dashboard
+  `observed_peers`. Command centre shows a peers headline and panel.
 - `synapse doctor` multi-seat trust checklist: `--multi-seat`,
   `--identity-trust`, and `--role-grants` feed `check_multi_seat_posture`
   (token + trust + role materials → `--team-secure` remedy). Auto-detects a

@@ -91,6 +91,13 @@ missing role bindings, peers, or receipts are shown as amber "not currently evid
 instead of being treated as configured. The panel is read-only; server-side ACL,
 dashboard bind, federation, and sandbox enforcement remain in their existing modules.
 
+The **observed peers (advisory)** panel projects dashboard `--observed-peer` rows (and
+any FLEET-style advisory mirrors folded into the same snapshot field) into
+`/studio.json` under `observed_fleet`: per-peer reachability, lag, clock skew, and
+observed claim-owner counts. Unreachable peers are red; lagging peers amber; no
+configured peers is an honest amber "not configured" state. Peer data never grants
+local claim authority.
+
 The LiveFeed panel tails `/events.json?since=SEQ&limit=N`, the durable event-store feed
 served when the dashboard starts with `--feeds-db`. It starts at `since=latest`, then
 polls forward by `next_cursor`, so it shows new recorded events without walking a large

@@ -233,6 +233,10 @@ function render(data) {
   setStat("cc-signals", h.risk_signals || 0);
   const posture = data.security_posture || {};
   setStat("cc-posture", posture.level || "unknown");
+  const observed = data.observed_fleet || {};
+  const peersTotal = h.peers_total || observed.peers_total || 0;
+  const peersReachable = h.peers_reachable || observed.peers_reachable || 0;
+  setStat("cc-peers", peersTotal ? (peersReachable + " / " + peersTotal) : "—");
   drawClock(data);
   const agents = data.agents || {};
   const live = (agents.live || []).map((a) => ({ name: a, state: "ok" }))
@@ -260,6 +264,19 @@ function render(data) {
     `<span class="syn-dot syn-dot--${TONE[row.level] || "warn"}"></span>` +
     `<span>${text(row.surface)}</span>` +
     `<span style="margin-left:auto;color:var(--syn-muted)">${text(row.state)}</span>`);
+  const peerRows = observed.peers || [];
+  if (!peerRows.length) {
+    list("cc-peers-list", [{ level: observed.level || "amber",
+      hub_id: "local-only", detail: observed.detail || "no observed peers" }], (row) =>
+      `<span class="syn-dot syn-dot--${TONE[row.level] || "warn"}"></span>` +
+      `<span>${text(row.hub_id)}</span>` +
+      `<span style="margin-left:auto;color:var(--syn-muted)">${text(row.detail)}</span>`);
+  } else {
+    list("cc-peers-list", peerRows, (row) =>
+      `<span class="syn-dot syn-dot--${TONE[row.level] || "warn"}"></span>` +
+      `<span>${text(row.hub_id)}</span>` +
+      `<span style="margin-left:auto;color:var(--syn-muted)">${text(row.detail)}</span>`);
+  }
   const tbody = document.getElementById("cc-fallback-body");
   tbody.replaceChildren();
   for (const x of allClaims) {
@@ -387,6 +404,7 @@ def render_studio_command_html(*, poll_seconds: int = DEFAULT_POLL_SECONDS) -> s
         <a href="#cc-agents-list">fleet</a>
         <a href="#cc-livefeed-list">live feed</a>
         <a href="#cc-posture-list">security</a>
+        <a href="#cc-peers-list">peers</a>
       </nav>
     </aside>
     <main class="cc-main">
@@ -409,6 +427,7 @@ def render_studio_command_html(*, poll_seconds: int = DEFAULT_POLL_SECONDS) -> s
         <div class="cc-stat"><b id="cc-conflicts">0</b><span>conflicts</span></div>
         <div class="cc-stat"><b id="cc-signals">0</b><span>risk signals</span></div>
         <div class="cc-stat"><b id="cc-posture">unknown</b><span>security posture</span></div>
+        <div class="cc-stat"><b id="cc-peers">—</b><span>peers reachable</span></div>
       </div>
       <div class="cc-grid">
     <section class="syn-panel cc-clock-wrap">
@@ -442,6 +461,10 @@ def render_studio_command_html(*, poll_seconds: int = DEFAULT_POLL_SECONDS) -> s
       <section class="syn-panel">
         <div class="syn-label">security posture</div>
         <div id="cc-posture-list" style="margin-top:var(--syn-sp-2)"></div>
+      </section>
+      <section class="syn-panel">
+        <div class="syn-label">observed peers (advisory)</div>
+        <div id="cc-peers-list" style="margin-top:var(--syn-sp-2)"></div>
       </section>
       <section class="syn-panel">
         <div class="syn-label">live feed</div>
