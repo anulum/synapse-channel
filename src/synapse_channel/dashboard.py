@@ -67,6 +67,7 @@ from synapse_channel.dashboard_store_feeds import (
     build_sessions_feed,
     build_state_at_feed,
     build_waits_feed,
+    event_store_key,
     latest_cursor,
 )
 from synapse_channel.dashboard_studio import (
@@ -645,6 +646,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     dashboard_token: ClassVar[str | None]
     token_protects_reads: ClassVar[bool]
     reliability_db: ClassVar[Path | None]
+    reliability_db_key_file: ClassVar[Path | None]
     federation_store: ClassVar[Path | None]
     cockpit_dist: ClassVar[Path | None]
     operator_enabled: ClassVar[bool]
@@ -670,6 +672,12 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 authenticate=True,
             )
             return
+        # Bind optional SQLCipher key for every store-backed feed on this request.
+        with event_store_key(self.reliability_db_key_file):
+            self._do_get_routed()
+
+    def _do_get_routed(self) -> None:
+        """Route a GET after auth and SQLCipher key binding."""
         path = urlsplit(self.path).path
         asset_name = path.lstrip("/")
         if asset_name in COCKPIT_ASSETS:
@@ -1008,7 +1016,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             )
             return
         try:
-            report = run_reliability_report(self.reliability_db)
+            report = run_reliability_report(
+                self.reliability_db, key_file=self.reliability_db_key_file
+            )
         except ValueError as exc:
             self._write(
                 HTTPStatus.SERVICE_UNAVAILABLE,
@@ -1480,6 +1490,7 @@ def _handler_class(
     dashboard_token: str | None,
     token_protects_reads: bool,
     reliability_db: Path | None,
+    reliability_db_key_file: Path | None,
     federation_store: Path | None,
     cockpit_dist: Path | None,
     operator_enabled: bool,
@@ -1500,6 +1511,7 @@ def _handler_class(
     bound_dashboard_token = dashboard_token
     bound_token_protects_reads = token_protects_reads
     bound_reliability_db = reliability_db
+    bound_reliability_db_key_file = reliability_db_key_file
     bound_federation_store = federation_store
     bound_cockpit_dist = cockpit_dist
     bound_operator_enabled = operator_enabled
@@ -1522,6 +1534,7 @@ def _handler_class(
         dashboard_token = bound_dashboard_token
         token_protects_reads = bound_token_protects_reads
         reliability_db = bound_reliability_db
+        reliability_db_key_file = bound_reliability_db_key_file
         federation_store = bound_federation_store
         cockpit_dist = bound_cockpit_dist
         operator_enabled = bound_operator_enabled
@@ -1548,6 +1561,7 @@ def start_dashboard_server(
     a2a_state_file: str | Path | None = None,
     dashboard_token: str | None = None,
     reliability_db: str | Path | None = None,
+    reliability_db_key_file: str | Path | None = None,
     federation_store: str | Path | None = None,
     cockpit_dist: str | Path | None = None,
     operator: bool = False,
@@ -1620,6 +1634,9 @@ def start_dashboard_server(
         dashboard_token=effective_dashboard_token,
         token_protects_reads=token_protects_reads,
         reliability_db=Path(reliability_db) if reliability_db is not None else None,
+        reliability_db_key_file=(
+            Path(reliability_db_key_file) if reliability_db_key_file is not None else None
+        ),
         federation_store=Path(federation_store) if federation_store is not None else None,
         cockpit_dist=Path(cockpit_dist) if cockpit_dist is not None else None,
         operator_enabled=operator,

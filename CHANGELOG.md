@@ -25,6 +25,8 @@ All notable changes to this project are documented here.
   gains a multi-seat golden path ending in Studio.
 
 ### Added
+- SQLCipher key for store readers: `ingest`/`compact --db-key-file`,
+  dashboard `--feeds-db-key-file` (store-backed feeds + reliability).
 - SQLCipher `encrypt-key rekey-sqlcipher` (in-place PRAGMA rekey) and
   `synapse doctor --db-key-file` check that the encrypted event store opens.
 - SQLCipher live event store: optional `synapse-channel[sqlcipher]` extra

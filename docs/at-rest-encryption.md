@@ -77,6 +77,13 @@ mv ~/synapse/hub.key.new ~/synapse/hub.key
 synapse hub --db ~/synapse/hub.db --db-key-file ~/synapse/hub.key
 ```
 
+Read the same store without decrypting offline copies:
+
+```bash
+synapse ingest ~/synapse/hub.db --db-key-file ~/synapse/hub.key
+synapse dashboard --feeds-db ~/synapse/hub.db --feeds-db-key-file ~/synapse/hub.key
+```
+
 Doctor can verify the key opens the store:
 
 ```bash

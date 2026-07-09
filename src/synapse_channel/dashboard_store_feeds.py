@@ -43,7 +43,9 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import cast
 
@@ -72,6 +74,27 @@ from synapse_channel.participants.session_metric_report import (
 )
 
 Clock = Callable[[], float]
+
+_event_store_key_file: ContextVar[str | Path | None] = ContextVar(
+    "dashboard_event_store_key_file", default=None
+)
+"""Optional SQLCipher key for store-backed dashboard feeds (set by the HTTP handler)."""
+
+
+@contextmanager
+def event_store_key(key_file: str | Path | None) -> Iterator[None]:
+    """Bind ``key_file`` for :func:`_open_event_store` within a feed build."""
+    token = _event_store_key_file.set(key_file)
+    try:
+        yield
+    finally:
+        _event_store_key_file.reset(token)
+
+
+def _open_event_store(db_path: str | Path) -> EventStore:
+    """Open a hub event store, honouring an optional SQLCipher key context."""
+    return EventStore(db_path, key_file=_event_store_key_file.get())
+
 
 DEFAULT_EVENTS_LIMIT = 200
 """Events returned per tail request when the client names no limit."""
@@ -119,7 +142,7 @@ def build_events_tail(
         msg = f"missing event store: {path}"
         raise ValueError(msg)
     bounded = max(1, min(int(limit), MAX_EVENTS_LIMIT))
-    store = EventStore(path)
+    store = _open_event_store(path)
     try:
         log_end_seq = store.max_seq()
         events = store.read_since(max(0, int(since)), limit=bounded)
@@ -159,7 +182,7 @@ def build_state_at_feed(db_path: str | Path, *, seq: int) -> dict[str, object]:
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path)
+    store = _open_event_store(path)
     try:
         log_end_seq = store.max_seq()
         bounded = max(0, min(int(seq), log_end_seq))
@@ -170,7 +193,7 @@ def build_state_at_feed(db_path: str | Path, *, seq: int) -> dict[str, object]:
             (event.ts for event in reversed(store.read_since(0)) if event.seq <= bounded),
             None,
         )
-        result = replay(EventStore(path), up_to_seq=bounded, now=as_of_ts)
+        result = replay(_open_event_store(path), up_to_seq=bounded, now=as_of_ts)
     finally:
         store.close()
     snapshot_now = as_of_ts if as_of_ts is not None else 0.0
@@ -212,11 +235,11 @@ def build_waits_feed(db_path: str | Path) -> dict[str, object]:
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path)
+    store = _open_event_store(path)
     try:
         log_end_seq = store.max_seq()
         as_of_ts = next((event.ts for event in reversed(store.read_since(0))), None)
-        result = replay(EventStore(path), up_to_seq=log_end_seq, now=as_of_ts)
+        result = replay(_open_event_store(path), up_to_seq=log_end_seq, now=as_of_ts)
     finally:
         store.close()
     board = result.blackboard
@@ -289,7 +312,7 @@ def build_operator_actions_feed(
         raise ValueError(msg)
     bounded_limit = max(1, min(int(limit), MAX_EVENTS_LIMIT))
     bounded_since = max(0, int(since))
-    store = EventStore(path)
+    store = _open_event_store(path)
     try:
         log_end_seq = store.max_seq()
         relay_events = [
@@ -352,7 +375,7 @@ def build_receipts_feed(
         raise ValueError(msg)
     bounded_since = max(0, int(since))
     bounded_limit = max(1, min(int(limit), MAX_EVENTS_LIMIT))
-    store = EventStore(path)
+    store = _open_event_store(path)
     try:
         log_end_seq = store.max_seq()
         events = store.read_window(
@@ -581,7 +604,7 @@ def latest_cursor(db_path: str | Path) -> int:
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path)
+    store = _open_event_store(path)
     try:
         return store.max_seq()
     finally:
@@ -590,7 +613,7 @@ def latest_cursor(db_path: str | Path) -> int:
 
 def _seq_exists(db_path: str | Path, seq: int) -> bool:
     """Return whether the log records an event at exactly ``seq``."""
-    store = EventStore(Path(db_path))
+    store = _open_event_store(Path(db_path))
     try:
         batch = store.read_since(max(0, seq - 1), limit=1)
     finally:
@@ -615,7 +638,7 @@ def resolve_task_last_seq(db_path: str | Path, task_id: str) -> int | None:
         msg = f"missing event store: {path}"
         raise ValueError(msg)
     last: int | None = None
-    store = EventStore(path)
+    store = _open_event_store(path)
     try:
         for event in store.read_since(0):
             if event.payload.get("task_id") == task_id:

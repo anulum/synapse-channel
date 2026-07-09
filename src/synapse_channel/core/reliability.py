@@ -92,7 +92,12 @@ class ReliabilityReport:
         return {summary.owner: summary for summary in self.owners}
 
 
-def run_reliability_report(db_path: str | Path, *, as_of: float | None = None) -> ReliabilityReport:
+def run_reliability_report(
+    db_path: str | Path,
+    *,
+    as_of: float | None = None,
+    key_file: str | Path | None = None,
+) -> ReliabilityReport:
     """Build reliability memory from an existing SQLite event store.
 
     Parameters
@@ -102,6 +107,8 @@ def run_reliability_report(db_path: str | Path, *, as_of: float | None = None) -
     as_of : float or None, optional
         Timestamp used to decide whether live claims and handoffs are stale. The
         latest event timestamp is used when omitted.
+    key_file : str or pathlib.Path or None, optional
+        Owner-only SQLCipher key when ``db_path`` is an encrypted store.
 
     Returns
     -------
@@ -117,7 +124,7 @@ def run_reliability_report(db_path: str | Path, *, as_of: float | None = None) -
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path)
+    store = EventStore(path, key_file=key_file)
     try:
         events = tuple(store.read_all())
     finally:

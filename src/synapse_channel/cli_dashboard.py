@@ -34,6 +34,7 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
             a2a_state_file=args.a2a_state_file,
             dashboard_token=args.dashboard_token,
             reliability_db=args.reliability_db,
+            reliability_db_key_file=getattr(args, "feeds_db_key_file", None),
             federation_store=args.federation_store,
             cockpit_dist=args.cockpit_dist,
             operator=args.operator,
@@ -136,6 +137,16 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             "/causality.json (one causality query in the CLI's JSON shape). "
             "Read-only; without it each endpoint reports its absence with 404. "
             "--reliability-db is the same flag's original name."
+        ),
+    )
+    dashboard.add_argument(
+        "--feeds-db-key-file",
+        dest="feeds_db_key_file",
+        type=Path,
+        default=None,
+        help=(
+            "Owner-only SQLCipher key for --feeds-db when the hub event store is "
+            "encrypted (same material as synapse hub --db-key-file)."
         ),
     )
     dashboard.add_argument(

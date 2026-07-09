@@ -107,7 +107,11 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
         kinds = set(args.kind)
     else:
         kinds = None
-    store = EventStore(args.db)
+    try:
+        store = EventStore(args.db, key_file=getattr(args, "db_key_file", None))
+    except (ValueError, OSError, RuntimeError) as exc:
+        print(f"ingest: cannot open event store: {exc}", file=sys.stderr)
+        return 2
     try:
         events = store.read_since(start, kinds=kinds, limit=args.limit)
     finally:
@@ -141,7 +145,11 @@ def _cmd_compact(args: argparse.Namespace) -> int:
     treat the whole log as settled when no read-side consumer lags. ``--vacuum``
     reclaims the freed disk pages afterwards.
     """
-    store = EventStore(args.db)
+    try:
+        store = EventStore(args.db, key_file=getattr(args, "db_key_file", None))
+    except (ValueError, OSError, RuntimeError) as exc:
+        print(f"compact: cannot open event store: {exc}", file=sys.stderr)
+        return 2
     try:
         if args.all:
             floor = store.max_seq()
@@ -253,6 +261,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     ingest.add_argument("db", help="Path to the hub event store (e.g. ~/synapse/hub.db).")
     ingest.add_argument(
+        "--db-key-file",
+        default=None,
+        help=(
+            "Owner-only SQLCipher key for an encrypted event store "
+            "(same as synapse hub --db-key-file)."
+        ),
+    )
+    ingest.add_argument(
         "--since", type=int, default=0, help="Return events whose sequence is above this."
     )
     ingest.add_argument(
@@ -283,6 +299,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "age out expired findings (the retention knob).",
     )
     compact_parser.add_argument("db", help="Path to the hub event store (e.g. ~/synapse/hub.db).")
+    compact_parser.add_argument(
+        "--db-key-file",
+        default=None,
+        help=(
+            "Owner-only SQLCipher key for an encrypted event store "
+            "(same as synapse hub --db-key-file)."
+        ),
+    )
     compact_parser.add_argument(
         "--max-checkpoints-per-task",
         type=int,
