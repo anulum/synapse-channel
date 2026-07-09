@@ -25,14 +25,15 @@ breaking wire change bumps the wire-protocol version and a breaking API change
 bumps the major version.
 
 The **wire-protocol version is decoupled from the package version**.
-`synapse_channel.core.protocol.WIRE_PROTOCOL_VERSION` (an integer, currently `1`)
+`synapse_channel.core.protocol.WIRE_PROTOCOL_VERSION` (an integer, currently `2`)
 changes only on a wire-incompatible change, so it is a stable compatibility
 signal rather than a release counter. The hub advertises it in the `welcome`
 handshake as `protocol_version` and in `/health`; a client reads the peer's
-version on connect as `hub_protocol_version`. It is advertise-only today — a
-version mismatch is captured but not yet enforced, because the mismatch behaviour
-(reject, warn, or negotiate down) is a contract agreed with the consumers the
-wire serves before it is enforced.
+version on connect as `hub_protocol_version`. Version mismatches are accepted
+with warning and negotiate down to the lowest common wire version. A peer that
+omits the field is treated as legacy wire version `1`; a peer that advertises a
+future version is served at the local version until this build learns the newer
+capabilities.
 
 ## The stable surfaces and how they are guarded
 

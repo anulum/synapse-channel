@@ -27,6 +27,9 @@ All notable changes to this project are documented here.
   private-CA or self-signed certificates. The fetch uses an unverified TLS context only in explicit
   pin mode, hashes the live peer certificate immediately after the handshake, and fails closed on a
   missing TLS certificate or pin mismatch.
+- Multi-hub network pulls now negotiate the peer hub's advertised wire version from the `welcome`
+  frame. Version-skewed peers are accepted, logged as operator-visible warnings, and recorded on
+  `MultiHubFollower` at the lowest common effective wire version instead of being silently ignored.
 
 ## [0.98.14] - 2026-07-09
 

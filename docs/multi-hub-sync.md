@@ -166,6 +166,12 @@ a secured peer hub, `--limit` to bound the batch, and `--json` for the machine-r
 the federation/mTLS policy (see [Boundaries](#boundaries)); the library API
 `peer_authoriser` composes it and the fetcher fails closed for an ungranted peer.
 
+On connect, the network fetcher also reads the peer hub's advertised
+`welcome.protocol_version`. A mismatch does not fail the pull: the fetcher logs an
+operator-visible warning, records the negotiated lowest-common wire version for
+the `MultiHubFollower`, and keeps optional features gated to that effective
+version. Peers that omit the field are treated as legacy wire version `1`.
+
 ### 5. Trace causality across the hubs
 
 With both logs at hand, `synapse causality causes ./east.db west:9 --peer west=./west.db`

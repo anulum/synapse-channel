@@ -10,9 +10,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 from collections.abc import AsyncIterator, Sequence
 from contextlib import AbstractAsyncContextManager
-from typing import Any
+from typing import Any, Protocol, cast
 
 import pytest
 from websockets.exceptions import ConnectionClosed
@@ -33,10 +34,21 @@ from synapse_channel.core.multihub_wire import (
     encode_log_snapshot,
 )
 from synapse_channel.core.persistence import EventStore, StoredEvent
-from synapse_channel.core.protocol import MAX_JSON_DEPTH, MessageType
+from synapse_channel.core.protocol import (
+    MAX_JSON_DEPTH,
+    WIRE_PROTOCOL_VERSION,
+    MessageType,
+    ProtocolNegotiation,
+)
 
 _REQUEST = MessageType.MULTIHUB_LOG_REQUEST
 _SNAPSHOT = MessageType.MULTIHUB_LOG_SNAPSHOT
+
+
+class _ProtocolAwareFetcher(Protocol):
+    """Test-side surface exposed by the network fetcher object."""
+
+    last_protocol_negotiation: ProtocolNegotiation | None
 
 
 def _event(seq: int) -> StoredEvent:
@@ -103,6 +115,11 @@ def _connector(socket: Any, *, opened: list[str] | None = None) -> Any:
     return factory
 
 
+def _last_negotiation(fetch: object) -> ProtocolNegotiation | None:
+    """Return a network fetcher's last protocol negotiation for assertions."""
+    return cast(_ProtocolAwareFetcher, fetch).last_protocol_negotiation
+
+
 # --- happy path --------------------------------------------------------------------------
 
 
@@ -121,6 +138,74 @@ async def test_fetch_returns_events_and_sends_the_cursor_request() -> None:
     assert request[AFTER_SEQ_FIELD] == 0
     assert request[LIMIT_FIELD] is None
     assert "token" not in request
+    negotiation = _last_negotiation(fetch)
+    assert negotiation is not None
+    assert negotiation.peer_version is None
+    assert negotiation.effective_version == 1
+
+
+async def test_fetch_records_matching_protocol_without_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    socket = _FakeSocket(
+        [
+            _wire({"type": "welcome", "protocol_version": WIRE_PROTOCOL_VERSION}),
+            _snapshot_frame([_event(1)], 1),
+        ]
+    )
+    fetch = network_fetcher("ws://peer/", local_id="f", connector=_connector(socket))
+    with caplog.at_level(logging.WARNING, logger="synapse_channel.core.multihub_transport"):
+        events = await fetch(0)
+    negotiation = _last_negotiation(fetch)
+    assert [event.seq for event in events] == [1]
+    assert negotiation is not None
+    assert negotiation.effective_version == WIRE_PROTOCOL_VERSION
+    assert negotiation.warning is None
+    assert "protocol mismatch" not in caplog.text
+
+
+async def test_fetch_warns_and_degrades_for_an_older_peer(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    warnings: list[ProtocolNegotiation] = []
+    socket = _FakeSocket(
+        [_wire({"type": "welcome", "protocol_version": 1}), _snapshot_frame([_event(1)], 1)]
+    )
+    fetch = network_fetcher(
+        "ws://peer/",
+        local_id="f",
+        connector=_connector(socket),
+        protocol_warning_sink=warnings.append,
+    )
+    with caplog.at_level(logging.WARNING, logger="synapse_channel.core.multihub_transport"):
+        await fetch(0)
+    negotiation = _last_negotiation(fetch)
+    assert negotiation is not None
+    assert negotiation.peer_version == 1
+    assert negotiation.effective_version == 1
+    assert negotiation.warning is not None
+    assert warnings == [negotiation]
+    assert "older than local" in caplog.text
+
+
+async def test_fetch_warns_and_degrades_for_a_newer_peer(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    socket = _FakeSocket(
+        [
+            _wire({"type": "welcome", "protocol_version": WIRE_PROTOCOL_VERSION + 1}),
+            _snapshot_frame([], 0),
+        ]
+    )
+    fetch = network_fetcher("ws://peer/", local_id="f", connector=_connector(socket))
+    with caplog.at_level(logging.WARNING, logger="synapse_channel.core.multihub_transport"):
+        await fetch(0)
+    negotiation = _last_negotiation(fetch)
+    assert negotiation is not None
+    assert negotiation.peer_version == WIRE_PROTOCOL_VERSION + 1
+    assert negotiation.effective_version == WIRE_PROTOCOL_VERSION
+    assert negotiation.warning is not None
+    assert "newer than local" in caplog.text
 
 
 async def test_fetch_skips_presence_then_decodes_a_bytes_snapshot() -> None:
@@ -252,10 +337,14 @@ async def test_network_fetcher_pulls_a_real_hubs_log(tmp_path: Any) -> None:
         await _seed_chats(uri, 3)
         fetch = network_fetcher(uri, local_id="follower")
         events = await fetch(0)
-        observed = await MultiHubFollower().poll("syn-peer", network_fetcher(uri, local_id="f2"))
+        follower = MultiHubFollower()
+        observed = await follower.poll("syn-peer", network_fetcher(uri, local_id="f2"))
     store.close()
     assert [event.seq for event in events] == [1, 2, 3]
     assert observed is not None
+    negotiation = follower.protocol_negotiation("syn-peer")
+    assert negotiation is not None
+    assert negotiation.effective_version == WIRE_PROTOCOL_VERSION
 
 
 async def test_fetch_fails_closed_on_a_deeply_nested_reply() -> None:

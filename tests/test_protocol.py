@@ -18,10 +18,12 @@ from synapse_channel.core.protocol import (
     SENDER_HUB,
     WIRE_PROTOCOL_VERSION,
     MessageType,
+    ProtocolNegotiation,
     _exceeds_json_depth,
     build_envelope,
     is_recipient,
     loads_bounded,
+    negotiate_protocol_version,
     read_protocol_version,
     system_message,
 )
@@ -413,3 +415,37 @@ def test_read_protocol_version_rejects_non_integer_or_boolean(value: object) -> 
     # An absent field (None), a bool (an int subclass but not a version), or any
     # non-int degrades to None rather than a spurious version a check might act on.
     assert read_protocol_version(value) is None
+
+
+def test_protocol_negotiation_accepts_matching_versions_without_warning() -> None:
+    negotiation = negotiate_protocol_version(WIRE_PROTOCOL_VERSION)
+    assert negotiation == ProtocolNegotiation(
+        local_version=WIRE_PROTOCOL_VERSION,
+        peer_version=WIRE_PROTOCOL_VERSION,
+        effective_version=WIRE_PROTOCOL_VERSION,
+        warning=None,
+    )
+
+
+def test_protocol_negotiation_degrades_to_an_older_peer() -> None:
+    negotiation = negotiate_protocol_version(1)
+    assert negotiation.peer_version == 1
+    assert negotiation.effective_version == 1
+    assert negotiation.warning is not None
+    assert "older than local" in negotiation.warning
+
+
+def test_protocol_negotiation_degrades_to_local_for_a_newer_peer() -> None:
+    negotiation = negotiate_protocol_version(WIRE_PROTOCOL_VERSION + 3)
+    assert negotiation.peer_version == WIRE_PROTOCOL_VERSION + 3
+    assert negotiation.effective_version == WIRE_PROTOCOL_VERSION
+    assert negotiation.warning is not None
+    assert "newer than local" in negotiation.warning
+
+
+def test_protocol_negotiation_treats_absent_version_as_legacy() -> None:
+    negotiation = negotiate_protocol_version(None)
+    assert negotiation.peer_version is None
+    assert negotiation.effective_version == 1
+    assert negotiation.warning is not None
+    assert "did not advertise" in negotiation.warning

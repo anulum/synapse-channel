@@ -20,8 +20,10 @@ read on connect rather than a release counter. Version `2` added the client → 
 emits an `ack` only when the peer advertises version `2` or newer, and a hub that
 predates the verb is never sent it, which is what keeps the addition
 backward-compatible. A client that predates the field, or a hub that does, reads it
-as absent; it is advertise-only for now, so a client captures the peer's version
-but no compatibility policy is enforced yet.
+as absent. Version-skewed peers are accepted rather than rejected: consumers
+negotiate to the lowest common wire version, warn the operator when the peer is
+older, newer, or did not advertise a usable version, and gate optional features
+against that effective version.
 
 The [per-message authentication runtime](per-message-authentication.md) keeps
 the same envelope shape and adds an `auth` object for selected mutating frames

@@ -23,6 +23,7 @@ import fnmatch
 import json
 import time
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any
 
 SENDER_HUB = "SynapseHub"
@@ -61,6 +62,23 @@ verb is never sent it.
 """
 
 
+@dataclass(frozen=True)
+class ProtocolNegotiation:
+    """Compatibility result after comparing local and peer wire versions."""
+
+    local_version: int
+    """Wire version spoken by this process."""
+
+    peer_version: int | None
+    """Wire version advertised by the peer, or ``None`` when absent or malformed."""
+
+    effective_version: int
+    """Lowest common version to use for optional capabilities."""
+
+    warning: str | None
+    """Operator-visible warning when the peer is version-skewed or did not advertise a version."""
+
+
 def read_protocol_version(value: object) -> int | None:
     """Return a wire protocol version read from a frame, or ``None`` if absent or malformed.
 
@@ -81,6 +99,63 @@ def read_protocol_version(value: object) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
         return None
     return value
+
+
+def negotiate_protocol_version(
+    peer_version: int | None,
+    *,
+    local_version: int = WIRE_PROTOCOL_VERSION,
+    fallback_version: int = 1,
+) -> ProtocolNegotiation:
+    """Return the negotiated wire version and any operator-visible warning.
+
+    Parameters
+    ----------
+    peer_version : int or None
+        Peer wire version read from the handshake. ``None`` means the peer did not
+        advertise a usable version, as older hubs did.
+    local_version : int, optional
+        Local wire version. Defaults to :data:`WIRE_PROTOCOL_VERSION`.
+    fallback_version : int, optional
+        Compatibility version assumed for peers that omit the field. Defaults to
+        ``1``, the pre-advertisement wire.
+
+    Returns
+    -------
+    ProtocolNegotiation
+        Lowest-common effective version plus a warning when the peer is skewed.
+    """
+    warning: str | None
+    if peer_version is None:
+        warning = (
+            "peer did not advertise a wire protocol version; "
+            f"using compatibility version {fallback_version}"
+        )
+        return ProtocolNegotiation(
+            local_version=local_version,
+            peer_version=None,
+            effective_version=min(local_version, fallback_version),
+            warning=warning,
+        )
+    effective = min(local_version, peer_version)
+    if peer_version == local_version:
+        warning = None
+    elif peer_version < local_version:
+        warning = (
+            f"peer wire protocol version {peer_version} is older than local "
+            f"version {local_version}; using compatibility version {effective}"
+        )
+    else:
+        warning = (
+            f"peer wire protocol version {peer_version} is newer than local "
+            f"version {local_version}; using compatibility version {effective}"
+        )
+    return ProtocolNegotiation(
+        local_version=local_version,
+        peer_version=peer_version,
+        effective_version=effective,
+        warning=warning,
+    )
 
 
 MAX_JSON_DEPTH = 64

@@ -29,13 +29,22 @@ which is the fail-closed posture the design requires.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
+from typing import Protocol
 
 from synapse_channel.core.multihub_fold import ObservedState, fold_observed_state
 from synapse_channel.core.multihub_merge import HubEvent, hub_cursors, merge_event_logs, tag_events
 from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.protocol import ProtocolNegotiation
 
 EventFetcher = Callable[[int], Awaitable[Sequence[StoredEvent]]]
 """Fetch a peer's events with ``seq`` greater than a cursor — the injected transport."""
+
+
+class ProtocolAwareEventFetcher(Protocol):
+    """Optional fetcher metadata surface for wire-version negotiation."""
+
+    last_protocol_negotiation: ProtocolNegotiation | None
+    """Most recent peer wire-version negotiation observed by the fetcher."""
 
 
 def store_fetcher(store: EventStore) -> EventFetcher:
@@ -58,6 +67,7 @@ class MultiHubFollower:
     def __init__(self) -> None:
         self._events: dict[tuple[str, int], HubEvent] = {}
         self._cursors: dict[str, int] = {}
+        self._protocol_negotiations: dict[str, ProtocolNegotiation] = {}
 
     async def poll(self, peer_id: str, fetch: EventFetcher) -> ObservedState:
         """Fetch a peer's new events past its cursor, fold the union, and return the view.
@@ -75,6 +85,9 @@ class MultiHubFollower:
             The merged observed view across every peer polled so far.
         """
         fetched = await fetch(self._cursors.get(peer_id, 0))
+        negotiation = _fetcher_protocol_negotiation(fetch)
+        if negotiation is not None:
+            self._protocol_negotiations[peer_id] = negotiation
         for event in tag_events(peer_id, fetched):
             self._events.setdefault(event.identity, event)
         self._cursors.update(hub_cursors(self._events.values()))
@@ -91,3 +104,15 @@ class MultiHubFollower:
     def peers(self) -> tuple[str, ...]:
         """Return the peer hub ids the follower has observed, sorted."""
         return tuple(sorted(self._cursors))
+
+    def protocol_negotiation(self, peer_id: str) -> ProtocolNegotiation | None:
+        """Return the last wire-version negotiation observed for ``peer_id``."""
+        return self._protocol_negotiations.get(peer_id)
+
+
+def _fetcher_protocol_negotiation(fetch: EventFetcher) -> ProtocolNegotiation | None:
+    """Return optional protocol metadata exposed by a network fetcher."""
+    candidate = getattr(fetch, "last_protocol_negotiation", None)
+    if isinstance(candidate, ProtocolNegotiation):
+        return candidate
+    return None

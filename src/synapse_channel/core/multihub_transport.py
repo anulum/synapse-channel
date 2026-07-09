@@ -32,7 +32,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Sequence
+import logging
+from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from typing import Any, Protocol, cast
 
@@ -48,7 +49,17 @@ from synapse_channel.core.multihub_wire import (
     encode_log_request,
 )
 from synapse_channel.core.persistence import StoredEvent
-from synapse_channel.core.protocol import MessageType, build_envelope, loads_bounded
+from synapse_channel.core.protocol import (
+    MessageType,
+    ProtocolNegotiation,
+    build_envelope,
+    loads_bounded,
+    negotiate_protocol_version,
+    read_protocol_version,
+)
+
+logger = logging.getLogger(__name__)
+"""Module logger for operator-visible multi-hub transport warnings."""
 
 DEFAULT_FETCH_TIMEOUT = 10.0
 """Seconds a single fetch waits for the snapshot before failing closed."""
@@ -103,6 +114,7 @@ def network_fetcher(
     timeout: float = DEFAULT_FETCH_TIMEOUT,
     authoriser: MultiHubAuthoriser | None = None,
     connector: _Connector = _default_connector,
+    protocol_warning_sink: Callable[[ProtocolNegotiation], None] | None = None,
 ) -> EventFetcher:
     """Return an :data:`~synapse_channel.core.multihub_follower.EventFetcher` over a connection.
 
@@ -128,6 +140,9 @@ def network_fetcher(
         already-trusted peer.
     connector : _Connector, optional
         Opens the peer connection; injected for testing. Defaults to a real websocket client.
+    protocol_warning_sink : Callable[[ProtocolNegotiation], None] or None, optional
+        Observer called when the peer advertises an older, newer, or absent wire
+        version. The fetch still proceeds at the lowest common compatibility level.
 
     Returns
     -------
@@ -135,23 +150,62 @@ def network_fetcher(
         An async callable ``fetch(after_seq)`` returning the peer's events past the cursor, or
         raising :class:`MultiHubFetchError` on any failure.
     """
+    return _NetworkFetcher(
+        uri,
+        local_id=local_id,
+        token=token,
+        limit=limit,
+        timeout=timeout,
+        authoriser=authoriser,
+        connector=connector,
+        protocol_warning_sink=protocol_warning_sink,
+    )
 
-    async def fetch(after_seq: int) -> Sequence[StoredEvent]:
-        if authoriser is not None:
-            decision = authoriser()
+
+class _NetworkFetcher:
+    """Callable multi-hub event fetcher with last-observed wire negotiation metadata."""
+
+    def __init__(
+        self,
+        uri: str,
+        *,
+        local_id: str,
+        token: str | None,
+        limit: int | None,
+        timeout: float,
+        authoriser: MultiHubAuthoriser | None,
+        connector: _Connector,
+        protocol_warning_sink: Callable[[ProtocolNegotiation], None] | None,
+    ) -> None:
+        self._uri = uri
+        self._local_id = local_id
+        self._token = token
+        self._limit = limit
+        self._timeout = timeout
+        self._authoriser = authoriser
+        self._connector = connector
+        self._protocol_warning_sink = protocol_warning_sink
+        self.last_protocol_negotiation: ProtocolNegotiation | None = None
+
+    async def __call__(self, after_seq: int) -> Sequence[StoredEvent]:
+        """Fetch peer events after ``after_seq`` and capture wire-version metadata."""
+        if self._authoriser is not None:
+            decision = self._authoriser()
             if not decision.allowed:
-                msg = f"peer {uri!r} not authorised for a multi-hub pull: {decision.reason}"
+                msg = f"peer {self._uri!r} not authorised for a multi-hub pull: {decision.reason}"
                 raise MultiHubFetchError(msg)
         fields: dict[str, Any] = dict(
-            encode_log_request(LogRequest(after_seq=after_seq, limit=limit))
+            encode_log_request(LogRequest(after_seq=after_seq, limit=self._limit))
         )
-        if token is not None:
-            fields["token"] = token
-        request = build_envelope(local_id, MessageType.MULTIHUB_LOG_REQUEST, **fields)
+        if self._token is not None:
+            fields["token"] = self._token
+        request = build_envelope(self._local_id, MessageType.MULTIHUB_LOG_REQUEST, **fields)
         try:
-            async with connector(uri) as socket:
+            async with self._connector(self._uri) as socket:
                 await socket.send(json.dumps(request))
-                frame = await asyncio.wait_for(_await_snapshot(socket), timeout)
+                frame = await asyncio.wait_for(
+                    _await_snapshot(socket, self._record_protocol_negotiation), self._timeout
+                )
             snapshot = decode_log_snapshot(frame)
         except MultiHubFetchError:
             raise
@@ -162,14 +216,23 @@ def network_fetcher(
             MultiHubWireError,
             json.JSONDecodeError,
         ) as exc:
-            msg = f"multi-hub fetch from {uri!r} failed: {exc}"
+            msg = f"multi-hub fetch from {self._uri!r} failed: {exc}"
             raise MultiHubFetchError(msg) from exc
         return snapshot.events
 
-    return fetch
+    def _record_protocol_negotiation(self, negotiation: ProtocolNegotiation) -> None:
+        """Store and report a peer wire-version negotiation result."""
+        self.last_protocol_negotiation = negotiation
+        if negotiation.warning is None:
+            return
+        logger.warning("multi-hub protocol mismatch from %s: %s", self._uri, negotiation.warning)
+        if self._protocol_warning_sink is not None:
+            self._protocol_warning_sink(negotiation)
 
 
-async def _await_snapshot(socket: _Socket) -> dict[str, Any]:
+async def _await_snapshot(
+    socket: _Socket, protocol_observer: Callable[[ProtocolNegotiation], None] | None = None
+) -> dict[str, Any]:
     """Read frames from ``socket`` until the log snapshot arrives.
 
     Frames that are neither the snapshot nor an error (a welcome, a presence broadcast) are
@@ -194,6 +257,10 @@ async def _await_snapshot(socket: _Socket) -> dict[str, Any]:
     while True:
         frame = _parse_frame(await socket.recv())
         frame_type = frame.get("type")
+        if frame_type == MessageType.WELCOME and protocol_observer is not None:
+            protocol_observer(
+                negotiate_protocol_version(read_protocol_version(frame.get("protocol_version")))
+            )
         if frame_type == MessageType.MULTIHUB_LOG_SNAPSHOT:
             return frame
         if frame_type == MessageType.ERROR:
