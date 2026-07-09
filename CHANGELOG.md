@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.19] - 2026-07-09
+
 ### Added
 - `synapse federation list` now shows each imported peering's bundle expiry
   distance and credential rotation state (`steady`, `overlap`, or
