@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.21] - 2026-07-09
+
 ### Fixed
 - The quickstart `SynapseAgent` code sample now waits for `checkpoint_saved`
   and `release_granted` hub replies before shutting down, and its E2E test polls
