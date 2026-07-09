@@ -1823,6 +1823,7 @@ synapse hub --port 8876 --federation-offer ./my-domain.json    # serve it to pee
 synapse federation rotate ./my-domain.json --lifetime-days 90 --add-signing-key ed25519:new  # fresh expiry + a new key kept alongside the old for a grace window; backs up the prior bundle
 synapse federation rotate ./my-domain.json --retire-signing-key ed25519:old  # after the grace window, drop the superseded key
 synapse federation fetch ws://peer-hub:8876 --out ./peer-domain.json  # pull + fingerprints; NEVER imports
+synapse federation fetch wss://peer-hub:8876 --pin sha256:<hex> --out ./peer-domain.json
 synapse federation import ./peer-domain.json --confirmed-by ceo --source ws://peer-hub:8876  # after comparing
 synapse federation list --store ./federation.json              # imported peer domains, provenance, and age
 synapse federation list --store ./federation.json --max-age 90 # flag active peerings imported >90 days ago; exit 1

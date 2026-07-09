@@ -28,7 +28,10 @@ comparison and leaves the import a separate, explicitly confirmed step
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
+import ssl
+from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager
 from typing import Any, Protocol, cast
 
@@ -38,6 +41,7 @@ from websockets.exceptions import ConnectionClosed
 from synapse_channel.core.federation import FederationPeer
 from synapse_channel.core.federation_wire import FederationWireError, decode_federation_offer
 from synapse_channel.core.protocol import MessageType, build_envelope, loads_bounded
+from synapse_channel.core.tls import HubTLSConfigError, certificate_sha256_pin_from_der
 
 DEFAULT_FETCH_TIMEOUT = 10.0
 """Seconds a fetch waits for the offer before failing closed."""
@@ -74,12 +78,94 @@ class _Connector(Protocol):
         ...
 
 
+class _ExtraInfoTransport(Protocol):
+    """Transport surface needed to inspect the live TLS object."""
+
+    def get_extra_info(self, name: str, default: object = None) -> object:  # pragma: no cover
+        """Return transport metadata by name."""
+        ...
+
+
+class _PinnedSocket(_Socket, Protocol):
+    """A websocket client connection with transport metadata."""
+
+    transport: _ExtraInfoTransport
+
+
+class _PeerCertificate(Protocol):
+    """TLS object surface that exposes the peer certificate bytes."""
+
+    def getpeercert(self, binary_form: bool = False) -> object:  # pragma: no cover
+        """Return the peer certificate."""
+        ...
+
+
 def _default_connector(uri: str) -> AbstractAsyncContextManager[_Socket]:
     """Open a real websocket connection to ``uri`` with keepalive pings.
 
     A ``wss://`` URI negotiates TLS through the ``websockets`` library's default context.
     """
     return cast(AbstractAsyncContextManager[_Socket], connect(uri, ping_interval=PING_INTERVAL))
+
+
+def pinned_connector(expected_pin: str) -> _Connector:
+    """Return a connector that accepts a ``wss://`` certificate only by SHA-256 pin.
+
+    Parameters
+    ----------
+    expected_pin : str
+        Certificate pin in ``sha256:<hex>`` form. The TLS handshake uses an
+        unverified client context because the operator is explicitly pinning a
+        self-signed or private-CA peer; immediately after the handshake, the live
+        peer certificate is hashed and compared to this value. A missing TLS
+        object, absent certificate, malformed certificate, or mismatch fails the
+        fetch before any offer frame is trusted.
+
+    Returns
+    -------
+    _Connector
+        Connector suitable for :func:`fetch_federation_offer`.
+    """
+    normalized = expected_pin.strip().lower()
+
+    @contextlib.asynccontextmanager
+    async def _open(uri: str) -> AsyncIterator[_Socket]:
+        if not uri.startswith("wss://"):
+            msg = "--pin requires a wss:// federation peer URI"
+            raise FederationFetchError(msg)
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        async with connect(uri, ping_interval=PING_INTERVAL, ssl=context) as socket:
+            pinned = cast(_PinnedSocket, socket)
+            actual = _live_certificate_pin(pinned)
+            if actual.lower() != normalized:
+                msg = f"peer certificate pin mismatch: expected {normalized}, got {actual}"
+                raise FederationFetchError(msg)
+            yield pinned
+
+    def _factory(uri: str) -> AbstractAsyncContextManager[_Socket]:
+        return _open(uri)
+
+    return _factory
+
+
+def _live_certificate_pin(socket: _PinnedSocket) -> str:
+    """Return the SHA-256 pin for ``socket``'s live peer certificate."""
+    ssl_object = socket.transport.get_extra_info("ssl_object")
+    if ssl_object is None:
+        msg = "peer connection is not TLS; no certificate pin can be checked"
+        raise FederationFetchError(msg)
+    certificate = cast(_PeerCertificate, ssl_object)
+    der = certificate.getpeercert(binary_form=True)
+    if not isinstance(der, bytes):
+        msg = "peer did not present a certificate"
+        raise FederationFetchError(msg)
+    try:
+        return certificate_sha256_pin_from_der(der)
+    except HubTLSConfigError as exc:
+        msg = f"peer certificate cannot be pinned: {exc}"
+        raise FederationFetchError(msg) from exc
 
 
 async def fetch_federation_offer(

@@ -460,6 +460,22 @@ def test_fetch_passes_token_local_id_and_timeout(tmp_path: Path) -> None:
     assert captured["timeout"] == 3.5
 
 
+def test_fetch_passes_a_pinned_connector(tmp_path: Path) -> None:
+    from synapse_channel.cli_federation import _cmd_fetch
+
+    captured: dict[str, object] = {}
+    args = _args(
+        "fetch",
+        "wss://peer:8876",
+        "--out",
+        str(tmp_path / "peer.json"),
+        "--pin",
+        "sha256:" + "a" * 64,
+    )
+    assert _cmd_fetch(args, fetcher=_stub_fetcher(captured)) == 0
+    assert callable(captured["connector"])
+
+
 def test_fetch_refuses_to_overwrite_without_force(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -23,6 +23,10 @@ All notable changes to this project are documented here.
   expiries are now journaled as audit-only receipt events. Unsettled immediate failures re-seed the
   pending receipt map on hub restart, and `synapse event-query <db> "receipts <agent>"` exposes the
   durable ledger even when the original sender is offline.
+- `synapse federation fetch` now accepts `--pin sha256:<hex>` for `wss://` peers that use
+  private-CA or self-signed certificates. The fetch uses an unverified TLS context only in explicit
+  pin mode, hashes the live peer certificate immediately after the handshake, and fails closed on a
+  missing TLS certificate or pin mismatch.
 
 ## [0.98.14] - 2026-07-09
 

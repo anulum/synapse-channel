@@ -200,6 +200,19 @@ compare the bundle fingerprint with the peer operator out-of-band (their
   synapse federation import fetched-atelier.json --confirmed-by <operator> --source ws://atelier-hub:8951
 ```
 
+For a `wss://` peer whose certificate is private-CA or self-signed, the fetching
+operator can pin the live certificate explicitly:
+
+```bash
+synapse federation fetch wss://atelier-hub:8951 \
+  --pin sha256:9b1f63a2c8d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0 \
+  --out ./fetched-atelier.json
+```
+
+That pin is checked against the certificate presented on the TLS socket before
+the offered bundle is decoded. It is still only transport verification: the
+operator must compare the bundle fingerprint out-of-band and import explicitly.
+
 The operators now read `eb240a1e…` to each other over an independent channel — a
 call, a signed ticket, a key-signing meetup. Only when the values match does the
 fetching operator import, and the import records who confirmed it and where the

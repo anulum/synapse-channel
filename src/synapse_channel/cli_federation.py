@@ -56,6 +56,7 @@ from synapse_channel.core.federation_fetch import (
     DEFAULT_FETCH_TIMEOUT,
     FederationFetchError,
     fetch_federation_offer,
+    pinned_connector,
 )
 from synapse_channel.core.federation_rotation import (
     DEFAULT_ROTATION_LIFETIME_DAYS,
@@ -261,8 +262,19 @@ def _cmd_fetch(args: argparse.Namespace, *, fetcher: Fetcher = fetch_federation_
         print(f"refusing to overwrite {out}; pass --force to replace it", file=sys.stderr)
         return 2
     try:
+        connector = pinned_connector(args.pin) if args.pin else None
+        fetch_kwargs: dict[str, Any] = {
+            "local_id": args.local_id,
+            "token": args.token,
+            "timeout": args.timeout,
+        }
+        if connector is not None:
+            fetch_kwargs["connector"] = connector
         peer = asyncio.run(
-            fetcher(args.uri, local_id=args.local_id, token=args.token, timeout=args.timeout)
+            fetcher(
+                args.uri,
+                **fetch_kwargs,
+            )
         )
     except FederationFetchError as exc:
         print(f"could not fetch the federation offer: {exc}", file=sys.stderr)
@@ -496,6 +508,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--local-id", default="federation-fetch", help="Identity stamped on the request frame."
     )
     fetch.add_argument("--token", default=None, help="Token for a secured peer hub.")
+    fetch.add_argument(
+        "--pin",
+        default=None,
+        metavar="sha256:<hex>",
+        help=(
+            "For wss:// peers with a private or self-signed certificate, verify the live "
+            "certificate by this SHA-256 pin instead of using the default CA trust path."
+        ),
+    )
     fetch.add_argument(
         "--timeout",
         type=float,
