@@ -75,9 +75,12 @@ count. Around it sit the verdict pill, the headline counters, and the agents, cl
 tasks, and risk panels.
 
 The page shell is hub-independent: it loads with no hub running, shows an offline state,
-and fills in live as it polls. It honours `prefers-reduced-motion` — the sweep stills and a
-claims table pairs the dial so the same information is legible without animation. Vanilla
-HTML, the `studio.css` tokens, and dependency-free ES — no build step, no external request.
+and fills in live as it polls. The persistent NavRail keeps the command view, reference
+view, fleet, LiveFeed, and security posture one click away; the HeaderBar shows the live
+hub id, version, verdict, and connection state from `/studio.json`. It honours
+`prefers-reduced-motion` — the sweep stills and a claims table pairs the dial so the same
+information is legible without animation. Vanilla HTML, the `studio.css` tokens, and
+dependency-free ES — no build step, no external request.
 
 The security-posture panel sits beside the Coordination Clock and summarises five shipped
 safety surfaces: sandbox grants, ACL/role visibility, the dashboard exposure guard,
@@ -86,8 +89,14 @@ missing role bindings, peers, or receipts are shown as amber "not currently evid
 instead of being treated as configured. The panel is read-only; server-side ACL,
 dashboard bind, federation, and sandbox enforcement remain in their existing modules.
 
+The LiveFeed panel tails `/events.json?since=SEQ&limit=N`, the durable event-store feed
+served when the dashboard starts with `--feeds-db`. It starts at `since=latest`, then
+polls forward by `next_cursor`, so it shows new recorded events without walking a large
+history. If `--feeds-db` is absent, the panel says the event feed is not configured rather
+than implying a quiet log.
+
 ```bash
-synapse dashboard --port 8765
+synapse dashboard --port 8765 --feeds-db ./hub.db
 # then open http://127.0.0.1:8765/studio/command
 ```
 

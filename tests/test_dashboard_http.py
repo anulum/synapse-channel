@@ -24,7 +24,7 @@ from dashboard_helpers import _http_get
 from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.hub_config import HubConfig, HubLimits, config_fingerprint
-from synapse_channel.core.journal import record_operator_relay
+from synapse_channel.core.journal import EventKind, record_operator_relay
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.dashboard import (
     _DashboardHandler,
@@ -91,6 +91,7 @@ async def test_dashboard_snapshot_fetches_real_hub_state() -> None:
             await close_agents(handle)
 
     assert "SYNAPSE-CHANNEL/demo" in snapshot.online_agents
+    assert snapshot.hub_id
     assert snapshot.board["tasks"][0]["task_id"] == "TASK-1"
     assert snapshot.state["active_claims"][0]["owner"] == "SYNAPSE-CHANNEL/demo"
     assert snapshot.manifest[0]["agent"] == "SYNAPSE-CHANNEL/demo"
@@ -110,10 +111,12 @@ async def test_dashboard_snapshot_carries_the_hub_pinning_tag() -> None:
         )
 
     assert snapshot.hub_version == __version__
+    assert snapshot.hub_id
     assert snapshot.config_epoch == config_fingerprint(config)
     # The pinning tag reaches /snapshot.json unchanged.
     payload = snapshot.to_dict()
     assert payload["hub_version"] == __version__
+    assert payload["hub_id"] == snapshot.hub_id
     assert payload["config_epoch"] == config_fingerprint(config)
 
 
@@ -188,7 +191,18 @@ async def test_dashboard_http_server_serves_real_html_and_json() -> None:
     assert payload["manifest"][0]["contracts"][0]["task_class"] == "chat"
 
 
-async def test_dashboard_http_server_serves_the_studio_reference_and_css() -> None:
+async def test_dashboard_http_server_serves_the_studio_reference_css_and_feed(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "hub.db"
+    store = EventStore(db)
+    store.append(
+        EventKind.TASK_UPDATE,
+        {"task_id": "TASK-1", "owner": "SYNAPSE-CHANNEL/demo", "status": "working"},
+        ts=1.0,
+    )
+    store.close()
+
     async with running_hub(SynapseHub()) as (_hub, uri):
         handle = await _prepare_dashboard_hub(uri)
         server = start_dashboard_server(
@@ -201,6 +215,7 @@ async def test_dashboard_http_server_serves_the_studio_reference_and_css() -> No
             response_timeout=1.0,
             refresh_seconds=5,
             allow_non_loopback=False,
+            reliability_db=db,
         )
         try:
             studio_status, studio_type, studio_body = await asyncio.to_thread(
@@ -214,6 +229,9 @@ async def test_dashboard_http_server_serves_the_studio_reference_and_css() -> No
             )
             studio_json_status, studio_json_type, studio_json_body = await asyncio.to_thread(
                 _http_get, server.url("/studio.json")
+            )
+            events_status, events_type, events_body = await asyncio.to_thread(
+                _http_get, server.url("/events.json?since=0&limit=20")
             )
         finally:
             server.close()
@@ -230,12 +248,20 @@ async def test_dashboard_http_server_serves_the_studio_reference_and_css() -> No
     assert command_type == "text/html"
     assert "Coordination clock" in command_body
     assert "/studio.json" in command_body
+    assert "/events.json" in command_body
+    assert 'id="cc-livefeed-list"' in command_body
+    assert 'aria-label="Studio navigation"' in command_body
     assert 'href="/studio.css"' in command_body  # absolute, so it resolves from the subpath
     assert studio_json_status == 200
     assert studio_json_type == "application/json"
     studio_json = json.loads(studio_json_body)
+    assert studio_json["hub"]["id"]
     assert studio_json["security_posture"]["rows"]
     assert studio_json["security_posture"]["level"] in {"green", "amber", "red", "unknown"}
+    assert events_status == 200
+    assert events_type == "application/json"
+    events_json = json.loads(events_body)
+    assert events_json["events"][0]["payload"]["task_id"] == "TASK-1"
 
 
 def test_dashboard_http_server_serves_operator_actions_feed(tmp_path: Path) -> None:

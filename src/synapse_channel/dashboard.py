@@ -114,6 +114,9 @@ class DashboardSnapshot:
     hub_version : str
         Package version the live hub reports, for a cockpit pinning indicator.
         Empty when the hub predates the field.
+    hub_id : str
+        Hub identifier reported by the welcome frame. Empty only if the client
+        connects to a hub old enough not to send the field.
     config_epoch : str
         Fingerprint of the hub's configuration posture, for the same indicator.
         Empty when the hub predates the field or was built without a config.
@@ -132,6 +135,7 @@ class DashboardSnapshot:
     board: SnapshotMapping
     manifest: ManifestCards
     hub_version: str = ""
+    hub_id: str = ""
     config_epoch: str = ""
     agent_roles: dict[str, list[str]] = field(default_factory=dict)
     observed_peers: tuple[ObservedPeerSnapshot, ...] = ()
@@ -305,6 +309,7 @@ async def fetch_dashboard_snapshot(
                 if isinstance(card, Mapping)
             ],
             hub_version=str(who.get("hub_version", "")),
+            hub_id=agent.hub_id if agent.hub_id != "unknown" else "",
             config_epoch=str(who.get("config_epoch", "")),
             agent_roles=_agent_roles_from_who(who),
             observed_peers=observed,

@@ -63,7 +63,7 @@ def build_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
     -------
     dict[str, Any]
         ``verdict``, ``generated_at``, a ``headline`` counter row, and the ``agents``,
-        ``claims``, ``tasks``, ``conflicts``, ``security_posture``, and ``risk``
+        ``hub``, ``claims``, ``tasks``, ``conflicts``, ``security_posture``, and ``risk``
         sections behind it. Counts are derived from the same lists the sections carry, so
         they cannot drift apart.
     """
@@ -87,6 +87,11 @@ def build_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "verdict": verdict,
         "generated_at": fleet.get("generated_at"),
+        "hub": {
+            "id": str(dashboard.get("hub_id") or ""),
+            "version": str(dashboard.get("hub_version") or ""),
+            "config_epoch": str(dashboard.get("config_epoch") or ""),
+        },
         "headline": {
             "agents_live": len(live),
             "waiters_missing": len(missing_waiters),
@@ -169,6 +174,8 @@ def frozen_studio_snapshot() -> dict[str, Any]:
             ],
             "agent_roles": {"SCPN-FUSION-CORE/claude-a1": ["SYNAPSE-CHANNEL/operator"]},
             "config_epoch": "sha256:demo",
+            "hub_id": "studio-demo",
+            "hub_version": "0.98.21",
             "observed_peers": [{"hub_id": "ml350", "reachable": True}],
         }
     )

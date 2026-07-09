@@ -55,6 +55,7 @@ def test_projection_foregrounds_the_verdict_and_sections() -> None:
     assert set(studio) == {
         "verdict",
         "generated_at",
+        "hub",
         "headline",
         "agents",
         "claims",
@@ -64,6 +65,7 @@ def test_projection_foregrounds_the_verdict_and_sections() -> None:
         "risk",
     }
     assert studio["agents"]["live"] == ["A/claude-1", "B/codex-2"]
+    assert studio["hub"] == {"id": "", "version": "", "config_epoch": ""}
     assert studio["claims"]["active"] == [{"owner": "A/claude-1", "scope": "src/"}]
     assert studio["tasks"]["graph"] == {"nodes": 3, "edges": 1}
     assert studio["risk"]["safe_next_work"] == ["t1", "t2"]
@@ -107,6 +109,8 @@ def test_malformed_sections_are_coerced_not_raised() -> None:
 def test_frozen_snapshot_is_a_valid_representative_sample() -> None:
     studio = frozen_studio_snapshot()
     assert studio["verdict"] == "amber"
+    assert studio["hub"]["id"] == "studio-demo"
+    assert studio["hub"]["version"] == "0.98.21"
     assert studio["headline"]["agents_live"] == 2
     assert studio["security_posture"]["level"] == "green"
     assert frozen_studio_snapshot() == studio  # deterministic

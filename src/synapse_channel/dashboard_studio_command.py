@@ -30,11 +30,36 @@ from synapse_channel.studio_snapshot import STUDIO_SNAPSHOT_PATH
 STUDIO_COMMAND_PATH = "/studio/command"
 """HTTP path the live Studio command centre is served at."""
 
+EVENTS_FEED_PATH = "/events.json"
+"""HTTP path for the optional durable event-log tail feed."""
+
 DEFAULT_POLL_SECONDS = 5
 """How often the command centre re-reads the live snapshot."""
 
 _STYLE = """
 :root { --syn-clock-r: 150px; }
+.cc-shell { min-height:100vh; display:grid; grid-template-columns: 188px minmax(0, 1fr);
+  background:var(--syn-bg); color:var(--syn-text); }
+.cc-rail { border-right:1px solid var(--syn-hairline); padding:var(--syn-sp-5) var(--syn-sp-3);
+  display:flex; flex-direction:column; gap:var(--syn-sp-4); }
+.cc-rail-title { font-family:var(--syn-font-display); font-size:var(--syn-fs-body);
+  text-transform:uppercase; letter-spacing:.08em; color:var(--syn-muted); }
+.cc-rail .syn-nav { flex-direction:column; align-items:stretch; gap:var(--syn-sp-2); }
+.cc-main { min-width:0; padding:var(--syn-sp-5); }
+.cc-header { display:flex; align-items:center; justify-content:space-between;
+  gap:var(--syn-sp-4); border-bottom:1px solid var(--syn-hairline);
+  padding-bottom:var(--syn-sp-4); }
+.cc-title { min-width:0; }
+.cc-title h1 { font-family:var(--syn-font-display); font-size:var(--syn-fs-title);
+  margin:0; }
+.cc-headerbar { display:flex; align-items:center; justify-content:flex-end;
+  gap:var(--syn-sp-3); flex-wrap:wrap; min-width:0; }
+.cc-chip { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.cc-chip span { font-size:var(--syn-fs-label); color:var(--syn-muted);
+  text-transform:uppercase; letter-spacing:.08em; }
+.cc-chip b { font-family:var(--syn-font-mono); font-size:var(--syn-fs-data);
+  color:var(--syn-text); font-weight:600; max-width:24ch; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; }
 .cc-grid { display:grid; grid-template-columns: minmax(320px, 1fr) minmax(280px, 0.9fr);
   gap: var(--syn-sp-5); align-items: start; }
 .cc-grid > * { min-width:0; }
@@ -67,6 +92,10 @@ _STYLE = """
 .cc-empty { color:var(--syn-muted); font-size:var(--syn-fs-body); padding:var(--syn-sp-2) 0; }
 .cc-grid .syn-row { min-width:0; overflow:hidden; }
 .cc-grid .syn-row > span { min-width:0; overflow-wrap:anywhere; }
+.cc-feed { max-height:260px; overflow:auto; }
+.cc-feed-row { display:grid; grid-template-columns: 5ch minmax(7ch, 10ch) minmax(0, 1fr);
+  gap:var(--syn-sp-2); align-items:baseline; }
+.cc-feed-row span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cc-table { width:100%; border-collapse:collapse; font-size:var(--syn-fs-data); }
 .cc-table th { text-align:left; color:var(--syn-muted); font-size:var(--syn-fs-label);
   text-transform:uppercase; letter-spacing:.08em; font-weight:500;
@@ -80,7 +109,12 @@ _STYLE = """
   .cc-fallback { display:block; }
 }
 @media (max-width: 760px) {
-  .syn-nav { flex-wrap:wrap; }
+  .cc-shell { grid-template-columns:minmax(0, 1fr); }
+  .cc-rail { border-right:0; border-bottom:1px solid var(--syn-hairline);
+    padding:var(--syn-sp-4); }
+  .cc-rail .syn-nav { flex-direction:row; flex-wrap:wrap; }
+  .cc-main { padding:var(--syn-sp-4); }
+  .cc-header { align-items:flex-start; flex-direction:column; }
   .cc-grid { grid-template-columns:minmax(0, 1fr); }
   .cc-clock { width:min(360px, 100%); }
 }
@@ -88,11 +122,14 @@ _STYLE = """
 
 _SCRIPT_TEMPLATE = """
 const SNAPSHOT = "__SNAPSHOT__";
+const EVENTS = "__EVENTS__";
 const POLL_MS = __POLL_MS__;
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const TONE = { green: "ok", amber: "warn", red: "bad", unknown: "warn" };
 const TAU = Math.PI * 2;
 const CX = 180, CY = 180, R = 132;
+let eventCursor = "latest";
+let eventFeedConfigured = true;
 
 function polar(angle, radius) {
   return [CX + radius * Math.cos(angle - Math.PI / 2), CY + radius * Math.sin(angle - Math.PI / 2)];
@@ -178,6 +215,11 @@ function setStat(id, value) { document.getElementById(id).textContent = value; }
 
 function render(data) {
   document.getElementById("cc-offline").hidden = true;
+  document.getElementById("cc-connection").textContent = "connected";
+  document.getElementById("cc-connection").className = "syn-verdict syn-verdict--green";
+  const hub = data.hub || {};
+  setStat("cc-hub", hub.id || "unknown");
+  setStat("cc-version", hub.version || "unknown");
   const h = data.headline || {};
   const verdict = data.verdict || "unknown";
   const pill = document.getElementById("cc-verdict");
@@ -228,6 +270,66 @@ function render(data) {
   }
 }
 
+function eventSubject(event) {
+  const payload = event.payload || {};
+  return payload.task_id || payload.target || payload.sender || payload.owner ||
+    payload.action || payload.kind || "";
+}
+
+function renderEvents(eventDocument) {
+  const host = document.getElementById("cc-livefeed-list");
+  const events = eventDocument.events || [];
+  eventCursor = eventDocument.next_cursor == null ? eventCursor : Number(eventDocument.next_cursor);
+  if (!events.length && host.childElementCount) return;
+  if (!events.length) {
+    host.replaceChildren();
+    const empty = document.createElement("div");
+    empty.className = "cc-empty";
+    empty.textContent = "waiting for new events";
+    host.appendChild(empty);
+    return;
+  }
+  if (host.querySelector(".cc-empty")) host.replaceChildren();
+  for (const event of events.slice(-20)) {
+    const row = document.createElement("div");
+    row.className = "syn-row cc-feed-row";
+    row.innerHTML = `<span>#${text(event.seq)}</span>` +
+      `<span>${text(event.kind)}</span>` +
+      `<span>${text(eventSubject(event))}</span>`;
+    host.prepend(row);
+  }
+  while (host.childElementCount > 20) host.removeChild(host.lastElementChild);
+}
+
+async function pollEvents() {
+  if (!eventFeedConfigured) return;
+  try {
+    const res = await fetch(EVENTS + "?since=" + encodeURIComponent(String(eventCursor)) +
+      "&limit=20", { cache: "no-store" });
+    if (res.status === 404) {
+      eventFeedConfigured = false;
+      const host = document.getElementById("cc-livefeed-list");
+      host.replaceChildren();
+      const empty = document.createElement("div");
+      empty.className = "cc-empty";
+      empty.textContent = "event feed not configured";
+      host.appendChild(empty);
+      return;
+    }
+    if (!res.ok) throw new Error("events " + res.status);
+    renderEvents(await res.json());
+  } catch (err) {
+    const host = document.getElementById("cc-livefeed-list");
+    host.replaceChildren();
+    const empty = document.createElement("div");
+    empty.className = "cc-empty";
+    empty.textContent = "event feed unavailable";
+    host.appendChild(empty);
+  } finally {
+    if (eventFeedConfigured) setTimeout(pollEvents, POLL_MS);
+  }
+}
+
 async function poll() {
   try {
     const res = await fetch(SNAPSHOT, { cache: "no-store" });
@@ -237,18 +339,23 @@ async function poll() {
     const banner = document.getElementById("cc-offline");
     banner.hidden = false;
     banner.textContent = "hub unavailable — " + err.message;
+    document.getElementById("cc-connection").textContent = "offline";
+    document.getElementById("cc-connection").className = "syn-verdict syn-verdict--amber";
   } finally {
     setTimeout(poll, POLL_MS);
   }
 }
 poll();
+pollEvents();
 """
 
 
 def _script(*, snapshot_path: str, poll_seconds: int) -> str:
     """Return the command-centre script with the snapshot path and poll interval bound."""
-    return _SCRIPT_TEMPLATE.replace("__SNAPSHOT__", snapshot_path).replace(
-        "__POLL_MS__", str(poll_seconds * 1000)
+    return (
+        _SCRIPT_TEMPLATE.replace("__SNAPSHOT__", snapshot_path)
+        .replace("__EVENTS__", EVENTS_FEED_PATH)
+        .replace("__POLL_MS__", str(poll_seconds * 1000))
     )
 
 
@@ -270,27 +377,40 @@ def render_studio_command_html(*, poll_seconds: int = DEFAULT_POLL_SECONDS) -> s
   <link rel="stylesheet" href="/studio.css">
   <style>{_STYLE}</style>
 </head>
-<body class="syn" style="margin:0;padding:var(--syn-sp-5)">
-  <nav class="syn-nav" style="margin-bottom:var(--syn-sp-4)">
-    <a href="{STUDIO_COMMAND_PATH}" aria-current="page">command</a>
-    <a href="{STUDIO_REFERENCE_PATH}">design</a>
-    <a href="#">workflow</a><a href="#">trace</a><a href="#">policy</a><a href="#">routing</a>
-  </nav>
-  <header style="display:flex;align-items:baseline;gap:var(--syn-sp-3)">
-    <h1 style="font-family:var(--syn-font-display);font-size:var(--syn-fs-title);margin:0">
-      Coordination command centre</h1>
-    <span id="cc-offline" class="cc-offline" hidden>connecting…</span>
-  </header>
-  <div class="cc-bar">
-    <span id="cc-verdict" class="syn-verdict syn-verdict--amber">unknown</span>
-    <div class="cc-stat"><b id="cc-agents">0</b><span>live agents</span></div>
-    <div class="cc-stat"><b id="cc-claims">0 / 0</b><span>claims active/stale</span></div>
-    <div class="cc-stat"><b id="cc-tasks">0 / 0</b><span>tasks ready/blocked</span></div>
-    <div class="cc-stat"><b id="cc-conflicts">0</b><span>conflicts</span></div>
-    <div class="cc-stat"><b id="cc-signals">0</b><span>risk signals</span></div>
-    <div class="cc-stat"><b id="cc-posture">unknown</b><span>security posture</span></div>
-  </div>
-  <div class="cc-grid">
+<body class="syn" style="margin:0">
+  <div class="cc-shell">
+    <aside class="cc-rail" aria-label="Studio navigation">
+      <div class="cc-rail-title">SYNAPSE Studio</div>
+      <nav class="syn-nav">
+        <a href="{STUDIO_COMMAND_PATH}" aria-current="page">command</a>
+        <a href="{STUDIO_REFERENCE_PATH}">design</a>
+        <a href="#cc-agents-list">fleet</a>
+        <a href="#cc-livefeed-list">live feed</a>
+        <a href="#cc-posture-list">security</a>
+      </nav>
+    </aside>
+    <main class="cc-main">
+      <header class="cc-header">
+        <div class="cc-title">
+          <h1>Coordination command centre</h1>
+          <span id="cc-offline" class="cc-offline" hidden>connecting…</span>
+        </div>
+        <div class="cc-headerbar" aria-label="Hub status">
+          <span id="cc-connection" class="syn-verdict syn-verdict--amber">connecting</span>
+          <span id="cc-verdict" class="syn-verdict syn-verdict--amber">unknown</span>
+          <div class="cc-chip"><span>hub</span><b id="cc-hub">unknown</b></div>
+          <div class="cc-chip"><span>version</span><b id="cc-version">unknown</b></div>
+        </div>
+      </header>
+      <div class="cc-bar">
+        <div class="cc-stat"><b id="cc-agents">0</b><span>live agents</span></div>
+        <div class="cc-stat"><b id="cc-claims">0 / 0</b><span>claims active/stale</span></div>
+        <div class="cc-stat"><b id="cc-tasks">0 / 0</b><span>tasks ready/blocked</span></div>
+        <div class="cc-stat"><b id="cc-conflicts">0</b><span>conflicts</span></div>
+        <div class="cc-stat"><b id="cc-signals">0</b><span>risk signals</span></div>
+        <div class="cc-stat"><b id="cc-posture">unknown</b><span>security posture</span></div>
+      </div>
+      <div class="cc-grid">
     <section class="syn-panel cc-clock-wrap">
       <div class="syn-label">coordination clock</div>
       <svg id="cc-clock" class="cc-clock" viewBox="0 0 360 360"
@@ -323,7 +443,15 @@ def render_studio_command_html(*, poll_seconds: int = DEFAULT_POLL_SECONDS) -> s
         <div class="syn-label">security posture</div>
         <div id="cc-posture-list" style="margin-top:var(--syn-sp-2)"></div>
       </section>
+      <section class="syn-panel">
+        <div class="syn-label">live feed</div>
+        <div id="cc-livefeed-list" class="cc-feed" style="margin-top:var(--syn-sp-2)">
+          <div class="cc-empty">connecting to event feed</div>
+        </div>
+      </section>
     </div>
+      </div>
+    </main>
   </div>
   <script>{script}</script>
 </body>

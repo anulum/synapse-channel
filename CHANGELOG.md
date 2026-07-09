@@ -29,6 +29,9 @@ All notable changes to this project are documented here.
   covering sandbox grants, ACL/role visibility, dashboard exposure evidence,
   signed federation observation, and receipt evidence. `/studio/command` renders
   the same rows as a read-only posture panel beside the Coordination Clock.
+- The Studio command centre now has a persistent NavRail, a HeaderBar with the
+  live hub id, version, verdict, and connection state, and a LiveFeed panel that
+  tails `/events.json` when the dashboard is started with `--feeds-db`.
 - Declarative workflows now support step-level `requires` evidence predicates
   for proof-carrying steps. `workflow plan` and `workflow run` accept an
   `--evidence` snapshot and hold a step until its required receipt, test,

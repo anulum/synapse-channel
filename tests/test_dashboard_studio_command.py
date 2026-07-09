@@ -11,6 +11,7 @@ from __future__ import annotations
 from synapse_channel.dashboard_studio import STUDIO_REFERENCE_PATH
 from synapse_channel.dashboard_studio_command import (
     DEFAULT_POLL_SECONDS,
+    EVENTS_FEED_PATH,
     STUDIO_COMMAND_PATH,
     _script,
     render_studio_command_html,
@@ -40,12 +41,17 @@ def test_page_carries_every_instrument_hook() -> None:
         'id="cc-conflicts"',
         'id="cc-signals"',
         'id="cc-posture"',
+        'id="cc-connection"',
+        'id="cc-hub"',
+        'id="cc-version"',
         'id="cc-offline"',
         'id="cc-fallback-body"',
         'id="cc-posture-list"',
+        'id="cc-livefeed-list"',
         "Coordination clock",
         "coordination clock",  # the panel label
         "security posture",
+        "live feed",
     ):
         assert hook in html, hook
 
@@ -54,6 +60,8 @@ def test_page_navigates_between_command_and_design() -> None:
     html = render_studio_command_html()
     assert f'href="{STUDIO_COMMAND_PATH}" aria-current="page"' in html
     assert f'href="{STUDIO_REFERENCE_PATH}"' in html
+    assert 'href="#cc-livefeed-list"' in html
+    assert 'aria-label="Studio navigation"' in html
 
 
 def test_page_honours_reduced_motion_and_a_table_fallback() -> None:
@@ -66,9 +74,14 @@ def test_page_honours_reduced_motion_and_a_table_fallback() -> None:
 def test_script_binds_the_snapshot_path_and_poll_interval() -> None:
     script = _script(snapshot_path=STUDIO_SNAPSHOT_PATH, poll_seconds=8)
     assert f'"{STUDIO_SNAPSHOT_PATH}"' in script
+    assert f'"{EVENTS_FEED_PATH}"' in script
     assert "8000" in script  # seconds rendered as milliseconds
-    assert "__SNAPSHOT__" not in script and "__POLL_MS__" not in script  # fully substituted
+    assert "__SNAPSHOT__" not in script
+    assert "__EVENTS__" not in script
+    assert "__POLL_MS__" not in script
     assert "drawClock" in script and "fetch(SNAPSHOT" in script
+    assert "fetch(EVENTS" in script
+    assert "event feed not configured" in script
     assert "cc-posture-list" in script
 
 
