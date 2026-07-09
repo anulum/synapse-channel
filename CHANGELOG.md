@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.22] - 2026-07-09
+
 ### Changed
 - Dashboard front door is the Studio command centre: `GET /` and
   `/studio/command` serve the same hub-independent shell; the pre-Studio hub

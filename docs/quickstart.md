@@ -89,7 +89,7 @@ claimed, and what is at risk.
 
 ```bash
 # 1. Install + doctor
-python -m pip install 'synapse-channel>=0.98.21'
+python -m pip install 'synapse-channel>=0.98.22'
 synapse doctor
 
 # 2. Durable hub (open loopback; add --team-secure when you have trust + role files)
