@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.18] - 2026-07-09
+
 ### Added
 - Multi-hub peer pulls now measure local-minus-peer clock skew from the peer
   `welcome` timestamp and carry it through `network_fetcher`,
