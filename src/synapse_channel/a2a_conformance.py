@@ -213,10 +213,21 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
     A2AConformanceRow(
         area="validation",
         item="Independent interoperability",
-        status="external",
-        synapse_surface="docs/a2a-validation-receipts.md",
-        evidence="Receipt template exists; no independent trace is recorded in this checkout.",
-        limitation="Requires third-party A2A clients or servers and captured traces.",
+        status="partial",
+        synapse_surface=(
+            "synapse a2a-interop-trace; synapse_channel.a2a_interop_trace; "
+            "docs/a2a-validation-receipts.md"
+        ),
+        evidence=(
+            "Local independent stdlib http.client trace exercises discovery, "
+            "message:send, and GET task against a live ThreadingHTTPServer bridge; "
+            "CLI emits a structured receipt (schema synapse.a2a_interop_trace.v1)."
+        ),
+        limitation=(
+            "Trace is an independent HTTP client stack, not a third-party A2A SDK. "
+            "Public-network clients, webhook, proxy/TLS, and durable-history receipts "
+            "remain external."
+        ),
         spec_reference="A2A 1.0.0 goals and operation model",
     ),
     A2AConformanceRow(

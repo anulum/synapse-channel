@@ -55,10 +55,9 @@ required exposed-bridge posture for bearer auth, TLS/proxy placement, state-file
 permissions, webhook egress, retention, logging, and receipts. Concrete
 production deployment sign-off remains external.
 
-The following row remains `external` until receipts exist:
-
-- independent A2A client/server interoperability traces.
-
-Use [A2A bridge validation receipts](a2a-validation-receipts.md) to record those
-external traces. Once a receipt exists, update the matrix row, the receipt page,
-and the TODO item in the same commit.
+Independent interoperability is **`partial`**: `synapse a2a-interop-trace` runs a
+stdlib `http.client` client against a live bridge (discovery, `message:send`,
+`GET /tasks/{id}`) and writes a structured receipt. That is an independent
+client *stack*, not a third-party A2A SDK. Public-network clients, webhook,
+proxy/TLS, and durable-history receipts remain external — record them with
+[A2A bridge validation receipts](a2a-validation-receipts.md).

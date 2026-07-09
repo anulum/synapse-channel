@@ -12,12 +12,14 @@ from __future__ import annotations
 import argparse
 
 from synapse_channel.cli_a2a_card import _cmd_a2a_card
+from synapse_channel.cli_a2a_interop import add_parsers as add_interop_parsers
 from synapse_channel.cli_a2a_serve import _cmd_a2a_serve
 from synapse_channel.client.agent import default_hub_uri
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register A2A bridge subcommands."""
+    add_interop_parsers(subparsers)
     card = subparsers.add_parser(
         "a2a-card",
         help="Print an A2A Agent Card projected from the live SYNAPSE capability manifest.",

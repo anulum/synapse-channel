@@ -80,6 +80,20 @@ discussion reply — the shape matters more than the medium.
 - The SSRF / local-network checks exercised, token handling, log redaction, and what a
   compromised client can still ask the bridge to do.
 
+## Local independent HTTP client (in-tree)
+
+Against a running bridge (or the test harness), the repository ships an
+independent stdlib client that does **not** import the request-handler path:
+
+```bash
+synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --host 127.0.0.1 --port 8877 &
+synapse a2a-interop-trace --host 127.0.0.1 --port 8877 --output /tmp/a2a-interop.json
+```
+
+The receipt schema is `synapse.a2a_interop_trace.v1` (discovery + task lifecycle).
+It upgrades the matrix row to **partial**; third-party SDK and public-network
+receipts still land via the contribution path below.
+
 ## How to contribute one
 
 Run the bridge (`synapse a2a-card`, `synapse a2a-serve` — see the README's A2A

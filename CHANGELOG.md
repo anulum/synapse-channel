@@ -25,6 +25,9 @@ All notable changes to this project are documented here.
   gains a multi-seat golden path ending in Studio.
 
 ### Added
+- `synapse a2a-interop-trace`: independent stdlib HTTP client against a live
+  A2A bridge (discovery + message:send + GET task) with structured receipt;
+  Independent interoperability matrix row is now `partial`.
 - SQLCipher key for store readers: `ingest`/`compact --db-key-file`,
   dashboard `--feeds-db-key-file` (store-backed feeds + reliability).
 - SQLCipher `encrypt-key rekey-sqlcipher` (in-place PRAGMA rekey) and

@@ -26,7 +26,9 @@ def test_conformance_rows_have_stable_unique_keys_and_valid_statuses() -> None:
     keys = [(row.area, row.item) for row in CONFORMANCE_ROWS]
 
     assert len(keys) == len(set(keys))
-    assert {row.status for row in CONFORMANCE_ROWS} == set(STATUS_MEANINGS)
+    # Every row status is a known label; unused labels (e.g. external) may remain
+    # in STATUS_MEANINGS for operator-facing docs until a row needs them again.
+    assert {row.status for row in CONFORMANCE_ROWS} <= set(STATUS_MEANINGS)
     assert all(row.evidence for row in CONFORMANCE_ROWS)
     assert all(row.spec_reference.startswith("A2A 1.0.0") for row in CONFORMANCE_ROWS)
 
@@ -57,11 +59,13 @@ def test_markdown_renderer_escapes_table_cells() -> None:
 
 
 def test_matrix_keeps_external_validation_gates_visible() -> None:
+    """Third-party public-network interop stays external; local HTTP client is partial."""
     external_items = {row.item for row in conformance_rows(status="external")}
+    # Local independent HTTP client trace upgraded Independent interoperability to partial.
+    assert "Independent interoperability" not in external_items
+    partial_items = {row.item for row in conformance_rows(status="partial")}
+    assert "Independent interoperability" in partial_items
 
-    assert external_items == {
-        "Independent interoperability",
-    }
 
 
 def test_matrix_records_real_webhook_receiver_progress_as_partial() -> None:
