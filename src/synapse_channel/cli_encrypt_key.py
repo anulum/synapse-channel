@@ -332,10 +332,7 @@ def _cmd_migrate_sqlcipher(args: argparse.Namespace) -> int:
     except (ValueError, FileNotFoundError, FileExistsError, SqlCipherUnavailableError) as exc:
         print(f"sqlcipher migrate problem: {exc}")
         return 1
-    print(
-        f"sqlcipher migrated {result['rows']} event(s): "
-        f"{args.source} -> {args.destination}"
-    )
+    print(f"sqlcipher migrated {result['rows']} event(s): {args.source} -> {args.destination}")
     print("start the hub with: synapse hub --db <destination> --db-key-file <key>")
     return 0
 

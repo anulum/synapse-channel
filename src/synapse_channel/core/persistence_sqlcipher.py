@@ -76,7 +76,7 @@ def import_sqlcipher_module() -> Any:
         from sqlcipher3 import dbapi2 as sqlcipher
     except ImportError:
         try:
-            from pysqlcipher3 import dbapi2 as sqlcipher  # type: ignore[no-redef]
+            from pysqlcipher3 import dbapi2 as sqlcipher
         except ImportError as exc:
             raise SqlCipherUnavailableError(SQLCIPHER_INSTALL_HINT) from exc
     return sqlcipher
@@ -117,7 +117,7 @@ def apply_sqlcipher_key(conn: Any, key: bytes) -> None:
     """
     literal = pragma_key_literal(key)
     # SQLCipher accepts the x'hex' form only as a SQL literal, not a bound param.
-    conn.execute(f"PRAGMA key = \"{literal}\"")
+    conn.execute(f'PRAGMA key = "{literal}"')
     try:
         conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
     except Exception as exc:  # noqa: BLE001 — driver raises DatabaseError variants
@@ -254,9 +254,7 @@ def migrate_plaintext_to_sqlcipher(
 
     plain = sqlite3.connect(str(src))
     try:
-        rows = list(
-            plain.execute("SELECT seq, ts, kind, payload FROM events ORDER BY seq")
-        )
+        rows = list(plain.execute("SELECT seq, ts, kind, payload FROM events ORDER BY seq"))
     finally:
         plain.close()
 

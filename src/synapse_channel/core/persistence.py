@@ -83,9 +83,7 @@ class EventStore:
         self.path = str(path)
         from synapse_channel.core.persistence_sqlcipher import connect_event_store
 
-        self._conn, self._encrypted = connect_event_store(
-            self.path, key=key, key_file=key_file
-        )
+        self._conn, self._encrypted = connect_event_store(self.path, key=key, key_file=key_file)
         # The event log holds chat, findings, and recall telemetry, so restrict
         # it to the owner (0o600) where the platform supports it — encryption
         # does not replace permissions.

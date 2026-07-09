@@ -90,7 +90,5 @@ def test_malformed_entries_are_ignored() -> None:
 
 
 def test_missing_hub_id_defaults_to_unknown() -> None:
-    health = build_observed_fleet_health(
-        {"observed_peers": [{"reachable": True, "lag": None}]}
-    )
+    health = build_observed_fleet_health({"observed_peers": [{"reachable": True, "lag": None}]})
     assert health["peers"][0]["hub_id"] == "unknown"

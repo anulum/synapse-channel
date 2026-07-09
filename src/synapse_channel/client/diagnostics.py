@@ -298,9 +298,8 @@ def check_multi_seat_posture(
         gaps.append("identity trust bundle missing")
     if roles_path is None or not roles_path.is_file():
         gaps.append("role-grants store missing")
-    detail = (
-        f"multi-seat roster ({len(agents)} agent(s), {len(waiters)} waiter(s))"
-        + (f": {'; '.join(gaps)}" if gaps else ": token + trust + role-grants present")
+    detail = f"multi-seat roster ({len(agents)} agent(s), {len(waiters)} waiter(s))" + (
+        f": {'; '.join(gaps)}" if gaps else ": token + trust + role-grants present"
     )
     if gaps:
         return Diagnosis(
