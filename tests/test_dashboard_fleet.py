@@ -22,10 +22,10 @@ from synapse_channel.core.multihub_fold import fold_observed_state
 from synapse_channel.core.multihub_merge import HubEvent
 from synapse_channel.dashboard import (
     DashboardSnapshot,
-    render_dashboard_html,
     start_dashboard_server,
 )
 from synapse_channel.dashboard_fleet import build_fleet_visibility
+from synapse_channel.dashboard_render import render_dashboard_html
 from synapse_channel.observed_peers import ObservedPeerSnapshot
 
 

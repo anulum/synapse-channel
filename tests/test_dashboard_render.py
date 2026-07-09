@@ -227,7 +227,8 @@ async def test_fetch_dashboard_snapshot_carries_agent_roles_from_who() -> None:
 def test_dashboard_html_renders_observed_peer_rows() -> None:
     """Reachable and unreachable observed peers render as escaped advisory rows."""
     from synapse_channel.core.journal import EventKind
-    from synapse_channel.core.multihub_fold import HubEvent, fold_observed_state
+    from synapse_channel.core.multihub_fold import fold_observed_state
+    from synapse_channel.core.multihub_merge import HubEvent
     from synapse_channel.observed_peers import ObservedPeerSnapshot
 
     reachable = ObservedPeerSnapshot(
