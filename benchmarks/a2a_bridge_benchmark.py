@@ -34,9 +34,13 @@ DEFAULT_SUBSCRIBER_COUNT = 32
 class _Agent:
     def __init__(self) -> None:
         self.messages: list[tuple[str, str]] = []
+        self.message_metadata: list[dict[str, object]] = []
 
-    async def chat(self, message: str, *, target: str = "all") -> None:
+    async def chat(
+        self, message: str, *, target: str = "all", metadata: dict[str, object] | None = None
+    ) -> None:
         self.messages.append((target, message))
+        self.message_metadata.append(dict(metadata or {}))
 
 
 def host_profile() -> dict[str, str]:
@@ -102,7 +106,8 @@ def profile(
             {
                 "type": "chat",
                 "sender": "WORKER",
-                "payload": f"done {task_id}\n[A2A-TASK:{task_id} contextId={task['contextId']}]",
+                "payload": f"done {task_id}",
+                "metadata": {"a2aTaskId": task_id, "a2aContextId": task["contextId"]},
             }
         )
     correlation_seconds = time.perf_counter() - start
@@ -130,9 +135,8 @@ def profile(
         {
             "type": "chat",
             "sender": "WORKER",
-            "payload": (
-                f"fanout done\n[A2A-TASK:{fanout_task_id} contextId={fanout_task['contextId']}]"
-            ),
+            "payload": "fanout done",
+            "metadata": {"a2aTaskId": fanout_task_id, "a2aContextId": fanout_task["contextId"]},
         }
     )
     for thread in threads:

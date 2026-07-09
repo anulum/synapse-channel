@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import secrets
+from collections.abc import Mapping
 from typing import Any
 
 from synapse_channel.client.agent_outbound_types import _OutboundAgent
@@ -82,6 +83,7 @@ class AgentSendMixin:
         priority: bool = False,
         memory_tag: str = "",
         channel: str = "",
+        metadata: Mapping[str, Any] | None = None,
     ) -> None:
         """Send a chat message to the room, a single agent, or a private channel.
 
@@ -99,6 +101,10 @@ class AgentSendMixin:
             Private channel id. When set, the hub delivers the message only to
             that channel's online members instead of broadcasting it, and refuses
             it if this agent is not a member.
+        metadata : Mapping[str, Any] or None, optional
+            Structured caller metadata forwarded as an opaque ``metadata`` field
+            on the chat envelope. The hub preserves it for receivers and journal
+            readers, but does not interpret it.
         """
         extra: dict[str, Any] = {}
         if priority:
@@ -107,6 +113,8 @@ class AgentSendMixin:
             extra["memory_tag"] = memory_tag
         if channel:
             extra["channel"] = channel
+        if metadata is not None:
+            extra["metadata"] = dict(metadata)
         await self.send_message(MessageType.CHAT, target=target, payload=payload, **extra)
 
     async def ack(self: _OutboundAgent, seq: int) -> bool:

@@ -93,6 +93,14 @@ def test_bridge_submitter_path_runs_agent_chat() -> None:
     assert submitted == ["coroutine"]
 
 
+def test_create_working_task_rejects_duplicate_direct_task_id() -> None:
+    bridge = _bridge()
+    bridge.create_working_task(_message("task-a"))
+
+    with pytest.raises(ValueError, match="message.taskId already exists"):
+        bridge.create_working_task(_message("task-a"))
+
+
 def test_synapse_agent_runtime_start_run_and_stop() -> None:
     class RuntimeAgent:
         def __init__(self) -> None:
@@ -274,15 +282,38 @@ def test_synapse_frame_ignores_unmatched_or_invalid_frames() -> None:
     bridge = _bridge()
     task = bridge.create_working_task(_message(), target="WORKER")
 
-    frames = [
+    frames: list[dict[str, Any]] = [
         {"type": "presence", "sender": "WORKER", "payload": "ignored"},
         {"type": "chat", "sender": "OTHER", "payload": "ignored"},
-        {"type": "chat", "sender": "WORKER", "payload": "reply [A2A-TASK:missing contextId=x]"},
-        {"type": "chat", "sender": "WORKER", "payload": f"reply [A2A-TASK:{task['id']}]"},
+        {
+            "type": "chat",
+            "sender": "OTHER",
+            "payload": "ignored",
+            "metadata": {"trace": "not-a2a-correlation"},
+        },
         {
             "type": "chat",
             "sender": "WORKER",
-            "payload": f"reply [A2A-TASK:{task['id']} contextId=wrong]",
+            "payload": "reply",
+            "metadata": {"a2aTaskId": "missing", "a2aContextId": "x"},
+        },
+        {
+            "type": "chat",
+            "sender": "WORKER",
+            "payload": "reply",
+            "metadata": {"a2aTaskId": "../bad", "a2aContextId": task["contextId"]},
+        },
+        {
+            "type": "chat",
+            "sender": "WORKER",
+            "payload": "reply",
+            "metadata": {"a2aTaskId": task["id"]},
+        },
+        {
+            "type": "chat",
+            "sender": "WORKER",
+            "payload": "reply",
+            "metadata": {"a2aTaskId": task["id"], "a2aContextId": "wrong"},
         },
     ]
     for frame in frames:
@@ -296,19 +327,46 @@ def test_synapse_frame_ignores_unmatched_or_invalid_frames() -> None:
         {
             "type": "chat",
             "sender": "WORKER",
-            "payload": f"done [A2A-TASK:{task['id']} contextId={task['contextId']}]",
+            "payload": "done",
+            "metadata": {"a2aTaskId": task["id"], "a2aContextId": task["contextId"]},
         }
     )
     bridge.handle_synapse_frame(
         {
             "type": "chat",
             "sender": "WORKER",
-            "payload": f"again [A2A-TASK:{task['id']} contextId={task['contextId']}]",
+            "payload": "again",
+            "metadata": {"a2aTaskId": task["id"], "a2aContextId": task["contextId"]},
         }
     )
     completed = bridge.store.get(str(task["id"]))
     assert completed is not None
     assert completed["status"]["state"] == "TASK_STATE_COMPLETED"
+
+
+def test_synapse_frame_treats_inline_a2a_markers_as_reply_text() -> None:
+    bridge = _bridge()
+    first = bridge.create_working_task(_message("task-a"), target="WORKER")
+    second = bridge.create_working_task(_message("task-b"), target="WORKER")
+
+    bridge.handle_synapse_frame(
+        {
+            "type": "chat",
+            "sender": "WORKER",
+            "payload": f"done [A2A-TASK:{second['id']} contextId={second['contextId']}]",
+        }
+    )
+
+    stored_first = bridge.store.get(str(first["id"]))
+    stored_second = bridge.store.get(str(second["id"]))
+    assert stored_first is not None
+    assert stored_second is not None
+    assert stored_first["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert stored_second["status"]["state"] == "TASK_STATE_WORKING"
+    artifact = stored_first["artifacts"][0]
+    assert artifact["parts"][0]["text"] == (
+        f"done [A2A-TASK:{second['id']} contextId={second['contextId']}]"
+    )
 
 
 def test_timeout_edge_paths() -> None:

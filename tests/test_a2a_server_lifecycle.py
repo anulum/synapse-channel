@@ -57,7 +57,8 @@ def test_cancel_task_keeps_terminal_task_state_unchanged() -> None:
         {
             "type": "chat",
             "sender": "WORKER",
-            "payload": f"done\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+            "payload": "done",
+            "metadata": {"a2aTaskId": task["id"], "a2aContextId": task["contextId"]},
         }
     )
     completed = bridge.store.get(task["id"])
@@ -95,7 +96,8 @@ def test_late_reply_after_timeout_does_not_reopen_failed_task() -> None:
         {
             "type": "chat",
             "sender": "WORKER",
-            "payload": f"late\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+            "payload": "late",
+            "metadata": {"a2aTaskId": task["id"], "a2aContextId": task["contextId"]},
         }
     )
 
@@ -163,7 +165,8 @@ def test_subscription_queue_receives_terminal_update() -> None:
         {
             "type": "chat",
             "sender": "WORKER",
-            "payload": f"done\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+            "payload": "done",
+            "metadata": {"a2aTaskId": task["id"], "a2aContextId": task["contextId"]},
         }
     )
     worker.join(timeout=2.0)

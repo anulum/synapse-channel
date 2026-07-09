@@ -19,7 +19,7 @@ from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 
 
-async def test_create_working_task_forwards_marked_request_through_live_hub() -> None:
+async def test_create_working_task_forwards_metadata_correlated_request_through_live_hub() -> None:
     async with running_hub() as (_hub, uri):
         bridge_handle = await connect_agent("A2A-BRIDGE", uri)
         worker = await connect_agent("WORKER", uri)
@@ -60,9 +60,12 @@ async def test_create_working_task_forwards_marked_request_through_live_hub() ->
         finally:
             await close_agents(worker, bridge_handle)
 
-    payload = str(frame.get("payload", ""))
     assert task["id"] == "task-live-forward"
-    assert "[A2A-TASK:task-live-forward contextId=ctx-live-forward]" in payload
+    assert frame.get("payload") == "compute through the live hub"
+    assert frame.get("metadata") == {
+        "a2aTaskId": "task-live-forward",
+        "a2aContextId": "ctx-live-forward",
+    }
 
 
 def test_handle_synapse_frame_correlates_reply_and_completes_task() -> None:
@@ -79,9 +82,8 @@ def test_handle_synapse_frame_correlates_reply_and_completes_task() -> None:
     reply_frame = {
         "type": "chat",
         "sender": "WORKER",
-        "payload": (
-            "the answer is 42\n[A2A-TASK:" + task["id"] + " contextId=" + task["contextId"] + "]"
-        ),
+        "payload": "the answer is 42",
+        "metadata": {"a2aTaskId": task["id"], "a2aContextId": task["contextId"]},
     }
     bridge.handle_synapse_frame(reply_frame)
     updated = bridge.store.get(task["id"])
@@ -91,7 +93,7 @@ def test_handle_synapse_frame_correlates_reply_and_completes_task() -> None:
     assert any("42" in str(h) for h in updated.get("history", []))
 
 
-def test_handle_synapse_frame_rejects_marker_from_wrong_sender() -> None:
+def test_handle_synapse_frame_rejects_metadata_from_wrong_sender() -> None:
     bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
@@ -106,7 +108,8 @@ def test_handle_synapse_frame_rejects_marker_from_wrong_sender() -> None:
         {
             "type": "chat",
             "sender": "OTHER",
-            "payload": f"wrong actor\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+            "payload": "wrong actor",
+            "metadata": {"a2aTaskId": task["id"], "a2aContextId": task["contextId"]},
         }
     )
 
@@ -115,7 +118,7 @@ def test_handle_synapse_frame_rejects_marker_from_wrong_sender() -> None:
     assert updated["status"]["state"] == "TASK_STATE_WORKING"
 
 
-def test_handle_synapse_frame_rejects_marker_with_wrong_context() -> None:
+def test_handle_synapse_frame_rejects_metadata_with_wrong_context() -> None:
     bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
@@ -130,32 +133,8 @@ def test_handle_synapse_frame_rejects_marker_with_wrong_context() -> None:
         {
             "type": "chat",
             "sender": "WORKER",
-            "payload": f"wrong context\n[A2A-TASK:{task['id']} contextId=other-context]",
-        }
-    )
-
-    updated = bridge.store.get(task["id"])
-    assert updated is not None
-    assert updated["status"]["state"] == "TASK_STATE_WORKING"
-    assert updated.get("artifacts") == []
-
-
-def test_handle_synapse_frame_rejects_marker_without_context() -> None:
-    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
-    task = bridge.create_completed_task(
-        {
-            "messageId": "m1",
-            "role": "ROLE_USER",
-            "parts": [{"text": "compute the answer"}],
-        },
-        target="WORKER",
-    )
-
-    bridge.handle_synapse_frame(
-        {
-            "type": "chat",
-            "sender": "WORKER",
-            "payload": f"missing context\n[A2A-TASK:{task['id']}]",
+            "payload": "wrong context",
+            "metadata": {"a2aTaskId": task["id"], "a2aContextId": "other-context"},
         }
     )
 
@@ -165,7 +144,7 @@ def test_handle_synapse_frame_rejects_marker_without_context() -> None:
     assert updated.get("artifacts") == []
 
 
-def test_handle_synapse_frame_strips_correlation_marker_from_reply() -> None:
+def test_handle_synapse_frame_rejects_metadata_without_context() -> None:
     bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
     task = bridge.create_completed_task(
         {
@@ -180,7 +159,34 @@ def test_handle_synapse_frame_strips_correlation_marker_from_reply() -> None:
         {
             "type": "chat",
             "sender": "WORKER",
-            "payload": f"answer body\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+            "payload": "missing context",
+            "metadata": {"a2aTaskId": task["id"]},
+        }
+    )
+
+    updated = bridge.store.get(task["id"])
+    assert updated is not None
+    assert updated["status"]["state"] == "TASK_STATE_WORKING"
+    assert updated.get("artifacts") == []
+
+
+def test_handle_synapse_frame_preserves_reply_body_under_metadata_correlation() -> None:
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "compute the answer"}],
+        },
+        target="WORKER",
+    )
+
+    bridge.handle_synapse_frame(
+        {
+            "type": "chat",
+            "sender": "WORKER",
+            "payload": "answer body",
+            "metadata": {"a2aTaskId": task["id"], "a2aContextId": task["contextId"]},
         }
     )
 
@@ -309,7 +315,8 @@ def test_late_correlated_reply_does_not_complete_canceled_task() -> None:
         {
             "type": "chat",
             "sender": "WORKER",
-            "payload": f"late\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+            "payload": "late",
+            "metadata": {"a2aTaskId": task["id"], "a2aContextId": task["contextId"]},
         }
     )
 
@@ -332,7 +339,8 @@ def test_duplicate_correlated_reply_does_not_append_second_completion() -> None:
     frame = {
         "type": "chat",
         "sender": "WORKER",
-        "payload": f"done\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+        "payload": "done",
+        "metadata": {"a2aTaskId": task["id"], "a2aContextId": task["contextId"]},
     }
 
     bridge.handle_synapse_frame(frame)
@@ -369,7 +377,8 @@ def test_concurrent_duplicate_correlated_reply_completes_once() -> None:
     frame = {
         "type": "chat",
         "sender": "WORKER",
-        "payload": f"done\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+        "payload": "done",
+        "metadata": {"a2aTaskId": task["id"], "a2aContextId": task["contextId"]},
     }
 
     threads = [

@@ -28,10 +28,18 @@ class RecordingAgent:
 
     def __init__(self) -> None:
         self.messages: list[tuple[str, str]] = []
+        self.message_metadata: list[dict[str, Any]] = []
 
-    async def chat(self, payload: str, *, target: str = "all") -> None:
+    async def chat(
+        self,
+        payload: str,
+        *,
+        target: str = "all",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         """Record one chat call made by the bridge."""
         self.messages.append((target, payload))
+        self.message_metadata.append(dict(metadata or {}))
 
 
 class SlowRecordingAgent(RecordingAgent):
@@ -43,14 +51,20 @@ class SlowRecordingAgent(RecordingAgent):
         self._active_chats = 0
         self.max_active_chats = 0
 
-    async def chat(self, payload: str, *, target: str = "all") -> None:
+    async def chat(
+        self,
+        payload: str,
+        *,
+        target: str = "all",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         """Record chat calls and the maximum concurrent entry count."""
         with self._lock:
             self._active_chats += 1
             self.max_active_chats = max(self.max_active_chats, self._active_chats)
         try:
             time.sleep(0.05)
-            await super().chat(payload, target=target)
+            await super().chat(payload, target=target, metadata=metadata)
         finally:
             with self._lock:
                 self._active_chats -= 1

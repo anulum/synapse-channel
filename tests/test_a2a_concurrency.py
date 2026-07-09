@@ -102,7 +102,8 @@ def test_concurrent_subscribers_receive_terminal_fanout() -> None:
         {
             "type": "chat",
             "sender": "WORKER",
-            "payload": f"done\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+            "payload": "done",
+            "metadata": {"a2aTaskId": task["id"], "a2aContextId": task["contextId"]},
         }
     )
     for thread in threads:

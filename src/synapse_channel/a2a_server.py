@@ -29,9 +29,6 @@ from synapse_channel.a2a_store import A2ATaskStore
 from synapse_channel.a2a_validation import (
     OPEN_TASK_STATES,
     TERMINAL_TASK_STATES,
-    marker_context_id,
-    marker_task_id,
-    strip_task_marker,
     validate_bridge_id,
     validate_message_parts,
     validate_webhook_url,
@@ -56,6 +53,45 @@ def _non_negative_int(value: object, *, default: int = 0) -> int:
     except (TypeError, ValueError):
         return default
     return max(parsed, 0)
+
+
+A2A_METADATA_TASK_ID = "a2aTaskId"
+"""Chat metadata key carrying the bridge task id."""
+
+A2A_METADATA_CONTEXT_ID = "a2aContextId"
+"""Chat metadata key carrying the bridge context id."""
+
+
+def _valid_metadata_id(value: object) -> str | None:
+    """Return ``value`` as a bridge-safe id, or ``None`` when unusable."""
+    if value is None:
+        return None
+    candidate = str(value)
+    try:
+        validate_bridge_id(candidate, field="metadata")
+    except ValueError:
+        return None
+    return candidate
+
+
+def _a2a_metadata_correlation(data: JsonMap) -> tuple[str | None, str | None, bool]:
+    """Extract trusted A2A correlation fields from structured chat metadata.
+
+    The boolean is ``True`` only when the frame attempted A2A correlation. A
+    malformed attempt is rejected by the caller instead of falling back to text or
+    sender inference, which keeps user-controlled chat content from selecting a
+    task.
+    """
+    metadata = data.get("metadata")
+    if not isinstance(metadata, dict):
+        return None, None, False
+    if A2A_METADATA_TASK_ID not in metadata and A2A_METADATA_CONTEXT_ID not in metadata:
+        return None, None, False
+    return (
+        _valid_metadata_id(metadata.get(A2A_METADATA_TASK_ID)),
+        _valid_metadata_id(metadata.get(A2A_METADATA_CONTEXT_ID)),
+        True,
+    )
 
 
 class SynapseAgentRuntime:
@@ -209,8 +245,16 @@ class A2ABridge:
             }
             self._pending_by_target.setdefault(resolved_target, []).append(task_id)
             if text:
-                marked = text + f"\n[A2A-TASK:{task_id} contextId={context_id}]"
-                self._run(self.agent.chat(marked, target=resolved_target))
+                self._run(
+                    self.agent.chat(
+                        text,
+                        target=resolved_target,
+                        metadata={
+                            A2A_METADATA_TASK_ID: task_id,
+                            A2A_METADATA_CONTEXT_ID: context_id,
+                        },
+                    )
+                )
             task = self._set_task_status(
                 task,
                 state="TASK_STATE_WORKING",
@@ -344,8 +388,9 @@ class A2ABridge:
             payload = str(data.get("payload", ""))
             sender = str(data.get("sender", ""))
 
-            task_id = marker_task_id(payload)
-            has_marker = task_id is not None
+            task_id, context_id, has_correlation_metadata = _a2a_metadata_correlation(data)
+            if has_correlation_metadata and (task_id is None or context_id is None):
+                return
             if task_id is None and sender in self._pending_by_target:
                 task_id = self._pending_task_for_sender(sender)
 
@@ -354,16 +399,13 @@ class A2ABridge:
             task = self.store.get(task_id)
             if task is None or not self._sender_matches_task(task, sender):
                 return
-            context_id = marker_context_id(payload)
-            if has_marker and context_id is None:
-                return
-            if context_id is not None and str(task.get("contextId", "")) != context_id:
+            if has_correlation_metadata and str(task.get("contextId", "")) != context_id:
                 return
             status = task.get("status", {})
             if isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES:
                 return
 
-            reply_text = strip_task_marker(payload)
+            reply_text = payload.strip()
             reply_part: JsonMap = {
                 "messageId": str(uuid.uuid4()),
                 "role": "ROLE_AGENT",

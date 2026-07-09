@@ -115,8 +115,12 @@ def test_message_send_creates_completed_task_and_forwards_text_to_synapse() -> N
     assert body["task"]["history"][0]["messageId"] == "m1"
     sent = harness.handler.bridge.agent.messages[0]
     assert sent[0] == "SC-NEUROCORE"
-    assert sent[1].startswith("status please")
-    assert "[A2A-TASK:" in sent[1]
+    assert sent[1] == "status please"
+    assert "[A2A-TASK:" not in sent[1]
+    assert harness.handler.bridge.agent.message_metadata[0] == {
+        "a2aTaskId": body["task"]["id"],
+        "a2aContextId": body["task"]["contextId"],
+    }
 
 
 def test_message_send_renders_file_parts_for_synapse_forwarding() -> None:
@@ -145,10 +149,10 @@ def test_message_send_renders_file_parts_for_synapse_forwarding() -> None:
     assert status == HTTPStatus.OK
     sent = harness.handler.bridge.agent.messages[0]
     assert sent[0] == "WORKER"
-    assert sent[1].startswith(
-        "[file: report.pdf; application/pdf; https://example.test/report.pdf]"
-    )
-    assert "[A2A-TASK:" in sent[1]
+    assert sent[1] == "[file: report.pdf; application/pdf; https://example.test/report.pdf]"
+    assert "[A2A-TASK:" not in sent[1]
+    assert harness.handler.bridge.agent.message_metadata[0]["a2aTaskId"]
+    assert harness.handler.bridge.agent.message_metadata[0]["a2aContextId"]
 
 
 def test_message_stream_sends_sse_task_event_and_forwards_to_synapse() -> None:
@@ -171,8 +175,12 @@ def test_message_stream_sends_sse_task_event_and_forwards_to_synapse() -> None:
     assert body["task"]["history"][0]["messageId"] == "m1"
     sent = harness.handler.bridge.agent.messages[0]
     assert sent[0] == "WORKER"
-    assert sent[1].startswith("stream status")
-    assert "[A2A-TASK:" in sent[1]
+    assert sent[1] == "stream status"
+    assert "[A2A-TASK:" not in sent[1]
+    assert harness.handler.bridge.agent.message_metadata[0] == {
+        "a2aTaskId": body["task"]["id"],
+        "a2aContextId": body["task"]["contextId"],
+    }
 
 
 def test_subscribe_to_completed_task_returns_terminal_state_problem() -> None:

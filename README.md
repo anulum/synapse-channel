@@ -624,6 +624,10 @@ routes, accepts JSON-RPC 2.0 calls on `/rpc`, and can enforce Bearer auth plus
 request size/depth bounds, persist task state with `--state-file`, fail stale
 open tasks with `--task-timeout`, and bound one subscription wait with
 `--subscribe-timeout`.
+Task correlation is carried in structured SYNAPSE chat metadata
+(`a2aTaskId` and `a2aContextId`); the bridge does not append or trust inline
+markers in chat text, so user-authored message bodies stay data rather than
+task selectors.
 The bridge is intentionally a local-first HTTP+JSON edge: it stores bridge task
 state locally in owner-only state/temp files, rejects unsafe caller ids and
 webhook targets including delivery-time DNS or redirect targets that resolve to

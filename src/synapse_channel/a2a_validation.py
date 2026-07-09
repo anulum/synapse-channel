@@ -16,7 +16,6 @@ from urllib.parse import urlparse
 A2A_MEDIA_TYPE = "application/a2a+json"
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 SSE_MEDIA_TYPE = "text/event-stream"
-A2A_TASK_MARKER = re.compile(r"\[A2A-TASK:([^\s\]]+)(?:\s+contextId=([^\]\s]+))?\]")
 BRIDGE_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 MAX_A2A_MESSAGE_PARTS = 64
 OPEN_TASK_STATES = {"TASK_STATE_SUBMITTED", "TASK_STATE_WORKING"}
@@ -26,23 +25,6 @@ TERMINAL_TASK_STATES = {
     "TASK_STATE_CANCELED",
     "TASK_STATE_REJECTED",
 }
-
-
-def marker_task_id(payload: str) -> str | None:
-    """Return a bridge task id carried by ``payload`` when present."""
-    marker = A2A_TASK_MARKER.search(payload)
-    return marker.group(1) if marker else None
-
-
-def marker_context_id(payload: str) -> str | None:
-    """Return a bridge context id carried by ``payload`` when present."""
-    marker = A2A_TASK_MARKER.search(payload)
-    return marker.group(2) if marker else None
-
-
-def strip_task_marker(payload: str) -> str:
-    """Remove bridge correlation markers from user-visible reply text."""
-    return A2A_TASK_MARKER.sub("", payload).strip()
 
 
 def validate_bridge_id(value: object, *, field: str) -> None:

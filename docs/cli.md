@@ -1648,6 +1648,9 @@ Operational boundaries:
   reopen or rewrite completed, failed, canceled, or rejected tasks.
 - `--task-timeout` marks open tasks failed when no correlated SYNAPSE reply arrives
   within the configured window.
+- A2A task correlation uses structured SYNAPSE chat metadata (`a2aTaskId` and
+  `a2aContextId`). Inline marker-looking text in a payload is preserved as reply
+  text and is never trusted to select a task.
 - `--subscribe-timeout` bounds one in-process subscription wait. Subscriptions
   emit bounded local replay frames for the current bridge process, then at most
   one queued update for that wait. Persisted task recovery restores task

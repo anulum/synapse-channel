@@ -114,7 +114,8 @@ def test_webhook_failures_do_not_block_bounded_completion_pressure() -> None:
             {
                 "type": "chat",
                 "sender": "WORKER",
-                "payload": f"done {index}\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+                "payload": f"done {index}",
+                "metadata": {"a2aTaskId": task["id"], "a2aContextId": task["contextId"]},
             }
         )
 
@@ -150,7 +151,8 @@ def test_subscriber_fanout_pressure_delivers_terminal_update_and_cleans_up() -> 
         {
             "type": "chat",
             "sender": "WORKER",
-            "payload": f"done\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+            "payload": "done",
+            "metadata": {"a2aTaskId": task["id"], "a2aContextId": task["contextId"]},
         }
     )
     for thread in threads:

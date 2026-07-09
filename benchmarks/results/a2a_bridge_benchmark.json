@@ -1,8 +1,8 @@
 {
   "correlated_replies": 250,
   "correlation": {
-    "seconds": 0.012644943000850617,
-    "tasks_per_sec": 19770.74945954147
+    "seconds": 0.02054930700251134,
+    "tasks_per_sec": 12165.86038494862
   },
   "host": {
     "cpu": "x86_64",
@@ -10,23 +10,23 @@
     "python": "3.12.3"
   },
   "listing": {
-    "seconds": 4.230699960316997e-05,
+    "seconds": 0.0002115640018018894,
     "tasks": 250,
-    "tasks_per_sec": 5909187.660314915
+    "tasks_per_sec": 1181675.5112909165
   },
   "push_delivery": {
     "deliveries": 250,
-    "deliveries_per_sec": 19770.74945954147
+    "deliveries_per_sec": 12165.86038494862
   },
   "subscriber_count": 32,
   "subscriber_fanout": {
     "events": 32,
-    "events_per_sec": 21912.135076650608,
-    "seconds": 0.0014603780000470579
+    "events_per_sec": 11192.368481305437,
+    "seconds": 0.002859091000573244
   },
   "task_creation": {
-    "seconds": 0.032203494999521354,
-    "tasks_per_sec": 7763.132542095688
+    "seconds": 0.04644323599495692,
+    "tasks_per_sec": 5382.9151790186725
   },
   "tasks": 250
 }

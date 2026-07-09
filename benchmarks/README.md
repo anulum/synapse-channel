@@ -115,8 +115,8 @@ python benchmarks/a2a_bridge_benchmark.py
 
 | Operation | Result |
 | --- | ---: |
-| Task creation | 7,763 tasks/s |
-| Reply correlation | 19,771 tasks/s |
+| Task creation | 5,383 tasks/s |
+| Reply correlation | 12,166 tasks/s |
 | Task listing | 250 tasks |
 | Push delivery callbacks | 250 deliveries |
 | Subscriber fanout | 32 terminal events |

@@ -106,8 +106,8 @@ On the committed reference run (250 tasks, 32 subscribers, Python 3.12):
 
 | Operation | Result |
 | --- | ---: |
-| Task creation | 7,763 tasks/s |
-| Reply correlation | 19,771 tasks/s |
+| Task creation | 5,383 tasks/s |
+| Reply correlation | 12,166 tasks/s |
 | Task listing | 250 tasks listed |
 | Push delivery callbacks | 250 delivered |
 | Subscriber fanout | 32 terminal events delivered |

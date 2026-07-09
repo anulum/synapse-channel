@@ -41,8 +41,12 @@ def test_json_rpc_message_send_dispatches_to_bridge() -> None:
     assert body["result"]["task"]["status"]["state"] == "TASK_STATE_WORKING"
     sent = harness.handler.bridge.agent.messages[0]
     assert sent[0] == "WORKER"
-    assert sent[1].startswith("json rpc")
-    assert "[A2A-TASK:" in sent[1]
+    assert sent[1] == "json rpc"
+    assert "[A2A-TASK:" not in sent[1]
+    assert harness.handler.bridge.agent.message_metadata[0] == {
+        "a2aTaskId": body["result"]["task"]["id"],
+        "a2aContextId": body["result"]["task"]["contextId"],
+    }
 
 
 def test_json_rpc_unknown_method_returns_method_not_found_error() -> None:

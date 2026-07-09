@@ -201,7 +201,8 @@ def test_completion_delivers_push_notification_to_stored_config() -> None:
         {
             "type": "chat",
             "sender": "WORKER",
-            "payload": f"done\n[A2A-TASK:{task['id']} contextId={task['contextId']}]",
+            "payload": "done",
+            "metadata": {"a2aTaskId": task["id"], "a2aContextId": task["contextId"]},
         }
     )
 
