@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.23] - 2026-07-09
+
 ### Added
 - SQLCipher `--db-key-file` on session metrics and semantic routing store
   joins: `participant costs`, `route-task --event-store`, dashboard sessions
