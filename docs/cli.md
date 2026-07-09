@@ -1576,6 +1576,14 @@ synapse hub --port 8876 --hub-id syn-a \
 `--namespace-owner NS=HUB_ID` (repeatable, requires `--hub-id`) declares the
 single authoritative owner of each namespace, deny-by-default: an ungoverned
 namespace grants nothing, a remote-owned claim is refused with the owner named.
+Remote-owned claims with a configured owner route are forwarded to the owning hub;
+the owner treats a retry of the same `(task_id, claimant)` as idempotent and
+relays the existing lease without renewing or double-counting it. A forwarding
+timeout is refused in place with `forward_error=timeout`, not hidden behind the
+generic ownership refusal. `/metrics` exposes
+`synapse_forwarded_claims_total`, `synapse_forwarded_claims_granted_total`,
+`synapse_forwarded_claims_denied_total`, and
+`synapse_forwarded_claim_timeouts_total`.
 `--multihub-watch PEER=URI` (repeatable, requires `--namespace-owner`) polls
 each named peer's event log on a bounded interval and folds the claims it
 observes into the asserting-owners view — a namespace a watched peer is seen

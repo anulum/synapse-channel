@@ -38,6 +38,7 @@ forwarding hub can hand its client an authentic ``CLAIM_GRANTED``.
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.handlers.leasing import apply_claim, claim_grant_fields
@@ -52,6 +53,7 @@ from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
+    from synapse_channel.core.state_models import TaskClaim
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +95,23 @@ async def handle_multihub_claim_request(
         await _send_result(hub, websocket, sender, refusal)
         return
 
+    duplicate = _duplicate_forwarded_claim(hub, request)
+    if duplicate is not None:
+        await _send_result(
+            hub,
+            websocket,
+            sender,
+            ClaimForwardResult(
+                granted=True,
+                task_id=request.task_id,
+                namespace=request.namespace,
+                owner_hub_id=hub.hub_id,
+                detail=f"Task '{request.task_id}' already claimed by {request.claimant}.",
+                grant=claim_grant_fields(duplicate),
+            ),
+        )
+        return
+
     application = apply_claim(hub, request.claimant, request.claim)
     if application.claim is not None:
         hub.counters.claims_granted += 1
@@ -119,6 +138,23 @@ async def handle_multihub_claim_request(
             detail=application.message,
         )
     await _send_result(hub, websocket, sender, result)
+
+
+def _duplicate_forwarded_claim(hub: SynapseHub, request: ClaimForwardRequest) -> TaskClaim | None:
+    """Return the live existing lease for a duplicate forwarded claim, if present.
+
+    The idempotency key for a forwarded grant is ``(task_id, claimant)``. If a peer retries
+    the same forward after losing the result frame, the owning hub relays the existing lease
+    without renewing it, rebroadcasting it, journalling another claim, or incrementing the
+    owner grant counter. A stale lease is not considered duplicate; the normal grant path may
+    reclaim it.
+    """
+    existing = hub.state.claims.get(request.task_id)
+    if existing is None or existing.owner != request.claimant:
+        return None
+    if existing.lease_expires_at <= time.time():
+        return None
+    return existing
 
 
 def _refuse_claim(

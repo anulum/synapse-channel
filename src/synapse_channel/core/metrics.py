@@ -104,8 +104,9 @@ def collect_hub_metrics(hub: SynapseHub) -> list[Metric]:
         dead-letter targets included), the monotonic message counter, and the
         hub's decision counters — claims granted/denied, releases, directed and
         broadcast chat, auth failures, rate-limit rejections, federation
-        denials, takeovers and their quarantines — everything a Grafana panel
-        or an alert rule needs to see the hub deciding, not just existing.
+        denials, forwarded-claim outcomes, takeovers and their quarantines —
+        everything a Grafana panel or an alert rule needs to see the hub deciding,
+        not just existing.
     """
     return [
         Metric("synapse_up", "Whether the hub is serving (always 1).", "gauge", 1),
@@ -220,6 +221,30 @@ def collect_hub_metrics(hub: SynapseHub) -> list[Metric]:
             "Frames refused by the federation gate since start.",
             "counter",
             hub.counters.federation_denied,
+        ),
+        Metric(
+            "synapse_forwarded_claims_total",
+            "Remote-owned claim requests forwarded to owning hubs since start.",
+            "counter",
+            hub.counters.forwarded_claims,
+        ),
+        Metric(
+            "synapse_forwarded_claims_granted_total",
+            "Forwarded claim requests answered with owner grants since start.",
+            "counter",
+            hub.counters.forwarded_claims_granted,
+        ),
+        Metric(
+            "synapse_forwarded_claims_denied_total",
+            "Forwarded claim requests answered with owner denials or malformed grants since start.",
+            "counter",
+            hub.counters.forwarded_claims_denied,
+        ),
+        Metric(
+            "synapse_forwarded_claim_timeouts_total",
+            "Forwarded claim requests refused after owner timeout since start.",
+            "counter",
+            hub.counters.forwarded_claim_timeouts,
         ),
         Metric(
             "synapse_takeovers_total",

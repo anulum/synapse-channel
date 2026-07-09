@@ -152,6 +152,10 @@ def test_fresh_hub_reports_zero_decision_counters() -> None:
         "synapse_auth_failures_total",
         "synapse_rate_limited_total",
         "synapse_federation_denied_total",
+        "synapse_forwarded_claims_total",
+        "synapse_forwarded_claims_granted_total",
+        "synapse_forwarded_claims_denied_total",
+        "synapse_forwarded_claim_timeouts_total",
         "synapse_takeovers_total",
         "synapse_takeover_quarantines_total",
         "synapse_live_waiters",
@@ -171,6 +175,10 @@ def test_counters_and_gauges_surface_hub_decisions() -> None:
     hub.counters.auth_failures = 5
     hub.counters.rate_limited = 6
     hub.counters.federation_denied = 8
+    hub.counters.forwarded_claims = 11
+    hub.counters.forwarded_claims_granted = 12
+    hub.counters.forwarded_claims_denied = 13
+    hub.counters.forwarded_claim_timeouts = 14
     hub.counters.takeovers = 9
     hub.counters.takeover_quarantines = 10
     hub.agent_sockets["repo/agent"] = object()
@@ -192,6 +200,10 @@ def test_counters_and_gauges_surface_hub_decisions() -> None:
     assert by_name["synapse_auth_failures_total"] == 5
     assert by_name["synapse_rate_limited_total"] == 6
     assert by_name["synapse_federation_denied_total"] == 8
+    assert by_name["synapse_forwarded_claims_total"] == 11
+    assert by_name["synapse_forwarded_claims_granted_total"] == 12
+    assert by_name["synapse_forwarded_claims_denied_total"] == 13
+    assert by_name["synapse_forwarded_claim_timeouts_total"] == 14
     assert by_name["synapse_takeovers_total"] == 9
     assert by_name["synapse_takeover_quarantines_total"] == 10
     assert by_name["synapse_live_waiters"] == 1

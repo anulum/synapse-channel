@@ -33,6 +33,9 @@ All notable changes to this project are documented here.
 - `synapse dashboard --feeds-db` now serves `/operator-actions.json`, a durable operator-action
   history feed reconstructed from `operator_relay` audit events with real sequence and timestamp
   anchors, relay direction, status, reason, break-glass tag, and peer/requester provenance.
+- Forwarded multi-hub claims now distinguish owner timeouts from generic ownership refusals,
+  expose forwarded/granted/denied/timeout counters on `/metrics`, and treat duplicate owner-side
+  `(task_id, claimant)` retries as idempotent relays of the existing lease.
 
 ## [0.98.14] - 2026-07-09
 

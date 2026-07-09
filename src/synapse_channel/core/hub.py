@@ -641,6 +641,7 @@ class SynapseHub:
             observed_asserting_hubs=self.observed_asserting_hubs,
             claim_peers=self.claim_peers,
             claim_forwarder=self.claim_forwarder,
+            counters=self.counters,
             hub_id=self.hub_id,
             send_json=self._send_json,
             system=self._system,

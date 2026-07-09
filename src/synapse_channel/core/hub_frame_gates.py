@@ -36,6 +36,7 @@ from typing import Any
 
 from synapse_channel.core.acl import AclPolicy
 from synapse_channel.core.acl_enforcement import authorise_frame, project_of
+from synapse_channel.core.hub_counters import HubCounters
 from synapse_channel.core.message_auth import (
     DEFAULT_SIGNED_MESSAGE_TYPES,
     EventSignatureTrustBundle,
@@ -50,6 +51,7 @@ from synapse_channel.core.multihub_claim_transport import (
     ClaimForwarder,
     ClaimForwardError,
     ClaimForwardPeer,
+    ClaimForwardTimeoutError,
 )
 from synapse_channel.core.multihub_claim_wire import ClaimForwardRequest
 from synapse_channel.core.namespace_ownership import NamespaceOwnership, OwnershipOutcome
@@ -92,6 +94,8 @@ class HubFrameGates:
         owner named.
     claim_forwarder : ClaimForwarder
         The seam that forwards a claim to an owning hub over the network.
+    counters : HubCounters
+        Shared live hub counters, incremented for forwarded-claim attempts and outcomes.
     hub_id : str
         This hub's stable id, stamped as the forwarding hub's local id on a forwarded
         claim.
@@ -115,6 +119,7 @@ class HubFrameGates:
         observed_asserting_hubs: Callable[[str], Iterable[str]] | None,
         claim_peers: dict[str, ClaimForwardPeer] | None,
         claim_forwarder: ClaimForwarder,
+        counters: HubCounters,
         hub_id: str,
         send_json: Callable[[Any, dict[str, Any]], Awaitable[None]],
         system: Callable[..., dict[str, Any]],
@@ -129,6 +134,7 @@ class HubFrameGates:
         self._observed_asserting_hubs_feed = observed_asserting_hubs
         self._claim_peers = claim_peers
         self._claim_forwarder = claim_forwarder
+        self._counters = counters
         self._hub_id = hub_id
         self._send_json = send_json
         self._system = system
@@ -306,16 +312,41 @@ class HubFrameGates:
         request = ClaimForwardRequest(
             namespace=namespace, claimant=sender, task_id=task_id, claim=data
         )
+        self._counters.forwarded_claims += 1
         try:
             result = await self._claim_forwarder(
                 request, uri=peer.uri, local_id=self._hub_id, token=peer.token
             )
+        except ClaimForwardTimeoutError:
+            self._counters.forwarded_claim_timeouts += 1
+            logger.warning(
+                "Forwarding claim %r for %s to owner %s timed out",
+                task_id,
+                sender,
+                owner_hub_id,
+            )
+            await self._send_json(
+                websocket,
+                self._system(
+                    f"claim refused: owning hub {owner_hub_id!r} did not answer "
+                    f"forwarded claim {task_id!r} before timeout",
+                    msg_type=MessageType.CLAIM_DENIED,
+                    target=sender,
+                    task_id=task_id,
+                    namespace=namespace,
+                    owner_hub_id=owner_hub_id,
+                    ownership="remote",
+                    forward_error="timeout",
+                ),
+            )
+            return True
         except ClaimForwardError:
             logger.warning(
                 "Forwarding claim %r for %s to owner %s failed", task_id, sender, owner_hub_id
             )
             return False
         if result.granted and result.grant is not None:
+            self._counters.forwarded_claims_granted += 1
             await self._send_json(
                 websocket,
                 self._system(
@@ -326,6 +357,7 @@ class HubFrameGates:
                 ),
             )
         else:
+            self._counters.forwarded_claims_denied += 1
             await self._send_json(
                 websocket,
                 self._system(

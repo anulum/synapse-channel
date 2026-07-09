@@ -178,6 +178,42 @@ async def test_relayed_grant_echoes_the_requested_task(tmp_path: Path) -> None:
     assert result.namespace == _NAMESPACE
 
 
+async def test_duplicate_forwarded_claim_is_idempotent_for_same_claimant(
+    tmp_path: Path,
+) -> None:
+    pin, der = _write_peer_cert(tmp_path)
+    hub = _owning_hub(policy=_serving_policy(pin, der), ownership=_owns())
+    async with running_hub(hub) as (_, uri):
+        first = await _forward(uri, _request())
+        original = hub.state.claims["t1"]
+        second = await _forward(uri, _request())
+
+    assert first.granted is True
+    assert second.granted is True
+    assert first.grant is not None
+    assert second.grant is not None
+    assert second.detail == "Task 't1' already claimed by SYNAPSE-CHANNEL/alice."
+    assert first.grant["epoch"] == second.grant["epoch"]
+    assert hub.state.claims["t1"] == original
+    assert hub.counters.claims_granted == 1
+
+
+async def test_stale_forwarded_claim_retry_reapplies_the_grant(tmp_path: Path) -> None:
+    pin, der = _write_peer_cert(tmp_path)
+    hub = _owning_hub(policy=_serving_policy(pin, der), ownership=_owns())
+    async with running_hub(hub) as (_, uri):
+        first = await _forward(uri, _request())
+        hub.state.claims["t1"].lease_expires_at = 0.0
+        second = await _forward(uri, _request())
+
+    assert first.granted is True
+    assert second.granted is True
+    assert first.grant is not None
+    assert second.grant is not None
+    assert second.grant["epoch"] != first.grant["epoch"]
+    assert hub.counters.claims_granted == 2
+
+
 async def test_refuses_a_second_claim_on_a_held_task(tmp_path: Path) -> None:
     pin, der = _write_peer_cert(tmp_path)
     hub = _owning_hub(policy=_serving_policy(pin, der), ownership=_owns())

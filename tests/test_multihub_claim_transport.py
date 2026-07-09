@@ -19,7 +19,11 @@ from websockets.exceptions import ConnectionClosed
 
 from hub_e2e_helpers import running_hub
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.multihub_claim_transport import ClaimForwardError, forward_claim
+from synapse_channel.core.multihub_claim_transport import (
+    ClaimForwardError,
+    ClaimForwardTimeoutError,
+    forward_claim,
+)
 from synapse_channel.core.multihub_claim_wire import (
     ClaimForwardRequest,
     ClaimForwardResult,
@@ -227,7 +231,7 @@ async def test_forward_raises_on_a_dropped_connection() -> None:
 
 
 async def test_forward_times_out_when_no_result_arrives() -> None:
-    with pytest.raises(ClaimForwardError, match="failed"):
+    with pytest.raises(ClaimForwardTimeoutError, match="timed out"):
         await forward_claim(
             _request(),
             uri="ws://owner/",

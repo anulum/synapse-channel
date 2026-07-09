@@ -61,6 +61,10 @@ class ClaimForwardError(RuntimeError):
     """
 
 
+class ClaimForwardTimeoutError(ClaimForwardError):
+    """Raised when the owning hub does not answer a forwarded claim before timeout."""
+
+
 @dataclass(frozen=True, slots=True)
 class ClaimForwardPeer:
     """How a non-owning hub reaches an owning hub to forward a claim to it.
@@ -180,13 +184,10 @@ async def forward_claim(
         return decode_claim_forward_result(frame)
     except ClaimForwardError:
         raise
-    except (
-        OSError,
-        ConnectionClosed,
-        asyncio.TimeoutError,
-        ClaimWireError,
-        json.JSONDecodeError,
-    ) as exc:
+    except asyncio.TimeoutError as exc:
+        msg = f"forwarding a claim to {uri!r} timed out after {timeout:g}s"
+        raise ClaimForwardTimeoutError(msg) from exc
+    except (OSError, ConnectionClosed, ClaimWireError, json.JSONDecodeError) as exc:
         msg = f"forwarding a claim to {uri!r} failed: {exc}"
         raise ClaimForwardError(msg) from exc
 

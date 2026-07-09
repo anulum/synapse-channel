@@ -14,6 +14,7 @@ from typing import Any, cast
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from synapse_channel.core.acl import CLAIM, AclPolicy, AclRule
+from synapse_channel.core.hub_counters import HubCounters
 from synapse_channel.core.hub_frame_gates import HubFrameGates
 from synapse_channel.core.message_auth import (
     EventSignatureKey,
@@ -27,6 +28,7 @@ from synapse_channel.core.multihub_claim_transport import (
     ClaimForwarder,
     ClaimForwardError,
     ClaimForwardPeer,
+    ClaimForwardTimeoutError,
 )
 from synapse_channel.core.multihub_claim_wire import ClaimForwardResult
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
@@ -85,6 +87,7 @@ def _gates(
     observed_asserting_hubs: Any = None,
     claim_peers: dict[str, ClaimForwardPeer] | None = None,
     claim_forwarder: ClaimForwarder | None = None,
+    counters: HubCounters | None = None,
     recorder: _Recorder | None = None,
 ) -> tuple[HubFrameGates, _Recorder]:
     rec = recorder or _Recorder()
@@ -99,6 +102,7 @@ def _gates(
         observed_asserting_hubs=observed_asserting_hubs,
         claim_peers=claim_peers,
         claim_forwarder=claim_forwarder or _never_forwards(),
+        counters=counters or HubCounters(),
         hub_id="syn-local",
         send_json=rec.send_json,
         system=_system,
@@ -397,9 +401,11 @@ async def test_forward_remote_claim_relays_a_grant() -> None:
         grant={"task_id": "T1", "lease_expires_at": 9.0},
     )
     forwarder = _FakeForwarder(result=grant)
+    counters = HubCounters()
     gates, rec = _gates(
         claim_peers={"syn-remote": ClaimForwardPeer(uri="ws://remote/", token="tok")},
         claim_forwarder=cast(ClaimForwarder, forwarder),
+        counters=counters,
     )
 
     result = await gates.forward_remote_claim("P/a", "P", "T1", {}, "syn-remote", _WS)
@@ -408,6 +414,8 @@ async def test_forward_remote_claim_relays_a_grant() -> None:
     frame = rec.sent[0][1]
     assert frame["type"] == MessageType.CLAIM_GRANTED
     assert frame["task_id"] == "T1"
+    assert counters.forwarded_claims == 1
+    assert counters.forwarded_claims_granted == 1
 
 
 async def test_forward_remote_claim_relays_a_denial() -> None:
@@ -415,15 +423,19 @@ async def test_forward_remote_claim_relays_a_denial() -> None:
         granted=False, task_id="T1", namespace="P", owner_hub_id="syn-remote"
     )
     forwarder = _FakeForwarder(result=denied)
+    counters = HubCounters()
     gates, rec = _gates(
         claim_peers={"syn-remote": ClaimForwardPeer(uri="ws://remote/")},
         claim_forwarder=cast(ClaimForwarder, forwarder),
+        counters=counters,
     )
 
     result = await gates.forward_remote_claim("P/a", "P", "T1", {}, "syn-remote", _WS)
 
     assert result is True
     assert rec.sent[0][1]["type"] == MessageType.CLAIM_DENIED
+    assert counters.forwarded_claims == 1
+    assert counters.forwarded_claims_denied == 1
 
 
 async def test_forward_remote_claim_treats_a_grantless_grant_as_a_denial() -> None:
@@ -443,10 +455,34 @@ async def test_forward_remote_claim_treats_a_grantless_grant_as_a_denial() -> No
 
 async def test_forward_remote_claim_returns_false_on_a_forward_error() -> None:
     forwarder = _FakeForwarder(error=ClaimForwardError("owner unreachable"))
+    counters = HubCounters()
     gates, rec = _gates(
         claim_peers={"syn-remote": ClaimForwardPeer(uri="ws://remote/")},
         claim_forwarder=cast(ClaimForwarder, forwarder),
+        counters=counters,
     )
 
     assert await gates.forward_remote_claim("P/a", "P", "T1", {}, "syn-remote", _WS) is False
     assert rec.sent == []
+    assert counters.forwarded_claims == 1
+    assert counters.forwarded_claim_timeouts == 0
+
+
+async def test_forward_remote_claim_reports_timeout_and_refuses_in_place() -> None:
+    forwarder = _FakeForwarder(error=ClaimForwardTimeoutError("owner timed out"))
+    counters = HubCounters()
+    gates, rec = _gates(
+        claim_peers={"syn-remote": ClaimForwardPeer(uri="ws://remote/")},
+        claim_forwarder=cast(ClaimForwarder, forwarder),
+        counters=counters,
+    )
+
+    handled = await gates.forward_remote_claim("P/a", "P", "T1", {}, "syn-remote", _WS)
+
+    assert handled is True
+    frame = rec.sent[0][1]
+    assert frame["type"] == MessageType.CLAIM_DENIED
+    assert frame["forward_error"] == "timeout"
+    assert "did not answer" in frame["payload"]
+    assert counters.forwarded_claims == 1
+    assert counters.forwarded_claim_timeouts == 1

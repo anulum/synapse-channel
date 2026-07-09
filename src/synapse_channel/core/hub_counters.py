@@ -10,9 +10,9 @@
 The live gauges (:func:`~synapse_channel.core.metrics.collect_hub_metrics`)
 answer *how things are*; these counters answer *what the hub has decided
 since start* — claims granted and denied, releases, directed versus broadcast
-chat, authentication failures, rate-limit rejections, federation denials, and
-waiter takeovers with their quarantines. Each increment is a single integer
-addition at the decision site, so the live message path pays nothing
+chat, authentication failures, rate-limit rejections, federation denials,
+forwarded claims, and waiter takeovers with their quarantines. Each increment
+is a single integer addition at the decision site, so the live message path pays nothing
 measurable and a scrape reads plain attributes with no I/O.
 
 Honest scope: counters reset with the process (Prometheus expects that of a
@@ -51,6 +51,14 @@ class HubCounters:
     federation_denied : int
         Frames refused by the federation gate (peered key without a
         resolvable single peer, scope mismatch, or unverified signature).
+    forwarded_claims : int
+        Claim requests actually forwarded to an owning peer hub.
+    forwarded_claims_granted : int
+        Forwarded claim requests answered with a valid owner grant.
+    forwarded_claims_denied : int
+        Forwarded claim requests answered with an owner denial or malformed grant.
+    forwarded_claim_timeouts : int
+        Forwarded claim requests refused because the owning peer did not answer before timeout.
     takeovers : int
         Waiter takeover requests accepted (an existing binding evicted).
     takeover_quarantines : int
@@ -65,5 +73,9 @@ class HubCounters:
     auth_failures: int = 0
     rate_limited: int = 0
     federation_denied: int = 0
+    forwarded_claims: int = 0
+    forwarded_claims_granted: int = 0
+    forwarded_claims_denied: int = 0
+    forwarded_claim_timeouts: int = 0
     takeovers: int = 0
     takeover_quarantines: int = 0
