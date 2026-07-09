@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.20] - 2026-07-09
+
 ### Added
 - `synapse doctor` now accepts `--federation-path PEER=MODE` for proxy-path
   diagnostics. Direct mTLS/WSS, TLS passthrough, and tailnet paths are reported
