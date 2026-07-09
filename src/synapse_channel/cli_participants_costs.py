@@ -38,7 +38,9 @@ from synapse_channel.participants.session_metric_report import (
 def _cmd_costs(args: argparse.Namespace) -> int:
     """Aggregate session telemetry from an event store and print it."""
     try:
-        report = run_session_metric_report(args.db)
+        report = run_session_metric_report(
+            args.db, key_file=getattr(args, "db_key_file", None)
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -56,5 +58,10 @@ def add_parsers(group: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
         help="Report per-session spend and telemetry from a hub SQLite event store.",
     )
     costs.add_argument("db", help="Path to the hub event store, e.g. ~/synapse/hub.db.")
+    costs.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted event store.",
+    )
     costs.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     costs.set_defaults(func=_cmd_costs)

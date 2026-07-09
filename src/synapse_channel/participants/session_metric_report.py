@@ -168,13 +168,19 @@ class SessionMetricReport:
         return {(record.agent, record.session_id): record for record in self.sessions}
 
 
-def run_session_metric_report(db_path: str | Path) -> SessionMetricReport:
+def run_session_metric_report(
+    db_path: str | Path,
+    *,
+    key_file: str | Path | None = None,
+) -> SessionMetricReport:
     """Build a session-telemetry report from a hub SQLite event store.
 
     Parameters
     ----------
     db_path : str or pathlib.Path
         Path to a hub event-store database.
+    key_file : str or pathlib.Path or None, optional
+        Owner-only SQLCipher key for an encrypted event store.
 
     Returns
     -------
@@ -190,7 +196,7 @@ def run_session_metric_report(db_path: str | Path) -> SessionMetricReport:
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path)
+    store = EventStore(path, key_file=key_file)
     try:
         events = tuple(store.read_all())
     finally:

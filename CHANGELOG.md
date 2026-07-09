@@ -14,6 +14,10 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- SQLCipher `--db-key-file` on session metrics and semantic routing store
+  joins: `participant costs`, `route-task --event-store`, dashboard sessions
+  feed (via `--feeds-db-key-file` context), and core
+  `run_session_metric_report` / `read_observed_capability_index`.
 - SQLCipher `--db-key-file` on multi-seat operator store readers: `approval
   status`, `trust-graph`, `ttl-advice`, `cross-repo` (with `--db`), and
   `sandbox run --attest` (core `run_*` / `_attest_run` accept `key_file`).

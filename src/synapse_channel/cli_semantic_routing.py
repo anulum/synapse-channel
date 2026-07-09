@@ -145,6 +145,7 @@ async def _route_task(
     limit: int = 5,
     include_zero: bool = False,
     event_store: str | None = None,
+    event_store_key_file: str | None = None,
     as_json: bool = False,
 ) -> int:
     """Fetch live snapshots and render advisory route recommendations.
@@ -168,6 +169,8 @@ async def _route_task(
     event_store : str or None, optional
         Optional hub event-store path used to add observed release-receipt
         evidence to the advisory ranking.
+    event_store_key_file : str or None, optional
+        Owner-only SQLCipher key when ``event_store`` is encrypted.
     as_json : bool, optional
         Print JSON instead of compact text.
 
@@ -195,7 +198,9 @@ async def _route_task(
     observations = None
     if event_store is not None:
         try:
-            observations = read_observed_capability_index(event_store)
+            observations = read_observed_capability_index(
+                event_store, key_file=event_store_key_file
+            )
         except ValueError as exc:
             print(f"[{name}] {exc}")
             return 1
@@ -226,6 +231,7 @@ def _cmd_route_task(args: argparse.Namespace) -> int:
             limit=args.limit,
             include_zero=args.include_zero,
             event_store=args.event_store,
+            event_store_key_file=getattr(args, "db_key_file", None),
             as_json=args.json,
         )
     )
@@ -256,6 +262,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--event-store",
         default=None,
         help="Optional hub event-store DB used for observed capability evidence.",
+    )
+    route.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key when --event-store is encrypted.",
     )
     route.add_argument("--json", action="store_true", help="Print JSON instead of text.")
     route.add_argument(

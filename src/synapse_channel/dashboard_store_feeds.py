@@ -558,7 +558,9 @@ def build_sessions_feed(db_path: str | Path) -> dict[str, object]:
     ValueError
         If the event store does not exist.
     """
-    return session_metric_report_to_json(run_session_metric_report(db_path))
+    return session_metric_report_to_json(
+        run_session_metric_report(db_path, key_file=_event_store_key_file.get())
+    )
 
 
 def build_health_anomalies_feed(
