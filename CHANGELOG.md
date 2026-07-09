@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+- Dashboard front door is the Studio command centre: `GET /` and
+  `/studio/command` serve the same hub-independent shell; the pre-Studio hub
+  HTML moves to `/classic`. CLI startup prints Studio URLs first. Quick start
+  gains a multi-seat golden path ending in Studio.
+
 ### Added
 - ACL permission verbs `mailbox` and `role-claim`: a policy can grant mailbox
   backlog replay for a non-self/non-`-rx` monitor (target kind `agent`) and

@@ -155,7 +155,8 @@ def test_cmd_dashboard_serves_until_interrupted_and_closes(
     server = _FakeDashboardServer(token=None, generated=False)
     assert _run_dispatcher(monkeypatch, server) == 0
     out = capsys.readouterr().out
-    assert "dashboard: http://127.0.0.1:8765/" in out
+    assert "studio (command centre): http://127.0.0.1:8765/" in out
+    assert "classic hub HTML: http://127.0.0.1:8765/classic" in out
     assert "snapshot JSON: http://127.0.0.1:8765/snapshot.json" in out
     assert "dashboard auth" not in out  # no token configured, nothing to announce
     assert server.closed

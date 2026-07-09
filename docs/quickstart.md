@@ -81,6 +81,48 @@ Bring up a hub plus one or two local model workers in one command:
 synapse team
 ```
 
+## Multi-seat golden path (≈5 minutes)
+
+Use this when two or more coding agents share one machine. It ends in the
+**Studio command centre** — the operator front door for who is live, what is
+claimed, and what is at risk.
+
+```bash
+# 1. Install + doctor
+python -m pip install 'synapse-channel>=0.98.21'
+synapse doctor
+
+# 2. Durable hub (open loopback; add --team-secure when you have trust + role files)
+mkdir -p ~/synapse
+echo "dev-token-$(openssl rand -hex 8)" > ~/synapse/token
+chmod 600 ~/synapse/token
+synapse hub --port 8876 --db ~/synapse/hub.db --token-file ~/synapse/token &
+
+# Optional multi-seat trust (identity binding + role grants + private directed):
+# synapse identity keygen --subject myproj/alice --out-key alice.pem --enroll ~/synapse/trust.json
+# synapse role grant myproj/coordinator myproj/alice --store ~/synapse/roles.json
+# synapse hub --db ~/synapse/hub.db --token-file ~/synapse/token \
+#   --team-secure --identity-trust ~/synapse/trust.json --role-grants ~/synapse/roles.json
+
+# 3. Arm a wake waiter (directed-only) in each agent terminal
+export SYNAPSE_TOKEN=$(cat ~/synapse/token)
+syn-wait --directed-only   # background; re-arm after each wake
+
+# 4. Claim work so agents never collide
+synapse git-init --name myproj/alice
+# …or synapse claim / lock for file scope in your workflow
+
+# 5. Open Studio (front door is the command centre)
+synapse dashboard --port 8765 --feeds-db ~/synapse/hub.db
+# open http://127.0.0.1:8765/  → Studio command centre
+# classic hub HTML: http://127.0.0.1:8765/classic
+```
+
+Success looks like: `synapse who` shows agents and waiters; Studio shows a live
+verdict and claim segments; a second agent cannot claim the same file scope.
+
+See [team-secure mode](team-secure.md) and [Studio](studio.md).
+
 ## Or run the pieces individually
 
 ```bash

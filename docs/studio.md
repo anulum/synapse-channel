@@ -45,7 +45,9 @@ visual reference the live command centre is assembled from.
 
 ```bash
 synapse dashboard --port 8765
-# then open http://127.0.0.1:8765/studio
+# front door (command centre): http://127.0.0.1:8765/
+# design reference:           http://127.0.0.1:8765/studio
+# classic hub HTML:           http://127.0.0.1:8765/classic
 ```
 
 ## The Studio snapshot — `/studio.json`
@@ -97,8 +99,11 @@ than implying a quiet log.
 
 ```bash
 synapse dashboard --port 8765 --feeds-db ./hub.db
-# then open http://127.0.0.1:8765/studio/command
+# open http://127.0.0.1:8765/  (same shell as /studio/command)
 ```
+
+The dashboard CLI prints the Studio URL first. Root `/` and `/studio/command`
+serve the same command-centre shell; `/classic` keeps the pre-Studio hub HTML.
 
 ## What comes next
 

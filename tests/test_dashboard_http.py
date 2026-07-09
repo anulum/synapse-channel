@@ -173,7 +173,10 @@ async def test_dashboard_http_server_serves_real_html_and_json() -> None:
             allow_non_loopback=False,
         )
         try:
-            html_status, html_type, html_body = await asyncio.to_thread(_http_get, server.url("/"))
+            root_status, root_type, root_body = await asyncio.to_thread(_http_get, server.url("/"))
+            classic_status, classic_type, classic_body = await asyncio.to_thread(
+                _http_get, server.url("/classic")
+            )
             json_status, json_type, json_body = await asyncio.to_thread(
                 _http_get, server.url("/snapshot.json")
             )
@@ -181,9 +184,14 @@ async def test_dashboard_http_server_serves_real_html_and_json() -> None:
             server.close()
             await close_agents(handle)
 
-    assert html_status == 200
-    assert html_type == "text/html"
-    assert "Dashboard task" in html_body
+    # Front door is the Studio command centre (hub-independent shell).
+    assert root_status == 200
+    assert root_type == "text/html"
+    assert "Coordination clock" in root_body
+    # Classic hub HTML remains available for the pre-Studio instrument page.
+    assert classic_status == 200
+    assert classic_type == "text/html"
+    assert "Dashboard task" in classic_body
     assert json_status == 200
     assert json_type == "application/json"
     payload = json.loads(json_body)
@@ -409,13 +417,18 @@ async def test_dashboard_http_server_reports_unavailable_hub() -> None:
         allow_non_loopback=False,
     )
     try:
-        status, content_type, body = _http_get(server.url("/"))
+        # Front door (Studio) loads offline; classic HTML still needs a live hub.
+        root_status, root_type, root_body = _http_get(server.url("/"))
+        classic_status, classic_type, classic_body = _http_get(server.url("/classic"))
     finally:
         server.close()
 
-    assert status == 503
-    assert content_type == "text/plain"
-    assert "could not reach hub" in body
+    assert root_status == 200
+    assert root_type == "text/html"
+    assert "Coordination clock" in root_body
+    assert classic_status == 503
+    assert classic_type == "text/plain"
+    assert "could not reach hub" in classic_body
 
 
 async def test_dashboard_http_server_rejects_unknown_paths() -> None:

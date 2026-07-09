@@ -688,16 +688,18 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 content_type="text/html",
             )
             return
-        if path == STUDIO_COMMAND_PATH:
-            # The command-centre shell is hub-independent: it serves without reaching the
-            # hub and fetches the live /studio.json projection from the browser, so the
-            # page loads (and shows an offline state) even when the hub is down.
+        if path in {STUDIO_COMMAND_PATH, "/"}:
+            # Studio command centre is the dashboard front door: hub-independent shell
+            # that fills in from /studio.json. Classic hub HTML remains at /classic.
             self._write(
                 HTTPStatus.OK,
                 render_studio_command_html(poll_seconds=self.refresh_seconds).encode("utf-8"),
                 content_type="text/html",
             )
             return
+        if path == "/classic":
+            # Legacy instrument HTML that fetches a live hub snapshot server-side.
+            path = "/index.html"
         if path == RELIABILITY_PATH:
             # Served from the durable event store, not the live hub: the
             # reliability report is an offline audit surface, so it stays
@@ -740,7 +742,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if path.startswith(COCKPIT_DIST_PREFIX) or path == COCKPIT_DIST_PREFIX.rstrip("/"):
             self._serve_cockpit_dist(path)
             return
-        if path not in {"/", "/index.html", "/snapshot.json", STUDIO_SNAPSHOT_PATH}:
+        if path not in {"/index.html", "/classic", "/snapshot.json", STUDIO_SNAPSHOT_PATH}:
             self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
             return
         try:
@@ -775,6 +777,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 content_type="application/json",
             )
             return
+        # /classic and /index.html — server-side hub snapshot HTML (pre-Studio cockpit).
         html_body = render_dashboard_html(
             snapshot,
             refresh_seconds=self.refresh_seconds,

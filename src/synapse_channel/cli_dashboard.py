@@ -45,8 +45,12 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc))
         return 2
-    print(f"dashboard: {server.url('/')}")
+    print(f"studio (command centre): {server.url('/')}")
+    print("studio command: " + server.url("/studio/command"))
+    print("studio design reference: " + server.url("/studio"))
+    print("classic hub HTML: " + server.url("/classic"))
     print("snapshot JSON: " + server.url("/snapshot.json"))
+    print("studio JSON: " + server.url("/studio.json"))
     if args.operator:
         print("operator write: POST " + server.url("/message"))
         print("operator task: POST " + server.url("/task"))
