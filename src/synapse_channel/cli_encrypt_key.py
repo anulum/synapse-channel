@@ -219,11 +219,13 @@ def _cmd_generate_wrapped_cloud_hsm(args: argparse.Namespace) -> int:
         PROVIDER_AWS_KMS,
         PROVIDER_LOCAL_AES_KW,
         AwsKmsCloudHsmProvider,
+        CloudHsmProvider,
         LocalAesKwCloudHsmProvider,
         generate_wrapped_key_file_cloud_hsm,
     )
 
     provider_name = args.provider
+    provider: CloudHsmProvider
     try:
         if provider_name == PROVIDER_LOCAL_AES_KW:
             if not args.master_key_file:

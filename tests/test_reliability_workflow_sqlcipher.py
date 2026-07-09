@@ -81,9 +81,7 @@ def test_reliability_reads_encrypted_store(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     db, key = _encrypted_store(tmp_path)
-    code = cli.main(
-        ["reliability", str(db), "--db-key-file", str(key), "--json"]
-    )
+    code = cli.main(["reliability", str(db), "--db-key-file", str(key), "--json"])
     assert code == 0
     out = capsys.readouterr().out
     assert out.strip()
@@ -103,9 +101,7 @@ def test_reliability_wrong_key_fails_closed(
 ) -> None:
     db, _key = _encrypted_store(tmp_path)
     wrong = generate_key_file(tmp_path / "wrong.key")
-    code = cli.main(
-        ["reliability", str(db), "--db-key-file", str(wrong), "--json"]
-    )
+    code = cli.main(["reliability", str(db), "--db-key-file", str(wrong), "--json"])
     _assert_fail_closed(code, capsys.readouterr().err)
 
 

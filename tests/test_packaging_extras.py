@@ -30,7 +30,16 @@ import pytest
 _PYPROJECT = Path(__file__).resolve().parent.parent / "pyproject.toml"
 
 #: Extras that carry a runtime feature library, and the module(s) that consume each.
-_FEATURE_EXTRAS = ("wasm", "otel", "mcp", "encryption", "sqlcipher", "pkcs11", "tpm2")
+_FEATURE_EXTRAS = (
+    "wasm",
+    "otel",
+    "mcp",
+    "encryption",
+    "sqlcipher",
+    "pkcs11",
+    "tpm2",
+    "cloud-hsm",
+)
 
 #: One import per optional dependency proving the feature module loads without the
 #: dependency being present at import time (it is loaded lazily on use).
@@ -42,6 +51,7 @@ _FEATURE_MODULES = (
     "synapse_channel.core.persistence_sqlcipher",
     "synapse_channel.core.at_rest_pkcs11",
     "synapse_channel.core.at_rest_tpm2",
+    "synapse_channel.core.at_rest_cloud_hsm",
     "synapse_channel.core.receipt_signing",
     "synapse_channel.core.wasm_sandbox",
     "synapse_channel.otel_export",

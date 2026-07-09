@@ -131,11 +131,16 @@ def collect_requirements(
 
 def installed_versions() -> Mapping[str, str]:
     """Return installed distribution versions for the active interpreter."""
-    return {
-        _normalise_name(distribution.metadata["Name"]): distribution.version
-        for distribution in metadata.distributions()
-        if distribution.metadata.get("Name")
-    }
+    versions: dict[str, str] = {}
+    for distribution in metadata.distributions():
+        name = distribution.metadata.get("Name")
+        if not name:
+            continue
+        normalised = _normalise_name(name)
+        previous = versions.get(normalised)
+        if previous is None or _version_key(previous) < _version_key(distribution.version):
+            versions[normalised] = distribution.version
+    return versions
 
 
 def scan_requirements(

@@ -230,9 +230,7 @@ def recover_data_key(shares: Sequence[EscrowShare]) -> bytes:
     if any(len(s.payload) != KEY_BYTES for s in shares):
         raise ValueError(f"each escrow payload must be {KEY_BYTES} bytes")
     if len(shares) < first.threshold:
-        raise ValueError(
-            f"need at least {first.threshold} shares to recover, got {len(shares)}"
-        )
+        raise ValueError(f"need at least {first.threshold} shares to recover, got {len(shares)}")
     by_index: dict[int, EscrowShare] = {}
     for share in shares:
         if share.index in by_index:

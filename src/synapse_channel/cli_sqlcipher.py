@@ -77,13 +77,8 @@ def _cmd_migrate(args: argparse.Namespace) -> int:
     ) as exc:
         print(f"synapse sqlcipher migrate: {exc}", file=sys.stderr)
         return 1
-    print(
-        f"sqlcipher migrated {result['rows']} event(s): "
-        f"{args.source} -> {args.destination}"
-    )
-    print(
-        f"start the hub with: synapse hub --db {args.destination} --db-key-file {args.key}"
-    )
+    print(f"sqlcipher migrated {result['rows']} event(s): {args.source} -> {args.destination}")
+    print(f"start the hub with: synapse hub --db {args.destination} --db-key-file {args.key}")
     return 0
 
 

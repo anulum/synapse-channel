@@ -270,9 +270,7 @@ def _verify_tpm2_quote(policy: AttestationPolicy, evidence: AttestationEvidence)
     )
 
 
-def _match_pcr_policy(
-    expected: Mapping[int, bytes], measured: Mapping[int, bytes]
-) -> None:
+def _match_pcr_policy(expected: Mapping[int, bytes], measured: Mapping[int, bytes]) -> None:
     """Require every expected PCR digest to match the measured map."""
     for idx, digest in expected.items():
         if idx not in measured:

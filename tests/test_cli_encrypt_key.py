@@ -784,9 +784,7 @@ def test_rekey_sqlcipher_cli_rotates_real_store(
     enc.close()
 
 
-def test_cloud_hsm_local_cli_round_trip(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cloud_hsm_local_cli_round_trip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     from synapse_channel.core.at_rest import generate_key_file
     from synapse_channel.core.at_rest_cloud_hsm import cipher_from_wrapped_key_file_cloud_hsm
 
@@ -825,9 +823,7 @@ def test_cloud_hsm_cli_requires_master_key(
     assert "master-key-file is required" in capsys.readouterr().out
 
 
-def test_escrow_split_and_recover_cli(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_escrow_split_and_recover_cli(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     from synapse_channel.core.at_rest import generate_key_file, load_key_file
 
     key = generate_key_file(tmp_path / "store.key")

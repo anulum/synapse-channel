@@ -8,7 +8,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -195,7 +197,7 @@ def _stub_bridge_for_route_task() -> SynapseHubBridge:
         "description": "Improve deterministic route fallback.",
         "status": "open",
     }
-    replies = [
+    replies: list[dict[str, Any]] = [
         {
             "type": MessageType.BOARD_SNAPSHOT,
             "board": {"tasks": [task]},
@@ -218,13 +220,16 @@ def _stub_bridge_for_route_task() -> SynapseHubBridge:
     bridge.agent = _Agent()  # type: ignore[assignment]
     idx = {"i": 0}
 
-    async def _await_reply(predicate, request) -> dict[str, object] | None:  # noqa: ANN001
+    async def _await_reply(
+        predicate: Callable[[dict[str, Any]], bool],
+        request: Callable[[], Awaitable[None]],
+    ) -> dict[str, Any] | None:
         await request()
         item = replies[idx["i"]]
         idx["i"] += 1
         return item if predicate(item) else None
 
-    bridge._await_reply = _await_reply  # type: ignore[method-assign]
+    cast(Any, bridge)._await_reply = _await_reply
     return bridge
 
 
@@ -252,9 +257,7 @@ async def test_mcp_route_task_observation_store_wrong_key_fails_closed(
     db, _key = _encrypted_claim_store(tmp_path)
     wrong = generate_key_file(tmp_path / "wrong-route.key")
     bridge = _stub_bridge_for_route_task()
-    out = await bridge.route_task(
-        "T1", event_store=str(db), event_store_key_file=str(wrong)
-    )
+    out = await bridge.route_task("T1", event_store=str(db), event_store_key_file=str(wrong))
     text = out.lower()
     assert "candidates" not in text or any(
         token in text
@@ -270,9 +273,7 @@ async def test_mcp_route_task_observation_store_wrong_key_fails_closed(
 async def test_mcp_route_task_observation_store_with_key_succeeds(tmp_path: Path) -> None:
     db, key = _encrypted_claim_store(tmp_path)
     bridge = _stub_bridge_for_route_task()
-    out = await bridge.route_task(
-        "T1", event_store=str(db), event_store_key_file=str(key)
-    )
+    out = await bridge.route_task("T1", event_store=str(db), event_store_key_file=str(key))
     text = out.lower()
     assert "file is not a database" not in text
     # Recommendation JSON on success.
