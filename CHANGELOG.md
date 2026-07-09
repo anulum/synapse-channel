@@ -13,10 +13,20 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse sqlcipher rekey` / `synapse sqlcipher migrate` — top-level SQLCipher
+  maintenance (``PRAGMA rekey`` page rotation and plaintext→encrypted copy);
+  aliases the existing encrypt-key sqlcipher ops for operator discoverability.
+- Studio command centre **operator actions** panel polls
+  `/operator-actions.json` (governed relay history); dashboard startup prints
+  the operator-actions and sessions feed URLs when `--feeds-db` is set.
+
 ### Documentation
 - README documents SQLCipher as a first-class at-rest feature: install extra,
   hub `--db-key-file`, migrate/rekey, analysis/doctor readers, complementary
   whole-file AES-GCM envelopes, and honest limits (replaces “planned” wording).
+  Scrypt cost flags (`--scrypt-n`/`--scrypt-r`/`--scrypt-p`) called out for
+  passphrase key generation.
 
 ### Added
 - SQLCipher `--db-key-file` on `reliability` and `workflow contention`

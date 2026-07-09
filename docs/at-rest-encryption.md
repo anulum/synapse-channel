@@ -65,14 +65,17 @@ synapse encrypt-key migrate-sqlcipher \
   --destination ~/synapse/hub.db
 ```
 
-Rotate an existing encrypted store (hub stopped):
+Rotate an existing encrypted store (hub stopped) using SQLCipher
+``PRAGMA rekey``:
 
 ```bash
 synapse encrypt-key generate ~/synapse/hub.key.new
-synapse encrypt-key rekey-sqlcipher \
+# Preferred top-level form:
+synapse sqlcipher rekey \
   --db ~/synapse/hub.db \
   --old-key ~/synapse/hub.key \
   --new-key ~/synapse/hub.key.new
+# Equivalent legacy form: synapse encrypt-key rekey-sqlcipher ...
 mv ~/synapse/hub.key.new ~/synapse/hub.key
 synapse hub --db ~/synapse/hub.db --db-key-file ~/synapse/hub.key
 ```

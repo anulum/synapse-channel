@@ -75,6 +75,7 @@ CLI_TAXONOMY: dict[str, str] = {
     # bridges to other ecosystems and tools
     "a2a-card": ADAPTER,
     "a2a-conformance": ADAPTER,
+    "a2a-interop-trace": ADAPTER,
     "a2a-serve": ADAPTER,
     "adapters": ADAPTER,
     "mcp": ADAPTER,
@@ -125,6 +126,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "supervisor": GOVERNANCE,
     "compact": GOVERNANCE,
     "encrypt-key": GOVERNANCE,
+    "sqlcipher": GOVERNANCE,
     # newer or advisory surfaces still settling
     "benchmark": EXPERIMENTAL,
     "memory-recall": EXPERIMENTAL,

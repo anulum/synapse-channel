@@ -61,6 +61,8 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
         print("events tail JSON: " + server.url("/events.json"))
         print("causality JSON: " + server.url("/causality.json"))
         print("receipts JSON: " + server.url("/receipts.json"))
+        print("operator actions JSON: " + server.url("/operator-actions.json"))
+        print("sessions JSON: " + server.url("/sessions.json"))
     if args.federation_store is not None:
         print("federation JSON: " + server.url("/federation.json"))
     if args.cockpit_dist is not None:
@@ -133,8 +135,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help=(
             "Hub event store powering the store-backed feeds: /reliability.json "
             "(audit signals, not scores), /events.json (raw log tail past a "
-            "cursor), /receipts.json (universal receipt projections), and "
-            "/causality.json (one causality query in the CLI's JSON shape). "
+            "cursor), /receipts.json (universal receipt projections), "
+            "/causality.json (one causality query in the CLI's JSON shape), "
+            "/operator-actions.json (governed operator relay history), and "
+            "/sessions.json (opt-in session telemetry). "
             "Read-only; without it each endpoint reports its absence with 404. "
             "--reliability-db is the same flag's original name."
         ),

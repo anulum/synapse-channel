@@ -1596,7 +1596,8 @@ def start_dashboard_server(
         operator write-path is never reachable unauthenticated, even on loopback.
     reliability_db : str, pathlib.Path, or None, optional
         Hub event store powering the store-backed feeds —
-        ``/reliability.json``, ``/events.json``, and ``/causality.json``;
+        ``/reliability.json``, ``/events.json``, ``/causality.json``,
+        ``/receipts.json``, ``/operator-actions.json``, and ``/sessions.json``;
         without it each endpoint reports its absence with 404.
     federation_store : str, pathlib.Path, or None, optional
         Operator federation store powering ``/federation.json``.

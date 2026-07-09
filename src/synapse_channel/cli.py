@@ -163,6 +163,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_agent_tmux:add_parsers", ("agent-tmux",)),
     ("synapse_channel.cli_channels:add_parsers", ("channel",)),
     ("synapse_channel.cli_encrypt_key:add_parsers", ("encrypt-key",)),
+    ("synapse_channel.cli_sqlcipher:add_parsers", ("sqlcipher",)),
     ("synapse_channel.cli_codex_tmux:add_parsers", ("codex-tmux",)),
     ("synapse_channel.cli_shell:add_parsers", ("shell-hook", "install-shell-hook")),
     ("synapse_channel.cli_mcp:add_parsers", ("mcp",)),

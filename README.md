@@ -557,11 +557,20 @@ synapse encrypt-key migrate-sqlcipher \
   --source ~/synapse/hub-plain.db \
   --destination ~/synapse/hub.db
 
-# In-place key rotation (hub stopped):
-synapse encrypt-key rekey-sqlcipher \
+# In-place key rotation via PRAGMA rekey (hub stopped):
+synapse encrypt-key generate ~/synapse/hub.key.new
+synapse sqlcipher rekey \
   --db ~/synapse/hub.db \
   --old-key ~/synapse/hub.key \
   --new-key ~/synapse/hub.key.new
+```
+
+Passphrase-derived keys (optional) tune scrypt cost on generation:
+
+```bash
+synapse encrypt-key generate --from-passphrase \
+  --scrypt-n 65536 --scrypt-r 8 --scrypt-p 1 \
+  ~/synapse/hub.key
 ```
 
 **Operators and analysis CLIs** open the same store with the same key material —

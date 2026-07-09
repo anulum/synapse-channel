@@ -33,6 +33,9 @@ STUDIO_COMMAND_PATH = "/studio/command"
 EVENTS_FEED_PATH = "/events.json"
 """HTTP path for the optional durable event-log tail feed."""
 
+OPERATOR_ACTIONS_FEED_PATH = "/operator-actions.json"
+"""HTTP path for the optional governed operator-action history feed."""
+
 DEFAULT_POLL_SECONDS = 5
 """How often the command centre re-reads the live snapshot."""
 
@@ -123,6 +126,7 @@ _STYLE = """
 _SCRIPT_TEMPLATE = """
 const SNAPSHOT = "__SNAPSHOT__";
 const EVENTS = "__EVENTS__";
+const OPERATOR_ACTIONS = "__OPERATOR_ACTIONS__";
 const POLL_MS = __POLL_MS__;
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const TONE = { green: "ok", amber: "warn", red: "bad", unknown: "warn" };
@@ -130,6 +134,7 @@ const TAU = Math.PI * 2;
 const CX = 180, CY = 180, R = 132;
 let eventCursor = "latest";
 let eventFeedConfigured = true;
+let operatorActionsConfigured = true;
 
 function polar(angle, radius) {
   return [CX + radius * Math.cos(angle - Math.PI / 2), CY + radius * Math.sin(angle - Math.PI / 2)];
@@ -318,6 +323,35 @@ function renderEvents(eventDocument) {
   while (host.childElementCount > 20) host.removeChild(host.lastElementChild);
 }
 
+function renderOperatorActions(documentJson) {
+  const host = document.getElementById("cc-actions-list");
+  if (!host) return;
+  const actions = documentJson.actions || [];
+  host.replaceChildren();
+  if (!actions.length) {
+    const empty = document.createElement("div");
+    empty.className = "cc-empty";
+    empty.textContent = documentJson.present
+      ? "no operator relay actions yet"
+      : "operator-actions feed not configured";
+    host.appendChild(empty);
+    return;
+  }
+  for (const action of actions.slice(-15).reverse()) {
+    const row = document.createElement("div");
+    row.className = "syn-row cc-feed-row";
+    const label = [
+      action.action || "action",
+      action.task_id || "",
+      action.status || "",
+    ].filter(Boolean).join(" · ");
+    row.innerHTML = `<span>#${text(action.seq)}</span>` +
+      `<span>${text(action.direction || "relay")}</span>` +
+      `<span>${text(label)}</span>`;
+    host.appendChild(row);
+  }
+}
+
 async function pollEvents() {
   if (!eventFeedConfigured) return;
   try {
@@ -347,6 +381,31 @@ async function pollEvents() {
   }
 }
 
+async function pollOperatorActions() {
+  if (!operatorActionsConfigured) return;
+  try {
+    const res = await fetch(OPERATOR_ACTIONS + "?limit=15", { cache: "no-store" });
+    if (res.status === 404) {
+      operatorActionsConfigured = false;
+      renderOperatorActions({ present: false, actions: [] });
+      return;
+    }
+    if (!res.ok) throw new Error("operator-actions " + res.status);
+    renderOperatorActions(await res.json());
+  } catch (err) {
+    const host = document.getElementById("cc-actions-list");
+    if (host) {
+      host.replaceChildren();
+      const empty = document.createElement("div");
+      empty.className = "cc-empty";
+      empty.textContent = "operator-actions feed unavailable";
+      host.appendChild(empty);
+    }
+  } finally {
+    if (operatorActionsConfigured) setTimeout(pollOperatorActions, POLL_MS);
+  }
+}
+
 async function poll() {
   try {
     const res = await fetch(SNAPSHOT, { cache: "no-store" });
@@ -364,6 +423,7 @@ async function poll() {
 }
 poll();
 pollEvents();
+pollOperatorActions();
 """
 
 
@@ -372,6 +432,7 @@ def _script(*, snapshot_path: str, poll_seconds: int) -> str:
     return (
         _SCRIPT_TEMPLATE.replace("__SNAPSHOT__", snapshot_path)
         .replace("__EVENTS__", EVENTS_FEED_PATH)
+        .replace("__OPERATOR_ACTIONS__", OPERATOR_ACTIONS_FEED_PATH)
         .replace("__POLL_MS__", str(poll_seconds * 1000))
     )
 
@@ -403,6 +464,7 @@ def render_studio_command_html(*, poll_seconds: int = DEFAULT_POLL_SECONDS) -> s
         <a href="{STUDIO_REFERENCE_PATH}">design</a>
         <a href="#cc-agents-list">fleet</a>
         <a href="#cc-livefeed-list">live feed</a>
+        <a href="#cc-actions-list">operator actions</a>
         <a href="#cc-posture-list">security</a>
         <a href="#cc-peers-list">peers</a>
       </nav>
@@ -470,6 +532,12 @@ def render_studio_command_html(*, poll_seconds: int = DEFAULT_POLL_SECONDS) -> s
         <div class="syn-label">live feed</div>
         <div id="cc-livefeed-list" class="cc-feed" style="margin-top:var(--syn-sp-2)">
           <div class="cc-empty">connecting to event feed</div>
+        </div>
+      </section>
+      <section class="syn-panel">
+        <div class="syn-label">operator actions</div>
+        <div id="cc-actions-list" class="cc-feed" style="margin-top:var(--syn-sp-2)">
+          <div class="cc-empty">connecting to operator-actions feed</div>
         </div>
       </section>
     </div>
