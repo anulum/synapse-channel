@@ -23,7 +23,7 @@ the hub is down, and never invent state the disk cannot prove. Three feeds:
   hub-runtime state that no durable store carries, so the section ships empty
   with its absence stated rather than guessed.
 
-Six further store-derived feeds serve the cockpit's operational panels, all
+Seven further store-derived feeds serve the cockpit's operational panels, all
 measured against the log's own timestamps (never the wall clock) so each is
 deterministic and available with the hub down: **metrics** (event counts by
 kind over trailing windows), **state-at** (coordination state reconstructed by
@@ -33,8 +33,10 @@ attested tree root), **health anomalies** (orphaned, dangling, and stale
 coordination signals the causality graph makes visible — the honest hub-side
 alert surface), **sessions** (the opt-in ``session_metric`` telemetry the fleet
 left in the log, each record indexed by ``seq`` for a cost-to-causality join),
-and **waits** (the pending coordination gates — non-terminal tasks blocked on
-dependencies that have not completed — reconstructed from the plan).
+**waits** (the pending coordination gates — non-terminal tasks blocked on
+dependencies that have not completed — reconstructed from the plan), and
+**operator actions** (the governed cross-hub relay audit trail, normalised for
+review).
 """
 
 from __future__ import annotations
@@ -53,7 +55,7 @@ from synapse_channel.core.causality_health import (
 )
 from synapse_channel.core.federation_store import load_store
 from synapse_channel.core.federation_wire import bundle_fingerprint
-from synapse_channel.core.journal import replay
+from synapse_channel.core.journal import EventKind, replay
 from synapse_channel.core.ledger import TERMINAL_LEDGER_STATUSES
 from synapse_channel.core.merkle import proof_to_json, run_proof
 from synapse_channel.core.multihub_wire import LogSnapshot, encode_log_snapshot
@@ -70,6 +72,9 @@ DEFAULT_EVENTS_LIMIT = 200
 
 MAX_EVENTS_LIMIT = 1000
 """Hard ceiling per tail request — a cockpit polls forward, it never bulk-dumps."""
+
+DEFAULT_OPERATOR_ACTIONS_LIMIT = 50
+"""Operator-action history rows returned when the client names no limit."""
 
 CAUSALITY_FEED_DIRECTIONS = ("causes", "effects")
 """Query directions the feed answers; the CLI's other modes stay CLI-only."""
@@ -232,6 +237,108 @@ def build_waits_feed(db_path: str | Path) -> dict[str, object]:
             "are omitted"
         ),
     }
+
+
+def build_operator_actions_feed(
+    db_path: str | Path, *, since: int = 0, limit: int = DEFAULT_OPERATOR_ACTIONS_LIMIT
+) -> dict[str, object]:
+    """Return recent governed operator relay actions from the durable log.
+
+    The feed is audit-only and store-derived: it reads journalled
+    :data:`~synapse_channel.core.journal.EventKind.OPERATOR_RELAY` events, keeps
+    their real ``seq`` and ``ts`` join anchors, and normalises the provenance
+    fields both inbound and outbound relay events carry. It never infers actions
+    from ordinary release events; a release without cross-hub provenance is not
+    an operator relay.
+
+    Parameters
+    ----------
+    db_path : str or pathlib.Path
+        Hub event store containing operator relay audit events.
+    since : int, optional
+        Exclusive sequence cursor. Defaults to ``0``.
+    limit : int, optional
+        Maximum action rows to return, clamped to ``1..MAX_EVENTS_LIMIT``.
+
+    Returns
+    -------
+    dict[str, object]
+        ``present``, normalised ``actions``, ``action_count``, ``next_cursor``,
+        ``log_end_seq``, and a note describing the audit-only scope.
+
+    Raises
+    ------
+    ValueError
+        If the event store does not exist.
+    """
+    path = Path(db_path)
+    if not path.exists():
+        msg = f"missing event store: {path}"
+        raise ValueError(msg)
+    bounded_limit = max(1, min(int(limit), MAX_EVENTS_LIMIT))
+    bounded_since = max(0, int(since))
+    store = EventStore(path)
+    try:
+        log_end_seq = store.max_seq()
+        relay_events = [
+            event
+            for event in store.read_since(bounded_since)
+            if event.kind == EventKind.OPERATOR_RELAY
+        ][-bounded_limit:]
+    finally:
+        store.close()
+    actions = [_operator_action_row(event.seq, event.ts, event.payload) for event in relay_events]
+    next_cursor = relay_events[-1].seq if relay_events else bounded_since
+    return {
+        "present": True,
+        "actions": actions,
+        "action_count": len(actions),
+        "next_cursor": next_cursor,
+        "log_end_seq": log_end_seq,
+        "note": (
+            "governed operator actions reconstructed from operator_relay audit events; "
+            "ordinary releases without relay provenance are omitted"
+        ),
+    }
+
+
+def _operator_action_row(seq: int, ts: float, payload: dict[str, object]) -> dict[str, object]:
+    """Return one normalised operator action history row."""
+    applied = bool(payload.get("applied", False))
+    pending = bool(payload.get("pending", False))
+    status = _text(payload, "status")
+    if not status:
+        status = "applied" if applied else "pending" if pending else "refused"
+    return {
+        "seq": seq,
+        "ts": ts,
+        "action": _text(payload, "action"),
+        "direction": _text(payload, "direction"),
+        "status": status,
+        "applied": applied,
+        "pending": pending or status == "pending",
+        "namespace": _text(payload, "namespace"),
+        "task_id": _text(payload, "task_id"),
+        "operator": _text(payload, "operator"),
+        "origin_hub_id": _text(payload, "origin_hub_id"),
+        "owner_hub_id": _text(payload, "owner_hub_id"),
+        "peer": _text(payload, "peer"),
+        "agent": _text(payload, "agent"),
+        "approver": _text(payload, "approver"),
+        "requester": _text(payload, "requester"),
+        "previous_owner": _text(payload, "previous_owner"),
+        "reason": _text(payload, "reason"),
+        "break_glass": bool(payload.get("break_glass", False)),
+        "detail": _text(payload, "detail"),
+    }
+
+
+def _text(payload: dict[str, object], key: str) -> str:
+    """Return ``payload[key]`` as text when present, else an empty string."""
+    value = payload.get(key, "")
+    if value is None:
+        return ""
+    return value if isinstance(value, str) else str(value)
 
 
 def build_metrics_feed(db_path: str | Path) -> dict[str, object]:

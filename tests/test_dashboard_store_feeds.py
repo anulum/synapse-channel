@@ -25,6 +25,7 @@ from synapse_channel.core.journal import (
     EventKind,
     record_claim,
     record_ledger_task,
+    record_operator_relay,
     record_release,
 )
 from synapse_channel.core.ledger import LedgerTask
@@ -33,6 +34,7 @@ from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.state import TaskClaim
 from synapse_channel.dashboard_store_feeds import (
     DEFAULT_EVENTS_LIMIT,
+    DEFAULT_OPERATOR_ACTIONS_LIMIT,
     MAX_EVENTS_LIMIT,
     build_causality_feed,
     build_events_tail,
@@ -40,6 +42,7 @@ from synapse_channel.dashboard_store_feeds import (
     build_health_anomalies_feed,
     build_merkle_proof_feed,
     build_metrics_feed,
+    build_operator_actions_feed,
     build_sessions_feed,
     build_state_at_feed,
     build_waits_feed,
@@ -803,3 +806,126 @@ class TestWaitsFeed:
         _seed_task(store, task_id="G", depends_on=("DEP",))
         store.close()
         assert build_waits_feed(db) == build_waits_feed(db)
+
+
+class TestOperatorActionsFeed:
+    def test_lists_journalled_operator_relay_actions(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        record_release(store, "local-only")
+        record_operator_relay(
+            store,
+            {
+                "action": "release",
+                "namespace": "TEAM",
+                "task_id": "T1",
+                "direction": "in",
+                "status": "applied",
+                "peer": "peer-hub",
+                "operator": "ops",
+                "approver": "second",
+                "origin_hub_id": "origin",
+                "reason": "wedged",
+                "break_glass": True,
+                "previous_owner": "worker",
+                "applied": True,
+                "detail": "released",
+            },
+        )
+        store.close()
+
+        document = build_operator_actions_feed(db)
+
+        assert document["present"] is True
+        assert document["action_count"] == 1
+        assert document["log_end_seq"] == 2
+        actions = document["actions"]
+        assert isinstance(actions, list)
+        action = actions[0]
+        assert action["seq"] == 2
+        assert action["action"] == "release"
+        assert action["direction"] == "in"
+        assert action["status"] == "applied"
+        assert action["peer"] == "peer-hub"
+        assert action["operator"] == "ops"
+        assert action["approver"] == "second"
+        assert action["previous_owner"] == "worker"
+        assert action["reason"] == "wedged"
+        assert action["break_glass"] is True
+        assert "ordinary releases" in str(document["note"])
+
+    def test_reports_outbound_and_pending_actions_with_cursor_and_limit(
+        self, tmp_path: Path
+    ) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        record_operator_relay(
+            store,
+            {
+                "action": "release",
+                "namespace": "TEAM",
+                "task_id": "T1",
+                "direction": "out",
+                "agent": "local-operator",
+                "operator": "ops",
+                "origin_hub_id": "edge",
+                "owner_hub_id": "owner",
+                "applied": False,
+                "detail": "scope_not_granted",
+            },
+        )
+        record_operator_relay(
+            store,
+            {
+                "action": "release",
+                "namespace": "TEAM",
+                "task_id": "T2",
+                "direction": "in",
+                "status": "pending",
+                "operator": "alice",
+                "requester": "alice",
+                "origin_hub_id": "edge",
+                "applied": False,
+                "detail": "awaiting approval",
+            },
+        )
+        store.close()
+
+        document = build_operator_actions_feed(db, since=1, limit=1)
+
+        actions = document["actions"]
+        assert isinstance(actions, list)
+        assert len(actions) == 1
+        assert actions[0]["task_id"] == "T2"
+        assert actions[0]["status"] == "pending"
+        assert actions[0]["pending"] is True
+        assert actions[0]["requester"] == "alice"
+        assert document["next_cursor"] == 2
+
+    def test_empty_log_reports_no_actions(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        EventStore(db).close()
+
+        document = build_operator_actions_feed(db)
+
+        assert document["actions"] == []
+        assert document["action_count"] == 0
+        assert document["next_cursor"] == 0
+        assert DEFAULT_OPERATOR_ACTIONS_LIMIT == 50
+
+    def test_missing_store_is_refused(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="missing event store"):
+            build_operator_actions_feed(tmp_path / "absent.db")
+
+    def test_document_is_deterministic_over_a_given_log(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        record_operator_relay(store, {"action": "release", "task_id": "T", "reason": None})
+        store.close()
+
+        document = build_operator_actions_feed(db)
+
+        assert document == build_operator_actions_feed(db)
+        actions = document["actions"]
+        assert isinstance(actions, list)
+        assert actions[0]["reason"] == ""

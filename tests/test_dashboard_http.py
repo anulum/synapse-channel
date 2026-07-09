@@ -24,6 +24,8 @@ from dashboard_helpers import _http_get
 from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.hub_config import HubConfig, HubLimits, config_fingerprint
+from synapse_channel.core.journal import record_operator_relay
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.dashboard import (
     _DashboardHandler,
     fetch_dashboard_snapshot,
@@ -226,6 +228,99 @@ async def test_dashboard_http_server_serves_the_studio_reference_and_css() -> No
     assert "Coordination clock" in command_body
     assert "/studio.json" in command_body
     assert 'href="/studio.css"' in command_body  # absolute, so it resolves from the subpath
+
+
+def test_dashboard_http_server_serves_operator_actions_feed(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    store = EventStore(db)
+    record_operator_relay(
+        store,
+        {
+            "action": "release",
+            "namespace": "TEAM",
+            "task_id": "T1",
+            "direction": "out",
+            "agent": "ops-agent",
+            "operator": "ops",
+            "origin_hub_id": "edge",
+            "owner_hub_id": "owner",
+            "reason": "stuck lease",
+            "applied": True,
+            "detail": "released",
+        },
+    )
+    store.close()
+    server = start_dashboard_server(
+        host="127.0.0.1",
+        port=0,
+        uri="ws://127.0.0.1:1",
+        name="SYNAPSE-CHANNEL/dashboard",
+        token=None,
+        ready_timeout=0.01,
+        response_timeout=0.01,
+        refresh_seconds=5,
+        allow_non_loopback=False,
+        reliability_db=db,
+    )
+    try:
+        status, content_type, body = _http_get(server.url("/operator-actions.json?limit=10"))
+    finally:
+        server.close()
+
+    assert status == 200
+    assert content_type == "application/json"
+    payload = json.loads(body)
+    assert payload["action_count"] == 1
+    action = payload["actions"][0]
+    assert action["task_id"] == "T1"
+    assert action["direction"] == "out"
+    assert action["agent"] == "ops-agent"
+
+
+def test_dashboard_http_operator_actions_feed_reports_absence() -> None:
+    server = start_dashboard_server(
+        host="127.0.0.1",
+        port=0,
+        uri="ws://127.0.0.1:1",
+        name="SYNAPSE-CHANNEL/dashboard",
+        token=None,
+        ready_timeout=0.01,
+        response_timeout=0.01,
+        refresh_seconds=5,
+        allow_non_loopback=False,
+    )
+    try:
+        missing_status, _, missing_body = _http_get(server.url("/operator-actions.json"))
+    finally:
+        server.close()
+
+    assert missing_status == 404
+    assert "operator-actions feed not configured" in missing_body
+
+
+def test_dashboard_http_operator_actions_feed_rejects_bad_query(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    EventStore(db).close()
+    server = start_dashboard_server(
+        host="127.0.0.1",
+        port=0,
+        uri="ws://127.0.0.1:1",
+        name="SYNAPSE-CHANNEL/dashboard",
+        token=None,
+        ready_timeout=0.01,
+        response_timeout=0.01,
+        refresh_seconds=5,
+        allow_non_loopback=False,
+        reliability_db=db,
+    )
+    try:
+        status, content_type, body = _http_get(server.url("/operator-actions.json?since=nope"))
+    finally:
+        server.close()
+
+    assert status == 400
+    assert content_type == "text/plain"
+    assert "since and limit must be integers" in body
 
 
 async def test_dashboard_http_server_requires_dashboard_bearer_token() -> None:

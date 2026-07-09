@@ -62,6 +62,7 @@ from synapse_channel.dashboard_store_feeds import (
     build_health_anomalies_feed,
     build_merkle_proof_feed,
     build_metrics_feed,
+    build_operator_actions_feed,
     build_sessions_feed,
     build_state_at_feed,
     build_waits_feed,
@@ -467,6 +468,9 @@ SESSIONS_PATH = "/sessions.json"
 WAITS_PATH = "/waits.json"
 """Read-only endpoint listing pending coordination gates — tasks blocked on deps."""
 
+OPERATOR_ACTIONS_PATH = "/operator-actions.json"
+"""Read-only endpoint serving governed operator-action audit history."""
+
 COCKPIT_DIST_PREFIX = "/cockpit/"
 """URL prefix under which an operator-named cockpit build directory is served."""
 
@@ -661,6 +665,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         if path == WAITS_PATH:
             self._serve_waits()
+            return
+        if path == OPERATOR_ACTIONS_PATH:
+            self._serve_operator_actions(urlsplit(self.path).query)
             return
         if path.startswith(COCKPIT_DIST_PREFIX) or path == COCKPIT_DIST_PREFIX.rstrip("/"):
             self._serve_cockpit_dist(path)
@@ -1137,6 +1144,43 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         try:
             document = build_waits_feed(self.reliability_db)
+        except ValueError as exc:
+            self._write(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                f"{exc}\n".encode(),
+                content_type="text/plain",
+            )
+            return
+        self._write_json(document)
+
+    def _serve_operator_actions(self, query: str) -> None:
+        """Serve governed operator-action history from the durable log.
+
+        The feed is store-derived and audit-only like the rest of the cockpit
+        feeds: 404 without ``--feeds-db``, 503 on an unreadable store, 400 on a
+        malformed cursor or limit, and no inferred actions beyond journalled
+        ``operator_relay`` events.
+        """
+        if self.reliability_db is None:
+            self._write(
+                HTTPStatus.NOT_FOUND,
+                b"operator-actions feed not configured; start the dashboard with --feeds-db\n",
+                content_type="text/plain",
+            )
+            return
+        params = parse_qs(query)
+        try:
+            since = _bounded_query_int(params.get("since", ["0"])[0])
+            limit = _bounded_query_int(params.get("limit", ["50"])[0])
+        except ValueError:
+            self._write(
+                HTTPStatus.BAD_REQUEST,
+                b"since and limit must be integers\n",
+                content_type="text/plain",
+            )
+            return
+        try:
+            document = build_operator_actions_feed(self.reliability_db, since=since, limit=limit)
         except ValueError as exc:
             self._write(
                 HTTPStatus.SERVICE_UNAVAILABLE,

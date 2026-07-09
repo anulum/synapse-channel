@@ -30,6 +30,9 @@ All notable changes to this project are documented here.
 - Multi-hub network pulls now negotiate the peer hub's advertised wire version from the `welcome`
   frame. Version-skewed peers are accepted, logged as operator-visible warnings, and recorded on
   `MultiHubFollower` at the lowest common effective wire version instead of being silently ignored.
+- `synapse dashboard --feeds-db` now serves `/operator-actions.json`, a durable operator-action
+  history feed reconstructed from `operator_relay` audit events with real sequence and timestamp
+  anchors, relay direction, status, reason, break-glass tag, and peer/requester provenance.
 
 ## [0.98.14] - 2026-07-09
 

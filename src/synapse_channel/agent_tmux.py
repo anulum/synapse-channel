@@ -545,7 +545,7 @@ def _wait_process_env() -> dict[str, str]:
 
 def _is_provider_yield_stdout(stdout: str | None) -> bool:
     """Return whether ``stdout`` is the plain-passive yield, not a real wake."""
-    return bool(stdout) and _PROVIDER_YIELD_MARKER in stdout
+    return stdout is not None and _PROVIDER_YIELD_MARKER in stdout
 
 
 def wait_and_wake(

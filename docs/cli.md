@@ -265,7 +265,7 @@ and `/snapshot.json`; when `--allow-non-loopback` exposes the dashboard and no
 token is supplied, Synapse generates and prints a startup token.
 
 With `--feeds-db <hub.db>` (`--reliability-db` is the same flag's original
-name) the dashboard serves seven feeds off the **durable event store** —
+name) the dashboard serves eight feeds off the **durable event store** —
 available when the hub is down, real sequences and timestamps, behind the
 same dashboard bearer token as every other path:
 
@@ -300,6 +300,7 @@ same dashboard bearer token as every other path:
 - `/health-anomalies.json` — the honest hub-side alert surface: the orphaned, dangling, and stale coordination anomalies the causality graph makes visible, in the same shape `synapse causality --health` emits, with an `anomaly_count` for a cockpit alerts badge. Fired alerts stay collector-side off `/metrics`; this is only what the durable log can prove.
 - `/sessions.json` — the opt-in `session_metric` telemetry the fleet left in the log, in the same shape `synapse participants costs` renders: per-session token counts, cost, latency, and error/abstention rates, with `totals` aggregated across sessions. Every record carries the `seq` of the snapshot it was read from, so a cockpit joins a session's cost straight to its causal cone via `/causality.json`; each record's coordination `task_id` (from the note body) is the same join key `synapse participant costs` reports. A log with no session notes reports empty `sessions` and zeroed `totals`, never a fabricated cost.
 - `/waits.json` — the pending coordination gates reconstructed from the plan: each non-terminal task blocked on a dependency that has not reached a terminal status, with `who` is waiting (the task's suggested owner, or whoever declared it), `on_what` dependency ids it is blocked on, and `since` when it was declared, plus a `wait_count`. This is the "what is the fleet stuck behind" panel. Transient socket waiters (a client's `-rx` connection) are not journalled and are omitted; this is only the coordination gates the durable plan can prove.
+- `/operator-actions.json?since=SEQ&limit=N` — the governed operator-action history reconstructed from `operator_relay` audit events: direction, action, namespace, task, operator, origin/owner hubs, peer or local requester, status, reason, break-glass tag, detail, and real `seq`/`ts` join anchors. Ordinary releases without relay provenance are omitted.
 
 Without the flag each endpoint answers 404 naming the remedy; an
 unreadable store answers 503 rather than an empty document pretending the
