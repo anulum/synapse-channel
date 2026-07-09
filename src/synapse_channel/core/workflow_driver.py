@@ -14,10 +14,10 @@ over a compiled workflow and a board status map, so it is fully testable without
 running hub. The driver shell (posting, polling, sending assignments) wraps it.
 
 :func:`derive_state` classifies every compiled task as done, in-flight, ready, or
-blocked from the board's reported statuses (readiness is recomputed from
-dependencies, not trusted from a stale stored status). :func:`plan_assignments`
-matches ready tasks to capable, free agents within an in-flight budget — bounded
-work-handing, never a flood.
+blocked from the board's reported statuses and evidence snapshots (readiness is
+recomputed from dependencies and declared evidence, not trusted from a stale stored
+status). :func:`plan_assignments` matches ready tasks to capable, free agents within
+an in-flight budget — bounded work-handing, never a flood.
 """
 
 from __future__ import annotations
@@ -33,6 +33,9 @@ IN_PROGRESS_STATUS = "in_progress"
 
 DEFAULT_STATUS = "open"
 """Assumed status for a compiled task the board has not reported yet."""
+
+EvidenceSnapshot = Mapping[str, Mapping[str, str]]
+"""Evidence values keyed by compiled task id, then predicate name."""
 
 
 def _edge_satisfied(dep_id: str, required: str, status: Mapping[str, str]) -> str:
@@ -53,6 +56,14 @@ def _edge_satisfied(dep_id: str, required: str, status: Mapping[str, str]) -> st
     return "unreachable" if dep_terminal else "pending"
 
 
+def _evidence_satisfied(task: CompiledTask, evidence: EvidenceSnapshot) -> bool:
+    """Return whether ``evidence`` proves every predicate required by ``task``."""
+    actual = evidence.get(task.task_id, {})
+    return all(
+        actual.get(predicate, "") == expected for predicate, expected in task.evidence_requirements
+    )
+
+
 @dataclass(frozen=True)
 class WorkflowState:
     """A compiled workflow's tasks bucketed by execution phase.
@@ -67,6 +78,9 @@ class WorkflowState:
         Not-started task ids whose dependency edges are all satisfied.
     blocked : tuple[str, ...]
         Not-started task ids still waiting on a dependency that may yet be met.
+    evidence_blocked : tuple[str, ...]
+        Not-started task ids whose dependencies are satisfied but whose declared
+        evidence predicates are missing or mismatched.
     skipped : tuple[str, ...]
         Not-started task ids with a conditional edge that can never be met (the
         dependency reached a terminal status other than the one required) — a branch
@@ -77,12 +91,15 @@ class WorkflowState:
     in_flight: tuple[str, ...]
     ready: tuple[str, ...]
     blocked: tuple[str, ...]
+    evidence_blocked: tuple[str, ...] = ()
     skipped: tuple[str, ...] = ()
 
     @property
     def complete(self) -> bool:
         """Return whether nothing is left to run, route, or retire."""
-        return not (self.in_flight or self.ready or self.blocked or self.skipped)
+        return not (
+            self.in_flight or self.ready or self.blocked or self.evidence_blocked or self.skipped
+        )
 
     def to_dict(self) -> dict[str, list[str]]:
         """Return a JSON-compatible mapping of the phase buckets."""
@@ -91,11 +108,16 @@ class WorkflowState:
             "in_flight": list(self.in_flight),
             "ready": list(self.ready),
             "blocked": list(self.blocked),
+            "evidence_blocked": list(self.evidence_blocked),
             "skipped": list(self.skipped),
         }
 
 
-def derive_state(tasks: Sequence[CompiledTask], status: Mapping[str, str]) -> WorkflowState:
+def derive_state(
+    tasks: Sequence[CompiledTask],
+    status: Mapping[str, str],
+    evidence: EvidenceSnapshot | None = None,
+) -> WorkflowState:
     """Bucket compiled tasks by phase from a board status map.
 
     Parameters
@@ -105,6 +127,10 @@ def derive_state(tasks: Sequence[CompiledTask], status: Mapping[str, str]) -> Wo
     status : Mapping[str, str]
         Board-reported status keyed by task id; unreported tasks are assumed
         :data:`DEFAULT_STATUS`.
+    evidence : EvidenceSnapshot or None, optional
+        Evidence values keyed by task id, then predicate name. A task declaring
+        ``evidence_requirements`` is held in ``evidence_blocked`` until all values
+        match.
 
     Returns
     -------
@@ -112,13 +138,16 @@ def derive_state(tasks: Sequence[CompiledTask], status: Mapping[str, str]) -> Wo
         The tasks bucketed into done, in-flight, ready, blocked, and skipped.
         Readiness is recomputed from the dependency edges, honouring each edge's
         condition: a task is ready only when every edge is satisfied, skipped when an
-        edge can never be met (a conditional branch not taken), and otherwise
+        edge can never be met (a conditional branch not taken), evidence-blocked
+        when dependencies are satisfied but a required proof is absent, and otherwise
         blocked.
     """
+    proof = evidence or {}
     done: list[str] = []
     in_flight: list[str] = []
     ready: list[str] = []
     blocked: list[str] = []
+    evidence_blocked: list[str] = []
     skipped: list[str] = []
     for task in tasks:
         state = status.get(task.task_id, DEFAULT_STATUS)
@@ -134,7 +163,10 @@ def derive_state(tasks: Sequence[CompiledTask], status: Mapping[str, str]) -> Wo
             if "unreachable" in outcomes:
                 skipped.append(task.task_id)
             elif all(outcome == "satisfied" for outcome in outcomes):
-                ready.append(task.task_id)
+                if _evidence_satisfied(task, proof):
+                    ready.append(task.task_id)
+                else:
+                    evidence_blocked.append(task.task_id)
             else:
                 blocked.append(task.task_id)
     return WorkflowState(
@@ -142,6 +174,7 @@ def derive_state(tasks: Sequence[CompiledTask], status: Mapping[str, str]) -> Wo
         in_flight=tuple(in_flight),
         ready=tuple(ready),
         blocked=tuple(blocked),
+        evidence_blocked=tuple(evidence_blocked),
         skipped=tuple(skipped),
     )
 
@@ -180,6 +213,7 @@ def plan_assignments(
     agents: Mapping[str, frozenset[str]],
     *,
     max_in_flight: int,
+    evidence: EvidenceSnapshot | None = None,
 ) -> tuple[Assignment, ...]:
     """Plan which ready tasks to hand to which agents, within the in-flight budget.
 
@@ -193,6 +227,9 @@ def plan_assignments(
         Available agents mapped to the task classes each advertises.
     max_in_flight : int
         Most tasks allowed in progress at once; clamped up to ``0``.
+    evidence : EvidenceSnapshot or None, optional
+        Evidence values used to hold proof-carrying tasks until their declared
+        predicates match.
 
     Returns
     -------
@@ -200,7 +237,7 @@ def plan_assignments(
         Ready tasks paired with a capable, free agent, in dependency order, never
         exceeding the in-flight budget and assigning each agent at most one task.
     """
-    state = derive_state(tasks, status)
+    state = derive_state(tasks, status, evidence=evidence)
     budget = max(0, max_in_flight) - len(state.in_flight)
     by_id = {task.task_id: task for task in tasks}
     ordered_agents = sorted(agents)

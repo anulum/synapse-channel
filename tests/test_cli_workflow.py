@@ -12,7 +12,7 @@ import argparse
 import asyncio
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -21,14 +21,16 @@ from synapse_channel.cli_workflow import (
     _AgentGateway,
     _cmd_run,
     _drive_run,
+    _load_evidence,
     _render_run,
     _snapshot_from_board,
     add_parsers,
 )
+from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
-from synapse_channel.core.workflow import compile_to_tasks, parse_workflow
+from synapse_channel.core.workflow import WorkflowError, compile_to_tasks, parse_workflow
 from synapse_channel.core.workflow_driver import WorkflowState
 from synapse_channel.core.workflow_run import RunResult
 
@@ -37,6 +39,19 @@ _GOOD = {
     "steps": [
         {"id": "build", "title": "Build", "task_class": "ci"},
         {"id": "test", "title": "Test", "depends_on": ["build"]},
+    ],
+}
+
+_PROOF = {
+    "name": "release",
+    "steps": [
+        {"id": "test", "title": "Test"},
+        {
+            "id": "publish",
+            "title": "Publish",
+            "depends_on": ["test"],
+            "requires": {"receipt": "verified", "policy": "pass"},
+        },
     ],
 }
 
@@ -108,6 +123,30 @@ def test_compile_json_output(tmp_path: Path, capsys: pytest.CaptureFixture[str])
     assert payload[1]["depends_on"] == ["release/build"]
 
 
+def test_compile_json_includes_evidence_requirements(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    parser = _parser()
+    args = parser.parse_args(["workflow", "compile", "--json", _write(tmp_path, _PROOF)])
+
+    assert args.func(args) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload[1]["requires"] == {"policy": "pass", "receipt": "verified"}
+
+
+def test_compile_human_output_shows_evidence_requirements(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    parser = _parser()
+    args = parser.parse_args(["workflow", "compile", _write(tmp_path, _PROOF)])
+
+    assert args.func(args) == 0
+
+    out = capsys.readouterr().out
+    assert "release/publish <- release/test requires policy=pass, receipt=verified" in out
+
+
 def test_compile_reports_a_malformed_workflow(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -133,6 +172,46 @@ def test_plan_routes_ready_tasks(tmp_path: Path, capsys: pytest.CaptureFixture[s
     out = capsys.readouterr().out
     assert "1 done" in out
     assert "release/test -> alpha" in out
+
+
+def test_plan_waits_for_evidence_before_assignment(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    wf = _write(tmp_path, _PROOF)
+    status = _write_named(tmp_path, "status.json", {"release/test": "done"})
+    agents = _write_named(tmp_path, "agents.json", {"alpha": []})
+    parser = _parser()
+
+    blocked = parser.parse_args(["workflow", "plan", wf, "--status", status, "--agents", agents])
+    assert blocked.func(blocked) == 0
+    assert "0 ready, 0 blocked, 1 waiting for evidence" in capsys.readouterr().out
+
+    evidence = _write_named(
+        tmp_path,
+        "evidence.json",
+        {"release/publish": {"receipt": "verified", "policy": "pass"}},
+    )
+    ready = parser.parse_args(
+        ["workflow", "plan", wf, "--status", status, "--agents", agents, "--evidence", evidence]
+    )
+    assert ready.func(ready) == 0
+    assert "release/publish -> alpha" in capsys.readouterr().out
+
+
+def test_plan_json_includes_evidence_blocked(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    status = _write_named(tmp_path, "status.json", {"release/test": "done"})
+    parser = _parser()
+    args = parser.parse_args(
+        ["workflow", "plan", _write(tmp_path, _PROOF), "--status", status, "--json"]
+    )
+
+    assert args.func(args) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["state"]["evidence_blocked"] == ["release/publish"]
+    assert payload["plan"] == []
 
 
 def test_plan_json_with_no_files_uses_defaults(
@@ -181,6 +260,24 @@ def test_plan_rejects_agent_without_a_class_list(
     args = parser.parse_args(["workflow", "plan", _write(tmp_path, _GOOD), "--agents", agents])
     assert args.func(args) == 2
     assert "list of task classes" in capsys.readouterr().err
+
+
+def test_load_evidence_rejects_non_object_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    parser = _parser()
+    evidence = _write_named(tmp_path, "evidence.json", [])
+    args = parser.parse_args(["workflow", "plan", _write(tmp_path, _GOOD), "--evidence", evidence])
+
+    assert args.func(args) == 2
+    assert "evidence file must be a JSON object" in capsys.readouterr().err
+
+
+def test_load_evidence_rejects_non_mapping_task_value(tmp_path: Path) -> None:
+    evidence = _write_named(tmp_path, "evidence.json", {"release/build": "verified"})
+
+    with pytest.raises(WorkflowError, match="predicate map"):
+        _load_evidence(evidence)
 
 
 # --- workflow run: gateway, rendering, and the live loop ---------------------
@@ -256,10 +353,34 @@ async def test_gateway_posts_reads_and_assigns() -> None:
 async def test_gateway_read_board_returns_empty_when_no_snapshot_arrives() -> None:
     boards: list[Any] = []
     agent = _FakeAgent(boards, board_payload=None)
-    gateway = _AgentGateway(agent, boards, attempts=2, poll=0.0)  # type: ignore[arg-type]
+    gateway = _AgentGateway(cast(SynapseAgent, agent), boards, attempts=2, poll=0.0)
     snapshot = await gateway.read_board()
     assert snapshot.status == {}
     assert snapshot.suggested_owner == {}
+
+
+async def test_gateway_rereads_evidence_file_on_each_board_poll(tmp_path: Path) -> None:
+    boards: list[Any] = []
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text(json.dumps({"w/a": {"policy": "fail"}}), encoding="utf-8")
+    agent = _FakeAgent(
+        boards,
+        board_payload={"tasks": [{"task_id": "w/a", "status": "open"}]},
+    )
+    gateway = _AgentGateway(
+        cast(SynapseAgent, agent),
+        boards,
+        evidence_path=str(evidence),
+        attempts=1,
+        poll=0.0,
+    )
+
+    first = await gateway.read_board()
+    evidence.write_text(json.dumps({"w/a": {"policy": "pass"}}), encoding="utf-8")
+    second = await gateway.read_board()
+
+    assert first.evidence == {"w/a": {"policy": "fail"}}
+    assert second.evidence == {"w/a": {"policy": "pass"}}
 
 
 def _empty_state() -> WorkflowState:

@@ -58,6 +58,57 @@ emitted in dependency order, so a step always appears after the steps it waits o
 The `task_class` is carried through compilation as a routing hint for a driver; it
 is not stored on the blackboard task itself.
 
+## Evidence requirements
+
+A step can require evidence before the driver routes it. Add a `requires` object
+whose keys are predicates and whose values are the required observed states:
+
+```json
+{
+  "name": "release",
+  "steps": [
+    { "id": "test", "title": "Run tests" },
+    {
+      "id": "publish",
+      "title": "Publish",
+      "depends_on": ["test"],
+      "requires": {
+        "receipt": "verified",
+        "policy": "pass",
+        "approval": "owner"
+      }
+    }
+  ]
+}
+```
+
+The supported predicates are `claim`, `receipt`, `tests`, `policy`, `approval`,
+`sandbox_run`, `mailbox`, and `dead_letters`. A task with `requires` is not ready
+until all dependency edges are satisfied and the evidence snapshot proves every
+predicate for that compiled task id:
+
+```json
+{
+  "release/publish": {
+    "receipt": "verified",
+    "policy": "pass",
+    "approval": "owner"
+  }
+}
+```
+
+Use the snapshot with `plan` or `run`:
+
+```bash
+synapse workflow plan release.json --status status.json --evidence evidence.json
+synapse workflow run release.json --agents agents.json --evidence evidence.json
+```
+
+`run` rereads the evidence file on every board poll. That lets a release script,
+operator approval process, policy check, sandbox run, or receipt verifier update
+the snapshot while the driver waits. The board still receives ordinary tasks; the
+driver holds proof-carrying steps before assignment.
+
 ## Validation is strict
 
 A workflow is rejected at authoring time — before anything reaches the board — if
@@ -157,10 +208,11 @@ assignments:
 ```
 
 The planner recomputes readiness from dependencies (a task is ready only when all
-of its dependencies are terminal), routes each ready task to a free agent that
-advertises its `task_class` (an unclassified task can go to anyone), and never
-exceeds the in-flight budget. It is a pure function over the compiled workflow and
-the board snapshot, so it is deterministic and replayable.
+of its dependencies are terminal and all declared evidence predicates match),
+routes each ready task to a free agent that advertises its `task_class` (an
+unclassified task can go to anyone), and never exceeds the in-flight budget. It is
+a pure function over the compiled workflow, board snapshot, and evidence snapshot,
+so it is deterministic and replayable.
 
 ## Running a workflow live
 
@@ -189,9 +241,10 @@ The loop is **advisory and idempotent**: it only suggests owners, so workers sta
 free to pick up whatever they choose, and a task already advising the chosen agent
 is never re-written. It is **resumable** — it routes from whatever the board
 currently reports, so a driver restarted mid-run simply continues from the live
-state. And it is **bounded** twice over: by `--max-in-flight` (how much work it will
-advise at once) and by `--deadline` (how long it will run). The decision logic is
-the pure planner above; `run` adds only the connect-post-read-assign shell.
+state, plus the latest evidence file when one is configured. And it is **bounded**
+twice over: by `--max-in-flight` (how much work it will advise at once) and by
+`--deadline` (how long it will run). The decision logic is the pure planner above;
+`run` adds only the connect-post-read-assign shell.
 
 ## Boundaries
 

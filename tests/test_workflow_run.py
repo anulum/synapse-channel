@@ -32,10 +32,13 @@ class _FakeGateway:
         *,
         complete_assigned: bool = True,
         preset_owner: Mapping[str, str] | None = None,
+        evidence_by_poll: Sequence[Mapping[str, Mapping[str, str]]] = (),
     ) -> None:
         self.status: dict[str, str] = {tid: "open" for tid in task_ids}
         self.owner: dict[str, str] = dict(preset_owner or {})
         self._complete_assigned = complete_assigned
+        self._evidence_by_poll = tuple(evidence_by_poll)
+        self._polls = 0
         self.posted: list[str] = []
         self.assigned: list[tuple[str, str]] = []
         self.cancelled: list[str] = []
@@ -46,11 +49,19 @@ class _FakeGateway:
             self.status.setdefault(task.task_id, "open")
 
     async def read_board(self) -> BoardSnapshot:
+        evidence = (
+            self._evidence_by_poll[min(self._polls, len(self._evidence_by_poll) - 1)]
+            if self._evidence_by_poll
+            else {}
+        )
+        self._polls += 1
         if self._complete_assigned:
             for task_id, owner in self.owner.items():
                 if owner and self.status.get(task_id) not in TERMINAL_LEDGER_STATUSES:
                     self.status[task_id] = "done"
-        return BoardSnapshot(status=dict(self.status), suggested_owner=dict(self.owner))
+        return BoardSnapshot(
+            status=dict(self.status), suggested_owner=dict(self.owner), evidence=evidence
+        )
 
     async def assign(self, task_id: str, agent: str) -> None:
         self.owner[task_id] = agent
@@ -118,7 +129,14 @@ async def test_run_completes_immediately_for_an_empty_workflow() -> None:
         "polls": 1,
         "assignments": [],
         "cancellations": [],
-        "state": {"done": [], "in_flight": [], "ready": [], "blocked": [], "skipped": []},
+        "state": {
+            "done": [],
+            "in_flight": [],
+            "ready": [],
+            "blocked": [],
+            "evidence_blocked": [],
+            "skipped": [],
+        },
     }
 
 
@@ -143,6 +161,37 @@ async def test_run_does_not_reassign_a_task_that_already_advises_the_owner() -> 
     assert result.timed_out is True
     assert gateway.assigned == []  # build skipped (already owned), test still blocked
     assert "w/build" in result.state.ready
+
+
+async def test_run_waits_for_evidence_before_assigning() -> None:
+    release = CompiledTask(
+        task_id="w/release",
+        title="Release",
+        description="",
+        depends_on=(),
+        task_class="",
+        evidence_requirements=(("policy", "pass"),),
+    )
+    gateway = _FakeGateway(
+        ["w/release"],
+        evidence_by_poll=({}, {"w/release": {"policy": "pass"}}),
+    )
+    clock = _Clock()
+
+    result = await run_workflow(
+        [release],
+        {"a1": frozenset[str]()},
+        gateway,
+        max_in_flight=1,
+        deadline=100.0,
+        clock=clock.time,
+        sleep=clock.sleep,
+        poll_interval=1.0,
+    )
+
+    assert result.complete is True
+    assert result.assignments == (("w/release", "a1"),)
+    assert result.polls == 3
 
 
 _GATE = CompiledTask(task_id="w/gate", title="Gate", description="", depends_on=(), task_class="")

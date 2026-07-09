@@ -29,6 +29,12 @@ through compilation but enforced by the driver, not the board: the board still s
 plain dependency edges (so it gates on terminal-ness), while the driver decides
 whether the recorded outcome actually satisfies each conditional edge.
 
+A step may also declare evidence requirements with ``requires``. Those requirements
+are metadata for the workflow driver: a step becomes ready only when its dependencies
+are satisfied and an evidence snapshot proves every declared predicate. The board
+still receives an ordinary task; the evidence gate is evaluated before the driver
+advises an owner.
+
 A step may also **fan out** over a list of items: a step with a ``for_each`` list
 compiles to one parallel task per item, and any dependency on that step expands to a
 dependency on *every* expanded task — a map (the parallel tasks) and a join (a
@@ -56,6 +62,11 @@ ANY_TERMINAL = ""
 
 TERMINAL_CONDITIONS = frozenset({"done", "cancelled"})
 """The terminal statuses a conditional dependency may require."""
+
+EVIDENCE_REQUIREMENTS = frozenset(
+    {"claim", "receipt", "tests", "policy", "approval", "sandbox_run", "mailbox", "dead_letters"}
+)
+"""Evidence predicate names a workflow step may require before assignment."""
 
 
 class WorkflowError(ValueError):
@@ -101,6 +112,10 @@ class WorkflowStep:
         Fan-out items. When non-empty, the step expands at compile time into one
         parallel task per item; a dependency on this step then expands to a join over
         all of them. Empty for an ordinary single-task step.
+    requires : tuple[tuple[str, str], ...]
+        Evidence predicates the driver must see for this step before it is ready.
+        Each pair is ``(predicate, expected_value)`` and is checked against an
+        evidence snapshot keyed by compiled task id.
     """
 
     step_id: str
@@ -109,6 +124,7 @@ class WorkflowStep:
     description: str = ""
     depends_on: tuple[StepDependency, ...] = ()
     for_each: tuple[str, ...] = ()
+    requires: tuple[tuple[str, str], ...] = ()
 
 
 def _expand_step(step: WorkflowStep) -> tuple[tuple[str, str], ...]:
@@ -160,6 +176,10 @@ class CompiledTask:
         edges only. An edge absent here is unconditional — any terminal status of
         the dependency satisfies it. Carried as driver metadata; the board never
         sees the condition, only the plain ``depends_on`` edge.
+    evidence_requirements : tuple[tuple[str, str], ...]
+        ``(predicate, expected_value)`` pairs the driver must find for this task in
+        an evidence snapshot before routing it. Carried as driver metadata; the
+        board receives only the task declaration.
     """
 
     task_id: str
@@ -168,6 +188,7 @@ class CompiledTask:
     depends_on: tuple[str, ...]
     task_class: str
     conditions: tuple[tuple[str, str], ...] = ()
+    evidence_requirements: tuple[tuple[str, str], ...] = ()
 
     def declaration(self) -> dict[str, Any]:
         """Return the board-declaration kwargs (``task_class`` is driver metadata)."""
@@ -184,6 +205,13 @@ class CompiledTask:
             if dependency == dep_id:
                 return status
         return ANY_TERMINAL
+
+    def required_evidence(self, predicate: str) -> str:
+        """Return the expected value for ``predicate``, or ``""`` when it is not required."""
+        for name, value in self.evidence_requirements:
+            if name == predicate:
+                return value
+        return ""
 
 
 def _require_text(value: object, label: str) -> str:
@@ -250,6 +278,7 @@ def _parse_step(raw: object, index: int) -> WorkflowStep:
         if not for_each:
             msg = f"step {step_id!r} for_each must list at least one non-empty item"
             raise WorkflowError(msg)
+    requires = _parse_requires(raw.get("requires", {}), step_id)
     return WorkflowStep(
         step_id=step_id,
         title=title,
@@ -257,7 +286,32 @@ def _parse_step(raw: object, index: int) -> WorkflowStep:
         description=str(raw.get("description", "")).strip(),
         depends_on=tuple(seen.values()),
         for_each=for_each,
+        requires=requires,
     )
+
+
+def _parse_requires(raw: object, step_id: str) -> tuple[tuple[str, str], ...]:
+    """Parse a step's evidence predicates from its ``requires`` mapping."""
+    if raw in (None, ""):
+        return ()
+    if not isinstance(raw, dict):
+        msg = f"step {step_id!r} requires must be a mapping"
+        raise WorkflowError(msg)
+    requirements: list[tuple[str, str]] = []
+    for name, value in raw.items():
+        predicate = str(name).strip()
+        expected = str(value).strip()
+        if predicate not in EVIDENCE_REQUIREMENTS:
+            msg = (
+                f"step {step_id!r} requires unknown evidence predicate {predicate!r}; "
+                f"expected one of {sorted(EVIDENCE_REQUIREMENTS)}"
+            )
+            raise WorkflowError(msg)
+        if not expected:
+            msg = f"step {step_id!r} requires {predicate!r} to have a non-empty expected value"
+            raise WorkflowError(msg)
+        requirements.append((predicate, expected))
+    return tuple(sorted(requirements))
 
 
 def parse_workflow(data: object) -> Workflow:
@@ -424,6 +478,7 @@ def compile_to_tasks(workflow: Workflow) -> tuple[CompiledTask, ...]:
                     depends_on=tuple(dep_task for dep_task, _on in dep_ids),
                     task_class=step.task_class,
                     conditions=tuple((dep_task, on) for dep_task, on in dep_ids if on),
+                    evidence_requirements=step.requires,
                 )
             )
     return tuple(tasks)

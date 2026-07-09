@@ -1947,6 +1947,10 @@ Newer, advisory surfaces whose shape may still change before 1.0. `sandbox`
 validates a capability manifest and pre-flights or runs a `.wasm` tool against
 it (running needs the `wasm` extra); `workflow` validates a declarative workflow
 and compiles it into the blackboard tasks the board would execute —
+step-level `requires` predicates (`receipt`, `tests`, `policy`, `approval`,
+`sandbox_run`, `mailbox`, `dead_letters`, or `claim`) hold a task until a
+`--evidence` snapshot proves the required values, so a workflow can route on
+attested evidence instead of status alone;
 `workflow contention FILE DB` additionally joins the compiled task ids to the
 durable log, running the same offline yield-advice analysis as
 `synapse causality contention` but keeping only the overlapping live-claim
@@ -2009,7 +2013,7 @@ synapse sandbox run ./tool.wasm --manifest ./manifest.json --input ./in.json
 synapse sandbox run ./tool.wasm --manifest ./manifest.json --approve --attest ~/synapse/audit.db  # run + record an audit attestation
 synapse workflow validate ./workflow.json               # parse and validate
 synapse workflow compile ./workflow.json --json         # compile into blackboard tasks
-synapse workflow plan ./workflow.json                   # show the tasks and their dependency order
+synapse workflow plan ./workflow.json --evidence ./evidence.json  # hold proof-carrying steps
 synapse workflow contention ./workflow.json ~/synapse/hub.db   # yield advice scoped to this workflow
 synapse participant list                                # readiness of every provider driver
 synapse participant ask ollama "summarise this diff" --model llama3   # one turn, print the answer

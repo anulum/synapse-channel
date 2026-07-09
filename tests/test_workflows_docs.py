@@ -41,3 +41,14 @@ def test_workflows_doc_keeps_the_blackboard_boundary() -> None:
     assert "single-dependency" in text
     # strict validation (cycle rejection) is documented
     assert "cycle" in text
+
+
+def test_workflows_doc_documents_proof_carrying_steps() -> None:
+    text = _collapsed()
+    assert "evidence requirements" in text
+    assert "requires" in text
+    assert (
+        "synapse workflow plan release.json --status status.json --evidence evidence.json" in text
+    )
+    for predicate in ("receipt", "policy", "approval", "sandbox_run", "dead_letters"):
+        assert predicate in text

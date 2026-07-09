@@ -25,11 +25,16 @@ re-reading an unchanged board issues no redundant writes.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from synapse_channel.core.workflow import CompiledTask
-from synapse_channel.core.workflow_driver import WorkflowState, derive_state, plan_assignments
+from synapse_channel.core.workflow_driver import (
+    EvidenceSnapshot,
+    WorkflowState,
+    derive_state,
+    plan_assignments,
+)
 
 
 @dataclass(frozen=True)
@@ -44,10 +49,14 @@ class BoardSnapshot:
         The owner currently advised for each task id; absent or ``""`` means none.
         Used to make assignment idempotent — a task already advising the chosen
         agent is not re-assigned.
+    evidence : EvidenceSnapshot
+        Evidence values keyed by task id, then predicate. A task with declared
+        evidence requirements is not assigned until these values match.
     """
 
     status: Mapping[str, str]
     suggested_owner: Mapping[str, str]
+    evidence: EvidenceSnapshot = field(default_factory=dict)
 
 
 class WorkflowGateway(Protocol):
@@ -161,7 +170,7 @@ async def run_workflow(
     while True:
         snapshot = await gateway.read_board()
         polls += 1
-        state = derive_state(tasks, snapshot.status)
+        state = derive_state(tasks, snapshot.status, evidence=snapshot.evidence)
         if state.complete:
             return RunResult(
                 complete=True,
@@ -175,7 +184,11 @@ async def run_workflow(
             await gateway.cancel(task_id)
             retired.append(task_id)
         for assignment in plan_assignments(
-            tasks, snapshot.status, agents, max_in_flight=max_in_flight
+            tasks,
+            snapshot.status,
+            agents,
+            max_in_flight=max_in_flight,
+            evidence=snapshot.evidence,
         ):
             if snapshot.suggested_owner.get(assignment.task_id, "") == assignment.agent:
                 continue

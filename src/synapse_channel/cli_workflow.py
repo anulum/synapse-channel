@@ -38,7 +38,11 @@ from synapse_channel.core.workflow import (
     compile_to_tasks,
     parse_workflow,
 )
-from synapse_channel.core.workflow_driver import DEFAULT_STATUS, derive_state, plan_assignments
+from synapse_channel.core.workflow_driver import (
+    DEFAULT_STATUS,
+    derive_state,
+    plan_assignments,
+)
 from synapse_channel.core.workflow_run import BoardSnapshot, RunResult, run_workflow
 from synapse_channel.core.yield_advice import (
     advice_involving,
@@ -96,6 +100,27 @@ def _load_agents(path: str | None) -> dict[str, frozenset[str]]:
     return agents
 
 
+def _load_evidence(path: str | None) -> dict[str, dict[str, str]]:
+    """Load a ``{task_id: {predicate: value}}`` evidence snapshot."""
+    if not path:
+        return {}
+    data = _load_workflow_file(path)
+    if not isinstance(data, dict):
+        msg = "evidence file must be a JSON object of task_id -> predicate map"
+        raise WorkflowError(msg)
+    evidence: dict[str, dict[str, str]] = {}
+    for task_id, predicates in data.items():
+        if not isinstance(predicates, dict):
+            msg = f"evidence for task {task_id!r} must be a predicate map"
+            raise WorkflowError(msg)
+        evidence[str(task_id)] = {
+            str(name).strip(): str(value).strip()
+            for name, value in predicates.items()
+            if str(name).strip()
+        }
+    return evidence
+
+
 def _cmd_validate(args: argparse.Namespace) -> int:
     """Validate a workflow file and report the outcome."""
     try:
@@ -120,6 +145,7 @@ def _cmd_compile(args: argparse.Namespace) -> int:
                 **task.declaration(),
                 "task_class": task.task_class,
                 "conditions": [{"dep": dep, "on": on} for dep, on in task.conditions],
+                "requires": dict(task.evidence_requirements),
             }
             for task in tasks
         ]
@@ -133,7 +159,13 @@ def _cmd_compile(args: argparse.Namespace) -> int:
         ]
         deps = ", ".join(edges) if edges else "(none)"
         task_class = f" [{task.task_class}]" if task.task_class else ""
-        print(f"  {task.task_id}{task_class} <- {deps}")
+        requires = (
+            " requires "
+            + ", ".join(f"{name}={value}" for name, value in task.evidence_requirements)
+            if task.evidence_requirements
+            else ""
+        )
+        print(f"  {task.task_id}{task_class} <- {deps}{requires}")
     return 0
 
 
@@ -143,17 +175,25 @@ def _cmd_plan(args: argparse.Namespace) -> int:
         tasks = compile_to_tasks(parse_workflow(_load_workflow_file(args.file)))
         status = _load_status(args.status)
         agents = _load_agents(args.agents)
+        evidence = _load_evidence(args.evidence)
     except WorkflowError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    state = derive_state(tasks, status)
-    plan = plan_assignments(tasks, status, agents, max_in_flight=args.max_in_flight)
+    state = derive_state(tasks, status, evidence=evidence)
+    plan = plan_assignments(
+        tasks,
+        status,
+        agents,
+        max_in_flight=args.max_in_flight,
+        evidence=evidence,
+    )
     if args.json:
         print(json.dumps({"state": state.to_dict(), "plan": [a.to_dict() for a in plan]}, indent=2))
         return 0
     print(
         f"state: {len(state.done)} done, {len(state.in_flight)} in flight, "
-        f"{len(state.ready)} ready, {len(state.blocked)} blocked"
+        f"{len(state.ready)} ready, {len(state.blocked)} blocked, "
+        f"{len(state.evidence_blocked)} waiting for evidence"
         + (" (complete)" if state.complete else "")
     )
     if not plan:
@@ -224,11 +264,13 @@ class _AgentGateway:
         agent: SynapseAgent,
         boards: list[Mapping[str, Any]],
         *,
+        evidence_path: str | None = None,
         attempts: int = 80,
         poll: float = 0.05,
     ) -> None:
         self._agent = agent
         self._boards = boards
+        self._evidence_path = evidence_path
         self._attempts = attempts
         self._poll = poll
 
@@ -251,7 +293,15 @@ class _AgentGateway:
                 break
             await asyncio.sleep(self._poll)
         board = self._boards[-1] if self._boards else {}
-        return _snapshot_from_board(board)
+        snapshot = _snapshot_from_board(board)
+        if not self._evidence_path:
+            return snapshot
+        evidence = _load_evidence(self._evidence_path)
+        return BoardSnapshot(
+            status=snapshot.status,
+            suggested_owner=snapshot.suggested_owner,
+            evidence=evidence,
+        )
 
     async def assign(self, task_id: str, agent: str) -> None:
         """Advise ``agent`` as the owner of ``task_id`` on the board."""
@@ -310,7 +360,7 @@ async def _drive_run(
                 )
             )
             return 1
-        gateway = _AgentGateway(agent, boards)
+        gateway = _AgentGateway(agent, boards, evidence_path=args.evidence)
         loop = asyncio.get_event_loop()
         result = await run_workflow(
             tasks,
@@ -336,6 +386,7 @@ def _cmd_run(args: argparse.Namespace, *, agent_factory: AgentFactory = SynapseA
     try:
         tasks = compile_to_tasks(parse_workflow(_load_workflow_file(args.file)))
         agents = _load_agents(args.agents)
+        _load_evidence(args.evidence)
     except WorkflowError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -374,6 +425,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--agents", default=None, help="JSON file mapping agent -> [task classes] it handles."
     )
     plan.add_argument(
+        "--evidence",
+        default=None,
+        help="JSON file mapping task_id -> evidence predicates for proof-carrying steps.",
+    )
+    plan.add_argument(
         "--max-in-flight", type=int, default=4, help="Most tasks allowed in progress at once."
     )
     plan.add_argument("--json", action="store_true", help="Emit machine-readable state and plan.")
@@ -389,6 +445,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     run.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     run.add_argument(
         "--agents", default=None, help="JSON file mapping agent -> [task classes] it handles."
+    )
+    run.add_argument(
+        "--evidence",
+        default=None,
+        help="JSON file mapping task_id -> evidence predicates; reread on each board poll.",
     )
     run.add_argument(
         "--max-in-flight", type=int, default=4, help="Most tasks allowed in progress at once."

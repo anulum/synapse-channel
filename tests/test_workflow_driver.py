@@ -22,6 +22,7 @@ def _task(
     depends_on: tuple[str, ...] = (),
     task_class: str = "",
     conditions: tuple[tuple[str, str], ...] = (),
+    evidence_requirements: tuple[tuple[str, str], ...] = (),
 ) -> CompiledTask:
     return CompiledTask(
         task_id=task_id,
@@ -30,6 +31,7 @@ def _task(
         depends_on=depends_on,
         task_class=task_class,
         conditions=conditions,
+        evidence_requirements=evidence_requirements,
     )
 
 
@@ -115,8 +117,33 @@ def test_state_to_dict_round_trips() -> None:
         "in_flight": [],
         "ready": ["w/b"],
         "blocked": ["w/c"],
+        "evidence_blocked": [],
         "skipped": [],
     }
+
+
+def test_evidence_requirement_blocks_ready_task_until_it_matches() -> None:
+    task = _task("w/release", evidence_requirements=(("policy", "pass"),))
+
+    missing = derive_state((task,), {})
+    mismatch = derive_state((task,), {}, evidence={"w/release": {"policy": "fail"}})
+    satisfied = derive_state((task,), {}, evidence={"w/release": {"policy": "pass"}})
+
+    assert missing.evidence_blocked == ("w/release",)
+    assert mismatch.evidence_blocked == ("w/release",)
+    assert satisfied.ready == ("w/release",)
+
+
+def test_evidence_requirement_waits_until_dependencies_are_satisfied_first() -> None:
+    task = _task(
+        "w/release",
+        depends_on=("w/test",),
+        evidence_requirements=(("receipt", "verified"),),
+    )
+    state = derive_state((task,), {"w/test": "open"}, evidence={"w/release": {"receipt": "bad"}})
+
+    assert state.blocked == ("w/release",)
+    assert state.evidence_blocked == ()
 
 
 # ---------- plan_assignments ----------
@@ -157,6 +184,22 @@ def test_plan_skips_a_task_with_no_capable_agent() -> None:
     plan = plan_assignments(tasks, {}, {"cpu": frozenset({"cpu"})}, max_in_flight=5)
     # w/a needs gpu (no agent), w/b is unclassified so cpu takes it
     assert plan == (Assignment(task_id="w/b", agent="cpu", task_class=""),)
+
+
+def test_plan_does_not_assign_evidence_blocked_tasks() -> None:
+    tasks = (_task("w/release", evidence_requirements=(("approval", "owner"),)),)
+
+    blocked = plan_assignments(tasks, {}, {"a1": frozenset()}, max_in_flight=1)
+    ready = plan_assignments(
+        tasks,
+        {},
+        {"a1": frozenset()},
+        max_in_flight=1,
+        evidence={"w/release": {"approval": "owner"}},
+    )
+
+    assert blocked == ()
+    assert ready == (Assignment("w/release", "a1", ""),)
 
 
 def test_assignment_to_dict() -> None:

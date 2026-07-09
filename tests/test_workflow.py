@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 from synapse_channel.core.workflow import (
+    EVIDENCE_REQUIREMENTS,
     FANOUT_MAX_WIDTH,
     StepDependency,
     Workflow,
@@ -156,6 +157,64 @@ def test_compiled_task_declaration_excludes_task_class() -> None:
         "depends_on": [],
     }
     assert "task_class" not in decl
+
+
+# ---------- evidence requirements ----------
+
+
+def test_parse_accepts_evidence_requirements() -> None:
+    wf = parse_workflow(
+        _wf(
+            {
+                "id": "release",
+                "requires": {"receipt": "verified", "policy": "pass"},
+            }
+        )
+    )
+    assert wf.steps[0].requires == (("policy", "pass"), ("receipt", "verified"))
+
+
+@pytest.mark.parametrize("requires", [None, ""])
+def test_parse_treats_empty_evidence_requirements_as_absent(requires: object) -> None:
+    wf = parse_workflow(_wf({"id": "release", "requires": requires}))
+
+    assert wf.steps[0].requires == ()
+
+
+def test_parse_rejects_an_unknown_evidence_requirement() -> None:
+    with pytest.raises(WorkflowError, match="unknown evidence predicate"):
+        parse_workflow(_wf({"id": "release", "requires": {"unknown": "ok"}}))
+
+
+def test_parse_rejects_an_empty_evidence_requirement_value() -> None:
+    with pytest.raises(WorkflowError, match="non-empty expected value"):
+        parse_workflow(_wf({"id": "release", "requires": {"policy": " "}}))
+
+
+def test_parse_rejects_non_mapping_evidence_requirements() -> None:
+    with pytest.raises(WorkflowError, match="requires must be a mapping"):
+        parse_workflow(_wf({"id": "release", "requires": ["policy"]}))
+
+
+def test_evidence_requirement_vocabulary_covers_review_predicates() -> None:
+    assert {
+        "claim",
+        "receipt",
+        "tests",
+        "policy",
+        "approval",
+        "sandbox_run",
+        "mailbox",
+        "dead_letters",
+    } <= EVIDENCE_REQUIREMENTS
+
+
+def test_compile_carries_evidence_requirements() -> None:
+    wf = parse_workflow(_wf({"id": "release", "requires": {"receipt": "verified"}}, name="ship"))
+    task = compile_to_tasks(wf)[0]
+    assert task.evidence_requirements == (("receipt", "verified"),)
+    assert task.required_evidence("receipt") == "verified"
+    assert task.required_evidence("policy") == ""
 
 
 # ---------- conditional dependencies ----------

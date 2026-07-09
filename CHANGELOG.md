@@ -14,6 +14,10 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Declarative workflows now support step-level `requires` evidence predicates
+  for proof-carrying steps. `workflow plan` and `workflow run` accept an
+  `--evidence` snapshot and hold a step until its required receipt, test,
+  policy, approval, sandbox, mailbox, dead-letter, or claim evidence matches.
 - `synapse a2a-conformance` now prints the local A2A 1.0.0 support matrix as
   Markdown or JSON, including supported, partial, unsupported, and externally
   gated rows for the bridge.
