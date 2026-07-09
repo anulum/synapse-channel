@@ -77,6 +77,7 @@ nav:
   - Agent Air Traffic Control: agent-air-traffic-control.md
   - Wire protocol: protocol.md
   - API and wire stability: api-stability.md
+  - Migration to 1.0: migration-1.0.md
   - Bounded streaming responses: streaming.md
   - Declarative workflows: workflows.md
   - Studio: studio.md

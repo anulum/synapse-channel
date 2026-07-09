@@ -16,6 +16,9 @@ version — in particular an out-of-tree consumer that builds on the core, such 
 the commercial fleet tier, which speaks the wire across hubs and imports the
 federation primitives directly.
 
+See the [0.x to 1.0 migration guide](migration-1.0.md) for the operator upgrade
+runbook and release-cut checklist.
+
 ## Versioning
 
 Releases follow semantic versioning. In the `0.x` line a minor release may change
@@ -42,7 +45,7 @@ fails CI rather than reaching a release:
 
 | Surface | What is frozen | Guard |
 | --- | --- | --- |
-| Public Python API | the package `__all__` | `tests/test_public_api.py` |
+| Public Python API | the exact package `__all__` export list | `tests/test_public_api.py` |
 | Wire message vocabulary | every `MessageType` name→value pair, the envelope's reserved keys, and the wire-protocol version | `tests/test_wire_surface_freeze.py` |
 | Federation primitives | the deep `core.*` symbols out-of-tree consumers import — the persisted event shape, the multihub follower and its fetcher, claim forwarding, the federation store and its peer records, the TLS pin helper | `tests/test_federation_consumer_contract.py` |
 | CLI surface | every subcommand is classified into a stability tier | `tests/test_surface_taxonomy.py` |

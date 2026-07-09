@@ -22,6 +22,9 @@ All notable changes to this project are documented here.
   and `synapse event-query <db> "universal-receipts all"` renders the same
   first-class receipt objects without changing the legacy delivery-receipt
   query.
+- The public API freeze now pins the exact `synapse_channel.__all__` export
+  list, and the docs include a 0.x to 1.0 migration guide covering upgrade
+  order, wire-version checks, stable-surface guards, and release-cut checks.
 - Declarative workflows now support step-level `requires` evidence predicates
   for proof-carrying steps. `workflow plan` and `workflow run` accept an
   `--evidence` snapshot and hold a step until its required receipt, test,
