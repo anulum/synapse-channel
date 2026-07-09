@@ -13,6 +13,14 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.24] - 2026-07-09
+
+### Release integrity
+- The 0.98.23 notes described the Cloud HSM / KMS KEK backend, threshold
+  escrow, hardware attestation gate, `synapse sqlcipher rekey`/`migrate`, and
+  the Studio operator-actions panel, but the 0.98.23 tag predates those
+  commits — they ship in this release.
+
 ### Added
 - Pinned-TLS multi-hub pull: `synapse multihub follow --pin sha256:<hex>` and
   `core.multihub_transport.pinned_connector` accept a self-signed or private-CA
