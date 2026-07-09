@@ -22,8 +22,8 @@ from synapse_channel.dashboard import (
     DashboardSnapshot,
     _agent_roles_from_who,
     fetch_dashboard_snapshot,
-    render_dashboard_html,
 )
+from synapse_channel.dashboard_render import render_dashboard_html
 
 
 def test_dashboard_html_escapes_snapshot_content() -> None:
@@ -222,3 +222,55 @@ async def test_fetch_dashboard_snapshot_carries_agent_roles_from_who() -> None:
             )
     assert snapshot.agent_roles["proj/holder"] == ["proj/coordinator"]
     assert snapshot.to_dict()["agent_roles"]["proj/holder"] == ["proj/coordinator"]
+
+
+def test_dashboard_html_renders_observed_peer_rows() -> None:
+    """Reachable and unreachable observed peers render as escaped advisory rows."""
+    from synapse_channel.core.journal import EventKind
+    from synapse_channel.core.multihub_fold import HubEvent, fold_observed_state
+    from synapse_channel.observed_peers import ObservedPeerSnapshot
+
+    reachable = ObservedPeerSnapshot(
+        hub_id="east",
+        uri="ws://east",
+        reachable=True,
+        cursor=4,
+        log_end_seq=6,
+        state=fold_observed_state(
+            [
+                HubEvent(
+                    "east",
+                    4,
+                    4.0,
+                    EventKind.CLAIM,
+                    {"task_id": "REMOTE", "owner": "east/agent", "paths": ["src/x.py"]},
+                )
+            ]
+        ),
+    )
+    unreachable = ObservedPeerSnapshot(
+        hub_id="west",
+        uri="ws://west",
+        reachable=False,
+        error="connection <refused>",
+    )
+    silent = ObservedPeerSnapshot(hub_id="quiet", uri="ws://quiet", reachable=True)
+    snapshot = DashboardSnapshot(
+        online_agents=[],
+        state={},
+        board={},
+        manifest=[],
+        observed_peers=(reachable, unreachable, silent),
+    )
+
+    page = render_dashboard_html(snapshot, refresh_seconds=5)
+
+    assert "observed@east" in page
+    assert "cursor=4 lag=2 claims=1" in page
+    assert "east/agent" in page
+    assert "observed@west" in page
+    assert "unreachable" in page
+    assert "connection &lt;refused&gt;" in page
+    assert "observed@quiet" in page
+    assert "lag=unknown" in page
+    assert "no observed claim owners" in page

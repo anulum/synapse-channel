@@ -24,6 +24,9 @@ All notable changes to this project are documented here.
 ### Changed
 - CI installs `sqlcipher3-binary` in the test matrix so the SQLCipher at-rest
   suite runs instead of skipping.
+- Dashboard HTML rendering extracted from the server module into
+  `dashboard_render.py` (one escape helper, per-section renderers, cockpit
+  hand-off); `dashboard.py` keeps the snapshot model, HTTP handler, and server.
 
 ### Fixed
 - Remaining ad-hoc numeric coercions on untrusted fields moved to
