@@ -130,7 +130,18 @@ from synapse_channel import SynapseAgent
 
 
 async def main() -> None:
-    agent = SynapseAgent("ALPHA", uri="ws://localhost:8876")
+    checkpoint_saved = asyncio.Event()
+    released = asyncio.Event()
+
+    async def on_message(message: dict[str, object]) -> None:
+        if message.get("task_id") != "refactor-parser":
+            return
+        if message.get("type") == "checkpoint_saved":
+            checkpoint_saved.set()
+        if message.get("type") == "release_granted":
+            released.set()
+
+    agent = SynapseAgent("ALPHA", on_message_callback=on_message, uri="ws://localhost:8876")
     agent_task = asyncio.create_task(agent.connect())
     # connect() is a single long-lived session; wait for the hub's welcome before
     # issuing verbs, and fail loudly if the hub is not up rather than acting on a
@@ -140,8 +151,10 @@ async def main() -> None:
 
     await agent.claim("refactor-parser", note="splitting the tokenizer", paths=["src/parser"])
     await agent.save_checkpoint("refactor-parser", "step=2")
+    await asyncio.wait_for(checkpoint_saved.wait(), timeout=5.0)
     await agent.update_task("refactor-parser", status="working")
     await agent.release("refactor-parser")
+    await asyncio.wait_for(released.wait(), timeout=5.0)
 
     agent.running = False
     agent_task.cancel()

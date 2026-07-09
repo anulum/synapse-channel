@@ -21,6 +21,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from cli_e2e_helpers import isolated_hub, run_cli
@@ -28,6 +29,21 @@ from cli_e2e_helpers import isolated_hub, run_cli
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _QUICKSTART = _REPO_ROOT / "docs" / "quickstart.md"
 _DEFAULT_URI = "ws://localhost:8876"
+
+
+def _event_query_until(
+    db_path: Path, query: str, *, required: tuple[str, ...], timeout: float = 5.0
+) -> str:
+    """Poll an event-query until every required token appears in its output."""
+    deadline = time.monotonic() + timeout
+    last_output = ""
+    while time.monotonic() < deadline:
+        result = run_cli("event-query", str(db_path), query)
+        last_output = result.output
+        if result.ok() and all(token in result.stdout for token in required):
+            return result.stdout
+        time.sleep(0.05)
+    return last_output
 
 
 def _coordinate_from_code_snippet() -> str:
@@ -64,8 +80,12 @@ def test_quickstart_coordinate_from_code_snippet_runs_against_a_hub(tmp_path: Pa
 
         # The hub durably recorded the snippet's claim and checkpoint — proof the
         # verbs coordinated, not merely that the process exited zero.
-        timeline = run_cli("event-query", str(hub.db_path), "task refactor-parser timeline")
-        assert timeline.ok(), timeline.output
-        assert "kind=claim" in timeline.stdout, timeline.output
-        assert "kind=checkpoint" in timeline.stdout, timeline.output
-        assert "owner=ALPHA" in timeline.stdout, timeline.output
+        timeline = _event_query_until(
+            hub.db_path,
+            "task refactor-parser timeline",
+            required=("kind=claim", "kind=checkpoint", "kind=release", "owner=ALPHA"),
+        )
+        assert "kind=claim" in timeline, timeline
+        assert "kind=checkpoint" in timeline, timeline
+        assert "kind=release" in timeline, timeline
+        assert "owner=ALPHA" in timeline, timeline
