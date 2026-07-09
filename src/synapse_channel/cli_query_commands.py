@@ -25,6 +25,11 @@ from synapse_channel.cli_query_rendering import (
 from synapse_channel.cli_query_transport import AgentFactory, _drop_message, _query_hub
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.observed_peers import (
+    ObservedPeerSpec,
+    fetch_observed_peers,
+    network_observed_fetcher_factory,
+)
 
 
 async def _health(
@@ -84,6 +89,9 @@ async def _who(
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
     ready_timeout: float = 5.0,
+    observed_peers: tuple[ObservedPeerSpec, ...] = (),
+    observed_token: str | None = None,
+    observed_timeout: float = 10.0,
 ) -> int:
     """Connect, print the online roster (optionally one project's agents), and exit.
 
@@ -115,6 +123,14 @@ async def _who(
         ``0`` once a roster is printed, ``1`` when the hub could not be reached.
     """
     query_name = f"{name}-who" if me else name
+    observed = await fetch_observed_peers(
+        observed_peers,
+        fetcher_factory=network_observed_fetcher_factory(
+            local_id=f"{name}-observed",
+            token=observed_token,
+            timeout=observed_timeout,
+        ),
+    )
     return await _query_hub(
         uri=uri,
         name=query_name,
@@ -138,6 +154,7 @@ async def _who(
                     project=project,
                     liveness=result[1],
                     wake_capabilities=result[2],
+                    observed_peers=observed,
                 )
             )
         ),
@@ -155,6 +172,9 @@ def _cmd_who(args: argparse.Namespace) -> int:
             me=args.me,
             token=args.token,
             ready_timeout=args.ready_timeout,
+            observed_peers=tuple(getattr(args, "observed_peers", ())),
+            observed_token=getattr(args, "observed_token", None),
+            observed_timeout=float(getattr(args, "observed_timeout", 10.0)),
         )
     )
 
@@ -167,6 +187,9 @@ async def _state(
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
     ready_timeout: float = 5.0,
+    observed_peers: tuple[ObservedPeerSpec, ...] = (),
+    observed_token: str | None = None,
+    observed_timeout: float = 10.0,
 ) -> int:
     """Print the live claims and their checkpoints — the "where was I" recovery view.
 
@@ -192,6 +215,14 @@ async def _state(
     int
         ``0`` once the claims are printed, ``1`` when the hub could not be reached.
     """
+    observed = await fetch_observed_peers(
+        observed_peers,
+        fetcher_factory=network_observed_fetcher_factory(
+            local_id=f"{name}-observed",
+            token=observed_token,
+            timeout=observed_timeout,
+        ),
+    )
     return await _query_hub(
         uri=uri,
         name=name,
@@ -200,7 +231,7 @@ async def _state(
         response_type=MessageType.STATE_SNAPSHOT,
         transform=lambda data: data.get("snapshot", {}),
         request=lambda agent: agent.request_state(),
-        render=lambda snapshot: _render_state(snapshot, owner=owner),
+        render=lambda snapshot: _render_state(snapshot, owner=owner, observed_peers=observed),
         ready_timeout=ready_timeout,
     )
 
@@ -214,6 +245,9 @@ def _cmd_state(args: argparse.Namespace) -> int:
             owner=args.owner,
             token=args.token,
             ready_timeout=args.ready_timeout,
+            observed_peers=tuple(getattr(args, "observed_peers", ())),
+            observed_token=getattr(args, "observed_token", None),
+            observed_timeout=float(getattr(args, "observed_timeout", 10.0)),
         )
     )
 

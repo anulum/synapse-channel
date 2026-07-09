@@ -334,7 +334,10 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   If you deliberately expose the
   dashboard with `--allow-non-loopback`, pass `--dashboard-token <token>` and
   require clients to send `Authorization: Bearer <token>`; when omitted on an
-  exposed bind, Synapse generates and prints a startup token.
+  exposed bind, Synapse generates and prints a startup token. Add
+  `--observed-peer HUB=URI` to include advisory peer-hub rows in the browser and
+  `/snapshot.json`; those rows are labelled `observed@HUB` and never grant local
+  claims.
 
 - **Verify a release redeploy:** `synapse doctor --redeploy-checklist` prints
   package, service, roster, durable-state, and git-hook checks for a post-release
@@ -931,8 +934,10 @@ The [multi-hub sync (CRDT) research](docs/multi-hub-sync.md) asks whether severa
 hubs could synchronise state while keeping claim safety and local-first. Its
 honest core: most state (the append-only event log, presence, progress) merges
 conflict-free, but claims are mutual exclusion and **not** a CRDT — they are
-routed by single-owner-per-namespace and fail closed on a partition. Not
-implemented; it adds no cross-hub service to the local core.
+routed by single-owner-per-namespace and fail closed on a partition. The shipped
+surface is operator-managed peering: `synapse multihub follow` and
+`--observed-peer HUB=URI` views observe peer logs as advisory `observed@HUB`
+state; local claim authority remains local or explicitly routed to the owning hub.
 
 The [sandboxed tools and marketplace research](docs/sandboxed-tools-and-marketplace.md)
 asks what it would take to run untrusted tool code safely — a capability-limited
@@ -1096,7 +1101,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 487 |
 | Wire message types | 73 |
 | CLI subcommands | 145 |
-| Test functions | 5459 |
+| Test functions | 5467 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 49 |
 | GitHub Actions workflows | 12 |

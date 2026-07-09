@@ -13,6 +13,7 @@ import time
 from typing import Any
 
 from synapse_channel.core.wake_capability import WAKE_UNKNOWN, wake_capability_label
+from synapse_channel.observed_peers import ObservedPeerSnapshot
 from synapse_channel.waiter_identity import split_roster, waiter_name
 
 
@@ -57,6 +58,7 @@ def _render_who(
     project: str | None = None,
     liveness: dict[str, dict[str, Any]] | None = None,
     wake_capabilities: dict[str, str] | None = None,
+    observed_peers: tuple[ObservedPeerSnapshot, ...] = (),
 ) -> None:
     """Render an online roster split into agents and waiter sidecars.
 
@@ -96,6 +98,7 @@ def _render_who(
     ]
     if unarmed:
         print(f"Unarmed (present, no live waiter): {', '.join(unarmed)}")
+    _render_observed_peers(observed_peers, project=project)
 
 
 def _render_who_me(roster: list[str], *, name: str) -> None:
@@ -119,7 +122,12 @@ def _render_who_me(roster: list[str], *, name: str) -> None:
     print("  note: presence is not a wake loop; the waiter is what wakes quiet terminals.")
 
 
-def _render_state(snapshot: dict[str, Any], *, owner: str | None = None) -> None:
+def _render_state(
+    snapshot: dict[str, Any],
+    *,
+    owner: str | None = None,
+    observed_peers: tuple[ObservedPeerSnapshot, ...] = (),
+) -> None:
     """Render live claims and checkpoints, optionally filtered to one owner namespace."""
     claims = list(snapshot.get("active_claims", []))
     if owner:
@@ -139,6 +147,54 @@ def _render_state(snapshot: dict[str, Any], *, owner: str | None = None) -> None
             f"  {claim.get('task_id')} [{claim.get('status')}] "
             f"owner={claim.get('owner')} paths={paths} checkpoint={checkpoint}{git_suffix}"
         )
+    _render_observed_claims(observed_peers, owner=owner)
+
+
+def _render_observed_peers(
+    peers: tuple[ObservedPeerSnapshot, ...], *, project: str | None = None
+) -> None:
+    """Render advisory peer rows for ``who``."""
+    if not peers:
+        return
+    print(f"Observed peers ({len(peers)}; advisory, not local authority):")
+    for peer in peers:
+        if not peer.reachable:
+            print(f"  observed@{peer.hub_id} unreachable: {peer.error or 'fetch failed'}")
+            continue
+        agents = [
+            agent
+            for agent in peer.observed_agents
+            if project is None or agent == project or agent.startswith(f"{project}/")
+        ]
+        lag = "unknown" if peer.lag is None else str(peer.lag)
+        agent_text = ", ".join(agents) if agents else "no observed claim owners"
+        print(f"  observed@{peer.hub_id} online cursor={peer.cursor} lag={lag}: {agent_text}")
+
+
+def _render_observed_claims(
+    peers: tuple[ObservedPeerSnapshot, ...], *, owner: str | None = None
+) -> None:
+    """Render advisory observed claims after the local state view."""
+    if not peers:
+        return
+    rows: list[str] = []
+    for peer in peers:
+        if not peer.reachable:
+            rows.append(f"  observed@{peer.hub_id} unreachable: {peer.error or 'fetch failed'}")
+            continue
+        for observed in peer.state.observed_claims.values():
+            claim = dict(observed.claim)
+            claim_owner = str(claim.get("owner", ""))
+            if owner and claim_owner != owner and not claim_owner.startswith(f"{owner}/"):
+                continue
+            paths = ", ".join(str(path) for path in claim.get("paths", []) or []) or "-"
+            rows.append(
+                f"  {observed.task_id} [observed@{peer.hub_id}] "
+                f"owner={claim_owner or '-'} paths={paths}"
+            )
+    print(f"Observed claims ({len(rows)}; advisory, never local grants):")
+    for row in rows:
+        print(row)
 
 
 def _render_dead_letters(snapshot: dict[str, Any]) -> None:

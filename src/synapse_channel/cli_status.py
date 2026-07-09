@@ -28,6 +28,16 @@ from typing import Any, TextIO
 from synapse_channel.cli_query_transport import AgentFactory
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.observed_peers import (
+    ObservedPeerSnapshot,
+    ObservedPeerSpec,
+    fetch_observed_peers,
+    network_observed_fetcher_factory,
+    observed_claim_count,
+    observed_max_lag,
+    observed_peers_to_dict,
+    parse_observed_peer,
+)
 from synapse_channel.waiter_identity import split_roster
 
 
@@ -57,6 +67,7 @@ class HubStatus:
     claims: int = 0
     resources: int = 0
     waiters: int = 0
+    observed_peers: tuple[ObservedPeerSnapshot, ...] = ()
 
 
 def _count_word(count: int, singular: str) -> str:
@@ -92,6 +103,14 @@ def render_status_line(status: HubStatus, *, plain: bool = False) -> str:
         segments.append(_count_word(status.waiters, "waiter"))
     if status.resources:
         segments.append(_count_word(status.resources, "resource"))
+    if status.observed_peers:
+        observed_claims = observed_claim_count(status.observed_peers)
+        segments.append(_count_word(len(status.observed_peers), "observed peer"))
+        if observed_claims:
+            segments.append(_count_word(observed_claims, "observed claim"))
+        max_lag = observed_max_lag(status.observed_peers)
+        if max_lag is not None:
+            segments.append(f"max lag {max_lag}")
     if plain:
         return "synapse online " + " ".join(segments)
     return "synapse ● " + " · ".join(segments)
@@ -105,6 +124,9 @@ async def query_status(
     token: str | None = None,
     ready_timeout: float = 5.0,
     attempts: int = 50,
+    observed_peers: tuple[ObservedPeerSpec, ...] = (),
+    observed_token: str | None = None,
+    observed_timeout: float = 10.0,
 ) -> HubStatus:
     """Connect once, request the roster and the state, and return the status counts.
 
@@ -151,7 +173,15 @@ async def query_status(
             if MessageType.WHO_SNAPSHOT in seen and MessageType.STATE_SNAPSHOT in seen:
                 break
             await asyncio.sleep(0.05)
-        return _tally(seen, probe=probe)
+        observed = await fetch_observed_peers(
+            observed_peers,
+            fetcher_factory=network_observed_fetcher_factory(
+                local_id=f"{name}-observed",
+                token=observed_token,
+                timeout=observed_timeout,
+            ),
+        )
+        return _tally(seen, probe=probe, observed_peers=observed)
     finally:
         agent.running = False
         conn_task.cancel()
@@ -159,7 +189,12 @@ async def query_status(
             await conn_task
 
 
-def _tally(seen: dict[str, dict[str, Any]], *, probe: str) -> HubStatus:
+def _tally(
+    seen: dict[str, dict[str, Any]],
+    *,
+    probe: str,
+    observed_peers: tuple[ObservedPeerSnapshot, ...] = (),
+) -> HubStatus:
     """Fold the collected ``who`` and ``state`` replies into a reachable ``HubStatus``."""
     who = seen.get(MessageType.WHO_SNAPSHOT, {})
     roster = who.get("online_agents", [])
@@ -177,6 +212,7 @@ def _tally(seen: dict[str, dict[str, Any]], *, probe: str) -> HubStatus:
         claims=claims,
         resources=resources,
         waiters=len(waiters),
+        observed_peers=observed_peers,
     )
 
 
@@ -193,6 +229,9 @@ def status_to_json(status: HubStatus) -> dict[str, object]:
         "claims": status.claims,
         "resources": status.resources,
         "waiters": status.waiters,
+        "observed_peers": observed_peers_to_dict(status.observed_peers),
+        "observed_claims": observed_claim_count(status.observed_peers),
+        "observed_max_lag": observed_max_lag(status.observed_peers),
     }
 
 
@@ -208,6 +247,9 @@ async def watch_status(
     plain: bool = False,
     agent_factory: AgentFactory = SynapseAgent,
     out: TextIO | None = None,
+    observed_peers: tuple[ObservedPeerSpec, ...] = (),
+    observed_token: str | None = None,
+    observed_timeout: float = 10.0,
 ) -> int:
     """Refresh the status every ``interval`` seconds — a watch-style dashboard.
 
@@ -253,6 +295,9 @@ async def watch_status(
                 agent_factory=agent_factory,
                 token=token,
                 ready_timeout=ready_timeout,
+                observed_peers=observed_peers,
+                observed_token=observed_token,
+                observed_timeout=observed_timeout,
             )
             if as_json:
                 stream.write(json.dumps(status_to_json(status), sort_keys=True) + "\n")
@@ -294,6 +339,9 @@ def _cmd_status(args: argparse.Namespace) -> int:
                     count=args.count,
                     as_json=args.json,
                     plain=args.plain,
+                    observed_peers=tuple(getattr(args, "observed_peers", ())),
+                    observed_token=getattr(args, "observed_token", None),
+                    observed_timeout=float(getattr(args, "observed_timeout", 10.0)),
                 )
             )
         except KeyboardInterrupt:
@@ -304,6 +352,9 @@ def _cmd_status(args: argparse.Namespace) -> int:
             name=args.name,
             token=args.token,
             ready_timeout=args.ready_timeout,
+            observed_peers=tuple(getattr(args, "observed_peers", ())),
+            observed_token=getattr(args, "observed_token", None),
+            observed_timeout=float(getattr(args, "observed_timeout", 10.0)),
         )
     )
     if args.json:
@@ -351,5 +402,25 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=int,
         default=0,
         help="Stop after this many --watch refreshes (0 = until interrupted).",
+    )
+    status.add_argument(
+        "--observed-peer",
+        action="append",
+        default=[],
+        type=parse_observed_peer,
+        dest="observed_peers",
+        metavar="HUB=URI",
+        help=("Fetch a peer hub's multi-hub event log and append observed@HUB advisory counts."),
+    )
+    status.add_argument(
+        "--observed-token",
+        default=None,
+        help="Shared-secret token used for every --observed-peer pull.",
+    )
+    status.add_argument(
+        "--observed-timeout",
+        type=float,
+        default=10.0,
+        help="Seconds to wait for each observed peer pull.",
     )
     status.set_defaults(func=_cmd_status)

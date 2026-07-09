@@ -259,6 +259,27 @@ def test_dashboard_parser_wires_the_feed_flags() -> None:
     assert alias.reliability_db == Path("./hub.db")
 
 
+def test_dashboard_parser_wires_observed_peer_flags() -> None:
+    parser = cli.build_parser(command="dashboard")
+
+    args = parser.parse_args(
+        [
+            "dashboard",
+            "--observed-peer",
+            "east=ws://127.0.0.1:8877",
+            "--observed-token",
+            "secret",
+            "--observed-timeout",
+            "3.5",
+        ]
+    )
+
+    assert args.observed_peers[0].hub_id == "east"
+    assert args.observed_peers[0].uri == "ws://127.0.0.1:8877"
+    assert args.observed_token == "secret"
+    assert args.observed_timeout == 3.5
+
+
 def test_cmd_dashboard_announces_every_configured_feed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

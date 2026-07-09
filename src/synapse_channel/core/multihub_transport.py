@@ -186,6 +186,7 @@ class _NetworkFetcher:
         self._connector = connector
         self._protocol_warning_sink = protocol_warning_sink
         self.last_protocol_negotiation: ProtocolNegotiation | None = None
+        self.last_log_end_seq: int | None = None
 
     async def __call__(self, after_seq: int) -> Sequence[StoredEvent]:
         """Fetch peer events after ``after_seq`` and capture wire-version metadata."""
@@ -207,6 +208,7 @@ class _NetworkFetcher:
                     _await_snapshot(socket, self._record_protocol_negotiation), self._timeout
                 )
             snapshot = decode_log_snapshot(frame)
+            self.last_log_end_seq = snapshot.log_end_seq
         except MultiHubFetchError:
             raise
         except (

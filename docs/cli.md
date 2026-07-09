@@ -35,7 +35,7 @@ everything, since they need the whole command table.
 | `synapse encrypt-key` | Generate and check at-rest encryption key files (needs the `encryption` extra to encrypt). |
 | `synapse agent-tmux` | Wake an existing terminal-agent tmux session (Codex, Kimi, …) with a fixed safe prompt. |
 | `synapse codex-tmux` | Codex-defaulted alias of `agent-tmux`. |
-| `synapse dashboard` | Serve a loopback-only read-only live cockpit (fleet graph, board, claims, stream, receipts) over hub snapshots, plus `/snapshot.json`; `--reliability-db` adds the `/reliability.json` audit-signal feed. |
+| `synapse dashboard` | Serve a loopback-only read-only live cockpit (fleet graph, board, claims, stream, receipts) over hub snapshots, plus `/snapshot.json`; `--reliability-db` adds the `/reliability.json` audit-signal feed, and `--observed-peer HUB=URI` adds advisory peer-hub rows. |
 | `synapse route-task` | Recommend agents for a board task using local capability signals. |
 | `synapse resource-bids` | Rank live resource offers for a board task without reserving capacity. |
 | `synapse memory-recall` | Recall matching durable memory records from a local event store. |
@@ -65,9 +65,9 @@ everything, since they need the whole command table.
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
 | `synapse manifest` | Print the capability manifest of advertised agents. |
 | `synapse directory` | Print a read-only capability directory from live agent cards (discovery only). |
-| `synapse who` | List the agents currently online, optionally for one project or this identity with `--me`. |
-| `synapse status` | Print a one-line hub summary (online agents, active claims) for shell prompts and tmux status bars, the counts as JSON with `--json`, or a refreshing operator dashboard with `--watch`; exit non-zero when the hub is down. |
-| `synapse state` | Print active claims and their checkpoints (a resume view). |
+| `synapse who` | List the agents currently online, optionally for one project or this identity with `--me`; `--observed-peer HUB=URI` appends advisory `observed@HUB` peer rows. |
+| `synapse status` | Print a one-line hub summary (online agents, active claims) for shell prompts and tmux status bars, the counts as JSON with `--json`, or a refreshing operator dashboard with `--watch`; exit non-zero when the hub is down; `--observed-peer HUB=URI` appends advisory peer counters. |
+| `synapse state` | Print active claims and their checkpoints (a resume view); `--observed-peer HUB=URI` appends advisory peer claims marked `observed@HUB`. |
 | `synapse dead-letters` | Print directed messages the hub delivered to no live connection — the blackhole ledger the dashboard and cockpit show, now on the terminal, worst first with the `syn inbox --as NAME` drain remedy. |
 | `synapse approvals` | Print the relays awaiting a second operator under the two-person quorum — the pending set of the per-hub approval ledger (enforced but otherwise invisible), oldest first, naming each pending action and its first requester. Rides in the same state snapshot the dashboard and cockpit read. |
 | `synapse doctor` | Check for common coordination misconfigs (identity, exposure, hub, waiter); exit non-zero on a failure. `--fix` auto-repairs a down default local hub or missing waiter by installing and starting the user services; `--json` emits the verdicts for CI health gates. |
@@ -242,6 +242,15 @@ synapse dashboard --port 8765                                           # local 
 A lapsed claim keeps its checkpoint, so re-claiming the task resumes from it rather
 than restarting.
 
+`synapse who`, `synapse status`, `synapse state`, and `synapse dashboard` can add
+an opt-in observed peer layer with repeatable `--observed-peer HUB=URI`. The peer
+URI is pulled through the same multi-hub event-log request path as
+`synapse multihub follow`, then folded locally and marked `observed@HUB` wherever
+it appears. Observed rows are advisory: they never grant local claims, never
+change the local hub's roster, and peer failures render as unreachable peer rows.
+Use `--observed-token` for secured peer hubs and `--observed-timeout` to bound
+each peer pull.
+
 `synapse dashboard` binds to `127.0.0.1` by default and reads roster, state,
 board, and manifest snapshots from the live hub. The state snapshot carries
 `dead_letters` — directed chats that reached no live connection, per target
@@ -272,7 +281,9 @@ blackboard. Dashboard branch conflicts use the same declared-claim metadata as
 page exposes agent names, claim scopes, branch names, and task text. Pass
 `--dashboard-token <token>` to require `Authorization: Bearer <token>` on `/`
 and `/snapshot.json`; when `--allow-non-loopback` exposes the dashboard and no
-token is supplied, Synapse generates and prints a startup token.
+token is supplied, Synapse generates and prints a startup token. Add
+`--observed-peer HUB=URI` to include peer-hub rows in the browser and
+`/snapshot.json`; those rows stay advisory and are labelled `observed@HUB`.
 
 With `--feeds-db <hub.db>` (`--reliability-db` is the same flag's original
 name) the dashboard serves eight feeds off the **durable event store** —
@@ -371,6 +382,7 @@ agent on the project, `quantum/claude-*` for one role), or `all`. List who is li
 ```bash
 synapse who                       # agents online, with -rx waiter sidecars counted apart
 synapse who --project quantum     # only quantum/... instances
+synapse who --observed-peer east=ws://127.0.0.1:8877  # add advisory peer owners
 synapse who --name quantum/codex-2b40 --me  # this identity plus its -rx waiter status
 syn who --me                      # same check using the resolved syn identity
 syn reap                          # list this identity's shell-hook waiter pidfile

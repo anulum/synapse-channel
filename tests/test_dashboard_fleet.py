@@ -17,12 +17,16 @@ from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel import cli
 from synapse_channel.a2a_store import A2ATaskStore
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.multihub_fold import fold_observed_state
+from synapse_channel.core.multihub_merge import HubEvent
 from synapse_channel.dashboard import (
     DashboardSnapshot,
     render_dashboard_html,
     start_dashboard_server,
 )
 from synapse_channel.dashboard_fleet import build_fleet_visibility
+from synapse_channel.observed_peers import ObservedPeerSnapshot
 
 
 def _http_get(url: str) -> tuple[int, str, str]:
@@ -201,6 +205,42 @@ def test_fleet_visibility_renders_in_dashboard_html(tmp_path: Path) -> None:
     assert "Task dependency edges" in html
     assert "Release receipts" in html
     assert "TASK_STATE_FAILED" in html
+
+
+def test_dashboard_snapshot_and_html_include_observed_peers() -> None:
+    observed = ObservedPeerSnapshot(
+        hub_id="east",
+        uri="ws://east",
+        reachable=True,
+        cursor=4,
+        log_end_seq=6,
+        state=fold_observed_state(
+            [
+                HubEvent(
+                    "east",
+                    4,
+                    4.0,
+                    EventKind.CLAIM,
+                    {"task_id": "REMOTE", "owner": "east/agent", "paths": ["src/x.py"]},
+                )
+            ]
+        ),
+    )
+    snapshot = DashboardSnapshot(
+        online_agents=["local"],
+        state={"active_claims": []},
+        board={"tasks": [], "progress": []},
+        manifest=[],
+        observed_peers=(observed,),
+    )
+
+    payload = snapshot.to_dict()
+    html = render_dashboard_html(snapshot, refresh_seconds=5)
+
+    assert payload["observed_peers"][0]["hub_id"] == "east"
+    assert payload["observed_peers"][0]["lag"] == 2
+    assert "Observed peer hubs" in html
+    assert "observed@east</strong> cursor=4 lag=2 claims=1" in html
 
 
 def test_dashboard_parser_accepts_a2a_state_file(tmp_path: Path) -> None:

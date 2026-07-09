@@ -14,9 +14,13 @@ from pathlib import Path
 import pytest
 
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
-from synapse_channel import cli_queries
+from synapse_channel import cli, cli_queries
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.multihub_fold import fold_observed_state
+from synapse_channel.core.multihub_merge import HubEvent
 from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
+from synapse_channel.observed_peers import ObservedPeerSnapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -226,6 +230,58 @@ def test_render_who_marks_receiver_capabilities(capsys: pytest.CaptureFixture[st
     assert "DIRECT  (direct agent)" in out
     assert "GROK-rx  (pane bridge)" in out
     assert "KIMI-rx  (passive receiver)" in out
+
+
+def test_render_who_marks_observed_peer_rows(capsys: pytest.CaptureFixture[str]) -> None:
+    observed = ObservedPeerSnapshot(
+        hub_id="east",
+        uri="ws://east",
+        reachable=True,
+        cursor=2,
+        log_end_seq=3,
+        state=fold_observed_state(
+            [
+                HubEvent(
+                    "east",
+                    2,
+                    2.0,
+                    EventKind.CLAIM,
+                    {"task_id": "T", "owner": "quantum/remote", "paths": ["src/x.py"]},
+                )
+            ]
+        ),
+    )
+    unreachable = ObservedPeerSnapshot(
+        hub_id="west", uri="ws://west", reachable=False, error="offline"
+    )
+
+    cli_queries._render_who(
+        ["quantum/local"], project="quantum", observed_peers=(observed, unreachable)
+    )
+
+    out = capsys.readouterr().out
+    assert "Observed peers (2; advisory, not local authority):" in out
+    assert "observed@east online cursor=2 lag=1: quantum/remote" in out
+    assert "observed@west unreachable: offline" in out
+
+
+def test_who_parser_accepts_observed_peer_flags() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "who",
+            "--observed-peer",
+            "east=ws://127.0.0.1:8877",
+            "--observed-token",
+            "secret",
+            "--observed-timeout",
+            "3.5",
+        ]
+    )
+
+    assert args.observed_peers[0].hub_id == "east"
+    assert args.observed_peers[0].uri == "ws://127.0.0.1:8877"
+    assert args.observed_token == "secret"
+    assert args.observed_timeout == 3.5
 
 
 def test_render_who_formats_the_silence_age_in_seconds_minutes_and_hours(

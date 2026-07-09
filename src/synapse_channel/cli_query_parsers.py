@@ -21,6 +21,34 @@ from synapse_channel.cli_query_commands import (
     _cmd_who,
 )
 from synapse_channel.client.agent import default_hub_uri
+from synapse_channel.observed_peers import parse_observed_peer
+
+
+def _add_observed_peer_flags(parser: argparse.ArgumentParser) -> None:
+    """Add opt-in advisory observed-peer flags to an operator surface."""
+    parser.add_argument(
+        "--observed-peer",
+        action="append",
+        default=[],
+        type=parse_observed_peer,
+        dest="observed_peers",
+        metavar="HUB=URI",
+        help=(
+            "Fetch a peer hub's multi-hub event log and render its folded state as "
+            "observed@HUB advisory data. Repeat for multiple peers."
+        ),
+    )
+    parser.add_argument(
+        "--observed-token",
+        default=None,
+        help="Shared-secret token used for every --observed-peer pull.",
+    )
+    parser.add_argument(
+        "--observed-timeout",
+        type=float,
+        default=10.0,
+        help="Seconds to wait for each observed peer pull.",
+    )
 
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -48,6 +76,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     who.add_argument(
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
     )
+    _add_observed_peer_flags(who)
     who.set_defaults(func=_cmd_who)
 
     health = subparsers.add_parser("health", help="Probe the hub; exit 0 if reachable, 1 if not.")
@@ -73,6 +102,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     state.add_argument(
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
     )
+    _add_observed_peer_flags(state)
     state.set_defaults(func=_cmd_state)
 
     dead_letters = subparsers.add_parser(

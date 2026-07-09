@@ -13,8 +13,12 @@ import argparse
 import pytest
 
 from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
-from synapse_channel import cli_queries
+from synapse_channel import cli, cli_queries
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.multihub_fold import fold_observed_state
+from synapse_channel.core.multihub_merge import HubEvent
+from synapse_channel.observed_peers import ObservedPeerSnapshot
 
 
 async def _claim(
@@ -125,3 +129,51 @@ async def test_state_shows_git_branch(capsys: pytest.CaptureFixture[str]) -> Non
             await close_agents(owner)
 
     assert "git=feature/x->main" in capsys.readouterr().out
+
+
+def test_render_state_marks_observed_claims_as_advisory(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    observed = ObservedPeerSnapshot(
+        hub_id="east",
+        uri="ws://east",
+        reachable=True,
+        cursor=1,
+        state=fold_observed_state(
+            [
+                HubEvent(
+                    "east",
+                    1,
+                    1.0,
+                    EventKind.CLAIM,
+                    {"task_id": "T", "owner": "remote/agent", "paths": ["src/x.py"]},
+                )
+            ]
+        ),
+    )
+
+    cli_queries._render_state({"active_claims": []}, observed_peers=(observed,))
+
+    out = capsys.readouterr().out
+    assert "Active claims (0)" in out
+    assert "Observed claims (1; advisory, never local grants):" in out
+    assert "T [observed@east] owner=remote/agent paths=src/x.py" in out
+
+
+def test_state_parser_accepts_observed_peer_flags() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "state",
+            "--observed-peer",
+            "east=ws://127.0.0.1:8877",
+            "--observed-token",
+            "secret",
+            "--observed-timeout",
+            "3.5",
+        ]
+    )
+
+    assert args.observed_peers[0].hub_id == "east"
+    assert args.observed_peers[0].uri == "ws://127.0.0.1:8877"
+    assert args.observed_token == "secret"
+    assert args.observed_timeout == 3.5

@@ -26,9 +26,14 @@ from synapse_channel.cli_status import (
     add_parsers,
     query_status,
     render_status_line,
+    status_to_json,
 )
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.multihub_fold import fold_observed_state
+from synapse_channel.core.multihub_merge import HubEvent
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.observed_peers import ObservedPeerSnapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -162,6 +167,9 @@ def _namespace(
         watch=watch,
         interval=interval,
         count=count,
+        observed_peers=[],
+        observed_token=None,
+        observed_timeout=10.0,
     )
 
 
@@ -289,6 +297,9 @@ def test_cmd_status_json_offline_reports_unreachable(
         "claims": 0,
         "resources": 0,
         "waiters": 0,
+        "observed_peers": [],
+        "observed_claims": 0,
+        "observed_max_lag": None,
     }
 
 
@@ -315,6 +326,45 @@ async def test_cmd_status_json_carries_the_live_counts(
 def test_parser_accepts_status_json() -> None:
     args = cli.build_parser().parse_args(["status", "--json"])
     assert args.json is True
+
+
+def test_parser_accepts_status_observed_peer_flags() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "status",
+            "--observed-peer",
+            "east=ws://127.0.0.1:8877",
+            "--observed-token",
+            "secret",
+            "--observed-timeout",
+            "3.5",
+        ]
+    )
+
+    assert args.observed_peers[0].hub_id == "east"
+    assert args.observed_peers[0].uri == "ws://127.0.0.1:8877"
+    assert args.observed_token == "secret"
+    assert args.observed_timeout == 3.5
+
+
+def test_status_line_and_json_include_observed_peer_counts() -> None:
+    observed = ObservedPeerSnapshot(
+        hub_id="east",
+        uri="ws://east",
+        reachable=True,
+        cursor=2,
+        log_end_seq=3,
+        state=fold_observed_state(
+            [HubEvent("east", 2, 2.0, EventKind.CLAIM, {"task_id": "T", "owner": "a"})]
+        ),
+    )
+    status = HubStatus(reachable=True, online=1, claims=0, observed_peers=(observed,))
+
+    assert "1 observed peer" in render_status_line(status, plain=True)
+    assert "1 observed claim" in render_status_line(status, plain=True)
+    payload = status_to_json(status)
+    assert payload["observed_claims"] == 1
+    assert payload["observed_max_lag"] == 1
 
 
 # --- watch mode -----------------------------------------------------------------

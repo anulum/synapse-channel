@@ -76,6 +76,13 @@ from synapse_channel.dashboard_studio_command import (
     STUDIO_COMMAND_PATH,
     render_studio_command_html,
 )
+from synapse_channel.observed_peers import (
+    ObservedPeerSnapshot,
+    ObservedPeerSpec,
+    fetch_observed_peers,
+    network_observed_fetcher_factory,
+    observed_peers_to_dict,
+)
 from synapse_channel.studio_snapshot import STUDIO_SNAPSHOT_PATH, build_studio_snapshot
 
 SnapshotMapping = dict[str, Any]
@@ -114,6 +121,9 @@ class DashboardSnapshot:
         the hub's ``who`` snapshot so the cockpit can show role bindings alongside
         the roster. Empty for an agent that declared none, or for a hub that
         predates role addressing.
+    observed_peers : tuple[ObservedPeerSnapshot, ...]
+        Optional advisory peer snapshots fetched through the multi-hub log
+        request path. Empty unless the dashboard was started with observed peers.
     """
 
     online_agents: list[str]
@@ -123,6 +133,7 @@ class DashboardSnapshot:
     hub_version: str = ""
     config_epoch: str = ""
     agent_roles: dict[str, list[str]] = field(default_factory=dict)
+    observed_peers: tuple[ObservedPeerSnapshot, ...] = ()
 
     def to_dict(self, *, a2a_state_file: str | Path | None = None) -> dict[str, Any]:
         """Return a JSON-serialisable dictionary for HTTP responses.
@@ -134,6 +145,7 @@ class DashboardSnapshot:
             derived ``fleet.a2a`` summary.
         """
         payload = asdict(self)
+        payload["observed_peers"] = observed_peers_to_dict(self.observed_peers)
         fleet = build_fleet_visibility(self, a2a_state_file=a2a_state_file)
         payload["fleet"] = fleet.to_dict()
         payload["risk"] = build_risk_view(fleet).to_dict()
@@ -214,6 +226,9 @@ async def fetch_dashboard_snapshot(
     token: str | None,
     ready_timeout: float = 5.0,
     response_timeout: float = 2.0,
+    observed_peers: tuple[ObservedPeerSpec, ...] = (),
+    observed_token: str | None = None,
+    observed_timeout: float = 10.0,
 ) -> DashboardSnapshot:
     """Fetch roster, state, board, and manifest snapshots from a live hub.
 
@@ -227,6 +242,9 @@ async def fetch_dashboard_snapshot(
         Seconds to wait for the hub welcome handshake.
     response_timeout : float, optional
         Seconds to wait for every read-side snapshot response.
+    observed_peers : tuple[ObservedPeerSpec, ...], optional
+        Peer hubs to fetch through the multi-hub log path and render as
+        advisory observed state.
 
     Returns
     -------
@@ -268,6 +286,14 @@ async def fetch_dashboard_snapshot(
             joined = ", ".join(missing)
             raise DashboardUnavailable(f"hub did not return dashboard snapshot(s): {joined}")
         who = messages[MessageType.WHO_SNAPSHOT]
+        observed = await fetch_observed_peers(
+            observed_peers,
+            fetcher_factory=network_observed_fetcher_factory(
+                local_id=f"{name}-observed",
+                token=observed_token,
+                timeout=observed_timeout,
+            ),
+        )
         return DashboardSnapshot(
             online_agents=[str(agent_name) for agent_name in who.get("online_agents", [])],
             state=dict(messages[MessageType.STATE_SNAPSHOT].get("snapshot", {})),
@@ -280,6 +306,7 @@ async def fetch_dashboard_snapshot(
             hub_version=str(who.get("hub_version", "")),
             config_epoch=str(who.get("config_epoch", "")),
             agent_roles=_agent_roles_from_who(who),
+            observed_peers=observed,
         )
     finally:
         agent.running = False
@@ -386,6 +413,29 @@ def _render_manifest(manifest: ManifestCards) -> str:
     return "".join(rows)
 
 
+def _render_observed_peer_rows(peers: tuple[ObservedPeerSnapshot, ...]) -> str:
+    """Render advisory observed peer rows for the fallback dashboard HTML."""
+    if not peers:
+        return '<li class="muted">No observed peers configured</li>'
+    rows: list[str] = []
+    for peer in peers:
+        label = f"observed@{peer.hub_id}"
+        if not peer.reachable:
+            rows.append(
+                f"<li><strong>{_escape(label)}</strong> unreachable"
+                f"<br><small>{_escape(peer.error or 'fetch failed')}</small></li>"
+            )
+            continue
+        lag = "unknown" if peer.lag is None else str(peer.lag)
+        agents = ", ".join(peer.observed_agents) or "no observed claim owners"
+        rows.append(
+            f"<li><strong>{_escape(label)}</strong> cursor={peer.cursor} "
+            f"lag={_escape(lag)} claims={len(peer.state.observed_claims)}"
+            f"<br><small>{_escape(agents)}</small></li>"
+        )
+    return "".join(rows)
+
+
 def render_dashboard_html(
     snapshot: DashboardSnapshot,
     *,
@@ -424,6 +474,9 @@ def render_dashboard_html(
     <section><h2>Board tasks</h2><ul>{_render_tasks(snapshot.board)}</ul></section>
     <section><h2>Recent progress</h2><ul>{_render_progress(snapshot.board)}</ul></section>
     <section><h2>Capability manifest</h2><ul>{_render_manifest(snapshot.manifest)}</ul></section>
+    <section><h2>Observed peer hubs</h2>
+      <ul>{_render_observed_peer_rows(snapshot.observed_peers)}</ul>
+    </section>
     {fleet_html}
   </div>"""
     return render_cockpit_html(refresh_seconds=refresh, fallback_html=fallback_html)
@@ -588,6 +641,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     operator_enabled: ClassVar[bool]
     operator_name: ClassVar[str]
     operator_rate_limiter: ClassVar[WriteRateLimiter]
+    observed_peers: ClassVar[tuple[ObservedPeerSpec, ...]]
+    observed_token: ClassVar[str | None]
+    observed_timeout: ClassVar[float]
 
     def do_GET(self) -> None:
         """Serve the dashboard HTML page, JSON snapshot, or a 404 response."""
@@ -683,6 +739,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                     token=self.token,
                     ready_timeout=self.ready_timeout,
                     response_timeout=self.response_timeout,
+                    observed_peers=self.observed_peers,
+                    observed_token=self.observed_token,
+                    observed_timeout=self.observed_timeout,
                 )
             )
         except DashboardUnavailable as exc:
@@ -1374,6 +1433,9 @@ def _handler_class(
     operator_enabled: bool,
     operator_name: str,
     operator_rate_limiter: WriteRateLimiter,
+    observed_peers: tuple[ObservedPeerSpec, ...],
+    observed_token: str | None,
+    observed_timeout: float,
 ) -> type[_DashboardHandler]:
     """Create an isolated handler class for one dashboard server."""
     bound_uri = uri
@@ -1391,6 +1453,9 @@ def _handler_class(
     bound_operator_enabled = operator_enabled
     bound_operator_name = operator_name
     bound_operator_rate_limiter = operator_rate_limiter
+    bound_observed_peers = observed_peers
+    bound_observed_token = observed_token
+    bound_observed_timeout = observed_timeout
 
     class BoundDashboardHandler(_DashboardHandler):
         """Dashboard handler bound to one hub URI and dashboard identity."""
@@ -1410,6 +1475,9 @@ def _handler_class(
         operator_enabled = bound_operator_enabled
         operator_name = bound_operator_name
         operator_rate_limiter = bound_operator_rate_limiter
+        observed_peers = bound_observed_peers
+        observed_token = bound_observed_token
+        observed_timeout = bound_observed_timeout
 
     return BoundDashboardHandler
 
@@ -1432,6 +1500,9 @@ def start_dashboard_server(
     cockpit_dist: str | Path | None = None,
     operator: bool = False,
     operator_name: str | None = None,
+    observed_peers: tuple[ObservedPeerSpec, ...] = (),
+    observed_token: str | None = None,
+    observed_timeout: float = 10.0,
 ) -> DashboardServer:
     """Start a background dashboard HTTP server (read-only unless armed).
 
@@ -1504,6 +1575,9 @@ def start_dashboard_server(
         operator_rate_limiter=WriteRateLimiter(
             max_calls=OPERATOR_RATE_MAX, window_seconds=OPERATOR_RATE_WINDOW_SECONDS
         ),
+        observed_peers=observed_peers,
+        observed_token=observed_token,
+        observed_timeout=observed_timeout,
     )
     server = ThreadingHTTPServer((host, int(port)), handler)
     thread = threading.Thread(target=server.serve_forever, name="synapse-dashboard", daemon=True)

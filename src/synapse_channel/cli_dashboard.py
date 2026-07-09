@@ -15,6 +15,7 @@ from pathlib import Path
 
 from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.dashboard import start_dashboard_server
+from synapse_channel.observed_peers import parse_observed_peer
 
 
 def _cmd_dashboard(args: argparse.Namespace) -> int:
@@ -37,6 +38,9 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
             cockpit_dist=args.cockpit_dist,
             operator=args.operator,
             operator_name=args.operator_name,
+            observed_peers=tuple(args.observed_peers),
+            observed_token=args.observed_token,
+            observed_timeout=args.observed_timeout,
         )
     except ValueError as exc:
         print(str(exc))
@@ -166,5 +170,28 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             "Sender identity for relayed operator writes; 'operator:<name>' when "
             "omitted, so operator actions are attributed and never impersonate an agent."
         ),
+    )
+    dashboard.add_argument(
+        "--observed-peer",
+        action="append",
+        default=[],
+        type=parse_observed_peer,
+        dest="observed_peers",
+        metavar="HUB=URI",
+        help=(
+            "Fetch a peer hub's multi-hub event log and include observed@HUB "
+            "advisory rows in dashboard snapshots. Repeat for multiple peers."
+        ),
+    )
+    dashboard.add_argument(
+        "--observed-token",
+        default=None,
+        help="Shared-secret token used for every --observed-peer pull.",
+    )
+    dashboard.add_argument(
+        "--observed-timeout",
+        type=float,
+        default=10.0,
+        help="Seconds to wait for each observed peer pull.",
     )
     dashboard.set_defaults(func=_cmd_dashboard)

@@ -82,6 +82,10 @@ contested namespace, have shipped:
   derivation, and holds the per-namespace asserting-hub view partition detection
   consumes. Opt-in via `--multihub-watch`; fail-closed for authority (a failed poll
   keeps the last successful observation).
+- `observed_peers.py` — the operator-surface adapter for the same read-only pull:
+  `synapse who`, `synapse status`, `synapse state`, and `synapse dashboard` accept
+  repeatable `--observed-peer HUB=URI` flags, fold each peer locally, and render
+  the result as `observed@HUB` advisory state without changing the local hub.
 
 ## Observing a peer — a two-hub walkthrough
 
@@ -171,6 +175,24 @@ On connect, the network fetcher also reads the peer hub's advertised
 operator-visible warning, records the negotiated lowest-common wire version for
 the `MultiHubFollower`, and keeps optional features gated to that effective
 version. Peers that omit the field are treated as legacy wire version `1`.
+
+### 4a. Add observed peers to operator surfaces
+
+The day-to-day operator surfaces can show the same advisory peer state without
+switching to the dedicated `multihub` command:
+
+```bash
+synapse who --observed-peer west=wss://west.example:8876/
+synapse status --json --observed-peer west=wss://west.example:8876/
+synapse state --observed-peer west=wss://west.example:8876/
+synapse dashboard --observed-peer west=wss://west.example:8876/
+```
+
+Each command fetches the peer with the multi-hub log request path, folds the
+events locally, and labels output `observed@west`. A peer outage renders an
+unreachable peer row; it does not make the local hub unhealthy and does not
+grant, revoke, or route a local claim. Use `--observed-token` for secured peers
+and `--observed-timeout` to bound each pull.
 
 ### 5. Trace causality across the hubs
 
