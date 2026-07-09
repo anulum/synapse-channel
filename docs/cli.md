@@ -1636,7 +1636,9 @@ generic ownership refusal. `/metrics` exposes
 `synapse_forwarded_claim_timeouts_total`.
 `--multihub-watch PEER=URI` (repeatable, requires `--namespace-owner`) polls
 each named peer's event log on a bounded interval and folds the claims it
-observes into the asserting-owners view — a namespace a watched peer is seen
+observes into the asserting-owners view (`--multihub-watch-pin PEER=sha256:<hex>`
+pins a self-signed `wss://` watch peer's certificate, mirroring
+`multihub follow --pin`; the peer must also be named by `--multihub-watch`) — a namespace a watched peer is seen
 contesting resolves as *partitioned* and refuses to grant until the contest
 clears. Naming a peer is the operator confirmation for the always-on outbound
 connection; a failed poll keeps the last successful observation, so a link

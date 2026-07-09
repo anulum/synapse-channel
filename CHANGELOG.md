@@ -20,6 +20,9 @@ All notable changes to this project are documented here.
   ceremony; a mismatch or plaintext URI fails the pull closed with the cursor
   unadvanced. Shared client-pin primitives live in `core.tls`
   (`pin_trust_client_context`, `live_peer_certificate_pin`).
+- `synapse hub --multihub-watch-pin PEER=sha256:<hex>` (repeatable): the
+  standing watch pulls a pinned self-signed `wss://` peer through the same
+  pinned connector; a pin naming an unwatched peer is refused at startup.
 
 ### Changed
 - CI installs `sqlcipher3-binary` in the test matrix so the SQLCipher at-rest

@@ -31,7 +31,7 @@ from synapse_channel.core.hub_config import HubConfig, config_fingerprint
 from synapse_channel.core.identity_binding import IdentityBindingError, load_identity_trust_bundle
 from synapse_channel.core.logging_setup import configure_logging
 from synapse_channel.core.message_auth import MessageAuthKey
-from synapse_channel.core.multihub_watch import MultiHubWatch, parse_watch_peers
+from synapse_channel.core.multihub_watch import MultiHubWatch, parse_watch_peers, parse_watch_pins
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.paranoid import ParanoidModeError, apply_paranoid_hub_profile
 from synapse_channel.core.persistence import EventStore
@@ -268,11 +268,13 @@ def _cmd_hub(
                 local_hub_id=args.hub_id,
             )
         if args.multihub_watch:
+            watch_peers = parse_watch_peers(args.multihub_watch)
             watch = MultiHubWatch(
-                parse_watch_peers(args.multihub_watch),
+                watch_peers,
                 local_id=args.hub_id,
                 token=args.multihub_watch_token,
                 interval=args.multihub_watch_interval,
+                pins=parse_watch_pins(args.multihub_watch_pin, watch_peers),
             )
     except ValueError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)

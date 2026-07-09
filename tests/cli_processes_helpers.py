@@ -85,6 +85,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "multihub_watch": [],
         "multihub_watch_interval": 30.0,
         "multihub_watch_token": None,
+        "multihub_watch_pin": [],
         "insecure_off_loopback": False,
         "tls_certfile": None,
         "tls_keyfile": None,

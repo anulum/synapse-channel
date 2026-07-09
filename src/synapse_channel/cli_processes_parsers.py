@@ -458,6 +458,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Authentication token sent to secured watch peers.",
     )
     hub.add_argument(
+        "--multihub-watch-pin",
+        action="append",
+        default=[],
+        metavar="PEER=sha256:HEX",
+        help="Accept the named watch peer's wss:// certificate only by this SHA-256 pin "
+        "(repeatable; self-signed or private-CA peers, no CA needed). The peer must "
+        "also be named by --multihub-watch.",
+    )
+    hub.add_argument(
         "--insecure-off-loopback",
         action="store_true",
         help="Bind a non-loopback host even without a token (and metrics token); by "

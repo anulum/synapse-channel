@@ -39,7 +39,11 @@ from collections.abc import Awaitable, Callable, Mapping
 from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.multihub_fold import asserting_owners
 from synapse_channel.core.multihub_follower import EventFetcher, MultiHubFollower
-from synapse_channel.core.multihub_transport import MultiHubFetchError, network_fetcher
+from synapse_channel.core.multihub_transport import (
+    MultiHubFetchError,
+    network_fetcher,
+    pinned_connector,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +90,51 @@ def parse_watch_peers(values: list[str]) -> dict[str, str]:
     return peers
 
 
+def parse_watch_pins(values: list[str], peers: Mapping[str, str]) -> dict[str, str]:
+    """Parse repeatable ``PEER=sha256:<hex>`` CLI values into a peer-to-pin map.
+
+    Parameters
+    ----------
+    values : list[str]
+        Raw flag values, each ``PEER=sha256:<hex>`` — the watched peer the pin
+        applies to and the SHA-256 certificate pin its ``wss://`` connection must
+        present.
+    peers : Mapping[str, str]
+        The watched peers (from :func:`parse_watch_peers`); a pin naming an
+        unwatched peer is an operator mistake and is refused.
+
+    Returns
+    -------
+    dict[str, str]
+        Peer hub id to certificate pin.
+
+    Raises
+    ------
+    ValueError
+        If a value has no ``=``, an empty peer or pin, a pin not in
+        ``sha256:<hex>`` form, a peer not named by ``--multihub-watch``, or a
+        repeated peer.
+    """
+    pins: dict[str, str] = {}
+    for value in values:
+        peer, sep, pin = value.partition("=")
+        peer, pin = peer.strip(), pin.strip()
+        if not sep or not peer or not pin:
+            msg = f"--multihub-watch-pin must use PEER=sha256:<hex>, got {value!r}"
+            raise ValueError(msg)
+        if not pin.lower().startswith("sha256:"):
+            msg = f"--multihub-watch-pin pin must be sha256:<hex>, got {pin!r}"
+            raise ValueError(msg)
+        if peer not in peers:
+            msg = f"--multihub-watch-pin names {peer!r}, which --multihub-watch does not watch"
+            raise ValueError(msg)
+        if peer in pins:
+            msg = f"--multihub-watch-pin names peer {peer!r} twice"
+            raise ValueError(msg)
+        pins[peer] = pin
+    return pins
+
+
 class MultiHubWatch:
     """Poll named peer hubs and hold the observed asserting-owners view.
 
@@ -108,6 +157,11 @@ class MultiHubWatch:
     fetcher_factory : FetcherFactory, optional
         Builds the per-peer transport; defaults to the real network fetcher. Injected in
         tests to script peers without sockets.
+    pins : Mapping[str, str] or None, optional
+        Per-peer ``sha256:<hex>`` certificate pins (see
+        :func:`parse_watch_pins`). A pinned peer's ``wss://`` connection is
+        trusted by live certificate pin instead of CA chain; a mismatch fails
+        that poll closed. Peers absent from the map use the default transport.
     """
 
     def __init__(
@@ -120,14 +174,19 @@ class MultiHubWatch:
         namespace_of: Callable[[str], str] = project_of,
         follower: MultiHubFollower | None = None,
         fetcher_factory: FetcherFactory = network_fetcher,
+        pins: Mapping[str, str] | None = None,
     ) -> None:
         self.interval = max(float(interval), MIN_WATCH_INTERVAL)
         self._namespace_of = namespace_of
         self._follower = follower if follower is not None else MultiHubFollower()
-        self._fetchers: dict[str, EventFetcher] = {
-            peer: fetcher_factory(uri, local_id=local_id, token=token)
-            for peer, uri in peers.items()
-        }
+        self._fetchers: dict[str, EventFetcher] = {}
+        for peer, uri in peers.items():
+            extra: dict[str, object] = {}
+            if pins and peer in pins:
+                # A pinned wss:// peer is trusted by certificate pin, not CA chain;
+                # the connector fails the poll closed on any mismatch.
+                extra["connector"] = pinned_connector(pins[peer])
+            self._fetchers[peer] = fetcher_factory(uri, local_id=local_id, token=token, **extra)
         self._assertions: dict[str, frozenset[str]] = {}
 
     def observed_asserting_hubs(self, namespace: str) -> tuple[str, ...]:

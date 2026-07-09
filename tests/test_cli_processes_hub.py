@@ -1046,3 +1046,36 @@ def test_cmd_hub_stale_recipient_warning_off_by_default() -> None:
 
     assert cli_processes._cmd_hub(_hub_ns(), runner=_close_runner, hub_factory=build_hub) == 0
     assert captured["warn_stale_recipients"] is False
+
+
+def test_cmd_hub_rejects_a_pin_for_an_unwatched_peer(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ns = _hub_ns(
+        hub_id="syn-a",
+        namespace_owner=["OWNED=syn-a"],
+        multihub_watch=["hub-b=wss://b:443"],
+        multihub_watch_pin=["ghost=sha256:" + "a" * 64],
+    )
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
+    assert "does not watch" in capsys.readouterr().err
+
+
+def test_cmd_hub_accepts_a_pin_for_a_watched_peer() -> None:
+    from synapse_channel.core.multihub_watch import MultiHubWatch
+
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    ns = _hub_ns(
+        hub_id="syn-a",
+        namespace_owner=["OWNED=syn-a"],
+        multihub_watch=["hub-b=wss://b:443"],
+        multihub_watch_pin=["hub-b=sha256:" + "a" * 64],
+    )
+    assert cli_processes._cmd_hub(ns, runner=_close_runner, hub_factory=build_hub) == 0
+    feed = captured["observed_asserting_hubs"]
+    assert isinstance(feed.__self__, MultiHubWatch)

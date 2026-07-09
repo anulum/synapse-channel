@@ -19,6 +19,7 @@ from synapse_channel.core.multihub_watch import (
     MIN_WATCH_INTERVAL,
     MultiHubWatch,
     parse_watch_peers,
+    parse_watch_pins,
 )
 from synapse_channel.core.persistence import StoredEvent
 
@@ -187,3 +188,54 @@ class TestWatchRun:
             raise AssertionError(f"unexpected sleep of {seconds}s")
 
         await watch.run(sleeper=sleeper, rounds=1)
+
+
+class TestParseWatchPins:
+    def test_parses_pins_for_watched_peers(self) -> None:
+        peers = {"hub-b": "wss://b:443", "hub-c": "wss://c:443"}
+        parsed = parse_watch_pins(["hub-b=sha256:" + "a" * 64, " hub-c = SHA256:BB "], peers)
+        assert parsed == {"hub-b": "sha256:" + "a" * 64, "hub-c": "SHA256:BB"}
+
+    def test_no_pins_yields_an_empty_map(self) -> None:
+        assert parse_watch_pins([], {"hub-b": "wss://b:443"}) == {}
+
+    def test_rejects_malformed_values(self) -> None:
+        peers = {"hub-b": "wss://b:443"}
+        for value in ("hub-b", "=sha256:aa", "hub-b=", "hub-b=md5:aa"):
+            with pytest.raises(ValueError, match="--multihub-watch-pin"):
+                parse_watch_pins([value], peers)
+
+    def test_rejects_an_unwatched_peer(self) -> None:
+        with pytest.raises(ValueError, match="does not watch"):
+            parse_watch_pins(["ghost=sha256:aa"], {"hub-b": "wss://b:443"})
+
+    def test_rejects_a_repeated_peer(self) -> None:
+        peers = {"hub-b": "wss://b:443"}
+        with pytest.raises(ValueError, match="twice"):
+            parse_watch_pins(["hub-b=sha256:aa", "hub-b=sha256:bb"], peers)
+
+
+class TestWatchPinnedTransport:
+    def test_only_pinned_peers_receive_a_connector(self) -> None:
+        captured: dict[str, dict[str, object]] = {}
+
+        def factory(
+            uri: str, *, local_id: str, token: str | None = None, **extra: object
+        ) -> EventFetcher:
+            captured[uri] = {"local_id": local_id, "token": token, **extra}
+
+            async def fetch(after_seq: int) -> Sequence[StoredEvent]:
+                del after_seq
+                return []  # pragma: no cover - construction-only test
+
+            return fetch
+
+        MultiHubWatch(
+            {"hub-b": "wss://b:443", "hub-c": "ws://c:8876"},
+            local_id="syn-a",
+            fetcher_factory=factory,
+            pins={"hub-b": "sha256:" + "a" * 64},
+        )
+
+        assert callable(captured["wss://b:443"]["connector"])
+        assert "connector" not in captured["ws://c:8876"]
