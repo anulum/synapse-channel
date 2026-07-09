@@ -22,8 +22,11 @@ reach the peer's log:
 
 Both are read-only by construction: they fold and exit, granting nothing. The store factory
 and fetcher factory are injectable so the commands are testable without a real peer. The
-``follow`` pull is open or token-authenticated here; deny-by-default federation/mTLS gating
-is available in the library (:func:`~synapse_channel.core.multihub_federation.peer_authoriser`).
+``follow`` pull is open or token-authenticated here, and ``--pin`` accepts a self-signed
+``wss://`` peer by SHA-256 certificate pin
+(:func:`~synapse_channel.core.multihub_transport.pinned_connector`); deny-by-default
+federation/mTLS gating is available in the library
+(:func:`~synapse_channel.core.multihub_federation.peer_authoriser`).
 """
 
 from __future__ import annotations
@@ -35,11 +38,16 @@ import sqlite3
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 from synapse_channel.core.multihub_fold import ObservedState
 from synapse_channel.core.multihub_follower import EventFetcher, MultiHubFollower, store_fetcher
-from synapse_channel.core.multihub_transport import MultiHubFetchError, network_fetcher
+from synapse_channel.core.multihub_transport import (
+    MultiHubFetchError,
+    network_fetcher,
+    pinned_connector,
+)
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import SqlCipherKeyError
 
@@ -103,13 +111,16 @@ def _cmd_follow(
 ) -> int:
     """Pull a peer hub's log over a connection, fold it, and print the observed state."""
     peer_id = args.peer_id or urlsplit(args.peer_uri).netloc or args.peer_uri
-    fetch = fetcher_factory(
-        args.peer_uri,
-        local_id=args.local_id,
-        token=args.token,
-        limit=args.limit,
-        timeout=args.timeout,
-    )
+    fetch_kwargs: dict[str, Any] = {
+        "local_id": args.local_id,
+        "token": args.token,
+        "limit": args.limit,
+        "timeout": args.timeout,
+    }
+    pin = getattr(args, "pin", None)
+    if pin:
+        fetch_kwargs["connector"] = pinned_connector(pin)
+    fetch = fetcher_factory(args.peer_uri, **fetch_kwargs)
     try:
         state = asyncio.run(MultiHubFollower().poll(peer_id, fetch))
     except MultiHubFetchError as exc:
@@ -158,6 +169,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Identity stamped on the request so the peer addresses the snapshot back.",
     )
     follow.add_argument("--token", default=None, help="Auth token for a secured peer hub.")
+    follow.add_argument(
+        "--pin",
+        default=None,
+        help=(
+            "Accept the wss:// peer only if its live certificate matches this sha256:<hex> "
+            "pin (self-signed or private-CA peers; no CA needed)."
+        ),
+    )
     follow.add_argument(
         "--limit", type=int, default=None, help="Maximum events to pull in the batch."
     )

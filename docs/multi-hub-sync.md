@@ -175,6 +175,22 @@ a secured peer hub, `--limit` to bound the batch, and `--json` for the machine-r
 the federation/mTLS policy (see [Boundaries](#boundaries)); the library API
 `peer_authoriser` composes it and the fetcher fails closed for an ungranted peer.
 
+For a `wss://` peer whose certificate is self-signed or private-CA, pass
+`--pin sha256:<hex>` to trust the peer by its live certificate pin instead of a
+CA chain — the same pin recorded in the peer's federation bundle and printed by
+`synapse federation fetch`:
+
+```bash
+synapse multihub follow --peer-uri wss://west.example:8876/ --peer-id west \
+  --pin sha256:9b1f63a2c8d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0
+```
+
+The pin is compared against the certificate presented on the TLS socket before
+any snapshot frame is decoded; a mismatch, a missing certificate, or a plaintext
+`ws://` URI fails the pull closed and the follower's cursor stays unadvanced.
+The library counterpart is
+`synapse_channel.core.multihub_transport.pinned_connector`.
+
 On connect, the network fetcher also reads the peer hub's advertised
 `welcome.protocol_version`. A mismatch does not fail the pull: the fetcher logs an
 operator-visible warning, records the negotiated lowest-common wire version for

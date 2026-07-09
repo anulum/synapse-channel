@@ -30,7 +30,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import ssl
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager
 from typing import Any, Protocol, cast
@@ -41,7 +40,11 @@ from websockets.exceptions import ConnectionClosed
 from synapse_channel.core.federation import FederationPeer
 from synapse_channel.core.federation_wire import FederationWireError, decode_federation_offer
 from synapse_channel.core.protocol import MessageType, build_envelope, loads_bounded
-from synapse_channel.core.tls import HubTLSConfigError, certificate_sha256_pin_from_der
+from synapse_channel.core.tls import (
+    HubTLSConfigError,
+    live_peer_certificate_pin,
+    pin_trust_client_context,
+)
 
 DEFAULT_FETCH_TIMEOUT = 10.0
 """Seconds a fetch waits for the offer before failing closed."""
@@ -92,14 +95,6 @@ class _PinnedSocket(_Socket, Protocol):
     transport: _ExtraInfoTransport
 
 
-class _PeerCertificate(Protocol):
-    """TLS object surface that exposes the peer certificate bytes."""
-
-    def getpeercert(self, binary_form: bool = False) -> object:  # pragma: no cover
-        """Return the peer certificate."""
-        ...
-
-
 def _default_connector(uri: str) -> AbstractAsyncContextManager[_Socket]:
     """Open a real websocket connection to ``uri`` with keepalive pings.
 
@@ -133,9 +128,7 @@ def pinned_connector(expected_pin: str) -> _Connector:
         if not uri.startswith("wss://"):
             msg = "--pin requires a wss:// federation peer URI"
             raise FederationFetchError(msg)
-        context = ssl.create_default_context()
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
+        context = pin_trust_client_context()
         async with connect(uri, ping_interval=PING_INTERVAL, ssl=context) as socket:
             pinned = cast(_PinnedSocket, socket)
             actual = _live_certificate_pin(pinned)
@@ -152,20 +145,10 @@ def pinned_connector(expected_pin: str) -> _Connector:
 
 def _live_certificate_pin(socket: _PinnedSocket) -> str:
     """Return the SHA-256 pin for ``socket``'s live peer certificate."""
-    ssl_object = socket.transport.get_extra_info("ssl_object")
-    if ssl_object is None:
-        msg = "peer connection is not TLS; no certificate pin can be checked"
-        raise FederationFetchError(msg)
-    certificate = cast(_PeerCertificate, ssl_object)
-    der = certificate.getpeercert(binary_form=True)
-    if not isinstance(der, bytes):
-        msg = "peer did not present a certificate"
-        raise FederationFetchError(msg)
     try:
-        return certificate_sha256_pin_from_der(der)
+        return live_peer_certificate_pin(socket.transport)
     except HubTLSConfigError as exc:
-        msg = f"peer certificate cannot be pinned: {exc}"
-        raise FederationFetchError(msg) from exc
+        raise FederationFetchError(str(exc)) from exc
 
 
 async def fetch_federation_offer(

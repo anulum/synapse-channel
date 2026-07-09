@@ -13,6 +13,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Pinned-TLS multi-hub pull: `synapse multihub follow --pin sha256:<hex>` and
+  `core.multihub_transport.pinned_connector` accept a self-signed or private-CA
+  `wss://` peer by live certificate pin, mirroring the `federation fetch --pin`
+  ceremony; a mismatch or plaintext URI fails the pull closed with the cursor
+  unadvanced. Shared client-pin primitives live in `core.tls`
+  (`pin_trust_client_context`, `live_peer_certificate_pin`).
+
+### Changed
+- CI installs `sqlcipher3-binary` in the test matrix so the SQLCipher at-rest
+  suite runs instead of skipping.
+
 ## [0.98.23] - 2026-07-09
 
 ### Added

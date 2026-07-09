@@ -11,20 +11,26 @@ import asyncio
 import contextlib
 import json
 import logging
+import ssl
+import subprocess
 from collections.abc import AsyncIterator, Sequence
 from contextlib import AbstractAsyncContextManager
+from pathlib import Path
 from typing import Any, Protocol, cast
 
 import pytest
+from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
-from hub_e2e_helpers import read_until_type, running_hub, send_json
+from hub_e2e_helpers import _await_listening, _free_port, read_until_type, running_hub, send_json
 from synapse_channel.core.clock_skew import ClockSkew
 from synapse_channel.core.multihub_federation import MultiHubAuthorisation
 from synapse_channel.core.multihub_follower import MultiHubFollower
 from synapse_channel.core.multihub_transport import (
     MultiHubFetchError,
+    _live_certificate_pin,
     network_fetcher,
+    pinned_connector,
 )
 from synapse_channel.core.multihub_wire import (
     AFTER_SEQ_FIELD,
@@ -41,6 +47,7 @@ from synapse_channel.core.protocol import (
     MessageType,
     ProtocolNegotiation,
 )
+from synapse_channel.core.tls import build_server_ssl_context, certificate_sha256_pin
 
 _REQUEST = MessageType.MULTIHUB_LOG_REQUEST
 _SNAPSHOT = MessageType.MULTIHUB_LOG_SNAPSHOT
@@ -401,3 +408,131 @@ async def test_fetch_fails_closed_on_a_deeply_nested_reply() -> None:
     fetch = network_fetcher("ws://peer/", local_id="f", connector=_connector(socket))
     with pytest.raises(MultiHubFetchError, match="failed"):
         await fetch(0)
+
+
+# --- pinned TLS pull ------------------------------------------------------------------------
+
+
+def _write_self_signed_cert(tmp_path: Path) -> tuple[Path, Path]:
+    """Write a localhost self-signed certificate pair for WSS pull tests."""
+    certfile = tmp_path / "hub-cert.pem"
+    keyfile = tmp_path / "hub-key.pem"
+    subprocess.run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-days",
+            "1",
+            "-subj",
+            "/CN=localhost",
+            "-addext",
+            "subjectAltName=DNS:localhost,IP:127.0.0.1",
+            "-keyout",
+            str(keyfile),
+            "-out",
+            str(certfile),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return certfile, keyfile
+
+
+async def _seed_chats_tls(uri: str, certfile: Path, count: int) -> None:
+    """Write ``count`` chat events onto a TLS hub over a CA-trusting client connection."""
+    client_context = ssl.create_default_context(cafile=str(certfile))
+    async with connect(uri, ssl=client_context) as ws:
+        await read_until_type(ws, "welcome")
+        await send_json(ws, sender="writer", type="heartbeat")
+        for index in range(count):
+            await send_json(ws, sender="writer", type="chat", payload=f"m{index}")
+            await read_until_type(ws, "chat")
+
+
+async def test_pinned_pull_accepts_a_self_signed_wss_peer(tmp_path: Path) -> None:
+    """The pinned connector pulls a self-signed TLS hub's log end to end by pin alone."""
+    certfile, keyfile = _write_self_signed_cert(tmp_path)
+    server_context = build_server_ssl_context(certfile=certfile, keyfile=keyfile)
+    pin = certificate_sha256_pin(certfile)
+    store = EventStore(tmp_path / "events.db")
+    from synapse_channel.core.hub import SynapseHub
+
+    hub = SynapseHub(hub_id="syn-pinned", journal=store)
+    port = _free_port()
+    task = asyncio.create_task(hub.serve("localhost", port, ssl_context=server_context))
+    try:
+        await _await_listening(port)
+        uri = f"wss://localhost:{port}"
+        await _seed_chats_tls(uri, certfile, 2)
+        fetch = network_fetcher(uri, local_id="follower", connector=pinned_connector(pin))
+        events = await fetch(0)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        store.close()
+
+    assert [event.kind for event in events] == ["chat", "chat"]
+    assert [event.seq for event in events] == [1, 2]
+
+
+async def test_pinned_pull_rejects_a_mismatched_certificate_pin(tmp_path: Path) -> None:
+    """A wrong pin fails the pull closed before any snapshot frame is trusted."""
+    certfile, keyfile = _write_self_signed_cert(tmp_path)
+    server_context = build_server_ssl_context(certfile=certfile, keyfile=keyfile)
+    store = EventStore(tmp_path / "events.db")
+    from synapse_channel.core.hub import SynapseHub
+
+    hub = SynapseHub(hub_id="syn-pinned", journal=store)
+    port = _free_port()
+    task = asyncio.create_task(hub.serve("localhost", port, ssl_context=server_context))
+    try:
+        await _await_listening(port)
+        fetch = network_fetcher(
+            f"wss://localhost:{port}",
+            local_id="follower",
+            connector=pinned_connector("sha256:" + "0" * 64),
+        )
+        with pytest.raises(MultiHubFetchError, match="certificate pin mismatch"):
+            await fetch(0)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        store.close()
+
+
+async def test_pinned_pull_requires_a_wss_uri() -> None:
+    """A plaintext ws:// URI is refused before any connection is attempted."""
+    fetch = network_fetcher(
+        "ws://localhost:1",
+        local_id="follower",
+        connector=pinned_connector("sha256:" + "0" * 64),
+    )
+    with pytest.raises(MultiHubFetchError, match="requires a wss://"):
+        await fetch(0)
+
+
+def test_live_certificate_pin_converts_tls_errors_to_fetch_errors() -> None:
+    """TLS-layer pin failures surface as MultiHubFetchError so the cursor stays put."""
+
+    class _NoTLSTransport:
+        def get_extra_info(self, name: str, default: object = None) -> object:
+            return default
+
+    class _NoTLSSocket:
+        transport = _NoTLSTransport()
+
+        async def send(self, message: str) -> None:  # pragma: no cover - never sends
+            raise AssertionError("pin inspection never sends")
+
+        async def recv(self) -> str | bytes:  # pragma: no cover - never receives
+            raise AssertionError("pin inspection never receives")
+
+    with pytest.raises(MultiHubFetchError, match="not TLS"):
+        _live_certificate_pin(cast(Any, _NoTLSSocket()))

@@ -225,3 +225,30 @@ def test_follow_reports_a_failed_pull(capsys: pytest.CaptureFixture[str]) -> Non
 def test_follow_peer_id_defaults_to_the_host() -> None:
     args = _args("follow", "--peer-uri", "wss://east.example:8876/path")
     assert args.peer_id is None  # the command fills the default from the URI host
+
+
+def test_follow_pin_forwards_a_pinned_connector(capsys: pytest.CaptureFixture[str]) -> None:
+    """``--pin`` hands the transport a connector; the other knobs stay untouched."""
+    captured: dict[str, object] = {}
+    args = _args("follow", "--peer-uri", "wss://h/", "--pin", "sha256:" + "a" * 64)
+    factory = _fetcher_factory(events=_peer_events(), captured=captured)
+    assert _cmd_follow(args, fetcher_factory=factory) == 0
+    assert callable(captured["connector"])
+    assert captured["token"] is None
+    assert "observing peer 'h'" in capsys.readouterr().out
+
+
+def test_follow_without_pin_passes_no_connector() -> None:
+    """Without ``--pin`` the factory sees no connector key, keeping the default transport."""
+    captured: dict[str, object] = {}
+    args = _args("follow", "--peer-uri", "wss://h/")
+    factory = _fetcher_factory(events=(), captured=captured)
+    assert _cmd_follow(args, fetcher_factory=factory) == 0
+    assert "connector" not in captured
+
+
+def test_follow_pin_refuses_a_plaintext_peer(capsys: pytest.CaptureFixture[str]) -> None:
+    """``--pin`` with a ws:// URI fails closed through the real transport, exit 2."""
+    args = _args("follow", "--peer-uri", "ws://localhost:1/", "--pin", "sha256:" + "0" * 64)
+    assert _cmd_follow(args) == 2
+    assert "requires a wss://" in capsys.readouterr().err

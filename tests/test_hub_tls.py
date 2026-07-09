@@ -29,6 +29,8 @@ from synapse_channel.core.tls import (
     build_server_ssl_context,
     certificate_sha256_pin,
     certificate_sha256_pin_from_der,
+    live_peer_certificate_pin,
+    pin_trust_client_context,
 )
 
 
@@ -373,3 +375,56 @@ def test_mutual_tls_context_reports_missing_server_material_and_bad_ca(
             keyfile=keyfile,
             client_ca_file=bad_ca,
         )
+
+
+# --- client-side pin trust (shared by federation fetch + multihub pull) --------------------
+
+
+class _ScriptedTransport:
+    """Transport facade exposing one scripted TLS object through ``get_extra_info``."""
+
+    def __init__(self, ssl_object: object) -> None:
+        self._ssl_object = ssl_object
+
+    def get_extra_info(self, name: str, default: object = None) -> object:
+        return self._ssl_object if name == "ssl_object" else default
+
+
+class _ScriptedTLS:
+    """TLS object facade returning scripted certificate bytes."""
+
+    def __init__(self, certificate: object) -> None:
+        self._certificate = certificate
+
+    def getpeercert(self, binary_form: bool = False) -> object:
+        return self._certificate if binary_form else {}
+
+
+def test_pin_trust_client_context_skips_chain_validation() -> None:
+    context = pin_trust_client_context()
+    assert context.check_hostname is False
+    assert context.verify_mode is ssl.CERT_NONE
+
+
+def test_live_peer_certificate_pin_matches_the_file_pin(tmp_path: Path) -> None:
+    certfile, _ = _write_self_signed_cert(tmp_path)
+    der = x509.load_pem_x509_certificate(certfile.read_bytes()).public_bytes(
+        serialization.Encoding.DER
+    )
+    live = live_peer_certificate_pin(_ScriptedTransport(_ScriptedTLS(der)))
+    assert live == certificate_sha256_pin(certfile)
+
+
+def test_live_peer_certificate_pin_rejects_a_non_tls_connection() -> None:
+    with pytest.raises(HubTLSConfigError, match="not TLS"):
+        live_peer_certificate_pin(_ScriptedTransport(None))
+
+
+def test_live_peer_certificate_pin_rejects_an_absent_certificate() -> None:
+    with pytest.raises(HubTLSConfigError, match="did not present a certificate"):
+        live_peer_certificate_pin(_ScriptedTransport(_ScriptedTLS(None)))
+
+
+def test_live_peer_certificate_pin_rejects_unparsable_bytes() -> None:
+    with pytest.raises(HubTLSConfigError, match="cannot be pinned"):
+        live_peer_certificate_pin(_ScriptedTransport(_ScriptedTLS(b"not a certificate")))

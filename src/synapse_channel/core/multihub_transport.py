@@ -25,16 +25,19 @@ follower advances a peer's cursor only from the union it builds *after* the fetc
 raised fetch leaves the cursor unadvanced: the same fail-closed posture the read-side already
 relies on, now extended across the network. The transport carries an optional token on its
 request frame (the hub gates authentication on the first frame); deny-by-default peer
-authorisation is layered on top separately.
+authorisation is layered on top separately. For a self-signed or private-CA ``wss://`` peer,
+:func:`pinned_connector` trusts the peer by SHA-256 certificate pin instead of CA chain,
+mirroring the federation-bundle fetch ceremony.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from typing import Any, Protocol, cast
 
@@ -58,6 +61,11 @@ from synapse_channel.core.protocol import (
     loads_bounded,
     negotiate_protocol_version,
     read_protocol_version,
+)
+from synapse_channel.core.tls import (
+    HubTLSConfigError,
+    live_peer_certificate_pin,
+    pin_trust_client_context,
 )
 
 logger = logging.getLogger(__name__)
@@ -105,6 +113,74 @@ def _default_connector(uri: str) -> AbstractAsyncContextManager[_Socket]:
     A ``wss://`` URI negotiates TLS through the ``websockets`` library's default context.
     """
     return cast(AbstractAsyncContextManager[_Socket], connect(uri, ping_interval=PING_INTERVAL))
+
+
+class _ExtraInfoTransport(Protocol):
+    """Transport surface needed to inspect the live TLS object."""
+
+    def get_extra_info(self, name: str, default: object = None) -> object:  # pragma: no cover
+        """Return transport metadata by name."""
+        ...
+
+
+class _PinnedSocket(_Socket, Protocol):
+    """A websocket client connection with transport metadata."""
+
+    transport: _ExtraInfoTransport
+
+
+def pinned_connector(expected_pin: str) -> _Connector:
+    """Return a connector that accepts a ``wss://`` peer certificate only by SHA-256 pin.
+
+    The pull-side counterpart of
+    :func:`synapse_channel.core.federation_fetch.pinned_connector`: it lets a
+    follower pull a self-signed or private-CA peer hub over TLS without any CA
+    dependency, matching the pin the operator recorded from the peer's federation
+    bundle (`docs/federated-trust-model.md`).
+
+    Parameters
+    ----------
+    expected_pin : str
+        Certificate pin in ``sha256:<hex>`` form. The TLS handshake uses an
+        unverified client context because trust is by pin, not chain; immediately
+        after the handshake, the live peer certificate is hashed and compared to
+        this value. A missing TLS object, absent certificate, malformed
+        certificate, or mismatch fails the fetch before any snapshot frame is
+        trusted, so the follower's cursor is left unadvanced.
+
+    Returns
+    -------
+    _Connector
+        Connector suitable for :func:`network_fetcher`.
+    """
+    normalized = expected_pin.strip().lower()
+
+    @contextlib.asynccontextmanager
+    async def _open(uri: str) -> AsyncIterator[_Socket]:
+        if not uri.startswith("wss://"):
+            msg = "--pin requires a wss:// peer URI"
+            raise MultiHubFetchError(msg)
+        context = pin_trust_client_context()
+        async with connect(uri, ping_interval=PING_INTERVAL, ssl=context) as socket:
+            pinned = cast(_PinnedSocket, socket)
+            actual = _live_certificate_pin(pinned)
+            if actual.lower() != normalized:
+                msg = f"peer certificate pin mismatch: expected {normalized}, got {actual}"
+                raise MultiHubFetchError(msg)
+            yield pinned
+
+    def _factory(uri: str) -> AbstractAsyncContextManager[_Socket]:
+        return _open(uri)
+
+    return _factory
+
+
+def _live_certificate_pin(socket: _PinnedSocket) -> str:
+    """Return the SHA-256 pin for ``socket``'s live peer certificate."""
+    try:
+        return live_peer_certificate_pin(socket.transport)
+    except HubTLSConfigError as exc:
+        raise MultiHubFetchError(str(exc)) from exc
 
 
 def network_fetcher(

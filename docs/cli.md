@@ -871,6 +871,7 @@ synapse ttl-advice ./synapse.db
 synapse ingest ./synapse.db --cursor ./ingest.cursor    # drain new events as JSON lines, resumable
 synapse multihub observe --peer-db ./peer.db --json     # fold a peer hub's log offline
 synapse multihub follow --peer-uri ws://peer:8876       # pull a peer's board over a connection
+synapse multihub follow --peer-uri wss://peer:8877 --pin sha256:HEX  # pin a self-signed TLS peer
 synapse supervisor --idle-seconds 300 --history-multiplier 3
 ```
 
@@ -1609,7 +1610,8 @@ the machine-readable form.
 `synapse multihub` reads a *peer* hub's event log rather than the local one.
 `multihub observe --peer-db ./peer.db` folds a peer's log file offline into its
 board and claims; `multihub follow --peer-uri ws://peer:8876` pulls the same
-snapshot from a live peer over a connection. Both are read-only observations
+snapshot from a live peer over a connection (`--pin sha256:<hex>` accepts a
+self-signed `wss://` peer by certificate pin). Both are read-only observations
 tagged with a peer id and neither mutates the local hub. See
 [Multi-hub sync](multi-hub-sync.md) for the federation and trust model.
 

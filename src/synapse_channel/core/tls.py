@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from enum import Enum
 from hashlib import sha256
 from pathlib import Path
+from typing import Protocol, cast
 
 
 class HubTLSConfigError(ValueError):
@@ -241,6 +242,79 @@ def certificate_sha256_pin_from_der(der: bytes) -> str:
     if not der:
         raise HubTLSConfigError("no peer certificate presented")
     return "sha256:" + sha256(_canonical_der(der)).hexdigest()
+
+
+class _ExtraInfoTransport(Protocol):
+    """Transport surface needed to inspect the live TLS object."""
+
+    def get_extra_info(self, name: str, default: object = None) -> object:  # pragma: no cover
+        """Return transport metadata by name."""
+        ...
+
+
+class _PeerCertificate(Protocol):
+    """TLS object surface that exposes the peer certificate bytes."""
+
+    def getpeercert(self, binary_form: bool = False) -> object:  # pragma: no cover
+        """Return the peer certificate."""
+        ...
+
+
+def pin_trust_client_context() -> ssl.SSLContext:
+    """Build a client TLS context for certificate-pin trust.
+
+    The context skips hostname checks and CA verification because the caller is
+    explicitly pinning a self-signed or private-CA peer: trust is established by
+    hashing the live peer certificate immediately after the handshake and
+    comparing it against an operator-supplied ``sha256:<hex>`` pin (see
+    :func:`live_peer_certificate_pin`), not by chain validation. Callers MUST
+    perform that comparison before trusting any application frame.
+
+    Returns
+    -------
+    ssl.SSLContext
+        Client context suitable for a pin-checked ``wss://`` connection.
+    """
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
+
+
+def live_peer_certificate_pin(transport: _ExtraInfoTransport) -> str:
+    """Return the SHA-256 pin of a live connection's peer certificate.
+
+    Parameters
+    ----------
+    transport : _ExtraInfoTransport
+        The connection transport (``asyncio`` transport of an established
+        websocket) whose ``ssl_object`` extra info exposes the peer certificate.
+
+    Returns
+    -------
+    str
+        Pin formatted as ``sha256:<hex>``, canonicalised identically to
+        :func:`certificate_sha256_pin`, so a file pin and a live pin of the same
+        certificate compare equal.
+
+    Raises
+    ------
+    HubTLSConfigError
+        If the connection is not TLS, the peer presented no certificate, or the
+        presented bytes cannot be parsed as a certificate.
+    """
+    ssl_object = transport.get_extra_info("ssl_object")
+    if ssl_object is None:
+        raise HubTLSConfigError("peer connection is not TLS; no certificate pin can be checked")
+    certificate = cast(_PeerCertificate, ssl_object)
+    der = certificate.getpeercert(binary_form=True)
+    if not isinstance(der, bytes):
+        raise HubTLSConfigError("peer did not present a certificate")
+    try:
+        return certificate_sha256_pin_from_der(der)
+    except HubTLSConfigError as exc:
+        msg = f"peer certificate cannot be pinned: {exc}"
+        raise HubTLSConfigError(msg) from exc
 
 
 def build_server_ssl_context(
