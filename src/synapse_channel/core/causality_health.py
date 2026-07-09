@@ -242,6 +242,7 @@ def run_causal_health(
     max_nodes: int | None = DEFAULT_MAX_GRAPH_NODES,
     stale_after: float = DEFAULT_STALE_AFTER,
     since: float | None = None,
+    key_file: str | Path | None = None,
 ) -> CausalHealthReport:
     """Assess an existing SQLite event store, streaming and bounded.
 
@@ -276,7 +277,7 @@ def run_causal_health(
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path)
+    store = EventStore(path, key_file=key_file)
     try:
         events: list[StoredEvent] = []
         for event in store.iter_events(kinds=GRAPH_KINDS):

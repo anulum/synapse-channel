@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- SQLCipher `--db-key-file` on remaining analysis CLIs: `causality` (including
+  otel/health/contention; federated peers share the same key file when set),
+  `accounting report`, `memory-recall`, `debug`, and `reproduce` (core
+  `run_*` / `read_memory_recall` / `load_task_for_seq` accept `key_file`).
+
 ## [0.98.22] - 2026-07-09
 
 ### Changed

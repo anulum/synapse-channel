@@ -329,6 +329,7 @@ def run_federated_causality(
     ref: HubEventRef,
     *,
     max_nodes: int | None = DEFAULT_MAX_GRAPH_NODES,
+    key_files: Mapping[str, str | Path | None] | None = None,
 ) -> FederatedQuery:
     """Build a federated causality query from several SQLite event stores.
 
@@ -349,6 +350,9 @@ def run_federated_causality(
         Fail-closed ceiling on coordination events folded across all logs;
         ``None`` or ``0`` lifts it. Defaults to
         :data:`~synapse_channel.core.causality.DEFAULT_MAX_GRAPH_NODES`.
+    key_files : Mapping[str, str or pathlib.Path or None] or None, optional
+        Optional per-hub SQLCipher key paths keyed by hub id. Hubs omitted
+        from the mapping open as plain SQLite stores.
 
     Returns
     -------
@@ -364,12 +368,13 @@ def run_federated_causality(
     """
     logs: dict[str, Sequence[StoredEvent]] = {}
     total = 0
+    keys = key_files or {}
     for hub_id, db_path in db_paths.items():
         path = Path(db_path)
         if not path.exists():
             msg = f"missing event store for hub '{hub_id}': {path}"
             raise ValueError(msg)
-        store = EventStore(path)
+        store = EventStore(path, key_file=keys.get(hub_id))
         try:
             events: list[StoredEvent] = []
             for event in store.iter_events(kinds=GRAPH_KINDS):

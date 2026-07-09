@@ -313,6 +313,7 @@ def run_fork(
     *,
     fork_seq: int,
     overrides: Mapping[str, str],
+    key_file: str | Path | None = None,
 ) -> ForkPlan:
     """Build a fork plan from an existing SQLite event store.
 
@@ -338,11 +339,16 @@ def run_fork(
         If the event store does not exist, ``fork_seq`` is negative, or an
         override key is not overridable.
     """
-    events = _load_events(db_path)
+    events = _load_events(db_path, key_file=key_file)
     return build_fork_plan(task_id, events, fork_seq=fork_seq, overrides=overrides)
 
 
-def load_task_for_seq(db_path: str | Path, seq: int) -> str | None:
+def load_task_for_seq(
+    db_path: str | Path,
+    seq: int,
+    *,
+    key_file: str | Path | None = None,
+) -> str | None:
     """Load the store and return the task id at ``seq``, if any.
 
     Parameters
@@ -351,6 +357,8 @@ def load_task_for_seq(db_path: str | Path, seq: int) -> str | None:
         Path to a hub event-store database.
     seq : int
         Exact sequence to look up.
+    key_file : str or pathlib.Path or None, optional
+        Owner-only SQLCipher key for an encrypted event store.
 
     Returns
     -------
@@ -362,7 +370,7 @@ def load_task_for_seq(db_path: str | Path, seq: int) -> str | None:
     ValueError
         If the event store does not exist.
     """
-    return infer_task_at_seq(_load_events(db_path), seq)
+    return infer_task_at_seq(_load_events(db_path, key_file=key_file), seq)
 
 
 def fork_plan_to_json(plan: ForkPlan) -> dict[str, object]:
@@ -415,13 +423,17 @@ def render_markdown(plan: ForkPlan) -> str:
     return "\n".join(lines)
 
 
-def _load_events(db_path: str | Path) -> tuple[StoredEvent, ...]:
+def _load_events(
+    db_path: str | Path,
+    *,
+    key_file: str | Path | None = None,
+) -> tuple[StoredEvent, ...]:
     """Load every event from a store, raising on a missing file."""
     path = Path(db_path)
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path)
+    store = EventStore(path, key_file=key_file)
     try:
         return tuple(store.read_all())
     finally:

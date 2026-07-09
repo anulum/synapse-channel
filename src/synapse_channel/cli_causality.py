@@ -188,7 +188,10 @@ def _cmd_causality(args: argparse.Namespace) -> int:
         print(f"invalid SEQ '{args.seq}': expected an integer", file=sys.stderr)
         return 2
     try:
-        query = run_causality(args.db, args.direction, seq, max_nodes=args.max_nodes)
+        query = run_causality(
+            args.db, args.direction, seq, max_nodes=args.max_nodes,
+            key_file=getattr(args, "db_key_file", None),
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -265,6 +268,7 @@ def _otel_once(args: argparse.Namespace) -> int:
             max_nodes=args.max_nodes,
             service_name=args.service_name if args.service_name is not None else SERVICE_NAME,
             task_filter=args.filter or None,
+            key_file=getattr(args, "db_key_file", None),
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -313,7 +317,17 @@ def _cmd_federated(args: argparse.Namespace) -> int:
         skews = _clock_skews(args.clock_skew)
         warnings = clock_skew_warnings(skews, threshold=float(args.skew_warn_seconds))
         ref = parse_hub_ref(args.seq, primary)
-        query = run_federated_causality(stores, args.direction, ref, max_nodes=args.max_nodes)
+        key_files = None
+        if getattr(args, "db_key_file", None):
+            # Peers keep plain opens unless they share this operator key file.
+            key_files = {hub: args.db_key_file for hub in stores}
+        query = run_federated_causality(
+            stores,
+            args.direction,
+            ref,
+            max_nodes=args.max_nodes,
+            key_files=key_files,
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -432,7 +446,8 @@ def _cmd_health(args: argparse.Namespace) -> int:
             return 0
     try:
         report = run_causal_health(
-            args.db, max_nodes=args.max_nodes, stale_after=stale_after, since=args.since
+            args.db, max_nodes=args.max_nodes, stale_after=stale_after, since=args.since,
+            key_file=getattr(args, "db_key_file", None),
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -521,7 +536,10 @@ def _cmd_contention(args: argparse.Namespace) -> int:
     sequence queries exit ``1`` for an absent event.
     """
     try:
-        recommendations = run_yield_advice(args.db, max_nodes=args.max_nodes)
+        recommendations = run_yield_advice(
+            args.db, max_nodes=args.max_nodes,
+            key_file=getattr(args, "db_key_file", None),
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -547,6 +565,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "(flag orphaned claims, dangling dependencies, and stale claims; takes no SEQ).",
     )
     causality.add_argument("db", help="Path to the hub event store, e.g. ~/synapse/hub.db.")
+    causality.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted event store.",
+    )
     causality.add_argument(
         "seq",
         nargs="?",

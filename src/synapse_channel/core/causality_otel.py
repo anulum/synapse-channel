@@ -259,6 +259,7 @@ def run_otel_projection(
     max_nodes: int | None = DEFAULT_MAX_GRAPH_NODES,
     service_name: str = SERVICE_NAME,
     task_filter: Sequence[str] | None = None,
+    key_file: str | Path | None = None,
 ) -> OtelProjection:
     """Build the span projection from an existing SQLite event store.
 
@@ -277,6 +278,8 @@ def run_otel_projection(
     task_filter : Sequence[str] or None, optional
         Project only the named tasks' traces; a task the log does not record
         is refused. See :func:`build_otel_projection`.
+    key_file : str or pathlib.Path or None, optional
+        Owner-only SQLCipher key for an encrypted event store.
 
     Returns
     -------
@@ -294,7 +297,7 @@ def run_otel_projection(
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path)
+    store = EventStore(path, key_file=key_file)
     try:
         events: list[StoredEvent] = []
         for event in store.iter_events(kinds=GRAPH_KINDS):

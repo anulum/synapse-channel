@@ -84,6 +84,11 @@ synapse ingest ~/synapse/hub.db --db-key-file ~/synapse/hub.key
 synapse event-query ~/synapse/hub.db --db-key-file ~/synapse/hub.key 'task T timeline'
 synapse postmortem ~/synapse/hub.db --db-key-file ~/synapse/hub.key T
 synapse merkle root ~/synapse/hub.db --db-key-file ~/synapse/hub.key
+synapse causality causes ~/synapse/hub.db --db-key-file ~/synapse/hub.key 1
+synapse accounting report ~/synapse/hub.db --db-key-file ~/synapse/hub.key
+synapse memory-recall ~/synapse/hub.db --db-key-file ~/synapse/hub.key 'probe'
+synapse debug ~/synapse/hub.db --db-key-file ~/synapse/hub.key --fork-at 1
+synapse reproduce ~/synapse/hub.db --db-key-file ~/synapse/hub.key T
 synapse dashboard --feeds-db ~/synapse/hub.db --feeds-db-key-file ~/synapse/hub.key
 ```
 

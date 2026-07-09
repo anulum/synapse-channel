@@ -189,7 +189,12 @@ def verify_reproduction(report: ReproductionReport, expected_digest: str) -> boo
     return hmac.compare_digest(report.digest, expected_digest.strip().lower())
 
 
-def run_reproduction(db_path: str | Path, task_id: str) -> ReproductionReport:
+def run_reproduction(
+    db_path: str | Path,
+    task_id: str,
+    *,
+    key_file: str | Path | None = None,
+) -> ReproductionReport:
     """Build a reproduction report from an existing SQLite event store.
 
     Parameters
@@ -213,7 +218,7 @@ def run_reproduction(db_path: str | Path, task_id: str) -> ReproductionReport:
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path)
+    store = EventStore(path, key_file=key_file)
     try:
         events = tuple(store.read_all())
     finally:

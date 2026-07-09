@@ -135,6 +135,7 @@ def run_yield_advice(
     db_path: str | Path,
     *,
     max_nodes: int | None = DEFAULT_MAX_GRAPH_NODES,
+    key_file: str | Path | None = None,
 ) -> list[YieldAdvice]:
     """Build yield advice from an existing SQLite event store.
 
@@ -162,7 +163,7 @@ def run_yield_advice(
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path)
+    store = EventStore(path, key_file=key_file)
     try:
         events: list[StoredEvent] = []
         for event in store.iter_events(kinds=GRAPH_KINDS):

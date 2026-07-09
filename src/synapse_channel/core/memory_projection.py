@@ -243,6 +243,7 @@ def read_memory_recall(
     *,
     since_seq: int = 0,
     limit: int = 5,
+    key_file: str | Path | None = None,
 ) -> MemoryRecallReport:
     """Read a local event store and return a deterministic recall report.
 
@@ -271,7 +272,7 @@ def read_memory_recall(
     if not path.exists():
         raise MemoryRecallInputError(f"missing event store: {path}")
     start = safe_int(since_seq, default=0, min_value=0, allow_bool=False)
-    store = EventStore(path)
+    store = EventStore(path, key_file=key_file)
     try:
         events = store.read_since(start, kinds=MEMORY_KINDS)
     finally:

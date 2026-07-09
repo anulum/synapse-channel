@@ -121,7 +121,10 @@ def _cmd_report(args: argparse.Namespace) -> int:
     try:
         pricing = load_pricing_table(args.pricing)
         budgets = _load_budgets(args.budget)
-        report = run_accounting_report(args.db, pricing=pricing, budgets=budgets)
+        report = run_accounting_report(
+            args.db, pricing=pricing, budgets=budgets,
+            key_file=getattr(args, "db_key_file", None),
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -224,6 +227,11 @@ def _add_report_parser(group: argparse._SubParsersAction[argparse.ArgumentParser
         help="Aggregate opt-in usage from a hub SQLite event store, e.g. ~/synapse/hub.db.",
     )
     report.add_argument("db", help="Path to the hub event store.")
+    report.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted event store.",
+    )
     report.add_argument(
         "--pricing",
         default=None,

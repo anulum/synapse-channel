@@ -39,6 +39,7 @@ def _cmd_memory_recall(args: argparse.Namespace) -> int:
             args.query,
             since_seq=args.since_seq,
             limit=args.limit,
+            key_file=getattr(args, "db_key_file", None),
         )
     except MemoryRecallInputError as exc:
         print(str(exc), file=sys.stderr)
@@ -57,6 +58,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Recall matching durable memory records from a local event store.",
     )
     parser.add_argument("db", help="Path to the hub event store, e.g. ~/synapse/hub.db.")
+    parser.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted event store.",
+    )
     parser.add_argument("query", help="Plain-text recall query.")
     parser.add_argument(
         "--since-seq",

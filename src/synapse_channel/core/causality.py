@@ -253,6 +253,7 @@ def run_causality(
     seq: int,
     *,
     max_nodes: int | None = DEFAULT_MAX_GRAPH_NODES,
+    key_file: str | Path | None = None,
 ) -> CausalQuery:
     """Build a causality query from an existing SQLite event store.
 
@@ -292,7 +293,7 @@ def run_causality(
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path)
+    store = EventStore(path, key_file=key_file)
     try:
         events: list[StoredEvent] = []
         for event in store.iter_events(kinds=GRAPH_KINDS):

@@ -85,3 +85,102 @@ def test_postmortem_reads_encrypted_store(
     )
     assert code == 0
     assert "T-ENC" in capsys.readouterr().out
+
+
+def test_causality_reads_encrypted_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db, key = _encrypted_task_store(tmp_path)
+    # Keep positionals contiguous; flags after SEQ (argparse interleaving).
+    code = cli.main(
+        [
+            "causality",
+            "causes",
+            str(db),
+            "1",
+            "--db-key-file",
+            str(key),
+            "--json",
+        ]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "T-ENC" in out
+    assert '"present": true' in out
+
+
+def test_causality_health_reads_encrypted_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db, key = _encrypted_task_store(tmp_path)
+    code = cli.main(
+        ["causality", "health", str(db), "--db-key-file", str(key), "--json"]
+    )
+    # Anomalies (orphan claim) exit 1; open of encrypted store still succeeded.
+    assert code in (0, 1)
+    out = capsys.readouterr().out
+    assert "T-ENC" in out
+    assert "anomaly_count" in out
+
+
+def test_accounting_report_reads_encrypted_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db, key = _encrypted_task_store(tmp_path)
+    code = cli.main(
+        ["accounting", "report", str(db), "--db-key-file", str(key), "--json"]
+    )
+    assert code == 0
+    assert capsys.readouterr().out.strip()
+
+
+def test_memory_recall_reads_encrypted_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db, key = _encrypted_task_store(tmp_path)
+    code = cli.main(
+        [
+            "memory-recall",
+            str(db),
+            "--db-key-file",
+            str(key),
+            "sqlcipher",
+            "--json",
+        ]
+    )
+    # Reader must open the encrypted store; empty recall is still success path.
+    captured = capsys.readouterr()
+    assert "file is not a database" not in captured.err.lower()
+    assert "not a database" not in captured.err.lower()
+    assert code != 2 or "missing event store" not in captured.err.lower()
+
+
+def test_reproduce_reads_encrypted_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db, key = _encrypted_task_store(tmp_path)
+    code = cli.main(
+        ["reproduce", str(db), "--db-key-file", str(key), "T-ENC", "--json"]
+    )
+    assert code == 0
+    assert "T-ENC" in capsys.readouterr().out
+
+
+def test_debug_fork_reads_encrypted_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db, key = _encrypted_task_store(tmp_path)
+    code = cli.main(
+        [
+            "debug",
+            str(db),
+            "--fork-at",
+            "1",
+            "--db-key-file",
+            str(key),
+            "--json",
+        ]
+    )
+    assert code in (0, 1)
+    out = capsys.readouterr().out
+    assert "T-ENC" in out or "task_id" in out

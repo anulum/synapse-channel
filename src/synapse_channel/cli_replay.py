@@ -66,14 +66,19 @@ def _cmd_debug(args: argparse.Namespace) -> int:
     """Fork a task's reconstructed state at a sequence point and print the plan."""
     try:
         overrides = _parse_overrides(args.set)
-        task_id = args.task or load_task_for_seq(args.db, args.fork_at)
+        task_id = args.task or load_task_for_seq(
+            args.db, args.fork_at, key_file=getattr(args, "db_key_file", None)
+        )
         if not task_id:
             print(
                 f"no task found at seq {args.fork_at}; pass --task to name one",
                 file=sys.stderr,
             )
             return 2
-        plan = run_fork(args.db, task_id, fork_seq=args.fork_at, overrides=overrides)
+        plan = run_fork(
+            args.db, task_id, fork_seq=args.fork_at, overrides=overrides,
+            key_file=getattr(args, "db_key_file", None),
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -87,7 +92,9 @@ def _cmd_debug(args: argparse.Namespace) -> int:
 def _cmd_reproduce(args: argparse.Namespace) -> int:
     """Fingerprint a task's authoritative history and optionally gate it."""
     try:
-        report = run_reproduction(args.db, args.task_id)
+        report = run_reproduction(
+            args.db, args.task_id, key_file=getattr(args, "db_key_file", None)
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -118,6 +125,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     debug.add_argument("db", help="Path to the hub event store, e.g. ~/synapse/hub.db.")
     debug.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted event store.",
+    )
+    debug.add_argument(
         "--fork-at",
         dest="fork_at",
         type=int,
@@ -145,6 +157,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Fingerprint a task's authoritative history into a deterministic digest.",
     )
     reproduce.add_argument("db", help="Path to the hub event store, e.g. ~/synapse/hub.db.")
+    reproduce.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted event store.",
+    )
     reproduce.add_argument("task_id", help="Task id to fingerprint.")
     reproduce.add_argument(
         "--expect",

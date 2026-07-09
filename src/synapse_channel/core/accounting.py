@@ -341,6 +341,7 @@ def run_accounting_report(
     *,
     pricing: Mapping[str, ModelPrice] | None = None,
     budgets: Mapping[str, float] | None = None,
+    key_file: str | Path | None = None,
 ) -> AccountingReport:
     """Build a cost/token accounting report from a hub SQLite event store.
 
@@ -367,7 +368,7 @@ def run_accounting_report(
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path)
+    store = EventStore(path, key_file=key_file)
     try:
         events = tuple(store.read_all())
     finally:
