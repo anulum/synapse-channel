@@ -312,6 +312,34 @@ def _cmd_restore(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_migrate_sqlcipher(args: argparse.Namespace) -> int:
+    """Offline-copy a plaintext hub event store into a new SQLCipher database.
+
+    Stop the hub first. Destination must not exist. Resume cursors keep their
+    sequence numbers.
+    """
+    from synapse_channel.core.persistence_sqlcipher import (
+        SqlCipherUnavailableError,
+        migrate_plaintext_to_sqlcipher,
+    )
+
+    try:
+        result = migrate_plaintext_to_sqlcipher(
+            args.source,
+            args.destination,
+            key_file=args.key,
+        )
+    except (ValueError, FileNotFoundError, FileExistsError, SqlCipherUnavailableError) as exc:
+        print(f"sqlcipher migrate problem: {exc}")
+        return 1
+    print(
+        f"sqlcipher migrated {result['rows']} event(s): "
+        f"{args.source} -> {args.destination}"
+    )
+    print("start the hub with: synapse hub --db <destination> --db-key-file <key>")
+    return 0
+
+
 def _add_scrypt_args(parser: argparse.ArgumentParser) -> None:
     """Register the shared scrypt cost selectors for passphrase-based key commands."""
     parser.add_argument(
@@ -496,3 +524,23 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     restore.add_argument("--key", required=True, help="Owner-only raw key file.")
     restore.add_argument("--manifest", required=True, help="Backup manifest written by backup.")
     restore.set_defaults(func=_cmd_restore)
+
+    migrate_sqlcipher = nested.add_parser(
+        "migrate-sqlcipher",
+        help=(
+            "Offline-copy a plaintext hub --db event store into a new SQLCipher database "
+            "(requires synapse-channel[sqlcipher]; hub must be stopped)."
+        ),
+    )
+    migrate_sqlcipher.add_argument("--key", required=True, help="Owner-only raw key file.")
+    migrate_sqlcipher.add_argument(
+        "--source",
+        required=True,
+        help="Existing plaintext event-store path (synapse hub --db).",
+    )
+    migrate_sqlcipher.add_argument(
+        "--destination",
+        required=True,
+        help="New encrypted database path (must not already exist).",
+    )
+    migrate_sqlcipher.set_defaults(func=_cmd_migrate_sqlcipher)

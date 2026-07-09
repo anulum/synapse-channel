@@ -10,9 +10,10 @@
 This is the first at-rest tranche: an AES-256-GCM envelope plus atomic
 encrypted-file helpers and a key-file permission check, wired into the artifacts
 that are written whole and not live-queried by SQLite — relay logs, A2A state
-files, archive reports, and cursor files. The live ``synapse hub --db`` SQLite
-event store needs SQLCipher-class transparent encryption and stays a separate,
-later tranche (see ``docs/at-rest-encryption``).
+files, archive reports, and cursor files. The live ``synapse hub --db`` event
+store uses optional SQLCipher page encryption when ``--db-key-file`` is set
+(see :mod:`synapse_channel.core.persistence_sqlcipher` and
+``docs/at-rest-encryption``).
 
 Encryption protects data when files are copied, backed up, or read offline. It
 does not protect data while the hub is running and does not replace filesystem
@@ -314,20 +315,7 @@ class AtRestCipher:
         ValueError
             When the key file fails its ownership/mode check or has a wrong size.
         """
-        target = Path(path)
-        try:
-            fd = os.open(target, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-        except FileNotFoundError as exc:
-            raise ValueError(f"key file does not exist: {target}") from exc
-        except OSError as exc:  # O_NOFOLLOW raises (ELOOP) when the path is a symlink.
-            raise ValueError(f"key file must not be a symlink: {target}") from exc
-        try:
-            ok, reason = _validate_key_stat(os.fstat(fd), target)
-            if not ok:
-                raise ValueError(reason)
-            return cls(os.read(fd, KEY_BYTES), counter=counter)
-        finally:
-            os.close(fd)
+        return cls(load_key_file(path), counter=counter)
 
     @classmethod
     def from_wrapped_key_file(
@@ -809,6 +797,44 @@ def check_key_file(path: str | Path) -> tuple[bool, str]:
     except FileNotFoundError:
         return False, f"key file does not exist: {target}"
     return _validate_key_stat(info, target)
+
+
+def load_key_file(path: str | Path) -> bytes:
+    """Load a raw :data:`KEY_BYTES` key after ownership and mode checks.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path
+        Owner-only key-file path (must not be a symlink).
+
+    Returns
+    -------
+    bytes
+        Exactly :data:`KEY_BYTES` key material.
+
+    Raises
+    ------
+    ValueError
+        When the path is missing, is a symlink, fails the permission check, or
+        does not hold exactly :data:`KEY_BYTES` bytes.
+    """
+    target = Path(path)
+    try:
+        fd = os.open(target, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError as exc:
+        raise ValueError(f"key file does not exist: {target}") from exc
+    except OSError as exc:  # O_NOFOLLOW raises (ELOOP) when the path is a symlink.
+        raise ValueError(f"key file must not be a symlink: {target}") from exc
+    try:
+        ok, reason = _validate_key_stat(os.fstat(fd), target)
+        if not ok:
+            raise ValueError(reason)
+        material = os.read(fd, KEY_BYTES)
+        if len(material) != KEY_BYTES:
+            raise ValueError(f"key file must hold exactly {KEY_BYTES} bytes: {target}")
+        return material
+    finally:
+        os.close(fd)
 
 
 def encrypt_file(path: str | Path, plaintext: bytes, cipher: AtRestCipher) -> None:

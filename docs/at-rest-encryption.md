@@ -43,11 +43,32 @@ The encryption primitive, key-file management, and operator runtime profile are 
 
 The implemented profile is whole-file operator encryption. It is intended for
 cold migration, rekey, backup, restore, and fail-safe startup checks around the
-real files Synapse already writes. Transparent live database opening through
-SQLCipher-class SQLite encryption is not implemented in the standard
-`sqlite3` event store, so an encrypted SQLite envelope cannot be opened directly
-by `synapse hub --db` until it is restored/decrypted by an operator-controlled
-runbook.
+real files Synapse already writes.
+
+### Live hub event store (SQLCipher)
+
+The live `synapse hub --db` store can use **SQLCipher page encryption** so the
+main database, WAL, and indexes stay ciphertext on disk while the hub holds the
+file open:
+
+```bash
+pip install 'synapse-channel[sqlcipher]'   # or sqlcipher3-binary==0.6.0
+synapse encrypt-key generate ~/synapse/hub.key
+# new store:
+synapse hub --db ~/synapse/hub.db --db-key-file ~/synapse/hub.key
+# migrate an existing plaintext store (hub stopped; destination must not exist):
+synapse encrypt-key migrate-sqlcipher \
+  --key ~/synapse/hub.key \
+  --source ~/synapse/hub-plain.db \
+  --destination ~/synapse/hub.db
+```
+
+Without `[sqlcipher]` the stock install stays dependency-free and `--db-key-file`
+fails closed with an install hint. Whole-file AES-GCM envelopes still apply to
+relay logs, A2A state, cursors, and archives — they are complementary, not a
+substitute for page encryption of a live open database. SQLCipher protects
+offline copies of the event store; it does not protect a running hub's RAM and
+does not replace filesystem permissions.
 
 ## Storage scope
 

@@ -94,14 +94,15 @@ def _cmd_hub(
     *,
     runner: Callable[[Coroutine[Any, Any, None]], None] = _run,
     hub_factory: Callable[..., SynapseHub] = SynapseHub,
-    store_factory: Callable[[str], EventStore] = EventStore,
+    store_factory: Callable[..., EventStore] = EventStore,
     logging_configurator: Callable[..., object] = configure_logging,
     tls_context_factory: Callable[..., ssl.SSLContext | None] = build_server_ssl_context,
 ) -> int:
     """Run the coordination hub until interrupted.
 
     With ``--db`` the hub persists authoritative state to a durable event log and
-    resumes from it on restart; without it the hub is purely in-memory.
+    resumes from it on restart; without it the hub is purely in-memory. Pair
+    ``--db-key-file`` with ``--db`` for SQLCipher page encryption of the store.
     """
     logging_configurator(log_format=args.log_format, level=args.log_level)
     try:
@@ -125,7 +126,17 @@ def _cmd_hub(
     except HubTLSConfigError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
-    journal = store_factory(args.db) if args.db else None
+    db_key_file = getattr(args, "db_key_file", None)
+    if db_key_file and not args.db:
+        print("synapse hub: --db-key-file requires --db", file=sys.stderr)
+        return 2
+    try:
+        journal = store_factory(args.db, key_file=db_key_file) if args.db else None
+    except (ValueError, RuntimeError) as exc:
+        # ValueError: bad key file. RuntimeError: SqlCipherUnavailableError /
+        # SqlCipherKeyError subclasses for missing driver or rejected key.
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        return 2
     limiter = RateLimiter(rate_per_second=args.rate, burst=args.burst) if args.rate > 0 else None
     host_limiter = (
         RateLimiter(rate_per_second=args.host_rate, burst=args.host_burst)

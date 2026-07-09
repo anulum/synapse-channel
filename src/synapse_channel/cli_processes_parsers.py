@@ -85,6 +85,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Path to a durable event-log database; enables crash-safe persistence.",
     )
     hub.add_argument(
+        "--db-key-file",
+        default=None,
+        help=(
+            "Owner-only 32-byte key file for SQLCipher page encryption of --db "
+            "(requires synapse-channel[sqlcipher]; generate with synapse encrypt-key generate)."
+        ),
+    )
+    hub.add_argument(
         "--rate",
         type=float,
         default=0.0,

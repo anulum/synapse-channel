@@ -76,6 +76,12 @@ mcp = [
 encryption = [
   "cryptography>=42.0",
 ]
+sqlcipher = [
+  # Page-level encryption for live hub --db (EventStore). Verified at
+  # https://pypi.org/pypi/sqlcipher3-binary/0.6.0/ — manylinux cp312 wheel
+  # sha256:c8a7076a18b4f6fc9b580b0f24aa526d6a47605b1e3e6491ee3e9f2977940d8e
+  "sqlcipher3-binary==0.6.0",
+]
 pkcs11 = [
   "python-pkcs11>=0.9",
 ]
@@ -88,6 +94,7 @@ all = [
   "opentelemetry-exporter-otlp-proto-http>=1.43.0",
   "mcp>=1.28.0",
   "cryptography>=42.0",
+  "sqlcipher3-binary==0.6.0",
   "python-pkcs11>=0.9",
   "tpm2-pytss>=2.3",
 ]

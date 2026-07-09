@@ -20,6 +20,11 @@ All notable changes to this project are documented here.
   gains a multi-seat golden path ending in Studio.
 
 ### Added
+- SQLCipher live event store: optional `synapse-channel[sqlcipher]` extra
+  (`sqlcipher3-binary==0.6.0`), `EventStore(..., key_file=)` / `key=`,
+  `synapse hub --db-key-file`, and offline
+  `synapse encrypt-key migrate-sqlcipher` for plaintext→encrypted migration.
+  Page-level encryption for main DB + WAL; stock install stays dependency-free.
 - Studio `observed_fleet` section on `/studio.json`: multi-hub / FLEET advisory
   peer health (reachable, lagging, unreachable) from dashboard
   `observed_peers`. Command centre shows a peers headline and panel.

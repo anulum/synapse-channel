@@ -26,7 +26,6 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import sqlite3
 import time
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -65,13 +64,31 @@ class EventStore:
     path : str or pathlib.Path
         Database file path. ``":memory:"`` is accepted for ephemeral use, but
         only a file path survives a restart.
+    key_file : str or pathlib.Path or None, optional
+        Owner-only 32-byte key file. When set, the store opens through SQLCipher
+        (``pip install synapse-channel[sqlcipher]``) so every page is encrypted
+        at rest. Omit for the default plaintext :mod:`sqlite3` path.
+    key : bytes or None, optional
+        Raw 32-byte key material (tests and programmatic callers). When set,
+        takes precedence over ``key_file``.
     """
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        key_file: str | Path | None = None,
+        key: bytes | None = None,
+    ) -> None:
         self.path = str(path)
-        self._conn = sqlite3.connect(self.path)
-        # The event log holds chat, findings, and recall telemetry in plaintext, so
-        # restrict it to the owner (0o600) where the platform supports it.
+        from synapse_channel.core.persistence_sqlcipher import connect_event_store
+
+        self._conn, self._encrypted = connect_event_store(
+            self.path, key=key, key_file=key_file
+        )
+        # The event log holds chat, findings, and recall telemetry, so restrict
+        # it to the owner (0o600) where the platform supports it — encryption
+        # does not replace permissions.
         self._restrict(self.path)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
@@ -85,10 +102,15 @@ class EventStore:
         )
         self._conn.commit()
         # WAL mode creates ``-wal`` and ``-shm`` sidecars on the first write (the
-        # ``CREATE TABLE`` commit above). They mirror the same plaintext as the main
+        # ``CREATE TABLE`` commit above). They mirror the same content as the main
         # file but are born under the process umask, so lock them down once they exist.
         self._restrict(f"{self.path}-wal")
         self._restrict(f"{self.path}-shm")
+
+    @property
+    def encrypted(self) -> bool:
+        """Return whether this store opened through SQLCipher page encryption."""
+        return self._encrypted
 
     def _restrict(self, path: str) -> None:
         """Restrict ``path`` to owner-only access (``0o600``).

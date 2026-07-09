@@ -153,17 +153,19 @@ modelling. At-rest encryption and private channels ship as separate opt-in
 profiles (below) that paranoid mode does not automatically enable.
 
 The [at-rest encryption](docs/at-rest-encryption.md) runtime encrypts local
-SQLite event stores and their WAL/SHM sidecars, relay logs, A2A state, cursor
-files, archive reports, temporary files, and backups at rest with AES-256-GCM
-envelope encryption. A random data key does the bulk encryption and is wrapped by
-a pluggable key-encryption key — a scrypt passphrase, or a hardware backend
+storage surfaces at rest with AES-256-GCM envelope encryption (relay logs, A2A
+state, cursor files, archive reports, temporary files, backups, and cold copies
+of SQLite files). A random data key does the bulk encryption and is wrapped by a
+pluggable key-encryption key — a scrypt passphrase, or a hardware backend
 (PKCS#11 token, TPM 2.0) — so rotating that key rewraps the data key without
 re-encrypting any data; the cipher counts sealed messages and refuses to encrypt
 past the AES-GCM per-key safety bound. It writes owner-only files, ships a
-migration/rekey flow for existing databases, and starts fail-safe. It does not
-transparently encrypt a live, open database's pages in memory — a page-level,
-SQLCipher-class profile for the running event store remains future work — and it
-does not replace host filesystem permissions.
+migration/rekey flow, and starts fail-safe. For the **live** hub event store
+opened with `synapse hub --db`, page-level SQLCipher encryption is available via
+`pip install synapse-channel[sqlcipher]` and `--db-key-file` (see
+[at-rest encryption](docs/at-rest-encryption.md)). SQLCipher encrypts pages on
+disk for offline confidentiality; neither profile protects a running hub's RAM
+or replaces host filesystem permissions.
 
 The [end-to-end encrypted channels](docs/end-to-end-encrypted-channels.md)
 runtime encrypts selected chat payloads on the sending endpoint and decrypts
