@@ -117,3 +117,13 @@ def test_stock_event_store_stays_unencrypted(tmp_path: Path) -> None:
     store.append("chat", {"text": "visible"})
     store.close()
     assert b"visible" in (tmp_path / "plain.db").read_bytes()
+
+
+def test_plaintext_open_of_encrypted_store_hints_key_file(tmp_path: Path) -> None:
+    key_path = generate_key_file(tmp_path / "hub.key")
+    db = tmp_path / "hub.db"
+    store = EventStore(db, key_file=key_path)
+    store.append("chat", {"text": "secret"})
+    store.close()
+    with pytest.raises(SqlCipherKeyError, match="--db-key-file"):
+        EventStore(db)

@@ -195,7 +195,19 @@ def connect_event_store(
     if material is None and key_file is not None:
         material = load_key_file(key_file)
     if material is None:
-        return sqlite3.connect(str(path)), False
+        conn = sqlite3.connect(str(path))
+        try:
+            # SQLCipher files open under stock sqlite3 but fail on the first real
+            # page read — surface a key-file hint instead of "file is not a database".
+            conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
+        except sqlite3.DatabaseError as exc:
+            conn.close()
+            raise SqlCipherKeyError(
+                f"cannot open {path} as a plaintext SQLite database; "
+                "if this is a SQLCipher event store, pass key_file= or "
+                "synapse hub --db-key-file"
+            ) from exc
+        return conn, False
     return connect_sqlcipher(path, material), True
 
 
