@@ -13,6 +13,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse a2a-conformance` now prints the local A2A 1.0.0 support matrix as
+  Markdown or JSON, including supported, partial, unsupported, and externally
+  gated rows for the bridge.
+
 ## [0.98.21] - 2026-07-09
 
 ### Fixed

@@ -106,6 +106,7 @@ nav:
   - Deployment: deployment.md
   - Observability: observability.md
   - A2A validation receipts: a2a-validation-receipts.md
+  - A2A conformance matrix: a2a-conformance.md
   - Benchmarks: benchmarks.md
   - API reference: api.md
   - Troubleshooting: troubleshooting.md

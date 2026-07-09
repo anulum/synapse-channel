@@ -30,6 +30,10 @@ it is adopted here as the project's validation template. Two rules run through i
 
 ## The receipts
 
+Run `synapse a2a-conformance` before recording a receipt. It prints the current
+local matrix against the A2A 1.0.0 operation model; receipt work should update
+the matching row instead of replacing the matrix with prose.
+
 Each receipt is a small, self-contained record. Capture it as JSON, a gist, or a
 discussion reply — the shape matters more than the medium.
 

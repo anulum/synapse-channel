@@ -58,6 +58,7 @@ The ``synapse`` command exposes these subcommands:
 * ``mcp`` — run a Model Context Protocol server over stdio, bridged to the hub;
 * ``mcp-tools`` / ``mcp-call`` — list and call allowlisted external MCP tools (outbound);
 * ``a2a-card`` — emit an Agent2Agent Agent Card projected from the live manifest;
+* ``a2a-conformance`` — print the local Agent2Agent conformance matrix;
 * ``init`` — print or install local user services for hub, presence, and wake arming;
 * ``worker-session`` — launch a provider command with identity env and a wake sidecar.
 * ``channel`` — manage private-channel membership (create/join/leave/list);
@@ -167,6 +168,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_mcp:add_parsers", ("mcp",)),
     ("synapse_channel.cli_mcp_call:add_parsers", ("mcp-tools", "mcp-call")),
     ("synapse_channel.cli_a2a:add_parsers", ("a2a-card", "a2a-serve")),
+    ("synapse_channel.cli_a2a_conformance:add_parsers", ("a2a-conformance",)),
     ("synapse_channel.cli_adapters:add_parsers", ("adapters",)),
     (
         "synapse_channel.cli_git:add_parsers",

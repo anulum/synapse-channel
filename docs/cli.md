@@ -30,6 +30,7 @@ everything, since they need the whole command table.
 | `synapse sandbox` | Validate a capability manifest and pre-flight or run a `.wasm` tool against it (`validate`/`test`/`run`). |
 | `synapse adapters` | Detect coding tools and wire them to the hub with a claim-aware adapter (`list`/`install`/`uninstall`). |
 | `synapse a2a-card` | Print an Agent2Agent Agent Card projected from the live capability manifest. |
+| `synapse a2a-conformance` | Print the local Agent2Agent conformance matrix. |
 | `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge. |
 | `synapse channel` | Manage private-channel membership and member-visible history; pair with `synapse send --channel`. |
 | `synapse encrypt-key` | Generate and check at-rest encryption key files (needs the `encryption` extra to encrypt). |
@@ -825,6 +826,7 @@ synapse route-task TASK-1 --limit 3 --event-store ./synapse.db --json
 synapse resource-bids TASK-1 --resource-kind gpu --json
 synapse memory-recall ./synapse.db "transport handoff" --json
 synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1
+synapse a2a-conformance --json
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --bearer-auth --a2a-token "$A2A_TOKEN" --state-file ./a2a-state.json
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --task-timeout 300 --subscribe-timeout 1
@@ -1640,6 +1642,8 @@ Agent Card. `synapse a2a-serve` runs the local HTTP+JSON bridge and keeps A2A at
 the edge of the system; the hub remains WebSocket-native.
 The bridge is an interop surface for A2A-shaped clients, not a replacement for
 orchestration frameworks, coding agents, or the native SYNAPSE hub protocol.
+`synapse a2a-conformance` prints the current support matrix against the A2A
+1.0.0 operation model, including rows that remain externally gated.
 
 Supported local subset:
 
@@ -1702,6 +1706,8 @@ Unsupported or externally gated:
 - No claim is made here about third-party A2A conformance until remote CI,
   independent interoperability/conformance tests, real webhook receiver tests,
   deployment threat-model review, and operator sign-off complete.
+- `synapse a2a-conformance` is the live local matrix for those supported,
+  partial, unsupported, and external rows.
 - The bridge does not make SYNAPSE itself an A2A-native hub; it is a separate edge
   process translating between A2A-shaped HTTP operations and SYNAPSE chat/tasks.
 - Subscription replay is local process memory. It is not a durable event log shared

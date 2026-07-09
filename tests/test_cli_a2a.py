@@ -17,6 +17,8 @@ import pytest
 
 from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_a2a
+from synapse_channel.a2a_conformance import SPEC_VERSION
+from synapse_channel.cli_a2a_conformance import _cmd_a2a_conformance, _status_filter
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.protocol import MessageType
@@ -63,6 +65,38 @@ def test_parser_a2a_serve() -> None:
     assert args.task_timeout == 30.0
     assert args.subscribe_timeout == 0.25
     assert args.func is cli_a2a._cmd_a2a_serve
+
+
+def test_parser_a2a_conformance() -> None:
+    args = cli.build_parser().parse_args(["a2a-conformance", "--status", "partial", "--json"])
+
+    assert args.status == "partial"
+    assert args.json is True
+    assert args.func is _cmd_a2a_conformance
+
+
+def test_cmd_a2a_conformance_prints_markdown(capsys: pytest.CaptureFixture[str]) -> None:
+    args = cli.build_parser().parse_args(["a2a-conformance", "--status", "unsupported"])
+
+    assert _cmd_a2a_conformance(args) == 0
+    captured = capsys.readouterr()
+    assert f"A2A conformance matrix (spec {SPEC_VERSION})" in captured.out
+    assert "| binding | gRPC | unsupported | none |" in captured.out
+
+
+def test_cmd_a2a_conformance_prints_json(capsys: pytest.CaptureFixture[str]) -> None:
+    args = cli.build_parser().parse_args(["a2a-conformance", "--status", "external", "--json"])
+
+    assert _cmd_a2a_conformance(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["spec_version"] == SPEC_VERSION
+    assert {row["status"] for row in payload["rows"]} == {"external"}
+
+
+def test_a2a_conformance_status_filter_accepts_none_and_rejects_unknown() -> None:
+    assert _status_filter(None) is None
+    with pytest.raises(ValueError, match="unsupported A2A conformance status"):
+        _status_filter("bad")
 
 
 async def test_a2a_card_prints_manifest_projection(

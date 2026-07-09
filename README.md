@@ -206,6 +206,7 @@ synapse quickstart-coding
 synapse git-init --name trial-agent
 synapse dashboard --port 8765
 synapse a2a-card --endpoint-url http://127.0.0.1:8877
+synapse a2a-conformance
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877
 ```
 
@@ -571,6 +572,9 @@ install keeps its single dependency — see the [MCP guide](docs/mcp.md).
 For Agent2Agent discovery, `synapse a2a-card --endpoint-url ...` projects the
 live capability manifest into an A2A Agent Card JSON document suitable for a
 thin HTTP edge to serve as `/.well-known/agent-card.json`.
+`synapse a2a-conformance` prints the local support matrix against the A2A 1.0.0
+operation model so supported, partial, unsupported, and external rows are visible
+from the installed package.
 Capability cards can also carry declarative capability contracts: per-task-class
 `input_schema` and `output_schema` mappings plus optional preconditions and
 postconditions. These contracts are discovery metadata for routing and review;
@@ -638,6 +642,8 @@ remote CI, interoperability, and real webhook receiver validation have run. That
 independent validation runs as a community track of reproducible
 [validation receipts](docs/a2a-validation-receipts.md) — discovery, task lifecycle,
 webhook, proxy/TLS, replay, and threat-model — rather than a single pass/fail.
+The installed support matrix is available with `synapse a2a-conformance` and in
+the [A2A conformance matrix](docs/a2a-conformance.md).
 
 ### Git-native claims
 
