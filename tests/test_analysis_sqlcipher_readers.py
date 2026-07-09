@@ -65,6 +65,54 @@ def test_event_query_reads_encrypted_store(
     assert "T-ENC" in capsys.readouterr().out
 
 
+def test_event_query_without_key_fails_closed_on_encrypted_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Plain open of a SQLCipher store must fail closed (not return empty data)."""
+    db, _key = _encrypted_task_store(tmp_path)
+    code = cli.main(
+        [
+            "event-query",
+            str(db),
+            "task T-ENC timeline",
+            "--json",
+        ]
+    )
+    assert code != 0
+    err = capsys.readouterr().err.lower()
+    assert "t-enc" not in err  # must not leak task content on failed open
+    assert (
+        "key" in err
+        or "sqlcipher" in err
+        or "encrypt" in err
+        or "not a database" in err
+        or "cipher" in err
+        or "db-key-file" in err
+    )
+
+
+def test_causality_without_key_fails_closed_on_encrypted_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db, _key = _encrypted_task_store(tmp_path)
+    code = cli.main(
+        [
+            "causality",
+            "causes",
+            str(db),
+            "1",
+            "--json",
+        ]
+    )
+    assert code != 0
+    err = capsys.readouterr().err.lower()
+    assert "t-enc" not in err
+    assert code == 2 or any(
+        token in err
+        for token in ("key", "sqlcipher", "encrypt", "cipher", "db-key-file", "database")
+    )
+
+
 def test_merkle_root_reads_encrypted_store(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

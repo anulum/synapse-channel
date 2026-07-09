@@ -116,6 +116,8 @@ synapse git-init --name myproj/alice
 synapse dashboard --port 8765 --feeds-db ~/synapse/hub.db
 # open http://127.0.0.1:8765/  → Studio command centre
 # classic hub HTML: http://127.0.0.1:8765/classic
+# Optional at-rest: hub --db-key-file + dashboard --feeds-db-key-file (see at-rest-encryption.md)
+# Multi-machine fleet fabric pins released core: synapse-channel==0.98.22 (SYNAPSE-CHANNEL-FLEET)
 
 # 6. Close out work with evidence-gated release (default story — not a bare release)
 #    Observe checks, write a receipt, then drop the claim you own:
