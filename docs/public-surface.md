@@ -21,6 +21,24 @@ not a 1.0 stability promise: the wire protocol and the public Python API stay
 backwards-compatible within a major version, and any breaking change is called
 out in the changelog.
 
+## Core Versus Optional Layers
+
+The package stays installable as one tool, but operators should read the surface
+as layered:
+
+| Layer | Taxonomy tier | Boundary |
+|---|---|---|
+| Local coordination core | `stable` | Hub, presence, directed messaging, claims, leases, task state, locks, board, status, and bootstrap commands. |
+| Edge adapters | `adapter` | Optional tool bridges for MCP, A2A, git, tmux/provider seats, shell hooks, ingestion, and workers. |
+| Read-only operator views | `analysis` | Diagnostics, dashboards, event queries, causality, multihub views, reliability, accounting, manifests, and trust graph reporting. |
+| Governance and integrity | `governance` | Policy, approvals, ACL/role commands, federation, Merkle roots, release evidence, reproduction, compaction, and key operations. |
+| Lab surfaces | `experimental` | Benchmarking, participant fabric, route-task, sandbox, workflow, TTL advice, memory recall, auto-action, and resource bidding. |
+
+Adapters and lab surfaces are useful, but they remain layers on top of or beside
+the local bus. They do not pull heavy dependencies into the core, replace the
+hub's event-sourced coordination model, or turn design-preview pages into shipped
+runtime promises.
+
 ## Tiers
 
 ### Stable core — `stable`

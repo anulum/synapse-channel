@@ -76,3 +76,18 @@ def test_public_surface_doc_lists_every_classified_command() -> None:
         assert f"`{command}`" in doc, command
     for tier in TIERS:
         assert tier in doc
+
+
+def test_readme_and_public_surface_map_core_to_optional_layers() -> None:
+    """Public docs must explain the tiered surface without implying a package split."""
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    public_surface = (ROOT / "docs" / "public-surface.md").read_text(encoding="utf-8")
+
+    assert "Core and Optional Layers" in readme
+    assert "Core Versus Optional Layers" in public_surface
+    assert "single-dependency local core" in readme
+    assert "do not pull heavy dependencies into the core" in public_surface
+
+    for tier in TIERS:
+        assert f"`{tier}`" in readme
+        assert f"`{tier}`" in public_surface

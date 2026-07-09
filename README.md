@@ -78,6 +78,24 @@ same files; the plan, handoffs, checkpoints, and a stall supervisor keep the wor
 moving; and the durable event log means a hub restart resumes live leases rather
 than losing them.
 
+## Core and Optional Layers
+
+SYNAPSE CHANNEL ships as one installable package, but the public surface is
+tiered so the lean bus stays clear:
+
+| Layer | Taxonomy tier | What belongs there |
+|---|---|---|
+| Local coordination core | `stable` | The hub, send/wait/listen/arm, claims, tasks, locks, status, board, init, and fleet bootstrap commands used for daily coordination. |
+| Edge adapters | `adapter` | MCP, A2A, git hooks, tmux/provider bridges, shell hooks, ingestion, and worker seats that connect existing tools to the bus. |
+| Read-only operator views | `analysis` | Doctor, state, dashboard, causality, multihub, reliability, trust graph, directory, accounting, manifests, and event queries. |
+| Governance and integrity | `governance` | Policy checks, approvals, ACL/role surfaces, federation, Merkle roots, release receipts, reproduction, compaction, and encryption-key operations. |
+| Lab surfaces | `experimental` | Benchmarking, participant fabric, route-task, sandbox, workflow, TTL advice, memory recall, auto-action, and resource bidding. |
+
+The authoritative map is [`synapse_channel.surface_taxonomy`](src/synapse_channel/surface_taxonomy.py)
+and the generated operator view is [Public surface and stability](docs/public-surface.md).
+Adapters and lab surfaces can be installed and used from the same package, but
+they do not change the single-dependency local core.
+
 > **Coming: Studio** — the dashboard is growing into an operator **[Studio](docs/studio.md)**:
 > a control plane that answers, at a glance, what is happening, what is at risk, and
 > what is safe to do next. The instrument-panel design system and the `/studio`
@@ -1101,7 +1119,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 490 |
 | Wire message types | 73 |
 | CLI subcommands | 145 |
-| Test functions | 5472 |
+| Test functions | 5473 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 49 |
 | GitHub Actions workflows | 12 |

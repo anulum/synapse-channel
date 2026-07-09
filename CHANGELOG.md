@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+- README and public-surface documentation now map the single-package install into
+  core, adapter, analysis, governance, and experimental layers using the
+  `surface_taxonomy` tiers, making the lean coordination core explicit without
+  implying a package split.
+
 ## [0.98.16] - 2026-07-09
 
 ### Added
