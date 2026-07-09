@@ -60,12 +60,14 @@ def test_projection_foregrounds_the_verdict_and_sections() -> None:
         "claims",
         "tasks",
         "conflicts",
+        "security_posture",
         "risk",
     }
     assert studio["agents"]["live"] == ["A/claude-1", "B/codex-2"]
     assert studio["claims"]["active"] == [{"owner": "A/claude-1", "scope": "src/"}]
     assert studio["tasks"]["graph"] == {"nodes": 3, "edges": 1}
     assert studio["risk"]["safe_next_work"] == ["t1", "t2"]
+    assert studio["security_posture"]["level"] == "amber"
 
 
 def test_headline_counts_are_derived_from_the_section_lists() -> None:
@@ -90,6 +92,7 @@ def test_empty_payload_projects_to_safe_defaults() -> None:
     assert studio["agents"] == {"live": [], "waiters": [], "missing_waiters": []}
     assert studio["claims"] == {"active": [], "stale": []}
     assert studio["tasks"]["graph"] is None
+    assert studio["security_posture"]["level"] == "amber"
 
 
 def test_malformed_sections_are_coerced_not_raised() -> None:
@@ -105,4 +108,5 @@ def test_frozen_snapshot_is_a_valid_representative_sample() -> None:
     studio = frozen_studio_snapshot()
     assert studio["verdict"] == "amber"
     assert studio["headline"]["agents_live"] == 2
+    assert studio["security_posture"]["level"] == "green"
     assert frozen_studio_snapshot() == studio  # deterministic

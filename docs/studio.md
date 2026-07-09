@@ -51,13 +51,13 @@ synapse dashboard --port 8765
 ## The Studio snapshot — `/studio.json`
 
 The command centre reads one JSON contract, served live at `/studio.json`: a single risk
-**verdict** (the reserved red/amber/green signal), a row of headline counters, and the
-agents, claims, tasks, conflicts, and risk behind them. It is a pure projection of the
-same read model the dashboard already exposes — `studio_snapshot.py` reshaping
-`/snapshot.json` — so Studio adds no new hub call, only a curated command-centre view.
-Every headline count is derived from the list it summarises, so the instrument and the
-rows beneath it can never disagree. A partial payload from a degraded hub still projects
-to a renderable snapshot rather than failing.
+**verdict** (the reserved red/amber/green signal), a row of headline counters, the
+agents, claims, tasks, conflicts, risk behind them, and a compact security-posture
+section. It is a pure projection of the same read model the dashboard already exposes —
+`studio_snapshot.py` reshaping `/snapshot.json` — so Studio adds no new hub call, only a
+curated command-centre view. Every headline count is derived from the list it summarises,
+so the instrument and the rows beneath it can never disagree. A partial payload from a
+degraded hub still projects to a renderable snapshot rather than failing.
 
 ```bash
 synapse dashboard --uri ws://127.0.0.1:8765
@@ -78,6 +78,13 @@ The page shell is hub-independent: it loads with no hub running, shows an offlin
 and fills in live as it polls. It honours `prefers-reduced-motion` — the sweep stills and a
 claims table pairs the dial so the same information is legible without animation. Vanilla
 HTML, the `studio.css` tokens, and dependency-free ES — no build step, no external request.
+
+The security-posture panel sits beside the Coordination Clock and summarises five shipped
+safety surfaces: sandbox grants, ACL/role visibility, the dashboard exposure guard,
+signed federation / peer observation, and receipt evidence. Rows are evidence-bound:
+missing role bindings, peers, or receipts are shown as amber "not currently evidenced"
+instead of being treated as configured. The panel is read-only; server-side ACL,
+dashboard bind, federation, and sandbox enforcement remain in their existing modules.
 
 ```bash
 synapse dashboard --port 8765

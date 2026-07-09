@@ -13,18 +13,20 @@ module is the projection that produces it — a pure dict-to-dict reshape of the
 ``DashboardSnapshot.to_dict()`` payload (fleet + risk views), so Studio adds no new hub
 call and no new state, only a curated view of what the dashboard already exposes.
 
-The projection foregrounds the risk **verdict** (the reserved red/amber/green signal) and
-derives every headline count from the same lists the panels render, so the number on the
-instrument and the rows below it can never disagree. It is robust to a partial payload: a
-missing section projects to its empty default rather than raising, so a degraded hub still
-yields a renderable snapshot. :func:`frozen_studio_snapshot` returns a deterministic sample
-for offline rendering and tests.
+The projection foregrounds the risk **verdict** (the reserved red/amber/green signal),
+derives every headline count from the same lists the panels render, and adds a
+security-posture section from the same source payload. It is robust to a partial payload:
+a missing section projects to its empty default rather than raising, so a degraded hub
+still yields a renderable snapshot. :func:`frozen_studio_snapshot` returns a deterministic
+sample for offline rendering and tests.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
+
+from synapse_channel.dashboard_security_posture import build_security_posture
 
 STUDIO_SNAPSHOT_PATH = "/studio.json"
 """The HTTP path the live Studio snapshot is served at."""
@@ -61,8 +63,9 @@ def build_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
     -------
     dict[str, Any]
         ``verdict``, ``generated_at``, a ``headline`` counter row, and the ``agents``,
-        ``claims``, ``tasks``, ``conflicts``, and ``risk`` sections behind it. Counts are
-        derived from the same lists the sections carry, so they cannot drift apart.
+        ``claims``, ``tasks``, ``conflicts``, ``security_posture``, and ``risk``
+        sections behind it. Counts are derived from the same lists the sections carry, so
+        they cannot drift apart.
     """
     fleet = _mapping(dashboard.get("fleet"))
     risk = _mapping(dashboard.get("risk"))
@@ -98,6 +101,7 @@ def build_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
         "claims": {"active": active_claims, "stale": stale_claims},
         "tasks": {"ready": ready, "blocked": blocked, "graph": fleet.get("task_graph")},
         "conflicts": conflicts,
+        "security_posture": build_security_posture(dashboard),
         "risk": {
             "level": verdict,
             "signals": signals,
@@ -134,6 +138,13 @@ def frozen_studio_snapshot() -> dict[str, Any]:
                     "blocked": [{"task_id": "publish", "depends_on": ["run-suite"]}],
                 },
                 "task_graph": {"nodes": 3, "edges": 1},
+                "receipts": [
+                    {
+                        "task_id": "build-wheel",
+                        "author": "SCPN-FUSION-CORE/claude-a1",
+                        "text": "release receipt: evidence=pytest tests/test_studio_snapshot.py -q",
+                    }
+                ],
                 "branch_conflicts": [],
                 "generated_at": 1782760000.0,
             },
@@ -149,5 +160,15 @@ def frozen_studio_snapshot() -> dict[str, Any]:
                 ],
                 "safe_next_work": ["build-wheel", "run-suite"],
             },
+            "manifest": [
+                {
+                    "agent": "SCPN-FUSION-CORE/claude-a1",
+                    "skills": ["sandbox"],
+                    "task_classes": ["wasm"],
+                }
+            ],
+            "agent_roles": {"SCPN-FUSION-CORE/claude-a1": ["SYNAPSE-CHANNEL/operator"]},
+            "config_epoch": "sha256:demo",
+            "observed_peers": [{"hub_id": "ml350", "reachable": True}],
         }
     )

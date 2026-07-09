@@ -113,9 +113,9 @@ they do not change the single-dependency local core.
 
 > **Coming: Studio** — the dashboard is growing into an operator **[Studio](docs/studio.md)**:
 > a control plane that answers, at a glance, what is happening, what is at risk, and
-> what is safe to do next. The instrument-panel design system and the `/studio`
-> reference have shipped; the live command centre is next. Local-first and read-only by
-> default — an organisation-level workbench is planned as a separate layer.
+> what is safe to do next. The instrument-panel design system, `/studio` reference,
+> live `/studio/command` view, and security-posture panel have shipped. Local-first
+> and read-only by default — an organisation-level workbench is planned as a separate layer.
 
 ## Install
 
@@ -1146,11 +1146,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.98.21 |
 | Public API exports | 70 |
-| Package modules | 337 |
-| Classes | 497 |
+| Package modules | 338 |
+| Classes | 499 |
 | Wire message types | 73 |
 | CLI subcommands | 146 |
-| Test functions | 5556 |
+| Test functions | 5560 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 52 |
 | GitHub Actions workflows | 12 |

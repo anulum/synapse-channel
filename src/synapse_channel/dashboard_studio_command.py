@@ -37,6 +37,7 @@ _STYLE = """
 :root { --syn-clock-r: 150px; }
 .cc-grid { display:grid; grid-template-columns: minmax(320px, 1fr) minmax(280px, 0.9fr);
   gap: var(--syn-sp-5); align-items: start; }
+.cc-grid > * { min-width:0; }
 .cc-bar { display:flex; align-items:center; gap:var(--syn-sp-4); flex-wrap:wrap;
   margin: var(--syn-sp-4) 0 var(--syn-sp-5); }
 .cc-stat { display:flex; flex-direction:column; line-height:1.1; }
@@ -64,6 +65,8 @@ _STYLE = """
 .cc-offline { color:var(--syn-amber); font-family:var(--syn-font-mono);
   font-size:var(--syn-fs-data); }
 .cc-empty { color:var(--syn-muted); font-size:var(--syn-fs-body); padding:var(--syn-sp-2) 0; }
+.cc-grid .syn-row { min-width:0; overflow:hidden; }
+.cc-grid .syn-row > span { min-width:0; overflow-wrap:anywhere; }
 .cc-table { width:100%; border-collapse:collapse; font-size:var(--syn-fs-data); }
 .cc-table th { text-align:left; color:var(--syn-muted); font-size:var(--syn-fs-label);
   text-transform:uppercase; letter-spacing:.08em; font-weight:500;
@@ -75,6 +78,11 @@ _STYLE = """
 @media (prefers-reduced-motion: reduce) {
   .cc-sweep { animation:none; display:none; }
   .cc-fallback { display:block; }
+}
+@media (max-width: 760px) {
+  .syn-nav { flex-wrap:wrap; }
+  .cc-grid { grid-template-columns:minmax(0, 1fr); }
+  .cc-clock { width:min(360px, 100%); }
 }
 """
 
@@ -181,6 +189,8 @@ function render(data) {
   setStat("cc-tasks", (h.tasks_ready || 0) + " / " + (h.tasks_blocked || 0));
   setStat("cc-conflicts", h.branch_conflicts || 0);
   setStat("cc-signals", h.risk_signals || 0);
+  const posture = data.security_posture || {};
+  setStat("cc-posture", posture.level || "unknown");
   drawClock(data);
   const agents = data.agents || {};
   const live = (agents.live || []).map((a) => ({ name: a, state: "ok" }))
@@ -204,6 +214,10 @@ function render(data) {
     `<span class="syn-dot syn-dot--${TONE[s.level] || "warn"}"></span>` +
     `<span>${text(s.subject)}</span>` +
     `<span style="margin-left:auto;color:var(--syn-muted)">${text(s.detail)}</span>`);
+  list("cc-posture-list", posture.rows || [], (row) =>
+    `<span class="syn-dot syn-dot--${TONE[row.level] || "warn"}"></span>` +
+    `<span>${text(row.surface)}</span>` +
+    `<span style="margin-left:auto;color:var(--syn-muted)">${text(row.state)}</span>`);
   const tbody = document.getElementById("cc-fallback-body");
   tbody.replaceChildren();
   for (const x of allClaims) {
@@ -274,6 +288,7 @@ def render_studio_command_html(*, poll_seconds: int = DEFAULT_POLL_SECONDS) -> s
     <div class="cc-stat"><b id="cc-tasks">0 / 0</b><span>tasks ready/blocked</span></div>
     <div class="cc-stat"><b id="cc-conflicts">0</b><span>conflicts</span></div>
     <div class="cc-stat"><b id="cc-signals">0</b><span>risk signals</span></div>
+    <div class="cc-stat"><b id="cc-posture">unknown</b><span>security posture</span></div>
   </div>
   <div class="cc-grid">
     <section class="syn-panel cc-clock-wrap">
@@ -303,6 +318,10 @@ def render_studio_command_html(*, poll_seconds: int = DEFAULT_POLL_SECONDS) -> s
       <section class="syn-panel">
         <div class="syn-label">risk signals</div>
         <div id="cc-risk-list" style="margin-top:var(--syn-sp-2)"></div>
+      </section>
+      <section class="syn-panel">
+        <div class="syn-label">security posture</div>
+        <div id="cc-posture-list" style="margin-top:var(--syn-sp-2)"></div>
       </section>
     </div>
   </div>

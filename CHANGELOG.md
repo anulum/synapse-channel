@@ -25,6 +25,10 @@ All notable changes to this project are documented here.
 - The public API freeze now pins the exact `synapse_channel.__all__` export
   list, and the docs include a 0.x to 1.0 migration guide covering upgrade
   order, wire-version checks, stable-surface guards, and release-cut checks.
+- The Studio `/studio.json` projection now includes a security-posture section
+  covering sandbox grants, ACL/role visibility, dashboard exposure evidence,
+  signed federation observation, and receipt evidence. `/studio/command` renders
+  the same rows as a read-only posture panel beside the Coordination Clock.
 - Declarative workflows now support step-level `requires` evidence predicates
   for proof-carrying steps. `workflow plan` and `workflow run` accept an
   `--evidence` snapshot and hold a step until its required receipt, test,

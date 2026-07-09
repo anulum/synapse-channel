@@ -49,8 +49,9 @@ state, and every agent connects to it.
 
 The read-only dashboard is growing into an operator **[Studio](studio.md)** — a
 control plane that answers, at a glance, what is happening, what is at risk, and what
-is safe to do next. The instrument-panel design system and the `/studio` reference
-have shipped; the live command centre is next. Local-first and read-only by default.
+is safe to do next. The instrument-panel design system, `/studio` reference page,
+live `/studio/command` view, and security-posture panel have shipped. Local-first and
+read-only by default.
 
 ## Next steps
 

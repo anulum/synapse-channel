@@ -39,10 +39,13 @@ def test_page_carries_every_instrument_hook() -> None:
         'id="cc-tasks"',
         'id="cc-conflicts"',
         'id="cc-signals"',
+        'id="cc-posture"',
         'id="cc-offline"',
         'id="cc-fallback-body"',
+        'id="cc-posture-list"',
         "Coordination clock",
         "coordination clock",  # the panel label
+        "security posture",
     ):
         assert hook in html, hook
 
@@ -66,6 +69,7 @@ def test_script_binds_the_snapshot_path_and_poll_interval() -> None:
     assert "8000" in script  # seconds rendered as milliseconds
     assert "__SNAPSHOT__" not in script and "__POLL_MS__" not in script  # fully substituted
     assert "drawClock" in script and "fetch(SNAPSHOT" in script
+    assert "cc-posture-list" in script
 
 
 def test_default_poll_interval_is_applied() -> None:

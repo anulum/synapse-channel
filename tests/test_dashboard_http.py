@@ -212,6 +212,9 @@ async def test_dashboard_http_server_serves_the_studio_reference_and_css() -> No
             command_status, command_type, command_body = await asyncio.to_thread(
                 _http_get, server.url("/studio/command")
             )
+            studio_json_status, studio_json_type, studio_json_body = await asyncio.to_thread(
+                _http_get, server.url("/studio.json")
+            )
         finally:
             server.close()
             await close_agents(handle)
@@ -228,6 +231,11 @@ async def test_dashboard_http_server_serves_the_studio_reference_and_css() -> No
     assert "Coordination clock" in command_body
     assert "/studio.json" in command_body
     assert 'href="/studio.css"' in command_body  # absolute, so it resolves from the subpath
+    assert studio_json_status == 200
+    assert studio_json_type == "application/json"
+    studio_json = json.loads(studio_json_body)
+    assert studio_json["security_posture"]["rows"]
+    assert studio_json["security_posture"]["level"] in {"green", "amber", "red", "unknown"}
 
 
 def test_dashboard_http_server_serves_operator_actions_feed(tmp_path: Path) -> None:
