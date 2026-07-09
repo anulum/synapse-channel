@@ -23,8 +23,10 @@ from synapse_channel.core.postmortem import (
 def _cmd_postmortem(args: argparse.Namespace) -> int:
     """Run one replayable task postmortem and print the report."""
     try:
-        report = run_task_postmortem(args.db, args.task_id)
-    except ValueError as exc:
+        report = run_task_postmortem(
+            args.db, args.task_id, key_file=getattr(args, "db_key_file", None)
+        )
+    except (ValueError, OSError, RuntimeError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     if args.json:
@@ -41,6 +43,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Build a replayable task postmortem from a hub SQLite event store.",
     )
     parser.add_argument("db", help="Path to the hub event store, e.g. ~/synapse/hub.db.")
+    parser.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted event store.",
+    )
     parser.add_argument("task_id", help="Task id to reconstruct.")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     parser.set_defaults(func=_cmd_postmortem)

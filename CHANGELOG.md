@@ -25,6 +25,8 @@ All notable changes to this project are documented here.
   gains a multi-seat golden path ending in Studio.
 
 ### Added
+- SQLCipher `--db-key-file` on analysis CLIs: `event-query`,
+  `postmortem`, `merkle root`/`prove` (core run_* accept `key_file`).
 - `synapse a2a-interop-trace`: independent stdlib HTTP client against a live
   A2A bridge (discovery + message:send + GET task) with structured receipt;
   Independent interoperability matrix row is now `partial`.

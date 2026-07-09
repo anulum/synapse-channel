@@ -289,7 +289,12 @@ def leaf_hash(event: StoredEvent) -> bytes:
     return hashlib.sha256(LEAF_PREFIX + _canonical_event_bytes(event)).digest()
 
 
-def run_root(db_path: str | Path, *, through_seq: int | None = None) -> MerkleRoot:
+def run_root(
+    db_path: str | Path,
+    *,
+    through_seq: int | None = None,
+    key_file: str | Path | None = None,
+) -> MerkleRoot:
     """Build a Merkle root from an existing SQLite event store.
 
     Events stream off the store cursor into a :class:`RunningRoot`, so committing
@@ -317,7 +322,7 @@ def run_root(db_path: str | Path, *, through_seq: int | None = None) -> MerkleRo
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path)
+    store = EventStore(path, key_file=key_file)
     try:
         running = RunningRoot()
         for event in store.iter_events(through_seq=through_seq):
@@ -332,6 +337,7 @@ def run_proof(
     seq: int,
     *,
     through_seq: int | None = None,
+    key_file: str | Path | None = None,
 ) -> InclusionProof | None:
     """Build an inclusion proof from an existing SQLite event store.
 
@@ -340,7 +346,9 @@ def run_proof(
     ValueError
         If the event store does not exist.
     """
-    return build_proof(_load_events(db_path), seq, through_seq=through_seq)
+    return build_proof(
+        _load_events(db_path, key_file=key_file), seq, through_seq=through_seq
+    )
 
 
 def root_to_json(root: MerkleRoot) -> dict[str, object]:
@@ -506,13 +514,15 @@ def _root_from_path(index: int, size: int, leaf: bytes, path: Sequence[bytes]) -
     return _node_hash(path[-1], _root_from_path(index - split, size - split, leaf, path[:-1]))
 
 
-def _load_events(db_path: str | Path) -> tuple[StoredEvent, ...]:
+def _load_events(
+    db_path: str | Path, *, key_file: str | Path | None = None
+) -> tuple[StoredEvent, ...]:
     """Load all events from an event store, raising if it is missing."""
     path = Path(db_path)
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path)
+    store = EventStore(path, key_file=key_file)
     try:
         return tuple(store.read_all())
     finally:

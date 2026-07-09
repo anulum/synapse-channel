@@ -124,7 +124,12 @@ class TaskPostmortem:
     unanswered_messages: tuple[UnansweredMessage, ...]
 
 
-def run_task_postmortem(db_path: str | Path, task_id: str) -> TaskPostmortem:
+def run_task_postmortem(
+    db_path: str | Path,
+    task_id: str,
+    *,
+    key_file: str | Path | None = None,
+) -> TaskPostmortem:
     """Build a task postmortem from an existing SQLite event store.
 
     Parameters
@@ -148,7 +153,7 @@ def run_task_postmortem(db_path: str | Path, task_id: str) -> TaskPostmortem:
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path)
+    store = EventStore(path, key_file=key_file)
     try:
         events = tuple(store.read_all())
     finally:

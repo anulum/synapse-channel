@@ -255,7 +255,13 @@ def parse_query(query: str) -> EventQuery:
     raise ValueError(msg)
 
 
-def run_query(db_path: str | Path, query: str, *, limit: int | None = None) -> QueryResult:
+def run_query(
+    db_path: str | Path,
+    query: str,
+    *,
+    limit: int | None = None,
+    key_file: str | Path | None = None,
+) -> QueryResult:
     """Run one temporal event-log query against an existing SQLite store.
 
     The store is read selectively: only the sequence/time window and event kinds
@@ -273,6 +279,8 @@ def run_query(db_path: str | Path, query: str, *, limit: int | None = None) -> Q
     limit : int or None, optional
         When given, cap the result to its most recent ``limit`` records (and
         conflict pairs); ``None`` returns every match.
+    key_file : str or pathlib.Path or None, optional
+        Owner-only SQLCipher key when the event store is encrypted.
 
     Returns
     -------
@@ -289,7 +297,7 @@ def run_query(db_path: str | Path, query: str, *, limit: int | None = None) -> Q
         msg = f"missing event store: {path}"
         raise ValueError(msg)
     parsed = parse_query(query)
-    store = EventStore(path)
+    store = EventStore(path, key_file=key_file)
     try:
         events = tuple(store.read_window(**_selective_read_args(parsed)))
     finally:

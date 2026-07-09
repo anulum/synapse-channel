@@ -19,8 +19,13 @@ from synapse_channel.core.event_query import render_human, result_to_json, run_q
 def _cmd_event_query(args: argparse.Namespace) -> int:
     """Run one temporal event-log query and print the result."""
     try:
-        result = run_query(args.db, args.query, limit=args.limit)
-    except ValueError as exc:
+        result = run_query(
+            args.db,
+            args.query,
+            limit=args.limit,
+            key_file=getattr(args, "db_key_file", None),
+        )
+    except (ValueError, OSError, RuntimeError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     if args.json:
@@ -37,6 +42,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Query a hub SQLite event store for temporal task and conflict evidence.",
     )
     parser.add_argument("db", help="Path to the hub event store, e.g. ~/synapse/hub.db.")
+    parser.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted event store.",
+    )
     parser.add_argument(
         "query",
         help=(

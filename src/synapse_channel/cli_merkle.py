@@ -43,8 +43,12 @@ from synapse_channel.core.receipt_signing import (
 def _cmd_root(args: argparse.Namespace) -> int:
     """Commit the event log to a Merkle root and optionally gate it."""
     try:
-        root = run_root(args.db, through_seq=args.through)
-    except ValueError as exc:
+        root = run_root(
+            args.db,
+            through_seq=args.through,
+            key_file=getattr(args, "db_key_file", None),
+        )
+    except (ValueError, OSError, RuntimeError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     if args.json:
@@ -66,8 +70,13 @@ def _cmd_root(args: argparse.Namespace) -> int:
 def _cmd_prove(args: argparse.Namespace) -> int:
     """Emit an inclusion proof for one event's sequence."""
     try:
-        proof = run_proof(args.db, args.seq, through_seq=args.through)
-    except ValueError as exc:
+        proof = run_proof(
+            args.db,
+            args.seq,
+            through_seq=args.through,
+            key_file=getattr(args, "db_key_file", None),
+        )
+    except (ValueError, OSError, RuntimeError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     if proof is None:
@@ -155,6 +164,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     root = actions.add_parser("root", help="Commit the log to a Merkle root.")
     root.add_argument("db", help="Path to the hub event store, e.g. ~/synapse/hub.db.")
     root.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted event store.",
+    )
+    root.add_argument(
         "--through",
         type=int,
         default=None,
@@ -172,6 +186,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
 
     prove = actions.add_parser("prove", help="Emit an inclusion proof for one event.")
     prove.add_argument("db", help="Path to the hub event store, e.g. ~/synapse/hub.db.")
+    prove.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted event store.",
+    )
     prove.add_argument("seq", type=int, metavar="SEQ", help="Event sequence to prove.")
     prove.add_argument(
         "--through",

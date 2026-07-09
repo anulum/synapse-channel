@@ -81,6 +81,9 @@ Read the same store without decrypting offline copies:
 
 ```bash
 synapse ingest ~/synapse/hub.db --db-key-file ~/synapse/hub.key
+synapse event-query ~/synapse/hub.db --db-key-file ~/synapse/hub.key 'task T timeline'
+synapse postmortem ~/synapse/hub.db --db-key-file ~/synapse/hub.key T
+synapse merkle root ~/synapse/hub.db --db-key-file ~/synapse/hub.key
 synapse dashboard --feeds-db ~/synapse/hub.db --feeds-db-key-file ~/synapse/hub.key
 ```
 
