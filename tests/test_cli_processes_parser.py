@@ -26,9 +26,19 @@ def test_parser_hub_defaults() -> None:
     args = cli.build_parser().parse_args(["hub"])
     assert args.host == "localhost"
     assert args.db is None
+    assert args.db_key_file is None
     assert args.func is cli_processes._cmd_hub
     assert args.role_grants == ""
     assert args.require_role_claim is False
+
+
+def test_parser_hub_db_key_file_flag() -> None:
+    """Production hub CLI exposes --db-key-file next to --db."""
+    args = cli.build_parser().parse_args(
+        ["hub", "--db", "/tmp/hub.db", "--db-key-file", "/tmp/hub.key"]
+    )
+    assert args.db == "/tmp/hub.db"
+    assert args.db_key_file == "/tmp/hub.key"
 
 
 def test_parser_hub_role_claim_flags() -> None:
