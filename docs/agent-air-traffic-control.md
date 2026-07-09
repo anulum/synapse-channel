@@ -35,9 +35,12 @@ designed Synapse surface:
    "conflicts at seq|time"`.)*
 3. **Evidence-gated completion** — let work close only against declared evidence.
    Release receipts carry bounded evidence, artefacts, known failures, and an
-   epistemic status; an advisory policy check evaluates them. *(Shipped:
-   release receipts, `synapse verify-release`, `synapse policy-check`,
-   human-in-the-loop `synapse approval`.)*
+   epistemic status; an advisory policy check evaluates them. The multi-seat
+   **default closeout story** is `synapse verify-release` → receipt JSON →
+   `synapse release --receipt` (see [quick start](quickstart.md) and
+   [recipes](recipes.md#evidence-gated-release-default-closeout)); bare release
+   is the emergency exit. *(Shipped: release receipts, `synapse verify-release`,
+   `synapse policy-check`, human-in-the-loop `synapse approval`.)*
 4. **Post-incident replay** — reconstruct what happened from the durable log.
    Replayable postmortems and evidence-only reliability memory turn the event
    store into an audit trail. *(Shipped: `synapse postmortem`, `synapse

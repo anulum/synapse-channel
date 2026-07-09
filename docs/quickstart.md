@@ -116,10 +116,20 @@ synapse git-init --name myproj/alice
 synapse dashboard --port 8765 --feeds-db ~/synapse/hub.db
 # open http://127.0.0.1:8765/  → Studio command centre
 # classic hub HTML: http://127.0.0.1:8765/classic
+
+# 6. Close out work with evidence-gated release (default story — not a bare release)
+#    Observe checks, write a receipt, then drop the claim you own:
+synapse verify-release BUILD --name myproj/alice \
+  --run ".venv/bin/python -m pytest tests/ -q" \
+  --output ~/synapse/receipt-BUILD.json
+synapse release BUILD --name myproj/alice \
+  --receipt ~/synapse/receipt-BUILD.json --receipt-json
 ```
 
 Success looks like: `synapse who` shows agents and waiters; Studio shows a live
-verdict and claim segments; a second agent cannot claim the same file scope.
+verdict and claim segments; a second agent cannot claim the same file scope; a
+finished claim leaves a receipt-backed release on the hub (not an evidence-free
+drop).
 
 Check multi-seat trust and deaf agents (present without a `-rx` waiter):
 
@@ -131,6 +141,22 @@ synapse doctor --multi-seat \
 
 A multi-seat roster without a token/trust/role materials warns with a
 `--team-secure` remedy; agents online without waiters warn under `deaf-agents`.
+
+### Evidence-gated release (default closeout)
+
+Prefer **observed** evidence over hand-typed notes when you drop a claim:
+
+1. `synapse verify-release TASK --name YOU --run "…" --output receipt.json` runs
+   the declared commands, records exit codes and digests, and writes receipt JSON.
+2. `synapse release TASK --name YOU --receipt receipt.json` drops **your** claim
+   only when you still own it, attaching that receipt on the hub.
+3. Optional: `synapse policy-check TASK --policy policy.toml --receipt-json receipt.json`
+   for advisory policy evaluation before or after release.
+
+Bare `synapse release TASK --name YOU` still works for emergency manual drops;
+the multi-seat default story is verify → receipt → release. Details:
+[CLI release / verify-release](cli.md) and the
+[parallel-agents recipe](recipes.md#evidence-gated-release-default-closeout).
 
 See [team-secure mode](team-secure.md) and [Studio](studio.md).
 

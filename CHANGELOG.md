@@ -16,6 +16,9 @@ All notable changes to this project are documented here.
 ## [0.98.22] - 2026-07-09
 
 ### Changed
+- Multi-seat golden path default closeout is evidence-gated release:
+  `synapse verify-release` → receipt → `synapse release --receipt` (quickstart
+  step 6 + recipes section). Bare release remains for emergency drops only.
 - Dashboard front door is the Studio command centre: `GET /` and
   `/studio/command` serve the same hub-independent shell; the pre-Studio hub
   HTML moves to `/classic`. CLI startup prints Studio URLs first. Quick start

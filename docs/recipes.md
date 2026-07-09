@@ -59,6 +59,10 @@ can hold a strict lease on its behalf.
     The output includes each lease's holder, scope, age, remaining TTL, checkpoint,
     git context, and exact `synapse release <task> --name <owner>` command.
 
+    When you are done, **do not** drop the claim bare by default. Use the
+    [evidence-gated release](#evidence-gated-release-default-closeout) path below
+    so the hub records observed checks with the release.
+
 3. **Tell the others what changed.** Address one teammate, several, or everyone:
 
     ```bash
@@ -96,6 +100,36 @@ can hold a strict lease on its behalf.
     The command stages only those paths and passes the same pathspecs to
     `git commit`, so unrelated staged or modified files remain outside the new
     commit.
+
+## Evidence-gated release (default closeout)
+
+Manual claim drop without evidence is the emergency exit. The default multi-seat
+closeout is: **run checks → write a receipt → release with that receipt**.
+
+```bash
+# Observe the verification (real commands, recorded digests)
+synapse verify-release edit-api --name api-dev \
+  --run ".venv/bin/python -m pytest tests/test_api.py -q" \
+  --artifact coverage.xml \
+  --output /tmp/receipt-edit-api.json
+
+# Optional advisory policy evaluation on the receipt
+# synapse policy-check edit-api --policy ./policy.toml \
+#   --receipt-json /tmp/receipt-edit-api.json
+
+# Drop only the claim you own, attaching the observed receipt
+synapse release edit-api --name api-dev \
+  --receipt /tmp/receipt-edit-api.json --receipt-json
+```
+
+`verify-release` is offline relative to the hub until you attach the file with
+`release --receipt`. The hub still enforces ownership: a non-owner cannot clear
+someone else's claim. The resulting `supported` status is **advisory** evidence
+quality, not independent proof that the suite was sufficient — reviewers still
+decide.
+
+Wire this into the multi-seat golden path in [quick start](quickstart.md): after
+Studio shows a live claim, finish with verify → receipt → release.
 
 ## Why it holds
 
