@@ -133,6 +133,115 @@ def test_ttl_advice_without_key_fails_closed(
     )
 
 
+def _cross_repo_org(tmp_path: Path) -> Path:
+    """Minimal multi-repo tree the cross-repo scanner accepts."""
+    root = tmp_path / "org"
+    root.mkdir()
+    provider = root / "provider"
+    provider.mkdir()
+    (provider / "pyproject.toml").write_text(
+        '[project]\nname = "provider-pkg"\ndependencies = []\n', encoding="utf-8"
+    )
+    consumer = root / "consumer"
+    consumer.mkdir()
+    (consumer / "pyproject.toml").write_text(
+        '[project]\nname = "consumer-pkg"\ndependencies = ["provider-pkg>=1"]\n',
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_cross_repo_reads_encrypted_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Shipped ``synapse cross-repo --db --db-key-file`` joins claims from SQLCipher."""
+    root = _cross_repo_org(tmp_path)
+    db, key = _encrypted_operator_store(tmp_path)
+    # Re-open encrypted store and add a claim on a scanned worktree name.
+    store = EventStore(db, key_file=key)
+    claim = TaskClaim(
+        task_id="T-XREPO",
+        owner="agent/x",
+        note="cross-repo join probe",
+        claimed_at=12.0,
+        lease_expires_at=9999.0,
+        status="claimed",
+        data_ref="",
+        worktree="consumer",
+        paths=("src/y.py",),
+        epoch=1,
+        checkpoint="",
+    )
+    store.append(EventKind.CLAIM, claim.as_dict(), ts=12.0, durable=True)
+    store.close()
+    code = cli.main(
+        [
+            "cross-repo",
+            str(root),
+            "--db",
+            str(db),
+            "--db-key-file",
+            str(key),
+            "--json",
+        ]
+    )
+    assert code in (0, 1)
+    out = capsys.readouterr().out
+    assert "T-XREPO" in out or "consumer" in out
+    assert "file is not a database" not in out.lower()
+
+
+def test_cross_repo_without_key_fails_closed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Plain open of an encrypted hub store via cross-repo must fail closed."""
+    root = _cross_repo_org(tmp_path)
+    db, _key = _encrypted_operator_store(tmp_path)
+    code = cli.main(
+        [
+            "cross-repo",
+            str(root),
+            "--db",
+            str(db),
+            "--json",
+        ]
+    )
+    assert code != 0
+    err = capsys.readouterr().err.lower()
+    assert "t-xrepo" not in err
+    assert any(
+        token in err
+        for token in ("key", "sqlcipher", "encrypt", "cipher", "db-key-file", "database")
+    )
+
+
+def test_run_cross_repo_graph_key_file_core_path(tmp_path: Path) -> None:
+    """Core ``run_cross_repo_graph(..., key_file=)`` opens encrypted store for real."""
+    from synapse_channel.core.cross_repo_graph import run_cross_repo_graph
+
+    root = _cross_repo_org(tmp_path)
+    db, key = _encrypted_operator_store(tmp_path)
+    store = EventStore(db, key_file=key)
+    claim = TaskClaim(
+        task_id="T-CORE",
+        owner="agent/c",
+        note="core join",
+        claimed_at=13.0,
+        lease_expires_at=9999.0,
+        status="claimed",
+        data_ref="",
+        worktree="provider",
+        paths=("a.py",),
+        epoch=1,
+        checkpoint="",
+    )
+    store.append(EventKind.CLAIM, claim.as_dict(), ts=13.0, durable=True)
+    store.close()
+    graph = run_cross_repo_graph(root, db_path=db, key_file=key)
+    task_ids = {claim.task_id for claim in graph.claims}
+    assert "T-CORE" in task_ids
+
+
 def test_sandbox_attest_writes_encrypted_store(tmp_path: Path) -> None:
     """Shipped ``_attest_run`` opens SQLCipher with key and appends SANDBOX_RUN."""
     from synapse_channel.cli_sandbox import _attest_run
