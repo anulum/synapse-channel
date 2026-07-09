@@ -13,6 +13,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Decompose the dashboard HTTP handler: read-side feed serving moved to
+  `dashboard_feed_serving` (pure `FeedResponse` values, the shared
+  honest-absence/fail-visible store posture factored into one place) and
+  the operator write-path validation/relay dispatch to
+  `dashboard_operator_writes`; the handler keeps only routing, auth, and
+  response plumbing. Behaviour-preserving — every route, status code, and
+  message byte-identical; both new modules carry dedicated test surfaces
+  at 100% line+branch.
+
 ## [0.98.24] - 2026-07-09
 
 ### Release integrity

@@ -16,6 +16,7 @@ import socket
 import pytest
 
 import synapse_channel.dashboard as dashboard_module
+import synapse_channel.dashboard_operator_writes as operator_writes_module
 from synapse_channel.dashboard import DashboardServer, start_dashboard_server
 from synapse_channel.dashboard_operator import (
     ACCEPTED,
@@ -200,7 +201,7 @@ def test_operator_write_accepts_json_with_a_charset_parameter(
     # A charset (or any) parameter after the media type must not defeat the check —
     # application/json; charset=utf-8 is still JSON and must reach the relay.
     monkeypatch.setattr(
-        dashboard_module,
+        operator_writes_module,
         "OperatorRelay",
         _stub_relay_class(RelayOutcome(DELIVERED, "delivered")),
     )
@@ -229,7 +230,7 @@ def test_operator_write_accepts_json_with_a_charset_parameter(
 def test_operator_write_maps_relay_outcome_to_status(
     monkeypatch: pytest.MonkeyPatch, outcome: RelayOutcome, expected_status: int
 ) -> None:
-    monkeypatch.setattr(dashboard_module, "OperatorRelay", _stub_relay_class(outcome))
+    monkeypatch.setattr(operator_writes_module, "OperatorRelay", _stub_relay_class(outcome))
     server = _operator_server()
     try:
         status, content_type, body = _operator_post(
@@ -250,7 +251,7 @@ def test_operator_write_maps_relay_outcome_to_status(
 def test_operator_write_is_rate_limited(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(dashboard_module, "OPERATOR_RATE_MAX", 1)
     monkeypatch.setattr(
-        dashboard_module,
+        operator_writes_module,
         "OperatorRelay",
         _stub_relay_class(RelayOutcome(DELIVERED, "delivered")),
     )
@@ -325,7 +326,7 @@ def test_operator_task_update_rejects_bad_bodies() -> None:
 def test_operator_task_maps_relay_outcome_to_status(
     monkeypatch: pytest.MonkeyPatch, outcome: RelayOutcome, expected_status: int
 ) -> None:
-    monkeypatch.setattr(dashboard_module, "OperatorRelay", _stub_relay_class(outcome))
+    monkeypatch.setattr(operator_writes_module, "OperatorRelay", _stub_relay_class(outcome))
     server = _operator_server()
     try:
         status, content_type, body = _operator_post(
@@ -356,7 +357,7 @@ def test_operator_task_maps_relay_outcome_to_status(
 def test_operator_task_update_maps_relay_outcome_to_status(
     monkeypatch: pytest.MonkeyPatch, outcome: RelayOutcome, expected_status: int
 ) -> None:
-    monkeypatch.setattr(dashboard_module, "OperatorRelay", _stub_relay_class(outcome))
+    monkeypatch.setattr(operator_writes_module, "OperatorRelay", _stub_relay_class(outcome))
     server = _operator_server()
     try:
         status, content_type, body = _operator_post(
@@ -392,7 +393,7 @@ def test_operator_write_maps_a_relay_exception_to_503(monkeypatch: pytest.Monkey
     # A relay that dies mid-flight (a dropped socket, a runtime fault) must
     # surface as a fail-visible 503, never a 500 stack trace on a write surface.
     monkeypatch.setattr(
-        dashboard_module, "OperatorRelay", _raising_relay_class(OSError("connection reset"))
+        operator_writes_module, "OperatorRelay", _raising_relay_class(OSError("connection reset"))
     )
     server = _operator_server()
     try:

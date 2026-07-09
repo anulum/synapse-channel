@@ -22,18 +22,16 @@ import hmac
 import json
 import threading
 import time
-from collections.abc import Callable, Coroutine, Mapping
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, ClassVar, Final
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import urlsplit
 
 from synapse_channel.client.agent import SynapseAgent
-from synapse_channel.core.federation_store import FederationStoreError
 from synapse_channel.core.protocol import MessageType
-from synapse_channel.core.reliability import reliability_to_json, run_reliability_report
 from synapse_channel.dashboard_bind import (
     _resolve_dashboard_token,
     validate_dashboard_bind,
@@ -42,33 +40,35 @@ from synapse_channel.dashboard_cockpit import (
     COCKPIT_ASSETS,
     load_cockpit_asset,
 )
+from synapse_channel.dashboard_feed_serving import (
+    FeedResponse,
+    serve_causality,
+    serve_cockpit_dist,
+    serve_events,
+    serve_federation,
+    serve_health_anomalies,
+    serve_merkle_proof,
+    serve_metrics_feed,
+    serve_operator_actions,
+    serve_receipts,
+    serve_reliability,
+    serve_sessions,
+    serve_state_at,
+    serve_waits,
+)
 from synapse_channel.dashboard_fleet import build_fleet_visibility
-from synapse_channel.dashboard_operator import (
-    DENIED,
-    REJECTED,
-    UNREACHABLE,
-    OperatorRelay,
-    RelayOutcome,
-    WriteRateLimiter,
+from synapse_channel.dashboard_operator import WriteRateLimiter
+from synapse_channel.dashboard_operator_writes import (
+    execute_relay,
+    is_json_media_type,
+    plan_message,
+    plan_task,
+    plan_task_update,
+    read_operator_body,
 )
 from synapse_channel.dashboard_render import render_dashboard_html
 from synapse_channel.dashboard_risk import build_risk_view
-from synapse_channel.dashboard_store_feeds import (
-    DEFAULT_EVENTS_LIMIT,
-    build_causality_feed,
-    build_events_tail,
-    build_federation_feed,
-    build_health_anomalies_feed,
-    build_merkle_proof_feed,
-    build_metrics_feed,
-    build_operator_actions_feed,
-    build_receipts_feed,
-    build_sessions_feed,
-    build_state_at_feed,
-    build_waits_feed,
-    event_store_key,
-    latest_cursor,
-)
+from synapse_channel.dashboard_store_feeds import event_store_key
 from synapse_channel.dashboard_studio import (
     STUDIO_REFERENCE_PATH,
     render_studio_reference_html,
@@ -383,21 +383,11 @@ TASK_PATH = "/task"
 TASK_UPDATE_PATH = "/task/update"
 """Operator write endpoint (POST) updating a board task's status or progress note."""
 
-MAX_OPERATOR_BODY_BYTES: Final = 64 * 1024
-"""Largest operator write body accepted; anything larger is a 400."""
-
 OPERATOR_RATE_MAX: Final = 30
 """Operator write actions permitted within :data:`OPERATOR_RATE_WINDOW_SECONDS`."""
 
 OPERATOR_RATE_WINDOW_SECONDS: Final = 60.0
 """Sliding-window length for the operator write rate limit."""
-
-_OUTCOME_STATUS: Final[dict[str, HTTPStatus]] = {
-    DENIED: HTTPStatus.FORBIDDEN,
-    REJECTED: HTTPStatus.CONFLICT,
-    UNREACHABLE: HTTPStatus.SERVICE_UNAVAILABLE,
-}
-"""Relay-outcome to HTTP-status map; an unlisted (accepted) outcome is ``200``."""
 
 # The dashboard and cockpit are self-contained — no CDN, external font, or remote
 # script — so a same-origin content policy costs nothing and blocks injected remote
@@ -422,52 +412,6 @@ _SECURITY_HEADERS: Final[tuple[tuple[str, str], ...]] = (
     ("Content-Security-Policy", _CONTENT_SECURITY_POLICY),
 )
 """Browser-hardening headers sent on every dashboard response."""
-
-
-def _is_string_list(value: object) -> bool:
-    """Return whether ``value`` is a list whose every element is a string."""
-    return isinstance(value, list) and all(isinstance(item, str) for item in value)
-
-
-# SQLite stores integers as signed 64-bit. A query integer beyond that range parses
-# fine as an unbounded Python int, then raises OverflowError deep inside a store
-# query — a 500. The feed handlers bound it here so an out-of-range value is a 400.
-_SQLITE_INT_MIN: Final = -(2**63)
-_SQLITE_INT_MAX: Final = 2**63 - 1
-
-
-def _bounded_query_int(raw: str) -> int:
-    """Parse a query integer, rejecting values outside SQLite's 64-bit range.
-
-    Raises
-    ------
-    ValueError
-        For a non-numeric value, or one too large to reach the durable store
-        safely. Every feed handler already maps this to a ``400``.
-    """
-    value = int(raw)
-    if not _SQLITE_INT_MIN <= value <= _SQLITE_INT_MAX:
-        raise ValueError("integer out of range")
-    return value
-
-
-_DIST_CONTENT_TYPES = {
-    ".html": "text/html",
-    ".js": "text/javascript",
-    ".mjs": "text/javascript",
-    ".css": "text/css",
-    ".map": "application/json",
-    ".json": "application/json",
-    ".svg": "image/svg+xml",
-    ".png": "image/png",
-    ".webp": "image/webp",
-    ".ico": "image/x-icon",
-    ".webmanifest": "application/manifest+json",
-    ".woff2": "font/woff2",
-    ".woff": "font/woff",
-    ".txt": "text/plain",
-}
-"""Suffixes the cockpit dist serving recognises; anything else is refused."""
 
 
 class _DashboardHandler(BaseHTTPRequestHandler):
@@ -546,47 +490,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if path == "/classic":
             # Legacy instrument HTML that fetches a live hub snapshot server-side.
             path = "/index.html"
-        if path == RELIABILITY_PATH:
-            # Served from the durable event store, not the live hub: the
-            # reliability report is an offline audit surface, so it stays
-            # available when the hub is down and needs no hub round-trip.
-            self._serve_reliability()
-            return
-        if path == EVENTS_PATH:
-            self._serve_events(urlsplit(self.path).query)
-            return
-        if path == METRICS_FEED_PATH:
-            self._serve_metrics_feed()
-            return
-        if path == STATE_AT_PATH:
-            self._serve_state_at(urlsplit(self.path).query)
-            return
-        if path == MERKLE_PROOF_PATH:
-            self._serve_merkle_proof(urlsplit(self.path).query)
-            return
-        if path == HEALTH_ANOMALIES_PATH:
-            self._serve_health_anomalies()
-            return
-        if path == CAUSALITY_PATH:
-            self._serve_causality(urlsplit(self.path).query)
-            return
-        if path == FEDERATION_PATH:
-            self._serve_federation()
-            return
-        if path == SESSIONS_PATH:
-            self._serve_sessions()
-            return
-        if path == WAITS_PATH:
-            self._serve_waits()
-            return
-        if path == OPERATOR_ACTIONS_PATH:
-            self._serve_operator_actions(urlsplit(self.path).query)
-            return
-        if path == RECEIPTS_PATH:
-            self._serve_receipts(urlsplit(self.path).query)
-            return
-        if path.startswith(COCKPIT_DIST_PREFIX) or path == COCKPIT_DIST_PREFIX.rstrip("/"):
-            self._serve_cockpit_dist(path)
+        feed = self._feed_response(path, urlsplit(self.path).query)
+        if feed is not None:
+            self._write_response(feed)
             return
         if path not in {"/index.html", "/classic", "/snapshot.json", STUDIO_SNAPSHOT_PATH}:
             self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
@@ -663,7 +569,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if route not in (MESSAGE_PATH, TASK_PATH, TASK_UPDATE_PATH):
             self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
             return
-        if not self._is_json_request():
+        if not is_json_media_type(self.headers.get("Content-Type", "")):
             self._write(
                 HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                 b"operator writes require Content-Type: application/json\n",
@@ -677,7 +583,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 content_type="text/plain",
             )
             return
-        body = self._read_json_body()
+        body = read_operator_body(self.headers.get("Content-Length"), self.rfile)
         if body is None:
             self._write(
                 HTTPStatus.BAD_REQUEST,
@@ -685,605 +591,65 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 content_type="text/plain",
             )
             return
-        if route == MESSAGE_PATH:
-            self._handle_message(body)
-        elif route == TASK_PATH:
-            self._handle_task(body)
-        else:
-            self._handle_task_update(body)
-
-    def _handle_message(self, body: dict[str, Any]) -> None:
-        """Validate a chat write and relay it, or answer 400 on a bad body."""
-        to = body.get("to")
-        text = body.get("text")
-        if not isinstance(to, str) or not to.strip():
-            self._bad_request("'to' must be a non-empty string")
+        planners = {MESSAGE_PATH: plan_message, TASK_PATH: plan_task}
+        plan = planners.get(route, plan_task_update)(body)
+        if isinstance(plan, str):
+            self._write(HTTPStatus.BAD_REQUEST, f"{plan}\n".encode(), content_type="text/plain")
             return
-        if not isinstance(text, str) or not text.strip():
-            self._bad_request("'text' must be a non-empty string")
-            return
-        target = to.strip()
-        self._dispatch_relay(
-            "message", {"to": target}, lambda relay: relay.relay_message(target, text)
+        self._write_response(
+            execute_relay(
+                plan,
+                uri=self.uri,
+                operator_name=self.operator_name,
+                token=self.token,
+                ready_timeout=self.ready_timeout,
+                response_timeout=self.response_timeout,
+            )
         )
 
-    def _handle_task(self, body: dict[str, Any]) -> None:
-        """Validate a task declaration and relay it, or answer 400 on a bad body."""
-        task_id = body.get("id")
-        title = body.get("title")
-        depends_on = body.get("depends_on", [])
-        if not isinstance(task_id, str) or not task_id.strip():
-            self._bad_request("'id' must be a non-empty string")
-            return
-        if not isinstance(title, str) or not title.strip():
-            self._bad_request("'title' must be a non-empty string")
-            return
-        if not _is_string_list(depends_on):
-            self._bad_request("'depends_on' must be a list of strings")
-            return
-        task = task_id.strip()
-        deps = tuple(dep.strip() for dep in depends_on if dep.strip())
-        self._dispatch_relay(
-            "task", {"id": task}, lambda relay: relay.relay_task(task, title, depends_on=deps)
-        )
+    def _feed_response(self, path: str, query: str) -> FeedResponse | None:
+        """Compute the read-side feed response for ``path``, or ``None``.
 
-    def _handle_task_update(self, body: dict[str, Any]) -> None:
-        """Validate a task update and relay it, or answer 400 on a bad body.
-
-        At least one of ``status`` or ``note`` must be present; each, when present,
-        must be a non-empty string.
+        ``None`` means the path is not a feed route and the caller falls
+        through to the hub-snapshot pages. Every feed's serving logic —
+        including the honest-absence 404 and fail-visible 503 postures —
+        lives in :mod:`synapse_channel.dashboard_feed_serving`.
         """
-        task_id = body.get("id")
-        status_value = body.get("status")
-        note = body.get("note")
-        if not isinstance(task_id, str) or not task_id.strip():
-            self._bad_request("'id' must be a non-empty string")
-            return
-        if status_value is not None and (
-            not isinstance(status_value, str) or not status_value.strip()
-        ):
-            self._bad_request("'status' must be a non-empty string when present")
-            return
-        if note is not None and (not isinstance(note, str) or not note.strip()):
-            self._bad_request("'note' must be a non-empty string when present")
-            return
-        if status_value is None and note is None:
-            self._bad_request("a task update needs at least one of 'status' or 'note'")
-            return
-        task = task_id.strip()
-        new_status = status_value.strip() if isinstance(status_value, str) else None
-        self._dispatch_relay(
-            "task_update",
-            {"id": task},
-            lambda relay: relay.relay_task_update(task, status=new_status, note=note),
-        )
+        db = self.reliability_db
+        if path == RELIABILITY_PATH:
+            # Served from the durable event store, not the live hub: the
+            # reliability report is an offline audit surface, so it stays
+            # available when the hub is down and needs no hub round-trip.
+            return serve_reliability(db, self.reliability_db_key_file)
+        if path == EVENTS_PATH:
+            return serve_events(db, query)
+        if path == METRICS_FEED_PATH:
+            return serve_metrics_feed(db)
+        if path == STATE_AT_PATH:
+            return serve_state_at(db, query)
+        if path == MERKLE_PROOF_PATH:
+            return serve_merkle_proof(db, query)
+        if path == HEALTH_ANOMALIES_PATH:
+            return serve_health_anomalies(db)
+        if path == CAUSALITY_PATH:
+            return serve_causality(db, query)
+        if path == FEDERATION_PATH:
+            return serve_federation(self.federation_store)
+        if path == SESSIONS_PATH:
+            return serve_sessions(db)
+        if path == WAITS_PATH:
+            return serve_waits(db)
+        if path == OPERATOR_ACTIONS_PATH:
+            return serve_operator_actions(db, query)
+        if path == RECEIPTS_PATH:
+            return serve_receipts(db, query)
+        if path.startswith(COCKPIT_DIST_PREFIX) or path == COCKPIT_DIST_PREFIX.rstrip("/"):
+            return serve_cockpit_dist(self.cockpit_dist, COCKPIT_DIST_PREFIX, path)
+        return None
 
-    def _dispatch_relay(
-        self,
-        action: str,
-        extra: dict[str, str],
-        make_coro: Callable[[OperatorRelay], Coroutine[Any, Any, RelayOutcome]],
-    ) -> None:
-        """Run one relay coroutine and map its outcome to an HTTP response."""
-        relay = OperatorRelay(
-            uri=self.uri,
-            operator_name=self.operator_name,
-            token=self.token,
-            ready_timeout=self.ready_timeout,
-            response_timeout=self.response_timeout,
-        )
-        try:
-            outcome = asyncio.run(make_coro(relay))
-        except (OSError, RuntimeError) as exc:
-            self._write(
-                HTTPStatus.SERVICE_UNAVAILABLE,
-                f"operator relay failed: {exc}\n".encode(),
-                content_type="text/plain",
-            )
-            return
-        document: dict[str, object] = {
-            "action": action,
-            **extra,
-            "status": outcome.status,
-            "detail": outcome.detail,
-            "ok": outcome.ok,
-        }
-        self._write(
-            _OUTCOME_STATUS.get(outcome.status, HTTPStatus.OK),
-            json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8"),
-            content_type="application/json",
-        )
-
-    def _bad_request(self, message: str) -> None:
-        """Answer a malformed operator body with a specific, stack-free 400."""
-        self._write(
-            HTTPStatus.BAD_REQUEST,
-            f"{message}\n".encode(),
-            content_type="text/plain",
-        )
-
-    def _is_json_request(self) -> bool:
-        """Return whether the request declares an ``application/json`` body.
-
-        Operator writes require this media type. A browser can send a request to
-        another origin without a CORS preflight only when its content type is one
-        of the three "simple" types (``text/plain``, form-encoded, or multipart);
-        ``application/json`` forces a preflight, which this surface never answers
-        with cross-origin allow headers, so the browser blocks the real write.
-        Requiring JSON therefore turns away a cross-origin page trying to drive an
-        operator action it cannot read the response of — a local CSRF. The check
-        ignores any charset or boundary parameter after the media type.
-        """
-        media_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
-        return media_type == "application/json"
-
-    def _read_json_body(self) -> dict[str, Any] | None:
-        """Return the request body as a JSON object, or ``None`` when unusable.
-
-        ``None`` covers a missing, over-large, non-JSON, or non-object body — every
-        case the caller answers with one 400, never a stack trace.
-        """
-        try:
-            length = int(self.headers.get("Content-Length", "0"))
-        except (TypeError, ValueError):
-            return None
-        if length <= 0 or length > MAX_OPERATOR_BODY_BYTES:
-            return None
-        raw = self.rfile.read(length)
-        try:
-            parsed = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            return None
-        if not isinstance(parsed, dict):
-            return None
-        return parsed
-
-    def _serve_reliability(self) -> None:
-        """Serve the reliability audit-signal report, or its honest absence.
-
-        Without a configured store the endpoint is 404 — the cockpit panel
-        treats that as the feed being absent, states so, and activates the
-        moment the operator starts the dashboard with ``--reliability-db``.
-        An unreadable store is 503, fail-visible rather than an empty
-        report pretending the log is clean.
-        """
-        if self.reliability_db is None:
-            self._write(
-                HTTPStatus.NOT_FOUND,
-                b"reliability feed not configured; start the dashboard with --reliability-db\n",
-                content_type="text/plain",
-            )
-            return
-        try:
-            report = run_reliability_report(
-                self.reliability_db, key_file=self.reliability_db_key_file
-            )
-        except ValueError as exc:
-            self._write(
-                HTTPStatus.SERVICE_UNAVAILABLE,
-                f"{exc}\n".encode(),
-                content_type="text/plain",
-            )
-            return
-        self._write(
-            HTTPStatus.OK,
-            json.dumps(reliability_to_json(report), ensure_ascii=False, sort_keys=True).encode(
-                "utf-8"
-            ),
-            content_type="application/json",
-        )
-
-    def _serve_metrics_feed(self) -> None:
-        """Serve store-attested log metrics, or their honest absence.
-
-        Same posture as the other store feeds: 404 without ``--feeds-db``
-        (the panel states the feed is absent), 503 on an unreadable store
-        (fail-visible, never an empty document pretending quiet), and the
-        document itself explains that the live process registry lives on
-        the hub's own ``/metrics`` endpoint, not here.
-        """
-        if self.reliability_db is None:
-            self._write(
-                HTTPStatus.NOT_FOUND,
-                b"metrics feed not configured; start the dashboard with --feeds-db\n",
-                content_type="text/plain",
-            )
-            return
-        try:
-            document = build_metrics_feed(self.reliability_db)
-        except ValueError as exc:
-            self._write(
-                HTTPStatus.SERVICE_UNAVAILABLE,
-                f"{exc}\n".encode(),
-                content_type="text/plain",
-            )
-            return
-        self._write(
-            HTTPStatus.OK,
-            json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8"),
-            content_type="application/json",
-        )
-
-    def _serve_state_at(self, query: str) -> None:
-        """Serve the coordination state reconstructed as of ``?seq=N``.
-
-        Store-derived time-travel: bounded replay of the durable log to ``seq``,
-        the state and board in the live-snapshot shape plus ``as_of_seq`` and
-        ``log_end_seq``. Same posture as the other store feeds — 404 without
-        ``--feeds-db``, 503 on an unreadable store, 400 on a malformed ``seq``.
-        Presence/roster is not journalled and is omitted (the document says so).
-        """
-        if self.reliability_db is None:
-            self._write(
-                HTTPStatus.NOT_FOUND,
-                b"state-at feed not configured; start the dashboard with --feeds-db\n",
-                content_type="text/plain",
-            )
-            return
-        raw = parse_qs(query).get("seq", ["0"])[0]
-        try:
-            seq = _bounded_query_int(raw)
-        except ValueError:
-            self._write(
-                HTTPStatus.BAD_REQUEST,
-                b"seq must be an integer\n",
-                content_type="text/plain",
-            )
-            return
-        try:
-            document = build_state_at_feed(self.reliability_db, seq=seq)
-        except ValueError as exc:
-            self._write(
-                HTTPStatus.SERVICE_UNAVAILABLE,
-                f"{exc}\n".encode(),
-                content_type="text/plain",
-            )
-            return
-        self._write(
-            HTTPStatus.OK,
-            json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8"),
-            content_type="application/json",
-        )
-
-    def _serve_merkle_proof(self, query: str) -> None:
-        """Serve an inclusion proof for the event named by ``?seq=N``.
-
-        Store-derived tamper-evidence: an RFC 6962 Merkle inclusion proof a
-        cockpit row's *verify* button checks against the tree root. Same posture
-        as the other store feeds — 404 without ``--feeds-db``, 503 on an
-        unreadable store, 400 on a malformed ``seq``. A ``seq`` the committed
-        log does not hold yields ``{"present": false}`` with a note, never a
-        fabricated proof.
-        """
-        if self.reliability_db is None:
-            self._write(
-                HTTPStatus.NOT_FOUND,
-                b"merkle-proof feed not configured; start the dashboard with --feeds-db\n",
-                content_type="text/plain",
-            )
-            return
-        raw = parse_qs(query).get("seq", ["0"])[0]
-        try:
-            seq = _bounded_query_int(raw)
-        except ValueError:
-            self._write(
-                HTTPStatus.BAD_REQUEST,
-                b"seq must be an integer\n",
-                content_type="text/plain",
-            )
-            return
-        try:
-            document = build_merkle_proof_feed(self.reliability_db, seq=seq)
-        except ValueError as exc:
-            self._write(
-                HTTPStatus.SERVICE_UNAVAILABLE,
-                f"{exc}\n".encode(),
-                content_type="text/plain",
-            )
-            return
-        self._write(
-            HTTPStatus.OK,
-            json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8"),
-            content_type="application/json",
-        )
-
-    def _serve_health_anomalies(self) -> None:
-        """Serve the coordination-anomaly report, or its honest absence.
-
-        The hub-side alert surface: orphaned, dangling, and stale coordination
-        signals the causality graph makes visible, with an ``anomaly_count`` for
-        a cockpit badge. Same posture as the other store feeds — 404 without
-        ``--feeds-db``, 503 on an unreadable store (or one past the graph node
-        ceiling). Fired alerts stay collector-side off ``/metrics``; this is
-        only what the durable log can prove.
-        """
-        if self.reliability_db is None:
-            self._write(
-                HTTPStatus.NOT_FOUND,
-                b"health-anomalies feed not configured; start the dashboard with --feeds-db\n",
-                content_type="text/plain",
-            )
-            return
-        try:
-            document = build_health_anomalies_feed(self.reliability_db)
-        except ValueError as exc:
-            self._write(
-                HTTPStatus.SERVICE_UNAVAILABLE,
-                f"{exc}\n".encode(),
-                content_type="text/plain",
-            )
-            return
-        self._write(
-            HTTPStatus.OK,
-            json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8"),
-            content_type="application/json",
-        )
-
-    def _serve_sessions(self) -> None:
-        """Serve the opt-in session-telemetry report, or its honest absence.
-
-        Aggregates the ``session_metric`` notes the fleet left in the durable
-        log — per-session token counts, cost, latency, and error/abstention
-        rates, each record carrying the ``seq`` a cockpit joins back to the
-        causality feed. Same posture as the other store feeds: 404 without
-        ``--feeds-db``, 503 on an unreadable store. Opt-in operational
-        telemetry, never hub-core collected — a log with no notes reports empty
-        sessions and zeroed totals, not a fabricated cost.
-        """
-        if self.reliability_db is None:
-            self._write(
-                HTTPStatus.NOT_FOUND,
-                b"sessions feed not configured; start the dashboard with --feeds-db\n",
-                content_type="text/plain",
-            )
-            return
-        try:
-            document = build_sessions_feed(self.reliability_db)
-        except ValueError as exc:
-            self._write(
-                HTTPStatus.SERVICE_UNAVAILABLE,
-                f"{exc}\n".encode(),
-                content_type="text/plain",
-            )
-            return
-        self._write_json(document)
-
-    def _serve_waits(self) -> None:
-        """Serve the pending coordination gates, or their honest absence.
-
-        Lists the non-terminal tasks blocked on dependencies that have not
-        completed — who is waiting, on which dependency ids, and since when —
-        reconstructed from the durable log. Same posture as the other store
-        feeds: 404 without ``--feeds-db``, 503 on an unreadable store. Transient
-        socket waiters are not journalled and are omitted; this is the
-        coordination gates the plan can prove.
-        """
-        if self.reliability_db is None:
-            self._write(
-                HTTPStatus.NOT_FOUND,
-                b"waits feed not configured; start the dashboard with --feeds-db\n",
-                content_type="text/plain",
-            )
-            return
-        try:
-            document = build_waits_feed(self.reliability_db)
-        except ValueError as exc:
-            self._write(
-                HTTPStatus.SERVICE_UNAVAILABLE,
-                f"{exc}\n".encode(),
-                content_type="text/plain",
-            )
-            return
-        self._write_json(document)
-
-    def _serve_operator_actions(self, query: str) -> None:
-        """Serve governed operator-action history from the durable log.
-
-        The feed is store-derived and audit-only like the rest of the cockpit
-        feeds: 404 without ``--feeds-db``, 503 on an unreadable store, 400 on a
-        malformed cursor or limit, and no inferred actions beyond journalled
-        ``operator_relay`` events.
-        """
-        if self.reliability_db is None:
-            self._write(
-                HTTPStatus.NOT_FOUND,
-                b"operator-actions feed not configured; start the dashboard with --feeds-db\n",
-                content_type="text/plain",
-            )
-            return
-        params = parse_qs(query)
-        try:
-            since = _bounded_query_int(params.get("since", ["0"])[0])
-            limit = _bounded_query_int(params.get("limit", ["50"])[0])
-        except ValueError:
-            self._write(
-                HTTPStatus.BAD_REQUEST,
-                b"since and limit must be integers\n",
-                content_type="text/plain",
-            )
-            return
-        try:
-            document = build_operator_actions_feed(self.reliability_db, since=since, limit=limit)
-        except ValueError as exc:
-            self._write(
-                HTTPStatus.SERVICE_UNAVAILABLE,
-                f"{exc}\n".encode(),
-                content_type="text/plain",
-            )
-            return
-        self._write_json(document)
-
-    def _serve_receipts(self, query: str) -> None:
-        """Serve the universal receipt feed from the durable log.
-
-        The feed is store-derived like the other cockpit feeds: 404 without
-        ``--feeds-db``, 503 on an unreadable store, 400 on malformed ``since``
-        or ``limit``, and no inferred receipts beyond event families that carry
-        receipt semantics.
-        """
-        if self.reliability_db is None:
-            self._write(
-                HTTPStatus.NOT_FOUND,
-                b"receipts feed not configured; start the dashboard with --feeds-db\n",
-                content_type="text/plain",
-            )
-            return
-        params = parse_qs(query)
-        try:
-            since = _bounded_query_int(params.get("since", ["0"])[0])
-            limit = _bounded_query_int(params.get("limit", ["100"])[0])
-        except ValueError:
-            self._write(
-                HTTPStatus.BAD_REQUEST,
-                b"since and limit must be integers\n",
-                content_type="text/plain",
-            )
-            return
-        try:
-            document = build_receipts_feed(self.reliability_db, since=since, limit=limit)
-        except ValueError as exc:
-            self._write(
-                HTTPStatus.SERVICE_UNAVAILABLE,
-                f"{exc}\n".encode(),
-                content_type="text/plain",
-            )
-            return
-        self._write_json(document)
-
-    def _serve_events(self, query: str) -> None:
-        """Serve the raw event-log tail past a cursor, or its honest absence.
-
-        Rides the same durable store as the reliability feed; parameters are
-        ``since`` (exclusive sequence cursor) and ``limit``. Malformed numbers
-        are a 400 naming the parameter, not a silent default.
-        """
-        if self.reliability_db is None:
-            self._write(
-                HTTPStatus.NOT_FOUND,
-                b"events feed not configured; start the dashboard with --feeds-db\n",
-                content_type="text/plain",
-            )
-            return
-        params = parse_qs(query)
-        since_raw = params.get("since", ["0"])[0]
-        try:
-            limit = _bounded_query_int(params.get("limit", [str(DEFAULT_EVENTS_LIMIT)])[0])
-            since = None if since_raw == "latest" else _bounded_query_int(since_raw)
-        except ValueError:
-            self._write(
-                HTTPStatus.BAD_REQUEST,
-                b"since must be an integer or 'latest'; limit must be an integer\n",
-                content_type="text/plain",
-            )
-            return
-        try:
-            if since is None:
-                # the tail shortcut: start at the log's end instead of
-                # walking a large history just to catch up to now
-                since = latest_cursor(self.reliability_db)
-            document = build_events_tail(self.reliability_db, since=since, limit=limit)
-        except ValueError as exc:
-            self._write(
-                HTTPStatus.SERVICE_UNAVAILABLE, f"{exc}\n".encode(), content_type="text/plain"
-            )
-            return
-        self._write_json(document)
-
-    def _serve_causality(self, query: str) -> None:
-        """Answer one causality query in the CLI's exact JSON shape.
-
-        ``seq=N`` or ``task=ID`` anchors the query; ``direction`` defaults to
-        ``causes``. A bad anchor or direction is a 400 with the reason; a task
-        the log never recorded is a 404 — absent, not invented.
-        """
-        if self.reliability_db is None:
-            self._write(
-                HTTPStatus.NOT_FOUND,
-                b"causality feed not configured; start the dashboard with --feeds-db\n",
-                content_type="text/plain",
-            )
-            return
-        params = parse_qs(query)
-        direction = params.get("direction", ["causes"])[0]
-        task = params.get("task", [None])[0]
-        seq_raw = params.get("seq", [None])[0]
-        try:
-            seq = _bounded_query_int(seq_raw) if seq_raw is not None else None
-        except ValueError:
-            self._write(
-                HTTPStatus.BAD_REQUEST, b"seq must be an integer\n", content_type="text/plain"
-            )
-            return
-        try:
-            document = build_causality_feed(
-                self.reliability_db, direction=direction, seq=seq, task=task
-            )
-        except ValueError as exc:
-            reason = str(exc)
-            status = (
-                HTTPStatus.NOT_FOUND
-                if reason.startswith("no recorded event for task")
-                else HTTPStatus.BAD_REQUEST
-            )
-            if reason.startswith("missing event store"):
-                status = HTTPStatus.SERVICE_UNAVAILABLE
-            self._write(status, f"{reason}\n".encode(), content_type="text/plain")
-            return
-        self._write_json(document)
-
-    def _serve_federation(self) -> None:
-        """Serve the imported peerings, or the feed's honest absence."""
-        if self.federation_store is None:
-            self._write(
-                HTTPStatus.NOT_FOUND,
-                b"federation feed not configured; start the dashboard with --federation-store\n",
-                content_type="text/plain",
-            )
-            return
-        try:
-            document = build_federation_feed(self.federation_store)
-        except FederationStoreError as exc:
-            self._write(
-                HTTPStatus.SERVICE_UNAVAILABLE, f"{exc}\n".encode(), content_type="text/plain"
-            )
-            return
-        self._write_json(document)
-
-    def _serve_cockpit_dist(self, path: str) -> None:
-        """Serve one file from the operator-named cockpit build directory.
-
-        ``/cockpit/`` maps to ``index.html``; every other path resolves inside
-        the named directory and is refused when it escapes it (path
-        traversal), carries an unrecognised suffix, or does not exist.
-        """
-        if self.cockpit_dist is None:
-            self._write(
-                HTTPStatus.NOT_FOUND,
-                b"cockpit build not configured; start the dashboard with --cockpit-dist\n",
-                content_type="text/plain",
-            )
-            return
-        relative = path[len(COCKPIT_DIST_PREFIX) :] if path.startswith(COCKPIT_DIST_PREFIX) else ""
-        if relative == "":
-            relative = "index.html"
-        root = self.cockpit_dist.resolve()
-        target = (root / relative).resolve()
-        if not target.is_relative_to(root):
-            self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
-            return
-        content_type = _DIST_CONTENT_TYPES.get(target.suffix.lower())
-        if content_type is None or not target.is_file():
-            self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
-            return
-        self._write(HTTPStatus.OK, target.read_bytes(), content_type=content_type)
-
-    def _write_json(self, document: dict[str, object]) -> None:
-        """Write one JSON feed response with the shared headers."""
-        self._write(
-            HTTPStatus.OK,
-            json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8"),
-            content_type="application/json",
-        )
+    def _write_response(self, response: FeedResponse) -> None:
+        """Write one computed feed/operator response through ``_write``."""
+        self._write(response.status, response.body, content_type=response.content_type)
 
     def log_message(self, _format: str, *_args: object) -> None:
         """Suppress stdlib access-log noise during CLI and tests."""
