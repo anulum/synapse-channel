@@ -232,8 +232,9 @@ agents.
   concern for a future managed multi-tenant hub, not the single-owner core.
 - The A2A bridge is a local HTTP+JSON bridge over SYNAPSE capabilities, not
   externally validated for full A2A conformance. Remote conformance, real webhook
-  receiver behavior, TLS/reverse-proxy deployment, and exposed-edge threat
-  modelling are tracked as future validation work.
+  receiver behavior, and operator-visible production deployment receipts remain
+  external validation work. The A2A-specific exposed-edge threat model is
+  documented in `docs/a2a-deployment-threat-model.md`.
 - `tools/fuzz_protocol_decode.py` provides local decoder hardening evidence for
   malformed bytes, malformed JSON, quoted bracket runs, valid nested JSON, and
   depth-limit rejection. It is not an external protocol-conformance

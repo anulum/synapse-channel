@@ -132,7 +132,9 @@ deployment posture into one future operator switch. Until that flag exists, use
 the design as a manual checklist for token-required access, loopback-first binds,
 metrics/A2A auth, owner-only state files, bounded retention, durable event logs,
 release receipts, and explicit missing hooks for encryption, signed events,
-identity, ACLs, private channels, and exposed deployment threat modelling.
+identity, ACLs, private channels, and exposed deployment threat modelling. Use
+the [A2A deployment threat model](a2a-deployment-threat-model.md) for exposed
+`synapse a2a-serve` deployments.
 The planned [at-rest encryption profile](at-rest-encryption.md) is the storage
 hook behind that checklist; it defines key storage, rotation, backup recovery,
 and local-first tradeoffs before any encrypted store migration ships.

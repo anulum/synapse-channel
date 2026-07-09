@@ -50,10 +50,14 @@ receivers with a test CA, follow a real 307 proxy redirect, and block a
 delivery-time DNS rebinding attempt before send, while remote public receivers
 and operator-visible deployment receipts remain external.
 
-The following rows remain `external` until receipts exist:
+The deployment-threat-model row is also `partial`: the local review records the
+required exposed-bridge posture for bearer auth, TLS/proxy placement, state-file
+permissions, webhook egress, retention, logging, and receipts. Concrete
+production deployment sign-off remains external.
 
-- independent A2A client/server interoperability traces;
-- deployment threat-model review for an exposed bridge.
+The following row remains `external` until receipts exist:
+
+- independent A2A client/server interoperability traces.
 
 Use [A2A bridge validation receipts](a2a-validation-receipts.md) to record those
 external traces. Once a receipt exists, update the matrix row, the receipt page,

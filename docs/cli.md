@@ -1705,9 +1705,11 @@ Unsupported or externally gated:
 
 - No claim is made here about third-party A2A conformance until remote CI,
   independent interoperability/conformance tests, remote public webhook receiver
-  receipts, deployment threat-model review, and operator sign-off complete.
+  receipts, and operator deployment sign-off complete.
 - `synapse a2a-conformance` is the live local matrix for those supported,
   partial, unsupported, and external rows.
+- Exposed A2A bridge deployments should follow the
+  [A2A deployment threat model](a2a-deployment-threat-model.md).
 - The bridge does not make SYNAPSE itself an A2A-native hub; it is a separate edge
   process translating between A2A-shaped HTTP operations and SYNAPSE chat/tasks.
 - Subscription replay is local process memory. It is not a durable event log shared

@@ -61,7 +61,6 @@ def test_matrix_keeps_external_validation_gates_visible() -> None:
 
     assert external_items == {
         "Independent interoperability",
-        "Deployment threat model",
     }
 
 
@@ -69,3 +68,4 @@ def test_matrix_records_real_webhook_receiver_progress_as_partial() -> None:
     partial_items = {row.item for row in conformance_rows(status="partial")}
 
     assert "Real webhook receiver" in partial_items
+    assert "Deployment threat model" in partial_items

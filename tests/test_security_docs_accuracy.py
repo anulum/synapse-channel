@@ -31,6 +31,27 @@ def test_security_policy_uses_evidence_bounded_a2a_claim_language() -> None:
     assert "not externally validated for full A2A conformance" in prose
 
 
+def test_a2a_deployment_threat_model_pins_exposed_bridge_controls() -> None:
+    """The A2A deployment review must keep exposed-bridge controls explicit."""
+    threat_model = _single_spaced(_read_repo_text("docs/a2a-deployment-threat-model.md"))
+    combined = _single_spaced(
+        "\n".join(
+            [
+                _read_repo_text("README.md"),
+                _read_repo_text("docs/cli.md"),
+                _read_repo_text("SECURITY.md"),
+            ]
+        )
+    )
+
+    assert "--bearer-auth --a2a-token" in threat_model
+    assert "--insecure-off-loopback" in threat_model
+    assert "DNS rebinding" in threat_model
+    assert "redact `Authorization`" in threat_model
+    assert "operator deployment sign-off" in combined
+    assert "A2A deployment threat model" in combined
+
+
 def test_file_scope_docs_describe_literal_prefix_overlap_not_glob() -> None:
     # `core/scoping.py` states wildcard-glob algebra is intentionally out of scope and
     # declared paths are literal files or directory prefixes; SECURITY.md must match the

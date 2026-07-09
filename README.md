@@ -638,12 +638,14 @@ webhook targets including delivery-time DNS or redirect targets that resolve to
 local networks, bounds stored tasks/history/artifacts/push configs/replay
 history with terminal-task retention GC, emits subscription replay only from the
 current bridge process, and does not claim independent A2A conformance until
-remote CI, interoperability, and remote public webhook receiver validation have
-run. That independent validation runs as a community track of reproducible
-[validation receipts](docs/a2a-validation-receipts.md) — discovery, task lifecycle,
-webhook, proxy/TLS, replay, and threat-model — rather than a single pass/fail.
+remote CI, interoperability, remote public webhook receiver validation, and
+operator deployment sign-off have run. That independent validation runs as a
+community track of reproducible [validation receipts](docs/a2a-validation-receipts.md)
+— discovery, task lifecycle, webhook, proxy/TLS, replay, and threat-model —
+rather than a single pass/fail.
 The installed support matrix is available with `synapse a2a-conformance` and in
-the [A2A conformance matrix](docs/a2a-conformance.md).
+the [A2A conformance matrix](docs/a2a-conformance.md); exposed deployments should
+also follow the [A2A deployment threat model](docs/a2a-deployment-threat-model.md).
 
 ### Git-native claims
 

@@ -237,12 +237,15 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
     A2AConformanceRow(
         area="validation",
         item="Deployment threat model",
-        status="external",
-        synapse_surface="docs/deployment.md; docs/a2a-validation-receipts.md",
-        evidence="Deployment boundaries are documented; no signed deployment review is recorded.",
+        status="partial",
+        synapse_surface="docs/a2a-deployment-threat-model.md; docs/deployment.md",
+        evidence=(
+            "A2A-specific exposed-bridge threat model documents auth, TLS/proxy, state-file, "
+            "webhook egress, retention, logging, and receipt requirements."
+        ),
         limitation=(
-            "Requires a concrete exposed deployment with auth, TLS, logging, retention, "
-            "and egress review."
+            "Concrete production deployment, public receiver validation, and operator sign-off "
+            "remain external."
         ),
         spec_reference="A2A 1.0.0 security guidance",
     ),

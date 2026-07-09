@@ -41,6 +41,11 @@ public-looking webhook URL when DNS resolves it back to a local receiver before
 send. A validation receipt is still needed for any public receiver behind
 production TLS or reverse-proxy infrastructure.
 
+The [A2A deployment threat model](a2a-deployment-threat-model.md) records the
+local exposed-bridge review for bearer auth, TLS/proxy placement, state-file
+permissions, webhook egress, retention, logging, and receipt evidence. A
+production receipt should still prove the chosen deployment follows that model.
+
 Each receipt is a small, self-contained record. Capture it as JSON, a gist, or a
 discussion reply — the shape matters more than the medium.
 

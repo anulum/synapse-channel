@@ -21,6 +21,9 @@ All notable changes to this project are documented here.
   validation harnesses, plus real HTTPS receiver and 307 reverse-proxy redirect
   tests that keep the production default fail-closed against local/private
   webhook targets, including delivery-time DNS rebinding to a local receiver.
+- The A2A deployment threat model now records the exposed-bridge posture for
+  bearer auth, TLS/proxy placement, state-file handling, webhook egress,
+  logging, and receipt evidence.
 
 ## [0.98.21] - 2026-07-09
 
