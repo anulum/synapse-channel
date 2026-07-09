@@ -73,6 +73,9 @@ def test_signed_events_mtls_design_covers_trusted_federation() -> None:
         "multi-host",
         "cross-project",
         "trust bundle",
+        "tls passthrough",
+        "tls-terminating proxy",
+        "synapse doctor --federation-path",
     )
     for control in required_controls:
         assert control in text

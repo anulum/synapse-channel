@@ -33,6 +33,7 @@ from synapse_channel.cli_doctor_federation import (
     _peer_certificate_expires_at,
     diagnose_federation,
     parse_cursor_specs,
+    parse_path_specs,
     parse_peer_specs,
     probe_federation_peer,
 )
@@ -104,6 +105,28 @@ def test_parse_cursor_specs_returns_non_negative_cursors_and_failures() -> None:
     assert [diagnosis.status for diagnosis in diagnoses] == ["fail", "fail", "fail"]
 
 
+def test_parse_path_specs_reports_proxy_path_policy() -> None:
+    path_diagnoses, parse_diagnoses = parse_path_specs(
+        [
+            "alpha=direct-mtls",
+            "beta=tls-terminating-proxy",
+            "gamma=tailnet",
+            "broken",
+        ]
+    )
+
+    assert parse_diagnoses[0].check == "federation-path"
+    assert parse_diagnoses[0].status == "fail"
+    assert [diagnosis.check for diagnosis in path_diagnoses] == [
+        "federation-path:alpha",
+        "federation-path:beta",
+        "federation-path:gamma",
+    ]
+    assert [diagnosis.status for diagnosis in path_diagnoses] == ["pass", "fail", "pass"]
+    assert "proxy certificate" in path_diagnoses[1].detail
+    assert "plain TLS termination" in path_diagnoses[1].remedy
+
+
 async def test_diagnose_federation_reports_store_states(tmp_path: Path) -> None:
     store = tmp_path / "federation.json"
     now = 1_000.0
@@ -121,6 +144,7 @@ async def test_diagnose_federation_reports_store_states(tmp_path: Path) -> None:
     diagnoses = await diagnose_federation(
         peer_specs=(),
         cursor_specs=(),
+        path_specs=("proxy=tls-terminating-proxy",),
         local_id="doctor",
         token=None,
         store_path=store,
@@ -128,6 +152,7 @@ async def test_diagnose_federation_reports_store_states(tmp_path: Path) -> None:
     )
 
     by_check = {diagnosis.check: diagnosis for diagnosis in diagnoses}
+    assert by_check["federation-path:proxy"].status == "fail"
     assert by_check["federation-bundle:active"].status == "pass"
     assert by_check["federation-bundle:near"].status == "warn"
     assert by_check["federation-bundle:old"].status == "fail"

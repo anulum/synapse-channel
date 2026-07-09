@@ -30,6 +30,10 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
 from synapse_channel.client.diagnostics import Diagnosis, DoctorStatus
+from synapse_channel.core.federation_proxy import (
+    classify_federation_proxy_path,
+    normalise_federation_path_mode,
+)
 from synapse_channel.core.federation_store import FederationRecord, FederationStoreError, load_store
 from synapse_channel.core.multihub_wire import (
     LogRequest,
@@ -205,10 +209,55 @@ def parse_cursor_specs(specs: Sequence[str]) -> tuple[dict[str, int], list[Diagn
     return cursors, diagnoses
 
 
+def parse_path_specs(specs: Sequence[str]) -> tuple[list[Diagnosis], list[Diagnosis]]:
+    """Parse ``PEER=MODE`` path specifications into doctor diagnoses.
+
+    Parameters
+    ----------
+    specs : sequence of str
+        Raw ``--federation-path`` values.
+
+    Returns
+    -------
+    tuple[list[Diagnosis], list[Diagnosis]]
+        Path diagnoses plus parse-failure diagnoses.
+    """
+    path_diagnoses: list[Diagnosis] = []
+    parse_diagnoses: list[Diagnosis] = []
+    for spec in specs:
+        peer_id, sep, raw_mode = spec.partition("=")
+        peer_id = peer_id.strip()
+        mode = normalise_federation_path_mode(raw_mode)
+        if not sep or not peer_id or mode is None:
+            parse_diagnoses.append(
+                Diagnosis(
+                    check="federation-path",
+                    status="fail",
+                    detail=f"malformed federation path spec {spec!r}",
+                    remedy=(
+                        "pass --federation-path PEER=direct-mtls|tls-passthrough|"
+                        "tailnet|tls-terminating-proxy"
+                    ),
+                )
+            )
+            continue
+        verdict = classify_federation_proxy_path(mode)
+        path_diagnoses.append(
+            Diagnosis(
+                check=f"federation-path:{peer_id}",
+                status=verdict.status,
+                detail=f"{raw_mode.strip()} path: {verdict.detail}",
+                remedy=verdict.remedy,
+            )
+        )
+    return path_diagnoses, parse_diagnoses
+
+
 async def diagnose_federation(
     *,
     peer_specs: Sequence[str],
     cursor_specs: Sequence[str],
+    path_specs: Sequence[str] = (),
     local_id: str,
     token: str | None,
     store_path: Path | None,
@@ -242,7 +291,8 @@ async def diagnose_federation(
     """
     peers, peer_diagnoses = parse_peer_specs(peer_specs)
     cursors, cursor_diagnoses = parse_cursor_specs(cursor_specs)
-    diagnoses = [*peer_diagnoses, *cursor_diagnoses]
+    path_diagnoses, path_parse_diagnoses = parse_path_specs(path_specs)
+    diagnoses = [*peer_diagnoses, *cursor_diagnoses, *path_parse_diagnoses, *path_diagnoses]
     records, store_diagnoses = _load_records(store_path)
     now_ts = now()
     warning_window = max(cert_warn_days, 0) * SECONDS_PER_DAY

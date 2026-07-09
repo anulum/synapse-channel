@@ -143,7 +143,11 @@ reachability, cursor lag (`log_end_seq - cursor` when the peer supports it),
 measured clock skew from the peer welcome timestamp, and TLS certificate expiry
 warnings. `--federation-token TOKEN` is sent only on these peer probes;
 `--federation-skew-warn-seconds` and `--federation-cert-warn-days` tune the
-warning thresholds.
+warning thresholds. Add `--federation-path PEER=MODE` to declare the network
+shape for certificate-pinned federation checks. Supported modes are
+`direct-mtls`, `tls-passthrough`, `tailnet`, and `tls-terminating-proxy`; the
+terminating-proxy mode fails because the remote peer pins the proxy certificate
+and hub-side client certificates do not reach the hub.
 `synapse status --watch` refreshes the line every `--interval` seconds (default
 2) as an operator dashboard: each refresh opens its own probe connection so a
 hub restart shows as an honest offline line, a TTY rewrites the line in place

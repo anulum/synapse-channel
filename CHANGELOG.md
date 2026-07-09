@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- `synapse doctor` now accepts `--federation-path PEER=MODE` for proxy-path
+  diagnostics. Direct mTLS/WSS, TLS passthrough, and tailnet paths are reported
+  as valid federation shapes, while TLS-terminating reverse proxies are flagged
+  as a different trust boundary for certificate-pinned hub federation.
+
 ## [0.98.19] - 2026-07-09
 
 ### Added

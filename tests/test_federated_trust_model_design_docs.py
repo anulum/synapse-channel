@@ -59,6 +59,9 @@ def test_federated_trust_model_pins_trust_domain_and_authorization_boundaries() 
     assert "out-of-band" in text
     assert "bounded local scope" in text
     assert "one authorisation path" in text
+    assert "tls-terminating reverse proxy" in text
+    assert "not the hub certificate" in text
+    assert "synapse doctor --federation-path peer=mode" in text
 
 
 def test_federated_trust_model_keeps_explicit_non_goals() -> None:

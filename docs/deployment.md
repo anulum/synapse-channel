@@ -217,6 +217,32 @@ to loopback or a private interface behind it. In both native and proxy-terminate
 deployments, clients use `wss://host:port` and still pass the shared token for a
 secured hub.
 
+For **federation** traffic, treat the proxy as part of the trust boundary. A
+plain TLS-terminating reverse proxy presents the proxy certificate to the remote
+peer, not the hub certificate; socket-level client certificates also stop at the
+proxy unless the proxy runs a separate verified forwarding policy. That is fine
+for ordinary token-gated clients, but it is not the same as direct mTLS or a
+certificate-pinned hub-to-hub path. Federated peers that rely on certificate
+pins or hub-side client certificates should use one of these paths:
+
+- Direct native WSS/mTLS to the hub process.
+- TCP/TLS passthrough, so the hub still owns the TLS handshake and sees client
+  certificates.
+- A private tailnet path, paired with the normal token and pinned-certificate
+  ceremony when `wss://` is used.
+
+Declare the intended mode in diagnostics before relying on the path:
+
+```bash
+synapse doctor --federation-peer atelier=wss://atelier.example:8876 \
+  --federation-path atelier=tls-passthrough \
+  --federation-token "$SYNAPSE_TOKEN"
+```
+
+`--federation-path atelier=tls-terminating-proxy` intentionally fails for
+certificate-pinned federation: it is a different trust boundary, not a direct
+hub mTLS path.
+
 A worked example with [Caddy](https://caddyserver.com) terminating TLS in
 front of a loopback hub (`reverse_proxy` speaks WebSocket without extra
 directives). The hub runs privately with its token:
@@ -256,6 +282,11 @@ the certificate chains to the system trust store. The proxy terminates TLS
 only — the hub still requires its `--token`, and per-host limits keep
 applying to the proxy's forwarded connections as one host, so set
 `--max-connections-per-host` with that in mind.
+
+Do not reuse this terminating Caddy shape as the certificate-pinned federation
+path unless the intended peer pin is the proxy certificate and the deployment has
+a separate policy for client identity at the proxy. For the hub certificate to
+remain the pinned object, use direct native WSS/mTLS or TCP/TLS passthrough.
 
 ## Persistence and backups
 

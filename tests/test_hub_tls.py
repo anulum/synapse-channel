@@ -117,6 +117,22 @@ def test_hub_tls_public_docs_describe_native_wss() -> None:
     assert "does not replace `--token`" in deployment_docs
 
 
+def test_federation_proxy_path_docs_separate_termination_from_pinning() -> None:
+    """Deployment docs must not present TLS termination as hub mTLS."""
+    deployment_docs = Path("docs/deployment.md").read_text(encoding="utf-8")
+
+    for required in (
+        "--federation-path atelier=tls-passthrough",
+        "--federation-path atelier=tls-terminating-proxy",
+        "Direct native WSS/mTLS to the hub process.",
+        "TCP/TLS passthrough",
+        "private tailnet path",
+        "not the hub certificate",
+        "not the same as direct mTLS",
+    ):
+        assert required in deployment_docs
+
+
 def test_mutual_tls_server_context_requires_client_certificate_authority(
     tmp_path: Path,
 ) -> None:

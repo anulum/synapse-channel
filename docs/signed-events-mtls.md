@@ -141,6 +141,16 @@ mTLS authenticates the transport peer. Event signatures authenticate selected
 events across storage, relay logs, postmortems, and policy checks. They are
 related, but neither replaces the other.
 
+Reverse proxies change this profile unless they preserve the TLS socket. Direct
+native WSS/mTLS and TCP/TLS passthrough keep the hub certificate as the pinned
+object and let the hub inspect client certificates. A TLS-terminating proxy
+instead presents the proxy certificate to the remote peer, and the hub sees only
+the proxy connection. That path can still protect ordinary token-gated clients,
+but it is not a hub mTLS path unless the operator deliberately pins the proxy
+certificate and enforces client identity at the proxy as a separate policy.
+`synapse doctor --federation-path PEER=direct-mtls|tls-passthrough|tailnet|tls-terminating-proxy`
+reports this boundary explicitly for deployment checks.
+
 The runtime peer verifier reports explicit failure modes: `valid`,
 `missing_certificate`, `unknown_peer`, `revoked_peer`, `bad_certificate_pin`,
 `project_scope_mismatch`, and `unknown_signing_key`.

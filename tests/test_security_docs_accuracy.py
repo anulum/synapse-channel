@@ -89,6 +89,25 @@ def test_takeover_docs_describe_payload_free_audit_logs() -> None:
     assert "cooldown refusals" in combined
 
 
+def test_federation_proxy_docs_keep_pinning_boundary_explicit() -> None:
+    """Public security docs must distinguish proxy TLS from hub mTLS."""
+    combined = _single_spaced(
+        "\n".join(
+            [
+                _read_repo_text("docs/deployment.md"),
+                _read_repo_text("docs/federated-trust-model.md"),
+                _read_repo_text("docs/signed-events-mtls.md"),
+                _read_repo_text("docs/cli.md"),
+            ]
+        )
+    )
+
+    assert "TLS-terminating reverse proxy" in combined
+    assert "not the hub certificate" in combined
+    assert "not a hub mTLS path" in combined
+    assert "`direct-mtls`, `tls-passthrough`, `tailnet`, and `tls-terminating-proxy`" in combined
+
+
 def test_benchmark_docs_describe_heap_expiry_not_stale_linear_sweeper() -> None:
     benchmarks = _read_repo_text("docs/benchmarks.md")
 

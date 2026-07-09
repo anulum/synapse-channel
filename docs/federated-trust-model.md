@@ -214,6 +214,13 @@ synapse federation fetch wss://atelier-hub:8951 \
 That pin is checked against the certificate presented on the TLS socket before
 the offered bundle is decoded. It is still only transport verification: the
 operator must compare the bundle fingerprint out-of-band and import explicitly.
+If the URI points at a TLS-terminating reverse proxy, the pin is the proxy's
+certificate, not the hub certificate. That is a different trust boundary from
+direct hub mTLS. Use direct WSS/mTLS, TCP/TLS passthrough, or a tailnet path
+when the peering depends on the hub certificate pin or hub-side client
+certificate verification; `synapse doctor --federation-path PEER=MODE` makes
+that declaration visible in health checks and fails the plain terminating-proxy
+mode for certificate-pinned federation.
 
 The operators now read `eb240a1e…` to each other over an independent channel — a
 call, a signed ticket, a key-signing meetup. Only when the values match does the

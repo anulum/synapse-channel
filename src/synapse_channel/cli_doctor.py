@@ -249,6 +249,7 @@ async def _diagnose(
     cursor_names_reader: Callable[[Mapping[str, str]], list[str]] | None = None,
     federation_peers: tuple[str, ...] = (),
     federation_cursors: tuple[str, ...] = (),
+    federation_paths: tuple[str, ...] = (),
     federation_store: Path | None = None,
     federation_token: str | None = None,
     federation_skew_warn_seconds: float = DEFAULT_FEDERATION_SKEW_WARN_SECONDS,
@@ -312,6 +313,7 @@ async def _diagnose(
         await federation_diagnose_runner(
             peer_specs=federation_peers,
             cursor_specs=federation_cursors,
+            path_specs=federation_paths,
             local_id=f"{identity.identity}-doctor",
             token=federation_token,
             store_path=federation_store,
@@ -417,6 +419,7 @@ def _cmd_doctor(
                 disk_warn_free_mib=getattr(args, "disk_warn_free_mib", 1024),
                 federation_peers=tuple(getattr(args, "federation_peer", ())),
                 federation_cursors=tuple(getattr(args, "federation_cursor", ())),
+                federation_paths=tuple(getattr(args, "federation_path", ())),
                 federation_store=(
                     None
                     if getattr(args, "federation_store", None) is None
@@ -630,6 +633,16 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=[],
         metavar="PEER=SEQ",
         help="Local consumed cursor for a named federation peer; defaults to 0.",
+    )
+    doctor.add_argument(
+        "--federation-path",
+        action="append",
+        default=[],
+        metavar="PEER=MODE",
+        help=(
+            "Declare a peer network path for proxy/pinning diagnostics. MODE is "
+            "direct-mtls, tls-passthrough, tailnet, or tls-terminating-proxy."
+        ),
     )
     doctor.add_argument(
         "--federation-store",
