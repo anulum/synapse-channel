@@ -28,6 +28,14 @@ from synapse_channel.core.delivery_receipts import (
 )
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.universal_receipts import (
+    UNIVERSAL_RECEIPT_EVENT_KINDS,
+    UniversalReceipt,
+    format_universal_receipt,
+    universal_receipt_matches,
+    universal_receipt_to_json,
+    universal_receipts_from_events,
+)
 
 TASK_EVENT_KINDS = frozenset(
     {
@@ -97,6 +105,10 @@ _DATALOG_RECEIPTS_RE = re.compile(
     rf"^receipts\(\s*{_ATOM_VALUE.format(name='participant')}\s*\)\.?$",
     re.IGNORECASE,
 )
+_DATALOG_UNIVERSAL_RECEIPTS_RE = re.compile(
+    rf"^universal_receipts\(\s*{_ATOM_VALUE.format(name='participant')}\s*\)\.?$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -162,6 +174,7 @@ class QueryResult:
     state: dict[str, object] | None = None
     conflicts: list[dict[str, object]] | None = None
     receipt_events: tuple[StoredEvent, ...] = ()
+    universal_receipts: tuple[UniversalReceipt, ...] = ()
 
 
 def parse_query(query: str) -> EventQuery:
@@ -230,6 +243,8 @@ def parse_query(query: str) -> EventQuery:
         )
     if len(tokens) == 2 and tokens[0] == "receipts":
         return EventQuery(kind="delivery_receipts", participant=tokens[1], raw=query)
+    if len(tokens) == 2 and tokens[0] == "universal-receipts":
+        return EventQuery(kind="universal_receipts", participant=tokens[1], raw=query)
     parsed_alias = _parse_cypher_like_query(query)
     if parsed_alias is not None:
         return parsed_alias
@@ -309,6 +324,8 @@ def _selective_read_args(query: EventQuery) -> dict[str, Any]:
         }
     if query.kind == "delivery_receipts":
         return {"kinds": DELIVERY_RECEIPT_EVENT_KINDS}
+    if query.kind == "universal_receipts":
+        return {"kinds": UNIVERSAL_RECEIPT_EVENT_KINDS}
     msg = f"unsupported event query kind: {query.kind}"
     raise ValueError(msg)
 
@@ -342,6 +359,7 @@ def _cap_result(result: QueryResult, limit: int) -> QueryResult:
         state=result.state,
         conflicts=conflicts,
         receipt_events=tuple(result.receipt_events[-keep:]) if keep else (),
+        universal_receipts=tuple(result.universal_receipts[-keep:]) if keep else (),
     )
 
 
@@ -401,6 +419,17 @@ def execute_query(events: Sequence[StoredEvent], query: EventQuery) -> QueryResu
                 event for event in events if receipt_event_matches(event, query.participant)
             ),
         )
+    if query.kind == "universal_receipts":
+        receipts = universal_receipts_from_events(events)
+        return QueryResult(
+            kind=query.kind,
+            query=query.raw,
+            universal_receipts=tuple(
+                receipt
+                for receipt in receipts
+                if universal_receipt_matches(receipt, query.participant)
+            ),
+        )
     msg = f"unsupported event query kind: {query.kind}"
     raise ValueError(msg)
 
@@ -420,6 +449,10 @@ def result_to_json(result: QueryResult) -> dict[str, object]:
         payload["conflicts"] = [dict(conflict) for conflict in result.conflicts]
     if result.receipt_events:
         payload["receipts"] = [receipt_event_to_json(event) for event in result.receipt_events]
+    if result.universal_receipts:
+        payload["receipts"] = [
+            universal_receipt_to_json(receipt) for receipt in result.universal_receipts
+        ]
     return payload
 
 
@@ -455,6 +488,11 @@ def render_human(result: QueryResult) -> str:
         participant = _query_receipt_label(result.query)
         lines = [f"delivery receipts {participant}: {len(result.receipt_events)} event(s)"]
         lines.extend(format_receipt_event(event) for event in result.receipt_events)
+        return "\n".join(lines)
+    if result.kind == "universal_receipts":
+        participant = _query_receipt_label(result.query)
+        lines = [f"universal receipts {participant}: {len(result.universal_receipts)} item(s)"]
+        lines.extend(format_universal_receipt(receipt) for receipt in result.universal_receipts)
         return "\n".join(lines)
     return f"{result.kind}: no renderer"
 
@@ -578,6 +616,13 @@ def _parse_datalog_like_query(query: str) -> EventQuery | None:
         return EventQuery(
             kind="delivery_receipts",
             participant=_unquote_atom(receipts.group("participant")),
+            raw=query,
+        )
+    universal_receipts = _DATALOG_UNIVERSAL_RECEIPTS_RE.match(query)
+    if universal_receipts is not None:
+        return EventQuery(
+            kind="universal_receipts",
+            participant=_unquote_atom(universal_receipts.group("participant")),
             raw=query,
         )
     return None

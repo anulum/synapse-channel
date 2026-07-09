@@ -55,6 +55,7 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
         print("reliability JSON: " + server.url("/reliability.json"))
         print("events tail JSON: " + server.url("/events.json"))
         print("causality JSON: " + server.url("/causality.json"))
+        print("receipts JSON: " + server.url("/receipts.json"))
     if args.federation_store is not None:
         print("federation JSON: " + server.url("/federation.json"))
     if args.cockpit_dist is not None:
@@ -127,9 +128,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help=(
             "Hub event store powering the store-backed feeds: /reliability.json "
             "(audit signals, not scores), /events.json (raw log tail past a "
-            "cursor), and /causality.json (one causality query in the CLI's JSON "
-            "shape). Read-only; without it each endpoint reports its absence "
-            "with 404. --reliability-db is the same flag's original name."
+            "cursor), /receipts.json (universal receipt projections), and "
+            "/causality.json (one causality query in the CLI's JSON shape). "
+            "Read-only; without it each endpoint reports its absence with 404. "
+            "--reliability-db is the same flag's original name."
         ),
     )
     dashboard.add_argument(

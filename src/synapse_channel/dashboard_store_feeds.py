@@ -61,6 +61,11 @@ from synapse_channel.core.ledger import TERMINAL_LEDGER_STATUSES
 from synapse_channel.core.merkle import proof_to_json, run_proof
 from synapse_channel.core.multihub_wire import LogSnapshot, encode_log_snapshot
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.universal_receipts import (
+    UNIVERSAL_RECEIPT_EVENT_KINDS,
+    universal_receipt_to_json,
+    universal_receipts_from_events,
+)
 from synapse_channel.participants.session_metric_report import (
     run_session_metric_report,
     session_metric_report_to_json,
@@ -76,6 +81,9 @@ MAX_EVENTS_LIMIT = 1000
 
 DEFAULT_OPERATOR_ACTIONS_LIMIT = 50
 """Operator-action history rows returned when the client names no limit."""
+
+DEFAULT_RECEIPTS_LIMIT = 100
+"""Universal receipt rows returned when the client names no limit."""
 
 CAUSALITY_FEED_DIRECTIONS = ("causes", "effects")
 """Query directions the feed answers; the CLI's other modes stay CLI-only."""
@@ -302,6 +310,69 @@ def build_operator_actions_feed(
         "note": (
             "governed operator actions reconstructed from operator_relay audit events; "
             "ordinary releases without relay provenance are omitted"
+        ),
+    }
+
+
+def build_receipts_feed(
+    db_path: str | Path, *, since: int = 0, limit: int = DEFAULT_RECEIPTS_LIMIT
+) -> dict[str, object]:
+    """Return universal receipts projected from the durable event log.
+
+    The feed reads the log's receipt-bearing event families and normalises them
+    into one shape for dashboards and cockpit clients: claim release evidence,
+    delivery receipts, sandbox runs, approval/policy/verification progress,
+    operator relays, cross-hub pointers, A2A validation notes, and postmortem
+    notes. It preserves the real ``seq``/``ts`` anchors and never infers a
+    receipt from an ordinary event that did not carry receipt semantics.
+
+    Parameters
+    ----------
+    db_path : str or pathlib.Path
+        Hub event store.
+    since : int, optional
+        Exclusive sequence cursor. Defaults to ``0``.
+    limit : int, optional
+        Maximum receipt rows to return, clamped to ``1..MAX_EVENTS_LIMIT``.
+
+    Returns
+    -------
+    dict[str, object]
+        ``present``, normalised ``receipts``, ``receipt_count``,
+        ``next_cursor``, ``log_end_seq``, and a scope note.
+
+    Raises
+    ------
+    ValueError
+        If the event store does not exist.
+    """
+    path = Path(db_path)
+    if not path.exists():
+        msg = f"missing event store: {path}"
+        raise ValueError(msg)
+    bounded_since = max(0, int(since))
+    bounded_limit = max(1, min(int(limit), MAX_EVENTS_LIMIT))
+    store = EventStore(path)
+    try:
+        log_end_seq = store.max_seq()
+        events = store.read_window(
+            min_seq=bounded_since + 1,
+            kinds=UNIVERSAL_RECEIPT_EVENT_KINDS,
+        )
+    finally:
+        store.close()
+    receipts = universal_receipts_from_events(events)[-bounded_limit:]
+    rows = [universal_receipt_to_json(receipt) for receipt in receipts]
+    next_cursor = receipts[-1].seq if receipts else bounded_since
+    return {
+        "present": True,
+        "receipts": rows,
+        "receipt_count": len(rows),
+        "next_cursor": next_cursor,
+        "log_end_seq": log_end_seq,
+        "note": (
+            "universal receipt view projected from receipt-bearing durable events; "
+            "ordinary events without receipt semantics are omitted"
         ),
     }
 

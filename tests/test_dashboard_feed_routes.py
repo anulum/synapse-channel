@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 
 from dashboard_helpers import _feeds_server, _http_get
-from synapse_channel.core.journal import EventKind, record_ledger_task
+from synapse_channel.core.journal import EventKind, record_ledger_task, record_operator_relay
 from synapse_channel.core.ledger import LedgerTask
 from synapse_channel.core.merkle import proof_from_json, verify_inclusion
 from synapse_channel.core.persistence import EventStore
@@ -129,7 +129,13 @@ def test_dashboard_feed_queries_never_crash_on_malformed_input(tmp_path: Path) -
     )
     store.close()
 
-    feeds = ("/state-at.json", "/merkle-proof.json", "/events.json", "/causality.json")
+    feeds = (
+        "/state-at.json",
+        "/merkle-proof.json",
+        "/events.json",
+        "/causality.json",
+        "/receipts.json",
+    )
     server = _reliability_server(db)
     try:
         for feed in feeds:
@@ -592,6 +598,92 @@ def test_metrics_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
     assert denied == 401
     assert allowed == 200
     assert json.loads(body)["log"]["total_events"] == 2
+
+
+def _seed_receipts_store(db: Path) -> None:
+    store = EventStore(db)
+    store.append(
+        EventKind.LEDGER_PROGRESS,
+        {
+            "task_id": "REL",
+            "author": "owner",
+            "kind": "assessment",
+            "text": "release receipt: evidence=pytest; epistemic_status=supported",
+        },
+        ts=1.0,
+    )
+    record_operator_relay(
+        store,
+        {"action": "release", "task_id": "REMOTE", "operator": "ops", "applied": True},
+    )
+    store.close()
+
+
+def test_receipts_feed_reports_absence_without_a_store() -> None:
+    server = _feeds_server()
+    try:
+        status, _, body = _http_get(server.url("/receipts.json"))
+    finally:
+        server.close()
+
+    assert status == 404
+    assert "--feeds-db" in body
+
+
+def test_receipts_feed_serves_universal_receipts_with_the_hub_down(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_receipts_store(db)
+
+    server = _feeds_server(reliability_db=db)
+    try:
+        status, content_type, body = _http_get(server.url("/receipts.json?since=0&limit=10"))
+    finally:
+        server.close()
+
+    assert status == 200
+    assert content_type == "application/json"
+    payload = json.loads(body)
+    assert [receipt["kind"] for receipt in payload["receipts"]] == ["claim", "operator-relay"]
+    assert payload["receipts"][0]["status"] == "supported"
+
+
+def test_receipts_feed_refuses_malformed_numbers(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_receipts_store(db)
+
+    server = _feeds_server(reliability_db=db)
+    try:
+        status, _, body = _http_get(server.url("/receipts.json?since=abc"))
+    finally:
+        server.close()
+
+    assert status == 400
+    assert "since and limit must be integers" in body
+
+
+def test_receipts_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
+    server = _feeds_server(reliability_db=tmp_path / "absent.db")
+    try:
+        status, _, body = _http_get(server.url("/receipts.json"))
+    finally:
+        server.close()
+
+    assert status == 503
+    assert "missing event store" in body
+
+
+def test_receipts_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_receipts_store(db)
+    server = _feeds_server(reliability_db=db, dashboard_token="s3cret")
+    try:
+        denied, _, _ = _http_get(server.url("/receipts.json"))
+        allowed, _, _ = _http_get(server.url("/receipts.json"), authorization="Bearer s3cret")
+    finally:
+        server.close()
+
+    assert denied == 401
+    assert allowed == 200
 
 
 def test_state_at_feed_reports_absence_without_a_store() -> None:

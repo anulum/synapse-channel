@@ -37,6 +37,8 @@ def test_load_cockpit_asset_returns_content() -> None:
 
 def test_cockpit_assets_render_the_risk_view() -> None:
     assert "renderRisk" in load_cockpit_asset("cockpit.js")
+    assert "fetchReceipts" in load_cockpit_asset("cockpit.js")
+    assert "receiptsUrl" in load_cockpit_asset("cockpit.js")
     assert ".risk__verdict" in load_cockpit_asset("cockpit.css")
 
 
@@ -57,9 +59,11 @@ def test_render_cockpit_html_embeds_shell_and_fallback() -> None:
         'id="lanes"',
         'id="risk"',
         'id="risk-verdict"',
+        'id="receipts"',
         'href="cockpit.css"',
         'src="cockpit.js"',
         "refreshSeconds: 5",
+        'receiptsUrl: "receipts.json"',
         "<noscript>",
         "FALLBACK-MARKER",
     ):

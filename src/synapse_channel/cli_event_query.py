@@ -42,7 +42,8 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help=(
             "Query string: 'task T timeline', 'task T at seq N', "
             "'task T at time SECONDS', 'path PATH between START END', or "
-            "'conflicts at seq N', or 'receipts AGENT'. Prototype aliases include "
+            "'conflicts at seq N', 'receipts AGENT', or "
+            "'universal-receipts all'. Prototype aliases include "
             "'timeline(\"T\").' "
             "and 'MATCH (task:TASK {id:\"T\"}) RETURN timeline'."
         ),

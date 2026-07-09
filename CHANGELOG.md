@@ -14,6 +14,14 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Universal receipt projections now expose release/claim evidence, delivery
+  receipts, sandbox run attestations, approval/policy/verification notes,
+  operator relays, cross-hub pointers, A2A validation notes, and postmortem
+  notes in one read-side shape. `synapse dashboard --feeds-db` serves the
+  projection at `/receipts.json`, the cockpit prefers that feed when present,
+  and `synapse event-query <db> "universal-receipts all"` renders the same
+  first-class receipt objects without changing the legacy delivery-receipt
+  query.
 - Declarative workflows now support step-level `requires` evidence predicates
   for proof-carrying steps. `workflow plan` and `workflow run` accept an
   `--evidence` snapshot and hold a step until its required receipt, test,

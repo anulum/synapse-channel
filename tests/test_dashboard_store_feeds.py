@@ -35,6 +35,7 @@ from synapse_channel.core.state import TaskClaim
 from synapse_channel.dashboard_store_feeds import (
     DEFAULT_EVENTS_LIMIT,
     DEFAULT_OPERATOR_ACTIONS_LIMIT,
+    DEFAULT_RECEIPTS_LIMIT,
     MAX_EVENTS_LIMIT,
     build_causality_feed,
     build_events_tail,
@@ -43,6 +44,7 @@ from synapse_channel.dashboard_store_feeds import (
     build_merkle_proof_feed,
     build_metrics_feed,
     build_operator_actions_feed,
+    build_receipts_feed,
     build_sessions_feed,
     build_state_at_feed,
     build_waits_feed,
@@ -938,3 +940,70 @@ class TestOperatorActionsFeed:
         actions = document["actions"]
         assert isinstance(actions, list)
         assert actions[0]["reason"] == ""
+
+
+class TestReceiptsFeed:
+    def test_projects_universal_receipts_from_the_durable_log(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        store.append(EventKind.CHAT, {"sender": "alice", "target": "all"}, ts=1.0)
+        store.append(
+            EventKind.LEDGER_PROGRESS,
+            {
+                "task_id": "REL",
+                "author": "owner",
+                "kind": "assessment",
+                "text": "release receipt: evidence=pytest; epistemic_status=supported",
+            },
+            ts=2.0,
+        )
+        record_operator_relay(
+            store,
+            {"action": "release", "task_id": "REMOTE", "operator": "ops", "applied": True},
+        )
+        store.close()
+
+        document = build_receipts_feed(db)
+
+        assert document["present"] is True
+        assert document["receipt_count"] == 2
+        assert document["log_end_seq"] == 3
+        receipts = document["receipts"]
+        assert isinstance(receipts, list)
+        assert [receipt["kind"] for receipt in receipts] == ["claim", "operator-relay"]
+        assert receipts[0]["status"] == "supported"
+        assert receipts[1]["actor"] == "ops"
+        assert "ordinary events" in str(document["note"])
+
+    def test_cursor_and_limit_select_recent_receipts(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        for seq in range(3):
+            store.append(
+                EventKind.SANDBOX_RUN,
+                {"tool_id": f"tool-{seq}", "exit": "ok", "fuel_used": seq},
+                ts=float(seq),
+            )
+        store.close()
+
+        document = build_receipts_feed(db, since=1, limit=1)
+
+        receipts = document["receipts"]
+        assert isinstance(receipts, list)
+        assert [receipt["subject"] for receipt in receipts] == ["tool-2"]
+        assert document["next_cursor"] == 3
+
+    def test_empty_log_reports_no_receipts(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        EventStore(db).close()
+
+        document = build_receipts_feed(db)
+
+        assert document["receipts"] == []
+        assert document["receipt_count"] == 0
+        assert document["next_cursor"] == 0
+        assert DEFAULT_RECEIPTS_LIMIT == 100
+
+    def test_missing_store_is_refused(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="missing event store"):
+            build_receipts_feed(tmp_path / "absent.db")

@@ -15,7 +15,7 @@ import pytest
 
 from synapse_channel import cli
 from synapse_channel.core.delivery_receipts import immediate_receipt_payload
-from synapse_channel.core.journal import EventKind, record_claim
+from synapse_channel.core.journal import EventKind, record_claim, record_operator_relay
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.state import TaskClaim
 
@@ -144,6 +144,54 @@ def test_cli_event_query_delivery_receipts_json(
     payload = json.loads(capsys.readouterr().out)
     assert payload["kind"] == "delivery_receipts"
     assert payload["receipts"][0]["sender"] == "ALICE"
+
+
+def test_cli_event_query_universal_receipts_json(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db = tmp_path / "events.db"
+    store = EventStore(db)
+    store.append(
+        EventKind.LEDGER_PROGRESS,
+        {
+            "task_id": "REL",
+            "author": "owner",
+            "kind": "assessment",
+            "text": "release receipt: evidence=pytest; epistemic_status=supported",
+        },
+        ts=1.0,
+    )
+    record_operator_relay(
+        store,
+        {"action": "release", "task_id": "REMOTE", "operator": "ops", "applied": True},
+    )
+    store.close()
+
+    exit_code = cli.main(["event-query", str(db), "universal-receipts all", "--json"])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["kind"] == "universal_receipts"
+    assert [receipt["kind"] for receipt in payload["receipts"]] == ["claim", "operator-relay"]
+    assert payload["receipts"][0]["status"] == "supported"
+
+
+def test_cli_event_query_universal_receipts_human_output(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db = tmp_path / "events.db"
+    store = EventStore(db)
+    store.append(EventKind.SANDBOX_RUN, {"tool_id": "tool", "exit": "ok"}, ts=1.0)
+    store.close()
+
+    exit_code = cli.main(["event-query", str(db), 'universal_receipts("tool").'])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "universal receipts tool: 1 item(s)" in out
+    assert "kind=sandbox-run" in out
 
 
 def test_cli_event_query_reports_query_errors(

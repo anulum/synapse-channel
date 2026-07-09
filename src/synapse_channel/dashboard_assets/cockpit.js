@@ -8,9 +8,14 @@
 "use strict";
 
 (function () {
-  const cfg = window.__SYN_COCKPIT__ || { refreshSeconds: 5, snapshotUrl: "/snapshot.json" };
+  const cfg = window.__SYN_COCKPIT__ || {
+    refreshSeconds: 5,
+    snapshotUrl: "/snapshot.json",
+    receiptsUrl: "/receipts.json",
+  };
   const REFRESH_MS = Math.max(1, Number(cfg.refreshSeconds) || 5) * 1000;
   const SNAPSHOT_URL = cfg.snapshotUrl || "/snapshot.json";
+  const RECEIPTS_URL = cfg.receiptsUrl || "/receipts.json";
   const TOKEN_KEY = "synapse-dashboard-token";
 
   const $ = (id) => document.getElementById(id);
@@ -41,6 +46,23 @@
     }
     if (!res.ok) {
       throw new Error("hub snapshot unavailable (" + res.status + ")");
+    }
+    return res.json();
+  }
+
+  async function fetchReceipts() {
+    const res = await fetch(RECEIPTS_URL, {
+      headers: authHeaders(),
+      cache: "no-store",
+    });
+    if (res.status === 401) {
+      throw Object.assign(new Error("unauthorized"), { unauthorized: true });
+    }
+    if (res.status === 404 || res.status === 503) {
+      return null;
+    }
+    if (!res.ok) {
+      throw new Error("receipt feed unavailable (" + res.status + ")");
     }
     return res.json();
   }
@@ -188,20 +210,35 @@
       .join("");
   }
 
-  function renderReceipts(snap) {
-    const receipts = ((snap.fleet || {}).receipts || []).slice(-12).reverse();
+  function fallbackReceipts(snap) {
+    return ((snap.fleet || {}).receipts || []).map((r) => ({
+      kind: "claim",
+      subject: r.task_id || "",
+      actor: r.author || "",
+      status: r.epistemic_status || r.confidence || "recorded",
+      summary: r.text || "",
+    }));
+  }
+
+  function renderReceipts(receiptDoc, snap) {
+    const source = receiptDoc && Array.isArray(receiptDoc.receipts)
+      ? receiptDoc.receipts
+      : fallbackReceipts(snap);
+    const receipts = source.slice(-12).reverse();
     $("receipts-count").textContent = receipts.length;
     if (!receipts.length) {
-      $("receipts").innerHTML = '<div class="empty">No release receipts.</div>';
+      $("receipts").innerHTML = '<div class="empty">No receipts.</div>';
       return;
     }
     $("receipts").innerHTML = receipts
       .map((r) => {
-        const status = r.epistemic_status || r.confidence || "";
+        const status = r.status || r.epistemic_status || r.confidence || "recorded";
+        const title = r.subject || r.task_id || r.author || r.kind || "receipt";
+        const kind = r.kind ? " [" + r.kind + "]" : "";
         return (
           `<div class="row"><div class="row__tick ${tickClass(status)}"></div>` +
-          `<div class="row__main"><div class="row__title">${esc(r.task_id || r.author || "receipt")}` +
-          `</div><div class="row__sub">${esc(status)} ${esc((r.text || "").slice(0, 120))}</div></div></div>`
+          `<div class="row__main"><div class="row__title">${esc(title)}${esc(kind)}` +
+          `</div><div class="row__sub">${esc(status)} ${esc((r.summary || r.text || "").slice(0, 120))}</div></div></div>`
         );
       })
       .join("");
@@ -344,11 +381,12 @@
   async function tick() {
     try {
       const snap = await fetchSnapshot();
+      const receiptDoc = await fetchReceipts();
       renderHud(snap);
       renderFleet(snap);
       renderRisk(snap);
       renderFeed(snap);
-      renderReceipts(snap);
+      renderReceipts(receiptDoc, snap);
       renderBoard(snap);
       renderClaims(snap);
       renderManifest(snap);

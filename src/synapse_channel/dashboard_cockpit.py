@@ -141,7 +141,7 @@ def render_cockpit_html(*, refresh_seconds: int, fallback_html: str) -> str:
     <div class="col">
       {risk_panel}
       {_panel("Signal stream", "feed", scroll=True)}
-      {_panel("Release receipts", "receipts", count_id="receipts-count", scroll=True)}
+      {_panel("Receipts", "receipts", count_id="receipts-count", scroll=True)}
     </div>
   </main>
   <div class="veil" id="veil">
@@ -154,7 +154,11 @@ def render_cockpit_html(*, refresh_seconds: int, fallback_html: str) -> str:
   </div>
   <noscript><div class="noscript-fallback">{fallback_html}</div></noscript>
   <script>
-    window.__SYN_COCKPIT__ = {{ refreshSeconds: {refresh}, snapshotUrl: "snapshot.json" }};
+    window.__SYN_COCKPIT__ = {{
+      refreshSeconds: {refresh},
+      snapshotUrl: "snapshot.json",
+      receiptsUrl: "receipts.json"
+    }};
   </script>
   <script src="cockpit.js"></script>
 </body>

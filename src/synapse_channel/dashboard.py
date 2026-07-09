@@ -63,6 +63,7 @@ from synapse_channel.dashboard_store_feeds import (
     build_merkle_proof_feed,
     build_metrics_feed,
     build_operator_actions_feed,
+    build_receipts_feed,
     build_sessions_feed,
     build_state_at_feed,
     build_waits_feed,
@@ -524,6 +525,9 @@ WAITS_PATH = "/waits.json"
 OPERATOR_ACTIONS_PATH = "/operator-actions.json"
 """Read-only endpoint serving governed operator-action audit history."""
 
+RECEIPTS_PATH = "/receipts.json"
+"""Read-only endpoint serving universal receipt projections from the event log."""
+
 COCKPIT_DIST_PREFIX = "/cockpit/"
 """URL prefix under which an operator-named cockpit build directory is served."""
 
@@ -724,6 +728,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         if path == OPERATOR_ACTIONS_PATH:
             self._serve_operator_actions(urlsplit(self.path).query)
+            return
+        if path == RECEIPTS_PATH:
+            self._serve_receipts(urlsplit(self.path).query)
             return
         if path.startswith(COCKPIT_DIST_PREFIX) or path == COCKPIT_DIST_PREFIX.rstrip("/"):
             self._serve_cockpit_dist(path)
@@ -1240,6 +1247,43 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         try:
             document = build_operator_actions_feed(self.reliability_db, since=since, limit=limit)
+        except ValueError as exc:
+            self._write(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                f"{exc}\n".encode(),
+                content_type="text/plain",
+            )
+            return
+        self._write_json(document)
+
+    def _serve_receipts(self, query: str) -> None:
+        """Serve the universal receipt feed from the durable log.
+
+        The feed is store-derived like the other cockpit feeds: 404 without
+        ``--feeds-db``, 503 on an unreadable store, 400 on malformed ``since``
+        or ``limit``, and no inferred receipts beyond event families that carry
+        receipt semantics.
+        """
+        if self.reliability_db is None:
+            self._write(
+                HTTPStatus.NOT_FOUND,
+                b"receipts feed not configured; start the dashboard with --feeds-db\n",
+                content_type="text/plain",
+            )
+            return
+        params = parse_qs(query)
+        try:
+            since = _bounded_query_int(params.get("since", ["0"])[0])
+            limit = _bounded_query_int(params.get("limit", ["100"])[0])
+        except ValueError:
+            self._write(
+                HTTPStatus.BAD_REQUEST,
+                b"since and limit must be integers\n",
+                content_type="text/plain",
+            )
+            return
+        try:
+            document = build_receipts_feed(self.reliability_db, since=since, limit=limit)
         except ValueError as exc:
             self._write(
                 HTTPStatus.SERVICE_UNAVAILABLE,

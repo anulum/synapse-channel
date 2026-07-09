@@ -36,7 +36,7 @@ everything, since they need the whole command table.
 | `synapse encrypt-key` | Generate and check at-rest encryption key files (needs the `encryption` extra to encrypt). |
 | `synapse agent-tmux` | Wake an existing terminal-agent tmux session (Codex, Kimi, …) with a fixed safe prompt. |
 | `synapse codex-tmux` | Codex-defaulted alias of `agent-tmux`. |
-| `synapse dashboard` | Serve a loopback-only read-only live cockpit (fleet graph, board, claims, stream, receipts) over hub snapshots, plus `/snapshot.json`; `--reliability-db` adds the `/reliability.json` audit-signal feed, and `--observed-peer HUB=URI` adds advisory peer-hub rows. |
+| `synapse dashboard` | Serve a loopback-only read-only live cockpit (fleet graph, board, claims, stream, receipts) over hub snapshots, plus `/snapshot.json`; `--feeds-db` adds durable store feeds including `/receipts.json`, and `--observed-peer HUB=URI` adds advisory peer-hub rows. |
 | `synapse route-task` | Recommend agents for a board task using local capability signals. |
 | `synapse resource-bids` | Rank live resource offers for a board task without reserving capacity. |
 | `synapse memory-recall` | Recall matching durable memory records from a local event store. |
@@ -294,7 +294,7 @@ token is supplied, Synapse generates and prints a startup token. Add
 `/snapshot.json`; those rows stay advisory and are labelled `observed@HUB`.
 
 With `--feeds-db <hub.db>` (`--reliability-db` is the same flag's original
-name) the dashboard serves eight feeds off the **durable event store** —
+name) the dashboard serves nine feeds off the **durable event store** —
 available when the hub is down, real sequences and timestamps, behind the
 same dashboard bearer token as every other path:
 
@@ -331,6 +331,7 @@ same dashboard bearer token as every other path:
 - `/sessions.json` — the opt-in `session_metric` telemetry the fleet left in the log, in the same shape `synapse participants costs` renders: per-session token counts, cost, latency, and error/abstention rates, with `totals` aggregated across sessions. Every record carries the `seq` of the snapshot it was read from, so a cockpit joins a session's cost straight to its causal cone via `/causality.json`; each record's coordination `task_id` (from the note body) is the same join key `synapse participant costs` reports. A log with no session notes reports empty `sessions` and zeroed `totals`, never a fabricated cost.
 - `/waits.json` — the pending coordination gates reconstructed from the plan: each non-terminal task blocked on a dependency that has not reached a terminal status, with `who` is waiting (the task's suggested owner, or whoever declared it), `on_what` dependency ids it is blocked on, and `since` when it was declared, plus a `wait_count`. This is the "what is the fleet stuck behind" panel. Transient socket waiters (a client's `-rx` connection) are not journalled and are omitted; this is only the coordination gates the durable plan can prove.
 - `/operator-actions.json?since=SEQ&limit=N` — the governed operator-action history reconstructed from `operator_relay` audit events: direction, action, namespace, task, operator, origin/owner hubs, peer or local requester, status, reason, break-glass tag, detail, and real `seq`/`ts` join anchors. Ordinary releases without relay provenance are omitted.
+- `/receipts.json?since=SEQ&limit=N` — the universal receipt feed projected from receipt-bearing durable events: release/claim evidence, delivery receipts, sandbox run attestations, approval/policy/verification notes, governed operator relays, cross-hub pointers, A2A validation notes, and postmortem notes in one shape (`seq`, `ts`, `receipt_id`, `kind`, `subject`, `actor`, `status`, `summary`, `source_event_kind`, `payload`). Ordinary events without receipt semantics are omitted.
 
 Without the flag each endpoint answers 404 naming the remedy; an
 unreadable store answers 503 rather than an empty document pretending the
@@ -836,6 +837,7 @@ synapse event-query ./synapse.db "task TASK-1 timeline"
 synapse event-query ./synapse.db "conflicts at seq 120" --json
 synapse event-query ./synapse.db "channel ops between seq 1 999999"
 synapse event-query ./synapse.db "receipts ALICE" --json
+synapse event-query ./synapse.db "universal-receipts all" --json
 synapse event-query ./synapse.db 'timeline("TASK-1").'
 synapse event-query ./synapse.db 'MATCH (task:TASK {id:"TASK-1"}) RETURN timeline'
 synapse postmortem ./synapse.db TASK-1
@@ -937,14 +939,19 @@ counts, board tasks, release receipt notes, and a bounded coordination timeline;
 event store. It supports `task <id> timeline`, `task <id> at seq <n>`,
 `task <id> at time <seconds>`, `path <path> between <start> <end>`,
 `channel <id> between seq|time <start> <end>`, `conflicts at seq|time <n>`, and
-`receipts <agent|target|all>` for the durable delivery-receipt ledger.
+`receipts <agent|target|all>` for the durable delivery-receipt ledger. Use
+`universal-receipts <selector|all>` for the first-class receipt view across
+claim/release evidence, delivery, sandbox-run, policy, approval, operator-relay,
+cross-hub, A2A-validation, and postmortem receipt families.
 Channel queries return metadata-only records so private-channel bodies are not
 printed by this forensic path. Receipt queries return the requested, immediate,
 deferred, and expired delivery-receipt audit events that involve the selected
-participant. It also accepts prototype aliases over the same
+participant. Universal receipt queries return the shared receipt shape with the
+source event kind and real event-log sequence. It also accepts prototype aliases over the same
 model: Datalog-like `timeline("TASK").`, `state("TASK", seq, 120).`,
 `touches("src/auth.py", 0, 9999999999).`, `channel("ops", seq, 1, 99).`,
-`receipts("AGENT").`, `conflicts(seq, 120).`, plus
+`receipts("AGENT").`, `universal_receipts("all").`,
+`conflicts(seq, 120).`, plus
 Cypher-like `MATCH (task:TASK {id:"TASK"}) RETURN timeline` and related
 `AT`/`BETWEEN` forms. It is read-only forensic evidence: it reconstructs what
 the event log said at a sequence or timestamp, but it does not contact the live
