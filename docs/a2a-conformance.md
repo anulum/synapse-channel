@@ -45,10 +45,14 @@ JSON-RPC dispatch, bridge-local task storage, local Server-Sent Events snapshots
 and push-notification configuration storage. The matrix marks these as
 `supported` or `partial` according to the local behavior and its limits.
 
+The real-webhook row is `partial`: focused tests deliver to real local HTTPS
+receivers with a test CA, follow a real 307 proxy redirect, and block a
+delivery-time DNS rebinding attempt before send, while remote public receivers
+and operator-visible deployment receipts remain external.
+
 The following rows remain `external` until receipts exist:
 
 - independent A2A client/server interoperability traces;
-- a real webhook receiver test behind TLS and proxy behavior;
 - deployment threat-model review for an exposed bridge.
 
 Use [A2A bridge validation receipts](a2a-validation-receipts.md) to record those

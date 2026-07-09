@@ -1704,8 +1704,8 @@ Bounded local soak coverage:
 Unsupported or externally gated:
 
 - No claim is made here about third-party A2A conformance until remote CI,
-  independent interoperability/conformance tests, real webhook receiver tests,
-  deployment threat-model review, and operator sign-off complete.
+  independent interoperability/conformance tests, remote public webhook receiver
+  receipts, deployment threat-model review, and operator sign-off complete.
 - `synapse a2a-conformance` is the live local matrix for those supported,
   partial, unsupported, and external rows.
 - The bridge does not make SYNAPSE itself an A2A-native hub; it is a separate edge

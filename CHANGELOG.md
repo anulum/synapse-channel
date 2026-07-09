@@ -17,6 +17,10 @@ All notable changes to this project are documented here.
 - `synapse a2a-conformance` now prints the local A2A 1.0.0 support matrix as
   Markdown or JSON, including supported, partial, unsupported, and externally
   gated rows for the bridge.
+- A2A push delivery now has an injectable `WebhookDeliveryClient` for local
+  validation harnesses, plus real HTTPS receiver and 307 reverse-proxy redirect
+  tests that keep the production default fail-closed against local/private
+  webhook targets, including delivery-time DNS rebinding to a local receiver.
 
 ## [0.98.21] - 2026-07-09
 

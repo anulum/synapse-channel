@@ -398,7 +398,7 @@ def test_http_push_deliverer_reads_the_webhook_response(
             read_calls.append(req.full_url)
             return _Response()
 
-    monkeypatch.setattr(a2a_push, "_validate_webhook_target", lambda url: None)
+    monkeypatch.setattr(a2a_push, "_validate_webhook_target", lambda url, **kwargs: None)
     monkeypatch.setattr("synapse_channel.a2a_push.request.build_opener", lambda *h: _Opener())
     a2a_push.http_push_deliverer(
         {"url": "http://public.example/hook", "headers": {}, "payload": {"task": {}}}
@@ -410,7 +410,7 @@ def test_redirect_handler_follows_a_safe_redirect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A redirect to a safe public target is rebuilt by the stdlib handler."""
-    monkeypatch.setattr(a2a_push, "_validate_webhook_target", lambda url: None)
+    monkeypatch.setattr(a2a_push, "_validate_webhook_target", lambda url, **kwargs: None)
     handler = a2a_push._SafeWebhookRedirectHandler()
     req = request.Request("http://public.example/hook")
     rebuilt = handler.redirect_request(
@@ -418,6 +418,29 @@ def test_redirect_handler_follows_a_safe_redirect(
     )
     assert rebuilt is not None
     assert rebuilt.full_url == "http://public.example/moved"
+
+
+def test_redirect_handler_preserves_post_for_temporary_redirects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 307/308 redirect keeps the webhook POST body after target validation."""
+    monkeypatch.setattr(a2a_push, "_validate_webhook_target", lambda url, **kwargs: None)
+    handler = a2a_push._SafeWebhookRedirectHandler()
+    req = request.Request(
+        "http://public.example/hook",
+        data=b'{"task":{}}',
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    rebuilt = handler.redirect_request(
+        req, io.BytesIO(), 307, "Temporary Redirect", HTTPMessage(), "/hook/next"
+    )
+
+    assert rebuilt is not None
+    assert rebuilt.full_url == "http://public.example/hook/next"
+    assert rebuilt.get_method() == "POST"
+    assert rebuilt.data == b'{"task":{}}'
 
 
 def test_build_push_delivery_skips_incomplete_authentication() -> None:

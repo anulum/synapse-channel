@@ -12,6 +12,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import socket
+import ssl
 from collections.abc import Callable
 from http.client import HTTPMessage
 from typing import IO
@@ -29,6 +30,10 @@ LOCAL_TARGET_ERROR = "pushNotificationConfig.webhookUrl must not target local ne
 class _SafeWebhookRedirectHandler(request.HTTPRedirectHandler):
     """Validate webhook redirect targets before following them."""
 
+    def __init__(self, *, allow_local_targets: bool = False) -> None:
+        self._allow_local_targets = allow_local_targets
+        super().__init__()
+
     def redirect_request(
         self,
         req: request.Request,
@@ -38,8 +43,81 @@ class _SafeWebhookRedirectHandler(request.HTTPRedirectHandler):
         headers: HTTPMessage,
         newurl: str,
     ) -> request.Request | None:
-        _validate_webhook_target(urljoin(req.full_url, newurl))
+        redirect_url = urljoin(req.full_url, newurl)
+        _validate_webhook_target(
+            redirect_url,
+            allow_local_targets=self._allow_local_targets,
+        )
+        if code in {307, 308}:
+            return request.Request(
+                redirect_url,
+                data=req.data,
+                headers=dict(req.headers),
+                method=req.get_method(),
+            )
         return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+class WebhookDeliveryClient:
+    """HTTP(S) push-delivery client with explicit target and TLS policy.
+
+    Parameters
+    ----------
+    allow_local_targets : bool, optional
+        When true, localhost, loopback, private, and link-local addresses are
+        allowed. The production default is false.
+    ca_file : str or None, optional
+        PEM file used as a trust anchor for HTTPS webhook receivers.
+    timeout_seconds : float, optional
+        Socket timeout for one webhook delivery attempt.
+    """
+
+    def __init__(
+        self,
+        *,
+        allow_local_targets: bool = False,
+        ca_file: str | None = None,
+        timeout_seconds: float = 5.0,
+    ) -> None:
+        self.allow_local_targets = allow_local_targets
+        self.ca_file = ca_file
+        self.timeout_seconds = timeout_seconds
+
+    def __call__(self, delivery: JsonMap) -> None:
+        """Deliver one push notification envelope."""
+        self.deliver(delivery)
+
+    def deliver(self, delivery: JsonMap) -> None:
+        """POST one prepared push notification envelope.
+
+        Parameters
+        ----------
+        delivery : JsonMap
+            Delivery envelope with ``url``, ``headers``, and ``payload`` entries.
+        """
+        url = str(delivery["url"])
+        _validate_webhook_target(url, allow_local_targets=self.allow_local_targets)
+        raw = json.dumps(delivery["payload"], sort_keys=True).encode("utf-8")
+        headers = {
+            "Content-Type": A2A_MEDIA_TYPE,
+            **delivery.get("headers", {}),
+        }
+        req = request.Request(
+            url,
+            data=raw,
+            headers=headers,
+            method="POST",
+        )
+        handlers: list[request.BaseHandler] = [
+            _SafeWebhookRedirectHandler(allow_local_targets=self.allow_local_targets)
+        ]
+        if self.ca_file is not None:
+            handlers.append(
+                request.HTTPSHandler(context=ssl.create_default_context(cafile=self.ca_file))
+            )
+        opener = request.build_opener(*handlers)
+        with opener.open(req, timeout=self.timeout_seconds) as response:
+            response.read()
 
 
 def build_push_delivery(*, task: JsonMap, config: JsonMap) -> JsonMap:
@@ -79,25 +157,10 @@ def http_push_deliverer(delivery: JsonMap) -> None:
     delivery : JsonMap
         Delivery envelope with ``url``, ``headers``, and ``payload`` entries.
     """
-    url = str(delivery["url"])
-    _validate_webhook_target(url)
-    raw = json.dumps(delivery["payload"], sort_keys=True).encode("utf-8")
-    headers = {
-        "Content-Type": A2A_MEDIA_TYPE,
-        **delivery.get("headers", {}),
-    }
-    req = request.Request(
-        url,
-        data=raw,
-        headers=headers,
-        method="POST",
-    )
-    opener = request.build_opener(_SafeWebhookRedirectHandler())
-    with opener.open(req, timeout=5.0) as response:
-        response.read()
+    WebhookDeliveryClient().deliver(delivery)
 
 
-def _validate_webhook_target(url: str) -> None:
+def _validate_webhook_target(url: str, *, allow_local_targets: bool = False) -> None:
     """Reject webhook targets that resolve to local network addresses."""
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
@@ -105,7 +168,7 @@ def _validate_webhook_target(url: str) -> None:
     hostname = parsed.hostname
     if hostname is None:
         raise URLError("pushNotificationConfig.webhookUrl must include a host")
-    if hostname.lower() == "localhost":
+    if not allow_local_targets and hostname.lower() == "localhost":
         raise URLError(LOCAL_TARGET_ERROR)
     try:
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
@@ -119,7 +182,7 @@ def _validate_webhook_target(url: str) -> None:
         sockaddr = info[4]
         if not sockaddr:
             continue
-        if _is_local_network_address(str(sockaddr[0])):
+        if not allow_local_targets and _is_local_network_address(str(sockaddr[0])):
             raise URLError(LOCAL_TARGET_ERROR)
 
 

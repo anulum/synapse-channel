@@ -162,10 +162,12 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
             "POST|GET|DELETE /tasks/{id}/pushNotificationConfigs[/config_id]; "
             "JSON-RPC tasks/pushNotificationConfig/*"
         ),
-        evidence="Config persistence, SSRF guard, delivery envelope, and failure-path tests.",
+        evidence=(
+            "Config persistence, SSRF guard, delivery envelope, failure paths, and real "
+            "local HTTPS/proxy receiver plus DNS-rebinding guard tests."
+        ),
         limitation=(
-            "Real receiver, TLS, proxy, redirect, retry, and operator-signoff tests "
-            "remain external."
+            "Remote public receivers, retry policy, and operator-signoff traces remain external."
         ),
         spec_reference="A2A 1.0.0 §3.1.7-§3.1.10",
     ),
@@ -220,11 +222,15 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
     A2AConformanceRow(
         area="validation",
         item="Real webhook receiver",
-        status="external",
+        status="partial",
         synapse_surface="docs/a2a-validation-receipts.md",
-        evidence="Local injected-deliverer tests exist; no real receiver trace is recorded.",
+        evidence=(
+            "Focused tests POST to real local HTTPS receivers with a test CA and through a "
+            "real 307 proxy redirect; delivery-time DNS rebinding is blocked before send."
+        ),
         limitation=(
-            "Requires a TLS receiver, redirect/DNS-rebinding cases, and operator-visible receipts."
+            "Remote public receivers, production TLS termination, and operator-visible receipts "
+            "remain external."
         ),
         spec_reference="A2A 1.0.0 push notification operations",
     ),

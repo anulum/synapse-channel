@@ -34,6 +34,13 @@ Run `synapse a2a-conformance` before recording a receipt. It prints the current
 local matrix against the A2A 1.0.0 operation model; receipt work should update
 the matching row instead of replacing the matrix with prose.
 
+The repository test suite now includes local real-receiver coverage: push
+delivery posts to an HTTPS receiver trusted by a test CA and follows a real 307
+proxy redirect without dropping the POST body. The delivery client also rejects a
+public-looking webhook URL when DNS resolves it back to a local receiver before
+send. A validation receipt is still needed for any public receiver behind
+production TLS or reverse-proxy infrastructure.
+
 Each receipt is a small, self-contained record. Capture it as JSON, a gist, or a
 discussion reply — the shape matters more than the medium.
 
