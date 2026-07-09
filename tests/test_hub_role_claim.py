@@ -68,9 +68,7 @@ class TestPermittedRoleClaims:
 
     def test_acl_role_claim_grant_permits_without_store_entry(self) -> None:
         # ACL role-claim is an alternate authoriser to the role-grant store.
-        policy = AclPolicy(
-            [AclRule(ROLE_CLAIM, "role", "proj/coordinator", "proj", "acl coord")]
-        )
+        policy = AclPolicy([AclRule(ROLE_CLAIM, "role", "proj/coordinator", "proj", "acl coord")])
         hub = SynapseHub(role_grants=None, require_role_claim=True, acl_policy=policy)
 
         assert hub.permitted_role_claims("proj/claude", ("proj/coordinator", "proj/reviewer")) == (

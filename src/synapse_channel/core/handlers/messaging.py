@@ -605,9 +605,7 @@ def _mailbox_acl_allows(hub: SynapseHub, connection: str, requested: str) -> boo
     return decision.decision == WOULD_ALLOW
 
 
-def _mailbox_recipient(
-    connection: str, declared: Any, hub: SynapseHub | None = None
-) -> str:
+def _mailbox_recipient(connection: str, declared: Any, hub: SynapseHub | None = None) -> str:
     """Resolve whose directed backlog a mailbox heartbeat may replay onto ``connection``.
 
     A mailbox client may name, in ``declared`` (the heartbeat's ``mailbox_for``), an

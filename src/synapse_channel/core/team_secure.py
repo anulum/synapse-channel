@@ -112,12 +112,12 @@ def apply_team_secure_hub_profile(args: argparse.Namespace) -> TeamSecureHubRepo
             "--message-auth-key and --require-message-auth "
             "(cryptographically bind the sender beyond the connect token)"
         )
-    if not bool(getattr(args, "require_acl", False)) or not str(
-        getattr(args, "acl_policy", "") or ""
-    ).strip():
+    if (
+        not bool(getattr(args, "require_acl", False))
+        or not str(getattr(args, "acl_policy", "") or "").strip()
+    ):
         recommended.append(
-            "--require-acl with --acl-policy "
-            "(authorise mutating verbs beyond connect + identity)"
+            "--require-acl with --acl-policy (authorise mutating verbs beyond connect + identity)"
         )
     if not getattr(args, "tls_certfile", None) or not getattr(args, "tls_keyfile", None):
         recommended.append(

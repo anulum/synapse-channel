@@ -85,12 +85,9 @@ def test_mailbox_grant_allows_agent_target_in_namespace() -> None:
 def test_role_claim_grant_allows_role_target() -> None:
     policy = AclPolicy([AclRule(ROLE_CLAIM, "role", "proj/coordinator", "proj", "coord")])
     assert (
-        _eval(policy, ROLE_CLAIM, Target("role", "proj/coordinator"), project="proj")
-        == WOULD_ALLOW
+        _eval(policy, ROLE_CLAIM, Target("role", "proj/coordinator"), project="proj") == WOULD_ALLOW
     )
-    assert (
-        _eval(policy, ROLE_CLAIM, Target("role", "proj/reviewer"), project="proj") == WOULD_DENY
-    )
+    assert _eval(policy, ROLE_CLAIM, Target("role", "proj/reviewer"), project="proj") == WOULD_DENY
 
 
 def test_pattern_must_match_target_value() -> None:
