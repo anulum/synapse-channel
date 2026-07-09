@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import stat
 from pathlib import Path
-from unittest import mock
 
 import pytest
 
@@ -86,13 +85,14 @@ class TestSaveDurability:
         assert [entry.name for entry in tmp_path.iterdir()] == ["cur"]
 
     def test_a_failed_replace_removes_the_temp_and_reraises(self, tmp_path: Path) -> None:
+        # A real failed replace: the destination is a non-empty directory, so the
+        # temp is written but the final os.replace raises. The half-written temp
+        # must be removed and the error must propagate rather than silently losing
+        # the cursor.
         path = tmp_path / "cur"
-        # A replace that fails must not leave a half-written temp behind, and the error
-        # must propagate rather than silently losing the cursor.
-        with mock.patch(
-            "synapse_channel.mailbox_cursor.os.replace", side_effect=OSError("no rename")
-        ):
-            with pytest.raises(OSError, match="no rename"):
-                save_cursor(path, 5)
-        assert not path.exists()
-        assert list(tmp_path.iterdir()) == []
+        path.mkdir()
+        (path / "occupant").write_text("x", encoding="utf-8")
+        with pytest.raises(OSError):
+            save_cursor(path, 5)
+        assert (path / "occupant").read_text(encoding="utf-8") == "x"
+        assert [entry.name for entry in tmp_path.iterdir()] == ["cur"]

@@ -158,33 +158,47 @@ class TestPushProjection:
             )
         assert exporter.shutdowns == 1
 
-    def test_default_factory_builds_the_official_otlp_exporter(self) -> None:
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    def test_default_factory_exports_to_a_real_local_collector(self) -> None:
+        """The default factory drives the official OTLP exporter against a live endpoint."""
+        import threading
+        from http import HTTPStatus
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-        built: list[Any] = []
-        original_init = OTLPSpanExporter.__init__
+        received: list[tuple[str, str, int]] = []
 
-        def _capture(self: Any, *args: Any, **kwargs: Any) -> None:
-            built.append(kwargs)
-            original_init(self, *args, **kwargs)
-            self._captured = True
+        class _Collector(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length") or "0")
+                body = self.rfile.read(length) if length else b""
+                received.append((self.path, str(self.headers.get("Content-Type")), len(body)))
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
 
-        class _Refuses(RuntimeError):
-            pass
+            def log_message(self, _format: str, *_args: Any) -> None:
+                return None
 
-        # Building the real exporter is enough; exporting would hit the network,
-        # so the factory path is exercised with a monkeypatched export.
-        import unittest.mock
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _Collector)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = server.server_address[1]
+            count = push_projection(
+                build_otel_projection(_events()),
+                f"http://127.0.0.1:{port}/v1/traces",
+                timeout=5.0,
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2.0)
 
-        with unittest.mock.patch.object(OTLPSpanExporter, "__init__", _capture):
-            with unittest.mock.patch.object(OTLPSpanExporter, "export", side_effect=_Refuses):
-                with pytest.raises(_Refuses):
-                    push_projection(
-                        build_otel_projection(_events()),
-                        "http://127.0.0.1:1/v1/traces",
-                        timeout=0.1,
-                    )
-        assert built == [{"endpoint": "http://127.0.0.1:1/v1/traces", "timeout": 0.1}]
+        assert count == 5
+        assert len(received) == 1
+        path, content_type, body_bytes = received[0]
+        assert path == "/v1/traces"
+        assert content_type == "application/x-protobuf"
+        assert body_bytes > 0
 
     def test_missing_extra_raises_the_install_hint(self) -> None:
         def _refuse(name: str) -> Any:
