@@ -14,6 +14,12 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `synapse hub --team-secure` multi-seat trust profile: requires a connect
+  token, `--identity-trust` (forces identity binding), `--role-grants` (forces
+  role-claim enforcement), and private directed messages. Prints recommended
+  next hardening (message-auth, ACL, TLS/`--paranoid`, durable `--db`) without
+  blocking startup. Composes with `--paranoid` for multi-seat + exposed binds.
+  See `docs/team-secure.md`.
 - Universal receipt projections now expose release/claim evidence, delivery
   receipts, sandbox run attestations, approval/policy/verification notes,
   operator relays, cross-hub pointers, A2A validation notes, and postmortem

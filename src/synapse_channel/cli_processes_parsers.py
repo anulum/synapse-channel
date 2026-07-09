@@ -234,6 +234,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Require a strict local hub profile and print missing hardening hooks.",
     )
     hub.add_argument(
+        "--team-secure",
+        action="store_true",
+        help="Multi-seat trust profile: require a connect token, identity binding "
+        "(--identity-trust), role-claim grants (--role-grants), and private directed "
+        "messages. Lighter than --paranoid (no TLS/ACL/HMAC mandate); combine both "
+        "when a multi-seat hub is also network-exposed. Fails closed if material is "
+        "missing; prints recommended next hardening steps on stderr.",
+    )
+    hub.add_argument(
         "--token",
         default=None,
         help="Require this shared-secret token from connecting agents (off by default).",

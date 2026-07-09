@@ -37,6 +37,7 @@ from synapse_channel.core.paranoid import ParanoidModeError, apply_paranoid_hub_
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
 from synapse_channel.core.role_grants import RoleGrantError, load_role_grants
+from synapse_channel.core.team_secure import TeamSecureModeError, apply_team_secure_hub_profile
 from synapse_channel.core.tls import HubTLSConfigError, build_server_ssl_context
 
 
@@ -110,6 +111,14 @@ def _cmd_hub(
         return 2
     if paranoid_report is not None:
         for line in paranoid_report.stderr_lines():
+            print(f"synapse hub: {line}", file=sys.stderr)
+    try:
+        team_secure_report = apply_team_secure_hub_profile(args)
+    except TeamSecureModeError as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        return 2
+    if team_secure_report is not None:
+        for line in team_secure_report.stderr_lines():
             print(f"synapse hub: {line}", file=sys.stderr)
     try:
         ssl_context = tls_context_factory(certfile=args.tls_certfile, keyfile=args.tls_keyfile)

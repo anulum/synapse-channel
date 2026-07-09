@@ -49,12 +49,15 @@ a required exposure guard is missing (override only with `--insecure-off-loopbac
 | Metrics token (`--metrics-token`) | — | required if `--metrics` | **required** if `--metrics` | **required** if `--metrics` |
 | Metrics query token | loopback debug only | loopback debug only | disabled | disabled |
 | Durable log (`--db`) | optional | recommended | recommended | recommended |
-| One-flag preset | — | — | `--paranoid` | `--paranoid` |
+| Identity binding + role claims + private directed | — | **`--team-secure`** | **`--team-secure`** | **`--team-secure`** + `--paranoid` |
+| One-flag preset | — | `--team-secure` | `--paranoid` | `--paranoid` (+ `--team-secure`) |
 
+[`synapse hub --team-secure`](docs/team-secure.md) is the multi-seat trust
+preset (token, identity trust bundle, role grants, private directed messages).
 `synapse hub --paranoid` composes the team-LAN / internet-exposed column into a
 single switch (token, durable log, per-message auth, ACL, native WSS; query
 tokens and the off-loopback override disabled) and fails closed when any of them
-is absent.
+is absent. Combine both when a multi-seat hub is also network-exposed.
 
 The runtime floor is a single dependency (`websockets`); several
 security-relevant features need an optional extra installed:
@@ -133,16 +136,21 @@ worth stating plainly:
   sandbox untrusted commands, review whether commands are sufficient, or turn a
   `supported` receipt into independent proof of correctness.
 
-[`synapse hub --paranoid`](docs/paranoid-mode.md) is the production secure preset
-for the hub runtime. It refuses to start unless the hub is fully hardened — a
-connect token, durable event-log replay, per-message authentication on selected
-mutating frames, ACL enforcement with a policy, native WSS (TLS), and metrics
-bearer-token auth when metrics are enabled — and it disables the metrics query
-token and the insecure off-loopback override. It still reports the hooks it
-cannot honestly enforce on its own: mutual-TLS client-certificate verification,
-cryptographic per-agent identity, and exposed deployment threat modelling remain
-explicit future work. At-rest encryption and private channels ship as separate
-opt-in profiles (below) that paranoid mode does not automatically enable.
+[`synapse hub --team-secure`](docs/team-secure.md) is the multi-seat trust
+preset: it requires a connect token, an identity trust bundle with binding
+enforced, a role-grant store with role-claim enforcement, and private directed
+messages. It recommends (but does not require) message-auth, ACL, TLS, and a
+durable event log. [`synapse hub --paranoid`](docs/paranoid-mode.md) is the
+production secure preset for the hub runtime. It refuses to start unless the hub
+is fully hardened — a connect token, durable event-log replay, per-message
+authentication on selected mutating frames, ACL enforcement with a policy,
+native WSS (TLS), and metrics bearer-token auth when metrics are enabled — and
+it disables the metrics query token and the insecure off-loopback override. It
+still reports hooks it does not automatically enable: mutual-TLS
+client-certificate verification, cryptographic per-agent identity (use
+`--team-secure` or `--require-identity-binding`), and exposed deployment threat
+modelling. At-rest encryption and private channels ship as separate opt-in
+profiles (below) that paranoid mode does not automatically enable.
 
 The [at-rest encryption](docs/at-rest-encryption.md) runtime encrypts local
 SQLite event stores and their WAL/SHM sidecars, relay logs, A2A state, cursor

@@ -665,12 +665,15 @@ strict type checking, owner approval, evidence freshness, generated artifact
 parity, and no-merge-without-receipt rules before turning any advisory output
 into a local hook or CI gate.
 
-[`synapse hub --paranoid`](docs/paranoid-mode.md) enforces a strict local hub
-profile and prints an explicit missing-hook checklist: token-required hub access,
-durable event logs, per-message authentication for selected mutating frames,
-metrics bearer-token auth, disabled metrics query tokens, and clear gaps for
-encryption, signed events, identity, ACLs, private channels, A2A profiles, and
-exposed deployment review.
+[`synapse hub --team-secure`](docs/team-secure.md) is the multi-seat trust
+profile: connect token, identity binding, role-claim grants, and private
+directed messages in one switch (loopback multi-agent fleets).
+[`synapse hub --paranoid`](docs/paranoid-mode.md) enforces a strict production
+hub profile and prints an explicit missing-hook checklist: token-required hub
+access, durable event logs, per-message authentication for selected mutating
+frames, ACL + native WSS, metrics bearer-token auth, disabled metrics query
+tokens, and clear remaining gaps. The two compose for multi-seat + exposed
+binds.
 
 The planned [at-rest encryption](docs/at-rest-encryption.md) profile scopes
 optional protection for SQLite event stores, relay logs, A2A state, cursor files,

@@ -4,6 +4,11 @@
 settings and reports missing hardening hooks. It is implemented for the hub
 runtime only. A2A and doctor paranoid profiles remain future work.
 
+For a multi-seat *trust* profile (identity binding, role grants, private directed
+messages) without mandating TLS/ACL/HMAC, use
+[`--team-secure`](team-secure.md). The two compose: `--team-secure --paranoid`
+is the multi-agent + network-exposed posture.
+
 The mode is for single-owner or small trusted-team deployments that want a
 repeatable strict profile before exposing more surfaces. It remains local-first:
 the hub and evidence stay on the operator's machine unless the operator
