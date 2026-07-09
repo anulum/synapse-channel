@@ -170,6 +170,60 @@ The design should support three operator profiles:
     with RSA-OAEP, so the RSA private key never leaves the chip. The optional `tpm2-pytss`
     dependency (`synapse-channel[tpm2]`) and a TPM interface via `--tcti` / `TPM2_TCTI`
     (default the in-kernel resource manager `device:/dev/tpmrm0`).
+  - `synapse encrypt-key generate-wrapped-cloud-hsm` wraps under a **cloud HSM / cloud KMS**
+    key-encryption key. Providers:
+    - `local-aes-kw` — AES-KW under an owner-only 32-byte master key file (offline tests,
+      air-gapped drills, CI).
+    - `aws-kms` — optional `boto3` (`synapse-channel[cloud-hsm]`) calling KMS Encrypt/Decrypt
+      so the customer master key never leaves AWS (`--kms-key-id`, optional `--region`).
+    Network HSMs that expose PKCS#11 continue to use `generate-wrapped-pkcs11`.
+
+### Key escrow and recovery
+
+Lost-key recovery is impossible unless the operator planned for it. Threshold (Shamir)
+escrow over GF(2^8) splits a raw 32-byte data key into `n` shares with threshold `k`:
+
+```bash
+synapse encrypt-key escrow-split \
+  --key ~/.config/synapse/at-rest.key \
+  --threshold 3 --shares 5 \
+  --out-dir ~/synapse/escrow-shares/
+# Store share-01.json … share-05.json in separate custody.
+synapse encrypt-key escrow-recover \
+  --share ~/custody-a/share-01.json \
+  --share ~/custody-b/share-03.json \
+  --share ~/custody-c/share-05.json \
+  --out ~/.config/synapse/at-rest-recovered.key
+```
+
+Any `k` distinct shares reconstruct the key; fewer than `k` reveal nothing. Recovery
+writes a **new** raw key file — it never bypasses encryption. The live hub never reads
+share files automatically.
+
+### Hardware attestation
+
+Operators can require a fresh attestation of platform PCR digests before trusting a
+host to unwrap keys. The attestation gate is fail-closed and orthogonal to the KEK
+backend:
+
+```bash
+synapse encrypt-key attest-policy-create \
+  --policy-id seat-a \
+  --pcr 0=<sha256-hex> --pcr 7=<sha256-hex> \
+  ~/.config/synapse/attest-policy.json
+synapse encrypt-key attest-create \
+  --policy ~/.config/synapse/attest-policy.json \
+  ~/.config/synapse/attest-evidence.json
+synapse encrypt-key attest-verify \
+  --policy ~/.config/synapse/attest-policy.json \
+  --evidence ~/.config/synapse/attest-evidence.json
+```
+
+The software path uses HMAC-SHA256 with a 32-byte policy key (no extra dependency).
+The `tpm2-quote` algorithm tag supports a software-assisted trust key for CI and the
+same statement format for future AK public-area verification. Combine with the TPM2
+KEK backend when the long-term secret must stay inside the chip **and** the host must
+prove measured boot state.
 
 Key storage must be explicit. Synapse should never silently write an encryption
 key next to the encrypted database with broad permissions. A doctor check should
@@ -232,7 +286,8 @@ Backup recovery must be boring and documented:
   after the operator has restored/decrypted the cold envelope into the expected
   runtime file.
 - Lost-key recovery is impossible by design unless the operator has an escrowed
-  passphrase, key-file backup, or platform-keyring recovery path.
+  passphrase, key-file backup, platform-keyring recovery path, or threshold
+  escrow shares (`synapse encrypt-key escrow-split` / `escrow-recover`).
 
 The command-line UX should state that lost-key recovery cannot decrypt the data.
 It can help identify which key id is needed, but it must not imply a bypass.

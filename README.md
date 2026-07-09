@@ -759,8 +759,9 @@ complementary layers: **SQLCipher page encryption** for the live hub event store
 [SQLCipher live event store](#sqlcipher-live-event-store-at-rest)), and
 **whole-file AES-256-GCM envelopes** for relay logs, A2A state, cursors, and
 archives (`synapse encrypt-key` profile/migrate/rekey/backup/restore, optional
-passphrase/PKCS#11/TPM2 key wrapping). Both are opt-in extras; neither claims
-RAM protection or multi-tenant isolation.
+passphrase / PKCS#11 / TPM2 / cloud-HSM key wrapping, threshold escrow, and
+hardware attestation gates). Both are opt-in extras; neither claims RAM
+protection or multi-tenant isolation.
 
 The [end-to-end encrypted channels](docs/end-to-end-encrypted-channels.md)
 runtime encrypts selected chat payloads with `synapse send --encrypt-key-file`

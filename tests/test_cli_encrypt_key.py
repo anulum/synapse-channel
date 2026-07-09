@@ -49,6 +49,67 @@ def test_parser_registers_encrypt_key_subcommands() -> None:
     assert pkcs11.func is cli_encrypt_key._cmd_generate_wrapped_pkcs11
     assert pkcs11.token_label == "t"
     assert pkcs11.create_kek is True
+    cloud = parser.parse_args(
+        [
+            "encrypt-key",
+            "generate-wrapped-cloud-hsm",
+            "--provider",
+            "local-aes-kw",
+            "--master-key-file",
+            "/tmp/m.key",
+            "/tmp/w.key",
+        ]
+    )
+    assert cloud.func is cli_encrypt_key._cmd_generate_wrapped_cloud_hsm
+    assert cloud.provider == "local-aes-kw"
+    escrow_split = parser.parse_args(
+        [
+            "encrypt-key",
+            "escrow-split",
+            "--key",
+            "/tmp/k.key",
+            "--threshold",
+            "2",
+            "--shares",
+            "3",
+            "--out-dir",
+            "/tmp/shares",
+        ]
+    )
+    assert escrow_split.func is cli_encrypt_key._cmd_escrow_split
+    assert escrow_split.threshold == 2
+    escrow_recover = parser.parse_args(
+        [
+            "encrypt-key",
+            "escrow-recover",
+            "--share",
+            "/tmp/s1.json",
+            "--share",
+            "/tmp/s2.json",
+            "--out",
+            "/tmp/out.key",
+        ]
+    )
+    assert escrow_recover.func is cli_encrypt_key._cmd_escrow_recover
+    attest_policy = parser.parse_args(
+        ["encrypt-key", "attest-policy-create", "--policy-id", "seat", "/tmp/p.json"]
+    )
+    assert attest_policy.func is cli_encrypt_key._cmd_attest_policy_create
+    attest_create = parser.parse_args(
+        ["encrypt-key", "attest-create", "--policy", "/tmp/p.json", "/tmp/e.json"]
+    )
+    assert attest_create.func is cli_encrypt_key._cmd_attest_create
+    attest_verify = parser.parse_args(
+        [
+            "encrypt-key",
+            "attest-verify",
+            "--policy",
+            "/tmp/p.json",
+            "--evidence",
+            "/tmp/e.json",
+        ]
+    )
+    assert attest_verify.func is cli_encrypt_key._cmd_attest_verify
 
 
 def test_generate_wrapped_pkcs11_requires_a_module(
@@ -721,3 +782,129 @@ def test_rekey_sqlcipher_cli_rotates_real_store(
     enc = EventStore(db, key_file=new)
     assert enc.read_all()[0].payload == {"via": "cli-rekey"}
     enc.close()
+
+
+def test_cloud_hsm_local_cli_round_trip(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from synapse_channel.core.at_rest import generate_key_file
+    from synapse_channel.core.at_rest_cloud_hsm import cipher_from_wrapped_key_file_cloud_hsm
+
+    master = generate_key_file(tmp_path / "master.key")
+    dest = tmp_path / "cloud.wrapped.key"
+    args = cli.build_parser().parse_args(
+        [
+            "encrypt-key",
+            "generate-wrapped-cloud-hsm",
+            "--provider",
+            "local-aes-kw",
+            "--master-key-file",
+            str(master),
+            str(dest),
+        ]
+    )
+    assert cli_encrypt_key._cmd_generate_wrapped_cloud_hsm(args) == 0
+    assert "cloud-HSM-wrapped" in capsys.readouterr().out
+    cipher = cipher_from_wrapped_key_file_cloud_hsm(dest, master_key_file=master)
+    assert cipher.decrypt(cipher.encrypt(b"cli-cloud")) == b"cli-cloud"
+
+
+def test_cloud_hsm_cli_requires_master_key(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "encrypt-key",
+            "generate-wrapped-cloud-hsm",
+            "--provider",
+            "local-aes-kw",
+            str(tmp_path / "w.key"),
+        ]
+    )
+    assert cli_encrypt_key._cmd_generate_wrapped_cloud_hsm(args) == 2
+    assert "master-key-file is required" in capsys.readouterr().out
+
+
+def test_escrow_split_and_recover_cli(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from synapse_channel.core.at_rest import generate_key_file, load_key_file
+
+    key = generate_key_file(tmp_path / "store.key")
+    original = load_key_file(key)
+    shares_dir = tmp_path / "shares"
+    split_args = cli.build_parser().parse_args(
+        [
+            "encrypt-key",
+            "escrow-split",
+            "--key",
+            str(key),
+            "--threshold",
+            "2",
+            "--shares",
+            "3",
+            "--out-dir",
+            str(shares_dir),
+        ]
+    )
+    assert cli_encrypt_key._cmd_escrow_split(split_args) == 0
+    assert "wrote 3 escrow shares" in capsys.readouterr().out
+    out_key = tmp_path / "recovered.key"
+    recover_args = cli.build_parser().parse_args(
+        [
+            "encrypt-key",
+            "escrow-recover",
+            "--share",
+            str(shares_dir / "share-01.json"),
+            "--share",
+            str(shares_dir / "share-03.json"),
+            "--out",
+            str(out_key),
+        ]
+    )
+    assert cli_encrypt_key._cmd_escrow_recover(recover_args) == 0
+    assert load_key_file(out_key) == original
+
+
+def test_attest_cli_policy_create_and_verify(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import hashlib
+
+    pcr = hashlib.sha256(b"cli-pcr").hexdigest()
+    policy = tmp_path / "policy.json"
+    create_args = cli.build_parser().parse_args(
+        [
+            "encrypt-key",
+            "attest-policy-create",
+            "--policy-id",
+            "cli-seat",
+            "--pcr",
+            f"0={pcr}",
+            str(policy),
+        ]
+    )
+    assert cli_encrypt_key._cmd_attest_policy_create(create_args) == 0
+    evidence = tmp_path / "evidence.json"
+    evidence_args = cli.build_parser().parse_args(
+        [
+            "encrypt-key",
+            "attest-create",
+            "--policy",
+            str(policy),
+            str(evidence),
+        ]
+    )
+    assert cli_encrypt_key._cmd_attest_create(evidence_args) == 0
+    verify_args = cli.build_parser().parse_args(
+        [
+            "encrypt-key",
+            "attest-verify",
+            "--policy",
+            str(policy),
+            "--evidence",
+            str(evidence),
+        ]
+    )
+    assert cli_encrypt_key._cmd_attest_verify(verify_args) == 0
+    assert "attestation ok" in capsys.readouterr().out

@@ -14,6 +14,19 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Cloud HSM / cloud KMS KEK backend for at-rest wrapped keys
+  (`synapse encrypt-key generate-wrapped-cloud-hsm`): `local-aes-kw` master-key
+  file for offline use and `aws-kms` via optional `boto3`
+  (`synapse-channel[cloud-hsm]`). Same envelope format as passphrase / PKCS#11 /
+  TPM2 backends.
+- Threshold (Shamir GF(2^8)) key escrow and recovery:
+  `synapse encrypt-key escrow-split` / `escrow-recover` — split a raw 32-byte
+  data key into n shares with threshold k; recover writes a new owner-only key
+  file (never a bypass).
+- Hardware attestation gate for at-rest trust decisions:
+  `synapse encrypt-key attest-policy-create` / `attest-create` / `attest-verify`
+  (HMAC-SHA256 software path; `tpm2-quote` algorithm tag for TPM-oriented
+  policies). Fail-closed PCR + signature checks before operators trust a host.
 - `synapse sqlcipher rekey` / `synapse sqlcipher migrate` — top-level SQLCipher
   maintenance (``PRAGMA rekey`` page rotation and plaintext→encrypted copy);
   aliases the existing encrypt-key sqlcipher ops for operator discoverability.

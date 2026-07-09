@@ -209,6 +209,166 @@ def _cmd_generate_wrapped_tpm2(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_generate_wrapped_cloud_hsm(args: argparse.Namespace) -> int:
+    """Create a key file wrapped by a cloud HSM / cloud KMS provider.
+
+    ``local-aes-kw`` wraps under a local owner-only master key file (offline tests and
+    air-gapped drills). ``aws-kms`` uses optional ``boto3`` against a customer master key.
+    """
+    from synapse_channel.core.at_rest_cloud_hsm import (
+        PROVIDER_AWS_KMS,
+        PROVIDER_LOCAL_AES_KW,
+        AwsKmsCloudHsmProvider,
+        LocalAesKwCloudHsmProvider,
+        generate_wrapped_key_file_cloud_hsm,
+    )
+
+    provider_name = args.provider
+    try:
+        if provider_name == PROVIDER_LOCAL_AES_KW:
+            if not args.master_key_file:
+                print(
+                    "synapse encrypt-key generate-wrapped-cloud-hsm: "
+                    "--master-key-file is required for provider local-aes-kw"
+                )
+                return 2
+            provider = LocalAesKwCloudHsmProvider.from_key_file(args.master_key_file)
+        elif provider_name == PROVIDER_AWS_KMS:
+            if not args.kms_key_id:
+                print(
+                    "synapse encrypt-key generate-wrapped-cloud-hsm: "
+                    "--kms-key-id is required for provider aws-kms"
+                )
+                return 2
+            provider = AwsKmsCloudHsmProvider(args.kms_key_id, region_name=args.region)
+        else:
+            print(
+                f"synapse encrypt-key generate-wrapped-cloud-hsm: "
+                f"unsupported provider {provider_name!r}"
+            )
+            return 2
+        written = generate_wrapped_key_file_cloud_hsm(args.path, provider=provider)
+    except FileExistsError as exc:
+        print(str(exc))
+        return 1
+    except (ValueError, RuntimeError) as exc:
+        print(f"synapse encrypt-key generate-wrapped-cloud-hsm: {exc}")
+        return 2
+    print(f"wrote cloud-HSM-wrapped at-rest key (owner-only): {written}")
+    return 0
+
+
+def _cmd_escrow_split(args: argparse.Namespace) -> int:
+    """Split a raw at-rest key file into threshold (Shamir) escrow shares."""
+    from synapse_channel.core.at_rest_escrow import split_key_file
+
+    try:
+        written = split_key_file(
+            args.key,
+            threshold=args.threshold,
+            share_count=args.shares,
+            out_dir=args.out_dir,
+        )
+    except (ValueError, OSError) as exc:
+        print(f"synapse encrypt-key escrow-split: {exc}")
+        return 2
+    print(f"wrote {len(written)} escrow shares under {args.out_dir}")
+    for path in written:
+        print(f"  {path}")
+    return 0
+
+
+def _cmd_escrow_recover(args: argparse.Namespace) -> int:
+    """Recover a raw at-rest key file from threshold escrow shares."""
+    from synapse_channel.core.at_rest_escrow import recover_key_file
+
+    try:
+        written = recover_key_file(args.share, out_path=args.out)
+    except FileExistsError as exc:
+        print(str(exc))
+        return 1
+    except (ValueError, OSError) as exc:
+        print(f"synapse encrypt-key escrow-recover: {exc}")
+        return 2
+    print(f"recovered at-rest key (owner-only, 32 bytes): {written}")
+    return 0
+
+
+def _cmd_attest_policy_create(args: argparse.Namespace) -> int:
+    """Create an HMAC attestation policy with optional expected PCR digests."""
+    from synapse_channel.core.at_rest_attestation import create_hmac_policy, write_policy_file
+
+    digests: dict[int, bytes] = {}
+    for item in args.pcr or []:
+        try:
+            index_s, hex_digest = item.split("=", 1)
+            digests[int(index_s)] = bytes.fromhex(hex_digest)
+        except ValueError as exc:
+            print(f"synapse encrypt-key attest-policy-create: invalid --pcr {item!r}: {exc}")
+            return 2
+    try:
+        policy = create_hmac_policy(policy_id=args.policy_id, pcr_digests=digests)
+        written = write_policy_file(args.path, policy)
+    except FileExistsError as exc:
+        print(str(exc))
+        return 1
+    except ValueError as exc:
+        print(f"synapse encrypt-key attest-policy-create: {exc}")
+        return 2
+    print(f"wrote attestation policy (owner-only): {written}")
+    return 0
+
+
+def _cmd_attest_create(args: argparse.Namespace) -> int:
+    """Create HMAC attestation evidence for a policy (fresh or supplied nonce)."""
+    from synapse_channel.core.at_rest_attestation import (
+        create_hmac_evidence,
+        fresh_nonce,
+        load_policy_file,
+        write_evidence_file,
+    )
+
+    try:
+        policy = load_policy_file(args.policy)
+        nonce = bytes.fromhex(args.nonce) if args.nonce else fresh_nonce()
+        digests: dict[int, bytes] | None = None
+        if args.pcr:
+            digests = {}
+            for item in args.pcr:
+                index_s, hex_digest = item.split("=", 1)
+                digests[int(index_s)] = bytes.fromhex(hex_digest)
+        evidence = create_hmac_evidence(policy, nonce=nonce, pcr_digests=digests)
+        written = write_evidence_file(args.path, evidence)
+    except FileExistsError as exc:
+        print(str(exc))
+        return 1
+    except (ValueError, OSError) as exc:
+        print(f"synapse encrypt-key attest-create: {exc}")
+        return 2
+    print(f"wrote attestation evidence (owner-only): {written}")
+    print(f"nonce (hex): {evidence.nonce.hex()}")
+    return 0
+
+
+def _cmd_attest_verify(args: argparse.Namespace) -> int:
+    """Verify attestation evidence against a policy (fail closed)."""
+    from synapse_channel.core.at_rest_attestation import (
+        enforce_attestation_gate,
+        load_evidence_file,
+        load_policy_file,
+    )
+
+    try:
+        policy = load_policy_file(args.policy)
+        evidence = load_evidence_file(args.evidence)
+        enforce_attestation_gate(policy, evidence)
+    except (ValueError, OSError) as exc:
+        print(f"synapse encrypt-key attest-verify: {exc}")
+        return 2
+    print(f"attestation ok: policy={policy.policy_id} algorithm={policy.algorithm}")
+    return 0
+
+
 def _cmd_check(args: argparse.Namespace) -> int:
     """Verify a key file is owner-only, regular, and full-length."""
     ok, reason = check_key_file(args.path)
@@ -492,6 +652,123 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         ),
     )
     tpm2.set_defaults(func=_cmd_generate_wrapped_tpm2)
+
+    cloud_hsm = nested.add_parser(
+        "generate-wrapped-cloud-hsm",
+        help="Write a key file wrapped by a cloud HSM / cloud KMS key-encryption key.",
+    )
+    cloud_hsm.add_argument(
+        "path",
+        help="Destination wrapped-key-file path (must not already exist).",
+    )
+    cloud_hsm.add_argument(
+        "--provider",
+        required=True,
+        choices=("local-aes-kw", "aws-kms"),
+        help="Cloud HSM provider: local-aes-kw (offline master key) or aws-kms (optional boto3).",
+    )
+    cloud_hsm.add_argument(
+        "--master-key-file",
+        default=None,
+        help="Owner-only 32-byte master key file (required for local-aes-kw).",
+    )
+    cloud_hsm.add_argument(
+        "--kms-key-id",
+        default=None,
+        help="AWS KMS key id / ARN / alias (required for aws-kms).",
+    )
+    cloud_hsm.add_argument(
+        "--region",
+        default=None,
+        help="AWS region for KMS (optional; falls back to the usual AWS config chain).",
+    )
+    cloud_hsm.set_defaults(func=_cmd_generate_wrapped_cloud_hsm)
+
+    escrow_split = nested.add_parser(
+        "escrow-split",
+        help="Split a raw at-rest key into threshold (Shamir) escrow shares for recovery.",
+    )
+    escrow_split.add_argument("--key", required=True, help="Owner-only raw 32-byte key file.")
+    escrow_split.add_argument(
+        "--threshold",
+        type=int,
+        required=True,
+        help="Minimum number of shares required to recover the key (at least 2).",
+    )
+    escrow_split.add_argument(
+        "--shares",
+        type=int,
+        required=True,
+        help="Total number of shares to issue (>= threshold, <= 255).",
+    )
+    escrow_split.add_argument(
+        "--out-dir",
+        required=True,
+        help="Directory for share-NN.json files (created if needed).",
+    )
+    escrow_split.set_defaults(func=_cmd_escrow_split)
+
+    escrow_recover = nested.add_parser(
+        "escrow-recover",
+        help="Recover a raw at-rest key from threshold escrow shares.",
+    )
+    escrow_recover.add_argument(
+        "--share",
+        action="append",
+        required=True,
+        help="Path to an escrow share file (repeat; supply at least threshold shares).",
+    )
+    escrow_recover.add_argument(
+        "--out",
+        required=True,
+        help="Destination raw key file (must not already exist).",
+    )
+    escrow_recover.set_defaults(func=_cmd_escrow_recover)
+
+    attest_policy = nested.add_parser(
+        "attest-policy-create",
+        help="Create an HMAC hardware-attestation policy with optional expected PCR digests.",
+    )
+    attest_policy.add_argument("path", help="Destination policy file (must not already exist).")
+    attest_policy.add_argument(
+        "--policy-id",
+        required=True,
+        help="Operator label for this attestation policy.",
+    )
+    attest_policy.add_argument(
+        "--pcr",
+        action="append",
+        default=[],
+        help="Expected PCR as INDEX=HEX_SHA256 (repeatable).",
+    )
+    attest_policy.set_defaults(func=_cmd_attest_policy_create)
+
+    attest_create = nested.add_parser(
+        "attest-create",
+        help="Create HMAC attestation evidence for a policy (binds a nonce and PCR digests).",
+    )
+    attest_create.add_argument("path", help="Destination evidence file (must not already exist).")
+    attest_create.add_argument("--policy", required=True, help="Attestation policy file.")
+    attest_create.add_argument(
+        "--nonce",
+        default=None,
+        help="Optional challenge nonce as hex (a fresh nonce is drawn when omitted).",
+    )
+    attest_create.add_argument(
+        "--pcr",
+        action="append",
+        default=[],
+        help="Measured PCR as INDEX=HEX_SHA256 (defaults to the policy expectations).",
+    )
+    attest_create.set_defaults(func=_cmd_attest_create)
+
+    attest_verify = nested.add_parser(
+        "attest-verify",
+        help="Verify attestation evidence against a policy (fail closed).",
+    )
+    attest_verify.add_argument("--policy", required=True, help="Attestation policy file.")
+    attest_verify.add_argument("--evidence", required=True, help="Attestation evidence file.")
+    attest_verify.set_defaults(func=_cmd_attest_verify)
 
     check = nested.add_parser("check", help="Verify a key file's ownership, mode, and length.")
     check.add_argument("path", help="Key-file path to check.")

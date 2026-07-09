@@ -88,6 +88,9 @@ pkcs11 = [
 tpm2 = [
   "tpm2-pytss>=2.3",
 ]
+cloud-hsm = [
+  "boto3>=1.34",
+]
 all = [
   "wasmtime>=14.0.0",
   "opentelemetry-sdk>=1.43.0",
@@ -97,6 +100,7 @@ all = [
   "sqlcipher3-binary==0.6.0",
   "python-pkcs11>=0.9",
   "tpm2-pytss>=2.3",
+  "boto3>=1.34",
 ]
 docs = [
   "mkdocs-material>=9.5",
@@ -174,6 +178,8 @@ module = [
   "yaml",
   "tpm2_pytss",
   "tpm2_pytss.*",
+  "boto3",
+  "boto3.*",
 ]
 ignore_missing_imports = true
 
