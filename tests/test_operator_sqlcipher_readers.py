@@ -66,9 +66,7 @@ def test_approval_status_reads_encrypted_store(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     db, key = _encrypted_operator_store(tmp_path)
-    code = cli.main(
-        ["approval", "status", str(db), "--db-key-file", str(key), "--json"]
-    )
+    code = cli.main(["approval", "status", str(db), "--db-key-file", str(key), "--json"])
     assert code == 0
     out = capsys.readouterr().out
     assert "gate-op" in out

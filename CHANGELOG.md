@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.23] - 2026-07-09
+
 ### Added
 - Cloud HSM / cloud KMS KEK backend for at-rest wrapped keys
   (`synapse encrypt-key generate-wrapped-cloud-hsm`): `local-aes-kw` master-key

@@ -85,12 +85,13 @@ def test_cmd_a2a_conformance_prints_markdown(capsys: pytest.CaptureFixture[str])
 
 
 def test_cmd_a2a_conformance_prints_json(capsys: pytest.CaptureFixture[str]) -> None:
-    args = cli.build_parser().parse_args(["a2a-conformance", "--status", "external", "--json"])
+    args = cli.build_parser().parse_args(["a2a-conformance", "--status", "partial", "--json"])
 
     assert _cmd_a2a_conformance(args) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["spec_version"] == SPEC_VERSION
-    assert {row["status"] for row in payload["rows"]} == {"external"}
+    assert {row["status"] for row in payload["rows"]} == {"partial"}
+    assert "Independent interoperability" in {row["item"] for row in payload["rows"]}
 
 
 def test_a2a_conformance_status_filter_accepts_none_and_rejects_unknown() -> None:

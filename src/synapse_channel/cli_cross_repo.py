@@ -178,9 +178,7 @@ def watch_cross_repo(
     previous_facts: frozenset[str] | None = None
     while True:
         try:
-            graph = run_cross_repo_graph(
-                root, db_path=db, focus=focus, key_file=key_file
-            )
+            graph = run_cross_repo_graph(root, db_path=db, focus=focus, key_file=key_file)
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 2
@@ -245,9 +243,7 @@ def _cmd_cross_repo(args: argparse.Namespace) -> int:
         except KeyboardInterrupt:
             return 0
     try:
-        graph = run_cross_repo_graph(
-            args.root, db_path=args.db, focus=args.repo, key_file=key_file
-        )
+        graph = run_cross_repo_graph(args.root, db_path=args.db, focus=args.repo, key_file=key_file)
         advice = run_resolution_advice(args.root) if args.suggest_resolution else ()
     except ValueError as exc:
         print(str(exc), file=sys.stderr)

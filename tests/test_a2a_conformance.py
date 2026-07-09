@@ -67,7 +67,6 @@ def test_matrix_keeps_external_validation_gates_visible() -> None:
     assert "Independent interoperability" in partial_items
 
 
-
 def test_matrix_records_real_webhook_receiver_progress_as_partial() -> None:
     partial_items = {row.item for row in conformance_rows(status="partial")}
 

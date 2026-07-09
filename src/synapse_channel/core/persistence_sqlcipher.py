@@ -292,9 +292,7 @@ def rekey_sqlcipher_store(
         pass
     else:
         leftover.close()
-        raise SqlCipherKeyError(
-            f"SQLCipher rekey for {target} left the old key usable — refusing"
-        )
+        raise SqlCipherKeyError(f"SQLCipher rekey for {target} left the old key usable — refusing")
     _restrict_owner(target)
     return {"path": str(target), "status": "rekeyed"}
 

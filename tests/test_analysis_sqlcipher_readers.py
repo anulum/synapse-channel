@@ -128,9 +128,7 @@ def test_postmortem_reads_encrypted_store(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     db, key = _encrypted_task_store(tmp_path)
-    code = cli.main(
-        ["postmortem", str(db), "--db-key-file", str(key), "T-ENC", "--json"]
-    )
+    code = cli.main(["postmortem", str(db), "--db-key-file", str(key), "T-ENC", "--json"])
     assert code == 0
     assert "T-ENC" in capsys.readouterr().out
 
@@ -161,9 +159,7 @@ def test_causality_health_reads_encrypted_store(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     db, key = _encrypted_task_store(tmp_path)
-    code = cli.main(
-        ["causality", "health", str(db), "--db-key-file", str(key), "--json"]
-    )
+    code = cli.main(["causality", "health", str(db), "--db-key-file", str(key), "--json"])
     # Anomalies (orphan claim) exit 1; open of encrypted store still succeeded.
     assert code in (0, 1)
     out = capsys.readouterr().out
@@ -175,9 +171,7 @@ def test_accounting_report_reads_encrypted_store(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     db, key = _encrypted_task_store(tmp_path)
-    code = cli.main(
-        ["accounting", "report", str(db), "--db-key-file", str(key), "--json"]
-    )
+    code = cli.main(["accounting", "report", str(db), "--db-key-file", str(key), "--json"])
     assert code == 0
     assert capsys.readouterr().out.strip()
 
@@ -207,9 +201,7 @@ def test_reproduce_reads_encrypted_store(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     db, key = _encrypted_task_store(tmp_path)
-    code = cli.main(
-        ["reproduce", str(db), "--db-key-file", str(key), "T-ENC", "--json"]
-    )
+    code = cli.main(["reproduce", str(db), "--db-key-file", str(key), "T-ENC", "--json"])
     assert code == 0
     assert "T-ENC" in capsys.readouterr().out
 

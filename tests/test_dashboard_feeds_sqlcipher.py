@@ -33,8 +33,13 @@ def test_events_tail_reads_encrypted_store_via_key_context(tmp_path: Path) -> No
     with event_store_key(key):
         doc = build_events_tail(db, since=0, limit=10)
     events = doc["events"]
+    assert isinstance(events, list)
     assert len(events) == 1
-    assert events[0]["payload"]["text"] == "feed-enc"
+    event = events[0]
+    assert isinstance(event, dict)
+    payload = event["payload"]
+    assert isinstance(payload, dict)
+    assert payload["text"] == "feed-enc"
 
 
 def test_events_tail_without_key_fails_on_encrypted_store(tmp_path: Path) -> None:
