@@ -31,7 +31,11 @@ from synapse_channel.core.trust_graph import (
 def _cmd_trust_graph(args: argparse.Namespace) -> int:
     """Build, filter, and print one trust-graph query."""
     try:
-        graph = run_trust_graph(args.db, as_of=args.as_of)
+        graph = run_trust_graph(
+            args.db,
+            as_of=args.as_of,
+            key_file=getattr(args, "db_key_file", None),
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -55,6 +59,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         ),
     )
     parser.add_argument("db", help="Path to the hub event store, e.g. ~/synapse/hub.db.")
+    parser.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted event store.",
+    )
     parser.add_argument(
         "--agent",
         default=None,

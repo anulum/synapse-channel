@@ -394,8 +394,20 @@ def run_cross_repo_graph(
     *,
     db_path: str | Path | None = None,
     focus: str | None = None,
+    key_file: str | Path | None = None,
 ) -> CrossRepoGraph:
     """Scan ``root``, build the graph, and join claims when a log is given.
+
+    Parameters
+    ----------
+    root : str or pathlib.Path
+        Directory of repository checkouts to scan.
+    db_path : str or pathlib.Path or None, optional
+        Hub event store used to join live claims.
+    focus : str or None, optional
+        Focus repository for claim-relation scoring.
+    key_file : str or pathlib.Path or None, optional
+        Owner-only SQLCipher key for an encrypted event store.
 
     Raises
     ------
@@ -413,7 +425,7 @@ def run_cross_repo_graph(
     if not store_path.exists():
         msg = f"missing event store: {store_path}"
         raise ValueError(msg)
-    store = EventStore(store_path)
+    store = EventStore(store_path, key_file=key_file)
     try:
         events = list(store.read_all())
     finally:

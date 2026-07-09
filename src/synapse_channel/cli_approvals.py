@@ -122,7 +122,9 @@ def _cmd_decide(args: argparse.Namespace) -> int:
 def _cmd_status(args: argparse.Namespace) -> int:
     """Print replayed approval state for one or all subjects."""
     try:
-        report = run_approval_report(args.db)
+        report = run_approval_report(
+            args.db, key_file=getattr(args, "db_key_file", None)
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -179,6 +181,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Replay approval state from a hub SQLite event store, e.g. ~/synapse/hub.db.",
     )
     status.add_argument("db", help="Path to the hub event store.")
+    status.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted event store.",
+    )
     status.add_argument("--subject", default="", help="Show only this subject.")
     status.add_argument("--pending", action="store_true", help="Show only awaiting subjects.")
     status.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")

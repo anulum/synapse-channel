@@ -61,12 +61,17 @@ Runner = Callable[..., RunReceipt]
 Attestor = Callable[[Path, RunReceipt], None]
 
 
-def _attest_run(db_path: Path, receipt: RunReceipt) -> None:
+def _attest_run(
+    db_path: Path,
+    receipt: RunReceipt,
+    *,
+    key_file: str | Path | None = None,
+) -> None:
     """Append a run receipt to a durable event store as a sandbox attestation."""
     from synapse_channel.core.journal import record_sandbox_run
     from synapse_channel.core.persistence import EventStore
 
-    store = EventStore(db_path)
+    store = EventStore(db_path, key_file=key_file)
     try:
         record_sandbox_run(store, dict(receipt))
     finally:
@@ -283,8 +288,13 @@ def _cmd_run(
         return 2
     if args.attest is not None:
         try:
-            attestor(Path(args.attest).expanduser(), receipt)
-        except (OSError, sqlite3.Error) as exc:
+            db_path = Path(args.attest).expanduser()
+            key_file = getattr(args, "db_key_file", None)
+            if attestor is _attest_run:
+                _attest_run(db_path, receipt, key_file=key_file)
+            else:
+                attestor(db_path, receipt)
+        except (OSError, sqlite3.Error, ValueError) as exc:
             print(f"ran the tool but could not attest it: {exc}", file=sys.stderr)
             return 2
         print(f"attested to {args.attest}")
@@ -369,6 +379,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         metavar="DB",
         help="Append the run receipt to this durable event store as an audit "
         "attestation (query it later with `synapse event-query --kind sandbox_run`).",
+    )
+    runner.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key when --attest targets an encrypted event store.",
     )
     runner.add_argument("--json", action="store_true", help="Emit the run receipt as JSON.")
     runner.set_defaults(func=_cmd_run)

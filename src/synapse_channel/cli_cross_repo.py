@@ -128,6 +128,7 @@ def watch_cross_repo(
     notify_cmd: str | None = None,
     out: TextIO | None = None,
     sleeper: Callable[[float], None] | None = None,
+    key_file: str | None = None,
 ) -> int:
     """Rescan and reprint the cross-repository report on a fixed cadence.
 
@@ -177,7 +178,9 @@ def watch_cross_repo(
     previous_facts: frozenset[str] | None = None
     while True:
         try:
-            graph = run_cross_repo_graph(root, db_path=db, focus=focus)
+            graph = run_cross_repo_graph(
+                root, db_path=db, focus=focus, key_file=key_file
+            )
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 2
@@ -220,6 +223,7 @@ def _cmd_cross_repo(args: argparse.Namespace) -> int:
     if args.notify_cmd is not None and not args.watch:
         print("--notify-cmd fires on watch transitions; it requires --watch", file=sys.stderr)
         return 2
+    key_file = getattr(args, "db_key_file", None)
     if args.watch:
         if args.dot:
             print("--watch does not combine with --dot", file=sys.stderr)
@@ -236,11 +240,14 @@ def _cmd_cross_repo(args: argparse.Namespace) -> int:
                 interval=args.interval,
                 count=args.count,
                 notify_cmd=args.notify_cmd,
+                key_file=key_file,
             )
         except KeyboardInterrupt:
             return 0
     try:
-        graph = run_cross_repo_graph(args.root, db_path=args.db, focus=args.repo)
+        graph = run_cross_repo_graph(
+            args.root, db_path=args.db, focus=args.repo, key_file=key_file
+        )
         advice = run_resolution_advice(args.root) if args.suggest_resolution else ()
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -277,6 +284,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--db",
         default=None,
         help="Hub event store to join live claims from, e.g. ~/synapse/hub.db.",
+    )
+    parser.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted hub event store (--db).",
     )
     parser.add_argument(
         "--repo",

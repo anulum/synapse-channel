@@ -14,6 +14,9 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- SQLCipher `--db-key-file` on multi-seat operator store readers: `approval
+  status`, `trust-graph`, `ttl-advice`, `cross-repo` (with `--db`), and
+  `sandbox run --attest` (core `run_*` / `_attest_run` accept `key_file`).
 - SQLCipher `--db-key-file` on remaining analysis CLIs: `causality` (including
   otel/health/contention; federated peers share the same key file when set),
   `accounting report`, `memory-recall`, `debug`, and `reproduce` (core

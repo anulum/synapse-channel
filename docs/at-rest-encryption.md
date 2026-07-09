@@ -89,6 +89,12 @@ synapse accounting report ~/synapse/hub.db --db-key-file ~/synapse/hub.key
 synapse memory-recall ~/synapse/hub.db --db-key-file ~/synapse/hub.key 'probe'
 synapse debug ~/synapse/hub.db --db-key-file ~/synapse/hub.key --fork-at 1
 synapse reproduce ~/synapse/hub.db --db-key-file ~/synapse/hub.key T
+synapse approval status ~/synapse/hub.db --db-key-file ~/synapse/hub.key
+synapse trust-graph ~/synapse/hub.db --db-key-file ~/synapse/hub.key
+synapse ttl-advice ~/synapse/hub.db --db-key-file ~/synapse/hub.key
+synapse cross-repo ~/repos --db ~/synapse/hub.db --db-key-file ~/synapse/hub.key
+synapse sandbox run tool.wasm --manifest m.json --approve \
+  --attest ~/synapse/hub.db --db-key-file ~/synapse/hub.key
 synapse dashboard --feeds-db ~/synapse/hub.db --feeds-db-key-file ~/synapse/hub.key
 ```
 

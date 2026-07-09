@@ -38,6 +38,7 @@ def _cmd_ttl_advice(args: argparse.Namespace) -> int:
             min_ttl_seconds=args.min_ttl,
             max_ttl_seconds=args.max_ttl,
             safety_multiplier=args.safety_multiplier,
+            key_file=getattr(args, "db_key_file", None),
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -56,6 +57,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Build read-only lease TTL advice from a hub SQLite event store.",
     )
     parser.add_argument("db", help="Path to the hub event store, e.g. ~/synapse/hub.db.")
+    parser.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted event store.",
+    )
     parser.add_argument(
         "--as-of",
         type=float,

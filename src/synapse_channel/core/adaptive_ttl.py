@@ -104,6 +104,7 @@ def run_ttl_advice(
     min_ttl_seconds: float = DEFAULT_MIN_TTL_SECONDS,
     max_ttl_seconds: float = DEFAULT_MAX_TTL_SECONDS,
     safety_multiplier: float = DEFAULT_SAFETY_MULTIPLIER,
+    key_file: str | Path | None = None,
 ) -> LeaseTtlAdvice:
     """Build lease TTL advice from an existing SQLite event store.
 
@@ -126,6 +127,8 @@ def run_ttl_advice(
         Upper clamp for advice.
     safety_multiplier : float, optional
         Multiplier applied to observed p90 durations.
+    key_file : str or pathlib.Path or None, optional
+        Owner-only SQLCipher key for an encrypted event store.
 
     Returns
     -------
@@ -141,7 +144,7 @@ def run_ttl_advice(
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path)
+    store = EventStore(path, key_file=key_file)
     try:
         events = tuple(store.read_all())
     finally:

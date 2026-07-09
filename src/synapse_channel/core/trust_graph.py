@@ -220,8 +220,22 @@ def _nodes_for(edges: list[TrustGraphEdge]) -> tuple[TrustGraphNode, ...]:
     return tuple(sorted(nodes.values(), key=lambda node: (node.kind, node.label)))
 
 
-def run_trust_graph(db_path: str | Path, *, as_of: float | None = None) -> TrustGraph:
+def run_trust_graph(
+    db_path: str | Path,
+    *,
+    as_of: float | None = None,
+    key_file: str | Path | None = None,
+) -> TrustGraph:
     """Build the evidence graph from an existing SQLite event store.
+
+    Parameters
+    ----------
+    db_path : str or pathlib.Path
+        Path to a hub event-store database.
+    as_of : float or None, optional
+        Timestamp for stale lease checks.
+    key_file : str or pathlib.Path or None, optional
+        Owner-only SQLCipher key for an encrypted event store.
 
     Raises
     ------
@@ -232,7 +246,7 @@ def run_trust_graph(db_path: str | Path, *, as_of: float | None = None) -> Trust
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    store = EventStore(path)
+    store = EventStore(path, key_file=key_file)
     try:
         events = list(store.read_all())
     finally:
