@@ -223,3 +223,86 @@ def test_an_unreadable_provider_pidfile_never_suppresses_an_arm(
     (runtime / "PROJ_agent-x.pid").write_text("not-a-pid")
 
     assert has_active_tmux_provider(EXPLICIT) is False
+
+
+async def _run_cmd_arm_to_wake(
+    args: Any, uri: str, observer: AgentHandle, target: str, payload: str
+) -> int:
+    """Drive the real ``_cmd_arm`` against a live hub until one directed wake.
+
+    ``_cmd_arm`` is the synchronous CLI entry point: it announces its binding
+    and then runs its own event loop (``asyncio.run``) to hold the waiter. It is
+    launched in a worker thread so that loop is independent of the test's loop,
+    connects over the real socket, and returns once a message to ``target`` wakes
+    it — no ``arm_runner``/``async_runner`` is replaced with a stand-in.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed ``arm`` arguments carrying the live-hub ``--uri`` and ``--max-wakes 1``.
+    uri : str
+        The running hub's URI, used to send the waking message.
+    observer : AgentHandle
+        A connected agent used to await the waiter's presence before sending.
+    target : str
+        The identity to send the waking directed message to.
+    payload : str
+        The message body, asserted on by the caller to confirm the real wake.
+
+    Returns
+    -------
+    int
+        The exit code returned by ``_cmd_arm`` (``0`` on a clean single wake).
+    """
+    loop = asyncio.get_running_loop()
+    arm_future = loop.run_in_executor(None, cli_arm._cmd_arm, args)
+    try:
+        await _wait_for_presence(observer, f"{EXPLICIT}-rx")
+        await _send_chat(uri, "peer", target, payload)
+        return await asyncio.wait_for(arm_future, timeout=5.0)
+    finally:
+        await close_agents(observer)
+
+
+async def test_an_arm_states_its_binding_out_loud_against_a_live_hub(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # F5: the real _cmd_arm dispatch — not a stand-in — names EXACTLY whose
+    # messages it wakes on before it holds the socket, and because the session
+    # env names ANOTHER seat (the borrowed-shell P0 signature) it also says so.
+    # Driven end to end: the announcement rides the same path that then wakes.
+    _ambient_env(monkeypatch, tmp_path)
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        args = _parse_arm(["--uri", uri, "--name", EXPLICIT, "--directed-only", "--max-wakes", "1"])
+        code = await _run_cmd_arm_to_wake(args, uri, observer, EXPLICIT, "wake the explicit seat")
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert f"waiting for messages to {EXPLICIT}" in out
+    assert f"SYN_IDENTITY={AMBIENT} differs from the armed identity {EXPLICIT}" in out
+
+
+async def test_no_mismatch_note_when_the_session_env_matches_the_binding(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The note is reserved for a genuine mismatch: when the env names the SAME
+    # identity the waiter binds (no borrowed shell), the real dispatch announces
+    # its binding and stays silent about the environment. Real hub, real wake.
+    monkeypatch.setenv("SYN_IDENTITY", EXPLICIT)
+    monkeypatch.setenv("SYN_PROJECT", "PROJ")
+    monkeypatch.delenv("SYN_TMUX_PROVIDER", raising=False)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        args = _parse_arm(["--uri", uri, "--name", EXPLICIT, "--directed-only", "--max-wakes", "1"])
+        code = await _run_cmd_arm_to_wake(args, uri, observer, EXPLICIT, "wake the matching seat")
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert f"waiting for messages to {EXPLICIT}" in out
+    assert "differs from the armed identity" not in out

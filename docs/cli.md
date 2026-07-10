@@ -573,6 +573,13 @@ synapse wait --name api-dev-rx --for api-dev   # blocks; prints + exits on a mes
 synapse wait --for api-dev --timeout 60        # give up after 60s (exit 2) instead of waiting forever
 ```
 
+`synapse arm` states its binding out loud before it holds the socket: the first line
+names exactly whose messages it wakes on (`waiting for messages to <identity>`), and
+when the shell environment carries a different `SYN_IDENTITY` it says so on a second
+line — an explicit `--name`/`--for` always wins, but that mismatch is the classic
+sign of arming from a borrowed shell, so it surfaces immediately rather than after a
+night of silently missed messages.
+
 A waiter is deaf while it is disconnected — the gap between a dropped connection (or
 a re-arm as a fresh process) and the next connect. A directed message that lands in
 that gap is durable, but the waiter is not woken by it and it waits unread until an

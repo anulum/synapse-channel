@@ -181,7 +181,39 @@ def _cmd_arm(
     arm_runner: ArmRunner = _arm,
     async_runner: AsyncRunner = asyncio.run,
 ) -> int:
-    """Dispatch the persistent ``arm`` subcommand."""
+    """Announce the resolved binding, then keep a directed waiter armed.
+
+    The identity to wake on is resolved explicit-first: ``--for`` (falling back
+    to ``--name``) always beats the ambient ``SYN_IDENTITY`` — the borrowed-shell
+    value behind the 2026-07-10 directed-delivery P0 — and that binding is stated
+    on the first printed line so a wrong one shows immediately instead of after a
+    night of silently missed messages; a session environment naming a different
+    identity is flagged explicitly. Two cases deliberately yield instead of
+    arming: a legacy broad project-sidecar wait (which would wake on every
+    project message) and an identity already served by a live tmux provider
+    (whose pane bridge is the real waker). The surviving case delegates to
+    ``arm_runner`` to hold the waiter and re-arm it after each wake.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed ``arm`` arguments from :func:`add_parser` — ``name``/``for_name``,
+        ``uri``, ``directed_only``, ``role``, mailbox and reconnect options,
+        ``token`` and ``owner_pid``.
+    arm_runner : ArmRunner, optional
+        Coroutine factory that holds and re-arms the directed waiter; defaults to
+        :func:`_arm`.
+    async_runner : AsyncRunner, optional
+        Callable that drives the ``arm_runner`` coroutine to completion; defaults
+        to :func:`asyncio.run`.
+
+    Returns
+    -------
+    int
+        A process exit code: ``0`` for every clean stop — keyboard interrupt,
+        owner-pid exit, a newer waiter taking the name, or a deliberate
+        legacy/provider yield.
+    """
     for_name = args.for_name or args.name
     connect_name = args.name if args.name != for_name else waiter_name(args.name)
     legacy_terminal = _legacy_project_scoped_terminal_sidecar(connect_name, for_name)
@@ -210,6 +242,20 @@ def _cmd_arm(
         return 0
 
     roles = tuple(r.strip() for r in (getattr(args, "role", None) or ()) if r.strip())
+    # State the binding OUT LOUD before holding a socket for hours: an operator
+    # (or an agent harness) reading the first line knows exactly whose messages
+    # this waiter wakes on — a wrong binding is visible immediately, not after
+    # a night of silently missed messages. When the session env names a
+    # DIFFERENT identity, say so: ambient env never overrides an explicit
+    # name, but the mismatch is the classic sign of arming from a borrowed
+    # shell (2026-07-10 P0), so it deserves one clear line.
+    print(f"[{connect_name}] waiting for messages to {for_name}")
+    ambient_identity = os.environ.get("SYN_IDENTITY", "").strip()
+    if ambient_identity and ambient_identity != for_name:
+        print(
+            f"[{connect_name}] note: session SYN_IDENTITY={ambient_identity} differs from "
+            f"the armed identity {for_name}; this waiter wakes ONLY for {for_name}."
+        )
     # In mailbox mode the cursor is keyed by the identity the waiter waits on (for_name),
     # not the -rx connection name, so every re-arm of the same identity shares one cursor.
     mailbox = bool(getattr(args, "mailbox", False))

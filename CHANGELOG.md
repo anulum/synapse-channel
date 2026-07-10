@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- The persistent waiter states its binding out loud: the first line of
+  every arm names exactly whose messages it wakes on
+  (``waiting for messages to <identity>``), and when the session
+  environment carries a DIFFERENT ``SYN_IDENTITY`` a second line says so
+  explicitly — ambient env never overrides an explicit name, and the
+  mismatch (the classic sign of arming from a borrowed shell) is now
+  visible immediately instead of after a night of missed messages.
+
 ### Fixed
 
 - Mailbox surfacing: a directed message is now either surfaced to the
