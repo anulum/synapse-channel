@@ -982,14 +982,16 @@ class SynapseHub:
         """
         return self._ingress.exposure_problems(host)
 
-    def _guard_exposure(self, host: str) -> None:
+    def _guard_exposure(self, host: str, *, tls_active: bool = False) -> None:
         """Refuse — or, when overridden, warn — before binding an exposed host.
 
         Thin wrapper over
         :meth:`~synapse_channel.core.hub_ingress.HubIngress.guard_exposure`, kept
         because :meth:`serve` and tests call ``hub._guard_exposure`` directly.
+        ``tls_active`` states whether the bind terminates TLS; without it a
+        token off loopback logs the plaintext-transport advisory.
         """
-        self._ingress.guard_exposure(host)
+        self._ingress.guard_exposure(host, tls_active=tls_active)
 
     async def _resolve_sender(
         self,
@@ -1308,7 +1310,7 @@ class SynapseHub:
             Server-side TLS context. When supplied, the hub serves native
             ``wss://`` instead of plain ``ws://``.
         """
-        self._guard_exposure(host)
+        self._guard_exposure(host, tls_active=ssl_context is not None)
         stop = asyncio.Event()
         self._install_signal_handlers(asyncio.get_running_loop(), stop)
         async with (

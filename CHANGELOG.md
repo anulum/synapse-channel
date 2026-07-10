@@ -65,6 +65,16 @@ All notable changes to this project are documented here.
   the explicit `--project-wide` flag; `--name PROJ/name` selects another exact
   address, and existing `--as` aliases retain independent cursors.
 
+### Security
+
+- The exposure guard now logs a startup advisory when a token authenticates a
+  non-loopback bind over plaintext `ws://` — the token and every coordination
+  frame are readable on the network path. Native WSS (`--tls-certfile`/
+  `--tls-keyfile`) or a `wss://` proxy silences it, and `--paranoid` continues
+  to require native WSS outright. The advisory never blocks the documented
+  team-LAN posture (transport encryption *recommended* there), so existing
+  deployments keep starting — loudly instead of silently.
+
 ## [0.99.2] - 2026-07-10
 
 ### Added

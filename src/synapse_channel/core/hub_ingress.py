@@ -172,14 +172,17 @@ class HubIngress:
             metrics_query_token_ok=self._metrics_query_token_ok,
         )
 
-    def guard_exposure(self, host: str) -> None:
+    def guard_exposure(self, host: str, *, tls_active: bool = False) -> None:
         """Refuse — or, when overridden, warn — before binding an exposed host.
 
         Off loopback without the matching guard the hub would be reachable
         unauthenticated. By default this raises
         :class:`~synapse_channel.core.hub_exposure.InsecureBindError` so the bus is
         never accidentally exposed; with ``insecure_off_loopback`` set the problems
-        are logged as warnings and the bind proceeds.
+        are logged as warnings and the bind proceeds. A token presented over
+        plaintext ``ws://`` off loopback additionally logs an advisory warning
+        (never a refusal — the documented team-LAN posture keeps starting);
+        pass ``tls_active=True`` when the bind terminates TLS.
         """
         guard_exposure(
             host,
@@ -188,6 +191,7 @@ class HubIngress:
             metrics_token=self._metrics_token,
             metrics_query_token_ok=self._metrics_query_token_ok,
             insecure_off_loopback=self._insecure_off_loopback,
+            tls_active=tls_active,
             logger=logger,
         )
 

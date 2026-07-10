@@ -38,6 +38,11 @@ Security here is proportionate to exposure, not one-size-fits-all. Pick the
 profile that matches where the hub is reachable from, and apply its controls; a
 control is *required* where the table says so, and the hub refuses to start when
 a required exposure guard is missing (override only with `--insecure-off-loopback`).
+Where the table says *recommended*, the hub still starts but warns: a token
+presented off loopback over plaintext `ws://` logs a startup advisory (the
+token and every frame are readable on the network path) — native WSS
+(`--tls-certfile`/`--tls-keyfile`) or a `wss://` proxy silences it, and
+`--paranoid` makes native WSS mandatory.
 
 | Control | local-dev | single-user workstation | team LAN | internet-exposed (behind reverse proxy) |
 |---|---|---|---|---|

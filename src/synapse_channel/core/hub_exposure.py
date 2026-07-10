@@ -36,6 +36,32 @@ class InsecureBindError(SynapseError, RuntimeError):
     code = "insecure_bind"
 
 
+def exposure_advisories(
+    host: str,
+    *,
+    authenticator: Any | None,
+    tls_active: bool,
+) -> list[str]:
+    """Return the advisory warnings for binding on ``host`` (never refusals).
+
+    A token over plaintext ``ws://`` off loopback is the documented team-LAN
+    posture (SECURITY.md marks transport encryption *recommended* there), so it
+    must keep starting — but silently, the shared token and every coordination
+    frame are readable on the network path. This surfaces that trade-off as a
+    startup warning; ``--paranoid`` is the profile that makes native WSS
+    mandatory and fails closed without it.
+    """
+    if is_loopback_host(host) or tls_active or authenticator is None:
+        return []
+    return [
+        f"authenticates with a shared token on non-loopback host {host!r} over "
+        "plaintext ws://; the token and all coordination traffic are readable "
+        "on the network path — terminate TLS natively (--tls-certfile and "
+        "--tls-keyfile) or front the hub with a wss:// proxy; --paranoid makes "
+        "native WSS mandatory"
+    ]
+
+
 def exposure_problems(
     host: str,
     *,
@@ -76,9 +102,12 @@ def guard_exposure(
     metrics_token: str | None,
     metrics_query_token_ok: bool = False,
     insecure_off_loopback: bool,
+    tls_active: bool = False,
     logger: logging.Logger,
 ) -> None:
     """Refuse, or warn before, binding an exposed host without matching guards."""
+    for advisory in exposure_advisories(host, authenticator=authenticator, tls_active=tls_active):
+        logger.warning("Synapse Hub %s.", advisory)
     problems = exposure_problems(
         host,
         authenticator=authenticator,
