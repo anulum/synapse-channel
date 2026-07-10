@@ -117,13 +117,14 @@ class AgentSendMixin:
             extra["metadata"] = dict(metadata)
         await self.send_message(MessageType.CHAT, target=target, payload=payload, **extra)
 
-    async def ack(self: _OutboundAgent, seq: int) -> bool:
+    async def ack(self: _OutboundAgent, seq: int, *, mailbox_for: str = "") -> bool:
         """Acknowledge a delivered directed message by its durable ``seq``.
 
-        When a reconnecting agent drains a receipt-requested directed message from
-        its journal backlog, this tells the hub the message finally arrived, so the
-        hub can send the original sender a deferred delivery receipt. It is emitted
-        only when the hub advertised wire version
+        A mailbox receiver emits this after its acceptance gate admits a live or
+        replayed chat. The hub advances the logical mailbox watermark and, when
+        the chat had a pending delivery receipt, tells the original sender it
+        finally arrived. This acknowledges receiver transport acceptance, never
+        model reading or action. It is emitted only when the hub advertised wire version
         :data:`~synapse_channel.core.protocol.MIN_ACK_PROTOCOL_VERSION` or newer in
         its ``WELCOME``, so a client never sends the verb to a hub too old to know
         it — the check makes the acknowledgement safe to call unconditionally.
@@ -132,6 +133,9 @@ class AgentSendMixin:
         ----------
         seq : int
             The durable journal sequence number carried on the replayed frame.
+        mailbox_for : str, optional
+            Logical mailbox identity. A receive-only ``-rx`` sidecar supplies its
+            bare owner; a directly connected agent may omit it.
 
         Returns
         -------
@@ -141,7 +145,8 @@ class AgentSendMixin:
         """
         if (self.hub_protocol_version or 0) < MIN_ACK_PROTOCOL_VERSION:
             return False
-        await self.send_message(MessageType.ACK, seq=seq)
+        extra = {"mailbox_for": mailbox_for} if mailbox_for else {}
+        await self.send_message(MessageType.ACK, seq=seq, **extra)
         return True
 
     async def channel_create(self: _OutboundAgent, channel: str, *, label: str = "") -> None:

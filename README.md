@@ -360,8 +360,11 @@ repeatable paths and the unsupported behavior that remains outside each demo.
 
 - **Check the wiring:** `synapse doctor` reports the common setup mistakes — no live
   waiter, a hub exposed without a token, an accidental identity, or a pressured
-  root filesystem — each with its fix. Use `--disk-path <path>` to check the
-  filesystem that holds a specific workspace or cache.
+  root filesystem — each with its fix. With a durable hub it also reports
+  `N undelivered messages pending for <identity>` from the receiver watermark;
+  this is mailbox transport acknowledgement, not proof a model processed the
+  messages. Use `--disk-path <path>` to check the filesystem that holds a
+  specific workspace or cache.
 
 - **Inspect the live board:** `synapse dashboard --port 8765` opens a
   loopback-only read-only HTML view of roster, claims, board tasks, progress,
@@ -1196,11 +1199,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.1 |
 | Public API exports | 70 |
-| Package modules | 360 |
-| Classes | 524 |
+| Package modules | 362 |
+| Classes | 526 |
 | Wire message types | 75 |
 | CLI subcommands | 158 |
-| Test functions | 5933 |
+| Test functions | 5958 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 13 |

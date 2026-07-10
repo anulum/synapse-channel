@@ -15,6 +15,13 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- `synapse who`, `synapse status`, and `synapse doctor` now expose a durable
+  per-identity mailbox pending count. Mailbox clients acknowledge every accepted
+  live or replayed directed frame; the hub validates the logical recipient,
+  journals a monotonic `mailbox_watermark`, restores it after restart, and reports
+  unavailability instead of a false zero without a durable store. The count is
+  explicitly receiver transport state, not evidence that a model processed work.
+
 - `synapse arm install --identity NAME [--start]` now productizes the permanent
   waiter as a focused Linux systemd user-service path. It writes only the arm
   template, enables the exact `systemd-escape` instance on request, uses mailbox

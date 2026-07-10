@@ -28,6 +28,7 @@ from typing import Any, TextIO
 from synapse_channel.cli_query_transport import AgentFactory
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.core.clock_skew import format_clock_skew
+from synapse_channel.core.mailbox_pending import format_pending_line, parse_pending_counts
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.observed_peers import (
     ObservedPeerSnapshot,
@@ -71,6 +72,9 @@ class HubStatus:
     claims: int = 0
     resources: int = 0
     waiters: int = 0
+    mailbox_identity: str = ""
+    mailbox_pending: int = 0
+    mailbox_pending_available: bool = False
     observed_peers: tuple[ObservedPeerSnapshot, ...] = ()
 
 
@@ -107,6 +111,11 @@ def render_status_line(status: HubStatus, *, plain: bool = False) -> str:
         segments.append(_count_word(status.waiters, "waiter"))
     if status.resources:
         segments.append(_count_word(status.resources, "resource"))
+    if status.mailbox_identity:
+        if status.mailbox_pending_available:
+            segments.append(format_pending_line(status.mailbox_identity, status.mailbox_pending))
+        else:
+            segments.append(f"mailbox pending unavailable for {status.mailbox_identity}")
     if status.observed_peers:
         observed_claims = observed_claim_count(status.observed_peers)
         segments.append(_count_word(len(status.observed_peers), "observed peer"))
@@ -190,7 +199,7 @@ async def query_status(
                 pins=observed_pins,
             ),
         )
-        return _tally(seen, probe=probe, observed_peers=observed)
+        return _tally(seen, probe=probe, identity=name, observed_peers=observed)
     finally:
         agent.running = False
         conn_task.cancel()
@@ -202,6 +211,7 @@ def _tally(
     seen: dict[str, dict[str, Any]],
     *,
     probe: str,
+    identity: str = "",
     observed_peers: tuple[ObservedPeerSnapshot, ...] = (),
 ) -> HubStatus:
     """Fold the collected ``who`` and ``state`` replies into a reachable ``HubStatus``."""
@@ -215,12 +225,16 @@ def _tally(
     snapshot = state.get("snapshot", {})
     claims = _len_of(snapshot.get("active_claims")) if isinstance(snapshot, dict) else 0
     resources = _len_of(snapshot.get("resources")) if isinstance(snapshot, dict) else 0
+    pending_counts = parse_pending_counts(who.get("mailbox_pending"))
     return HubStatus(
         reachable=True,
         online=len(agents),
         claims=claims,
         resources=resources,
         waiters=len(waiters),
+        mailbox_identity=identity,
+        mailbox_pending=pending_counts.get(identity, 0) if pending_counts is not None else 0,
+        mailbox_pending_available=pending_counts is not None,
         observed_peers=observed_peers,
     )
 
@@ -232,7 +246,7 @@ def _len_of(value: object) -> int:
 
 def status_to_json(status: HubStatus) -> dict[str, object]:
     """Return the status counts as a stable JSON-compatible object."""
-    return {
+    payload: dict[str, object] = {
         "reachable": status.reachable,
         "online": status.online,
         "claims": status.claims,
@@ -243,6 +257,15 @@ def status_to_json(status: HubStatus) -> dict[str, object]:
         "observed_max_lag": observed_max_lag(status.observed_peers),
         "observed_max_clock_skew_seconds": observed_max_abs_clock_skew(status.observed_peers),
     }
+    if status.mailbox_identity:
+        payload.update(
+            {
+                "mailbox_identity": status.mailbox_identity,
+                "mailbox_pending": status.mailbox_pending,
+                "mailbox_pending_available": status.mailbox_pending_available,
+            }
+        )
+    return payload
 
 
 async def watch_status(

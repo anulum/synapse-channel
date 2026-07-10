@@ -62,8 +62,8 @@ does not add agent grades to protocol envelopes.
 ## Agent → hub
 
 - **Presence and chat:** `chat`, `heartbeat` (sent automatically by clients).
-- **Directed delivery:** `ack` (acknowledges a replayed directed message by its
-  durable `seq` so the hub can confirm a deferred receipt to its sender; see
+- **Directed delivery:** `ack` (acknowledges a mailbox-accepted live or replayed
+  directed message by its durable `seq`, optionally naming `mailbox_for`; see
   [Directed delivery and the mailbox](#directed-delivery-and-the-mailbox)).
 - **Claims and leases:** `claim`, `release`, `task_update`, `handoff`,
   `checkpoint`, `wait_request`.
@@ -141,8 +141,8 @@ offline can ask for them on reconnect. On its *registration* heartbeat it sets:
 
 - `mailbox: true` — request a replay of the directed backlog.
 - `since_seq` — the last durable journal `seq` it has already processed; the hub
-  replays only chat after it. A missing or malformed value degrades to `0` (the
-  whole retained window).
+  advances that identity's receiver watermark and replays only chat after it. A
+  missing or malformed value degrades to `0` (the whole retained window).
 - `mailbox_for` (optional) — the identity whose backlog to replay, when it differs
   from the connection name. A wake-listener connects under a receive-only `-rx` name
   but waits on its bare identity, so it names that identity here; absent or blank,
@@ -153,10 +153,28 @@ The hub re-sends each missed directed message as an ordinary `chat` frame marked
 `msg_id` — the per-hub `msg_id` counter resets on restart while `seq` never repeats.
 Broadcasts are never replayed, and a hub with no durable journal replays nothing.
 
+**Receiver watermark and pending count.** A mailbox client sends `ack` for every
+live or replayed chat admitted by its `mailbox_advance` gate. The frame carries
+the durable `seq` and may carry `mailbox_for` so an `identity-rx` sidecar advances
+the bare identity, not its connection name. The hub validates that the stored
+chat was directed to that logical identity before advancing, and journals the
+monotonic cursor as `mailbox_watermark`. A registration `since_seq` advances the
+same cursor after the existing mailbox-identity authorisation check.
+
+The additive `who_snapshot.mailbox_pending` field is a per-identity integer map
+when the hub has a durable journal, or JSON `null` when the projection is
+unavailable. A count is the matching directed chats after the receiver watermark;
+it is what `synapse who`, `synapse status`, and `synapse doctor` render as
+`N undelivered messages pending for <identity>`. This is deliberately a mailbox
+transport fact: it does **not** claim that a model read, understood, or acted on
+the message. Older clients ignore the WHO field; older hubs ignore the additive
+ACK identity and keep their receipt-only ACK behavior.
+
 **Deferred receipts.** When a `receipt_requested` directed message dead-lettered,
 the hub remembers it in a bounded pending-receipt store keyed by its `seq`. When the
-recipient reconnects, drains the replayed message, and sends `ack: {seq}`, the hub
-re-checks that the sender is a genuine recipient of the original target and then
+recipient reconnects, drains the replayed message, and sends
+`ack: {seq, mailbox_for?}`, the hub re-checks that the logical mailbox identity is
+a genuine recipient of the original target and then
 sends the *original* sender a second `delivery_receipt` marked
 `delivered: true, deferred: true` — closing the gap where the sender was told "not
 delivered" and never learnt the message arrived. A spoofed ack from a client the
@@ -171,6 +189,9 @@ lifecycle as audit-only events:
 immediate failures re-seed the bounded pending-receipt store, so a later mailbox
 `ack` can still journal the deferred verdict even if the original sender is offline.
 Operators can query the ledger with `synapse event-query <db> "receipts <agent>"`.
+Mailbox watermarks are separate `mailbox_watermark` events: losing the newest
+normal-durability watermark in a power failure can cause safe replay/recount, not
+loss of an unseen message body.
 
 ## Release receipts
 

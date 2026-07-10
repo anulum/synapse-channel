@@ -66,12 +66,12 @@ everything, since they need the whole command table.
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
 | `synapse manifest` | Print the capability manifest of advertised agents. |
 | `synapse directory` | Print a read-only capability directory from live agent cards (discovery only). |
-| `synapse who` | List the agents currently online, optionally for one project or this identity with `--me`; `--observed-peer HUB=URI` appends advisory `observed@HUB` peer rows. |
-| `synapse status` | Print a one-line hub summary (online agents, active claims) for shell prompts and tmux status bars, the counts as JSON with `--json`, or a refreshing operator dashboard with `--watch`; exit non-zero when the hub is down; `--observed-peer HUB=URI` appends advisory peer counters. |
+| `synapse who` | List the agents currently online and hub-authoritative mailbox pending counts, optionally for one project or this identity with `--me`; `--observed-peer HUB=URI` appends advisory `observed@HUB` peer rows. |
+| `synapse status` | Print a one-line hub summary (online agents, active claims, this identity's mailbox pending count) for shell prompts and tmux status bars, the counts as JSON with `--json`, or a refreshing operator dashboard with `--watch`; exit non-zero when the hub is down; `--observed-peer HUB=URI` appends advisory peer counters. |
 | `synapse state` | Print active claims and their checkpoints (a resume view); `--observed-peer HUB=URI` appends advisory peer claims marked `observed@HUB`. |
 | `synapse dead-letters` | Print directed messages the hub delivered to no live connection — the blackhole ledger the dashboard and cockpit show, now on the terminal, worst first with the `syn inbox --as NAME` drain remedy. |
 | `synapse approvals` | Print the relays awaiting a second operator under the two-person quorum — the pending set of the per-hub approval ledger (enforced but otherwise invisible), oldest first, naming each pending action and its first requester. Rides in the same state snapshot the dashboard and cockpit read. |
-| `synapse doctor` | Check for common coordination misconfigs (identity, exposure, hub, waiter); exit non-zero on a failure. `--fix` auto-repairs a down default local hub or missing waiter by installing and starting the user services; `--json` emits the verdicts for CI health gates. |
+| `synapse doctor` | Check common coordination misconfigs plus this identity's hub mailbox pending count; exit non-zero on a failure. `--fix` auto-repairs a down default local hub or missing waiter by installing and starting the user services; `--json` emits the verdicts for CI health gates. |
 | `synapse init` | Print or install the local user services (hub, waiter, presence) as systemd units. |
 | `synapse install-shell-hook` | Install auto-arming shell integration into Bash, Zsh, and Fish (idempotent, guarded block). |
 | `synapse shell-hook` | Print the shell code that auto-arms terminals and wraps agent commands, for manual sourcing. |

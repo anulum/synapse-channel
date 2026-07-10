@@ -27,6 +27,7 @@ class _DispatchAgent(Protocol):
     hub_protocol_version: int | None
     mailbox: bool
     mailbox_advance: Callable[[dict[str, Any]], bool] | None
+    mailbox_for: str
     name: str
     on_lease_granted: Callable[[str], None] | None
     owner_lease: str
@@ -34,11 +35,11 @@ class _DispatchAgent(Protocol):
     verbose: bool
     _mailbox_since_seq: int
 
-    async def ack(self, seq: int) -> bool:
+    async def ack(self, seq: int, *, mailbox_for: str = "") -> bool:
         """Acknowledge a delivered directed message by its durable seq."""
 
     async def _track_mailbox_frame(self, data: dict[str, Any]) -> None:
-        """Advance the mailbox cursor on a chat frame and ack a replayed one."""
+        """Advance the mailbox cursor and ack an accepted chat frame."""
 
 
 class AgentDispatchMixin:
@@ -85,14 +86,14 @@ class AgentDispatchMixin:
             await self.callback(data)
 
     async def _track_mailbox_frame(self: _DispatchAgent, data: dict[str, Any]) -> None:
-        """Advance the mailbox cursor on a chat frame and ack a replayed one.
+        """Advance the mailbox cursor and ack an accepted chat frame.
 
         Every chat frame carries its durable journal ``seq``; the cursor tracks the
-        highest one seen so a reconnect resumes its backlog from there. A frame the
-        hub marked ``replayed`` is one this agent missed while offline, so it is
-        acknowledged by that ``seq`` — a no-op at the hub unless a sender is awaiting
-        a deferred delivery receipt, in which case the ack releases it. A missing or
-        non-integer ``seq`` is ignored rather than allowed to reset the cursor.
+        highest one seen so a reconnect resumes its backlog from there. Every live or
+        replayed frame admitted by the acceptance gate is acknowledged by that ``seq``;
+        the hub advances its receiver watermark and may also release a deferred delivery
+        receipt. The ACK proves transport acceptance, not model processing. A missing
+        or non-integer ``seq`` is ignored rather than allowed to reset the cursor.
 
         When the agent carries a ``mailbox_advance`` gate, a frame the gate refuses
         neither advances the cursor nor acks — the frame stays pending for a later
@@ -106,5 +107,4 @@ class AgentDispatchMixin:
             return
         if seq > self._mailbox_since_seq:
             self._mailbox_since_seq = seq
-        if data.get("replayed") is True:
-            await self.ack(seq)
+        await self.ack(seq, mailbox_for=self.mailbox_for or self.name)

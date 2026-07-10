@@ -84,9 +84,11 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         When ``True``, the registration heartbeat declares ``mailbox: true`` and the
         agent's ``since_seq`` cursor, so a mailbox-capable hub replays the directed
         messages missed while offline; the agent then advances its cursor on every
-        chat frame it sees and acknowledges each replayed frame (which lets the hub
-        confirm a deferred delivery receipt to the original sender). Defaults to
-        ``False`` — an ordinary agent neither asks for a replay nor acks.
+        chat frame admitted by its acceptance gate and acknowledges live and replayed
+        frames. The hub uses that receiver watermark for pending counts and can also
+        confirm a deferred delivery receipt to the original sender. This does not
+        acknowledge model processing. Defaults to ``False`` — an ordinary agent
+        neither asks for a replay nor acks.
     mailbox_since_seq : int, optional
         The durable journal ``seq`` the agent has already processed, used to seed
         the cursor so a caller that persists it across reconnects resumes from where
@@ -101,7 +103,7 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         for an agent that connects under its own identity.
     mailbox_advance : Callable or None, optional
         Gate consulted before the mailbox cursor advances past a chat frame (and
-        before a replayed frame is acknowledged). A waiter that surfaces only a
+        before a live or replayed frame is acknowledged). A waiter that surfaces only a
         FILTERED subset of frames passes its wake filter here, so a frame it will
         never show cannot be silently consumed: an unadvanced cursor leaves the
         frame pending and a later (or correctly bound) waiter still receives it

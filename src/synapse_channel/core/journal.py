@@ -72,6 +72,7 @@ class EventKind:
     DELIVERY_RECEIPT_IMMEDIATE = "delivery_receipt_immediate"
     DELIVERY_RECEIPT_DEFERRED = "delivery_receipt_deferred"
     DELIVERY_RECEIPT_EXPIRED = "delivery_receipt_expired"
+    MAILBOX_WATERMARK = "mailbox_watermark"
 
 
 MEMORY_KINDS = frozenset(
@@ -249,6 +250,28 @@ def record_delivery_receipt_deferred(store: EventStore, receipt: Mapping[str, An
 def record_delivery_receipt_expired(store: EventStore, receipt: Mapping[str, Any]) -> None:
     """Append a pending receipt expiry when the bounded live window evicts it."""
     store.append(EventKind.DELIVERY_RECEIPT_EXPIRED, dict(receipt), durable=True)
+
+
+def record_mailbox_watermark(
+    store: EventStore,
+    *,
+    identity: str,
+    through_seq: int,
+    source: str,
+) -> None:
+    """Append a receiver-acknowledged mailbox cursor.
+
+    This uses the chat path's normal durability: losing the newest watermark to
+    a power failure causes safe replay/recount, never deletion of an unseen body.
+    """
+    store.append(
+        EventKind.MAILBOX_WATERMARK,
+        {
+            "identity": identity,
+            "through_seq": int(through_seq),
+            "source": source,
+        },
+    )
 
 
 def record_checkpoint(store: EventStore, claim: TaskClaim) -> None:

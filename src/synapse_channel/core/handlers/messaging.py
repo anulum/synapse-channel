@@ -118,6 +118,7 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
         # Stamp the durable journal seq on the outgoing frame so a client can track
         # it as the cursor it resumes a missed directed backlog from on reconnect.
         data["seq"] = record_chat(hub.journal, data)
+        hub.mailbox_pending.observe_chat(int(data["seq"]), data)
     if hub.private_directed_messages and is_directed_target(target):
         # Recipient routing: a directed message reaches only its recipients (and their
         # -rx waiter sidecars) plus any granted observers — never every socket. It is
@@ -499,21 +500,24 @@ async def handle_ack(hub: SynapseHub, sender: str, data: dict[str, Any], websock
     raw_seq = data.get("seq")
     if isinstance(raw_seq, bool) or not isinstance(raw_seq, int):
         return
+    recipient = _mailbox_recipient(sender, data.get("mailbox_for"), hub=hub)
+    roles = hub.roles_of(sender)
+    hub.mailbox_pending.acknowledge(recipient, raw_seq, roles=roles)
     entry = hub.pending_receipts.peek(raw_seq)
     if entry is None:
         return
-    if not is_recipient(entry.target, sender, roles=hub.roles_of(sender)):
+    if not is_recipient(entry.target, recipient, roles=roles):
         return
     hub.pending_receipts.claim(raw_seq)
     if hub.journal is not None:
         record_delivery_receipt_deferred(
             hub.journal,
-            deferred_receipt_payload(entry=entry, message_seq=raw_seq, recipient=sender),
+            deferred_receipt_payload(entry=entry, message_seq=raw_seq, recipient=recipient),
         )
     await hub._send_to_agent(
         entry.sender,
         hub._system(
-            f"delivered to {sender} on reconnect",
+            f"delivered to {recipient} on reconnect",
             msg_type=MessageType.DELIVERY_RECEIPT,
             target=entry.sender,
             message_target=entry.target,
@@ -521,7 +525,7 @@ async def handle_ack(hub: SynapseHub, sender: str, data: dict[str, Any], websock
             message_seq=raw_seq,
             delivered=True,
             deferred=True,
-            recipients=[sender],
+            recipients=[recipient],
         ),
     )
 
@@ -681,4 +685,10 @@ async def handle_heartbeat(
     if data.get("mailbox") is True:
         since_seq = safe_int(data.get("since_seq"), default=0, min_value=0, allow_bool=False)
         recipient = _mailbox_recipient(sender, data.get("mailbox_for"), hub=hub)
+        hub.mailbox_pending.advance(
+            recipient,
+            since_seq,
+            roles=hub.roles_of(sender),
+            source="cursor",
+        )
         await _replay_directed_backlog(hub, sender, recipient, since_seq, websocket)

@@ -25,6 +25,7 @@ from synapse_channel.cli_query_rendering import (
 )
 from synapse_channel.cli_query_transport import AgentFactory, _drop_message, _query_hub
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.core.mailbox_pending import parse_pending_counts
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.observed_peers import (
     ObservedPeerSpec,
@@ -147,10 +148,18 @@ async def _who(
             data.get("wake_capabilities")
             if isinstance(data.get("wake_capabilities"), dict)
             else None,
+            parse_pending_counts(data.get("mailbox_pending")),
         ),
         request=lambda agent: agent.request_who(),
         render=(
-            (lambda result: _render_who_me(result[0], name=name))
+            (
+                lambda result: _render_who_me(
+                    result[0],
+                    name=name,
+                    mailbox_pending=result[3],
+                    show_mailbox_pending=True,
+                )
+            )
             if me
             else (
                 lambda result: _render_who(
@@ -158,6 +167,8 @@ async def _who(
                     project=project,
                     liveness=result[1],
                     wake_capabilities=result[2],
+                    mailbox_pending=result[3],
+                    show_mailbox_pending=True,
                     observed_peers=observed,
                 )
             )

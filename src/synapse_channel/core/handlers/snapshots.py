@@ -79,6 +79,7 @@ async def handle_who_request(
             connected_clients=len(hub.connected_clients),
             hub_version=__version__,
             config_epoch=hub.config_epoch,
+            mailbox_pending=hub.mailbox_pending.snapshot(hub.online_agents(), hub.roles_of),
             **extra,
         ),
     )

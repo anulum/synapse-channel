@@ -86,6 +86,7 @@ from synapse_channel.core.ledger import (
     DEFAULT_MAX_PROGRESS_PER_AUTHOR,
     DEFAULT_MAX_PROGRESS_PER_TASK,
 )
+from synapse_channel.core.mailbox_pending import MailboxPendingTracker
 from synapse_channel.core.message_auth import (
     DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
     EventSignatureTrustBundle,
@@ -591,6 +592,7 @@ class SynapseHub:
         )
         self.dead_letters = DeadLetterLedger(max_age_seconds=DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS)
         self.pending_receipts = PendingReceipts()
+        self.mailbox_pending = MailboxPendingTracker(self.journal)
         self._relay = RelayMirror(self.relay_log, self.relay_max_lines)
         self._broadcaster = HubBroadcaster(
             self.clients,

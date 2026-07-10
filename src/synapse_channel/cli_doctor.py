@@ -37,7 +37,12 @@ from synapse_channel.cli_doctor_federation import (
     DEFAULT_FEDERATION_SKEW_WARN_SECONDS,
     diagnose_federation,
 )
-from synapse_channel.cli_queries import AgentFactory, _query_hub
+from synapse_channel.cli_doctor_mailbox import (
+    DoctorRoster,
+    diagnose_mailbox_pending,
+    fetch_doctor_roster,
+)
+from synapse_channel.cli_queries import AgentFactory
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.client.diagnostics import (
     Diagnosis,
@@ -53,11 +58,10 @@ from synapse_channel.client.diagnostics import (
     check_waiter,
     summarise,
 )
-from synapse_channel.core.protocol import MessageType
 from synapse_channel.ops_redeploy import build_redeploy_checklist, render_redeploy_checklist
 from synapse_channel.service_setup import install_user_services, service_suggestions
 
-RosterProbe = Callable[..., Awaitable[list[str] | None]]
+RosterProbe = Callable[..., Awaitable[DoctorRoster | list[str] | None]]
 """Async callable that returns the live hub roster for doctor diagnostics."""
 
 FederationDiagnoseRunner = Callable[..., Awaitable[list[Diagnosis]]]
@@ -171,36 +175,6 @@ def _disk_usage(
     return shutil.disk_usage(path)
 
 
-async def _fetch_roster(
-    *,
-    uri: str,
-    name: str,
-    token: str | None,
-    agent_factory: AgentFactory,
-    ready_timeout: float = 5.0,
-) -> list[str] | None:
-    """Return the live roster, or ``None`` when the hub is unreachable.
-
-    Reuses the shared connect → request → poll flow; a non-zero return from the
-    query means the hub never answered, which the caller reads as unreachable.
-    """
-    captured: list[list[str]] = []
-    code = await _query_hub(
-        uri=uri,
-        name=name,
-        token=token,
-        response_type=MessageType.WHO_SNAPSHOT,
-        transform=lambda data: [str(agent) for agent in data.get("online_agents", [])],
-        request=lambda agent: agent.request_who(),
-        render=lambda roster: captured.append(roster),
-        agent_factory=agent_factory,
-        ready_timeout=ready_timeout,
-    )
-    if code != 0:
-        return None
-    return captured[-1] if captured else []
-
-
 FEED_TAIL_BYTES = 512 * 1024
 """How much of the feed's tail the addressee check reads — bounded, newest last."""
 
@@ -240,7 +214,7 @@ async def _diagnose(
     send_name: str | None = None,
     agent_factory: AgentFactory = SynapseAgent,
     ready_timeout: float = 5.0,
-    roster_probe: RosterProbe = _fetch_roster,
+    roster_probe: RosterProbe = fetch_doctor_roster,
     env: Mapping[str, str] | None = None,
     cwd_basename: str | None = None,
     home_basename: str | None = None,
@@ -303,16 +277,29 @@ async def _diagnose(
             warn_free_mib=disk_warn_free_mib,
         )
     )
-    roster = await roster_probe(
+    roster_result = await roster_probe(
         uri=uri,
         name=f"{identity.identity}-doctor",
         token=token,
         agent_factory=agent_factory,
         ready_timeout=ready_timeout,
     )
+    if isinstance(roster_result, DoctorRoster):
+        doctor_roster: DoctorRoster | None = roster_result
+        roster: list[str] | None = list(roster_result.agents)
+    else:
+        doctor_roster = None
+        roster = roster_result
     diagnoses.append(check_reachable(roster is not None, uri))
     diagnoses.append(check_waiter(roster, identity.waiter_name))
     diagnoses.append(check_deaf_agents(roster))
+    if doctor_roster is not None:
+        diagnoses.append(
+            diagnose_mailbox_pending(
+                doctor_roster.mailbox_pending,
+                identity=identity.identity,
+            )
+        )
     diagnoses.append(check_sqlcipher_event_store(event_store_path, event_store_key_file))
     diagnoses.append(
         check_multi_seat_posture(

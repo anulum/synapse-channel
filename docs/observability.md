@@ -83,6 +83,16 @@ happened. The signals that matter operationally:
   and the owning hub broadcasts the incoming pointer to its own operators. Query
   both with `synapse event-query --kind dead_letter_escalation` and
   `--kind dead_letter_forwarding`.
+- **Mailbox pending is not the dead-letter ledger.** Dead letters record the
+  send-time fact that no socket matched; the mailbox projection counts durable
+  directed chats after an identity's receiver-acknowledged watermark, even across
+  hub restart. `synapse who`, `synapse status`, and `synapse doctor` render
+  `N undelivered messages pending for <identity>` from the additive WHO snapshot;
+  a mailbox-enabled `synapse arm` replay advances the watermark, while
+  `syn inbox --as <identity>` remains the human-readable body inspection path.
+  A hub without a durable event store reports the projection unavailable instead
+  of zero. The watermark proves only that a mailbox client accepted the
+  frame—never that a model read or acted on it.
 - Any movement on `synapse_auth_failures_total` or
   `synapse_federation_denied_total` on a locked-down hub deserves a look
   at `synapse event-query --kind error` — expected during key rotation,
