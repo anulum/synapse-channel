@@ -94,10 +94,14 @@ The ACL model and its evaluation are implemented in
   `identity-pin-reclaim` ACL grant on target kind `agent`, even when general
   `--require-acl` enforcement is off; the requester must itself be pinned or
   operator-bundle-bound, and a hub without `--db` refuses because it cannot
-  write the mandatory audit event. The safe path accepts only an offline name
-  whose ownership lease has lapsed under `--lease-offline-ttl`. An operator may
-  add `--break-glass` to evict a live or still-leased holder, but that override,
-  the previous key id, the operator, and the reason are recorded in a
+  write the mandatory audit event. The safe path accepts an offline name whose
+  ownership lease has lapsed under `--lease-offline-ttl`. It also accepts a
+  socket-up holder after it has lacked both a recent reaction and a live waiter
+  for that TTL *after* the recipient-liveness window elapsed; keepalive
+  heartbeats neither refresh that clock nor erase its dead-letter signal. A fresh
+  reaction or waiter blocks normal recovery. An operator may add `--break-glass`
+  to evict any other live or still-leased holder, but that override, the previous
+  key id, the operator, and the reason are recorded in a
   write-ahead `identity_pin_reclaim` audit trail and broadcast as a system
   notice. Removal is compare-and-swap on `--expected-key-id`; it never rotates
   or installs a replacement key. The next valid proof establishes a fresh

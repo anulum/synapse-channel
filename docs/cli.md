@@ -70,7 +70,7 @@ everything, since they need the whole command table.
 | `synapse who` | List the agents currently online and hub-authoritative mailbox pending counts, optionally for one project or this identity with `--me`; `--observed-peer HUB=URI` appends advisory `observed@HUB` peer rows. |
 | `synapse status` | Print a one-line hub summary (online agents, active claims, this identity's mailbox pending count) for shell prompts and tmux status bars, the counts as JSON with `--json`, or a refreshing operator dashboard with `--watch`; exit non-zero when the hub is down; `--observed-peer HUB=URI` appends advisory peer counters. |
 | `synapse state` | Print active claims and their checkpoints (a resume view); `--observed-peer HUB=URI` appends advisory peer claims marked `observed@HUB`. |
-| `synapse dead-letters` | Print directed messages the hub delivered to no live connection — the blackhole ledger the dashboard and cockpit show, now on the terminal, worst first with the `syn inbox --as NAME` drain remedy. |
+| `synapse dead-letters` | Print directed messages the hub delivered to no consume-live recipient — no socket, or only stale sockets without a recent reaction/live waiter — worst first with the `syn inbox --as NAME` drain remedy. |
 | `synapse approvals` | Print the relays awaiting a second operator under the two-person quorum — the pending set of the per-hub approval ledger (enforced but otherwise invisible), oldest first, naming each pending action and its first requester. Rides in the same state snapshot the dashboard and cockpit read. |
 | `synapse doctor` | Check common coordination misconfigs plus this identity's hub mailbox pending count; exit non-zero on a failure. `--fix` auto-repairs a down default local hub or missing waiter by installing and starting the user services; `--json` emits the verdicts for CI health gates. |
 | `synapse init` | Print or install the local user services (hub, waiter, presence) as systemd units. |
@@ -686,20 +686,24 @@ selects who it is *for*:
 synapse send --target all "deploy is green"              # everyone (the default)
 synapse send --target SCPN-CONTROL "kernel built, run the control tests"  # one agent
 synapse send --target SCPN-CONTROL,REMANENTIA "you two: rebase on main"   # several
-synapse send --require-recipient --target SCPN-CONTROL "ping"             # fail if nobody online matches
+synapse send --require-recipient --target SCPN-CONTROL "ping"             # also print the positive receipt
 ```
 
 If a one-shot send accidentally uses a waiter name such as `api-dev-rx`, the
 command sends as `api-dev` instead. That keeps the persistent wake socket online
 and avoids the hub's duplicate-name refusal for the short-lived sender.
 
-Use `synapse send --require-recipient` for directed sends that should be
-observable. The sender asks the hub for a delivery receipt; the hub replies with
-`delivery_receipt`, including `delivered`, `message_target`, `message_id`, and
-the matched online `recipients`. The CLI prints `delivered to ...` and exits `0`
-when at least one online recipient matches `--target`; it prints `delivery
-failed: no online recipient matched ...` and exits `1` when the message would
-otherwise be only a silent durable-feed entry.
+Every directed `synapse send` asks the hub for a delivery receipt. The reply
+includes `delivered`, `message_target`, `message_id`, consume-live `recipients`,
+all socket-level `matched_recipients`, `stale_recipients`, a machine-readable
+`reason`, and whether the hub `dead_lettered` it. A socket match counts as live
+only when the recipient reacted within the configured liveness window or has a
+fresh `-rx` waiter; otherwise the CLI prints `delivery failed: no live recipient
+matched ...` and exits `1`, the same as an offline target. The message is still
+journalled and best-effort routed to the stale socket, so a later mailbox replay
+can settle its deferred receipt. `--require-recipient` additionally prints a
+positive `delivered to ...` receipt and fails if an older hub returns no receipt;
+without the flag, receiptless older hubs retain their historical success result.
 
 For selected sensitive bodies, `synapse send --encrypt-key-file` replaces the
 plain payload with an AES-256-GCM envelope whose authenticated data binds the
@@ -742,7 +746,8 @@ For the common question workflow, use `syn ask <target> <message>`. It resolves
 the same identity as `syn say`, dispatches to `synapse send` with
 `--wait-seconds 30 --require-recipient`, and prints replies during that wait
 window. Override the window with `syn ask --wait 10 <target> <message>`. Use
-`--no-require-recipient` only for broadcasts or durable-feed-only asks.
+`--no-require-recipient` for broadcasts or to tolerate a receiptless legacy hub;
+a directed negative receipt from a current hub still exits non-zero.
 
 A reader sees only the messages addressed to it with `--for`, which also drops
 presence noise and other agents' cross-talk — a per-agent inbox. Because the

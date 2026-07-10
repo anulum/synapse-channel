@@ -383,19 +383,19 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--warn-stale-recipients",
         action=argparse.BooleanOptionalAction,
         default=DEFAULT_WARN_STALE_RECIPIENTS,
-        help="Privately warn a sender when a directed message reaches a recipient that is "
-        "present but not proven wake-capable — no armed -rx waiter sidecar and no genuine "
-        "reaction within --recipient-liveness-window seconds — so a reply that never comes is "
-        "not silently waited on. Enabled by default; use --no-warn-stale-recipients for an "
-        "explicit compatibility opt-out.",
+        help="Warn a sender when a directed recipient is present but not proven wake-capable — "
+        "no armed -rx waiter sidecar and no genuine reaction within "
+        "--recipient-liveness-window seconds. Such a stale-only match is dead-lettered and "
+        "returns no_live_recipient instead of a positive receipt. Enabled by default; use "
+        "--no-warn-stale-recipients for the legacy socket-presence compatibility behavior.",
     )
     hub.add_argument(
         "--recipient-liveness-window",
         type=float,
         default=DEFAULT_RECIPIENT_LIVENESS_WINDOW,
         metavar="SECONDS",
-        help="How long after its last genuine reaction a recipient stays judged live for "
-        "--warn-stale-recipients. A just-connected or briefly quiet agent is inside the "
+        help="How long after its last genuine reaction a recipient stays judged live for the "
+        "warning and delivery gate. A just-connected or briefly quiet agent is inside the "
         f"window and never flagged. Defaults to {DEFAULT_RECIPIENT_LIVENESS_WINDOW:g}s.",
     )
     hub.add_argument(
@@ -404,7 +404,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=DEFAULT_WAITER_LIVENESS_WINDOW,
         metavar="SECONDS",
         help="How long a waiter's -rx sidecar may go silent (no keepalive) before it stops "
-        "counting as a live waiter for --warn-stale-recipients, so a hung or exiting waiter no "
+        "counting as a live waiter for the warning and delivery gate, so a hung waiter no "
         f"longer vouches for its agent. Defaults to {DEFAULT_WAITER_LIVENESS_WINDOW:g}s.",
     )
     hub.add_argument(

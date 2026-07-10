@@ -35,11 +35,12 @@ from synapse_channel.core.dead_letter_escalation import (
 )
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwardError, forwarding_notice
 from synapse_channel.core.dead_letters import is_directed_target
-from synapse_channel.core.delivery_receipts import (
-    deferred_receipt_payload,
-    expired_receipt_payload,
-    immediate_receipt_payload,
-    requested_receipt_payload,
+from synapse_channel.core.delivery_receipts import deferred_receipt_payload
+from synapse_channel.core.directed_delivery_liveness import classify_delivery_liveness
+from synapse_channel.core.handlers.delivery_feedback import (
+    send_and_track_delivery_receipt,
+    send_delivery_receipt,
+    warn_stale_recipients,
 )
 from synapse_channel.core.journal import (
     DEAD_LETTER_DIRECTION_OUT,
@@ -48,19 +49,11 @@ from synapse_channel.core.journal import (
     record_dead_letter_escalation,
     record_dead_letter_forwarding,
     record_delivery_receipt_deferred,
-    record_delivery_receipt_expired,
-    record_delivery_receipt_immediate,
-    record_delivery_receipt_requested,
 )
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.operator_relay_routing import RelayRouteKind, route_operator_relay
 from synapse_channel.core.protocol import MessageType, is_recipient
-from synapse_channel.core.wake_capability import (
-    WAKE_PASSIVE,
-    WAKE_UNKNOWN,
-    normalize_wake_capability,
-    wake_capability_label,
-)
+from synapse_channel.core.wake_capability import normalize_wake_capability
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
@@ -100,14 +93,17 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
         return
     target = str(data.get("target") or "all")
     recipients = _matching_online_recipients(target, sender, hub.online_agents(), hub.roles_of)
-    if is_directed_target(target):
+    directed = is_directed_target(target)
+    stale_recipients = hub.recipients_without_live_waiter(recipients) if directed else ()
+    delivery = classify_delivery_liveness(recipients, stale_recipients)
+    if directed:
         hub.counters.chat_directed += 1
     else:
         hub.counters.chat_broadcast += 1
     escalation: tuple[str, int, str] | None = None
-    if not recipients and is_directed_target(target):
-        # durable but waking nobody - remember the blackhole so the state
-        # snapshot can show it instead of a human discovering it by relaying
+    if not delivery.delivered and directed:
+        # Durable but reaching nobody proven consume-live: remember the blackhole
+        # even when a stale socket stayed open, so transport presence cannot hide it.
         count = hub.dead_letters.record(target, sender=sender, ts=float(data["timestamp"]))
         if crosses_escalation_threshold(count, hub.dead_letter_escalation_threshold):
             escalation = (target, count, sender)
@@ -119,7 +115,23 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
         # it as the cursor it resumes a missed directed backlog from on reconnect.
         data["seq"] = record_chat(hub.journal, data)
         hub.mailbox_pending.observe_chat(int(data["seq"]), data)
-    if hub.private_directed_messages and is_directed_target(target):
+    receipt_requested = bool(data.get("receipt_requested"))
+    message_seq = int(data["seq"]) if "seq" in data else None
+    receipt_before_fanout = (
+        receipt_requested and directed and not delivery.delivered and bool(recipients)
+    )
+    if receipt_before_fanout:
+        await send_and_track_delivery_receipt(
+            hub,
+            websocket,
+            sender=sender,
+            target=target,
+            msg_id=int(data["msg_id"]),
+            message_seq=message_seq,
+            decision=delivery,
+            directed=directed,
+        )
+    if hub.private_directed_messages and directed:
         # Recipient routing: a directed message reaches only its recipients (and their
         # -rx waiter sidecars) plus any granted observers — never every socket. It is
         # still mirrored to the relay and journalled above, so the durable feed keeps
@@ -133,62 +145,26 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
         await _escalate_dead_letter(
             hub, target=escalation[0], count=escalation[1], sender=escalation[2]
         )
-    if hub.warn_stale_recipients and is_directed_target(target) and recipients:
-        # The message was delivered to present recipients, but present is not the
-        # same as reachable-in-practice: warn the sender about any recipient that is
-        # online yet has no proof it is wake-capable, so a reply that never comes is
-        # not silently waited on. An explicit compatibility opt-out disables it.
-        await _warn_stale_recipients(
+    if hub.warn_stale_recipients and directed and recipients:
+        await warn_stale_recipients(
             hub,
             websocket,
             sender=sender,
             target=target,
             msg_id=int(data["msg_id"]),
-            recipients=recipients,
+            decision=delivery,
         )
-    if bool(data.get("receipt_requested")):
-        message_seq = int(data["seq"]) if "seq" in data else None
-        if hub.journal is not None and message_seq is not None:
-            record_delivery_receipt_requested(
-                hub.journal,
-                requested_receipt_payload(
-                    sender=sender,
-                    target=target,
-                    message_id=int(data["msg_id"]),
-                    message_seq=message_seq,
-                ),
-            )
-        await _send_delivery_receipt(
+    if receipt_requested and not receipt_before_fanout:
+        await send_and_track_delivery_receipt(
             hub,
             websocket,
             sender=sender,
             target=target,
             msg_id=int(data["msg_id"]),
             message_seq=message_seq,
-            recipients=recipients,
+            decision=delivery,
+            directed=directed,
         )
-        if not recipients and is_directed_target(target) and message_seq is not None:
-            # Nobody live matched, so the immediate receipt said "not delivered" — but the
-            # journal kept the body, so remember it under its durable seq: when the recipient
-            # reconnects, drains the backlog, and acks that seq, we can revise the verdict to
-            # a deferred "delivered". Only a journalled directed message can be acked, because
-            # only it carries the seq the ack echoes and the durable copy the recipient reads.
-            evicted = hub.pending_receipts.remember(
-                message_seq,
-                sender=sender,
-                target=target,
-                message_id=int(data["msg_id"]),
-            )
-            if evicted is not None and hub.journal is not None:
-                evicted_seq, evicted_entry = evicted
-                record_delivery_receipt_expired(
-                    hub.journal,
-                    expired_receipt_payload(
-                        entry=evicted_entry,
-                        message_seq=evicted_seq,
-                        reason="pending_window_evicted",
-                    ),
-                )
 
 
 async def _escalate_dead_letter(hub: SynapseHub, *, target: str, count: int, sender: str) -> None:
@@ -300,13 +276,13 @@ async def _route_channel_chat(
     for member in recipients:
         await hub._send_to_agent(member, data)
     if bool(data.get("receipt_requested")):
-        await _send_delivery_receipt(
+        await send_delivery_receipt(
             hub,
             websocket,
             sender=sender,
             target=channel,
             msg_id=int(data["msg_id"]),
-            recipients=recipients,
+            decision=classify_delivery_liveness(recipients, ()),
         )
 
 
@@ -355,129 +331,6 @@ def _matching_online_recipients(
         if is_recipient(target, name, roles=roles):
             recipients.add(name)
     return sorted(recipients)
-
-
-def _recipient_wake_capability(hub: SynapseHub, recipient: str) -> str:
-    """Return the best declared wake capability for a logical recipient."""
-    direct = hub.wake_capability_of(recipient)
-    if direct != WAKE_UNKNOWN:
-        return direct
-    return hub.wake_capability_of(f"{recipient}{_WAITER_SUFFIX}")
-
-
-def _recipient_wake_capabilities(hub: SynapseHub, recipients: Iterable[str]) -> dict[str, str]:
-    """Return normalized wake capabilities keyed by logical recipient name."""
-    return {recipient: _recipient_wake_capability(hub, recipient) for recipient in recipients}
-
-
-def _render_recipient_with_capability(recipient: str, capability: str) -> str:
-    """Render one receipt recipient with its declared wake-capability label."""
-    if capability == WAKE_UNKNOWN:
-        return recipient
-    return f"{recipient} ({wake_capability_label(capability)})"
-
-
-async def _warn_stale_recipients(
-    hub: SynapseHub,
-    websocket: Any,
-    *,
-    sender: str,
-    target: str,
-    msg_id: int,
-    recipients: list[str],
-) -> None:
-    """Privately warn ``sender`` about directed recipients that are present but deaf.
-
-    A recipient is flagged when it is online yet has no independent proof of
-    liveness — no armed ``-rx`` waiter sidecar and no genuine reaction within the
-    liveness window (see
-    :meth:`~synapse_channel.core.hub.SynapseHub.recipients_without_live_waiter`). The
-    warning names those recipients and is delivered only to the sender's own socket,
-    the way a delivery receipt is; it is advisory (the message was still delivered
-    and journalled) so it is not itself journalled. When every recipient has a proof
-    of liveness the sender is told nothing, so the signal stays rare enough to mean
-    something.
-    """
-    capabilities = _recipient_wake_capabilities(hub, recipients)
-    stale = hub.recipients_without_live_waiter(recipients)
-    passive = tuple(
-        recipient for recipient, capability in capabilities.items() if capability == WAKE_PASSIVE
-    )
-    if not stale and not passive:
-        return
-    clauses: list[str] = []
-    if stale:
-        clauses.append(
-            f"{', '.join(stale)} present but not proven live — no armed waiter and no "
-            "recent reaction"
-        )
-    if passive:
-        clauses.append(
-            f"{', '.join(passive)} reached only a passive receiver — socket delivery does "
-            "not prove an agent pane was woken"
-        )
-    await hub._send_json(
-        websocket,
-        hub._system(
-            "; ".join(clauses) + "; a directed message may sit unread",
-            msg_type=MessageType.RECIPIENT_LIVENESS_WARNING,
-            target=sender,
-            message_target=target,
-            message_id=msg_id,
-            stale_recipients=list(stale),
-            passive_recipients=list(passive),
-            recipient_wake_capabilities=capabilities,
-        ),
-    )
-
-
-async def _send_delivery_receipt(
-    hub: SynapseHub,
-    websocket: Any,
-    *,
-    sender: str,
-    target: str,
-    msg_id: int,
-    message_seq: int | None = None,
-    recipients: list[str],
-) -> None:
-    """Send a private delivery receipt for a receipt-requested chat."""
-    delivered = bool(recipients)
-    capabilities = _recipient_wake_capabilities(hub, recipients)
-    if delivered:
-        rendered = (
-            _render_recipient_with_capability(recipient, capabilities[recipient])
-            for recipient in recipients
-        )
-        payload = f"delivered to {', '.join(rendered)}"
-    else:
-        payload = f"delivery failed: no online recipient matched {target}"
-    if hub.journal is not None and message_seq is not None:
-        record_delivery_receipt_immediate(
-            hub.journal,
-            immediate_receipt_payload(
-                sender=sender,
-                target=target,
-                message_id=msg_id,
-                message_seq=message_seq,
-                delivered=delivered,
-                recipients=recipients,
-                recipient_wake_capabilities=capabilities,
-            ),
-        )
-    await hub._send_json(
-        websocket,
-        hub._system(
-            payload,
-            msg_type=MessageType.DELIVERY_RECEIPT,
-            target=sender,
-            message_target=target,
-            message_id=msg_id,
-            delivered=delivered,
-            recipients=recipients,
-            recipient_wake_capabilities=capabilities,
-        ),
-    )
 
 
 async def handle_ack(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:

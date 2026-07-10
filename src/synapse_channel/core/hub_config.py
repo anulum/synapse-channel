@@ -14,7 +14,7 @@ parameters belong together. :class:`HubConfig` groups them into their opt-in
 families — ceilings (:class:`HubLimits`), name-takeover damping
 (:class:`TakeoverDamping`), authentication and access control
 (:class:`HubAuthConfig`), the HTTP metrics endpoint
-(:class:`HubMetricsConfig`), the stale-recipient warning
+(:class:`HubMetricsConfig`), the stale-recipient delivery gate
 (:class:`HubLiveness`), multi-hub claim routing (:class:`MultiHubConfig`),
 and cross-domain federation (:class:`FederationConfig`) — while
 :meth:`HubConfig.to_kwargs` flattens the record back into exactly the keyword
@@ -195,13 +195,14 @@ class HubMetricsConfig:
 
 @dataclass(frozen=True, kw_only=True)
 class HubLiveness:
-    """The stale-recipient warning that tells a present agent from a deaf one.
+    """The stale-recipient policy that tells a present agent from a deaf one.
 
     On by default: a directed message to a recipient that is present but has no
     proof of liveness — no ``-rx`` waiter sidecar whose keepalive is fresh within
     ``waiter_liveness_window`` seconds, and no genuine reaction within
-    ``recipient_liveness_window`` seconds — draws a private warning to the sender,
-    and ``/who`` marks it distinctly. Operators can opt out explicitly.
+    ``recipient_liveness_window`` seconds — draws a private warning, cannot count
+    as a positive directed delivery, and is marked distinctly by ``/who``.
+    Operators can opt out explicitly for the legacy socket-presence behavior.
     """
 
     warn_stale_recipients: bool = DEFAULT_WARN_STALE_RECIPIENTS

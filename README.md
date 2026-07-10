@@ -267,14 +267,18 @@ Then, from another terminal, watch the channel or send a message:
 ```bash
 synapse listen --name USER
 synapse send --name USER --target FAST "what is the status of TASK-1?"
-synapse send --require-recipient --target FAST "ping"  # fail if FAST is not online
+synapse send --require-recipient --target FAST "ping"  # also print the positive receipt
 ```
 
 One-shot sends avoid the common waiter-name collision: `synapse send --name
 api-dev-rx ...` sends as `api-dev`, leaving the persistent `api-dev-rx` wake
-socket connected. Add `--require-recipient` for directed sends that must not
-silently miss: the hub returns a private receipt naming the matched online
-recipients, and the command exits non-zero when none match `--target`.
+socket connected. Directed sends request a private receipt by default and exit
+non-zero when no consume-live recipient matches — including when a stale socket
+is still connected but has neither a recent reaction nor a live waiter. The
+message remains journalled and best-effort routed, while the hub records a dead
+letter instead of reporting socket presence as delivery. Add
+`--require-recipient` when the positive receipt should also be printed and a hub
+too old to return receipts must fail closed.
 
 For selected sensitive payloads, encrypt the body before it reaches the hub and
 decrypt it only on the recipient side:
@@ -1245,11 +1249,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.2 |
 | Public API exports | 70 |
-| Package modules | 377 |
-| Classes | 543 |
+| Package modules | 379 |
+| Classes | 544 |
 | Wire message types | 77 |
 | CLI subcommands | 160 |
-| Test functions | 6090 |
+| Test functions | 6105 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 13 |

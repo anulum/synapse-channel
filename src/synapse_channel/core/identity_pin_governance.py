@@ -12,9 +12,10 @@ undoes a durable key binding. The policy therefore composes independent gates
 before the store is touched: an ACL grant, a cryptographically bound requester,
 an append-only audit journal, an exact expected-key comparison, and the name's
 live ownership state. Normal recovery waits until the holder is offline and its
-ownership lease has lapsed under the configured offline TTL. A live or still-
-leased holder requires the explicit break-glass flag; there is no silent key
-rotation or automatic takeover in this module.
+ownership lease has lapsed under the configured offline TTL, or until a socket-up
+holder has lacked both a reaction and a live waiter for that same TTL after its
+reaction window elapsed. Any other live or still-leased holder requires explicit
+break-glass; there is no silent key rotation or automatic takeover in this module.
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ def pin_reclaim_denial(
     journal_available: bool,
     owner_online: bool,
     lease_live: bool,
+    stale_owner_reclaimable: bool,
     break_glass: bool,
 ) -> str:
     """Return the first fail-closed denial, or ``""`` when reclaim may run.
@@ -69,8 +71,9 @@ def pin_reclaim_denial(
         return "the target has no identity pin"
     if pin.key_id != clean_key:
         return "the current pin does not match the expected key id"
-    if not break_glass and owner_online:
+    stale_online_override = owner_online and stale_owner_reclaimable
+    if not break_glass and owner_online and not stale_online_override:
         return "the pinned identity is online; use explicit break-glass recovery to evict it"
-    if not break_glass and lease_live:
+    if not break_glass and lease_live and not stale_online_override:
         return "the ownership lease is still live; wait for its offline TTL or use break-glass"
     return ""

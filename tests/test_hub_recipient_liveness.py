@@ -147,6 +147,10 @@ class TestStaleRecipientWarning:
         assert warnings[0]["stale_recipients"] == ["BETA"]
         assert warnings[0]["target"] == "ALPHA"
         assert warnings[0]["message_target"] == "BETA"
+        assert warnings[0]["delivered"] is False
+        assert warnings[0]["dead_lettered"] is True
+        assert warnings[0]["reason"] == "no_live_recipient"
+        assert hub.dead_letters.snapshot()[0]["target"] == "BETA"
 
     async def test_no_warning_when_the_recipient_has_a_live_waiter(self) -> None:
         clock = _Clock()

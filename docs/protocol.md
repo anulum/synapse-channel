@@ -203,6 +203,19 @@ transport fact: it does **not** claim that a model read, understood, or acted on
 the message. Older clients ignore the WHO field; older hubs ignore the additive
 ACK identity and keep their receipt-only ACK behavior.
 
+**Consume-live immediate receipts.** For a directed chat, the hub partitions
+socket-level matches using the same reaction-plus-waiter liveness policy exposed
+by WHO. At least one consume-live match yields `delivered: true`. If sockets match
+but every recipient is stale, the immediate receipt instead carries
+`delivered: false`, `reason: "no_live_recipient"`, the complete
+`matched_recipients` and `stale_recipients`, and `dead_lettered: true`; no socket
+match uses `reason: "no_online_recipient"`. These fields are additive and do not
+change the wire version. The chat stays durable and may still be queued to a stale
+socket as a best effort, but transport presence is never promoted to a positive
+delivery verdict. This is reachability/acceptance evidence, not proof that a model
+understood or acted on the body. A hub with stale-recipient tracking explicitly
+disabled keeps the compatibility behavior and treats its socket matches as live.
+
 **Deferred receipts.** When a `receipt_requested` directed message dead-lettered,
 the hub remembers it in a bounded pending-receipt store keyed by its `seq`. When the
 recipient reconnects, drains the replayed message, and sends

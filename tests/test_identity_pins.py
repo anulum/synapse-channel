@@ -187,6 +187,7 @@ def test_pin_reclaim_policy_fails_closed_at_each_independent_gate(
         "journal_available": True,
         "owner_online": False,
         "lease_live": False,
+        "stale_owner_reclaimable": False,
         "break_glass": False,
     }
     inputs.update(overrides)
@@ -209,7 +210,47 @@ def test_pin_reclaim_policy_allows_a_stale_exact_pin() -> None:
             journal_available=True,
             owner_online=False,
             lease_live=False,
+            stale_owner_reclaimable=False,
             break_glass=False,
         )
         == ""
     )
+
+
+def test_pin_reclaim_policy_allows_a_consume_stale_online_holder_after_ttl() -> None:
+    assert (
+        pin_reclaim_denial(
+            requester="OPS/operator",
+            pin_name=NAME,
+            expected_key_id="machine-abc",
+            reason="recover wedged holder",
+            pin=IdentityPin("machine-abc", VALID_KEY, 1.0),
+            acl_allowed=True,
+            requester_bound=True,
+            journal_available=True,
+            owner_online=True,
+            lease_live=True,
+            stale_owner_reclaimable=True,
+            break_glass=False,
+        )
+        == ""
+    )
+
+
+def test_stale_override_cannot_bypass_an_offline_live_lease() -> None:
+    denial = pin_reclaim_denial(
+        requester="OPS/operator",
+        pin_name=NAME,
+        expected_key_id="machine-abc",
+        reason="recover wedged holder",
+        pin=IdentityPin("machine-abc", VALID_KEY, 1.0),
+        acl_allowed=True,
+        requester_bound=True,
+        journal_available=True,
+        owner_online=False,
+        lease_live=True,
+        stale_owner_reclaimable=True,
+        break_glass=False,
+    )
+
+    assert "ownership lease is still live" in denial

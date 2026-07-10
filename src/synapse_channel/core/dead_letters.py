@@ -4,23 +4,23 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — track directed chats that reached no live connection
-"""Track directed chats the hub delivered to no live connection.
+# SYNAPSE_CHANNEL — track directed chats that reached no consume-live recipient
+"""Track directed chats the hub delivered to no consume-live recipient.
 
-A message addressed to a name with no live socket is still durable — the
-journal and relay mirror keep it — but it wakes no one, and if nobody ever
-drains that name's inbox the human ends up relaying it by hand: the exact
-failure the bus exists to remove. The hub is the one component that *sees*
-this happen at send time, so it keeps a small, bounded ledger of those
-targets and serves it in the state snapshot, where the dashboard and the
-cockpit can show "N messages, nobody listening" instead of leaving the
-blackhole invisible.
+A message addressed to a name with no socket, or only sockets lacking a recent
+reaction and a live waiter, is still durable — the journal and relay mirror keep
+it — but it has no consume-live recipient. If nobody drains that name's inbox,
+the human ends up relaying it by hand: the exact failure the bus exists to
+remove. The hub is the one component that *sees* this happen at send time, so it
+keeps a small, bounded ledger of those targets and serves it in the state
+snapshot, where the dashboard and cockpit can show "N messages, nobody
+listening" instead of leaving the blackhole invisible.
 
-Honest scope: an entry means "at send time, no live connection matched the
-target". It does not know about inbox cursors on other machines, and it
-clears when the exact name connects — arrival is the hub-visible signal
-that a reader exists; whether that reader also drains the feed history is
-the doctor's addressee check, not this ledger.
+Honest scope: an entry means "at send time, no consume-live recipient matched
+the target". It does not know about inbox cursors on other machines. It clears
+when the exact name freshly connects or produces a genuine non-heartbeat
+reaction; a socket keepalive alone cannot erase it. Whether that reader also
+drains the feed history is the doctor's addressee check, not this ledger.
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ def is_directed_target(target: str) -> bool:
 
 @dataclass(frozen=True)
 class DeadLetter:
-    """One target with directed traffic that reached no live connection.
+    """One target with directed traffic that reached no consume-live recipient.
 
     Attributes
     ----------
@@ -118,7 +118,7 @@ class DeadLetterLedger:
             del self._entries[target]
 
     def record(self, target: str, *, sender: str, ts: float) -> int:
-        """Count one directed message that matched no live connection.
+        """Count one directed message that matched no consume-live recipient.
 
         Returns
         -------

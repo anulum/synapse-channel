@@ -19,8 +19,10 @@ All notable changes to this project are documented here.
   trust-on-first-use pins. A cryptographically bound operator needs an exact
   `identity-pin-reclaim` ACL grant, the observed key id, a reason, and a durable
   hub journal. Normal recovery waits for the target socket to disappear and
-  its ownership lease TTL to lapse; explicit `--break-glass` may evict a live
-  or still-leased holder. Every applied action is compare-and-swap guarded,
+  its ownership lease TTL to lapse, or for a socket-up target to remain without
+  a recent reaction or live waiter for that TTL after its liveness window;
+  explicit `--break-glass` may evict any other live or still-leased holder.
+  Every applied action is compare-and-swap guarded,
   write-ahead audited, broadcast without key material, and removes rather than
   silently replacing the old key. Pin-refusal diagnostics now point at this
   governed command instead of manual JSON deletion.
@@ -139,12 +141,22 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Directed `synapse send` now requests a negative delivery receipt by default.
+  An online socket without a recent reaction or live waiter is classified
+  `no_live_recipient`, recorded as a dead letter, and returns exit `1` just like
+  an offline target; the durable chat is still best-effort routed and remains
+  eligible for mailbox replay. Immediate receipt audits distinguish live,
+  matched, and stale recipients plus their reason. Keepalives cannot clear the
+  resulting blackhole entry. `--require-recipient` still prints positive
+  receipts and additionally requires a receipt from older hubs.
+
 - Stale-recipient liveness warnings and the matching `synapse who` annotations
   are now enabled by default for a bare hub. The existing
   `--warn-stale-recipients` spelling remains accepted, while
   `--no-warn-stale-recipients` provides an explicit compatibility opt-out.
-  Directed messages remain delivered and journalled; the default change makes a
-  present-but-deaf recipient visible to the sender instead of silently waiting.
+  Directed messages remain journalled and best-effort routed; consume-stale-only
+  matches now receive an honest negative delivery verdict instead of being
+  promoted from socket presence.
 
 - `cli_a2a_interop` now has a direct module-owned test surface covering parser
   defaults and overrides, live endpoint-URL and host/port receipt flows through

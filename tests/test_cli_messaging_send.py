@@ -335,6 +335,49 @@ async def test_send_require_recipient_fails_without_online_recipient(
     assert "delivery failed: no online recipient matched MISSING" in capsys.readouterr().out
 
 
+async def test_directed_send_fails_without_online_recipient_by_default(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        code = await cli_messaging._send(
+            uri=uri,
+            name="USER",
+            target="MISSING",
+            message="ping",
+            wait_seconds=0.0,
+            receipt_timeout=0.2,
+        )
+
+    assert code == 1
+    assert "delivery failed: no online recipient matched MISSING" in capsys.readouterr().out
+
+
+async def test_directed_send_fails_by_default_when_only_a_stale_socket_matches(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    now = [0.0]
+    hub = SynapseHub(recipient_liveness_window=1.0, clock=lambda: now[0])
+    async with running_hub(hub) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        try:
+            now[0] = 2.0
+            code = await cli_messaging._send(
+                uri=uri,
+                name="USER",
+                target="OBSERVER",
+                message="ping",
+                wait_seconds=0.0,
+                receipt_timeout=0.2,
+            )
+        finally:
+            await close_agents(observer)
+
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "no live recipient matched OBSERVER" in out
+    assert "stale sockets: OBSERVER" in out
+
+
 async def test_send_require_recipient_fails_without_hub_receipt(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -361,6 +404,33 @@ async def test_send_require_recipient_fails_without_hub_receipt(
 
     assert code == 1
     assert "delivery failed: no receipt from hub for MISSING" in capsys.readouterr().out
+
+
+async def test_default_directed_receipt_stays_compatible_with_an_older_hub(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def receiptless_hub(websocket: ServerConnection) -> None:
+        await websocket.send(json.dumps({"type": "welcome", "sender": "Hub", "target": "self"}))
+        async for _message in websocket:
+            await asyncio.sleep(1)
+
+    port = _free_port()
+    server = await serve(receiptless_hub, "localhost", port)
+    try:
+        code = await cli_messaging._send(
+            uri=f"ws://localhost:{port}",
+            name="USER",
+            target="LEGACY",
+            message="ping",
+            wait_seconds=0.0,
+            receipt_timeout=0.03,
+        )
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    assert code == 0
+    assert capsys.readouterr().out == ""
 
 
 def test_send_waiter_identity_normalization_is_documented() -> None:

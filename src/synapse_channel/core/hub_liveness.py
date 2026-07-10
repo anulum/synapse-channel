@@ -12,8 +12,9 @@ reaction *store* — when each agent last did something that is not a keepalive.
 module is the *policy* layer that combines that store with the two other liveness
 signals the hub already has — the presence of an armed ``-rx`` waiter sidecar and the
 freshness of its keepalives (``state.last_seen``) — to answer the questions the
-sender warning and the ``/who`` roster ask: is this present agent reachable in
-practice, and which agents have no live waiter?
+sender warning, delivery receipt, stale-pin recovery policy, and ``/who`` roster
+ask: is this present agent reachable in practice, and for how long has it lacked
+that proof?
 
 It reads the live client registry and last-seen map through injected references
 rather than holding a back-reference to the hub, the same callback-injection the
@@ -40,8 +41,8 @@ class HubLivenessView:
         The reaction store the hub already writes on registration and every genuine
         (non-heartbeat) frame. Read here; never written.
     enabled : bool
-        Whether the stale-recipient warning is on. When off, the two aggregate
-        queries return empty so the open hub carries no liveness surface.
+        Whether stale-recipient policy is on. When off, aggregate queries return
+        empty and stale socket owners never qualify for TTL recovery.
     waiter_window_seconds : float
         How long a waiter's ``-rx`` sidecar may go without a keepalive before it stops
         counting as live. Clamped non-negative.
@@ -99,12 +100,12 @@ class HubLivenessView:
 
         A directed message reaches only online agents, but online is not the same as
         reachable-in-practice. This returns the subset of ``recipients`` a sender
-        should be warned about — each is present but has *no independent proof of
-        liveness*: no live ``-rx`` waiter (see :meth:`has_live_waiter`) is armed for
-        it, and it has not produced a genuine reaction within the reaction window. An
-        agent with either proof is omitted, so an armed-but-idle agent (reachable,
-        just quiet) and an actively-reacting one are never flagged. Empty when the
-        warning is disabled.
+        must not count as consume-live — each is present but has *no independent
+        proof of liveness*: no live ``-rx`` waiter (see :meth:`has_live_waiter`) is
+        armed for it, and it has not produced a genuine reaction within the reaction
+        window. An agent with either proof is omitted, so an armed-but-idle agent
+        (reachable, just quiet) and an actively-reacting one are never flagged. Empty
+        when stale-recipient policy is disabled.
         """
         if not self._enabled:
             return ()
@@ -114,6 +115,36 @@ class HubLivenessView:
             for name in recipients
             if not self.has_live_waiter(name) and self._reactions.is_stale(name, now)
         )
+
+    def stale_owner_reclaimable(self, name: str, *, ttl_seconds: float) -> bool:
+        """Return whether a socket-up owner has been consume-stale for its recovery TTL.
+
+        Parameters
+        ----------
+        name : str
+            Pinned logical identity whose live socket is under review.
+        ttl_seconds : float
+            Recovery delay measured from the instant the reaction window elapsed.
+            Negative values collapse to zero.
+
+        Returns
+        -------
+        bool
+            ``True`` only when liveness tracking is enabled, no live waiter
+            independently vouches for the identity, a prior reaction timestamp is
+            known, and the identity has remained stale for at least the requested
+            TTL. Unknown history refuses recovery rather than inventing an age.
+        """
+        if not self._enabled or self.has_live_waiter(name):
+            return False
+        now = self._clock()
+        if not self._reactions.is_stale(name, now):
+            return False
+        last = self._reactions.last_reaction_at(name)
+        if last is None:
+            return False
+        stale_for = max(0.0, now - last - self._reactions.window_seconds)
+        return stale_for >= max(float(ttl_seconds), 0.0)
 
     def roster_liveness(self) -> dict[str, dict[str, Any]]:
         """Return a per-agent liveness annotation for the ``/who`` roster.

@@ -118,10 +118,11 @@ class HubClientRegistry:
     def revoke_name(self, name: str) -> Any | None:
         """Detach ``name`` and release its ownership lease for operator recovery.
 
-        This is the synchronous half of a governed break-glass reclaim. The
-        caller has already passed policy and removed the durable identity pin;
-        detaching both registry maps before its next ``await`` prevents a new
-        claimant from racing with a socket that still appears to own the name.
+        This is the synchronous half of a governed reclaim, whether explicit
+        break-glass or a consume-stale holder whose recovery TTL elapsed. The caller
+        has already passed policy and removed the durable identity pin; detaching
+        both registry maps before its next ``await`` prevents a new claimant from
+        racing with a socket that still appears to own the name.
         The returned socket remains in ``connected_clients`` until its normal
         connection teardown runs, so the caller may send a final notice and
         close it without bypassing connection accounting.

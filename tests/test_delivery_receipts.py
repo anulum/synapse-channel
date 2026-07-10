@@ -151,6 +151,8 @@ def test_receipt_event_matching_handles_all_recipients_and_non_receipts() -> Non
             message_seq=10,
             delivered=True,
             recipients=("BOB",),
+            matched_recipients=("BOB", "STALE"),
+            stale_recipients=("STALE",),
         ),
     )
     non_receipt = _event(9, EventKind.CHAT, {"sender": "ALICE", "target": "BOB"})
@@ -158,9 +160,32 @@ def test_receipt_event_matching_handles_all_recipients_and_non_receipts() -> Non
     assert receipt_event_matches(event, "")
     assert receipt_event_matches(event, "all")
     assert receipt_event_matches(event, "BOB")
+    assert receipt_event_matches(event, "STALE")
     assert not receipt_event_matches(non_receipt, "all")
     assert "recipients=BOB" in format_receipt_event(event)
     assert "delivered=True" in format_receipt_event(event)
+
+
+def test_immediate_receipt_preserves_the_no_live_recipient_evidence() -> None:
+    payload = immediate_receipt_payload(
+        sender="ALICE",
+        target="BOB",
+        message_id=5,
+        message_seq=10,
+        delivered=False,
+        recipients=(),
+        matched_recipients=("BOB",),
+        stale_recipients=("BOB",),
+        reason="no_live_recipient",
+        dead_lettered=True,
+    )
+    event = _event(11, EventKind.DELIVERY_RECEIPT_IMMEDIATE, payload)
+
+    projected = receipt_event_to_json(event)
+    assert projected["matched_recipients"] == ["BOB"]
+    assert projected["stale_recipients"] == ["BOB"]
+    assert projected["reason"] == "no_live_recipient"
+    assert projected["dead_lettered"] is True
 
 
 def test_receipt_json_handles_non_list_recipients_and_non_prefixed_kinds() -> None:

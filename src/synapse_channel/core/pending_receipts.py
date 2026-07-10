@@ -8,13 +8,13 @@
 """Track directed chats that dead-lettered but may still be delivered later.
 
 When a sender asks for a delivery receipt on a directed message and no recipient
-is live, the hub answers ``delivered: false`` at once — honest for that instant,
-but it never revises the verdict when the recipient reconnects and drains the
-message from the journal backlog. This store closes that gap: it remembers the
-few facts a *deferred* receipt needs — the durable journal ``seq``, who sent it,
-and the target it was addressed to — keyed on the ``seq`` the reconnecting
-recipient echoes back in its ``ACK``. On that ack the hub can finally tell the
-original sender ``delivered: true, deferred: true`` and forget the entry.
+is consume-live, the hub answers ``delivered: false`` at once — honest for that
+instant — but the message can still arrive through a later replay or a stale
+socket's transport ACK. This store closes that gap: it remembers the few facts a
+*deferred* receipt needs — the durable journal ``seq``, who sent it, and the
+target it was addressed to — keyed on the ``seq`` the recipient echoes back in
+its ``ACK``. On that ACK the hub can finally tell the original sender
+``delivered: true, deferred: true`` and forget the entry.
 
 It holds no message body (the journal already does) and is bounded: a flood of
 receipt-requested messages to blackholed targets evicts the oldest pending entry
@@ -31,9 +31,9 @@ from dataclasses import dataclass
 DEFAULT_PENDING_RECEIPTS = 1024
 """Bounded number of directed messages tracked for a deferred receipt.
 
-A receipt-requested directed message that reaches no live recipient adds one
-entry; the oldest is evicted once the bound is crossed, so a burst of messages to
-blackholed targets cannot grow the hub without limit. The window is generous
+A receipt-requested directed message that reaches no consume-live recipient adds
+one entry; the oldest is evicted once the bound is crossed, so a burst of messages
+to blackholed targets cannot grow the hub without limit. The window is generous
 because an entry is small (a seq and two names) and is claimed the moment its
 recipient reconnects and acks, so only genuinely unacked messages occupy slots.
 """

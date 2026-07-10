@@ -62,9 +62,15 @@ def immediate_receipt_payload(
     message_seq: int,
     delivered: bool,
     recipients: Iterable[str],
+    matched_recipients: Iterable[str] | None = None,
+    stale_recipients: Iterable[str] = (),
+    reason: str = "",
+    dead_lettered: bool = False,
     recipient_wake_capabilities: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Return the audit payload for the hub's immediate receipt verdict."""
+    live = [str(recipient) for recipient in recipients]
+    matched = live if matched_recipients is None else [str(item) for item in matched_recipients]
     return {
         "sender": sender,
         "target": target,
@@ -72,7 +78,11 @@ def immediate_receipt_payload(
         "message_seq": int(message_seq),
         "delivered": bool(delivered),
         "deferred": False,
-        "recipients": [str(recipient) for recipient in recipients],
+        "recipients": live,
+        "matched_recipients": matched,
+        "stale_recipients": [str(recipient) for recipient in stale_recipients],
+        "reason": str(reason),
+        "dead_lettered": bool(dead_lettered),
         "recipient_wake_capabilities": dict(recipient_wake_capabilities or {}),
     }
 
@@ -163,10 +173,15 @@ def receipt_event_matches(event: StoredEvent, participant: str) -> bool:
         return True
     payload = event.payload
     recipients = payload.get("recipients")
+    matched_recipients = payload.get("matched_recipients")
     return (
         str(payload.get("sender", "")) == name
         or str(payload.get("target", "")) == name
         or (isinstance(recipients, list) and name in {str(item) for item in recipients})
+        or (
+            isinstance(matched_recipients, list)
+            and name in {str(item) for item in matched_recipients}
+        )
     )
 
 
@@ -188,6 +203,13 @@ def receipt_event_to_json(event: StoredEvent) -> dict[str, Any]:
         "recipients": [str(item) for item in payload.get("recipients", [])]
         if isinstance(payload.get("recipients"), list)
         else [],
+        "matched_recipients": [str(item) for item in payload.get("matched_recipients", [])]
+        if isinstance(payload.get("matched_recipients"), list)
+        else [],
+        "stale_recipients": [str(item) for item in payload.get("stale_recipients", [])]
+        if isinstance(payload.get("stale_recipients"), list)
+        else [],
+        "dead_lettered": bool(payload.get("dead_lettered", False)),
         "reason": str(payload.get("reason", "")),
         "acked_by": str(payload.get("acked_by", "")),
     }

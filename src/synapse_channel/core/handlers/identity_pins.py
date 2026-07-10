@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("synapse.hub")
 
 PIN_RECLAIM_CLOSE_CODE = 4017
-"""Close code sent to a live holder evicted by an audited break-glass reclaim."""
+"""Close code sent to a live holder evicted by an audited governed reclaim."""
 
 
 async def handle_identity_pin_reclaim(
@@ -53,6 +53,10 @@ async def handle_identity_pin_reclaim(
     owner_socket = hub.clients.agent_sockets.get(pin_name)
     owner_online = owner_socket is not None
     lease_live = hub.clients.ownership.is_leased(pin_name)
+    stale_owner_reclaimable = owner_online and hub._liveness.stale_owner_reclaimable(
+        pin_name,
+        ttl_seconds=hub.clients.ownership.offline_ttl,
+    )
     requester_pin = hub._identity_pins.pinned(sender)
     requester_bound = hub.require_identity_binding or requester_pin is not None
     journal = hub.journal
@@ -67,6 +71,7 @@ async def handle_identity_pin_reclaim(
         journal_available=journal is not None,
         owner_online=owner_online,
         lease_live=lease_live,
+        stale_owner_reclaimable=stale_owner_reclaimable,
         break_glass=break_glass,
     )
     if denial:
@@ -99,6 +104,7 @@ async def handle_identity_pin_reclaim(
         "break_glass": break_glass,
         "owner_online": owner_online,
         "lease_live": lease_live,
+        "stale_owner_reclaimable": stale_owner_reclaimable,
     }
     approved_seq = record_identity_pin_reclaim(
         journal, {**provenance, "status": "approved", "applied": False}

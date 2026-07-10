@@ -150,6 +150,43 @@ class TestRecipientsWithoutLiveWaiter:
         assert view.recipients_without_live_waiter(["A", "B", "C"]) == ("A", "C")
 
 
+class TestStaleOwnerReclaimable:
+    def test_recovery_ttl_starts_when_the_reaction_window_expires(self) -> None:
+        clock = _Clock()
+        view, reactions, sockets, _seen = _view(recipient_window=10.0, clock=clock)
+        sockets["BETA"] = object()
+        reactions.touch("BETA", 0.0)
+
+        clock.t = 5.0
+        assert view.stale_owner_reclaimable("BETA", ttl_seconds=10.0) is False
+        clock.t = 19.0
+        assert view.stale_owner_reclaimable("BETA", ttl_seconds=10.0) is False
+        clock.t = 20.0
+        assert view.stale_owner_reclaimable("BETA", ttl_seconds=10.0) is True
+
+    def test_live_waiter_blocks_stale_socket_recovery(self) -> None:
+        clock = _Clock()
+        view, reactions, sockets, seen = _view(recipient_window=10.0, clock=clock)
+        sockets["BETA"] = object()
+        sockets["BETA-rx"] = object()
+        seen["BETA-rx"] = time.time()
+        reactions.touch("BETA", 0.0)
+        clock.t = 100.0
+
+        assert view.stale_owner_reclaimable("BETA", ttl_seconds=10.0) is False
+
+    def test_unknown_or_disabled_reaction_history_refuses_recovery(self) -> None:
+        clock = _Clock()
+        enabled, _reactions, sockets, _seen = _view(clock=clock)
+        disabled, disabled_reactions, _, _ = _view(enabled=False, clock=clock)
+        sockets["BETA"] = object()
+        disabled_reactions.touch("BETA", 0.0)
+        clock.t = 100.0
+
+        assert enabled.stale_owner_reclaimable("BETA", ttl_seconds=0.0) is False
+        assert disabled.stale_owner_reclaimable("BETA", ttl_seconds=0.0) is False
+
+
 class TestRosterLiveness:
     def test_disabled_returns_empty(self) -> None:
         view, _reactions, sockets, _seen = _view(enabled=False)

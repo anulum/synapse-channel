@@ -1095,13 +1095,14 @@ class SynapseHub:
 
         self.state.heartbeat(sender)
         is_new_agent = self.clients.set_agent_socket(sender, websocket)
-        self.dead_letters.clear(sender)
+        if not was_bound or msg_type != MessageType.HEARTBEAT:
+            self.dead_letters.clear(sender)
         if is_new_agent:
             await self._broadcast_presence("joined", sender)
-        if self.warn_stale_recipients and (is_new_agent or msg_type != MessageType.HEARTBEAT):
+        if self.warn_stale_recipients and (not was_bound or msg_type != MessageType.HEARTBEAT):
             # Seed the grace window on registration, then refresh on every genuine
-            # reaction — any non-heartbeat frame — so a directed sender can be warned
-            # about a recipient that is present but has gone deaf. A keepalive
+            # reaction — any non-heartbeat frame — so directed delivery can classify
+            # a recipient that is present but has gone deaf. A keepalive
             # heartbeat is deliberately not a reaction: it proves the socket, not the
             # agent. Only written when the warning is enabled, so the default open hub
             # keeps no per-frame liveness state.
