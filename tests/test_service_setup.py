@@ -65,7 +65,10 @@ def test_install_arm_service_writes_only_waiter_unit(tmp_path: Path) -> None:
     assert any(
         "systemd-escape --template=synapse-arm@.service -- repo/ux" in line for line in result.lines
     )
-    assert not (tmp_path / "synapse").exists()
+    # Still no hub or presence unit — but the sandboxed unit's ReadWritePaths
+    # targets must exist before the first start, so the data dirs are created.
+    assert (tmp_path / "synapse").is_dir()
+    assert (tmp_path / ".local" / "share" / "synapse").is_dir()
 
 
 def test_install_arm_service_start_enables_exact_escaped_instance(tmp_path: Path) -> None:

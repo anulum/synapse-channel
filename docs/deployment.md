@@ -37,6 +37,27 @@ It prints exact `systemctl --user` commands. `synapse git-init` accepts the same
 `--install-user-services` and `--start-user-services` flags, so claim-aware git
 setup can also write/start the hub, presence, and wake-listener units.
 
+### Sandboxing of the generated units
+
+Every generated unit (hub, presence, wake listener) ships a systemd sandbox
+block: `ProtectSystem=strict` with `ProtectHome=read-only` makes the whole
+filesystem read-only to the service except its declared `ReadWritePaths=` —
+`~/synapse` (event store, relay feed, mailbox cursors, owner leases) and, for
+connecting clients, `~/.local/share/synapse` (the trust-on-first-use machine
+key). `PrivateTmp`, `NoNewPrivileges`, `UMask=0077`, namespace/realtime/SUID
+restrictions, and a per-role `LimitNOFILE` (65536 hub, 4096 listeners) complete
+the set. The block is the strongest one a *user* service manager can apply:
+directives that need capability-bounding-set changes (`ProtectClock=`,
+`ProtectKernelModules=`, `PrivateDevices=`, `CapabilityBoundingSet=`) fail at
+spawn with `218/CAPABILITIES` under `systemd --user`, so they are deliberately
+absent — one shared module (`synapse_channel/service_hardening.py`) owns the
+set, and the checked-in `deploy/*.service` templates are test-pinned to it.
+The install paths create the writable directories up front because
+`ReadWritePaths=` refuses to mount a path that does not exist. Measured with
+`systemd-analyze security --user` on a live workstation, the block moves a
+service from 9.8 (UNSAFE) to 7.4 (MEDIUM); the residual score reflects the
+user-manager capability ceiling, not missing configuration.
+
 ## Permanent waiter (`synapse arm install`)
 
 Install only the exact-identity waiter when the hub already exists or lives on

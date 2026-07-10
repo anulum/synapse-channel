@@ -10,12 +10,17 @@
 # armed. It holds a socket, prints matching messages, and restarts if it dies.
 #
 # User install:
+#   mkdir -p ~/synapse ~/.local/share/synapse
 #   cp deploy/synapse-arm@.service ~/.config/systemd/user/
 #   systemctl --user daemon-reload
 #   systemctl --user enable --now "$(systemd-escape --template=synapse-arm@.service '<project-or-identity>')"
 #
 # %I expands to the unescaped instance name, so identities such as PROJECT/ux work
 # when enabled through systemd-escape.
+# The sandbox block mirrors synapse_channel/service_hardening.py: the strongest
+# set a user manager can apply (capability-dropping directives fail with
+# 218/CAPABILITIES under systemd --user). ReadWritePaths targets must exist
+# before the first start — the mkdir above creates them.
 
 [Unit]
 Description=SYNAPSE CHANNEL wake listener for %I
@@ -30,6 +35,20 @@ Environment=SYN_IDENTITY=%I
 ExecStart=%h/.local/bin/synapse arm --name %I-rx --for %I --directed-only --mailbox --uri ws://localhost:8876
 Restart=always
 RestartSec=2
+NoNewPrivileges=yes
+UMask=0077
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/synapse %h/.local/share/synapse
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+LimitNOFILE=4096
 
 [Install]
 WantedBy=default.target

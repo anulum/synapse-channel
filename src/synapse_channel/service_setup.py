@@ -22,6 +22,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from synapse_channel.service_hardening import (
+    HUB_NOFILE,
+    HUB_WRITE_PATHS,
+    LISTENER_NOFILE,
+    LISTENER_WRITE_PATHS,
+    hardening_directives,
+)
+
 
 class CommandRunner(Protocol):
     """Callable compatible with :func:`subprocess.run` for injectable tests."""
@@ -76,7 +84,9 @@ def render_hub_unit(*, synapse_bin: str) -> str:
         f"ExecStart={synapse_bin} hub --port 8876 --db %h/synapse/hub.db "
         "--relay-log %h/synapse/feed.ndjson --relay-max-lines 20000\n"
         "Restart=always\n"
-        "RestartSec=2\n\n"
+        "RestartSec=2\n"
+        + hardening_directives(write_paths=HUB_WRITE_PATHS, nofile=HUB_NOFILE)
+        + "\n"
         "[Install]\n"
         "WantedBy=default.target\n"
     )
@@ -103,7 +113,9 @@ def render_presence_unit(*, synapse_bin: str) -> str:
         "Type=simple\n"
         f"ExecStart={synapse_bin} listen --name %I-presence --for %I --uri ws://localhost:8876\n"
         "Restart=always\n"
-        "RestartSec=3\n\n"
+        "RestartSec=3\n"
+        + hardening_directives(write_paths=LISTENER_WRITE_PATHS, nofile=LISTENER_NOFILE)
+        + "\n"
         "[Install]\n"
         "WantedBy=default.target\n"
     )
@@ -150,10 +162,28 @@ def render_arm_unit(
         f"ExecStart={executable} arm --name %I-rx --for %I --directed-only "
         f"--mailbox --uri {hub_uri}{extra_argument}\n"
         "Restart=always\n"
-        "RestartSec=2\n\n"
+        "RestartSec=2\n"
+        + hardening_directives(write_paths=LISTENER_WRITE_PATHS, nofile=LISTENER_NOFILE)
+        + "\n"
         "[Install]\n"
         "WantedBy=default.target\n"
     )
+
+
+def _ensure_writable_dirs(home: Path | None) -> tuple[Path, ...]:
+    """Create the directories the sandboxed units are allowed to write.
+
+    ``ReadWritePaths=`` refuses to mount a path that does not exist, so a
+    hardened unit would fail its first start on a fresh machine unless the
+    writable roots are created at install time: the coordination data
+    directory (event store, relay feed, mailbox cursors, owner leases) and the
+    machine-identity directory (trust-on-first-use key auto-provisioning).
+    """
+    root = Path.home() if home is None else home
+    directories = (root / "synapse", root / ".local" / "share" / "synapse")
+    for directory in directories:
+        directory.mkdir(parents=True, exist_ok=True)
+    return directories
 
 
 def _run_service_command(
@@ -197,11 +227,14 @@ def install_arm_service(
     try:
         body = render_arm_unit(synapse_bin=synapse, uri=uri, token_file=token_file)
         unit_dir.mkdir(parents=True, exist_ok=True)
+        writable = _ensure_writable_dirs(home)
         unit_path.write_text(body, encoding="utf-8")
     except (OSError, ValueError) as exc:
         return ArmServiceInstallResult(False, (f"failed to write {unit_path} — {exc}",))
 
-    lines = [f"ensured {unit_dir}", f"wrote {unit_path}"]
+    lines = [f"ensured {unit_dir}"]
+    lines.extend(f"ensured {directory}" for directory in writable)
+    lines.append(f"wrote {unit_path}")
     if not start:
         lines.extend(
             (
@@ -269,7 +302,7 @@ def service_suggestions(
     """Return exact commands for manually installing and starting user services."""
     synapse = synapse_bin or default_synapse_bin()
     return [
-        "mkdir -p ~/.config/systemd/user ~/synapse",
+        "mkdir -p ~/.config/systemd/user ~/synapse ~/.local/share/synapse",
         "synapse init --install-user-services",
         "systemctl --user daemon-reload",
         "systemctl --user enable --now synapse-hub.service",
@@ -315,16 +348,16 @@ def install_user_services(
     """
     synapse = synapse_bin or default_synapse_bin()
     unit_dir = user_systemd_dir(home=home)
-    data_dir = (Path.home() if home is None else home) / "synapse"
     unit_dir.mkdir(parents=True, exist_ok=True)
-    data_dir.mkdir(parents=True, exist_ok=True)
+    writable = _ensure_writable_dirs(home)
 
     units = {
         "synapse-hub.service": render_hub_unit(synapse_bin=synapse),
         "synapse-presence@.service": render_presence_unit(synapse_bin=synapse),
         "synapse-arm@.service": render_arm_unit(synapse_bin=synapse),
     }
-    lines = [f"ensured {unit_dir}", f"ensured {data_dir}"]
+    lines = [f"ensured {unit_dir}"]
+    lines.extend(f"ensured {directory}" for directory in writable)
     for filename, body in units.items():
         path = unit_dir / filename
         path.write_text(body, encoding="utf-8")

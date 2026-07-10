@@ -12,6 +12,10 @@
 #   systemctl --user enable --now synapse-hub
 #
 # %h expands to the user's home directory under `systemctl --user`.
+# The sandbox block mirrors synapse_channel/service_hardening.py: the strongest
+# set a user manager can apply (capability-dropping directives fail with
+# 218/CAPABILITIES under systemd --user). ReadWritePaths targets must exist
+# before the first start — the mkdir above creates them.
 
 [Unit]
 Description=SYNAPSE CHANNEL coordination hub (local-first, loopback)
@@ -23,6 +27,20 @@ Type=simple
 ExecStart=%h/.local/bin/synapse hub --port 8876 --db %h/synapse/hub.db --relay-log %h/synapse/feed.ndjson --relay-max-lines 20000
 Restart=always
 RestartSec=2
+NoNewPrivileges=yes
+UMask=0077
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/synapse
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+LimitNOFILE=65536
 
 [Install]
 WantedBy=default.target

@@ -11,10 +11,15 @@
 # itself if it dies. It only holds the connection — no model, no cost.
 #
 # User install (recommended, local-first):
+#   mkdir -p ~/synapse ~/.local/share/synapse
 #   cp deploy/synapse-presence@.service ~/.config/systemd/user/
 #   systemctl --user enable --now synapse-presence@<project>
 #
 # %h expands to the user's home directory; %i to the instance name (the project).
+# The sandbox block mirrors synapse_channel/service_hardening.py: the strongest
+# set a user manager can apply (capability-dropping directives fail with
+# 218/CAPABILITIES under systemd --user). ReadWritePaths targets must exist
+# before the first start — the mkdir above creates them.
 
 [Unit]
 Description=SYNAPSE CHANNEL presence holder for %i (provider-independent reachability)
@@ -28,6 +33,20 @@ Type=simple
 ExecStart=%h/.local/bin/synapse listen --name %i-presence --for %i --uri ws://localhost:8876
 Restart=always
 RestartSec=3
+NoNewPrivileges=yes
+UMask=0077
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/synapse %h/.local/share/synapse
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+LimitNOFILE=4096
 
 [Install]
 WantedBy=default.target

@@ -85,6 +85,21 @@ All notable changes to this project are documented here.
   full class-to-code map is frozen by a registry test, and an AST drift gate
   refuses any future `*Error` class that does not join the taxonomy.
 
+- Every generated systemd user unit (hub, presence, wake listener) and its
+  checked-in `deploy/*.service` template now carries a sandbox block:
+  `ProtectSystem=strict` + `ProtectHome=read-only` with narrow, code-derived
+  `ReadWritePaths` (`~/synapse`; clients also `~/.local/share/synapse` for the
+  trust-on-first-use key), `PrivateTmp`, `NoNewPrivileges`, `UMask=0077`,
+  namespace/realtime/SUID restrictions, and per-role `LimitNOFILE` (65536 hub,
+  4096 listeners). One shared module owns the block, tests pin the deploy
+  templates to the renderers and pin the writable roots to the real storage
+  modules, and the install paths create the writable directories up front.
+  Directives that fail under a user manager (`ProtectClock`,
+  `ProtectKernelModules`, `PrivateDevices`, `CapabilityBoundingSet`) are
+  deliberately absent and test-forbidden. Measured on a live workstation the
+  block moves a service from 9.8 (UNSAFE) to 7.4 (MEDIUM) in
+  `systemd-analyze security --user`.
+
 ### Changed
 
 - `cli_a2a_interop` now has a direct module-owned test surface covering parser
