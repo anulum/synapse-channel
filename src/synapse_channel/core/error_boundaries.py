@@ -52,10 +52,12 @@ def http_error_boundary(
     exc: BaseException,
     default: HTTPStatus,
     default_title: str,
-) -> tuple[HTTPStatus, str]:
-    """Return a mapped status and a title consistent with that status."""
+) -> tuple[HTTPStatus, str, str]:
+    """Return a mapped status, consistent title, and safe public detail."""
     status = http_status_for_error(exc, default=default)
-    return status, default_title if status == default else status.phrase
+    title = default_title if status == default else status.phrase
+    detail = str(exc) if status < HTTPStatus.INTERNAL_SERVER_ERROR else ""
+    return status, title, detail
 
 
 def cli_exit_code_for_error(

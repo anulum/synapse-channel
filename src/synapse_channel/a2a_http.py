@@ -331,7 +331,7 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                 try:
                     created = self.bridge.create_push_notification_config(task_id, config)
                 except ValueError as exc:
-                    status, title = http_error_boundary(
+                    status, title, detail = http_error_boundary(
                         exc, HTTPStatus.BAD_REQUEST, "Invalid push notification config"
                     )
                     self._send_json(
@@ -339,7 +339,7 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                         problem_response(
                             status,
                             title,
-                            str(exc),
+                            detail,
                         ),
                         media_type=PROBLEM_MEDIA_TYPE,
                     )
@@ -356,12 +356,12 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                 try:
                     self._send_sse(HTTPStatus.OK, self.bridge.stream_message(data))
                 except ValueError as exc:
-                    status, title = http_error_boundary(
+                    status, title, detail = http_error_boundary(
                         exc, HTTPStatus.BAD_REQUEST, "Invalid A2A message"
                     )
                     self._send_json(
                         status,
-                        problem_response(status, title, str(exc)),
+                        problem_response(status, title, detail),
                         media_type=PROBLEM_MEDIA_TYPE,
                     )
                 return
@@ -372,12 +372,12 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                 try:
                     self._send_json(HTTPStatus.OK, self.bridge.send_message(data))
                 except ValueError as exc:
-                    status, title = http_error_boundary(
+                    status, title, detail = http_error_boundary(
                         exc, HTTPStatus.BAD_REQUEST, "Invalid A2A message"
                     )
                     self._send_json(
                         status,
-                        problem_response(status, title, str(exc)),
+                        problem_response(status, title, detail),
                         media_type=PROBLEM_MEDIA_TYPE,
                     )
                 return

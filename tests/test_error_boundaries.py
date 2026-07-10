@@ -53,11 +53,21 @@ def test_http_boundary_preserves_default_title_only_for_the_default_status() -> 
     assert http_error_boundary(ValueError("foreign"), HTTPStatus.BAD_REQUEST, "Invalid") == (
         HTTPStatus.BAD_REQUEST,
         "Invalid",
+        "foreign",
     )
     assert http_error_boundary(A2AConflictError("exists"), HTTPStatus.BAD_REQUEST, "Invalid") == (
         HTTPStatus.CONFLICT,
         "Conflict",
+        "exists",
     )
+
+
+def test_http_boundary_redacts_internal_error_detail() -> None:
+    assert http_error_boundary(
+        A2AStoreError("Invalid A2A state file: /private/hub.json"),
+        HTTPStatus.BAD_REQUEST,
+        "Invalid",
+    ) == (HTTPStatus.INTERNAL_SERVER_ERROR, "Internal Server Error", "")
 
 
 @pytest.mark.parametrize(

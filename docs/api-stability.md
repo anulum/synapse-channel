@@ -75,6 +75,8 @@ not-found, conflict, quota, and store codes map to HTTP 400, 404, 409, 429, and
 500 respectively. Outbound MCP config, access, and tool codes map to CLI exits
 2, 3, and 1. Foreign exceptions take the boundary caller's explicit default;
 neither projection parses exception text or infers semantics from wording.
+Caller-actionable 4xx responses retain their detail, while mapped 5xx responses
+omit exception text so internal paths and storage diagnostics stay server-side.
 
 ## Stability tiers
 

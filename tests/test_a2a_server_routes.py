@@ -11,7 +11,10 @@ from __future__ import annotations
 from http import HTTPStatus
 from pathlib import Path
 
+import pytest
+
 from a2a_server_helpers import HandlerHarness, RecordingAgent
+from synapse_channel.a2a_errors import A2AStoreError
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 
@@ -392,6 +395,26 @@ def test_stream_invalid_message_returns_problem_json() -> None:
     assert status == HTTPStatus.BAD_REQUEST
     assert body["title"] == "Invalid A2A message"
     assert body["detail"] == "message must be an object"
+
+
+def test_message_send_redacts_typed_internal_failure_detail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+
+    def fail_send(_payload: object) -> object:
+        raise A2AStoreError("Invalid A2A state file: /private/hub.json")
+
+    monkeypatch.setattr(bridge, "send_message", fail_send)
+    harness = HandlerHarness("POST", "/message:send", body={})
+    harness.handler.bridge = bridge
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.INTERNAL_SERVER_ERROR
+    assert body["title"] == "Internal Server Error"
+    assert "detail" not in body
+    assert "/private/hub.json" not in str(body)
 
 
 def test_rpc_accepts_malformed_content_length_as_empty_body() -> None:
