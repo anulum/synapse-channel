@@ -6,6 +6,15 @@
   "version": "0.1.0",
   "license": "AGPL-3.0-or-later",
   "publisher": "anulum",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anulum/synapse-channel.git",
+    "directory": "clients/vscode"
+  },
+  "homepage": "https://github.com/anulum/synapse-channel/tree/main/clients/vscode#readme",
+  "bugs": {
+    "url": "https://github.com/anulum/synapse-channel/issues"
+  },
   "type": "module",
   "engines": {
     "vscode": "^1.90.0",
@@ -42,12 +51,16 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "vscode:prepublish": "npm run build",
+    "prepackage:vsix": "node -e \"require('node:fs').mkdirSync('dist',{recursive:true})\"",
+    "package:vsix": "vsce package --no-dependencies --out dist/synapse-channel-vscode.vsix",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "3.9.2",
     "typescript": "^5.6.0",
     "vitest": "^3.2.6"
   }

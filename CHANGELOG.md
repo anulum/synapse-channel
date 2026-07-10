@@ -97,7 +97,12 @@ All notable changes to this project are documented here.
   freezes; the A2A bridge is validated, partial interop (official SDK
   lifecycle passes; TCK MUST run 55 passed / 5 documented gaps — evidence,
   not certification); Go/JS embed within stated boundaries; the cockpit PWA
-  and VS Code extension stub stay experimental.
+  and VS Code extension preview stay experimental.
+- The experimental VS Code/Cursor extension now has a repeatable,
+  version-pinned official `vsce` packaging path, a development-only payload
+  exclusion list, local VSIX installation instructions, and a CI-uploaded
+  installable artifact. Its unauthenticated-loopback runtime boundary is
+  unchanged and explicit.
 
 ### Security
 

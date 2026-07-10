@@ -13,9 +13,11 @@ Bring the coordination bus into the editor: claim the file you are about to edit
 release it when you are done, watch the shared board, and see hub health in the
 status bar — so two agents (or two people) never edit the same file at once.
 
-This is an early stub. The structure, the editor-agnostic logic, and its tests
-are in place; packaging to a `.vsix` and the richer gutter affordances are the
-next step. It is intentionally kept separate from the core Python package.
+This is an installable experimental preview. The structure, editor-agnostic
+logic, tests, and repeatable version-pinned `.vsix` packaging path are in place;
+richer per-line gutter affordances remain open. It is intentionally kept
+separate from the core Python package and is not published in the VS Code
+Marketplace yet.
 
 ## What it does
 
@@ -45,7 +47,26 @@ npm ci
 npm run typecheck   # strict TypeScript, no emit
 npm test            # Vitest unit tests for the fleet model
 npm run build       # compile to out/
+npm run package:vsix
 ```
 
-The extension talks to a local hub over a plain WebSocket; start one with
-`synapse hub` (see the repository root) before launching the extension host.
+`package:vsix` runs the production build through the official VS Code extension
+packager and writes `dist/synapse-channel-vscode.vsix`. Install that exact local
+artifact with:
+
+```bash
+code --install-extension dist/synapse-channel-vscode.vsix --force
+code --list-extensions --show-versions | grep '^anulum.synapse-channel-vscode@'
+```
+
+You can also use **Extensions → Views and More Actions… → Install from VSIX…**.
+The CI job builds the same package, verifies that its archive contains the
+runtime manifest and compiled entry point but no source/test/dependency trees,
+and uploads it as the `synapse-channel-vscode-vsix` workflow artifact.
+
+The preview currently talks to a local unauthenticated hub over a plain
+WebSocket; start one with `synapse hub` (see the repository root) before
+launching the extension host. It does not yet expose a token-file setting, so do
+not point it at an off-loopback or token-gated hub. Packaging does not change
+that runtime/security boundary or promote the extension into the supported-core
+tier.

@@ -63,9 +63,9 @@ support weight. Choose in this order:
   5 documented gaps — recorded evidence, not certification. The
   **[Go](go-client.md)** and **[JS](js-client.md)** clients embed within
   their stated boundaries.
-- **Experimental** — the **cockpit** PWA and the **VS Code extension stub**:
-  useful, moving fast, and not part of the stability contract. Expect surface
-  changes between minor releases.
+- **Experimental** — the **cockpit** PWA and the installable **VS Code
+  extension preview**: useful, moving fast, and not part of the stability
+  contract. Expect surface changes between minor releases.
 
 ## Coming: Studio
 

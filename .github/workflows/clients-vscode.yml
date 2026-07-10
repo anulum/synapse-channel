@@ -30,3 +30,21 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - run: npm run package:vsix
+      - name: Verify VSIX runtime payload
+        run: |
+          unzip -t dist/synapse-channel-vscode.vsix
+          unzip -Z1 dist/synapse-channel-vscode.vsix | sort > /tmp/synapse-vsix-files.txt
+          grep -Fx 'extension/package.json' /tmp/synapse-vsix-files.txt
+          grep -Fx 'extension/out/extension.js' /tmp/synapse-vsix-files.txt
+          grep -Fx 'extension/LICENSE.txt' /tmp/synapse-vsix-files.txt
+          if grep -Eq '^extension/(src|test|node_modules)/' /tmp/synapse-vsix-files.txt; then
+            echo 'VSIX contains development-only trees' >&2
+            exit 1
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: synapse-channel-vscode-vsix
+          path: clients/vscode/dist/synapse-channel-vscode.vsix
+          if-no-files-found: error
+          retention-days: 14
