@@ -184,6 +184,15 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Read-only query verbs (`who`, `state`, `board`, `manifest`) no longer exit
+  `0` with no output when the hub accepts the welcome and then closes the socket
+  before answering — an identity-pin refusal (`4013`), an ownership-lease
+  refusal (`4016`), or a takeover. The query now surfaces the close reason and
+  exits `1`, so a name pinned to another machine's key (the silent sink a
+  borrowed shell's ambient name produced on the 0.99.2 workstation) fails
+  visibly instead of looking like an empty roster. A genuine no-reply against a
+  reachable hub still exits `0`.
+
 - Fleet-scorecard history loading now stays at the CLI feature edge instead of
   importing `benchmark.trend` upward from the coordination kernel. Core accepts
   a minimal structural benchmark-run contract and preserves the existing JSON

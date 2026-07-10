@@ -9,17 +9,21 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 from pathlib import Path
 
 import pytest
 
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_queries
+from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.client.agent_dispatch import MessageCallback
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.multihub_fold import fold_observed_state
 from synapse_channel.core.multihub_merge import HubEvent
 from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
+from synapse_channel.machine_identity import machine_identity_agent_kwargs
 from synapse_channel.observed_peers import ObservedPeerSnapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -400,3 +404,62 @@ def test_public_docs_explain_who_me_presence_and_waiter_distinction() -> None:
     assert "syn who --me" in combined
     assert "synapse who --me" in combined
     assert "presence is not a wake loop" in combined
+
+
+async def test_who_under_a_foreign_key_fails_loudly_not_silently(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A query whose name is pinned to another machine key exits 1 with guidance.
+
+    The hub accepts the welcome and only then closes the socket with 4013
+    (`identity pin mismatch`), so the query received no snapshot. Before this
+    fix `who` printed nothing and exited 0 — the silent sink observed on the
+    live 0.99.2 workstation when a borrowed shell's ambient name resolved to a
+    pin held by a different key (F12). The refusal must now be visible.
+    """
+    name = "PROJ/pinned"
+    async with running_hub(SynapseHub(identity_pin_path=tmp_path / "pins.json")) as (hub, uri):
+        owner = SynapseAgent(
+            name, None, uri=uri, verbose=False, **machine_identity_agent_kwargs(base=tmp_path / "a")
+        )
+        owner_task = asyncio.create_task(owner.connect())
+        try:
+            assert await owner.wait_until_ready(3.0)
+            for _ in range(60):
+                if hub._identity_pins.pinned(name) is not None:
+                    break
+                await asyncio.sleep(0.05)
+            assert hub._identity_pins.pinned(name) is not None
+        finally:
+            owner.running = False
+            owner_task.cancel()
+
+        def _foreign_agent(
+            agent_name: str,
+            callback: MessageCallback | None = None,
+            **kwargs: object,
+        ) -> SynapseAgent:
+            """Build the query agent under a different machine key than the pin."""
+            return SynapseAgent(
+                agent_name,
+                callback,
+                uri=str(kwargs["uri"]),
+                verbose=False,
+                token=kwargs.get("token"),  # type: ignore[arg-type]
+                **machine_identity_agent_kwargs(base=tmp_path / "b"),
+            )
+
+        code = await cli_queries._query_hub(
+            uri=uri,
+            name=name,
+            token=None,
+            response_type="roster",
+            request=lambda agent: agent.request_who(),
+            render=lambda value: None,
+            agent_factory=_foreign_agent,
+            attempts=40,
+        )
+
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "identity proof refused" in out

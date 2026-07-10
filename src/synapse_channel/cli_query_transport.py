@@ -100,9 +100,27 @@ async def _query_hub(
         for _ in range(attempts):
             if results:
                 break
+            if agent.last_close_code is not None:
+                break
             await asyncio.sleep(0.05)
         if results:
             render(results[-1])
+            return 0
+        if agent.last_close_code is not None:
+            # The hub accepted the welcome, then closed the socket before it
+            # answered — an identity-pin refusal (4013), an ownership-lease
+            # refusal (4016), or a takeover. Without this the query would print
+            # nothing and exit 0, the silent sink a pinned name under a
+            # borrowed key produced (2026-07-10). Surface the reason and fail.
+            print(
+                describe_connect_failure(
+                    name,
+                    uri,
+                    close_code=agent.last_close_code,
+                    close_reason=agent.last_close_reason,
+                )
+            )
+            return 1
         return 0
     finally:
         agent.running = False
