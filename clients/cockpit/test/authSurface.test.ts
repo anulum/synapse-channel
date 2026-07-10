@@ -15,7 +15,7 @@ const REQUEST_MODULES = [
   "feed.ts",
   "history.ts",
   "merkleVerify.ts",
-  "palette.ts",
+  "operatorActions.ts",
   "snapshot.ts",
   "stateAt.ts",
 ] as const;

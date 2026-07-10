@@ -381,7 +381,10 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   loads its token-free static shell, asks for that bearer, and retains it only
   in the tab's session storage. It never accepts the bearer in a URL. When the
   token is omitted on an exposed bind, Synapse generates and prints a startup
-  token. Add
+  token. With `--operator`, its command palette exposes governed message,
+  task-declaration, and task-update forms; each reports the hub's strict outcome
+  and grants no authority beyond the hub's validation, ACL, rate limit, and audit
+  decision. Add
   `--observed-peer HUB=URI` to include advisory peer-hub rows in the browser and
   `/snapshot.json`; those rows are labelled `observed@HUB` and never grant local
   claims.

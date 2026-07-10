@@ -9,8 +9,9 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # SYNAPSE·CHANNEL cockpit
 
-A read-mostly, real-time operator cockpit for the coordination hub, built as a
-static React + TypeScript SPA (Vite). It is a *client* — like `clients/go`,
+A read-mostly, real-time operator cockpit with three opt-in governed writes for
+the coordination hub, built as a static React + TypeScript SPA (Vite). It is a
+*client* — like `clients/go`,
 `clients/js`, and `clients/vscode` — so the Python core stays an untouched,
 no-telemetry neutral substrate. The cockpit renders what the hub recorded — it
 never invents, smooths, or extrapolates state, and an empty surface is shown
@@ -113,11 +114,18 @@ first), with the spine kept at every width.
 | `/sessions.json` | 30 s poll | per-session cost/turn/token telemetry with task attribution (optional) |
 | `/waits.json` | 15 s poll | tasks standing behind unmet dependencies — the pending decision queue (optional) |
 | `/health-anomalies.json` | 30 s poll | the hub's causal-graph anomaly report: orphaned / dangling / stale (optional) |
-| `POST /message` | on send | the ONE write: an operator chat relay — 404 unless the dashboard runs `--operator`; answers the `{action, status, detail, ok}` outcome document, and the palette states each status as a fact (`undelivered` never reads as "sent") |
+| `POST /message` | on send | governed operator chat relay; `undelivered` never reads as "sent" |
+| `POST /task` | on declaration | governed task declaration with `id`, `title`, and `depends_on` |
+| `POST /task/update` | on update | governed task status and/or progress-note update |
 
 Optional endpoints answer `404` on dashboards that do not serve them; the
 corresponding panel states that plainly and activates the moment the surface
 ships (`synapse dashboard --feeds-db PATH` serves the store-backed feeds).
+All three write routes are absent unless the dashboard runs `--operator` and
+require the dashboard bearer. Each returns the strict
+`{action, status, detail, ok}` outcome document; the cockpit reports the hub's
+decision and never treats HTTP `200` alone as acceptance. Task update IDs are
+suggested from the live board, while explicit IDs remain available.
 The snapshot's `state.pending_relay_approvals` (hubs ≥ 0.98.5) lists relays
 awaiting their second operator; the risk rail names each one, and a hub
 without the field simply shows no section.
@@ -178,8 +186,9 @@ and branch coverage. The behavioural component layer uses jsdom and
 Testing Library for the palette, drawers, boards, rail sections, toasts, and
 views. Playwright then drives the production bundle through the real Python hub
 and dashboard boundary: wrong/correct bearer handling, authenticated operator
-messaging, lock-on-`401`, URL/storage/cache discipline, and axe-core scans in
-both themes at desktop and phone widths.
+messaging, dependent-task declaration and update, lock-on-`401`,
+URL/storage/cache discipline, and axe-core scans in both themes at desktop and
+phone widths.
 
 `.github/workflows/clients-cockpit.yml` runs that whole lane whenever cockpit,
 dashboard-auth, route, lockfile, or workflow code changes. CI installs Chromium
@@ -212,9 +221,11 @@ Under 640px the deck becomes a segmented single-column view (signals ·
 claims · board · roster · reliability) with 44px touch targets; the spine
 stays at every width and yields vertical panning to the page on touch.
 
-Honest scope (Tier 1): read-mostly observation. No push, no background
-wake — mobile OSes suspend the tab, so "the phone stays live on the bus"
-is deliberately not promised here.
+Honest scope (Tier 1): read-mostly observation plus the three explicit,
+foreground operator actions above. Every action remains subject to dashboard
+gating and the hub's validation, authorisation, rate limit, and audit decision.
+No push, no background wake — mobile OSes suspend the tab, so "the phone stays
+live on the bus" is deliberately not promised here.
 
 ## Serving the built cockpit
 

@@ -15,6 +15,14 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- The React cockpit command palette now exposes the dashboard's governed task
+  declaration and task-update routes alongside operator messaging. Focused
+  forms validate task IDs, dependencies, statuses, and notes; update IDs come
+  from the live board but remain explicit-entry capable. A shared strict
+  `{action, status, detail, ok}` parser fails closed on malformed or
+  success-shaped non-2xx responses, and the production browser gate proves a
+  parent/dependent declaration plus recorded update through a real hub.
+
 - A dedicated, path-filtered `clients-cockpit` workflow now gates the strict
   TypeScript build, full Vitest coverage thresholds, the production Vite
   bundle, and a Chromium acceptance run against a real local hub and dashboard.

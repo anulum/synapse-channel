@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { OperatorTaskForm, type OperatorTaskMode } from "./OperatorTaskForm";
 import {
   matchCommands,
   sendOperatorMessage,
@@ -39,15 +40,14 @@ interface PaletteProps {
 }
 
 /**
- * Ctrl/Cmd+K. Navigation commands dispatch to the caller and close. The one
- * write command opens an inline two-field form and states the relay's
- * outcome verbatim — including "not armed", which is a fact about the
- * dashboard's posture, not an error.
+ * Ctrl/Cmd+K. Navigation commands dispatch to the caller and close. Governed
+ * message/task commands open focused forms and state the hub's outcome —
+ * including "not armed", which is a fact about dashboard posture, not success.
  */
 export function Palette({ open, commands, onClose, onRun }: PaletteProps): JSX.Element | null {
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
-  const [composing, setComposing] = useState(false);
+  const [composing, setComposing] = useState<"message" | OperatorTaskMode | null>(null);
   const [to, setTo] = useState("");
   const [text, setText] = useState("");
   const [outcome, setOutcome] = useState<string | null>(null);
@@ -57,7 +57,7 @@ export function Palette({ open, commands, onClose, onRun }: PaletteProps): JSX.E
     if (open) {
       setQuery("");
       setCursor(0);
-      setComposing(false);
+      setComposing(null);
       setOutcome(null);
       setTimeout(() => inputRef.current?.focus(), 0);
     }
@@ -80,13 +80,26 @@ export function Palette({ open, commands, onClose, onRun }: PaletteProps): JSX.E
 
   const choose = (command: Command): void => {
     if (command.kind === "operator-message") {
-      setComposing(true);
+      setComposing("message");
+      setOutcome(null);
+      return;
+    }
+    if (command.kind === "operator-task-declare") {
+      setComposing("declare");
+      setOutcome(null);
+      return;
+    }
+    if (command.kind === "operator-task-update") {
+      setComposing("update");
       setOutcome(null);
       return;
     }
     onRun(command);
     onClose();
   };
+  const taskIds = commands
+    .filter((command) => command.kind === "inspect-task")
+    .map((command) => command.subject);
 
   const submitSend = (): void => {
     setOutcome("relaying…");
@@ -101,7 +114,7 @@ export function Palette({ open, commands, onClose, onRun }: PaletteProps): JSX.E
         aria-label="Command palette"
         onClick={(click) => click.stopPropagation()}
       >
-        {!composing ? (
+        {composing === null ? (
           <>
             <input
               ref={inputRef}
@@ -135,7 +148,7 @@ export function Palette({ open, commands, onClose, onRun }: PaletteProps): JSX.E
                     role="option"
                     aria-selected={index === clamped}
                     className={`palette__item${index === clamped ? " palette__item--active" : ""}${
-                      command.kind === "operator-message" ? " palette__item--write" : ""
+                      command.kind.startsWith("operator-") ? " palette__item--write" : ""
                     }`}
                     onMouseEnter={() => setCursor(index)}
                     onClick={() => choose(command)}
@@ -146,7 +159,7 @@ export function Palette({ open, commands, onClose, onRun }: PaletteProps): JSX.E
               ))}
             </ul>
           </>
-        ) : (
+        ) : composing === "message" ? (
           <div className="palette__compose">
             <span className="palette__compose-head">
               operator message — relayed by the dashboard, authorised and audited by the hub
@@ -178,12 +191,14 @@ export function Palette({ open, commands, onClose, onRun }: PaletteProps): JSX.E
               >
                 send
               </button>
-              <button type="button" className="panel__clear" onClick={() => setComposing(false)}>
+              <button type="button" className="panel__clear" onClick={() => setComposing(null)}>
                 back
               </button>
               {outcome !== null && <span className="palette__outcome">{outcome}</span>}
             </div>
           </div>
+        ) : (
+          <OperatorTaskForm mode={composing} taskIds={taskIds} onBack={() => setComposing(null)} />
         )}
       </div>
     </div>

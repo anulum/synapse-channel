@@ -26,7 +26,7 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
-const COMMANDS = buildCommands(["quantum/claude"], ["t-1"]);
+const COMMANDS = buildCommands(["quantum/worker"], ["t-1"]);
 
 describe("Palette", () => {
   it("renders nothing while closed", () => {
@@ -44,7 +44,7 @@ describe("Palette", () => {
     await userEvent.type(input, "focus quantum");
     await userEvent.keyboard("{Enter}");
     expect(onRun).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "focus-agent", subject: "quantum/claude" }),
+      expect.objectContaining({ kind: "focus-agent", subject: "quantum/worker" }),
     );
     expect(onClose).toHaveBeenCalled();
   });
@@ -66,7 +66,7 @@ describe("Palette", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("composes the one write and states the relay's outcome as a fact", async () => {
+  it("composes a governed message and states the relay's outcome as a fact", async () => {
     const fetcher = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({ action: "message", status: "undelivered", detail: "accepted; no live recipient (dead-lettered)", ok: true }),
@@ -111,6 +111,21 @@ describe("Palette", () => {
         screen.getByText("operator write-path not armed on this dashboard (--operator)"),
       ).toBeTruthy(),
     );
+  });
+
+  it("opens focused task forms, carries live ids, returns to commands, and closes on Escape", async () => {
+    const onClose = vi.fn();
+    render(<Palette open commands={COMMANDS} onClose={onClose} onRun={() => {}} />);
+    await userEvent.click(screen.getByText("operator: declare a task…"));
+    expect(document.activeElement).toBe(screen.getByLabelText("Task id"));
+    await userEvent.click(screen.getByRole("button", { name: "back" }));
+    expect(screen.getByLabelText("Search commands")).toBeTruthy();
+
+    await userEvent.click(screen.getByText("operator: update a task…"));
+    const options = [...document.querySelectorAll<HTMLOptionElement>("#operator-task-ids option")];
+    expect(options.map((option) => option.value)).toEqual(["t-1"]);
+    await userEvent.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalled();
   });
 
   it("closes from the veil click but not from inside the dialog", async () => {
