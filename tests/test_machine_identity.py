@@ -109,3 +109,73 @@ def test_the_key_id_is_a_stable_digest_of_the_public_key(tmp_path: Path) -> None
     other = ensure_machine_identity(base=tmp_path / "other-machine")
     assert other.key_id != machine.key_id
     assert other.public_key != machine.public_key
+
+
+def _block_cryptography(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make every ``cryptography`` import raise ImportError, as on a core-only install."""
+    import sys
+
+    for name in list(sys.modules):
+        if name == "cryptography" or name.startswith("cryptography."):
+            monkeypatch.delitem(sys.modules, name)
+    monkeypatch.setitem(sys.modules, "cryptography", None)
+
+
+def test_agent_kwargs_degrade_when_cryptography_is_absent_on_first_provision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The 0.99.0 regression: a core-only install (websockets is the only hard
+    # dependency) crashed every arm/wait with ModuleNotFoundError instead of
+    # registering unsigned. The kwargs helper must degrade to nothing.
+    _block_cryptography(monkeypatch)
+    assert machine_identity_agent_kwargs(base=tmp_path) == {}
+    assert not (tmp_path / "synapse" / "identity" / MACHINE_KEY_FILENAME).exists()
+
+
+def test_agent_kwargs_degrade_when_cryptography_vanished_after_provisioning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A key provisioned earlier must not turn a later core-only environment
+    # (a rebuilt venv, a stripped container) into a crash either.
+    ensure_machine_identity(base=tmp_path)
+    _block_cryptography(monkeypatch)
+    assert machine_identity_agent_kwargs(base=tmp_path) == {}
+
+
+def test_the_arm_command_survives_a_core_only_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The exact 0.99.0 failure path: `syn-wait` dispatches _cmd_arm, which
+    # provisions the machine identity before arming. Without cryptography it
+    # must arm unsigned, never raise.
+    import argparse
+    import asyncio
+
+    from synapse_channel import cli_arm
+
+    monkeypatch.delenv("SYN_TMUX_PROVIDER", raising=False)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    _block_cryptography(monkeypatch)
+    captured: dict[str, object] = {}
+
+    async def arm_once(**kwargs: object) -> int:
+        captured.update(kwargs)
+        return 0
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="X",
+        for_name=None,
+        directed_only=True,
+        wake_jitter=0.0,
+        reconnect_delay=0.0,
+        max_wakes=None,
+        token=None,
+        owner_pid=None,
+        mailbox=False,
+    )
+    code = cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=lambda coro: asyncio.run(coro))
+    assert code == 0
+    assert captured["identity_key_path"] is None
+    assert captured["identity_key_id"] == ""

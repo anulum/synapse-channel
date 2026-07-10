@@ -23,11 +23,14 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from hub_e2e_helpers import running_hub
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.machine_identity import (
     MACHINE_KEY_ID_PREFIX,
+    ensure_machine_identity,
     machine_identity_agent_kwargs,
 )
 
@@ -261,3 +264,51 @@ async def test_operator_bundle_enforcement_still_takes_precedence(tmp_path: Path
         assert reason == "identity binding failed"
         assert hub._identity_pins.pinned(NAME) is None
         task.cancel()
+
+
+async def test_a_hub_without_cryptography_degrades_open_instead_of_crashing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A core-only hub admits signed registrations unverified, with one warning.
+
+    The frame is signed while the primitives are importable, then every
+    ``cryptography`` import is blocked before the hub verifies — the exact
+    state of a hub venv holding only the core dependency. Refusing would brick
+    every signing client; crashing would kill the frame handler. It must
+    admit, warn once, and record no pin it could not verify.
+    """
+    import json as jsonlib
+    import logging
+    import sys
+
+    from websockets.asyncio.client import connect
+
+    from synapse_channel.core.identity_keys import load_signing_key, sign_registration
+    from synapse_channel.core.protocol import build_envelope
+
+    kwargs = _machine(tmp_path, "machine-a")
+    frame = build_envelope(NAME, "heartbeat", target="System", payload="online")
+    machine = ensure_machine_identity(base=tmp_path / "machine-a")
+    frame["identity_public_key"] = machine.public_key
+    frame = sign_registration(
+        frame,
+        private_key=load_signing_key(str(kwargs["identity_key_path"])),
+        key_id=str(kwargs["identity_key_id"]),
+        nonce="tofu-degrade-nonce",
+        sequence=1,
+    )
+
+    hub = SynapseHub(hub_id="syn-tofu", identity_pin_path=tmp_path / "pins.json")
+    async with running_hub(hub) as (_, uri):
+        for name in list(sys.modules):
+            if name == "cryptography" or name.startswith("cryptography."):
+                monkeypatch.delitem(sys.modules, name)
+        monkeypatch.setitem(sys.modules, "cryptography", None)
+        with caplog.at_level(logging.WARNING, logger="synapse.hub"):
+            async with connect(uri) as websocket:
+                await websocket.recv()  # welcome
+                await websocket.send(jsonlib.dumps(frame))
+                await _await_bound(hub, NAME)
+        assert hub.clients.agent_sockets.get(NAME) is not None
+        assert hub._identity_pins.pinned(NAME) is None
+        assert any("trust-on-first-use" in record.message for record in caplog.records)

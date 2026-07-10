@@ -124,6 +124,12 @@ def ensure_machine_identity(*, base: Path | None = None) -> MachineIdentity:
     IdentityKeyError
         When the key can neither be created nor loaded — an unwritable
         directory, or an existing file that is not a valid Ed25519 PEM.
+    ImportError
+        When the optional ``cryptography`` package is not installed; the
+        Ed25519 primitives import lazily inside
+        :mod:`~synapse_channel.core.identity_keys`. Callers that must never
+        fail use :func:`machine_identity_agent_kwargs`, which degrades to an
+        unsigned connection instead.
     """
     directory = identity_dir(base=base)
     key_path = directory / MACHINE_KEY_FILENAME
@@ -163,11 +169,14 @@ def machine_identity_agent_kwargs(*, base: Path | None = None) -> dict[str, Any]
     -------
     dict[str, Any]
         ``identity_key_path`` and ``identity_key_id`` keyword arguments, or an
-        empty mapping when provisioning is unavailable.
+        empty mapping when provisioning is unavailable — including when the
+        optional ``cryptography`` package is not installed (the core package
+        depends only on ``websockets``), in which case the connection simply
+        registers unsigned exactly as every pre-0.99 client did.
     """
     try:
         machine = ensure_machine_identity(base=base)
-    except IdentityKeyError:
+    except (IdentityKeyError, ImportError):
         return {}
     return {
         "identity_key_path": str(machine.key_path),

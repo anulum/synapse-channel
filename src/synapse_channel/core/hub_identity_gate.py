@@ -114,6 +114,24 @@ class HubIdentityGate:
             window_seconds=DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
             max_entries=DEFAULT_IDENTITY_REPLAY_CAPACITY,
         )
+        self._crypto_warning_logged = False
+
+    def _warn_crypto_missing(self) -> None:
+        """Log — once per gate — that trust-on-first-use is disabled.
+
+        Without the optional ``cryptography`` package the gate can verify no
+        proof, so pins are neither checked nor recorded. One warning names the
+        remedy; repeating it per frame would drown the hub log.
+        """
+        if self._crypto_warning_logged:
+            return
+        self._crypto_warning_logged = True
+        logger.warning(
+            "trust-on-first-use identity pinning is disabled: the optional "
+            "cryptography package is not installed (pip install "
+            "synapse-channel[encryption]); signed registrations are admitted "
+            "unverified"
+        )
 
     async def verify_identity(self, sender: str, data: dict[str, Any], websocket: Any) -> bool:
         """Verify a first frame's identity proof; refuse and close on failure.
@@ -173,6 +191,12 @@ class HubIdentityGate:
           never admitted, and never pins);
         - name unpinned, no complete proof presented → admit unchanged (the
           pre-TOFU client, or a key provisioned for a different hub posture).
+
+        A hub whose environment lacks the optional ``cryptography`` package
+        cannot verify any proof: the posture degrades to a pass-through with
+        a once-per-gate warning rather than refusing (which would brick every
+        signing client) or crashing the frame handler. Trust-on-first-use is
+        protection for the default local hub, never an availability hazard.
         """
         pin = pin_store.pinned(sender)
         presented_key = str(data.get("identity_public_key") or "")
@@ -183,7 +207,11 @@ class HubIdentityGate:
                     pin_store, sender, websocket, detail="signature missing"
                 )
                 return False
-            result = self._verify_self_contained(sender, data, pin.key_id, pin.public_key)
+            try:
+                result = self._verify_self_contained(sender, data, pin.key_id, pin.public_key)
+            except ImportError:
+                self._warn_crypto_missing()
+                return True
             if result is SignedEventVerificationResult.VALID:
                 return True
             await self._refuse_pin_mismatch(pin_store, sender, websocket, detail=result.value)
@@ -191,7 +219,11 @@ class HubIdentityGate:
         if not has_signature or not presented_key:
             return True
         key_id = str(data.get("signature", {}).get("key_id") or "")
-        result = self._verify_self_contained(sender, data, key_id, presented_key)
+        try:
+            result = self._verify_self_contained(sender, data, key_id, presented_key)
+        except ImportError:
+            self._warn_crypto_missing()
+            return True
         if result is not SignedEventVerificationResult.VALID:
             logger.warning("identity first-use proof failed for %s: %s", sender, result.value)
             await self._refuse(
