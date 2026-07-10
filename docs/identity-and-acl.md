@@ -80,6 +80,14 @@ The ACL model and its evaluation are implemented in
   ownership lease this closes the name-squatting class: the lease covers
   reconnect gaps with a bearer token, the pin covers restarts with a proof of
   key possession.
+- **Every client verb signs uniformly**: `SynapseAgent` presents the machine
+  identity by default, so any verb that connects — send, listen, arm, queries,
+  the bridges — proves the same key. Before this default only `arm` and `wait`
+  signed, and arming a name locked its holder out of every *other* verb under
+  that name (refused `signature missing` — the 2026-07-10 incident class). An
+  explicit `identity_key_path` wins over the default, `machine_identity=False`
+  opts a deliberately unsigned agent out, and a core-only installation
+  degrades to the unsigned path with the module's one-time warning.
 
 The identity namespace is taken from the resolved sender (`project/agent`). The
 first credential format is now the zero-config machine key above (operator

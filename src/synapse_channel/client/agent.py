@@ -38,6 +38,7 @@ from synapse_channel.client.agent_queries import AgentQueryMixin
 from synapse_channel.core.identity_keys import load_signing_key
 from synapse_channel.core.message_auth import MessageAuthKey
 from synapse_channel.core.wake_capability import WAKE_DIRECT, normalize_wake_capability
+from synapse_channel.machine_identity import machine_identity_agent_kwargs
 
 logging.basicConfig(level=logging.ERROR)
 
@@ -128,6 +129,14 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         Called with the token the moment the hub grants a lease, so the caller
         can persist it before the process exits. ``None`` (the default) only
         records the token on :attr:`owner_lease`.
+    machine_identity : bool, optional
+        Present the zero-config trust-on-first-use machine key when no explicit
+        ``identity_key_path`` is given (the default). Resolution is best-effort:
+        a core-only install or an unreadable key degrades to an unsigned
+        connection with the module's stated one-time warning. Pass ``False``
+        for a deliberately unsigned agent — a hub enforcing an identity pin for
+        the name will then refuse the connection, by design. An explicit
+        ``identity_key_path`` always wins over the machine default.
     per_message_auth_key_id : str or None, optional
         Key id used to sign mutating frames with per-message authentication.
         ``None`` leaves frame signing off.
@@ -168,9 +177,22 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         per_message_auth_secret: str | bytes | None = None,
         identity_key_path: str | None = None,
         identity_key_id: str = "",
+        machine_identity: bool = True,
         ping_interval: float = 20.0,
         ping_timeout: float = 20.0,
     ) -> None:
+        if identity_key_path is None and machine_identity:
+            # Present the zero-config machine identity by default. Every verb
+            # that builds an agent signs uniformly — the 2026-07-10 incident
+            # 1603 lockout class, where arming pinned a name and every other
+            # (unsigned) verb was then refused 4013, cannot recur through a
+            # forgotten call site. Best-effort by contract: on a core-only
+            # install or an unreadable key this resolves to nothing and the
+            # connection proceeds unsigned, exactly as before.
+            resolved = machine_identity_agent_kwargs()
+            if resolved:
+                identity_key_path = str(resolved["identity_key_path"])
+                identity_key_id = identity_key_id or str(resolved["identity_key_id"])
         self.name = name
         self.uri = uri
         self.connection: ClientConnection | None = None

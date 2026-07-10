@@ -9,9 +9,36 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Iterator
 
 import pytest
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _isolated_machine_identity(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
+    """Point ``XDG_DATA_HOME`` at a session-scoped temporary directory.
+
+    :class:`~synapse_channel.client.agent.SynapseAgent` presents the machine
+    identity by default, and the key resolves through ``$XDG_DATA_HOME``. Left
+    unset, every test agent would read — or first-use provision — the
+    developer's real ``~/.local/share/synapse`` key: non-hermetic, and a test
+    hub would pin real-machine key ids. One session-scoped directory keeps the
+    whole run (including subprocess end-to-end tests, which inherit the
+    environment) on a throwaway key while still exercising the real
+    provisioning and signing paths. Tests that need a specific data home keep
+    overriding per-test with ``monkeypatch.setenv``.
+    """
+    data_home = tmp_path_factory.mktemp("machine-identity-data-home")
+    previous = os.environ.get("XDG_DATA_HOME")
+    os.environ["XDG_DATA_HOME"] = str(data_home)
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("XDG_DATA_HOME", None)
+        else:
+            os.environ["XDG_DATA_HOME"] = previous
 
 
 @pytest.fixture(autouse=True)

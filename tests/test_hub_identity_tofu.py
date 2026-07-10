@@ -144,7 +144,9 @@ async def test_an_unsigned_claim_cannot_bypass_the_pin(tmp_path: Path) -> None:
         await _close(owner, owner_task)
         await _await_unbound(hub, NAME)
 
-        unsigned = SynapseAgent(NAME, None, uri=uri, verbose=False, takeover=True)
+        unsigned = SynapseAgent(
+            NAME, None, uri=uri, verbose=False, takeover=True, machine_identity=False
+        )
         unsigned_task = await _run_until_closed_or_ready(unsigned)
         code, reason = await _await_refused(unsigned)
         assert code == IDENTITY_CLOSE
@@ -183,14 +185,14 @@ async def test_the_owner_re_takes_its_pinned_name_across_a_hub_restart(tmp_path:
 async def test_names_that_never_sign_keep_classic_first_come_semantics(tmp_path: Path) -> None:
     hub = SynapseHub(hub_id="syn-tofu", identity_pin_path=tmp_path / "pins.json")
     async with running_hub(hub) as (_, uri):
-        classic = SynapseAgent(NAME, None, uri=uri, verbose=False)
+        classic = SynapseAgent(NAME, None, uri=uri, verbose=False, machine_identity=False)
         task = await _run_until_closed_or_ready(classic)
         await _await_bound(hub, NAME)
         assert hub._identity_pins.pinned(NAME) is None
         await _close(classic, task)
         await _await_unbound(hub, NAME)
 
-        next_comer = SynapseAgent(NAME, None, uri=uri, verbose=False)
+        next_comer = SynapseAgent(NAME, None, uri=uri, verbose=False, machine_identity=False)
         next_task = await _run_until_closed_or_ready(next_comer)
         await _await_bound(hub, NAME)
         assert next_comer.last_close_code is None
@@ -312,3 +314,47 @@ async def test_a_hub_without_cryptography_degrades_open_instead_of_crashing(
         assert hub.clients.agent_sockets.get(NAME) is not None
         assert hub._identity_pins.pinned(NAME) is None
         assert any("trust-on-first-use" in record.message for record in caplog.records)
+
+
+async def test_a_pinned_name_stays_usable_by_default_constructed_agents(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The incident 2026-07-10T1603 regression, end to end on a real hub.
+
+    An arm-style connect (explicit machine kwargs) pins the name on first use.
+    Before F9 slice 0, every OTHER verb built its agent without the machine
+    identity and was then refused ``signature missing`` — the seat locked
+    itself out of its own name. A plain default construction must now present
+    the same machine key and be admitted; only a deliberate opt-out is still
+    refused, proving the pin keeps guarding.
+    """
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    pins = tmp_path / "pins.json"
+    hub = SynapseHub(hub_id="syn-tofu", identity_pin_path=pins)
+    async with running_hub(hub) as (_, uri):
+        # 1. The arm path (explicit kwargs, as cli_arm wires them) mints the pin.
+        arm_style = SynapseAgent(
+            NAME, None, uri=uri, verbose=False, **machine_identity_agent_kwargs()
+        )
+        arm_task = await _run_until_closed_or_ready(arm_style)
+        await _await_bound(hub, NAME)
+        pin = hub._identity_pins.pinned(NAME)
+        assert pin is not None and pin.key_id.startswith(MACHINE_KEY_ID_PREFIX)
+        await _close(arm_style, arm_task)
+        await _await_unbound(hub, NAME)
+
+        # 2. The send path: a plain construction, no identity kwargs anywhere.
+        plain = SynapseAgent(NAME, None, uri=uri, verbose=False)
+        plain_task = await _run_until_closed_or_ready(plain)
+        await _await_bound(hub, NAME)
+        assert plain.last_close_code is None
+        await _close(plain, plain_task)
+        await _await_unbound(hub, NAME)
+
+        # 3. A deliberate opt-out is still refused: the pin keeps guarding.
+        opted_out = SynapseAgent(NAME, None, uri=uri, verbose=False, machine_identity=False)
+        opted_out_task = await _run_until_closed_or_ready(opted_out)
+        code, reason = await _await_refused(opted_out)
+        assert code == IDENTITY_CLOSE
+        assert "identity" in reason
+        opted_out_task.cancel()

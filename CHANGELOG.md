@@ -15,6 +15,17 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- `SynapseAgent` now presents the zero-config machine identity by default, so
+  every verb that connects — send, listen, arm, queries, the bridges, and any
+  embedding application — signs its registration with the same
+  trust-on-first-use key. Previously only `arm` and `wait` signed, and arming
+  a name locked its holder out of every other verb under that name (refused
+  `signature missing`; the 2026-07-10 directed-delivery incident class). An
+  explicit `identity_key_path` wins over the default, `machine_identity=False`
+  opts a deliberately unsigned agent out, and a core-only installation
+  degrades to the unsigned path with a one-time warning. The test suite runs
+  on a session-isolated throwaway key.
+
 - `synapse git-claim --diff-base` now narrows safe tracked modifications to
   function or type scopes using local tree-sitter grammars for Python,
   JavaScript/JSX, TypeScript/TSX, Rust, and Go. Canonical `.synapse-symbol`

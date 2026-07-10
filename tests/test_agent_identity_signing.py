@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from pathlib import Path
 
+import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from hub_e2e_helpers import running_hub
@@ -27,6 +29,7 @@ from synapse_channel.core.message_auth import (
     SignedEventVerificationResult,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.machine_identity import MACHINE_KEY_ID_PREFIX
 
 _SENDER = "proj/claude"
 _KEY_ID = "k"
@@ -94,8 +97,8 @@ async def test_keepalive_heartbeat_is_not_identity_signed(tmp_path: Path) -> Non
     assert "signature" not in json.loads(agent.connection.sent[0])  # type: ignore[union-attr]
 
 
-async def test_agent_without_a_key_signs_nothing() -> None:
-    agent = SynapseAgent(_SENDER, uri="ws://unused")
+async def test_opted_out_agent_signs_nothing() -> None:
+    agent = SynapseAgent(_SENDER, uri="ws://unused", machine_identity=False)
     agent.connection = _CaptureConnection()  # type: ignore[assignment]
 
     await agent.send_message(
@@ -103,6 +106,69 @@ async def test_agent_without_a_key_signs_nothing() -> None:
     )
 
     assert "signature" not in json.loads(agent.connection.sent[0])  # type: ignore[union-attr]
+
+
+async def test_agent_presents_the_machine_identity_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plain construction signs with the zero-config machine key.
+
+    This is the F9 slice-0 contract behind incident 2026-07-10T1603: `arm`
+    pinned a name and every other verb — none of which wired the machine
+    identity — was then refused with `signature missing`. The default makes
+    every verb that builds an agent sign uniformly, so the lockout class
+    cannot recur through a forgotten call site.
+    """
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    agent = SynapseAgent(_SENDER, uri="ws://unused")
+    agent.connection = _CaptureConnection()  # type: ignore[assignment]
+
+    await agent.send_message(
+        MessageType.HEARTBEAT, target="System", payload="online", sign_identity=True
+    )
+
+    frame = json.loads(agent.connection.sent[0])  # type: ignore[union-attr]
+    assert frame["signature"]["key_id"].startswith(MACHINE_KEY_ID_PREFIX)
+
+
+async def test_an_explicit_key_wins_over_the_machine_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    key_path = tmp_path / "explicit.pem"
+    write_signing_key(key_path, generate_signing_key())
+    agent = SynapseAgent(
+        _SENDER, uri="ws://unused", identity_key_path=str(key_path), identity_key_id=_KEY_ID
+    )
+    agent.connection = _CaptureConnection()  # type: ignore[assignment]
+
+    await agent.send_message(
+        MessageType.HEARTBEAT, target="System", payload="online", sign_identity=True
+    )
+
+    frame = json.loads(agent.connection.sent[0])  # type: ignore[union-attr]
+    assert frame["signature"]["key_id"] == _KEY_ID
+
+
+def test_core_only_default_degrades_to_unsigned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without the cryptography extra, the default construction stays unsigned.
+
+    The 0.99.1 regression class: the machine-identity default must never turn
+    a core-only install into a crash — resolution degrades to nothing and the
+    agent behaves exactly like an opted-out one.
+    """
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    for name in list(sys.modules):
+        if name == "cryptography" or name.startswith("cryptography."):
+            monkeypatch.delitem(sys.modules, name)
+    monkeypatch.setitem(sys.modules, "cryptography", None)
+
+    agent = SynapseAgent(_SENDER, uri="ws://unused")
+
+    assert agent._identity_key is None
+    assert agent._identity_key_id == ""
 
 
 async def test_keyed_agent_is_admitted_by_a_binding_hub_end_to_end(tmp_path: Path) -> None:
@@ -135,7 +201,7 @@ async def test_keyed_agent_is_admitted_by_a_binding_hub_end_to_end(tmp_path: Pat
 async def test_unsigned_agent_is_refused_by_a_binding_hub_end_to_end(tmp_path: Path) -> None:
     private_key = generate_signing_key()
     async with running_hub(_binding_hub(private_key)) as (hub, uri):
-        agent = SynapseAgent(_SENDER, uri=uri, verbose=False)  # no identity key
+        agent = SynapseAgent(_SENDER, uri=uri, verbose=False, machine_identity=False)
         await asyncio.wait_for(agent.connect(), timeout=3.0)
 
         assert agent.last_close_code == IDENTITY_BINDING_CLOSE_CODE
