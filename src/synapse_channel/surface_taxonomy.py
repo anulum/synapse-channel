@@ -31,7 +31,7 @@ ADAPTER = "adapter"
 """Bridges to other ecosystems and tools (A2A, MCP, git, tmux, model workers)."""
 
 ANALYSIS = "analysis"
-"""Read-only inspection and reporting; safe to run, no coordination side effects."""
+"""Inspection and reporting that never mutates coordination state."""
 
 GOVERNANCE = "governance"
 """Advisory governance: policy, approvals, access control, and release integrity."""
@@ -45,7 +45,7 @@ TIERS = (STABLE, ADAPTER, ANALYSIS, GOVERNANCE, EXPERIMENTAL)
 TIER_SUMMARIES = {
     STABLE: "Daily-safe coordination core with a stable wire and CLI surface.",
     ADAPTER: "Bridges to other ecosystems and tools; optional extras, not core.",
-    ANALYSIS: "Read-only inspection and reporting with no coordination side effects.",
+    ANALYSIS: "Inspection and reporting that never mutates coordination state.",
     GOVERNANCE: "Advisory governance: policy, approvals, access control, release integrity.",
     EXPERIMENTAL: "Newer or advisory surfaces still settling; shape may change before 1.0.",
 }
@@ -112,6 +112,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "dashboard": ANALYSIS,
     "identity": ANALYSIS,
     "accounting": ANALYSIS,
+    "fleet-scorecard": ANALYSIS,
     # advisory governance and release integrity
     "policy-check": GOVERNANCE,
     "approval": GOVERNANCE,

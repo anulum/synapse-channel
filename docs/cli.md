@@ -59,6 +59,7 @@ everything, since they need the whole command table.
 | `synapse reliability` | Build evidence-only reliability memory from a hub SQLite event store. |
 | `synapse trust-graph` | Query the evidence trust graph (receipts, stale claims, conflicts) as text, JSON, or Graphviz DOT. |
 | `synapse accounting` | Record and report opt-in model cost/token usage from a hub SQLite event store. |
+| `synapse fleet-scorecard` | Compose causality spans, opt-in accounting, live-claim contention, reliability findings, and optional benchmark history into an owner-only JSON bundle or a two-signal OTLP/HTTP collector push. |
 | `synapse approval` | Request, decide, and replay human-in-the-loop approval gates from a hub SQLite event store. |
 | `synapse ttl-advice` | Build read-only lease TTL advice from a hub SQLite event store. |
 | `synapse auto-action` | Introspect the opt-in auto-action reactor and manage the durable armed policy the orchestration loop reads (`show`/`arm`/`disarm`/`clear`). |
@@ -1579,6 +1580,27 @@ cost from tokens, and `--budget budget.json` (agent → ceiling) for budget
 evidence. Budgets are evidence, not an enforcement gate: the report states spend
 against a ceiling, it does not block work. Non-Python clients can record usage by
 posting the identical note body.
+
+`synapse fleet-scorecard ./synapse.db --out fleet-scorecard.json` composes the
+existing causality, accounting, contention, and reliability reports into one
+portable schema. Add `--trend bench-trend.db` to include the complete benchmark
+history and context breaks. The output is replaced atomically with owner-only
+permissions because task identities and opt-in cost evidence can be sensitive.
+No source report is weakened: accounting remains opt-in evidence, contention
+remains advisory, reliability remains findings rather than scores, and benchmark
+numbers remain host-dependent.
+
+With the optional `otel` extra,
+`synapse fleet-scorecard ./synapse.db --endpoint http://127.0.0.1:4318` pushes
+the existing deterministic causality spans to `/v1/traces` and the scorecard
+gauges to `/v1/metrics`. `--endpoint` is a collector base URL; embedded
+credentials, query strings, fragments, and pre-appended signal paths are
+refused. The JSON bundle carries full benchmark history; the metric plane sends
+only the latest value and a same-package, same-host relative change, never a
+fabricated historical backfill. The command reads local stores only; the two
+collector posts are its sole network actions and are not transactional. If one
+signal export fails, the command exits `2` even if the collector already accepted
+the other, so rerun it after repairing the endpoint.
 
 `synapse approval` runs a human-in-the-loop approval gate over the same ledger.
 `synapse approval request --name <actor> --subject <id>` posts an

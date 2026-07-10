@@ -15,6 +15,13 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- `synapse fleet-scorecard` now composes the existing durable causality spans,
+  opt-in accounting, advisory live-claim contention, evidence-only reliability,
+  and optional benchmark history into one atomic owner-only JSON bundle. With
+  the optional `otel` extra it pushes the same projection to the collector's
+  standard trace and metric endpoints, fails visibly on either signal, and
+  keeps historical benchmark backfill outside the current-gauge claim.
+
 - MCP-first onboarding now includes identity-safe `synapse mcp` defaults, real
   `synapse_inbox` and `synapse_status` tools, a secret-free `.mcp.json` template,
   a dedicated PyPI/registry console entry, validated official-registry metadata,

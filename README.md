@@ -108,7 +108,7 @@ tiered so the lean bus stays clear:
 |---|---|---|
 | Local coordination core | `stable` | The hub, send/wait/listen/arm, claims, tasks, locks, status, board, init, and fleet bootstrap commands used for daily coordination. |
 | Edge adapters | `adapter` | MCP, A2A, git hooks, tmux/provider bridges, shell hooks, ingestion, and worker seats that connect existing tools to the bus. |
-| Read-only operator views | `analysis` | Doctor, state, dashboard, causality, multihub, reliability, trust graph, directory, accounting, manifests, and event queries. |
+| Operator analysis | `analysis` | Doctor, state, dashboard, causality, multihub, reliability, trust graph, directory, accounting, fleet scorecard export, manifests, and event queries. These do not mutate coordination state; explicit export modes can write to an operator-selected sink. |
 | Governance and integrity | `governance` | Policy checks, approvals, ACL/role surfaces, federation, Merkle roots, release receipts, reproduction, compaction, encrypt-key / SQLCipher key operations. |
 | Lab surfaces | `experimental` | Benchmarking, participant fabric, route-task, sandbox, workflow, TTL advice, memory recall, auto-action, and resource bidding. |
 
@@ -915,6 +915,7 @@ synapse causality causes ./hub.db peer:96 --peer peer=./peer-hub.db
 synapse merkle root ./synapse.db
 synapse reliability ./synapse.db
 synapse accounting report ./synapse.db --pricing pricing.json --budget budget.json
+synapse fleet-scorecard ./synapse.db --trend bench-trend.db --out fleet-scorecard.json
 synapse approval request --name dev --subject TASK-1 --reason "needs sign-off"
 synapse approval status ./synapse.db --pending
 synapse ttl-advice ./synapse.db
@@ -1001,6 +1002,16 @@ it: `synapse accounting record` posts a `usage`-kind progress note, and `synapse
 accounting report ./synapse.db` aggregates those notes into per-agent and
 per-model totals, with optional `--pricing` for cost estimates and `--budget` for
 budget evidence. Budgets are evidence, not an enforcement gate.
+
+Use `synapse fleet-scorecard ./synapse.db --out fleet-scorecard.json` to compose
+the existing causality spans, opt-in accounting, advisory claim contention, and
+evidence-only reliability report into one atomic owner-only JSON bundle.
+`--trend bench-trend.db` includes the full host-context-labelled benchmark
+history. With the optional `otel` extra, replace `--out` with
+`--endpoint http://127.0.0.1:4318`: the command pushes traces and current
+scorecard gauges to the collector's standard HTTP signal paths. It does not
+collect usage, rank agents, pre-empt claims, or pretend that current gauges
+backfill historical benchmark timestamps.
 
 Use `synapse approval` for human-in-the-loop approval gates on held tasks or
 policy-gated releases. `synapse approval request` puts a subject in
@@ -1211,11 +1222,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.1 |
 | Public API exports | 70 |
-| Package modules | 366 |
-| Classes | 532 |
+| Package modules | 370 |
+| Classes | 535 |
 | Wire message types | 75 |
-| CLI subcommands | 158 |
-| Test functions | 6007 |
+| CLI subcommands | 159 |
+| Test functions | 6030 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 13 |

@@ -134,3 +134,28 @@ deterministic ids, `--endpoint` pushes OTLP/HTTP to a collector, and
 `--watch` keeps the projection live. See the CLI reference — that surface
 reads the durable log, so it belongs to the analytics plane and works
 with the hub down.
+
+## One fleet scorecard
+
+`synapse fleet-scorecard ~/synapse/hub.db --out fleet-scorecard.json`
+composes those durable analytics with opt-in accounting, advisory live-claim
+contention, evidence-only reliability findings, and optional benchmark history
+(`--trend bench-trend.db`). The portable JSON retains the complete source
+reports and is written atomically with owner-only permissions.
+
+With `pip install 'synapse-channel[otel]'`, point the same command at an
+OTLP/HTTP collector base:
+
+```bash
+synapse fleet-scorecard ~/synapse/hub.db \
+  --service-name workstation-hub \
+  --endpoint http://127.0.0.1:4318
+```
+
+The command appends `/v1/traces` and `/v1/metrics`, sends the existing
+deterministic task traces, and publishes scorecard gauges for opt-in calls,
+tokens and cost, conflict pairs, reliability finding counts, trace volume, and
+the latest comparable benchmark values. It does not collect usage itself, rank
+agents, pre-empt claims, or backfill historic metric timestamps. The two OTLP
+posts are fail-visible but not transactional: a failure exits nonzero even if
+the collector accepted the other signal.

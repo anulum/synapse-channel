@@ -30,7 +30,7 @@ as layered:
 |---|---|---|
 | Local coordination core | `stable` | Hub, presence, directed messaging, claims, leases, task state, locks, board, status, and bootstrap commands. |
 | Edge adapters | `adapter` | Optional tool bridges for MCP, A2A, git, tmux/provider seats, shell hooks, ingestion, and workers. |
-| Read-only operator views | `analysis` | Diagnostics, dashboards, event queries, causality, multihub views, reliability, accounting, manifests, and trust graph reporting. |
+| Operator analysis | `analysis` | Diagnostics, dashboards, event queries, causality, multihub views, reliability, accounting, fleet scorecard export, manifests, and trust graph reporting. These commands do not mutate coordination state; explicitly selected export modes may write a file or contact an operator-owned collector. |
 | Governance and integrity | `governance` | Policy, approvals, ACL/role commands, federation, Merkle roots, release evidence, reproduction, compaction, and key operations. |
 | Lab surfaces | `experimental` | Benchmarking, participant fabric, route-task, sandbox, workflow, TTL advice, memory recall, auto-action, and resource bidding. |
 
@@ -55,12 +55,13 @@ optional extras and none belongs to the single-dependency local core.
 
 `a2a-card`  `a2a-conformance`  `a2a-interop-trace`  `a2a-serve`  `adapters`  `agent-tmux`  `codex-tmux`  `git-claim`  `git-hook`  `git-init`  `git-release`  `ingest`  `install-shell-hook`  `mcp`  `mcp-call`  `mcp-tools`  `shell-hook`  `worker`  `worker-session`
 
-### Read-only analysis — `analysis`
+### Operator analysis — `analysis`
 
-Read-only inspection and reporting with no coordination side effects. Safe to run
-at any time; they observe state and never mutate the plan or leases.
+Inspection and reporting that never mutates the coordination plan or leases.
+Explicit export modes can write an operator-selected file or collector endpoint;
+they never silently enable telemetry or change hub authority.
 
-`accounting`  `approvals`  `causality`  `conflicts`  `cross-repo`  `dashboard`  `dead-letters`  `debug`  `directory`  `doctor`  `event-query`  `health`  `identity`  `manifest`  `multihub`  `relay`  `reliability`  `state`  `trust-graph`
+`accounting`  `approvals`  `causality`  `conflicts`  `cross-repo`  `dashboard`  `dead-letters`  `debug`  `directory`  `doctor`  `event-query`  `fleet-scorecard`  `health`  `identity`  `manifest`  `multihub`  `relay`  `reliability`  `state`  `trust-graph`
 
 ### Advisory governance — `governance`
 
