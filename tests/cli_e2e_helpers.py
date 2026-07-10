@@ -21,6 +21,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -369,25 +370,30 @@ def isolated_team(*, no_workers: bool = True, ready_timeout: float = 10.0) -> It
     ``team`` is a one-command launcher that starts its own hub (and, without
     ``--no-workers``, a roster of workers). The journey uses ``--no-workers`` so
     no model provider is needed — the worker reply path is covered separately —
-    and only asserts the launcher stands up a reachable, usable hub. The launcher
-    forks its hub as a child, so teardown signals the whole process group.
+    and only asserts the launcher stands up a reachable, usable hub. A temporary
+    ``HOME`` keeps the child hub's default identity-pin file away from the
+    workstation's real pins; subprocess clients still share pytest's isolated
+    ``XDG_DATA_HOME`` key. The launcher forks its hub as a child, so teardown
+    signals the whole process group.
     """
     port = free_port()
     argv = [*_CLI, "team", "--port", str(port)]
     if no_workers:
         argv.append("--no-workers")
-    proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
-        argv,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        start_new_session=True,
-    )
-    try:
-        _await_listening(port, timeout=ready_timeout)
-        yield f"ws://localhost:{port}"
-    finally:
-        _stop_group(proc)
+    with tempfile.TemporaryDirectory(prefix="synapse-team-e2e-") as home:
+        proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
+            argv,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            start_new_session=True,
+            env={**os.environ, "HOME": home},
+        )
+        try:
+            _await_listening(port, timeout=ready_timeout)
+            yield f"ws://localhost:{port}"
+        finally:
+            _stop_group(proc)
 
 
 @contextmanager
