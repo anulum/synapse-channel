@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import os
 import shlex
 import shutil
 import subprocess
@@ -39,6 +40,15 @@ def _write_fake_synapse(tmp_path: Path) -> Path:
     )
     synapse.chmod(0o755)
     return bindir
+
+
+def _clean_shell_environment() -> dict[str, str]:
+    """Remove host Synapse and shell startup state from real-shell tests."""
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("SYN") and key not in {"BASH_ENV", "ENV"}
+    }
 
 
 def test_render_shell_hook_auto_arms_and_wraps_default_providers() -> None:
@@ -89,6 +99,7 @@ def test_bash_auto_arm_skips_arming_when_a_provider_tmux_waker_is_live(tmp_path:
         ["bash", "--noprofile", "--norc", "-c", script],
         text=True,
         capture_output=True,
+        env=_clean_shell_environment(),
         check=False,
     )
 
@@ -120,6 +131,7 @@ def test_bash_auto_arm_skips_arming_when_provider_auto_connect_is_disabled(
         ["bash", "--noprofile", "--norc", "-c", script],
         text=True,
         capture_output=True,
+        env=_clean_shell_environment(),
         check=False,
     )
 
@@ -204,6 +216,7 @@ def test_bash_shell_hook_uses_neutral_project_without_marker(tmp_path: Path) -> 
         ],
         text=True,
         capture_output=True,
+        env=_clean_shell_environment(),
         check=False,
     )
 
@@ -250,6 +263,7 @@ def test_bash_shell_hook_uses_marker_project_when_opted_in(tmp_path: Path) -> No
         ],
         text=True,
         capture_output=True,
+        env=_clean_shell_environment(),
         check=False,
     )
 
