@@ -53,6 +53,11 @@ All notable changes to this project are documented here.
   async, card, bridge, and store factories, accept the production A2A defaults,
   and reject a factory returning the wrong type.
 
+- `core.handlers.offerings` now has a direct module-owned test surface covering
+  capability normalization, private malformed-offer and quota rejection,
+  resource aliases, journal persistence, idempotency memory, and broadcasts
+  with or without a journal.
+
 ### Fixed
 
 - Public security, protocol, glossary, staged-profile documentation, and the
