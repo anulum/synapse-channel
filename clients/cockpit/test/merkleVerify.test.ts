@@ -9,8 +9,10 @@
 // The known-answer tree is built here with the same RFC 6962 arithmetic
 // (leaf = sha256(0x00||data), node = sha256(0x01||l||r)) so verifyInclusion
 // is checked against independently computed material, not against itself.
+// The material is computed with WebCrypto — the browser primitive the
+// verifier itself runs on — never Node's Buffer, which the cockpit has no
+// business depending on.
 
-import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   auditPathLength,
@@ -20,31 +22,45 @@ import {
   type InclusionProof,
 } from "../src/lib/merkleVerify";
 
-function sha256(...parts: Buffer[]): Buffer {
-  return createHash("sha256").update(Buffer.concat(parts)).digest();
+async function sha256(...parts: readonly Uint8Array[]): Promise<Uint8Array> {
+  const joined = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    joined.set(part, offset);
+    offset += part.length;
+  }
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", joined));
 }
 
-const LEAVES = [0, 1, 2, 3, 4].map((n) => sha256(Buffer.from([0x00]), Buffer.from(`event-${n}`)));
+function hex(bytes: Uint8Array): string {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 
-function node(left: Buffer, right: Buffer): Buffer {
-  return sha256(Buffer.from([0x01]), left, right);
+const utf8 = new TextEncoder();
+
+const LEAVES = (await Promise.all(
+  [0, 1, 2, 3, 4].map((n) => sha256(Uint8Array.of(0x00), utf8.encode(`event-${n}`))),
+)) as [Uint8Array, Uint8Array, Uint8Array, Uint8Array, Uint8Array];
+
+function node(left: Uint8Array, right: Uint8Array): Promise<Uint8Array> {
+  return sha256(Uint8Array.of(0x01), left, right);
 }
 
 // Tree of size 5 (split 4): root = node(node(node(l0,l1),node(l2,l3)), l4)
-const N01 = node(LEAVES[0] as Buffer, LEAVES[1] as Buffer);
-const N23 = node(LEAVES[2] as Buffer, LEAVES[3] as Buffer);
-const N0123 = node(N01, N23);
-const ROOT = node(N0123, LEAVES[4] as Buffer);
+const N01 = await node(LEAVES[0], LEAVES[1]);
+const N23 = await node(LEAVES[2], LEAVES[3]);
+const N0123 = await node(N01, N23);
+const ROOT = await node(N0123, LEAVES[4]);
 
 /** Audit path for leaf 2 in size 5, consumed from the END by the verifier. */
 const PROOF_FOR_2: InclusionProof = {
   seq: 3,
   index: 2,
   treeSize: 5,
-  leaf: (LEAVES[2] as Buffer).toString("hex"),
+  leaf: hex(LEAVES[2]),
   // Recursion order: [deepest sibling first ... outermost last]
-  path: [(LEAVES[3] as Buffer).toString("hex"), N01.toString("hex"), (LEAVES[4] as Buffer).toString("hex")],
-  root: ROOT.toString("hex"),
+  path: [hex(LEAVES[3]), hex(N01), hex(LEAVES[4])],
+  root: hex(ROOT),
 };
 
 describe("auditPathLength", () => {
@@ -58,9 +74,9 @@ describe("auditPathLength", () => {
 describe("verifyInclusion", () => {
   it("verifies a known-answer proof and its single-leaf edge", async () => {
     expect(await verifyInclusion(PROOF_FOR_2)).toBe(true);
-    const single = LEAVES[0] as Buffer;
+    const single = hex(LEAVES[0]);
     expect(
-      await verifyInclusion({ seq: 1, index: 0, treeSize: 1, leaf: single.toString("hex"), path: [], root: single.toString("hex") }),
+      await verifyInclusion({ seq: 1, index: 0, treeSize: 1, leaf: single, path: [], root: single }),
     ).toBe(true);
     // Right-arm recursion: leaf 4 of 5 has path [N0123].
     expect(
@@ -68,16 +84,16 @@ describe("verifyInclusion", () => {
         seq: 5,
         index: 4,
         treeSize: 5,
-        leaf: (LEAVES[4] as Buffer).toString("hex"),
-        path: [N0123.toString("hex")],
-        root: ROOT.toString("hex"),
+        leaf: hex(LEAVES[4]),
+        path: [hex(N0123)],
+        root: hex(ROOT),
       }),
     ).toBe(true);
   });
 
   it("rejects tampered material, wrong positions, and non-hex", async () => {
     expect(await verifyInclusion({ ...PROOF_FOR_2, root: PROOF_FOR_2.root.replace(/^./, "f") })).toBe(false);
-    expect(await verifyInclusion({ ...PROOF_FOR_2, leaf: (LEAVES[0] as Buffer).toString("hex") })).toBe(false);
+    expect(await verifyInclusion({ ...PROOF_FOR_2, leaf: hex(LEAVES[0]) })).toBe(false);
     expect(await verifyInclusion({ ...PROOF_FOR_2, index: 9 })).toBe(false);
     expect(await verifyInclusion({ ...PROOF_FOR_2, path: PROOF_FOR_2.path.slice(1) })).toBe(false);
     expect(await verifyInclusion({ ...PROOF_FOR_2, leaf: "zz" })).toBe(false);
