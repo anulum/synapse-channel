@@ -149,7 +149,11 @@ remain wired.
 
 This installs the `synapse` command. To run the hub as an always-on local service
 or a container, see the [deployment guide](docs/deployment.md) (a `systemd` user
-unit and `docker compose` are both included).
+unit and `docker compose` are both included). On Linux, install only a permanent
+exact-identity waiter with
+`synapse arm install --identity myproject/agent --start`; it uses mailbox replay
+and `Restart=always`, without installing a hub. Native Windows service setup is
+not claimed; use WSL with systemd as documented in the deployment guide.
 
 Two optional shell conveniences ship with the CLI: `synapse completions
 bash|zsh|fish` prints tab completion for every subcommand (generated from the
@@ -1192,11 +1196,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.1 |
 | Public API exports | 70 |
-| Package modules | 359 |
-| Classes | 522 |
+| Package modules | 360 |
+| Classes | 524 |
 | Wire message types | 75 |
 | CLI subcommands | 158 |
-| Test functions | 5909 |
+| Test functions | 5933 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 13 |

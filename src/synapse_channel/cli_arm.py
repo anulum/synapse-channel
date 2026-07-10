@@ -17,6 +17,11 @@ from collections.abc import Awaitable, Callable, Coroutine
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.cli_arm_install import (
+    RawTokenAction,
+    add_arm_install_arguments,
+    maybe_install_arm,
+)
 from synapse_channel.cli_messaging import AgentFactory, _wait
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.core.wake_capability import WAKE_PASSIVE
@@ -229,6 +234,10 @@ def _cmd_arm(
         owner-pid exit, a newer waiter taking the name, or a deliberate
         legacy/provider yield.
     """
+    install_status = maybe_install_arm(args)
+    if install_status is not None:
+        return install_status
+
     for_name = args.for_name or args.name
     connect_name = args.name if args.name != for_name else waiter_name(args.name)
     legacy_terminal = legacy_project_scoped_terminal_sidecar(connect_name, for_name)
@@ -308,6 +317,7 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
         "arm",
         help="Keep a waiter armed and re-arm automatically after each wake or reconnect.",
     )
+    add_arm_install_arguments(arm)
     arm.add_argument("--uri", default=default_hub_uri())
     arm.add_argument("--name", default="USER")
     arm.add_argument(
@@ -369,7 +379,12 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
         default=None,
         help="Stop after N wakes; primarily useful for smoke tests and scripts.",
     )
-    arm.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    arm.add_argument(
+        "--token",
+        default=None,
+        action=RawTokenAction,
+        help="Shared-secret token for a secured hub.",
+    )
     arm.add_argument(
         "--wake-capability",
         default=WAKE_PASSIVE,

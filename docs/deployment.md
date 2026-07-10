@@ -37,6 +37,56 @@ It prints exact `systemctl --user` commands. `synapse git-init` accepts the same
 `--install-user-services` and `--start-user-services` flags, so claim-aware git
 setup can also write/start the hub, presence, and wake-listener units.
 
+## Permanent waiter (`synapse arm install`)
+
+Install only the exact-identity waiter when the hub already exists or lives on
+another machine:
+
+```bash
+# Inspect/write first; this does not install or start a hub.
+synapse arm install --identity myproject/worker
+
+# Write, reload systemd, and enable the escaped identity instance now.
+synapse arm install --identity myproject/worker --start
+systemctl --user status "$(systemd-escape --template=synapse-arm@.service -- 'myproject/worker')"
+```
+
+The generated user template runs `synapse arm --mailbox`, has
+`Restart=always`, and is enabled under `default.target`. It therefore survives
+terminal closure and recovers directed messages that landed during reconnect
+gaps. Enable lingering once with `loginctl enable-linger "$USER"` if it must
+remain up after every login session closes. To remove it, disable the same
+escaped instance with `systemctl --user disable --now ...`; the shared template
+can remain for other identities.
+
+For a remote or secured hub, bake the URI and a protected token-file path into
+the unit:
+
+```bash
+chmod 600 ~/.config/synapse/token
+synapse arm install --identity myproject/worker \
+  --uri wss://hub.example:8876 \
+  --token-file ~/.config/synapse/token \
+  --start
+```
+
+The installer stores an absolute token-file path in the unit, never the secret.
+It refuses a raw `--token` or ambient
+`SYNAPSE_TOKEN` because embedding either in a persistent unit would expose the
+credential. `--start` returns nonzero if `systemd-escape`, `daemon-reload`, or
+`enable --now` fails; a write-only install prints the exact follow-up commands.
+
+This service is a permanent, model-token-free passive receiver: it keeps the exact
+identity's mailbox reachable and writes wakes to the user journal, but does not
+paste untrusted message bodies into a model terminal or spend provider tokens.
+Use `agent-tmux`/`codex-tmux` when a running terminal provider also needs a fixed
+safe prompt injected.
+
+Native Windows Task Scheduler installation is not implemented or claimed.
+`synapse arm install` exits `2` outside Linux; on Windows, use WSL with systemd
+enabled and install the unit inside that distribution. This is the supported
+permanent-waiter path until a real native Windows service is validated.
+
 ## Provider-independent presence
 
 An agent's wake loop (a backgrounded `synapse wait`) gives prompt wakes, but it
@@ -53,8 +103,9 @@ It registers as `myproject-presence`, costs nothing (it holds a socket — no mo
 and keeps the project visible in `synapse who` and addressable even while the agent
 is offline. No message is lost meanwhile — the hub records them durably — so the
 returning agent catches up with `synapse relay --project myproject`. The two
-layers are complementary: the presence holder is always-on reachability; the
-`syn arm` listener is promptness while the agent runs.
+layers are complementary: the presence holder is project-level visibility; the
+exact-identity `synapse arm install` service is a durable passive receiver; and
+the tmux bridge supplies active terminal promptness when a provider is running.
 
 > **Presence is not a wake.** The presence holder keeps the project in the roster and
 > the feed durable, but it does **not** wake the agent. Use an active `syn arm` /

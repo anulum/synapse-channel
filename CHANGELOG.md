@@ -15,6 +15,13 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- `synapse arm install --identity NAME [--start]` now productizes the permanent
+  waiter as a focused Linux systemd user-service path. It writes only the arm
+  template, enables the exact `systemd-escape` instance on request, uses mailbox
+  replay plus `Restart=always`, accepts remote URIs and protected token files,
+  refuses persistent raw-token exposure, reports systemd failures as nonzero,
+  and gives an honest WSL recommendation outside Linux.
+
 - The hub now detects a dark seat when an identity owns an unexpired claim or
   assigned non-terminal board task without a fresh exact-identity `-rx` waiter.
   After a bounded grace it broadcasts one machine-readable `dark_seat_alert`

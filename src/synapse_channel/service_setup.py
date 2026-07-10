@@ -15,8 +15,10 @@ remain operator-readable templates; these helpers are the installed path.
 
 from __future__ import annotations
 
+import shlex
 import shutil
 import subprocess  # nosec B404 - fixed systemctl argv, never a shell string
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
@@ -33,6 +35,14 @@ class CommandRunner(Protocol):
         check: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         """Run a command and return its completed process."""
+
+
+@dataclass(frozen=True, slots=True)
+class ArmServiceInstallResult:
+    """Outcome and operator-facing lines from one arm-service installation."""
+
+    ok: bool
+    lines: tuple[str, ...]
 
 
 def default_synapse_bin() -> str:
@@ -99,8 +109,26 @@ def render_presence_unit(*, synapse_bin: str) -> str:
     )
 
 
-def render_arm_unit(*, synapse_bin: str) -> str:
+def _unit_token(value: str, *, label: str) -> str:
+    """Return a safe single-token systemd value or reject ambiguous input."""
+    if not value or any(character.isspace() for character in value):
+        raise ValueError(f"{label} must be one non-empty token without whitespace")
+    return value
+
+
+def render_arm_unit(
+    *,
+    synapse_bin: str,
+    uri: str = "ws://localhost:8876",
+    token_file: str | None = None,
+) -> str:
     """Render the persistent non-LLM wake listener template unit."""
+    executable = _unit_token(synapse_bin, label="synapse executable path")
+    hub_uri = _unit_token(uri, label="hub URI")
+    extra_argument = ""
+    if token_file is not None:
+        token_path = _unit_token(token_file, label="token file path")
+        extra_argument = f" --token-file {token_path}"
     return (
         "# SPDX-License-"
         "Identifier: AGPL-3.0-or-later\n"
@@ -114,19 +142,102 @@ def render_arm_unit(*, synapse_bin: str) -> str:
         "Description=SYNAPSE CHANNEL wake listener for %I\n"
         "Documentation=https://github.com/anulum/synapse-channel\n"
         "After=synapse-hub.service\n"
-        "Wants=synapse-hub.service\n"
         "StartLimitIntervalSec=0\n\n"
         "[Service]\n"
         "Type=simple\n"
         "Environment=SYN_PROJECT=%I\n"
         "Environment=SYN_IDENTITY=%I\n"
-        f"ExecStart={synapse_bin} arm --name %I-rx --for %I --directed-only "
-        "--uri ws://localhost:8876\n"
+        f"ExecStart={executable} arm --name %I-rx --for %I --directed-only "
+        f"--mailbox --uri {hub_uri}{extra_argument}\n"
         "Restart=always\n"
         "RestartSec=2\n\n"
         "[Install]\n"
         "WantedBy=default.target\n"
     )
+
+
+def _run_service_command(
+    command: list[str], *, runner: CommandRunner
+) -> tuple[subprocess.CompletedProcess[str] | None, str]:
+    """Run one fixed service command and normalize its failure description."""
+    rendered = " ".join(command)
+    try:
+        proc = runner(command, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        return None, f"failed: {rendered} — {exc}"
+    if proc.returncode == 0:
+        return proc, ""
+    detail = (proc.stderr or proc.stdout).strip()
+    suffix = f" — {detail}" if detail else ""
+    return proc, f"failed: {rendered}{suffix}"
+
+
+def install_arm_service(
+    *,
+    identity: str,
+    uri: str = "ws://localhost:8876",
+    synapse_bin: str | None = None,
+    token_file: str | None = None,
+    start: bool = False,
+    home: Path | None = None,
+    runner: CommandRunner = subprocess.run,
+) -> ArmServiceInstallResult:
+    """Install only the permanent waiter unit and optionally enable it.
+
+    This deliberately does not install or start a hub or presence service. The
+    exact identity is escaped by ``systemd-escape`` before ``--start`` enables
+    the instance; an escape or systemctl failure is returned to the CLI instead
+    of being reported as a successful installation.
+    """
+    synapse = synapse_bin or default_synapse_bin()
+    unit_dir = user_systemd_dir(home=home)
+    unit_path = unit_dir / "synapse-arm@.service"
+    if not identity.strip():
+        return ArmServiceInstallResult(False, ("identity must not be empty",))
+    try:
+        body = render_arm_unit(synapse_bin=synapse, uri=uri, token_file=token_file)
+        unit_dir.mkdir(parents=True, exist_ok=True)
+        unit_path.write_text(body, encoding="utf-8")
+    except (OSError, ValueError) as exc:
+        return ArmServiceInstallResult(False, (f"failed to write {unit_path} — {exc}",))
+
+    lines = [f"ensured {unit_dir}", f"wrote {unit_path}"]
+    if not start:
+        lines.extend(
+            (
+                "run: systemctl --user daemon-reload",
+                "run: systemctl --user enable --now "
+                '"$(systemd-escape --template=synapse-arm@.service -- '
+                f'{shlex.quote(identity)})"',
+            )
+        )
+        return ArmServiceInstallResult(True, tuple(lines))
+
+    escape_command = [
+        "systemd-escape",
+        "--template=synapse-arm@.service",
+        "--",
+        identity,
+    ]
+    escaped, failure = _run_service_command(escape_command, runner=runner)
+    if escaped is None or failure:
+        lines.append(failure)
+        return ArmServiceInstallResult(False, tuple(lines))
+    arm_unit = escaped.stdout.strip()
+    if not arm_unit:
+        lines.append("failed: systemd-escape returned an empty unit name")
+        return ArmServiceInstallResult(False, tuple(lines))
+
+    for command in (
+        ["systemctl", "--user", "daemon-reload"],
+        ["systemctl", "--user", "enable", "--now", arm_unit],
+    ):
+        _proc, failure = _run_service_command(command, runner=runner)
+        if failure:
+            lines.append(failure)
+            return ArmServiceInstallResult(False, tuple(lines))
+        lines.append(f"ok: {' '.join(command)}")
+    return ArmServiceInstallResult(True, tuple(lines))
 
 
 def escaped_instance(

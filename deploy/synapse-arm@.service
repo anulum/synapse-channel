@@ -21,14 +21,13 @@
 Description=SYNAPSE CHANNEL wake listener for %I
 Documentation=https://github.com/anulum/synapse-channel
 After=synapse-hub.service
-Wants=synapse-hub.service
 StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 Environment=SYN_PROJECT=%I
 Environment=SYN_IDENTITY=%I
-ExecStart=%h/.local/bin/synapse arm --name %I-rx --for %I --directed-only --uri ws://localhost:8876
+ExecStart=%h/.local/bin/synapse arm --name %I-rx --for %I --directed-only --mailbox --uri ws://localhost:8876
 Restart=always
 RestartSec=2
 

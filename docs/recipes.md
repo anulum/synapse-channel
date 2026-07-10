@@ -199,11 +199,13 @@ The discipline that makes it reliable:
   resolved identity, or `synapse who --name <identity> --me` explicitly, to see
   presence and `-rx` waiter status separately; presence is not a wake loop.
 - **Prefer a self-healing waiter.** Re-arming by hand is fragile — a missed re-arm
-  leaves the agent present but deaf. `synapse init --install-user-services` writes a
-  `synapse-arm@<identity>` systemd user unit that re-arms the waiter and, with
-  `Restart=always`, is brought back by systemd if it ever dies — so the waiter cannot
-  silently lapse. Reserve the manual `--max-wakes 1` re-arm loop for a harness that
-  re-invokes on each wake. To catch a lapse when it does happen, run the hub with
+  leaves the agent present but deaf. On Linux,
+  `synapse arm install --identity <identity> --start` writes only the
+  `synapse-arm@<identity>` systemd user unit. It enables mailbox replay and, with
+  `Restart=always`, is brought back by systemd if it ever dies — so the passive
+  receiver cannot silently lapse. Native Windows service installation is not
+  claimed; use WSL with systemd. Reserve the manual `--max-wakes 1` re-arm loop for
+  a harness that re-invokes on each wake. To catch a lapse when it does happen, run the hub with
   `--warn-stale-recipients`: a directed message to a present-but-deaf recipient warns
   the sender, and `synapse who` marks such agents `(deaf …)` and lists any present
   agent with no live waiter under `Unarmed (present, no live waiter)`.

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from synapse_channel.service_setup import (
     escaped_instance,
+    install_arm_service,
     install_user_services,
     render_arm_unit,
     service_suggestions,
@@ -23,7 +24,197 @@ def test_render_arm_unit_uses_non_llm_synapse_arm() -> None:
     unit = render_arm_unit(synapse_bin="/usr/bin/synapse")
     assert "ExecStart=/usr/bin/synapse arm" in unit
     assert "--directed-only" in unit
+    assert "--mailbox" in unit
     assert "Restart=always" in unit
+    assert "Wants=synapse-hub.service" not in unit
+    assert "After=synapse-hub.service" in unit
+
+
+def test_render_arm_unit_adds_remote_uri_and_token_file() -> None:
+    unit = render_arm_unit(
+        synapse_bin="/usr/bin/synapse",
+        uri="wss://hub.example:8876",
+        token_file="/home/user/.config/synapse/token",
+    )
+
+    assert "--uri wss://hub.example:8876" in unit
+    assert "--token-file /home/user/.config/synapse/token" in unit
+
+
+def test_checked_in_arm_template_matches_generated_runtime_contract() -> None:
+    template = (Path(__file__).resolve().parents[1] / "deploy" / "synapse-arm@.service").read_text(
+        encoding="utf-8"
+    )
+
+    assert "After=synapse-hub.service" in template
+    assert "Wants=synapse-hub.service" not in template
+    assert "--directed-only --mailbox --uri ws://localhost:8876" in template
+    assert "Restart=always" in template
+
+
+def test_install_arm_service_writes_only_waiter_unit(tmp_path: Path) -> None:
+    result = install_arm_service(
+        identity="repo/ux",
+        synapse_bin="/bin/synapse",
+        home=tmp_path,
+    )
+
+    unit_dir = tmp_path / ".config" / "systemd" / "user"
+    assert result.ok is True
+    assert sorted(path.name for path in unit_dir.iterdir()) == ["synapse-arm@.service"]
+    assert any(
+        "systemd-escape --template=synapse-arm@.service -- repo/ux" in line for line in result.lines
+    )
+    assert not (tmp_path / "synapse").exists()
+
+
+def test_install_arm_service_start_enables_exact_escaped_instance(tmp_path: Path) -> None:
+    commands: list[list[str]] = []
+
+    def runner(
+        args: list[str], *, capture_output: bool = False, text: bool = False, check: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        stdout = "synapse-arm@repo-ux.service\n" if args[0] == "systemd-escape" else ""
+        return subprocess.CompletedProcess(args, 0, stdout=stdout, stderr="")
+
+    result = install_arm_service(
+        identity="repo/ux",
+        synapse_bin="/bin/synapse",
+        start=True,
+        home=tmp_path,
+        runner=runner,
+    )
+
+    assert result.ok is True
+    assert commands == [
+        ["systemd-escape", "--template=synapse-arm@.service", "--", "repo/ux"],
+        ["systemctl", "--user", "daemon-reload"],
+        ["systemctl", "--user", "enable", "--now", "synapse-arm@repo-ux.service"],
+    ]
+    assert result.lines[-1] == ("ok: systemctl --user enable --now synapse-arm@repo-ux.service")
+
+
+def test_install_arm_service_fails_closed_when_escape_fails(tmp_path: Path) -> None:
+    commands: list[list[str]] = []
+
+    def runner(
+        args: list[str], *, capture_output: bool = False, text: bool = False, check: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr="bad identity")
+
+    result = install_arm_service(
+        identity="repo/ux",
+        start=True,
+        home=tmp_path,
+        runner=runner,
+    )
+
+    assert result.ok is False
+    assert commands == [["systemd-escape", "--template=synapse-arm@.service", "--", "repo/ux"]]
+    assert result.lines[-1].endswith("— bad identity")
+
+
+def test_install_arm_service_rejects_empty_escaped_instance(tmp_path: Path) -> None:
+    def runner(
+        args: list[str], *, capture_output: bool = False, text: bool = False, check: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args, 0, stdout="\n", stderr="")
+
+    result = install_arm_service(
+        identity="repo/ux",
+        start=True,
+        home=tmp_path,
+        runner=runner,
+    )
+
+    assert result.ok is False
+    assert result.lines[-1] == "failed: systemd-escape returned an empty unit name"
+
+
+def test_install_arm_service_reports_systemctl_failure(tmp_path: Path) -> None:
+    def runner(
+        args: list[str], *, capture_output: bool = False, text: bool = False, check: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        if args[0] == "systemd-escape":
+            return subprocess.CompletedProcess(
+                args, 0, stdout="synapse-arm@repo.service\n", stderr=""
+            )
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr="no user bus")
+
+    result = install_arm_service(
+        identity="repo",
+        start=True,
+        home=tmp_path,
+        runner=runner,
+    )
+
+    assert result.ok is False
+    assert result.lines[-1] == "failed: systemctl --user daemon-reload — no user bus"
+
+
+def test_install_arm_service_reports_enable_failure(tmp_path: Path) -> None:
+    def runner(
+        args: list[str], *, capture_output: bool = False, text: bool = False, check: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        if args[0] == "systemd-escape":
+            return subprocess.CompletedProcess(
+                args, 0, stdout="synapse-arm@repo.service\n", stderr=""
+            )
+        if args[-1] == "daemon-reload":
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr="enable refused")
+
+    result = install_arm_service(
+        identity="repo",
+        start=True,
+        home=tmp_path,
+        runner=runner,
+    )
+
+    assert result.ok is False
+    assert result.lines[-2:] == (
+        "ok: systemctl --user daemon-reload",
+        "failed: systemctl --user enable --now synapse-arm@repo.service — enable refused",
+    )
+
+
+def test_install_arm_service_normalizes_missing_command(tmp_path: Path) -> None:
+    def runner(
+        args: list[str], *, capture_output: bool = False, text: bool = False, check: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        raise FileNotFoundError("systemd-escape not installed")
+
+    result = install_arm_service(
+        identity="repo",
+        start=True,
+        home=tmp_path,
+        runner=runner,
+    )
+
+    assert result.ok is False
+    assert "systemd-escape not installed" in result.lines[-1]
+
+
+def test_install_arm_service_rejects_unit_directive_injection(tmp_path: Path) -> None:
+    result = install_arm_service(
+        identity="repo",
+        synapse_bin="/bin/synapse\nExecStart=/bin/false",
+        home=tmp_path,
+    )
+
+    assert result.ok is False
+    assert "without whitespace" in result.lines[-1]
+
+
+def test_install_arm_service_requires_nonempty_identity(tmp_path: Path) -> None:
+    result = install_arm_service(identity="  ", home=tmp_path)
+
+    assert result == install_arm_service(identity="", home=tmp_path)
+    assert result.ok is False
+    assert result.lines == ("identity must not be empty",)
+    assert not (tmp_path / ".config").exists()
 
 
 def test_service_suggestions_include_hub_presence_and_arm() -> None:

@@ -43,7 +43,7 @@ everything, since they need the whole command table.
 | `synapse send` | Connect, send one message, optionally await replies, and exit. |
 | `synapse wait` | Block until a message addressed to you arrives, then exit (a wake trigger). |
 | `synapse listen` | Connect and stream channel messages until interrupted. |
-| `synapse arm` | Keep a waiter armed, re-arming automatically after each wake so a terminal stays reachable. |
+| `synapse arm` | Keep a waiter armed, or use `arm install --identity NAME [--start]` to write a permanent Linux systemd user waiter with mailbox replay and `Restart=always`. |
 | `synapse relay` | Decode and print a lite relay log a hub mirrored to a file. |
 | `synapse ingest` | Stream durable event-store records since a sequence cursor. |
 | `synapse event-query` | Query a hub SQLite event store for temporal task and coordination history. |
@@ -1798,6 +1798,7 @@ coding tools to the claim-aware hooks.
 ```bash
 synapse init --project my-repo                          # print the hub/waiter/presence user units
 synapse init --project my-repo --install-user-services  # install them under systemd --user
+synapse arm install --identity my-repo/agent --start    # install/start only one permanent waiter (Linux)
 synapse install-shell-hook                              # auto-arm Bash, Zsh, and Fish on new terminals
 synapse install-shell-hook --shell fish                 # only the Fish integration
 synapse shell-hook                                      # print the block instead of installing it
@@ -1809,6 +1810,14 @@ synapse worker-session --identity my-repo -- codex      # run a provider CLI wit
 synapse adapters list                                   # detect coding tools and report adapter status
 synapse adapters install --project my-repo              # write the claim-aware adapter into each tool
 ```
+
+`arm install` requires an explicit identity and never silently uses ambient
+`SYN_IDENTITY` for a background service. Add `--uri URI` for a remote hub and
+`--token-file PATH` for a secured hub; raw `--token` and ambient
+`SYNAPSE_TOKEN` are refused so a secret cannot be embedded in the unit. Without
+`--start`, the command writes the template and prints exact systemctl follow-up
+commands. It supports Linux systemd user services; native Windows installation
+is not claimed, so use WSL with systemd enabled.
 
 ## Governance and integrity
 
