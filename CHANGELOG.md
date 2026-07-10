@@ -63,6 +63,10 @@ All notable changes to this project are documented here.
   WebSocket-path fallthrough, private rejection, and the production Prometheus
   and health payloads.
 
+- `core.state_scopes` now has a direct module-owned test surface covering empty
+  state, self and same-owner exclusions, disjoint paths and worktrees,
+  whole-worktree contention, and deterministic first-conflict selection.
+
 ### Fixed
 
 - Public security, protocol, glossary, staged-profile documentation, and the
