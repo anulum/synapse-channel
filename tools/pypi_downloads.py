@@ -26,6 +26,7 @@ import argparse
 import csv
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -43,8 +44,20 @@ PYPISTATS_OVERALL = "https://pypistats.org/api/packages/{package}/overall"
 CATEGORIES = ("without_mirrors", "with_mirrors")
 """Recorded download categories, most-meaningful first."""
 
+RETRYABLE_STATUSES = (429, 502, 503, 504)
+"""Upstream statuses worth retrying: throttles and transient gateway failures."""
+
+RETRY_SCHEDULE = (30.0, 60.0, 120.0)
+"""Fallback seconds between attempts when the throttle names no Retry-After."""
+
+MAX_RETRY_AFTER = 600.0
+"""Ceiling for an upstream Retry-After, so a hostile header cannot hang the job."""
+
 Fetch = Callable[[str], bytes]
 """A URL-to-bytes fetcher, injected so the network call is replaceable in tests."""
+
+Sleep = Callable[[float], None]
+"""A seconds-sleeper, injected so retry pacing is instant in tests."""
 
 
 def detect_package(pyproject_path: Path) -> str:
@@ -68,6 +81,38 @@ def fetch_overall(package: str, fetch: Fetch = _http_get) -> dict[str, Any]:
     raw = fetch(PYPISTATS_OVERALL.format(package=package))
     decoded: dict[str, Any] = json.loads(raw)
     return decoded
+
+
+def _retry_delay(exc: urllib.error.HTTPError, fallback: float) -> float:
+    """Honour a plausible upstream ``Retry-After``, else use the schedule's wait."""
+    header = str(exc.headers.get("Retry-After", "")) if exc.headers else ""
+    try:
+        delay = float(header)
+    except ValueError:
+        return fallback
+    return min(max(delay, 1.0), MAX_RETRY_AFTER)
+
+
+def fetch_overall_with_retry(
+    package: str, fetch: Fetch = _http_get, sleep: Sleep = time.sleep
+) -> dict[str, Any] | None:
+    """Fetch ``/overall``, waiting out transient upstream throttles.
+
+    pypistats rate-limits shared CI runner addresses, so a 429 (and the
+    transient gateway statuses) earns a paced retry per ``RETRY_SCHEDULE``.
+    Returns ``None`` only when every attempt ended retryable — the caller
+    records a skipped day, which the per-date upsert self-heals on the next
+    run. Any other failure propagates unchanged.
+    """
+    for delay in (*RETRY_SCHEDULE, None):
+        try:
+            return fetch_overall(package, fetch)
+        except urllib.error.HTTPError as exc:
+            if exc.code not in RETRYABLE_STATUSES:
+                raise
+            if delay is not None:
+                sleep(_retry_delay(exc, delay))
+    return None
 
 
 def daily_counts(overall: dict[str, Any]) -> dict[str, dict[str, int]]:
@@ -140,7 +185,7 @@ def _summary(package: str, rows: dict[str, dict[str, int]]) -> str:
     )
 
 
-def main(argv: list[str] | None = None, fetch: Fetch = _http_get) -> int:
+def main(argv: list[str] | None = None, fetch: Fetch = _http_get, sleep: Sleep = time.sleep) -> int:
     """Snapshot downloads for the resolved package and upsert them into ``--csv``."""
     parser = argparse.ArgumentParser(description="Record a daily PyPI download snapshot.")
     parser.add_argument("--pyproject", default="pyproject.toml", help="Path to pyproject.toml.")
@@ -161,12 +206,22 @@ def main(argv: list[str] | None = None, fetch: Fetch = _http_get) -> int:
         parser.error("--csv is required unless --print-package is given")
 
     try:
-        overall = fetch_overall(package, fetch)
+        overall = fetch_overall_with_retry(package, fetch, sleep)
     except urllib.error.URLError as exc:
-        # A transient pypistats hiccup must not crash with a traceback or corrupt
-        # the existing series; fail cleanly and let the next run backfill the day.
+        # A genuine failure must not crash with a traceback or corrupt the
+        # existing series; fail cleanly and let the next run backfill the day.
         print(f"{package}: could not fetch download stats: {exc}", file=sys.stderr)
         return 1
+    if overall is None:
+        # A throttle that outlasts every retry is an upstream mood, not a
+        # defect here: say so and leave the series alone — the upsert model
+        # backfills the missing day from the rolling window on the next run.
+        print(
+            f"{package}: upstream rate limit persisted across retries; "
+            "skipping this snapshot (the per-date upsert self-heals next run)",
+            file=sys.stderr,
+        )
+        return 0
     fresh = daily_counts(overall)
     csv_path = Path(args.csv)
     merged = merge(read_csv(csv_path), fresh)

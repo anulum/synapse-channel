@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import urllib.error
+from email.message import Message
 from pathlib import Path
 from typing import Any
 
@@ -200,4 +201,85 @@ def test_main_returns_one_on_fetch_error(
     assert rc == 1
     assert "could not fetch download stats" in capsys.readouterr().err
     # the existing series is left untouched on a fetch failure
+    assert dl.read_csv(csv_path) == {"2026-06-20": {"without_mirrors": 50, "with_mirrors": 90}}
+
+
+def _throttle(code: int = 429, retry_after: str | None = None) -> urllib.error.HTTPError:
+    headers = Message()
+    if retry_after is not None:
+        headers["Retry-After"] = retry_after
+    return urllib.error.HTTPError("https://pypistats.org", code, "throttled", headers, None)
+
+
+def test_fetch_overall_with_retry_recovers_after_a_throttle() -> None:
+    body = json.dumps(_SAMPLE).encode()
+    attempts: list[str] = []
+    waits: list[float] = []
+
+    def flaky(url: str) -> bytes:
+        attempts.append(url)
+        if len(attempts) == 1:
+            raise _throttle()
+        return body
+
+    overall = dl.fetch_overall_with_retry("synapse-channel", flaky, waits.append)
+    assert overall == _SAMPLE
+    assert len(attempts) == 2
+    assert waits == [dl.RETRY_SCHEDULE[0]]
+
+
+def test_fetch_overall_with_retry_honours_a_sane_retry_after() -> None:
+    calls: list[int] = []
+    waits: list[float] = []
+    body = json.dumps(_SAMPLE).encode()
+
+    def flaky(url: str) -> bytes:
+        calls.append(1)
+        if len(calls) == 1:
+            raise _throttle(retry_after="7")
+        return body
+
+    assert dl.fetch_overall_with_retry("synapse-channel", flaky, waits.append) == _SAMPLE
+    assert waits == [7.0]
+    # A hostile header is clamped instead of hanging the job.
+    assert dl._retry_delay(_throttle(retry_after="99999"), 30.0) == dl.MAX_RETRY_AFTER
+    assert dl._retry_delay(_throttle(retry_after="0"), 30.0) == 1.0
+    assert dl._retry_delay(_throttle(retry_after="soon"), 30.0) == 30.0
+
+
+def test_fetch_overall_with_retry_gives_up_after_the_schedule() -> None:
+    waits: list[float] = []
+
+    def always_throttled(url: str) -> bytes:
+        raise _throttle(code=503)
+
+    assert dl.fetch_overall_with_retry("synapse-channel", always_throttled, waits.append) is None
+    assert waits == list(dl.RETRY_SCHEDULE)
+
+
+def test_fetch_overall_with_retry_propagates_a_hard_http_error() -> None:
+    def gone(url: str) -> bytes:
+        raise _throttle(code=404)
+
+    with pytest.raises(urllib.error.HTTPError):
+        dl.fetch_overall_with_retry("synapse-channel", gone, lambda _seconds: None)
+
+
+def test_main_skips_cleanly_when_the_throttle_outlasts_retries(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    csv_path = tmp_path / "synapse-channel.csv"
+    dl.write_csv(csv_path, {"2026-06-20": {"without_mirrors": 50, "with_mirrors": 90}})
+
+    def always_throttled(url: str) -> bytes:
+        raise _throttle()
+
+    rc = dl.main(
+        ["--package", "synapse-channel", "--csv", str(csv_path)],
+        fetch=always_throttled,
+        sleep=lambda _seconds: None,
+    )
+    assert rc == 0
+    assert "rate limit persisted" in capsys.readouterr().err
+    # the series is left untouched; the next successful run backfills the day
     assert dl.read_csv(csv_path) == {"2026-06-20": {"without_mirrors": 50, "with_mirrors": 90}}
