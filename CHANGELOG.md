@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.2] - 2026-07-10
+
 ### Added
 
 - `SynapseAgent` now presents the zero-config machine identity by default, so

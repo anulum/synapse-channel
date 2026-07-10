@@ -50,6 +50,7 @@ def discover(root: Path = ROOT) -> dict[str, str]:
         "README.md citation": _search(root, "README.md", r"version\s*=\s*\{([^}]+)\}"),
         "CITATION.cff": _search(root, "CITATION.cff", r'^version:\s*"?([^"\n]+?)"?\s*$'),
         ".zenodo.json": _search(root, ".zenodo.json", r'"version":\s*"([^"]+)"'),
+        "server.json": _search(root, "server.json", r'"version":\s*"([^"]+)"'),
     }
 
 

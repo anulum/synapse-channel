@@ -34,6 +34,7 @@ def test_discover_returns_every_surface() -> None:
         "README.md citation",
         "CITATION.cff",
         ".zenodo.json",
+        "server.json",
     }
     # The repository surfaces are all in sync, so each equals the canonical version.
     assert set(surfaces.values()) == {cvs._pyproject_version()}
@@ -65,6 +66,18 @@ def test_main_fails_on_real_surface_drift(
         encoding="utf-8",
     )
     (tmp_path / ".zenodo.json").write_text(
+        dedent(
+            """\
+            {
+              "version": "1.2.3"
+            }
+            """
+        ),
+        encoding="utf-8",
+    )
+    # The MCP registry metadata is a version surface too (0.99.2 lesson: the
+    # release bump missed it because the checker did not know it).
+    (tmp_path / "server.json").write_text(
         dedent(
             """\
             {
