@@ -315,6 +315,7 @@ class MessageType:
     RESUME_SNAPSHOT = "resume_snapshot"
     WAIT_GRANTED = "wait_granted"
     WAIT_DENIED = "wait_denied"
+    LEASE_GRANTED = "lease_granted"
     LEDGER_TASK_POSTED = "ledger_task_posted"
     LEDGER_TASK_UPDATED = "ledger_task_updated"
     LEDGER_PROGRESS_POSTED = "ledger_progress_posted"

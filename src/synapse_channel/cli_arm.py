@@ -21,6 +21,7 @@ from synapse_channel.cli_messaging import AgentFactory, _wait
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.core.wake_capability import WAKE_PASSIVE
 from synapse_channel.mailbox_cursor import cursor_path
+from synapse_channel.owner_lease import lease_path
 from synapse_channel.shell_integration import has_active_tmux_provider
 from synapse_channel.waiter_identity import (
     legacy_project_scoped_terminal_sidecar,
@@ -92,6 +93,7 @@ async def _arm(
     mailbox: bool = False,
     mailbox_cursor_path: Path | None = None,
     wake_capability: str = WAKE_PASSIVE,
+    owner_lease_path: Path | None = None,
 ) -> int:
     """Keep a directed waiter armed until interrupted, displaced, or orphaned.
 
@@ -100,9 +102,11 @@ async def _arm(
     and the loop returns — a waiter for a closed terminal can wake nobody, and
     leaving it connected inflates the hub roster with phantom presence.
 
-    A wait that reports a takeover (exit ``4``) also ends the loop: a newer
-    waiter owns the name now, and re-arming would take it back and leave the
-    two stealing the identity from each other until the hub quarantines it.
+    A wait that reports a yield verdict (exit ``4``) also ends the loop: either
+    a newer waiter owns the name now — re-arming would take it back and leave
+    the two stealing the identity from each other until the hub quarantines
+    it — or a foreign ownership lease refused the claim, which no retry
+    without the lease token can ever pass.
 
     ``roles`` are the full ``<project>/<role>`` names this waiter also answers to,
     threaded into every re-armed wait so a message addressed to a role it holds
@@ -116,6 +120,11 @@ async def _arm(
 
     ``wake_capability`` is forwarded into each one-shot wait; the arm command
     defaults to ``passive`` because a socket wake alone does not force a provider pane.
+
+    ``owner_lease_path`` is likewise threaded into every re-armed wait, so each
+    re-arm presents the hub ownership-lease token the previous one persisted and
+    re-takes its own name; a stranger claiming the waiter identity in the gap is
+    refused by the hub instead (see :mod:`synapse_channel.owner_lease`).
     """
     if owner_pid is not None and not owner_probe(owner_pid):
         print(f"[{name}] owner pid {owner_pid} is already gone; not arming.")
@@ -136,6 +145,7 @@ async def _arm(
                 mailbox=mailbox,
                 mailbox_cursor_path=mailbox_cursor_path,
                 wake_capability=wake_capability,
+                owner_lease_path=owner_lease_path,
             )
         )
         if owner_pid is None:
@@ -164,7 +174,7 @@ async def _arm(
             wakes_seen += 1
             continue
         if code == 4:
-            print(f"[{name}] a newer waiter holds this name; disarming.")
+            print(f"[{name}] another connection holds this name; disarming.")
             return 0
         if reconnect_delay > 0:
             await sleep_runner(reconnect_delay)
@@ -272,6 +282,7 @@ def _cmd_arm(
                 mailbox=mailbox,
                 mailbox_cursor_path=mailbox_cursor_path,
                 wake_capability=getattr(args, "wake_capability", WAKE_PASSIVE),
+                owner_lease_path=lease_path(connect_name),
             )
         )
     except KeyboardInterrupt:

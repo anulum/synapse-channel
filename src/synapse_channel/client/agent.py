@@ -110,6 +110,22 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
     wake_capability : str, optional
         Receiver capability declared on the registration heartbeat. Ordinary agents
         default to ``direct``; passive wait sockets and pane bridges override it.
+    request_lease : bool, optional
+        When ``True``, the registration heartbeat declares ``lease: true``, asking
+        the hub for an ownership lease on the bound name: the hub then admits a
+        later claim on that name only when it presents the granted token, so a
+        reconnect re-takes its own name and a stranger cannot squat it in the gap.
+        Off by default — a client that does not opt in keeps classic first-come
+        name semantics, and a pre-lease hub ignores the field entirely.
+    owner_lease : str, optional
+        The lease token to present for the bound name, persisted from an earlier
+        grant (see :mod:`synapse_channel.owner_lease`). Empty (the default)
+        presents nothing, which is correct for a first claim. Updated in place
+        when the hub grants a fresh lease.
+    on_lease_granted : Callable[[str], None] or None, optional
+        Called with the token the moment the hub grants a lease, so the caller
+        can persist it before the process exits. ``None`` (the default) only
+        records the token on :attr:`owner_lease`.
     per_message_auth_key_id : str or None, optional
         Key id used to sign mutating frames with per-message authentication.
         ``None`` leaves frame signing off.
@@ -143,6 +159,9 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         mailbox_for: str = "",
         mailbox_advance: Callable[[dict[str, Any]], bool] | None = None,
         wake_capability: str = WAKE_DIRECT,
+        request_lease: bool = False,
+        owner_lease: str = "",
+        on_lease_granted: Callable[[str], None] | None = None,
         per_message_auth_key_id: str | None = None,
         per_message_auth_secret: str | bytes | None = None,
         identity_key_path: str | None = None,
@@ -171,6 +190,9 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         self.mailbox_for = str(mailbox_for)
         self.mailbox_advance = mailbox_advance
         self.wake_capability = normalize_wake_capability(wake_capability, default=WAKE_DIRECT)
+        self.request_lease = bool(request_lease)
+        self.owner_lease = str(owner_lease)
+        self.on_lease_granted = on_lease_granted
         self._message_auth_key: MessageAuthKey | None = None
         if per_message_auth_key_id is not None and per_message_auth_secret is not None:
             secret = (

@@ -46,6 +46,22 @@ The ACL model and its evaluation are implemented in
   authentication layer; this is the authorisation layer. Enforcement is opt-in
   and off by default, ungated verbs and read surfaces still pass, and a missing
   policy or shared-token local hub is unchanged.
+- **Hub-authoritative name-ownership lease** (`core/name_ownership.py`): a name
+  has exactly one owner across reconnects, not merely per socket. A registration
+  that declares `lease: true` on a free name is granted an opaque `owner_lease`
+  token in a directed `lease_granted` frame (the hub stores only a SHA-256
+  digest); while the lease is live — its holder connected, or offline for less
+  than `--lease-offline-ttl` seconds (default 3600) — any claim on the name
+  must present the token or it is refused with close code
+  `4016` (`name owned`), takeover flag or not. A claim presenting the token
+  passes and still crosses the takeover damping (cooldown, oscillation
+  quarantine). The waiter (`synapse wait` / `synapse arm`) opts in end to end:
+  it persists the token per connect name under `~/synapse/owner-lease/` and
+  presents it on every re-arm, so a re-arm re-takes its own `-rx` identity and
+  a stranger cannot squat it in the gap. Clients that never opt in keep classic
+  first-come semantics, and a pre-lease hub ignores the fields — a mixed fleet
+  keeps working. A lapsed or lost token self-heals: past the offline window the
+  name returns to first-come-first-owned.
 
 The identity namespace is taken from the resolved sender (`project/agent`). The
 first credential format, in-hub credential resolution, credential rotation,

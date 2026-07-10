@@ -14,7 +14,9 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from synapse_channel.core.hub_counters import HubCounters
+from synapse_channel.core.name_ownership import DEFAULT_LEASE_OFFLINE_TTL, NameOwnership
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
+from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.wake_capability import WAKE_UNKNOWN, normalize_wake_capability
 
 logger = logging.getLogger("synapse.hub")
@@ -35,6 +37,7 @@ class HubClientRegistry:
         takeover_oscillation_window: float = 30.0,
         takeover_oscillation_threshold: int = 5,
         takeover_quarantine: float = 60.0,
+        lease_offline_ttl: float = DEFAULT_LEASE_OFFLINE_TTL,
     ) -> None:
         self.max_clients = safe_int(max_clients, default=1, min_value=1)
         self.max_unauth_clients = (
@@ -57,6 +60,7 @@ class HubClientRegistry:
         self.takeover_quarantine = max(safe_float(takeover_quarantine, default=60.0), 0.0)
         self.counters = counters if counters is not None else HubCounters()
         self._clock = clock
+        self.ownership = NameOwnership(clock=clock, offline_ttl=lease_offline_ttl)
         self._last_takeover: dict[str, float] = {}
         self._takeover_times: dict[str, list[float]] = {}
         self._quarantine_until: dict[str, float] = {}
@@ -107,6 +111,7 @@ class HubClientRegistry:
             self.agent_sockets.pop(name, None)
             self.agent_roles.pop(name, None)
             self.agent_wake_capabilities.pop(name, None)
+            self.ownership.mark_offline(name)
             return name
         return None
 
@@ -197,6 +202,56 @@ class HubClientRegistry:
         self.counters.takeovers += 1
         return "accept"
 
+    async def _admit_owner(
+        self,
+        sender: str,
+        websocket: Any,
+        *,
+        lease_requested: bool,
+        send_json: Callable[[Any, dict[str, Any]], Awaitable[None]],
+        system: Callable[..., dict[str, Any]],
+    ) -> None:
+        """Complete a successful bind: freeze lease expiry and grant when asked.
+
+        Runs at every bind site the moment the registry maps point at the new
+        owner. The lease mint happens in the synchronous prefix — before the
+        grant frame's send awaits — so from the instant a takeover swap or a
+        fresh bind completes, a concurrently arriving claim on the same name
+        already sees the lease and is gated on its token. The grant frame goes
+        only to the owning socket, never a broadcast: the token is a bearer
+        credential.
+
+        Parameters
+        ----------
+        sender : str
+            The name that just bound.
+        websocket : Any
+            The socket that now owns it, and the only recipient of the grant.
+        lease_requested : bool
+            Whether the claimant opted into ownership leasing (the
+            registration frame's ``lease`` field). Without it no lease is
+            minted, preserving classic semantics for pre-lease clients.
+        send_json : callable
+            Coroutine used to deliver the grant frame.
+        system : callable
+            Factory for the grant frame payload.
+        """
+        self.ownership.mark_online(sender)
+        if not lease_requested or self.ownership.is_leased(sender):
+            return
+        token = self.ownership.grant(sender)
+        await send_json(
+            websocket,
+            system(
+                f"Ownership lease granted for '{sender}'. Persist the token and "
+                "present it as owner_lease on every reconnect.",
+                msg_type=MessageType.LEASE_GRANTED,
+                target=sender,
+                owner_lease=token,
+                lease_name=sender,
+            ),
+        )
+
     async def resolve_sender(
         self,
         sender: str,
@@ -205,8 +260,10 @@ class HubClientRegistry:
         takeover: bool,
         send_json: Callable[[Any, dict[str, Any]], Awaitable[None]],
         system: Callable[..., dict[str, Any]],
+        lease_requested: bool = False,
+        owner_lease: str = "",
     ) -> str | None:
-        """Bind a socket to a sender name, enforcing uniqueness and takeover rules.
+        """Bind a socket to a sender name, enforcing ownership and takeover rules.
 
         Parameters
         ----------
@@ -218,9 +275,18 @@ class HubClientRegistry:
             Whether the claim may evict a current holder of ``sender``.
         send_json : callable
             Coroutine used to deliver the refusal system message on a name
-            conflict or a denied name switch.
+            conflict or a denied name switch, and the lease-grant frame.
         system : callable
             Factory for those system message payloads.
+        lease_requested : bool, optional
+            Whether the claimant asks for an ownership lease on the name it
+            binds (the registration frame's ``lease`` field). Opt-in: absent,
+            the name keeps today's first-come semantics, so a pre-lease client
+            is never locked out of its own re-arm.
+        owner_lease : str, optional
+            The lease token the claimant presents for ``sender``. Required —
+            and verified — whenever the name holds a live lease, whether its
+            owner is currently connected or not.
 
         Returns
         -------
@@ -230,14 +296,44 @@ class HubClientRegistry:
 
         Notes
         -----
+        The ownership gate runs before every other admission rule: a claim on
+        a leased name that does not present the matching token is refused with
+        close code ``4016`` (``"name owned"``) regardless of its ``takeover``
+        flag, so a stranger can neither squat a leased name in its owner's
+        reconnect gap nor evict the live owner. A claim that does present the
+        token still passes through the takeover damping — cooldown, and the
+        oscillation quarantine — so two processes sharing one lease cannot
+        evict each other indefinitely.
+
         An accepted takeover rebinds ``agent_sockets`` and ``socket_agent`` to
         the new owner *synchronously, before* the eviction close handshake
         awaits. From any other task's point of view the name therefore switches
         owner atomically: no interleaving can resolve the name to the evicted
-        socket or observe the name unheld mid-takeover.
+        socket or observe the name unheld mid-takeover. The lease mint shares
+        that atomic prefix (see :meth:`_admit_owner`).
         """
         known_sender = self.socket_agent.get(websocket)
         if known_sender is None:
+            if self.ownership.is_leased(sender) and not self.ownership.matches(sender, owner_lease):
+                logger.info(
+                    "ownership refused sender=%s requester_host=%s reason=name owned",
+                    sender,
+                    self.remote_host(websocket),
+                )
+                await send_json(
+                    websocket,
+                    system(
+                        f"Name '{sender}' is protected by an ownership lease. "
+                        "Reconnect presenting its owner_lease token, wait "
+                        f"{self.ownership.offline_ttl:.0f}s after its holder "
+                        "disconnects for the lease to lapse, or choose a "
+                        "unique --name.",
+                        msg_type=MessageType.NAME_CONFLICT,
+                        target=sender,
+                    ),
+                )
+                await self.close_socket(websocket, code=4016, reason="name owned")
+                return None
             owner_ws = self.agent_sockets.get(sender)
             if owner_ws is not None and owner_ws != websocket:
                 if takeover:
@@ -281,6 +377,16 @@ class HubClientRegistry:
                         self.remote_host(websocket),
                         self.remote_host(owner_ws),
                     )
+                    # The lease mint inside _admit_owner shares the swap's atomic
+                    # prefix: it runs before this coroutine next suspends, so a
+                    # concurrent claim already sees the lease it must match.
+                    await self._admit_owner(
+                        sender,
+                        websocket,
+                        lease_requested=lease_requested,
+                        send_json=send_json,
+                        system=system,
+                    )
                     await self.close_socket(owner_ws, code=4010, reason="superseded")
                     return sender
                 logger.info(
@@ -301,6 +407,13 @@ class HubClientRegistry:
                 await self.close_socket(websocket, code=4009, reason="name conflict")
                 return None
             self.socket_agent[websocket] = sender
+            await self._admit_owner(
+                sender,
+                websocket,
+                lease_requested=lease_requested,
+                send_json=send_json,
+                system=system,
+            )
             return sender
         if known_sender != sender:
             logger.info(

@@ -72,6 +72,7 @@ _FROZEN_WIRE_VALUES: dict[str, str] = {
     "HEARTBEAT": "heartbeat",
     "HISTORY_REQUEST": "history_request",
     "HISTORY_SNAPSHOT": "history_snapshot",
+    "LEASE_GRANTED": "lease_granted",
     "LEDGER_PROGRESS": "ledger_progress",
     "LEDGER_PROGRESS_POSTED": "ledger_progress_posted",
     "LEDGER_TASK": "ledger_task",

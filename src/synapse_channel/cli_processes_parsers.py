@@ -53,6 +53,7 @@ from synapse_channel.core.logging_setup import (
     LOG_LEVELS,
 )
 from synapse_channel.core.message_auth import DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS
+from synapse_channel.core.name_ownership import DEFAULT_LEASE_OFFLINE_TTL
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 from synapse_channel.core.state import MAX_CLAIMS_PER_AGENT, MAX_OFFERS_PER_AGENT
 
@@ -219,6 +220,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=float,
         default=DEFAULT_TAKEOVER_COOLDOWN,
         help="Seconds a name is protected from a second takeover, to blunt an eviction storm.",
+    )
+    hub.add_argument(
+        "--lease-offline-ttl",
+        type=float,
+        default=DEFAULT_LEASE_OFFLINE_TTL,
+        help="Seconds a name ownership lease outlives its holder disconnect before the "
+        "name returns to first-come-first-owned; 0 ends the lease at disconnect.",
     )
     hub.add_argument(
         "--shutdown-close-timeout",

@@ -28,6 +28,8 @@ class _DispatchAgent(Protocol):
     mailbox: bool
     mailbox_advance: Callable[[dict[str, Any]], bool] | None
     name: str
+    on_lease_granted: Callable[[str], None] | None
+    owner_lease: str
     ready_event: Any
     verbose: bool
     _mailbox_since_seq: int
@@ -61,6 +63,17 @@ class AgentDispatchMixin:
             self.hub_id = str(data.get("hub_id", "unknown"))
             self.hub_protocol_version = read_protocol_version(data.get("protocol_version"))
             self.ready_event.set()
+
+        if data.get("type") == MessageType.LEASE_GRANTED:
+            # The hub granted an ownership lease on the bound name. Record the
+            # token — and hand it to the persistence hook immediately — because
+            # the process may exit (a one-shot verb, a woken waiter) long before
+            # any later frame arrives.
+            token = str(data.get("owner_lease") or "")
+            if token:
+                self.owner_lease = token
+                if self.on_lease_granted is not None:
+                    self.on_lease_granted(token)
 
         if self.mailbox and data.get("type") == MessageType.CHAT:
             await self._track_mailbox_frame(data)

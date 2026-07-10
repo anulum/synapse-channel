@@ -451,6 +451,12 @@ borrowed-shell signature) is dropped out loud: the command proceeds as the local
 identity and says so, or refuses entirely when the local fallback also looks
 accidental (the home directory, a system path). Set `$SYN_PROJECT` once per
 terminal and the identity is stable across tool calls.
+On the hub side the waiter identity is protected by a **name-ownership lease**:
+the first `synapse wait`/`arm` for a name is granted an opaque token (persisted
+under `~/synapse/owner-lease/`), every re-arm presents it and re-takes its own
+name, and a stranger claiming the name — takeover flag or not — is refused with
+close code `4016` until the lease lapses (`--lease-offline-ttl`, default one
+hour offline). One name, one owner, across reconnects.
 Hyphenated aliases
 (`syn-name`/`syn-wait`/`syn-say`/`syn-ask`/`syn-inbox`/`syn-board`/`syn-reap`/`syn-locks`/`syn-ack`/`syn-commit`)
 are installed too.
@@ -1166,11 +1172,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.98.27 |
 | Public API exports | 70 |
-| Package modules | 354 |
-| Classes | 516 |
-| Wire message types | 73 |
+| Package modules | 356 |
+| Classes | 517 |
+| Wire message types | 74 |
 | CLI subcommands | 158 |
-| Test functions | 5815 |
+| Test functions | 5844 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 12 |

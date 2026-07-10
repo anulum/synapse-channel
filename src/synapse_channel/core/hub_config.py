@@ -86,6 +86,7 @@ from synapse_channel.core.multihub_serving import (
     PeerCertificateSource,
     live_peer_certificate_der,
 )
+from synapse_channel.core.name_ownership import DEFAULT_LEASE_OFFLINE_TTL
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.operator_relay_transport import (
     OperatorRelayPeer,
@@ -138,17 +139,21 @@ class HubLimits:
 
 @dataclass(frozen=True, kw_only=True)
 class TakeoverDamping:
-    """Damping applied when one agent name is taken over repeatedly.
+    """Damping and ownership rules applied when one agent name is contested.
 
     Cooldown blunts a single eviction storm; the oscillation window and
     threshold detect two waiters at war over one name; quarantine pins a
-    thrashing name to its current owner.
+    thrashing name to its current owner. The lease offline TTL bounds how
+    long a name's ownership lease outlives its holder's disconnect, so a
+    re-arming owner re-takes its name and a stranger cannot squat it in the
+    gap.
     """
 
     takeover_cooldown: float = DEFAULT_TAKEOVER_COOLDOWN
     takeover_oscillation_window: float = DEFAULT_TAKEOVER_OSCILLATION_WINDOW
     takeover_oscillation_threshold: int = DEFAULT_TAKEOVER_OSCILLATION_THRESHOLD
     takeover_quarantine: float = DEFAULT_TAKEOVER_QUARANTINE
+    lease_offline_ttl: float = DEFAULT_LEASE_OFFLINE_TTL
 
 
 @dataclass(frozen=True, kw_only=True)

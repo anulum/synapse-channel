@@ -20,12 +20,14 @@ from synapse_channel.cli_messaging_types import AgentFactory, JitterFunction
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.connect_failures import (
     describe_connect_failure,
+    is_name_owned_close,
     is_superseded_close,
     is_takeover_refused_close,
 )
 from synapse_channel.core.protocol import MessageType, wakes
 from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
 from synapse_channel.mailbox_cursor import load_cursor, save_cursor
+from synapse_channel.owner_lease import lease_agent_kwargs, lease_path
 from synapse_channel.shell_integration import has_active_tmux_provider
 from synapse_channel.waiter_identity import (
     legacy_project_scoped_terminal_sidecar,
@@ -54,6 +56,7 @@ async def _wait(
     mailbox: bool = False,
     mailbox_cursor_path: Path | None = None,
     wake_capability: str = WAKE_PASSIVE,
+    owner_lease_path: Path | None = None,
 ) -> int:
     """Block until one message addressed to ``for_name`` arrives, print it, and exit.
 
@@ -109,6 +112,13 @@ async def _wait(
     wake_capability : str, optional
         Receiver capability declared to the hub. A bare wait socket defaults to
         ``passive`` because receiving a frame does not prove an agent pane was woken.
+    owner_lease_path : pathlib.Path or None, optional
+        File holding this connection name's hub ownership-lease token (see
+        :mod:`synapse_channel.owner_lease`). When set, the waiter opts into the
+        hub's ownership lease: it presents the stored token so a re-arm re-takes
+        its own name, and persists a freshly granted one, so a stranger cannot
+        squat the waiter identity in a re-arm gap. ``None`` disables lease
+        participation (classic first-come semantics).
 
     Returns
     -------
@@ -116,9 +126,10 @@ async def _wait(
         ``0`` when a message arrived, ``1`` when the hub was unreachable, ``2`` on
         timeout with nothing received, ``3`` when the connection dropped while
         waiting (so the caller knows to re-arm rather than treat it as a timeout),
-        ``4`` when a newer connection took the name over (the caller must *yield*,
-        not re-arm — reconnecting would evict the legitimate holder and the two
-        waiters would fight over the identity indefinitely).
+        ``4`` when a newer connection took the name over or an ownership lease
+        held by another identity refused the claim (the caller must *yield*,
+        not re-arm — reconnecting would evict the legitimate holder, or feed a
+        refusal that can never succeed without the lease token).
     """
     received: list[dict[str, Any]] = []
 
@@ -172,6 +183,7 @@ async def _wait(
         mailbox_for=for_name if mailbox else "",
         mailbox_advance=matches,
         wake_capability=wake_capability,
+        **lease_agent_kwargs(owner_lease_path),
     )
     conn_task = asyncio.create_task(agent.connect())
     try:
@@ -188,6 +200,11 @@ async def _wait(
                 # Another live connection holds this name and the hub is
                 # protecting it; retrying the takeover would only feed the
                 # oscillation quarantine. Yield the identity.
+                return 4
+            if is_name_owned_close(agent.last_close_code, agent.last_close_reason):
+                # An ownership lease held by another identity refused this
+                # claim. Without the lease token a retry can never succeed;
+                # yield instead of hammering the refusal.
                 return 4
             return 1
         loop = asyncio.get_event_loop()
@@ -230,6 +247,20 @@ async def _wait(
                 # a takeover of our own would evict it and the two waiters would
                 # steal the identity from each other indefinitely.
                 print(f"[{name}] superseded by a newer waiter; yielding.")
+                return 4
+            if is_name_owned_close(agent.last_close_code, agent.last_close_reason):
+                # On an open hub the welcome precedes registration, so an
+                # ownership-lease refusal lands after readiness. It is a yield
+                # verdict either way: re-arming without the lease token would
+                # only hammer a refusal that can never pass.
+                print(
+                    describe_connect_failure(
+                        name,
+                        uri,
+                        close_code=agent.last_close_code,
+                        close_reason=agent.last_close_reason,
+                    )
+                )
                 return 4
             # The connection dropped without a message. Exit so the caller re-arms,
             # rather than looping forever on a dead socket — a timeout=0 waiter that
@@ -315,5 +346,6 @@ def _cmd_wait(
             token=args.token,
             ready_timeout=args.ready_timeout,
             wake_capability=wake_capability,
+            owner_lease_path=lease_path(connect_name),
         )
     )

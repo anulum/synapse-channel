@@ -23,6 +23,7 @@ from synapse_channel.core.hub import (
     DEFAULT_TAKEOVER_COOLDOWN,
 )
 from synapse_channel.core.logging_setup import DEFAULT_LOG_FORMAT, DEFAULT_LOG_LEVEL
+from synapse_channel.core.name_ownership import DEFAULT_LEASE_OFFLINE_TTL
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 
 # --- parser ------------------------------------------------------------------
@@ -56,6 +57,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "compact_hint_threshold": DEFAULT_COMPACT_HINT_THRESHOLD,
         "shutdown_close_timeout": DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
         "takeover_cooldown": DEFAULT_TAKEOVER_COOLDOWN,
+        "lease_offline_ttl": DEFAULT_LEASE_OFFLINE_TTL,
         "log_format": DEFAULT_LOG_FORMAT,
         "log_level": DEFAULT_LOG_LEVEL,
         "token": None,

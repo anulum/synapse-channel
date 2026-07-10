@@ -94,6 +94,14 @@ host (``reason="too many unauthenticated connections"``). Disambiguate on reason
 PER_HOST_CAP_CLOSE_CODE = 4015
 """Hub close code emitted when a host exceeds its per-host connection cap."""
 
+NAME_OWNED_CLOSE_CODE = 4016
+"""Hub close code emitted when a leased name is claimed without its owner_lease token.
+
+Distinct from the ``4009`` name conflict: the refusal stands whether the
+name's owner is currently connected or not, and a ``takeover`` flag does not
+override it — only presenting the matching lease token does.
+"""
+
 
 def is_superseded_close(code: int | None, reason: str) -> bool:
     """Return whether a close means a takeover displaced this connection.
@@ -105,6 +113,17 @@ def is_superseded_close(code: int | None, reason: str) -> bool:
     holder for the identity indefinitely.
     """
     return code == SUPERSEDED_CLOSE_CODE and "auth" not in reason.lower()
+
+
+def is_name_owned_close(code: int | None, reason: str) -> bool:
+    """Return whether a close means an ownership lease refused this claim.
+
+    ``4016`` is not overloaded, but the reason text is still checked so a
+    proxy or future reuse cannot silently widen the match. For a waiter this
+    is a *yield* verdict, like a refused takeover: another identity owns the
+    name and retrying without the lease token can never succeed.
+    """
+    return code == NAME_OWNED_CLOSE_CODE and "owned" in reason.lower()
 
 
 def is_takeover_refused_close(code: int | None, reason: str) -> bool:
@@ -165,6 +184,12 @@ def _guidance_for(code: int, reason: str) -> str | None:
         return (
             "per-host connection cap reached. Close other sockets from this host or "
             "raise --max-connections-per-host"
+        )
+    if code == NAME_OWNED_CLOSE_CODE:
+        return (
+            "name is protected by an ownership lease held by another identity. "
+            "Reconnect presenting its owner_lease token, wait for the offline "
+            "lease window to lapse, or choose a unique --name"
         )
     return None
 

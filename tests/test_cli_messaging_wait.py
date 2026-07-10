@@ -22,6 +22,7 @@ from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
 from synapse_channel.mailbox_cursor import load_cursor
+from synapse_channel.owner_lease import load_lease
 
 
 async def _wait_for_presence(observer: AgentHandle, name: str) -> None:
@@ -655,7 +656,7 @@ async def test_arm_disarms_after_a_takeover_displacement(
         timeout=5.0,
     )
     assert code == 0
-    assert "a newer waiter holds this name; disarming" in capsys.readouterr().out
+    assert "another connection holds this name; disarming" in capsys.readouterr().out
 
 
 async def test_takeover_refused_at_handshake_yields(
@@ -742,3 +743,70 @@ async def test_wait_mailbox_resumes_from_the_persisted_cursor(tmp_path: Path) ->
         )
     store.close()
     assert second == 2
+
+
+async def test_wait_persists_the_granted_lease_and_the_owner_re_arms_with_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The production waiter path opts into the hub ownership lease: the first
+    # arm persists the granted token, a squatter without it is refused with the
+    # yield verdict, and the owner's next arm re-takes the name from the file.
+    lease_file = tmp_path / "waiter-lease"
+    async with running_hub(SynapseHub(takeover_cooldown=0.0)) as (hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        first = asyncio.create_task(
+            cli_messaging._wait(
+                uri=uri,
+                name="B-rx",
+                for_name="B",
+                timeout=5.0,
+                poll_interval=0.01,
+                owner_lease_path=lease_file,
+            )
+        )
+        try:
+            await _wait_for_presence(observer, "B-rx")
+            loop = asyncio.get_event_loop()
+            deadline = loop.time() + 3.0
+            while loop.time() < deadline and not lease_file.exists():
+                await asyncio.sleep(0.01)
+            token = load_lease(lease_file)
+            assert token, "the waiter did not persist the granted lease"
+            await _send_chat(uri, "A", "B", "first-wake")
+            assert await first == 0
+        finally:
+            await close_agents(observer)
+
+        # A squatter with no token file yields with the ownership guidance —
+        # even with the waiter's usual takeover flag.
+        squatter = await cli_messaging._wait(
+            uri=uri,
+            name="B-rx",
+            for_name="B",
+            timeout=5.0,
+            poll_interval=0.01,
+            owner_lease_path=tmp_path / "someone-else",
+        )
+        assert squatter == 4
+        out = capsys.readouterr().out
+        assert "ownership lease" in out
+
+        # The owner's next process re-takes the name from the persisted token.
+        observer = await connect_agent("OBSERVER", uri)
+        second = asyncio.create_task(
+            cli_messaging._wait(
+                uri=uri,
+                name="B-rx",
+                for_name="B",
+                timeout=5.0,
+                poll_interval=0.01,
+                owner_lease_path=lease_file,
+            )
+        )
+        try:
+            await _wait_for_presence(observer, "B-rx")
+            await _send_chat(uri, "A", "B", "second-wake")
+            assert await second == 0
+        finally:
+            await close_agents(observer)
+        assert load_lease(lease_file) == token

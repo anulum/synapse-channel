@@ -100,6 +100,7 @@ from synapse_channel.core.multihub_serving import (
     PeerCertificateSource,
     live_peer_certificate_der,
 )
+from synapse_channel.core.name_ownership import DEFAULT_LEASE_OFFLINE_TTL
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
@@ -435,6 +436,7 @@ class SynapseHub:
         takeover_oscillation_window: float = DEFAULT_TAKEOVER_OSCILLATION_WINDOW,
         takeover_oscillation_threshold: int = DEFAULT_TAKEOVER_OSCILLATION_THRESHOLD,
         takeover_quarantine: float = DEFAULT_TAKEOVER_QUARANTINE,
+        lease_offline_ttl: float = DEFAULT_LEASE_OFFLINE_TTL,
         shutdown_close_timeout: float = DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
         enable_metrics: bool = False,
         auth_timeout: float = DEFAULT_AUTH_TIMEOUT,
@@ -549,6 +551,7 @@ class SynapseHub:
             takeover_oscillation_window=takeover_oscillation_window,
             takeover_oscillation_threshold=takeover_oscillation_threshold,
             takeover_quarantine=takeover_quarantine,
+            lease_offline_ttl=lease_offline_ttl,
         )
         self.max_clients = self.clients.max_clients
         self.max_unauth_clients = self.clients.max_unauth_clients
@@ -557,6 +560,7 @@ class SynapseHub:
         self.takeover_oscillation_window = self.clients.takeover_oscillation_window
         self.takeover_oscillation_threshold = self.clients.takeover_oscillation_threshold
         self.takeover_quarantine = self.clients.takeover_quarantine
+        self.lease_offline_ttl = self.clients.ownership.offline_ttl
         self.shutdown_close_timeout = max(
             safe_float(shutdown_close_timeout, default=DEFAULT_SHUTDOWN_CLOSE_TIMEOUT), 0.1
         )
@@ -972,15 +976,27 @@ class SynapseHub:
         self._ingress.guard_exposure(host)
 
     async def _resolve_sender(
-        self, sender: str, websocket: Any, *, takeover: bool = False
+        self,
+        sender: str,
+        websocket: Any,
+        *,
+        takeover: bool = False,
+        lease_requested: bool = False,
+        owner_lease: str = "",
     ) -> str | None:
-        """Bind a socket to a sender name, enforcing uniqueness.
+        """Bind a socket to a sender name, enforcing ownership and uniqueness.
 
         Thin wrapper over
         :meth:`~synapse_channel.core.hub_ingress.HubIngress.resolve_sender`, kept
         because :meth:`handle_message` calls ``self._resolve_sender`` directly.
         """
-        return await self._ingress.resolve_sender(sender, websocket, takeover=takeover)
+        return await self._ingress.resolve_sender(
+            sender,
+            websocket,
+            takeover=takeover,
+            lease_requested=lease_requested,
+            owner_lease=owner_lease,
+        )
 
     @staticmethod
     async def _close_socket(websocket: Any, *, code: int, reason: str) -> None:
@@ -1049,7 +1065,11 @@ class SynapseHub:
             return
 
         resolved = await self._resolve_sender(
-            sender, websocket, takeover=bool(data.get("takeover"))
+            sender,
+            websocket,
+            takeover=bool(data.get("takeover")),
+            lease_requested=bool(data.get("lease")),
+            owner_lease=str(data.get("owner_lease") or ""),
         )
         if resolved is None:
             return

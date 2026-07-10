@@ -78,9 +78,11 @@ class _LifecycleAgent(Protocol):
     mailbox: bool
     mailbox_for: str
     name: str
+    owner_lease: str
     ping_interval: float
     ping_timeout: float
     ready_event: Any
+    request_lease: bool
     roles: tuple[str, ...]
     running: bool
     takeover: bool
@@ -145,6 +147,14 @@ class AgentLifecycleMixin:
                 if self.takeover:
                     extra["takeover"] = True
                 extra["wake_capability"] = self.wake_capability
+                if self.request_lease:
+                    # Opt into a hub ownership lease on the bound name; the hub
+                    # answers a fresh grant with a lease_granted frame.
+                    extra["lease"] = True
+                if self.owner_lease:
+                    # Present the persisted token so a leased name admits this
+                    # reconnect as its owner instead of refusing it as a stranger.
+                    extra["owner_lease"] = self.owner_lease
                 if self.roles:
                     # Declare the roles this identity answers to so the hub binds them
                     # to this socket: /who shows them and a directed message to a role

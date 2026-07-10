@@ -125,17 +125,27 @@ class HubIngress:
         return False
 
     async def resolve_sender(
-        self, sender: str, websocket: Any, *, takeover: bool = False
+        self,
+        sender: str,
+        websocket: Any,
+        *,
+        takeover: bool = False,
+        lease_requested: bool = False,
+        owner_lease: str = "",
     ) -> str | None:
-        """Bind a socket to a sender name, enforcing uniqueness.
+        """Bind a socket to a sender name, enforcing ownership and uniqueness.
 
         When ``takeover`` is set and the name is held by another (possibly stale)
         socket, the holder is evicted and the name rebound to the newcomer — this
         lets a re-arming waiter reclaim its own ``<name>-rx`` from a ghost connection
-        without waiting for the keepalive ping to reap it.
+        without waiting for the keepalive ping to reap it. A name protected by an
+        ownership lease additionally requires the matching ``owner_lease`` token
+        before any of that applies; ``lease_requested`` asks for a lease on a name
+        that has none (see
+        :meth:`~synapse_channel.core.hub_clients.HubClientRegistry.resolve_sender`).
 
-        Returns the resolved name, or ``None`` when a name conflict closed the
-        socket.
+        Returns the resolved name, or ``None`` when a name conflict or ownership
+        refusal closed the socket.
         """
         return await self._clients.resolve_sender(
             sender,
@@ -143,6 +153,8 @@ class HubIngress:
             takeover=takeover,
             send_json=self._send_json,
             system=self._system,
+            lease_requested=lease_requested,
+            owner_lease=owner_lease,
         )
 
     def exposure_problems(self, host: str) -> list[str]:

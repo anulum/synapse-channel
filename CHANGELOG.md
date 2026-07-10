@@ -13,6 +13,33 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **Hub-authoritative name-ownership lease** (ownership keystone P-B). A name
+  now has exactly one owner across reconnects, not merely per socket: a
+  registration that declares `lease: true` on a free name is granted an opaque
+  `owner_lease` token in a directed `lease_granted` frame (the hub keeps only
+  a SHA-256 digest), and while the lease is live any claim on that name must
+  present the token or it is refused with the new close code `4016`
+  (`name owned`) — the `takeover` flag does not override it. A claim that
+  presents the token still crosses the takeover damping, so the oscillation
+  quarantine holds for lease holders too. The lease survives the holder's
+  disconnect for `--lease-offline-ttl` seconds (default 3600, `synapse hub`
+  flag / `SynapseHub(lease_offline_ttl=…)` / `TakeoverDamping`), then the name
+  self-heals to first-come-first-owned, so a lost token file is a bounded
+  wait, never a bricked name. The production waiter opts in end to end:
+  `synapse wait`/`arm` persist the granted token per connect name under
+  `~/synapse/owner-lease/` (atomic, `0600`) and present it on every re-arm, so
+  a re-arm re-takes its own `-rx` identity and a stranger cannot squat the
+  waiter in the gap — closing the squatting half of the 2026-07-10 identity
+  incident class. A refusal is a *yield* verdict for the waiter (exit `4`,
+  actionable message), not a retry. `SynapseAgent` exposes the same opt-in
+  (`request_lease`/`owner_lease`/`on_lease_granted`) for any embedder;
+  ephemeral one-shot verbs stay classic until the zero-config TOFU keypair
+  (P-C) covers every verb uniformly. Fully additive on the wire: a pre-lease
+  hub ignores the fields and a pre-lease client is never locked out of its
+  own names.
+
 ### Changed
 
 - **Ambient `$SYN_IDENTITY` is never a silent identity source** (ownership
