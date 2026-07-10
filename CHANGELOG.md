@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- The legacy broad project-scoped arm detector
+  (`legacy_project_scoped_terminal_sidecar`) now lives once in
+  `waiter_identity` — the module that owns the ``-rx`` sidecar naming
+  convention — instead of as two byte-identical private copies inside
+  `arm` and `wait` dispatch. No behaviour change; both commands refuse
+  the legacy shape exactly as before.
+
 ## [0.98.26] - 2026-07-10
 
 ### Added

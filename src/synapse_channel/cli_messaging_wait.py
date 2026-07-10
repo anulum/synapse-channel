@@ -27,18 +27,14 @@ from synapse_channel.core.protocol import MessageType, wakes
 from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
 from synapse_channel.mailbox_cursor import load_cursor, save_cursor
 from synapse_channel.shell_integration import has_active_tmux_provider
-from synapse_channel.waiter_identity import waiter_name, waiter_owner
+from synapse_channel.waiter_identity import (
+    legacy_project_scoped_terminal_sidecar,
+    waiter_name,
+    waiter_owner,
+)
 
 WaitRunner = Callable[..., Coroutine[Any, Any, int]]
 AsyncRunner = Callable[[Coroutine[Any, Any, int]], int]
-
-
-def _legacy_project_scoped_terminal_sidecar(connect_name: str, for_name: str) -> str | None:
-    """Return the terminal identity for an old broad project-sidecar wait, if any."""
-    owner = waiter_owner(connect_name)
-    if owner != connect_name and owner.startswith(f"{for_name}/terminal-"):
-        return owner
-    return None
 
 
 async def _wait(
@@ -268,7 +264,7 @@ def _cmd_wait(
     for_name = args.for_name or args.name
     connect_name = args.name if args.name != for_name else waiter_name(args.name)
     roles = tuple(r.strip() for r in (getattr(args, "role", None) or ()) if r.strip())
-    legacy_terminal = _legacy_project_scoped_terminal_sidecar(connect_name, for_name)
+    legacy_terminal = legacy_project_scoped_terminal_sidecar(connect_name, for_name)
     if legacy_terminal is not None:
         print(
             f"[{connect_name}] legacy broad project wait for {for_name} would wake "

@@ -13,6 +13,7 @@ from __future__ import annotations
 from synapse_channel.waiter_identity import (
     WAITER_SUFFIX,
     is_waiter,
+    legacy_project_scoped_terminal_sidecar,
     split_roster,
     waiter_name,
     waiter_owner,
@@ -58,3 +59,36 @@ def test_split_roster_sorts_agents_and_waiters_apart() -> None:
 
 def test_split_roster_of_nothing_is_two_empty_lists() -> None:
     assert split_roster([]) == ([], [])
+
+
+def test_legacy_broad_project_arm_names_the_exact_terminal_to_use() -> None:
+    """A ``<project>/terminal-<id>-rx`` sidecar waking for the bare project is legacy."""
+    assert (
+        legacy_project_scoped_terminal_sidecar("quantum/terminal-14753-rx", "quantum")
+        == "quantum/terminal-14753"
+    )
+
+
+def test_an_exact_identity_arm_is_not_flagged_as_legacy() -> None:
+    """The replacement shape — sidecar of the exact identity it wakes — passes."""
+    assert (
+        legacy_project_scoped_terminal_sidecar(
+            "quantum/terminal-14753-rx", "quantum/terminal-14753"
+        )
+        is None
+    )
+    assert (
+        legacy_project_scoped_terminal_sidecar(
+            "SYNAPSE-CHANNEL/claude-a7c2-rx", "SYNAPSE-CHANNEL/claude-a7c2"
+        )
+        is None
+    )
+
+
+def test_a_non_sidecar_connect_name_is_never_legacy() -> None:
+    """Without the ``-rx`` suffix the owner equals the connect name, so no match."""
+    assert legacy_project_scoped_terminal_sidecar("quantum/terminal-14753", "quantum") is None
+
+
+def test_another_projects_terminal_sidecar_is_not_this_projects_legacy_arm() -> None:
+    assert legacy_project_scoped_terminal_sidecar("fluctara/terminal-9-rx", "quantum") is None

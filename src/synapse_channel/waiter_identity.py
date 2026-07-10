@@ -25,6 +25,7 @@ WAITER_SUFFIX = "-rx"
 __all__ = [
     "WAITER_SUFFIX",
     "is_waiter",
+    "legacy_project_scoped_terminal_sidecar",
     "split_roster",
     "waiter_name",
     "waiter_owner",
@@ -49,6 +50,37 @@ def waiter_owner(name: str) -> str:
 def waiter_name(owner: str) -> str:
     """Return the sidecar name for ``owner``'s wake listener."""
     return f"{owner}{WAITER_SUFFIX}"
+
+
+def legacy_project_scoped_terminal_sidecar(connect_name: str, for_name: str) -> str | None:
+    """Return the exact terminal identity behind an old broad project-scoped arm.
+
+    Early fleets armed one waiter per *project*: the sidecar connected as
+    ``<project>/terminal-<id>-rx`` while waking for the bare ``<project>``,
+    which woke it on every message anyone sent into the project. The
+    exact-identity convention replaced that shape, so ``arm`` and ``wait``
+    refuse such a request and point the caller at the exact terminal identity
+    to re-arm for instead.
+
+    Parameters
+    ----------
+    connect_name : str
+        The name the waiter would connect under (normally the ``-rx`` sidecar
+        of the identity it wakes).
+    for_name : str
+        The identity whose messages the waiter would wake on.
+
+    Returns
+    -------
+    str or None
+        The exact identity (``<project>/terminal-<id>``) the caller should
+        re-arm for, or ``None`` when the request is not a legacy broad
+        project-scoped arm.
+    """
+    owner = waiter_owner(connect_name)
+    if owner != connect_name and owner.startswith(f"{for_name}/terminal-"):
+        return owner
+    return None
 
 
 def split_roster(roster: Iterable[str]) -> tuple[list[str], list[str]]:
