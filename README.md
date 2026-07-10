@@ -19,6 +19,7 @@ SYNAPSE CHANNEL — repository overview
 
 <p align="center">
   <a href="https://github.com/anulum/synapse-channel/actions/workflows/ci.yml"><img src="https://github.com/anulum/synapse-channel/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/anulum/synapse-channel/actions/workflows/clients-cockpit.yml"><img src="https://github.com/anulum/synapse-channel/actions/workflows/clients-cockpit.yml/badge.svg" alt="Cockpit CI"></a>
   <a href="https://github.com/anulum/synapse-channel/actions/workflows/codeql.yml"><img src="https://github.com/anulum/synapse-channel/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
   <a href="https://pypi.org/project/synapse-channel/"><img src="https://img.shields.io/pypi/v/synapse-channel" alt="PyPI version"></a>
   <a href="https://pypi.org/project/synapse-channel/"><img src="https://img.shields.io/pypi/dm/synapse-channel" alt="PyPI downloads"></a>
@@ -1183,10 +1184,10 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 520 |
 | Wire message types | 74 |
 | CLI subcommands | 158 |
-| Test functions | 5870 |
+| Test functions | 5876 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
-| GitHub Actions workflows | 12 |
+| GitHub Actions workflows | 13 |
 | Optional-dependency groups | 12 |
 
 This snapshot is a static inventory generated from the source tree. Performance and coverage claims have their own committed evidence — see `VALIDATION.md` and `benchmarks/`.

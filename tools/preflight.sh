@@ -33,6 +33,7 @@ run "ruff lint"            "$V/ruff" check src tests benchmarks examples
 run "capability manifest"  "$V/python" tools/capability_manifest.py --check
 run "dev dependency drift" "$V/python" tools/check_dev_dependency_drift.py --check
 run "dependency/tooling audit" "$V/python" tools/audit_dependency_tooling.py --check
+run "cockpit CI contract"  "$V/python" tools/check_cockpit_ci.py --check
 run "version sync"         "$V/python" tools/check_version_sync.py
 run "MCP surface audit"    "$V/python" tools/audit_mcp_surface.py --check
 run "release claim hygiene" "$V/python" tools/check_release_claim_hygiene.py --check

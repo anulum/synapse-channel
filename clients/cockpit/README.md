@@ -168,19 +168,25 @@ npm run build      # strict typecheck (app + node configs), then vite build -> d
 npm run typecheck  # strict type check only
 npm test           # vitest unit suite
 npm run coverage   # vitest with full-coverage thresholds on src/lib
+npm run e2e        # production build against a real local hub/dashboard (Chromium)
 npm run preview    # serves the PRODUCTION build on :8772 with the same proxy
 ```
 
-The testable surface is the pure data logic — snapshot parsing, the freshness
-contract, the polling stores, transition derivation, and every panel's data
-shaping — held to full line and branch coverage — plus the behavioural
-component layer: jsdom + testing-library drive the palette, drawers, boards,
-rail sections, toasts, and views through their real interactions (the
-canvas-drawing spine and the store-owning app shell stay on build + visual
-review). Accessibility is scanned with axe-core against the live dashboard
-in both themes at desktop and phone widths; the shipped surface measures
-zero violations, and informational text never rides the faint decorative
-tier or a whole-row opacity.
+The pure data logic — snapshot parsing, the freshness contract, polling stores,
+transition derivation, and every panel's data shaping — is held to full line
+and branch coverage. The behavioural component layer uses jsdom and
+Testing Library for the palette, drawers, boards, rail sections, toasts, and
+views. Playwright then drives the production bundle through the real Python hub
+and dashboard boundary: wrong/correct bearer handling, authenticated operator
+messaging, lock-on-`401`, URL/storage/cache discipline, and axe-core scans in
+both themes at desktop and phone widths.
+
+`.github/workflows/clients-cockpit.yml` runs that whole lane whenever cockpit,
+dashboard-auth, route, lockfile, or workflow code changes. CI installs Chromium
+only and retains a failure trace containing a disposable test bearer, never a
+repository or deployment credential. Root CI and preflight also run
+`tools/check_cockpit_ci.py --check`, which freezes the workflow contract and
+verifies npm v3 package/lock alignment plus registry integrity metadata.
 
 ## Installing on a phone (PWA)
 

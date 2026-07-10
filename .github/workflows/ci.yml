@@ -35,6 +35,8 @@ jobs:
       - run: python -m bandit -q -r src -c pyproject.toml
       - name: Capability snapshot drift
         run: python tools/capability_manifest.py --check
+      - name: Cockpit CI and npm-lock integrity
+        run: python tools/check_cockpit_ci.py --check
 
   typecheck:
     runs-on: ubuntu-latest

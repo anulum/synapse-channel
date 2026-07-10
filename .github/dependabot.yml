@@ -40,6 +40,21 @@ updates:
       - "dependencies"
       - "python"
 
+  - package-ecosystem: "npm"
+    directory: "/clients/cockpit"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      cockpit-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+      - "javascript"
+
   - package-ecosystem: "docker"
     directory: "/"
     schedule:

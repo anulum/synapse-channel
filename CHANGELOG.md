@@ -13,6 +13,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- A dedicated, path-filtered `clients-cockpit` workflow now gates the strict
+  TypeScript build, full Vitest coverage thresholds, the production Vite
+  bundle, and a Chromium acceptance run against a real local hub and dashboard.
+  The browser gate covers wrong and correct bearer handling, authenticated
+  operator messaging, lock-on-`401`, service-worker cache discipline, and
+  axe-core accessibility in both themes at desktop and phone widths. Failure
+  traces use only a disposable test bearer. The root CI/preflight guard also
+  fails closed when the workflow loses a required gate or the npm v3 lockfile
+  drifts from `package.json` or loses registry integrity metadata.
+
 ### Fixed
 
 - The built React cockpit can now unlock a read-gated dashboard without putting
