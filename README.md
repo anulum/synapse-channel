@@ -1349,11 +1349,15 @@ convenience on top of the free core, and nothing is ever moved behind a paywall.
   hosted derivative over a network to third parties.
 - **Buy a commercial licence** to ship a **closed-source** product or a **SaaS** without
   the AGPL's network-copyleft obligation — the same code, under your own terms.
-- **Running it free and want it to keep improving?** Development is independent and
-  self-funded — you can buy the maintainer a coffee via
-  [GitHub Sponsors](https://github.com/sponsors/anulum) or a
-  [one-off PayPal donation](https://www.paypal.com/donate?hosted_button_id=4X5F6DNT934HY).
-  It genuinely helps.
+- **Running it free and it helps you?** Development is independent and
+  self-funded — you can buy us a coffee:
+  ☕ [Buy Me a Coffee](https://buymeacoffee.com/anulum) ·
+  [GitHub Sponsors](https://github.com/sponsors/anulum) ·
+  [PayPal](https://www.paypal.com/donate?hosted_button_id=4X5F6DNT934HY).
+
+<p align="center">
+  <a href="https://buymeacoffee.com/anulum"><img src="https://raw.githubusercontent.com/anulum/synapse-channel/main/assets/bmc_qr.png" width="180" alt="Buy Me a Coffee QR code"></a>
+</p>
 
 | Layer | For | What you add |
 | --- | --- | --- |

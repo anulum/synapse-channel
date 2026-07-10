@@ -36,7 +36,7 @@ SPDX-License-Identifier = "AGPL-3.0-or-later"
 # --- Documentation and media (AGPL-3.0-or-later) ---
 
 [[annotations]]
-path = ["docs/**", "*.png", "*.svg", "*.jpg"]
+path = ["docs/**", "assets/**", "*.png", "*.svg", "*.jpg"]
 SPDX-FileCopyrightText = "1998-2026 Miroslav Šotek <protoscience@anulum.li>"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
