@@ -92,6 +92,10 @@ discrete event-driven oscilloscope of observed coordination transitions.
 - **Metrics** — the log's pulse from the store-attested metrics feed: whole-
   log coverage, per-kind counts as plain horizontal bars, and the trailing
   windows the server measures against the log's own final timestamp.
+- **Audit** — two independent, store-attested cursor feeds: universal receipts
+  (kind, status, subject, actor) and governed operator-relay history (action,
+  outcome, subject, operator). Each states live, absent, failed, or stale
+  last-good provenance independently and retains a bounded newest-first window.
 - **Causality** — recorded causes/effects traces for a sequence or task, with
   per-hub clustering; log rows and task chips hop straight into it.
 
@@ -114,6 +118,8 @@ first), with the spine kept at every width.
 | `/sessions.json` | 30 s poll | per-session cost/turn/token telemetry with task attribution (optional) |
 | `/waits.json` | 15 s poll | tasks standing behind unmet dependencies — the pending decision queue (optional) |
 | `/health-anomalies.json` | 30 s poll | the hub's causal-graph anomaly report: orphaned / dangling / stale (optional) |
+| `/receipts.json?since=SEQ&limit=N` | 2 s incremental | universal receipts projected from receipt-bearing durable events (optional) |
+| `/operator-actions.json?since=SEQ&limit=N` | 2 s incremental | governed operator-relay audit history from durable `operator_relay` events (optional) |
 | `POST /message` | on send | governed operator chat relay; `undelivered` never reads as "sent" |
 | `POST /task` | on declaration | governed task declaration with `id`, `title`, and `depends_on` |
 | `POST /task/update` | on update | governed task status and/or progress-note update |
@@ -187,8 +193,8 @@ Testing Library for the palette, drawers, boards, rail sections, toasts, and
 views. Playwright then drives the production bundle through the real Python hub
 and dashboard boundary: wrong/correct bearer handling, authenticated operator
 messaging, dependent-task declaration and update, lock-on-`401`,
-URL/storage/cache discipline, and axe-core scans in both themes at desktop and
-phone widths.
+store-backed receipt/operator-audit rendering, URL/storage/cache discipline,
+and axe-core scans in both themes at desktop and phone widths.
 
 `.github/workflows/clients-cockpit.yml` runs that whole lane whenever cockpit,
 dashboard-auth, route, lockfile, or workflow code changes. CI installs Chromium

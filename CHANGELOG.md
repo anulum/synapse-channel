@@ -15,6 +15,14 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- The React cockpit now incrementally renders `/receipts.json` and
+  `/operator-actions.json` in a compact Audit inspector tab. Strict typed
+  parsers, monotonic sequence cursors, de-duplication, and bounded retention
+  keep the two durable histories distinct; `404`, failure, empty-present, and
+  stale last-good states remain explicit. The production browser harness now
+  uses a real temporary event store and proves a dashboard message receipt plus
+  a journalled governed operator action in the built cockpit.
+
 - The React cockpit command palette now exposes the dashboard's governed task
   declaration and task-update routes alongside operator messaging. Focused
   forms validate task IDs, dependencies, statuses, and notes; update IDs come

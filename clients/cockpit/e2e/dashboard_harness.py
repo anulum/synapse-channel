@@ -14,10 +14,13 @@ import contextlib
 import os
 import signal
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from websockets.asyncio.client import connect
 
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import record_operator_relay
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.dashboard import start_dashboard_server
 
 HOST = "127.0.0.1"
@@ -79,7 +82,24 @@ async def _serve() -> None:
     if not (dist / "index.html").is_file():
         raise FileNotFoundError("build the cockpit before running the browser gate")
 
-    hub = SynapseHub(hub_id="cockpit-e2e")
+    scratch = TemporaryDirectory(prefix="synapse-cockpit-e2e-")
+    event_db = Path(scratch.name) / "hub.db"
+    journal = EventStore(event_db)
+    record_operator_relay(
+        journal,
+        {
+            "action": "release",
+            "direction": "out",
+            "status": "applied",
+            "applied": True,
+            "pending": False,
+            "namespace": "cockpit-e2e",
+            "task_id": "cockpit-e2e-audit-seed",
+            "operator": "operator:cockpit-e2e-seed",
+            "detail": "seeded production audit evidence",
+        },
+    )
+    hub = SynapseHub(hub_id="cockpit-e2e", journal=journal)
     hub_task = asyncio.create_task(hub.serve(HOST, hub_port))
     dashboard = None
     try:
@@ -97,6 +117,7 @@ async def _serve() -> None:
             allow_non_loopback=False,
             dashboard_token=bearer,
             cockpit_dist=dist,
+            reliability_db=event_db,
             operator=True,
             operator_name="operator:cockpit-e2e",
         )
@@ -113,6 +134,8 @@ async def _serve() -> None:
         hub_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await hub_task
+        journal.close()
+        scratch.cleanup()
 
 
 def main() -> int:

@@ -74,6 +74,8 @@ export function App(): JSX.Element {
     sessions,
     waits,
     anomalyReport,
+    receipts,
+    operatorActions,
   } = useCockpitFeeds(authBlocked, auth.revision);
   const [brush, setBrush] = useState<TimeWindow | null>(null);
   // Phone-width segment: one deck section at a time; CSS ignores this above
@@ -399,6 +401,8 @@ export function App(): JSX.Element {
                 federation={federation}
                 metrics={metrics}
                 sessions={sessions}
+                receipts={receipts}
+                operatorActions={operatorActions}
                 traceRequest={traceRequest}
               />
             </PanelBoundary>

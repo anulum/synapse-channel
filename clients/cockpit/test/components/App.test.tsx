@@ -85,6 +85,9 @@ describe("App", () => {
     await waitFor(() =>
       expect(screen.getByText(/does not serve reliability evidence yet/)).toBeTruthy(),
     );
+    await userEvent.click(screen.getByRole("tab", { name: "audit" }));
+    await waitFor(() => expect(screen.getByText(/Receipts feed absent/u)).toBeTruthy());
+    expect(screen.getByText(/Operator actions feed absent/u)).toBeTruthy();
     expect(screen.getByText("The board is empty — no tasks declared.")).toBeTruthy();
   });
 

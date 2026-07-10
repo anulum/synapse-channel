@@ -384,7 +384,10 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   token. With `--operator`, its command palette exposes governed message,
   task-declaration, and task-update forms; each reports the hub's strict outcome
   and grants no authority beyond the hub's validation, ACL, rate limit, and audit
-  decision. Add
+  decision. With `--feeds-db`, the cockpit's Audit tab incrementally renders the
+  universal receipt ledger and governed operator-relay history as two distinct,
+  bounded store-attested feeds; absence and stale last-good data remain visible.
+  Add
   `--observed-peer HUB=URI` to include advisory peer-hub rows in the browser and
   `/snapshot.json`; those rows are labelled `observed@HUB` and never grant local
   claims.

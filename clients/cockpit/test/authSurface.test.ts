@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const REQUEST_MODULES = [
+  "auditFeeds.ts",
   "causality.ts",
   "eventsTail.ts",
   "feed.ts",

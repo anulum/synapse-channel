@@ -7,6 +7,7 @@
 // SYNAPSE_CHANNEL — tab switch between the signal log and the causality inspector
 
 import { useCallback, useEffect, useState } from "react";
+import type { OperatorActionsState, ReceiptsState } from "../lib/auditFeeds";
 import { windowEdgeLabel, type TimeWindow } from "../lib/brush";
 import type { BranchConflictView, ClaimView } from "../lib/claims";
 import type { FederationState } from "../lib/federation";
@@ -14,12 +15,13 @@ import type { MetricsState } from "../lib/metrics";
 import type { SessionsState } from "../lib/sessions";
 import type { LogQuery } from "../lib/logQuery";
 import type { CockpitEvent } from "../types";
+import { AuditView } from "./AuditView";
 import { CausalityView, type CausalityPrefill } from "./CausalityView";
 import { SignalLog } from "./SignalLog";
 import { MetricsPanel } from "./MetricsPanel";
 import { TopologyView } from "./TopologyView";
 
-type InspectorTab = "log" | "topology" | "metrics" | "causality";
+type InspectorTab = "log" | "topology" | "metrics" | "audit" | "causality";
 
 interface InspectorTabsProps {
   /** Events for the signal-log tab, newest first. */
@@ -48,6 +50,10 @@ interface InspectorTabsProps {
   readonly metrics?: MetricsState | undefined;
   /** The sessions/cost feed, rendered inside the metrics tab. */
   readonly sessions?: SessionsState | undefined;
+  /** Universal receipt history for the audit tab. */
+  readonly receipts?: ReceiptsState | undefined;
+  /** Governed operator-relay history for the audit tab. */
+  readonly operatorActions?: OperatorActionsState | undefined;
   /** External trace request (e.g. a drawer's hop); nonce forces re-fire. */
   readonly traceRequest?: { readonly subject: string; readonly nonce: number } | undefined;
 }
@@ -66,6 +72,8 @@ export function InspectorTabs({
   federation,
   metrics,
   sessions,
+  receipts,
+  operatorActions,
   traceRequest,
 }: InspectorTabsProps): JSX.Element {
   const [tab, setTab] = useState<InspectorTab>("log");
@@ -118,6 +126,15 @@ export function InspectorTabs({
         <button
           type="button"
           role="tab"
+          aria-selected={tab === "audit"}
+          className={`inspector__tab${tab === "audit" ? " inspector__tab--active" : ""}`}
+          onClick={() => setTab("audit")}
+        >
+          audit
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={tab === "causality"}
           className={`inspector__tab${tab === "causality" ? " inspector__tab--active" : ""}`}
           onClick={() => setTab("causality")}
@@ -161,6 +178,13 @@ export function InspectorTabs({
             liveAgentCount={liveAgentCount}
             connected={connected}
             {...(federation !== undefined ? { federation } : {})}
+          />
+        ) : tab === "audit" ? (
+          <AuditView
+            receipts={receipts ?? { data: null, status: "connecting", fetchedAt: null, error: null }}
+            operatorActions={
+              operatorActions ?? { data: null, status: "connecting", fetchedAt: null, error: null }
+            }
           />
         ) : (
           <CausalityView prefill={prefill} />

@@ -9,6 +9,12 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { Kpi } from "../components/Hud";
+import {
+  createOperatorActionsStore,
+  createReceiptsStore,
+  type OperatorActionsState,
+  type ReceiptsState,
+} from "../lib/auditFeeds";
 import { createEventsTailSource, type SpineProvenance } from "../lib/eventsTail";
 import { createFederationStore, type FederationState } from "../lib/federation";
 import {
@@ -64,6 +70,18 @@ const INITIAL_WAITS: WaitsState = {
   error: null,
 };
 const INITIAL_ANOMALIES: HealthAnomaliesState = {
+  data: null,
+  status: "connecting",
+  fetchedAt: null,
+  error: null,
+};
+const INITIAL_RECEIPTS: ReceiptsState = {
+  data: null,
+  status: "connecting",
+  fetchedAt: null,
+  error: null,
+};
+const INITIAL_OPERATOR_ACTIONS: OperatorActionsState = {
   data: null,
   status: "connecting",
   fetchedAt: null,
@@ -128,6 +146,8 @@ export interface CockpitFeeds {
   readonly sessions: SessionsState;
   readonly waits: WaitsState;
   readonly anomalyReport: HealthAnomaliesState;
+  readonly receipts: ReceiptsState;
+  readonly operatorActions: OperatorActionsState;
 }
 
 /**
@@ -150,6 +170,9 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
   const [sessions, setSessions] = useState<SessionsState>(INITIAL_SESSIONS);
   const [waits, setWaits] = useState<WaitsState>(INITIAL_WAITS);
   const [anomalyReport, setAnomalyReport] = useState<HealthAnomaliesState>(INITIAL_ANOMALIES);
+  const [receipts, setReceipts] = useState<ReceiptsState>(INITIAL_RECEIPTS);
+  const [operatorActions, setOperatorActions] =
+    useState<OperatorActionsState>(INITIAL_OPERATOR_ACTIONS);
   const previous = useRef<HeadlineMetrics>(ZERO_METRICS);
 
   useEffect(() => {
@@ -164,6 +187,8 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
     setSessions(INITIAL_SESSIONS);
     setWaits(INITIAL_WAITS);
     setAnomalyReport(INITIAL_ANOMALIES);
+    setReceipts(INITIAL_RECEIPTS);
+    setOperatorActions(INITIAL_OPERATOR_ACTIONS);
     previous.current = ZERO_METRICS;
     if (blocked) return;
 
@@ -212,6 +237,10 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
     const unsubscribeWaits = waitsStore.subscribe(setWaits);
     const anomaliesStore = createHealthAnomaliesStore();
     const unsubscribeAnomalies = anomaliesStore.subscribe(setAnomalyReport);
+    const receiptsStore = createReceiptsStore();
+    const unsubscribeReceipts = receiptsStore.subscribe(setReceipts);
+    const operatorActionsStore = createOperatorActionsStore();
+    const unsubscribeOperatorActions = operatorActionsStore.subscribe(setOperatorActions);
     const clock = setInterval(() => {
       const tick = Date.now();
       setNowMs(tick);
@@ -229,6 +258,8 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
       unsubscribeSessions();
       unsubscribeWaits();
       unsubscribeAnomalies();
+      unsubscribeReceipts();
+      unsubscribeOperatorActions();
       clearInterval(clock);
       tail.stop();
       derived.stop();
@@ -239,6 +270,8 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
       sessionsStore.stop();
       waitsStore.stop();
       anomaliesStore.stop();
+      receiptsStore.stop();
+      operatorActionsStore.stop();
     };
   }, [blocked, credentialRevision]);
 
@@ -272,5 +305,7 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
     sessions,
     waits,
     anomalyReport,
+    receipts,
+    operatorActions,
   };
 }

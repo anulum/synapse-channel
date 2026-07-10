@@ -26,7 +26,7 @@ const EVENTS: readonly CockpitEvent[] = [
     kind: "claim",
     lane: "claims",
     severity: 0.4,
-    actor: "quantum/claude",
+    actor: "quantum/worker",
     label: "claimed t-7",
     taskId: "t-7",
   },
@@ -34,13 +34,22 @@ const EVENTS: readonly CockpitEvent[] = [
 
 describe("InspectorTabs", () => {
   it("starts on the log and switches to each tab", async () => {
-    render(<InspectorTabs events={EVENTS} connected />);
+    render(
+      <InspectorTabs
+        events={EVENTS}
+        connected
+        receipts={{ data: [], status: "live", fetchedAt: 1, error: null }}
+        operatorActions={{ data: [], status: "live", fetchedAt: 1, error: null }}
+      />,
+    );
     expect(screen.getByRole("tab", { name: /signal log/ }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByLabelText("Signal log")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "topology" }));
     expect(screen.getByLabelText("Fleet topology")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "metrics" }));
     expect(screen.getByLabelText("Log metrics")).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: "audit" }));
+    expect(screen.getByLabelText("Receipt and operator audit")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "causality" }));
     expect(screen.getByLabelText("Causality inspector")).toBeTruthy();
   });
