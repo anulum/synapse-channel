@@ -13,6 +13,19 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- README readability: the dense prose runs — the `syn` command ergonomics,
+  the discovery/advisory-routing surfaces, the A2A bridge description, and
+  the eleven security/governance profile paragraphs — are restructured into
+  scannable tables, with the profile statuses corrected against the current
+  design docs (identity+ACL: implemented in shadow mode with opt-in
+  enforcement; policy engine: first tranche implemented, advisory; signed
+  events + mTLS: runtime primitives shipped). New section: *Beyond one
+  machine — SYNAPSE CHANNEL Fleet*, a factual description and topology map
+  of the commercial multi-machine tier, cross-linked from the
+  single-machine limitation and the licensing section.
+
 ## [0.98.27] - 2026-07-10
 
 ### Fixed

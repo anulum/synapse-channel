@@ -447,42 +447,36 @@ for a `project/<type>-<id>` multi-agent identity), and the working directory onl
 as a last resort — so a command run from the wrong directory does not silently
 coordinate as the wrong project, and an identity that looks accidental (the home
 directory, a system path) is flagged rather than used in silence. Set
-`$SYN_PROJECT` once per terminal and the identity is stable across tool calls. The
-`syn who --me` shortcut dispatches to `synapse who --me --name <resolved identity>`;
-it reports the identity's presence separately from its `-rx` waiter because
-presence is not a wake loop.
+`$SYN_PROJECT` once per terminal and the identity is stable across tool calls.
+Hyphenated aliases
+(`syn-name`/`syn-wait`/`syn-say`/`syn-ask`/`syn-inbox`/`syn-board`/`syn-reap`/`syn-locks`/`syn-ack`/`syn-commit`)
+are installed too.
 
-`syn-name`/`syn-wait`/`syn-say`/`syn-ask`/`syn-inbox`/`syn-board`/`syn-reap`/`syn-locks`/`syn-ack`/`syn-commit`
-aliases are installed too. `syn-wait` is the agent wake primitive: it waits for a
-single directed message and then *exits*, so the surrounding harness — which
-re-invokes the agent when its background task ends — is actually woken. It defaults
-to `--max-wakes 1` for exactly this reason, yet keeps the self-healing reconnect of
-`syn arm`, so a dropped connection or a hub restart re-arms transparently and only a
-real wake ends the wait. (`syn arm` itself stays persistently armed across many
-wakes, for an interactive terminal that reacts by other means.) Adding `--mailbox`
-to `synapse arm` also wakes the waiter on directed messages that arrived while it was
-disconnected — the reconnect or re-arm gap — by asking the hub to replay them on
-connect, resuming from a per-identity cursor under `~/synapse/mailbox-cursor/` so a
-re-arm is not replayed the whole backlog again (off by default; needs a wire version
-`2` hub). `syn reap` is the safe cleanup path for shell-hook waiter sidecars:
-it only inspects this resolved identity's pidfile, and it refuses to signal a PID
-unless the live command line verifies as that exact identity's `synapse arm`
-waiter. It never pattern-kills processes. `syn locks` queries the live state
-snapshot using the resolved identity and prints active leases for the project:
-holder, scope, age, remaining TTL, checkpoint/git context, and the explicit
-`synapse release <task> --name <owner>` command. `syn ack <task>` posts repeatable
-`--evidence` and `--artifact` values as an `assessment` progress note authored by
-the resolved identity, waits for the hub confirmation, then marks the board task
-`done`. `synapse release` can also attach a hub-echoed receipt with evidence,
-artifacts, changed files, generated artifacts, approvals, known failures,
-confidence, and evidence freshness. The receipt includes advisory
-`epistemic_status` metadata (`supported`, `needs_freshness`, `stale`,
-`degraded`, or `unsupported`) plus reasons derived from the submitted evidence;
-`--receipt-json` prints the receipt for automation, and the board records it as
-an assessment note. The `syn commit`
-workflow holds the project git lease, stages only the requested paths, and
-commits only those paths so unrelated staged or modified files stay out of the
-commit.
+| Command | What it does | The detail it gets right |
+| --- | --- | --- |
+| `syn name` | Resolve and print this terminal's identity. | Same resolution order every `syn` command uses — what it prints is what you coordinate as. |
+| `syn arm` | Keep a persistent directed-only waiter armed. | Connects as the `-rx` sidecar (never steals the sender name); announces exactly whose messages it wakes on; stays armed across many wakes. |
+| `syn-wait` | The wake primitive: wait for one directed message, print it, exit. | Defaults to `--max-wakes 1` so a harness that re-invokes on background-task exit is actually woken; self-healing reconnect means a hub restart re-arms transparently and only a real wake ends the wait. |
+| `syn say` | Send to one, several, or all. | Sends as the owner identity even when a waiter holds the `-rx` name. |
+| `syn ask` | Send and wait for replies. | Requires an online recipient — a question never silently addresses nobody. |
+| `syn inbox` | Print messages addressed to you. | Advances a per-identity cursor, so nothing is re-read and nothing is silently consumed. |
+| `syn board` | The shared task/progress board. | One view of the plan every agent sees. |
+| `syn who --me` | Presence of this identity and its waiter. | Reports the identity separately from its `-rx` waiter, because presence is not a wake loop. |
+| `syn locks` | Active leases for the project. | Prints holder, scope, age, remaining TTL, checkpoint/git context, and the exact `synapse release <task> --name <owner>` command. |
+| `syn reap` | Clean up shell-hook waiter sidecars. | Inspects only this identity's pidfile and refuses to signal a PID unless its live command line verifies as that exact waiter — it never pattern-kills. |
+| `syn ack TASK` | Post evidence and close a board task. | Repeatable `--evidence`/`--artifact` land as an assessment note authored by the resolved identity; waits for hub confirmation before marking `done`. |
+| `syn commit` | Lease-guarded, pathspec-scoped commit. | Holds the project git lease and stages/commits only the requested paths, so a co-agent's staged files stay out of your commit. |
+
+Two follow-ons complete that loop. Adding `--mailbox` to `synapse arm` also wakes
+the waiter on directed messages that arrived while it was disconnected — the
+reconnect or re-arm gap — by asking the hub to replay them on connect, resuming
+from a per-identity cursor under `~/synapse/mailbox-cursor/` so a re-arm does not
+replay the whole backlog (off by default; needs a wire version `2` hub). And
+`synapse release` can attach a hub-echoed receipt with evidence, artifacts,
+changed files, approvals, known failures, confidence, and evidence freshness; the
+receipt carries advisory `epistemic_status` metadata (`supported`,
+`needs_freshness`, `stale`, `degraded`, or `unsupported`) with reasons derived
+from the submitted evidence, and `--receipt-json` prints it for automation.
 
 To make fresh terminals connect automatically, install the shell hook once:
 
@@ -648,20 +642,26 @@ resources. It also exposes read-only MCP resource templates for a single board
 task, one agent, and one resource kind. The hub stays MCP-agnostic and the core
 install keeps its single dependency — see the [MCP guide](docs/mcp.md).
 
-For Agent2Agent discovery, `synapse a2a-card --endpoint-url ...` projects the
-live capability manifest into an A2A Agent Card JSON document suitable for a
-thin HTTP edge to serve as `/.well-known/agent-card.json`.
-`synapse a2a-conformance` prints the local support matrix against the A2A 1.0.0
-operation model so supported, partial, unsupported, and external rows are visible
-from the installed package.
+### Discovery, advisory routing, and memory
+
+Every surface in this group is **advisory by design**: it prints ranked,
+provenance-tagged evidence for a human or an agent to act on, and none of it
+claims work, reserves capacity, mutates the board, or turns a capability card
+into executable trust.
+
+| Surface | What it prints or serves | Where its authority ends |
+| --- | --- | --- |
+| `synapse a2a-card` | The live capability manifest projected as an A2A Agent Card JSON document, ready for a thin HTTP edge to serve as `/.well-known/agent-card.json`. | Discovery metadata only. |
+| `synapse a2a-conformance` | The local support matrix against the A2A 1.0.0 operation model — supported, partial, unsupported, and external rows. | Visible from the installed package; not an external conformance claim. |
+| `synapse directory` | The capability manifest joined with live resource offers into a discovery-only directory. | Routing hints and review evidence; no reservation, authorisation, or trust certification. |
+| `synapse route-task` | Candidate agents for a board task, ranked by deterministic local signals; with `--event-store` it adds positive release-receipt notes as observed evidence, each tied to its source task and durable event sequence. | Does not claim work, mutate the board, reserve resources, or grade agents. |
+| `synapse resource-bids` | Resource offers ranked with deterministic reasons: kind, capacity, task-class/skill matches, description and name overlap, metadata. | A marketplace-style view only; nothing is reserved or authorised. |
+| `synapse memory-recall` | Provenance-preserving recall over durable findings, checkpoints, and handoffs: source sequence, event kind, task id, actor, matched tokens. | Reads only the local event store; no external embeddings, no service, no truth certification. |
+
 Capability cards can also carry declarative capability contracts: per-task-class
 `input_schema` and `output_schema` mappings plus optional preconditions and
-postconditions. These contracts are discovery metadata for routing and review;
-they do not grant executable trust or certify that a remote peer conforms.
-`synapse directory` joins the live capability manifest with resource offers into
-a discovery-only capability directory for agents and tools. Directory entries
-are routing hints and review evidence only; they do not reserve capacity,
-authorize execution, or certify agent/tool trust.
+postconditions — discovery metadata for routing and review, not a grant of
+executable trust.
 
 ### Official Go client
 
@@ -680,50 +680,35 @@ protocol — chat, claims, releases, board reads, presence, and receipts — and
 unchanged in the browser and in Node 20+ with no runtime dependencies. See the
 [TypeScript/JavaScript client guide](docs/js-client.md).
 
-`synapse route-task TASK-1` uses that live directory plus the shared board to
-rank candidate agents with deterministic local signals. With
-`--event-store ./synapse.db`, it also uses positive release-receipt assessment
-notes as observed evidence and keeps each matched signal tied to its source task
-and durable event sequence. The recommendation is advisory only: it does not
-claim work, mutate the board, reserve resources, grade agents, or turn a
-capability card into executable trust.
-`synapse resource-bids TASK-1` uses the same live directory and board task to
-rank resource offers with deterministic local reasons: resource kind, capacity,
-provider task-class/skill matches, description overlap, resource-name overlap,
-and matching metadata. It is an advisory marketplace-style view only; it does
-not reserve capacity, authorize execution, mutate the board, or certify provider
-trust.
-`synapse memory-recall ./synapse.db "query"` provides the first product slice of
-provenance-preserving memory recall. It reads only the local SQLite event store,
-projects findings, checkpoints, and handoffs into deterministic token matches,
-and returns the source sequence, event kind, task id, actor, and matched tokens.
-It does not create external embeddings, contact a service, certify truth, or
-mutate hub state.
-To run that edge directly, use `synapse a2a-serve --endpoint-url ...`; it serves
-the public Agent Card, forwards `POST /message:send` text/data/file parts into
-SYNAPSE chat, supports immediate `POST /message:stream` Server-Sent Events,
-exposes bridge-local task list/get/cancel plus push-notification configuration
-routes, accepts JSON-RPC 2.0 calls on `/rpc`, and can enforce Bearer auth plus
-request size/depth bounds, persist task state with `--state-file`, fail stale
-open tasks with `--task-timeout`, and bound one subscription wait with
-`--subscribe-timeout`.
-Task correlation is carried in structured SYNAPSE chat metadata
-(`a2aTaskId` and `a2aContextId`); the bridge does not append or trust inline
-markers in chat text, so user-authored message bodies stay data rather than
-task selectors.
-The bridge is intentionally a local-first HTTP+JSON edge: it stores bridge task
-state locally in owner-only state/temp files, rejects unsafe caller ids and
-webhook targets including delivery-time DNS or redirect targets that resolve to
-local networks, bounds stored tasks/history/artifacts/push configs/replay
-history with terminal-task retention GC, emits subscription replay only from the
-current bridge process, and does not claim independent A2A conformance until
-remote CI, interoperability, remote public webhook receiver validation, and
-operator deployment sign-off have run. That independent validation runs as a
-community track of reproducible [validation receipts](docs/a2a-validation-receipts.md)
-— discovery, task lifecycle, webhook, proxy/TLS, replay, and threat-model —
-rather than a single pass/fail.
-The installed support matrix is available with `synapse a2a-conformance` and in
-the [A2A conformance matrix](docs/a2a-conformance.md); exposed deployments should
+### A2A HTTP bridge
+
+`synapse a2a-serve --endpoint-url ...` runs the Agent2Agent edge directly — an
+intentionally **local-first HTTP+JSON bridge**:
+
+- Serves the public Agent Card; forwards `POST /message:send` text/data/file
+  parts into SYNAPSE chat; supports immediate `POST /message:stream`
+  Server-Sent Events; exposes bridge-local task list/get/cancel and
+  push-notification configuration routes; accepts JSON-RPC 2.0 on `/rpc`.
+- Operational bounds: Bearer auth plus request size/depth limits, durable task
+  state with `--state-file`, stale-task failure with `--task-timeout`, one
+  bounded subscription wait with `--subscribe-timeout`.
+- Task correlation travels in structured chat metadata (`a2aTaskId`,
+  `a2aContextId`) — the bridge never appends or trusts inline markers in chat
+  text, so user-authored message bodies stay data rather than task selectors.
+- Safety posture: owner-only state/temp files, unsafe caller ids and webhook
+  targets rejected (including delivery-time DNS or redirect targets that
+  resolve to local networks), bounded task/history/artifact/replay retention
+  with terminal-task GC, and subscription replay only from the current bridge
+  process.
+
+The bridge does not claim independent A2A conformance until remote CI,
+interoperability, public webhook receiver validation, and operator deployment
+sign-off have run; that validation is a community track of reproducible
+[validation receipts](docs/a2a-validation-receipts.md) — discovery, task
+lifecycle, webhook, proxy/TLS, replay, and threat-model — rather than a single
+pass/fail. The installed support matrix is available with
+`synapse a2a-conformance` and in the
+[A2A conformance matrix](docs/a2a-conformance.md); exposed deployments should
 also follow the [A2A deployment threat model](docs/a2a-deployment-threat-model.md).
 
 ### Git-native claims
@@ -737,77 +722,23 @@ synapse git-hook install                         # (git-init already does this) 
 synapse conflicts --check-diff                   # predict cross-branch merge conflicts
 ```
 
-The planned [policy engine](docs/policy-engine.md) builds on git-native claims,
-release receipts, and event-log evidence so teams can evaluate required tests,
-strict type checking, owner approval, evidence freshness, generated artifact
-parity, and no-merge-without-receipt rules before turning any advisory output
-into a local hook or CI gate.
+Around those claims sits a family of **security and governance profiles**. Each
+one is documented with an honest status — what runs today, and what each layer
+explicitly does *not* claim:
 
-[`synapse hub --team-secure`](docs/team-secure.md) is the multi-seat trust
-profile: connect token, identity binding, role-claim grants, and private
-directed messages in one switch (loopback multi-agent fleets).
-[`synapse hub --paranoid`](docs/paranoid-mode.md) enforces a strict production
-hub profile and prints an explicit missing-hook checklist: token-required hub
-access, durable event logs, per-message authentication for selected mutating
-frames, ACL + native WSS, metrics bearer-token auth, disabled metrics query
-tokens, and clear remaining gaps. The two compose for multi-seat + exposed
-binds.
-
-[At-rest encryption](docs/at-rest-encryption.md) is **implemented** in two
-complementary layers: **SQLCipher page encryption** for the live hub event store
-(`hub --db-key-file`, migrate/rekey-sqlcipher, analysis and doctor readers — see
-[SQLCipher live event store](#sqlcipher-live-event-store-at-rest)), and
-**whole-file AES-256-GCM envelopes** for relay logs, A2A state, cursors, and
-archives (`synapse encrypt-key` profile/migrate/rekey/backup/restore, optional
-passphrase / PKCS#11 / TPM2 / cloud-HSM key wrapping, threshold escrow, and
-hardware attestation gates). Both are opt-in extras; neither claims RAM
-protection or multi-tenant isolation.
-
-The [end-to-end encrypted channels](docs/end-to-end-encrypted-channels.md)
-runtime encrypts selected chat payloads with `synapse send --encrypt-key-file`
-and decrypts them locally with `synapse listen --decrypt-key-file`, while the
-broader profile for private progress notes, handoff checkpoints, A2A artifacts,
-key discovery, and rotation remains explicit follow-on work.
-
-The [private channels](docs/private-channels.md) runtime scopes chat delivery to
-explicit channel members, keeps a bounded member-only live history, mirrors
-channel-tagged relay events for filtered export, and supports metadata-only
-event-query channel filters. It does not encrypt payloads or create
-cryptographic identity.
-
-The planned [differential-privacy blackboard](docs/differential-privacy-blackboard.md)
-profile scopes redacted and noisy shared blackboard projections for
-multi-organisation views. It is not implemented yet, keeps raw local board data
-exact for the operator, and does not encrypt payloads, replace private channels,
-replace end-to-end encrypted channels, anonymize raw logs, or authorize board
-writes.
-
-The planned [signed events and mTLS](docs/signed-events-mtls.md) profile scopes
-event signatures, key rotation, replay protection, verification results, trust
-bundles, certificate pinning, and trusted multi-host peers. It is not
-implemented yet, does not encrypt payloads, does not replace per-agent identity,
-and does not certify external federation.
-
-The [per-message authentication](docs/per-message-authentication.md) runtime
-enforces opt-in HMAC-SHA256 authentication for selected mutating WebSocket
-frames after connect authentication. It defines canonical frames, key ids,
-sender-bound CLI keys, nonces, signed sequence metadata, timestamp windows,
-bounded in-memory replay cache behavior, key rotation, revocation results, and
-verification results without claiming payload encryption, public-key signatures,
-signed events, or identity enforcement.
-
-The planned [identity and ACL](docs/identity-and-acl.md) profile scopes
-per-agent identity, identity-bound credentials, project namespaces, allowed
-verbs, target patterns, metrics/A2A/dashboard/release privileges,
-deny-by-default authorization, credential rotation, revocation, and migration
-from shared-token mode without claiming runtime enforcement today.
-
-The planned [signed capability cards](docs/signed-capability-cards.md) profile
-scopes tamper-evident capability advertisements for manifests, directories,
-dashboards, MCP resources, and A2A Agent Card projections. It is not implemented
-yet, keeps unsigned local cards as advisory discovery, and does not authorize
-tools, replace per-message authentication, replace signed events, or sandbox
-agents.
+| Profile | Status | What it gives you | Explicitly not claimed |
+| --- | --- | --- | --- |
+| [`hub --team-secure`](docs/team-secure.md) | Shipped | The multi-seat trust profile in one switch: connect token, identity binding, role-claim grants, private directed messages (loopback multi-agent fleets). | — |
+| [`hub --paranoid`](docs/paranoid-mode.md) | Shipped | Strict production profile with an explicit missing-hook checklist: token-required access, durable event logs, per-message auth on selected frames, ACL + native WSS, metrics bearer auth. Composes with `--team-secure`. | — |
+| [At-rest encryption](docs/at-rest-encryption.md) | Shipped (opt-in extras) | SQLCipher page encryption for the live event store, plus whole-file AES-256-GCM envelopes for relay logs, A2A state, cursors, and archives; passphrase / PKCS#11 / TPM2 / cloud-HSM key wrapping, threshold escrow, attestation gates. | RAM protection; multi-tenant isolation. |
+| [End-to-end encrypted channels](docs/end-to-end-encrypted-channels.md) | Shipped (runtime) | Selected chat payloads encrypted with `send --encrypt-key-file`, decrypted locally with `listen --decrypt-key-file`. | Key discovery and rotation; private notes/checkpoints/artifacts are follow-on work. |
+| [Private channels](docs/private-channels.md) | Shipped (runtime) | Member-scoped chat delivery, bounded member-only history, channel-tagged relay export, metadata-only event-query filters. | Payload encryption; cryptographic identity. |
+| [Per-message authentication](docs/per-message-authentication.md) | Shipped (opt-in) | HMAC-SHA256 on selected mutating frames after connect auth: canonical frames, key ids, sender-bound CLI keys, nonces, timestamp windows, bounded replay cache, rotation and revocation. | Payload encryption; public-key signatures; identity enforcement. |
+| [Identity and ACL](docs/identity-and-acl.md) | Implemented (shadow mode + opt-in enforcement) | Per-agent identity binding, project namespaces, deny-by-default verb/target ACLs (including `mailbox` and `role-claim` grants), credential rotation and revocation, migration from shared-token mode. | A full multi-tenant IAM. |
+| [Policy engine](docs/policy-engine.md) | First tranche implemented (advisory) | Required tests, strict typing, owner approval, evidence freshness, artifact parity, and no-merge-without-receipt rules evaluated over git-native claims, receipts, and event-log evidence. | Blocking anything by itself — operators decide what becomes a hook or CI gate. |
+| [Signed events and mTLS](docs/signed-events-mtls.md) | Runtime primitives shipped; full profile staged | Event signatures, key rotation, replay protection, trust bundles, certificate pinning for trusted multi-host peers. | Payload encryption; replacing per-agent identity; certifying external federation. |
+| [Differential-privacy blackboard](docs/differential-privacy-blackboard.md) | Design target | Redacted and noisy board projections for multi-organisation views; raw local board data stays exact for the operator. | Payload encryption; replacing private or E2E channels; anonymising raw logs. |
+| [Signed capability cards](docs/signed-capability-cards.md) | Design target | Tamper-evident capability advertisements for manifests, directories, dashboards, MCP resources, and Agent Card projections. | Authorising tools; replacing per-message auth or signed events; sandboxing agents. |
 
 `synapse git-init` bundles the hook install with a short `.synapse/git-claims.md`
 onboarding guide (branch convention + worktree workflow). `synapse state` shows
@@ -1315,7 +1246,9 @@ threat model and how to report a vulnerability are in [`SECURITY.md`](SECURITY.m
 - **Single hub, single machine.** There is no built-in failover or horizontal
   scale; the hub is one process and the design is deliberately local-first. A
   hub restart resumes from the durable log, but it is not a high-availability
-  cluster.
+  cluster. The federation primitives for reaching beyond one machine are all in
+  this package; operating them as a production service is the job of the
+  commercial [Fleet tier](#beyond-one-machine-synapse-channel-fleet) below.
 - **Connect authentication is a proportionate shared secret**, not a
   cryptographic identity system. Opt-in per-message authentication, Ed25519
   event-signature trust, mTLS certificate pins, and a deny-by-default ACL policy
@@ -1359,11 +1292,55 @@ threat model and how to report a vulnerability are in [`SECURITY.md`](SECURITY.m
   (once a day, cached, no payload beyond the request itself). Set
   `SYNAPSE_NO_UPDATE_CHECK=1` to suppress the check even when opt-in is present.
 
+## Beyond one machine: SYNAPSE CHANNEL Fleet
+
+The open-source core ships every federation primitive: the multihub follower,
+claim forwarding, the deny-by-default federation gate with mTLS + Ed25519, and
+the wire protocol. **SYNAPSE CHANNEL Fleet** is the commercial package that
+*operates* those primitives across machines as a durable service. It is
+proprietary — distributed as a private wheel to licensees under the SYNAPSE
+Enterprise Licence, never on public PyPI — and it builds against an exact
+pinned release of this core, so wire compatibility and federation logic stay in
+the open where every peer can verify them.
+
+```mermaid
+graph LR
+    subgraph MA["Machine A"]
+      HA["SynapseHub (OSS core)<br/>event log"]
+      FD["synapse-fleet sync daemon<br/>persisted per-peer mirror<br/>fail-closed cursors"]
+      OV["fleet status · doctor · observed<br/>advisory views from the mirror"]
+      HA --- FD --> OV
+    end
+    subgraph MB["Machine B"]
+      HB["SynapseHub (OSS core)"]
+    end
+    subgraph MC["Machine C"]
+      HC["SynapseHub (OSS core)"]
+    end
+    FD -- "mTLS + Ed25519 pins<br/>deny-by-default, live trust generations" --> HB
+    FD -- "budgeted polls<br/>backoff-isolated per peer" --> HC
+```
+
+| Fleet surface | What it does |
+| --- | --- |
+| `sync` daemon | The follower loop as a durable service: a persisted per-peer mirror that survives restarts, page/new-event/time budgets that make large backlogs resumable partial successes, exponential backoff isolation so one slow peer cannot serially block healthy ones, and fail-closed cursors — a failed poll never advances the mirror. |
+| Live trust reload | A versioned operator trust schema assembled into immutable trust generations; authorisation and pinned TLS are rebuilt *before* a changed generation can open a socket, and an invalid live update denies that poll rather than falling back to a cached allow. |
+| `synapse-fleet` CLI | A separate binary (the `synapse` surface is untouched): `sync status` with per-peer clock skew, a read-only federation `doctor` (reachability, RTT, cursor lag, mirror integrity, certificate expiry, revocations), `observed` — peers' coordination state rendered offline from the mirror with every claim tagged `observed@<hub>` (advisory, never local authority), `federation` key/certificate lifecycle with zero-downtime add-new-then-revoke-old rotation, and strict `journal verify`/`repair-cursor`. |
+| `ResilientClaimForwarder` | A library layer adding retry, idempotency, and metrics around the core claim-forward seam for cross-hub claim routing. |
+
+Fleet changes none of this package's features and removes nothing from it; it
+adds the multi-machine operations layer on top. For licensing, see
+[commercial use](#commercial-use) below or write to
+[protoscience@anulum.li](mailto:protoscience@anulum.li).
+
 ## Commercial use
 
 SYNAPSE CHANNEL is **dual-licensed**, and there is **no feature difference between the
 open-source and the commercial build** — the package on PyPI *is* the full product. A
-commercial licence changes the **terms, not the code**. You can run the whole platform
+commercial licence changes the **terms, not the code**. The separately licensed
+[Fleet package](#beyond-one-machine-synapse-channel-fleet) is an *addition* for
+multi-machine operations, built on this core's public federation primitives —
+nothing here is held back to make room for it. You can run the whole platform
 yourself, forever, at no cost; the paid layers **add** permission, hosting, support, and
 convenience on top of the free core, and nothing is ever moved behind a paywall.
 
