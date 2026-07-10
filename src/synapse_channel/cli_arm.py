@@ -20,6 +20,7 @@ from typing import Any
 from synapse_channel.cli_messaging import AgentFactory, _wait
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.core.wake_capability import WAKE_PASSIVE
+from synapse_channel.machine_identity import machine_identity_agent_kwargs
 from synapse_channel.mailbox_cursor import cursor_path
 from synapse_channel.owner_lease import lease_path
 from synapse_channel.shell_integration import has_active_tmux_provider
@@ -94,6 +95,8 @@ async def _arm(
     mailbox_cursor_path: Path | None = None,
     wake_capability: str = WAKE_PASSIVE,
     owner_lease_path: Path | None = None,
+    identity_key_path: str | None = None,
+    identity_key_id: str = "",
 ) -> int:
     """Keep a directed waiter armed until interrupted, displaced, or orphaned.
 
@@ -125,6 +128,10 @@ async def _arm(
     re-arm presents the hub ownership-lease token the previous one persisted and
     re-takes its own name; a stranger claiming the waiter identity in the gap is
     refused by the hub instead (see :mod:`synapse_channel.owner_lease`).
+
+    ``identity_key_path``/``identity_key_id`` sign every re-armed registration
+    with the machine identity key, so a first-use hub pins the waiter name to
+    this machine (:mod:`synapse_channel.machine_identity`).
     """
     if owner_pid is not None and not owner_probe(owner_pid):
         print(f"[{name}] owner pid {owner_pid} is already gone; not arming.")
@@ -146,6 +153,8 @@ async def _arm(
                 mailbox_cursor_path=mailbox_cursor_path,
                 wake_capability=wake_capability,
                 owner_lease_path=owner_lease_path,
+                identity_key_path=identity_key_path,
+                identity_key_id=identity_key_id,
             )
         )
         if owner_pid is None:
@@ -266,6 +275,7 @@ def _cmd_arm(
     # not the -rx connection name, so every re-arm of the same identity shares one cursor.
     mailbox = bool(getattr(args, "mailbox", False))
     mailbox_cursor_path = cursor_path(for_name) if mailbox else None
+    machine = machine_identity_agent_kwargs()
     try:
         return async_runner(
             arm_runner(
@@ -283,6 +293,8 @@ def _cmd_arm(
                 mailbox_cursor_path=mailbox_cursor_path,
                 wake_capability=getattr(args, "wake_capability", WAKE_PASSIVE),
                 owner_lease_path=lease_path(connect_name),
+                identity_key_path=machine.get("identity_key_path"),
+                identity_key_id=str(machine.get("identity_key_id", "")),
             )
         )
     except KeyboardInterrupt:

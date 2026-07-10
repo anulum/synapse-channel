@@ -26,7 +26,13 @@ import asyncio
 from typing import Protocol
 
 CAPACITY_CLOSE_CODE = 4013
-"""Hub close code emitted when the total connection table is full."""
+"""Hub close code for a full connection table — also used for identity refusals.
+
+The hub overloads ``4013``: a connect refused because the table is full
+(``reason="hub at capacity"``) and a registration refused because it did not
+prove its identity (``reason="identity binding failed"`` / ``"identity pin
+mismatch"``). Disambiguate on the reason text, not the code alone.
+"""
 
 NAME_CONFLICT_CLOSE_CODE = 4009
 """Hub close code emitted when the requested name is already online."""
@@ -115,6 +121,17 @@ def is_superseded_close(code: int | None, reason: str) -> bool:
     return code == SUPERSEDED_CLOSE_CODE and "auth" not in reason.lower()
 
 
+def is_identity_refused_close(code: int | None, reason: str) -> bool:
+    """Return whether a close means the hub refused this side's identity proof.
+
+    ``4013`` is overloaded with the capacity refusal, so the reason text
+    decides. For a waiter this is a *yield* verdict: the name is pinned to (or
+    requires) an identity key this process does not hold, and retrying with
+    the same credentials can never succeed.
+    """
+    return code == CAPACITY_CLOSE_CODE and "identity" in reason.lower()
+
+
 def is_name_owned_close(code: int | None, reason: str) -> bool:
     """Return whether a close means an ownership lease refused this claim.
 
@@ -158,6 +175,12 @@ def _guidance_for(code: int, reason: str) -> str | None:
     if code == NAME_CONFLICT_CLOSE_CODE:
         return "name already online from another session. Reconnect with a unique --name"
     if code == CAPACITY_CLOSE_CODE:
+        if "identity" in reason_l:
+            return (
+                "identity proof refused: the name is bound to an identity key this "
+                "process did not prove. Connect from the machine holding that key, "
+                "or follow the recovery path in the hub error message"
+            )
         return (
             "hub at capacity: too many connections are open. Retry shortly, reap "
             "stale waiters, or restart the hub with a higher --max-clients"

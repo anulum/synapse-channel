@@ -810,3 +810,69 @@ async def test_wait_persists_the_granted_lease_and_the_owner_re_arms_with_it(
         finally:
             await close_agents(observer)
         assert load_lease(lease_file) == token
+
+
+async def test_wait_zero_config_machine_identity_pins_and_protects_the_waiter(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The pip-install acceptance at the CLI level: the production waiter signs
+    # with an auto-provisioned machine key, the hub pins the waiter name on
+    # first use, a waiter from another machine yields with the identity
+    # guidance, and the owner machine re-arms untouched.
+    from synapse_channel.core.hub import SynapseHub as Hub
+    from synapse_channel.machine_identity import machine_identity_agent_kwargs
+
+    machine_a = machine_identity_agent_kwargs(base=tmp_path / "machine-a")
+    machine_b = machine_identity_agent_kwargs(base=tmp_path / "machine-b")
+    hub = Hub(identity_pin_path=tmp_path / "pins.json")
+    async with running_hub(hub) as (_, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        first = asyncio.create_task(
+            cli_messaging._wait(
+                uri=uri,
+                name="B-rx",
+                for_name="B",
+                timeout=5.0,
+                poll_interval=0.01,
+                identity_key_path=machine_a.get("identity_key_path"),
+                identity_key_id=str(machine_a.get("identity_key_id", "")),
+            )
+        )
+        try:
+            await _wait_for_presence(observer, "B-rx")
+            assert hub._identity_pins.pinned("B-rx") is not None
+            await _send_chat(uri, "A", "B", "first-wake")
+            assert await first == 0
+        finally:
+            await close_agents(observer)
+
+        squatter = await cli_messaging._wait(
+            uri=uri,
+            name="B-rx",
+            for_name="B",
+            timeout=5.0,
+            poll_interval=0.01,
+            identity_key_path=machine_b.get("identity_key_path"),
+            identity_key_id=str(machine_b.get("identity_key_id", "")),
+        )
+        assert squatter == 4
+        assert "identity" in capsys.readouterr().out
+
+        observer = await connect_agent("OBSERVER", uri)
+        second = asyncio.create_task(
+            cli_messaging._wait(
+                uri=uri,
+                name="B-rx",
+                for_name="B",
+                timeout=5.0,
+                poll_interval=0.01,
+                identity_key_path=machine_a.get("identity_key_path"),
+                identity_key_id=str(machine_a.get("identity_key_id", "")),
+            )
+        )
+        try:
+            await _wait_for_presence(observer, "B-rx")
+            await _send_chat(uri, "A", "B", "second-wake")
+            assert await second == 0
+        finally:
+            await close_agents(observer)

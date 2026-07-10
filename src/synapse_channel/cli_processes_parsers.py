@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from synapse_channel.cli_processes_hub import _cmd_hub
 from synapse_channel.cli_processes_supervisor import _cmd_supervisor
@@ -220,6 +221,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=float,
         default=DEFAULT_TAKEOVER_COOLDOWN,
         help="Seconds a name is protected from a second takeover, to blunt an eviction storm.",
+    )
+    hub.add_argument(
+        "--identity-pins",
+        default=str(Path.home() / "synapse" / "identity-pins.json"),
+        help="JSON file persisting trust-on-first-use name-to-key identity pins; "
+        "pass an empty string to keep pins in memory only.",
     )
     hub.add_argument(
         "--lease-offline-ttl",

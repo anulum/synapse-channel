@@ -75,6 +75,9 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "require_role_claim": False,
         "identity_trust": "",
         "require_identity_binding": False,
+        # In-memory pins: hub-command tests must not write the real
+        # ~/synapse/identity-pins.json the production parser defaults to.
+        "identity_pins": "",
         "private_directed_messages": False,
         "warn_stale_recipients": False,
         "recipient_liveness_window": DEFAULT_RECIPIENT_LIVENESS_WINDOW,

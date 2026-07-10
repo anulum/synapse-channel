@@ -179,6 +179,7 @@ class HubAuthConfig:
     require_role_claim: bool = False
     identity_trust_bundle: EventSignatureTrustBundle | None = None
     require_identity_binding: bool = False
+    identity_pin_path: str | Path | None = None
     private_directed_messages: bool = False
 
 

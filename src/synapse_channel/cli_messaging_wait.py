@@ -20,12 +20,14 @@ from synapse_channel.cli_messaging_types import AgentFactory, JitterFunction
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.connect_failures import (
     describe_connect_failure,
+    is_identity_refused_close,
     is_name_owned_close,
     is_superseded_close,
     is_takeover_refused_close,
 )
 from synapse_channel.core.protocol import MessageType, wakes
 from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
+from synapse_channel.machine_identity import machine_identity_agent_kwargs
 from synapse_channel.mailbox_cursor import load_cursor, save_cursor
 from synapse_channel.owner_lease import lease_agent_kwargs, lease_path
 from synapse_channel.shell_integration import has_active_tmux_provider
@@ -57,6 +59,8 @@ async def _wait(
     mailbox_cursor_path: Path | None = None,
     wake_capability: str = WAKE_PASSIVE,
     owner_lease_path: Path | None = None,
+    identity_key_path: str | None = None,
+    identity_key_id: str = "",
 ) -> int:
     """Block until one message addressed to ``for_name`` arrives, print it, and exit.
 
@@ -119,6 +123,13 @@ async def _wait(
         its own name, and persists a freshly granted one, so a stranger cannot
         squat the waiter identity in a re-arm gap. ``None`` disables lease
         participation (classic first-come semantics).
+    identity_key_path : str or None, optional
+        PEM file of the Ed25519 identity key signing the registration — for the
+        production waiter, the auto-provisioned machine key
+        (:mod:`synapse_channel.machine_identity`), so a first-use hub pins the
+        waiter name to this machine. ``None`` registers unsigned.
+    identity_key_id : str, optional
+        Key id carried in the registration signature envelope.
 
     Returns
     -------
@@ -183,6 +194,8 @@ async def _wait(
         mailbox_for=for_name if mailbox else "",
         mailbox_advance=matches,
         wake_capability=wake_capability,
+        identity_key_path=identity_key_path,
+        identity_key_id=identity_key_id,
         **lease_agent_kwargs(owner_lease_path),
     )
     conn_task = asyncio.create_task(agent.connect())
@@ -205,6 +218,10 @@ async def _wait(
                 # An ownership lease held by another identity refused this
                 # claim. Without the lease token a retry can never succeed;
                 # yield instead of hammering the refusal.
+                return 4
+            if is_identity_refused_close(agent.last_close_code, agent.last_close_reason):
+                # The name is pinned to (or requires) an identity key this
+                # process does not hold — the same yield verdict.
                 return 4
             return 1
         loop = asyncio.get_event_loop()
@@ -248,11 +265,14 @@ async def _wait(
                 # steal the identity from each other indefinitely.
                 print(f"[{name}] superseded by a newer waiter; yielding.")
                 return 4
-            if is_name_owned_close(agent.last_close_code, agent.last_close_reason):
+            if is_name_owned_close(
+                agent.last_close_code, agent.last_close_reason
+            ) or is_identity_refused_close(agent.last_close_code, agent.last_close_reason):
                 # On an open hub the welcome precedes registration, so an
-                # ownership-lease refusal lands after readiness. It is a yield
-                # verdict either way: re-arming without the lease token would
-                # only hammer a refusal that can never pass.
+                # ownership-lease or identity-pin refusal lands after
+                # readiness. It is a yield verdict either way: re-arming
+                # without the lease token or the pinned key would only hammer
+                # a refusal that can never pass.
                 print(
                     describe_connect_failure(
                         name,
@@ -334,6 +354,7 @@ def _cmd_wait(
             )
             return 0
 
+    machine = machine_identity_agent_kwargs()
     return async_runner(
         wait_runner(
             uri=args.uri,
@@ -347,5 +368,7 @@ def _cmd_wait(
             ready_timeout=args.ready_timeout,
             wake_capability=wake_capability,
             owner_lease_path=lease_path(connect_name),
+            identity_key_path=machine.get("identity_key_path"),
+            identity_key_id=str(machine.get("identity_key_id", "")),
         )
     )

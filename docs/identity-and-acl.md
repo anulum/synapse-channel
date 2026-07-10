@@ -10,12 +10,14 @@ SYNAPSE CHANNEL — identity and ACL design
 
 # Identity and ACL design
 
-Per-agent identity and ACL enforcement are a design target for deployments that
-need more than the current shared-token mode and caller-name model. They are not
-implemented yet. Today, a secured hub admits a connection with a shared token and
-then trusts the sender name on accepted frames. That remains proportionate for a
-single-owner local hub, but it is not enough for exposed or multi-operator
-coordination.
+Per-agent identity and ACL enforcement grew out of a design target for
+deployments that need more than shared-token mode and the caller-name model.
+The core of it is now implemented (see the next section): deny-by-default ACL
+enforcement is opt-in, and name ownership is enforced by default through the
+ownership lease and the zero-config trust-on-first-use machine key. What
+remains a design target is listed at the end of that section. A secured hub
+still admits a connection with a shared token; the layers below decide what
+the admitted connection may claim to *be* and to *do*.
 
 The goal is to bind every durable actor to an identity-bound credential, then
 evaluate whether that identity may perform a requested action before the hub
@@ -62,12 +64,28 @@ The ACL model and its evaluation are implemented in
   first-come semantics, and a pre-lease hub ignores the fields — a mixed fleet
   keeps working. A lapsed or lost token self-heals: past the offline window the
   name returns to first-come-first-owned.
+- **Zero-config trust-on-first-use identity** (`machine_identity.py` +
+  `core/identity_pins.py` + the trust-on-first-use posture in
+  `core/hub_identity_gate.py`): with no operator input at all, the first
+  connect provisions a per-machine Ed25519 keypair under
+  `$XDG_DATA_HOME/synapse/identity/`, the registration is signed with it and
+  carries `identity_public_key`, and the hub pins the name to the first key
+  that proves it — persisted in `--identity-pins` (default
+  `~/synapse/identity-pins.json`) so the pin survives hub restarts. A pinned
+  name refuses a missing signature or any other key with close code `4013`
+  (`identity pin mismatch`) and a recovery path naming the pin file; unsigned
+  names keep classic semantics; `--require-identity-binding` takes precedence
+  and keeps its fail-closed operator-bundle behaviour. Together with the
+  ownership lease this closes the name-squatting class: the lease covers
+  reconnect gaps with a bearer token, the pin covers restarts with a proof of
+  key possession.
 
 The identity namespace is taken from the resolved sender (`project/agent`). The
-first credential format, in-hub credential resolution, credential rotation,
-revocation, owner recovery, durable audit-event journaling, and read-surface ACLs
-(metrics, dashboard, event-query) remain design targets and are not implemented
-yet.
+first credential format is now the zero-config machine key above (operator
+bundles remain the multi-tenant graduation); credential rotation tooling,
+revocation UX beyond hand-editing the pin file, owner recovery flows, durable
+audit-event journaling, and read-surface ACLs (metrics, dashboard, event-query)
+remain design targets.
 
 ## Identity model
 

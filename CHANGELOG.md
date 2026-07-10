@@ -15,6 +15,29 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- **Zero-config trust-on-first-use identity** (ownership keystone P-C). The
+  first command that connects auto-provisions one Ed25519 keypair for the
+  whole machine under `$XDG_DATA_HOME/synapse/identity/` (owner-only,
+  exclusive-create, race-safe); the production waiter signs its registration
+  with it and carries the public half in a new additive `identity_public_key`
+  registration field. A hub running the default loopback posture verifies the
+  self-contained proof with the same signed-event primitives the operator
+  bundle uses (freshness, replay, sender binding) and **pins** the name to
+  the key on first valid use — durably (`synapse hub --identity-pins`,
+  default `~/synapse/identity-pins.json`; empty string keeps pins in
+  memory). From then on the name binds only to a connection proving
+  possession of the pinned key, across reconnects and hub restarts: a
+  different key or a missing signature is refused with close code `4013`
+  (`identity pin mismatch`) and a recovery path naming the pin file. Names
+  that never sign keep classic first-come semantics, so no existing client
+  is locked out, and `--require-identity-binding` still takes precedence
+  with its operator-bundle semantics unchanged. The waiter yields (exit `4`)
+  on an identity refusal instead of retrying. Provisioning is best-effort: a
+  read-only home degrades to an unsigned connection, never a startup
+  failure. The `4013` close code is now shared between the capacity refusal
+  and identity refusals — clients disambiguate on the reason text
+  (`is_identity_refused_close`).
+
 - **Hub-authoritative name-ownership lease** (ownership keystone P-B). A name
   now has exactly one owner across reconnects, not merely per socket: a
   registration that declares `lease: true` on a free name is granted an opaque

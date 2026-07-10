@@ -17,6 +17,7 @@ from typing import Any, Protocol
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosedError
 
+from synapse_channel.core.identity_keys import public_key_b64
 from synapse_channel.core.protocol import MessageType
 
 DEFAULT_HUB_URI = "ws://localhost:8876"
@@ -91,6 +92,7 @@ class _LifecycleAgent(Protocol):
     verbose: bool
     wake_capability: str
     _heartbeat_task: asyncio.Task[None] | None
+    _identity_key: Any
     _mailbox_since_seq: int
 
     async def _dispatch(self, raw: str | bytes) -> None:
@@ -147,6 +149,12 @@ class AgentLifecycleMixin:
                 if self.takeover:
                     extra["takeover"] = True
                 extra["wake_capability"] = self.wake_capability
+                if self._identity_key is not None:
+                    # Carry the public half of the signing key so a first-use
+                    # hub can verify the registration self-contained and pin
+                    # the name to it (trust-on-first-use); an operator-bundle
+                    # hub simply ignores the field.
+                    extra["identity_public_key"] = public_key_b64(self._identity_key)
                 if self.request_lease:
                     # Opt into a hub ownership lease on the bound name; the hub
                     # answers a fresh grant with a lease_granted frame.

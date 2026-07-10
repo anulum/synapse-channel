@@ -79,6 +79,7 @@ from synapse_channel.core.hub_ledger_guard import HubLedgerGuard
 from synapse_channel.core.hub_liveness import HubLivenessView
 from synapse_channel.core.hub_relay import RelayMirror
 from synapse_channel.core.hub_state_seed import seed_hub_state
+from synapse_channel.core.identity_pins import IdentityPinStore
 from synapse_channel.core.ledger import (
     DEFAULT_MAX_PROGRESS,
     DEFAULT_MAX_PROGRESS_PER_AUTHOR,
@@ -455,6 +456,7 @@ class SynapseHub:
         require_role_claim: bool = False,
         identity_trust_bundle: EventSignatureTrustBundle | None = None,
         require_identity_binding: bool = False,
+        identity_pin_path: str | Path | None = None,
         private_directed_messages: bool = False,
         warn_stale_recipients: bool = False,
         recipient_liveness_window: float = DEFAULT_RECIPIENT_LIVENESS_WINDOW,
@@ -499,6 +501,8 @@ class SynapseHub:
         self.require_role_claim = bool(require_role_claim)
         self.identity_trust_bundle = identity_trust_bundle
         self.require_identity_binding = bool(require_identity_binding)
+        self.identity_pin_path = Path(identity_pin_path).expanduser() if identity_pin_path else None
+        self._identity_pins = IdentityPinStore(path=self.identity_pin_path)
         self.private_directed_messages = bool(private_directed_messages)
         self.warn_stale_recipients = bool(warn_stale_recipients)
         self.recipient_liveness_window = max(
@@ -613,6 +617,7 @@ class SynapseHub:
             identity_trust_bundle=self.identity_trust_bundle,
             send_json=self._send_json,
             system=self._system,
+            pin_store=self._identity_pins,
         )
         self.connected_clients = self.clients.connected_clients
         self.unauth_clients = self.clients.unauth_clients
