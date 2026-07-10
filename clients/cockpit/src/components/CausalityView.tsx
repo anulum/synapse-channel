@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the causality inspector: recorded causes and effects on demand
 
+import type { JSX } from "react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
   clusterByHub,

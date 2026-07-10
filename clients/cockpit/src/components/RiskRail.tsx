@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the risk rail: the operator's triage list
 
+import type { JSX } from "react";
 import { memo } from "react";
 
 import type { AnomalyFlag } from "../lib/anomalies";

@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — governed task declaration and update form
 
+import type { JSX } from "react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import {

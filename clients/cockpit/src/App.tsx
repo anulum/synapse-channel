@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — cockpit app shell
 
+import type { JSX } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivitySpine } from "./components/ActivitySpine";
 import { AuthVeil } from "./components/AuthVeil";

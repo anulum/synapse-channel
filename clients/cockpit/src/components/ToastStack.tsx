@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the toast stack: transitions, said once, out of the way
 
+import type { JSX } from "react";
 import type { Toast } from "../lib/toasts";
 
 /** How many toasts show at once; older ones wait underneath. */

@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the reliability EVIDENCE panel: the record, never a score
 
+import type { JSX } from "react";
 import { memo } from "react";
 
 import { orderOwners, type ReliabilityFinding, type ReliabilityState } from "../lib/reliability";

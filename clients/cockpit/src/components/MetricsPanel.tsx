@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the log-pulse panel: store-attested counts, drawn as plain bars
 
+import type { JSX } from "react";
 import { memo } from "react";
 
 import { orderKindCounts, type MetricsState, type MetricsWindow } from "../lib/metrics";

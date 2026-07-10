@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — dashboard bearer unlock boundary
 
+import type { JSX } from "react";
 import { useState, type FormEvent } from "react";
 
 interface AuthVeilProps {

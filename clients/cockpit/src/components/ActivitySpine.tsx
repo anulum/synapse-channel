@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the activity spine, the cockpit's signature instrument
 
+import type { JSX } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
   laneAtY,

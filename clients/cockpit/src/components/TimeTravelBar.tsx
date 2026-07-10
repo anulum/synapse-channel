@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the time-travel bar: scrub the whole fleet, not just the log
 
+import type { JSX } from "react";
 import type { FleetStateAt } from "../lib/stateAt";
 
 function stampOf(ts: number): string {

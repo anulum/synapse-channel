@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — tab switch between the signal log and the causality inspector
 
+import type { JSX } from "react";
 import { useCallback, useEffect, useState } from "react";
 import type { OperatorActionsState, ReceiptsState } from "../lib/auditFeeds";
 import { windowEdgeLabel, type TimeWindow } from "../lib/brush";

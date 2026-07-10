@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the detail drawer: one name, everything the fleet knows
 
+import type { JSX } from "react";
 import { useEffect } from "react";
 
 import type { AgentDetail, TaskDetail } from "../lib/detail";

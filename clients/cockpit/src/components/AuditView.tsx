@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — compact durable receipt and operator-action audit view
 
+import type { JSX } from "react";
 import type {
   OperatorActionRow,
   OperatorActionsState,

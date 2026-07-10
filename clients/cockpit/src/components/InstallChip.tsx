@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the add-to-home-screen chip, shown only when the browser offers it
 
+import type { JSX } from "react";
 import { useEffect, useState } from "react";
 
 /** The non-standard beforeinstallprompt event Chromium fires. */

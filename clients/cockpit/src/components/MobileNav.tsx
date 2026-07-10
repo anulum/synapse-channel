@@ -6,6 +6,8 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the phone-width segmented switch between deck sections
 
+import type { JSX } from "react";
+
 /** The deck sections a phone shows one at a time. */
 export type MobileSegment = "signals" | "claims" | "board" | "roster" | "reliability";
 

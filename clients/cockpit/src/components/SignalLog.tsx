@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the signal log: the plain, legible table under the spine
 
+import type { JSX } from "react";
 import { Fragment, memo, useRef, useState } from "react";
 
 import { actorsInWindow, eventsInWindow, windowEdgeLabel, type TimeWindow } from "../lib/brush";

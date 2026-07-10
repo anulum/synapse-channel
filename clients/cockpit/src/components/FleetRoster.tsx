@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the fleet roster panel: who is present and what they hold
 
+import type { JSX } from "react";
 import { memo } from "react";
 
 import type { RosterEntry, RowStatus } from "../lib/roster";

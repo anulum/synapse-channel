@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the task board: the shared plan with hub-verdicted dependency edges
 
+import type { JSX } from "react";
 import { memo, useState } from "react";
 
 import type { BoardBucket, BoardTask, BoardTruncation, DependencyChip } from "../lib/board";

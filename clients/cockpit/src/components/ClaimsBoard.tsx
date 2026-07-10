@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the claims board: who holds which file scope, and how safely
 
+import type { JSX } from "react";
 import { formatCountdown, type BranchConflictView, type ClaimView } from "../lib/claims";
 
 /** Glyph per urgency — redundant with colour and order, never colour alone. */

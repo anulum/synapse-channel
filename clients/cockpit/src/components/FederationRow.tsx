@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the federation row: hub identity, peers, and partition honesty
 
+import type { JSX } from "react";
 import { memo } from "react";
 
 import { contestedNamespaces, type FederationState } from "../lib/federation";

@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the command palette: the whole cockpit from the keyboard
 
+import type { JSX } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { OperatorTaskForm, type OperatorTaskMode } from "./OperatorTaskForm";

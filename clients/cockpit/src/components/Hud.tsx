@@ -6,6 +6,8 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the HUD strip: mark, KPI triad, liveness beacon
 
+import type { JSX } from "react";
+
 /** One headline metric with a redundant delta (arrow + colour + sign). */
 export interface Kpi {
   readonly label: string;

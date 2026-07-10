@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the findings stream: recorded discoveries, newest first
 
+import type { JSX } from "react";
 import { memo } from "react";
 
 import type { FindingNote } from "../lib/board";

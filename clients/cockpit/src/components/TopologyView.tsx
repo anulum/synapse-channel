@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the fleet topology panel: agents, held tasks, conflict ties
 
+import type { JSX } from "react";
 import { memo } from "react";
 
 import type { BranchConflictView, ClaimView } from "../lib/claims";
