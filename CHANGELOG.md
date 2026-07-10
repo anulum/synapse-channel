@@ -15,6 +15,15 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Split the `encrypt-key` CLI by domain: hardware-backed wrapping
+  (`cli_encrypt_key_hardware` — PKCS#11/TPM 2.0/cloud HSM), threshold
+  escrow (`cli_encrypt_key_escrow`), attestation gating
+  (`cli_encrypt_key_attest`), and the at-rest profile lifecycle incl.
+  SQLCipher (`cli_encrypt_key_profile`); `cli_encrypt_key` keeps the
+  local key-file commands and composes the family under the same
+  subparser group. Command surface, registration order, and every
+  message unchanged; the test surface splits along the same lines.
+
 - Decompose the dashboard HTTP handler: read-side feed serving moved to
   `dashboard_feed_serving` (pure `FeedResponse` values, the shared
   honest-absence/fail-visible store posture factored into one place) and

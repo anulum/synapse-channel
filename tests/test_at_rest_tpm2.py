@@ -204,18 +204,18 @@ def _tpm2_cli_args(path: Path, *extra: str) -> list[str]:
 def test_cli_generate_wrapped_tpm2_round_trips_and_refuses_overwrite(
     swtpm_tcti: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from synapse_channel import cli, cli_encrypt_key
+    from synapse_channel import cli, cli_encrypt_key_hardware
 
     key_path = tmp_path / "cli.tpm.key"
     args = cli.build_parser().parse_args(_tpm2_cli_args(key_path, "--tcti", swtpm_tcti))
-    assert cli_encrypt_key._cmd_generate_wrapped_tpm2(args) == 0
+    assert cli_encrypt_key_hardware._cmd_generate_wrapped_tpm2(args) == 0
     assert "TPM-wrapped at-rest key" in capsys.readouterr().out
 
     cipher = cipher_from_wrapped_key_file_tpm2(key_path, tcti=swtpm_tcti)
     assert cipher.decrypt(cipher.encrypt(b"z")) == b"z"
 
     again = cli.build_parser().parse_args(_tpm2_cli_args(key_path, "--tcti", swtpm_tcti))
-    assert cli_encrypt_key._cmd_generate_wrapped_tpm2(again) == 1
+    assert cli_encrypt_key_hardware._cmd_generate_wrapped_tpm2(again) == 1
     assert "refusing to overwrite" in capsys.readouterr().out
 
 
@@ -224,7 +224,7 @@ def test_cli_resolves_tcti_from_env_then_the_device_default(
 ) -> None:
     # Resolution order is --tcti, then TPM2_TCTI, then the device default. The token operation is
     # stubbed so only the CLI's resolution logic is exercised, independent of a live TPM.
-    from synapse_channel import cli, cli_encrypt_key
+    from synapse_channel import cli, cli_encrypt_key_hardware
     from synapse_channel.core import at_rest_tpm2
 
     seen: list[str] = []
@@ -237,11 +237,11 @@ def test_cli_resolves_tcti_from_env_then_the_device_default(
 
     monkeypatch.setenv("TPM2_TCTI", "env:tcti")
     env_args = cli.build_parser().parse_args(_tpm2_cli_args(tmp_path / "e.key"))
-    assert cli_encrypt_key._cmd_generate_wrapped_tpm2(env_args) == 0
+    assert cli_encrypt_key_hardware._cmd_generate_wrapped_tpm2(env_args) == 0
 
     monkeypatch.delenv("TPM2_TCTI", raising=False)
     default_args = cli.build_parser().parse_args(_tpm2_cli_args(tmp_path / "d.key"))
-    assert cli_encrypt_key._cmd_generate_wrapped_tpm2(default_args) == 0
+    assert cli_encrypt_key_hardware._cmd_generate_wrapped_tpm2(default_args) == 0
 
     assert seen == ["env:tcti", DEFAULT_TPM2_TCTI]
 
@@ -249,7 +249,7 @@ def test_cli_resolves_tcti_from_env_then_the_device_default(
 def test_cli_reports_a_missing_dependency(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from synapse_channel import cli, cli_encrypt_key
+    from synapse_channel import cli, cli_encrypt_key_hardware
     from synapse_channel.core import at_rest_tpm2
 
     def _raise(path: str, *, tcti: str) -> Path:
@@ -257,5 +257,5 @@ def test_cli_reports_a_missing_dependency(
 
     monkeypatch.setattr(at_rest_tpm2, "generate_wrapped_key_file_tpm2", _raise)
     args = cli.build_parser().parse_args(_tpm2_cli_args(tmp_path / "x.key", "--tcti", "swtpm:x"))
-    assert cli_encrypt_key._cmd_generate_wrapped_tpm2(args) == 2
+    assert cli_encrypt_key_hardware._cmd_generate_wrapped_tpm2(args) == 2
     assert "generate-wrapped-tpm2" in capsys.readouterr().out

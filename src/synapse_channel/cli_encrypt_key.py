@@ -15,37 +15,35 @@ data; ``check`` verifies an existing key file's ownership, mode, and length befo
 an encrypted workflow trusts it. The key file feeds
 :class:`~synapse_channel.core.at_rest.AtRestCipher` for the storage-surface
 encryption that builds on this foundation (see ``docs/at-rest-encryption``).
+
+The wider ``encrypt-key`` family lives in sibling modules, one per domain, and
+registers under the same subparser group here: hardware-backed wrapping
+(:mod:`~synapse_channel.cli_encrypt_key_hardware`), threshold escrow
+(:mod:`~synapse_channel.cli_encrypt_key_escrow`), attestation gating
+(:mod:`~synapse_channel.cli_encrypt_key_attest`), and the at-rest profile
+lifecycle (:mod:`~synapse_channel.cli_encrypt_key_profile`).
 """
 
 from __future__ import annotations
 
 import argparse
 import getpass
-import os
 from collections.abc import Callable
 
+from synapse_channel.cli_encrypt_key_attest import add_attestation_parsers
+from synapse_channel.cli_encrypt_key_escrow import add_escrow_parsers
+from synapse_channel.cli_encrypt_key_hardware import add_hardware_parsers
+from synapse_channel.cli_encrypt_key_profile import add_profile_parsers
 from synapse_channel.core.at_rest import (
     DEFAULT_SCRYPT_N,
     DEFAULT_SCRYPT_P,
     DEFAULT_SCRYPT_R,
-    AtRestCipher,
-    AtRestProfileReport,
-    AtRestSurface,
-    backup_profile,
     check_key_file,
-    full_profile_surfaces,
     generate_key_file,
     generate_key_file_from_passphrase,
     generate_wrapped_key_file,
-    inspect_profile,
-    migrate_profile,
-    rekey_profile,
-    require_encrypted_profile,
-    restore_profile_backup,
     rewrap_wrapped_key_file,
 )
-from synapse_channel.core.at_rest_pkcs11 import DEFAULT_KEK_LABEL
-from synapse_channel.core.at_rest_tpm2 import DEFAULT_TPM2_TCTI
 
 
 def _cmd_generate(
@@ -147,383 +145,11 @@ def _cmd_rewrap(
     return 0
 
 
-def _cmd_generate_wrapped_pkcs11(
-    args: argparse.Namespace,
-    *,
-    pin_reader: Callable[[str], str] = getpass.getpass,
-) -> int:
-    """Create a key file wrapped by a key-encryption key held on a PKCS#11 token.
-
-    The data key is random and wrapped on the token (YubiKey PIV, cloud/network HSM, or SoftHSM);
-    the token key never leaves the device. The module path comes from ``--pkcs11-module`` or the
-    ``PKCS11_MODULE`` environment variable; the PIN from ``PKCS11_PIN`` or an interactive prompt.
-    """
-    from synapse_channel.core.at_rest_pkcs11 import generate_wrapped_key_file_pkcs11
-
-    module_path = args.pkcs11_module or os.environ.get("PKCS11_MODULE")
-    if not module_path:
-        print(
-            "synapse encrypt-key generate-wrapped-pkcs11: "
-            "a PKCS#11 module is required via --pkcs11-module or PKCS11_MODULE"
-        )
-        return 2
-    pin = os.environ.get("PKCS11_PIN") or pin_reader("PKCS#11 user PIN: ")
-    try:
-        written = generate_wrapped_key_file_pkcs11(
-            args.path,
-            module_path=module_path,
-            token_label=args.token_label,
-            pin=pin,
-            key_label=args.key_label,
-            create_kek=args.create_kek,
-        )
-    except FileExistsError as exc:
-        print(str(exc))
-        return 1
-    except (ValueError, RuntimeError) as exc:
-        print(f"synapse encrypt-key generate-wrapped-pkcs11: {exc}")
-        return 2
-    print(f"wrote PKCS#11-wrapped at-rest key (owner-only): {written}")
-    return 0
-
-
-def _cmd_generate_wrapped_tpm2(args: argparse.Namespace) -> int:
-    """Create a key file wrapped by a key-encryption key rooted in a TPM 2.0 device.
-
-    The data key is random and wrapped with RSA-OAEP against a decrypt-only primary derived inside
-    the TPM; the RSA private key never leaves the chip. The TPM is reached through ``--tcti`` (or
-    the ``TPM2_TCTI`` environment variable), defaulting to the in-kernel resource-managed device.
-    """
-    from synapse_channel.core.at_rest_tpm2 import generate_wrapped_key_file_tpm2
-
-    tcti = args.tcti or os.environ.get("TPM2_TCTI") or DEFAULT_TPM2_TCTI
-    try:
-        written = generate_wrapped_key_file_tpm2(args.path, tcti=tcti)
-    except FileExistsError as exc:
-        print(str(exc))
-        return 1
-    except (ValueError, RuntimeError) as exc:
-        print(f"synapse encrypt-key generate-wrapped-tpm2: {exc}")
-        return 2
-    print(f"wrote TPM-wrapped at-rest key (owner-only): {written}")
-    return 0
-
-
-def _cmd_generate_wrapped_cloud_hsm(args: argparse.Namespace) -> int:
-    """Create a key file wrapped by a cloud HSM / cloud KMS provider.
-
-    ``local-aes-kw`` wraps under a local owner-only master key file (offline tests and
-    air-gapped drills). ``aws-kms`` uses optional ``boto3`` against a customer master key.
-    """
-    from synapse_channel.core.at_rest_cloud_hsm import (
-        PROVIDER_AWS_KMS,
-        PROVIDER_LOCAL_AES_KW,
-        AwsKmsCloudHsmProvider,
-        CloudHsmProvider,
-        LocalAesKwCloudHsmProvider,
-        generate_wrapped_key_file_cloud_hsm,
-    )
-
-    provider_name = args.provider
-    provider: CloudHsmProvider
-    try:
-        if provider_name == PROVIDER_LOCAL_AES_KW:
-            if not args.master_key_file:
-                print(
-                    "synapse encrypt-key generate-wrapped-cloud-hsm: "
-                    "--master-key-file is required for provider local-aes-kw"
-                )
-                return 2
-            provider = LocalAesKwCloudHsmProvider.from_key_file(args.master_key_file)
-        elif provider_name == PROVIDER_AWS_KMS:
-            if not args.kms_key_id:
-                print(
-                    "synapse encrypt-key generate-wrapped-cloud-hsm: "
-                    "--kms-key-id is required for provider aws-kms"
-                )
-                return 2
-            provider = AwsKmsCloudHsmProvider(args.kms_key_id, region_name=args.region)
-        else:
-            print(
-                f"synapse encrypt-key generate-wrapped-cloud-hsm: "
-                f"unsupported provider {provider_name!r}"
-            )
-            return 2
-        written = generate_wrapped_key_file_cloud_hsm(args.path, provider=provider)
-    except FileExistsError as exc:
-        print(str(exc))
-        return 1
-    except (ValueError, RuntimeError) as exc:
-        print(f"synapse encrypt-key generate-wrapped-cloud-hsm: {exc}")
-        return 2
-    print(f"wrote cloud-HSM-wrapped at-rest key (owner-only): {written}")
-    return 0
-
-
-def _cmd_escrow_split(args: argparse.Namespace) -> int:
-    """Split a raw at-rest key file into threshold (Shamir) escrow shares."""
-    from synapse_channel.core.at_rest_escrow import split_key_file
-
-    try:
-        written = split_key_file(
-            args.key,
-            threshold=args.threshold,
-            share_count=args.shares,
-            out_dir=args.out_dir,
-        )
-    except (ValueError, OSError) as exc:
-        print(f"synapse encrypt-key escrow-split: {exc}")
-        return 2
-    print(f"wrote {len(written)} escrow shares under {args.out_dir}")
-    for path in written:
-        print(f"  {path}")
-    return 0
-
-
-def _cmd_escrow_recover(args: argparse.Namespace) -> int:
-    """Recover a raw at-rest key file from threshold escrow shares."""
-    from synapse_channel.core.at_rest_escrow import recover_key_file
-
-    try:
-        written = recover_key_file(args.share, out_path=args.out)
-    except FileExistsError as exc:
-        print(str(exc))
-        return 1
-    except (ValueError, OSError) as exc:
-        print(f"synapse encrypt-key escrow-recover: {exc}")
-        return 2
-    print(f"recovered at-rest key (owner-only, 32 bytes): {written}")
-    return 0
-
-
-def _cmd_attest_policy_create(args: argparse.Namespace) -> int:
-    """Create an HMAC attestation policy with optional expected PCR digests."""
-    from synapse_channel.core.at_rest_attestation import create_hmac_policy, write_policy_file
-
-    digests: dict[int, bytes] = {}
-    for item in args.pcr or []:
-        try:
-            index_s, hex_digest = item.split("=", 1)
-            digests[int(index_s)] = bytes.fromhex(hex_digest)
-        except ValueError as exc:
-            print(f"synapse encrypt-key attest-policy-create: invalid --pcr {item!r}: {exc}")
-            return 2
-    try:
-        policy = create_hmac_policy(policy_id=args.policy_id, pcr_digests=digests)
-        written = write_policy_file(args.path, policy)
-    except FileExistsError as exc:
-        print(str(exc))
-        return 1
-    except ValueError as exc:
-        print(f"synapse encrypt-key attest-policy-create: {exc}")
-        return 2
-    print(f"wrote attestation policy (owner-only): {written}")
-    return 0
-
-
-def _cmd_attest_create(args: argparse.Namespace) -> int:
-    """Create HMAC attestation evidence for a policy (fresh or supplied nonce)."""
-    from synapse_channel.core.at_rest_attestation import (
-        create_hmac_evidence,
-        fresh_nonce,
-        load_policy_file,
-        write_evidence_file,
-    )
-
-    try:
-        policy = load_policy_file(args.policy)
-        nonce = bytes.fromhex(args.nonce) if args.nonce else fresh_nonce()
-        digests: dict[int, bytes] | None = None
-        if args.pcr:
-            digests = {}
-            for item in args.pcr:
-                index_s, hex_digest = item.split("=", 1)
-                digests[int(index_s)] = bytes.fromhex(hex_digest)
-        evidence = create_hmac_evidence(policy, nonce=nonce, pcr_digests=digests)
-        written = write_evidence_file(args.path, evidence)
-    except FileExistsError as exc:
-        print(str(exc))
-        return 1
-    except (ValueError, OSError) as exc:
-        print(f"synapse encrypt-key attest-create: {exc}")
-        return 2
-    print(f"wrote attestation evidence (owner-only): {written}")
-    print(f"nonce (hex): {evidence.nonce.hex()}")
-    return 0
-
-
-def _cmd_attest_verify(args: argparse.Namespace) -> int:
-    """Verify attestation evidence against a policy (fail closed)."""
-    from synapse_channel.core.at_rest_attestation import (
-        enforce_attestation_gate,
-        load_evidence_file,
-        load_policy_file,
-    )
-
-    try:
-        policy = load_policy_file(args.policy)
-        evidence = load_evidence_file(args.evidence)
-        enforce_attestation_gate(policy, evidence)
-    except (ValueError, OSError) as exc:
-        print(f"synapse encrypt-key attest-verify: {exc}")
-        return 2
-    print(f"attestation ok: policy={policy.policy_id} algorithm={policy.algorithm}")
-    return 0
-
-
 def _cmd_check(args: argparse.Namespace) -> int:
     """Verify a key file is owner-only, regular, and full-length."""
     ok, reason = check_key_file(args.path)
     print(f"key file ok: {args.path}" if ok else f"key file problem: {reason}")
     return 0 if ok else 1
-
-
-def _surfaces(args: argparse.Namespace) -> tuple[AtRestSurface, ...]:
-    """Build at-rest profile surfaces from shared CLI flags."""
-    return full_profile_surfaces(
-        sqlite_event_stores=args.sqlite_db,
-        relay_logs=args.relay_log,
-        a2a_state_files=args.a2a_state_file,
-        cursor_files=args.cursor,
-        archive_outputs=args.archive_report,
-    )
-
-
-def _print_report(report: AtRestProfileReport) -> None:
-    """Print a compact at-rest profile inspection report."""
-    print(f"surfaces: {report.total}")
-    print(f"existing: {report.existing}")
-    print(f"missing: {report.missing}")
-    print(f"encrypted: {report.encrypted}")
-    print(f"plaintext: {report.plaintext}")
-    for status in report.statuses:
-        if not status.exists:
-            print(f"missing {status.surface.role}: {status.surface.path}")
-        elif not status.encrypted or not status.decryptable:
-            print(f"problem {status.surface.role}: {status.surface.path} ({status.reason})")
-
-
-def _cmd_profile(args: argparse.Namespace) -> int:
-    """Inspect the configured at-rest profile and optionally require encryption."""
-    try:
-        cipher = AtRestCipher.from_key_file(args.key)
-        surfaces = _surfaces(args)
-        report = (
-            require_encrypted_profile(surfaces, cipher)
-            if args.require_encrypted
-            else inspect_profile(surfaces, cipher)
-        )
-    except ValueError as exc:
-        print(f"at-rest profile problem: {exc}")
-        return 1
-    _print_report(report)
-    return 0
-
-
-def _cmd_migrate(args: argparse.Namespace) -> int:
-    """Encrypt existing plaintext profile surfaces with the configured key."""
-    try:
-        cipher = AtRestCipher.from_key_file(args.key)
-        result = migrate_profile(_surfaces(args), cipher, backup_dir=args.backup_dir)
-    except ValueError as exc:
-        print(f"at-rest migration problem: {exc}")
-        return 1
-    print(f"encrypted {result.changed} file(s); skipped {result.skipped} file(s)")
-    return 0
-
-
-def _cmd_rekey(args: argparse.Namespace) -> int:
-    """Rotate encrypted profile surfaces from one key file to another."""
-    try:
-        old_cipher = AtRestCipher.from_key_file(args.old_key)
-        new_cipher = AtRestCipher.from_key_file(args.new_key)
-        result = rekey_profile(
-            _surfaces(args),
-            old_cipher,
-            new_cipher,
-            backup_dir=args.backup_dir,
-        )
-    except ValueError as exc:
-        print(f"at-rest rekey problem: {exc}")
-        return 1
-    print(f"re-encrypted {result.changed} file(s); skipped {result.skipped} file(s)")
-    return 0
-
-
-def _cmd_backup(args: argparse.Namespace) -> int:
-    """Write a recovery bundle manifest for encrypted profile surfaces."""
-    try:
-        cipher = AtRestCipher.from_key_file(args.key)
-        manifest = backup_profile(_surfaces(args), args.backup_dir, cipher)
-    except ValueError as exc:
-        print(f"at-rest backup problem: {exc}")
-        return 1
-    print(f"backup manifest: {manifest}")
-    return 0
-
-
-def _cmd_restore(args: argparse.Namespace) -> int:
-    """Restore encrypted profile surfaces from a recovery bundle manifest."""
-    try:
-        cipher = AtRestCipher.from_key_file(args.key)
-        result = restore_profile_backup(args.manifest, cipher)
-    except ValueError as exc:
-        print(f"at-rest restore problem: {exc}")
-        return 1
-    print(f"restored {result.changed} file(s)")
-    return 0
-
-
-def _cmd_migrate_sqlcipher(args: argparse.Namespace) -> int:
-    """Offline-copy a plaintext hub event store into a new SQLCipher database.
-
-    Stop the hub first. Destination must not exist. Resume cursors keep their
-    sequence numbers.
-    """
-    from synapse_channel.core.persistence_sqlcipher import (
-        SqlCipherUnavailableError,
-        migrate_plaintext_to_sqlcipher,
-    )
-
-    try:
-        result = migrate_plaintext_to_sqlcipher(
-            args.source,
-            args.destination,
-            key_file=args.key,
-        )
-    except (ValueError, FileNotFoundError, FileExistsError, SqlCipherUnavailableError) as exc:
-        print(f"sqlcipher migrate problem: {exc}")
-        return 1
-    print(f"sqlcipher migrated {result['rows']} event(s): {args.source} -> {args.destination}")
-    print("start the hub with: synapse hub --db <destination> --db-key-file <key>")
-    return 0
-
-
-def _cmd_rekey_sqlcipher(args: argparse.Namespace) -> int:
-    """Rotate the SQLCipher page key for a live event-store file (hub stopped)."""
-    from synapse_channel.core.persistence_sqlcipher import (
-        SqlCipherKeyError,
-        SqlCipherUnavailableError,
-        rekey_sqlcipher_store,
-    )
-
-    try:
-        result = rekey_sqlcipher_store(
-            args.db,
-            old_key_file=args.old_key,
-            new_key_file=args.new_key,
-        )
-    except (
-        ValueError,
-        FileNotFoundError,
-        SqlCipherUnavailableError,
-        SqlCipherKeyError,
-    ) as exc:
-        print(f"sqlcipher rekey problem: {exc}")
-        return 1
-    print(f"sqlcipher rekeyed: {result['path']}")
-    print(f"start the hub with: synapse hub --db {args.db} --db-key-file {args.new_key}")
-    return 0
 
 
 def _add_scrypt_args(parser: argparse.ArgumentParser) -> None:
@@ -548,37 +174,14 @@ def _add_scrypt_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_surface_args(parser: argparse.ArgumentParser) -> None:
-    """Register the shared at-rest profile surface selectors."""
-    parser.add_argument(
-        "--sqlite-db",
-        action="append",
-        default=[],
-        help="SQLite event-store path; includes -wal and -shm sidecars.",
-    )
-    parser.add_argument("--relay-log", action="append", default=[], help="Relay NDJSON log path.")
-    parser.add_argument(
-        "--a2a-state-file",
-        action="append",
-        default=[],
-        help="Agent2Agent bridge state-file path.",
-    )
-    parser.add_argument(
-        "--cursor",
-        action="append",
-        default=[],
-        help="Relay or ingest cursor path.",
-    )
-    parser.add_argument(
-        "--archive-report",
-        action="append",
-        default=[],
-        help="Compaction/archive/postmortem report output path.",
-    )
-
-
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register the ``encrypt-key`` subparser group."""
+    """Register the ``encrypt-key`` subparser group.
+
+    The registration order matches the original single-module layout so
+    ``--help`` output is unchanged: local key-file commands, then the
+    hardware, escrow, and attestation families, then ``check``, then the
+    profile lifecycle family.
+    """
     encrypt_key = subparsers.add_parser(
         "encrypt-key", help="Manage at-rest encryption key files (generate/check)."
     )
@@ -612,262 +215,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     _add_scrypt_args(rewrap)
     rewrap.set_defaults(func=_cmd_rewrap)
 
-    pkcs11 = nested.add_parser(
-        "generate-wrapped-pkcs11",
-        help="Write a key file wrapped by a key-encryption key on a PKCS#11 token (YubiKey/HSM).",
-    )
-    pkcs11.add_argument("path", help="Destination wrapped-key-file path (must not already exist).")
-    pkcs11.add_argument(
-        "--pkcs11-module",
-        default=None,
-        help="Path to the PKCS#11 module (.so/.dll), or set the PKCS11_MODULE env var.",
-    )
-    pkcs11.add_argument(
-        "--token-label",
-        required=True,
-        help="Label of the token that holds (or will hold) the key-encryption key.",
-    )
-    pkcs11.add_argument(
-        "--key-label",
-        default=DEFAULT_KEK_LABEL,
-        help=f"Label of the token key-encryption key object (default {DEFAULT_KEK_LABEL!r}).",
-    )
-    pkcs11.add_argument(
-        "--no-create-kek",
-        dest="create_kek",
-        action="store_false",
-        help="Fail if the key-encryption key is absent instead of generating it on the token.",
-    )
-    pkcs11.set_defaults(func=_cmd_generate_wrapped_pkcs11, create_kek=True)
-
-    tpm2 = nested.add_parser(
-        "generate-wrapped-tpm2",
-        help="Write a key file wrapped by a key-encryption key rooted in a TPM 2.0 device.",
-    )
-    tpm2.add_argument("path", help="Destination wrapped-key-file path (must not already exist).")
-    tpm2.add_argument(
-        "--tcti",
-        default=None,
-        help=(
-            "TPM transmission interface (e.g. device:/dev/tpmrm0), or set the TPM2_TCTI env var "
-            f"(default {DEFAULT_TPM2_TCTI!r})."
-        ),
-    )
-    tpm2.set_defaults(func=_cmd_generate_wrapped_tpm2)
-
-    cloud_hsm = nested.add_parser(
-        "generate-wrapped-cloud-hsm",
-        help="Write a key file wrapped by a cloud HSM / cloud KMS key-encryption key.",
-    )
-    cloud_hsm.add_argument(
-        "path",
-        help="Destination wrapped-key-file path (must not already exist).",
-    )
-    cloud_hsm.add_argument(
-        "--provider",
-        required=True,
-        choices=("local-aes-kw", "aws-kms"),
-        help="Cloud HSM provider: local-aes-kw (offline master key) or aws-kms (optional boto3).",
-    )
-    cloud_hsm.add_argument(
-        "--master-key-file",
-        default=None,
-        help="Owner-only 32-byte master key file (required for local-aes-kw).",
-    )
-    cloud_hsm.add_argument(
-        "--kms-key-id",
-        default=None,
-        help="AWS KMS key id / ARN / alias (required for aws-kms).",
-    )
-    cloud_hsm.add_argument(
-        "--region",
-        default=None,
-        help="AWS region for KMS (optional; falls back to the usual AWS config chain).",
-    )
-    cloud_hsm.set_defaults(func=_cmd_generate_wrapped_cloud_hsm)
-
-    escrow_split = nested.add_parser(
-        "escrow-split",
-        help="Split a raw at-rest key into threshold (Shamir) escrow shares for recovery.",
-    )
-    escrow_split.add_argument("--key", required=True, help="Owner-only raw 32-byte key file.")
-    escrow_split.add_argument(
-        "--threshold",
-        type=int,
-        required=True,
-        help="Minimum number of shares required to recover the key (at least 2).",
-    )
-    escrow_split.add_argument(
-        "--shares",
-        type=int,
-        required=True,
-        help="Total number of shares to issue (>= threshold, <= 255).",
-    )
-    escrow_split.add_argument(
-        "--out-dir",
-        required=True,
-        help="Directory for share-NN.json files (created if needed).",
-    )
-    escrow_split.set_defaults(func=_cmd_escrow_split)
-
-    escrow_recover = nested.add_parser(
-        "escrow-recover",
-        help="Recover a raw at-rest key from threshold escrow shares.",
-    )
-    escrow_recover.add_argument(
-        "--share",
-        action="append",
-        required=True,
-        help="Path to an escrow share file (repeat; supply at least threshold shares).",
-    )
-    escrow_recover.add_argument(
-        "--out",
-        required=True,
-        help="Destination raw key file (must not already exist).",
-    )
-    escrow_recover.set_defaults(func=_cmd_escrow_recover)
-
-    attest_policy = nested.add_parser(
-        "attest-policy-create",
-        help="Create an HMAC hardware-attestation policy with optional expected PCR digests.",
-    )
-    attest_policy.add_argument("path", help="Destination policy file (must not already exist).")
-    attest_policy.add_argument(
-        "--policy-id",
-        required=True,
-        help="Operator label for this attestation policy.",
-    )
-    attest_policy.add_argument(
-        "--pcr",
-        action="append",
-        default=[],
-        help="Expected PCR as INDEX=HEX_SHA256 (repeatable).",
-    )
-    attest_policy.set_defaults(func=_cmd_attest_policy_create)
-
-    attest_create = nested.add_parser(
-        "attest-create",
-        help="Create HMAC attestation evidence for a policy (binds a nonce and PCR digests).",
-    )
-    attest_create.add_argument("path", help="Destination evidence file (must not already exist).")
-    attest_create.add_argument("--policy", required=True, help="Attestation policy file.")
-    attest_create.add_argument(
-        "--nonce",
-        default=None,
-        help="Optional challenge nonce as hex (a fresh nonce is drawn when omitted).",
-    )
-    attest_create.add_argument(
-        "--pcr",
-        action="append",
-        default=[],
-        help="Measured PCR as INDEX=HEX_SHA256 (defaults to the policy expectations).",
-    )
-    attest_create.set_defaults(func=_cmd_attest_create)
-
-    attest_verify = nested.add_parser(
-        "attest-verify",
-        help="Verify attestation evidence against a policy (fail closed).",
-    )
-    attest_verify.add_argument("--policy", required=True, help="Attestation policy file.")
-    attest_verify.add_argument("--evidence", required=True, help="Attestation evidence file.")
-    attest_verify.set_defaults(func=_cmd_attest_verify)
+    add_hardware_parsers(nested)
+    add_escrow_parsers(nested)
+    add_attestation_parsers(nested)
 
     check = nested.add_parser("check", help="Verify a key file's ownership, mode, and length.")
     check.add_argument("path", help="Key-file path to check.")
     check.set_defaults(func=_cmd_check)
 
-    profile = nested.add_parser(
-        "profile",
-        help="Inspect encrypted runtime surfaces and fail closed when requested.",
-    )
-    profile.add_argument("--key", required=True, help="Owner-only raw key file.")
-    profile.add_argument(
-        "--require-encrypted",
-        action="store_true",
-        help="Return non-zero if any existing selected surface is plaintext or unreadable.",
-    )
-    _add_surface_args(profile)
-    profile.set_defaults(func=_cmd_profile)
-
-    migrate = nested.add_parser(
-        "migrate",
-        help="Encrypt existing plaintext runtime surfaces with an owner-only key file.",
-    )
-    migrate.add_argument("--key", required=True, help="Owner-only raw key file.")
-    migrate.add_argument("--backup-dir", help="Optional owner-only backup directory for originals.")
-    _add_surface_args(migrate)
-    migrate.set_defaults(func=_cmd_migrate)
-
-    rekey = nested.add_parser(
-        "rekey",
-        help="Rotate encrypted runtime surfaces from one key file to another.",
-    )
-    rekey.add_argument("--old-key", required=True, help="Current owner-only raw key file.")
-    rekey.add_argument("--new-key", required=True, help="Replacement owner-only raw key file.")
-    rekey.add_argument(
-        "--backup-dir",
-        help="Optional owner-only backup directory for old envelopes.",
-    )
-    _add_surface_args(rekey)
-    rekey.set_defaults(func=_cmd_rekey)
-
-    backup = nested.add_parser(
-        "backup",
-        help="Copy encrypted runtime surfaces into a recovery bundle manifest.",
-    )
-    backup.add_argument("--key", required=True, help="Owner-only raw key file.")
-    backup.add_argument("--backup-dir", required=True, help="Owner-only backup bundle directory.")
-    _add_surface_args(backup)
-    backup.set_defaults(func=_cmd_backup)
-
-    restore = nested.add_parser(
-        "restore",
-        help="Restore encrypted runtime surfaces from a recovery bundle manifest.",
-    )
-    restore.add_argument("--key", required=True, help="Owner-only raw key file.")
-    restore.add_argument("--manifest", required=True, help="Backup manifest written by backup.")
-    restore.set_defaults(func=_cmd_restore)
-
-    migrate_sqlcipher = nested.add_parser(
-        "migrate-sqlcipher",
-        help=(
-            "Offline-copy a plaintext hub --db event store into a new SQLCipher database "
-            "(requires synapse-channel[sqlcipher]; hub must be stopped)."
-        ),
-    )
-    migrate_sqlcipher.add_argument("--key", required=True, help="Owner-only raw key file.")
-    migrate_sqlcipher.add_argument(
-        "--source",
-        required=True,
-        help="Existing plaintext event-store path (synapse hub --db).",
-    )
-    migrate_sqlcipher.add_argument(
-        "--destination",
-        required=True,
-        help="New encrypted database path (must not already exist).",
-    )
-    migrate_sqlcipher.set_defaults(func=_cmd_migrate_sqlcipher)
-
-    rekey_sqlcipher = nested.add_parser(
-        "rekey-sqlcipher",
-        help=(
-            "Rotate the SQLCipher page key for an existing encrypted hub --db "
-            "(requires synapse-channel[sqlcipher]; hub must be stopped)."
-        ),
-    )
-    rekey_sqlcipher.add_argument(
-        "--db",
-        required=True,
-        help="Existing encrypted event-store path (synapse hub --db).",
-    )
-    rekey_sqlcipher.add_argument(
-        "--old-key",
-        required=True,
-        help="Current owner-only raw key file that opens the store.",
-    )
-    rekey_sqlcipher.add_argument(
-        "--new-key",
-        required=True,
-        help="Replacement owner-only raw key file (must differ from --old-key).",
-    )
-    rekey_sqlcipher.set_defaults(func=_cmd_rekey_sqlcipher)
+    add_profile_parsers(nested)

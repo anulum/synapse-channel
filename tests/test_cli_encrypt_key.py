@@ -12,7 +12,14 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel import cli, cli_encrypt_key
+from synapse_channel import (
+    cli,
+    cli_encrypt_key,
+    cli_encrypt_key_attest,
+    cli_encrypt_key_escrow,
+    cli_encrypt_key_hardware,
+    cli_encrypt_key_profile,
+)
 from synapse_channel.core.at_rest import KEY_BYTES
 
 
@@ -24,21 +31,21 @@ def test_parser_registers_encrypt_key_subcommands() -> None:
     check = parser.parse_args(["encrypt-key", "check", "/tmp/store.key"])
     assert check.func is cli_encrypt_key._cmd_check
     profile = parser.parse_args(["encrypt-key", "profile", "--key", "/tmp/store.key"])
-    assert profile.func is cli_encrypt_key._cmd_profile
+    assert profile.func is cli_encrypt_key_profile._cmd_profile
     migrate = parser.parse_args(["encrypt-key", "migrate", "--key", "/tmp/store.key"])
-    assert migrate.func is cli_encrypt_key._cmd_migrate
+    assert migrate.func is cli_encrypt_key_profile._cmd_migrate
     rekey = parser.parse_args(
         ["encrypt-key", "rekey", "--old-key", "/tmp/old.key", "--new-key", "/tmp/new.key"]
     )
-    assert rekey.func is cli_encrypt_key._cmd_rekey
+    assert rekey.func is cli_encrypt_key_profile._cmd_rekey
     backup = parser.parse_args(
         ["encrypt-key", "backup", "--key", "/tmp/store.key", "--backup-dir", "/tmp/backup"]
     )
-    assert backup.func is cli_encrypt_key._cmd_backup
+    assert backup.func is cli_encrypt_key_profile._cmd_backup
     restore = parser.parse_args(
         ["encrypt-key", "restore", "--key", "/tmp/store.key", "--manifest", "/tmp/manifest.json"]
     )
-    assert restore.func is cli_encrypt_key._cmd_restore
+    assert restore.func is cli_encrypt_key_profile._cmd_restore
     generate_wrapped = parser.parse_args(["encrypt-key", "generate-wrapped", "/tmp/w.key"])
     assert generate_wrapped.func is cli_encrypt_key._cmd_generate_wrapped
     rewrap = parser.parse_args(["encrypt-key", "rewrap", "/tmp/w.key"])
@@ -46,7 +53,7 @@ def test_parser_registers_encrypt_key_subcommands() -> None:
     pkcs11 = parser.parse_args(
         ["encrypt-key", "generate-wrapped-pkcs11", "--token-label", "t", "/tmp/w.key"]
     )
-    assert pkcs11.func is cli_encrypt_key._cmd_generate_wrapped_pkcs11
+    assert pkcs11.func is cli_encrypt_key_hardware._cmd_generate_wrapped_pkcs11
     assert pkcs11.token_label == "t"
     assert pkcs11.create_kek is True
     cloud = parser.parse_args(
@@ -60,7 +67,7 @@ def test_parser_registers_encrypt_key_subcommands() -> None:
             "/tmp/w.key",
         ]
     )
-    assert cloud.func is cli_encrypt_key._cmd_generate_wrapped_cloud_hsm
+    assert cloud.func is cli_encrypt_key_hardware._cmd_generate_wrapped_cloud_hsm
     assert cloud.provider == "local-aes-kw"
     escrow_split = parser.parse_args(
         [
@@ -76,7 +83,7 @@ def test_parser_registers_encrypt_key_subcommands() -> None:
             "/tmp/shares",
         ]
     )
-    assert escrow_split.func is cli_encrypt_key._cmd_escrow_split
+    assert escrow_split.func is cli_encrypt_key_escrow._cmd_escrow_split
     assert escrow_split.threshold == 2
     escrow_recover = parser.parse_args(
         [
@@ -90,15 +97,15 @@ def test_parser_registers_encrypt_key_subcommands() -> None:
             "/tmp/out.key",
         ]
     )
-    assert escrow_recover.func is cli_encrypt_key._cmd_escrow_recover
+    assert escrow_recover.func is cli_encrypt_key_escrow._cmd_escrow_recover
     attest_policy = parser.parse_args(
         ["encrypt-key", "attest-policy-create", "--policy-id", "seat", "/tmp/p.json"]
     )
-    assert attest_policy.func is cli_encrypt_key._cmd_attest_policy_create
+    assert attest_policy.func is cli_encrypt_key_attest._cmd_attest_policy_create
     attest_create = parser.parse_args(
         ["encrypt-key", "attest-create", "--policy", "/tmp/p.json", "/tmp/e.json"]
     )
-    assert attest_create.func is cli_encrypt_key._cmd_attest_create
+    assert attest_create.func is cli_encrypt_key_attest._cmd_attest_create
     attest_verify = parser.parse_args(
         [
             "encrypt-key",
@@ -109,114 +116,7 @@ def test_parser_registers_encrypt_key_subcommands() -> None:
             "/tmp/e.json",
         ]
     )
-    assert attest_verify.func is cli_encrypt_key._cmd_attest_verify
-
-
-def test_generate_wrapped_pkcs11_requires_a_module(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # No --pkcs11-module and no PKCS11_MODULE env -> a clean exit 2 before touching the token.
-    monkeypatch.delenv("PKCS11_MODULE", raising=False)
-    args = cli.build_parser().parse_args(
-        ["encrypt-key", "generate-wrapped-pkcs11", "--token-label", "t", str(tmp_path / "w.key")]
-    )
-    rc = cli_encrypt_key._cmd_generate_wrapped_pkcs11(args, pin_reader=lambda _p: "1234")
-    assert rc == 2
-    assert "PKCS#11 module is required" in capsys.readouterr().out
-    assert not (tmp_path / "w.key").exists()
-
-
-def test_generate_wrapped_pkcs11_reports_an_existing_file(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A pre-existing destination is refused by the token wrapper -> a clean exit 1.
-    # PKCS11_PIN set -> the env-PIN branch is taken and the prompt reader stays idle.
-    monkeypatch.setenv("PKCS11_MODULE", "/opt/softhsm/libsofthsm2.so")
-    monkeypatch.setenv("PKCS11_PIN", "1234")
-    from synapse_channel.core import at_rest_pkcs11
-
-    def refuse(*_args: object, **_kwargs: object) -> object:
-        raise FileExistsError("refusing to overwrite existing key file")
-
-    monkeypatch.setattr(at_rest_pkcs11, "generate_wrapped_key_file_pkcs11", refuse)
-
-    def _forbidden_reader(_prompt: str) -> str:
-        raise AssertionError("pin_reader must not run when PKCS11_PIN is set")
-
-    args = cli.build_parser().parse_args(
-        ["encrypt-key", "generate-wrapped-pkcs11", "--token-label", "t", str(tmp_path / "w.key")]
-    )
-    rc = cli_encrypt_key._cmd_generate_wrapped_pkcs11(args, pin_reader=_forbidden_reader)
-    assert rc == 1
-    assert "refusing to overwrite" in capsys.readouterr().out
-
-
-def test_generate_wrapped_pkcs11_reports_a_token_error(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A token/library failure surfaces as a RuntimeError -> exit 2 naming the command.
-    # PKCS11_PIN unset -> the interactive prompt branch supplies the PIN.
-    monkeypatch.setenv("PKCS11_MODULE", "/opt/softhsm/libsofthsm2.so")
-    monkeypatch.delenv("PKCS11_PIN", raising=False)
-    from synapse_channel.core import at_rest_pkcs11
-
-    def fail(*_args: object, **_kwargs: object) -> object:
-        raise RuntimeError("token 'synapse' not found on the module")
-
-    monkeypatch.setattr(at_rest_pkcs11, "generate_wrapped_key_file_pkcs11", fail)
-    args = cli.build_parser().parse_args(
-        ["encrypt-key", "generate-wrapped-pkcs11", "--token-label", "t", str(tmp_path / "w.key")]
-    )
-    rc = cli_encrypt_key._cmd_generate_wrapped_pkcs11(args, pin_reader=lambda _p: "1234")
-    assert rc == 2
-    out = capsys.readouterr().out
-    assert "generate-wrapped-pkcs11" in out
-    assert "token 'synapse' not found" in out
-
-
-def test_generate_wrapped_tpm2_reports_an_existing_file(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A pre-existing destination is refused by the TPM wrapper -> a clean exit 1.
-    from synapse_channel.core import at_rest_tpm2
-
-    def refuse(*_args: object, **_kwargs: object) -> object:
-        raise FileExistsError("refusing to overwrite existing key file")
-
-    monkeypatch.setattr(at_rest_tpm2, "generate_wrapped_key_file_tpm2", refuse)
-    args = cli.build_parser().parse_args(
-        ["encrypt-key", "generate-wrapped-tpm2", str(tmp_path / "w.key")]
-    )
-    rc = cli_encrypt_key._cmd_generate_wrapped_tpm2(args)
-    assert rc == 1
-    assert "refusing to overwrite" in capsys.readouterr().out
-
-
-def test_generate_wrapped_tpm2_reports_a_device_error(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A TPM/device failure surfaces as a RuntimeError -> exit 2 naming the command.
-    # An explicit --tcti exercises the flag branch of the transport resolution.
-    from synapse_channel.core import at_rest_tpm2
-
-    def fail(*_args: object, **_kwargs: object) -> object:
-        raise RuntimeError("no TPM device at /dev/tpmrm0")
-
-    monkeypatch.setattr(at_rest_tpm2, "generate_wrapped_key_file_tpm2", fail)
-    args = cli.build_parser().parse_args(
-        [
-            "encrypt-key",
-            "generate-wrapped-tpm2",
-            "--tcti",
-            "device:/dev/tpmrm0",
-            str(tmp_path / "w.key"),
-        ]
-    )
-    rc = cli_encrypt_key._cmd_generate_wrapped_tpm2(args)
-    assert rc == 2
-    out = capsys.readouterr().out
-    assert "generate-wrapped-tpm2" in out
-    assert "no TPM device" in out
+    assert attest_verify.func is cli_encrypt_key_attest._cmd_attest_verify
 
 
 def test_generate_then_check_round_trip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -410,497 +310,3 @@ def test_check_reports_a_bad_key(tmp_path: Path, capsys: pytest.CaptureFixture[s
     args = cli.build_parser().parse_args(["encrypt-key", "check", str(loose)])
     assert args.func(args) == 1
     assert "owner-only" in capsys.readouterr().out
-
-
-def test_migrate_and_profile_cover_all_runtime_surface_flags(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    key_path = tmp_path / "store.key"
-    generate = cli.build_parser().parse_args(["encrypt-key", "generate", str(key_path)])
-    cli_encrypt_key._cmd_generate(generate)
-    capsys.readouterr()
-    db = tmp_path / "hub.db"
-    relay = tmp_path / "feed.ndjson"
-    a2a = tmp_path / "a2a-state.json"
-    cursor = tmp_path / "feed.cursor"
-    archive = tmp_path / "archive.html"
-    db.write_bytes(b"sqlite")
-    Path(f"{db}-wal").write_bytes(b"wal")
-    Path(f"{db}-shm").write_bytes(b"shm")
-    relay.write_text('{"ty":"chat"}\n', encoding="utf-8")
-    a2a.write_text('{"tasks":{},"pushConfigs":{}}', encoding="utf-8")
-    cursor.write_text("5", encoding="utf-8")
-    archive.write_text("<!doctype html><html></html>", encoding="utf-8")
-    parser = cli.build_parser()
-
-    migrate = parser.parse_args(
-        [
-            "encrypt-key",
-            "migrate",
-            "--key",
-            str(key_path),
-            "--sqlite-db",
-            str(db),
-            "--relay-log",
-            str(relay),
-            "--a2a-state-file",
-            str(a2a),
-            "--cursor",
-            str(cursor),
-            "--archive-report",
-            str(archive),
-            "--backup-dir",
-            str(tmp_path / "migration-backup"),
-        ]
-    )
-    assert migrate.func(migrate) == 0
-    assert "encrypted 7 file(s)" in capsys.readouterr().out
-
-    profile = parser.parse_args(
-        [
-            "encrypt-key",
-            "profile",
-            "--key",
-            str(key_path),
-            "--sqlite-db",
-            str(db),
-            "--relay-log",
-            str(relay),
-            "--a2a-state-file",
-            str(a2a),
-            "--cursor",
-            str(cursor),
-            "--archive-report",
-            str(archive),
-            "--require-encrypted",
-        ]
-    )
-    assert profile.func(profile) == 0
-    output = capsys.readouterr().out
-    assert "encrypted: 7" in output
-    assert "plaintext: 0" in output
-
-
-def test_rekey_backup_and_restore_round_trip_from_cli(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    old_key = tmp_path / "old.key"
-    new_key = tmp_path / "new.key"
-    parser = cli.build_parser()
-    for key in (old_key, new_key):
-        assert (
-            parser.parse_args(["encrypt-key", "generate", str(key)]).func(
-                parser.parse_args(["encrypt-key", "generate", str(key)])
-            )
-            == 0
-        )
-    capsys.readouterr()
-    relay = tmp_path / "feed.ndjson"
-    relay.write_bytes(b'{"ty":"chat"}\n')
-    migrate = parser.parse_args(
-        ["encrypt-key", "migrate", "--key", str(old_key), "--relay-log", str(relay)]
-    )
-    assert migrate.func(migrate) == 0
-    capsys.readouterr()
-
-    rekey = parser.parse_args(
-        [
-            "encrypt-key",
-            "rekey",
-            "--old-key",
-            str(old_key),
-            "--new-key",
-            str(new_key),
-            "--relay-log",
-            str(relay),
-            "--backup-dir",
-            str(tmp_path / "rekey-backup"),
-        ]
-    )
-    assert rekey.func(rekey) == 0
-    assert "re-encrypted 1 file(s)" in capsys.readouterr().out
-
-    backup = parser.parse_args(
-        [
-            "encrypt-key",
-            "backup",
-            "--key",
-            str(new_key),
-            "--relay-log",
-            str(relay),
-            "--backup-dir",
-            str(tmp_path / "bundle"),
-        ]
-    )
-    assert backup.func(backup) == 0
-    backup_output = capsys.readouterr().out
-    manifest = backup_output.strip().split()[-1]
-    relay.unlink()
-
-    restore = parser.parse_args(
-        ["encrypt-key", "restore", "--key", str(new_key), "--manifest", manifest]
-    )
-    assert restore.func(restore) == 0
-    assert relay.exists()
-    assert "restored 1 file(s)" in capsys.readouterr().out
-
-
-def test_profile_reports_missing_and_plaintext_surfaces(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    key_path = tmp_path / "store.key"
-    parser = cli.build_parser()
-    assert (
-        parser.parse_args(["encrypt-key", "generate", str(key_path)]).func(
-            parser.parse_args(["encrypt-key", "generate", str(key_path)])
-        )
-        == 0
-    )
-    capsys.readouterr()
-    relay = tmp_path / "feed.ndjson"
-    relay.write_text('{"ty":"chat"}\n', encoding="utf-8")
-
-    profile = parser.parse_args(
-        [
-            "encrypt-key",
-            "profile",
-            "--key",
-            str(key_path),
-            "--relay-log",
-            str(relay),
-            "--cursor",
-            str(tmp_path / "missing.cursor"),
-        ]
-    )
-
-    assert profile.func(profile) == 0
-    output = capsys.readouterr().out
-    assert f"problem relay-log: {relay} (plaintext)" in output
-    assert "missing cursor-file:" in output
-
-
-def test_runtime_commands_report_key_or_manifest_failures(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    parser = cli.build_parser()
-    missing_key = tmp_path / "missing.key"
-    relay = tmp_path / "feed.ndjson"
-    relay.write_text("plain", encoding="utf-8")
-
-    profile = parser.parse_args(
-        ["encrypt-key", "profile", "--key", str(missing_key), "--relay-log", str(relay)]
-    )
-    assert profile.func(profile) == 1
-    assert "at-rest profile problem" in capsys.readouterr().out
-
-    migrate = parser.parse_args(
-        ["encrypt-key", "migrate", "--key", str(missing_key), "--relay-log", str(relay)]
-    )
-    assert migrate.func(migrate) == 1
-    assert "at-rest migration problem" in capsys.readouterr().out
-
-    rekey = parser.parse_args(
-        [
-            "encrypt-key",
-            "rekey",
-            "--old-key",
-            str(missing_key),
-            "--new-key",
-            str(missing_key),
-            "--relay-log",
-            str(relay),
-        ]
-    )
-    assert rekey.func(rekey) == 1
-    assert "at-rest rekey problem" in capsys.readouterr().out
-
-    backup = parser.parse_args(
-        [
-            "encrypt-key",
-            "backup",
-            "--key",
-            str(missing_key),
-            "--backup-dir",
-            str(tmp_path / "bundle"),
-            "--relay-log",
-            str(relay),
-        ]
-    )
-    assert backup.func(backup) == 1
-    assert "at-rest backup problem" in capsys.readouterr().out
-
-    key_path = tmp_path / "store.key"
-    assert (
-        parser.parse_args(["encrypt-key", "generate", str(key_path)]).func(
-            parser.parse_args(["encrypt-key", "generate", str(key_path)])
-        )
-        == 0
-    )
-    bad_manifest = tmp_path / "bad-manifest.json"
-    bad_manifest.write_text("{}", encoding="utf-8")
-    capsys.readouterr()
-    restore = parser.parse_args(
-        ["encrypt-key", "restore", "--key", str(key_path), "--manifest", str(bad_manifest)]
-    )
-    assert restore.func(restore) == 1
-    assert "at-rest restore problem" in capsys.readouterr().out
-
-
-def test_parser_registers_migrate_sqlcipher() -> None:
-    parser = cli.build_parser()
-    args = parser.parse_args(
-        [
-            "encrypt-key",
-            "migrate-sqlcipher",
-            "--key",
-            "/tmp/k",
-            "--source",
-            "/tmp/s.db",
-            "--destination",
-            "/tmp/d.db",
-        ]
-    )
-    assert args.func is cli_encrypt_key._cmd_migrate_sqlcipher
-
-
-def test_migrate_sqlcipher_cli_copies_real_store(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Production encrypt-key migrate-sqlcipher path on a real EventStore."""
-    pytest.importorskip("sqlcipher3")
-    from synapse_channel.core.at_rest import generate_key_file
-    from synapse_channel.core.persistence import EventStore
-
-    key = generate_key_file(tmp_path / "hub.key")
-    source = tmp_path / "plain.db"
-    dest = tmp_path / "enc.db"
-    plain = EventStore(source)
-    plain.append("chat", {"via": "cli-migrate"})
-    plain.append("claim", {"task_id": "M1"})
-    plain.close()
-
-    args = cli.build_parser().parse_args(
-        [
-            "encrypt-key",
-            "migrate-sqlcipher",
-            "--key",
-            str(key),
-            "--source",
-            str(source),
-            "--destination",
-            str(dest),
-        ]
-    )
-    assert args.func(args) == 0
-    out = capsys.readouterr().out
-    assert "migrated 2 event" in out
-    assert "--db-key-file" in out
-
-    enc = EventStore(dest, key_file=key)
-    events = enc.read_all()
-    enc.close()
-    assert [e.seq for e in events] == [1, 2]
-    assert events[0].payload == {"via": "cli-migrate"}
-    assert b"cli-migrate" not in dest.read_bytes()
-
-
-def test_migrate_sqlcipher_cli_refuses_missing_source(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    pytest.importorskip("sqlcipher3")
-    from synapse_channel.core.at_rest import generate_key_file
-
-    key = generate_key_file(tmp_path / "hub.key")
-    args = cli.build_parser().parse_args(
-        [
-            "encrypt-key",
-            "migrate-sqlcipher",
-            "--key",
-            str(key),
-            "--source",
-            str(tmp_path / "absent.db"),
-            "--destination",
-            str(tmp_path / "out.db"),
-        ]
-    )
-    assert args.func(args) == 1
-    assert "sqlcipher migrate problem" in capsys.readouterr().out
-
-
-def test_parser_registers_rekey_sqlcipher() -> None:
-    parser = cli.build_parser()
-    args = parser.parse_args(
-        [
-            "encrypt-key",
-            "rekey-sqlcipher",
-            "--db",
-            "/tmp/h.db",
-            "--old-key",
-            "/tmp/old",
-            "--new-key",
-            "/tmp/new",
-        ]
-    )
-    assert args.func is cli_encrypt_key._cmd_rekey_sqlcipher
-
-
-def test_rekey_sqlcipher_cli_rotates_real_store(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Production encrypt-key rekey-sqlcipher path on a real EventStore."""
-    pytest.importorskip("sqlcipher3")
-    from synapse_channel.core.at_rest import generate_key_file
-    from synapse_channel.core.persistence import EventStore
-    from synapse_channel.core.persistence_sqlcipher import SqlCipherKeyError
-
-    old = generate_key_file(tmp_path / "old.key")
-    new = generate_key_file(tmp_path / "new.key")
-    db = tmp_path / "hub.db"
-    store = EventStore(db, key_file=old)
-    store.append("chat", {"via": "cli-rekey"})
-    store.close()
-
-    args = cli.build_parser().parse_args(
-        [
-            "encrypt-key",
-            "rekey-sqlcipher",
-            "--db",
-            str(db),
-            "--old-key",
-            str(old),
-            "--new-key",
-            str(new),
-        ]
-    )
-    assert args.func(args) == 0
-    out = capsys.readouterr().out
-    assert "rekeyed" in out
-    assert "--db-key-file" in out
-
-    with pytest.raises(SqlCipherKeyError):
-        EventStore(db, key_file=old)
-    enc = EventStore(db, key_file=new)
-    assert enc.read_all()[0].payload == {"via": "cli-rekey"}
-    enc.close()
-
-
-def test_cloud_hsm_local_cli_round_trip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    from synapse_channel.core.at_rest import generate_key_file
-    from synapse_channel.core.at_rest_cloud_hsm import cipher_from_wrapped_key_file_cloud_hsm
-
-    master = generate_key_file(tmp_path / "master.key")
-    dest = tmp_path / "cloud.wrapped.key"
-    args = cli.build_parser().parse_args(
-        [
-            "encrypt-key",
-            "generate-wrapped-cloud-hsm",
-            "--provider",
-            "local-aes-kw",
-            "--master-key-file",
-            str(master),
-            str(dest),
-        ]
-    )
-    assert cli_encrypt_key._cmd_generate_wrapped_cloud_hsm(args) == 0
-    assert "cloud-HSM-wrapped" in capsys.readouterr().out
-    cipher = cipher_from_wrapped_key_file_cloud_hsm(dest, master_key_file=master)
-    assert cipher.decrypt(cipher.encrypt(b"cli-cloud")) == b"cli-cloud"
-
-
-def test_cloud_hsm_cli_requires_master_key(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    args = cli.build_parser().parse_args(
-        [
-            "encrypt-key",
-            "generate-wrapped-cloud-hsm",
-            "--provider",
-            "local-aes-kw",
-            str(tmp_path / "w.key"),
-        ]
-    )
-    assert cli_encrypt_key._cmd_generate_wrapped_cloud_hsm(args) == 2
-    assert "master-key-file is required" in capsys.readouterr().out
-
-
-def test_escrow_split_and_recover_cli(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    from synapse_channel.core.at_rest import generate_key_file, load_key_file
-
-    key = generate_key_file(tmp_path / "store.key")
-    original = load_key_file(key)
-    shares_dir = tmp_path / "shares"
-    split_args = cli.build_parser().parse_args(
-        [
-            "encrypt-key",
-            "escrow-split",
-            "--key",
-            str(key),
-            "--threshold",
-            "2",
-            "--shares",
-            "3",
-            "--out-dir",
-            str(shares_dir),
-        ]
-    )
-    assert cli_encrypt_key._cmd_escrow_split(split_args) == 0
-    assert "wrote 3 escrow shares" in capsys.readouterr().out
-    out_key = tmp_path / "recovered.key"
-    recover_args = cli.build_parser().parse_args(
-        [
-            "encrypt-key",
-            "escrow-recover",
-            "--share",
-            str(shares_dir / "share-01.json"),
-            "--share",
-            str(shares_dir / "share-03.json"),
-            "--out",
-            str(out_key),
-        ]
-    )
-    assert cli_encrypt_key._cmd_escrow_recover(recover_args) == 0
-    assert load_key_file(out_key) == original
-
-
-def test_attest_cli_policy_create_and_verify(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    import hashlib
-
-    pcr = hashlib.sha256(b"cli-pcr").hexdigest()
-    policy = tmp_path / "policy.json"
-    create_args = cli.build_parser().parse_args(
-        [
-            "encrypt-key",
-            "attest-policy-create",
-            "--policy-id",
-            "cli-seat",
-            "--pcr",
-            f"0={pcr}",
-            str(policy),
-        ]
-    )
-    assert cli_encrypt_key._cmd_attest_policy_create(create_args) == 0
-    evidence = tmp_path / "evidence.json"
-    evidence_args = cli.build_parser().parse_args(
-        [
-            "encrypt-key",
-            "attest-create",
-            "--policy",
-            str(policy),
-            str(evidence),
-        ]
-    )
-    assert cli_encrypt_key._cmd_attest_create(evidence_args) == 0
-    verify_args = cli.build_parser().parse_args(
-        [
-            "encrypt-key",
-            "attest-verify",
-            "--policy",
-            str(policy),
-            "--evidence",
-            str(evidence),
-        ]
-    )
-    assert cli_encrypt_key._cmd_attest_verify(verify_args) == 0
-    assert "attestation ok" in capsys.readouterr().out

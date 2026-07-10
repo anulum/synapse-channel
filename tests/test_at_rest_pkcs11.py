@@ -226,7 +226,7 @@ def test_cli_generate_wrapped_pkcs11_round_trips_and_refuses_overwrite(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from synapse_channel import cli, cli_encrypt_key
+    from synapse_channel import cli, cli_encrypt_key_hardware
 
     key_path = tmp_path / "cli.wrapped.key"
     # The PIN comes from the environment here, so the interactive reader must not be consulted.
@@ -236,7 +236,7 @@ def test_cli_generate_wrapped_pkcs11_round_trips_and_refuses_overwrite(
         raise AssertionError("PIN prompt should not be used when PKCS11_PIN is set")
 
     args = cli.build_parser().parse_args(_pkcs11_cli_args(softhsm_token, key_path))
-    assert cli_encrypt_key._cmd_generate_wrapped_pkcs11(args, pin_reader=_no_prompt) == 0
+    assert cli_encrypt_key_hardware._cmd_generate_wrapped_pkcs11(args, pin_reader=_no_prompt) == 0
     assert "PKCS#11-wrapped at-rest key" in capsys.readouterr().out
 
     cipher = cipher_from_wrapped_key_file_pkcs11(
@@ -245,7 +245,7 @@ def test_cli_generate_wrapped_pkcs11_round_trips_and_refuses_overwrite(
     assert cipher.decrypt(cipher.encrypt(b"z")) == b"z"
 
     again = cli.build_parser().parse_args(_pkcs11_cli_args(softhsm_token, key_path))
-    assert cli_encrypt_key._cmd_generate_wrapped_pkcs11(again, pin_reader=_no_prompt) == 1
+    assert cli_encrypt_key_hardware._cmd_generate_wrapped_pkcs11(again, pin_reader=_no_prompt) == 1
     assert "refusing to overwrite" in capsys.readouterr().out
 
 
@@ -255,7 +255,7 @@ def test_cli_generate_wrapped_pkcs11_no_create_kek_errors(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from synapse_channel import cli, cli_encrypt_key
+    from synapse_channel import cli, cli_encrypt_key_hardware
 
     monkeypatch.delenv("PKCS11_PIN", raising=False)
     args = cli.build_parser().parse_args(
@@ -263,7 +263,7 @@ def test_cli_generate_wrapped_pkcs11_no_create_kek_errors(
             softhsm_token, tmp_path / "w.key", "--key-label", "cli-absent-kek", "--no-create-kek"
         )
     )
-    rc = cli_encrypt_key._cmd_generate_wrapped_pkcs11(
+    rc = cli_encrypt_key_hardware._cmd_generate_wrapped_pkcs11(
         args, pin_reader=lambda _p: softhsm_token["pin"]
     )
     assert rc == 2

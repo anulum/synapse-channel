@@ -1232,11 +1232,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.98.24 |
 | Public API exports | 70 |
-| Package modules | 348 |
-| Classes | 514 |
+| Package modules | 354 |
+| Classes | 516 |
 | Wire message types | 73 |
 | CLI subcommands | 158 |
-| Test functions | 5750 |
+| Test functions | 5778 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 12 |
