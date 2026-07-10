@@ -15,6 +15,16 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Mailbox surfacing: a directed message is now either surfaced to the
+  operator or stays pending — never silently consumed. A wake prints
+  EVERY frame collected in its window (a replay burst previously printed
+  only the last frame while the persisted cursor advanced past the whole
+  backlog), the persisted resume point covers exactly the surfaced
+  frames, and the mailbox cursor/ack no longer advances past a frame the
+  wake filter refuses (`SynapseAgent` gains an optional
+  ``mailbox_advance`` gate wired to the waiter's own wake predicate).
+  Pinned end to end against a live hub with a durable journal, including
+  the incident-shaped two-drain regression.
 - Waiter identity binding: the ``SYN_TMUX_PROVIDER`` session marker now
   suppresses a passive arm/wait ONLY for the session's own
   ``$SYN_IDENTITY`` — an explicitly named waiter for a different seat is

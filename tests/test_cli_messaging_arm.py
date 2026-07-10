@@ -70,7 +70,11 @@ async def test_arm_rearms_after_each_wake(capsys: pytest.CaptureFixture[str]) ->
             await close_agents(observer)
 
     assert code == 0
-    assert capsys.readouterr().out.count("A: wake") == 2
+    # Two wakes ended the arm (max_wakes=2). Each wake surfaces EVERY frame
+    # collected in its window — the sender loop may land several per window —
+    # so the print count is at least one per wake, not exactly one (the
+    # surfacing contract: no received matching frame goes unprinted).
+    assert capsys.readouterr().out.count("A: wake") >= 2
 
 
 async def test_arm_retries_after_non_wake_result() -> None:

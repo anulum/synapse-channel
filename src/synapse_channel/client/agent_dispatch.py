@@ -26,6 +26,7 @@ class _DispatchAgent(Protocol):
     hub_id: str
     hub_protocol_version: int | None
     mailbox: bool
+    mailbox_advance: Callable[[dict[str, Any]], bool] | None
     name: str
     ready_event: Any
     verbose: bool
@@ -79,9 +80,16 @@ class AgentDispatchMixin:
         acknowledged by that ``seq`` — a no-op at the hub unless a sender is awaiting
         a deferred delivery receipt, in which case the ack releases it. A missing or
         non-integer ``seq`` is ignored rather than allowed to reset the cursor.
+
+        When the agent carries a ``mailbox_advance`` gate, a frame the gate refuses
+        neither advances the cursor nor acks — the frame stays pending for a later
+        replay instead of being silently consumed by a receiver that will never
+        surface it (the message-loss guard behind the 2026-07-10 P0).
         """
         seq = data.get("seq")
         if not isinstance(seq, int) or isinstance(seq, bool):
+            return
+        if self.mailbox_advance is not None and not self.mailbox_advance(data):
             return
         if seq > self._mailbox_since_seq:
             self._mailbox_since_seq = seq

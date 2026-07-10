@@ -107,7 +107,7 @@ async def test_a_message_to_the_ambient_identity_does_not_wake_the_explicit_wait
     tmp_path: Any,
 ) -> None:
     # The inverse guard: the explicit waiter must NOT be listening on the
-    # ambient identity's stream (that mis-binding was the incident).
+    # ambient identity's stream (that wrong-identity binding was the incident).
     _ambient_env(monkeypatch, tmp_path)
     async with running_hub(SynapseHub()) as (_hub, uri):
         observer = await connect_agent("OBSERVER", uri)

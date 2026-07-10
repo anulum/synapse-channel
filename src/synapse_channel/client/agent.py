@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
+from typing import Any
 
 from websockets.asyncio.client import ClientConnection
 
@@ -97,6 +99,14 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         filters the replay by it rather than by the connection name. Empty (the
         default) leaves the hub replaying the backlog for ``name`` itself — correct
         for an agent that connects under its own identity.
+    mailbox_advance : Callable or None, optional
+        Gate consulted before the mailbox cursor advances past a chat frame (and
+        before a replayed frame is acknowledged). A waiter that surfaces only a
+        FILTERED subset of frames passes its wake filter here, so a frame it will
+        never show cannot be silently consumed: an unadvanced cursor leaves the
+        frame pending and a later (or correctly bound) waiter still receives it
+        on replay. ``None`` (the default) advances on every chat frame — correct
+        for an ordinary client whose callback processes everything it receives.
     wake_capability : str, optional
         Receiver capability declared on the registration heartbeat. Ordinary agents
         default to ``direct``; passive wait sockets and pane bridges override it.
@@ -131,6 +141,7 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         mailbox: bool = False,
         mailbox_since_seq: int = 0,
         mailbox_for: str = "",
+        mailbox_advance: Callable[[dict[str, Any]], bool] | None = None,
         wake_capability: str = WAKE_DIRECT,
         per_message_auth_key_id: str | None = None,
         per_message_auth_secret: str | bytes | None = None,
@@ -158,6 +169,7 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         self.mailbox = bool(mailbox)
         self._mailbox_since_seq = max(0, int(mailbox_since_seq))
         self.mailbox_for = str(mailbox_for)
+        self.mailbox_advance = mailbox_advance
         self.wake_capability = normalize_wake_capability(wake_capability, default=WAKE_DIRECT)
         self._message_auth_key: MessageAuthKey | None = None
         if per_message_auth_key_id is not None and per_message_auth_secret is not None:

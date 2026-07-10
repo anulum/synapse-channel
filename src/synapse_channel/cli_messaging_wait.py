@@ -126,9 +126,15 @@ async def _wait(
     """
     received: list[dict[str, Any]] = []
 
-    async def collect(data: dict[str, Any]) -> None:
+    def matches(data: dict[str, Any]) -> bool:
+        """Return whether one frame wakes this waiter.
+
+        The SAME predicate gates the wake collection and the agent's mailbox
+        cursor advance, so the two can never drift: a frame this waiter will
+        not surface is never consumed from the mailbox either.
+        """
         sender = str(data.get("sender", ""))
-        if (
+        return (
             data.get("type") == MessageType.CHAT
             and sender != name
             and sender != for_name  # ignore our own sends (the agent sends as for_name)
@@ -140,7 +146,10 @@ async def _wait(
                 priority=bool(data.get("priority")),
                 roles=roles,
             )
-        ):
+        )
+
+    async def collect(data: dict[str, Any]) -> None:
+        if matches(data):
             received.append(data)
 
     # A re-arming waiter takes over its own name, evicting a ghost holder of
@@ -150,6 +159,10 @@ async def _wait(
     since_seq = (
         load_cursor(mailbox_cursor_path) if mailbox and mailbox_cursor_path is not None else 0
     )
+    # Highest durable seq this waiter actually SURFACED (printed). The persisted
+    # resume point advances only through here — never past a frame the operator
+    # was not shown (see the finally block).
+    surfaced_seq = [since_seq]
     agent = agent_factory(
         name,
         collect,
@@ -161,6 +174,7 @@ async def _wait(
         mailbox=mailbox,
         mailbox_since_seq=since_seq,
         mailbox_for=for_name if mailbox else "",
+        mailbox_advance=matches,
         wake_capability=wake_capability,
     )
     conn_task = asyncio.create_task(agent.connect())
@@ -187,8 +201,10 @@ async def _wait(
                 break  # the socket closed (hub restart, superseded, network)
             await asyncio.sleep(poll_interval)
         if received:
-            message = received[-1]
-            target = str(message.get("target", "all")).strip()
+            # Snapshot the burst BEFORE any await: a frame arriving during the
+            # jitter sleep joins the next wake, it is not half-consumed here.
+            to_surface = list(received)
+            target = str(to_surface[-1].get("target", "all")).strip()
             # A broadcast woke many terminals at the same instant; jitter the exit
             # so their agents do not all re-invoke (and hit the provider API)
             # simultaneously and get rate-limited. A 1:1 directed message has no
@@ -196,7 +212,20 @@ async def _wait(
             reaches_many = target in ("", "all") or "*" in target or "," in target
             if reaches_many and wake_jitter > 0:
                 await asyncio.sleep(jitter_func(0.0, wake_jitter))
-            print(f"{message.get('sender')}: {message.get('payload')}")
+            # Surface EVERY collected frame in arrival order. A replay burst can
+            # deliver a whole backlog inside one poll window; printing only one
+            # frame while the persisted cursor advanced past all of them silently
+            # lost the rest (the 2026-07-10 P0 drain swallowed a backlog this way).
+            for message in to_surface:
+                print(f"{message.get('sender')}: {message.get('payload')}")
+            surfaced_seq[0] = max(
+                (
+                    seq
+                    for seq in (frame.get("seq") for frame in to_surface)
+                    if isinstance(seq, int) and not isinstance(seq, bool)
+                ),
+                default=surfaced_seq[0],
+            )
             return 0
         if conn_task.done():
             if is_superseded_close(agent.last_close_code, agent.last_close_reason):
@@ -216,9 +245,11 @@ async def _wait(
         agent.running = False
         conn_task.cancel()
         if mailbox and mailbox_cursor_path is not None:
-            # Persist the cursor the agent advanced (past any replayed or live frames)
-            # so the next re-arm resumes from here instead of re-replaying the backlog.
-            save_cursor(mailbox_cursor_path, agent.mailbox_cursor)
+            # Persist a resume point covering exactly what this waiter SURFACED,
+            # never merely what its socket saw: a matching frame that arrived too
+            # late to be printed stays before the cursor and is replayed to the
+            # next arm instead of being silently consumed.
+            save_cursor(mailbox_cursor_path, surfaced_seq[0])
 
 
 def _cmd_wait(
