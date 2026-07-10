@@ -28,10 +28,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-try:
+if sys.version_info >= (3, 11):  # pragma: no cover - version branch.
     import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python 3.10
-    import tomli as tomllib  # type: ignore[no-redef]
+else:  # pragma: no cover - covered on Python 3.10.
+    import tomli as tomllib
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_REGISTRATION = REPO_ROOT / "src" / "synapse_channel" / "mcp" / "registration.py"

@@ -21,10 +21,10 @@ import re
 import sys
 from pathlib import Path
 
-try:
+if sys.version_info >= (3, 11):  # pragma: no cover - version branch.
     import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility path.
-    import tomli as tomllib  # type: ignore[no-redef]  # pragma: no cover
+else:  # pragma: no cover - covered on Python 3.10.
+    import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parent.parent
 

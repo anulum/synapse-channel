@@ -78,6 +78,13 @@ All notable changes to this project are documented here.
   the explicit `--project-wide` flag; `--name PROJ/name` selects another exact
   address, and existing `--as` aliases retain independent cursors.
 
+- The A2A HTTP protocol helpers import on Python 3.10 again: `datetime.UTC`
+  (a 3.11 alias) is replaced by `timezone.utc`, and mypy now types the whole
+  tree against the 3.10 floor (`python_version = "3.10"`) so an
+  above-the-floor stdlib symbol fails locally instead of only in the 3.10 CI
+  job. Two tools gained the version-branch `tomllib`/`tomli` import the drift
+  checker already used.
+
 ### Security
 
 - The exposure guard now logs a startup advisory when a token authenticates a

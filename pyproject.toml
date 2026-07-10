@@ -179,6 +179,7 @@ convention = "numpy"
 
 [tool.mypy]
 strict = true
+python_version = "3.10"
 mypy_path = "src"
 files = ["src/synapse_channel", "tests", "benchmarks", "tools", "examples"]
 exclude = ["legacy/"]

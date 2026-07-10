@@ -12,7 +12,7 @@ from __future__ import annotations
 import hmac
 import math
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from http import HTTPStatus
 from typing import Any, Final
 
@@ -169,7 +169,7 @@ def _is_finite_number(value: object) -> bool:
 def _iso8601_utc(value: float) -> str:
     """Render epoch seconds with millisecond UTC precision."""
     try:
-        stamp = datetime.fromtimestamp(value, tz=UTC)
+        stamp = datetime.fromtimestamp(value, tz=timezone.utc)
     except (OverflowError, OSError, ValueError):
         return "1970-01-01T00:00:00.000Z"
     return stamp.isoformat(timespec="milliseconds").replace("+00:00", "Z")

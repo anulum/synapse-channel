@@ -133,7 +133,9 @@ def installed_versions() -> Mapping[str, str]:
     """Return installed distribution versions for the active interpreter."""
     versions: dict[str, str] = {}
     for distribution in metadata.distributions():
-        name = distribution.metadata.get("Name")
+        # Distribution.name (3.10+) reads metadata Name and stays typed on the
+        # 3.10 floor, where the PackageMetadata protocol lacks .get().
+        name = distribution.name
         if not name:
             continue
         normalised = _normalise_name(name)
