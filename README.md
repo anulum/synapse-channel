@@ -442,12 +442,15 @@ syn commit README.md -m "document the change"
 ```
 
 The one thing it gets right that a hand-rolled shell alias does not is **identity**.
-The project is resolved from `--project`, then `$SYN_PROJECT` (or `$SYN_IDENTITY`
-for a `project/<type>-<id>` multi-agent identity), and the working directory only
-as a last resort — so a command run from the wrong directory does not silently
-coordinate as the wrong project, and an identity that looks accidental (the home
-directory, a system path) is flagged rather than used in silence. Set
-`$SYN_PROJECT` once per terminal and the identity is stable across tool calls.
+The project is resolved from `--project`, then `$SYN_PROJECT`, and the working
+directory only as a last resort. Ambient `$SYN_IDENTITY` is **never a silent
+source**: it refines the identity to a full `project/<type>-<id>` only when
+`$SYN_PROJECT` is also set and agrees with it — the pair the shell hook exports
+together is the opt-in. A `SYN_IDENTITY` standing alone or disagreeing (the
+borrowed-shell signature) is dropped out loud: the command proceeds as the local
+identity and says so, or refuses entirely when the local fallback also looks
+accidental (the home directory, a system path). Set `$SYN_PROJECT` once per
+terminal and the identity is stable across tool calls.
 Hyphenated aliases
 (`syn-name`/`syn-wait`/`syn-say`/`syn-ask`/`syn-inbox`/`syn-board`/`syn-reap`/`syn-locks`/`syn-ack`/`syn-commit`)
 are installed too.
@@ -1167,7 +1170,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 516 |
 | Wire message types | 73 |
 | CLI subcommands | 158 |
-| Test functions | 5811 |
+| Test functions | 5815 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 12 |

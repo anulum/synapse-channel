@@ -15,6 +15,20 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- **Ambient `$SYN_IDENTITY` is never a silent identity source** (ownership
+  keystone P-A). It is honoured only when `$SYN_PROJECT` is also set and
+  agrees with its project segment — the pair the shell hook exports together
+  is the opt-in. An unqualified `syn` command in a shell carrying a lone or
+  disagreeing `SYN_IDENTITY` (the borrowed-shell signature behind the
+  2026-07-10 directed-delivery incident) now proceeds as the local identity
+  and says so on stderr, or refuses (exit 2) when the local fallback also
+  looks accidental; `syn name` reports the dropped ambient identity on an
+  `ambient:` line. Behaviour change for shells that exported only
+  `SYN_IDENTITY`: set `SYN_PROJECT` alongside it (what
+  `synapse install-shell-hook` already does) or pass `--project`/`--id`.
+  Pinned end to end against a live hub: the production `syn say` path in a
+  poisoned shell authors as the local project, never as the borrowed name.
+
 - The free tier now carries the ecosystem's standard donation surface: a
   low-key coffee line (Buy Me a Coffee, GitHub Sponsors, PayPal) with the
   canonical branded QR code under `assets/bmc_qr.png`, the BTC/ETH/LTC

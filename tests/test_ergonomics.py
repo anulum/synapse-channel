@@ -56,11 +56,18 @@ def test_syn_project_env_over_cwd() -> None:
     assert ident.source == "env"
 
 
-def test_syn_identity_env_supplies_full_identity() -> None:
+def test_a_lone_syn_identity_is_never_a_silent_source() -> None:
+    """P-A: ambient identity without an agreeing ``$SYN_PROJECT`` is dropped.
+
+    The shell hook exports the SYN_PROJECT/SYN_IDENTITY pair together; a lone
+    SYN_IDENTITY is the borrowed-shell signature, so the resolution falls back
+    to the local working directory and records what it refused to borrow.
+    """
     ident = resolve_identity(env={"SYN_IDENTITY": "quantum/codex-2b40"}, cwd_basename="anulum")
-    assert ident.project == "quantum"  # first segment
-    assert ident.identity == "quantum/codex-2b40"  # verbatim
-    assert ident.source == "env"
+    assert ident.project == "anulum"
+    assert ident.identity == "anulum"
+    assert ident.source == "cwd"
+    assert ident.ignored_ambient == "quantum/codex-2b40"
 
 
 def test_syn_project_and_identity_env_keep_full_identity() -> None:
@@ -86,6 +93,7 @@ def test_disagreeing_syn_project_and_identity_drops_the_borrowed_identity() -> N
     assert ident.project == "quantum"
     assert ident.identity == "quantum"  # not the borrowed "user/terminal-14753"
     assert ident.source == "env"
+    assert ident.ignored_ambient == "user/terminal-14753"
 
 
 def test_explicit_project_flag_also_drops_a_disagreeing_ambient_identity() -> None:
@@ -102,10 +110,17 @@ def test_explicit_project_flag_also_drops_a_disagreeing_ambient_identity() -> No
 
 
 def test_explicit_id_overrides_syn_identity() -> None:
+    """An explicit ``--id`` composes with the resolved project, not the ambient one.
+
+    The lone ambient identity no longer supplies even the project segment, so the
+    composed identity rides on the local working directory; being explicitly
+    qualified, the command carries no ignored-ambient note either.
+    """
     ident = resolve_identity(
         agent_id="9999", env={"SYN_IDENTITY": "quantum/codex-2b40"}, cwd_basename="x"
     )
-    assert ident.identity == "quantum/claude-9999"
+    assert ident.identity == "x/claude-9999"
+    assert ident.ignored_ambient == ""
 
 
 def test_cwd_is_the_last_resort() -> None:
@@ -371,7 +386,11 @@ def test_main_say_uses_syn_identity_for_exact_replies(captured_cli: CapturedCall
     assert (
         ergonomics.main(
             ["say", "CEO", "ack"],
-            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/coordinator"},
+            env={
+                "HOME": "/home/u",
+                "SYN_PROJECT": "SYNAPSE-CHANNEL",
+                "SYN_IDENTITY": "SYNAPSE-CHANNEL/coordinator",
+            },
             cwd_basename="SYNAPSE-CHANNEL",
             dispatcher=_dispatch(captured_cli),
         )
@@ -391,7 +410,11 @@ def test_main_say_as_project_keeps_shared_project_sender(captured_cli: CapturedC
     assert (
         ergonomics.main(
             ["say", "--as-project", "CEO", "ack"],
-            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/coordinator"},
+            env={
+                "HOME": "/home/u",
+                "SYN_PROJECT": "SYNAPSE-CHANNEL",
+                "SYN_IDENTITY": "SYNAPSE-CHANNEL/coordinator",
+            },
             cwd_basename="SYNAPSE-CHANNEL",
             dispatcher=_dispatch(captured_cli),
         )
@@ -436,7 +459,11 @@ def test_main_ask_routes_target_message_wait_and_receipt(captured_cli: CapturedC
     assert (
         ergonomics.main(
             ["ask", "--wait", "15", "CEO", "status?"],
-            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            env={
+                "HOME": "/home/u",
+                "SYN_PROJECT": "SYNAPSE-CHANNEL",
+                "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1",
+            },
             cwd_basename="SYNAPSE-CHANNEL",
             dispatcher=_dispatch(captured_cli),
         )
@@ -459,7 +486,11 @@ def test_main_ask_can_disable_recipient_requirement(captured_cli: CapturedCalls)
     assert (
         ergonomics.main(
             ["ask", "--no-require-recipient", "all", "status?"],
-            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            env={
+                "HOME": "/home/u",
+                "SYN_PROJECT": "SYNAPSE-CHANNEL",
+                "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1",
+            },
             cwd_basename="SYNAPSE-CHANNEL",
             dispatcher=_dispatch(captured_cli),
         )
@@ -473,7 +504,11 @@ def test_main_ask_keeps_extra_send_options(captured_cli: CapturedCalls) -> None:
     assert (
         ergonomics.main(
             ["ask", "--receipt-timeout", "1", "CEO", "status?", "--priority"],
-            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            env={
+                "HOME": "/home/u",
+                "SYN_PROJECT": "SYNAPSE-CHANNEL",
+                "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1",
+            },
             cwd_basename="SYNAPSE-CHANNEL",
             dispatcher=_dispatch(captured_cli),
         )
@@ -499,7 +534,11 @@ def test_main_ask_keeps_extra_flag_without_value(captured_cli: CapturedCalls) ->
     assert (
         ergonomics.main(
             ["ask", "--priority", "--receipt-timeout", "1", "CEO", "status?"],
-            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            env={
+                "HOME": "/home/u",
+                "SYN_PROJECT": "SYNAPSE-CHANNEL",
+                "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1",
+            },
             cwd_basename="SYNAPSE-CHANNEL",
             dispatcher=_dispatch(captured_cli),
         )
@@ -593,7 +632,11 @@ def test_main_who_me_uses_resolved_identity(captured_cli: CapturedCalls) -> None
     assert (
         ergonomics.main(
             ["who", "--me"],
-            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            env={
+                "HOME": "/home/u",
+                "SYN_PROJECT": "SYNAPSE-CHANNEL",
+                "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1",
+            },
             cwd_basename="SYNAPSE-CHANNEL",
             dispatcher=_dispatch(captured_cli),
         )
@@ -612,7 +655,11 @@ def test_main_reap_uses_resolved_identity() -> None:
     assert (
         ergonomics.main(
             ["reap", "--pid", "1234"],
-            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            env={
+                "HOME": "/home/u",
+                "SYN_PROJECT": "SYNAPSE-CHANNEL",
+                "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1",
+            },
             cwd_basename="SYNAPSE-CHANNEL",
             reap_runner=reap_runner,
         )
@@ -641,7 +688,11 @@ def test_main_locks_uses_resolved_identity() -> None:
     assert (
         ergonomics.main(
             ["locks", "--all"],
-            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            env={
+                "HOME": "/home/u",
+                "SYN_PROJECT": "SYNAPSE-CHANNEL",
+                "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1",
+            },
             cwd_basename="SYNAPSE-CHANNEL",
             locks_runner=locks_runner,
         )
@@ -670,7 +721,11 @@ def test_main_ack_uses_resolved_identity() -> None:
     assert (
         ergonomics.main(
             ["ack", "BUILD", "--evidence", "pytest"],
-            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            env={
+                "HOME": "/home/u",
+                "SYN_PROJECT": "SYNAPSE-CHANNEL",
+                "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1",
+            },
             cwd_basename="SYNAPSE-CHANNEL",
             ack_runner=ack_runner,
         )
@@ -701,7 +756,11 @@ def test_main_ack_default_runner_dispatches_ack_module(monkeypatch: pytest.Monke
     assert (
         ergonomics.main(
             ["ack", "BUILD", "--evidence", "pytest"],
-            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            env={
+                "HOME": "/home/u",
+                "SYN_PROJECT": "SYNAPSE-CHANNEL",
+                "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1",
+            },
             cwd_basename="SYNAPSE-CHANNEL",
         )
         == 0
@@ -729,7 +788,11 @@ def test_main_commit_uses_resolved_identity() -> None:
     assert (
         ergonomics.main(
             ["commit", "README.md", "-m", "docs"],
-            env={"HOME": "/home/u", "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1"},
+            env={
+                "HOME": "/home/u",
+                "SYN_PROJECT": "SYNAPSE-CHANNEL",
+                "SYN_IDENTITY": "SYNAPSE-CHANNEL/codex-1",
+            },
             cwd_basename="SYNAPSE-CHANNEL",
             commit_runner=commit_runner,
         )
@@ -979,3 +1042,102 @@ def test_main_inbox_env_aliases_apply_without_flags(captured_cli: CapturedCalls)
     )
     assert len(captured_cli) == 2
     assert captured_cli[1][2:4] == ["--for", "SYNAPSE-CHANNEL/coordinator"]
+
+
+# --- P-A: ambient SYN_IDENTITY is never a silent source (env-never-silent) ---
+
+
+def test_poisoned_shell_with_plausible_cwd_proceeds_locally_and_says_so(
+    captured_cli: CapturedCalls, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unqualified verb in a poisoned shell acts as the local identity, out loud."""
+    assert (
+        ergonomics.main(
+            ["say", "CEO", "ack"],
+            env={"HOME": "/home/u", "SYN_IDENTITY": "user/terminal-14753"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 0
+    )
+    assert captured_cli[0][1:3] == ["--name", "SYNAPSE-CHANNEL"]  # local, not borrowed
+    err = capsys.readouterr().err
+    assert "ignoring ambient SYN_IDENTITY=user/terminal-14753" in err
+
+
+def test_poisoned_shell_with_an_accidental_fallback_refuses(
+    captured_cli: CapturedCalls, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Nothing trustworthy to act as: foreign ambient plus accidental cwd refuses."""
+    assert (
+        ergonomics.main(
+            ["say", "CEO", "ack"],
+            env={"HOME": "/home/u", "SYN_IDENTITY": "user/terminal-14753"},
+            cwd_basename="tmp",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 2
+    )
+    assert captured_cli == []  # the verb never reaches the package CLI
+    err = capsys.readouterr().err
+    assert "REFUSED" in err
+    assert "user/terminal-14753" in err
+
+
+def test_syn_name_reports_the_ignored_ambient_identity(
+    captured_cli: CapturedCalls, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The diagnostic verb never refuses and names the dropped ambient identity."""
+    assert (
+        ergonomics.main(
+            ["name"],
+            env={"HOME": "/home/u", "SYN_IDENTITY": "user/terminal-14753"},
+            cwd_basename="tmp",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "ambient:" in out
+    assert "user/terminal-14753" in out
+    assert "NOT honoured" in out
+
+
+async def test_poisoned_shell_says_as_the_local_identity_against_a_live_hub() -> None:
+    """P-A live proof: the production say path never borrows the ambient identity.
+
+    A real hub runs, a real observer socket listens, and the full ``syn say``
+    production path (ergonomics dispatch into the package CLI, real WebSocket
+    send) executes in a shell whose environment carries a foreign
+    ``SYN_IDENTITY``. The message that reaches the hub must be authored by the
+    LOCAL project identity, never by the borrowed name.
+    """
+    import asyncio
+    import functools
+
+    from websockets.asyncio.client import connect
+
+    from hub_e2e_helpers import read_json, read_until_type, running_hub, send_json
+    from synapse_channel.core.hub import SynapseHub
+
+    async with running_hub(SynapseHub(hub_id="syn-pa")) as (_, uri):
+        async with connect(uri) as observer:
+            await read_json(observer)  # welcome
+            await send_json(observer, sender="OBSERVER", type="heartbeat")
+
+            loop = asyncio.get_event_loop()
+            exit_code = await loop.run_in_executor(
+                None,
+                functools.partial(
+                    ergonomics.main,
+                    ["say", "all", "pa-proof", "--uri", uri],
+                    env={"HOME": "/home/u", "SYN_IDENTITY": "user/terminal-14753"},
+                    cwd_basename="PROJ-LOCAL",
+                ),
+            )
+            assert exit_code == 0
+
+            chat = await read_until_type(observer, "chat")
+            assert chat["payload"] == "pa-proof"
+            assert chat["sender"] == "PROJ-LOCAL"
+            assert chat["sender"] != "user/terminal-14753"

@@ -95,12 +95,19 @@ class Identity:
     plausible : bool
         ``False`` when the resolved project looks accidental (the home directory, a
         system path, or empty), so the caller can warn before coordinating as it.
+    ignored_ambient : str
+        An ambient ``$SYN_IDENTITY`` that was present on an *unqualified* command
+        but not honoured — either it stood alone (no ``$SYN_PROJECT`` opted into
+        it) or its project segment disagreed with the resolved project. Empty when
+        no ambient identity was dropped. Callers surface it, and refuse entirely
+        when the local fallback is implausible too.
     """
 
     project: str
     identity: str
     source: str
     plausible: bool
+    ignored_ambient: str = ""
 
     @property
     def waiter_name(self) -> str:
@@ -136,19 +143,20 @@ def resolve_identity(
     cwd_basename: str = "",
     home_basename: str = "",
 ) -> Identity:
-    """Resolve the coordination identity, preferring explicit and env over the CWD.
+    """Resolve the coordination identity from explicit inputs and opted-into env.
 
-    Precedence for the project, first match wins: an explicit ``project`` flag, the
-    ``$SYN_PROJECT`` env var, the first segment of ``$SYN_IDENTITY``, then the
-    working-directory basename. The full identity is ``project/<type>-<id>`` when
-    ``agent_id`` is given, the verbatim ``$SYN_IDENTITY`` when it supplied the
-    project and no flag overrode it, else the bare project. A ``$SYN_IDENTITY``
-    whose project segment disagrees with the resolved project (because an explicit
-    ``$SYN_PROJECT`` chose a different one) did not supply the project, so it is
-    *not* used verbatim: the identity falls back to the bare project rather than
-    splitting a session across two projects — the borrowed-shell hazard behind the
-    2026-07-10 directed-delivery incident, where identity-scoped and project-scoped
-    verbs would otherwise follow different names.
+    Precedence for the project, first match wins: an explicit ``project`` flag,
+    the ``$SYN_PROJECT`` env var, then the working-directory basename. Ambient
+    ``$SYN_IDENTITY`` is **never a silent source**: it refines the identity to
+    the full ``project/<type>-<id>`` form only when ``$SYN_PROJECT`` is also set
+    and agrees with its project segment — the pair the shell hook exports
+    together is the opt-in. A ``$SYN_IDENTITY`` standing alone, or one whose
+    project segment disagrees, is the borrowed-shell signature of the 2026-07-10
+    directed-delivery incident: honouring it would coordinate as a foreign seat,
+    so it is dropped, recorded in ``ignored_ambient``, and the identity falls
+    back to the consistent local resolution. The full identity is
+    ``project/<type>-<id>`` when ``agent_id`` is given, the opted-into
+    ``$SYN_IDENTITY`` as described, else the bare project.
 
     Parameters
     ----------
@@ -169,42 +177,48 @@ def resolve_identity(
     Returns
     -------
     Identity
-        The resolved identity, its source, and whether it looks plausible.
+        The resolved identity, its source, whether it looks plausible, and any
+        ambient identity that was present but not honoured.
     """
     env = os.environ if env is None else env
     syn_identity = env.get("SYN_IDENTITY", "").strip()
     syn_project = env.get("SYN_PROJECT", "").strip()
+    explicit_project = bool(project and project.strip())
+    explicit_id = bool(agent_id and agent_id.strip())
 
-    if project and project.strip():
-        proj, source = project.strip(), "flag"
+    if explicit_project:
+        proj, source = str(project).strip(), "flag"
     elif syn_project:
         proj, source = syn_project, "env"
-    elif syn_identity:
-        proj, source = syn_identity.split("/", 1)[0], "env"
     else:
         proj, source = cwd_basename.strip(), "cwd"
 
-    if agent_id and agent_id.strip():
-        identity = f"{proj}/{agent_type.strip()}-{agent_id.strip()}"
-    elif (
-        syn_identity and not (project and project.strip()) and syn_identity.split("/", 1)[0] == proj
-    ):
-        # Use the ambient full identity only when it agrees with the resolved
-        # project — i.e. when SYN_IDENTITY itself supplied the project. A
-        # SYN_IDENTITY whose project segment disagrees with an explicit
-        # SYN_PROJECT is the borrowed-shell signature of the 2026-07-10 P0;
-        # trusting it would bind identity-scoped verbs to a foreign seat while
-        # project-scoped verbs stay on SYN_PROJECT, so it is dropped and the
-        # identity falls back to the consistent bare project.
+    ambient_opted_in = bool(
+        syn_identity and syn_project and syn_identity.split("/", 1)[0] == syn_project
+    )
+    if explicit_id:
+        identity = f"{proj}/{str(agent_type).strip()}-{str(agent_id).strip()}"
+    elif ambient_opted_in and not explicit_project:
+        # The shell hook exports SYN_PROJECT and SYN_IDENTITY together; that
+        # agreeing pair is the operator's opt-in to the full ambient identity.
         identity = syn_identity
     else:
         identity = proj
+
+    ignored_ambient = ""
+    if syn_identity and identity != syn_identity and not explicit_project and not explicit_id:
+        # An unqualified command in a shell carrying a foreign or unaccompanied
+        # SYN_IDENTITY: the ambient name is dropped, never silently borrowed,
+        # and recorded so the caller can say so out loud (or refuse when the
+        # local fallback is implausible too).
+        ignored_ambient = syn_identity
 
     return Identity(
         project=proj,
         identity=identity,
         source=source,
         plausible=is_plausible_project(proj, home_basename=home_basename),
+        ignored_ambient=ignored_ambient,
     )
 
 
@@ -338,13 +352,19 @@ def who_argv(identity: Identity, *, extra: Sequence[str] = ()) -> list[str]:
 def name_lines(identity: Identity) -> list[str]:
     """Return the human-readable report ``syn name`` prints."""
     plausible = "yes" if identity.plausible else "NO — looks accidental, set $SYN_PROJECT"
-    return [
+    lines = [
         f"project:  {identity.project}",
         f"identity: {identity.identity}",
         f"waiter:   {identity.waiter_name}",
         f"source:   {identity.source}",
         f"plausible: {plausible}",
     ]
+    if identity.ignored_ambient:
+        lines.append(
+            f"ambient:  SYN_IDENTITY={identity.ignored_ambient} present but NOT honoured "
+            "(no agreeing $SYN_PROJECT opted into it)"
+        )
+    return lines
 
 
 def _cwd_basename(*, runner: Callable[[Sequence[str]], str] | None = None) -> str:
@@ -372,6 +392,46 @@ def _warn_if_implausible(identity: Identity) -> None:
             "this looks accidental. Set $SYN_PROJECT or pass --project.",
             file=sys.stderr,
         )
+
+
+def _refuse_or_note_ignored_ambient(identity: Identity) -> int | None:
+    """Handle a dropped ambient ``$SYN_IDENTITY`` before a verb acts on the identity.
+
+    A poisoned shell carries a ``$SYN_IDENTITY`` no ``$SYN_PROJECT`` opted into.
+    When the local fallback is a plausible project, the command proceeds as that
+    local identity and says so on stderr — never silently as the ambient name.
+    When the fallback ALSO looks accidental there is nothing trustworthy to act
+    as, so the command refuses instead of guessing.
+
+    Parameters
+    ----------
+    identity : Identity
+        The resolved identity to inspect.
+
+    Returns
+    -------
+    int or None
+        ``2`` when the command must refuse; ``None`` when it may proceed.
+    """
+    if not identity.ignored_ambient:
+        return None
+    if not identity.plausible:
+        print(
+            f"syn: REFUSED — this shell carries SYN_IDENTITY={identity.ignored_ambient} "
+            f"that no agreeing $SYN_PROJECT opted into, and the local fallback "
+            f"'{identity.project}' (source: {identity.source}) looks accidental. "
+            "Set $SYN_PROJECT (and keep SYN_IDENTITY agreeing with it), or pass "
+            "--project/--id explicitly.",
+            file=sys.stderr,
+        )
+        return 2
+    print(
+        f"syn: note — ignoring ambient SYN_IDENTITY={identity.ignored_ambient} "
+        f"(no agreeing $SYN_PROJECT opted into it); coordinating as "
+        f"'{identity.identity}' from {identity.source}.",
+        file=sys.stderr,
+    )
+    return None
 
 
 def _run_ack(identity: Identity, rest: Sequence[str]) -> int:
@@ -487,6 +547,9 @@ def main(
             print(line)
         return 0
 
+    refusal = _refuse_or_note_ignored_ambient(identity)
+    if refusal is not None:
+        return refusal
     _warn_if_implausible(identity)
     if args.verb == "arm":
         directed_only = "--broadcasts" not in rest
