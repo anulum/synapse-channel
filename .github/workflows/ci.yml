@@ -74,8 +74,10 @@ jobs:
       - run: python -m pip install -e . --no-deps
       # tpm2-pytss is sdist-only and needs the TSS2 headers, so it is kept out of the hash-locked
       # dev requirements (which every job installs) and built here, where libtss2-dev is present, to
-      # exercise the TPM 2.0 backend against swtpm rather than skip it.
-      - run: python -m pip install 'tpm2-pytss>=2.3'
+      # exercise the TPM 2.0 backend against swtpm rather than skip it. Pinned exactly (verified at
+      # source, PyPI 2.3.0) to stop version-range drift into an unvetted release; full hash-locking
+      # would need a compiled dependency closure at build time and is tracked separately.
+      - run: python -m pip install 'tpm2-pytss==2.3.0'
       # sqlcipher3-binary lives in the optional [sqlcipher] extra, not the hash-locked dev
       # requirements, so without this install the whole SQLCipher at-rest suite (persistence,
       # session capability, reliability workflow, multihub MCP, encrypt-key) silently skips.

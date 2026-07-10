@@ -146,6 +146,10 @@ class _WebhookReceiver:
         self._server = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
         if certfile is not None and keyfile is not None:
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            # PROTOCOL_TLS_SERVER still negotiates the deprecated TLS 1.0/1.1 by
+            # default; pin the floor to 1.2 so even this test receiver never
+            # offers an insecure protocol (CodeQL py/insecure-protocol).
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
             context.load_cert_chain(certfile, keyfile)
             self._server.socket = context.wrap_socket(self._server.socket, server_side=True)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
