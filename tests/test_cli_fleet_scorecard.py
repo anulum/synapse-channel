@@ -58,9 +58,11 @@ def test_json_mode_writes_a_complete_owner_only_bundle(
 ) -> None:
     hub = tmp_path / "hub.db"
     output = tmp_path / "reports" / "fleet.json"
+    trend = tmp_path / "trend.db"
     pricing = tmp_path / "pricing.json"
     budget = tmp_path / "budget.json"
     _seed(hub)
+    EventStore(trend).close()
     output.parent.mkdir()
     output.write_text("old", encoding="utf-8")
     output.chmod(0o644)
@@ -80,6 +82,8 @@ def test_json_mode_writes_a_complete_owner_only_bundle(
             str(budget),
             "--service-name",
             "hub-test",
+            "--trend",
+            str(trend),
             "--out",
             str(output),
         ]
@@ -91,7 +95,7 @@ def test_json_mode_writes_a_complete_owner_only_bundle(
     assert document["accounting"]["totals"]["estimated_cost"] == pytest.approx(4.0)
     assert document["accounting"]["budgets"][0]["over_budget"] is True
     assert document["causality"]["service_name"] == "hub-test"
-    assert document["benchmark_trend"] is None
+    assert document["benchmark_trend"]["runs"] == []
     assert "fleet scorecard:" in capsys.readouterr().out
 
 
@@ -180,6 +184,22 @@ def test_report_and_output_failures_are_visible(
 
     hub = tmp_path / "hub.db"
     _seed(hub)
+
+    missing_trend = tmp_path / "missing-trend.db"
+    assert (
+        main(
+            [
+                "fleet-scorecard",
+                str(hub),
+                "--trend",
+                str(missing_trend),
+                "--out",
+                str(tmp_path / "x"),
+            ]
+        )
+        == 2
+    )
+    assert "missing trend store" in capsys.readouterr().err
 
     def refuse(_path: Path, _document: dict[str, object]) -> None:
         raise OSError("disk read-only")

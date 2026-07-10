@@ -23,8 +23,8 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from typing import Protocol
 
-from synapse_channel.benchmark.trend import StoredRun
 from synapse_channel.core.accounting import AccountingReport, AccountingTotals, UsageSummary
 from synapse_channel.core.causality_otel import OtelProjection
 from synapse_channel.core.reliability import ReliabilityReport
@@ -56,13 +56,53 @@ class MetricPoint:
     attributes: tuple[tuple[str, str], ...] = ()
 
 
+class BenchmarkRun(Protocol):
+    """Structural benchmark-history record consumed by the core projection.
+
+    The benchmark feature layer owns storage and its concrete ``StoredRun``
+    dataclass. Core needs only these immutable data fields, so accepting a
+    protocol keeps the package dependency pointed inward without duplicating
+    the feature type.
+    """
+
+    @property
+    def run_id(self) -> int:  # pragma: no cover - structural
+        """Return the monotonically increasing store row id."""
+        ...
+
+    @property
+    def started_at(self) -> float:  # pragma: no cover - structural
+        """Return the run start timestamp."""
+        ...
+
+    @property
+    def package_version(self) -> str:  # pragma: no cover - structural
+        """Return the measured package version."""
+        ...
+
+    @property
+    def cpu_model(self) -> str:  # pragma: no cover - structural
+        """Return the host CPU model."""
+        ...
+
+    @property
+    def governor(self) -> str:  # pragma: no cover - structural
+        """Return the host frequency governor."""
+        ...
+
+    @property
+    def metrics(self) -> dict[str, dict[str, float]]:  # pragma: no cover - structural
+        """Return probe-to-metric numeric values."""
+        ...
+
+
 def fleet_metric_points(
     *,
     causality: OtelProjection,
     accounting: AccountingReport,
     conflicts: tuple[YieldAdvice, ...],
     reliability: ReliabilityReport,
-    benchmark_runs: tuple[StoredRun, ...] | None,
+    benchmark_runs: tuple[BenchmarkRun, ...] | None,
 ) -> tuple[MetricPoint, ...]:
     """Return the sorted numeric projection of every scorecard component.
 
@@ -76,7 +116,7 @@ def fleet_metric_points(
         Advisory overlapping-claim pairs.
     reliability : ReliabilityReport
         Evidence-only operational findings.
-    benchmark_runs : tuple[StoredRun, ...] or None
+    benchmark_runs : tuple[BenchmarkRun, ...] or None
         Optional complete benchmark history.
 
     Returns
@@ -265,7 +305,7 @@ def _reliability_metrics(report: ReliabilityReport) -> tuple[MetricPoint, ...]:
     return tuple(points)
 
 
-def _benchmark_metrics(runs: tuple[StoredRun, ...] | None) -> tuple[MetricPoint, ...]:
+def _benchmark_metrics(runs: tuple[BenchmarkRun, ...] | None) -> tuple[MetricPoint, ...]:
     """Return latest benchmark values and comparable relative changes."""
     if not runs:
         return ()
@@ -306,8 +346,8 @@ def _benchmark_metrics(runs: tuple[StoredRun, ...] | None) -> tuple[MetricPoint,
 
 
 def _previous_comparable(
-    candidates: tuple[StoredRun, ...],
-    latest: StoredRun,
+    candidates: tuple[BenchmarkRun, ...],
+    latest: BenchmarkRun,
     probe: str,
     metric: str,
 ) -> float | None:

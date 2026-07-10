@@ -9,7 +9,7 @@
 
 The scorecard is a projection, not a new telemetry plane. It reuses the durable
 causality, opt-in accounting, contention, reliability, and benchmark-history
-readers and preserves their honesty boundaries. No model call, live-hub query,
+records and preserves their honesty boundaries. No model call, live-hub query,
 claim mutation, or pricing default is introduced here. The result contains the
 full source reports for portable JSON export plus a small set of numeric metric
 points for an OTLP collector.
@@ -26,7 +26,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from synapse_channel.benchmark.trend import StoredRun, load_history, trend_to_json
 from synapse_channel.core.accounting import (
     AccountingReport,
     ModelPrice,
@@ -40,7 +39,11 @@ from synapse_channel.core.causality_otel import (
     projection_to_json,
     run_otel_projection,
 )
-from synapse_channel.core.fleet_scorecard_metrics import MetricPoint, fleet_metric_points
+from synapse_channel.core.fleet_scorecard_metrics import (
+    BenchmarkRun,
+    MetricPoint,
+    fleet_metric_points,
+)
 from synapse_channel.core.reliability import (
     ReliabilityReport,
     reliability_to_json,
@@ -74,7 +77,7 @@ class FleetScorecard:
         Existing advisory overlap analysis.
     reliability : ReliabilityReport
         Existing evidence-only reliability findings.
-    benchmark_runs : tuple[StoredRun, ...] or None
+    benchmark_runs : tuple[BenchmarkRun, ...] or None
         Optional complete benchmark history. ``None`` means the operator did
         not supply a trend store; an empty tuple means the supplied store had
         no runs.
@@ -88,7 +91,7 @@ class FleetScorecard:
     accounting: AccountingReport
     conflicts: tuple[YieldAdvice, ...]
     reliability: ReliabilityReport
-    benchmark_runs: tuple[StoredRun, ...] | None
+    benchmark_runs: tuple[BenchmarkRun, ...] | None
     metrics: tuple[MetricPoint, ...]
 
 
@@ -98,7 +101,7 @@ def build_fleet_scorecard(
     accounting: AccountingReport,
     conflicts: tuple[YieldAdvice, ...],
     reliability: ReliabilityReport,
-    benchmark_runs: tuple[StoredRun, ...] | None = None,
+    benchmark_runs: tuple[BenchmarkRun, ...] | None = None,
 ) -> FleetScorecard:
     """Compose already-built evidence reports into a fleet scorecard.
 
@@ -112,7 +115,7 @@ def build_fleet_scorecard(
         Advisory overlapping-claim analysis.
     reliability : ReliabilityReport
         Evidence-only reliability report.
-    benchmark_runs : tuple[StoredRun, ...] or None, optional
+    benchmark_runs : tuple[BenchmarkRun, ...] or None, optional
         Optional benchmark history.
 
     Returns
@@ -145,7 +148,7 @@ def build_fleet_scorecard(
 def run_fleet_scorecard(
     db_path: str | Path,
     *,
-    trend_path: str | Path | None = None,
+    benchmark_runs: tuple[BenchmarkRun, ...] | None = None,
     pricing: Mapping[str, ModelPrice] | None = None,
     budgets: Mapping[str, float] | None = None,
     max_nodes: int | None = DEFAULT_MAX_GRAPH_NODES,
@@ -158,8 +161,8 @@ def run_fleet_scorecard(
     ----------
     db_path : str or pathlib.Path
         Hub event-store database read by every durable report.
-    trend_path : str or pathlib.Path or None, optional
-        Optional benchmark-history SQLite store.
+    benchmark_runs : tuple[BenchmarkRun, ...] or None, optional
+        Optional benchmark history loaded by the feature-layer caller.
     pricing : collections.abc.Mapping[str, ModelPrice] or None, optional
         Local pricing table for the existing accounting projection.
     budgets : collections.abc.Mapping[str, float] or None, optional
@@ -197,14 +200,45 @@ def run_fleet_scorecard(
         service_name=service_name,
         key_file=key_file,
     )
-    history = None if trend_path is None else load_history(trend_path)
     return build_fleet_scorecard(
         causality=causality,
         accounting=accounting,
         conflicts=conflicts,
         reliability=reliability,
-        benchmark_runs=history,
+        benchmark_runs=benchmark_runs,
     )
+
+
+def _benchmark_trend_to_json(runs: tuple[BenchmarkRun, ...]) -> dict[str, object]:
+    """Return the stable benchmark-history shape from structural records."""
+    context_breaks: list[dict[str, object]] = []
+    for previous, current in zip(runs, runs[1:], strict=False):
+        changes = [
+            f"{field} {before}→{after}"
+            for field, before, after in (
+                ("package", previous.package_version, current.package_version),
+                ("cpu", previous.cpu_model, current.cpu_model),
+                ("governor", previous.governor, current.governor),
+            )
+            if before != after
+        ]
+        if changes:
+            context_breaks.append({"before_run_id": current.run_id, "changes": changes})
+    return {
+        "runs": [
+            {
+                "run_id": run.run_id,
+                "started_at": run.started_at,
+                "package_version": run.package_version,
+                "cpu_model": run.cpu_model,
+                "governor": run.governor,
+                "metrics": run.metrics,
+            }
+            for run in runs
+        ],
+        "context_breaks": context_breaks,
+        "note": "host-dependent series; compare within one context segment",
+    }
 
 
 def fleet_scorecard_to_json(scorecard: FleetScorecard) -> dict[str, object]:
@@ -218,7 +252,9 @@ def fleet_scorecard_to_json(scorecard: FleetScorecard) -> dict[str, object]:
         "conflicts": advice_to_json(list(scorecard.conflicts)),
         "reliability": reliability_to_json(scorecard.reliability),
         "benchmark_trend": (
-            None if scorecard.benchmark_runs is None else trend_to_json(scorecard.benchmark_runs)
+            None
+            if scorecard.benchmark_runs is None
+            else _benchmark_trend_to_json(scorecard.benchmark_runs)
         ),
         "metrics": [metric_point_to_json(point) for point in scorecard.metrics],
         "note": (

@@ -23,6 +23,7 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from synapse_channel.benchmark.trend import load_history
 from synapse_channel.cli_accounting import _load_budgets, load_pricing_table
 from synapse_channel.core.causality import DEFAULT_MAX_GRAPH_NODES
 from synapse_channel.core.causality_otel import SERVICE_NAME
@@ -49,9 +50,10 @@ def _cmd_fleet_scorecard(args: argparse.Namespace) -> int:
     try:
         pricing = load_pricing_table(args.pricing)
         budgets = _load_budgets(args.budget)
+        history = None if args.trend is None else load_history(args.trend)
         scorecard = run_fleet_scorecard(
             args.db,
-            trend_path=args.trend,
+            benchmark_runs=history,
             pricing=pricing,
             budgets=budgets,
             max_nodes=args.max_nodes,

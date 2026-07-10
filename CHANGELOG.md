@@ -151,6 +151,12 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Fleet-scorecard history loading now stays at the CLI feature edge instead of
+  importing `benchmark.trend` upward from the coordination kernel. Core accepts
+  a minimal structural benchmark-run contract and preserves the existing JSON
+  and metric shapes, restoring the package-decomposition boundary without an
+  allowlist exception.
+
 - Public security, protocol, glossary, staged-profile documentation, and the
   paranoid operator checklist now distinguish shipped opt-in controls from the
   remaining operator and external validation work. The evidence map pins the

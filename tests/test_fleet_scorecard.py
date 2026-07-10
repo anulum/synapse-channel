@@ -16,7 +16,7 @@ import pytest
 
 from synapse_channel.benchmark.probes import ProbeResult
 from synapse_channel.benchmark.scorecard import NON_ISOLATED_LABEL, HostContext, Scorecard
-from synapse_channel.benchmark.trend import StoredRun, append_scorecard
+from synapse_channel.benchmark.trend import StoredRun, append_scorecard, load_history, trend_to_json
 from synapse_channel.core.accounting import ModelPrice, format_usage_note
 from synapse_channel.core.fleet_scorecard import (
     SCORECARD_SCHEMA_VERSION,
@@ -121,10 +121,11 @@ def test_run_composes_every_existing_report_and_complete_trend(tmp_path: Path) -
     _seed_hub(hub)
     append_scorecard(trend, _benchmark(100.0, started_at=10.0))
     append_scorecard(trend, _benchmark(125.0, started_at=20.0))
+    history = load_history(trend)
 
     scorecard = run_fleet_scorecard(
         hub,
-        trend_path=trend,
+        benchmark_runs=history,
         pricing={"local-model": ModelPrice(input_per_1k=2.0, output_per_1k=4.0)},
         budgets={"alice": 3.0},
         service_name="hub-test",
@@ -157,6 +158,7 @@ def test_run_composes_every_existing_report_and_complete_trend(tmp_path: Path) -
     assert document["schema_version"] == SCORECARD_SCHEMA_VERSION
     assert document["generated_from_seq"] == 5
     assert document["benchmark_trend"]["runs"][1]["run_id"] == 2
+    assert document["benchmark_trend"] == trend_to_json(history)
     assert document["conflicts"][0]["yielder"]["owner"] == "bob"
     assert document["accounting"]["note"].startswith("opt-in usage evidence")
     assert document["reliability"]["note"] == "audit signals, not scores"
@@ -172,7 +174,7 @@ def test_no_trend_is_distinct_from_an_explicit_empty_trend_store(tmp_path: Path)
     EventStore(trend).close()
 
     absent = run_fleet_scorecard(hub)
-    empty = run_fleet_scorecard(hub, trend_path=trend)
+    empty = run_fleet_scorecard(hub, benchmark_runs=load_history(trend))
 
     assert absent.benchmark_runs is None
     assert empty.benchmark_runs == ()
@@ -203,6 +205,11 @@ def test_relative_change_requires_nonzero_matching_context(tmp_path: Path) -> No
 
     benchmark_names = [point.name for point in scorecard.metrics if ".benchmark." in point.name]
     assert benchmark_names == ["synapse.fleet.benchmark.latest"]
+    trend = cast("dict[str, Any]", fleet_scorecard_to_json(scorecard))["benchmark_trend"]
+    assert trend["context_breaks"] == [
+        {"before_run_id": 2, "changes": ["cpu cpu→other"]},
+        {"before_run_id": 3, "changes": ["cpu other→cpu"]},
+    ]
 
     no_match = build_fleet_scorecard(
         causality=base.causality,
@@ -238,5 +245,3 @@ def test_run_refuses_missing_or_over_ceiling_stores(tmp_path: Path) -> None:
     _seed_hub(hub)
     with pytest.raises(ValueError, match="would exceed 1 coordination events"):
         run_fleet_scorecard(hub, max_nodes=1)
-    with pytest.raises(ValueError, match="missing trend store"):
-        run_fleet_scorecard(hub, trend_path=tmp_path / "absent-trend.db")
