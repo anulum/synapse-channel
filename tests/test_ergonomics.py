@@ -455,6 +455,55 @@ def test_main_say_as_project_without_target_and_message_is_a_usage_error(
     assert captured_cli == []
 
 
+def test_main_say_refuses_a_flag_where_the_target_belongs(
+    captured_cli: CapturedCalls, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `syn-say --name X CEO msg` used to swallow `--name` as the target and
+    # explode later inside `synapse send` with an unrelated parse error. The
+    # refusal must be loud, local, and point at the identity flags instead.
+    assert (
+        ergonomics.main(
+            ["say", "--name", "SYNAPSE-CHANNEL/claude-a7c2", "CEO", "ack"],
+            env={"HOME": "/home/u"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 2
+    )
+    err = capsys.readouterr().err
+    assert "usage" in err
+    assert "--project" in err
+    assert "AFTER the message" in err
+    assert captured_cli == []
+
+
+def test_main_say_passes_trailing_package_flags_through_after_the_message(
+    captured_cli: CapturedCalls,
+) -> None:
+    # The convention the refusal advertises: package flags written AFTER the
+    # message on the syn command line reach the underlying send (say_argv
+    # slots them before the positional message so argparse reads them as
+    # options; an explicit trailing --name then wins by argparse last-wins).
+    assert (
+        ergonomics.main(
+            ["say", "CEO", "ack", "--priority"],
+            env={"HOME": "/home/u"},
+            cwd_basename="SYNAPSE-CHANNEL",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 0
+    )
+    assert captured_cli[0] == [
+        "send",
+        "--name",
+        "SYNAPSE-CHANNEL",
+        "--target",
+        "CEO",
+        "--priority",
+        "ack",
+    ]
+
+
 def test_main_ask_routes_target_message_wait_and_receipt(captured_cli: CapturedCalls) -> None:
     assert (
         ergonomics.main(

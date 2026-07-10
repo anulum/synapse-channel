@@ -567,6 +567,16 @@ def main(
             print("syn: usage: syn say [--as-project] <target> <message>", file=sys.stderr)
             return 2
         target, message, *extra = rest
+        if target.startswith("-"):
+            print(
+                "syn: usage: syn say [--as-project] <target> <message> — "
+                f"{target!r} sits where the target belongs, and a target never "
+                "starts with a dash. Identity flags (--project/--id/--type) go "
+                "BEFORE the verb; package flags such as --name go AFTER the "
+                "message and pass through to the underlying send.",
+                file=sys.stderr,
+            )
+            return 2
         return dispatcher(say_argv(identity, target, message, as_project=as_project, extra=extra))
     if args.verb == "ask":
         wait_seconds = 30.0

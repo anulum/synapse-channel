@@ -29,6 +29,13 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Stable error taxonomy codes now drive two real boundary families instead of
+  remaining metadata only. The A2A HTTP bridge maps typed validation, missing,
+  conflict, quota, and store failures to 400, 404, 409, 429, and 500 without
+  message matching; outbound MCP CLI commands distinguish invalid config
+  (exit 2), deny-by-default access refusal (exit 3), and tool failure (exit 1).
+  Existing A2A exceptions remain `ValueError` compatible.
+
 - `synapse who` now bounds the full-roster mailbox-pending section to the 20
   largest positive counts and reports complete identity/message totals, so
   hundreds of dead test identities cannot flood normal operator output.
@@ -192,6 +199,13 @@ All notable changes to this project are documented here.
   whole-worktree contention, and deterministic first-conflict selection.
 
 ### Fixed
+
+- `syn say` now refuses a flag-shaped token in the target position with a
+  local, actionable usage error. Previously `syn say --name X <target> <msg>`
+  swallowed `--name` as the target and failed later inside `synapse send`
+  with an unrelated parse error; the refusal points at the identity flags
+  (`--project`/`--id`/`--type` before the verb) and at the trailing
+  pass-through convention for package flags.
 
 - Read-only query verbs (`who`, `state`, `board`, `manifest`) no longer exit
   `0` with no output when the hub accepts the welcome and then closes the socket
