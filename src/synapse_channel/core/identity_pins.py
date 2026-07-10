@@ -23,8 +23,9 @@ file gives, and the right default for the loopback single-user hub a
 ``--require-identity-binding`` bundle, which takes precedence over this store.
 
 Pins persist as one small JSON file (atomic replace), so an operator can
-inspect them, and recovery from a lost machine key is editing one entry out —
-the refusal message names the file.
+inspect them. Recovery from a lost machine key goes through the hub's governed
+reclaim verb: it compares the expected key id, enforces the owner-liveness
+policy, and records the action durably before a different key may pin the name.
 """
 
 from __future__ import annotations
@@ -126,6 +127,40 @@ class IdentityPinStore:
         if self._path is not None:
             _write_pins(self._path, self._pins)
         logger.info("identity pinned name=%s key_id=%s", name, key_id)
+
+    def reclaim(self, name: str, *, expected_key_id: str) -> IdentityPin | None:
+        """Remove ``name`` only when it is pinned to ``expected_key_id``.
+
+        The expected-key comparison is a compare-and-swap guard for the
+        operator path: a delayed request cannot remove a pin that was rotated
+        or re-established after the operator inspected it. When the store is
+        file-backed, the replacement file is committed before the live table
+        changes, so an I/O failure leaves both views on the old, protective
+        pin rather than weakening only the running hub.
+
+        Parameters
+        ----------
+        name : str
+            Pinned agent name to remove.
+        expected_key_id : str
+            Exact key id the operator observed and intends to reclaim.
+
+        Returns
+        -------
+        IdentityPin or None
+            The removed pin, or ``None`` when the name is absent or its current
+            key id differs. A mismatch never mutates memory or disk.
+        """
+        pin = self._pins.get(name)
+        if pin is None or pin.key_id != expected_key_id:
+            return None
+        remaining = dict(self._pins)
+        remaining.pop(name)
+        if self._path is not None:
+            _write_pins(self._path, remaining)
+        self._pins = remaining
+        logger.warning("identity pin reclaimed name=%s key_id=%s", name, pin.key_id)
+        return pin
 
     def __len__(self) -> int:
         """Return the number of pinned names."""

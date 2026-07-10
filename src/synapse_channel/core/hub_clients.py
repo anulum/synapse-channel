@@ -115,6 +115,35 @@ class HubClientRegistry:
             return name
         return None
 
+    def revoke_name(self, name: str) -> Any | None:
+        """Detach ``name`` and release its ownership lease for operator recovery.
+
+        This is the synchronous half of a governed break-glass reclaim. The
+        caller has already passed policy and removed the durable identity pin;
+        detaching both registry maps before its next ``await`` prevents a new
+        claimant from racing with a socket that still appears to own the name.
+        The returned socket remains in ``connected_clients`` until its normal
+        connection teardown runs, so the caller may send a final notice and
+        close it without bypassing connection accounting.
+
+        Parameters
+        ----------
+        name : str
+            Agent identity whose live binding and lease are revoked.
+
+        Returns
+        -------
+        object or None
+            The previously bound socket, or ``None`` when the name was offline.
+        """
+        websocket = self.agent_sockets.pop(name, None)
+        if websocket is not None:
+            self.socket_agent.pop(websocket, None)
+        self.agent_roles.pop(name, None)
+        self.agent_wake_capabilities.pop(name, None)
+        self.ownership.release(name)
+        return websocket
+
     def add_unauthenticated(self, websocket: Any) -> None:
         """Record a socket in its secured-hub pre-authentication window."""
         self.unauth_clients.add(websocket)

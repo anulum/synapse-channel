@@ -14,6 +14,7 @@ from synapse_channel.core.acl import (
     BOARD,
     CLAIM,
     MESSAGE,
+    PIN_RECLAIM,
     RELEASE,
     AclPolicy,
     AclRule,
@@ -86,6 +87,9 @@ def test_resource_advertise_and_channel_verbs_are_gated() -> None:
     ]
     assert required_accesses(MessageType.CHANNEL_JOIN, {"channel": "secret"}) == [
         (MESSAGE, Target("channel", "secret"))
+    ]
+    assert required_accesses(MessageType.IDENTITY_PIN_RECLAIM, {"pin_name": "PROJ/agent"}) == [
+        (PIN_RECLAIM, Target("agent", "PROJ/agent"))
     ]
 
 

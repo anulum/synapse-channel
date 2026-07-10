@@ -117,6 +117,11 @@ async def test_zero_config_first_use_pins_the_name_to_the_machine_key(tmp_path: 
 
 async def test_a_different_machine_key_is_refused_on_a_pinned_name(tmp_path: Path) -> None:
     hub = SynapseHub(hub_id="syn-tofu", identity_pin_path=tmp_path / "pins.json")
+    refusals: list[dict[str, Any]] = []
+
+    async def collect(frame: dict[str, Any]) -> None:
+        refusals.append(frame)
+
     async with running_hub(hub) as (_, uri):
         owner = SynapseAgent(NAME, None, uri=uri, verbose=False, **_machine(tmp_path, "machine-a"))
         owner_task = await _run_until_closed_or_ready(owner)
@@ -125,12 +130,15 @@ async def test_a_different_machine_key_is_refused_on_a_pinned_name(tmp_path: Pat
         await _await_unbound(hub, NAME)
 
         stranger = SynapseAgent(
-            NAME, None, uri=uri, verbose=False, **_machine(tmp_path, "machine-b")
+            NAME, collect, uri=uri, verbose=False, **_machine(tmp_path, "machine-b")
         )
         stranger_task = await _run_until_closed_or_ready(stranger)
         code, reason = await _await_refused(stranger)
         assert code == IDENTITY_CLOSE
         assert reason == "identity pin mismatch"
+        error = next(frame for frame in refusals if frame.get("type") == "error")
+        assert "synapse identity reclaim" in error["payload"]
+        assert "--expected-key-id" in error["payload"]
         stranger_task.cancel()
 
 

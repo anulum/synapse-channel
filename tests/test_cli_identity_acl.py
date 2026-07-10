@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from typing import Any
 import pytest
 
 from synapse_channel import cli, cli_acl_shadow, cli_identity
+from synapse_channel.core.acl import PIN_RECLAIM, load_acl_policy
 
 
 def _run(argv: list[str]) -> int:
@@ -208,6 +210,201 @@ def test_identity_keygen_duplicate_enrollment_returns_two(
 
     assert code == 2
     assert "already enrolled" in capsys.readouterr().out
+
+
+# --- governed identity-pin reclaim ----------------------------------------
+
+
+def test_identity_reclaim_parser_requires_explicit_governance_inputs() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "identity",
+            "reclaim",
+            "PROJ/stale",
+            "--operator",
+            "OPS/operator",
+            "--expected-key-id",
+            "machine-old",
+            "--reason",
+            "holder wedged",
+            "--break-glass",
+        ]
+    )
+    assert args.func is cli_identity._cmd_identity_reclaim
+    assert args.pin_name == "PROJ/stale"
+    assert args.operator == "OPS/operator"
+    assert args.expected_key_id == "machine-old"
+    assert args.reason == "holder wedged"
+    assert args.break_glass is True
+
+
+def test_identity_pin_reclaim_acl_permission_loads_from_operator_policy(tmp_path: Path) -> None:
+    policy_path = _json(
+        tmp_path / "acl.json",
+        {
+            "rules": [
+                {
+                    "permission": PIN_RECLAIM,
+                    "target_kind": "agent",
+                    "target_pattern": "PROJ/stale",
+                    "namespace": "OPS",
+                    "reason": "designated recovery operator",
+                }
+            ]
+        },
+    )
+    policy = load_acl_policy(policy_path)
+    assert policy.rules[0].permission == PIN_RECLAIM
+
+
+class _FakeReclaimAgent:
+    """Minimal one-shot agent for CLI transport verdict branches."""
+
+    def __init__(
+        self,
+        callback: Any,
+        *,
+        outcome: dict[str, Any] | None,
+        ready: bool = True,
+        closed: bool = False,
+    ) -> None:
+        self.callback = callback
+        self.outcome = outcome
+        self.ready = ready
+        self.running = not closed
+        self.last_close_code = 4009 if closed else None
+        self.last_close_reason = "name conflict" if closed else ""
+
+    async def connect(self) -> None:
+        while self.running:
+            await asyncio.sleep(1.0)
+
+    async def wait_until_ready(self, timeout: float) -> bool:
+        del timeout
+        return self.ready
+
+    async def send_message(self, _msg_type: str, **_fields: Any) -> None:
+        if self.outcome is not None:
+            await self.callback(self.outcome)
+
+
+def _reclaim_factory(
+    outcome: dict[str, Any] | None, *, ready: bool = True, closed: bool = False
+) -> Any:
+    def factory(_name: str, callback: Any, **_kwargs: Any) -> _FakeReclaimAgent:
+        return _FakeReclaimAgent(callback, outcome=outcome, ready=ready, closed=closed)
+
+    return factory
+
+
+async def test_identity_reclaim_cli_renders_a_generic_acl_error_as_json(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = await cli_identity._identity_reclaim(
+        uri="ws://hub",
+        operator="OPS/operator",
+        pin_name="PROJ/stale",
+        expected_key_id="machine-old",
+        reason="recover",
+        break_glass=False,
+        token=None,
+        ready_timeout=0.1,
+        result_timeout=0.1,
+        json_output=True,
+        agent_factory=_reclaim_factory(
+            {"type": "error", "payload": "access denied: identity-pin-reclaim"}
+        ),
+    )
+    assert code == 1
+    assert json.loads(capsys.readouterr().out)["detail"].startswith("access denied")
+
+
+async def test_identity_reclaim_cli_times_out_without_a_hub_verdict(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = await cli_identity._identity_reclaim(
+        uri="ws://hub",
+        operator="OPS/operator",
+        pin_name="PROJ/stale",
+        expected_key_id="machine-old",
+        reason="recover",
+        break_glass=False,
+        token=None,
+        ready_timeout=0.1,
+        result_timeout=0.0,
+        json_output=False,
+        agent_factory=_reclaim_factory(None),
+    )
+    assert code == 2
+    assert "no authoritative verdict" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(("ready", "closed"), [(False, False), (True, True)])
+async def test_identity_reclaim_cli_reports_a_connection_failure(
+    ready: bool, closed: bool, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = await cli_identity._identity_reclaim(
+        uri="ws://hub",
+        operator="OPS/operator",
+        pin_name="PROJ/stale",
+        expected_key_id="machine-old",
+        reason="recover",
+        break_glass=False,
+        token=None,
+        ready_timeout=0.1,
+        result_timeout=0.1,
+        json_output=False,
+        agent_factory=_reclaim_factory(None, ready=ready, closed=closed),
+    )
+    assert code == 2
+    assert "hub" in capsys.readouterr().out.lower()
+
+
+async def test_identity_reclaim_cli_renders_an_applied_result_without_an_audit_seq(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = await cli_identity._identity_reclaim(
+        uri="ws://hub",
+        operator="OPS/operator",
+        pin_name="PROJ/stale",
+        expected_key_id="machine-old",
+        reason="recover",
+        break_glass=False,
+        token=None,
+        ready_timeout=0.1,
+        result_timeout=0.1,
+        json_output=False,
+        agent_factory=_reclaim_factory(
+            {
+                "type": "identity_pin_reclaim_result",
+                "applied": True,
+                "pin_name": "PROJ/stale",
+                "payload": "done",
+            }
+        ),
+    )
+    assert code == 0
+    assert capsys.readouterr().out.strip() == "reclaimed identity pin for PROJ/stale"
+
+
+def test_identity_reclaim_dispatches_the_async_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_reclaim(**_kwargs: Any) -> int:
+        return 7
+
+    monkeypatch.setattr(cli_identity, "_identity_reclaim", fake_reclaim)
+    args = argparse.Namespace(
+        uri="ws://hub",
+        operator="OPS/operator",
+        pin_name="PROJ/stale",
+        expected_key_id="machine-old",
+        reason="recover",
+        break_glass=False,
+        token=None,
+        ready_timeout=1.0,
+        timeout=1.0,
+        json=False,
+    )
+    assert cli_identity._cmd_identity_reclaim(args) == 7
 
 
 # --- acl shadow ------------------------------------------------------------

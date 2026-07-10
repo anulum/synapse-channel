@@ -13,6 +13,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `synapse identity reclaim` adds a deny-by-default recovery path for stale
+  trust-on-first-use pins. A cryptographically bound operator needs an exact
+  `identity-pin-reclaim` ACL grant, the observed key id, a reason, and a durable
+  hub journal. Normal recovery waits for the target socket to disappear and
+  its ownership lease TTL to lapse; explicit `--break-glass` may evict a live
+  or still-leased holder. Every applied action is compare-and-swap guarded,
+  write-ahead audited, broadcast without key material, and removes rather than
+  silently replacing the old key. Pin-refusal diagnostics now point at this
+  governed command instead of manual JSON deletion.
+
 ## [0.99.2] - 2026-07-10
 
 ### Added

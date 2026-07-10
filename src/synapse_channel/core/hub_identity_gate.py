@@ -38,6 +38,7 @@ from __future__ import annotations
 import base64
 import binascii
 import logging
+import shlex
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -270,11 +271,15 @@ class HubIdentityGate:
         """Refuse a claim on a pinned name with the actionable recovery path."""
         pin = pin_store.pinned(sender)
         pinned_key_id = pin.key_id if pin is not None else "unknown"
-        store = pin_store.path
-        recovery = (
-            f"remove its entry from {store} and restart the hub to re-pin"
-            if store is not None
-            else "restart the hub to clear the in-memory pin"
+        store_hint = (
+            f" after inspecting {pin_store.path}"
+            if pin_store.path is not None
+            else " after inspecting the in-memory pin through the hub operator"
+        )
+        reclaim_command = (
+            f"synapse identity reclaim {shlex.quote(sender)} "
+            "--operator OPERATOR_IDENTITY "
+            f"--expected-key-id {shlex.quote(pinned_key_id)} --reason REASON"
         )
         logger.warning(
             "identity pin refused name=%s pinned_key=%s detail=%s", sender, pinned_key_id, detail
@@ -284,7 +289,9 @@ class HubIdentityGate:
             sender,
             message=(
                 f"identity pin: name {sender!r} is pinned to key {pinned_key_id} "
-                f"({detail}). Connect from the machine holding that key, or {recovery}."
+                f"({detail}). Connect from the machine holding that key, or ask an "
+                "identity-pin-reclaim ACL operator to run "
+                f"{reclaim_command}{store_hint}; the hub needs --db for the mandatory audit."
             ),
             reason="identity pin mismatch",
             verification_result=detail,

@@ -2,14 +2,14 @@
   "metrics": {
     "benchmark_harnesses": 6,
     "classes": 543,
-    "cli_subcommands": 159,
+    "cli_subcommands": 160,
     "documentation_pages": 53,
     "optional_dependency_groups": 13,
-    "package_modules": 375,
+    "package_modules": 377,
     "public_api_exports": 70,
-    "tests": 6074,
+    "tests": 6090,
     "version": "0.99.2",
-    "wire_message_types": 75,
+    "wire_message_types": 77,
     "workflows": 13
   },
   "project": "SYNAPSE CHANNEL",

@@ -295,6 +295,7 @@ class MessageType:
     MULTIHUB_CLAIM_REQUEST = "multihub_claim_request"
     OPERATOR_RELAY_REQUEST = "operator_relay_request"
     FEDERATION_OFFER_REQUEST = "federation_offer_request"
+    IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
 
     # Hub -> agent.
     SYSTEM = "system"
@@ -333,6 +334,7 @@ class MessageType:
     MULTIHUB_CLAIM_RESULT = "multihub_claim_result"
     OPERATOR_RELAY_RESULT = "operator_relay_result"
     FEDERATION_OFFER = "federation_offer"
+    IDENTITY_PIN_RECLAIM_RESULT = "identity_pin_reclaim_result"
     DEAD_LETTER_ESCALATION = "dead_letter_escalation"
     DEAD_LETTER_FORWARDING = "dead_letter_forwarding"
     RECIPIENT_LIVENESS_WARNING = "recipient_liveness_warning"

@@ -74,12 +74,12 @@ The ACL model and its evaluation are implemented in
   that proves it — persisted in `--identity-pins` (default
   `~/synapse/identity-pins.json`) so the pin survives hub restarts. A pinned
   name refuses a missing signature or any other key with close code `4013`
-  (`identity pin mismatch`) and a recovery path naming the pin file; unsigned
-  names keep classic semantics; `--require-identity-binding` takes precedence
-  and keeps its fail-closed operator-bundle behaviour. Together with the
-  ownership lease this closes the name-squatting class: the lease covers
-  reconnect gaps with a bearer token, the pin covers restarts with a proof of
-  key possession.
+  (`identity pin mismatch`) and names the observed key id plus the governed
+  recovery command; unsigned names keep classic semantics;
+  `--require-identity-binding` takes precedence and keeps its fail-closed
+  operator-bundle behaviour. Together with the ownership lease this closes the
+  name-squatting class: the lease covers reconnect gaps with a bearer token,
+  the pin covers restarts with a proof of key possession.
 - **Every client verb signs uniformly**: `SynapseAgent` presents the machine
   identity by default, so any verb that connects — send, listen, arm, queries,
   the bridges — proves the same key. Before this default only `arm` and `wait`
@@ -88,13 +88,26 @@ The ACL model and its evaluation are implemented in
   explicit `identity_key_path` wins over the default, `machine_identity=False`
   opts a deliberately unsigned agent out, and a core-only installation
   degrades to the unsigned path with the module's one-time warning.
+- **Governed stale-pin reclaim**: `synapse identity reclaim <agent>
+  --operator <identity> --expected-key-id <key> --reason <text>` asks the live
+  hub to remove one exact TOFU pin. The handler always enforces an
+  `identity-pin-reclaim` ACL grant on target kind `agent`, even when general
+  `--require-acl` enforcement is off; the requester must itself be pinned or
+  operator-bundle-bound, and a hub without `--db` refuses because it cannot
+  write the mandatory audit event. The safe path accepts only an offline name
+  whose ownership lease has lapsed under `--lease-offline-ttl`. An operator may
+  add `--break-glass` to evict a live or still-leased holder, but that override,
+  the previous key id, the operator, and the reason are recorded in a
+  write-ahead `identity_pin_reclaim` audit trail and broadcast as a system
+  notice. Removal is compare-and-swap on `--expected-key-id`; it never rotates
+  or installs a replacement key. The next valid proof establishes a fresh
+  first-use pin.
 
 The identity namespace is taken from the resolved sender (`project/agent`). The
 first credential format is now the zero-config machine key above (operator
-bundles remain the multi-tenant graduation); credential rotation tooling,
-revocation UX beyond hand-editing the pin file, owner recovery flows, durable
-audit-event journaling, and read-surface ACLs (metrics, dashboard, event-query)
-remain design targets.
+bundles remain the multi-tenant graduation). General credential rotation and
+revocation tooling, owner recovery beyond the governed stale-pin path, and
+read-surface ACLs (metrics, dashboard, event-query) remain design targets.
 
 ## Identity model
 
@@ -140,6 +153,7 @@ permission vocabulary should stay small and auditable:
 | `observe` | Receive directed messages the identity is not a party to (when private directed routing is on). Target kind `agent`. |
 | `mailbox` | Replay another identity's directed backlog via a mailbox heartbeat (`mailbox_for`). Target kind `agent`. Self and `-rx` sidecars do not need a grant. |
 | `role-claim` | Bind a role on the heartbeat when `--require-role-claim` is on. Target kind `role` (`<project>/<role>`). Complements the role-grant store. |
+| `identity-pin-reclaim` | Remove one exact stale TOFU pin after the liveness, expected-key, requester-binding, and durable-audit gates pass. Target kind `agent`. Always enforced for this verb. |
 
 Each rule should include an allowed verb, a target pattern, an optional channel
 or project namespace constraint, and a decision reason suitable for receipts and
@@ -212,6 +226,7 @@ replace TLS, sandbox agents, or make arbitrary provider code safe to run.
 
 The local-first tradeoff is administrative complexity. A single-owner loopback
 hub should still work with shared-token mode. Exposed deployments need explicit
-credentials, credential rotation, revocation, owner recovery, deny by default
-ACLs, diagnostics, and operator procedures before this opt-in runtime can be
-treated as a complete multi-tenant IAM system.
+credentials, broader credential rotation and revocation, deny by default ACLs,
+diagnostics, and operator procedures before this opt-in runtime can be treated
+as a complete multi-tenant IAM system. The reclaim verb is a recovery primitive,
+not a complete credential lifecycle.

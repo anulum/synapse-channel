@@ -73,6 +73,10 @@ does not add agent grades to protocol envelopes.
 - **Capabilities:** `advertise`, `manifest_request`.
 - **Queries:** `state_request`, `who_request`, `history_request`,
   `resume_request`.
+- **Governed operator recovery:** `identity_pin_reclaim` removes one exact TOFU
+  pin after the always-on ACL, requester-binding, owner-liveness, expected-key,
+  and durable-audit gates pass. It is emitted only by an explicit operator
+  command, never automatically by a client.
 
 An `advertise` message may include `contracts`, either as a list of contract
 objects or as a task-class keyed mapping. The hub normalizes valid entries into
@@ -106,6 +110,8 @@ current wire format.
   `resume_snapshot`.
 - **Operational warnings:** `recipient_liveness_warning`,
   `dark_seat_alert`, `dead_letter_escalation`, `dead_letter_forwarding`.
+- **Governed operator recovery:** `identity_pin_reclaim_result` is the private
+  applied/refused verdict for an `identity_pin_reclaim` request.
 
 A `dark_seat_alert` is a default-on hub broadcast for an identity that owns an
 unexpired claim or is the `suggested_owner` of a non-terminal board task but has
@@ -119,6 +125,33 @@ claim or blackboard authority.
 The envelope builders and the message-type constants live in
 `synapse_channel.core.protocol`; the working agreement is in the repository's
 `TEAM_PROTOCOL.md`.
+
+## Governed identity-pin reclaim
+
+The request carries `pin_name`, `expected_key_id`, a non-empty `reason`, and an
+optional boolean `break_glass`. The requesting socket is already bound to the
+envelope `sender`; the hub additionally requires that sender to have proved a
+TOFU pin or an operator-managed identity bundle and to hold the ACL permission
+`identity-pin-reclaim` on target kind `agent` for `pin_name`. This grant is
+always checked by the handler, even when the general ACL compatibility switch
+is off. A durable event journal is mandatory.
+
+Without `break_glass`, the target must have no live socket and any opt-in name
+ownership lease must have lapsed under the hub's configured offline TTL. With
+`break_glass: true`, the same ACL-authorised, exact-key request may revoke the
+live socket and lease. The hub write-ahead records an `approved` audit event,
+compare-and-swap removes only a pin still matching `expected_key_id`, then
+records `applied`; a storage failure or race records `not_applied` and leaves no
+false success verdict. An applied action is also broadcast as a body-free
+`system` notice. Public key material and replacement key material never enter
+the audit or the wire request.
+
+The result carries `applied`, `pin_name`, `expected_key_id`, `break_glass`, an
+actionable `payload`, and the applied `audit_seq` when successful. Reclaim only
+removes the old binding: the next valid registration proof may establish a new
+first-use pin. Because the verb is explicit operator control rather than an
+automatically emitted compatibility feature, an older hub simply refuses the
+unknown request; clients never send it during ordinary connect or messaging.
 
 ## Directed delivery and the mailbox
 

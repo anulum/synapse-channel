@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — identity inventory audit + identity signing-key generation CLI
-"""``synapse identity`` — audit declared identities and generate identity signing keys.
+"""``synapse identity`` — audit, key generation, and governed pin recovery.
 
 ``audit`` is a local, read-only command: it loads an identity inventory file and
 reports the ambiguities that would block an enforcement rollout — duplicate audit
@@ -14,14 +14,25 @@ subjects, missing credentials, and seats that run more than one agent id.
 ``keygen`` generates the Ed25519 key an agent uses to prove its identity under
 connection-identity binding: it writes the private key to an owner-only file and
 prints (or enrols) the public trust-bundle entry the hub verifies against. Neither
-command talks to a running hub.
+of those commands talks to a running hub.
+
+``reclaim`` is the deliberately narrow live-hub recovery path for a stale
+trust-on-first-use pin. It names the exact key the operator inspected, requires
+an ACL grant and durable hub journal, and never replaces the key in place: after
+the audited removal, a later valid proof may establish a new first-use pin.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
+import contextlib
 import json
+from typing import Any
 
+from synapse_channel.cli_messaging_types import AgentFactory
+from synapse_channel.client.agent import SynapseAgent, default_hub_uri
+from synapse_channel.connect_failures import closed_after_ready, describe_connect_failure
 from synapse_channel.core.identity import IdentityError, IdentityInventory
 from synapse_channel.core.identity_binding import IdentityBindingError, enroll_identity_key
 from synapse_channel.core.identity_keys import (
@@ -30,6 +41,7 @@ from synapse_channel.core.identity_keys import (
     public_key_b64,
     write_signing_key,
 )
+from synapse_channel.core.protocol import MessageType
 
 
 def _cmd_identity_audit(args: argparse.Namespace) -> int:
@@ -109,6 +121,121 @@ def _cmd_identity_keygen(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _identity_reclaim(
+    *,
+    uri: str,
+    operator: str,
+    pin_name: str,
+    expected_key_id: str,
+    reason: str,
+    break_glass: bool,
+    token: str | None,
+    ready_timeout: float,
+    result_timeout: float,
+    json_output: bool,
+    agent_factory: AgentFactory = SynapseAgent,
+) -> int:
+    """Request one governed pin reclaim and print the hub's authoritative verdict.
+
+    Returns ``0`` when applied, ``1`` when policy refused the action, and ``2``
+    when no authoritative verdict arrived. The client uses its ordinary machine
+    identity, so the hub can require a pinned or operator-bundle-bound requester.
+    """
+    replies: list[dict[str, Any]] = []
+
+    async def collect(data: dict[str, Any]) -> None:
+        if data.get("type") in {MessageType.IDENTITY_PIN_RECLAIM_RESULT, MessageType.ERROR}:
+            replies.append(data)
+
+    agent = agent_factory(operator, collect, uri=uri, verbose=False, token=token)
+    connection = asyncio.create_task(agent.connect())
+    try:
+        if not await agent.wait_until_ready(timeout=ready_timeout) or await closed_after_ready(
+            agent
+        ):
+            print(
+                describe_connect_failure(
+                    operator,
+                    uri,
+                    close_code=agent.last_close_code,
+                    close_reason=agent.last_close_reason,
+                )
+            )
+            return 2
+        await agent.send_message(
+            MessageType.IDENTITY_PIN_RECLAIM,
+            target="System",
+            pin_name=pin_name,
+            expected_key_id=expected_key_id,
+            reason=reason,
+            break_glass=break_glass,
+        )
+        result = await _await_reclaim_result(replies, timeout=result_timeout)
+        if result is None:
+            print("pin reclaim failed: the hub returned no authoritative verdict")
+            return 2
+        if result.get("type") == MessageType.ERROR:
+            rendered = {
+                "applied": False,
+                "pin_name": pin_name,
+                "expected_key_id": expected_key_id,
+                "detail": str(result.get("payload") or "hub refused the request"),
+            }
+        else:
+            rendered = {
+                "applied": bool(result.get("applied")),
+                "pin_name": str(result.get("pin_name") or pin_name),
+                "expected_key_id": str(result.get("expected_key_id") or expected_key_id),
+                "break_glass": bool(result.get("break_glass")),
+                "audit_seq": result.get("audit_seq"),
+                "detail": str(result.get("payload") or ""),
+            }
+        if json_output:
+            print(json.dumps(rendered, indent=2, sort_keys=True))
+        elif rendered["applied"]:
+            suffix = f" (audit seq {rendered['audit_seq']})" if rendered.get("audit_seq") else ""
+            print(f"reclaimed identity pin for {rendered['pin_name']}{suffix}")
+        else:
+            print(f"pin reclaim refused: {rendered['detail']}")
+        return 0 if rendered["applied"] else 1
+    finally:
+        agent.running = False
+        connection.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await connection
+
+
+async def _await_reclaim_result(
+    replies: list[dict[str, Any]], *, timeout: float
+) -> dict[str, Any] | None:
+    """Return the first reclaim verdict or generic hub error before ``timeout``."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + max(float(timeout), 0.0)
+    while loop.time() <= deadline:
+        if replies:
+            return replies[-1]
+        await asyncio.sleep(0.01)
+    return None
+
+
+def _cmd_identity_reclaim(args: argparse.Namespace) -> int:
+    """Dispatch ``synapse identity reclaim`` to the one-shot async client."""
+    return asyncio.run(
+        _identity_reclaim(
+            uri=args.uri,
+            operator=args.operator,
+            pin_name=args.pin_name,
+            expected_key_id=args.expected_key_id,
+            reason=args.reason,
+            break_glass=args.break_glass,
+            token=args.token,
+            ready_timeout=args.ready_timeout,
+            result_timeout=args.timeout,
+            json_output=args.json,
+        )
+    )
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``identity`` subparser group."""
     identity = subparsers.add_parser(
@@ -150,3 +277,42 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Optional key expiry as wall-clock seconds since the epoch.",
     )
     keygen.set_defaults(func=_cmd_identity_keygen)
+
+    reclaim = nested.add_parser(
+        "reclaim",
+        help="Remove one stale TOFU identity pin through the hub's governed operator path.",
+    )
+    reclaim.add_argument("pin_name", help="Pinned agent identity to reclaim.")
+    reclaim.add_argument(
+        "--operator",
+        required=True,
+        help="Cryptographically bound requester identity named by the ACL grant.",
+    )
+    reclaim.add_argument(
+        "--expected-key-id",
+        required=True,
+        help="Exact current pin key id (compare-and-swap guard against a stale request).",
+    )
+    reclaim.add_argument(
+        "--reason", required=True, help="Operator reason written to the durable audit event."
+    )
+    reclaim.add_argument(
+        "--break-glass",
+        action="store_true",
+        help="Explicitly evict a live or still-leased holder; loudly marked in the audit.",
+    )
+    reclaim.add_argument("--uri", default=default_hub_uri())
+    reclaim.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    reclaim.add_argument(
+        "--token-file",
+        default=None,
+        help="Read the shared-secret token from this file instead of --token.",
+    )
+    reclaim.add_argument(
+        "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
+    )
+    reclaim.add_argument(
+        "--timeout", type=float, default=5.0, help="Seconds to await the governed verdict."
+    )
+    reclaim.add_argument("--json", action="store_true", help="Emit the verdict as JSON.")
+    reclaim.set_defaults(func=_cmd_identity_reclaim)

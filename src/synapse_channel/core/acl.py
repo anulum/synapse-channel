@@ -41,6 +41,7 @@ SANDBOX = "sandbox"
 OBSERVE = "observe"
 MAILBOX = "mailbox"
 ROLE_CLAIM = "role-claim"
+PIN_RECLAIM = "identity-pin-reclaim"
 
 PERMISSIONS = frozenset(
     {
@@ -56,6 +57,7 @@ PERMISSIONS = frozenset(
         OBSERVE,
         MAILBOX,
         ROLE_CLAIM,
+        PIN_RECLAIM,
     }
 )
 """The auditable permission vocabulary an ACL rule may grant.
@@ -79,6 +81,12 @@ without a grant; this verb is the policy-file path for a trusted monitor that is
 ``--require-role-claim`` is on. Target kind is ``role``; the pattern matches
 ``<project>/<role>``. Complements the role-grant store (``synapse role``): either the
 store or an ACL rule may authorise a claim.
+
+``PIN_RECLAIM`` grants a cryptographically bound operator the right to remove
+one stale trust-on-first-use identity pin. Target kind is ``agent``. Unlike the
+general mutation switch, this grant is always enforced by the reclaim handler,
+even when ``--require-acl`` is off, because no open-hub compatibility posture
+may silently make identity recovery public.
 """
 
 WOULD_ALLOW = "would_allow"

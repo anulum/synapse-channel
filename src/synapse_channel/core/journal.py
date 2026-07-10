@@ -73,6 +73,7 @@ class EventKind:
     DELIVERY_RECEIPT_DEFERRED = "delivery_receipt_deferred"
     DELIVERY_RECEIPT_EXPIRED = "delivery_receipt_expired"
     MAILBOX_WATERMARK = "mailbox_watermark"
+    IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
 
 
 MEMORY_KINDS = frozenset(
@@ -180,6 +181,23 @@ def record_operator_relay(store: EventStore, provenance: Mapping[str, Any]) -> N
         peer and previous owner inbound, or the local requester and destination outbound).
     """
     store.append(EventKind.OPERATOR_RELAY, dict(provenance), durable=True)
+
+
+def record_identity_pin_reclaim(store: EventStore, provenance: Mapping[str, Any]) -> int:
+    """Append the mandatory durable audit event for an applied pin reclaim.
+
+    This event is audit-only: the identity-pin JSON file is the durable state
+    projection, while replay deliberately ignores this kind. The event records
+    who removed which exact key, why, whether the live/lease gates were
+    overridden, and whether a live socket was evicted, so a break-glass action
+    is never confused with passive expiry or a first-use pin.
+
+    Returns
+    -------
+    int
+        Monotonic journal sequence of the audit event.
+    """
+    return store.append(EventKind.IDENTITY_PIN_RECLAIM, dict(provenance), durable=True)
 
 
 def record_dead_letter_escalation(store: EventStore, provenance: Mapping[str, Any]) -> None:

@@ -19,6 +19,7 @@ from synapse_channel.core.journal import (
     record_finding,
     record_handoff,
     record_idempotency,
+    record_identity_pin_reclaim,
     record_ledger_progress,
     record_ledger_task,
     record_operator_relay,
@@ -79,6 +80,29 @@ def test_record_operator_relay_writes_the_provenance(tmp_path: Path) -> None:
     assert events[0].kind == EventKind.OPERATOR_RELAY
     assert events[0].payload["peer"] == "peer-b"
     assert events[0].payload["applied"] is True
+
+
+def test_record_identity_pin_reclaim_is_a_durable_audit_only_event(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    seq = record_identity_pin_reclaim(
+        store,
+        {
+            "operator": "OPS/operator",
+            "pin_name": "PROJ/stale",
+            "expected_key_id": "machine-old",
+            "reason": "holder wedged",
+            "status": "applied",
+            "applied": True,
+        },
+    )
+    events = store.read_all()
+    result = replay(store, now=2000.0)
+    store.close()
+    assert seq == events[0].seq
+    assert events[0].kind == EventKind.IDENTITY_PIN_RECLAIM
+    assert events[0].payload["operator"] == "OPS/operator"
+    assert result.chat_history == []
+    assert result.state.claims == {}
 
 
 def test_replay_skips_the_audit_only_operator_relay_event(tmp_path: Path) -> None:
