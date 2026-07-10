@@ -136,11 +136,12 @@ def test_dependent_task_unblocks_when_prerequisite_completes(tmp_path: Path) -> 
         assert "TEST" in after.stdout
 
 
-def test_send_to_absent_target_is_accepted(tmp_path: Path) -> None:
-    """``send`` to an offline target exits cleanly (delivery is best-effort)."""
+def test_send_to_absent_target_reports_failed_delivery(tmp_path: Path) -> None:
+    """``send`` fails visibly when no online recipient matches its target."""
     with isolated_hub(tmp_path) as hub:
         sent = run_cli("send", "--name", "USER", "--target", "NOBODY", "ping", uri=hub.uri)
-        assert sent.ok(), sent.output
+        assert sent.returncode == 1
+        assert sent.stdout == "delivery failed: no online recipient matched NOBODY\n"
 
 
 def test_health_probe_is_silent_but_zero_on_a_live_hub(tmp_path: Path) -> None:
