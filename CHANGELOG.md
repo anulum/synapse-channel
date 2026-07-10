@@ -52,6 +52,13 @@ All notable changes to this project are documented here.
   project filtering happens before the bound. The hub-side 512-identity
   projection and durable journal evidence are unchanged.
 
+### Deprecated
+
+- `synapse hub --metrics-query-token-ok` now emits a parse-time warning and is
+  scheduled for removal in 0.101.0. The safe default remains unchanged; send
+  metrics credentials in the `Authorization: Bearer` header instead of URLs,
+  where tokens can leak into logs, histories, and proxy records.
+
 ### Fixed
 
 - `EventStore.delete()` now uses one static parameterised `DELETE` statement

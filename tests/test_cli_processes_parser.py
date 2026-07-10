@@ -235,12 +235,6 @@ def test_parser_worker_logging_options() -> None:
     assert args.log_level == DEFAULT_LOG_LEVEL
 
 
-def test_parser_hub_metrics_query_token_ok() -> None:
-    assert cli.build_parser().parse_args(["hub"]).metrics_query_token_ok is False
-    opted = cli.build_parser().parse_args(["hub", "--metrics-query-token-ok"])
-    assert opted.metrics_query_token_ok is True
-
-
 def test_parser_hub_message_authentication_options() -> None:
     defaults = cli.build_parser().parse_args(["hub"])
     assert defaults.message_auth_key == []

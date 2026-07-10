@@ -124,8 +124,9 @@ When that boundary is crossed, the proportionate controls are:
   metrics are enabled on a non-loopback host, the hub refuses to start without a
   metrics token unless `--insecure-off-loopback` is set. The recommended token
   presentation is `Authorization: Bearer <token>`. The `?token=<token>` query
-  form is accepted only when the operator opts in with
-  `--metrics-query-token-ok`.
+  form is accepted only when the operator opts in with the deprecated
+  `--metrics-query-token-ok` compatibility flag. It warns at parse time and is
+  scheduled for removal in 0.101.0; migrate probes to the bearer header now.
 - **A2A HTTP bridge.** `synapse a2a-serve` is a separate stdlib HTTP edge that
   defaults to `127.0.0.1`. Its public Agent Card is intentionally readable; the
   task, RPC, extended-card, and push-configuration routes can require HTTP

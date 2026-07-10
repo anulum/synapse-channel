@@ -1261,11 +1261,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.2 |
 | Public API exports | 70 |
-| Package modules | 387 |
-| Classes | 553 |
+| Package modules | 389 |
+| Classes | 554 |
 | Wire message types | 77 |
 | CLI subcommands | 160 |
-| Test functions | 6164 |
+| Test functions | 6168 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 13 |
@@ -1387,9 +1387,10 @@ threat model and how to report a vulnerability are in [`SECURITY.md`](SECURITY.m
   keep it on a loopback bind, or require `--metrics-token` before exposing it.
   The header form, `Authorization: Bearer <token>`, is the default token
   presentation. The query-string form `?token=<token>` is disabled by default and
-  is accepted only with `--metrics-query-token-ok`, because query tokens leak
-  easily into logs and history. The live board, state, and manifest also remain
-  available over the CLI and the MCP resources.
+  is accepted only with the deprecated `--metrics-query-token-ok` compatibility
+  flag, which warns at parse time and will be removed in 0.101.0 because query
+  tokens leak easily into logs and history. The live board, state, and manifest
+  also remain available over the CLI and the MCP resources.
 - **`synapse --version` is network-silent by default.** Set
   `SYNAPSE_UPDATE_CHECK=1` to opt in to a best-effort PyPI newer-release check
   (once a day, cached, no payload beyond the request itself). Set

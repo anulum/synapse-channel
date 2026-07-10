@@ -43,8 +43,9 @@ The hub switch maps to these concrete settings:
 - **Native WSS (TLS) required** through `--tls-certfile` and `--tls-keyfile`, so
   the transport is encrypted rather than plain `ws://`.
 - **Metrics token required** whenever `--metrics` is enabled.
-- **Metrics query tokens disabled** even if `--metrics-query-token-ok` is passed;
-  `Authorization: Bearer` remains the only token presentation in paranoid mode.
+- **Metrics query tokens disabled** even if the deprecated
+  `--metrics-query-token-ok` compatibility flag is passed; `Authorization:
+  Bearer` remains the only token presentation in paranoid mode.
 - **Insecure off-loopback override disabled** even if `--insecure-off-loopback`
   is passed. An off-loopback bind still needs the existing token and metrics
   token guards.

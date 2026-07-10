@@ -236,6 +236,11 @@ event log, and metrics bearer token when metrics are enabled; it disables metric
 query tokens and the insecure off-loopback override while printing the hardening
 hooks that are still missing.
 
+The loopback-only `--metrics-query-token-ok` compatibility flag is deprecated,
+warns when parsed, and is scheduled for removal in 0.101.0. Send metrics tokens
+in the `Authorization: Bearer` header instead; URL credentials can leak into
+logs, shell/browser histories, and proxy records.
+
 ## Recovery: picking up after a restart
 
 Nothing is lost when a terminal or session goes down — the feed, the plan, and the
