@@ -58,6 +58,11 @@ All notable changes to this project are documented here.
   resource aliases, journal persistence, idempotency memory, and broadcasts
   with or without a journal.
 
+- `core.hub_http` now has a direct module-owned test surface covering response
+  construction, bearer-versus-query token precedence, opt-in authorization,
+  WebSocket-path fallthrough, private rejection, and the production Prometheus
+  and health payloads.
+
 ### Fixed
 
 - Public security, protocol, glossary, staged-profile documentation, and the
