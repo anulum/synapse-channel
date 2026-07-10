@@ -8,10 +8,15 @@
 
 from __future__ import annotations
 
+import dataclasses
+import json
+import os
+import stat
 from pathlib import Path
 
 import pytest
 
+import synapse_channel.core.federation_store as federation_store
 from synapse_channel.core.federation import FederationPeer, ScopeGrant
 from synapse_channel.core.federation_store import (
     FederationRecord,
@@ -54,7 +59,9 @@ def test_peer_from_dict_is_deny_by_default_on_omissions() -> None:
 
 def test_peer_from_dict_rejects_bad_inputs() -> None:
     with pytest.raises(FederationStoreError, match="must be a mapping"):
-        peer_from_dict(["not", "a", "mapping"])  # type: ignore[arg-type]
+        peer_from_dict(
+            ["not", "a", "mapping"]  # type: ignore[arg-type]  # intentional malformed input
+        )
     with pytest.raises(FederationStoreError, match="non-empty domain_id"):
         peer_from_dict({"domain_id": "  "})
     with pytest.raises(FederationStoreError, match="'namespaces' must be a list"):
@@ -125,10 +132,82 @@ def test_save_and_load_round_trip(tmp_path: Path) -> None:
     loaded = load_store(path)
     assert loaded["acme"].peer == _PEER
     assert loaded["acme"].provenance == _PROV
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert list(path.parent.iterdir()) == [path]
+
+
+def test_save_failure_preserves_destination_and_removes_temporary_file(tmp_path: Path) -> None:
+    path = tmp_path / "store.json"
+    path.mkdir()
+    occupant = path / "existing"
+    occupant.write_text("preserved", encoding="utf-8")
+
+    with pytest.raises(FederationStoreError, match="cannot write federation store"):
+        save_store(path, [FederationRecord(_PEER, _PROV)])
+
+    assert occupant.read_text(encoding="utf-8") == "preserved"
+    assert [entry.name for entry in tmp_path.iterdir()] == ["store.json"]
+
+
+def test_save_closes_descriptor_and_removes_temporary_file_when_fdopen_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    descriptors: list[int] = []
+
+    def refuse_fdopen(descriptor: int, mode: str, *, encoding: str) -> None:
+        descriptors.append(descriptor)
+        raise OSError("fdopen refused")
+
+    monkeypatch.setattr(federation_store.os, "fdopen", refuse_fdopen)
+
+    with pytest.raises(FederationStoreError, match="cannot write federation store"):
+        save_store(tmp_path / "store.json", [FederationRecord(_PEER, _PROV)])
+
+    assert len(descriptors) == 1
+    with pytest.raises(OSError):
+        os.fstat(descriptors[0])
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_save_remains_atomic_when_directory_fsync_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(federation_store, "_DIRECTORY_FSYNC_SUPPORTED", False)
+    path = tmp_path / "store.json"
+
+    save_store(path, [FederationRecord(_PEER, _PROV)])
+
+    assert load_store(path)["acme"] == FederationRecord(_PEER, _PROV)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert list(tmp_path.iterdir()) == [path]
+
+
+@pytest.mark.parametrize("non_finite", [float("nan"), float("inf"), float("-inf")])
+def test_save_rejects_non_finite_values_without_replacing_destination(
+    tmp_path: Path, non_finite: float
+) -> None:
+    path = tmp_path / "store.json"
+    save_store(path, [FederationRecord(_PEER, _PROV)])
+    original = path.read_bytes()
+    invalid = FederationRecord(dataclasses.replace(_PEER, expires_at=non_finite), _PROV)
+
+    with pytest.raises(FederationStoreError, match="cannot encode federation store"):
+        save_store(path, [invalid])
+
+    assert path.read_bytes() == original
+    assert list(tmp_path.iterdir()) == [path]
 
 
 def test_load_absent_file_is_empty(tmp_path: Path) -> None:
     assert load_store(tmp_path / "missing.json") == {}
+
+
+def test_load_rejects_a_non_file_store_path(tmp_path: Path) -> None:
+    store = tmp_path / "store.json"
+    store.mkdir()
+
+    with pytest.raises(FederationStoreError, match="cannot read federation store"):
+        load_store(store)
 
 
 def test_load_rejects_malformed_store(tmp_path: Path) -> None:
@@ -136,6 +215,11 @@ def test_load_rejects_malformed_store(tmp_path: Path) -> None:
     bad_json.write_text("{not json", encoding="utf-8")
     with pytest.raises(FederationStoreError, match="not valid JSON"):
         load_store(bad_json)
+
+    non_mapping = tmp_path / "list.json"
+    non_mapping.write_text("[]", encoding="utf-8")
+    with pytest.raises(FederationStoreError, match="must be a mapping"):
+        load_store(non_mapping)
 
     no_records = tmp_path / "norec.json"
     no_records.write_text('{"version": 1}', encoding="utf-8")
@@ -148,6 +232,63 @@ def test_load_rejects_malformed_store(tmp_path: Path) -> None:
     )
     with pytest.raises(FederationStoreError, match="'provenance' must be a mapping"):
         load_store(bad_prov)
+
+
+@pytest.mark.parametrize("version", [None, True, "1", 2])
+def test_load_rejects_unknown_or_malformed_store_version(tmp_path: Path, version: object) -> None:
+    store = tmp_path / "version.json"
+    store.write_text(json.dumps({"version": version, "records": []}), encoding="utf-8")
+
+    with pytest.raises(FederationStoreError, match="unsupported federation store version"):
+        load_store(store)
+
+
+@pytest.mark.parametrize(
+    "field,value,reason",
+    [
+        ("domain_id", 7, "non-empty string domain_id"),
+        ("namespaces", ["ok", 7], "contain only strings"),
+        ("certificate_pins", [False], "contain only strings"),
+        ("signing_key_ids", [None], "contain only strings"),
+        ("scope_grants", [{"verb": 7, "namespace": "a"}], "must be strings"),
+        ("revoked", "false", "must be a boolean"),
+        ("expires_at", True, "must be a number"),
+    ],
+)
+def test_peer_from_dict_rejects_coerced_field_types(field: str, value: object, reason: str) -> None:
+    with pytest.raises(FederationStoreError, match=reason):
+        peer_from_dict({"domain_id": "a", field: value})
+
+
+def test_load_rejects_coerced_provenance_and_duplicate_domains(tmp_path: Path) -> None:
+    bad_provenance = tmp_path / "provenance.json"
+    bad_provenance.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "records": [{"domain_id": "a", "provenance": {"source": 7, "confirmed_by": "op"}}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(FederationStoreError, match="provenance source"):
+        load_store(bad_provenance)
+
+    duplicate = tmp_path / "duplicate.json"
+    duplicate.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "records": [
+                    {"domain_id": "a", "provenance": {}},
+                    {"domain_id": "a", "provenance": {}},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(FederationStoreError, match="duplicate federation domain_id"):
+        load_store(duplicate)
 
 
 @pytest.mark.parametrize("bad_imported_at", ['"xyz"', "{}", "[1]", "NaN"])

@@ -77,7 +77,7 @@ class FederationPeer:
         The bounded local scope a remote subject maps to — specific verbs over specific
         namespaces. Empty means read nothing; a remote subject inherits no local default.
     expires_at : float or None
-        Monotonic time the peering expires; ``None`` never expires by time.
+        UNIX epoch time when the peering expires; ``None`` never expires by time.
     revoked : bool
         When ``True`` the whole peering is refused.
     """

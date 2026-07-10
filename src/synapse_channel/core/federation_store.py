@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import tempfile
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,10 +38,11 @@ from synapse_channel.core.federation import FederationBundle, FederationPeer, Sc
 
 STORE_VERSION = 1
 """On-disk schema version of the federation store file."""
+_DIRECTORY_FSYNC_SUPPORTED = os.name == "posix"
 
 
 class FederationStoreError(ValueError):
-    """Raised when a federation bundle or store file is malformed."""
+    """Raised when a federation bundle or store is malformed or inaccessible."""
 
 
 def _finite_float(field: str, value: Any) -> float:
@@ -53,6 +56,9 @@ def _finite_float(field: str, value: Any) -> float:
     expiry comparison and leave a peering that never expires. ``OverflowError`` is
     caught because a JSON integer too large for a double raises it on conversion.
     """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        msg = f"federation bundle field {field!r} must be a number"
+        raise FederationStoreError(msg)
     try:
         number = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
@@ -106,10 +112,13 @@ class FederationRecord:
 def _str_list(data: Mapping[str, Any], key: str) -> list[str]:
     """Return a cleaned list of strings under ``key``, or empty when absent."""
     raw = data.get(key, [])
-    if not isinstance(raw, (list, tuple)):
+    if not isinstance(raw, list):
         msg = f"federation bundle field {key!r} must be a list"
         raise FederationStoreError(msg)
-    return [str(item).strip() for item in raw if str(item).strip()]
+    if not all(isinstance(item, str) for item in raw):
+        msg = f"federation bundle field {key!r} must contain only strings"
+        raise FederationStoreError(msg)
+    return [item.strip() for item in raw if item.strip()]
 
 
 def peer_to_dict(peer: FederationPeer) -> dict[str, Any]:
@@ -134,12 +143,16 @@ def peer_from_dict(data: Mapping[str, Any]) -> FederationPeer:
     if not isinstance(data, Mapping):
         msg = "federation bundle must be a mapping"
         raise FederationStoreError(msg)
-    domain_id = str(data.get("domain_id", "")).strip()
+    domain_raw = data.get("domain_id", "")
+    if not isinstance(domain_raw, str):
+        msg = "federation bundle must name a non-empty string domain_id"
+        raise FederationStoreError(msg)
+    domain_id = domain_raw.strip()
     if not domain_id:
         msg = "federation bundle must name a non-empty domain_id"
         raise FederationStoreError(msg)
     grants_raw = data.get("scope_grants", [])
-    if not isinstance(grants_raw, (list, tuple)):
+    if not isinstance(grants_raw, list):
         msg = "federation bundle field 'scope_grants' must be a list"
         raise FederationStoreError(msg)
     scope_grants: list[ScopeGrant] = []
@@ -147,11 +160,20 @@ def peer_from_dict(data: Mapping[str, Any]) -> FederationPeer:
         if not isinstance(grant, Mapping):
             msg = "each scope grant must be a mapping with 'verb' and 'namespace'"
             raise FederationStoreError(msg)
-        verb = str(grant.get("verb", "")).strip()
-        namespace = str(grant.get("namespace", "")).strip()
+        verb_raw = grant.get("verb", "")
+        namespace_raw = grant.get("namespace", "")
+        if not isinstance(verb_raw, str) or not isinstance(namespace_raw, str):
+            msg = "scope grant 'verb' and 'namespace' must be strings"
+            raise FederationStoreError(msg)
+        verb = verb_raw.strip()
+        namespace = namespace_raw.strip()
         if verb and namespace:
             scope_grants.append(ScopeGrant(verb=verb, namespace=namespace))
     expires_raw = data.get("expires_at")
+    revoked = data.get("revoked", False)
+    if not isinstance(revoked, bool):
+        msg = "federation bundle field 'revoked' must be a boolean"
+        raise FederationStoreError(msg)
     return FederationPeer(
         domain_id=domain_id,
         namespaces=frozenset(_str_list(data, "namespaces")),
@@ -159,7 +181,7 @@ def peer_from_dict(data: Mapping[str, Any]) -> FederationPeer:
         signing_key_ids=frozenset(_str_list(data, "signing_key_ids")),
         scope_grants=tuple(scope_grants),
         expires_at=None if expires_raw is None else _finite_float("expires_at", expires_raw),
-        revoked=bool(data.get("revoked", False)),
+        revoked=revoked,
     )
 
 
@@ -175,14 +197,26 @@ def merge_record(
 def load_store(path: str | Path) -> dict[str, FederationRecord]:
     """Load the federation store keyed by domain id; an absent file is an empty store."""
     file = Path(path)
-    if not file.is_file():
-        return {}
     try:
-        data = json.loads(file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        raw = file.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    except OSError as exc:
+        msg = f"cannot read federation store {file}: {exc}"
+        raise FederationStoreError(msg) from exc
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
         msg = f"federation store is not valid JSON: {exc}"
         raise FederationStoreError(msg) from exc
-    if not isinstance(data, Mapping) or not isinstance(data.get("records"), list):
+    if not isinstance(data, Mapping):
+        msg = "federation store must be a mapping with a 'records' list"
+        raise FederationStoreError(msg)
+    version = data.get("version")
+    if isinstance(version, bool) or not isinstance(version, int) or version != STORE_VERSION:
+        msg = f"unsupported federation store version: {version!r}"
+        raise FederationStoreError(msg)
+    if not isinstance(data.get("records"), list):
         msg = "federation store must be a mapping with a 'records' list"
         raise FederationStoreError(msg)
     records: dict[str, FederationRecord] = {}
@@ -192,12 +226,20 @@ def load_store(path: str | Path) -> dict[str, FederationRecord]:
         if not isinstance(prov, Mapping):
             msg = "federation record 'provenance' must be a mapping"
             raise FederationStoreError(msg)
+        source = prov.get("source", "")
+        confirmed_by = prov.get("confirmed_by", "")
+        if not isinstance(source, str) or not isinstance(confirmed_by, str):
+            msg = "federation provenance source and confirmed_by must be strings"
+            raise FederationStoreError(msg)
+        if peer.domain_id in records:
+            msg = f"duplicate federation domain_id: {peer.domain_id!r}"
+            raise FederationStoreError(msg)
         records[peer.domain_id] = FederationRecord(
             peer=peer,
             provenance=PeerProvenance(
-                source=str(prov.get("source", "")),
+                source=source,
                 imported_at=_finite_float("provenance.imported_at", prov.get("imported_at", 0.0)),
-                confirmed_by=str(prov.get("confirmed_by", "")),
+                confirmed_by=confirmed_by,
             ),
         )
     return records
@@ -227,10 +269,61 @@ def bundle_from_store(path: str | Path) -> FederationBundle:
     return FederationBundle(record.peer for record in records.values())
 
 
+def _fsync_directory(directory: Path) -> None:
+    """Persist a completed rename in ``directory`` on POSIX filesystems."""
+    if not _DIRECTORY_FSYNC_SUPPORTED:
+        return
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    descriptor = os.open(directory, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def save_store(path: str | Path, records: Iterable[FederationRecord]) -> None:
-    """Write the federation store file, records sorted by domain id for a stable diff."""
+    """Atomically write an owner-only federation store sorted by domain id.
+
+    The replacement is ordered after an ``fsync`` of the owner-only sibling
+    temporary file, then the parent directory is synced so a power loss cannot
+    expose a partial policy or lose the completed rename.
+
+    Raises
+    ------
+    FederationStoreError
+        If the destination directory or durable replacement cannot be written.
+    """
     ordered = sorted(records, key=lambda record: record.peer.domain_id)
     payload = {"version": STORE_VERSION, "records": [record.to_dict() for record in ordered]}
-    file = Path(path)
-    file.parent.mkdir(parents=True, exist_ok=True)
-    file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    file = Path(path).expanduser()
+    try:
+        encoded = json.dumps(payload, indent=2, allow_nan=False) + "\n"
+    except (TypeError, ValueError) as exc:
+        msg = f"cannot encode federation store {file}: {exc}"
+        raise FederationStoreError(msg) from exc
+    temporary: Path | None = None
+    descriptor = -1
+    try:
+        file.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, temp_name = tempfile.mkstemp(
+            dir=file.parent,
+            prefix=f".{file.name}.",
+            suffix=".tmp",
+        )
+        temporary = Path(temp_name)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            descriptor = -1
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, file)
+        temporary = None
+        _fsync_directory(file.parent)
+    except OSError as exc:
+        msg = f"cannot write federation store {file}: {exc}"
+        raise FederationStoreError(msg) from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)

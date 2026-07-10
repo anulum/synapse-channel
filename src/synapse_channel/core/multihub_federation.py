@@ -117,7 +117,7 @@ def authorise_multihub_pull(
     credential : MultiHubPeerCredential
         The pinned peer identity being verified.
     now : float
-        The current monotonic time, used to evaluate peering expiry.
+        Current UNIX epoch time used to evaluate peering expiry.
     signature_ok : bool, optional
         Whether an event-signature check is satisfied. Defaults to ``True``; the
         connection-establishment gate does not require per-event signing, but a caller may
@@ -187,7 +187,7 @@ def authorise_multihub_peer(
     signing_key_id : str
         The peer's event-signing key id, which both bundles must accept.
     now : float
-        The current monotonic time, used to evaluate peering expiry.
+        Current UNIX epoch time used to evaluate peering expiry.
     signature_ok : bool, optional
         Whether an event-signature check is satisfied. Defaults to ``True``.
     acl_ok : bool, optional
@@ -255,7 +255,7 @@ def peer_authoriser(
     credential : MultiHubPeerCredential
         The pinned peer identity authorised on each call.
     clock : Callable[[], float]
-        Returns the current monotonic time; sampled per call.
+        Returns the current UNIX epoch time; sampled per call.
     signature_ok : bool, optional
         Forwarded to :func:`authorise_multihub_pull`. Defaults to ``True``.
     acl_ok : bool, optional
