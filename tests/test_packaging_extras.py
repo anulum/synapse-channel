@@ -8,7 +8,7 @@
 """Guard the optional-dependency extras and the modules that consume them.
 
 The wheel keeps a deliberately minimal runtime (`websockets` only); every feature
-library — cryptography, WASM, OTel, MCP — lives behind a named extra so a base
+library — cryptography, WASM, OTel, MCP, tree-sitter — lives behind a named extra so a base
 install stays lean and a feature install is explicit. Two failure modes are worth
 a permanent test: the runtime dependency set quietly growing a heavy library, and
 the `all` convenience extra drifting out of sync with the individual feature
@@ -39,6 +39,7 @@ _FEATURE_EXTRAS = (
     "pkcs11",
     "tpm2",
     "cloud-hsm",
+    "semantic",
 )
 
 #: One import per optional dependency proving the feature module loads without the
@@ -56,6 +57,7 @@ _FEATURE_MODULES = (
     "synapse_channel.core.wasm_sandbox",
     "synapse_channel.otel_export",
     "synapse_channel.mcp.registration",
+    "synapse_channel.git.semantic_tree_sitter",
 )
 
 

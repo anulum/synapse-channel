@@ -111,6 +111,9 @@ def _cmd_git_claim(
             auto_release_on=args.auto_release_on,
             token=args.token,
             semantic_selectors=_semantic_selectors_from_args(args),
+            semantic_diff_base=getattr(args, "semantic_diff_base", None),
+            semantic_diff_head=getattr(args, "semantic_diff_head", None),
+            semantic_diff_paths=tuple(getattr(args, "semantic_diff_path", None) or ()),
             semantic_evidence_json=args.semantic_evidence_json,
         )
     )
@@ -348,6 +351,28 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             "Write receipt-ready semantic selector evidence JSON after resolving "
             "semantic claim flags. Relative paths are written under the git root."
         ),
+    )
+    git_claim.add_argument(
+        "--diff-base",
+        dest="semantic_diff_base",
+        default=None,
+        help=(
+            "Infer conservative function scopes from this Git base versus the working tree, "
+            "using the optional semantic extra."
+        ),
+    )
+    git_claim.add_argument(
+        "--diff-head",
+        dest="semantic_diff_head",
+        default=None,
+        help="Optional committed head for --diff-base; omit for working-tree changes.",
+    )
+    git_claim.add_argument(
+        "--diff-path",
+        dest="semantic_diff_path",
+        action="append",
+        default=None,
+        help="Limit tree-sitter diff inference to this repository-relative path; repeatable.",
     )
     git_claim.add_argument(
         "--base", default="main", help="Branch the work merges back into (default: main)."

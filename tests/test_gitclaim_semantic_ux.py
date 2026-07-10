@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
@@ -20,6 +21,7 @@ import pytest
 from hub_e2e_helpers import running_hub
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.git.gitclaim import AgentFactory, run_git_claim
+from synapse_channel.git.semantic_scope import semantic_scope_path
 
 
 def _write(path: Path, text: str = "") -> None:
@@ -70,6 +72,25 @@ def _branch_then_repo(branch: str, repo: Path) -> Callable[[list[str]], str]:
     return runner
 
 
+def _commit_repo(root: Path) -> str:
+    """Initialise ``root`` and return its first commit hash."""
+    commands = (
+        ("init", "-q"),
+        ("config", "user.name", "Test"),
+        ("config", "user.email", "test@example.invalid"),
+        ("add", "."),
+        ("commit", "-qm", "base"),
+    )
+    for command in commands:
+        subprocess.run(["git", "-C", str(root), *command], check=True)
+    return subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
 async def test_run_git_claim_resolves_semantic_selectors_into_claim_paths(
     tmp_path: Path,
 ) -> None:
@@ -90,7 +111,7 @@ async def test_run_git_claim_resolves_semantic_selectors_into_claim_paths(
     assert rc == 0
     assert hub.state.claims["SEMANTIC"].paths == (
         "docs/manual.md",
-        "src/synapse_channel/core/receipts.py",
+        "src/synapse_channel/core/receipts.py/.synapse-symbol/build_release_receipt",
         "tests/test_release_receipts.py",
         "README.md",
         "docs/_generated/capability_manifest.json",
@@ -98,7 +119,7 @@ async def test_run_git_claim_resolves_semantic_selectors_into_claim_paths(
     payload = json.loads(evidence.read_text(encoding="utf-8"))
     assert payload[0]["selector"] == ("symbol:synapse_channel.core.receipts.build_release_receipt")
     assert payload[0]["claim_paths"] == [
-        "src/synapse_channel/core/receipts.py",
+        "src/synapse_channel/core/receipts.py/.synapse-symbol/build_release_receipt",
         "tests/test_release_receipts.py",
         "README.md",
         "docs/_generated/capability_manifest.json",
@@ -147,16 +168,6 @@ async def test_run_git_claim_reports_unwritable_semantic_evidence(
     assert "semantic claim evidence error:" in capsys.readouterr().out
 
 
-def test_write_semantic_evidence_resolves_a_relative_destination(tmp_path: Path) -> None:
-    """A relative evidence path lands below the repository root."""
-    from synapse_channel.git.gitclaim import _write_semantic_evidence
-
-    _write_semantic_evidence((), tmp_path, "sub/evidence.json")
-    written = tmp_path / "sub" / "evidence.json"
-    assert written.exists()
-    assert written.read_text(encoding="utf-8").strip() in ("[]", "{}")
-
-
 async def test_run_git_claim_resolves_selectors_without_evidence_output(
     tmp_path: Path,
 ) -> None:
@@ -175,8 +186,107 @@ async def test_run_git_claim_resolves_selectors_without_evidence_output(
         )
 
     assert rc == 0
-    assert "src/synapse_channel/core/receipts.py" in hub.state.claims["SEMANTIC"].paths
+    assert (
+        "src/synapse_channel/core/receipts.py/.synapse-symbol/build_release_receipt"
+        in hub.state.claims["SEMANTIC"].paths
+    )
     assert not (tmp_path / "semantic-evidence.json").exists()
+
+
+async def test_run_git_claim_infers_worktree_diff_and_writes_combined_evidence(
+    tmp_path: Path,
+) -> None:
+    _build_semantic_repo(tmp_path)
+    base = _commit_repo(tmp_path)
+    source = tmp_path / "src" / "synapse_channel" / "core" / "receipts.py"
+    source.write_text(
+        "\ndef build_release_receipt():\n    return {'changed': True}\n\n\n"
+        "class ReleaseReceipt:\n    pass\n",
+        encoding="utf-8",
+    )
+    evidence = tmp_path / "diff-evidence.json"
+
+    async with running_hub(SynapseHub()) as (hub, uri):
+        rc = await run_git_claim(
+            uri=uri,
+            name="diff-agent",
+            task_id="DIFF",
+            paths=[],
+            semantic_diff_base=base,
+            semantic_diff_paths=("src/synapse_channel/core/receipts.py",),
+            semantic_evidence_json=evidence.as_posix(),
+            runner=_branch_then_repo("feature/diff", tmp_path),
+        )
+
+    assert rc == 0
+    claim_paths = hub.state.claims["DIFF"].paths
+    assert claim_paths[0] == (
+        "src/synapse_channel/core/receipts.py/.synapse-symbol/build_release_receipt"
+    )
+    assert "tests/test_release_receipts.py" in claim_paths
+    assert "docs/_generated/capability_manifest.json" in claim_paths
+    payload = json.loads(evidence.read_text(encoding="utf-8"))
+    assert payload == [
+        {
+            "base": base,
+            "claim_paths": list(claim_paths),
+            "companion_claim_paths": list(claim_paths[1:]),
+            "head": None,
+            "kind": "diff-summary",
+            "note": "tree-sitter evidence; incomplete mappings widen to whole-file claims",
+            "records": [
+                {
+                    "claim_paths": [claim_paths[0]],
+                    "kind": "diff",
+                    "language": "python",
+                    "narrowed": True,
+                    "old_source": "src/synapse_channel/core/receipts.py",
+                    "reason": "all changed lines map to named declarations",
+                    "semantic_scopes": [claim_paths[0]],
+                    "source": "src/synapse_channel/core/receipts.py",
+                    "status": "M",
+                    "symbols": ["build_release_receipt"],
+                }
+            ],
+        }
+    ]
+
+
+async def test_synthetic_symbol_paths_coexist_but_whole_file_is_refused(
+    tmp_path: Path,
+) -> None:
+    _build_semantic_repo(tmp_path)
+    runner = _branch_then_repo("feature/symbols", tmp_path)
+    source = "src/synapse_channel/core/receipts.py"
+    first = semantic_scope_path(source, "build_release_receipt")
+    second = semantic_scope_path(source, "ReleaseReceipt")
+
+    async with running_hub(SynapseHub()) as (hub, uri):
+        first_rc = await run_git_claim(
+            uri=uri,
+            name="first",
+            task_id="FIRST",
+            paths=[first],
+            runner=runner,
+        )
+        second_rc = await run_git_claim(
+            uri=uri,
+            name="second",
+            task_id="SECOND",
+            paths=[second],
+            runner=runner,
+        )
+        whole_rc = await run_git_claim(
+            uri=uri,
+            name="whole",
+            task_id="WHOLE",
+            paths=[source],
+            runner=runner,
+        )
+
+    assert first_rc == second_rc == 0
+    assert whole_rc == 1
+    assert set(hub.state.claims) == {"FIRST", "SECOND"}
 
 
 class _ScriptedClaimAgent:

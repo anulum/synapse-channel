@@ -35,12 +35,23 @@ This installs the `synapse` console command and the `synapse_channel` package.
 | `benchmark` | `tiktoken`, for real token counts in the relay benchmark. |
 | `docs` | The documentation-site toolchain (MkDocs Material, mkdocstrings). |
 | `otel` | The OpenTelemetry SDK + OTLP/HTTP exporters, for `synapse causality otel --endpoint` and `synapse fleet-scorecard --endpoint`. |
+| `semantic` | Local tree-sitter runtime and Python, JavaScript/JSX, TypeScript/TSX, Rust, and Go grammar wheels for function-level Git-diff claims. |
 
 Install one or more with, for example:
 
 ```bash
 pip install -e ".[dev,benchmark]"
 ```
+
+For offline-capable semantic diff inference after installation:
+
+```bash
+pip install 'synapse-channel[semantic]'
+python tools/semantic_diff_claims.py --base main --check
+```
+
+The grammar wheels are installed up front. Claim resolution never downloads a
+parser at runtime.
 
 For a contributor checkout, the local `.venv` should mirror the declared
 development, documentation, and benchmark extras. Verify that before running

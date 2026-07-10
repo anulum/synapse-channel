@@ -68,17 +68,30 @@ the owning generator's check command.
 
 `python tools/semantic_claims.py --selector <kind:value> --claim-args` is the
 semantic claim resolver for local planning. It accepts module, symbol, API,
-source, test, generated, and migration selectors, then emits the ordinary
-file-scope paths that `synapse git-claim` already understands. This keeps the hub
-simple while letting agents coordinate over meaning before submitting path
-claims and release receipt fields.
+source, test, generated, and migration selectors. Symbol and API selectors emit
+a canonical synthetic descendant such as
+`src/pkg/worker.py/.synapse-symbol/Worker/run`; the other selectors and owning
+test/generated companions remain whole-file paths. The hub enforces all of them
+with its existing path ancestry rule, so symbol separation needs no parser or
+wire change on the server.
 
 For day-to-day claims, `synapse git-claim` accepts the same selector kinds as
 first-class flags (`--module`, `--symbol`, `--api`, `--source`, `--test`,
 `--generated`, and `--migration`). It resolves them after discovering the local
 git root, merges the derived paths with explicit `--paths`, and can write the
-selector evidence with `--semantic-evidence-json`. The hub still stores only
-ordinary paths and branch metadata.
+selector evidence with `--semantic-evidence-json`.
+
+Function-level inference from actual edits is also client-side. Install
+`synapse-channel[semantic]`, then use `python tools/semantic_diff_claims.py
+--base main --claim-args` or `synapse git-claim TASK --diff-base main`. The
+resolver maps zero-context Git hunks on both old and new source sides to the
+smallest named tree-sitter declaration for Python, JavaScript, TypeScript, Rust,
+and Go. Any incomplete mapping — including module-level changes, unsupported or
+invalid syntax, add/delete/rename statuses, or unavailable source content —
+widens to the whole file. Optional `--diff-head`, repeatable `--diff-path`, and
+`--semantic-evidence-json` keep the comparison and receipt evidence explicit.
+No parser is downloaded at runtime; the hub still stores only canonical paths
+and branch metadata.
 
 `python tools/import_merge_risk.py --changed <path> --claimed <path> --check` is
 the import graph merge-risk radar for pre-merge and handoff checks. It combines

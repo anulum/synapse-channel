@@ -6,12 +6,12 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — semantic claim selector resolver
-"""Resolve semantic claim selectors into ordinary file-scope claim paths.
+"""Resolve semantic claim selectors into canonical path claim scopes.
 
-The hub remains path-scope only. This tool is the local semantic layer that lets
-agents ask for a module, public symbol, API surface, test owner, generated
-artefact, migration, or source path and receive deterministic ``--paths`` values
-for ``synapse git-claim`` plus receipt-ready JSON.
+The hub remains path-scope only. Symbol and API selectors become synthetic
+source descendants; all other selectors remain whole-file scopes. This local
+layer returns deterministic ``--paths`` values for ``synapse git-claim`` plus
+receipt-ready JSON.
 """
 
 from __future__ import annotations
@@ -20,11 +20,12 @@ import argparse
 import json
 import shlex
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from synapse_channel.git import generated_dependency_claims, test_ownership_map
+from synapse_channel.git.semantic_scope import semantic_scope_path
 
 REPO_ROOT = Path.cwd()
 
@@ -53,6 +54,7 @@ class SemanticClaimRecord:
     sources: tuple[str, ...]
     modules: tuple[str, ...]
     symbols: tuple[str, ...]
+    semantic_scopes: tuple[str, ...]
     tests: tuple[str, ...]
     generated: tuple[str, ...]
     claim_paths: tuple[str, ...]
@@ -135,11 +137,19 @@ def _record_from_owner(
     owner: test_ownership_map.OwnershipRecord,
     symbols: Sequence[str],
     repo_root: Path,
+    *,
+    narrow_symbols: bool = False,
 ) -> SemanticClaimRecord:
     """Build a semantic claim record from a source ownership record."""
     sources = (owner.source,)
     tests = tuple(test_owner.path for test_owner in owner.test_owners)
     generated = _normalise_generated_for_sources(repo_root, sources)
+    semantic_scopes = (
+        tuple(semantic_scope_path(owner.source, symbol) for symbol in symbols)
+        if narrow_symbols
+        else ()
+    )
+    claimed_sources = semantic_scopes or sources
     return SemanticClaimRecord(
         selector=selector.raw,
         kind=selector.kind,
@@ -147,9 +157,10 @@ def _record_from_owner(
         sources=sources,
         modules=(owner.module,),
         symbols=tuple(symbols),
+        semantic_scopes=semantic_scopes,
         tests=tests,
         generated=generated,
-        claim_paths=_unique_ordered((*sources, *tests, *generated)),
+        claim_paths=_unique_ordered((*claimed_sources, *tests, *generated)),
     )
 
 
@@ -167,7 +178,13 @@ def _resolve_symbol_like(
     if owner is None or symbol not in owner.symbols:
         msg = f"unknown {selector.kind} selector: {selector.raw}"
         raise ValueError(msg)
-    return _record_from_owner(selector, owner, (symbol,), repo_root)
+    return _record_from_owner(
+        selector,
+        owner,
+        (symbol,),
+        repo_root,
+        narrow_symbols=True,
+    )
 
 
 def _resolve_module(
@@ -223,6 +240,7 @@ def _resolve_test(
         sources=sources,
         modules=tuple(record.module for record in owners),
         symbols=tuple(symbol for record in owners for symbol in record.symbols),
+        semantic_scopes=(),
         tests=(test_path,),
         generated=generated,
         claim_paths=_unique_ordered((*sources, test_path, *generated)),
@@ -253,6 +271,7 @@ def _resolve_generated(
         sources=(),
         modules=(),
         symbols=(),
+        semantic_scopes=(),
         tests=(),
         generated=generated_paths,
         claim_paths=generated_paths,
@@ -272,6 +291,7 @@ def _resolve_migration(selector: ParsedSelector, repo_root: Path) -> SemanticCla
         sources=(),
         modules=(),
         symbols=(),
+        semantic_scopes=(),
         tests=(),
         generated=(),
         claim_paths=(migration,),
@@ -306,6 +326,24 @@ def resolve_selectors(
     return tuple(resolved)
 
 
+def companion_claim_paths(repo_root: Path, sources: Sequence[str]) -> tuple[str, ...]:
+    """Return owning tests and generated outputs for changed ``sources``.
+
+    Semantic diff inference owns only source scopes. This helper reuses the
+    resolver's existing ownership and generated-output maps so a narrowed
+    function claim still reserves the tests and generated artefacts that can be
+    made stale by the edit.
+    """
+    ownership = _index_by_source(test_ownership_map.build_ownership_map(repo_root))
+    tests: list[str] = []
+    for source in sources:
+        owner = ownership.get(source)
+        if owner is not None:
+            tests.extend(test_owner.path for test_owner in owner.test_owners)
+    generated = _normalise_generated_for_sources(repo_root, sources)
+    return _unique_ordered((*tests, *generated))
+
+
 def records_to_json(records: Sequence[SemanticClaimRecord]) -> list[dict[str, object]]:
     """Convert semantic claim records into a stable JSON payload."""
     return [
@@ -316,6 +354,7 @@ def records_to_json(records: Sequence[SemanticClaimRecord]) -> list[dict[str, ob
             "sources": list(record.sources),
             "modules": list(record.modules),
             "symbols": list(record.symbols),
+            "semantic_scopes": list(record.semantic_scopes),
             "tests": list(record.tests),
             "generated": list(record.generated),
             "claim_paths": list(record.claim_paths),
@@ -382,7 +421,11 @@ def _claim_path_count(records: Sequence[SemanticClaimRecord]) -> int:
     return len(_unique_ordered(path for record in records for path in record.claim_paths))
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    resolver: Callable[[Path, Sequence[str]], tuple[SemanticClaimRecord, ...]] | None = None,
+) -> int:
     """Run semantic claim resolution and return a process exit code."""
     args = parse_args(argv)
     if not args.selectors:
@@ -391,7 +434,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     repo_root = args.repo_root.resolve()
     try:
-        records = resolve_selectors(repo_root, args.selectors)
+        records = (resolve_selectors if resolver is None else resolver)(repo_root, args.selectors)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2

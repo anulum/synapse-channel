@@ -95,10 +95,13 @@ def test_current_repo_symbol_selector_json_resolves_full_claim_surface() -> None
             "sources": ["src/synapse_channel/core/receipts.py"],
             "modules": ["synapse_channel.core.receipts"],
             "symbols": ["build_release_receipt"],
+            "semantic_scopes": [
+                "src/synapse_channel/core/receipts.py/.synapse-symbol/build_release_receipt"
+            ],
             "tests": ["tests/test_hub_core_claims.py", "tests/test_release_receipts.py"],
             "generated": ["README.md", "docs/_generated/capability_manifest.json"],
             "claim_paths": [
-                "src/synapse_channel/core/receipts.py",
+                "src/synapse_channel/core/receipts.py/.synapse-symbol/build_release_receipt",
                 "tests/test_hub_core_claims.py",
                 "tests/test_release_receipts.py",
                 "README.md",
@@ -117,7 +120,7 @@ def test_current_repo_claim_args_are_stable_for_api_selector() -> None:
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert result.stdout.strip() == (
-        "--paths src/synapse_channel/core/receipts.py "
+        "--paths src/synapse_channel/core/receipts.py/.synapse-symbol/ReleaseReceipt "
         "--paths tests/test_hub_core_claims.py "
         "--paths tests/test_release_receipts.py "
         "--paths README.md "
@@ -155,6 +158,9 @@ def test_api_test_and_generated_selectors_resolve_directly() -> None:
 
     assert [record.kind for record in records] == ["api", "test", "generated"]
     assert records[0].symbols == ("ReleaseReceipt",)
+    assert records[0].semantic_scopes == (
+        "src/synapse_channel/core/receipts.py/.synapse-symbol/ReleaseReceipt",
+    )
     assert records[1].sources == ("src/synapse_channel/core/receipts.py",)
     assert records[2].claim_paths == ("docs/_generated/capability_manifest.json",)
 
@@ -176,6 +182,7 @@ def test_module_source_and_migration_selectors_resolve_temp_repo(
 
     assert [record.kind for record in records] == ["module", "source", "migration"]
     assert records[0].symbols == ("ReleaseReceipt", "build_release_receipt")
+    assert records[0].semantic_scopes == ()
     assert records[0].tests == ("tests/test_release_receipts.py",)
     assert records[0].generated == (
         "README.md",
@@ -347,6 +354,7 @@ def test_records_to_json_and_render_human_cover_empty_and_deduplicated_paths() -
         sources=("src/synapse_channel/a.py",),
         modules=("synapse_channel.a",),
         symbols=("A",),
+        semantic_scopes=(),
         tests=("tests/test_a.py",),
         generated=("README.md",),
         claim_paths=(
@@ -364,6 +372,18 @@ def test_records_to_json_and_render_human_cover_empty_and_deduplicated_paths() -
     assert semantic_claims.render_human(()) == ""
     assert semantic_claims.render_human((record,)) == (
         "module:synapse_channel.a -> src/synapse_channel/a.py, tests/test_a.py, README.md"
+    )
+
+
+def test_companion_paths_reuse_test_and_generated_maps() -> None:
+    assert semantic_claims.companion_claim_paths(
+        REPO_ROOT,
+        ("src/synapse_channel/core/receipts.py", "clients/js/src/client.ts"),
+    ) == (
+        "tests/test_hub_core_claims.py",
+        "tests/test_release_receipts.py",
+        "README.md",
+        "docs/_generated/capability_manifest.json",
     )
 
 

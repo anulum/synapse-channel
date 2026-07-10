@@ -536,9 +536,18 @@ is hook-invoked and does not take a task id; when a manual drop is needed, use
 resolver exposed by `tools/semantic_claims.py`: `--module`, `--symbol`, `--api`,
 `--source`, `--test`, `--generated`, and `--migration`. The command resolves the
 selectors against the local git root, merges the derived source/test/generated
-paths with any explicit `--paths`, and sends only ordinary file-scope paths to
-the hub. Add `--semantic-evidence-json semantic-evidence.json` to write
-receipt-ready selector evidence under the git root.
+paths with any explicit `--paths`, and sends only canonical path scopes to the
+hub. Symbol and API selectors use a synthetic descendant below their source;
+other selectors and companion paths stay whole-file.
+
+With the optional `semantic` extra, `--diff-base main` maps tracked working-tree
+changes to the smallest named declaration in Python, JavaScript/JSX,
+TypeScript/TSX, Rust, or Go. Add `--diff-head HEAD` for a committed comparison
+and repeat `--diff-path src/pkg` to filter it. Every incomplete mapping widens to
+the whole file. `python tools/semantic_diff_claims.py --base main --claim-args`
+exposes the same diff-only planning surface. Add `--semantic-evidence-json
+semantic-evidence.json` to either selector or diff claims to write receipt-ready
+local evidence; no parser download or hub-side Git access occurs.
 
 Claim paths are coordination scopes, not filesystem reads. Normal relative paths
 such as `src/auth.py` stay narrow. Absolute paths and any path containing `..`

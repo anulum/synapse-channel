@@ -55,6 +55,12 @@ dev = [
   "wasmtime>=14.0.0",
   "opentelemetry-sdk>=1.43.0",
   "opentelemetry-exporter-otlp-proto-http>=1.43.0",
+  "tree-sitter>=0.26.0",
+  "tree-sitter-python>=0.25.0",
+  "tree-sitter-javascript>=0.25.0",
+  "tree-sitter-typescript>=0.23.2",
+  "tree-sitter-rust>=0.24.2",
+  "tree-sitter-go>=0.25.0",
 ]
 # NB: tpm2-pytss (the [tpm2] extra) is deliberately NOT in dev. It is sdist-only and its build
 # needs the TSS2 system headers (libtss2-dev), so putting it in the hash-locked requirements-dev.txt
@@ -72,6 +78,14 @@ otel = [
 ]
 mcp = [
   "mcp>=1.28.0",
+]
+semantic = [
+  "tree-sitter>=0.26.0",
+  "tree-sitter-python>=0.25.0",
+  "tree-sitter-javascript>=0.25.0",
+  "tree-sitter-typescript>=0.23.2",
+  "tree-sitter-rust>=0.24.2",
+  "tree-sitter-go>=0.25.0",
 ]
 encryption = [
   "cryptography>=42.0",
@@ -101,6 +115,12 @@ all = [
   "python-pkcs11>=0.9",
   "tpm2-pytss>=2.3",
   "boto3>=1.34",
+  "tree-sitter>=0.26.0",
+  "tree-sitter-python>=0.25.0",
+  "tree-sitter-javascript>=0.25.0",
+  "tree-sitter-typescript>=0.23.2",
+  "tree-sitter-rust>=0.24.2",
+  "tree-sitter-go>=0.25.0",
 ]
 docs = [
   "mkdocs-material>=9.5",

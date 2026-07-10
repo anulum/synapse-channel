@@ -15,6 +15,18 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- `synapse git-claim --diff-base` now narrows safe tracked modifications to
+  function or type scopes using local tree-sitter grammars for Python,
+  JavaScript/JSX, TypeScript/TSX, Rust, and Go. Canonical `.synapse-symbol`
+  descendants reuse the hub's existing path ancestry rule, so separate symbols
+  can coexist without a wire change while class, file, and directory claims stay
+  conservative ancestors. Old and new diff sides are both mapped; incomplete,
+  unsupported, unsafe, add/delete/rename, or non-textual evidence widens to the
+  whole file. The optional `semantic` extra installs individual upstream grammar
+  wheels with no runtime download; `tools/semantic_diff_claims.py`, path filters,
+  committed-head comparisons, owner-only JSON evidence, and owning
+  test/generated companions expose the same local-first decision trail.
+
 - `synapse fleet-scorecard` now composes the existing durable causality spans,
   opt-in accounting, advisory live-claim contention, evidence-only reliability,
   and optional benchmark history into one atomic owner-only JSON bundle. With

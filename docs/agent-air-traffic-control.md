@@ -28,7 +28,10 @@ designed Synapse surface:
 1. **Separation** — keep two agents off the same work. File-scope claims and
    semantic claims lease a unit of work (paths, symbols, APIs, tests, generated
    artefacts) with an epoch and a checkpoint, so a second agent is refused before
-   it edits. *(Shipped: `synapse git-claim`, semantic selectors, leases.)*
+   it edits. Symbol scopes are synthetic source-file descendants enforced by the
+   existing path ancestry rule; conservative tree-sitter Git-diff inference runs
+   only on the client and widens incomplete evidence to the whole file.
+   *(Shipped: `synapse git-claim`, semantic selectors and diff scopes, leases.)*
 2. **Merge-risk radar** — surface impending collisions across branches before
    they land. Cross-branch claim overlap and historical path conflicts are
    computed read-only. *(Shipped: `synapse conflicts`, `synapse event-query

@@ -59,6 +59,14 @@ def test_parser_git_claim_accepts_semantic_selector_flags() -> None:
             "migrations/001_initial.sql",
             "--semantic-evidence-json",
             "semantic-evidence.json",
+            "--diff-base",
+            "main",
+            "--diff-head",
+            "HEAD",
+            "--diff-path",
+            "src",
+            "--diff-path",
+            "tests",
         ]
     )
 
@@ -70,6 +78,9 @@ def test_parser_git_claim_accepts_semantic_selector_flags() -> None:
     assert args.generated == ["docs/_generated/capability_manifest.json"]
     assert args.migration == ["migrations/001_initial.sql"]
     assert args.semantic_evidence_json == "semantic-evidence.json"
+    assert args.semantic_diff_base == "main"
+    assert args.semantic_diff_head == "HEAD"
+    assert args.semantic_diff_path == ["src", "tests"]
 
 
 def test_cmd_git_claim_dispatches() -> None:
@@ -101,6 +112,9 @@ def test_cmd_git_claim_dispatches() -> None:
     assert captured["task_id"] == "T1"
     assert captured["paths"] == ["src"]
     assert captured["semantic_selectors"] == ()
+    assert captured["semantic_diff_base"] is None
+    assert captured["semantic_diff_head"] is None
+    assert captured["semantic_diff_paths"] == ()
     assert captured["semantic_evidence_json"] is None
 
 
@@ -156,6 +170,9 @@ def test_cmd_git_claim_dispatches_semantic_selectors() -> None:
         test=None,
         generated=["docs/_generated/capability_manifest.json"],
         migration=None,
+        semantic_diff_base="main",
+        semantic_diff_head="HEAD",
+        semantic_diff_path=["src", "tests"],
         semantic_evidence_json="semantic-evidence.json",
     )
 
@@ -166,6 +183,9 @@ def test_cmd_git_claim_dispatches_semantic_selectors() -> None:
         "generated:docs/_generated/capability_manifest.json",
     )
     assert captured["semantic_evidence_json"] == "semantic-evidence.json"
+    assert captured["semantic_diff_base"] == "main"
+    assert captured["semantic_diff_head"] == "HEAD"
+    assert captured["semantic_diff_paths"] == ("src", "tests")
 
 
 def test_cmd_git_claim_rejects_positional_and_flag(
@@ -234,6 +254,7 @@ def test_git_claim_argument_docs_are_aligned() -> None:
     assert "--symbol synapse_channel.core.receipts.build_release_receipt" in readme
     assert "`--module`, `--symbol`, `--api`" in cli_doc
     assert "--semantic-evidence-json semantic-evidence.json" in git_claims
+    assert "--diff-base main" in git_claims
 
 
 # --- git-hook ----------------------------------------------------------------

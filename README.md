@@ -765,6 +765,7 @@ A claim can be scoped to the git branch it happens on, resolved client-side:
 ```bash
 synapse git-init                                 # one-step setup: install the hooks + write a .synapse/ guide
 synapse git-claim TASK-1 --paths src/auth.py     # or: synapse git-claim --task-id TASK-1 ...
+synapse git-claim TASK-2 --diff-base main        # optional [semantic] extra narrows safe edits to symbols
 synapse git-hook install                         # (git-init already does this) auto-release on commit/merge
 synapse conflicts --check-diff                   # predict cross-branch merge conflicts
 ```
@@ -867,10 +868,13 @@ python tools/semantic_claims.py --selector \
   --claim-args
 ```
 
-The semantic claim resolver prints the source file, likely owning tests, and
-generated outputs that should share the same file-scope claim. It keeps the hub
-path-scope and local-first while giving agents a deterministic semantic planning
-step before they call `synapse git-claim`.
+For a symbol or API selector, the resolver prints a synthetic descendant such as
+`src/synapse_channel/core/receipts.py/.synapse-symbol/build_release_receipt`;
+likely owning tests and generated outputs remain whole-file companions. Module,
+source, test, generated, and migration selectors also remain whole-file. The hub
+uses its existing path ancestry rule: different functions can coexist, while a
+class, whole-file, or parent-directory claim still conflicts with every symbol
+below it.
 
 For daily claims, `synapse git-claim` can resolve the same selectors directly:
 
@@ -881,8 +885,27 @@ synapse git-claim TASK-RECEIPTS \
 ```
 
 The command resolves the current git root locally, expands the selector into
-ordinary claim paths, and writes receipt-ready selector evidence when requested.
-The hub still receives only file-scope paths.
+canonical claim paths, and writes receipt-ready selector evidence when requested.
+
+To infer scopes from an actual tracked diff, install the optional local parser
+bundle and claim from a base revision:
+
+```bash
+pip install 'synapse-channel[semantic]'
+python tools/semantic_diff_claims.py --base main --claim-args
+synapse git-claim TASK-WORKER \
+  --diff-base main \
+  --diff-path src/synapse_channel/core/worker.py \
+  --semantic-evidence-json semantic-evidence.json
+```
+
+The client maps zero-context hunks on both old and new source sides to the
+smallest named Python, JavaScript/JSX, TypeScript/TSX, Rust, or Go declaration.
+Renames claim both symbol names. Add/delete/rename statuses, module-level edits,
+unsupported or invalid syntax, oversized sources, and every other incomplete
+mapping widen to the whole file. Grammar wheels are installed with the extra;
+there is no runtime download, new wire field, or hub-side Git access. The JSON is
+planning evidence, not a correctness proof.
 
 Before merge or handoff, the import graph merge-risk radar compares changed
 files with claimed paths, package-local Python import neighbours, CODEOWNERS,
@@ -1222,15 +1245,15 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.1 |
 | Public API exports | 70 |
-| Package modules | 371 |
-| Classes | 535 |
+| Package modules | 375 |
+| Classes | 542 |
 | Wire message types | 75 |
 | CLI subcommands | 159 |
-| Test functions | 6040 |
+| Test functions | 6070 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 13 |
-| Optional-dependency groups | 12 |
+| Optional-dependency groups | 13 |
 
 This snapshot is a static inventory generated from the source tree. Performance and coverage claims have their own committed evidence — see `VALIDATION.md` and `benchmarks/`.
 <!-- capability-snapshot:end -->

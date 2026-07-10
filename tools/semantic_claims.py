@@ -6,7 +6,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — semantic claim selector resolver wrapper
-"""Resolve semantic claim selectors into ordinary file-scope claim paths."""
+"""Resolve semantic claim selectors into canonical path claim scopes."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from synapse_channel.git.semantic_claims import (  # noqa: E402,F401
     CliArgs,
     ParsedSelector,
     SemanticClaimRecord,
+    companion_claim_paths,
     parse_args,
     parse_selector,
     records_to_json,
@@ -38,8 +39,7 @@ SEMANTIC_SELECTOR_KINDS = _impl.SEMANTIC_SELECTOR_KINDS
 def main(argv: list[str] | None = None) -> int:
     """Run the packaged semantic claim resolver from the checkout tool path."""
     _impl.REPO_ROOT = REPO_ROOT
-    _impl.resolve_selectors = resolve_selectors
-    return _impl.main(argv)
+    return _impl.main(argv, resolver=resolve_selectors)
 
 
 if __name__ == "__main__":

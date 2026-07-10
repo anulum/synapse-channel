@@ -42,8 +42,9 @@ Active claims (1):
 | Option | Meaning |
 |---|---|
 | `--paths` | File-scope path the claim intends to touch (repeatable). |
-| `--module`, `--symbol`, `--api`, `--source`, `--test`, `--generated`, `--migration` | Resolve semantic selectors locally and merge their derived source/test/generated/migration paths into the ordinary claim paths sent to the hub. |
-| `--semantic-evidence-json` | Write receipt-ready semantic selector evidence JSON under the git root, or to an absolute path. |
+| `--module`, `--symbol`, `--api`, `--source`, `--test`, `--generated`, `--migration` | Resolve semantic selectors locally. Symbol and API selectors use a synthetic descendant scope; the other selectors and companion tests/generated outputs remain whole-file paths. |
+| `--diff-base`, `--diff-head`, `--diff-path` | Infer conservative symbol scopes from a tracked Git diff. `--diff-head` is optional; without it the base is compared with the working tree. Repeat `--diff-path` to limit the diff. |
+| `--semantic-evidence-json` | Write receipt-ready selector and diff evidence JSON under the git root, or to an absolute path. |
 | `--base` | The branch the work merges back into (default: `main`). |
 | `--auto-release-on` | The release trigger recorded on the claim: `manual`, `commit`, or `merge` (default `merge`). |
 
@@ -73,13 +74,57 @@ synapse git-claim TASK-RECEIPTS \
   --semantic-evidence-json semantic-evidence.json
 ```
 
-The command resolves the current git root first, runs the same deterministic
-resolver as `python tools/semantic_claims.py`, and expands the selector into the
-source file, likely owning tests, and generated outputs that should share one
-claim. Those derived paths are merged with any explicit `--paths` and sent to the
-hub as ordinary file-scope paths. The selector text and derived paths stay local
+The command resolves the current git root first and runs the same deterministic
+resolver as `python tools/semantic_claims.py`. A symbol or API selector encodes
+the source and qualified symbol as a synthetic descendant such as
+`src/pkg/worker.py/.synapse-symbol/Worker/run`; likely owning tests and generated
+outputs remain ordinary whole-file companion paths. Module, source, test,
+generated, and migration selectors also remain whole-file paths. All derived
+paths are merged with explicit `--paths`. Selector text and evidence stay local
 unless you choose `--semantic-evidence-json` and later attach that JSON to a
 release receipt.
+
+## Claim a Git diff at symbol scope
+
+Install the local parser bindings, then compare a base revision with the working
+tree:
+
+```bash
+pip install 'synapse-channel[semantic]'
+python tools/semantic_diff_claims.py --base main --claim-args
+synapse git-claim TASK-WORKER \
+  --diff-base main \
+  --diff-path src/pkg/worker.py \
+  --semantic-evidence-json semantic-evidence.json
+```
+
+Use `--diff-head HEAD` for a committed comparison. The standalone tool accepts
+the equivalent `--head` and repeatable `--path` flags. Python/PYI,
+JavaScript/JSX, TypeScript/TSX, Rust, and Go are supported by locally installed
+upstream grammar wheels. Parser imports are lazy, and neither command downloads
+a grammar or contacts a service at runtime.
+
+For an ordinary modified file, zero-context hunks are mapped on both the old and
+new source side. Every changed line must fall inside a named declaration. The
+smallest enclosing declaration becomes the claim path; renaming a declaration
+claims both old and new names. The existing path ancestry rule then provides the
+enforcement:
+
+- two different function descendants in one source file can coexist;
+- a class scope conflicts with its methods;
+- a whole-file or parent-directory claim conflicts with every symbol below it.
+
+Incomplete evidence always widens. Additions, deletions, file renames or copies,
+mode-only changes, unsupported languages, syntax-error trees, oversized or
+non-regular sources, module-level changed lines, and unsafe declaration names
+produce a whole-file claim. Owning tests and generated outputs also remain
+whole-file companions. This may block more work, but it cannot silently omit a
+known conflict.
+
+The hub receives only canonical path strings; `.synapse-symbol` is a reserved
+coordination segment, not a filesystem lookup or a new wire field. Evidence JSON
+records each narrowing or widening decision, but tree-sitter output is planning
+evidence, not proof that a change is correct or complete.
 
 ## Auto-release on commit or merge
 
@@ -165,7 +210,8 @@ the release receipt.
 ## What stays out of the hub
 
 A git-scoped claim is an ordinary claim with one extra field. The hub deserialises
-that field for storage and display but runs no git and reads no filesystem — the
-branch is resolved and acted on entirely on the client. Resist any temptation to
-move git execution into the hub: the git-agnostic hub is the whole local-first
-guarantee.
+that field for storage and display but runs no git and reads no filesystem. Even
+symbol claims are ordinary canonical paths interpreted by the existing ancestry
+algebra; parsing and diff resolution stay entirely client-side. Resist any
+temptation to move git execution into the hub: the git-agnostic hub is the whole
+local-first guarantee.
