@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.27] - 2026-07-10
+
 ### Fixed
 
 - Takeover is now atomic from every other session's point of view: the hub
