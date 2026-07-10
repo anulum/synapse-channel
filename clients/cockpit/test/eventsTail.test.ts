@@ -172,6 +172,40 @@ describe("createEventsTailSource", () => {
     source.stop();
   });
 
+  it("drops a forward page that resolves after stop", async () => {
+    vi.useFakeTimers();
+    let releaseForward!: (response: Response) => void;
+    const forward = new Promise<Response>((resolve) => {
+      releaseForward = resolve;
+    });
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(pageResponse({ events: [], next_cursor: 1 }))
+      .mockResolvedValueOnce(pageResponse({ events: [wire(1)], next_cursor: 1 }))
+      .mockReturnValueOnce(forward);
+    const events: CockpitEvent[] = [];
+    const modes: SpineProvenance[] = [];
+    const source = createEventsTailSource({ fetcher, pollMs: 1000, historyLimit: 3 });
+    source.subscribe((event) => events.push(event));
+    source.subscribeMode((mode) => modes.push(mode));
+    await vi.waitFor(() => {
+      expect(modes.at(-1)).toBe("hub");
+    });
+    expect(events.map((event) => event.seq)).toEqual([1]);
+
+    // Trigger the forward poll; it hangs on the deferred fetch.
+    await vi.advanceTimersByTimeAsync(1000);
+    // Stop while that fetch is in flight, then let it resolve with new events.
+    source.stop();
+    releaseForward(pageResponse({ events: [wire(2)], next_cursor: 2 }));
+    await forward;
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Seq 2 arrived after stop, so it must never reach a subscriber.
+    expect(events.map((event) => event.seq)).toEqual([1]);
+  });
+
   it("clamps the backfill start to zero on a short log and reports a backfill 404 as absent", async () => {
     vi.useFakeTimers();
     const short = vi

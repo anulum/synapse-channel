@@ -192,6 +192,20 @@ describe("deriveTransitionEvents", () => {
     expect(event.severity).toBeGreaterThan(0.8);
   });
 
+  it("ignores a non-red prior signal when keying the reds already seen", () => {
+    // The previous snapshot carries only an amber signal, so building the
+    // already-red key set walks past a non-red level. The new red then fires.
+    const previous = snapshotOf({
+      signals: [{ level: "amber", category: "lease", subject: "soon", detail: "" }],
+    });
+    const next = snapshotOf({
+      signals: [{ level: "red", category: "conflict", subject: "hot", detail: "" }],
+    });
+    const events = deriveTransitionEvents(previous, next, 6_000, 1);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.label).toBe("conflict: hot");
+  });
+
   it("numbers events from seqStart in a stable section order", () => {
     const previous = snapshotOf({ live: [] });
     const next = snapshotOf({

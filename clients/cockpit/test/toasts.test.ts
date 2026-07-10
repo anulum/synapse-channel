@@ -90,4 +90,12 @@ describe("toastsBetween", () => {
     expect(toastsBetween(two, three)).toHaveLength(1);
     expect(toastsBetween(three, two)).toEqual([]);
   });
+
+  it("does not re-announce a task that was already done", () => {
+    // The task is done in both cuts, so the done toast fired earlier and must
+    // not repeat — the already-done branch of the done scan.
+    const before = factsOf([task("shipped", "done")], [], [], null);
+    const after = factsOf([task("shipped", "done")], [], [], null);
+    expect(toastsBetween(before, after)).toEqual([]);
+  });
 });

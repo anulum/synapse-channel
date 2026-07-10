@@ -84,6 +84,12 @@ describe("layoutTopology", () => {
     expect(layout.agents.map((node) => node.name)).toEqual(["a", "b", "ghost"]);
   });
 
+  it("skips an empty owner on either side of a conflict", () => {
+    // ownerA empty exercises the other guard: only the named side is drawn.
+    const layout = layoutTopology([], [{ ...conflict("", "named"), ownerA: "" }], 1);
+    expect(layout.agents.map((node) => node.name)).toEqual(["named"]);
+  });
+
   it("lays out the federation band: sorted peers, centred hub, joined detail", () => {
     const peering = (domain: string, overrides: Partial<PeeringView> = {}): PeeringView => ({
       domain,

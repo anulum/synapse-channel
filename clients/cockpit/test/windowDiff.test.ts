@@ -68,4 +68,14 @@ describe("diffWindows", () => {
     expect(diff.appeared).toEqual(["a"]);
     expect(diff.wentQuiet).toEqual([]);
   });
+
+  it("sorts several appeared and several who went quiet alphabetically", () => {
+    // Two or more names on each side so both sort comparators actually run,
+    // not just the single-element no-op case.
+    const a = [event(1, { actor: "delta" }), event(2, { actor: "charlie" })];
+    const b = [event(3, { actor: "bravo" }), event(4, { actor: "alfa" })];
+    const diff = diffWindows(a, b);
+    expect(diff.appeared).toEqual(["alfa", "bravo"]);
+    expect(diff.wentQuiet).toEqual(["charlie", "delta"]);
+  });
 });
