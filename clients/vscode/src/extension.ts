@@ -11,135 +11,15 @@
  *
  * This is the thin editor-host glue: it owns the VS Code API surface — the status
  * bar, the board tree, gutter decorations, and the claim/release commands — and
- * delegates every decision to the editor-agnostic {@link ./fleetModel.js}, which
- * is unit-tested without an editor host. The hub connection is a plain WebSocket
- * to the local hub; the extension registers an identity, tracks presence, board,
- * and active claims from inbound frames, and renders them.
+ * delegates the socket/state lifecycle to {@link ./fleetController.js}, secure
+ * credential policy to {@link ./hubAuth.js}, and display decisions to the
+ * editor-agnostic {@link ./fleetModel.js}.
  */
 
 import * as vscode from "vscode";
-import {
-  boardItems,
-  claimMarks,
-  claimRequest,
-  hubHealth,
-  statusBarText,
-  type BoardItem,
-  type ClaimMark,
-  type RawClaim,
-  type RawTask,
-} from "./fleetModel.js";
-
-interface Envelope {
-  type?: string;
-  sender?: string;
-  online_agents?: string[];
-  tasks?: RawTask[];
-  active_claims?: RawClaim[];
-}
-
-interface HubState {
-  connected: boolean;
-  agents: string[];
-  tasks: RawTask[];
-  claims: RawClaim[];
-}
-
-const CLAIM_TASK_PREFIX = "vscode";
-
-class FleetController {
-  private readonly state: HubState = { connected: false, agents: [], tasks: [], claims: [] };
-  private socket: WebSocket | undefined;
-
-  constructor(
-    private readonly identity: string,
-    private readonly statusBar: vscode.StatusBarItem,
-    private readonly decoration: vscode.TextEditorDecorationType,
-    private readonly board: BoardProvider,
-    private readonly onChange: () => void,
-  ) {}
-
-  connect(uri: string): void {
-    const socket = new WebSocket(uri);
-    this.socket = socket;
-    socket.addEventListener("open", () => {
-      this.state.connected = true;
-      socket.send(JSON.stringify({ type: "register", sender: this.identity }));
-      this.render();
-    });
-    socket.addEventListener("close", () => {
-      this.state.connected = false;
-      this.render();
-    });
-    socket.addEventListener("message", (event: MessageEvent) => this.ingest(String(event.data)));
-  }
-
-  private ingest(raw: string): void {
-    let frame: Envelope;
-    try {
-      frame = JSON.parse(raw) as Envelope;
-    } catch {
-      return;
-    }
-    if (frame.online_agents) {
-      this.state.agents = frame.online_agents;
-    }
-    if (frame.tasks) {
-      this.state.tasks = frame.tasks;
-    }
-    if (frame.active_claims) {
-      this.state.claims = frame.active_claims;
-    }
-    this.render();
-  }
-
-  render(): void {
-    const health = hubHealth(this.state.connected, this.state.agents);
-    const marks = this.marks();
-    const mine = marks.filter((mark) => mark.mine).length;
-    this.statusBar.text = statusBarText(health, mine);
-    this.statusBar.show();
-    this.board.replace(boardItems(this.state.tasks));
-    this.onChange();
-  }
-
-  marks(): ClaimMark[] {
-    return claimMarks(this.state.claims, this.identity);
-  }
-
-  decorate(editor: vscode.TextEditor): void {
-    const path = vscode.workspace.asRelativePath(editor.document.uri, false);
-    const claimed = this.marks().some((mark) => mark.path === path.replace(/\\/g, "/"));
-    const ranges = claimed ? [new vscode.Range(0, 0, 0, 0)] : [];
-    editor.setDecorations(this.decoration, ranges);
-  }
-
-  claimActiveFile(): void {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor || !this.socket) {
-      return;
-    }
-    const path = vscode.workspace.asRelativePath(editor.document.uri, false);
-    const request = claimRequest(`${CLAIM_TASK_PREFIX}/${this.identity}`, path);
-    this.socket.send(
-      JSON.stringify({ type: "claim", sender: this.identity, task_id: request.taskId, paths: request.paths }),
-    );
-  }
-
-  releaseActiveFile(): void {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor || !this.socket) {
-      return;
-    }
-    this.socket.send(
-      JSON.stringify({ type: "release", sender: this.identity, task_id: `${CLAIM_TASK_PREFIX}/${this.identity}` }),
-    );
-  }
-
-  dispose(): void {
-    this.socket?.close();
-  }
-}
+import { FleetController } from "./fleetController.js";
+import { HubCredentialStore, hubConnectionVerdict } from "./hubAuth.js";
+import { type BoardItem } from "./fleetModel.js";
 
 class BoardProvider implements vscode.TreeDataProvider<BoardItem> {
   private items: BoardItem[] = [];
@@ -170,9 +50,8 @@ function resolveIdentity(configured: string): string {
   return `${folder}/vscode`;
 }
 
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const config = vscode.workspace.getConfiguration("synapse");
-  const uri = config.get<string>("hubUri", "ws://127.0.0.1:8876");
   const identity = resolveIdentity(config.get<string>("identity", ""));
 
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -191,6 +70,75 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
   const controller = new FleetController(identity, statusBar, decoration, board, redecorate);
+  const credentials = new HubCredentialStore(context.secrets);
+  const configuredUri = (): string =>
+    vscode.workspace.getConfiguration("synapse").get<string>("hubUri", "ws://127.0.0.1:8876");
+  const reconnectConfiguredHub = async (): Promise<void> => {
+    const uri = configuredUri();
+    const verdict = hubConnectionVerdict(uri);
+    if (!verdict.allowed) {
+      controller.connect(uri);
+      void vscode.window.showErrorMessage(verdict.reason);
+      return;
+    }
+    try {
+      const token = await credentials.get(verdict.uri);
+      const error = controller.connect(verdict.uri, token);
+      if (error !== undefined) {
+        void vscode.window.showErrorMessage(error);
+      }
+    } catch (error) {
+      controller.connect(verdict.uri);
+      const reason = error instanceof Error ? error.message : "SecretStorage access failed.";
+      void vscode.window.showErrorMessage(`Could not read the SYNAPSE hub token: ${reason}`);
+    }
+  };
+
+  const setHubToken = async (provided?: unknown): Promise<void> => {
+    const verdict = hubConnectionVerdict(configuredUri());
+    if (!verdict.allowed) {
+      void vscode.window.showErrorMessage(verdict.reason);
+      return;
+    }
+    const token = typeof provided === "string"
+      ? provided
+      : await vscode.window.showInputBox({
+          password: true,
+          ignoreFocusOut: true,
+          prompt: `Shared token for ${new URL(verdict.uri).host}; stored only in VS Code SecretStorage`,
+        });
+    if (token === undefined) {
+      return;
+    }
+    try {
+      await credentials.store(verdict.uri, token);
+      await reconnectConfiguredHub();
+      void vscode.window.showInformationMessage(
+        `SYNAPSE hub token stored securely for ${new URL(verdict.uri).host}.`,
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "SecretStorage access failed.";
+      void vscode.window.showErrorMessage(`Could not store the SYNAPSE hub token: ${reason}`);
+    }
+  };
+
+  const clearHubToken = async (): Promise<void> => {
+    const verdict = hubConnectionVerdict(configuredUri());
+    if (!verdict.allowed) {
+      void vscode.window.showErrorMessage(verdict.reason);
+      return;
+    }
+    try {
+      await credentials.clear(verdict.uri);
+      await reconnectConfiguredHub();
+      void vscode.window.showInformationMessage(
+        `SYNAPSE hub token cleared for ${new URL(verdict.uri).host}.`,
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "SecretStorage access failed.";
+      void vscode.window.showErrorMessage(`Could not clear the SYNAPSE hub token: ${reason}`);
+    }
+  };
 
   context.subscriptions.push(
     statusBar,
@@ -200,13 +148,15 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("synapse.claimFile", () => controller.claimActiveFile()),
     vscode.commands.registerCommand("synapse.releaseFile", () => controller.releaseActiveFile()),
     vscode.commands.registerCommand("synapse.refreshHealth", () => controller.render()),
+    vscode.commands.registerCommand("synapse.setHubToken", setHubToken),
+    vscode.commands.registerCommand("synapse.clearHubToken", clearHubToken),
     vscode.commands.registerCommand("synapse.showBoard", () =>
       vscode.commands.executeCommand("synapseBoard.focus"),
     ),
     { dispose: () => controller.dispose() },
   );
 
-  controller.connect(uri);
+  await reconnectConfiguredHub();
 }
 
 export function deactivate(): void {

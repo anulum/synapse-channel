@@ -28,27 +28,46 @@ Marketplace yet.
 - **`SYNAPSE: Release current file`** — releases your claim.
 - **`SYNAPSE board` view** — the shared plan's tasks and their status.
 - **Overview-ruler marks** — the active file is flagged when it is claimed.
+- **`SYNAPSE: Set hub token` / `Clear hub token`** — manage one encrypted
+  SecretStorage credential per hub URI without writing a bearer to settings.
 
-Configure the hub with `synapse.hubUri` (default `ws://127.0.0.1:8876`) and an
-optional `synapse.identity`.
+Configure the hub URI with `synapse.hubUri` (default
+`ws://127.0.0.1:8876`) and an optional `synapse.identity`. There is
+intentionally no token setting. Run **SYNAPSE: Set hub token** from the Command
+Palette; the password input is stored under the canonical hub URI in VS Code
+SecretStorage, encrypted by the editor host and not synced across machines.
+Changing the URI does not send the old hub's credential to the new endpoint.
+
+Plain `ws://` is accepted only for `localhost`, IPv4 `127.0.0.0/8`, or IPv6
+`::1`. A non-loopback hub must use `wss://`; the extension refuses remote
+plaintext before opening a socket. The TLS certificate must be trusted by the
+editor host. Never put a token in the URI, settings JSON, a query parameter, or
+workspace files.
 
 ## Design
 
 The editor-agnostic decisions — hub health, board items, claim marks, the claim
-request for a path, and the status-bar text — live in `src/fleetModel.ts` and are
-unit-tested with Vitest, no editor host required. `src/extension.ts` is the thin
-VS Code glue that owns the API surface (commands, status bar, tree view,
-decorations, the hub WebSocket) and renders what the model computes.
+request for a path, and the status-bar text — live in `src/fleetModel.ts`.
+`src/hubAuth.ts` owns URI policy, the registration heartbeat, and the structural
+SecretStorage adapter; `src/fleetController.ts` owns the WebSocket and hub-state
+lifecycle. `src/extension.ts` remains thin activation/UI glue. The pieces are
+kept separate so credential work cannot turn the editor entry point into a
+Godfile.
 
 ## Develop
 
 ```bash
 npm ci
 npm run typecheck   # strict TypeScript, no emit
-npm test            # Vitest unit tests for the fleet model
+npm test            # Vitest unit tests for the model and auth policy
 npm run build       # compile to out/
 npm run package:vsix
 ```
+
+`npm run test:integration` launches a disposable real token-gated Python hub and
+a VS Code Extension Development Host. It proves wrong-token refusal, an actual
+SecretStorage store/read/delete cycle, authenticated roster presence, and a real
+file claim in the hub state. On headless Linux, run it through `xvfb-run -a`.
 
 `package:vsix` runs the production build through the official VS Code extension
 packager and writes `dist/synapse-channel-vscode.vsix`. Install that exact local
@@ -64,9 +83,8 @@ The CI job builds the same package, verifies that its archive contains the
 runtime manifest and compiled entry point but no source/test/dependency trees,
 and uploads it as the `synapse-channel-vscode-vsix` workflow artifact.
 
-The preview currently talks to a local unauthenticated hub over a plain
-WebSocket; start one with `synapse hub` (see the repository root) before
-launching the extension host. It does not yet expose a token-file setting, so do
-not point it at an off-loopback or token-gated hub. Packaging does not change
-that runtime/security boundary or promote the extension into the supported-core
-tier.
+The preview supports an open or token-gated loopback hub and a token-gated
+shared hub over trusted `wss://`. The token is connection authentication only;
+it does not add identity signatures, per-message authentication, certificate
+pinning, or Marketplace publication. The extension remains experimental rather
+than part of the supported-core tier.

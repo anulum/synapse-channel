@@ -15,6 +15,13 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- The experimental VS Code/Cursor extension can now authenticate to secured
+  hubs without a token setting. `SYNAPSE: Set hub token` stores one credential
+  per canonical hub URI in VS Code SecretStorage; clear deletes it. A real
+  Extension Development Host test now drives wrong-token refusal, the
+  SecretStorage store/read/delete path, authenticated roster presence, and a
+  file claim against a disposable token-gated Python hub.
+
 - `synapse identity reclaim` adds a deny-by-default recovery path for stale
   trust-on-first-use pins. A cryptographically bound operator needs an exact
   `identity-pin-reclaim` ACL grant, the observed key id, a reason, and a durable
@@ -105,6 +112,11 @@ All notable changes to this project are documented here.
   unchanged and explicit.
 
 ### Security
+
+- The VS Code/Cursor extension refuses non-loopback `ws://` connections before
+  opening a socket, rejects credentials/query parameters/fragments in hub URIs,
+  and presents a shared token only on the first protocol heartbeat. Remote hubs
+  require trusted `wss://`; bearer values never enter settings JSON or URLs.
 
 - The exposure guard now logs a startup advisory when a token authenticates a
   non-loopback bind over plaintext `ws://` — the token and every coordination

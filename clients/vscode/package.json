@@ -3,7 +3,7 @@
   "private": true,
   "displayName": "SYNAPSE CHANNEL",
   "description": "Claim files, release them, watch the board, and see hub health from inside VS Code or Cursor.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "AGPL-3.0-or-later",
   "publisher": "anulum",
   "repository": {
@@ -28,7 +28,9 @@
       { "command": "synapse.claimFile", "title": "SYNAPSE: Claim current file" },
       { "command": "synapse.releaseFile", "title": "SYNAPSE: Release current file" },
       { "command": "synapse.showBoard", "title": "SYNAPSE: Show board" },
-      { "command": "synapse.refreshHealth", "title": "SYNAPSE: Refresh hub health" }
+      { "command": "synapse.refreshHealth", "title": "SYNAPSE: Refresh hub health" },
+      { "command": "synapse.setHubToken", "title": "SYNAPSE: Set hub token" },
+      { "command": "synapse.clearHubToken", "title": "SYNAPSE: Clear hub token" }
     ],
     "views": {
       "explorer": [{ "id": "synapseBoard", "name": "SYNAPSE board" }]
@@ -39,7 +41,7 @@
         "synapse.hubUri": {
           "type": "string",
           "default": "ws://127.0.0.1:8876",
-          "description": "WebSocket URI of the local SYNAPSE hub."
+          "description": "WebSocket URI of the SYNAPSE hub. Remote hubs require wss://."
         },
         "synapse.identity": {
           "type": "string",
@@ -51,15 +53,18 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:integration": "tsc -p tsconfig.integration.json",
     "vscode:prepublish": "npm run build",
     "prepackage:vsix": "node -e \"require('node:fs').mkdirSync('dist',{recursive:true})\"",
     "package:vsix": "vsce package --no-dependencies --out dist/synapse-channel-vscode.vsix",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:integration": "npm run build && npm run build:integration && node dist/integration/launch.cjs"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.90.0",
+    "@vscode/test-electron": "2.5.2",
     "@vscode/vsce": "3.9.2",
     "typescript": "^5.6.0",
     "vitest": "^3.2.6"

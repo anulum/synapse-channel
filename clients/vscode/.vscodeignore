@@ -1,9 +1,12 @@
 .github/**
 .vscode/**
+.vscode-test/**
 dist/**
 node_modules/**
+out-test/**
 src/**
 test/**
 **/*.ts
 package-lock.json
 tsconfig.json
+tsconfig.integration.json
