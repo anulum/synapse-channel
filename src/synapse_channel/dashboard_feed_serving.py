@@ -361,3 +361,19 @@ def serve_cockpit_dist(dist_dir: Path | None, prefix: str, path: str) -> FeedRes
     if content_type is None or not target.is_file():
         return _NOT_FOUND
     return FeedResponse(HTTPStatus.OK, target.read_bytes(), content_type)
+
+
+def serve_public_cockpit_asset(
+    dist_dir: Path | None, prefix: str, path: str
+) -> FeedResponse | None:
+    """Return one validated token-free cockpit shell asset, if ``path`` names one.
+
+    The React shell must load before it can ask for a dashboard bearer. This is
+    deliberately narrower than a prefix bypass: only an existing file accepted
+    by :func:`serve_cockpit_dist` is public; unknown, escaping, and odd-suffix
+    paths remain behind normal dashboard authentication.
+    """
+    if path != prefix.rstrip("/") and not path.startswith(prefix):
+        return None
+    response = serve_cockpit_dist(dist_dir, prefix, path)
+    return response if response.status == HTTPStatus.OK else None

@@ -16,6 +16,7 @@
 
 import { laneOf, SEVERITY_OF } from "./events";
 import type { CockpitEvent, EventKind } from "../types";
+import { authenticatedFetch } from "./auth";
 
 /** One stored event as the multihub wire encodes it. */
 export interface StoredEvent {
@@ -191,7 +192,7 @@ export function createEventsTailSource(options: EventsTailOptions = {}): EventsT
   const absentPollMs = options.absentPollMs ?? DEFAULT_ABSENT_POLL_MS;
   const limit = options.limit ?? DEFAULT_PAGE_LIMIT;
   const historyLimit = options.historyLimit ?? DEFAULT_HISTORY_LIMIT;
-  const fetcher = options.fetcher ?? fetch;
+  const fetcher = options.fetcher ?? authenticatedFetch;
 
   const listeners = new Set<(event: CockpitEvent) => void>();
   const modeListeners = new Set<(mode: SpineProvenance) => void>();

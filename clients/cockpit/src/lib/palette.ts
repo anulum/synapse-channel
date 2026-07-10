@@ -14,6 +14,8 @@
 // and audits the relayed frame, and the palette states "not armed" instead
 // of pretending; the cockpit itself arms nothing.
 
+import { authenticatedFetch } from "./auth";
+
 /** What a palette entry does when chosen. */
 export type CommandKind =
   | "focus-agent"
@@ -141,7 +143,7 @@ function plainLine(raw: string, fallback: string): string {
 export async function sendOperatorMessage(
   to: string,
   text: string,
-  fetcher: typeof fetch = fetch,
+  fetcher: typeof fetch = authenticatedFetch,
   url: string = MESSAGE_URL,
 ): Promise<OperatorSendResult> {
   try {

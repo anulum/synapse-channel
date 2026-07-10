@@ -14,6 +14,7 @@
 
 import { mapStoredEvent, parseTail } from "./eventsTail";
 import type { CockpitEvent } from "../types";
+import { authenticatedFetch } from "./auth";
 
 /** One fetched slice of the log's history. */
 export interface HistoryWindow {
@@ -41,7 +42,7 @@ export const HISTORY_WINDOW_SIZE = 200;
  * `since=latest` shortcut, so the cost is one request on a log of any size.
  */
 export async function fetchLatestSeq(
-  fetcher: typeof fetch = fetch,
+  fetcher: typeof fetch = authenticatedFetch,
   url: string = EVENTS_URL,
 ): Promise<{ kind: "loaded"; latest: number } | { kind: "absent" } | { kind: "error"; message: string }> {
   try {
@@ -64,7 +65,7 @@ export async function fetchLatestSeq(
 export async function fetchHistoryWindow(
   toSeq: number,
   limit: number = HISTORY_WINDOW_SIZE,
-  fetcher: typeof fetch = fetch,
+  fetcher: typeof fetch = authenticatedFetch,
   url: string = EVENTS_URL,
 ): Promise<HistoryResult> {
   const since = Math.max(0, Math.trunc(toSeq) - limit);

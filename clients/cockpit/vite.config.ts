@@ -48,5 +48,8 @@ export default defineConfig({
     outDir: "dist",
     sourcemap: true,
     target: "es2022",
+    // Keep even the smallest bundled fonts on this origin. Vite's data-URL
+    // inlining would be refused by the dashboard's intentionally strict CSP.
+    assetsInlineLimit: 0,
   },
 });

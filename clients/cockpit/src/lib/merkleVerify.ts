@@ -14,6 +14,8 @@
 // verify that passes means the row is committed to the tree root even if
 // the dashboard lied about everything else; a mismatched proof says so.
 
+import { authenticatedFetch } from "./auth";
+
 /** The proof document `/merkle-proof.json?seq=N` serves for a present seq. */
 export interface InclusionProof {
   readonly seq: number;
@@ -130,7 +132,7 @@ const PROOF_URL = "/merkle-proof.json";
 /** Fetch the proof for one sequence and verify it client-side. */
 export async function fetchAndVerify(
   seq: number,
-  fetcher: typeof fetch = fetch,
+  fetcher: typeof fetch = authenticatedFetch,
   url: string = PROOF_URL,
 ): Promise<VerifyResult> {
   try {

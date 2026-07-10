@@ -1,0 +1,88 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Commercial license available */
+/* © Concepts 1996–2026 Miroslav Šotek. All rights reserved. */
+/* © Code 2020–2026 Miroslav Šotek. All rights reserved. */
+/* ORCID: 0009-0009-3560-0851 */
+/* Contact: www.anulum.li | protoscience@anulum.li */
+/* SYNAPSE_CHANNEL — session bearer unlock boundary */
+
+.auth-veil {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: clamp(1rem, 4vw, 3rem);
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 20% 10%, color-mix(in srgb, var(--signal) 12%, transparent), transparent 34rem),
+    var(--bg);
+}
+
+.auth-card {
+  width: min(100%, 34rem);
+  display: grid;
+  gap: 0.9rem;
+  padding: clamp(1.4rem, 5vw, 2.4rem);
+  border: 1px solid var(--line);
+  border-top-color: var(--signal);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+}
+
+.auth-card__eyebrow {
+  color: var(--signal);
+  font: 600 var(--fs-tiny) / 1 var(--font-mono);
+  letter-spacing: 0.16em;
+}
+
+.auth-card h1,
+.auth-card p {
+  margin: 0;
+}
+
+.auth-card h1 {
+  font-size: clamp(1.5rem, 6vw, 2.2rem);
+}
+
+.auth-card p,
+.auth-card small {
+  color: var(--ink-dim);
+  line-height: 1.55;
+}
+
+.auth-card label {
+  margin-top: 0.4rem;
+  color: var(--ink-dim);
+  font: 500 var(--fs-small) / 1.2 var(--font-mono);
+}
+
+.auth-card input {
+  width: 100%;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--raised);
+  font: 500 var(--fs-small) / 1.2 var(--font-mono);
+}
+
+.auth-card input:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.auth-card button {
+  justify-self: start;
+  padding: 0.72rem 1rem;
+  border: 1px solid var(--signal);
+  border-radius: var(--radius);
+  color: var(--bg);
+  background: var(--signal);
+  font: 700 var(--fs-small) / 1 var(--font-mono);
+  cursor: pointer;
+}
+
+.auth-card__error {
+  color: var(--sev-crit-text) !important;
+  font-family: var(--font-mono);
+}

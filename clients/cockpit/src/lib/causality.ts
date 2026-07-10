@@ -13,6 +13,8 @@
 // hub, mirroring the CLI's --dot semantics. Nothing is inferred client-side —
 // the hub's recorded relations are the only edges drawn.
 
+import { authenticatedFetch } from "./auth";
+
 /** One recorded event in a causality trace. */
 export interface CausalityNode {
   readonly seq: number;
@@ -183,7 +185,7 @@ export function traceUrl(query: TraceQuery, base: string = CAUSALITY_URL): strin
  */
 export async function fetchTrace(
   query: TraceQuery,
-  fetcher: typeof fetch = fetch,
+  fetcher: typeof fetch = authenticatedFetch,
 ): Promise<TraceResult> {
   try {
     const response = await fetcher(traceUrl(query));

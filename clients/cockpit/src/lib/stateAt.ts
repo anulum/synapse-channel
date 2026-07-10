@@ -17,6 +17,7 @@
 import type { BoardTask, DependencyChip } from "./board";
 import type { ClaimView } from "./claims";
 import type { ClaimGit, ClaimRecord } from "../types";
+import { authenticatedFetch } from "./auth";
 
 /** The reconstructed moment, shaped for the cockpit's panels. */
 export interface FleetStateAt {
@@ -152,7 +153,7 @@ const STATE_AT_URL = "/state-at.json";
 /** Fetch and shape the fleet's state as of `seq`. */
 export async function fetchStateAt(
   seq: number,
-  fetcher: typeof fetch = fetch,
+  fetcher: typeof fetch = authenticatedFetch,
   url: string = STATE_AT_URL,
 ): Promise<StateAtResult> {
   try {

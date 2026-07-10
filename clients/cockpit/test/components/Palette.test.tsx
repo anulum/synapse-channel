@@ -9,14 +9,21 @@
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Palette } from "../../src/components/Palette";
+import { resetCockpitAuth, unlockCockpit } from "../../src/lib/auth";
 import { buildCommands } from "../../src/lib/palette";
+
+beforeEach(() => {
+  sessionStorage.clear();
+  resetCockpitAuth();
+});
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  sessionStorage.clear();
 });
 
 const COMMANDS = buildCommands(["quantum/claude"], ["t-1"]);
@@ -67,6 +74,7 @@ describe("Palette", () => {
       ),
     );
     vi.stubGlobal("fetch", fetcher);
+    expect(unlockCockpit("operator-secret")).toBe(true);
     render(<Palette open commands={COMMANDS} onClose={() => {}} onRun={() => {}} />);
     await userEvent.click(screen.getByText("operator: send a message…"));
     await userEvent.type(screen.getByLabelText("Message recipient"), "ghost/agent");
@@ -74,7 +82,15 @@ describe("Palette", () => {
     await waitFor(() =>
       expect(screen.getByText("relayed, not delivered — accepted; no live recipient (dead-lettered)")).toBeTruthy(),
     );
-    expect(fetcher).toHaveBeenCalledWith("/message", expect.objectContaining({ method: "POST" }));
+    expect(fetcher).toHaveBeenCalledWith(
+      "/message",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.any(Headers),
+      }),
+    );
+    const headers = new Headers(fetcher.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer operator-secret");
     await userEvent.click(screen.getByText("back"));
     expect(screen.getByLabelText("Search commands")).toBeTruthy();
   });

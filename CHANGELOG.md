@@ -13,6 +13,22 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- The built React cockpit can now unlock a read-gated dashboard without putting
+  its bearer in a URL. The server permits only files accepted by the existing
+  cockpit-dist containment and content-type validator to load before read
+  authentication; every live feed, history/proof/causality request, and
+  operator write uses one authenticated fetch adapter. The bearer lives only
+  in the tab's `sessionStorage`; a `401` clears it and removes the whole live
+  presentation before the unlock veil returns. The service worker bypasses
+  every credential-bearing request and caches only the token-free shell. The
+  production build also keeps fonts as same-origin assets instead of
+  CSP-blocked `data:` URLs. Loopback read-only and loopback operator dashboards
+  retain their existing open-read posture. The 634-line React app shell was
+  reduced below 500 lines by extracting the auth-bound feed lifecycle instead
+  of growing a godfile.
+
 ## [0.99.1] - 2026-07-10
 
 ### Fixed

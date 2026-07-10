@@ -123,6 +123,42 @@ def test_cockpit_dist_serves_index_assets_and_refuses_escapes(tmp_path: Path) ->
     assert missing_status == 404
 
 
+def test_read_gated_dashboard_exposes_only_the_validated_cockpit_shell(tmp_path: Path) -> None:
+    """The shell can reach its unlock veil while every live surface stays gated."""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<title>unlock cockpit</title>", encoding="utf-8")
+    (dist / "app.js").write_text("export {}", encoding="utf-8")
+    (dist / "tool.exe").write_bytes(b"MZ")
+
+    server = _feeds_server(cockpit_dist=dist, dashboard_token="secret")
+    try:
+        shell_status, shell_type, shell_body = _http_get(server.url("/cockpit/"))
+        bare_status, _, _ = _http_get(server.url("/cockpit"))
+        asset_status, asset_type, _ = _http_get(server.url("/cockpit/app.js"))
+        snapshot_status, _, _ = _http_get(server.url("/snapshot.json"))
+        wrong_status, _, _ = _http_get(
+            server.url("/snapshot.json"), authorization="Bearer wrong"
+        )
+        allowed_status, _, _ = _http_get(
+            server.url("/snapshot.json"), authorization="Bearer secret"
+        )
+        odd_status, _, _ = _http_get(server.url("/cockpit/tool.exe"))
+        missing_status, _, _ = _http_get(server.url("/cockpit/missing.js"))
+    finally:
+        server.close()
+
+    assert (shell_status, shell_type) == (200, "text/html")
+    assert "unlock cockpit" in shell_body
+    assert bare_status == 200
+    assert (asset_status, asset_type) == (200, "text/javascript")
+    assert snapshot_status == 401
+    assert wrong_status == 401
+    assert allowed_status != 401
+    assert odd_status == 401
+    assert missing_status == 401
+
+
 def test_cockpit_dist_reports_absence_when_unconfigured() -> None:
     server = _feeds_server()
     try:

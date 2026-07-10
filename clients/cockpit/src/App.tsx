@@ -6,13 +6,14 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — cockpit app shell
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivitySpine } from "./components/ActivitySpine";
+import { AuthVeil } from "./components/AuthVeil";
 import { ClaimsBoard } from "./components/ClaimsBoard";
 import { FederationRow } from "./components/FederationRow";
 import { FindingsStream } from "./components/FindingsStream";
 import { FleetRoster } from "./components/FleetRoster";
-import { Hud, type Kpi } from "./components/Hud";
+import { Hud } from "./components/Hud";
 import { InspectorTabs } from "./components/InspectorTabs";
 import { InstallChip } from "./components/InstallChip";
 import { MobileNav, type MobileSegment } from "./components/MobileNav";
@@ -31,9 +32,7 @@ import { boardTruncation, deriveBoard, deriveFindings } from "./lib/board";
 import { parseDeadLetters } from "./lib/deadLetters";
 import type { TimeWindow } from "./lib/brush";
 import { deriveClaims, parseConflicts } from "./lib/claims";
-import { createEventsTailSource, type SpineProvenance } from "./lib/eventsTail";
 import { queryFromHash, queryToHash, type LogQuery } from "./lib/logQuery";
-import { createMetricsStore, type MetricsState } from "./lib/metrics";
 import {
   applyTheme,
   persistTheme,
@@ -41,119 +40,41 @@ import {
   toggledTheme,
   type Theme,
 } from "./lib/theme";
-import { createFederationStore, type FederationState } from "./lib/federation";
-import { createHealthAnomaliesStore, type HealthAnomaliesState } from "./lib/healthAnomalies";
-import { createSessionsStore, type SessionsState } from "./lib/sessions";
-import { createWaitsStore, type WaitsState } from "./lib/waits";
-import { createReliabilityStore, type ReliabilityState } from "./lib/reliability";
 import { deriveRoster } from "./lib/roster";
-import {
-  createSnapshotStore,
-  withFreshness,
-  type SnapshotState,
-} from "./lib/snapshot";
-import { createSnapshotEventSource } from "./lib/spineEvents";
 import { fetchStateAt, type FleetStateAt } from "./lib/stateAt";
 import { focusClaims, focusTasks } from "./lib/focus";
 import { buildCommands, type Command } from "./lib/palette";
 import { readPref, writePref } from "./lib/prefs";
 import { factsOf, toastsBetween, type FleetFacts, type Toast } from "./lib/toasts";
-import type { CockpitEvent, EventSource } from "./types";
-
-/** Wall-clock time-of-day stamp for the freshness contract. */
-function stampFor(ms: number | null): string {
-  if (ms === null) return "—";
-  return new Date(ms).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-}
-
-const INITIAL_SNAPSHOT: SnapshotState = {
-  snapshot: null,
-  status: "connecting",
-  fetchedAt: null,
-  error: null,
-};
-
-const INITIAL_RELIABILITY: ReliabilityState = {
-  data: null,
-  status: "connecting",
-  fetchedAt: null,
-  error: null,
-};
-
-const INITIAL_FEDERATION: FederationState = {
-  data: null,
-  status: "connecting",
-  fetchedAt: null,
-  error: null,
-};
-
-const INITIAL_METRICS: MetricsState = {
-  data: null,
-  status: "connecting",
-  fetchedAt: null,
-  error: null,
-};
-
-const INITIAL_SESSIONS: SessionsState = { data: null, status: "connecting", fetchedAt: null, error: null };
-const INITIAL_WAITS: WaitsState = { data: null, status: "connecting", fetchedAt: null, error: null };
-const INITIAL_ANOMALIES: HealthAnomaliesState = { data: null, status: "connecting", fetchedAt: null, error: null };
-
-/** Most recent derived events held for the signal log. */
-const LOG_LIMIT = 250;
-
-interface Metrics {
-  readonly agents: number;
-  readonly claims: number;
-  readonly risk: number;
-  readonly ratePerMinute: number;
-}
-
-const ZERO_METRICS: Metrics = { agents: 0, claims: 0, risk: 0, ratePerMinute: 0 };
-
-function metricsOf(state: SnapshotState, ratePerMinute: number): Metrics {
-  const snapshot = state.snapshot;
-  if (snapshot === null) return { ...ZERO_METRICS, ratePerMinute };
-  return {
-    agents: snapshot.fleet.agents.live.length,
-    claims: snapshot.fleet.claims.active,
-    risk: snapshot.risk.signals.filter((signal) => signal.level === "red").length,
-    ratePerMinute,
-  };
-}
-
-/**
- * Observed transitions in the trailing minute. Counts the derived event log
- * (capped upstream), so a fleet outpacing the cap reads as at-least-the-cap —
- * an undercount, never an invention.
- */
-function observedPerMinute(log: readonly CockpitEvent[], nowMs: number): number {
-  const since = nowMs / 1000 - 60;
-  let count = 0;
-  for (const event of log) {
-    if (event.ts >= since) count += 1;
-    else break; // newest-first: everything after this is older still
-  }
-  return count;
-}
+import {
+  cockpitAuthSnapshot,
+  subscribeCockpitAuth,
+  unlockCockpit,
+} from "./lib/auth";
+import { useCockpitFeeds } from "./hooks/useCockpitFeeds";
 
 export function App(): JSX.Element {
-  const [snap, setSnap] = useState<SnapshotState>(INITIAL_SNAPSHOT);
-  const [kpis, setKpis] = useState<readonly Kpi[]>([]);
-  const [log, setLog] = useState<readonly CockpitEvent[]>([]);
-  const [spineSource, setSpineSource] = useState<EventSource | undefined>(undefined);
-  const [provenance, setProvenance] = useState<SpineProvenance>("connecting");
-  const [nowMs, setNowMs] = useState<number>(() => Date.now());
-  const [reliability, setReliability] = useState<ReliabilityState>(INITIAL_RELIABILITY);
-  const [federation, setFederation] = useState<FederationState>(INITIAL_FEDERATION);
-  const [metrics, setMetrics] = useState<MetricsState>(INITIAL_METRICS);
-  const [sessions, setSessions] = useState<SessionsState>(INITIAL_SESSIONS);
-  const [waits, setWaits] = useState<WaitsState>(INITIAL_WAITS);
-  const [anomalyReport, setAnomalyReport] = useState<HealthAnomaliesState>(INITIAL_ANOMALIES);
+  const auth = useSyncExternalStore(
+    subscribeCockpitAuth,
+    cockpitAuthSnapshot,
+    cockpitAuthSnapshot,
+  );
+  const authBlocked = auth.phase === "locked";
+  const {
+    snap,
+    stamp,
+    kpis,
+    log,
+    spineSource,
+    provenance,
+    nowMs,
+    reliability,
+    federation,
+    metrics,
+    sessions,
+    waits,
+    anomalyReport,
+  } = useCockpitFeeds(authBlocked, auth.revision);
   const [brush, setBrush] = useState<TimeWindow | null>(null);
   // Phone-width segment: one deck section at a time; CSS ignores this above
   // 640px, where the whole deck renders as always.
@@ -208,14 +129,14 @@ export function App(): JSX.Element {
   const [paletteOpen, setPaletteOpen] = useState(false);
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key.toLowerCase() === "k" && (event.ctrlKey || event.metaKey)) {
+      if (!authBlocked && event.key.toLowerCase() === "k" && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
         setPaletteOpen((current) => !current);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [authBlocked]);
 
   // The detail drawer's subject: one agent or one task, or nothing.
   const [inspected, setInspected] = useState<
@@ -273,7 +194,6 @@ export function App(): JSX.Element {
   const [logQuery, setLogQuery] = useState<LogQuery>(() =>
     queryFromHash(typeof location === "undefined" ? "" : location.hash),
   );
-  const previous = useRef<Metrics>(ZERO_METRICS);
 
   const onQueryChange = useCallback((query: LogQuery) => {
     setLogQuery(query);
@@ -300,114 +220,6 @@ export function App(): JSX.Element {
   // Stable identities so the spine's canvas effect never re-arms mid-flight.
   const onBrush = useCallback((window: TimeWindow | null) => setBrush(window), []);
   const onClearWindow = useCallback(() => setBrush(null), []);
-
-  useEffect(() => {
-    // The stores own their polling and are created per-mount so their
-    // lifecycle is tied to the effect. Two event sources exist: the
-    // hub-attested tail (/events.json, real seq + ts) and the snapshot-diff
-    // derivation. The tail wins whenever the dashboard serves it; the
-    // derivation is the honest fallback while the endpoint is absent. A
-    // router forwards exactly one of them to the spine and the log, and a
-    // provenance flip clears the log so the two never mix.
-    const store = createSnapshotStore();
-    const derived = createSnapshotEventSource(store);
-    const tail = createEventsTailSource();
-
-    const routed = new Set<(event: CockpitEvent) => void>();
-    setSpineSource({
-      subscribe(listener) {
-        routed.add(listener);
-        return () => routed.delete(listener);
-      },
-      stop() {
-        // The router owns nothing; the effect cleanup stops the real sources.
-      },
-    });
-    let active: "tail" | "derived" | null = null;
-    const push = (event: CockpitEvent): void => {
-      setLog((current) => [event, ...current].slice(0, LOG_LIMIT));
-      for (const listener of routed) listener(event);
-    };
-    const unsubscribeTail = tail.subscribe((event) => {
-      if (active === "tail") push(event);
-    });
-    const unsubscribeDerived = derived.subscribe((event) => {
-      if (active === "derived") push(event);
-    });
-    const unsubscribeMode = tail.subscribeMode((mode) => {
-      setProvenance(mode);
-      // The tail feeds the deck only while it is genuinely live; on absence
-      // AND on error the derivation takes over — an erroring endpoint must
-      // never leave the cockpit with no event source at all. `connecting` is
-      // the only (sub-second) window with no active source.
-      const next = mode === "hub" ? "tail" : mode === "connecting" ? active : "derived";
-      if (next !== active) {
-        active = next;
-        setLog([]);
-      }
-    });
-    const unsubscribeSnapshots = store.subscribe(setSnap);
-    // Reliability evidence is log-derived and heavier server-side, so it polls
-    // on its own slow cadence, independent of the 2 s fleet snapshot.
-    const reliabilityStore = createReliabilityStore();
-    const unsubscribeReliability = reliabilityStore.subscribe(setReliability);
-    const federationStore = createFederationStore();
-    const unsubscribeFederation = federationStore.subscribe(setFederation);
-    const metricsStore = createMetricsStore();
-    const unsubscribeMetrics = metricsStore.subscribe(setMetrics);
-    const sessionsStore = createSessionsStore();
-    const unsubscribeSessions = sessionsStore.subscribe(setSessions);
-    const waitsStore = createWaitsStore();
-    const unsubscribeWaits = waitsStore.subscribe(setWaits);
-    const anomaliesStore = createHealthAnomaliesStore();
-    const unsubscribeAnomalies = anomaliesStore.subscribe(setAnomalyReport);
-    // Re-evaluate freshness between polls so the beacon flips to `stale` even
-    // while the hub is silent, without waiting for the next fetch to return.
-    // The same tick drives the lease countdowns on the claims board.
-    const clock = setInterval(() => {
-      const tick = Date.now();
-      setNowMs(tick);
-      setSnap((current) => withFreshness(current, tick));
-    }, 1000);
-    return () => {
-      unsubscribeTail();
-      unsubscribeDerived();
-      unsubscribeMode();
-      unsubscribeSnapshots();
-      unsubscribeReliability();
-      unsubscribeFederation();
-      unsubscribeMetrics();
-      unsubscribeSessions();
-      unsubscribeWaits();
-      unsubscribeAnomalies();
-      clearInterval(clock);
-      tail.stop();
-      derived.stop();
-      store.stop();
-      reliabilityStore.stop();
-      federationStore.stop();
-      metricsStore.stop();
-      sessionsStore.stop();
-      waitsStore.stop();
-      anomaliesStore.stop();
-    };
-  }, []);
-
-  useEffect(() => {
-    const metrics = metricsOf(snap, observedPerMinute(log, nowMs));
-    const prior = previous.current;
-    previous.current = metrics;
-    setKpis([
-      { label: "agents online", value: metrics.agents, delta: metrics.agents - prior.agents },
-      { label: "claims held", value: metrics.claims, delta: metrics.claims - prior.claims },
-      {
-        label: "obs / min",
-        value: metrics.ratePerMinute,
-        delta: metrics.ratePerMinute - prior.ratePerMinute,
-      },
-      { label: "risk signals", value: metrics.risk, delta: metrics.risk - prior.risk },
-    ]);
-  }, [snap, log, nowMs]);
 
   const roster = useMemo(() => deriveRoster(snap.snapshot), [snap.snapshot]);
   const waiters = snap.snapshot?.fleet.agents.waiters.length ?? 0;
@@ -492,12 +304,33 @@ export function App(): JSX.Element {
     [onFocusChange, onToggleTheme, onToggleDensity, onToggleTravel],
   );
 
+  useEffect(() => {
+    if (!authBlocked) return;
+    if (travelTimer.current !== undefined) clearTimeout(travelTimer.current);
+    for (const timer of toastTimers.current) clearTimeout(timer);
+    toastTimers.current.clear();
+    previousFacts.current = null;
+    setBrush(null);
+    setTravelOn(false);
+    setTravelSeq(0);
+    setTravelState(null);
+    setTravelNote(null);
+    setPaletteOpen(false);
+    setInspected(null);
+    setTraceRequest(undefined);
+    setToasts([]);
+  }, [authBlocked]);
+
+  if (authBlocked) {
+    return <AuthVeil reason={auth.reason} onUnlock={unlockCockpit} />;
+  }
+
   return (
     <div className="shell">
       <Hud
         kpis={kpis}
         live={snap.status === "live"}
-        stamp={stampFor(snap.fetchedAt)}
+        stamp={stamp}
         onSelect={onSelectKpi}
         theme={theme}
         onToggleTheme={onToggleTheme}

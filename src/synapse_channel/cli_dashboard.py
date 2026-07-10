@@ -123,8 +123,9 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--dashboard-token",
         default=None,
         help=(
-            "Bearer token required by dashboard HTTP requests; generated automatically "
-            "for non-loopback binds when omitted."
+            "Bearer token required by dashboard data/page requests and writes; the "
+            "validated React cockpit shell stays token-free so its unlock veil can "
+            "load. Generated automatically for non-loopback binds when omitted."
         ),
     )
     dashboard.add_argument(

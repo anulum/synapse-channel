@@ -15,7 +15,7 @@
 // Navigations go network-first with a cached fallback: updates propagate on
 // the next online open, and an offline launch still boots the shell.
 
-const CACHE = "cockpit-shell-v1";
+const CACHE = "cockpit-shell-v2";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -38,6 +38,10 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  // A credential-bearing request is live data even when its suffix looks like
+  // a shell asset. Never persist the Authorization header in Cache Storage.
+  if (request.headers.has("Authorization")) return;
 
   // Live fleet state: straight to the network, never intercepted further.
   if (url.pathname.endsWith(".json") && !url.pathname.endsWith("manifest.webmanifest")) return;

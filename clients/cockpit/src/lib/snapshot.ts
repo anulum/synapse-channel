@@ -6,6 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the live fleet-snapshot data layer
 
+import { authenticatedFetch } from "./auth";
 import type {
   ClaimGit,
   ClaimRecord,
@@ -263,7 +264,7 @@ export function createSnapshotStore(options: SnapshotStoreOptions = {}): Snapsho
   const url = options.url ?? DEFAULT_URL;
   const pollMs = options.pollMs ?? DEFAULT_POLL_MS;
   const staleAfterMs = options.staleAfterMs ?? DEFAULT_STALE_AFTER_MS;
-  const fetcher = options.fetcher ?? fetch;
+  const fetcher = options.fetcher ?? authenticatedFetch;
   const now = options.now ?? Date.now;
 
   const listeners = new Set<(state: SnapshotState) => void>();

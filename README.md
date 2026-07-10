@@ -376,8 +376,11 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   built bundle with `synapse dashboard --cockpit-dist clients/cockpit/dist`).
   If you deliberately expose the
   dashboard with `--allow-non-loopback`, pass `--dashboard-token <token>` and
-  require clients to send `Authorization: Bearer <token>`; when omitted on an
-  exposed bind, Synapse generates and prints a startup token. Add
+  require clients to send `Authorization: Bearer <token>`; the React cockpit
+  loads its token-free static shell, asks for that bearer, and retains it only
+  in the tab's session storage. It never accepts the bearer in a URL. When the
+  token is omitted on an exposed bind, Synapse generates and prints a startup
+  token. Add
   `--observed-peer HUB=URI` to include advisory peer-hub rows in the browser and
   `/snapshot.json`; those rows are labelled `observed@HUB` and never grant local
   claims.
@@ -1180,7 +1183,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 520 |
 | Wire message types | 74 |
 | CLI subcommands | 158 |
-| Test functions | 5869 |
+| Test functions | 5870 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 12 |

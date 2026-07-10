@@ -12,6 +12,8 @@
 // failure — keep the last good payload across transient errors, and re-check
 // on the same cadence so the panel comes alive the moment the server ships.
 
+import { authenticatedFetch } from "./auth";
+
 /** Connection state of an endpoint feed. `absent` = the hub has no endpoint. */
 export type FeedStatus = "connecting" | "live" | "absent" | "error";
 
@@ -51,7 +53,7 @@ export interface EndpointFeedOptions<T> {
  * retained. Listeners receive the current state on subscribe.
  */
 export function createEndpointFeed<T>(options: EndpointFeedOptions<T>): EndpointFeed<T> {
-  const fetcher = options.fetcher ?? fetch;
+  const fetcher = options.fetcher ?? authenticatedFetch;
   const now = options.now ?? Date.now;
 
   const listeners = new Set<(state: FeedState<T>) => void>();

@@ -50,6 +50,7 @@ from synapse_channel.dashboard_feed_serving import (
     serve_merkle_proof,
     serve_metrics_feed,
     serve_operator_actions,
+    serve_public_cockpit_asset,
     serve_receipts,
     serve_reliability,
     serve_sessions,
@@ -440,13 +441,21 @@ class _DashboardHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         """Serve the dashboard HTML page, JSON snapshot, or a 404 response."""
-        # Reads are gated only when the token protects reads — a caller-supplied token
-        # or one generated for an exposed bind. A token generated solely to gate
-        # operator writes on loopback leaves reads open, so the read-only browser
-        # cockpit still loads (a browser cannot send an Authorization header on
-        # navigation, and the write-path is protected by do_POST regardless).
+        path = urlsplit(self.path).path
+        # Reads are gated only when the token protects reads. The validated React
+        # shell is the narrow exception: navigation cannot carry an Authorization
+        # header, so its known static files must load before the in-app unlock veil
+        # can attach the bearer to data requests. The same containment, suffix, and
+        # regular-file checks as the authenticated route decide that exception;
+        # `/cockpit/*` is never accepted as a blanket bypass.
         reads_gated = self.dashboard_token is not None and self.token_protects_reads
         if reads_gated and not self._authorized():
+            public_asset = serve_public_cockpit_asset(
+                self.cockpit_dist, COCKPIT_DIST_PREFIX, path
+            )
+            if public_asset is not None:
+                self._write_response(public_asset)
+                return
             self._write(
                 HTTPStatus.UNAUTHORIZED,
                 b"dashboard authorization required\n",

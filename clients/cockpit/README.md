@@ -9,7 +9,7 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # SYNAPSE·CHANNEL cockpit
 
-A read-only, real-time operator cockpit for the coordination hub, built as a
+A read-mostly, real-time operator cockpit for the coordination hub, built as a
 static React + TypeScript SPA (Vite). It is a *client* — like `clients/go`,
 `clients/js`, and `clients/vscode` — so the Python core stays an untouched,
 no-telemetry neutral substrate. The cockpit renders what the hub recorded — it
@@ -126,6 +126,22 @@ labelled "hub event log"); while it is absent they fall back to diffing
 consecutive snapshot fetches — real transitions, quantised to the poll
 cadence, labelled "observed transitions". The two sources never mix.
 
+### Dashboard bearer
+
+The normal loopback, read-only dashboard remains open-read and the cockpit
+connects without a prompt. A caller-supplied `--dashboard-token` or a dashboard
+bound beyond loopback protects the live feeds. The validated static shell still
+loads so it can show an unlock veil; paste the bearer printed by the dashboard
+process there. The cockpit retains it only in this tab's `sessionStorage` and
+sends `Authorization: Bearer …` on every snapshot, optional feed, history,
+proof, causality, and operator request. A `401` clears the credential and the
+entire live presentation before showing the veil again.
+
+Never put a dashboard bearer in a URL. The cockpit accepts no query-token form,
+does not write the bearer to `localStorage`, rendered HTML, logs, built assets,
+or Cache Storage, and the service worker bypasses every request carrying an
+`Authorization` header.
+
 ## Develop
 
 ```bash
@@ -169,9 +185,9 @@ tier or a whole-row opacity.
 ## Installing on a phone (PWA)
 
 The built cockpit is an installable PWA. A phone on the tailnet opens
-`http://<hub-tailnet-ip>:<dashboard-port>/cockpit/` (for a tokened dashboard
-use the `?token=` query form — a plain navigation cannot send an
-Authorization header), and installs it:
+`http://<hub-tailnet-ip>:<dashboard-port>/cockpit/`; when the dashboard protects
+reads, the token-free shell opens first and asks for the bearer in its unlock
+veil. Then install it:
 
 - **Android / Chromium**: the cockpit shows an "add to home screen" chip
   when the browser fires its install prompt; one tap hands over to the
@@ -179,9 +195,10 @@ Authorization header), and installs it:
 - **iOS Safari**: there is no prompt event — use **Share → Add to Home
   Screen**.
 
-The service worker (`public/sw.js`) caches the **app shell only** —
+The service worker (`public/sw.js`) caches the **token-free app shell only** —
 navigations are network-first with a cached fallback, hashed assets are
-cache-first. The data feeds (`*.json`) are **never cached**: stale
+cache-first, and any request carrying `Authorization` bypasses it. The data
+feeds (`*.json`) are **never cached**: stale
 coordination data presented as current is worse than a spinner, so an
 unreachable hub surfaces through the HUD beacon's honest `stale HH:MM:SS`
 state (amber-bordered at phone width) instead of silently served old JSON.
