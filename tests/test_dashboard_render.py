@@ -137,9 +137,7 @@ def test_read_gated_dashboard_exposes_only_the_validated_cockpit_shell(tmp_path:
         bare_status, _, _ = _http_get(server.url("/cockpit"))
         asset_status, asset_type, _ = _http_get(server.url("/cockpit/app.js"))
         snapshot_status, _, _ = _http_get(server.url("/snapshot.json"))
-        wrong_status, _, _ = _http_get(
-            server.url("/snapshot.json"), authorization="Bearer wrong"
-        )
+        wrong_status, _, _ = _http_get(server.url("/snapshot.json"), authorization="Bearer wrong")
         allowed_status, _, _ = _http_get(
             server.url("/snapshot.json"), authorization="Bearer secret"
         )

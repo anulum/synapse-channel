@@ -450,9 +450,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         # `/cockpit/*` is never accepted as a blanket bypass.
         reads_gated = self.dashboard_token is not None and self.token_protects_reads
         if reads_gated and not self._authorized():
-            public_asset = serve_public_cockpit_asset(
-                self.cockpit_dist, COCKPIT_DIST_PREFIX, path
-            )
+            public_asset = serve_public_cockpit_asset(self.cockpit_dist, COCKPIT_DIST_PREFIX, path)
             if public_asset is not None:
                 self._write_response(public_asset)
                 return
