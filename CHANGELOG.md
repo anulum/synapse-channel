@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.25] - 2026-07-10
+
 ### Changed
 
 - Split the `encrypt-key` CLI by domain: hardware-backed wrapping
