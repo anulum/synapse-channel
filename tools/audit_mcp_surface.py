@@ -21,15 +21,33 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
 import re
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.10
+    import tomli as tomllib  # type: ignore[no-redef]
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_REGISTRATION = REPO_ROOT / "src" / "synapse_channel" / "mcp" / "registration.py"
 DEFAULT_DOCS = REPO_ROOT / "docs" / "mcp.md"
+DEFAULT_REGISTRY = REPO_ROOT / "server.json"
+DEFAULT_TEMPLATE = REPO_ROOT / "examples" / "mcp" / ".mcp.json"
+DEFAULT_PYPROJECT = REPO_ROOT / "pyproject.toml"
+DEFAULT_README = REPO_ROOT / "README.md"
+
+REGISTRY_NAME = "io.github.anulum/synapse-channel"
+REGISTRY_SCHEMA = "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
+
+REQUIRED_ONBOARDING_TOOLS = frozenset(
+    {"synapse_send", "synapse_inbox", "synapse_board", "synapse_claim", "synapse_status"}
+)
+"""Minimum send/read/coordinate/status loop promised by MCP-first onboarding."""
 
 REQUIRED_DOC_PHRASES = (
     "`synapse mcp` runs an MCP server over stdio",
@@ -40,6 +58,11 @@ REQUIRED_DOC_PHRASES = (
     "--token-file",
     "SYNAPSE_TOKEN",
     "adapter registers on the\nhub under `--name`",
+    "`synapse_inbox",
+    "`synapse_status",
+    "no MCP `synapse_lock(command)` tool",
+    "the vendor `claude/channel` extension",
+    "examples/mcp/.mcp.json",
 )
 """Boundary phrases that must stay present in the MCP guide."""
 
@@ -81,6 +104,10 @@ class CliArgs:
 
     registration: Path
     docs: Path
+    registry: Path
+    template: Path
+    pyproject: Path
+    readme: Path
     check: bool
 
 
@@ -135,7 +162,15 @@ def discover_surface(registration_path: Path) -> McpSurface:
     )
 
 
-def audit_docs(registration_path: Path, docs_path: Path) -> AuditResult:
+def audit_docs(
+    registration_path: Path,
+    docs_path: Path,
+    *,
+    registry_path: Path = DEFAULT_REGISTRY,
+    template_path: Path = DEFAULT_TEMPLATE,
+    pyproject_path: Path = DEFAULT_PYPROJECT,
+    readme_path: Path = DEFAULT_README,
+) -> AuditResult:
     """Compare registered MCP tools/resources with the public MCP guide."""
     surface = discover_surface(registration_path)
     docs = docs_path.read_text(encoding="utf-8")
@@ -167,11 +202,124 @@ def audit_docs(registration_path: Path, docs_path: Path) -> AuditResult:
     if forbidden_claims:
         errors.append(f"forbidden MCP overclaim patterns: {'; '.join(forbidden_claims)}")
 
+    missing_onboarding = tuple(sorted(REQUIRED_ONBOARDING_TOOLS.difference(surface.tools)))
+    if missing_onboarding:
+        errors.append(f"missing MCP onboarding tools: {', '.join(missing_onboarding)}")
+
+    errors.extend(
+        _audit_onboarding_artifacts(
+            registry_path=registry_path,
+            template_path=template_path,
+            pyproject_path=pyproject_path,
+            readme_path=readme_path,
+        )
+    )
+
     return AuditResult(
         tools=surface.tools,
         resources=surface.resources,
         resource_templates=surface.resource_templates,
         errors=tuple(errors),
+    )
+
+
+def _audit_onboarding_artifacts(
+    *,
+    registry_path: Path,
+    template_path: Path,
+    pyproject_path: Path,
+    readme_path: Path,
+) -> list[str]:
+    """Return registry, package-entry, ownership-marker, and template drift."""
+    errors: list[str] = []
+    try:
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"invalid MCP registry metadata: {exc}"]
+    try:
+        template = json.loads(template_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"invalid MCP client template: {exc}"]
+    try:
+        project = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))["project"]
+        readme = readme_path.read_text(encoding="utf-8")
+    except (OSError, KeyError, tomllib.TOMLDecodeError) as exc:
+        return [f"invalid MCP package metadata: {exc}"]
+
+    version = str(project.get("version", ""))
+    scripts = project.get("scripts", {})
+    if (
+        not isinstance(scripts, dict)
+        or scripts.get("synapse-channel") != "synapse_channel.cli_mcp:main"
+    ):
+        errors.append(
+            "MCP registry console entry must be synapse-channel -> synapse_channel.cli_mcp:main"
+        )
+    if f"mcp-name: {REGISTRY_NAME}" not in readme:
+        errors.append(f"README is missing the PyPI MCP ownership marker for {REGISTRY_NAME}")
+
+    packages = registry.get("packages")
+    package = packages[0] if isinstance(packages, list) and len(packages) == 1 else None
+    if registry.get("$schema") != REGISTRY_SCHEMA:
+        errors.append("server.json does not use the verified MCP registry schema")
+    if registry.get("name") != REGISTRY_NAME:
+        errors.append(f"server.json name must be {REGISTRY_NAME}")
+    if registry.get("version") != version:
+        errors.append("server.json version does not match pyproject.toml")
+    if not isinstance(package, dict):
+        errors.append("server.json must contain exactly one PyPI package")
+    else:
+        if (
+            package.get("registryType") != "pypi"
+            or package.get("identifier") != "synapse-channel"
+            or package.get("version") != version
+            or package.get("transport") != {"type": "stdio"}
+        ):
+            errors.append("server.json PyPI package identity/version/transport drifted")
+        runtime_args = package.get("runtimeArguments")
+        if package.get("runtimeHint") != "uvx" or not _has_mcp_runtime(runtime_args):
+            errors.append("server.json must install the optional MCP SDK through uvx --with")
+
+    servers = template.get("mcpServers")
+    synapse = servers.get("synapse") if isinstance(servers, dict) else None
+    if not isinstance(synapse, dict):
+        errors.append("MCP template is missing mcpServers.synapse")
+    else:
+        args = synapse.get("args")
+        env = synapse.get("env")
+        arguments = args if isinstance(args, list) else []
+        environment = env if isinstance(env, dict) else {}
+        if (
+            synapse.get("command") != "synapse"
+            or not isinstance(args, list)
+            or "mcp" not in arguments
+        ):
+            errors.append("MCP template does not launch synapse mcp")
+        identity = environment.get("SYN_IDENTITY")
+        name_index = arguments.index("--name") if "--name" in arguments else -1
+        if (
+            not isinstance(identity, str)
+            or name_index < 0
+            or name_index + 1 >= len(arguments)
+            or arguments[name_index + 1] != identity
+        ):
+            errors.append("MCP template does not pin one explicit matching client identity")
+        serialized = json.dumps(template).lower()
+        if "synapse_token" in serialized or '"--token"' in serialized:
+            errors.append("MCP template must not embed a raw token")
+    return errors
+
+
+def _has_mcp_runtime(value: object) -> bool:
+    """Return whether registry runtime args request the MCP SDK through ``--with``."""
+    if not isinstance(value, list):
+        return False
+    return any(
+        isinstance(item, dict)
+        and item.get("type") == "named"
+        and item.get("name") == "--with"
+        and str(item.get("value", "")).startswith("mcp>=")
+        for item in value
     )
 
 
@@ -184,6 +332,10 @@ def parse_args(argv: Sequence[str] | None = None) -> CliArgs:
         default=DEFAULT_REGISTRATION,
         help="Path to src/synapse_channel/mcp/registration.py",
     )
+    parser.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
+    parser.add_argument("--template", type=Path, default=DEFAULT_TEMPLATE)
+    parser.add_argument("--pyproject", type=Path, default=DEFAULT_PYPROJECT)
+    parser.add_argument("--readme", type=Path, default=DEFAULT_README)
     parser.add_argument(
         "--docs",
         type=Path,
@@ -199,6 +351,10 @@ def parse_args(argv: Sequence[str] | None = None) -> CliArgs:
     return CliArgs(
         registration=namespace.registration,
         docs=namespace.docs,
+        registry=namespace.registry,
+        template=namespace.template,
+        pyproject=namespace.pyproject,
+        readme=namespace.readme,
         check=namespace.check,
     )
 
@@ -207,7 +363,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the MCP surface audit and return a process exit code."""
     args = parse_args(argv)
     _ = args.check
-    result = audit_docs(args.registration, args.docs)
+    result = audit_docs(
+        args.registration,
+        args.docs,
+        registry_path=args.registry,
+        template_path=args.template,
+        pyproject_path=args.pyproject,
+        readme_path=args.readme,
+    )
     if not result.ok:
         for error in result.errors:
             print(error, file=sys.stderr)

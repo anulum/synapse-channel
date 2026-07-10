@@ -109,6 +109,7 @@ docs = [
 
 [project.scripts]
 synapse = "synapse_channel.cli:main"
+synapse-channel = "synapse_channel.cli_mcp:main"
 syn = "synapse_channel.ergonomics:main"
 syn-name = "synapse_channel.ergonomics:alias_name"
 syn-wait = "synapse_channel.ergonomics:alias_arm"

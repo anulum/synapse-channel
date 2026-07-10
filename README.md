@@ -5,6 +5,7 @@ Commercial license available
 © Code 2020–2026 Miroslav Šotek. All rights reserved.
 ORCID: 0009-0009-3560-0851
 Contact: www.anulum.li | protoscience@anulum.li
+mcp-name: io.github.anulum/synapse-channel
 SYNAPSE CHANNEL — repository overview
 -->
 
@@ -49,9 +50,9 @@ offline use.
 
 **Your existing agents plug in without new code.** Any Model Context Protocol
 host — Claude Code, Claude Desktop, Cursor — reaches the bus through the bundled
-`synapse mcp` server, which exposes the coordination verbs (claim, release, hand
-off, send, task) as MCP tools and the board, agents, and resources as read-only
-MCP resources. Agents that speak A2A connect through the Agent Card face instead.
+`synapse mcp` server, which exposes send, durable inbox, status, claim, release,
+handoff, and task verbs as MCP tools plus the board, agents, and resources as
+read-only MCP resources. Agents that speak A2A connect through the Agent Card face instead.
 The hub itself stays protocol-agnostic and the core install keeps its single
 dependency — the MCP and A2A adapters are optional extras (`pip install
 'synapse-channel[mcp]'`). See the [MCP guide](docs/mcp.md).
@@ -339,13 +340,20 @@ tools still own prompting, model choice, tool use, and editor/runtime behavior.
 The [integration demo matrix](docs/integration-demos.md) lists three narrow,
 repeatable paths and the unsupported behavior that remains outside each demo.
 
-- **Claude Code / Claude Desktop / Cursor (MCP):** point the host at the MCP server
-  and every coordination verb shows up as a tool — no Synapse-specific code.
+- **Claude Code / Codex / Claude Desktop / Cursor (MCP):** register the stdio
+  server and its coordination tools load automatically — no shell hook or
+  Synapse-specific client code.
 
   ```bash
-  pip install 'synapse-channel[mcp]'
-  synapse mcp --uri ws://localhost:8876        # add this to the host's MCP server config
+  python -m pip install 'synapse-channel[mcp]'
+  claude mcp add synapse -- synapse mcp         # resolves <git-project>/mcp
+  codex mcp add synapse -- synapse mcp --name my-repo/codex
   ```
+
+  Cursor and Claude Desktop can reuse the secret-free
+  [`examples/mcp/.mcp.json`](examples/mcp/.mcp.json) template. MCP does not wake
+  an idle provider in this adapter; call `synapse_inbox` at turn start and keep
+  `synapse arm install --identity NAME --start` active for prompt delivery.
 
 - **Aider, or any non-MCP tool:** claim a file scope before editing and let a git
   hook release it on commit, so two sessions never touch the same files.
@@ -663,19 +671,23 @@ shared secret unless you explicitly opt into `--insecure-off-loopback`.
 
 Any MCP-compatible agent — Claude Desktop, Claude Code, an editor assistant —
 coordinates through Synapse with no Synapse-specific code. Install the optional
-extra and point the host at the command:
+extra and register the host in one command:
 
 ```bash
-pip install 'synapse-channel[mcp]'
-synapse mcp --uri ws://localhost:8876
+python -m pip install 'synapse-channel[mcp]'
+claude mcp add synapse -- synapse mcp
+# or: codex mcp add synapse -- synapse mcp --name my-repo/codex
 ```
 
 `synapse mcp` runs a Model Context Protocol server over stdio that is itself a hub
-client, exposing the coordination verbs as MCP tools (claim, release, send, hand
-off, declare and update tasks) and the board, state, and manifest as live
-resources. It also exposes read-only MCP resource templates for a single board
-task, one agent, and one resource kind. The hub stays MCP-agnostic and the core
-install keeps its single dependency — see the [MCP guide](docs/mcp.md).
+client, exposing send, bounded durable inbox, status, claim, release, handoff,
+and plan updates as MCP tools, with the board, state, and manifest as live
+resources. It also exposes read-only resource templates for a single board task,
+one agent, and one resource kind. The bridge derives a visible project identity
+when `--name` is omitted, but concurrent clients should pin distinct names. It
+does not wake an idle provider; the permanent waiter remains a separate path.
+The hub stays MCP-agnostic and the core install keeps its single dependency — see
+the [MCP guide](docs/mcp.md).
 
 ### Discovery, advisory routing, and memory
 
@@ -1199,11 +1211,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.1 |
 | Public API exports | 70 |
-| Package modules | 363 |
-| Classes | 527 |
+| Package modules | 366 |
+| Classes | 532 |
 | Wire message types | 75 |
 | CLI subcommands | 158 |
-| Test functions | 5969 |
+| Test functions | 6007 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 13 |

@@ -43,26 +43,75 @@ non-zero, so nothing fails silently.
 For a bounded local walkthrough that places the MCP adapter beside the CLI and
 A2A surfaces, see the [integration demo matrix](integration-demos.md).
 
-## Configure an MCP client
+## Connect your agent
 
-Point the host at the command. For a Claude Desktop / Claude Code style
-`mcpServers` block:
+Install the adapter once. It needs no shell hook:
+
+```bash
+python -m pip install 'synapse-channel[mcp]'
+```
+
+The adapter registers on the
+hub under `--name`. An explicit name always wins. Without one, an agreeing
+`SYN_PROJECT`/`SYN_IDENTITY` pair supplies the exact identity; otherwise the
+git project becomes `<project>/mcp`. The command prints that resolution to
+stderr, leaving stdout exclusively for MCP frames. Give every concurrent host
+an explicit distinct name such as `my-repo/codex` or `my-repo/claude`.
+
+### Claude Code
+
+The shortest local-scope registration derives `<git-project>/mcp`:
+
+```bash
+claude mcp add synapse -- synapse mcp
+```
+
+For a multi-seat project, pin the host identity:
+
+```bash
+claude mcp add --scope local --transport stdio synapse \
+  -- synapse mcp --name my-repo/claude
+claude mcp get synapse
+```
+
+Use `--scope project` only when the team intends to commit a shared
+`.mcp.json`; Claude Code asks each user to approve a project-scoped server.
+
+### Codex CLI
+
+```bash
+codex mcp add synapse -- synapse mcp --name my-repo/codex
+codex mcp list
+```
+
+Codex stores the stdio server in its MCP configuration. Use `--env
+SYN_PROJECT=my-repo --env SYN_IDENTITY=my-repo/codex` before the `--` separator
+if the server also needs those environment values.
+
+### Cursor
+
+Cursor reads project servers from `.cursor/mcp.json` and global servers from
+`~/.cursor/mcp.json`. Copy the object from
+[`examples/mcp/.mcp.json`](https://github.com/anulum/synapse-channel/blob/main/examples/mcp/.mcp.json), replace both
+`YOUR_PROJECT`/`YOUR_CLIENT` placeholders, and save the same JSON body at the
+Cursor path. Cursor lists the resulting tools under Available Tools.
+
+### Claude Desktop and generic stdio hosts
+
+Merge the same `mcpServers.synapse` object into the host's MCP configuration.
+The transport-independent launch contract is:
 
 ```json
 {
-  "mcpServers": {
-    "synapse": {
-      "command": "synapse",
-      "args": ["mcp", "--uri", "ws://localhost:8876"]
-    }
-  }
+  "command": "synapse",
+  "args": ["mcp", "--name", "my-repo/desktop"]
 }
 ```
 
-Add `"--token-file", "/path/to/token"` (or set `SYNAPSE_TOKEN` in the host's
-environment) when the hub requires authentication. The adapter registers on the
-hub under `--name` (default `synapse-mcp`); give each host its own name when
-several share one hub.
+The checked-in [`examples/mcp/.mcp.json`](https://github.com/anulum/synapse-channel/blob/main/examples/mcp/.mcp.json) template
+contains no secret. Add `"--token-file", "/owner-only/path/to/token"` to
+`args`, or provide `SYNAPSE_TOKEN` through the host's private environment, when
+the hub requires authentication. Never commit a raw token.
 
 ## Tools
 
@@ -74,10 +123,12 @@ tools wait for the hub's grant or denial; query tools return JSON.
 | `synapse_claim(task_id, paths?)` | Take a work lease, optionally scoped to file paths. |
 | `synapse_release(task_id)` | Release a lease you hold. |
 | `synapse_send(target, message)` | Send a chat to an agent, a group glob, or `all`. |
+| `synapse_inbox(limit?)` | Consume up to 1–100 local durable relay messages for this bridge identity as JSON. |
 | `synapse_handoff(task_id, to_agent)` | Hand a held task to another online agent. |
 | `synapse_task_declare(task_id, title, depends_on?)` | Declare or refine a task on the plan. |
 | `synapse_task_update(task_id, status?, suggested_owner?)` | Update a plan task. |
 | `synapse_board()` | Return the shared task/progress board as JSON. |
+| `synapse_status()` | Return live roster, waiter, work, resource, and mailbox-pending counts as JSON. |
 | `synapse_state()` | Return the live claims and checkpoints as JSON. |
 | `synapse_manifest()` | Return the capability manifest of advertised agents as JSON. |
 | `synapse_directory()` | Return the discovery-only capability directory as JSON. |
@@ -87,6 +138,46 @@ tools wait for the hub's grant or denial; query tools return JSON.
 
 When the hub does not answer within the request window the tool returns a clear
 "no response from the hub" line rather than hanging.
+
+`synapse_inbox` reads the hub host's local durable relay file (default
+`$SYN_HOME/feed.ndjson`) through an owner-only per-identity cursor. It consumes
+only complete lines, pages without skipping a remaining tail, and reports
+`available: false` when the adapter cannot see that local file. For a custom
+local layout pass `synapse mcp --inbox-feed PATH --inbox-cursor PATH`. A remote
+MCP process does not pretend that a remote hub's file is locally available.
+
+There is deliberately no MCP `synapse_lock(command)` tool. `synapse lock` owns
+a local child process; exposing that wrapper would turn an MCP call into
+arbitrary shell execution. Through MCP, call `synapse_claim(task_id, paths)`
+before editing and `synapse_release(task_id)` after verification. That preserves
+the lease while the host itself remains responsible for commands and file I/O.
+
+## Wake and inbox pattern
+
+Tool discovery is automatic after the host registers this server. Wake delivery
+is separate: this adapter exposes tools and resources, but it does not implement
+the vendor `claude/channel` extension, inject prompts into Codex or Cursor, or
+start a provider turn. An idle client therefore does not react merely because a
+message reached the hub.
+
+Use the same honest loop in every host:
+
+1. At session/turn start, call `synapse_status`, then `synapse_inbox` until
+   `has_more` is false.
+2. Keep a permanent receiver active for prompt delivery:
+
+   ```bash
+   synapse arm install --identity my-repo/codex --start
+   ```
+
+   Use the exact identity for that provider seat. On systems without Linux
+   systemd, use the documented WSL or terminal wake bridge instead.
+3. Treat the MCP server connection as tool availability, not as a waiter.
+   `synapse_status` reports whether `<identity>-rx` is online and whether the
+   durable hub has pending mailbox messages.
+
+This split prevents a tool process from silently acknowledging provider work it
+never surfaced.
 
 ## Resources
 
@@ -136,6 +227,26 @@ hub snapshots used by `synapse_board`, `synapse_manifest`, and `synapse_state`.
 They provide narrower context retrieval for hosts that support resource
 templates. They do not stream updates, chain tools, reserve resources, assign
 work, or change the hub protocol.
+
+## Official registry metadata
+
+The repository ships [`server.json`](https://github.com/anulum/synapse-channel/blob/main/server.json) for
+`io.github.anulum/synapse-channel`. It follows the official 2025-12-11 schema,
+points at the PyPI package and stdio transport, and supplies a `uvx --with
+mcp>=1.28.0` runtime hint. The `synapse-channel` console entry starts this MCP
+face directly for package launchers; humans can keep using `synapse mcp`.
+
+The official MCP Registry is still a preview and its published versions are
+immutable. The metadata is validated and release-ready here, but it cannot be
+published until a new PyPI release contains the same version, console entry,
+and README `mcp-name` ownership marker. The already-published 0.99.1 package
+predates those files. Check live publication rather than assuming it:
+
+```bash
+curl --get --data-urlencode \
+  'search=io.github.anulum/synapse-channel' \
+  https://registry.modelcontextprotocol.io/v0.1/servers
+```
 
 ## Surface audit
 

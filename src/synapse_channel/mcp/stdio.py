@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from pathlib import Path
 from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
@@ -31,6 +32,9 @@ async def serve_stdio(
     token: str | None = None,
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT,
     ready_timeout: float = 5.0,
+    roles: Iterable[str] = (),
+    inbox_feed: str | Path | None = None,
+    inbox_cursor: str | Path | None = None,
     agent_factory: AgentFactory = SynapseAgent,
     server_builder: Callable[[SynapseHubBridge], Any] = build_mcp_server,
 ) -> int:
@@ -50,6 +54,10 @@ async def serve_stdio(
     ready_timeout : float, optional
         Seconds to wait for the bridge agent handshake before reporting the hub
         unreachable. Defaults to ``5.0``.
+    roles : Iterable[str], optional
+        Full role identities the bridge answers to.
+    inbox_feed, inbox_cursor : str, pathlib.Path, or None, optional
+        Local durable relay feed and byte cursor overrides for ``synapse_inbox``.
     agent_factory : AgentFactory, optional
         Factory for the hub client; injectable for testing.
     server_builder : Callable, optional
@@ -66,6 +74,9 @@ async def serve_stdio(
         token=token,
         request_timeout=request_timeout,
         agent_factory=agent_factory,
+        roles=roles,
+        inbox_feed=inbox_feed,
+        inbox_cursor=inbox_cursor,
     )
     conn_task = asyncio.create_task(bridge.agent.connect())
     try:

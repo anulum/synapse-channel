@@ -27,6 +27,7 @@ def test_parser_mcp() -> None:
 
 def test_parser_mcp_timeouts() -> None:
     args = cli.build_parser().parse_args(["mcp"])
+    assert args.name is None
     assert args.request_timeout == DEFAULT_REQUEST_TIMEOUT
     assert args.ready_timeout == 5.0
 
@@ -35,6 +36,24 @@ def test_parser_mcp_timeouts() -> None:
     )
     assert custom.request_timeout == 12.5
     assert custom.ready_timeout == 0.25
+
+
+def test_parser_mcp_inbox_and_role_overrides() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "mcp",
+            "--role",
+            "PROJ/reviewer",
+            "--inbox-feed",
+            "/state/feed.ndjson",
+            "--inbox-cursor",
+            "/state/cursor",
+        ]
+    )
+
+    assert args.role == ["PROJ/reviewer"]
+    assert args.inbox_feed == "/state/feed.ndjson"
+    assert args.inbox_cursor == "/state/cursor"
 
 
 def _mcp_ns(**overrides: Any) -> argparse.Namespace:

@@ -25,7 +25,7 @@ everything, since they need the whole command table.
 | `synapse worker` | Run a model worker that answers on the channel. |
 | `synapse worker-session` | Run a provider command with `SYN_PROJECT`/`SYN_IDENTITY` set and a waiter armed around it. |
 | `synapse team` | Launch a hub plus one or two local workers in one shot. |
-| `synapse mcp` | Serve the hub to MCP-compatible agents over stdio (see [MCP server](mcp.md)). |
+| `synapse mcp` | Serve identity-safe coordination tools over stdio, including bounded local-feed inbox and live status; an omitted `--name` resolves from an agreeing environment or `<git-project>/mcp` (see [MCP server](mcp.md)). |
 | `synapse mcp-tools` / `synapse mcp-call` | List and call allowlisted tools on an external MCP server (outbound). |
 | `synapse sandbox` | Validate a capability manifest and pre-flight or run a `.wasm` tool against it (`validate`/`test`/`run`). |
 | `synapse adapters` | Detect coding tools and wire them to the hub with a claim-aware adapter (`list`/`install`/`uninstall`). |

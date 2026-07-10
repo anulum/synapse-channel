@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.anulum/synapse-channel",
+  "title": "SYNAPSE CHANNEL",
+  "description": "Local-first multi-agent coordination for messages, leases, shared plans, status, and resources.",
+  "repository": {
+    "url": "https://github.com/anulum/synapse-channel",
+    "source": "github"
+  },
+  "version": "0.99.1",
+  "websiteUrl": "https://anulum.github.io/synapse-channel/",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "synapse-channel",
+      "version": "0.99.1",
+      "runtimeHint": "uvx",
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--with",
+          "value": "mcp>=1.28.0"
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

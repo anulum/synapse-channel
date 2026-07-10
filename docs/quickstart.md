@@ -46,6 +46,27 @@ That generated workspace succeeds when it prints:
 success: coding fleet demo completed
 ```
 
+## Connect an MCP-capable coding agent
+
+The MCP extra gives an existing host the coordination tools without installing
+shell hooks:
+
+```bash
+python -m pip install 'synapse-channel[mcp]'
+claude mcp add synapse -- synapse mcp
+# Codex: codex mcp add synapse -- synapse mcp --name my-repo/codex
+```
+
+The short Claude command resolves the git project to `<project>/mcp`. Pin
+`--name <project>/<client>` when several clients share a hub. Cursor and Claude
+Desktop can reuse the
+[`examples/mcp/.mcp.json`](https://github.com/anulum/synapse-channel/blob/main/examples/mcp/.mcp.json)
+template.
+After the host connects, call `synapse_status` and `synapse_inbox` at the start
+of a turn. MCP tool discovery does not wake an idle provider; keep an exact
+permanent waiter active with `synapse arm install --identity NAME --start`.
+See [MCP server face](mcp.md) for authentication and client-specific paths.
+
 ## Fastest safe trial path
 
 Use this order when moving from the self-contained demos into a real checkout:

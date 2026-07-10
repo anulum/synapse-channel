@@ -49,7 +49,17 @@ async def test_serve_stdio_threads_request_timeout_to_the_bridge() -> None:
         return RecordingStdioServer()
 
     async with running_hub(SynapseHub()) as (_, uri):
-        rc = await serve_stdio(uri=uri, server_builder=builder, request_timeout=12.5)
+        rc = await serve_stdio(
+            uri=uri,
+            server_builder=builder,
+            request_timeout=12.5,
+            roles=("PROJ/reviewer",),
+            inbox_feed="/tmp/mcp-feed",
+            inbox_cursor="/tmp/mcp-cursor",
+        )
 
     assert rc == 0
     assert captured[0].request_timeout == 12.5
+    assert captured[0].agent.roles == ("PROJ/reviewer",)
+    assert str(captured[0].inbox_reader.feed_path) == "/tmp/mcp-feed"
+    assert str(captured[0].inbox_reader.cursor_path) == "/tmp/mcp-cursor"

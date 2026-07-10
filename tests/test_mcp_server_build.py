@@ -17,6 +17,7 @@ from hub_e2e_helpers import running_hub
 from mcp_server_helpers import start_bridge
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.mcp.inbox import McpFeedInbox
 from synapse_channel.mcp.server import (
     MCP_EXTRA_HINT,
     SynapseHubBridge,
@@ -45,10 +46,12 @@ async def test_build_registers_tools_and_resources() -> None:
         "synapse_claim",
         "synapse_release",
         "synapse_send",
+        "synapse_inbox",
         "synapse_handoff",
         "synapse_task_declare",
         "synapse_task_update",
         "synapse_board",
+        "synapse_status",
         "synapse_state",
         "synapse_manifest",
         "synapse_directory",
@@ -73,15 +76,22 @@ async def test_every_tool_and_resource_wrapper_dispatches(tmp_path: Path) -> Non
     store.close()
     async with running_hub() as (hub, uri):
         handle = await start_bridge(uri, request_timeout=0.5)
+        handle.bridge.inbox_reader = McpFeedInbox(
+            handle.bridge.name,
+            feed_path=tmp_path / "missing-feed.ndjson",
+            cursor_path=tmp_path / "inbox.cursor",
+        )
         server = build_mcp_server(handle.bridge)
         try:
             await server.call_tool("synapse_claim", {"task_id": "T", "paths": ["a"]})
             await server.call_tool("synapse_release", {"task_id": "T"})
             await server.call_tool("synapse_send", {"target": "X", "message": "m"})
+            inbox = await server.call_tool("synapse_inbox", {"limit": 3})
             await server.call_tool("synapse_handoff", {"task_id": "T", "to_agent": "Y"})
             await server.call_tool("synapse_task_declare", {"task_id": "T", "title": "t"})
             await server.call_tool("synapse_task_update", {"task_id": "T", "status": "done"})
             board = await server.call_tool("synapse_board", {})
+            status = await server.call_tool("synapse_status", {})
             state = await server.call_tool("synapse_state", {})
             manifest = await server.call_tool("synapse_manifest", {})
             directory = await server.call_tool("synapse_directory", {})
@@ -107,6 +117,8 @@ async def test_every_tool_and_resource_wrapper_dispatches(tmp_path: Path) -> Non
         finally:
             await handle.close()
     assert "T" in str(board)
+    assert "local relay feed is missing" in str(inbox)
+    assert "mailbox_pending" in str(status)
     assert "active_claims" in str(state)
     assert "[]" in str(manifest)
     assert "trust_boundary" in str(directory)

@@ -15,6 +15,13 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- MCP-first onboarding now includes identity-safe `synapse mcp` defaults, real
+  `synapse_inbox` and `synapse_status` tools, a secret-free `.mcp.json` template,
+  a dedicated PyPI/registry console entry, validated official-registry metadata,
+  and client-specific setup guidance for Claude Code, Codex, Cursor, and generic
+  stdio hosts. The guide keeps provider wake delivery separate from MCP tool
+  discovery and excludes arbitrary local shell-command locking from the adapter.
+
 - `synapse who`, `synapse status`, and `synapse doctor` now expose a durable
   per-identity mailbox pending count. Mailbox clients acknowledge every accepted
   live or replayed directed frame; the hub validates the logical recipient,

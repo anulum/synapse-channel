@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "synapse": {
+      "command": "synapse",
+      "args": [
+        "mcp",
+        "--name",
+        "YOUR_PROJECT/YOUR_CLIENT"
+      ],
+      "env": {
+        "SYN_PROJECT": "YOUR_PROJECT",
+        "SYN_IDENTITY": "YOUR_PROJECT/YOUR_CLIENT"
+      }
+    }
+  }
+}

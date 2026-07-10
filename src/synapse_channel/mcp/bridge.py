@@ -12,7 +12,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
+from pathlib import Path
 from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
@@ -33,11 +34,13 @@ from synapse_channel.core.semantic_routing import (
     recommend_agents_for_task,
     recommendation_to_json,
 )
+from synapse_channel.mcp.inbox import DEFAULT_MCP_INBOX_LIMIT, McpFeedInbox
 from synapse_channel.mcp.resource_views import (
     agent_resource_to_json,
     resource_kind_resource_to_json,
     task_resource_to_json,
 )
+from synapse_channel.mcp.status import mcp_status
 
 AgentFactory = Callable[..., SynapseAgent]
 """Factory that builds the bridge's hub client; injectable for testing."""
@@ -77,6 +80,12 @@ class SynapseHubBridge:
     request_timeout : float, optional
         Seconds to await a hub reply before reporting no response. Defaults to
         :data:`DEFAULT_REQUEST_TIMEOUT`.
+    roles : Iterable[str], optional
+        Additional full role names the bridge answers to and includes in its
+        local durable inbox filter.
+    inbox_feed, inbox_cursor : str, pathlib.Path, or None, optional
+        Local relay feed and per-identity byte cursor. ``None`` uses the
+        ``SYN_HOME``/home defaults owned by :class:`McpFeedInbox`.
     """
 
     def __init__(
@@ -87,11 +96,28 @@ class SynapseHubBridge:
         token: str | None = None,
         agent_factory: AgentFactory = SynapseAgent,
         request_timeout: float = DEFAULT_REQUEST_TIMEOUT,
+        roles: Iterable[str] = (),
+        inbox_feed: str | Path | None = None,
+        inbox_cursor: str | Path | None = None,
     ) -> None:
         self.name = name
         self.request_timeout = request_timeout
+        role_names = tuple(dict.fromkeys(role.strip() for role in roles if role.strip()))
         self._waiters: list[tuple[Matcher, asyncio.Future[dict[str, Any]]]] = []
-        self.agent = agent_factory(name, self.on_message, uri=uri, verbose=False, token=token)
+        self.inbox_reader = McpFeedInbox(
+            name,
+            roles=role_names,
+            feed_path=inbox_feed,
+            cursor_path=inbox_cursor,
+        )
+        self.agent = agent_factory(
+            name,
+            self.on_message,
+            uri=uri,
+            verbose=False,
+            token=token,
+            roles=role_names,
+        )
 
     async def on_message(self, data: dict[str, Any]) -> None:
         """Resolve the first pending request whose matcher accepts ``data``.
@@ -341,6 +367,18 @@ class SynapseHubBridge:
             self.agent.request_board,
         )
         return self._render(reply, "board", "the hub did not return the board")
+
+    async def inbox(self, limit: int = DEFAULT_MCP_INBOX_LIMIT) -> str:
+        """Return one bounded, cursored page of local durable message bodies."""
+        return self.inbox_reader.drain(limit)
+
+    async def status(self) -> str:
+        """Return live roster, waiter, claim, resource, and mailbox counts."""
+        return await mcp_status(
+            identity=self.name,
+            await_reply=self._await_reply,
+            agent=self.agent,
+        )
 
     async def state(self) -> str:
         """Return the live claims/checkpoints snapshot as JSON.

@@ -89,6 +89,11 @@ def build_mcp_server(
         return await bridge.send(target, message)
 
     @server.tool()
+    async def synapse_inbox(limit: int = 50) -> str:
+        """Consume a bounded page of local durable messages for this bridge identity."""
+        return await bridge.inbox(limit)
+
+    @server.tool()
     async def synapse_handoff(task_id: str, to_agent: str) -> str:
         """Hand a held task to another online agent atomically."""
         return await bridge.handoff(task_id, to_agent)
@@ -111,6 +116,11 @@ def build_mcp_server(
     async def synapse_board() -> str:
         """Return the shared task/progress blackboard as JSON."""
         return await bridge.board()
+
+    @server.tool()
+    async def synapse_status() -> str:
+        """Return live presence, waiter, work, resource, and mailbox counts as JSON."""
+        return await bridge.status()
 
     @server.tool()
     async def synapse_state() -> str:
