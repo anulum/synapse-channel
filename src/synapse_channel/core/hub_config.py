@@ -46,6 +46,7 @@ from synapse_channel.core.acl import AclPolicy
 from synapse_channel.core.agent_liveness import (
     DEFAULT_RECIPIENT_LIVENESS_WINDOW,
     DEFAULT_WAITER_LIVENESS_WINDOW,
+    DEFAULT_WARN_STALE_RECIPIENTS,
 )
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
@@ -194,17 +195,16 @@ class HubMetricsConfig:
 
 @dataclass(frozen=True, kw_only=True)
 class HubLiveness:
-    """The opt-in stale-recipient warning that tells a present agent from a deaf one.
+    """The stale-recipient warning that tells a present agent from a deaf one.
 
-    Off by default: the open hub never tracks per-agent reactions or warns a
-    sender. With ``warn_stale_recipients`` on, a directed message to a recipient
-    that is present but has no proof of liveness — no ``-rx`` waiter sidecar whose
-    keepalive is fresh within ``waiter_liveness_window`` seconds, and no genuine
-    reaction within ``recipient_liveness_window`` seconds — draws a private warning
-    to the sender, and ``/who`` marks it distinctly.
+    On by default: a directed message to a recipient that is present but has no
+    proof of liveness — no ``-rx`` waiter sidecar whose keepalive is fresh within
+    ``waiter_liveness_window`` seconds, and no genuine reaction within
+    ``recipient_liveness_window`` seconds — draws a private warning to the sender,
+    and ``/who`` marks it distinctly. Operators can opt out explicitly.
     """
 
-    warn_stale_recipients: bool = False
+    warn_stale_recipients: bool = DEFAULT_WARN_STALE_RECIPIENTS
     recipient_liveness_window: float = DEFAULT_RECIPIENT_LIVENESS_WINDOW
     waiter_liveness_window: float = DEFAULT_WAITER_LIVENESS_WINDOW
 

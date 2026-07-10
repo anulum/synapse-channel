@@ -50,6 +50,7 @@ from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.agent_liveness import (
     DEFAULT_RECIPIENT_LIVENESS_WINDOW,
     DEFAULT_WAITER_LIVENESS_WINDOW,
+    DEFAULT_WARN_STALE_RECIPIENTS,
     RecipientLiveness,
 )
 from synapse_channel.core.auth import TokenAuthenticator
@@ -460,7 +461,7 @@ class SynapseHub:
         require_identity_binding: bool = False,
         identity_pin_path: str | Path | None = None,
         private_directed_messages: bool = False,
-        warn_stale_recipients: bool = False,
+        warn_stale_recipients: bool = DEFAULT_WARN_STALE_RECIPIENTS,
         recipient_liveness_window: float = DEFAULT_RECIPIENT_LIVENESS_WINDOW,
         waiter_liveness_window: float = DEFAULT_WAITER_LIVENESS_WINDOW,
         multihub_serving_policy: MultiHubServingPolicy | None = None,

@@ -20,11 +20,15 @@ is *stale*: present, but not proven wake-capable. A hub pairs this with a second
 independent proof — a live ``-rx`` waiter sidecar — before it warns a sender, so an
 armed-but-idle agent (which is genuinely reachable, just quiet) is not flagged.
 
-The store is opt-in from the hub's side: it is only written when the stale-recipient
-warning is enabled, so the default open hub carries no extra per-frame state.
+The store is written only while stale-recipient warnings are enabled. Warnings are
+enabled by default so a zero-configuration sender sees a present-but-deaf recipient;
+an operator can explicitly disable them for a compatibility deployment.
 """
 
 from __future__ import annotations
+
+DEFAULT_WARN_STALE_RECIPIENTS = True
+"""Whether a bare hub reports recipients that are present but not proven live."""
 
 DEFAULT_RECIPIENT_LIVENESS_WINDOW = 90.0
 """Seconds an agent may go without a genuine reaction before it is judged stale.

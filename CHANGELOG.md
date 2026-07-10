@@ -125,6 +125,13 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Stale-recipient liveness warnings and the matching `synapse who` annotations
+  are now enabled by default for a bare hub. The existing
+  `--warn-stale-recipients` spelling remains accepted, while
+  `--no-warn-stale-recipients` provides an explicit compatibility opt-out.
+  Directed messages remain delivered and journalled; the default change makes a
+  present-but-deaf recipient visible to the sender instead of silently waiting.
+
 - `cli_a2a_interop` now has a direct module-owned test surface covering parser
   defaults and overrides, live endpoint-URL and host/port receipt flows through
   the production HTTP bridge, operator-file output, invalid endpoints, and

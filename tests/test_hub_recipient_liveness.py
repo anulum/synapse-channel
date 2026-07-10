@@ -111,7 +111,7 @@ class TestReactionTracking:
         assert hub._recipient_liveness.last_reaction_at("BETA") == 50.0
 
     async def test_disabled_hub_tracks_no_reactions(self) -> None:
-        hub = SynapseHub()  # warning off by default
+        hub = SynapseHub(warn_stale_recipients=False)
         socket = _FakeSocket()
         hub.clients.add_client(socket)
 
@@ -138,9 +138,7 @@ class TestStaleRecipientWarning:
 
     async def test_directed_message_to_a_deaf_recipient_warns_the_sender(self) -> None:
         clock = _Clock()
-        hub, alpha = await self._hub_with_sender_and_deaf_recipient(
-            clock, warn_stale_recipients=True
-        )
+        hub, alpha = await self._hub_with_sender_and_deaf_recipient(clock)
 
         await hub.handle_message(_chat("ALPHA", "BETA", "are you there"), alpha)
 
@@ -211,7 +209,7 @@ class TestStaleRecipientWarning:
 class TestWhoSnapshotLiveness:
     async def test_who_snapshot_carries_liveness_when_enabled(self) -> None:
         clock = _Clock()
-        hub = SynapseHub(warn_stale_recipients=True, recipient_liveness_window=10.0, clock=clock)
+        hub = SynapseHub(recipient_liveness_window=10.0, clock=clock)
         beta = _FakeSocket()
         hub.clients.add_client(beta)
         await hub.handle_message(_register("BETA"), beta)  # seeds BETA at t=0, then it goes deaf
@@ -227,7 +225,7 @@ class TestWhoSnapshotLiveness:
         assert snap["agent_liveness"]["BETA"]["proven_live"] is False
 
     async def test_who_snapshot_omits_liveness_when_disabled(self) -> None:
-        hub = SynapseHub()  # off by default
+        hub = SynapseHub(warn_stale_recipients=False)
         beta = _FakeSocket()
         hub.clients.add_client(beta)
         await hub.handle_message(_register("BETA"), beta)

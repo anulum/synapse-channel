@@ -137,7 +137,7 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
         # The message was delivered to present recipients, but present is not the
         # same as reachable-in-practice: warn the sender about any recipient that is
         # online yet has no proof it is wake-capable, so a reply that never comes is
-        # not silently waited on. Off by default, so the open hub never sends this.
+        # not silently waited on. An explicit compatibility opt-out disables it.
         await _warn_stale_recipients(
             hub,
             websocket,

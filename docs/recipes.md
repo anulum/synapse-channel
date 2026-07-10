@@ -205,10 +205,11 @@ The discipline that makes it reliable:
   `Restart=always`, is brought back by systemd if it ever dies — so the passive
   receiver cannot silently lapse. Native Windows service installation is not
   claimed; use WSL with systemd. Reserve the manual `--max-wakes 1` re-arm loop for
-  a harness that re-invokes on each wake. To catch a lapse when it does happen, run the hub with
-  `--warn-stale-recipients`: a directed message to a present-but-deaf recipient warns
-  the sender, and `synapse who` marks such agents `(deaf …)` and lists any present
-  agent with no live waiter under `Unarmed (present, no live waiter)`.
+  a harness that re-invokes on each wake. The hub warns by default when a directed
+  message reaches a present-but-deaf recipient; `synapse who` also marks such agents
+  `(deaf …)` and lists any present agent with no live waiter under
+  `Unarmed (present, no live waiter)`. Use `--no-warn-stale-recipients` only for an
+  explicit compatibility opt-out.
 - **Clean up by identity and PID only.** Use `syn reap` to list the resolved
   identity's shell-hook waiter pidfile, then `syn reap --pid <pid>` when that
   exact PID needs cleanup. It removes dead pidfiles and signals only a verified

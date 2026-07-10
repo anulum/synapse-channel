@@ -28,6 +28,7 @@ from synapse_channel.client.supervisor import (
 from synapse_channel.core.agent_liveness import (
     DEFAULT_RECIPIENT_LIVENESS_WINDOW,
     DEFAULT_WAITER_LIVENESS_WINDOW,
+    DEFAULT_WARN_STALE_RECIPIENTS,
 )
 from synapse_channel.core.hub import (
     DEFAULT_AUTH_TIMEOUT,
@@ -380,12 +381,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     hub.add_argument(
         "--warn-stale-recipients",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_WARN_STALE_RECIPIENTS,
         help="Privately warn a sender when a directed message reaches a recipient that is "
         "present but not proven wake-capable — no armed -rx waiter sidecar and no genuine "
         "reaction within --recipient-liveness-window seconds — so a reply that never comes is "
-        "not silently waited on. Off by default, so an open hub tracks nothing and warns "
-        "nobody.",
+        "not silently waited on. Enabled by default; use --no-warn-stale-recipients for an "
+        "explicit compatibility opt-out.",
     )
     hub.add_argument(
         "--recipient-liveness-window",

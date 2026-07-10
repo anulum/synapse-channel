@@ -1013,7 +1013,7 @@ def test_cmd_hub_private_directed_messages_off_by_default() -> None:
     assert captured["private_directed_messages"] is False
 
 
-def test_cmd_hub_threads_stale_recipient_warning() -> None:
+def test_cmd_hub_threads_stale_recipient_warning_opt_out() -> None:
     captured: dict[str, Any] = {}
 
     def build_hub(**kwargs: Any) -> SynapseHub:
@@ -1023,7 +1023,7 @@ def test_cmd_hub_threads_stale_recipient_warning() -> None:
     assert (
         cli_processes._cmd_hub(
             _hub_ns(
-                warn_stale_recipients=True,
+                warn_stale_recipients=False,
                 recipient_liveness_window=30.0,
                 waiter_liveness_window=15.0,
             ),
@@ -1032,12 +1032,12 @@ def test_cmd_hub_threads_stale_recipient_warning() -> None:
         )
         == 0
     )
-    assert captured["warn_stale_recipients"] is True
+    assert captured["warn_stale_recipients"] is False
     assert captured["recipient_liveness_window"] == 30.0
     assert captured["waiter_liveness_window"] == 15.0
 
 
-def test_cmd_hub_stale_recipient_warning_off_by_default() -> None:
+def test_cmd_hub_stale_recipient_warning_on_by_default() -> None:
     captured: dict[str, Any] = {}
 
     def build_hub(**kwargs: Any) -> SynapseHub:
@@ -1045,7 +1045,7 @@ def test_cmd_hub_stale_recipient_warning_off_by_default() -> None:
         return SynapseHub(**kwargs)
 
     assert cli_processes._cmd_hub(_hub_ns(), runner=_close_runner, hub_factory=build_hub) == 0
-    assert captured["warn_stale_recipients"] is False
+    assert captured["warn_stale_recipients"] is True
 
 
 def test_cmd_hub_rejects_a_pin_for_an_unwatched_peer(

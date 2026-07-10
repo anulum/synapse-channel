@@ -16,6 +16,7 @@ from synapse_channel.client.llm_worker import DEFAULT_OLLAMA_BASE_URL
 from synapse_channel.core.agent_liveness import (
     DEFAULT_RECIPIENT_LIVENESS_WINDOW,
     DEFAULT_WAITER_LIVENESS_WINDOW,
+    DEFAULT_WARN_STALE_RECIPIENTS,
 )
 from synapse_channel.core.hub import (
     DEFAULT_COMPACT_HINT_THRESHOLD,
@@ -79,7 +80,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         # ~/synapse/identity-pins.json the production parser defaults to.
         "identity_pins": "",
         "private_directed_messages": False,
-        "warn_stale_recipients": False,
+        "warn_stale_recipients": DEFAULT_WARN_STALE_RECIPIENTS,
         "recipient_liveness_window": DEFAULT_RECIPIENT_LIVENESS_WINDOW,
         "waiter_liveness_window": DEFAULT_WAITER_LIVENESS_WINDOW,
         "federation_store": "",
