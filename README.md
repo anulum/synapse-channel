@@ -1353,7 +1353,15 @@ convenience on top of the free core, and nothing is ever moved behind a paywall.
   self-funded — you can buy us a coffee:
   ☕ [Buy Me a Coffee](https://buymeacoffee.com/anulum) ·
   [GitHub Sponsors](https://github.com/sponsors/anulum) ·
-  [PayPal](https://www.paypal.com/donate?hosted_button_id=4X5F6DNT934HY).
+  [PayPal](https://www.paypal.com/donate?hosted_button_id=4X5F6DNT934HY) —
+  or send crypto (the same addresses published at
+  [anulum.li](https://www.anulum.li/contact.html)):
+
+  | Coin | Address |
+  | --- | --- |
+  | BTC | `bc1qg48gdmrjrjumn6fqltvt0cf0w6nvs0wggy37zd` |
+  | ETH | `0xd9b07F617bEff4aC9CAdC2a13Dd631B1980905FF` |
+  | LTC | `ltc1q886tmvtlnj86kmg2urd8f5td3lmfh32xtpdrut` |
 
 <p align="center">
   <a href="https://buymeacoffee.com/anulum"><img src="https://raw.githubusercontent.com/anulum/synapse-channel/main/assets/bmc_qr.png" width="180" alt="Buy Me a Coffee QR code"></a>
@@ -1401,9 +1409,9 @@ AGPL text, [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md) the commercial terms
 ---
 
 <p align="center">
-  <a href="https://www.anulum.li"><img src="https://raw.githubusercontent.com/anulum/synapse-channel/main/docs/assets/anulum_logo_company.jpg" width="170" alt="ANULUM"></a>
+  <a href="https://www.anulum.li"><img src="https://raw.githubusercontent.com/anulum/synapse-channel/main/docs/assets/anulum_logo_company.jpg" height="70" alt="ANULUM"></a>
   &nbsp;&nbsp;&nbsp;
-  <img src="https://raw.githubusercontent.com/anulum/synapse-channel/main/docs/assets/fortis_studio_logo.jpg" width="170" alt="Fortis Studio">
+  <img src="https://raw.githubusercontent.com/anulum/synapse-channel/main/docs/assets/fortis_studio_logo.jpg" height="70" alt="Fortis Studio">
 </p>
 
 <p align="center">
