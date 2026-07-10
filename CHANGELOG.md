@@ -85,6 +85,20 @@ All notable changes to this project are documented here.
   job. Two tools gained the version-branch `tomllib`/`tomli` import the drift
   checker already used.
 
+### Documentation
+
+- The deployment exposure guide now leads with the recommended team shape —
+  token **and** TLS together (native `wss://` or a TLS-terminating proxy) —
+  and describes token-without-TLS as the trusted-LAN fallback that logs the
+  plaintext-transport advisory.
+- The docs landing page ranks client paths by evidence-bounded support tiers:
+  hub + `syn` CLI are the supported core under the stability contract; the
+  MCP server face is a shipped adapter whose named boundaries the contract
+  freezes; the A2A bridge is validated, partial interop (official SDK
+  lifecycle passes; TCK MUST run 55 passed / 5 documented gaps — evidence,
+  not certification); Go/JS embed within stated boundaries; the cockpit PWA
+  and VS Code extension stub stay experimental.
+
 ### Security
 
 - The exposure guard now logs a startup advisory when a token authenticates a

@@ -45,6 +45,28 @@ state, and every agent connects to it.
 - A **command line** for the whole flow (`synapse hub/worker/team/send/listen/
   relay/board/supervisor/manifest/task`) and **runnable examples**.
 
+## Client paths: supported first
+
+The hub speaks one wire protocol, but not every client surface carries the same
+support weight. Choose in this order:
+
+- **Supported core** — the paths fleets should build on today: the hub itself
+  and the **`syn-*` / `synapse` CLI** (the complete flow above), release-gated
+  and covered by the [API and wire stability](api-stability.md) contract.
+- **Shipped adapter** — the **[MCP server face](mcp.md)** for MCP hosts such
+  as Claude Code, Codex, Cursor, and Claude Desktop: release-gated and fully
+  tested; classified as an adapter, so the stability contract freezes its
+  named boundaries rather than the whole surface.
+- **Validated, partial interop** — the **[A2A bridge](a2a-conformance.md)**:
+  the official SDK completes discovery and the send/get/list/cancel lifecycle
+  against it, and the official TCK HTTP+JSON MUST run records 55 passed with
+  5 documented gaps — recorded evidence, not certification. The
+  **[Go](go-client.md)** and **[JS](js-client.md)** clients embed within
+  their stated boundaries.
+- **Experimental** — the **cockpit** PWA and the **VS Code extension stub**:
+  useful, moving fast, and not part of the stability contract. Expect surface
+  changes between minor releases.
+
 ## Coming: Studio
 
 The read-only dashboard is growing into an operator **[Studio](studio.md)** — a
