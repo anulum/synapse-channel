@@ -73,6 +73,34 @@ def test_syn_project_and_identity_env_keep_full_identity() -> None:
     assert ident.source == "env"
 
 
+def test_disagreeing_syn_project_and_identity_drops_the_borrowed_identity() -> None:
+    # SYN_PROJECT deliberately names one project while a stale SYN_IDENTITY from a
+    # borrowed shell names another. The ambient identity did NOT supply the project,
+    # so it must not be used verbatim: doing so split identity-scoped verbs onto the
+    # foreign seat (the 2026-07-10 directed-delivery incident) while project-scoped
+    # verbs stayed on SYN_PROJECT. The identity falls back to the bare project.
+    ident = resolve_identity(
+        env={"SYN_PROJECT": "quantum", "SYN_IDENTITY": "user/terminal-14753"},
+        cwd_basename="anulum",
+    )
+    assert ident.project == "quantum"
+    assert ident.identity == "quantum"  # not the borrowed "user/terminal-14753"
+    assert ident.source == "env"
+
+
+def test_explicit_project_flag_also_drops_a_disagreeing_ambient_identity() -> None:
+    # An explicit --project overrides the project; a disagreeing ambient identity is
+    # likewise not trusted verbatim, so the identity stays consistent with the flag.
+    ident = resolve_identity(
+        project="quantum",
+        env={"SYN_IDENTITY": "user/terminal-14753"},
+        cwd_basename="anulum",
+    )
+    assert ident.project == "quantum"
+    assert ident.identity == "quantum"
+    assert ident.source == "flag"
+
+
 def test_explicit_id_overrides_syn_identity() -> None:
     ident = resolve_identity(
         agent_id="9999", env={"SYN_IDENTITY": "quantum/codex-2b40"}, cwd_basename="x"

@@ -142,7 +142,13 @@ def resolve_identity(
     ``$SYN_PROJECT`` env var, the first segment of ``$SYN_IDENTITY``, then the
     working-directory basename. The full identity is ``project/<type>-<id>`` when
     ``agent_id`` is given, the verbatim ``$SYN_IDENTITY`` when it supplied the
-    project and no flag overrode it, else the bare project.
+    project and no flag overrode it, else the bare project. A ``$SYN_IDENTITY``
+    whose project segment disagrees with the resolved project (because an explicit
+    ``$SYN_PROJECT`` chose a different one) did not supply the project, so it is
+    *not* used verbatim: the identity falls back to the bare project rather than
+    splitting a session across two projects — the borrowed-shell hazard behind the
+    2026-07-10 directed-delivery incident, where identity-scoped and project-scoped
+    verbs would otherwise follow different names.
 
     Parameters
     ----------
@@ -180,7 +186,16 @@ def resolve_identity(
 
     if agent_id and agent_id.strip():
         identity = f"{proj}/{agent_type.strip()}-{agent_id.strip()}"
-    elif syn_identity and not (project and project.strip()):
+    elif (
+        syn_identity and not (project and project.strip()) and syn_identity.split("/", 1)[0] == proj
+    ):
+        # Use the ambient full identity only when it agrees with the resolved
+        # project — i.e. when SYN_IDENTITY itself supplied the project. A
+        # SYN_IDENTITY whose project segment disagrees with an explicit
+        # SYN_PROJECT is the borrowed-shell signature of the 2026-07-10 P0;
+        # trusting it would bind identity-scoped verbs to a foreign seat while
+        # project-scoped verbs stay on SYN_PROJECT, so it is dropped and the
+        # identity falls back to the consistent bare project.
         identity = syn_identity
     else:
         identity = proj

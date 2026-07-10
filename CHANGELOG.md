@@ -53,6 +53,12 @@ All notable changes to this project are documented here.
   every field deny-by-default (store version, record shape, provenance types,
   duplicate domain ids) and raises rather than admitting a partial or ambiguous
   policy, so a malformed store can never silently authorise or drop a peering.
+- Identity resolution no longer splits a session across two projects: a
+  ``$SYN_IDENTITY`` whose project segment disagrees with an explicit
+  ``$SYN_PROJECT`` (the borrowed-shell signature of the directed-delivery
+  incident) is no longer taken verbatim as the identity — since it did not
+  supply the project, the identity falls back to the resolved bare project, so
+  identity-scoped and project-scoped verbs always follow the same name.
 
 ## [0.98.25] - 2026-07-10
 
