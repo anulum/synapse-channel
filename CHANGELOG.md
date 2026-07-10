@@ -13,6 +13,23 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.1] - 2026-07-10
+
+### Fixed
+
+- **A core-only install could not arm a waiter on 0.99.0.** The machine
+  identity provisioning called the Ed25519 primitives unconditionally, so
+  `synapse wait`/`arm` crashed with `ModuleNotFoundError: cryptography` on
+  any environment holding only the core dependency (`websockets`) — the
+  optional `cryptography` package was never a hard requirement. Provisioning
+  now degrades to an unsigned registration exactly as every pre-0.99 client
+  behaved, and a hub without `cryptography` admits signed registrations
+  unverified with a single actionable warning (`pip install
+  synapse-channel[encryption]`) instead of refusing or crashing the frame
+  handler. Trust-on-first-use pinning remains fully active wherever
+  `cryptography` is installed. Regression tests pin the core-only arm path,
+  both degradation branches, and the hub-side warning.
+
 ## [0.99.0] - 2026-07-10
 
 ### Added
