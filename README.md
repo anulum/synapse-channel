@@ -1349,6 +1349,11 @@ convenience on top of the free core, and nothing is ever moved behind a paywall.
   hosted derivative over a network to third parties.
 - **Buy a commercial licence** to ship a **closed-source** product or a **SaaS** without
   the AGPL's network-copyleft obligation — the same code, under your own terms.
+- **Running it free and want it to keep improving?** Development is independent and
+  self-funded — you can buy the maintainer a coffee via
+  [GitHub Sponsors](https://github.com/sponsors/anulum) or a
+  [one-off PayPal donation](https://www.paypal.com/donate?hosted_button_id=4X5F6DNT934HY).
+  It genuinely helps.
 
 | Layer | For | What you add |
 | --- | --- | --- |

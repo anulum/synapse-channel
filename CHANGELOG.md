@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- The commercial-use section now also invites coffee: a sponsorship line
+  pointing at GitHub Sponsors and the existing PayPal donation button (both
+  already declared in `.github/FUNDING.yml`) for users who run the free tier
+  and want development to keep its pace.
 - README readability: the dense prose runs — the `syn` command ergonomics,
   the discovery/advisory-routing surfaces, the A2A bridge description, and
   the eleven security/governance profile paragraphs — are restructured into
