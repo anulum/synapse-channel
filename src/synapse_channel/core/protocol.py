@@ -336,6 +336,7 @@ class MessageType:
     DEAD_LETTER_ESCALATION = "dead_letter_escalation"
     DEAD_LETTER_FORWARDING = "dead_letter_forwarding"
     RECIPIENT_LIVENESS_WARNING = "recipient_liveness_warning"
+    DARK_SEAT_ALERT = "dark_seat_alert"
     ERROR = "error"
     NAME_CONFLICT = "name_conflict"
     AUTH_DENIED = "auth_denied"

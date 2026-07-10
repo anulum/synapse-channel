@@ -471,6 +471,11 @@ first connect provisions a per-machine Ed25519 key, the hub pins each signed
 name to it on first use (durable across hub restarts, `--identity-pins`), and
 a claim from any other machine is refused until the operator clears the pin.
 One name, one owner, across reconnects and restarts.
+While the hub is running, it also watches every unexpired claim and assigned
+non-terminal board task. If that exact owner has no fresh `-rx` waiter for 30
+continuous seconds, the hub broadcasts one machine-readable `dark_seat_alert`
+with the affected work and the exact permanent-arm command. Re-arming clears the
+episode; the monitor never releases or reassigns work on its own.
 Hyphenated aliases
 (`syn-name`/`syn-wait`/`syn-say`/`syn-ask`/`syn-inbox`/`syn-board`/`syn-reap`/`syn-locks`/`syn-ack`/`syn-commit`)
 are installed too.
@@ -1187,11 +1192,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.1 |
 | Public API exports | 70 |
-| Package modules | 358 |
-| Classes | 520 |
-| Wire message types | 74 |
+| Package modules | 359 |
+| Classes | 522 |
+| Wire message types | 75 |
 | CLI subcommands | 158 |
-| Test functions | 5904 |
+| Test functions | 5909 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 13 |

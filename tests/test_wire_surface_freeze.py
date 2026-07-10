@@ -59,6 +59,7 @@ _FROZEN_WIRE_VALUES: dict[str, str] = {
     "CLAIM_GRANTED": "claim_granted",
     "DEAD_LETTER_ESCALATION": "dead_letter_escalation",
     "DEAD_LETTER_FORWARDING": "dead_letter_forwarding",
+    "DARK_SEAT_ALERT": "dark_seat_alert",
     "DELIVERY_RECEIPT": "delivery_receipt",
     "ERROR": "error",
     "FEDERATION_OFFER": "federation_offer",

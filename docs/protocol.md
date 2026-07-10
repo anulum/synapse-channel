@@ -104,6 +104,17 @@ current wire format.
 - **Capabilities:** `capability_advertised`, `manifest_snapshot`.
 - **Queries:** `state_snapshot`, `who_snapshot`, `history_snapshot`,
   `resume_snapshot`.
+- **Operational warnings:** `recipient_liveness_warning`,
+  `dark_seat_alert`, `dead_letter_escalation`, `dead_letter_forwarding`.
+
+A `dark_seat_alert` is a default-on hub broadcast for an identity that owns an
+unexpired claim or is the `suggested_owner` of a non-terminal board task but has
+no fresh exact-identity `-rx` waiter. The condition must persist for 30 seconds;
+the hub then emits one alert per continuous episode with sorted `claims` and
+`tasks`, `missing_for_seconds`, and an explicit permanent-arm `remedy`. Re-arming
+the waiter or ending all owned work clears the episode, so a later regression can
+alert again. This is an operator warning: it neither releases work nor changes
+claim or blackboard authority.
 
 The envelope builders and the message-type constants live in
 `synapse_channel.core.protocol`; the working agreement is in the repository's

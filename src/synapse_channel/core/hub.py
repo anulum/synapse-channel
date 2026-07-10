@@ -55,6 +55,7 @@ from synapse_channel.core.agent_liveness import (
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.channels import ChannelRegistry
+from synapse_channel.core.dark_seat import DarkSeatMonitor
 from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
 from synapse_channel.core.dead_letter_forwarding_transport import forward_dead_letter
@@ -698,6 +699,13 @@ class SynapseHub:
         self.chat_history = seeded.chat_history
         self.pending_receipts.restore(seeded.pending_receipts)
         self.blackboard = seeded.blackboard
+        self._dark_seats = DarkSeatMonitor(
+            claims=lambda: self.state.claims,
+            tasks=lambda: self.blackboard.tasks,
+            has_live_waiter=self._liveness.has_live_waiter,
+            broadcast=self._broadcast,
+            system=self._system,
+        )
         self._ledger = HubLedgerGuard(
             max_findings_per_agent=self.max_findings_per_agent,
             journal=self.journal,
@@ -1299,18 +1307,21 @@ class SynapseHub:
         self._guard_exposure(host)
         stop = asyncio.Event()
         self._install_signal_handlers(asyncio.get_running_loop(), stop)
-        async with websockets.serve(
-            self.handler,
-            host,
-            port,
-            max_size=self.max_msg_bytes,
-            max_queue=DEFAULT_MAX_QUEUE,
-            ping_interval=DEFAULT_PING_INTERVAL,
-            ping_timeout=DEFAULT_PING_TIMEOUT,
-            close_timeout=self.shutdown_close_timeout,
-            process_request=self._process_request if self.enable_metrics else None,
-            ssl=ssl_context,
-            logger=ws_server_logger,
+        async with (
+            self._dark_seats.running(),
+            websockets.serve(
+                self.handler,
+                host,
+                port,
+                max_size=self.max_msg_bytes,
+                max_queue=DEFAULT_MAX_QUEUE,
+                ping_interval=DEFAULT_PING_INTERVAL,
+                ping_timeout=DEFAULT_PING_TIMEOUT,
+                close_timeout=self.shutdown_close_timeout,
+                process_request=self._process_request if self.enable_metrics else None,
+                ssl=ssl_context,
+                logger=ws_server_logger,
+            ),
         ):
             scheme = "wss" if ssl_context is not None else "ws"
             logger.info("Synapse Hub running on %s://%s:%d", scheme, host, port)

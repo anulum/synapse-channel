@@ -15,6 +15,12 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- The hub now detects a dark seat when an identity owns an unexpired claim or
+  assigned non-terminal board task without a fresh exact-identity `-rx` waiter.
+  After a bounded grace it broadcasts one machine-readable `dark_seat_alert`
+  per continuous episode with affected work and the explicit permanent-arm
+  remedy; recovery re-arms detection without changing work authority.
+
 - The React cockpit now incrementally renders `/receipts.json` and
   `/operator-actions.json` in a compact Audit inspector tab. Strict typed
   parsers, monotonic sequence cursors, de-duplication, and bounded retention
