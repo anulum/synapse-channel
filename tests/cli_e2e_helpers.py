@@ -167,12 +167,25 @@ def isolated_hub(
 
     Yields an :class:`IsolatedHub`. The hub is durable (``--db``) so replay,
     reproduce, merkle, and causality journeys can read the same event log the
-    coordination journey wrote.
+    coordination journey wrote. Its trust-on-first-use pin store is temporary
+    too: signed test clients must never read or mutate the developer's
+    ``~/synapse/identity-pins.json`` across pytest sessions.
     """
     port = free_port()
     db_path = tmp_path / "e2e-hub.db"
+    identity_pins = tmp_path / "e2e-identity-pins.json"
     proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
-        [*_CLI, "hub", "--port", str(port), "--db", str(db_path), *extra_args],
+        [
+            *_CLI,
+            "hub",
+            "--port",
+            str(port),
+            "--db",
+            str(db_path),
+            "--identity-pins",
+            str(identity_pins),
+            *extra_args,
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
