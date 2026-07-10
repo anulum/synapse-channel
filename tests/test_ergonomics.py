@@ -227,15 +227,19 @@ def test_ask_argv_can_skip_recipient_requirement_and_keep_extra() -> None:
     assert argv[-3:] == ["--receipt-timeout", "1", "status?"]
 
 
-def test_inbox_argv_is_project_scoped_and_cursored() -> None:
-    argv = inbox_argv(_ident(), feed="/h/feed.ndjson", cursor="/h/SCPN-CONTROL.cursor")
+def test_inbox_argv_is_exact_identity_scoped_and_cursored() -> None:
+    argv = inbox_argv(
+        _ident(project="user", identity="user/terminal-23696"),
+        feed="/h/feed.ndjson",
+        cursor="/h/user__terminal-23696.cursor",
+    )
     assert argv == [
         "relay",
         "/h/feed.ndjson",
-        "--project",
-        "SCPN-CONTROL",
+        "--for",
+        "user/terminal-23696",
         "--cursor",
-        "/h/SCPN-CONTROL.cursor",
+        "/h/user__terminal-23696.cursor",
     ]
 
 
@@ -644,7 +648,7 @@ def test_main_ask_without_a_message_is_a_usage_error(
     assert captured_cli == []
 
 
-def test_main_inbox_is_project_scoped(captured_cli: CapturedCalls) -> None:
+def test_main_inbox_is_exact_identity_scoped(captured_cli: CapturedCalls) -> None:
     assert (
         ergonomics.main(
             ["inbox"],
@@ -657,7 +661,7 @@ def test_main_inbox_is_project_scoped(captured_cli: CapturedCalls) -> None:
     assert captured_cli[0] == [
         "relay",
         "/home/u/synapse/feed.ndjson",
-        "--project",
+        "--for",
         "SYNAPSE-CHANNEL",
         "--cursor",
         "/home/u/synapse/SYNAPSE-CHANNEL.cursor",
@@ -1062,7 +1066,7 @@ def test_main_inbox_drains_every_as_identity_under_its_own_cursor(
     assert captured_cli[0][:4] == [
         "relay",
         "/home/u/synapse/feed.ndjson",
-        "--project",
+        "--for",
         "SYNAPSE-CHANNEL",
     ]
     assert captured_cli[1] == [

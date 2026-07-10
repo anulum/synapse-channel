@@ -461,6 +461,8 @@ syn arm                           # keep a directed-only waiter armed (named <pr
 syn say REMANENTIA,CEO "ack"      # send to one, several, or all
 syn ask CEO "status?"             # send, require an online recipient, and wait for replies
 syn inbox                         # print messages addressed to you since the cursor
+syn inbox --project-wide          # explicitly include every identity in this project
+syn inbox --name PROJ/role        # read one exact identity under its own cursor
 syn board                         # the shared task/progress board
 syn who --me                      # show whether this identity and its -rx waiter are online
 syn reap                          # list this identity's shell-hook waiter pidfile
@@ -480,6 +482,12 @@ borrowed-shell signature) is dropped out loud: the command proceeds as the local
 identity and says so, or refuses entirely when the local fallback also looks
 accidental (the home directory, a system path). Set `$SYN_PROJECT` once per
 terminal and the identity is stable across tool calls.
+`syn inbox` filters on that full resolved identity and advances a cursor named for
+that identity. It never falls back to a shared project cursor. Use
+`--project-wide` when the broader project feed is intentional, `--name PROJ/name`
+for another exact address, or repeat `--as PROJ/name` to drain standing role
+addresses under independent cursors. A bare `--as PROJ` is the explicit
+project-wide alias form; `$SYN_ALIASES` supplies the same standing alias list.
 On the hub side the waiter identity is protected by a **name-ownership lease**:
 the first `synapse wait`/`arm` for a name is granted an opaque token (persisted
 under `~/synapse/owner-lease/`), every re-arm presents it and re-takes its own
@@ -506,7 +514,7 @@ are installed too.
 | `syn-wait` | The wake primitive: wait for one directed message, print it, exit. | Defaults to `--max-wakes 1` so a harness that re-invokes on background-task exit is actually woken; self-healing reconnect means a hub restart re-arms transparently and only a real wake ends the wait. |
 | `syn say` | Send to one, several, or all. | Sends as the owner identity even when a waiter holds the `-rx` name. |
 | `syn ask` | Send and wait for replies. | Requires an online recipient — a question never silently addresses nobody. |
-| `syn inbox` | Print messages addressed to you. | Advances a per-identity cursor, so nothing is re-read and nothing is silently consumed. |
+| `syn inbox` | Print messages addressed to you. | Defaults to the exact resolved identity and its own cursor, so another terminal's mail is neither displayed nor consumed; broader project scope requires `--project-wide`. |
 | `syn board` | The shared task/progress board. | One view of the plan every agent sees. |
 | `syn who --me` | Presence of this identity and its waiter. | Reports the identity separately from its `-rx` waiter, because presence is not a wake loop. |
 | `syn locks` | Active leases for the project. | Prints holder, scope, age, remaining TTL, checkpoint/git context, and the exact `synapse release <task> --name <owner>` command. |
@@ -1249,11 +1257,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.2 |
 | Public API exports | 70 |
-| Package modules | 383 |
-| Classes | 551 |
+| Package modules | 384 |
+| Classes | 553 |
 | Wire message types | 77 |
 | CLI subcommands | 160 |
-| Test functions | 6130 |
+| Test functions | 6137 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 13 |

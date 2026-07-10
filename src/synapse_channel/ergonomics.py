@@ -40,8 +40,14 @@ from pathlib import Path
 from synapse_channel import ack as ack_command
 from synapse_channel import cli
 from synapse_channel import commit as commit_command
+from synapse_channel import ergonomics_inbox as _inbox
 from synapse_channel import locks as locks_command
 from synapse_channel import reap as reap_command
+
+aliased_inbox_argv = _inbox.aliased_inbox_argv
+inbox_argv = _inbox.inbox_argv
+run_inbox = _inbox.run_inbox
+split_as_names = _inbox.split_as_names
 
 CliDispatcher = Callable[[list[str] | None], int]
 """Callable surface used to dispatch into the package CLI."""
@@ -285,53 +291,6 @@ def ask_argv(
     argv.extend(extra)
     argv.append(message)
     return argv
-
-
-def inbox_argv(identity: Identity, *, feed: str, cursor: str) -> list[str]:
-    """Build the ``synapse relay`` argv for ``syn inbox`` (project-scoped, cursored delta)."""
-    return ["relay", feed, "--project", identity.project, "--cursor", cursor]
-
-
-def split_as_names(rest: Sequence[str], env: Mapping[str, str]) -> list[str]:
-    """Extract the ``--as NAME`` identities an inbox run should also drain.
-
-    One reader often answers to several names — a terminal identity, an
-    agent identity, and a role name like ``<project>/coordinator``. A
-    message addressed to a name whose inbox nobody reads lands durably in
-    the feed and wakes no one; ``--as`` lets a single ``syn inbox`` drain
-    those extra names too. Explicit ``--as`` flags win; without any, the
-    comma-separated ``$SYN_ALIASES`` environment variable supplies the
-    standing set. Blank entries are dropped.
-    """
-    names: list[str] = []
-    tokens = list(rest)
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        if token == "--as" and index + 1 < len(tokens):  # nosec B105 - a CLI flag literal, not a secret
-            names.append(tokens[index + 1].strip())
-            index += 2
-            continue
-        if token.startswith("--as="):
-            names.append(token[len("--as=") :].strip())
-        index += 1
-    if not names:
-        names = [item.strip() for item in env.get("SYN_ALIASES", "").split(",")]
-    return [name for name in names if name]
-
-
-def aliased_inbox_argv(name: str, *, feed: str, home: Path) -> list[str]:
-    """Build the relay argv draining one extra ``--as`` identity.
-
-    A bare project name gets the project-stable inbox (matching the name,
-    ``project/...`` sub-addresses, and broadcasts); a full ``a/b`` identity
-    gets the exact-name inbox. Each name advances its OWN cursor file, so
-    draining a role name never consumes another reader's delta.
-    """
-    cursor = str(home / f"{name.replace('/', '__')}.cursor")
-    if "/" in name:
-        return ["relay", feed, "--for", name, "--cursor", cursor]
-    return ["relay", feed, "--project", name, "--cursor", cursor]
 
 
 def board_argv(identity: Identity, *, extra: Sequence[str] = ()) -> list[str]:
@@ -617,14 +576,7 @@ def main(
             )
         )
     if args.verb == "inbox":
-        home = _syn_home(env)
-        feed = str(home / "feed.ndjson")
-        cursor = str(home / f"{identity.project}.cursor")
-        code = dispatcher(inbox_argv(identity, feed=feed, cursor=cursor))
-        for name in split_as_names(rest, env):
-            print(f"--- inbox as {name} ---")
-            code = max(code, dispatcher(aliased_inbox_argv(name, feed=feed, home=home)))
-        return code
+        return run_inbox(identity, rest, env, dispatcher, home=_syn_home(env))
     if args.verb == "who":
         return dispatcher(who_argv(identity, extra=rest))
     if args.verb == "reap":

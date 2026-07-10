@@ -117,7 +117,12 @@ waking no one — the human ends up relaying, the exact failure the bus exists
 to remove. The doctor names such addresses with their message counts and the
 remedy (`syn inbox --as NAME`, repeatable; a standing set goes in the
 comma-separated `$SYN_ALIASES`, and each name advances its own cursor so
-draining a role never consumes another reader's delta). On
+draining a role never consumes another reader's delta). The primary `syn inbox`
+read is exact-identity scoped too: it uses the full resolved identity and an
+identity-specific cursor, so one terminal cannot display or consume another
+terminal's directed mail. `syn inbox --project-wide` is the explicit opt-in to
+the broader project feed, while `syn inbox --name PROJ/name` reads one exact
+address. A bare `--as PROJ` remains an explicit project-wide alias. On
 a fresh machine, a missing hub or waiter can be a warning before services are
 installed. `synapse doctor --fix` repairs the safely repairable findings: when the
 default local hub does not answer or the waiter is missing, it installs and starts
@@ -403,6 +408,9 @@ syn reap --stale                  # reap all verified waiters whose owner shell 
 syn reap --stale --dry-run        # report the sweep verdicts without acting
 syn locks                         # list this project's leases, scopes, ages, and release commands
 syn ask <target> <message>        # send, require an online recipient, and wait for replies
+syn inbox                         # exact resolved identity, with its own cursor
+syn inbox --project-wide          # explicit project-wide feed and project cursor
+syn inbox --name PROJ/name        # one exact address, with its own cursor
 syn inbox --as PROJ/coordinator   # also drain a role name, under its own cursor (repeatable)
 syn commit <paths> -m <message>   # hold the project git lease and commit only those paths
 synapse send --target quantum/* "rebasing main now"   # the whole project team

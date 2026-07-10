@@ -43,6 +43,15 @@ All notable changes to this project are documented here.
   project filtering happens before the bound. The hub-side 512-identity
   projection and durable journal evidence are unchanged.
 
+### Fixed
+
+- `syn inbox` and `syn-inbox` now read the exact resolved identity by default
+  and advance an identity-specific cursor. Previously they silently used the
+  project-wide filter and shared project cursor, so one terminal could display
+  and consume another terminal's directed messages. Broader reads now require
+  the explicit `--project-wide` flag; `--name PROJ/name` selects another exact
+  address, and existing `--as` aliases retain independent cursors.
+
 ## [0.99.2] - 2026-07-10
 
 ### Added
