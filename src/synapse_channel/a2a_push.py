@@ -20,8 +20,8 @@ from urllib import request
 from urllib.error import URLError
 from urllib.parse import urljoin, urlparse
 
+from synapse_channel import a2a_http_protocol
 from synapse_channel.a2a import JsonMap
-from synapse_channel.a2a_validation import A2A_MEDIA_TYPE
 
 PushDeliverer = Callable[[JsonMap], None]
 LOCAL_TARGET_ERROR = "pushNotificationConfig.webhookUrl must not target local networks"
@@ -97,9 +97,12 @@ class WebhookDeliveryClient:
         """
         url = str(delivery["url"])
         _validate_webhook_target(url, allow_local_targets=self.allow_local_targets)
-        raw = json.dumps(delivery["payload"], sort_keys=True).encode("utf-8")
+        raw = json.dumps(
+            a2a_http_protocol.to_wire_json(delivery["payload"]),
+            sort_keys=True,
+        ).encode("utf-8")
         headers = {
-            "Content-Type": A2A_MEDIA_TYPE,
+            "Content-Type": a2a_http_protocol.HTTP_JSON_MEDIA_TYPE,
             **delivery.get("headers", {}),
         }
         req = request.Request(

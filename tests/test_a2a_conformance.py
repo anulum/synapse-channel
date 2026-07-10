@@ -59,12 +59,16 @@ def test_markdown_renderer_escapes_table_cells() -> None:
 
 
 def test_matrix_keeps_external_validation_gates_visible() -> None:
-    """Third-party public-network interop stays external; local HTTP client is partial."""
+    """Independent SDK/TCK evidence stays partial while public deployment gates remain."""
     external_items = {row.item for row in conformance_rows(status="external")}
     # Local independent HTTP client trace upgraded Independent interoperability to partial.
     assert "Independent interoperability" not in external_items
     partial_items = {row.item for row in conformance_rows(status="partial")}
     assert "Independent interoperability" in partial_items
+    interop = next(row for row in CONFORMANCE_ROWS if row.item == "Independent interoperability")
+    assert "a2a-sdk 1.1.0" in interop.evidence
+    assert "TCK 5996b79" in interop.evidence
+    assert "not certification" in interop.limitation
 
 
 def test_matrix_records_real_webhook_receiver_progress_as_partial() -> None:

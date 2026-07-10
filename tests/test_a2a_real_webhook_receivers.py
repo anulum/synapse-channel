@@ -22,7 +22,7 @@ from urllib.error import URLError
 import pytest
 
 from synapse_channel import a2a_push
-from synapse_channel.a2a_validation import A2A_MEDIA_TYPE
+from synapse_channel.a2a_http_protocol import HTTP_JSON_MEDIA_TYPE
 
 
 def test_real_https_webhook_receiver_accepts_push_with_local_validation_policy(
@@ -50,7 +50,7 @@ def test_real_https_webhook_receiver_accepts_push_with_local_validation_policy(
     assert received["method"] == "POST"
     assert received["path"] == "/hook"
     assert received["headers"]["Authorization"] == "Bearer push-token"
-    assert received["headers"]["Content-Type"] == A2A_MEDIA_TYPE
+    assert received["headers"]["Content-Type"] == HTTP_JSON_MEDIA_TYPE
     assert json.loads(received["body"].decode("utf-8")) == {
         "task": {"id": "task-real", "status": {"state": "TASK_STATE_COMPLETED"}}
     }

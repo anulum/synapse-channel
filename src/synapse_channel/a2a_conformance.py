@@ -9,8 +9,7 @@
 
 The matrix is an operator-facing inventory, not a certification. It maps the
 current local bridge surface to the A2A 1.0.0 operation model and keeps external
-validation gates visible until independent clients and webhook receivers exercise
-them.
+validation gates visible after each independently exercised boundary.
 """
 
 from __future__ import annotations
@@ -27,7 +26,10 @@ SPEC_VERSION = "1.0.0"
 SPECIFICATION_URL = "https://a2a-protocol.org/v1.0.0/specification"
 """Human-readable A2A specification URL used as the comparison source."""
 
-NORMATIVE_SOURCE_URL = "https://github.com/a2aproject/A2A/blob/main/spec/a2a.proto"
+NORMATIVE_SOURCE_URL = (
+    "https://github.com/a2aproject/A2A/blob/"
+    "173695755607e884aa9acf8ce4feed90e32727a1/specification/a2a.proto"
+)
 """A2A normative proto source referenced by the specification."""
 
 STATUS_MEANINGS: dict[ConformanceStatus, str] = {
@@ -186,10 +188,13 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
         status="partial",
         synapse_surface="synapse a2a-serve",
         evidence=(
-            "Real localhost HTTP tests exercise discovery, message, task, subscription, "
-            "and push routes."
+            "Official a2a-sdk 1.1.0 selected HTTP+JSON RestTransport and completed "
+            "discovery/send/get/list/cancel; official TCK 5996b79 exercises the binding."
         ),
-        limitation="External reverse-proxy and TLS deployment validation remains open.",
+        limitation=(
+            "The TCK still exposes structured-response scenario gaps; external "
+            "reverse-proxy and TLS deployment validation remains open."
+        ),
         spec_reference="A2A 1.0.0 §11",
     ),
     A2AConformanceRow(
@@ -219,14 +224,15 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
             "docs/a2a-validation-receipts.md"
         ),
         evidence=(
-            "Local independent stdlib http.client trace exercises discovery, "
-            "message:send, and GET task against a live ThreadingHTTPServer bridge; "
-            "CLI emits a structured receipt (schema synapse.a2a_interop_trace.v1)."
+            "Official a2a-sdk 1.1.0 completed Agent Card discovery plus "
+            "send/get/list/cancel over RestTransport; official A2A TCK 5996b79 "
+            "finished with 55 passed, 5 failed, and 175 skipped HTTP+JSON MUST tests; "
+            "the in-tree stdlib http.client independently records discovery/send/get."
         ),
         limitation=(
-            "Trace is an independent HTTP client stack, not a third-party A2A SDK. "
-            "Public-network clients, webhook, proxy/TLS, and durable-history receipts "
-            "remain external."
+            "This is partial validation, not certification: structured artifact/direct "
+            "Message scenarios, an outbound external-server pass, public webhook, "
+            "proxy/TLS, and durable-history receipts remain open."
         ),
         spec_reference="A2A 1.0.0 goals and operation model",
     ),

@@ -760,12 +760,16 @@ intentionally **local-first HTTP+JSON bridge**:
   with terminal-task GC, and subscription replay only from the current bridge
   process.
 
-The bridge does not claim independent A2A conformance until remote CI,
-interoperability, public webhook receiver validation, and operator deployment
-sign-off have run; that validation is a community track of reproducible
+Independent validation now includes an official `a2a-sdk==1.1.0`
+discovery/send/get/list/cancel lifecycle and an official A2A TCK HTTP+JSON MUST
+run (55 passed, 5 structured-response failures, 175 skipped). That is partial
+interoperability evidence, not certification or full conformance: structured
+artifact/direct Message scenarios, an outbound external-server pass, public
+webhook and proxy/TLS receipts, durable replay, and operator deployment
+sign-off remain open. Validation stays a track of reproducible
 [validation receipts](docs/a2a-validation-receipts.md) — discovery, task
-lifecycle, webhook, proxy/TLS, replay, and threat-model — rather than a single
-pass/fail. The installed support matrix is available with
+lifecycle, webhook, proxy/TLS, replay, and threat-model — rather than one
+score. The installed support matrix is available with
 `synapse a2a-conformance` and in the
 [A2A conformance matrix](docs/a2a-conformance.md); exposed deployments should
 also follow the [A2A deployment threat model](docs/a2a-deployment-threat-model.md).
@@ -1257,11 +1261,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.2 |
 | Public API exports | 70 |
-| Package modules | 384 |
+| Package modules | 387 |
 | Classes | 553 |
 | Wire message types | 77 |
 | CLI subcommands | 160 |
-| Test functions | 6137 |
+| Test functions | 6153 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 13 |

@@ -21,10 +21,13 @@ _SPEC.loader.exec_module(tool)
 def test_a2a_module_coverage_ratchet_reports_each_weak_module() -> None:
     report = {
         "files": {
+            "src/synapse_channel/a2a_http_protocol.py": {"summary": {"percent_covered": 100.0}},
+            "src/synapse_channel/a2a_rpc.py": {"summary": {"percent_covered": 100.0}},
             "src/synapse_channel/a2a_server.py": {"summary": {"percent_covered": 99.99}},
             "src/synapse_channel/cli_a2a.py": {"summary": {"percent_covered": 100.0}},
             "src/synapse_channel/a2a_events.py": {"summary": {"percent_covered": 100.0}},
             "src/synapse_channel/a2a_store.py": {"summary": {"percent_covered": 97.5}},
+            "src/synapse_channel/a2a_task_flow.py": {"summary": {"percent_covered": 100.0}},
         }
     }
 
@@ -39,10 +42,13 @@ def test_a2a_module_coverage_ratchet_reports_each_weak_module() -> None:
 def test_a2a_module_coverage_ratchet_accepts_exact_thresholds() -> None:
     report = {
         "files": {
+            "src/synapse_channel/a2a_http_protocol.py": {"summary": {"percent_covered": 100.0}},
+            "src/synapse_channel/a2a_rpc.py": {"summary": {"percent_covered": 100.0}},
             "src/synapse_channel/a2a_server.py": {"summary": {"percent_covered": 100.0}},
             "src/synapse_channel/cli_a2a.py": {"summary": {"percent_covered": 100.0}},
             "src/synapse_channel/a2a_events.py": {"summary": {"percent_covered": 100.0}},
             "src/synapse_channel/a2a_store.py": {"summary": {"percent_covered": 100.0}},
+            "src/synapse_channel/a2a_task_flow.py": {"summary": {"percent_covered": 100.0}},
         }
     }
 

@@ -17,7 +17,10 @@ from pathlib import Path
 from typing import Any
 
 TARGETS = {
+    "src/synapse_channel/a2a_http_protocol.py": 100.0,
+    "src/synapse_channel/a2a_rpc.py": 100.0,
     "src/synapse_channel/a2a_server.py": 100.0,
+    "src/synapse_channel/a2a_task_flow.py": 100.0,
     "src/synapse_channel/cli_a2a.py": 100.0,
     "src/synapse_channel/a2a_events.py": 100.0,
     "src/synapse_channel/a2a_store.py": 100.0,

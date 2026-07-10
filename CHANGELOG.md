@@ -29,6 +29,15 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- The A2A HTTP+JSON bridge now aligns its explicit 1.0 wire path with the
+  official SDK/TCK: ISO 8601 UTC task timestamps, `application/json` responses,
+  explicit `A2A-Version` negotiation, AIP-193 errors, task-not-found semantics
+  for unknown continuation ids, context-safe non-terminal continuation, and the
+  direct 1.0 inline push-config shape. Independent validation with
+  `a2a-sdk==1.1.0` completes discovery/send/get/list/cancel; official TCK
+  `5996b79` HTTP+JSON MUST results are 55 passed, 5 structured-response
+  failures, and 175 skipped. This is partial evidence, not certification.
+
 - Stable error taxonomy codes now drive two real boundary families instead of
   remaining metadata only. The A2A HTTP bridge maps typed validation, missing,
   conflict, quota, and store failures to 400, 404, 409, 429, and 500 without
@@ -44,6 +53,10 @@ All notable changes to this project are documented here.
   projection and durable journal evidence are unchanged.
 
 ### Fixed
+
+- `synapse a2a-serve` now cancels and awaits tasks owned by its private agent
+  event loop before stopping and closing it, so normal `Ctrl+C` shutdown no
+  longer destroys live WebSocket keepalive or heartbeat tasks.
 
 - `syn inbox` and `syn-inbox` now read the exact resolved identity by default
   and advance an identity-specific cursor. Previously they silently used the

@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import threading
 from typing import Any
@@ -126,6 +127,104 @@ def test_synapse_agent_runtime_start_run_and_stop() -> None:
         runtime._thread.join(timeout=2.0)
 
     assert agent.running is False
+    assert not runtime._thread.is_alive()
+    assert runtime.loop.is_closed()
+    runtime.stop()
+
+
+def test_synapse_agent_runtime_stop_drains_private_loop_tasks() -> None:
+    class HangingRuntimeAgent:
+        def __init__(self) -> None:
+            self.running = True
+            self.connected = False
+            self.connection_stopped = threading.Event()
+            self.child_stopped = threading.Event()
+
+        async def connect(self) -> None:
+            self.connected = True
+            asyncio.create_task(self._child())
+            try:
+                await asyncio.Future()
+            finally:
+                self.connection_stopped.set()
+
+        async def _child(self) -> None:
+            try:
+                await asyncio.Future()
+            finally:
+                self.child_stopped.set()
+
+        async def wait_until_ready(self, timeout: float) -> bool:
+            deadline = asyncio.get_running_loop().time() + timeout
+            while not self.connected and asyncio.get_running_loop().time() < deadline:
+                await asyncio.sleep(0)
+            return self.connected
+
+    agent = HangingRuntimeAgent()
+    runtime = SynapseAgentRuntime(agent)  # type: ignore[arg-type] # focused lifecycle adapter
+
+    assert runtime.start(ready_timeout=0.1) is True
+    runtime.stop()
+
+    assert agent.connection_stopped.wait(timeout=0.1)
+    assert agent.child_stopped.wait(timeout=0.1)
+    assert not runtime._thread.is_alive()
+    assert runtime.loop.is_closed()
+
+
+def test_synapse_agent_runtime_stop_closes_unstarted_loop() -> None:
+    class IdleAgent:
+        running = True
+
+    agent = IdleAgent()
+    runtime = SynapseAgentRuntime(agent)  # type: ignore[arg-type] # stop-only lifecycle adapter
+
+    runtime.stop()
+
+    assert agent.running is False
+    assert runtime.loop.is_closed()
+
+
+def test_synapse_agent_runtime_stop_bounds_drain_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RuntimeAgent:
+        def __init__(self) -> None:
+            self.running = True
+            self.connected = False
+
+        async def connect(self) -> None:
+            self.connected = True
+
+        async def wait_until_ready(self, timeout: float) -> bool:
+            return self.connected
+
+    class TimedOutDrain:
+        def __init__(self) -> None:
+            self.canceled = False
+
+        def result(self, *, timeout: float) -> None:
+            assert timeout == 2.0
+            raise TimeoutError
+
+        def cancel(self) -> None:
+            self.canceled = True
+
+    agent = RuntimeAgent()
+    runtime = SynapseAgentRuntime(agent)  # type: ignore[arg-type] # focused lifecycle adapter
+    assert runtime.start(ready_timeout=0.1) is True
+    drain = TimedOutDrain()
+
+    def submit(coro: Any, _loop: Any) -> TimedOutDrain:
+        coro.close()
+        return drain
+
+    monkeypatch.setattr("synapse_channel.a2a_server.asyncio.run_coroutine_threadsafe", submit)
+
+    runtime.stop()
+
+    assert drain.canceled is True
+    assert runtime.loop.is_closed()
 
 
 def test_push_config_path_rejects_empty_task_id() -> None:

@@ -91,8 +91,39 @@ synapse a2a-interop-trace --host 127.0.0.1 --port 8877 --output /tmp/a2a-interop
 ```
 
 The receipt schema is `synapse.a2a_interop_trace.v1` (discovery + task lifecycle).
-It upgrades the matrix row to **partial**; third-party SDK and public-network
-receipts still land via the contribution path below.
+It is the deterministic second client stack for the independent matrix row.
+
+## Official SDK and TCK receipt (2026-07-10)
+
+The official Python SDK `a2a-sdk==1.1.0` discovered the live Agent Card,
+selected `RestTransport`, and completed send, get, list, and cancel. The
+official A2A TCK at commit `5996b79`, pinned to specification commit
+`173695755607e884aa9acf8ce4feed90e32727a1`, then ran the HTTP+JSON MUST
+profile:
+
+| Result | Count |
+| --- | ---: |
+| Passed | 55 |
+| Failed | 5 |
+| Skipped | 175 |
+| Deselected | 30 |
+
+The run closed wire timestamp, explicit version negotiation, AIP-193 error
+shape, HTTP media-type, unknown-task, continuation, and direct A2A 1.0 inline
+push-config defects found by the initial diagnostic. The five remaining
+failures are response-content scenarios: four require exact structured
+artifacts and one requires a direct Message response. The bridge instead
+returns a working Task and waits for a SYNAPSE identity; its current plain-chat
+correlation path cannot express every artifact variant.
+
+The TCK loopback webhook is rejected by the production SSRF guard. Separate
+repository tests exercise authenticated HTTPS delivery, a real 307 redirect,
+and DNS-rebinding refusal under an explicit local-test policy. SYNAPSE also has
+no outbound A2A client/adapter yet, so an independent server pass remains a
+recorded product gap.
+
+This upgrades the matrix with real official-SDK and official-TCK evidence, but
+it is **partial validation, not A2A certification or full conformance**.
 
 ## How to contribute one
 

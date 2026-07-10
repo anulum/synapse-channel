@@ -43,3 +43,18 @@ def test_validation_receipts_doc_lists_every_receipt_and_credits_the_contributor
     assert "restart + bounded replay + a real webhook receiver" in text
     assert "armorer labs" in text
     assert "discussions/20" in text
+
+
+def test_official_sdk_tck_receipt_keeps_partial_claim_boundary() -> None:
+    """Public docs record the independent run without upgrading it to certification."""
+    receipts = _read(DOC)
+    assert "a2a-sdk==1.1.0" in receipts
+    assert "5996b79" in receipts
+    assert "55" in receipts and "5" in receipts and "175" in receipts
+    assert "not A2A certification or full conformance" in receipts
+
+    for path in (ROOT / "README.md", ROOT / "docs" / "cli.md"):
+        text = _read(path)
+        assert "a2a-sdk==1.1.0" in text
+        assert "partial" in text
+        assert "not certification" in text

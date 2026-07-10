@@ -15,7 +15,6 @@ HTTP edge and push delivery helpers live in focused sibling modules.
 from __future__ import annotations
 
 import asyncio
-import json
 import threading
 import time
 import uuid
@@ -25,8 +24,18 @@ from typing import Any, cast
 from synapse_channel import a2a_errors
 from synapse_channel.a2a import JsonMap
 from synapse_channel.a2a_events import A2ATaskEvents
+from synapse_channel.a2a_http_protocol import non_negative_int
 from synapse_channel.a2a_push import PushDeliverer, deliver_push_notification, http_push_deliverer
+from synapse_channel.a2a_rpc import dispatch_json_rpc
 from synapse_channel.a2a_store import A2ATaskStore
+from synapse_channel.a2a_task_flow import (
+    build_working_task,
+    prepare_continuation,
+    render_message_text,
+    resolve_target,
+    stored_task_target,
+    user_status_message,
+)
 from synapse_channel.a2a_validation import (
     OPEN_TASK_STATES,
     TERMINAL_TASK_STATES,
@@ -36,26 +45,6 @@ from synapse_channel.a2a_validation import (
 )
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.numeric_coercion import safe_float
-
-
-def _rpc_success(rpc_id: object, result: object) -> JsonMap:
-    """Build a JSON-RPC success response."""
-    return {"jsonrpc": "2.0", "id": rpc_id, "result": result}
-
-
-def _rpc_error(rpc_id: object, code: int, message: str) -> JsonMap:
-    """Build a JSON-RPC error response."""
-    return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": code, "message": message}}
-
-
-def _non_negative_int(value: object, *, default: int = 0) -> int:
-    """Parse a non-negative integer from JSON or query input."""
-    try:
-        parsed = int(str(value))
-    except (TypeError, ValueError):
-        return default
-    return max(parsed, 0)
-
 
 A2A_METADATA_TASK_ID = "a2aTaskId"
 """Chat metadata key carrying the bridge task id."""
@@ -123,9 +112,31 @@ class SynapseAgentRuntime:
         return asyncio.run_coroutine_threadsafe(coro, self.loop).result()
 
     def stop(self) -> None:
-        """Stop the agent connection and event loop."""
+        """Cancel private-loop tasks, then stop and close the event loop."""
         self.agent.running = False
+        if self.loop.is_closed():
+            return
+        if not self.loop.is_running():
+            self.loop.close()
+            return
+        drained = asyncio.run_coroutine_threadsafe(self._cancel_pending_tasks(), self.loop)
+        try:
+            drained.result(timeout=2.0)
+        except TimeoutError:
+            drained.cancel()
         self.loop.call_soon_threadsafe(self.loop.stop)
+        self._thread.join()
+        self.loop.close()
+
+    @staticmethod
+    async def _cancel_pending_tasks() -> None:
+        """Cancel and await every task owned by the private agent loop."""
+        current = asyncio.current_task()
+        pending = [task for task in asyncio.all_tasks() if task is not current]
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
 
 class A2ABridge:
@@ -175,40 +186,6 @@ class A2ABridge:
             return self._submit(coro)
         return asyncio.run(coro)
 
-    def _message_text(self, message: JsonMap) -> str:
-        """Render A2A message parts into the text sent over SYNAPSE."""
-        rendered: list[str] = []
-        for part in message.get("parts", []):
-            if not isinstance(part, dict):
-                continue
-            if "text" in part:
-                rendered.append(str(part["text"]))
-            elif "data" in part:
-                rendered.append(json.dumps(part["data"], sort_keys=True))
-            elif "url" in part:
-                rendered.append(str(part["url"]))
-            elif isinstance(part.get("file"), dict):
-                file_part = part["file"]
-                file_bits = [
-                    str(file_part[value])
-                    for value in ("name", "mimeType", "uri")
-                    if file_part.get(value)
-                ]
-                if file_bits:
-                    rendered.append(f"[file: {'; '.join(file_bits)}]")
-            elif "raw" in part:
-                rendered.append("[raw omitted]")
-        return "\n".join(text for text in rendered if text).strip()
-
-    def _target_for(self, message: JsonMap, fallback: str | None = None) -> str:
-        """Resolve the SYNAPSE target for one A2A message."""
-        metadata = message.get("metadata")
-        if isinstance(metadata, dict):
-            target = metadata.get("target") or metadata.get("synapseTarget")
-            if target:
-                return str(target)
-        return fallback or self.target
-
     def create_working_task(self, message: JsonMap, *, target: str | None = None) -> JsonMap:
         """Create a working A2A task and forward the request into SYNAPSE."""
         with self._task_creation_lock:
@@ -221,49 +198,26 @@ class A2ABridge:
             context_id = str(raw_context_id or uuid.uuid4())
             if raw_task_id is not None and self.store.get(task_id) is not None:
                 raise a2a_errors.A2AConflictError("message.taskId already exists")
-            resolved_target = self._target_for(message, target)
-            text = self._message_text(message)
-            now = time.time()
-            task: JsonMap = {
-                "id": task_id,
-                "contextId": context_id,
-                "status": {
-                    "state": "TASK_STATE_SUBMITTED",
-                    "message": {
-                        "messageId": str(uuid.uuid4()),
-                        "role": "ROLE_USER",
-                        "parts": message.get("parts", []),
-                    },
-                },
-                "history": [message],
-                "artifacts": [],
-                "metadata": {
-                    "synapseTarget": resolved_target,
-                    "a2aTaskId": task_id,
-                    "a2aContextId": context_id,
-                    "createdAt": now,
-                    "updatedAt": now,
-                },
-            }
-            self._pending_by_target.setdefault(resolved_target, []).append(task_id)
-            if text:
-                self._run(
-                    self.agent.chat(
-                        text,
-                        target=resolved_target,
-                        metadata={
-                            A2A_METADATA_TASK_ID: task_id,
-                            A2A_METADATA_CONTEXT_ID: context_id,
-                        },
-                    )
-                )
-            task = self._set_task_status(
+            resolved_target = resolve_target(message, default=target or self.target)
+            task = build_working_task(
+                message,
+                task_id=task_id,
+                context_id=context_id,
+                target=resolved_target,
+                now=time.time(),
+            )
+            self._forward_message(
+                message,
+                task_id=task_id,
+                context_id=context_id,
+                target=resolved_target,
+            )
+            stored = self._set_task_status(
                 task,
                 state="TASK_STATE_WORKING",
                 message=task["status"]["message"],
                 publish=False,
             )
-            stored = self.store.put(task)
             self._publish_task_update(stored, deliver_push=False)
             return stored
 
@@ -271,19 +225,24 @@ class A2ABridge:
         """Create a task for compatibility with older callers."""
         return self.create_working_task(message, target=target)
 
-    def send_message(self, payload: JsonMap) -> JsonMap:
+    def send_message(self, payload: JsonMap, *, protocol_version: str | None = None) -> JsonMap:
         """Handle an A2A ``message:send`` request."""
-        task = self._send_message_task(payload)
+        task = self._send_message_task(payload, protocol_version=protocol_version)
         self._store_request_push_config(payload, task_id=str(task["id"]))
         return {"task": task}
 
-    def stream_message(self, payload: JsonMap) -> JsonMap:
+    def stream_message(self, payload: JsonMap, *, protocol_version: str | None = None) -> JsonMap:
         """Handle an A2A ``message:stream`` request as an immediate lifecycle stream."""
-        task = self._send_message_task(payload)
+        task = self._send_message_task(payload, protocol_version=protocol_version)
         self._store_request_push_config(payload, task_id=str(task["id"]))
         return {"task": task}
 
-    def _send_message_task(self, payload: JsonMap) -> JsonMap:
+    def _send_message_task(
+        self,
+        payload: JsonMap,
+        *,
+        protocol_version: str | None = None,
+    ) -> JsonMap:
         """Validate a send payload and return the created task."""
         with self._task_creation_lock:
             message = payload.get("message")
@@ -297,9 +256,63 @@ class A2ABridge:
             validate_bridge_id(message.get("taskId"), field="taskId")
             validate_bridge_id(message.get("contextId"), field="contextId")
             task_id = message.get("taskId")
-            if task_id is not None and self.store.get(str(task_id)) is not None:
+            existing = self.store.get(str(task_id)) if task_id is not None else None
+            if protocol_version == "1.0" and task_id is not None:
+                if existing is None:
+                    raise a2a_errors.A2ANotFoundError(f"Unknown task: {task_id}")
+                return self._continue_working_task(existing, message)
+            if task_id is not None and existing is not None:
                 raise a2a_errors.A2AConflictError("message.taskId already exists")
             return self.create_working_task(message)
+
+    def _continue_working_task(self, task: JsonMap, message: JsonMap) -> JsonMap:
+        """Continue a non-terminal task under A2A 1.0 task-id semantics."""
+        status = task.get("status")
+        if isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES:
+            raise a2a_errors.A2AConflictError("terminal task cannot accept another message")
+        continued = prepare_continuation(task, message)
+        task_id = str(task["id"])
+        context_id = str(task["contextId"])
+        target = stored_task_target(task, default=self.target)
+        history = task.setdefault("history", [])
+        if isinstance(history, list):
+            history.append(continued)
+        self._forward_message(
+            continued,
+            task_id=task_id,
+            context_id=context_id,
+            target=target,
+        )
+        return self._set_task_status(
+            task,
+            state="TASK_STATE_WORKING",
+            message=user_status_message(continued),
+        )
+
+    def _forward_message(
+        self,
+        message: JsonMap,
+        *,
+        task_id: str,
+        context_id: str,
+        target: str,
+    ) -> None:
+        """Forward one task-bound message and maintain fallback correlation."""
+        pending = self._pending_by_target.setdefault(target, [])
+        if task_id not in pending:
+            pending.append(task_id)
+        text = render_message_text(message)
+        if text:
+            self._run(
+                self.agent.chat(
+                    text,
+                    target=target,
+                    metadata={
+                        A2A_METADATA_TASK_ID: task_id,
+                        A2A_METADATA_CONTEXT_ID: context_id,
+                    },
+                )
+            )
 
     def _store_request_push_config(self, payload: JsonMap, *, task_id: str) -> JsonMap | None:
         """Store a send-time push notification config when one is present."""
@@ -309,9 +322,13 @@ class A2ABridge:
         task_config = configuration.get("taskPushNotificationConfig")
         if not isinstance(task_config, dict):
             return None
-        config = task_config.get("pushNotificationConfig")
-        if not isinstance(config, dict):
-            return None
+        if "pushNotificationConfig" in task_config:
+            nested_config = task_config["pushNotificationConfig"]
+            if not isinstance(nested_config, dict):
+                return None
+            config = nested_config
+        else:
+            config = task_config
         task = self.store.get(task_id)
         if task is None:
             return None
@@ -481,7 +498,7 @@ class A2ABridge:
         self._gc_retained_tasks()
         tasks = self.store.list_tasks(state=state)
         total = len(tasks)
-        start = _non_negative_int(page_token, default=0)
+        start = non_negative_int(page_token, default=0)
         if page_size is None:
             page_size = total
         page_size = max(page_size, 0)
@@ -568,80 +585,15 @@ class A2ABridge:
         self._gc_retained_tasks()
         return {"deleted": self.store.delete_push_config(task_id, config_id)}
 
-    def handle_json_rpc(self, request_body: JsonMap) -> JsonMap:
+    def handle_json_rpc(
+        self,
+        request_body: JsonMap,
+        *,
+        protocol_version: str | None = None,
+    ) -> JsonMap:
         """Dispatch one JSON-RPC 2.0 A2A request."""
-        rpc_id = request_body.get("id")
-        if request_body.get("jsonrpc") != "2.0" or not isinstance(request_body.get("method"), str):
-            return _rpc_error(rpc_id, -32600, "Invalid Request")
-        params = request_body.get("params", {})
-        if params is None:
-            params = {}
-        if not isinstance(params, dict):
-            return _rpc_error(rpc_id, -32602, "Invalid params")
-        method = str(request_body["method"])
-        try:
-            result = self._json_rpc_result(method, params)
-        except KeyError:
-            return _rpc_error(rpc_id, -32601, "Method not found")
-        except ValueError as exc:
-            return _rpc_error(rpc_id, -32602, str(exc))
-        return _rpc_success(rpc_id, result)
-
-    def _json_rpc_result(self, method: str, params: JsonMap) -> object:
-        """Return the result object for one supported JSON-RPC method."""
-        if method == "message/send":
-            return self.send_message(params)
-        if method == "message/stream":
-            return self.stream_message(params)
-        if method == "tasks/get":
-            task_id = str(params.get("id") or params.get("taskId") or "")
-            history_length = params.get("historyLength")
-            task = self.get_task(
-                task_id,
-                history_length=(
-                    _non_negative_int(history_length) if history_length is not None else None
-                ),
-            )
-            if task is None:
-                raise a2a_errors.A2ANotFoundError(f"Unknown task: {task_id}")
-            return task
-        if method == "tasks/list":
-            state = params.get("status")
-            page_size = params.get("pageSize")
-            return self.list_tasks(
-                state=str(state) if state else None,
-                page_size=_non_negative_int(page_size) if page_size is not None else None,
-                page_token=str(params.get("pageToken") or ""),
-            )
-        if method == "tasks/cancel":
-            task_id = str(params.get("id") or params.get("taskId") or "")
-            task = self.cancel_task(task_id)
-            if task is None:
-                raise a2a_errors.A2ANotFoundError(f"Unknown task: {task_id}")
-            return task
-        if method == "tasks/pushNotificationConfig/set":
-            task_id = str(params.get("taskId") or params.get("id") or "")
-            config = params.get("pushNotificationConfig")
-            if not isinstance(config, dict):
-                raise a2a_errors.A2AValidationError("pushNotificationConfig is required")
-            created = self.create_push_notification_config(task_id, config)
-            if created is None:
-                raise a2a_errors.A2ANotFoundError(f"Unknown task: {task_id}")
-            return created
-        if method == "tasks/pushNotificationConfig/list":
-            task_id = str(params.get("taskId") or params.get("id") or "")
-            return self.list_push_notification_configs(task_id)["pushNotificationConfigs"]
-        if method == "tasks/pushNotificationConfig/get":
-            task_id = str(params.get("taskId") or params.get("id") or "")
-            config_id = str(params.get("pushNotificationConfigId") or params.get("configId") or "")
-            config = self.get_push_notification_config(task_id, config_id)
-            if config is None:
-                raise a2a_errors.A2ANotFoundError(f"Unknown push notification config: {config_id}")
-            return config
-        if method == "tasks/pushNotificationConfig/delete":
-            task_id = str(params.get("taskId") or params.get("id") or "")
-            config_id = str(params.get("pushNotificationConfigId") or params.get("configId") or "")
-            return self.delete_push_notification_config(task_id, config_id)
-        if method == "agent/getAuthenticatedExtendedCard":
-            return self.agent_card
-        raise KeyError(method)
+        return dispatch_json_rpc(
+            self,
+            request_body,
+            protocol_version=protocol_version,
+        )

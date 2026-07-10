@@ -1767,9 +1767,13 @@ Bounded local soak coverage:
 
 Unsupported or externally gated:
 
-- No claim is made here about third-party A2A conformance until remote CI,
-  independent interoperability/conformance tests, remote public webhook receiver
-  receipts, and operator deployment sign-off complete.
+- Independent evidence includes an official `a2a-sdk==1.1.0`
+  discovery/send/get/list/cancel lifecycle and an official A2A TCK HTTP+JSON
+  MUST run (55 passed, 5 structured-response failures, 175 skipped). This is
+  partial validation, not certification or full conformance.
+- Structured artifact/direct Message scenarios, an outbound external-server
+  pass, remote public webhook and proxy/TLS receipts, durable replay, and
+  operator deployment sign-off remain open.
 - `synapse a2a-conformance` is the live local matrix for those supported,
   partial, unsupported, and external rows.
 - Exposed A2A bridge deployments should follow the
