@@ -13,6 +13,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Takeover is now atomic from every other session's point of view: the hub
+  rebinds the name to the new socket *before* the eviction close handshake
+  awaits (swap-then-close). Previously the identity→socket map kept pointing
+  at the dying socket across that await, so a directed message racing the
+  takeover could be sent to the evicted socket (and lost), and two takeovers
+  racing the same name could each "evict" the same stale owner and co-bind
+  two live sockets to one identity. Pinned against a live hub: a probe one
+  scheduler step into the eviction sees the new owner, and racing takeovers
+  end with exactly one bound survivor that receives directed mail.
+
 ### Changed
 
 - The legacy broad project-scoped arm detector

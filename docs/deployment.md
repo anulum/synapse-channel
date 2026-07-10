@@ -319,7 +319,11 @@ re-arms with **takeover**: the hub evicts the stale holder (closing it with code
 `4010` *superseded*) and rebinds the name, so the re-arm succeeds instead of failing
 with a `4009` name conflict. Takeover needs **both ends on 0.29.0+** — the client to
 ask for it, the hub to perform the eviction — and a 15-second keepalive reaps a
-genuine ghost quickly as the backstop. The hub logs takeover outcomes without
+genuine ghost quickly as the backstop. The swap is atomic from every other
+session's point of view: the hub rebinds the name to the new socket *before* the
+eviction close handshake runs, so a directed message racing the takeover is
+delivered to the new owner, never to the evicted socket, and two takeovers
+racing each other can never co-bind one name. The hub logs takeover outcomes without
 message payloads: accepted takeovers, cooldown refusals, plain name conflicts,
 and name-switch denials include the sender name, remote host, and close reason.
 

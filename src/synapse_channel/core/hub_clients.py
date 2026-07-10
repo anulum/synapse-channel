@@ -206,7 +206,36 @@ class HubClientRegistry:
         send_json: Callable[[Any, dict[str, Any]], Awaitable[None]],
         system: Callable[..., dict[str, Any]],
     ) -> str | None:
-        """Bind a socket to a sender name, enforcing uniqueness and takeover rules."""
+        """Bind a socket to a sender name, enforcing uniqueness and takeover rules.
+
+        Parameters
+        ----------
+        sender : str
+            The name the socket claims.
+        websocket : Any
+            The socket claiming it.
+        takeover : bool
+            Whether the claim may evict a current holder of ``sender``.
+        send_json : callable
+            Coroutine used to deliver the refusal system message on a name
+            conflict or a denied name switch.
+        system : callable
+            Factory for those system message payloads.
+
+        Returns
+        -------
+        str or None
+            The resolved name, or ``None`` when the claim was refused and the
+            socket closed.
+
+        Notes
+        -----
+        An accepted takeover rebinds ``agent_sockets`` and ``socket_agent`` to
+        the new owner *synchronously, before* the eviction close handshake
+        awaits. From any other task's point of view the name therefore switches
+        owner atomically: no interleaving can resolve the name to the evicted
+        socket or observe the name unheld mid-takeover.
+        """
         known_sender = self.socket_agent.get(websocket)
         if known_sender is None:
             owner_ws = self.agent_sockets.get(sender)
@@ -236,7 +265,15 @@ class HubClientRegistry:
                         await self.close_socket(websocket, code=4014, reason="takeover cooldown")
                         return None
                     self._last_takeover[sender] = now
+                    # Swap-then-close: rebind BOTH maps to the new owner before the
+                    # close handshake awaits. The eviction used to leave
+                    # ``agent_sockets[sender]`` pointing at the dying socket across
+                    # that await, so a concurrent directed send resolved a closed
+                    # socket and a concurrent takeover of the same name read the
+                    # already-evicted owner and co-bound a second live socket.
                     self.socket_agent.pop(owner_ws, None)
+                    self.socket_agent[websocket] = sender
+                    self.agent_sockets[sender] = websocket
                     logger.info(
                         "takeover accepted sender=%s requester_host=%s previous_host=%s "
                         "reason=superseded",
@@ -245,7 +282,6 @@ class HubClientRegistry:
                         self.remote_host(owner_ws),
                     )
                     await self.close_socket(owner_ws, code=4010, reason="superseded")
-                    self.socket_agent[websocket] = sender
                     return sender
                 logger.info(
                     "name conflict sender=%s requester_host=%s holder_host=%s reason=name conflict",
