@@ -1353,7 +1353,8 @@ convenience on top of the free core, and nothing is ever moved behind a paywall.
   self-funded — you can buy us a coffee:
   ☕ [Buy Me a Coffee](https://buymeacoffee.com/anulum) ·
   [GitHub Sponsors](https://github.com/sponsors/anulum) ·
-  [PayPal](https://www.paypal.com/donate?hosted_button_id=4X5F6DNT934HY) —
+  [PayPal](https://www.paypal.com/donate?hosted_button_id=4X5F6DNT934HY) ·
+  [TWINT](https://go.twint.ch/1/e/tw?tw=acq.lJTAypb8SL2s8vPg7fL0ubi2C220ajOH0BEQn1aKfEJIiIakLpt8jlEv8XdQ9tCp.) (CH) —
   or send crypto (the same addresses published at
   [anulum.li](https://www.anulum.li/contact.html)):
 

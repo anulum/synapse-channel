@@ -18,7 +18,7 @@ All notable changes to this project are documented here.
 - The free tier now carries the ecosystem's standard donation surface: a
   low-key coffee line (Buy Me a Coffee, GitHub Sponsors, PayPal) with the
   canonical branded QR code under `assets/bmc_qr.png`, the BTC/ETH/LTC
-  donation addresses published at anulum.li, and
+  donation addresses and the TWINT link published at anulum.li, and
   `buy_me_a_coffee: anulum` joins `.github/FUNDING.yml` so the repository
   Sponsor button offers it too. Free tier only — paid surfaces stay
   donation-free.
