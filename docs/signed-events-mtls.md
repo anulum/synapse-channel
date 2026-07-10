@@ -45,9 +45,13 @@ The implemented runtime covers these enforceable primitives:
 - `MTLSPeerTrustBundle` verifies trusted peer certificate pins, project scope,
   signing key scope, and peer revocation.
 
-There is no CLI trust-bundle import command yet. Operators embedding the hub can
-enforce these primitives today; packaged command-line workflow for trust-bundle
-loading, rotation, import/export, and incident response remains future work.
+The packaged `hub` CLI has no option that loads an
+`EventSignatureTrustBundle`, and it exposes server WSS but no client-CA option.
+Operators embedding the hub can enforce both primitives today. The separate
+`synapse federation` commands manage operator-confirmed domain bundles and
+certificate pins; they do not silently install a signed-event trust bundle into
+the hub. Packaged loading, managed signing-key lifecycle, and incident-response
+workflow for this profile remain future work.
 
 ## Event signature profile
 
@@ -190,10 +194,9 @@ Signed events and mTLS sit beside the other security designs:
 - [Per-message authentication](per-message-authentication.md) can reject bad
   frames before hub admission; signed events verify selected records after
   admission, storage, relay export, and postmortem reconstruction.
-- [Per-agent identity and ACLs](identity-and-acl.md) remain a separate design.
-  Signatures can carry an asserted key id, but policy still needs
-  identity-bound permissions before the hub can enforce who may perform each
-  action.
+- [Per-agent identity and ACLs](identity-and-acl.md) are a separate runtime
+  profile. A signature proves possession of an accepted event key; identity
+  binding and policy still decide which named actor may perform each action.
 - [Signed capability cards](signed-capability-cards.md) remain a separate
   profile for discovery advertisements, manifest digests, expiry, and capability
   downgrade diagnostics. Signed events verify durable records around those
@@ -208,6 +211,8 @@ arbitrary external systems.
 
 Mutual TLS authenticates configured peers only when the operator manages the
 trust bundle, certificate pinning, key rotation, revocation, and deployment
-procedures. Until command-line trust-bundle import/export, rotation, and
-incident-response workflows exist, the supported default security posture
-remains the trusted local hub with explicit warnings for exposed deployments.
+procedures. Until the packaged hub can load signed-event trust, require a client
+CA, and manage signing-key rotation and incident response, the supported default
+security posture remains the trusted local hub with explicit warnings for
+exposed deployments. The federation bundle workflow does not remove those
+profile-specific limits.

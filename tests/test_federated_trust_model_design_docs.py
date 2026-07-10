@@ -36,6 +36,7 @@ def test_federated_trust_model_states_runtime_status_and_dependencies() -> None:
     """The design must ground itself in the shipped single-domain primitives."""
     text = _collapsed(DOC)
     assert "runtime status" in text
+    assert "opt-in policy, persistence, lifecycle, exchange, frame-authorisation" in text
     # The exchange transport shipped (offer/fetch); the trust decision itself is
     # declared permanently out-of-band, not a pending implementation gap.
     assert "out-of-band by design" in text
@@ -62,6 +63,8 @@ def test_federated_trust_model_pins_trust_domain_and_authorization_boundaries() 
     assert "tls-terminating reverse proxy" in text
     assert "not the hub certificate" in text
     assert "synapse doctor --federation-path peer=mode" in text
+    assert "posix wall-clock epoch seconds" in text
+    assert "never with process-relative monotonic time" in text
 
 
 def test_federated_trust_model_keeps_explicit_non_goals() -> None:

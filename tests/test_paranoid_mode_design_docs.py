@@ -50,11 +50,14 @@ def test_paranoid_mode_design_names_strict_local_settings() -> None:
         assert setting in text
 
 
-def test_paranoid_mode_design_reports_missing_hooks() -> None:
-    """The design must identify future hooks without pretending they exist."""
+def test_paranoid_mode_design_reports_uncomposed_controls() -> None:
+    """The profile must distinguish separate opt-ins from genuinely absent hooks."""
     text = _collapsed(PARANOID_DOC)
 
-    required_hooks = (
+    required_controls = (
+        "controls not composed by this profile",
+        "ships separately",
+        "`--team-secure` requires",
         "at-rest encryption",
         "signed events",
         "per-message key rotation",
@@ -63,8 +66,8 @@ def test_paranoid_mode_design_reports_missing_hooks() -> None:
         "private channels",
         "deployment threat model",
     )
-    for hook in required_hooks:
-        assert hook in text
+    for control in required_controls:
+        assert control in text
 
 
 def test_paranoid_mode_design_keeps_boundary_claims_clear() -> None:

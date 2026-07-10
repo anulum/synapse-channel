@@ -84,7 +84,8 @@ def test_agent_trust_graph_design_keeps_boundaries_clear() -> None:
 
     required_boundaries = (
         "design target",
-        "not implemented yet",
+        "routing integration and the owner-annotation workflow described below "
+        "are not implemented yet",
         "does not rank agents",
         "does not assign trust grades",
         "does not authorize execution",

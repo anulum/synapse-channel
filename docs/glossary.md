@@ -140,19 +140,22 @@ candidate unanswered messages that mention the task id.
 
 ### Policy engine
 
-Planned local-first decision layer for evaluating release receipts and event-log
-evidence against configured rules such as required tests, strict type checking,
-owner approval, evidence freshness, generated artifact parity, and
-no-merge-without-receipt. The design is advisory by default and does not merge
-code.
+Advisory local-first decision layer exposed by `synapse policy-check`. It
+evaluates release receipts and event-log evidence against configured rules such
+as required tests, strict type checking, owner approval, evidence freshness,
+generated-artifact parity, and no-merge-without-receipt. It reports a decision;
+it does not merge code or become a blocking gate unless an operator wires it
+into a hook or CI.
 
 ### Identity and ACL
 
-Design target for per-agent identity, identity-bound credentials, project
-namespaces, allowed verbs, target patterns, deny-by-default authorization,
-metrics permission, A2A permission, dashboard permission, release permission,
-credential rotation, revocation, and migration from shared-token mode. It is not
-implemented yet and does not replace per-message authentication or signed events.
+Shipped identity-binding and authorisation controls. Installations with
+`cryptography` can pin a name to a trust-on-first-use machine key; operator
+profiles can require an enrolled Ed25519 identity bundle. Deny-by-default ACLs
+can enforce allowed verbs and target patterns on mutating frames, including
+mailbox and role-claim gates. Read-surface ACLs, automated credential lifecycle,
+and full multi-tenant IAM remain outside the current runtime. Identity and ACL do
+not replace per-message authentication or signed events.
 
 ### Signed capability cards
 
@@ -165,36 +168,36 @@ advisory discovery.
 
 ### Paranoid mode
 
-Design target for one future operator switch that enables strict local settings
-and reports missing hardening hooks. It is not implemented as a CLI flag yet; it
-defines token-required access, loopback-first binds, metrics/A2A auth,
-owner-only state files, bounded retention, durable event logs, release receipts,
-and gaps such as encryption, signed events, per-agent identity, ACLs, private
-channels, and exposed deployment threat modelling.
+Shipped `synapse hub --paranoid` profile. It requires a connect token, durable
+event log, HMAC per-message authentication, deny-by-default ACL enforcement,
+native WSS, and metrics bearer auth when metrics are enabled. It reports controls
+that the flag does not compose automatically, including identity binding,
+at-rest encryption, private/E2E channels, mutual-TLS client verification, and
+deployment evidence.
 
 ### At-rest encryption
 
-Design target for optional encryption of local storage surfaces such as SQLite
-event stores, WAL and SHM sidecars, relay logs, A2A state files, cursor files,
-archive reports, temporary files, and backups. The design covers key storage,
-key derivation, key rotation, backup recovery, and lost-key recovery boundaries;
-it is not implemented yet.
+Shipped opt-in protection for local storage. `--db-key-file` enables SQLCipher
+page encryption for the live event store; AES-256-GCM whole-file envelopes cover
+relay logs, A2A state, cursors, archives, temporary files, and backups. Key
+wrapping, rotation, backup recovery, escrow, and attestation tools are separate
+operator workflows. At-rest encryption does not protect hub RAM or create
+multi-tenant isolation.
 
 ### End-to-end encrypted channels
 
-Design target for routing selected payloads while the hub cannot read plaintext.
-Direct messages, private progress notes, handoff checkpoints, and A2A artifacts
-are candidate encrypted bodies; routing metadata remains visible so the hub can
-deliver, retain, and audit coordination events. The feature is not implemented
-yet.
+Shipped runtime for selected chat payloads. `send --encrypt-key-file` encrypts
+the body at the endpoint and `listen --decrypt-key-file` decrypts it locally, so
+the hub cannot read plaintext. Routing metadata remains visible, and key
+discovery, managed rotation, non-chat payload profiles, and compromised-endpoint
+protection remain outside the tranche.
 
 ### Private channels
 
-Design target for routing selected coordination messages to a scoped audience,
-such as a project channel, worktree channel, task channel, or direct channel.
-Private channels define channel ids, membership lists, history visibility,
-retention boundaries, relay log filtering, and event-query filtering, but they
-do not encrypt payloads.
+Shipped audience-scoped routing for channel messages. The runtime enforces
+membership on delivery and bounded history and filters relay/event-query
+projections. Channel membership is process-local in the current tranche, and
+private channels do not encrypt payloads or create cryptographic identity.
 
 ### Differential privacy blackboard
 
@@ -207,19 +210,21 @@ anonymize raw logs.
 
 ### Signed events and mTLS
 
-Design target for authenticating selected coordination events and trusted
-multi-host peers. Signed events use an event signature over a canonical payload,
-key id, signed sequence metadata, timestamp window, replay protection, and verification
-result. Mutual TLS uses operator-managed trust bundles, certificate pinning, key
-rotation, revocation, and trusted peer definitions; it is not implemented yet.
+Library/runtime primitives for authenticating selected coordination events and
+trusted multi-host peers. Signed events use Ed25519 over a canonical payload,
+key id, signed sequence metadata, timestamp window, replay protection, and an
+explicit verification result. Mutual-TLS contexts and operator-managed
+certificate-pin bundles protect configured peer paths. The packaged hub CLI does
+not yet load a signed-event trust bundle or client CA, so the complete operator
+profile remains staged.
 
 ### Per-message authentication
 
-Design target for authenticating selected WebSocket frames after connect
-authentication. The profile defines authenticated frames, canonical frames,
-message authentication codes, signatures, key ids, sender binding, nonces,
-signed sequence metadata, timestamp windows, replay cache bounds, key rotation,
-revocation, and verification results; it is not implemented yet.
+Shipped opt-in HMAC-SHA256 authentication for selected mutating WebSocket frames
+after connect authentication. `--message-auth-key` configures sender-bound keys
+and `--require-message-auth` enforces canonical frames, key ids, nonces,
+timestamps, sequence metadata, and a bounded replay cache. It does not encrypt
+payloads, replace TLS, or provide a managed key lifecycle.
 
 ### Reliability memory
 
@@ -230,11 +235,11 @@ signals, not scores.
 
 ### Agent trust graph
 
-Design target for an inspectable evidence graph over reliability signals,
-release receipts, capability observations, handoff outcomes, conflict history,
-evidence nodes, evidence edges, provenance references, event sequences, decay
-windows, and owner review notes. It is not implemented yet and does not rank
-agents or assign trust grades.
+Shipped read-side evidence graph exposed by `synapse trust-graph`. It projects
+reliability signals, release receipts, handoff outcomes, conflict history,
+provenance references, and event sequences into typed edges with optional decay
+windows. Routing integration and owner annotations remain design targets. The
+graph does not rank agents, assign trust grades, or authorise execution.
 
 ### TTL advice
 

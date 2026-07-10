@@ -112,8 +112,9 @@ class MultiHubServingPolicy:
         The identity each requesting peer is authorised under, keyed by the sender id the peer
         registers as. A request from a sender with no grant is refused.
     clock : Callable[[], float]
-        Returns the current monotonic time; sampled per request so a peering's expiry and
-        revocation are re-evaluated on every pull.
+        Returns the current POSIX wall-clock time, equivalent to ``time.time()``;
+        sampled per request so epoch-based peering expiry and revocation are
+        re-evaluated on every pull.
     cert_source : PeerCertificateSource
         Reads the peer's live certificate. Defaults to :func:`live_peer_certificate_der`;
         injected in tests to exercise the decision without a real handshake.

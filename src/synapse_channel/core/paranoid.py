@@ -21,22 +21,23 @@ import argparse
 from dataclasses import dataclass
 
 MISSING_PARANOID_HOOKS: tuple[str, ...] = (
-    "at-rest encryption",
-    "mutual-TLS client-certificate verification",
-    "cryptographic per-agent identity verification",
-    "private channels",
-    "end-to-end encrypted channels",
+    "at-rest encryption (available separately; not enabled by --paranoid)",
+    "mutual-TLS client-certificate verification and signed-event trust loading",
+    "cryptographic per-agent identity verification (compose --team-secure)",
+    "private channels (available separately; not enabled by --paranoid)",
+    "end-to-end encrypted channels (available separately; not enabled by --paranoid)",
     "differential-privacy blackboard projections",
     "per-message key rotation and revocation operator workflow",
     "deployment threat-model evidence for exposed bridges",
 )
-"""Runtime hooks that paranoid mode must report as unavailable today.
+"""Controls that paranoid mode must report as not automatically composed.
 
-Server TLS, ACL enforcement, and signed events are now *required* by the profile
-(see :func:`apply_paranoid_hub_profile`), so they are no longer listed here; what
-remains are the hooks the profile cannot yet enforce — notably mutual-TLS client
-verification (server TLS is required, client-certificate pinning is not) and
-cryptographic per-agent identity (the ACL authorises a *declared* sender name).
+Server TLS, ACL enforcement, and HMAC per-message authentication are required by
+the profile (see :func:`apply_paranoid_hub_profile`). Several other controls
+ship independently but are not enabled by this flag; mutual-TLS client
+verification and packaged signed-event trust loading remain unavailable on the
+hub CLI. Qualifying the shipped controls here prevents the operator report from
+claiming that the underlying feature is absent.
 """
 
 
@@ -53,7 +54,8 @@ class ParanoidHubReport:
     enforced : tuple[str, ...]
         Runtime settings that the CLI checked or normalised before startup.
     missing_hooks : tuple[str, ...]
-        Future security hooks that are still unavailable and must not be implied.
+        Controls the profile does not compose, including separately available
+        opt-ins and genuinely unavailable hooks.
     """
 
     enforced: tuple[str, ...]

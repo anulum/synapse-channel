@@ -13,10 +13,11 @@ SYNAPSE CHANNEL — identity and ACL design
 Per-agent identity and ACL enforcement grew out of a design target for
 deployments that need more than shared-token mode and the caller-name model.
 The core of it is now implemented (see the next section): deny-by-default ACL
-enforcement is opt-in, and name ownership is enforced by default through the
-ownership lease and the zero-config trust-on-first-use machine key. What
-remains a design target is listed at the end of that section. A secured hub
-still admits a connection with a shared token; the layers below decide what
+enforcement is opt-in, the production waiter opts into a name-ownership lease,
+and installations with `cryptography` use a zero-config trust-on-first-use
+machine key. Core-only installations retain the unsigned compatibility path.
+What remains a design target is listed at the end of that section. A secured
+hub still admits a connection with a shared token; the layers below decide what
 the admitted connection may claim to *be* and to *do*.
 
 The goal is to bind every durable actor to an identity-bound credential, then
@@ -24,7 +25,7 @@ evaluate whether that identity may perform a requested action before the hub
 mutates state or exposes scoped data. This does not replace per-message
 authentication, does not replace signed events, and does not sandbox agents.
 
-## Implemented (shadow mode and opt-in enforcement)
+## Implemented (TOFU, shadow tools, and opt-in enforcement)
 
 The ACL model and its evaluation are implemented in
 :mod:`synapse_channel.core.identity`, :mod:`synapse_channel.core.acl`, and
@@ -106,11 +107,11 @@ or provider session currently using it:
 - **Audit subject:** the canonical identity string recorded by the hub after
   verification, not a self-reported display name.
 
-The first credential format should be local-first and operator-managed. A
-credential can be a symmetric key, an asymmetric signing key, or a certificate
-handle, but every option must support key id lookup, credential rotation,
-revocation, owner recovery, and diagnostics that explain which credential failed
-without leaking secret material.
+The shipped credential formats are the local machine Ed25519 key and the
+operator-managed Ed25519 trust bundle. A future managed credential lifecycle may
+add other key or certificate handles, but any addition must support key-id
+lookup, rotation, revocation, owner recovery, and diagnostics that explain which
+credential failed without leaking secret material.
 
 ## ACL model
 
@@ -196,13 +197,13 @@ postmortem can explain what changed during migration.
 
 ## Boundaries
 
-This is a design target, not implemented yet. Identity and ACLs do not encrypt
-payloads, do not replace per-message authentication, do not replace signed
-events, do not replace TLS, do not sandbox agents, and do not make arbitrary
-provider code safe to run.
+The identity-binding, trust-on-first-use, role-claim, mailbox, private-directed,
+and mutating-frame ACL controls described above are implemented. They do not
+encrypt payloads, replace per-message authentication, replace signed events,
+replace TLS, sandbox agents, or make arbitrary provider code safe to run.
 
 The local-first tradeoff is administrative complexity. A single-owner loopback
 hub should still work with shared-token mode. Exposed deployments need explicit
 credentials, credential rotation, revocation, owner recovery, deny by default
-ACLs, diagnostics, and operator procedures before identity and ACL enforcement
-can become a runtime mode.
+ACLs, diagnostics, and operator procedures before this opt-in runtime can be
+treated as a complete multi-tenant IAM system.

@@ -43,6 +43,15 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Public security, protocol, glossary, staged-profile documentation, and the
+  paranoid operator checklist now distinguish shipped opt-in controls from the
+  remaining operator and external validation work. The evidence map pins the
+  live team-secure, paranoid, identity/ACL, message-auth, signed-event/mTLS,
+  federation, encryption, private-channel, and trust-graph boundaries.
+  Federation lifecycle clocks are described as POSIX epoch time, and
+  wire-version documentation now reflects the shipped version-2
+  negotiate-down-and-warn path.
+
 - The built React cockpit can now unlock a read-gated dashboard without putting
   its bearer in a URL. The server permits only files accepted by the existing
   cockpit-dist containment and content-type validator to load before read

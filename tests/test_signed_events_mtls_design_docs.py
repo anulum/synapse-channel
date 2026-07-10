@@ -87,12 +87,14 @@ def test_signed_events_mtls_runtime_keeps_boundaries_clear() -> None:
 
     required_boundaries = (
         "operator-managed",
-        "no cli trust-bundle import command yet",
+        "packaged `hub` cli has no option that loads an `eventsignaturetrustbundle`",
+        "no client-ca option",
+        "operator-confirmed domain bundles",
         "does not encrypt payloads",
         "does not replace per-agent identity",
         "does not certify federation",
         "local-first tradeoff",
-        "command-line trust-bundle import/export",
+        "packaged hub can load signed-event trust",
     )
     for boundary in required_boundaries:
         assert boundary in text

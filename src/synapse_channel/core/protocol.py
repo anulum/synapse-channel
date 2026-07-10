@@ -44,11 +44,12 @@ peer advertising version ``2`` or newer (:data:`MIN_ACK_PROTOCOL_VERSION`), so i
 never sends the verb to a hub that predates it — and an older hub, never taught the
 verb, is never sent it, which is what keeps the addition backward-compatible.
 
-It is **advertise-only for now**: a client captures the peer's version and gates
-its own ``ACK`` emission on it, but the hub enforces no cross-version policy,
-because the mismatch behaviour (reject, warn, or negotiate down) is a contract
-shared with the downstream consumers the wire serves and is decided with them
-before it is enforced.
+Version-skewed peers remain accepted rather than rejected. Consumers negotiate
+to the lowest common version through :func:`negotiate_protocol_version`, warn on
+an absent, older, or newer peer version, and gate optional capabilities against
+the effective version. The multi-hub network fetcher records that decision and
+the follower exposes it per peer; the hub itself does not reject a connection
+solely for version skew.
 """
 
 MIN_ACK_PROTOCOL_VERSION = 2

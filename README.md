@@ -757,9 +757,9 @@ explicitly does *not* claim:
 | [End-to-end encrypted channels](docs/end-to-end-encrypted-channels.md) | Shipped (runtime) | Selected chat payloads encrypted with `send --encrypt-key-file`, decrypted locally with `listen --decrypt-key-file`. | Key discovery and rotation; private notes/checkpoints/artifacts are follow-on work. |
 | [Private channels](docs/private-channels.md) | Shipped (runtime) | Member-scoped chat delivery, bounded member-only history, channel-tagged relay export, metadata-only event-query filters. | Payload encryption; cryptographic identity. |
 | [Per-message authentication](docs/per-message-authentication.md) | Shipped (opt-in) | HMAC-SHA256 on selected mutating frames after connect auth: canonical frames, key ids, sender-bound CLI keys, nonces, timestamp windows, bounded replay cache, rotation and revocation. | Payload encryption; public-key signatures; identity enforcement. |
-| [Identity and ACL](docs/identity-and-acl.md) | Implemented (shadow mode + opt-in enforcement) | Per-agent identity binding, project namespaces, deny-by-default verb/target ACLs (including `mailbox` and `role-claim` grants), credential rotation and revocation, migration from shared-token mode. | A full multi-tenant IAM. |
+| [Identity and ACL](docs/identity-and-acl.md) | Implemented (TOFU + opt-in operator enforcement) | Machine-key trust-on-first-use pins when `cryptography` is installed; operator identity bundles; project namespaces; deny-by-default verb/target ACLs including `mailbox` and `role-claim`. | Automated credential lifecycle, read-surface ACLs, owner recovery, and full multi-tenant IAM. |
 | [Policy engine](docs/policy-engine.md) | First tranche implemented (advisory) | Required tests, strict typing, owner approval, evidence freshness, artifact parity, and no-merge-without-receipt rules evaluated over git-native claims, receipts, and event-log evidence. | Blocking anything by itself — operators decide what becomes a hook or CI gate. |
-| [Signed events and mTLS](docs/signed-events-mtls.md) | Runtime primitives shipped; full profile staged | Event signatures, key rotation, replay protection, trust bundles, certificate pinning for trusted multi-host peers. | Payload encryption; replacing per-agent identity; certifying external federation. |
+| [Signed events and mTLS](docs/signed-events-mtls.md) | Library/runtime primitives shipped; packaged profile staged | Ed25519 event verification, replay/scope checks, mutual-TLS server contexts, and certificate-pin trust bundles for guarded multi-host paths. | Hub CLI loading of signed-event trust and client CAs; managed key lifecycle; payload encryption; external federation certification. |
 | [Differential-privacy blackboard](docs/differential-privacy-blackboard.md) | Design target | Redacted and noisy board projections for multi-organisation views; raw local board data stays exact for the operator. | Payload encryption; replacing private or E2E channels; anonymising raw logs. |
 | [Signed capability cards](docs/signed-capability-cards.md) | Design target | Tamper-evident capability advertisements for manifests, directories, dashboards, MCP resources, and Agent Card projections. | Authorising tools; replacing per-message auth or signed events; sandboxing agents. |
 
@@ -996,11 +996,12 @@ not rank agents, assign trust grades, authorize execution, replace code
 review, or replace identity and ACL; the routing integration and the
 owner-annotation workflow remain design targets.
 
-The planned [federated trust model](docs/federated-trust-model.md) profile
-designs how independent operator-managed domains could peer — out-of-band,
-deny-by-default bundle exchange composing identity, signed events, mutual TLS,
-ACLs, and receipts across a domain boundary. It is not implemented yet, is not a
-certificate authority, and does not change the local-first default.
+The [federated trust model](docs/federated-trust-model.md) has an opt-in runtime:
+deny-by-default peer policy and lifecycle stores, signed-frame authorisation,
+guarded multi-hub paths, and `federation offer/fetch/import/list/rotate/revoke`
+bundle workflows. Operators still establish trust out-of-band by comparing
+fingerprints; there is no automatic trust distribution, certificate authority,
+or external federation certification, and the local-first default is unchanged.
 
 The [Agent Air Traffic Control architecture](docs/agent-air-traffic-control.md)
 names how the shipped parts compose into one control loop — separation (claims),
@@ -1190,7 +1191,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 520 |
 | Wire message types | 74 |
 | CLI subcommands | 158 |
-| Test functions | 5876 |
+| Test functions | 5882 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 13 |
@@ -1220,10 +1221,14 @@ opt-in and deny-by-default:
 - **Connect authentication** — a shared-secret token compared in constant time
   (`--token-file` or `SYNAPSE_TOKEN` preferred over `--token`, which is visible in the
   process list).
-- **Per-message authentication** — `--require-message-auth` demands authentication on
-  selected mutating frames, with an Ed25519 event-signature trust bundle and mTLS
-  certificate pins for multi-hub pulls and federation peerings; an unresolvable or
-  unpinnable peer is denied, never handled locally.
+- **Per-message authentication** — `--message-auth-key` with
+  `--require-message-auth` demands sender-bound HMAC authentication on selected
+  mutating frames after connect authentication.
+- **Signed events and trusted peers** — embedded hubs can accept Ed25519 event
+  signatures as the per-message alternative, and guarded multi-hub/federation
+  paths compose live certificate pins with operator-confirmed peer policy. The
+  packaged hub CLI does not load an Ed25519 event-trust bundle or client CA, so
+  `--tls-certfile --tls-keyfile` alone is server TLS, not mTLS.
 - **Deny-by-default ACL** — `--acl-policy` with `--require-acl` rejects mutating frames
   from identities the policy does not grant.
 - **Bounded resources** — connection, frame-size, JSON-depth, rate, and history caps
@@ -1273,15 +1278,16 @@ threat model and how to report a vulnerability are in [`SECURITY.md`](SECURITY.m
   this package; operating them as a production service is the job of the
   commercial [Fleet tier](#beyond-one-machine-synapse-channel-fleet) below.
 - **Connect authentication is a proportionate shared secret**, not a
-  cryptographic identity system. Opt-in per-message authentication, Ed25519
-  event-signature trust, mTLS certificate pins, and a deny-by-default ACL policy
-  exist for exposed or multi-hub deployments (see
-  [Security posture](#security-posture)), but every peering is an out-of-band
-  trust decision — bundle bytes can move over the wire
-  (`synapse federation offer`/`fetch`, fingerprint-compared, never
-  trust-on-first-use), yet there is no automatic trust distribution — and an
-  agent's identity is a declared name, not a per-agent credential. Do not expose
-  the hub on an untrusted network and rely on the token alone.
+  cryptographic identity system. With the `encryption` extra, default clients
+  sign registration with a machine key and the hub pins names on first valid use;
+  operator-managed deployments can instead require an enrolled identity bundle.
+  Per-message authentication, Ed25519 event-signature trust, peer certificate
+  pins, and deny-by-default ACLs remain separate opt-ins (see
+  [Security posture](#security-posture)). Every federation peering is still an
+  out-of-band trust decision: bundle bytes can move over the wire (`synapse
+  federation offer`/`fetch`, fingerprint-compared, never automatically trusted),
+  but there is no automatic trust distribution. Do not expose the hub on an
+  untrusted network and rely on the token alone.
 - **Graceful shutdown is bounded, not transactional.** `SIGTERM`/`SIGINT` stop
   accepting new sockets, close active WebSocket sessions within
   `--shutdown-close-timeout`, and rely on per-mutation persistence for durable

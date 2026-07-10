@@ -80,19 +80,24 @@ def test_identity_acl_design_defines_acl_model() -> None:
         assert permission in text
 
 
-def test_identity_acl_design_keeps_migration_and_boundaries_clear() -> None:
-    """The design must not claim authorization exists before implementation."""
+def test_identity_acl_runtime_keeps_migration_and_boundaries_clear() -> None:
+    """The page must separate shipped identity gates from the remaining IAM work."""
     text = _collapsed(IDENTITY_ACL_DOC)
 
     required_boundaries = (
-        "design target",
-        "not implemented yet",
+        "implemented (tofu, shadow tools, and opt-in enforcement)",
+        "trust-on-first-use",
+        "--require-identity-binding",
+        "--require-acl",
+        "core-only installations retain the unsigned compatibility path",
         "shared-token mode",
         "migration",
         "does not replace per-message authentication",
         "does not replace signed events",
         "does not sandbox agents",
         "local-first tradeoff",
+        "complete multi-tenant iam system",
     )
     for boundary in required_boundaries:
         assert boundary in text
+    assert "this is a design target, not implemented yet" not in text

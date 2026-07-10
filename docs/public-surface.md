@@ -65,8 +65,10 @@ at any time; they observe state and never mutate the plan or leases.
 ### Advisory governance — `governance`
 
 Advisory governance: policy, approvals, access control, and release integrity.
-These express and check intent; they advise and record rather than enforce at the
-transport layer.
+Most commands create, inspect, or verify policy material. Some of that material
+is consumed by explicit runtime gates — notably `--require-acl` and
+`--federation-store` — but running a governance command does not silently enable
+enforcement or widen trust.
 
 `acl`  `approval`  `compact`  `encrypt-key`  `federation`  `merkle`  `policy-check`  `postmortem`  `release`  `reproduce`  `role`  `sqlcipher`  `supervisor`  `verify-release`
 
@@ -78,11 +80,11 @@ but pin to a version if you depend on their exact behaviour.
 `auto-action`  `benchmark`  `memory-recall`  `participant`  `resource-bids`  `route-task`  `sandbox`
 `ttl-advice`  `workflow`
 
-## Design-preview documentation
+## Architecture and staged-profile documentation
 
-Some documentation pages describe designs that are intentionally **not yet
-implemented** — research and architecture written down before any code, so the
-boundary is explicit. They are documentation, never CLI surface:
+Some pages describe how shipped primitives compose with remaining architecture.
+They are documentation rather than additional CLI verbs, and each page states
+its own runtime boundary:
 
 - [Agent Air Traffic Control](agent-air-traffic-control.md)
 - [Cross-agent adapter kits](cross-agent-adapter-kits.md)
@@ -90,5 +92,7 @@ boundary is explicit. They are documentation, never CLI surface:
 - [Multi-hub sync (CRDT) research](multi-hub-sync.md)
 - [Sandboxed tools and marketplace](sandboxed-tools-and-marketplace.md)
 
-Each such page states that it is not implemented; treat it as direction, not a
-shipped feature.
+Do not infer that an entire page is either shipped or absent from its title.
+Federation policy and exchange, multi-hub observation, and the WASM sandbox now
+have runtime surfaces; automatic cross-organisation trust, CRDT claim merging,
+and the marketplace remain outside those shipped tranches.

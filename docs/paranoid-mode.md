@@ -19,8 +19,8 @@ deliberately adds network, model-worker, A2A, or relay egress.
 `synapse hub --paranoid` does two things:
 
 1. Refuse relaxed hub runtime settings when a safer local setting exists.
-2. Print an operator checklist for missing hooks that Synapse cannot honestly
-   provide yet.
+2. Print an operator checklist for controls the flag does not compose, including
+   controls that ship as separate opt-in profiles.
 
 The command should never imply that one flag makes an exposed deployment safe.
 It should make the current posture obvious, repeatable, and auditable.
@@ -69,45 +69,42 @@ switch does not yet enforce:
 The hub profile prints its enforced settings and missing hooks to stderr at
 startup. It does not rewrite service units or hooks.
 
-## Missing hardening hooks
+## Controls not composed by this profile
 
-The checklist should explicitly report these missing or future hooks instead of
-pretending they are solved:
+The checklist explicitly reports controls that `--paranoid` does not enable. A
+listed control may be available separately; the list prevents the one flag from
+implying a broader posture than it actually configures:
 
-- **At-rest encryption** for SQLite databases, relay logs, A2A state files, and
-  generated reports. See the [at-rest encryption design](at-rest-encryption.md)
-  for storage scope, key storage, rotation, backup recovery, and local-first
-  tradeoffs.
+- **At-rest encryption** ships separately: `--db-key-file` protects the live
+  event store with SQLCipher, and the AES-256-GCM profile protects whole-file
+  surfaces. `--paranoid` does not choose or load those keys. See
+  [at-rest encryption](at-rest-encryption.md).
 - **Mutual-TLS client-certificate verification and the signed-events/mTLS operator
-  workflow** beyond the runtime primitives. Paranoid mode now requires server TLS
-  and signed mutating frames, but the transport does not yet verify a client
-  certificate, and the CLI has no trust-bundle import/export, key rotation, peer
-  inventory, or incident-response workflow. See
+  workflow** beyond the runtime primitives. Paranoid mode requires server TLS
+  and HMAC-authenticated mutating frames, but the packaged hub CLI does not load
+  an Ed25519 event-trust bundle or client CA. Federation commands manage a
+  different operator-confirmed domain bundle. See
   [signed events and mTLS](signed-events-mtls.md).
 - **Per-message key rotation and revocation operator workflow** beyond the
   runtime's explicit HMAC key list. The hub can enforce selected signed
   mutating frames, but there is no managed key store, no key file lifecycle, and
   no automatic rotation workflow. See the
   [per-message authentication runtime](per-message-authentication.md).
-- **Cryptographic per-agent identity** beyond the current shared-token and
-  caller-name model. Paranoid mode now enforces ACL authorisation of mutating
-  verbs, but the ACL authorises a *declared* sender name — there is no
-  identity-bound credential binding a caller to that name. See the
-  [identity and ACL design](identity-and-acl.md).
-- **Private channels** for project-local or worktree-local payloads that the hub
-  should not broadcast to every trusted participant. See the
-  [private channels design](private-channels.md) for channel ids, membership
-  lists, history visibility, retention boundaries, relay log filtering, and
-  event-query filtering.
+- **Cryptographic per-agent identity** ships through machine-key
+  trust-on-first-use and operator identity bundles; `--team-secure` requires the
+  latter. `--paranoid` alone does not enable either, so its ACL may still
+  authorise a declared sender name. See [identity and ACL](identity-and-acl.md).
+- **Private channels** ship as an audience-scoped runtime, but `--paranoid` does
+  not create channels or membership. See [private channels](private-channels.md).
 - **Differential-privacy blackboard projections** for multi-organisation views
   that should share aggregate progress without raw notes. See the
   [differential-privacy blackboard design](differential-privacy-blackboard.md)
   for redaction policy, aggregation boundary, cohort thresholds, privacy budget,
   and audit-trail requirements.
-- **End-to-end encrypted channels** for selected payloads that the hub should
-  route without reading plaintext. See the
-  [encrypted channels design](end-to-end-encrypted-channels.md) for recipient
-  sets, per-project keys, per-worktree keys, and operational key management.
+- **End-to-end encrypted chat** ships through explicit endpoint key files, but
+  `--paranoid` does not select participant keys or enable encryption for a
+  sender/listener. Broader encrypted payload profiles and managed key discovery
+  remain staged. See [encrypted channels](end-to-end-encrypted-channels.md).
 - **Deployment threat model** evidence for exposed bridges, reverse proxies,
   TLS termination, logging, retention, DNS rebinding, and operator procedures.
 
@@ -140,8 +137,9 @@ The doctor report should include:
 - Exact remediation text.
 
 Runtime commands fail closed only for settings they directly control. For
-example, the paranoid hub requires a token and durable event log, but it cannot
-claim at-rest encryption until that hook exists.
+example, the paranoid hub requires a token and durable event log, but it does not
+claim at-rest encryption unless the operator separately supplies and verifies
+the SQLCipher or envelope profile.
 
 ## Boundaries
 

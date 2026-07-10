@@ -31,10 +31,17 @@ after WebSocket connect authentication. It is opt-in: `--message-auth-key`
 configures sender-bound HMAC keys, and `--require-message-auth` enforces signed
 claims, releases, task updates, handoffs, checkpoints, and resource offers.
 
-The planned [identity and ACL design](identity-and-acl.md) keeps protocol
-messages as ordinary envelopes while adding a future authorization decision
-before state mutation or scoped reads. It is not implemented yet and does not
-change the current shared-token wire format.
+Embedded hubs may instead verify the `signature` object defined by the
+[signed-events runtime](signed-events-mtls.md) against an
+`EventSignatureTrustBundle`. The packaged hub CLI does not load that bundle;
+native `--tls-certfile --tls-keyfile` is server TLS and does not by itself
+enable signed events or mutual TLS.
+
+The [identity and ACL runtime](identity-and-acl.md) keeps protocol messages as
+ordinary envelopes. Signed registration fields bind a connection name to a
+machine key or operator trust bundle, and opt-in ACL evaluation refuses
+unauthorised mutating frames before state changes. These additive fields and
+checks do not replace the connect token or change the default local wire flow.
 
 The planned [signed capability cards design](signed-capability-cards.md) keeps
 `advertise` and `manifest_request` as ordinary discovery messages while adding a
@@ -105,9 +112,12 @@ The envelope builders and the message-type constants live in
 ## Directed delivery and the mailbox
 
 A `chat` addressed to a `target` — one name, a `project/*` group glob, or a
-`project/role` a holder answers to — is still fanned out to every connected socket;
-each client filters for the messages meant for it. The recipient set the hub
-computes is used for delivery accounting, not to gate the broadcast.
+`project/role` a holder answers to — uses the compatibility broadcast flow by
+default, so each client filters for the messages meant for it. With
+`--private-directed-messages` (forced by `--team-secure`), the hub instead sends
+the frame only to recipients, their `-rx` sidecars, and identities holding the
+ACL `observe` grant. The durable journal and configured relay log still retain
+the message for audit and replay.
 
 **Immediate receipts.** A `chat` sent with `receipt_requested: true` gets a private
 `delivery_receipt` back: `delivered: true` with the matched `recipients` when a live

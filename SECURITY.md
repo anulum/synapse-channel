@@ -73,6 +73,23 @@ security-relevant features need an optional extra installed:
 Native WSS itself uses the standard-library `ssl` module and needs no extra; the
 `encryption` extra adds the cryptographic identity and pinning helpers on top.
 
+### Runtime evidence map
+
+The following controls are shipped, but most are opt-in and none turns the
+default local hub into a managed multi-tenant service. The source and focused
+tests named here are the repository evidence for that boundary.
+
+| Capability | Shipped activation or runtime | Focused evidence | Remaining boundary |
+|---|---|---|---|
+| Multi-seat trust | `hub --team-secure --identity-trust FILE --role-grants FILE` forces identity binding, role-claim grants, and private directed routing. | `tests/test_team_secure_mode_runtime.py`, `tests/test_hub_identity_binding.py`, `tests/test_hub_role_claim.py` | It does not require TLS, ACL, HMAC, or a durable log; compose `--paranoid` for an exposed hub. |
+| Strict exposed-hub profile | `hub --paranoid` requires a token, `--db`, HMAC per-message authentication, ACL enforcement, native WSS, and metrics bearer auth when metrics are enabled. | `tests/test_paranoid_policy.py`, `tests/test_paranoid_mode_runtime.py` | It does not automatically enable identity binding, at-rest encryption, private/E2E channels, or mutual-TLS client verification. |
+| Identity and ACL | With the `encryption` extra, default clients sign registration with a machine key and the hub persists trust-on-first-use name pins. Operator bundles use `--identity-trust --require-identity-binding`; ACLs use `--acl-policy --require-acl`. | `tests/test_hub_identity_tofu.py`, `tests/test_hub_identity_binding.py`, `tests/test_hub_acl_enforcement.py` | Core-only clients without `cryptography` remain unsigned; read-surface ACLs and full multi-tenant IAM remain out of scope. |
+| Per-message and signed-event authentication | `--message-auth-key --require-message-auth` enforces HMAC on selected mutating frames. Embedded hubs may supply an `EventSignatureTrustBundle` as the Ed25519 alternative. | `tests/test_hub_per_message_auth.py`, `tests/test_message_auth.py`, `tests/test_agent_identity_signing.py` | The packaged hub CLI does not load an Ed25519 event-trust bundle; neither profile encrypts payloads. |
+| TLS and trusted peers | `--tls-certfile --tls-keyfile` enables native WSS. The library ships mutual-TLS server contexts and certificate-pin peer bundles used by guarded multi-hub paths. | `tests/test_hub_tls.py`, `tests/test_multihub_federation.py`, `tests/test_multihub_serving.py` | The packaged hub CLI does not expose a client-CA option, so native WSS alone is server TLS, not mutual TLS. |
+| Federation | `--federation-store`, `--federation-observe-only`, and `--federation-offer` compose with `federation import/list/revoke/rotate/offer/fetch` and deny-by-default frame/peer gates. | `tests/test_hub_federation_frame_path.py`, `tests/test_federation_lifecycle.py`, `tests/test_federation_rotation.py` | Trust remains an explicit out-of-band operator decision; there is no automatic trust distribution or external federation certification. |
+| Data protection | `--db-key-file` enables SQLCipher for the live event store; the encryption profile covers whole-file envelopes; `send/listen --encrypt-key-file` protects selected chat bodies; private channels restrict audience. | `tests/test_hub_sqlcipher_e2e.py`, `tests/test_at_rest.py`, `tests/test_e2ee_channels_runtime.py`, `tests/test_private_channel_runtime.py` | These are separate opt-ins. They do not protect hub RAM, compromised endpoints, or routing metadata. |
+| Trust evidence | `synapse trust-graph` projects the durable event log into provenance-linked evidence edges. | `tests/test_cli_trust_graph.py`, `tests/test_trust_graph.py` | It does not rank agents, authorise execution, or implement the planned owner-annotation workflow. |
+
 When that boundary is crossed, the proportionate controls are:
 
 - **Connect authentication.** `synapse hub --token SECRET` requires a shared
@@ -127,9 +144,9 @@ worth stating plainly:
   `--base-url`. The hub is local-first, but a worker is an intentional bridge to
   whatever backend it is pointed at, so `--base-url` must be trusted. A rule-based
   worker (`--provider rule`) never leaves the machine.
-- **Update check.** `synapse --version` makes one request a day to PyPI to check
-  for a newer release; it sends nothing beyond the request itself. Silence it with
-  `SYNAPSE_NO_UPDATE_CHECK=1`.
+- **Update check.** `synapse --version` is network-silent by default. Set
+  `SYNAPSE_UPDATE_CHECK=1` to opt in to a best-effort daily PyPI version check;
+  `SYNAPSE_NO_UPDATE_CHECK=1` suppresses it even when the opt-in is present.
 - **Verified release receipts.** `synapse verify-release` executes commands
   supplied by the local caller and records digest-only stdout/stderr evidence,
   artifact hashes, and Git state for `synapse release --receipt`. It does not
@@ -186,24 +203,28 @@ exact for the operator, and does not encrypt payloads, replace private channels,
 replace end-to-end encrypted channels, anonymize raw logs, or authorize board
 writes.
 
-The planned [agent trust graph](docs/agent-trust-graph.md) profile scopes
-evidence-linked routing review over reliability signals, release receipts,
-capability observations, handoff outcomes, and conflict history. It is not
-implemented yet and does not rank agents, assign trust grades, authorize
-execution, replace code review, or replace identity and ACL.
+The [agent trust graph](docs/agent-trust-graph.md) read side is implemented:
+`synapse trust-graph` projects reliability signals, release receipts, handoff
+outcomes, and conflict history into provenance-linked evidence edges. Routing
+integration and owner annotations remain design targets. The graph does not rank
+agents, assign trust grades, authorise execution, replace code review, or replace
+identity and ACL.
 
-The planned [federated trust model](docs/federated-trust-model.md) profile scopes
-how independent operator-managed domains could peer: out-of-band, deny-by-default
-bundle exchange that composes identity, signed events, mutual TLS, ACLs, and
-receipts across a domain boundary. It is not implemented yet, is not a
-certificate authority, does not authorize untrusted organisations, does not
-weaken any single check it composes, and does not change the local-first default.
+The [federated trust model](docs/federated-trust-model.md) has shipped as an
+opt-in, deny-by-default policy/store/lifecycle and bundle-exchange layer. A hub
+can compose operator-confirmed domains into signed-frame authorisation with
+`--federation-store`; operators can offer, fetch, fingerprint, import, list,
+rotate, and revoke bundle material. The trust decision stays out-of-band by
+design. This is not a certificate authority, automatic trust distribution,
+authorisation for untrusted organisations, or external federation certification.
 
-The planned [signed events and mTLS](docs/signed-events-mtls.md) profile scopes
-event signatures, key rotation, replay protection, verification results, trust
-bundles, certificate pinning, and trusted multi-host peers. It is not
-implemented yet, does not encrypt payloads, does not replace per-agent identity,
-and does not certify federation.
+The [signed events and mTLS](docs/signed-events-mtls.md) runtime primitives are
+implemented for embedded hubs and guarded multi-hub paths: Ed25519 event
+verification, replay and scope checks, mutual-TLS server contexts, and peer
+certificate pins. The packaged `hub` CLI still has no signed-event trust-bundle
+loader or client-CA option, so native WSS is not automatically mTLS. These
+controls do not encrypt payloads, replace per-agent identity, or certify external
+federation.
 
 The [per-message authentication](docs/per-message-authentication.md) runtime
 enforces opt-in HMAC-SHA256 authentication for selected mutating WebSocket
@@ -213,12 +234,15 @@ in-memory replay cache. It does not encrypt payloads, does not replace TLS,
 does not add public-key signatures or signed durable events, and does not
 replace per-agent identity or ACL enforcement.
 
-The planned [identity and ACL](docs/identity-and-acl.md) profile scopes
-per-agent identity, identity-bound credentials, project namespaces, allowed
-verbs, target patterns, metrics/A2A/dashboard/release privileges,
-deny-by-default authorization, credential rotation, revocation, and migration
-from shared-token mode. It is not implemented yet and does not replace
-per-message authentication, signed events, TLS, or host process isolation.
+The [identity and ACL](docs/identity-and-acl.md) runtime provides trust-on-first-use
+machine-key pins when the `encryption` extra is installed, operator-managed
+identity binding through `--identity-trust --require-identity-binding`, and
+deny-by-default mutating-frame authorisation through `--acl-policy
+--require-acl`. `--team-secure` composes identity binding with role grants and
+private directed routing. Read-surface ACLs, automated credential lifecycle,
+owner recovery, and full multi-tenant IAM remain outside this runtime. Identity
+and ACL do not replace per-message authentication, signed events, TLS, or host
+process isolation.
 
 The planned [signed capability cards](docs/signed-capability-cards.md) profile
 scopes tamper-evident capability advertisements for manifests, directories,
@@ -230,16 +254,18 @@ agents.
 ## Out of scope / known limitations
 
 - The connect token is a proportionate shared secret, **not** a cryptographic
-  identity system: there is no implemented key exchange, public-key signatures,
-  per-agent identity, ACL enforcement, or mTLS trust bundle. Per-message HMAC
-  authentication is opt-in and protects selected mutating frames only. Do not
-  expose the hub on an untrusted network and rely on the token alone.
+  identity system. Machine-key trust-on-first-use, operator identity bundles,
+  ACL enforcement, Ed25519 signed events, and mutual-TLS/pinning primitives are
+  separate opt-ins; none is implied by `--token`. Per-message HMAC protects only
+  selected mutating frames. Do not expose the hub on an untrusted network and
+  rely on the token alone.
 - The bus does not sandbox the agents that connect to it. An agent is trusted to
   the extent the operator trusts the process it runs in. Never run untrusted agent
   code against a hub.
-- The event log and SQLite database are stored in plaintext on the operator's own
-  machine. Encryption at rest is out of scope for the local-first niche; it is a
-  concern for a future managed multi-tenant hub, not the single-owner core.
+- The event log and SQLite database are plaintext by default. SQLCipher page
+  encryption for the live store and AES-256-GCM whole-file envelopes are shipped
+  opt-ins; they require explicit key management and do not protect a running
+  hub's RAM or create multi-tenant isolation.
 - The A2A bridge is a local HTTP+JSON bridge over SYNAPSE capabilities, not
   externally validated for full A2A conformance. Remote conformance, real webhook
   receiver behavior, and operator-visible production deployment receipts remain

@@ -12,25 +12,26 @@ Contact: www.anulum.li | protoscience@anulum.li
 Synapse is local-first and operator-managed: one hub, one operator, loopback by
 default, with optional shared tokens, file permissions, per-agent identity,
 signed events, mutual TLS, and release receipts layered on top. This document
-designs how those single-domain primitives could compose into a **federated**
-trust model — multiple independently operated Synapse domains that let scoped
-agents and evidence cross an organisational boundary without surrendering
-local-first control.
+defines how those single-domain primitives compose into a **federated** trust
+model — multiple independently operated Synapse domains that let scoped agents
+and evidence cross an organisational boundary without surrendering local-first
+control.
 
-It is a design, not an implementation. The runtime primitives it builds on exist
-and are tested; the federation layer that joins domains does not exist yet. The
-goal is to pin the trust boundaries before any cross-organisation code is
-written, so federation never silently widens what a single domain already
-enforces.
+The opt-in policy, persistence, lifecycle, exchange, frame-authorisation, and
+guarded multi-hub primitives described below are implemented and tested. This
+page also preserves the residual boundary: Synapse does not automate the trust
+decision, operate a certificate authority, certify an external federation, or
+turn these primitives into a managed multi-organisation service.
 
 ## Runtime status
 
 These single-domain primitives are implemented and are the building blocks a
 federation layer would compose — it would add no new trust root of its own:
 
-- **Identity and ACLs** — per-agent identity inventory and deny-by-default ACL
-  evaluation (`synapse identity`, `synapse acl`), today in shadow/observe mode.
-  See [identity and ACL](identity-and-acl.md).
+- **Identity and ACLs** — trust-on-first-use or operator-bundle identity binding,
+  shadow evaluation, and opt-in deny-by-default runtime ACL enforcement
+  (`synapse identity`, `synapse acl`, `--identity-trust`, `--require-acl`). See
+  [identity and ACL](identity-and-acl.md).
 - **Signed events** — `EventSignatureKey` / `EventSignatureTrustBundle` verify
   Ed25519-signed coordination frames with sender, project, expiry, replay, and
   revocation checks. See [signed events and mTLS](signed-events-mtls.md).
@@ -49,6 +50,10 @@ accepted certificate pins and event-signing key ids, the bounded local scope
 expired, namespace not granted, key not accepted, pin not accepted, in that order), and
 `compose_cross_domain` joins it with the external mutual TLS, signature, and ACL results
 so a frame any layer rejects is rejected. It owns no crypto and adds no trust root.
+
+`expires_at`, provenance `imported_at`, and rotation lifetimes are POSIX
+wall-clock epoch seconds. Lifecycle and serving decisions compare them with
+`time.time()`-equivalent values, never with process-relative monotonic time.
 
 That policy is now **composed into the live runtime**, on both surfaces, deny-closed and
 opt-in:
@@ -115,7 +120,7 @@ authority by the issuing domain, never by the asserted content.
 
 Federation extends the existing single-host `MTLSPeerTrustBundle` and
 `EventSignatureTrustBundle` from "trusted peer hosts" to "trusted peer domains".
-A federation bundle would record, per remote domain:
+A federation bundle records, per remote domain:
 
 - the remote domain id and the project namespaces it is allowed to address
   locally (deny-by-default; a remote domain addresses nothing until granted);
@@ -149,6 +154,11 @@ expired, and `--max-age` flags active peerings whose ceremony has gone stale,
 exiting `1` for scheduled checks. `synapse federation revoke` retires one while
 keeping its audit record. There is no automatic trust-on-first-use and no
 network-driven trust root.
+
+`synapse federation rotate` refreshes an operator-authored offer bundle with a
+new wall-clock expiry and add-new-before-retire signing keys or certificate pins;
+it preserves a backup and changes the fingerprint, so peers repeat the same
+out-of-band comparison before re-importing it.
 
 The bundle *bytes* may move over the wire (shipped): a hub started with
 `--federation-offer FILE` answers a peer operator's `synapse federation fetch` with its
@@ -280,8 +290,8 @@ implicit transitive web.
 
 ## Relationship to other designs
 
-This model is the composition layer above the shipped and designed security
-profiles. It depends on [identity and ACL](identity-and-acl.md) for the local
+This model is the composition layer above shipped and staged security profiles.
+It depends on [identity and ACL](identity-and-acl.md) for the local
 authorisation path, [signed events and mTLS](signed-events-mtls.md) for
 cross-domain authentication and integrity, [signed capability
 cards](signed-capability-cards.md) for portable capability provenance, and the

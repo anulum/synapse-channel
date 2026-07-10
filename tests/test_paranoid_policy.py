@@ -63,7 +63,9 @@ def test_paranoid_policy_reports_enforced_and_missing_hooks() -> None:
     assert "per-message authentication required" in report.enforced
     assert "ACL enforcement required" in report.enforced
     assert "native WSS (TLS) required" in report.enforced
-    assert "private channels" in report.missing_hooks
+    assert any(hook.startswith("private channels") for hook in report.missing_hooks)
+    assert any("available separately" in hook for hook in report.missing_hooks)
+    assert any("compose --team-secure" in hook for hook in report.missing_hooks)
     assert "per-message authentication" not in report.missing_hooks
     assert "ACL enforcement" not in report.missing_hooks
     assert report.missing_hooks == MISSING_PARANOID_HOOKS
