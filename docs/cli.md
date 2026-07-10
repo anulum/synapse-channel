@@ -67,7 +67,7 @@ everything, since they need the whole command table.
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
 | `synapse manifest` | Print the capability manifest of advertised agents. |
 | `synapse directory` | Print a read-only capability directory from live agent cards (discovery only). |
-| `synapse who` | List the agents currently online and hub-authoritative mailbox pending counts, optionally for one project or this identity with `--me`; `--observed-peer HUB=URI` appends advisory `observed@HUB` peer rows. |
+| `synapse who` | List the agents currently online and hub-authoritative mailbox pending counts, optionally for one project or this identity with `--me`. The full-roster view shows the 20 largest positive mailboxes plus total identities/messages; `--all-mailbox-pending` (alias `--all`) expands every retained positive identity. `--observed-peer HUB=URI` appends advisory `observed@HUB` peer rows. |
 | `synapse status` | Print a one-line hub summary (online agents, active claims, this identity's mailbox pending count) for shell prompts and tmux status bars, the counts as JSON with `--json`, or a refreshing operator dashboard with `--watch`; exit non-zero when the hub is down; `--observed-peer HUB=URI` appends advisory peer counters. |
 | `synapse state` | Print active claims and their checkpoints (a resume view); `--observed-peer HUB=URI` appends advisory peer claims marked `observed@HUB`. |
 | `synapse dead-letters` | Print directed messages the hub delivered to no consume-live recipient — no socket, or only stale sockets without a recent reaction/live waiter — worst first with the `syn inbox --as NAME` drain remedy. |

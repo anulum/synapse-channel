@@ -28,6 +28,8 @@ from synapse_channel.cli_query_transport import (
     _drop_message,
     _query_hub,
 )
+from synapse_channel.cli_query_who import _cmd_who as owned_cmd_who
+from synapse_channel.cli_query_who import _who as owned_who
 
 
 def test_cli_queries_reexports_transport_helpers_from_owner_module() -> None:
@@ -47,6 +49,11 @@ def test_cli_queries_reexports_command_handlers_from_owner_module() -> None:
     assert cli_queries._cmd_board is _cmd_board
     assert cli_queries._manifest is _manifest
     assert cli_queries._cmd_manifest is _cmd_manifest
+
+
+def test_who_flow_has_a_focused_owner_without_breaking_compatibility() -> None:
+    assert _who is owned_who
+    assert _cmd_who is owned_cmd_who
 
 
 def test_cli_queries_reexports_renderers_and_parser_registration() -> None:

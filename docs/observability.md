@@ -88,11 +88,18 @@ happened. The signals that matter operationally:
   directed chats after an identity's receiver-acknowledged watermark, even across
   hub restart. `synapse who`, `synapse status`, and `synapse doctor` render
   `N undelivered messages pending for <identity>` from the additive WHO snapshot;
-  a mailbox-enabled `synapse arm` replay advances the watermark, while
+  to keep old test/diagnostic identities from flooding an operator terminal, a
+  full `who` view sorts positive counts largest-first and shows the top 20 plus
+  total identities/messages. `synapse who --all-mailbox-pending` (or `--all`)
+  expands the complete retained projection; `--project` filters before the bound.
+  A mailbox-enabled `synapse arm` replay advances the watermark, while
   `syn inbox --as <identity>` remains the human-readable body inspection path.
   A hub without a durable event store reports the projection unavailable instead
   of zero. The watermark proves only that a mailbox client accepted the
   frame—never that a model read or acted on it.
+  The hub projection itself retains at most 512 recently touched identities.
+  Eviction removes only a cached count, not journal evidence or message bodies;
+  durable journal compaction remains an explicit operator retention decision.
 - Any movement on `synapse_auth_failures_total` or
   `synapse_federation_denied_total` on a locked-down hub deserves a look
   at `synapse event-query --kind error` — expected during key rotation,

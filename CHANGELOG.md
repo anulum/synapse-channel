@@ -27,6 +27,15 @@ All notable changes to this project are documented here.
   silently replacing the old key. Pin-refusal diagnostics now point at this
   governed command instead of manual JSON deletion.
 
+### Changed
+
+- `synapse who` now bounds the full-roster mailbox-pending section to the 20
+  largest positive counts and reports complete identity/message totals, so
+  hundreds of dead test identities cannot flood normal operator output.
+  `--all-mailbox-pending` (alias `--all`) restores the complete retained map;
+  project filtering happens before the bound. The hub-side 512-identity
+  projection and durable journal evidence are unchanged.
+
 ## [0.99.2] - 2026-07-10
 
 ### Added

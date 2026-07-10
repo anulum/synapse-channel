@@ -10,7 +10,8 @@
 The implementation lives in focused modules:
 ``cli_query_transport`` for connect/request/poll cleanup,
 ``cli_query_rendering`` for stdout formatting, ``cli_query_commands`` for the
-async command flows, and ``cli_query_parsers`` for argparse registration.
+shared async command flows, ``cli_query_who`` for roster-specific orchestration,
+and ``cli_query_parsers`` for argparse registration.
 Existing imports from ``synapse_channel.cli_queries`` remain supported.
 """
 

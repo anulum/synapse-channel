@@ -85,6 +85,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         action="store_true",
         help="Show this identity's presence and -rx waiter status instead of the full roster.",
     )
+    who.add_argument(
+        "--all-mailbox-pending",
+        "--all",
+        dest="all_mailbox_pending",
+        action="store_true",
+        help="Show every positive mailbox-pending identity instead of the default top 20.",
+    )
     who.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     who.add_argument(
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."

@@ -200,8 +200,12 @@ unavailable. A count is the matching directed chats after the receiver watermark
 it is what `synapse who`, `synapse status`, and `synapse doctor` render as
 `N undelivered messages pending for <identity>`. This is deliberately a mailbox
 transport fact: it does **not** claim that a model read, understood, or acted on
-the message. Older clients ignore the WHO field; older hubs ignore the additive
-ACK identity and keep their receipt-only ACK behavior.
+the message. The hub bounds this projection to 512 recently touched identities;
+that cache bound does not delete journal events. The default `synapse who`
+presentation independently shows the 20 largest positive counts plus complete
+totals, while `--all-mailbox-pending` expands the retained map. Older clients
+ignore the WHO field; older hubs ignore the additive ACK identity and keep their
+receipt-only ACK behavior.
 
 **Consume-live immediate receipts.** For a directed chat, the hub partitions
 socket-level matches using the same reaction-plus-waiter liveness policy exposed

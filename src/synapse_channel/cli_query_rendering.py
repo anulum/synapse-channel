@@ -12,6 +12,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from synapse_channel.cli_mailbox_pending import render_mailbox_pending
 from synapse_channel.core.clock_skew import format_clock_skew
 from synapse_channel.core.mailbox_pending import format_pending_line
 from synapse_channel.core.wake_capability import WAKE_UNKNOWN, wake_capability_label
@@ -62,6 +63,7 @@ def _render_who(
     wake_capabilities: dict[str, str] | None = None,
     mailbox_pending: dict[str, int] | None = None,
     show_mailbox_pending: bool = False,
+    show_all_mailbox_pending: bool = False,
     observed_peers: tuple[ObservedPeerSnapshot, ...] = (),
 ) -> None:
     """Render an online roster split into agents and waiter sidecars.
@@ -103,7 +105,11 @@ def _render_who(
     if unarmed:
         print(f"Unarmed (present, no live waiter): {', '.join(unarmed)}")
     if show_mailbox_pending:
-        _render_mailbox_pending(mailbox_pending, project=project)
+        render_mailbox_pending(
+            mailbox_pending,
+            project=project,
+            show_all=show_all_mailbox_pending,
+        )
     _render_observed_peers(observed_peers, project=project)
 
 
@@ -137,29 +143,6 @@ def _render_who_me(
             print("  mailbox pending: unavailable (hub has no durable projection)")
         else:
             print(f"  {format_pending_line(name, mailbox_pending.get(name, 0))}")
-
-
-def _render_mailbox_pending(
-    counts: dict[str, int] | None,
-    *,
-    project: str | None,
-) -> None:
-    """Render positive pending counts, an empty verdict, or unavailability."""
-    if counts is None:
-        print("Mailbox pending: unavailable (hub has no durable projection)")
-        return
-    prefix = f"{project}/" if project else ""
-    pending = {
-        identity: count
-        for identity, count in counts.items()
-        if count > 0 and (project is None or identity == project or identity.startswith(prefix))
-    }
-    if not pending:
-        print("Mailbox pending: none")
-        return
-    print(f"Mailbox pending ({len(pending)} identities):")
-    for identity in sorted(pending):
-        print(f"  {format_pending_line(identity, pending[identity])}")
 
 
 def _render_state(

@@ -15,6 +15,7 @@ def test_parser_who() -> None:
     args = cli.build_parser().parse_args(["who", "--project", "quantum"])
     assert args.project == "quantum"
     assert args.me is False
+    assert args.all_mailbox_pending is False
     assert args.func is cli_queries._cmd_who
 
 
@@ -23,6 +24,14 @@ def test_parser_who_me() -> None:
     assert args.name == "quantum/codex-1"
     assert args.me is True
     assert args.func is cli_queries._cmd_who
+
+
+def test_parser_who_all_mailbox_pending_aliases() -> None:
+    explicit = cli.build_parser().parse_args(["who", "--all-mailbox-pending"])
+    concise = cli.build_parser().parse_args(["who", "--all"])
+
+    assert explicit.all_mailbox_pending is True
+    assert concise.all_mailbox_pending is True
 
 
 def test_parser_state() -> None:
