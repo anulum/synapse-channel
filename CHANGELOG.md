@@ -105,6 +105,17 @@ All notable changes to this project are documented here.
   reduced below 500 lines by extracting the auth-bound feed lifecycle instead
   of growing a godfile.
 
+### Documentation
+
+- `ARCHITECTURE.md` is rewritten to describe the shipped system instead of the
+  early prototype: the real module families, the default-on ownership keystone
+  (ambient-identity refusal, hub-authoritative ownership lease, trust-on-first-use
+  key pinning), the conflict-free multi-hub merge slice with its
+  authority-never-merges boundary, and the stated scale ceiling. The previous
+  revision still claimed the package had no CRDT slice and no cryptographic
+  agent identity, which the 0.98–0.99 tree contradicts (external audit finding,
+  2026-07-10).
+
 ## [0.99.1] - 2026-07-10
 
 ### Fixed
