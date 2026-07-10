@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import random
 from collections.abc import Callable, Coroutine
 from pathlib import Path
@@ -262,14 +261,16 @@ def _cmd_wait(
     # treat that as a real wake, inject forever, and burn the agent pane.
     # Do not yield the bridge to itself.
     if wake_capability != WAKE_PANE_BRIDGE:
+        # has_active_tmux_provider is identity-scoped: the SYN_TMUX_PROVIDER
+        # session flag counts only for the session's own $SYN_IDENTITY, so an
+        # explicitly named wait for a different seat is never suppressed here.
         live_provider_identity = next(
             (identity for identity in provider_identities if has_active_tmux_provider(identity)),
             None,
         )
-        if os.environ.get("SYN_TMUX_PROVIDER") == "1" or live_provider_identity is not None:
-            provider_label = live_provider_identity or for_name
+        if live_provider_identity is not None:
             print(
-                f"[{connect_name}] provider-backed session for {provider_label}; "
+                f"[{connect_name}] provider-backed session for {live_provider_identity}; "
                 "agent-tmux wait is the canonical long-lived listener. "
                 "Yielding plain passive to preserve identity inheritance for the session."
             )

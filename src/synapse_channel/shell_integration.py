@@ -65,9 +65,19 @@ def has_active_tmux_provider(identity: str) -> bool:
     collisions on the *-rx sidecar. The provider owns the name for pane injection
     (WAKE_PANE_BRIDGE / receiver wake capability). Mirrors the pidfile check in the
     generated shell hooks (XDG_RUNTIME_DIR/synapse-provider-tmux/*.pid).
-    Also true if SYN_TMUX_PROVIDER=1 (explicitly running as inner agent in provider session).
+
+    ``SYN_TMUX_PROVIDER=1`` (running as the inner agent of a provider session)
+    counts only for the SESSION'S OWN identity (``$SYN_IDENTITY``): the provider
+    wakes that seat and no other. The flag must never suppress an arm that
+    explicitly names a different identity — ambient environment is a statement
+    about this session, not about every seat reachable from it (2026-07-10 P0:
+    the identity-blind form made explicitly named waiters refuse to arm while
+    any provider session was live, and directed messages were lost).
     """
-    if os.environ.get("SYN_TMUX_PROVIDER") == "1":
+    if (
+        os.environ.get("SYN_TMUX_PROVIDER") == "1"
+        and identity == os.environ.get("SYN_IDENTITY", "").strip()
+    ):
         return True
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR") or gettempdir()) / "synapse-provider-tmux"
     key = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in identity)

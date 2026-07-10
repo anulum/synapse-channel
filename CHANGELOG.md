@@ -13,6 +13,20 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Waiter identity binding: the ``SYN_TMUX_PROVIDER`` session marker now
+  suppresses a passive arm/wait ONLY for the session's own
+  ``$SYN_IDENTITY`` — an explicitly named waiter for a different seat is
+  never yielded away. Previously any live provider session made every
+  explicit ``syn-wait --name <other-seat>`` refuse to arm, so directed
+  messages to that seat were lost from the live path while broadcasts
+  kept flowing (P0, found live on the coordination fleet 2026-07-10).
+  A dedicated regression surface pins the contract end to end against a
+  live hub: explicit ``--name``/``--for`` beats ambient environment, the
+  ambient identity's own arm still yields to its provider, and a foreign
+  provider pidfile or corrupt pidfile never suppresses an explicit arm.
+
 ## [0.98.25] - 2026-07-10
 
 ### Changed
