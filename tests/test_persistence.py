@@ -212,6 +212,20 @@ def test_delete_of_nothing_is_a_no_op(tmp_path: Path) -> None:
     store.close()
 
 
+def test_delete_counts_only_distinct_existing_sequences_from_an_iterable(tmp_path: Path) -> None:
+    store = _seeded(tmp_path)
+    events = store.read_all()
+    doomed = events[1].seq
+
+    removed = store.delete(seq for seq in (doomed, doomed, events[-1].seq + 100))
+
+    assert removed == 1
+    assert [event.seq for event in store.read_all()] == [
+        event.seq for event in events if event.seq != doomed
+    ]
+    store.close()
+
+
 def test_delete_does_not_recycle_sequence_numbers(tmp_path: Path) -> None:
     # The AUTOINCREMENT key must keep climbing past a deleted seq, so a downstream
     # read_since cursor walks the gap instead of re-reading a recycled sequence.

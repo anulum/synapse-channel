@@ -54,6 +54,12 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- `EventStore.delete()` now uses one static parameterised `DELETE` statement
+  through `executemany()` instead of constructing an `IN` clause. This removes
+  the `B608` suppression without depending on optional SQLite JSON1 support,
+  preserves iterable inputs, and reports only rows that actually existed even
+  when requested sequence numbers are duplicated or missing.
+
 - `synapse a2a-serve` now cancels and awaits tasks owned by its private agent
   event loop before stopping and closing it, so normal `Ctrl+C` shutdown no
   longer destroys live WebSocket keepalive or heartbeat tasks.
