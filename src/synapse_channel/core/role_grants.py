@@ -40,6 +40,8 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
+
 DEFAULT_STORE_PATH = "~/.synapse/role-grants.json"
 """Conventional store location, mirroring ``synapse federation``'s ``~/.synapse`` home."""
 
@@ -47,8 +49,10 @@ STORE_FILE_MODE = 0o600
 """Owner-only permissions for the store: it is tamper-sensitive authorisation state."""
 
 
-class RoleGrantError(ValueError):
+class RoleGrantError(SynapseError, ValueError):
     """Raised when a role-grant store file is malformed or a grant is invalid."""
+
+    code = "role_grant"
 
 
 def _require_token(value: str, label: str) -> str:

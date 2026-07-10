@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.at_rest import KEY_BYTES, load_key_file
+from synapse_channel.core.errors import SynapseError
 
 SQLCIPHER_INSTALL_HINT = (
     "SQLCipher support requires the optional sqlcipher extra: "
@@ -38,12 +39,16 @@ SQLCIPHER_INSTALL_HINT = (
 )
 
 
-class SqlCipherUnavailableError(RuntimeError):
+class SqlCipherUnavailableError(SynapseError, RuntimeError):
     """Raised when a keyed store is requested but SQLCipher is not installed."""
 
+    code = "sqlcipher_unavailable"
 
-class SqlCipherKeyError(ValueError):
+
+class SqlCipherKeyError(SynapseError, ValueError):
     """Raised when the provided key cannot open an encrypted store."""
+
+    code = "sqlcipher_key"
 
 
 def sqlcipher_available() -> bool:

@@ -12,6 +12,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
+
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 """Bind hosts treated as loopback-only, where running without a token is fine."""
 
@@ -21,7 +23,7 @@ def is_loopback_host(host: str) -> bool:
     return host.strip().lower() in LOOPBACK_HOSTS
 
 
-class InsecureBindError(RuntimeError):
+class InsecureBindError(SynapseError, RuntimeError):
     """Raised when a hub would bind off-loopback without an authenticating guard.
 
     By default the hub refuses to bind a non-loopback interface unless a token
@@ -30,6 +32,8 @@ class InsecureBindError(RuntimeError):
     network. An operator who accepts the risk passes ``insecure_off_loopback``
     (CLI: ``--insecure-off-loopback``) to downgrade the refusal to a warning.
     """
+
+    code = "insecure_bind"
 
 
 def exposure_problems(

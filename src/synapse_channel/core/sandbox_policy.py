@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from synapse_channel.core.acl import SANDBOX, AclRule
+from synapse_channel.core.errors import SynapseError
 
 SANDBOX_TARGET_FS = "fs"
 """ACL target kind for a filesystem capability (the guest path a tool may reach)."""
@@ -51,8 +52,10 @@ class SandboxDenyReason:
     WALLCLOCK_EXCEEDS_GRANT = "wallclock_exceeds_grant"
 
 
-class SandboxManifestError(ValueError):
+class SandboxManifestError(SynapseError, ValueError):
     """Raised when a capability manifest mapping is malformed."""
+
+    code = "sandbox_manifest"
 
 
 @dataclass(frozen=True)

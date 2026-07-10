@@ -45,6 +45,7 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
 from synapse_channel.core.clock_skew import ClockSkew, measure_clock_skew
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.multihub_federation import MultiHubAuthoriser
 from synapse_channel.core.multihub_follower import EventFetcher
 from synapse_channel.core.multihub_wire import (
@@ -78,13 +79,15 @@ PING_INTERVAL = 20.0
 """Keepalive ping interval, in seconds, for the per-fetch connection."""
 
 
-class MultiHubFetchError(RuntimeError):
+class MultiHubFetchError(SynapseError, RuntimeError):
     """Raised when a network fetch of a peer hub's event log fails.
 
     Every transport failure — connection, protocol, decode, or timeout — surfaces as this one
     type, so the follower (or an operator loop) catches a single error and leaves the peer's
     cursor unadvanced.
     """
+
+    code = "multihub_fetch"
 
 
 class _Socket(Protocol):

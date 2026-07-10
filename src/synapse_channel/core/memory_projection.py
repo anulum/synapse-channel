@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.journal import MEMORY_KINDS, EventKind
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.persistence import EventStore, StoredEvent
@@ -58,8 +59,10 @@ _STOPWORDS = frozenset(
 )
 
 
-class MemoryRecallInputError(ValueError):
+class MemoryRecallInputError(SynapseError, ValueError):
     """Raised when a recall request cannot read the requested event store."""
+
+    code = "memory_recall_input"
 
 
 @dataclass(frozen=True)

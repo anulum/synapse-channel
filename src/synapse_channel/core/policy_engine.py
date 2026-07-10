@@ -30,6 +30,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
+
 PASS = "pass"  # nosec B105 - decision status name, not a secret
 WARN = "warn"
 FAIL = "fail"
@@ -91,8 +93,10 @@ class PolicyConfig:
     rules: dict[str, Any] = field(default_factory=dict)
 
 
-class PolicyError(ValueError):
+class PolicyError(SynapseError, ValueError):
     """Raised when a policy file is malformed or unsupported."""
+
+    code = "policy"
 
 
 def load_policy(path: str | Path) -> PolicyConfig:

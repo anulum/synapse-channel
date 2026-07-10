@@ -36,6 +36,7 @@ from typing import Any, Protocol, cast
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.multihub_claim_wire import (
     ClaimForwardRequest,
     ClaimForwardResult,
@@ -52,7 +53,7 @@ PING_INTERVAL = 20.0
 """Keepalive ping interval, in seconds, for the per-forward connection."""
 
 
-class ClaimForwardError(RuntimeError):
+class ClaimForwardError(SynapseError, RuntimeError):
     """Raised when forwarding a claim to its owning hub fails.
 
     Every transport failure — connection, protocol, decode, or timeout — surfaces as this one
@@ -60,9 +61,13 @@ class ClaimForwardError(RuntimeError):
     the claim and naming the owner rather than relaying a result it never received.
     """
 
+    code = "claim_forward"
+
 
 class ClaimForwardTimeoutError(ClaimForwardError):
     """Raised when the owning hub does not answer a forwarded claim before timeout."""
+
+    code = "claim_forward_timeout"
 
 
 @dataclass(frozen=True, slots=True)

@@ -16,9 +16,13 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Protocol, cast
 
+from synapse_channel.core.errors import SynapseError
 
-class HubTLSConfigError(ValueError):
+
+class HubTLSConfigError(SynapseError, ValueError):
     """Raised when the hub TLS certificate configuration is incomplete or invalid."""
+
+    code = "hub_tls_config"
 
 
 class MTLSVerificationResult(str, Enum):

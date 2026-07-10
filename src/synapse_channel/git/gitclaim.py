@@ -30,6 +30,7 @@ from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.connect_failures import describe_connect_failure, explain_silent_outcome
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.state import GitContext
 from synapse_channel.git.semantic_claims import (
@@ -45,8 +46,10 @@ AgentFactory = Callable[..., SynapseAgent]
 """Factory that builds the hub client; injectable for testing."""
 
 
-class GitError(RuntimeError):
+class GitError(SynapseError, RuntimeError):
     """A git command failed, or git is not available on the host."""
+
+    code = "git"
 
 
 def _unique_ordered(values: list[str]) -> list[str]:

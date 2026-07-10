@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import TypedDict, cast
 
 from synapse_channel.core.at_rest import KEY_BYTES, NONCE_BYTES, require_aes_gcm
+from synapse_channel.core.errors import SynapseError
 
 PAYLOAD_ENVELOPE_VERSION = 1
 """Version of the encrypted payload envelope."""
@@ -36,8 +37,10 @@ PAYLOAD_PLACEHOLDER = "<encrypted payload>"
 """Plain envelope payload used when the body is encrypted."""
 
 
-class PayloadCryptoError(ValueError):
+class PayloadCryptoError(SynapseError, ValueError):
     """Raised when an encrypted payload envelope cannot be used safely."""
+
+    code = "payload_crypto"
 
 
 @dataclass(frozen=True)

@@ -36,6 +36,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
+
 ACTION_FIELD = "action"
 """Request field: the relayable action id, resolved against the deny-by-default registry."""
 
@@ -70,13 +72,15 @@ PENDING_FIELD = "pending"
 """Result field: whether the action is recorded and awaiting a second operator's approval."""
 
 
-class RelayWireError(ValueError):
+class RelayWireError(SynapseError, ValueError):
     """Raised when an operator-relay wire body is malformed.
 
     Carries the fail-closed contract: a side that catches this refuses the relay and
     performs no action, so a corrupt or hostile request or result can never cause an
     action to be applied on doubt.
     """
+
+    code = "relay_wire"
 
 
 @dataclass(frozen=True, slots=True)

@@ -24,9 +24,13 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
+from synapse_channel.core.errors import SynapseError
 
-class IdentityError(ValueError):
+
+class IdentityError(SynapseError, ValueError):
     """Raised when an identity inventory file is malformed."""
+
+    code = "identity"
 
 
 @dataclass(frozen=True)

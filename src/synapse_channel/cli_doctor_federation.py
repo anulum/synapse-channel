@@ -30,6 +30,7 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
 from synapse_channel.client.diagnostics import Diagnosis, DoctorStatus
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.federation_proxy import (
     classify_federation_proxy_path,
     normalise_federation_path_mode,
@@ -54,8 +55,10 @@ DEFAULT_FEDERATION_CERT_WARN_DAYS = 30
 """Days before certificate or bundle expiry at which doctor warns."""
 
 
-class FederationDoctorError(RuntimeError):
+class FederationDoctorError(SynapseError, RuntimeError):
     """Raised when a federation peer probe fails before a snapshot is decoded."""
+
+    code = "federation_doctor"
 
 
 @dataclass(frozen=True, slots=True)

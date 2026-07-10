@@ -25,6 +25,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from synapse_channel.core.errors import SynapseError
+
 CLIENT_NAME = "synapse-stdlib-http-client"
 """Identity of this independent client for receipts."""
 
@@ -35,8 +37,10 @@ RECEIPT_SCHEMA = "synapse.a2a_interop_trace.v1"
 """Stable schema id for machine-readable interop receipts."""
 
 
-class A2AInteropTraceError(RuntimeError):
+class A2AInteropTraceError(SynapseError, RuntimeError):
     """Raised when an interop step fails against the live bridge."""
+
+    code = "a2a_interop_trace"
 
 
 def _request(

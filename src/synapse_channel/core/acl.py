@@ -27,6 +27,8 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
+
 MESSAGE = "message"
 CLAIM = "claim"
 RELEASE = "release"
@@ -83,8 +85,10 @@ WOULD_ALLOW = "would_allow"
 WOULD_DENY = "would_deny"
 
 
-class AclError(ValueError):
+class AclError(SynapseError, ValueError):
     """Raised when an ACL policy file is malformed."""
+
+    code = "acl"
 
 
 @dataclass(frozen=True)

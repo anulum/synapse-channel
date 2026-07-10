@@ -20,6 +20,8 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 
+from synapse_channel.core.errors import SynapseError
+
 MISSING_PARANOID_HOOKS: tuple[str, ...] = (
     "at-rest encryption (available separately; not enabled by --paranoid)",
     "mutual-TLS client-certificate verification and signed-event trust loading",
@@ -41,8 +43,10 @@ claiming that the underlying feature is absent.
 """
 
 
-class ParanoidModeError(ValueError):
+class ParanoidModeError(SynapseError, ValueError):
     """Raised when a runtime cannot satisfy paranoid-mode requirements."""
+
+    code = "paranoid_mode"
 
 
 @dataclass(frozen=True)

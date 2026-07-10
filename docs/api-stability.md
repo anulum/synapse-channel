@@ -50,10 +50,25 @@ fails CI rather than reaching a release:
 | Federation primitives | the deep `core.*` symbols out-of-tree consumers import — the persisted event shape, the multihub follower and its fetcher, claim forwarding, the federation store and its peer records, the TLS pin helper | `tests/test_federation_consumer_contract.py` |
 | CLI surface | every subcommand is classified into a stability tier | `tests/test_surface_taxonomy.py` |
 | Capability counts | class, module, wire-type, subcommand, and test counts | the capability manifest (`tools/capability_manifest.py --check`) |
+| Error taxonomy codes | every domain exception's class→`code` pair | `tests/test_core_errors.py` |
 
 The manifest pins counts, which catches an addition or removal; the freeze tests
 pin identities and values, which catches a rename that keeps a count constant.
 The two together close the gap either leaves open alone.
+
+### Error taxonomy
+
+Every domain exception derives from `synapse_channel.core.errors.SynapseError`
+and carries a stable machine-readable `code` (snake_case), so a boundary layer
+— the CLI, the A2A bridge, the MCP server, an embedding application — can
+classify a failure without matching on message text
+(`synapse_channel.core.errors.error_code(exc)` returns the code, or `""` for a
+foreign exception). Each class keeps its historical built-in base
+(`ValueError`, `RuntimeError`, `PermissionError`) through multiple inheritance,
+so pre-existing `except` clauses keep catching exactly what they caught before
+the taxonomy landed. A released code never changes meaning and is never reused;
+the registry test freezes the full map, and an AST drift gate refuses any new
+`*Error` class that does not join the taxonomy.
 
 ## Stability tiers
 

@@ -48,6 +48,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
+
 TASK_ID_SEPARATOR = "/"
 """Separator joining the workflow name and a step id into a board task id."""
 
@@ -69,8 +71,10 @@ EVIDENCE_REQUIREMENTS = frozenset(
 """Evidence predicate names a workflow step may require before assignment."""
 
 
-class WorkflowError(ValueError):
+class WorkflowError(SynapseError, ValueError):
     """Raised when a workflow is malformed: bad fields, dangling deps, or a cycle."""
+
+    code = "workflow"
 
 
 @dataclass(frozen=True)

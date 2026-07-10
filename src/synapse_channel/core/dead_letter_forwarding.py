@@ -31,6 +31,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from synapse_channel.core.errors import SynapseError
+
 FORWARDING_FIELD = "forwarding"
 """The wire envelope field the pointer is nested under.
 
@@ -40,7 +42,7 @@ The transport nests the pointer here; :func:`decode_forwarding_notice` reads it 
 """
 
 
-class DeadLetterForwardError(RuntimeError):
+class DeadLetterForwardError(SynapseError, RuntimeError):
     """Raised when forwarding a dead-letter signal to the owning peer hub fails.
 
     A single type for every transmission failure — connection, protocol, or timeout — so an
@@ -48,6 +50,8 @@ class DeadLetterForwardError(RuntimeError):
     audit is already written, so a failed hand-off degrades to "recorded but not yet delivered"
     rather than losing the signal.
     """
+
+    code = "dead_letter_forward"
 
 
 def forwarding_notice(
@@ -109,13 +113,15 @@ class DeadLetterForwarder(Protocol):
         ...
 
 
-class DeadLetterForwardingWireError(ValueError):
+class DeadLetterForwardingWireError(SynapseError, ValueError):
     """Raised when an inbound dead-letter forwarding frame cannot be decoded to a pointer.
 
     The peer that sent the frame is a trust boundary, so the receiving hub validates every field
     before acting on it; a frame missing the pointer, or with a malformed target or count, raises
     this rather than yielding a half-built shape the receiver would journal or broadcast.
     """
+
+    code = "dead_letter_forwarding_wire"
 
 
 @dataclass(frozen=True, slots=True)

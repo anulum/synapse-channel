@@ -33,6 +33,7 @@ from typing import Any, Protocol, cast
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.operator_relay_wire import (
     RelayActionRequest,
     RelayActionResult,
@@ -49,13 +50,15 @@ PING_INTERVAL = 20.0
 """Keepalive ping interval, in seconds, for the per-relay connection."""
 
 
-class RelayTransportError(RuntimeError):
+class RelayTransportError(SynapseError, RuntimeError):
     """Raised when relaying an operator action to a peer hub fails.
 
     Every transport failure — connection, protocol, decode, or timeout — surfaces as this one
     type, so the caller catches a single error and reports that the relay never reached a
     verdict rather than a result it never received.
     """
+
+    code = "relay_transport"
 
 
 @dataclass(frozen=True, slots=True)

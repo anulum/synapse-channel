@@ -37,6 +37,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
+from synapse_channel.core.errors import SynapseError
+
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -56,8 +58,10 @@ _PUBLIC_KEY_BYTES = 32
 """Raw Ed25519 public key length."""
 
 
-class ReceiptSigningError(ValueError):
+class ReceiptSigningError(SynapseError, ValueError):
     """A receipt-signing key could not be generated, loaded, or used."""
+
+    code = "receipt_signing"
 
 
 @dataclass(frozen=True)

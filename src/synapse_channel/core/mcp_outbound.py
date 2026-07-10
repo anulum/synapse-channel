@@ -30,20 +30,28 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from synapse_channel.core.errors import SynapseError
+
 MCP_EXTRA_HINT = "outbound MCP calls need the optional extra: pip install 'synapse-channel[mcp]'"
 WILDCARD = "*"
 
 
-class McpConfigError(ValueError):
+class McpConfigError(SynapseError, ValueError):
     """Raised when the outbound MCP config file is malformed."""
 
+    code = "mcp_config"
 
-class McpAccessError(PermissionError):
+
+class McpAccessError(SynapseError, PermissionError):
     """Raised when a server or tool is not permitted by the config allowlist."""
 
+    code = "mcp_access"
 
-class McpToolError(RuntimeError):
+
+class McpToolError(SynapseError, RuntimeError):
     """Raised when a permitted tool call returns an error result."""
+
+    code = "mcp_tool"
 
 
 @dataclass(frozen=True)

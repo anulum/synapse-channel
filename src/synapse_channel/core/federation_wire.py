@@ -44,6 +44,7 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.federation import FederationPeer
 from synapse_channel.core.federation_store import (
     FederationStoreError,
@@ -52,12 +53,14 @@ from synapse_channel.core.federation_store import (
 )
 
 
-class FederationWireError(ValueError):
+class FederationWireError(SynapseError, ValueError):
     """Raised when a federation-offer wire body is malformed.
 
     Carries the fail-closed contract: a fetching operator that catches this imports
     nothing — corrupt or hostile offer material can never become a peering.
     """
+
+    code = "federation_wire"
 
 
 def encode_federation_offer(peer: FederationPeer) -> dict[str, Any]:

@@ -31,6 +31,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.federation import FederationPeer
 
 DEFAULT_ROTATION_LIFETIME_DAYS = 90.0
@@ -40,13 +41,15 @@ SECONDS_PER_DAY = 86400.0
 """One day of bundle lifetime, in the bundle's epoch seconds."""
 
 
-class FederationRotationError(ValueError):
+class FederationRotationError(SynapseError, ValueError):
     """Raised when a rotation is not well-formed.
 
     A non-positive lifetime, or retiring a signing key or certificate pin the bundle does not
     hold, is a mistake the rotation refuses rather than apply — an operator typo must never
     silently empty the policy or drop the wrong material.
     """
+
+    code = "federation_rotation"
 
 
 @dataclass(frozen=True)

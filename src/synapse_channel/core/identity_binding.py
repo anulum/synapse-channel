@@ -39,6 +39,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.message_auth import (
     DEFAULT_MESSAGE_AUTH_FUTURE_SKEW_SECONDS,
     DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
@@ -54,8 +55,10 @@ DEFAULT_IDENTITY_REPLAY_CAPACITY = 4096
 """Bounded nonce records the identity trust bundle retains for replay detection."""
 
 
-class IdentityBindingError(ValueError):
+class IdentityBindingError(SynapseError, ValueError):
     """Raised when an identity trust bundle file is malformed."""
+
+    code = "identity_binding"
 
 
 def _string_set(value: object, key_id: str, field: str) -> frozenset[str]:

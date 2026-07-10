@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.federation import FederationBundle, FederationPeer, ScopeGrant
 
 STORE_VERSION = 1
@@ -41,8 +42,10 @@ STORE_VERSION = 1
 _DIRECTORY_FSYNC_SUPPORTED = os.name == "posix"
 
 
-class FederationStoreError(ValueError):
+class FederationStoreError(SynapseError, ValueError):
     """Raised when a federation bundle or store is malformed or inaccessible."""
+
+    code = "federation_store"
 
 
 def _finite_float(field: str, value: Any) -> float:

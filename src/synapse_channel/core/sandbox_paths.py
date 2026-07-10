@@ -33,14 +33,18 @@ import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from synapse_channel.core.errors import SynapseError
 
-class SandboxPathError(RuntimeError):
+
+class SandboxPathError(SynapseError, RuntimeError):
     """Raised when a sandbox filesystem grant's host path fails validation.
 
     A single type for every rejection — a symlink-redirected path or one that is not an
     existing directory — so the runner catches one error and refuses the whole run rather
     than preopening a directory the manifest did not literally name.
     """
+
+    code = "sandbox_path"
 
 
 def _within_approved_root(real_path: str, approved_roots: Sequence[str]) -> bool:

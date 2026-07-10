@@ -61,6 +61,16 @@ All notable changes to this project are documented here.
   fails closed when the workflow loses a required gate or the npm v3 lockfile
   drifts from `package.json` or loses registry integrity metadata.
 
+- Every domain exception now derives from
+  `synapse_channel.core.errors.SynapseError` and carries a stable
+  machine-readable `code`, so boundary layers (CLI, A2A bridge, MCP server,
+  embedding applications) can classify failures without matching on message
+  text. Each class keeps its historical built-in base through multiple
+  inheritance — every pre-existing `except ValueError`/`RuntimeError`/
+  `PermissionError` clause keeps catching exactly what it caught before. The
+  full class-to-code map is frozen by a registry test, and an AST drift gate
+  refuses any future `*Error` class that does not join the taxonomy.
+
 ### Changed
 
 - `cli_a2a_interop` now has a direct module-owned test surface covering parser

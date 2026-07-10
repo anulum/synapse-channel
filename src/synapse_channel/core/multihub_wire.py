@@ -39,6 +39,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.persistence import StoredEvent
 
 AFTER_SEQ_FIELD = "after_seq"
@@ -69,12 +70,14 @@ PAYLOAD_FIELD = "payload"
 """Event field: the decoded JSON object body."""
 
 
-class MultiHubWireError(ValueError):
+class MultiHubWireError(SynapseError, ValueError):
     """Raised when a multi-hub wire body is malformed or out of range.
 
     Carries the fail-closed contract: a fetching follower that catches this leaves the
     peer's cursor unadvanced, so a corrupt or hostile snapshot can never advance the view.
     """
+
+    code = "multihub_wire"
 
 
 @dataclass(frozen=True, slots=True)

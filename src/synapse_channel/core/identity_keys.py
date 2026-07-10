@@ -27,6 +27,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.message_auth import sign_event_frame
 
 if TYPE_CHECKING:
@@ -36,8 +37,10 @@ SIGNING_KEY_FILE_MODE = 0o600
 """Owner-only permissions for a private identity key file."""
 
 
-class IdentityKeyError(ValueError):
+class IdentityKeyError(SynapseError, ValueError):
     """Raised when an identity key cannot be generated, written, or loaded."""
+
+    code = "identity_key"
 
 
 def generate_signing_key() -> Ed25519PrivateKey:

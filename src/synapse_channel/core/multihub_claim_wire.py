@@ -40,6 +40,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
+
 NAMESPACE_FIELD = "namespace"
 """Request and result field: the namespace the claim concerns, owned by exactly one hub."""
 
@@ -65,13 +67,15 @@ GRANT_FIELD = "grant"
 """Result field: the authentic grant fields on a grant, or ``null`` on a denial."""
 
 
-class ClaimWireError(ValueError):
+class ClaimWireError(SynapseError, ValueError):
     """Raised when a claim-forwarding wire body is malformed.
 
     Carries the fail-closed contract: a forwarding hub that catches this refuses the
     claim and relays no grant, so a corrupt or hostile request or result can never cause
     a claim to be granted on doubt.
     """
+
+    code = "claim_wire"
 
 
 @dataclass(frozen=True, slots=True)

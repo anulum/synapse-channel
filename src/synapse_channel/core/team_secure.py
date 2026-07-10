@@ -22,9 +22,13 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 
+from synapse_channel.core.errors import SynapseError
 
-class TeamSecureModeError(ValueError):
+
+class TeamSecureModeError(SynapseError, ValueError):
     """Raised when a hub cannot satisfy team-secure requirements."""
+
+    code = "team_secure_mode"
 
 
 @dataclass(frozen=True)

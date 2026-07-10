@@ -33,6 +33,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
+
 STREAM_FRAME_KIND = "stream"
 """Marker identifying a message payload as a stream frame."""
 
@@ -51,8 +53,10 @@ ABORT = "abort"
 _FRAME_TYPES = frozenset({OPEN, CHUNK, DONE, ABORT})
 
 
-class StreamError(ValueError):
+class StreamError(SynapseError, ValueError):
     """Raised when a stream operation would violate its declared bounds or order."""
+
+    code = "stream"
 
 
 @dataclass(frozen=True)

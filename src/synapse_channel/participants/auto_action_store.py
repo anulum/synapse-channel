@@ -29,6 +29,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.participants.auto_action import AutoAction, AutoActionPolicy
 
 POLICY_FILENAME = "auto_action_policy.json"
@@ -41,13 +42,15 @@ _VERSION_FIELD = "version"
 _ARMED_FIELD = "armed"
 
 
-class AutoActionStoreError(Exception):
+class AutoActionStoreError(SynapseError):
     """A policy file exists but does not hold a store this version can read.
 
     Raised only for a present-but-invalid file (unreadable JSON, wrong shape, unknown schema
     version, or a tag that is not an :class:`AutoAction`). A missing file is not an error — it means
     nothing is armed.
     """
+
+    code = "auto_action_store"
 
 
 def load_policy(path: Path) -> AutoActionPolicy:

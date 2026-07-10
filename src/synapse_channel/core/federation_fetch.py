@@ -37,6 +37,7 @@ from typing import Any, Protocol, cast
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.federation import FederationPeer
 from synapse_channel.core.federation_wire import FederationWireError, decode_federation_offer
 from synapse_channel.core.protocol import MessageType, build_envelope, loads_bounded
@@ -53,12 +54,14 @@ PING_INTERVAL = 20.0
 """Keepalive ping interval, in seconds, for the per-fetch connection."""
 
 
-class FederationFetchError(RuntimeError):
+class FederationFetchError(SynapseError, RuntimeError):
     """Raised when fetching a peer hub's federation-bundle offer fails.
 
     Every transport failure — connection, protocol, decode, or timeout — surfaces as this
     one type, so the ceremony catches a single error and imports nothing.
     """
+
+    code = "federation_fetch"
 
 
 class _Socket(Protocol):
