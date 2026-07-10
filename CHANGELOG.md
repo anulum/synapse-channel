@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.98.26] - 2026-07-10
+
 ### Added
 
 - The persistent waiter states its binding out loud: the first line of
