@@ -48,6 +48,11 @@ All notable changes to this project are documented here.
   the production HTTP bridge, operator-file output, invalid endpoints, and
   refused connections.
 
+- `cli_a2a_types` now has a direct module-owned runtime and strict-typing test
+  surface. The tests pin every callable alias's result contract, exercise real
+  async, card, bridge, and store factories, accept the production A2A defaults,
+  and reject a factory returning the wrong type.
+
 ### Fixed
 
 - Public security, protocol, glossary, staged-profile documentation, and the
