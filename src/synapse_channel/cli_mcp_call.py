@@ -19,6 +19,7 @@ import argparse
 import asyncio
 import json
 
+from synapse_channel.core.error_boundaries import cli_exit_code_for_error
 from synapse_channel.core.mcp_outbound import (
     McpAccessError,
     McpConfigError,
@@ -62,9 +63,9 @@ def _cmd_mcp_tools(args: argparse.Namespace) -> int:
     try:
         client = _build_client(args.config)
         tools = asyncio.run(client.list_tools(args.server))
-    except (McpConfigError, McpAccessError) as exc:
+    except (McpConfigError, McpAccessError, McpToolError) as exc:
         print(f"mcp-tools error: {exc}")
-        return 2
+        return cli_exit_code_for_error(exc, default=2)
     except RuntimeError as exc:
         print(f"mcp-tools error: {exc}")
         return 2
@@ -85,7 +86,7 @@ def _cmd_mcp_call(args: argparse.Namespace) -> int:
         result = asyncio.run(client.call_tool(args.server, args.tool, arguments))
     except (McpConfigError, McpAccessError, McpToolError, json.JSONDecodeError) as exc:
         print(f"mcp-call error: {exc}")
-        return 2
+        return cli_exit_code_for_error(exc, default=2)
     except RuntimeError as exc:
         print(f"mcp-call error: {exc}")
         return 2

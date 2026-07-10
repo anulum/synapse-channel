@@ -361,6 +361,31 @@ def test_post_push_config_error_routes_return_problem_json() -> None:
     assert unknown_body["detail"] == "Unknown task: missing"
 
 
+def test_post_push_config_maps_typed_quota_to_too_many_requests() -> None:
+    store = A2ATaskStore(max_push_configs_per_task=1)
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=store)
+    task = bridge.create_completed_task(
+        {"messageId": "m1", "role": "ROLE_USER", "parts": [{"text": "hello"}]},
+        target="WORKER",
+    )
+    bridge.create_push_notification_config(
+        str(task["id"]),
+        {"id": "cfg-a", "webhookUrl": "https://example.test/a"},
+    )
+    harness = HandlerHarness(
+        "POST",
+        f"/tasks/{task['id']}/pushNotificationConfigs",
+        body={"id": "cfg-b", "webhookUrl": "https://example.test/b"},
+    )
+    harness.handler.bridge = bridge
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.TOO_MANY_REQUESTS
+    assert body["title"] == "Too Many Requests"
+    assert body["detail"] == "pushNotificationConfig limit exceeded"
+
+
 def test_stream_invalid_message_returns_problem_json() -> None:
     status, body = HandlerHarness("POST", "/message:stream", body={"message": "bad"}).run()
 

@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from synapse_channel.a2a_errors import A2AQuotaError, A2AStoreError
 from synapse_channel.a2a_store import A2ATaskStore, _fsync_parent
 
 
@@ -231,7 +232,7 @@ def test_a2a_task_store_bounds_history_artifacts_and_push_configs() -> None:
     assert stored is not None
     assert stored["history"] == [{"messageId": "m2"}, {"messageId": "m3"}]
     assert stored["artifacts"] == [{"artifactId": "a2"}]
-    with pytest.raises(ValueError, match="pushNotificationConfig limit exceeded"):
+    with pytest.raises(A2AQuotaError, match="pushNotificationConfig limit exceeded"):
         store.put_push_config("task-a", {"id": "cfg-b", "webhookUrl": "https://example.test/b"})
 
 
@@ -239,7 +240,7 @@ def test_a2a_task_store_rejects_invalid_state_file(tmp_path: Path) -> None:
     storage_path = tmp_path / "a2a-state.json"
     storage_path.write_text("{not-json", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="Invalid A2A state file"):
+    with pytest.raises(A2AStoreError, match="Invalid A2A state file"):
         A2ATaskStore(storage_path)
 
 

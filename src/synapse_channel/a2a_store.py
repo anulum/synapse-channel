@@ -18,6 +18,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from synapse_channel.a2a import JsonMap
+from synapse_channel.a2a_errors import A2AQuotaError, A2AStoreError
 from synapse_channel.a2a_validation import TERMINAL_TASK_STATES
 from synapse_channel.core.numeric_coercion import safe_float
 
@@ -94,7 +95,7 @@ class A2ATaskStore:
         try:
             data = json.loads(self._storage_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
-            raise ValueError(f"Invalid A2A state file: {self._storage_path}") from exc
+            raise A2AStoreError(f"Invalid A2A state file: {self._storage_path}") from exc
         tasks = data.get("tasks", {})
         push_configs = data.get("pushConfigs", {})
         if isinstance(tasks, dict):
@@ -280,7 +281,7 @@ class A2ATaskStore:
             stored["taskId"] = task_id
             previous = dict(self._push_configs.get(task_id, {}))
             if config_id not in previous and len(previous) >= self.max_push_configs_per_task:
-                raise ValueError("pushNotificationConfig limit exceeded")
+                raise A2AQuotaError("pushNotificationConfig limit exceeded")
             self._push_configs.setdefault(task_id, {})[config_id] = stored
             try:
                 self._save()

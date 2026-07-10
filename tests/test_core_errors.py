@@ -42,10 +42,28 @@ _SRC = Path(__file__).resolve().parent.parent / "src" / "synapse_channel"
 # A row may be ADDED for a new error class; an existing row must never change.
 # ---------------------------------------------------------------------------
 FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
+    "A2AConflictError": (
+        "synapse_channel.a2a_errors",
+        "a2a_conflict",
+        ValueError,
+    ),
+    "A2AError": ("synapse_channel.a2a_errors", "a2a", ValueError),
     "A2AInteropTraceError": (
         "synapse_channel.a2a_interop_trace",
         "a2a_interop_trace",
         RuntimeError,
+    ),
+    "A2ANotFoundError": (
+        "synapse_channel.a2a_errors",
+        "a2a_not_found",
+        ValueError,
+    ),
+    "A2AQuotaError": ("synapse_channel.a2a_errors", "a2a_quota", ValueError),
+    "A2AStoreError": ("synapse_channel.a2a_errors", "a2a_store", ValueError),
+    "A2AValidationError": (
+        "synapse_channel.a2a_errors",
+        "a2a_validation",
+        ValueError,
     ),
     "AclError": ("synapse_channel.core.acl", "acl", ValueError),
     "AutoActionStoreError": (

@@ -70,6 +70,12 @@ the taxonomy landed. A released code never changes meaning and is never reused;
 the registry test freezes the full map, and an AST drift gate refuses any new
 `*Error` class that does not join the taxonomy.
 
+Boundary projections are explicit and frozen by focused tests. A2A validation,
+not-found, conflict, quota, and store codes map to HTTP 400, 404, 409, 429, and
+500 respectively. Outbound MCP config, access, and tool codes map to CLI exits
+2, 3, and 1. Foreign exceptions take the boundary caller's explicit default;
+neither projection parses exception text or infers semantics from wording.
+
 ## Stability tiers
 
 Every CLI subcommand carries a tier (`synapse_channel.surface_taxonomy`):

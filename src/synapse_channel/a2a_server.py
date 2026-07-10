@@ -22,6 +22,7 @@ import uuid
 from collections.abc import Callable, Coroutine
 from typing import Any, cast
 
+from synapse_channel import a2a_errors
 from synapse_channel.a2a import JsonMap
 from synapse_channel.a2a_events import A2ATaskEvents
 from synapse_channel.a2a_push import PushDeliverer, deliver_push_notification, http_push_deliverer
@@ -219,7 +220,7 @@ class A2ABridge:
             task_id = str(raw_task_id or uuid.uuid4())
             context_id = str(raw_context_id or uuid.uuid4())
             if raw_task_id is not None and self.store.get(task_id) is not None:
-                raise ValueError("message.taskId already exists")
+                raise a2a_errors.A2AConflictError("message.taskId already exists")
             resolved_target = self._target_for(message, target)
             text = self._message_text(message)
             now = time.time()
@@ -287,17 +288,17 @@ class A2ABridge:
         with self._task_creation_lock:
             message = payload.get("message")
             if not isinstance(message, dict):
-                raise ValueError("message must be an object")
+                raise a2a_errors.A2AValidationError("message must be an object")
             if not message.get("messageId"):
-                raise ValueError("message.messageId is required")
+                raise a2a_errors.A2AValidationError("message.messageId is required")
             if message.get("role") != "ROLE_USER":
-                raise ValueError("message.role must be ROLE_USER")
+                raise a2a_errors.A2AValidationError("message.role must be ROLE_USER")
             validate_message_parts(message.get("parts"))
             validate_bridge_id(message.get("taskId"), field="taskId")
             validate_bridge_id(message.get("contextId"), field="contextId")
             task_id = message.get("taskId")
             if task_id is not None and self.store.get(str(task_id)) is not None:
-                raise ValueError("message.taskId already exists")
+                raise a2a_errors.A2AConflictError("message.taskId already exists")
             return self.create_working_task(message)
 
     def _store_request_push_config(self, payload: JsonMap, *, task_id: str) -> JsonMap | None:
@@ -547,7 +548,7 @@ class A2ABridge:
             return None
         webhook = config.get("webhookUrl") or config.get("url")
         if not webhook:
-            raise ValueError("pushNotificationConfig.webhookUrl is required")
+            raise a2a_errors.A2AValidationError("pushNotificationConfig.webhookUrl is required")
         stored = dict(config)
         stored["webhookUrl"] = validate_webhook_url(webhook)
         return self.store.put_push_config(task_id, stored)
@@ -602,7 +603,7 @@ class A2ABridge:
                 ),
             )
             if task is None:
-                raise ValueError(f"Unknown task: {task_id}")
+                raise a2a_errors.A2ANotFoundError(f"Unknown task: {task_id}")
             return task
         if method == "tasks/list":
             state = params.get("status")
@@ -616,16 +617,16 @@ class A2ABridge:
             task_id = str(params.get("id") or params.get("taskId") or "")
             task = self.cancel_task(task_id)
             if task is None:
-                raise ValueError(f"Unknown task: {task_id}")
+                raise a2a_errors.A2ANotFoundError(f"Unknown task: {task_id}")
             return task
         if method == "tasks/pushNotificationConfig/set":
             task_id = str(params.get("taskId") or params.get("id") or "")
             config = params.get("pushNotificationConfig")
             if not isinstance(config, dict):
-                raise ValueError("pushNotificationConfig is required")
+                raise a2a_errors.A2AValidationError("pushNotificationConfig is required")
             created = self.create_push_notification_config(task_id, config)
             if created is None:
-                raise ValueError(f"Unknown task: {task_id}")
+                raise a2a_errors.A2ANotFoundError(f"Unknown task: {task_id}")
             return created
         if method == "tasks/pushNotificationConfig/list":
             task_id = str(params.get("taskId") or params.get("id") or "")
@@ -635,7 +636,7 @@ class A2ABridge:
             config_id = str(params.get("pushNotificationConfigId") or params.get("configId") or "")
             config = self.get_push_notification_config(task_id, config_id)
             if config is None:
-                raise ValueError(f"Unknown push notification config: {config_id}")
+                raise a2a_errors.A2ANotFoundError(f"Unknown push notification config: {config_id}")
             return config
         if method == "tasks/pushNotificationConfig/delete":
             task_id = str(params.get("taskId") or params.get("id") or "")

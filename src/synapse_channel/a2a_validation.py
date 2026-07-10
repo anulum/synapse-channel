@@ -13,6 +13,8 @@ import ipaddress
 import re
 from urllib.parse import urlparse
 
+from synapse_channel.a2a_errors import A2AValidationError
+
 A2A_MEDIA_TYPE = "application/a2a+json"
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 SSE_MEDIA_TYPE = "text/event-stream"
@@ -32,15 +34,15 @@ def validate_bridge_id(value: object, *, field: str) -> None:
     if value is None:
         return
     if not BRIDGE_ID.fullmatch(str(value)):
-        raise ValueError(f"message.{field} contains unsupported characters")
+        raise A2AValidationError(f"message.{field} contains unsupported characters")
 
 
 def validate_message_parts(parts: object) -> list[object]:
     """Return validated A2A message parts."""
     if not isinstance(parts, list) or not parts:
-        raise ValueError("message.parts must be a non-empty array")
+        raise A2AValidationError("message.parts must be a non-empty array")
     if len(parts) > MAX_A2A_MESSAGE_PARTS:
-        raise ValueError("message.parts exceeds maximum supported length")
+        raise A2AValidationError("message.parts exceeds maximum supported length")
     return parts
 
 
@@ -49,14 +51,14 @@ def validate_webhook_url(value: object) -> str:
     webhook = str(value)
     parsed_webhook = urlparse(webhook)
     if parsed_webhook.scheme not in {"http", "https"}:
-        raise ValueError("pushNotificationConfig.webhookUrl must use http or https")
+        raise A2AValidationError("pushNotificationConfig.webhookUrl must use http or https")
     if not parsed_webhook.netloc:
-        raise ValueError("pushNotificationConfig.webhookUrl must include a host")
+        raise A2AValidationError("pushNotificationConfig.webhookUrl must include a host")
     if parsed_webhook.username is not None or parsed_webhook.password is not None:
-        raise ValueError("pushNotificationConfig.webhookUrl must not include credentials")
+        raise A2AValidationError("pushNotificationConfig.webhookUrl must not include credentials")
     hostname = parsed_webhook.hostname
     if hostname is None or _is_local_network_host(hostname):
-        raise ValueError("pushNotificationConfig.webhookUrl must not target local networks")
+        raise A2AValidationError("pushNotificationConfig.webhookUrl must not target local networks")
     return webhook
 
 

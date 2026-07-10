@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from synapse_channel.a2a_errors import A2AValidationError
 from synapse_channel.a2a_validation import (
     MAX_A2A_MESSAGE_PARTS,
     is_supported_json_media_type,
@@ -22,7 +23,7 @@ def test_validate_bridge_id_rejects_path_separator() -> None:
     validate_bridge_id("task-1", field="taskId")
     try:
         validate_bridge_id("../task", field="taskId")
-    except ValueError as exc:
+    except A2AValidationError as exc:
         assert str(exc) == "message.taskId contains unsupported characters"
     else:
         raise AssertionError("path separator was accepted")

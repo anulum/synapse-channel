@@ -136,7 +136,8 @@ def test_message_send_rejects_duplicate_task_id() -> None:
 
     status, body = harness.run()
 
-    assert status == HTTPStatus.BAD_REQUEST
+    assert status == HTTPStatus.CONFLICT
+    assert body["title"] == "Conflict"
     assert body["detail"] == "message.taskId already exists"
     stored = bridge.store.get("task-a")
     assert stored is not None

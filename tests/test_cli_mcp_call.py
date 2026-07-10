@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 
 from synapse_channel import cli, cli_mcp_call
-from synapse_channel.core.mcp_outbound import McpServerSpec, OutboundMcpClient
+from synapse_channel.core.mcp_outbound import McpServerSpec, McpToolError, OutboundMcpClient
 
 
 class _FakeSession:
@@ -127,8 +127,39 @@ def test_mcp_call_denies_a_non_allowlisted_tool(
     code = _run(
         ["mcp-call", "echo", "echo", "--config", str(_config(tmp_path)), "--arg", 'text="hi"']
     )
-    assert code == 2
+    assert code == 3
     assert "not allowed by the config" in capsys.readouterr().out
+
+
+def test_mcp_tools_denies_an_unknown_server_with_access_exit_code(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = _run(["mcp-tools", "missing", "--config", str(_config(tmp_path))])
+
+    assert code == 3
+    assert "not in the outbound MCP allowlist" in capsys.readouterr().out
+
+
+def test_mcp_call_reports_a_tool_failure_with_operational_exit_code(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingClient:
+        async def call_tool(
+            self,
+            server: str,
+            tool: str,
+            arguments: dict[str, object],
+        ) -> str:
+            raise McpToolError(f"{server}/{tool} failed with {arguments!r}")
+
+    monkeypatch.setattr(cli_mcp_call, "_build_client", lambda _path: FailingClient())
+
+    code = _run(["mcp-call", "echo", "echo", "--config", str(_config(tmp_path))])
+
+    assert code == 1
+    assert "echo/echo failed" in capsys.readouterr().out
 
 
 def test_mcp_tools_reports_a_bad_config(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
