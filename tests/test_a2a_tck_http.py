@@ -263,7 +263,9 @@ def test_v1_terminal_task_rejects_followup() -> None:
 
     assert status == HTTPStatus.CONFLICT
     assert body["error"]["details"][0]["reason"] == "TASK_NOT_CANCELABLE"
-    assert bridge.store.get("task-existing")["status"]["state"] == "TASK_STATE_COMPLETED"
+    stored = bridge.store.get("task-existing")
+    assert stored is not None
+    assert stored["status"]["state"] == "TASK_STATE_COMPLETED"
 
 
 def test_http_protocol_helpers_cover_safe_projection_and_error_mapping() -> None:
