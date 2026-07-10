@@ -139,6 +139,22 @@ def peer_from_dict(data: Mapping[str, Any]) -> FederationPeer:
 
     Only ``domain_id`` is required; everything else defaults to empty, so a bundle that
     omits namespaces, keys, or pins grants nothing until the operator adds them.
+
+    Parameters
+    ----------
+    data : Mapping
+        The peer sub-mapping of a federation bundle.
+
+    Returns
+    -------
+    FederationPeer
+        The parsed peer, with empty defaults for every omitted optional field.
+
+    Raises
+    ------
+    FederationStoreError
+        If ``data`` is not a mapping, ``domain_id`` is missing or is not a
+        non-empty string, or ``scope_grants`` is not a list of mappings.
     """
     if not isinstance(data, Mapping):
         msg = "federation bundle must be a mapping"
@@ -195,7 +211,32 @@ def merge_record(
 
 
 def load_store(path: str | Path) -> dict[str, FederationRecord]:
-    """Load the federation store keyed by domain id; an absent file is an empty store."""
+    """Load and validate the federation store, keyed by peer domain id.
+
+    Every field is checked deny-by-default: a store that is unreadable,
+    malformed, of an unknown version, or internally inconsistent raises rather
+    than loading a partial or ambiguous policy, so a corrupt file can never
+    silently authorise or drop a peering. An absent file is the empty store.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path
+        The federation store file, as written by :func:`save_store`.
+
+    Returns
+    -------
+    dict of str to FederationRecord
+        The stored peerings keyed by ``peer.domain_id``; empty when the file
+        does not exist.
+
+    Raises
+    ------
+    FederationStoreError
+        If the file cannot be read (an ``OSError`` other than a missing file),
+        is not valid JSON, is not a mapping, declares an unsupported
+        ``version``, lacks a ``records`` list, carries non-mapping or
+        non-string provenance, or names a duplicate ``domain_id``.
+    """
     file = Path(path)
     try:
         raw = file.read_text(encoding="utf-8")
@@ -264,6 +305,11 @@ def bundle_from_store(path: str | Path) -> FederationBundle:
     -------
     FederationBundle
         The deny-by-default policy over the stored peer domains.
+
+    Raises
+    ------
+    FederationStoreError
+        Propagated from :func:`load_store` when the store exists but is malformed.
     """
     records = load_store(path)
     return FederationBundle(record.peer for record in records.values())

@@ -46,6 +46,13 @@ All notable changes to this project are documented here.
   live hub: explicit ``--name``/``--for`` beats ambient environment, the
   ambient identity's own arm still yields to its provider, and a foreign
   provider pidfile or corrupt pidfile never suppresses an explicit arm.
+- Federation store durability: the peering store is now written atomically —
+  to an owner-only sibling temporary file that is fsynced, renamed into place,
+  then followed by a parent-directory fsync — so a power loss can neither leave
+  a torn or partial policy behind nor lose a completed write. Loading validates
+  every field deny-by-default (store version, record shape, provenance types,
+  duplicate domain ids) and raises rather than admitting a partial or ambiguous
+  policy, so a malformed store can never silently authorise or drop a peering.
 
 ## [0.98.25] - 2026-07-10
 
