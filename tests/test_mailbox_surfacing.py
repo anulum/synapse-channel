@@ -21,10 +21,13 @@ waiter's replay.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from pathlib import Path
 from typing import Any
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
+from synapse_channel.cli_arm import _arm
 from synapse_channel.cli_messaging_wait import _wait
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
@@ -110,6 +113,64 @@ async def test_the_persisted_cursor_covers_exactly_the_surfaced_frames(
     assert saved > 0
     assert out.count("alpha") == 1 and out.count("beta") == 1
     assert second == 2  # timeout, nothing pending — and nothing lost
+
+
+async def test_max_wakes_one_surfaces_the_full_backlog_before_rearm(
+    tmp_path: Path,
+    capsys: Any,
+) -> None:
+    """One arm wake drains its collected replay burst without skipping frames."""
+    db = tmp_path / "hub.db"
+    cursor = tmp_path / "cursor"
+    store = EventStore(db)
+    second_arm: asyncio.Task[int] | None = None
+    try:
+        async with running_hub(SynapseHub(journal=store)) as (hub, uri):
+            payloads = ["oldest", "middle", "newest"]
+            await _seed_backlog(uri, payloads)
+            first = await _arm(
+                uri=uri,
+                name=f"{SEAT}-rx",
+                for_name=SEAT,
+                max_wakes=1,
+                reconnect_delay=0.0,
+                mailbox=True,
+                mailbox_cursor_path=cursor,
+            )
+            second_arm = asyncio.create_task(
+                _arm(
+                    uri=uri,
+                    name=f"{SEAT}-rx",
+                    for_name=SEAT,
+                    max_wakes=1,
+                    reconnect_delay=0.0,
+                    mailbox=True,
+                    mailbox_cursor_path=cursor,
+                )
+            )
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + 2.0
+            while (
+                not second_arm.done()
+                and f"{SEAT}-rx" not in hub.online_agents()
+                and loop.time() < deadline
+            ):
+                await asyncio.sleep(0.01)
+            assert f"{SEAT}-rx" in hub.online_agents(), "re-arm did not establish presence"
+            await asyncio.sleep(0.2)
+            assert not second_arm.done(), "re-arm replayed backlog that the first arm surfaced"
+    finally:
+        if second_arm is not None:
+            second_arm.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await second_arm
+        store.close()
+
+    out = capsys.readouterr().out
+    assert first == 0
+    assert load_cursor(cursor) > 0
+    for payload in payloads:
+        assert out.count(payload) == 1
 
 
 async def test_a_refused_frame_stays_pending_for_the_next_waiter(
