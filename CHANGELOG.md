@@ -41,6 +41,13 @@ All notable changes to this project are documented here.
   fails closed when the workflow loses a required gate or the npm v3 lockfile
   drifts from `package.json` or loses registry integrity metadata.
 
+### Changed
+
+- `cli_a2a_interop` now has a direct module-owned test surface covering parser
+  defaults and overrides, live endpoint-URL and host/port receipt flows through
+  the production HTTP bridge, operator-file output, invalid endpoints, and
+  refused connections.
+
 ### Fixed
 
 - Public security, protocol, glossary, staged-profile documentation, and the
