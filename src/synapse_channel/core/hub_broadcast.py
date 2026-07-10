@@ -92,14 +92,20 @@ class HubBroadcaster:
         )
 
     async def send_to_agent(self, agent: str, data: dict[str, Any]) -> bool:
-        """Send to a named agent's socket; return whether the send succeeded."""
+        """Send to a named agent's socket; return whether the send succeeded.
+
+        A recipient can vanish between recipient resolution and this send — a
+        channel member that disconnects mid fan-out leaves no live socket, and
+        a socket that died before the hub pruned its binding fails the send —
+        so both misses are reported as ``False``, never raised.
+        """
         websocket = self._clients.agent_sockets.get(agent)
-        if websocket is None:  # pragma: no cover - public routing binds senders before use.
+        if websocket is None:
             return False
         try:
             await self.send_json(websocket, data)
             return True
-        except Exception:  # pragma: no cover - defensive half-closed socket guard.
+        except Exception:
             return False
 
     async def send_directed(

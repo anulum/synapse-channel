@@ -8,9 +8,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
+from typing import Any
 
+from websockets.asyncio.client import connect
+
+from hub_e2e_helpers import read_json, running_hub, send_json
+from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.hub_broadcast import HubBroadcaster
 from synapse_channel.core.hub_clients import HubClientRegistry
 from synapse_channel.core.hub_relay import RelayMirror
@@ -173,3 +179,92 @@ async def test_send_directed_with_no_live_targets_still_mirrors(tmp_path: Path) 
 
     events, _ = read_jsonl_since(log, 0)
     assert [decode_lite(event)["payload"] for event in events] == ["void"]
+
+
+async def test_send_to_agent_reports_a_miss_for_a_name_that_never_bound() -> None:
+    """A recipient with no live socket is a reported miss, not an error.
+
+    The registry here is real and genuinely empty — this is exactly the state
+    a channel fan-out sees when a member disconnects between the roster
+    snapshot and its turn in the send loop.
+    """
+    broadcaster = _broadcaster(_registry(), RelayMirror(None, 8))
+
+    delivered = await broadcaster.send_to_agent("PROJ/vanished", {"type": "chat", "payload": "x"})
+
+    assert delivered is False
+
+
+async def _bound_server_socket(hub: SynapseHub, name: str, *, timeout: float = 3.0) -> Any:
+    """Poll the live registry until ``name`` binds; return its server-side socket.
+
+    Parameters
+    ----------
+    hub : SynapseHub
+        The in-process hub under test.
+    name : str
+        The agent name whose binding to wait for.
+    timeout : float, optional
+        Seconds to keep polling before failing the test.
+
+    Returns
+    -------
+    Any
+        The real server-side socket the hub bound ``name`` to.
+    """
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        websocket = hub.clients.agent_sockets.get(name)
+        if websocket is not None:
+            return websocket
+        await asyncio.sleep(0.01)
+    raise TimeoutError(f"{name} did not bind on the hub")
+
+
+async def _await_unbound(hub: SynapseHub, name: str, *, timeout: float = 3.0) -> None:
+    """Poll the live registry until the hub has reaped ``name``'s binding.
+
+    Parameters
+    ----------
+    hub : SynapseHub
+        The in-process hub under test.
+    name : str
+        The agent name whose disappearance to wait for.
+    timeout : float, optional
+        Seconds to keep polling before failing the test.
+    """
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        if name not in hub.clients.agent_sockets:
+            return
+        await asyncio.sleep(0.01)
+    raise TimeoutError(f"{name} was not reaped from the hub")
+
+
+async def test_send_to_agent_reports_a_recipient_whose_socket_died_in_flight() -> None:
+    """A send onto a genuinely dead socket is a reported miss, not a crash.
+
+    A real client registers on a live hub and disconnects; the test then pins
+    the exact race window — the socket is dead but the identity map still
+    names it (the hub has not pruned the binding yet) — by re-pointing the
+    live registry at the real, closed server-side socket. The send genuinely
+    fails on the closed connection and must be reported as a miss.
+    """
+    name = "PROJ/mayfly"
+    async with running_hub(SynapseHub(hub_id="syn-test")) as (hub, uri):
+        async with connect(uri) as recipient:
+            await read_json(recipient)  # welcome
+            await send_json(recipient, sender=name, type="heartbeat")
+            server_ws = await _bound_server_socket(hub, name)
+        await _await_unbound(hub, name)
+
+        # Freeze the race window: the socket died but the map still names it.
+        hub.clients.agent_sockets[name] = server_ws
+        try:
+            delivered = await hub._send_to_agent(name, {"type": "chat", "payload": "ping"})
+        finally:
+            hub.clients.agent_sockets.pop(name, None)
+
+        assert delivered is False

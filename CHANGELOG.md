@@ -27,6 +27,13 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- The vanished-recipient branches of the hub's directed send
+  (`send_to_agent`: recipient with no live socket; socket that died before
+  the hub pruned its binding) are now pinned by real tests — an actually
+  closed server-side connection and a genuinely empty registry — instead of
+  being excluded from coverage as "unreachable"; a channel member that
+  disconnects mid fan-out reaches the first branch through public routing.
+  Both misses report `False` to the caller, never raise.
 - The legacy broad project-scoped arm detector
   (`legacy_project_scoped_terminal_sidecar`) now lives once in
   `waiter_identity` — the module that owns the ``-rx`` sidecar naming
