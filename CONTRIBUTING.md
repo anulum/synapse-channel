@@ -48,6 +48,11 @@ The `Makefile` wraps the common tasks (`make help` lists them):
 
 - **Tests.** Every new module, function, and branch ships with tests. Coverage
   is held at 100% (the gate fails below 95%); a change must not lower it.
+- **Coverage exclusions are ledgered.** Every `pragma: no cover` in `src/` and
+  every conditional skip in `tests/` is enumerated with a justification class
+  in `tests/test_coverage_exclusion_ledger.py`; the suite fails the moment the
+  tree and the ledger disagree, so adding one is a deliberate, reviewed edit.
+  Unconditional skips and xfails are not accepted.
 - **Types.** `mypy` runs in strict mode and must pass with no new ignores.
 - **Style.** Code is formatted with `ruff format` and linted with `ruff`
   (`E, F, I, B, UP, D` with the NumPy docstring convention). Public symbols carry

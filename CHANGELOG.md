@@ -25,6 +25,18 @@ All notable changes to this project are documented here.
   scheduler step into the eviction sees the new owner, and racing takeovers
   end with exactly one bound survivor that receives directed mail.
 
+### Added
+
+- A coverage-exclusion ledger gate: every `pragma: no cover` in `src/` (49,
+  audited — Protocol bodies, optional-dependency import guards, typing-only
+  imports, entry points, environment-defensive branches) and every
+  conditional test skip (32 — platform guards, optional-dependency guards,
+  operator-triggered real provider smokes; zero unconditional skips, zero
+  xfails) is now enumerated with a justification class in
+  `tests/test_coverage_exclusion_ledger.py`, and the suite fails the moment
+  the tree and the ledger disagree — exclusion counts can never drift
+  silently in either direction again.
+
 ### Changed
 
 - The vanished-recipient branches of the hub's directed send
