@@ -73,6 +73,7 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
     "src/synapse_channel/core/payload_crypto.py": (1, "optional-import"),
     "src/synapse_channel/core/tls.py": (2, "protocol-body"),
     "src/synapse_channel/ergonomics.py": (1, "entrypoint"),
+    "src/synapse_channel/ergonomics_inbox.py": (2, "protocol-body"),
     "src/synapse_channel/locks.py": (2, "protocol-body"),
     "src/synapse_channel/observed_peers.py": (1, "protocol-body"),
     "src/synapse_channel/reap.py": (3, "protocol-body"),
