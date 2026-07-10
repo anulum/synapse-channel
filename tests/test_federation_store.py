@@ -158,7 +158,9 @@ def test_save_closes_descriptor_and_removes_temporary_file_when_fdopen_fails(
         descriptors.append(descriptor)
         raise OSError("fdopen refused")
 
-    monkeypatch.setattr(federation_store.os, "fdopen", refuse_fdopen)
+    # Patch the os module directly: federation_store imports the same singleton,
+    # so this reaches its os.fdopen call without an implicit-reexport access.
+    monkeypatch.setattr(os, "fdopen", refuse_fdopen)
 
     with pytest.raises(FederationStoreError, match="cannot write federation store"):
         save_store(tmp_path / "store.json", [FederationRecord(_PEER, _PROV)])
