@@ -71,6 +71,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "auto_action_store",
         Exception,
     ),
+    "ClaimCoverageError": (
+        "synapse_channel.git.claim_coverage",
+        "claim_coverage",
+        RuntimeError,
+    ),
     "ClaimForwardError": (
         "synapse_channel.core.multihub_claim_transport",
         "claim_forward",
@@ -84,6 +89,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
     "ClaimGuardError": (
         "synapse_channel.claude_claim_guard",
         "claude_claim_guard",
+        RuntimeError,
+    ),
+    "ClaimStateError": (
+        "synapse_channel.claim_state",
+        "claim_state",
         RuntimeError,
     ),
     "ClaimWireError": ("synapse_channel.core.multihub_claim_wire", "claim_wire", ValueError),

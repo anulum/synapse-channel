@@ -4,61 +4,34 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — authoritative state retrieval for the Claude claim guard
-"""Fetch one live hub snapshot for the Claude claim guard.
-
-This transport is isolated from claim-decision logic so network lifecycle and
-timeouts stay independently testable. It never prints: the hook's stdout is
-reserved for Claude Code's structured decision JSON.
-"""
+# SYNAPSE_CHANNEL — Claude claim-state compatibility facade
+"""Preserve the Claude claim guard's released state-query API and error code."""
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
-import math
-from collections.abc import Callable
-from typing import Any, Protocol
+from typing import Any
 
+from synapse_channel.claim_state import (
+    MAX_CLAIM_STATE_PHASE_TIMEOUT,
+    AgentFactory,
+    ClaimStateError,
+)
+from synapse_channel.claim_state import (
+    StateAgent as StateAgent,
+)
+from synapse_channel.claim_state import (
+    fetch_state_snapshot as _fetch_state_snapshot,
+)
 from synapse_channel.client.agent import SynapseAgent
-from synapse_channel.core.errors import SynapseError
-from synapse_channel.core.protocol import MessageType
 
-
-class StateAgent(Protocol):
-    """Minimal client surface required to retrieve one state snapshot."""
-
-    running: bool
-
-    async def connect(self) -> None:
-        """Connect until cancelled."""
-
-    async def wait_until_ready(self, *, timeout: float) -> bool:
-        """Return whether the hub handshake completed before ``timeout``."""
-
-    async def request_state(self) -> None:
-        """Request the authoritative state snapshot."""
-
-
-AgentFactory = Callable[..., StateAgent]
-MAX_CLAUDE_CLAIM_PHASE_TIMEOUT = 300.0
+MAX_CLAUDE_CLAIM_PHASE_TIMEOUT = MAX_CLAIM_STATE_PHASE_TIMEOUT
 """Maximum seconds allowed for either claim-state query phase."""
 
 
-class StateSnapshotError(SynapseError, RuntimeError):
+class StateSnapshotError(ClaimStateError):
     """The authoritative hub snapshot could not be obtained safely."""
 
     code = "claude_claim_state"
-
-
-def _validated_phase_timeout(timeout: float) -> float:
-    """Return a bounded positive state-query deadline or fail closed."""
-    if not math.isfinite(timeout) or timeout <= 0 or timeout > MAX_CLAUDE_CLAIM_PHASE_TIMEOUT:
-        raise StateSnapshotError(
-            "Synapse state query timeout must be finite, greater than zero, "
-            f"and at most {MAX_CLAUDE_CLAIM_PHASE_TIMEOUT:g} seconds."
-        )
-    return timeout
 
 
 async def fetch_state_snapshot(
@@ -92,35 +65,13 @@ async def fetch_state_snapshot(
     StateSnapshotError
         If connection, timeout, or response validation fails.
     """
-    phase_timeout = _validated_phase_timeout(timeout)
-    received = asyncio.Event()
-    result: list[dict[str, Any]] = []
-
-    async def collect(data: dict[str, Any]) -> None:
-        if data.get("type") != MessageType.STATE_SNAPSHOT:
-            return
-        snapshot = data.get("snapshot")
-        if isinstance(snapshot, dict):
-            result.append(snapshot)
-        received.set()
-
-    agent = agent_factory(requester, collect, uri=uri, verbose=False, token=token)
-    connection = asyncio.create_task(agent.connect())
     try:
-        if not await agent.wait_until_ready(timeout=phase_timeout):
-            raise StateSnapshotError("Synapse hub is unavailable; Edit/Write denied fail-closed.")
-        await agent.request_state()
-        try:
-            await asyncio.wait_for(received.wait(), timeout=phase_timeout)
-        except asyncio.TimeoutError as exc:
-            raise StateSnapshotError(
-                "Synapse state query timed out; Edit/Write denied fail-closed."
-            ) from exc
-        if not result:
-            raise StateSnapshotError("Synapse returned an invalid state snapshot.")
-        return result[-1]
-    finally:
-        agent.running = False
-        connection.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await connection
+        return await _fetch_state_snapshot(
+            uri=uri,
+            requester=requester,
+            token=token,
+            timeout=timeout,
+            agent_factory=agent_factory,
+        )
+    except ClaimStateError as exc:
+        raise StateSnapshotError(str(exc)) from exc

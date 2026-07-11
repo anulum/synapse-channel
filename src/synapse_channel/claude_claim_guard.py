@@ -30,15 +30,20 @@ from typing import Any
 
 from synapse_channel.claude_claim_state import StateSnapshotError, fetch_state_snapshot
 from synapse_channel.core.errors import SynapseError
-from synapse_channel.core.lifecycle import TaskStatus
-from synapse_channel.core.scoping import normalize_path
+from synapse_channel.git.claim_coverage import (
+    EDITABLE_STATUSES as EDITABLE_STATUSES,
+)
+from synapse_channel.git.claim_coverage import (
+    ClaimCoverageError,
+    decide_claim_coverage,
+)
+from synapse_channel.git.claim_coverage import (
+    claim_path_covers as claim_path_covers,
+)
 from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runner
 
 SUPPORTED_TOOLS = frozenset({"Edit", "Write"})
 """Claude Code tools covered by this guard."""
-
-EDITABLE_STATUSES = frozenset({TaskStatus.CLAIMED, TaskStatus.WORKING})
-"""Live task states in which the owner may mutate claimed files."""
 
 StateFetcher = Callable[..., Awaitable[dict[str, Any]]]
 
@@ -184,56 +189,28 @@ def resolve_repository_target(
     return RepositoryTarget(root=root, branch=lines[1].strip(), relative_path=relative.as_posix())
 
 
-def claim_path_covers(scope: str, target: str) -> bool:
-    """Return whether one literal claim path owns ``target`` in the same worktree."""
-    claimed = normalize_path(scope)
-    relative = normalize_path(target)
-    return claimed == "" or claimed == relative or relative.startswith(claimed + "/")
-
-
-def _claim_covers_target(claim: Mapping[str, Any], target: RepositoryTarget) -> bool:
-    worktree = claim.get("worktree")
-    git = claim.get("git")
-    paths = claim.get("paths")
-    if not isinstance(worktree, str) or not worktree.strip():
-        return False
-    if not isinstance(git, dict) or git.get("branch") != target.branch:
-        return False
-    if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
-        raise ClaimGuardError("Hub returned malformed claim paths.")
-    try:
-        claimed_root = Path(worktree).resolve(strict=False)
-    except OSError as exc:
-        raise ClaimGuardError("Hub returned an invalid claim worktree.") from exc
-    if claimed_root != target.root:
-        return False
-    return not paths or any(claim_path_covers(path, target.relative_path) for path in paths)
-
-
 def decide_from_snapshot(
     snapshot: Mapping[str, Any], *, identity: str, target: RepositoryTarget
 ) -> GuardVerdict:
     """Decide whether ``identity`` unambiguously owns ``target`` in a hub snapshot."""
-    claims = snapshot.get("active_claims")
-    if not isinstance(claims, list):
-        raise ClaimGuardError("Hub state snapshot has no valid active_claims list.")
-
-    covering: list[Mapping[str, Any]] = []
-    for item in claims:
-        if not isinstance(item, dict):
-            raise ClaimGuardError("Hub state snapshot contains a malformed claim.")
-        if _claim_covers_target(item, target):
-            covering.append(item)
-
-    if not covering:
+    try:
+        coverage = decide_claim_coverage(
+            snapshot,
+            identity=identity,
+            root=target.root,
+            branch=target.branch,
+            paths=(target.relative_path,),
+        )
+    except ClaimCoverageError as exc:
+        raise ClaimGuardError(str(exc)) from exc
+    if coverage.missing_paths:
         return GuardVerdict(
             False,
             f"Synapse claim required before {target.relative_path!r} can be edited.",
         )
-    owners = {claim.get("owner") for claim in covering}
-    if owners != {identity}:
+    if coverage.ownership_mismatch_paths:
         return GuardVerdict(False, "Synapse claim ownership is missing or ambiguous for this file.")
-    if any(claim.get("status") not in EDITABLE_STATUSES for claim in covering):
+    if coverage.non_editable_paths:
         return GuardVerdict(False, "The covering Synapse claim is not in an editable task state.")
     return GuardVerdict(True)
 
