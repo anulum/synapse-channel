@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.3] - 2026-07-11
+
 ### Added
 
 - The experimental VS Code/Cursor extension 0.3.0 now renders file and
