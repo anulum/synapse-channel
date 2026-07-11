@@ -36,7 +36,7 @@ everything, since they need the whole command table.
 | `synapse encrypt-key` | Generate and check at-rest encryption key files (needs the `encryption` extra to encrypt). |
 | `synapse agent-tmux` | Wake an existing terminal-agent tmux session (Codex, Kimi, …) with a fixed safe prompt. |
 | `synapse codex-tmux` | Codex-defaulted alias of `agent-tmux`. |
-| `synapse dashboard` | Serve a loopback-only read-only live cockpit (fleet graph, board, claims, stream, receipts) over hub snapshots, plus `/snapshot.json`; `--feeds-db` adds durable store feeds including `/receipts.json`, and `--observed-peer HUB=URI` adds advisory peer-hub rows. |
+| `synapse dashboard` | Serve a loopback-only read-only live cockpit (fleet graph, board, claims, risk guidance, stream, receipts) over hub snapshots, plus `/snapshot.json`; `--feeds-db` adds durable store feeds including `/postmortem.json?task=ID` and `/receipts.json`, and `--observed-peer HUB=URI` adds advisory peer-hub rows. |
 | `synapse route-task` | Recommend agents for a board task using local capability signals. |
 | `synapse resource-bids` | Rank live resource offers for a board task without reserving capacity. |
 | `synapse memory-recall` | Recall matching durable memory records from a local event store. |
@@ -305,9 +305,14 @@ and `/snapshot.json`; when `--allow-non-loopback` exposes the dashboard and no
 token is supplied, Synapse generates and prints a startup token. Add
 `--observed-peer HUB=URI` to include peer-hub rows in the browser and
 `/snapshot.json`; those rows stay advisory and are labelled `observed@HUB`.
+The snapshot's risk section also enriches at most 20 ready tasks with at most
+three explainable `route-task` candidates and three `resource-bids` candidates
+per task. These are the same deterministic local scorers as the CLI, remain
+advisory-only, and never claim work, assign owners, reserve capacity, or grant
+execution authority.
 
 With `--feeds-db <hub.db>` (`--reliability-db` is the same flag's original
-name) the dashboard serves nine feeds off the **durable event store** —
+name) the dashboard serves twelve feeds off the **durable event store** —
 available when the hub is down, real sequences and timestamps, behind the
 same dashboard bearer token as every other path:
 
@@ -329,6 +334,10 @@ same dashboard bearer token as every other path:
   `note` naming which absence it is: an event recorded but outside the
   coordination causal graph (chatter carries no causal edges), or no
   event at that sequence at all;
+- `/postmortem.json?task=ID` — the same replayable task evidence as
+  `synapse postmortem`, projected as JSON for cockpit links. The identifier is
+  required and bounded before storage access; a task with no matching events
+  returns `present: false` and an empty timeline rather than invented history;
 - `/metrics.json` — store-attested log metrics for the cockpit's metrics
   panel: total and per-kind event counts plus the same split over
   trailing hour/day windows, measured against the log's own final

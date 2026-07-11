@@ -45,6 +45,7 @@ from synapse_channel.dashboard_feed_serving import (
     serve_merkle_proof,
     serve_metrics_feed,
     serve_operator_actions,
+    serve_postmortem,
     serve_receipts,
     serve_reliability,
     serve_sessions,
@@ -110,6 +111,7 @@ def test_bounded_query_int_rejects_malformed_or_oversize(raw: str) -> None:
         (lambda: serve_sessions(None), "--feeds-db"),
         (lambda: serve_waits(None), "--feeds-db"),
         (lambda: serve_operator_actions(None, ""), "--feeds-db"),
+        (lambda: serve_postmortem(None, None, "task=T"), "--feeds-db"),
         (lambda: serve_receipts(None, ""), "--feeds-db"),
         (lambda: serve_events(None, ""), "--feeds-db"),
         (lambda: serve_causality(None, ""), "--feeds-db"),
@@ -135,6 +137,14 @@ def test_an_unconfigured_feed_is_an_honest_404_naming_the_flag(
         (lambda db: serve_receipts(db, "limit=abc"), "since and limit must be integers"),
         (lambda db: serve_events(db, "limit=abc"), "since must be an integer or 'latest'"),
         (lambda db: serve_causality(db, "seq=abc"), "seq must be an integer"),
+        (
+            lambda db: serve_postmortem(db, None, "task="),
+            "task must be one non-empty identifier",
+        ),
+        (
+            lambda db: serve_postmortem(db, None, "task=A&task=B"),
+            "task must be one non-empty identifier",
+        ),
     ],
 )
 def test_a_malformed_query_is_a_400_naming_the_parameter(
@@ -179,6 +189,7 @@ def test_events_tail_serves_seeded_events_and_the_latest_shortcut(tmp_path: Path
         lambda db: serve_sessions(db),
         lambda db: serve_waits(db),
         lambda db: serve_operator_actions(db, ""),
+        lambda db: serve_postmortem(db, None, "task=T"),
         lambda db: serve_receipts(db, ""),
     ],
 )
@@ -209,6 +220,24 @@ def test_causality_answers_a_seq_anchor_from_the_log(tmp_path: Path) -> None:
     document = json.loads(response.body)
     assert document["seq"] == 1
     assert document["present"] is True
+
+
+def test_postmortem_serves_real_task_evidence_and_honest_absence(tmp_path: Path) -> None:
+    db = _seeded_db(tmp_path)
+    present = serve_postmortem(db, None, "task=T")
+    absent = serve_postmortem(db, None, "task=UNKNOWN")
+
+    assert present.status == HTTPStatus.OK
+    present_document = json.loads(present.body)
+    assert present_document["present"] is True
+    assert [event["kind"] for event in present_document["timeline"]] == ["claim", "release"]
+    assert json.loads(absent.body)["present"] is False
+
+
+def test_postmortem_rejects_an_unbounded_task_identifier(tmp_path: Path) -> None:
+    response = serve_postmortem(_seeded_db(tmp_path), None, "task=" + "T" * 513)
+    assert response.status == HTTPStatus.BAD_REQUEST
+    assert "at most 512" in response.body.decode()
 
 
 def test_federation_serves_peerings_from_a_real_store(tmp_path: Path) -> None:

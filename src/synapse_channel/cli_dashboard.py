@@ -141,12 +141,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=Path,
         default=None,
         help=(
-            "Hub event store powering the store-backed feeds: /reliability.json "
-            "(audit signals, not scores), /events.json (raw log tail past a "
-            "cursor), /receipts.json (universal receipt projections), "
-            "/causality.json (one causality query in the CLI's JSON shape), "
-            "/operator-actions.json (governed operator relay history), and "
-            "/sessions.json (opt-in session telemetry). "
+            "Hub event store powering 12 read-only feeds, including "
+            "/reliability.json (audit signals, not scores), /events.json (raw log "
+            "tail), /postmortem.json?task=ID (replayable task evidence), "
+            "/receipts.json, /causality.json, /operator-actions.json, and "
+            "/sessions.json. "
             "Read-only; without it each endpoint reports its absence with 404. "
             "--reliability-db is the same flag's original name."
         ),

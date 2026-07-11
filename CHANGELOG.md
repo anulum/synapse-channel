@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- The read-only cockpit risk panel now enriches its bounded safe-work queue
+  with explainable route candidates and resource bids from the existing local
+  advisory scorers. Risk and ready-task rows link to a new
+  `/postmortem.json?task=ID` durable-store feed. The renderer and styles live in
+  dedicated risk-panel assets, shrinking the original cockpit JS/CSS instead
+  of turning either into a Godfile; no hint claims work, assigns an owner,
+  reserves capacity, or grants authority.
+
 ### Security
 
 - A weekly or manual read-only Actions-history audit now classifies the latest

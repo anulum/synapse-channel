@@ -26,6 +26,8 @@ def test_cockpit_assets_mapping() -> None:
     assert COCKPIT_ASSETS == {
         "cockpit.css": "text/css",
         "cockpit.js": "text/javascript",
+        "risk-panel.css": "text/css",
+        "risk-panel.js": "text/javascript",
         "studio.css": "text/css",
     }
 
@@ -39,7 +41,9 @@ def test_cockpit_assets_render_the_risk_view() -> None:
     assert "renderRisk" in load_cockpit_asset("cockpit.js")
     assert "fetchReceipts" in load_cockpit_asset("cockpit.js")
     assert "receiptsUrl" in load_cockpit_asset("cockpit.js")
-    assert ".risk__verdict" in load_cockpit_asset("cockpit.css")
+    assert "SynapseRiskPanel" in load_cockpit_asset("risk-panel.js")
+    assert "/postmortem.json?task=" in load_cockpit_asset("risk-panel.js")
+    assert ".risk__guidance-card" in load_cockpit_asset("risk-panel.css")
 
 
 def test_load_cockpit_asset_rejects_unknown() -> None:
@@ -61,6 +65,8 @@ def test_render_cockpit_html_embeds_shell_and_fallback() -> None:
         'id="risk-verdict"',
         'id="receipts"',
         'href="cockpit.css"',
+        'href="risk-panel.css"',
+        'src="risk-panel.js"',
         'src="cockpit.js"',
         "refreshSeconds: 5",
         'receiptsUrl: "receipts.json"',
@@ -68,6 +74,7 @@ def test_render_cockpit_html_embeds_shell_and_fallback() -> None:
         "FALLBACK-MARKER",
     ):
         assert needle in html, needle
+    assert html.index('src="risk-panel.js"') < html.index('src="cockpit.js"')
 
 
 def test_render_cockpit_html_coerces_refresh_floor() -> None:
@@ -94,6 +101,8 @@ async def test_dashboard_serves_cockpit_assets_and_404() -> None:
         try:
             css_status, css_headers, css_body = await http_get(base, "/cockpit.css")
             js_status, js_headers, js_body = await http_get(base, "/cockpit.js")
+            risk_css_status, _, risk_css_body = await http_get(base, "/risk-panel.css")
+            risk_js_status, _, risk_js_body = await http_get(base, "/risk-panel.js")
             missing_status, _, _ = await http_get(base, "/nope.png")
         finally:
             server.close()
@@ -104,4 +113,8 @@ async def test_dashboard_serves_cockpit_assets_and_404() -> None:
     assert js_status == 200
     assert js_headers["Content-Type"].startswith("text/javascript")
     assert "fleet" in js_body
+    assert risk_css_status == 200
+    assert ".risk__guidance" in risk_css_body
+    assert risk_js_status == 200
+    assert "SynapseRiskPanel" in risk_js_body
     assert missing_status == 404

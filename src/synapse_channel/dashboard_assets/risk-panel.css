@@ -1,0 +1,136 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Commercial license available
+ * © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+ * © Code 2020–2026 Miroslav Šotek. All rights reserved.
+ * ORCID: 0009-0009-3560-0851
+ * Contact: www.anulum.li | protoscience@anulum.li
+ * SYNAPSE CHANNEL — cockpit risk and advisory safe-work guidance
+ */
+
+.risk__verdict {
+  font: 700 11px/1 var(--mono);
+  letter-spacing: 0.12em;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--void);
+}
+.risk__verdict--green {
+  background: var(--synapse);
+}
+.risk__verdict--amber {
+  background: var(--signal);
+}
+.risk__verdict--red {
+  background: var(--alert);
+}
+.risk__signal {
+  border-left: 3px solid var(--line);
+  padding-left: 9px;
+}
+.risk__signal--red {
+  border-left-color: var(--alert);
+}
+.risk__signal--amber {
+  border-left-color: var(--signal);
+}
+.risk__postmortem {
+  margin-left: 8px;
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.risk__safe {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.risk__safe-head,
+.risk__hint-label {
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.risk__safe-head {
+  margin-bottom: 7px;
+}
+.risk__guidance {
+  display: grid;
+  gap: 8px;
+}
+.risk__compact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.risk__guidance-card {
+  padding: 9px;
+  background: color-mix(in srgb, var(--panel-2) 86%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.risk__guidance-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+  color: var(--text);
+}
+.risk__hint {
+  display: grid;
+  grid-template-columns: minmax(64px, auto) 1fr;
+  gap: 8px;
+  align-items: start;
+  margin-top: 6px;
+}
+.risk__hint-label {
+  padding-top: 5px;
+}
+.risk__hint-body {
+  min-width: 0;
+}
+.risk__fallback,
+.risk__bounded,
+.risk__trust {
+  color: var(--muted);
+  font-size: 11px;
+}
+.risk__bounded,
+.risk__trust {
+  margin: 8px 0 0;
+  line-height: 1.45;
+}
+.chip {
+  display: inline-block;
+  font: 600 11px/1 var(--mono);
+  color: var(--synapse);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin: 0 4px 4px 0;
+}
+.chip--resource {
+  color: var(--signal);
+}
+.risk__task-link {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+@media (max-width: 520px) {
+  .risk__hint {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .risk__guidance-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .risk__postmortem {
+    margin-left: 0;
+  }
+}

@@ -202,7 +202,9 @@ def test_cmd_dashboard_rejects_an_invalid_bind(
     assert "refusing non-loopback bind" in capsys.readouterr().out
 
 
-def test_dashboard_parser_wires_the_reliability_store_flag() -> None:
+def test_dashboard_parser_wires_the_reliability_store_flag(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     parser = cli.build_parser(command="dashboard")
 
     default = parser.parse_args(["dashboard"])
@@ -210,6 +212,12 @@ def test_dashboard_parser_wires_the_reliability_store_flag() -> None:
 
     named = parser.parse_args(["dashboard", "--reliability-db", "./hub.db"])
     assert named.reliability_db == Path("./hub.db")
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(["dashboard", "--help"])
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "12 read-only feeds" in help_text
+    assert "/postmortem.json?task=ID" in help_text
 
 
 def test_cmd_dashboard_announces_the_reliability_url(

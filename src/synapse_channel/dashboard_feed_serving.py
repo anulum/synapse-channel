@@ -29,6 +29,10 @@ from urllib.parse import parse_qs
 
 from synapse_channel.core.federation_store import FederationStoreError
 from synapse_channel.core.reliability import reliability_to_json, run_reliability_report
+from synapse_channel.dashboard_postmortem_feed import (
+    MAX_POSTMORTEM_TASK_ID_LENGTH,
+    build_postmortem_feed,
+)
 from synapse_channel.dashboard_store_feeds import (
     DEFAULT_EVENTS_LIMIT,
     build_causality_feed,
@@ -243,6 +247,26 @@ def serve_receipts(db: Path | None, query: str) -> FeedResponse:
     except ValueError:
         return plain_response(HTTPStatus.BAD_REQUEST, "since and limit must be integers")
     return _store_feed(lambda: build_receipts_feed(db, since=since, limit=limit))
+
+
+def serve_postmortem(db: Path | None, key_file: Path | None, query: str) -> FeedResponse:
+    """Serve one replayable task postmortem from ``?task=ID``.
+
+    The task id is required, singular, and bounded before the durable store is
+    touched. An unknown task returns a successful document with
+    ``present=false``; only missing configuration or unreadable storage fail.
+    """
+    if db is None:
+        return _absent("postmortem", "--feeds-db")
+    values = parse_qs(query, keep_blank_values=True).get("task", [])
+    task_id = values[0].strip() if len(values) == 1 else ""
+    if not task_id or len(task_id) > MAX_POSTMORTEM_TASK_ID_LENGTH:
+        return plain_response(
+            HTTPStatus.BAD_REQUEST,
+            "task must be one non-empty identifier of at most "
+            f"{MAX_POSTMORTEM_TASK_ID_LENGTH} characters",
+        )
+    return _store_feed(lambda: build_postmortem_feed(db, task_id, key_file=key_file))
 
 
 def serve_events(db: Path | None, query: str) -> FeedResponse:

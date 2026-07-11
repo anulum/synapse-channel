@@ -50,6 +50,7 @@ from synapse_channel.dashboard_feed_serving import (
     serve_merkle_proof,
     serve_metrics_feed,
     serve_operator_actions,
+    serve_postmortem,
     serve_public_cockpit_asset,
     serve_receipts,
     serve_reliability,
@@ -67,8 +68,10 @@ from synapse_channel.dashboard_operator_writes import (
     plan_task_update,
     read_operator_body,
 )
+from synapse_channel.dashboard_postmortem_feed import POSTMORTEM_PATH
 from synapse_channel.dashboard_render import render_dashboard_html
 from synapse_channel.dashboard_risk import build_risk_view
+from synapse_channel.dashboard_risk_guidance import build_risk_guidance
 from synapse_channel.dashboard_store_feeds import event_store_key
 from synapse_channel.dashboard_studio import (
     STUDIO_REFERENCE_PATH,
@@ -154,7 +157,14 @@ class DashboardSnapshot:
         payload["observed_peers"] = observed_peers_to_dict(self.observed_peers)
         fleet = build_fleet_visibility(self, a2a_state_file=a2a_state_file)
         payload["fleet"] = fleet.to_dict()
-        payload["risk"] = build_risk_view(fleet).to_dict()
+        risk = build_risk_view(fleet).to_dict()
+        risk["guidance"] = build_risk_guidance(
+            board=self.board,
+            manifest=self.manifest,
+            state=self.state,
+            safe_task_ids=fleet.tasks.ready,
+        ).to_dict()
+        payload["risk"] = risk
         return payload
 
 
@@ -650,6 +660,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return serve_operator_actions(db, query)
         if path == RECEIPTS_PATH:
             return serve_receipts(db, query)
+        if path == POSTMORTEM_PATH:
+            return serve_postmortem(db, self.reliability_db_key_file, query)
         if path.startswith(COCKPIT_DIST_PREFIX) or path == COCKPIT_DIST_PREFIX.rstrip("/"):
             return serve_cockpit_dist(self.cockpit_dist, COCKPIT_DIST_PREFIX, path)
         return None

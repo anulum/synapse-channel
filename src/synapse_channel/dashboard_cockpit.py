@@ -27,6 +27,8 @@ _ASSETS_DIR: Final = Path(__file__).parent / "dashboard_assets"
 COCKPIT_ASSETS: Final[dict[str, str]] = {
     "cockpit.css": "text/css",
     "cockpit.js": "text/javascript",
+    "risk-panel.css": "text/css",
+    "risk-panel.js": "text/javascript",
     "studio.css": "text/css",
 }
 """Servable cockpit asset file names mapped to their content types."""
@@ -122,6 +124,7 @@ def render_cockpit_html(*, refresh_seconds: int, fallback_html: str) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SYNAPSE CHANNEL — fleet nerve center</title>
   <link rel="stylesheet" href="cockpit.css">
+  <link rel="stylesheet" href="risk-panel.css">
 </head>
 <body>
   <header class="hud">
@@ -160,6 +163,7 @@ def render_cockpit_html(*, refresh_seconds: int, fallback_html: str) -> str:
       receiptsUrl: "receipts.json"
     }};
   </script>
+  <script src="risk-panel.js"></script>
   <script src="cockpit.js"></script>
 </body>
 </html>

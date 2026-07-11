@@ -135,6 +135,7 @@ def test_dashboard_feed_queries_never_crash_on_malformed_input(tmp_path: Path) -
         "/events.json",
         "/causality.json",
         "/receipts.json",
+        "/postmortem.json",
     )
     server = _reliability_server(db)
     try:
@@ -243,6 +244,23 @@ def test_events_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
 
     assert status == 503
     assert "missing event store" in body
+
+
+def test_postmortem_feed_serves_task_evidence_with_the_hub_down(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_feed_store(db)
+
+    server = _feeds_server(reliability_db=db)
+    try:
+        status, content_type, body = _http_get(server.url("/postmortem.json?task=T"))
+    finally:
+        server.close()
+
+    assert status == 200
+    assert content_type == "application/json"
+    payload = json.loads(body)
+    assert payload["present"] is True
+    assert [event["kind"] for event in payload["timeline"]] == ["claim", "release"]
 
 
 def _seed_session_note(db: Path) -> None:

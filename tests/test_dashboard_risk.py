@@ -27,6 +27,10 @@ from synapse_channel.dashboard_risk import (
     STALE_CLAIM,
     build_risk_view,
 )
+from synapse_channel.dashboard_risk_guidance import (
+    MAX_GUIDANCE_TASKS,
+    build_risk_guidance,
+)
 from synapse_channel.dashboard_task_graph import TaskDependencyGraph
 
 
@@ -154,3 +158,73 @@ def test_snapshot_to_dict_carries_the_risk_view() -> None:
     assert risk["level"] == RED
     assert risk["safe_next_work"] == ["R"]
     assert risk["signals"][0]["category"] == STALE_CLAIM
+    assert risk["guidance"]["tasks"][0]["task_id"] == "R"
+    assert risk["guidance"]["tasks"][0]["route_fallback"] == (
+        "no agent capability cards are available"
+    )
+
+
+def test_risk_guidance_ranks_routes_resources_and_links_postmortems() -> None:
+    guidance = build_risk_guidance(
+        board={
+            "tasks": [
+                {
+                    "task_id": "GPU render/1",
+                    "title": "render gpu frames",
+                    "description": "use the available accelerator",
+                }
+            ]
+        },
+        manifest=[
+            {
+                "agent": "render-seat",
+                "task_classes": ["render"],
+                "skills": ["gpu"],
+                "description": "GPU rendering",
+                "contracts": [{"name": "render"}],
+            }
+        ],
+        state={
+            "resources": [
+                {
+                    "agent": "render-seat",
+                    "kind": "gpu",
+                    "name": "A100",
+                    "capacity": 2,
+                }
+            ]
+        },
+        safe_task_ids=["GPU render/1"],
+    ).to_dict()
+
+    task = guidance["tasks"][0]
+    assert task["route_candidates"][0]["agent"] == "render-seat"
+    assert task["route_candidates"][0]["score"] > 0
+    bid = task["resource_bids"][0]
+    assert (bid["resource_kind"], bid["resource_name"], bid["agent"]) == (
+        "gpu",
+        "A100",
+        "render-seat",
+    )
+    assert bid["capacity"] == 2
+    assert bid["trust"] == "advisory-only"
+    assert task["postmortem_href"] == "/postmortem.json?task=GPU+render%2F1"
+    assert "do not claim tasks" in guidance["trust_boundary"]
+
+
+def test_risk_guidance_is_bounded_deduplicated_and_fail_visible() -> None:
+    task_ids = [f"T{index}" for index in range(MAX_GUIDANCE_TASKS + 2)]
+    guidance = build_risk_guidance(
+        board={"tasks": []},
+        manifest=[],
+        state={"resources": {"malformed": True}},
+        safe_task_ids=[*task_ids, task_ids[0], ""],
+    ).to_dict()
+
+    assert guidance["task_count"] == MAX_GUIDANCE_TASKS
+    assert guidance["omitted_tasks"] == 2
+    assert [task["task_id"] for task in guidance["tasks"]] == task_ids[:MAX_GUIDANCE_TASKS]
+    assert guidance["tasks"][0]["route_fallback"] == (
+        "ready task is absent from the board snapshot"
+    )
+    assert guidance["tasks"][0]["resource_bids"] == []
