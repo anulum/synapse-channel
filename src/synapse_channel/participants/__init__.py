@@ -112,6 +112,21 @@ from synapse_channel.participants.kimi_stream import (
     parse_kimi_stream,
 )
 from synapse_channel.participants.mcp_participant import McpParticipant
+from synapse_channel.participants.memory_boundary import (
+    MEMORY_FENCE_CLOSE,
+    MEMORY_FENCE_OPEN,
+    render_memory_context,
+    render_memory_unavailable,
+)
+from synapse_channel.participants.memory_contract import (
+    MemoryHit,
+    MemoryPolicy,
+    MemoryPresentation,
+    MemoryRecall,
+    MemoryRecallResult,
+    normalise_presentation,
+)
+from synapse_channel.participants.memory_participant import MemoryAugmentedParticipant
 from synapse_channel.participants.modes import (
     ConversationMode,
     ModePolicy,
@@ -206,6 +221,14 @@ __all__ = [
     "GrokParticipant",
     "KimiParticipant",
     "McpParticipant",
+    "MemoryAugmentedParticipant",
+    "MemoryHit",
+    "MemoryPolicy",
+    "MemoryPresentation",
+    "MemoryRecall",
+    "MemoryRecallResult",
+    "MEMORY_FENCE_CLOSE",
+    "MEMORY_FENCE_OPEN",
     "ModelCandidate",
     "ModePolicy",
     "HeadlessClaudeParticipant",
@@ -260,6 +283,7 @@ __all__ = [
     "frame_peer_panel",
     "load_policy",
     "no_wake",
+    "normalise_presentation",
     "orchestrate_session",
     "parse_claude_stream",
     "parse_codex_stream",
@@ -271,6 +295,8 @@ __all__ = [
     "react_to_advice",
     "relay_turn",
     "render_session_metric_report",
+    "render_memory_context",
+    "render_memory_unavailable",
     "run_session_metric_report",
     "save_policy",
     "select_channel",
