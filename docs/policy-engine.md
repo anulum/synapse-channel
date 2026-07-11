@@ -140,8 +140,10 @@ adding new protocol fields:
 - The [agent trust graph](agent-trust-graph.md) (`synapse trust-graph`), which
   exposes reliability signals, positive release receipts, broken handoff
   candidates, and conflict history as policy input without ranking agents.
-- Git hooks from `synapse git-init`, including claim checks before commit and
-  release checks before merge or push.
+- The read-only `synapse git-claim-check --staged` gate when a repository wires
+  it into pre-commit. `synapse git-init` persists non-secret local connection
+  metadata but installs only non-blocking post-commit/post-merge auto-release
+  hooks; it does not install a universal commit, merge, or push policy gate.
 - Repository-local files such as `CODEOWNERS`, generated-artifact maps, test
   ownership maps, and optional policy configuration.
 

@@ -146,6 +146,59 @@ hook from anything else is left untouched.
 The hub is never involved: it only ever receives an ordinary release, and a hook
 never blocks a commit — an unreachable hub or no matching claim is simply a no-op.
 
+## Block commits whose staged paths are not claimed
+
+Run the read-only staged gate directly:
+
+```bash
+synapse git-init --name project/agent
+synapse git-claim-check --staged
+```
+
+The checker reads the authoritative index with `git diff --cached --name-status
+-z --find-renames --find-copies`; it does not trust filenames supplied by a hook.
+Adds, modifications, deletions, type changes, and unmerged paths are checked.
+Copies and renames check both the old and new names. Malformed, absolute,
+parent-escaping, or truncated records fail closed.
+
+An empty staged index returns success without resolving identity, reading a
+token, or connecting to a hub. For a non-empty index, every covering claim must:
+
+- match the canonical repository root and current non-detached branch exactly;
+- belong to one exact identity and be in `claimed` or `working` state; and
+- cover every staged path, either literally, by directory ancestry, or through
+  the existing empty-path whole-worktree meaning.
+
+A `PROJECT:git` serialization lock cannot satisfy this check: it has no canonical
+worktree, branch, and path ownership. The checker never acquires, widens, renews,
+or releases a claim. Its bounded denial lists all ordinary uncovered paths so the
+operator can acquire the exact claim and retry.
+
+Identity resolution is deliberately strict. Populated sources must agree in this
+order: explicit `--name`, local `synapse.identity`, then an agreeing
+`SYN_PROJECT` plus `SYN_IDENTITY` pair. A bare ambient identity, placeholder such
+as `USER`, disagreement, or detached HEAD is refused. `git-init` persists
+`synapse.identity` and `synapse.uri` in local Git config; `--token-file` persists
+only its canonical path as `synapse.tokenFile`, never token content.
+
+This repository dogfoods the gate through the pre-commit framework:
+
+```yaml
+- id: staged-claim-coverage
+  name: every staged path has an owned Synapse claim
+  entry: python -m synapse_channel.cli git-claim-check --staged
+  language: system
+  stages: [pre-commit]
+  always_run: true
+  pass_filenames: false
+```
+
+`git-init` does **not** splice or overwrite a pre-commit hook. It installs only
+the non-blocking `post-commit` and `post-merge` auto-release hooks and writes the
+local guide/config. Repositories using pre-commit can add the stanza above;
+repositories with another hook manager must compose the standalone command
+themselves.
+
 ### Verify the hooks (recommended for production)
 
 Because a missing hook — or one whose baked-in `synapse` path has since moved —

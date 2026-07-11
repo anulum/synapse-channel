@@ -76,8 +76,9 @@ python -m pip install synapse-channel && synapse demo
 Synapse's daily promise is three explicit loops:
 
 - **Coordinate** before agents collide: `synapse git-init`, `synapse git-claim`,
-  `synapse task`, and `syn ack` turn work scope, dependencies, and evidence into
-  shared state instead of side-channel notes.
+  `synapse git-claim-check --staged`, `synapse task`, and `syn ack` turn work
+  scope, dependencies, and evidence into shared state instead of side-channel
+  notes.
 - **Observe** the fleet from durable state: `synapse who`, `synapse state`,
   `synapse dashboard`, `synapse event-query`, and observed peer rows show who is
   present, what is claimed, what changed, and which peer-hub facts are advisory.
@@ -809,8 +810,9 @@ also follow the [A2A deployment threat model](docs/a2a-deployment-threat-model.m
 A claim can be scoped to the git branch it happens on, resolved client-side:
 
 ```bash
-synapse git-init                                 # one-step setup: install the hooks + write a .synapse/ guide
+synapse git-init --name project/agent            # persist exact identity/URI + install release hooks
 synapse git-claim TASK-1 --paths src/auth.py     # or: synapse git-claim --task-id TASK-1 ...
+synapse git-claim-check --staged                 # fail unless this owner covers the staged index
 synapse git-claim TASK-2 --diff-base main        # optional [semantic] extra narrows safe edits to symbols
 synapse git-hook install                         # (git-init already does this) auto-release on commit/merge
 synapse conflicts --check-diff                   # predict cross-branch merge conflicts
@@ -834,11 +836,17 @@ explicitly does *not* claim:
 | [Differential-privacy blackboard](docs/differential-privacy-blackboard.md) | Design target | Redacted and noisy board projections for multi-organisation views; raw local board data stays exact for the operator. | Payload encryption; replacing private or E2E channels; anonymising raw logs. |
 | [Signed capability cards](docs/signed-capability-cards.md) | Design target | Tamper-evident capability advertisements for manifests, directories, dashboards, MCP resources, and Agent Card projections. | Authorising tools; replacing per-message auth or signed events; sandboxing agents. |
 
-`synapse git-init` bundles the hook install with a short `.synapse/git-claims.md`
-onboarding guide (branch convention + worktree workflow). `synapse state` shows
-each claim's branch; installed git hooks release a claim
-when its files are committed or merged; and `synapse conflicts` flags two agents
-about to edit the same files on branches that merge into the same base.
+`synapse git-init` records the exact identity and hub URI in local Git config,
+optionally records a token-*file path* (never token content), installs only the
+non-blocking post-commit/post-merge auto-release hooks, and writes a short
+`.synapse/git-claims.md` guide. This repository separately wires
+`git-claim-check --staged` into pre-commit: it reads the NUL-delimited Git index
+itself and fails closed unless the configured owner has editable claims covering
+every staged path on the same canonical worktree and branch. A Git serialization
+lock is not a path claim. An empty staged index succeeds without a hub so
+`pre-commit run --all-files` remains hermetic. `synapse state` shows each claim's
+branch, while `synapse conflicts` flags agents about to edit the same files on
+branches that merge into the same base.
 `--check-diff` narrows directory or whole-worktree claims to files both branches
 actually changed when both branch diffs are available. The hub stays
 **git-agnostic** — it stores the branch as opaque metadata and never runs git or
@@ -1291,11 +1299,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.4 |
 | Public API exports | 70 |
-| Package modules | 397 |
-| Classes | 566 |
+| Package modules | 401 |
+| Classes | 569 |
 | Wire message types | 77 |
-| CLI subcommands | 161 |
-| Test functions | 6303 |
+| CLI subcommands | 162 |
+| Test functions | 6351 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 18 |

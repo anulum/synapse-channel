@@ -45,6 +45,13 @@ repos:
         stages: [pre-commit]
   - repo: local
     hooks:
+      - id: staged-claim-coverage
+        name: every staged path has an owned Synapse claim
+        entry: python -m synapse_channel.cli git-claim-check --staged
+        language: system
+        stages: [pre-commit]
+        always_run: true
+        pass_filenames: false
       - id: mypy-whole-tree
         name: strict whole-tree mypy
         entry: python tools/run_mypy_hook.py

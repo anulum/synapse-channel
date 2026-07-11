@@ -10,18 +10,17 @@
 :func:`init_repo` installs the auto-release hooks (reusing
 :func:`synapse_channel.git.githook.install_hooks`) and writes a short scaffold
 guide under ``.synapse/`` documenting the branch-naming convention, the
-recommended git-worktree-per-claim workflow, and the exact ``git-claim`` /
-``git-hook`` commands — so a fresh clone becomes claim-aware in one step instead
-of several. Everything is client-side and idempotent; the git executor and the
-target directories are injectable so the flow is unit-testable without a real
-repository.
+recommended git-worktree-per-claim workflow, and the exact claim-check command.
+It also records the repository-local identity and connection metadata used by
+the staged gate. Everything is client-side and idempotent; the git executor and
+target directories are injectable for isolated tests.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from synapse_channel.git.gitclaim import GitRunner, _default_git_runner
+from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runner
 from synapse_channel.git.githook import install_hooks
 
 SCAFFOLD_DIR = ".synapse"
@@ -69,7 +68,38 @@ def _scaffold_body(*, name: str, base_branch: str) -> str:
         "The hub only ever sees an ordinary claim and release — all the git awareness\n"
         "is client-side. Run `synapse conflicts` to predict cross-branch overlaps, and\n"
         "`synapse git-hook test` to confirm the hooks are healthy.\n"
+        "\n## Commit-time claim coverage\n\n"
+        "This command verifies the real staged index before a commit:\n\n"
+        "```\n"
+        "synapse git-claim-check --staged\n"
+        "```\n\n"
+        "With the pre-commit framework, use an always-run local hook with\n"
+        "`pass_filenames: false`; the checker reads Git directly. `git-init` installs\n"
+        "only the post-commit and post-merge auto-release hooks.\n"
     )
+
+
+def persist_claim_check_config(
+    *, uri: str, name: str, token_file: str | None, runner: GitRunner
+) -> tuple[list[str], str | None]:
+    """Write non-secret repository-local claim-check configuration."""
+    runner(["config", "--local", "synapse.identity", name])
+    runner(["config", "--local", "synapse.uri", uri])
+    canonical_token: str | None = None
+    if token_file:
+        try:
+            canonical_token = str(Path(token_file).expanduser().resolve(strict=False))
+        except (OSError, RuntimeError) as exc:
+            raise GitError("the Synapse token-file path is invalid") from exc
+        runner(["config", "--local", "synapse.tokenFile", canonical_token])
+    elif runner(["config", "--local", "--get", "--default", "", "synapse.tokenFile"]).strip():
+        runner(["config", "--local", "--unset-all", "synapse.tokenFile"])
+    results = ["recorded local synapse.identity and synapse.uri for staged claim checks"]
+    if canonical_token:
+        results.append("recorded local synapse.tokenFile path (token content was not stored)")
+    else:
+        results.append("cleared local synapse.tokenFile (no token file requested)")
+    return results, canonical_token
 
 
 def init_repo(
@@ -111,13 +141,21 @@ def init_repo(
         One human-readable line per hook and the scaffold file (installed,
         updated, or skipped).
     """
-    results = install_hooks(
+    results, canonical_token = persist_claim_check_config(
         uri=uri,
         name=name,
         token_file=token_file,
-        synapse_bin=synapse_bin,
         runner=runner,
-        hooks_dir=hooks_dir,
+    )
+    results.extend(
+        install_hooks(
+            uri=uri,
+            name=name,
+            token_file=canonical_token,
+            synapse_bin=synapse_bin,
+            runner=runner,
+            hooks_dir=hooks_dir,
+        )
     )
     base = scaffold_dir if scaffold_dir is not None else repo_toplevel(runner=runner) / SCAFFOLD_DIR
     base.mkdir(parents=True, exist_ok=True)

@@ -45,6 +45,7 @@ The ``synapse`` command exposes these subcommands:
 * ``who`` — list the agents currently online, optionally for one project;
 * ``state`` — print active claims and their checkpoints (a resume view);
 * ``git-claim`` — claim a task scoped to the current git branch (branch resolved client-side);
+* ``git-claim-check`` — require owned claims for every staged Git path;
 * ``git-hook`` — install git hooks that auto-release branch-scoped claims on commit/merge;
 * ``git-release`` — release branch-scoped claims whose paths were committed/merged (hook-invoked);
 * ``conflicts`` — predict merge conflicts between branch-scoped claims on different branches;
@@ -176,6 +177,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "synapse_channel.cli_git:add_parsers",
         ("git-claim", "git-hook", "git-init", "git-release", "conflicts"),
     ),
+    ("synapse_channel.cli_git_claim_check:add_parser", ("git-claim-check",)),
     ("synapse_channel.cli_verify_release:add_parsers", ("verify-release",)),
     ("synapse_channel.cli_policy_check:add_parsers", ("policy-check",)),
     ("synapse_channel.cli_identity:add_parsers", ("identity",)),

@@ -76,8 +76,9 @@ everything, since they need the whole command table.
 | `synapse init` | Print or install the local user services (hub, waiter, presence) as systemd units. |
 | `synapse install-shell-hook` | Install auto-arming shell integration into Bash, Zsh, and Fish (idempotent, guarded block). |
 | `synapse shell-hook` | Print the shell code that auto-arms terminals and wraps agent commands, for manual sourcing. |
-| `synapse git-init` | One-step claim-aware setup: install the hooks and write a `.synapse/` conventions guide. |
+| `synapse git-init` | Persist the local claim identity/URI/token-file path, install post-commit/post-merge auto-release hooks, and write a `.synapse/` conventions guide. |
 | `synapse git-claim` | Claim work scoped to the current git branch (see [Git-native claims](git-claims.md)). |
+| `synapse git-claim-check --staged` | Read the real staged index and fail unless one exact identity owns editable claims covering every path on this worktree and branch. |
 | `synapse git-hook` | Install post-commit/post-merge hooks that auto-release a commit's claims. |
 | `synapse git-release` | Release the claims whose paths a commit or merge just touched. |
 | `synapse conflicts` | Predict cross-branch merge conflicts between overlapping claims; exit non-zero on a hit. |
@@ -575,6 +576,16 @@ Claim paths are coordination scopes, not filesystem reads. Normal relative paths
 such as `src/auth.py` stay narrow. Absolute paths and any path containing `..`
 are treated as traversal-like declarations and widen to the whole worktree, so a
 suspicious scope may block more work but cannot miss a conflict.
+
+`synapse git-claim-check --staged` is the read-only commit gate. It ignores hook
+filenames and parses `git diff --cached --name-status -z --find-renames
+--find-copies`; copies and renames require claims for both names. An empty index
+returns success before resolving identity or contacting a hub. Otherwise the
+explicit `--name`, local `synapse.identity`, and an ambient `SYN_PROJECT` plus
+`SYN_IDENTITY` pair must agree. `git-init --name <exact-owner>` writes that local
+identity, the selected URI, and at most a token-file path. It installs only the
+post-commit/post-merge release hooks; a repository must wire the checker into its
+pre-commit framework to make it blocking. See [Git-native claims](git-claims.md).
 
 Use `syn locks` for the operator view before releasing or asking another owner to
 release. It queries the live state snapshot as `<identity>-locks`, filters to the

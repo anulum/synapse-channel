@@ -76,6 +76,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "claim_coverage",
         RuntimeError,
     ),
+    "ClaimCheckConfigError": (
+        "synapse_channel.git.claim_check_context",
+        "claim_check_config",
+        RuntimeError,
+    ),
     "ClaimForwardError": (
         "synapse_channel.core.multihub_claim_transport",
         "claim_forward",
