@@ -3,7 +3,7 @@
   "private": true,
   "displayName": "SYNAPSE CHANNEL",
   "description": "Claim files, release them, watch the board, and see hub health from inside VS Code or Cursor.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "AGPL-3.0-or-later",
   "publisher": "anulum",
   "repository": {

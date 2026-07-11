@@ -14,10 +14,9 @@ release it when you are done, watch the shared board, and see hub health in the
 status bar — so two agents (or two people) never edit the same file at once.
 
 This is an installable experimental preview. The structure, editor-agnostic
-logic, tests, and repeatable version-pinned `.vsix` packaging path are in place;
-richer per-line gutter affordances remain open. It is intentionally kept
-separate from the core Python package and is not published in the VS Code
-Marketplace yet.
+logic, tests, per-line claim gutter, and repeatable version-pinned `.vsix`
+packaging path are in place. It is intentionally kept separate from the core
+Python package and is not published in the VS Code Marketplace yet.
 
 ## What it does
 
@@ -27,7 +26,12 @@ Marketplace yet.
   path on the hub.
 - **`SYNAPSE: Release current file`** — releases your claim.
 - **`SYNAPSE board` view** — the shared plan's tasks and their status.
-- **Overview-ruler marks** — the active file is flagged when it is claimed.
+- **Claim gutter and overview ruler** — every visible line covered by a file or
+  directory claim carries a restrained marker. A circle/check means your claim;
+  a diamond/exclamation means another agent's claim, and hover text names the
+  owner. Semantic `.synapse-symbol` claims mark only the document-symbol range
+  the editor resolves. If no range is available, one explicit alert marker is
+  shown instead of falsely widening the claim to the whole file.
 - **`SYNAPSE: Set hub token` / `Clear hub token`** — manage one encrypted
   SecretStorage credential per hub URI without writing a bearer to settings.
 
@@ -46,13 +50,15 @@ workspace files.
 
 ## Design
 
-The editor-agnostic decisions — hub health, board items, claim marks, the claim
-request for a path, and the status-bar text — live in `src/fleetModel.ts`.
-`src/hubAuth.ts` owns URI policy, the registration heartbeat, and the structural
-SecretStorage adapter; `src/fleetController.ts` owns the WebSocket and hub-state
-lifecycle. `src/extension.ts` remains thin activation/UI glue. The pieces are
-kept separate so credential work cannot turn the editor entry point into a
-Godfile.
+The editor-agnostic fleet decisions — hub health, board items, claim marks, the
+claim request for a path, and the status-bar text — live in `src/fleetModel.ts`.
+`src/claimGutterModel.ts` separately projects file, directory, whole-worktree,
+and semantic claims into visible line and overview-ruler spans;
+`src/claimGutter.ts` is the VS Code-only renderer. `src/hubAuth.ts` owns URI
+policy, the registration heartbeat, and the structural SecretStorage adapter;
+`src/fleetController.ts` owns the WebSocket and hub-state lifecycle.
+`src/extension.ts` remains thin activation glue, so no feature turns the entry
+point or controller into a Godfile.
 
 ## Develop
 

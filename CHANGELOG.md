@@ -15,6 +15,14 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- The experimental VS Code/Cursor extension 0.3.0 now renders file and
+  directory claims on every visible gutter line, with distinct own/other shapes,
+  theme-specific contrast, owner hover text, and true-scope overview marks.
+  Semantic `.synapse-symbol` claims follow resolved editor symbol ranges; when a
+  provider cannot resolve a symbol, one explicit alert marker appears instead
+  of widening the lease to the whole file. Pure range decisions and VS Code
+  rendering live in separate focused modules.
+
 - The experimental VS Code/Cursor extension can now authenticate to secured
   hubs without a token setting. `SYNAPSE: Set hub token` stores one credential
   per canonical hub URI in VS Code SecretStorage; clear deletes it. A real

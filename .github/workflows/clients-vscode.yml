@@ -45,8 +45,14 @@ jobs:
           unzip -Z1 dist/synapse-channel-vscode.vsix | sort > /tmp/synapse-vsix-files.txt
           grep -Fx 'extension/package.json' /tmp/synapse-vsix-files.txt
           grep -Fx 'extension/out/extension.js' /tmp/synapse-vsix-files.txt
+          grep -Fx 'extension/out/claimGutter.js' /tmp/synapse-vsix-files.txt
+          grep -Fx 'extension/out/claimGutterModel.js' /tmp/synapse-vsix-files.txt
           grep -Fx 'extension/out/fleetController.js' /tmp/synapse-vsix-files.txt
           grep -Fx 'extension/out/hubAuth.js' /tmp/synapse-vsix-files.txt
+          grep -Fx 'extension/media/claim-mine-light.svg' /tmp/synapse-vsix-files.txt
+          grep -Fx 'extension/media/claim-mine-dark.svg' /tmp/synapse-vsix-files.txt
+          grep -Fx 'extension/media/claim-other-light.svg' /tmp/synapse-vsix-files.txt
+          grep -Fx 'extension/media/claim-other-dark.svg' /tmp/synapse-vsix-files.txt
           grep -Fx 'extension/LICENSE.txt' /tmp/synapse-vsix-files.txt
           if grep -Eq '^extension/(src|test|node_modules|out-test)/' /tmp/synapse-vsix-files.txt; then
             echo 'VSIX contains development-only trees' >&2

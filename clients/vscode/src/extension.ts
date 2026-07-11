@@ -10,13 +10,14 @@
  * VS Code / Cursor extension entry point.
  *
  * This is the thin editor-host glue: it owns the VS Code API surface — the status
- * bar, the board tree, gutter decorations, and the claim/release commands — and
- * delegates the socket/state lifecycle to {@link ./fleetController.js}, secure
- * credential policy to {@link ./hubAuth.js}, and display decisions to the
- * editor-agnostic {@link ./fleetModel.js}.
+ * bar, the board tree, and the claim/release commands — and delegates gutter
+ * rendering to {@link ./claimGutter.js}, socket/state lifecycle to
+ * {@link ./fleetController.js}, credential policy to {@link ./hubAuth.js}, and
+ * display decisions to editor-agnostic model modules.
  */
 
 import * as vscode from "vscode";
+import { ClaimGutter } from "./claimGutter.js";
 import { FleetController } from "./fleetController.js";
 import { HubCredentialStore, hubConnectionVerdict } from "./hubAuth.js";
 import { type BoardItem } from "./fleetModel.js";
@@ -56,20 +57,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBar.command = "synapse.showBoard";
-  const decoration = vscode.window.createTextEditorDecorationType({
-    overviewRulerColor: new vscode.ThemeColor("editorWarning.foreground"),
-    overviewRulerLane: vscode.OverviewRulerLane.Left,
-    isWholeLine: true,
-  });
   const board = new BoardProvider();
-
-  const redecorate = (): void => {
-    const editor = vscode.window.activeTextEditor;
-    if (editor) {
-      controller.decorate(editor);
+  const gutter = new ClaimGutter(context.extensionUri);
+  let renderVisibleGutters = (): void => {};
+  const controller = new FleetController(identity, statusBar, board, () => {
+    renderVisibleGutters();
+  });
+  const renderGutter = (editor: vscode.TextEditor): void => {
+    void gutter.render(editor, controller.claimSnapshot(), identity);
+  };
+  renderVisibleGutters = (): void => {
+    for (const editor of vscode.window.visibleTextEditors) {
+      renderGutter(editor);
     }
   };
-  const controller = new FleetController(identity, statusBar, decoration, board, redecorate);
   const credentials = new HubCredentialStore(context.secrets);
   const configuredUri = (): string =>
     vscode.workspace.getConfiguration("synapse").get<string>("hubUri", "ws://127.0.0.1:8876");
@@ -142,9 +143,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     statusBar,
-    decoration,
+    gutter,
     vscode.window.registerTreeDataProvider("synapseBoard", board),
-    vscode.window.onDidChangeActiveTextEditor(redecorate),
+    vscode.window.onDidChangeVisibleTextEditors(renderVisibleGutters),
+    vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
+      renderGutter(event.textEditor);
+    }),
+    vscode.workspace.onDidSaveTextDocument((document) => {
+      for (const editor of vscode.window.visibleTextEditors) {
+        if (editor.document === document) {
+          renderGutter(editor);
+        }
+      }
+    }),
     vscode.commands.registerCommand("synapse.claimFile", () => controller.claimActiveFile()),
     vscode.commands.registerCommand("synapse.releaseFile", () => controller.releaseActiveFile()),
     vscode.commands.registerCommand("synapse.refreshHealth", () => controller.render()),
@@ -157,6 +168,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   await reconnectConfiguredHub();
+  renderVisibleGutters();
 }
 
 export function deactivate(): void {

@@ -1,0 +1,13 @@
+<!--
+SPDX-License-Identifier: AGPL-3.0-or-later
+Commercial license available
+© Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+© Code 2020–2026 Miroslav Šotek. All rights reserved.
+ORCID: 0009-0009-3560-0851
+Contact: www.anulum.li | protoscience@anulum.li
+SYNAPSE_CHANNEL — foreign-claim gutter icon for dark editor themes
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <path d="M8 2.25 13.75 8 8 13.75 2.25 8 8 2.25Z" stroke="#CCA700" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M8 5.1V8.65M8 10.9v.05" stroke="#CCA700" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

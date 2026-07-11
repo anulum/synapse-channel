@@ -60,7 +60,6 @@ export class FleetController {
   constructor(
     private readonly identity: string,
     private readonly statusBar: vscode.StatusBarItem,
-    private readonly decoration: vscode.TextEditorDecorationType,
     private readonly board: BoardSink,
     private readonly onChange: () => void,
   ) {}
@@ -190,11 +189,8 @@ export class FleetController {
     return claimMarks(this.state.claims, this.identity);
   }
 
-  decorate(editor: vscode.TextEditor): void {
-    const path = vscode.workspace.asRelativePath(editor.document.uri, false);
-    const claimed = this.marks().some((mark) => mark.path === path.replace(/\\/g, "/"));
-    const ranges = claimed ? [new vscode.Range(0, 0, 0, 0)] : [];
-    editor.setDecorations(this.decoration, ranges);
+  claimSnapshot(): readonly RawClaim[] {
+    return this.state.claims;
   }
 
   claimActiveFile(): void {
