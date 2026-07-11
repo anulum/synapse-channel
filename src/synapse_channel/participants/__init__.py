@@ -156,6 +156,7 @@ from synapse_channel.participants.provider_route import (
     select_provider,
 )
 from synapse_channel.participants.pty_participant import PtyParticipant
+from synapse_channel.participants.remanentia_http import RemanentiaHttpRecall
 from synapse_channel.participants.session_advisor import (
     AdvisorThresholds,
     Recommendation,
@@ -244,6 +245,7 @@ __all__ = [
     "ProviderCapabilities",
     "PtyParticipant",
     "Recommendation",
+    "RemanentiaHttpRecall",
     "RelaySettings",
     "ResponderSettings",
     "RoutingChoice",

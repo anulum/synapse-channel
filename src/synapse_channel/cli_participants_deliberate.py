@@ -39,6 +39,10 @@ from synapse_channel.cli_participants import (
     build_participant,
     refusal_for,
 )
+from synapse_channel.cli_participants_memory import (
+    add_memory_arguments,
+    wrap_participants,
+)
 from synapse_channel.core.accounting import ModelPrice
 from synapse_channel.participants.convene import ConvocationTranscript, convene
 from synapse_channel.participants.conversation import STOPPED_BUDGET
@@ -183,7 +187,9 @@ def _cmd_exchange(args: argparse.Namespace) -> int:
     a degraded turn, ``2`` for a refused configuration.
     """
     try:
-        opener, reactor = build_deliberants([args.opener, args.reactor], timeout=args.timeout)
+        opener, reactor = wrap_participants(
+            build_deliberants([args.opener, args.reactor], timeout=args.timeout), args
+        )
     except ValueError as exc:
         print(str(exc))
         return 2
@@ -399,7 +405,7 @@ def _cmd_convene(args: argparse.Namespace) -> int:
     """
     specs = list(args.panel) + ([args.moderator] if args.moderator else [])
     try:
-        seats = build_deliberants(specs, timeout=args.timeout)
+        seats = wrap_participants(build_deliberants(specs, timeout=args.timeout), args)
     except ValueError as exc:
         print(str(exc))
         return 2
@@ -470,6 +476,7 @@ def _add_shared_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--json", action="store_true", help="Print the full typed transcript as JSON."
     )
+    add_memory_arguments(parser)
 
 
 def add_parsers(group: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

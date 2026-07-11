@@ -147,6 +147,27 @@ and the generated operator view is [Public surface and stability](docs/public-su
 Adapters and lab surfaces can be installed and used from the same package, but
 they do not change the single-dependency local core.
 
+### Optional Participant memory recall
+
+`participant ask`, `participant exchange`, and `participant convene` can wrap
+their seats with bounded, read-only recall from REMANENTIA's lightweight HTTP
+API. Recall is disabled unless `--memory-url` is present; no memory process is
+started implicitly. Tokens are accepted only through `--memory-token-file`, and
+recalled snippets enter `TurnRequest.context` inside a data-only fence while the
+operator prompt remains unchanged.
+
+```bash
+synapse participant ask claude "review this design" \
+  --memory-url http://127.0.0.1:8001 \
+  --memory-token-file /run/secrets/remanentia
+```
+
+Current HTTP results omit REMANENTIA's honesty axes, so every recalled hit is
+shown as boundary data; similarity is relevance evidence, not truth evidence.
+No-hit and unavailable states remain visible without failing the provider turn.
+See [Participant memory recall](docs/participant-memory.md) for setup, limits,
+CLI flags, library use, and audit boundaries.
+
 > **Coming: Studio** — the dashboard is growing into an operator **[Studio](docs/studio.md)**:
 > a control plane that answers, at a glance, what is happening, what is at risk, and
 > what is safe to do next. The instrument-panel design system, `/studio` reference,
@@ -1299,13 +1320,13 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.4 |
 | Public API exports | 70 |
-| Package modules | 404 |
-| Classes | 574 |
+| Package modules | 406 |
+| Classes | 576 |
 | Wire message types | 77 |
 | CLI subcommands | 162 |
-| Test functions | 6372 |
+| Test functions | 6405 |
 | Benchmark harnesses | 6 |
-| Documentation pages | 53 |
+| Documentation pages | 54 |
 | GitHub Actions workflows | 18 |
 | Optional-dependency groups | 13 |
 

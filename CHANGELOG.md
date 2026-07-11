@@ -13,6 +13,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Participant `ask`, `exchange`, and `convene` can now opt into bounded,
+  token-file-authenticated REMANENTIA recall. The stdlib HTTP adapter binds an
+  operator-supplied origin to the fixed `/recall` path, refuses redirects,
+  requires HTTPS outside literal loopback IPs, caps requests, responses,
+  tokens, hits, rendering, and elapsed time, and treats every current HTTP hit
+  as boundary data because the response omits honesty axes. Recall stays off by
+  default; the operator prompt is unchanged, recalled text is fenced as data,
+  and unavailable or empty memory remains visible without failing the provider
+  turn.
+
 ## [0.99.4] - 2026-07-11
 
 ### Added

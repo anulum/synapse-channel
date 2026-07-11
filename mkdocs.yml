@@ -82,6 +82,7 @@ nav:
   - Declarative workflows: workflows.md
   - Studio: studio.md
   - CLI reference: cli.md
+  - Participant memory recall: participant-memory.md
   - Public surface and stability: public-surface.md
   - MCP server: mcp.md
   - Git-native claims: git-claims.md
