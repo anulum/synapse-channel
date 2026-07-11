@@ -102,7 +102,7 @@ linked commands and documentation describe the shipped behaviour today.
 | **Share the plan.** `synapse task` and [`synapse board`](docs/coordination-model.md) keep task state, dependencies, and ready work on the hub instead of in separate agent notes. | **Visual placeholder — board:** a blocked task becomes ready when its dependency completes. |
 | **Hand work over without an ownership gap.** [Atomic handoff](docs/coordination-model.md#4-hand-off-and-recover) moves the held task, scope, status, and checkpoint to an online recipient without a release-and-reclaim window. | **Visual placeholder — handoff:** ownership and checkpoint move together between two seats. |
 | **Expose a dark seat.** After 30 continuous seconds without the owner's exact waiter, the hub emits one [`dark_seat_alert`](docs/protocol.md) for affected claims or assigned work, including the permanent-arm remedy; it does not release or reassign work automatically. | **Visual placeholder — dark-seat alert:** the missing waiter and exact re-arm command appear beside the affected work. |
-| **Read the fleet from one cockpit.** [`synapse dashboard`](docs/studio.md) serves the local command centre, claims, tasks, conflicts, security posture, and an optional durable event feed; the read-only Studio projection adds no new hub authority. | **Visual placeholder — cockpit:** live claims, task risk, and recent events share one operator view. |
+| **Read the fleet from one cockpit.** [`synapse dashboard`](docs/studio.md) serves the local command centre, exact-status task columns, claims, conflicts, security posture, and an optional durable event feed; the read-only Studio projection adds no new hub authority. | **Visual placeholder — cockpit:** live claims, task state, risk, and recent events share one operator view. |
 | **Connect existing agent protocols at the edge.** [`synapse mcp`](docs/mcp.md) exposes coordination tools and read-only resources over stdio; the [A2A bridge](docs/a2a-conformance.md) exposes a local Agent Card and HTTP+JSON surface while keeping its partial validation boundary explicit. | **Visual placeholder — MCP and A2A:** an existing agent reaches the same hub through either adapter. |
 
 ## At a glance
@@ -408,7 +408,8 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   specific workspace or cache.
 
 - **Inspect the live board:** `synapse dashboard --port 8765` opens a
-  loopback-only read-only HTML view of roster, claims, board tasks, progress,
+  loopback-only read-only HTML view of roster, exact blackboard/claim status
+  columns, progress,
   fleet visibility, task-dependency graph edges, branch-conflict candidates,
   release receipts, and advertised capabilities, with the same snapshot
   available at `/snapshot.json` for local tooling. Pass `--a2a-state-file <path>`
@@ -1290,11 +1291,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.3 |
 | Public API exports | 70 |
-| Package modules | 394 |
-| Classes | 562 |
+| Package modules | 395 |
+| Classes | 563 |
 | Wire message types | 77 |
 | CLI subcommands | 161 |
-| Test functions | 6276 |
+| Test functions | 6283 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 18 |

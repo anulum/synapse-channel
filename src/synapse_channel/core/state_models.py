@@ -96,8 +96,8 @@ class TaskClaim:
     lease_expires_at : float
         Wall-clock time, in seconds, after which the claim auto-expires.
     status : str
-        Lifecycle marker: ``claimed``, ``in_progress``, ``blocked``, or
-        ``completed``.
+        Exact claim lifecycle marker: ``claimed``, ``working``,
+        ``input_required``, ``done``, or ``failed``.
     data_ref : str
         Optional pointer to produced artefacts (e.g. a memory key or file path).
     worktree : str

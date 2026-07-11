@@ -15,6 +15,15 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- The free read-only Studio command centre now renders exact-status board
+  columns from the blackboard and live claim leases. Open, claimed, working,
+  input-required, blocked, and closed work remain distinct; future statuses
+  fail visibly into Other, ad-hoc claims are labelled undeclared, and partial
+  board snapshots disclose truncation without fabricating omitted dependencies
+  as blockers. The 550-line inline command renderer is
+  split into focused packaged CSS/JavaScript assets, and every untrusted task,
+  event, and operator field is inserted as DOM text rather than HTML.
+
 - A standalone, hosting-neutral Managed GitHub App package now ships under
   `integrations/github-app/`. It renders a least-privilege App manifest,
   verifies bounded HMAC-SHA256 pull-request webhooks before parsing, creates

@@ -1,0 +1,135 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Commercial license available
+ * © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+ * © Code 2020–2026 Miroslav Šotek. All rights reserved.
+ * ORCID: 0009-0009-3560-0851
+ * Contact: www.anulum.li | protoscience@anulum.li
+ * SYNAPSE_CHANNEL — read-only board-column layout and task cards
+ */
+
+.syn-board-columns {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(220px, 1fr);
+  gap: var(--syn-sp-3);
+  max-width: 100%;
+  overflow-x: auto;
+  padding: var(--syn-sp-2) 0 var(--syn-sp-3);
+  scrollbar-color: var(--syn-hairline) transparent;
+}
+
+.syn-board-column {
+  min-width: 0;
+  border: 1px solid var(--syn-hairline);
+  background: color-mix(in srgb, var(--syn-surface) 88%, transparent);
+}
+
+.syn-board-column__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--syn-sp-2);
+  padding: var(--syn-sp-2) var(--syn-sp-3);
+  border-bottom: 1px solid var(--syn-hairline);
+}
+
+.syn-board-column[data-tone="good"] .syn-board-column__head {
+  border-top: 2px solid var(--syn-green);
+}
+
+.syn-board-column[data-tone="warn"] .syn-board-column__head {
+  border-top: 2px solid var(--syn-amber);
+}
+
+.syn-board-column[data-tone="bad"] .syn-board-column__head {
+  border-top: 2px solid var(--syn-red);
+}
+
+.syn-board-column__title,
+.syn-board-column__count {
+  margin: 0;
+  font-family: var(--syn-font-mono);
+  font-size: var(--syn-fs-label);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.syn-board-column__body {
+  display: grid;
+  align-content: start;
+  gap: var(--syn-sp-2);
+  min-height: 88px;
+  padding: var(--syn-sp-2);
+}
+
+.syn-board-card {
+  min-width: 0;
+  padding: var(--syn-sp-2);
+  border: 1px solid var(--syn-hairline);
+  background: var(--syn-raised);
+}
+
+.syn-board-card__id,
+.syn-board-card__status,
+.syn-board-card__meta {
+  font-family: var(--syn-font-mono);
+  font-size: var(--syn-fs-label);
+  overflow-wrap: anywhere;
+}
+
+.syn-board-card__id,
+.syn-board-card__status,
+.syn-board-card__meta-label,
+.syn-board-column__empty,
+.syn-board-source-note {
+  color: var(--syn-muted);
+}
+
+.syn-board-card__title {
+  margin: var(--syn-sp-1) 0;
+  font-size: var(--syn-fs-body);
+  overflow-wrap: anywhere;
+}
+
+.syn-board-card__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--syn-sp-1);
+  margin-top: var(--syn-sp-2);
+}
+
+.syn-board-flag {
+  padding: 1px var(--syn-sp-1);
+  border: 1px solid var(--syn-hairline);
+  font-family: var(--syn-font-mono);
+  font-size: var(--syn-fs-label);
+}
+
+.syn-board-card__meta {
+  display: grid;
+  grid-template-columns: minmax(5ch, auto) minmax(0, 1fr);
+  gap: var(--syn-sp-2);
+  margin-top: var(--syn-sp-1);
+}
+
+.syn-board-column__empty,
+.syn-board-empty,
+.syn-board-source-note {
+  padding: var(--syn-sp-3);
+  font-size: var(--syn-fs-body);
+}
+
+.syn-board-source-note {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .syn-board-columns {
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+    grid-template-columns: minmax(0, 1fr);
+    overflow-x: visible;
+  }
+}

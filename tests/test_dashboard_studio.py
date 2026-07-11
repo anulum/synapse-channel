@@ -30,6 +30,23 @@ def test_studio_css_is_a_servable_asset_with_the_design_tokens() -> None:
     assert "prefers-reduced-motion" in css
 
 
+def test_board_and_command_assets_are_fixed_servable_package_data() -> None:
+    expected = {
+        "board-columns.css": "text/css",
+        "board-columns.js": "text/javascript",
+        "studio-command.css": "text/css",
+        "studio-command.js": "text/javascript",
+        "studio-feeds.js": "text/javascript",
+    }
+    assert {name: COCKPIT_ASSETS[name] for name in expected} == expected
+    assert ".syn-board-columns" in load_cockpit_asset("board-columns.css")
+    assert "SynapseBoardColumns" in load_cockpit_asset("board-columns.js")
+    command_css = load_cockpit_asset("studio-command.css")
+    assert "prefers-reduced-motion" in command_css
+    assert "SynapseStudioCommand" in load_cockpit_asset("studio-command.js")
+    assert "SynapseStudioFeeds" in load_cockpit_asset("studio-feeds.js")
+
+
 def test_verdict_helper_renders_the_toned_pill() -> None:
     html = _verdict("green", "Green")
     assert 'class="syn-verdict syn-verdict--green"' in html

@@ -26,6 +26,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from synapse_channel.dashboard_board_columns import build_board_columns
 from synapse_channel.dashboard_observed_health import build_observed_fleet_health
 from synapse_channel.dashboard_security_posture import build_security_posture
 
@@ -73,6 +74,10 @@ def build_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
     agents = _mapping(fleet.get("agents"))
     claims = _mapping(fleet.get("claims"))
     tasks = _mapping(fleet.get("tasks"))
+    board_columns = build_board_columns(
+        _mapping(dashboard.get("board")),
+        _mapping(dashboard.get("state")),
+    )
     observed_fleet = build_observed_fleet_health(dashboard)
 
     live = _list(agents.get("live"))
@@ -108,7 +113,12 @@ def build_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
         },
         "agents": {"live": live, "waiters": waiters, "missing_waiters": missing_waiters},
         "claims": {"active": active_claims, "stale": stale_claims},
-        "tasks": {"ready": ready, "blocked": blocked, "graph": fleet.get("task_graph")},
+        "tasks": {
+            "ready": ready,
+            "blocked": blocked,
+            "graph": fleet.get("task_graph"),
+            "columns": board_columns,
+        },
         "conflicts": conflicts,
         "security_posture": build_security_posture(dashboard),
         "observed_fleet": observed_fleet,
@@ -144,7 +154,7 @@ def frozen_studio_snapshot() -> dict[str, Any]:
                     "stale_claims": [{"owner": "DIRECTOR-AI/claude-c3", "scope": "tests/"}],
                 },
                 "tasks": {
-                    "ready": ["build-wheel", "run-suite"],
+                    "ready": ["build-wheel"],
                     "blocked": [{"task_id": "publish", "depends_on": ["run-suite"]}],
                 },
                 "task_graph": {"nodes": 3, "edges": 1},
@@ -156,6 +166,44 @@ def frozen_studio_snapshot() -> dict[str, Any]:
                     }
                 ],
                 "branch_conflicts": [],
+                "generated_at": 1782760000.0,
+            },
+            "board": {
+                "tasks": [
+                    {"task_id": "build-wheel", "title": "Build wheel", "status": "open"},
+                    {
+                        "task_id": "publish",
+                        "title": "Publish release",
+                        "status": "blocked",
+                        "depends_on": ["run-suite"],
+                    },
+                    {
+                        "task_id": "run-suite",
+                        "title": "Run focused suite",
+                        "status": "in_progress",
+                    },
+                ],
+                "ready": ["build-wheel"],
+                "progress": [],
+            },
+            "state": {
+                "active_claims": [
+                    {
+                        "task_id": "run-suite",
+                        "owner": "SCPN-FUSION-CORE/claude-a1",
+                        "status": "working",
+                        "lease_expires_at": 1782760060.0,
+                        "paths": ["tests/"],
+                    },
+                    {
+                        "task_id": "docs-refresh",
+                        "owner": "REMANENTIA/codex-b2",
+                        "note": "Refresh docs",
+                        "status": "claimed",
+                        "lease_expires_at": 1782760040.0,
+                        "paths": ["docs/"],
+                    },
+                ],
                 "generated_at": 1782760000.0,
             },
             "risk": {

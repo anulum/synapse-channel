@@ -24,11 +24,16 @@ from synapse_channel.dashboard_cockpit import (
 
 def test_cockpit_assets_mapping() -> None:
     assert COCKPIT_ASSETS == {
+        "board-columns.css": "text/css",
+        "board-columns.js": "text/javascript",
         "cockpit.css": "text/css",
         "cockpit.js": "text/javascript",
         "risk-panel.css": "text/css",
         "risk-panel.js": "text/javascript",
+        "studio-command.css": "text/css",
+        "studio-command.js": "text/javascript",
         "studio.css": "text/css",
+        "studio-feeds.js": "text/javascript",
     }
 
 

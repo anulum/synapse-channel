@@ -1,0 +1,95 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Commercial license available
+ * © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+ * © Code 2020–2026 Miroslav Šotek. All rights reserved.
+ * ORCID: 0009-0009-3560-0851
+ * Contact: www.anulum.li | protoscience@anulum.li
+ * SYNAPSE_CHANNEL — Studio command-centre shell and instrument layout
+ */
+
+:root { --syn-clock-r: 150px; }
+body.syn { margin:0; }
+.cc-shell { min-height:100vh; display:grid; grid-template-columns:188px minmax(0, 1fr);
+  background:var(--syn-base); color:var(--syn-text); }
+.cc-rail { border-right:1px solid var(--syn-hairline); padding:var(--syn-sp-5) var(--syn-sp-3);
+  display:flex; flex-direction:column; gap:var(--syn-sp-4); }
+.cc-rail-title { font-family:var(--syn-font-display); font-size:var(--syn-fs-body);
+  text-transform:uppercase; letter-spacing:.08em; color:var(--syn-muted); }
+.cc-rail .syn-nav { flex-direction:column; align-items:stretch; gap:var(--syn-sp-2); }
+.cc-main { min-width:0; padding:var(--syn-sp-5); }
+.cc-header { display:flex; align-items:center; justify-content:space-between;
+  gap:var(--syn-sp-4); border-bottom:1px solid var(--syn-hairline);
+  padding-bottom:var(--syn-sp-4); }
+.cc-title { min-width:0; }
+.cc-title h1 { font-family:var(--syn-font-display); font-size:var(--syn-fs-title); margin:0; }
+.cc-headerbar { display:flex; align-items:center; justify-content:flex-end;
+  gap:var(--syn-sp-3); flex-wrap:wrap; min-width:0; }
+.cc-chip { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.cc-chip span { font-size:var(--syn-fs-label); color:var(--syn-muted);
+  text-transform:uppercase; letter-spacing:.08em; }
+.cc-chip b { font-family:var(--syn-font-mono); font-size:var(--syn-fs-data);
+  color:var(--syn-text); font-weight:600; max-width:24ch; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; }
+.cc-grid { display:grid; grid-template-columns:minmax(320px, 1fr) minmax(280px, .9fr);
+  gap:var(--syn-sp-5); align-items:start; }
+.cc-grid > * { min-width:0; }
+.cc-bar { display:flex; align-items:center; gap:var(--syn-sp-4); flex-wrap:wrap;
+  margin:var(--syn-sp-4) 0 var(--syn-sp-5); }
+.cc-stat { display:flex; flex-direction:column; line-height:1.1; }
+.cc-stat b { font-family:var(--syn-font-mono); font-size:var(--syn-fs-data);
+  color:var(--syn-text); font-weight:600; }
+.cc-stat span { font-size:var(--syn-fs-label); color:var(--syn-muted);
+  text-transform:uppercase; letter-spacing:.08em; }
+.cc-board-panel { margin-bottom:var(--syn-sp-5); }
+.cc-board-boundary { margin:var(--syn-sp-1) 0 0; color:var(--syn-muted);
+  font-size:var(--syn-fs-label); }
+.cc-stack { display:grid; gap:var(--syn-sp-4); }
+.cc-panel-list { margin-top:var(--syn-sp-2); }
+.cc-push-right { margin-left:auto; color:var(--syn-muted); text-align:right; }
+.cc-clock-wrap { display:flex; flex-direction:column; align-items:center; gap:var(--syn-sp-4); }
+.cc-clock { width:min(360px, 78vw); height:auto; }
+.cc-clock-face { fill:var(--syn-surface); stroke:var(--syn-hairline); stroke-width:1; }
+.cc-tick { stroke:var(--syn-hairline); stroke-width:1; }
+.cc-seg { fill:none; stroke-width:9; stroke-linecap:round; }
+.cc-seg--ok { stroke:var(--syn-green); }
+.cc-seg--warn { stroke:var(--syn-amber); }
+.cc-seg--bad { stroke:var(--syn-red); }
+.cc-conflict { stroke:var(--syn-red); stroke-width:2.5; }
+.cc-centre-verdict { font-family:var(--syn-font-display); font-size:18px; font-weight:600;
+  text-anchor:middle; text-transform:uppercase; letter-spacing:.04em; }
+.cc-centre-count { font-family:var(--syn-font-mono); font-size:34px; font-weight:600;
+  fill:var(--syn-text); text-anchor:middle; }
+.cc-centre-label { font-size:var(--syn-fs-label); fill:var(--syn-muted); text-anchor:middle;
+  text-transform:uppercase; letter-spacing:.1em; }
+.cc-sweep { transform-origin:center; animation:cc-spin 6s linear infinite; }
+.cc-offline { color:var(--syn-amber); font-family:var(--syn-font-mono);
+  font-size:var(--syn-fs-data); }
+.cc-empty { color:var(--syn-muted); font-size:var(--syn-fs-body); padding:var(--syn-sp-2) 0; }
+.cc-grid .syn-row { min-width:0; overflow:hidden; }
+.cc-grid .syn-row > span { min-width:0; overflow-wrap:anywhere; }
+.cc-feed { max-height:260px; overflow:auto; }
+.cc-feed-row { display:grid; grid-template-columns:5ch minmax(7ch, 10ch) minmax(0, 1fr);
+  gap:var(--syn-sp-2); align-items:baseline; }
+.cc-feed-row span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cc-table { width:100%; border-collapse:collapse; font-size:var(--syn-fs-data); }
+.cc-table th { text-align:left; color:var(--syn-muted); font-size:var(--syn-fs-label);
+  text-transform:uppercase; letter-spacing:.08em; font-weight:500;
+  border-bottom:1px solid var(--syn-hairline); padding:var(--syn-sp-1) var(--syn-sp-2); }
+.cc-table td { font-family:var(--syn-font-mono); padding:var(--syn-sp-1) var(--syn-sp-2);
+  border-bottom:1px solid var(--syn-hairline); }
+.cc-fallback { display:none; width:100%; }
+@keyframes cc-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) {
+  .cc-sweep { animation:none; display:none; }
+  .cc-fallback { display:block; }
+}
+@media (max-width:760px) {
+  .cc-shell { grid-template-columns:minmax(0, 1fr); }
+  .cc-rail { border-right:0; border-bottom:1px solid var(--syn-hairline);
+    padding:var(--syn-sp-4); }
+  .cc-rail .syn-nav { flex-direction:row; flex-wrap:wrap; }
+  .cc-main { padding:var(--syn-sp-4); }
+  .cc-header { align-items:flex-start; flex-direction:column; }
+  .cc-grid { grid-template-columns:minmax(0, 1fr); }
+  .cc-clock { width:min(360px, 100%); }
+}

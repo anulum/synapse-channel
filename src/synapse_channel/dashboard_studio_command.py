@@ -4,25 +4,19 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — Studio command centre (Stage B): the live operator view
-"""The Studio command centre — the live operator view (Stage B).
+# SYNAPSE_CHANNEL — Studio command-centre HTML shell and runtime configuration
+"""Render the Studio command-centre shell.
 
-A single self-contained page, in the instrument-panel language of the A0 design system,
-that reads the `/studio.json` projection and answers at a glance: what is the fleet's
-verdict, who is live, what is claimed, what is ready or blocked, and what is at risk. Its
-signature instrument is the **Coordination Clock** — a radial gauge where every claim is a
-segment around the dial, coloured by lease health (green fresh, amber ageing, red stale),
-with conflicts struck through on the rim and a slow radar sweep; the dial centre carries
-the verdict and the live claim count.
-
-The page shell is hub-independent: it loads with no hub running and shows an offline state,
-then progressively fills in live data as it polls `/studio.json`. It honours
-``prefers-reduced-motion`` — the radar sweep is stilled and the dial is paired with a claims
-table so the same information is legible without animation. Vanilla HTML, CSS custom
-properties from `studio.css`, and dependency-free ES — no build step, no external request.
+The shell is hub-independent and contains no mutable coordination behaviour.
+Focused package assets own the instrument layout, snapshot polling, durable-feed
+polling, and safe board-column DOM rendering. The only inline script is a
+server-authored, secret-free runtime configuration containing fixed feed paths
+and the bounded poll interval.
 """
 
 from __future__ import annotations
+
+import json
 
 from synapse_channel.dashboard_studio import STUDIO_REFERENCE_PATH
 from synapse_channel.studio_snapshot import STUDIO_SNAPSHOT_PATH
@@ -39,429 +33,67 @@ OPERATOR_ACTIONS_FEED_PATH = "/operator-actions.json"
 DEFAULT_POLL_SECONDS = 5
 """How often the command centre re-reads the live snapshot."""
 
-_STYLE = """
-:root { --syn-clock-r: 150px; }
-.cc-shell { min-height:100vh; display:grid; grid-template-columns: 188px minmax(0, 1fr);
-  background:var(--syn-bg); color:var(--syn-text); }
-.cc-rail { border-right:1px solid var(--syn-hairline); padding:var(--syn-sp-5) var(--syn-sp-3);
-  display:flex; flex-direction:column; gap:var(--syn-sp-4); }
-.cc-rail-title { font-family:var(--syn-font-display); font-size:var(--syn-fs-body);
-  text-transform:uppercase; letter-spacing:.08em; color:var(--syn-muted); }
-.cc-rail .syn-nav { flex-direction:column; align-items:stretch; gap:var(--syn-sp-2); }
-.cc-main { min-width:0; padding:var(--syn-sp-5); }
-.cc-header { display:flex; align-items:center; justify-content:space-between;
-  gap:var(--syn-sp-4); border-bottom:1px solid var(--syn-hairline);
-  padding-bottom:var(--syn-sp-4); }
-.cc-title { min-width:0; }
-.cc-title h1 { font-family:var(--syn-font-display); font-size:var(--syn-fs-title);
-  margin:0; }
-.cc-headerbar { display:flex; align-items:center; justify-content:flex-end;
-  gap:var(--syn-sp-3); flex-wrap:wrap; min-width:0; }
-.cc-chip { display:flex; flex-direction:column; gap:2px; min-width:0; }
-.cc-chip span { font-size:var(--syn-fs-label); color:var(--syn-muted);
-  text-transform:uppercase; letter-spacing:.08em; }
-.cc-chip b { font-family:var(--syn-font-mono); font-size:var(--syn-fs-data);
-  color:var(--syn-text); font-weight:600; max-width:24ch; overflow:hidden;
-  text-overflow:ellipsis; white-space:nowrap; }
-.cc-grid { display:grid; grid-template-columns: minmax(320px, 1fr) minmax(280px, 0.9fr);
-  gap: var(--syn-sp-5); align-items: start; }
-.cc-grid > * { min-width:0; }
-.cc-bar { display:flex; align-items:center; gap:var(--syn-sp-4); flex-wrap:wrap;
-  margin: var(--syn-sp-4) 0 var(--syn-sp-5); }
-.cc-stat { display:flex; flex-direction:column; line-height:1.1; }
-.cc-stat b { font-family:var(--syn-font-mono); font-size:var(--syn-fs-data);
-  color:var(--syn-text); font-weight:600; }
-.cc-stat span { font-size:var(--syn-fs-label); color:var(--syn-muted);
-  text-transform:uppercase; letter-spacing:.08em; }
-.cc-clock-wrap { display:flex; flex-direction:column; align-items:center;
-  gap:var(--syn-sp-4); }
-.cc-clock { width:min(360px, 78vw); height:auto; }
-.cc-clock-face { fill:var(--syn-surface); stroke:var(--syn-hairline); stroke-width:1; }
-.cc-tick { stroke:var(--syn-hairline); stroke-width:1; }
-.cc-seg { fill:none; stroke-width:9; stroke-linecap:round; }
-.cc-seg--ok { stroke:var(--syn-green); }
-.cc-seg--warn { stroke:var(--syn-amber); }
-.cc-seg--bad { stroke:var(--syn-red); }
-.cc-conflict { stroke:var(--syn-red); stroke-width:2.5; }
-.cc-centre-verdict { font-family:var(--syn-font-display); font-size:18px; font-weight:600;
-  text-anchor:middle; text-transform:uppercase; letter-spacing:.04em; }
-.cc-centre-count { font-family:var(--syn-font-mono); font-size:34px; font-weight:600;
-  fill:var(--syn-text); text-anchor:middle; }
-.cc-centre-label { font-size:var(--syn-fs-label); fill:var(--syn-muted); text-anchor:middle;
-  text-transform:uppercase; letter-spacing:.1em; }
-.cc-sweep { transform-origin:center; animation: cc-spin 6s linear infinite; }
-.cc-offline { color:var(--syn-amber); font-family:var(--syn-font-mono);
-  font-size:var(--syn-fs-data); }
-.cc-empty { color:var(--syn-muted); font-size:var(--syn-fs-body); padding:var(--syn-sp-2) 0; }
-.cc-grid .syn-row { min-width:0; overflow:hidden; }
-.cc-grid .syn-row > span { min-width:0; overflow-wrap:anywhere; }
-.cc-feed { max-height:260px; overflow:auto; }
-.cc-feed-row { display:grid; grid-template-columns: 5ch minmax(7ch, 10ch) minmax(0, 1fr);
-  gap:var(--syn-sp-2); align-items:baseline; }
-.cc-feed-row span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.cc-table { width:100%; border-collapse:collapse; font-size:var(--syn-fs-data); }
-.cc-table th { text-align:left; color:var(--syn-muted); font-size:var(--syn-fs-label);
-  text-transform:uppercase; letter-spacing:.08em; font-weight:500;
-  border-bottom:1px solid var(--syn-hairline); padding:var(--syn-sp-1) var(--syn-sp-2); }
-.cc-table td { font-family:var(--syn-font-mono); padding:var(--syn-sp-1) var(--syn-sp-2);
-  border-bottom:1px solid var(--syn-hairline); }
-.cc-fallback { display:none; }
-@keyframes cc-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .cc-sweep { animation:none; display:none; }
-  .cc-fallback { display:block; }
-}
-@media (max-width: 760px) {
-  .cc-shell { grid-template-columns:minmax(0, 1fr); }
-  .cc-rail { border-right:0; border-bottom:1px solid var(--syn-hairline);
-    padding:var(--syn-sp-4); }
-  .cc-rail .syn-nav { flex-direction:row; flex-wrap:wrap; }
-  .cc-main { padding:var(--syn-sp-4); }
-  .cc-header { align-items:flex-start; flex-direction:column; }
-  .cc-grid { grid-template-columns:minmax(0, 1fr); }
-  .cc-clock { width:min(360px, 100%); }
-}
-"""
+STUDIO_COMMAND_STYLES = (
+    "studio.css",
+    "board-columns.css",
+    "studio-command.css",
+)
+"""Fixed package stylesheets loaded by the command-centre shell."""
 
-_SCRIPT_TEMPLATE = """
-const SNAPSHOT = "__SNAPSHOT__";
-const EVENTS = "__EVENTS__";
-const OPERATOR_ACTIONS = "__OPERATOR_ACTIONS__";
-const POLL_MS = __POLL_MS__;
-const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-const TONE = { green: "ok", amber: "warn", red: "bad", unknown: "warn" };
-const TAU = Math.PI * 2;
-const CX = 180, CY = 180, R = 132;
-let eventCursor = "latest";
-let eventFeedConfigured = true;
-let operatorActionsConfigured = true;
+STUDIO_COMMAND_SCRIPTS = (
+    "board-columns.js",
+    "studio-feeds.js",
+    "studio-command.js",
+)
+"""Fixed package scripts loaded in dependency order by the shell."""
 
-function polar(angle, radius) {
-  return [CX + radius * Math.cos(angle - Math.PI / 2), CY + radius * Math.sin(angle - Math.PI / 2)];
-}
-function arc(a0, a1, radius) {
-  const [x0, y0] = polar(a0, radius), [x1, y1] = polar(a1, radius);
-  const large = a1 - a0 > Math.PI ? 1 : 0;
-  return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${radius} ${radius} 0 ${large} 1 ` +
-    `${x1.toFixed(2)} ${y1.toFixed(2)}`;
-}
-function el(tag, attrs, text) {
-  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
-  for (const k in attrs) node.setAttribute(k, attrs[k]);
-  if (text != null) node.textContent = text;
-  return node;
-}
 
-function drawClock(data) {
-  const svg = document.getElementById("cc-clock");
-  while (svg.lastChild) svg.removeChild(svg.lastChild);
-  svg.appendChild(el("circle", { class: "cc-clock-face", cx: CX, cy: CY, r: R + 14 }));
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * TAU;
-    const [x0, y0] = polar(a, R + 14), [x1, y1] = polar(a, R + 8);
-    svg.appendChild(el("line", { class: "cc-tick", x1: x0, y1: y0, x2: x1, y2: y1 }));
-  }
-  const active = (data.claims && data.claims.active) || [];
-  const stale = (data.claims && data.claims.stale) || [];
-  const segments = active.map(() => "ok").concat(stale.map(() => "bad"));
-  const conflicts = (data.conflicts || []).length;
-  const gap = 0.10;
-  const span = segments.length ? (TAU / segments.length) : 0;
-  segments.forEach((tone, i) => {
-    const a0 = i * span + gap / 2, a1 = (i + 1) * span - gap / 2;
-    svg.appendChild(el("path", { class: "cc-seg cc-seg--" + tone, d: arc(a0, a1, R) }));
-    if (i < conflicts) {
-      const am = (a0 + a1) / 2;
-      const [mx, my] = polar(am, R);
-      svg.appendChild(el("circle", { class: "cc-conflict", cx: mx, cy: my, r: 5, fill: "none" }));
+def _runtime_config(*, poll_seconds: int) -> str:
+    """Return the secret-free JavaScript runtime configuration."""
+    payload = {
+        "eventsUrl": EVENTS_FEED_PATH,
+        "operatorActionsUrl": OPERATOR_ACTIONS_FEED_PATH,
+        "pollMs": max(1, int(poll_seconds)) * 1000,
+        "snapshotUrl": STUDIO_SNAPSHOT_PATH,
     }
-  });
-  if (!reduceMotion) {
-    const sweep = el("g", { class: "cc-sweep" });
-    const [sx, sy] = polar(0, R + 6);
-    sweep.appendChild(el("line", { x1: CX, y1: CY, x2: sx, y2: sy,
-      stroke: "var(--syn-brand)", "stroke-width": 1.5, opacity: 0.5 }));
-    svg.appendChild(sweep);
-  }
-  const verdict = data.verdict || "unknown";
-  const count = String(active.length);
-  svg.appendChild(el("text", { class: "cc-centre-count", x: CX, y: CY + 2 }, count));
-  svg.appendChild(el("text", { class: "cc-centre-label", x: CX, y: CY + 22 }, "active claims"));
-  const v = el("text", { class: "cc-centre-verdict", x: CX, y: CY - 28 }, verdict);
-  v.setAttribute("fill", "var(--syn-" + (verdict === "green" ? "green" :
-    verdict === "red" ? "red" : verdict === "amber" ? "amber" : "muted") + ")");
-  svg.appendChild(v);
-}
-
-function list(id, items, render) {
-  const host = document.getElementById(id);
-  host.replaceChildren();
-  if (!items.length) {
-    const empty = document.createElement("div");
-    empty.className = "cc-empty";
-    empty.textContent = "none";
-    host.appendChild(empty);
-    return;
-  }
-  for (const item of items) {
-    const row = document.createElement("div");
-    row.className = "syn-row";
-    row.innerHTML = render(item);
-    host.appendChild(row);
-  }
-}
-
-function text(value) {
-  return String(value == null ? "" : value).replace(/[&<>]/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-}
-
-function setStat(id, value) { document.getElementById(id).textContent = value; }
-
-function render(data) {
-  document.getElementById("cc-offline").hidden = true;
-  document.getElementById("cc-connection").textContent = "connected";
-  document.getElementById("cc-connection").className = "syn-verdict syn-verdict--green";
-  const hub = data.hub || {};
-  setStat("cc-hub", hub.id || "unknown");
-  setStat("cc-version", hub.version || "unknown");
-  const h = data.headline || {};
-  const verdict = data.verdict || "unknown";
-  const pill = document.getElementById("cc-verdict");
-  pill.className = "syn-verdict syn-verdict--" + (TONE[verdict] === "ok" ? "green" :
-    TONE[verdict] === "bad" ? "red" : "amber");
-  pill.textContent = verdict;
-  setStat("cc-agents", h.agents_live || 0);
-  setStat("cc-claims", (h.claims_active || 0) + " / " + (h.claims_stale || 0));
-  setStat("cc-tasks", (h.tasks_ready || 0) + " / " + (h.tasks_blocked || 0));
-  setStat("cc-conflicts", h.branch_conflicts || 0);
-  setStat("cc-signals", h.risk_signals || 0);
-  const posture = data.security_posture || {};
-  setStat("cc-posture", posture.level || "unknown");
-  const observed = data.observed_fleet || {};
-  const peersTotal = h.peers_total || observed.peers_total || 0;
-  const peersReachable = h.peers_reachable || observed.peers_reachable || 0;
-  setStat("cc-peers", peersTotal ? (peersReachable + " / " + peersTotal) : "—");
-  drawClock(data);
-  const agents = data.agents || {};
-  const live = (agents.live || []).map((a) => ({ name: a, state: "ok" }))
-    .concat((agents.missing_waiters || []).map((a) => ({ name: a, state: "bad" })));
-  list("cc-agents-list", live, (a) =>
-    `<span class="syn-dot syn-dot--${a.state}"></span><span>${text(a.name)}</span>`);
-  const claims = data.claims || {};
-  const allClaims = (claims.active || []).map((c) => ({ c, tone: "ok" }))
-    .concat((claims.stale || []).map((c) => ({ c, tone: "bad" })));
-  list("cc-claims-list", allClaims, (x) =>
-    `<span class="syn-dot syn-dot--${x.tone}"></span>` +
-    `<span>${text(x.c.owner || x.c.task_id || "claim")}</span>` +
-    `<span style="margin-left:auto;color:var(--syn-muted)">${text(x.c.scope || "")}</span>`);
-  const tasks = data.tasks || {};
-  const taskRows = (tasks.ready || []).map((t) => ({ id: t, state: "ok" }))
-    .concat((tasks.blocked || []).map((t) => ({ id: t.task_id || t, state: "warn" })));
-  list("cc-tasks-list", taskRows, (t) =>
-    `<span class="syn-dot syn-dot--${t.state}"></span><span>${text(t.id)}</span>`);
-  const risk = data.risk || {};
-  list("cc-risk-list", risk.signals || [], (s) =>
-    `<span class="syn-dot syn-dot--${TONE[s.level] || "warn"}"></span>` +
-    `<span>${text(s.subject)}</span>` +
-    `<span style="margin-left:auto;color:var(--syn-muted)">${text(s.detail)}</span>`);
-  list("cc-posture-list", posture.rows || [], (row) =>
-    `<span class="syn-dot syn-dot--${TONE[row.level] || "warn"}"></span>` +
-    `<span>${text(row.surface)}</span>` +
-    `<span style="margin-left:auto;color:var(--syn-muted)">${text(row.state)}</span>`);
-  const peerRows = observed.peers || [];
-  if (!peerRows.length) {
-    list("cc-peers-list", [{ level: observed.level || "amber",
-      hub_id: "local-only", detail: observed.detail || "no observed peers" }], (row) =>
-      `<span class="syn-dot syn-dot--${TONE[row.level] || "warn"}"></span>` +
-      `<span>${text(row.hub_id)}</span>` +
-      `<span style="margin-left:auto;color:var(--syn-muted)">${text(row.detail)}</span>`);
-  } else {
-    list("cc-peers-list", peerRows, (row) =>
-      `<span class="syn-dot syn-dot--${TONE[row.level] || "warn"}"></span>` +
-      `<span>${text(row.hub_id)}</span>` +
-      `<span style="margin-left:auto;color:var(--syn-muted)">${text(row.detail)}</span>`);
-  }
-  const tbody = document.getElementById("cc-fallback-body");
-  tbody.replaceChildren();
-  for (const x of allClaims) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${text(x.c.owner || x.c.task_id || "claim")}</td>` +
-      `<td>${text(x.c.scope || "")}</td><td>${x.tone === "ok" ? "active" : "stale"}</td>`;
-    tbody.appendChild(tr);
-  }
-}
-
-function eventSubject(event) {
-  const payload = event.payload || {};
-  return payload.task_id || payload.target || payload.sender || payload.owner ||
-    payload.action || payload.kind || "";
-}
-
-function renderEvents(eventDocument) {
-  const host = document.getElementById("cc-livefeed-list");
-  const events = eventDocument.events || [];
-  eventCursor = eventDocument.next_cursor == null ? eventCursor : Number(eventDocument.next_cursor);
-  if (!events.length && host.childElementCount) return;
-  if (!events.length) {
-    host.replaceChildren();
-    const empty = document.createElement("div");
-    empty.className = "cc-empty";
-    empty.textContent = "waiting for new events";
-    host.appendChild(empty);
-    return;
-  }
-  if (host.querySelector(".cc-empty")) host.replaceChildren();
-  for (const event of events.slice(-20)) {
-    const row = document.createElement("div");
-    row.className = "syn-row cc-feed-row";
-    row.innerHTML = `<span>#${text(event.seq)}</span>` +
-      `<span>${text(event.kind)}</span>` +
-      `<span>${text(eventSubject(event))}</span>`;
-    host.prepend(row);
-  }
-  while (host.childElementCount > 20) host.removeChild(host.lastElementChild);
-}
-
-function renderOperatorActions(documentJson) {
-  const host = document.getElementById("cc-actions-list");
-  if (!host) return;
-  const actions = documentJson.actions || [];
-  host.replaceChildren();
-  if (!actions.length) {
-    const empty = document.createElement("div");
-    empty.className = "cc-empty";
-    empty.textContent = documentJson.present
-      ? "no operator relay actions yet"
-      : "operator-actions feed not configured";
-    host.appendChild(empty);
-    return;
-  }
-  for (const action of actions.slice(-15).reverse()) {
-    const row = document.createElement("div");
-    row.className = "syn-row cc-feed-row";
-    const label = [
-      action.action || "action",
-      action.task_id || "",
-      action.status || "",
-    ].filter(Boolean).join(" · ");
-    row.innerHTML = `<span>#${text(action.seq)}</span>` +
-      `<span>${text(action.direction || "relay")}</span>` +
-      `<span>${text(label)}</span>`;
-    host.appendChild(row);
-  }
-}
-
-async function pollEvents() {
-  if (!eventFeedConfigured) return;
-  try {
-    const res = await fetch(EVENTS + "?since=" + encodeURIComponent(String(eventCursor)) +
-      "&limit=20", { cache: "no-store" });
-    if (res.status === 404) {
-      eventFeedConfigured = false;
-      const host = document.getElementById("cc-livefeed-list");
-      host.replaceChildren();
-      const empty = document.createElement("div");
-      empty.className = "cc-empty";
-      empty.textContent = "event feed not configured";
-      host.appendChild(empty);
-      return;
-    }
-    if (!res.ok) throw new Error("events " + res.status);
-    renderEvents(await res.json());
-  } catch (err) {
-    const host = document.getElementById("cc-livefeed-list");
-    host.replaceChildren();
-    const empty = document.createElement("div");
-    empty.className = "cc-empty";
-    empty.textContent = "event feed unavailable";
-    host.appendChild(empty);
-  } finally {
-    if (eventFeedConfigured) setTimeout(pollEvents, POLL_MS);
-  }
-}
-
-async function pollOperatorActions() {
-  if (!operatorActionsConfigured) return;
-  try {
-    const res = await fetch(OPERATOR_ACTIONS + "?limit=15", { cache: "no-store" });
-    if (res.status === 404) {
-      operatorActionsConfigured = false;
-      renderOperatorActions({ present: false, actions: [] });
-      return;
-    }
-    if (!res.ok) throw new Error("operator-actions " + res.status);
-    renderOperatorActions(await res.json());
-  } catch (err) {
-    const host = document.getElementById("cc-actions-list");
-    if (host) {
-      host.replaceChildren();
-      const empty = document.createElement("div");
-      empty.className = "cc-empty";
-      empty.textContent = "operator-actions feed unavailable";
-      host.appendChild(empty);
-    }
-  } finally {
-    if (operatorActionsConfigured) setTimeout(pollOperatorActions, POLL_MS);
-  }
-}
-
-async function poll() {
-  try {
-    const res = await fetch(SNAPSHOT, { cache: "no-store" });
-    if (!res.ok) throw new Error("hub " + res.status);
-    render(await res.json());
-  } catch (err) {
-    const banner = document.getElementById("cc-offline");
-    banner.hidden = false;
-    banner.textContent = "hub unavailable — " + err.message;
-    document.getElementById("cc-connection").textContent = "offline";
-    document.getElementById("cc-connection").className = "syn-verdict syn-verdict--amber";
-  } finally {
-    setTimeout(poll, POLL_MS);
-  }
-}
-poll();
-pollEvents();
-pollOperatorActions();
-"""
-
-
-def _script(*, snapshot_path: str, poll_seconds: int) -> str:
-    """Return the command-centre script with the snapshot path and poll interval bound."""
-    return (
-        _SCRIPT_TEMPLATE.replace("__SNAPSHOT__", snapshot_path)
-        .replace("__EVENTS__", EVENTS_FEED_PATH)
-        .replace("__OPERATOR_ACTIONS__", OPERATOR_ACTIONS_FEED_PATH)
-        .replace("__POLL_MS__", str(poll_seconds * 1000))
-    )
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return f"window.__SYN_STUDIO__ = Object.freeze({encoded});"
 
 
 def render_studio_command_html(*, poll_seconds: int = DEFAULT_POLL_SECONDS) -> str:
-    """Render the live Studio command centre page.
+    """Render the offline-safe, read-only Studio command-centre page.
 
-    The shell renders without the hub and shows an offline banner until the first
-    ``/studio.json`` poll succeeds. The Coordination Clock and panels then fill in live and
-    refresh every ``poll_seconds``. ``prefers-reduced-motion`` stills the radar sweep and
-    reveals the claims-table fallback.
+    Parameters
+    ----------
+    poll_seconds : int, optional
+        Snapshot and optional-feed refresh interval, floored at one second.
+
+    Returns
+    -------
+    str
+        Complete HTML shell linking only fixed package assets.
     """
-    script = _script(snapshot_path=STUDIO_SNAPSHOT_PATH, poll_seconds=poll_seconds)
+    styles = "\n".join(
+        f'  <link rel="stylesheet" href="/{asset}">' for asset in STUDIO_COMMAND_STYLES
+    )
+    scripts = "\n".join(f'  <script src="/{asset}"></script>' for asset in STUDIO_COMMAND_SCRIPTS)
+    runtime_config = _runtime_config(poll_seconds=poll_seconds)
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SYNAPSE Studio — command centre</title>
-  <link rel="stylesheet" href="/studio.css">
-  <style>{_STYLE}</style>
+{styles}
 </head>
-<body class="syn" style="margin:0">
+<body class="syn">
   <div class="cc-shell">
     <aside class="cc-rail" aria-label="Studio navigation">
       <div class="cc-rail-title">SYNAPSE Studio</div>
       <nav class="syn-nav">
         <a href="{STUDIO_COMMAND_PATH}" aria-current="page">command</a>
         <a href="{STUDIO_REFERENCE_PATH}">design</a>
+        <a href="#cc-board-columns">board</a>
         <a href="#cc-agents-list">fleet</a>
         <a href="#cc-livefeed-list">live feed</a>
         <a href="#cc-actions-list">operator actions</a>
@@ -491,60 +123,68 @@ def render_studio_command_html(*, poll_seconds: int = DEFAULT_POLL_SECONDS) -> s
         <div class="cc-stat"><b id="cc-posture">unknown</b><span>security posture</span></div>
         <div class="cc-stat"><b id="cc-peers">—</b><span>peers reachable</span></div>
       </div>
+      <section class="syn-panel cc-board-panel" aria-labelledby="cc-board-title">
+        <div id="cc-board-title" class="syn-label">shared plan · exact board and claim states</div>
+        <p class="cc-board-boundary">Read-only projection; actions remain hub-enforced.</p>
+        <div id="cc-board-columns" class="syn-board-columns" aria-live="polite">
+          <div class="syn-board-empty">Waiting for snapshot</div>
+        </div>
+      </section>
       <div class="cc-grid">
-    <section class="syn-panel cc-clock-wrap">
-      <div class="syn-label">coordination clock</div>
-      <svg id="cc-clock" class="cc-clock" viewBox="0 0 360 360"
-        role="img" aria-label="Coordination clock: claims by lease health"></svg>
-      <div class="cc-fallback" style="width:100%">
-        <table class="cc-table">
-          <thead><tr><th>owner</th><th>scope</th><th>state</th></tr></thead>
-          <tbody id="cc-fallback-body"></tbody>
-        </table>
-      </div>
-    </section>
-    <div class="syn-stack" style="display:grid;gap:var(--syn-sp-4)">
-      <section class="syn-panel">
-        <div class="syn-label">agents</div>
-        <div id="cc-agents-list" style="margin-top:var(--syn-sp-2)"></div>
-      </section>
-      <section class="syn-panel">
-        <div class="syn-label">claims</div>
-        <div id="cc-claims-list" style="margin-top:var(--syn-sp-2)"></div>
-      </section>
-      <section class="syn-panel">
-        <div class="syn-label">tasks</div>
-        <div id="cc-tasks-list" style="margin-top:var(--syn-sp-2)"></div>
-      </section>
-      <section class="syn-panel">
-        <div class="syn-label">risk signals</div>
-        <div id="cc-risk-list" style="margin-top:var(--syn-sp-2)"></div>
-      </section>
-      <section class="syn-panel">
-        <div class="syn-label">security posture</div>
-        <div id="cc-posture-list" style="margin-top:var(--syn-sp-2)"></div>
-      </section>
-      <section class="syn-panel">
-        <div class="syn-label">observed peers (advisory)</div>
-        <div id="cc-peers-list" style="margin-top:var(--syn-sp-2)"></div>
-      </section>
-      <section class="syn-panel">
-        <div class="syn-label">live feed</div>
-        <div id="cc-livefeed-list" class="cc-feed" style="margin-top:var(--syn-sp-2)">
-          <div class="cc-empty">connecting to event feed</div>
+        <section class="syn-panel cc-clock-wrap">
+          <div class="syn-label">coordination clock</div>
+          <svg id="cc-clock" class="cc-clock" viewBox="0 0 360 360"
+            role="img" aria-label="Coordination clock: claims by lease health"></svg>
+          <div class="cc-fallback">
+            <table class="cc-table">
+              <thead><tr><th>owner</th><th>scope</th><th>state</th></tr></thead>
+              <tbody id="cc-fallback-body"></tbody>
+            </table>
+          </div>
+        </section>
+        <div class="cc-stack">
+          <section class="syn-panel">
+            <div class="syn-label">agents</div>
+            <div id="cc-agents-list" class="cc-panel-list"></div>
+          </section>
+          <section class="syn-panel">
+            <div class="syn-label">claims</div>
+            <div id="cc-claims-list" class="cc-panel-list"></div>
+          </section>
+          <section class="syn-panel">
+            <div class="syn-label">tasks</div>
+            <div id="cc-tasks-list" class="cc-panel-list"></div>
+          </section>
+          <section class="syn-panel">
+            <div class="syn-label">risk signals</div>
+            <div id="cc-risk-list" class="cc-panel-list"></div>
+          </section>
+          <section class="syn-panel">
+            <div class="syn-label">security posture</div>
+            <div id="cc-posture-list" class="cc-panel-list"></div>
+          </section>
+          <section class="syn-panel">
+            <div class="syn-label">observed peers (advisory)</div>
+            <div id="cc-peers-list" class="cc-panel-list"></div>
+          </section>
+          <section class="syn-panel">
+            <div class="syn-label">live feed</div>
+            <div id="cc-livefeed-list" class="cc-feed cc-panel-list">
+              <div class="cc-empty">connecting to event feed</div>
+            </div>
+          </section>
+          <section class="syn-panel">
+            <div class="syn-label">operator actions</div>
+            <div id="cc-actions-list" class="cc-feed cc-panel-list">
+              <div class="cc-empty">connecting to operator-actions feed</div>
+            </div>
+          </section>
         </div>
-      </section>
-      <section class="syn-panel">
-        <div class="syn-label">operator actions</div>
-        <div id="cc-actions-list" class="cc-feed" style="margin-top:var(--syn-sp-2)">
-          <div class="cc-empty">connecting to operator-actions feed</div>
-        </div>
-      </section>
-    </div>
       </div>
     </main>
   </div>
-  <script>{script}</script>
+  <script>{runtime_config}</script>
+{scripts}
 </body>
 </html>
 """

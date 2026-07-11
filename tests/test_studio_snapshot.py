@@ -16,6 +16,26 @@ from synapse_channel.studio_snapshot import (
 )
 
 _DASHBOARD = {
+    "board": {
+        "tasks": [
+            {"task_id": "t1", "title": "ready", "status": "open"},
+            {"task_id": "t2", "title": "working", "status": "in_progress"},
+            {"task_id": "t3", "title": "blocked", "status": "blocked", "depends_on": ["t2"]},
+        ],
+        "ready": ["t1"],
+    },
+    "state": {
+        "active_claims": [
+            {
+                "task_id": "t2",
+                "owner": "A/claude-1",
+                "status": "working",
+                "lease_expires_at": 1782760100.0,
+                "paths": ["src/"],
+            }
+        ],
+        "generated_at": 1782760000.0,
+    },
     "fleet": {
         "agents": {
             "live": ["A/claude-1", "B/codex-2"],
@@ -71,6 +91,17 @@ def test_projection_foregrounds_the_verdict_and_sections() -> None:
     assert studio["hub"] == {"id": "", "version": "", "config_epoch": ""}
     assert studio["claims"]["active"] == [{"owner": "A/claude-1", "scope": "src/"}]
     assert studio["tasks"]["graph"] == {"nodes": 3, "edges": 1}
+    columns = studio["tasks"]["columns"]
+    assert columns["declared_tasks"] == 3
+    assert [column["id"] for column in columns["columns"]] == [
+        "open",
+        "claimed",
+        "working",
+        "input_required",
+        "blocked",
+        "closed",
+        "other",
+    ]
     assert studio["risk"]["safe_next_work"] == ["t1", "t2"]
     assert studio["security_posture"]["level"] == "amber"
 
@@ -97,6 +128,7 @@ def test_empty_payload_projects_to_safe_defaults() -> None:
     assert studio["agents"] == {"live": [], "waiters": [], "missing_waiters": []}
     assert studio["claims"] == {"active": [], "stale": []}
     assert studio["tasks"]["graph"] is None
+    assert studio["tasks"]["columns"]["total_cards"] == 0
     assert studio["security_posture"]["level"] == "amber"
 
 
@@ -119,6 +151,8 @@ def test_frozen_snapshot_is_a_valid_representative_sample() -> None:
     assert studio["observed_fleet"]["configured"] is True
     assert studio["observed_fleet"]["peers_total"] == 1
     assert studio["headline"]["peers_reachable"] == 1
+    assert studio["tasks"]["columns"]["declared_tasks"] == 3
+    assert studio["tasks"]["columns"]["ad_hoc_claims"] == 1
     assert frozen_studio_snapshot() == studio  # deterministic
 
 

@@ -5,15 +5,13 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — fleet nerve-center cockpit shell and static assets
-"""Render the live cockpit shell and serve its static assets.
+"""Render the live cockpit shell and serve fixed cockpit and Studio assets.
 
-The cockpit is a dependency-free single-page client: the HTML shell links one
-stylesheet and one script, both shipped as package data under
-``dashboard_assets/``. The script polls ``/snapshot.json`` and renders the live
-HUD, fleet graph, board lanes, claims, progress stream, receipts, and capability
-manifest in place. A ``<noscript>`` block carries the server-rendered fallback so
-the page is still informative without JavaScript and so static assertions keep
-working. This module owns only presentation: it never reaches the hub.
+The dependency-free clients load only allowlisted package data under
+``dashboard_assets/``. The classic cockpit script polls ``/snapshot.json``;
+focused Studio assets poll its curated read model and render the command centre.
+A ``<noscript>`` block carries the classic server-rendered fallback. This module
+owns presentation and fixed asset lookup only; it never reaches the hub.
 """
 
 from __future__ import annotations
@@ -25,11 +23,16 @@ from typing import Final
 _ASSETS_DIR: Final = Path(__file__).parent / "dashboard_assets"
 
 COCKPIT_ASSETS: Final[dict[str, str]] = {
+    "board-columns.css": "text/css",
+    "board-columns.js": "text/javascript",
     "cockpit.css": "text/css",
     "cockpit.js": "text/javascript",
     "risk-panel.css": "text/css",
     "risk-panel.js": "text/javascript",
     "studio.css": "text/css",
+    "studio-command.css": "text/css",
+    "studio-command.js": "text/javascript",
+    "studio-feeds.js": "text/javascript",
 }
 """Servable cockpit asset file names mapped to their content types."""
 

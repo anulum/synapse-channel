@@ -54,7 +54,7 @@ synapse dashboard --port 8765
 
 The command centre reads one JSON contract, served live at `/studio.json`: a single risk
 **verdict** (the reserved red/amber/green signal), a row of headline counters, the
-agents, claims, tasks, conflicts, risk behind them, and a compact security-posture
+agents, claims, task columns, conflicts, risk behind them, and a compact security-posture
 section. It is a pure projection of the same read model the dashboard already exposes —
 `studio_snapshot.py` reshaping `/snapshot.json` — so Studio adds no new hub call, only a
 curated command-centre view. Every headline count is derived from the list it summarises,
@@ -73,8 +73,31 @@ glance what the fleet is doing and what is at risk. Its signature instrument is 
 **Coordination Clock** — a radial gauge where every claim is a segment around the dial,
 coloured by lease health (green fresh, amber ageing, red stale), with conflicts marked on
 the rim and a slow radar sweep; the dial centre carries the verdict and the live claim
-count. Around it sit the verdict pill, the headline counters, and the agents, claims,
-tasks, and risk panels.
+count. Around it sit the verdict pill, the headline counters, a board-column view, and
+the agents, claims, tasks, and risk panels.
+
+### Shared-plan columns
+
+The board view joins the blackboard plan with live claim leases by task id. It preserves
+the hub's exact values rather than inventing presentation-only lifecycle states:
+
+- blackboard `open`, `in_progress`, `blocked`, `done`, and `cancelled`;
+- claim `claimed`, `working`, `input_required`, `done`, and `failed`.
+
+The visible columns are Open, Claimed, Working, Input required, Blocked, Closed, and a
+fail-visible Other column for future additive values. Cards retain both raw statuses,
+their source, readiness, unmet dependencies, owner, paths, and lease freshness. A live
+claim without a blackboard row appears as an explicitly labelled ad-hoc claim; the view
+does not fabricate a declaration. A bounded blackboard snapshot carries its truncation
+and total counts so the UI cannot present a partial page as the whole plan. Its complete
+ready-id set remains authoritative: dependencies whose task rows were omitted are shown
+as unknown when necessary, never fabricated as proven blockers of a ready task.
+
+The projection is read-only. It does not claim, assign, route, reserve, approve, release,
+or update work, and the free Studio page renders no mutation controls. Evidence and
+approval notes remain progress-ledger facts; they do not become a fictional "review"
+status. `board-columns.js` creates DOM text nodes for task data, and the command shell,
+feed polling, board renderer, and styles ship as separate focused package assets.
 
 The page shell is hub-independent: it loads with no hub running, shows an offline state,
 and fills in live as it polls. The persistent NavRail keeps the command view, reference
