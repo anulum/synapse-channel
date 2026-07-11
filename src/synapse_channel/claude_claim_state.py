@@ -21,6 +21,7 @@ from collections.abc import Callable
 from typing import Any, Protocol
 
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.protocol import MessageType
 
 
@@ -44,8 +45,10 @@ MAX_CLAUDE_CLAIM_PHASE_TIMEOUT = 300.0
 """Maximum seconds allowed for either claim-state query phase."""
 
 
-class StateSnapshotError(RuntimeError):
+class StateSnapshotError(SynapseError, RuntimeError):
     """The authoritative hub snapshot could not be obtained safely."""
+
+    code = "claude_claim_state"
 
 
 def _validated_phase_timeout(timeout: float) -> float:

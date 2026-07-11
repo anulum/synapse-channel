@@ -81,6 +81,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "claim_forward_timeout",
         RuntimeError,
     ),
+    "ClaimGuardError": (
+        "synapse_channel.claude_claim_guard",
+        "claude_claim_guard",
+        RuntimeError,
+    ),
     "ClaimWireError": ("synapse_channel.core.multihub_claim_wire", "claim_wire", ValueError),
     "DeadLetterForwardError": (
         "synapse_channel.core.dead_letter_forwarding",
@@ -158,6 +163,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
     "SqlCipherUnavailableError": (
         "synapse_channel.core.persistence_sqlcipher",
         "sqlcipher_unavailable",
+        RuntimeError,
+    ),
+    "StateSnapshotError": (
+        "synapse_channel.claude_claim_state",
+        "claude_claim_state",
         RuntimeError,
     ),
     "StreamError": ("synapse_channel.core.streaming", "stream", ValueError),

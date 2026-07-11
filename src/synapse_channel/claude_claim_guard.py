@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.claude_claim_state import StateSnapshotError, fetch_state_snapshot
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.lifecycle import TaskStatus
 from synapse_channel.core.scoping import normalize_path
 from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runner
@@ -42,8 +43,10 @@ EDITABLE_STATUSES = frozenset({TaskStatus.CLAIMED, TaskStatus.WORKING})
 StateFetcher = Callable[..., Awaitable[dict[str, Any]]]
 
 
-class ClaimGuardError(RuntimeError):
+class ClaimGuardError(SynapseError, RuntimeError):
     """A controlled verification failure that must deny the tool call."""
+
+    code = "claude_claim_guard"
 
 
 @dataclass(frozen=True)
