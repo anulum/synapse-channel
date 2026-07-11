@@ -40,6 +40,8 @@ class StateAgent(Protocol):
 
 
 AgentFactory = Callable[..., StateAgent]
+MAX_CLAUDE_CLAIM_PHASE_TIMEOUT = 300.0
+"""Maximum seconds allowed for either claim-state query phase."""
 
 
 class StateSnapshotError(RuntimeError):
@@ -47,10 +49,11 @@ class StateSnapshotError(RuntimeError):
 
 
 def _validated_phase_timeout(timeout: float) -> float:
-    """Return a finite positive state-query deadline or fail closed."""
-    if not math.isfinite(timeout) or timeout <= 0:
+    """Return a bounded positive state-query deadline or fail closed."""
+    if not math.isfinite(timeout) or timeout <= 0 or timeout > MAX_CLAUDE_CLAIM_PHASE_TIMEOUT:
         raise StateSnapshotError(
-            "Synapse state query timeout must be finite and greater than zero."
+            "Synapse state query timeout must be finite, greater than zero, "
+            f"and at most {MAX_CLAUDE_CLAIM_PHASE_TIMEOUT:g} seconds."
         )
     return timeout
 

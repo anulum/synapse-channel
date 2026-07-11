@@ -89,7 +89,7 @@ async def test_state_fetch_timeout_is_a_controlled_denial() -> None:
         )
 
 
-@pytest.mark.parametrize("timeout", [float("inf"), float("-inf"), float("nan"), 0.0])
+@pytest.mark.parametrize("timeout", [float("inf"), float("-inf"), float("nan"), 0.0, 1e308])
 @pytest.mark.asyncio
 async def test_state_fetch_rejects_unbounded_timeout_before_connect(timeout: float) -> None:
     class MustNotStart(_AgentBase):

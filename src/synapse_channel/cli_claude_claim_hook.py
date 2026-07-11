@@ -30,6 +30,7 @@ from synapse_channel.claude_claim_guard import (
     denial_payload,
     evaluate_hook_event,
 )
+from synapse_channel.claude_claim_state import MAX_CLAUDE_CLAIM_PHASE_TIMEOUT
 from synapse_channel.client.agent import default_hub_uri
 
 HookEvaluator = Callable[..., Awaitable[GuardVerdict]]
@@ -37,9 +38,12 @@ _MIN_READY_TIMEOUT = 0.1
 
 
 def _normalise_ready_timeout(value: float) -> float:
-    """Return the bounded finite-positive timeout shared by every CLI path."""
-    if not math.isfinite(value) or value <= 0:
-        raise ValueError("--ready-timeout must be finite and greater than zero")
+    """Return the bounded positive timeout shared by every CLI path."""
+    if not math.isfinite(value) or value <= 0 or value > MAX_CLAUDE_CLAIM_PHASE_TIMEOUT:
+        raise ValueError(
+            "--ready-timeout must be finite, greater than zero, "
+            f"and at most {MAX_CLAUDE_CLAIM_PHASE_TIMEOUT:g} seconds"
+        )
     return max(_MIN_READY_TIMEOUT, value)
 
 
@@ -180,7 +184,10 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
         "--ready-timeout",
         type=_parse_ready_timeout,
         default=2.0,
-        help="Seconds allowed for each connect and state-snapshot phase (default: 2).",
+        help=(
+            "Seconds allowed for each connect and state-snapshot phase "
+            f"(0 < value <= {MAX_CLAUDE_CLAIM_PHASE_TIMEOUT:g}; default: 2)."
+        ),
     )
     parser.add_argument(
         "--print-config",

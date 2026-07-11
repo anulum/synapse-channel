@@ -37,7 +37,7 @@ def test_nested_parser_requires_identity() -> None:
     assert args.ready_timeout == 2.0
 
 
-@pytest.mark.parametrize("value", ["inf", "-inf", "nan", "0", "not-a-number"])
+@pytest.mark.parametrize("value", ["inf", "-inf", "nan", "0", "1e308", "not-a-number"])
 def test_nested_parser_rejects_invalid_ready_timeout(value: str) -> None:
     with pytest.raises(SystemExit) as raised:
         _args("--identity", "seat/one", "--ready-timeout", value)
@@ -68,7 +68,7 @@ def test_render_hook_config_is_exec_form_scoped_and_token_safe(tmp_path: Path) -
     assert "allow" not in json.dumps(config)
 
 
-@pytest.mark.parametrize("value", [float("inf"), float("-inf"), float("nan"), 0.0])
+@pytest.mark.parametrize("value", [float("inf"), float("-inf"), float("nan"), 0.0, 1e308])
 def test_render_hook_config_rejects_unbounded_timeout(value: float) -> None:
     with pytest.raises(ValueError, match="finite"):
         render_hook_config(
@@ -152,15 +152,18 @@ def test_runtime_exception_fails_closed_without_exit_one(
     assert "boom" not in json.dumps(output)
 
 
-def test_runtime_nonfinite_timeout_fails_closed_before_evaluation(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("value", [float("inf"), 1e308])
+def test_runtime_unbounded_timeout_fails_closed_before_evaluation(
+    value: float,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     async def must_not_run(*_args: object, **_kwargs: object) -> GuardVerdict:
         raise AssertionError("invalid timeout must fail before evaluation")
 
     monkeypatch.setattr(sys, "stdin", io.StringIO("{}"))
     args = _args("--identity", "seat/one")
-    args.ready_timeout = float("inf")
+    args.ready_timeout = value
     assert _cmd_claude_claim_hook(args, evaluator=must_not_run) == 0
     output = json.loads(capsys.readouterr().out)
     assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
