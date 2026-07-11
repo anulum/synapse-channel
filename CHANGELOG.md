@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.4] - 2026-07-11
+
 ### Added
 
 - The free read-only Studio command centre now renders exact-status board
