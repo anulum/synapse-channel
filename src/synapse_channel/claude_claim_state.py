@@ -34,6 +34,14 @@ class StateSnapshotError(ClaimStateError):
     code = "claude_claim_state"
 
 
+def _legacy_denial_message(message: str) -> str:
+    """Restore the released Claude-facing denial subject."""
+    return message.replace(
+        "claim denied fail-closed.",
+        "Edit/Write denied fail-closed.",
+    )
+
+
 async def fetch_state_snapshot(
     *,
     uri: str,
@@ -74,4 +82,4 @@ async def fetch_state_snapshot(
             agent_factory=agent_factory,
         )
     except ClaimStateError as exc:
-        raise StateSnapshotError(str(exc)) from exc
+        raise StateSnapshotError(_legacy_denial_message(str(exc))) from exc

@@ -172,8 +172,11 @@ async def test_state_fetch_rejects_non_mapping_snapshot() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("phase", ["connect", "request"])
-async def test_state_fetch_wraps_connection_and_request_failures(phase: str) -> None:
+@pytest.mark.parametrize(
+    ("phase", "message"),
+    [("connect", "connection failed"), ("request", "state query failed")],
+)
+async def test_state_fetch_wraps_connection_and_request_failures(phase: str, message: str) -> None:
     class BrokenAgent(_AgentBase):
         async def connect(self) -> None:
             if phase == "connect":
@@ -188,7 +191,7 @@ async def test_state_fetch_wraps_connection_and_request_failures(phase: str) -> 
         async def request_state(self) -> None:
             raise OSError("request failed")
 
-    with pytest.raises(ClaimStateError, match="failed") as caught:
+    with pytest.raises(ClaimStateError, match=message) as caught:
         await fetch_state_snapshot(
             uri="ws://hub",
             requester="guard",
@@ -197,6 +200,8 @@ async def test_state_fetch_wraps_connection_and_request_failures(phase: str) -> 
             agent_factory=BrokenAgent,
         )
     assert isinstance(caught.value.__cause__, OSError)
+    if phase == "connect":
+        assert "unavailable" in str(caught.value)
 
 
 @pytest.mark.asyncio
@@ -217,7 +222,7 @@ async def test_state_fetch_denies_connection_that_ends_before_readiness(
         async def request_state(self) -> None:
             raise AssertionError("state must not be requested after connection exit")
 
-    with pytest.raises(ClaimStateError, match="connection ended"):
+    with pytest.raises(ClaimStateError, match="connection ended") as caught:
         await fetch_state_snapshot(
             uri="ws://hub",
             requester="guard",
@@ -225,6 +230,7 @@ async def test_state_fetch_denies_connection_that_ends_before_readiness(
             timeout=0.1,
             agent_factory=EndedAgent,
         )
+    assert "unavailable" in str(caught.value)
 
 
 @pytest.mark.asyncio

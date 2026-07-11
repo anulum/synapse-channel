@@ -39,6 +39,14 @@ AgentFactory = Callable[..., StateAgent]
 MAX_CLAIM_STATE_PHASE_TIMEOUT = 300.0
 """Maximum seconds allowed for either state-query phase."""
 
+_HUB_UNAVAILABLE = "Synapse hub is unavailable; claim denied fail-closed."
+_HUB_CONNECTION_ENDED = (
+    "Synapse hub unavailable: connection ended before state arrived; claim denied fail-closed."
+)
+_HUB_CONNECTION_FAILED = (
+    "Synapse hub unavailable: connection failed during state query; claim denied fail-closed."
+)
+
 
 class ClaimStateError(SynapseError, RuntimeError):
     """The authoritative hub snapshot could not be obtained safely."""
@@ -61,10 +69,10 @@ def _raise_if_connection_ended(connection: asyncio.Task[None]) -> None:
     try:
         connection.result()
     except asyncio.CancelledError as exc:
-        raise ClaimStateError("Synapse hub connection ended before state arrived.") from exc
+        raise ClaimStateError(_HUB_CONNECTION_ENDED) from exc
     except Exception as exc:
-        raise ClaimStateError("Synapse hub connection failed during state query.") from exc
-    raise ClaimStateError("Synapse hub connection ended before state arrived.")
+        raise ClaimStateError(_HUB_CONNECTION_FAILED) from exc
+    raise ClaimStateError(_HUB_CONNECTION_ENDED)
 
 
 async def fetch_state_snapshot(
@@ -127,7 +135,7 @@ async def fetch_state_snapshot(
         if readiness not in done:
             raise ClaimStateError("Synapse hub readiness timed out; claim denied fail-closed.")
         if not readiness.result():
-            raise ClaimStateError("Synapse hub is unavailable; claim denied fail-closed.")
+            raise ClaimStateError(_HUB_UNAVAILABLE)
 
         await agent.request_state()
         response = asyncio.create_task(received.wait())

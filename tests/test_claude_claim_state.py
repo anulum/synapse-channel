@@ -63,7 +63,7 @@ async def test_state_fetch_unavailable_hub_is_a_controlled_denial() -> None:
         async def request_state(self) -> None:
             raise AssertionError("state must not be requested before readiness")
 
-    with pytest.raises(StateSnapshotError, match="unavailable"):
+    with pytest.raises(StateSnapshotError, match="unavailable") as caught:
         await fetch_state_snapshot(
             uri="ws://hub",
             requester="guard",
@@ -71,6 +71,7 @@ async def test_state_fetch_unavailable_hub_is_a_controlled_denial() -> None:
             timeout=0.01,
             agent_factory=UnavailableAgent,
         )
+    assert str(caught.value) == "Synapse hub is unavailable; Edit/Write denied fail-closed."
 
 
 @pytest.mark.asyncio
@@ -79,7 +80,7 @@ async def test_state_fetch_timeout_is_a_controlled_denial() -> None:
         async def request_state(self) -> None:
             return None
 
-    with pytest.raises(StateSnapshotError, match="timed out"):
+    with pytest.raises(StateSnapshotError, match="timed out") as caught:
         await fetch_state_snapshot(
             uri="ws://hub",
             requester="guard",
@@ -87,6 +88,7 @@ async def test_state_fetch_timeout_is_a_controlled_denial() -> None:
             timeout=0.01,
             agent_factory=SilentAgent,
         )
+    assert str(caught.value) == "Synapse state query timed out; Edit/Write denied fail-closed."
 
 
 @pytest.mark.parametrize("timeout", [float("inf"), float("-inf"), float("nan"), 0.0, 1e308])
