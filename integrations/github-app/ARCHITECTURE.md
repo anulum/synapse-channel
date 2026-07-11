@@ -65,6 +65,8 @@ single-dependency local runtime.
 ```text
 integrations/github-app/
 ├── ARCHITECTURE.md          decision record and invariants
+├── LICENSE                  AGPL-3.0-or-later distribution terms
+├── NOTICE.md                licensing and attribution notice
 ├── README.md                operator-facing skeleton usage and limits
 ├── pyproject.toml           independent package and strict tool policy
 ├── requirements-dev.txt     hash-locked test/build toolchain
@@ -139,7 +141,8 @@ API origin must use HTTPS.
   reads PR data from the local API server, calls the shipped core conflict finder,
   and inspects the captured neutral Check Run payload.
 - Dedicated CI runs strict mypy, Ruff, Bandit, 100% line/branch coverage, package
-  build, wheel-content inspection, and dependency audit for this package.
+  build, wheel-content and licence-file inspection, and dependency audit for
+  this package.
 
 ## Explicitly deferred
 

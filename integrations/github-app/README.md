@@ -84,3 +84,7 @@ python -m build
 
 The repository's `github-app` workflow repeats these gates from the hash-locked
 development requirements and inspects the built wheel.
+
+The wheel and source distribution carry the repository's full `LICENSE` and
+`NOTICE.md`; the package is AGPL-3.0-or-later with a separate commercial licence
+available from the contact named in that notice.

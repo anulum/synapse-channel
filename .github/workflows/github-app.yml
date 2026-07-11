@@ -105,4 +105,10 @@ jobs:
           }
           assert packaged == expected, (packaged, expected)
           assert not any(name.startswith("synapse_channel/") for name in names)
+          license_files = {
+              name.rsplit("/", 1)[-1]
+              for name in names
+              if ".dist-info/licenses/" in name
+          }
+          assert license_files == {"LICENSE", "NOTICE.md"}, license_files
           PY
