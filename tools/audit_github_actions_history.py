@@ -223,5 +223,5 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 1 if has_unresolved_runs(classified) else 0
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     raise SystemExit(main())
