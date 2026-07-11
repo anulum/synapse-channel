@@ -15,6 +15,18 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- A standalone, hosting-neutral Managed GitHub App package now ships under
+  `integrations/github-app/`. It renders a least-privilege App manifest,
+  verifies bounded HMAC-SHA256 pull-request webhooks before parsing, creates
+  short-lived RS256 App credentials, scopes installation tokens, reads bounded
+  open-PR file inventories through a fixed-origin no-redirect REST client,
+  reuses the existing core conflict finder, and creates completed neutral
+  advisory checks. The local core gains no GitHub dependency or hosted state;
+  App registration, secret custody, hosting, retries, tenancy, and billing
+  remain owner-gated. A dedicated Python 3.10–3.13 workflow enforces strict
+  typing, 100% line/branch coverage, security/dependency scans, package build,
+  and wheel-boundary inspection.
+
 - The read-only cockpit risk panel now enriches its bounded safe-work queue
   with explainable route candidates and resource bids from the existing local
   advisory scorers. Risk and ready-task rows link to a new

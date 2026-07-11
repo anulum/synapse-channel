@@ -1,0 +1,108 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — standalone Managed GitHub App quality and package gate
+name: github-app
+
+on:
+  push:
+    paths:
+      - "integrations/github-app/**"
+      - ".github/workflows/github-app.yml"
+  pull_request:
+    paths:
+      - "integrations/github-app/**"
+      - ".github/workflows/github-app.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  managed-layer:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: integrations/github-app/requirements-dev.txt
+      - name: Install hash-locked managed-layer toolchain
+        run: python -m pip install --require-hashes -r integrations/github-app/requirements-dev.txt
+      - name: Install current Core and managed layer without resolving
+        run: |
+          python -m pip install -e . --no-deps
+          python -m pip install -e integrations/github-app --no-deps
+      - name: Verify dependency closure
+        run: python -m pip check
+      - name: Ruff lint and format
+        working-directory: integrations/github-app
+        run: |
+          python -m ruff check src tests
+          python -m ruff format --check src tests
+      - name: Strict typing
+        working-directory: integrations/github-app
+        run: python -m mypy
+      - name: Focused line and branch coverage
+        working-directory: integrations/github-app
+        run: python -m pytest
+      - name: Bandit source scan
+        working-directory: integrations/github-app
+        run: python -m bandit -q -r src -c pyproject.toml
+      - name: Audit hash-locked dependencies
+        if: matrix.python == '3.12'
+        working-directory: integrations/github-app
+        run: python -m pip_audit -r requirements-dev.txt
+      - name: Build and validate independent package
+        if: matrix.python == '3.12'
+        working-directory: integrations/github-app
+        run: |
+          python -m build
+          python -m twine check dist/*
+      - name: Inspect managed-layer wheel boundary
+        if: matrix.python == '3.12'
+        working-directory: integrations/github-app
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheels = list(Path("dist").glob("synapse_github_app-*.whl"))
+          assert len(wheels) == 1, wheels
+          expected = {
+              "__init__.py",
+              "auth.py",
+              "checks.py",
+              "conflicts.py",
+              "errors.py",
+              "github_api.py",
+              "json_boundary.py",
+              "manifest.py",
+              "models.py",
+              "service.py",
+              "webhook.py",
+          }
+          with ZipFile(wheels[0]) as archive:
+              names = set(archive.namelist())
+          packaged = {
+              name.removeprefix("synapse_github_app/")
+              for name in names
+              if name.startswith("synapse_github_app/")
+          }
+          assert packaged == expected, (packaged, expected)
+          assert not any(name.startswith("synapse_channel/") for name in names)
+          PY

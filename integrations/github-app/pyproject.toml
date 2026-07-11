@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE GITHUB APP — independent managed-layer package configuration
+
+[build-system]
+requires = ["setuptools>=80", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "synapse-github-app"
+version = "0.1.0"
+description = "Hosting-neutral GitHub App adapter for advisory SYNAPSE pull-request conflict checks"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "AGPL-3.0-or-later"
+authors = [
+  { name = "Miroslav Šotek", email = "protoscience@anulum.li" },
+]
+dependencies = [
+  "PyJWT[crypto]>=2.13.0,<3",
+  "synapse-channel>=0.99.3,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "bandit>=1.9.4",
+  "build>=1.4.0",
+  "mypy>=1.20.0",
+  "pip-audit>=2.10.0",
+  "pytest>=9.0.3",
+  "pytest-cov>=7.0.0",
+  "ruff>=0.15.18",
+  "twine>=6.2.0",
+]
+
+[project.scripts]
+synapse-github-app-manifest = "synapse_github_app.manifest:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "D"]
+ignore = ["D203", "D212"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D"]
+
+[tool.mypy]
+strict = true
+python_version = "3.10"
+mypy_path = "src"
+files = ["src/synapse_github_app", "tests"]
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --tb=short --strict-markers --cov=synapse_github_app --cov-branch --cov-report=term-missing --cov-fail-under=100"
+
+[tool.coverage.run]
+source = ["synapse_github_app"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 100
+exclude_lines = [
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B101"]

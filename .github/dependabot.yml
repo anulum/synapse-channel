@@ -55,6 +55,22 @@ updates:
       - "dependencies"
       - "javascript"
 
+  - package-ecosystem: "pip"
+    directory: "/integrations/github-app"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      github-app-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+      - "python"
+      - "github-app"
+
   - package-ecosystem: "docker"
     directory: "/"
     schedule:

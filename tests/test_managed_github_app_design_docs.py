@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — managed GitHub App design documentation tests
-"""Guard the managed GitHub App design's boundary and not-implemented status."""
+"""Guard the managed GitHub App skeleton and undeployed-host boundary."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DOC = ROOT / "docs" / "managed-github-app.md"
+INTEGRATION = ROOT / "integrations" / "github-app"
 
 
 def _collapsed() -> str:
@@ -21,15 +22,17 @@ def _collapsed() -> str:
 
 
 def test_design_is_in_the_nav() -> None:
-    assert "Managed GitHub App (design): managed-github-app.md" in (ROOT / "mkdocs.yml").read_text(
+    assert "Managed GitHub App: managed-github-app.md" in (ROOT / "mkdocs.yml").read_text(
         encoding="utf-8"
     )
 
 
-def test_design_states_the_app_is_not_implemented() -> None:
+def test_design_states_skeleton_is_built_but_app_is_undeployed() -> None:
     text = _collapsed()
-    assert "the app is not implemented" in text
-    assert "no webhook intake, no github app, no hosted state exists" in text
+    assert "app manifest and checks api skeleton — shipped" in text
+    assert "the skeleton is implemented; the app is not registered or deployed" in text
+    assert "no public installation" in text
+    assert "hosted endpoint" in text
 
 
 def test_design_records_the_badge_first_build_order() -> None:
@@ -42,6 +45,18 @@ def test_design_records_the_badge_first_build_order() -> None:
     assert "policy-engine.md#the-synapse-protected-badge" in raw
     # and stays honest about what it is until the App exists
     assert "self-declaration, not an attestation" in text
+
+
+def test_design_links_the_concrete_architecture_and_package() -> None:
+    raw = DOC.read_text(encoding="utf-8")
+    architecture = (INTEGRATION / "ARCHITECTURE.md").read_text(encoding="utf-8")
+
+    assert "integrations/github-app/ARCHITECTURE.md" in raw
+    assert "integrations/github-app/README.md" in raw
+    assert "```mermaid" in architecture
+    assert "synapse_channel.git.gitconflict.find_conflicts" in architecture
+    assert (INTEGRATION / "pyproject.toml").is_file()
+    assert (ROOT / ".github" / "workflows" / "github-app.yml").is_file()
 
 
 def test_design_keeps_the_core_managed_boundary() -> None:

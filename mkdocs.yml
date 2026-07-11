@@ -102,7 +102,7 @@ nav:
   - WASM sandbox threat model: sandbox-threat-model.md
   - Federated trust model: federated-trust-model.md
   - Multi-hub sync (CRDT) research: multi-hub-sync.md
-  - Managed GitHub App (design): managed-github-app.md
+  - Managed GitHub App: managed-github-app.md
   - Recipes: recipes.md
   - Examples: examples.md
   - Deployment: deployment.md
