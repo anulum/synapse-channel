@@ -15,6 +15,14 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- A weekly or manual read-only Actions-history audit now classifies the latest
+  500 main-branch workflow runs and fails visibly when a failure, timeout,
+  stale run, action-required run, or cancellation lacks later successful
+  evidence for the same workflow. Raw and classified evidence remains attached
+  to every audit. A separate SHA-pinned link workflow checks public Markdown on
+  documentation changes and weekly drift, refuses private or loopback targets,
+  requires TLS 1.2 or newer, and does not treat HTTP 5xx responses as healthy.
+
 - A read-only property-based fuzz workflow now exercises the production bounded
   wire decoder and SQLite event store on a weekly or manual schedule. Separate
   Hypothesis targets cover arbitrary wire bytes, JSON round-trips, depth bombs,

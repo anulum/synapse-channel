@@ -7,10 +7,10 @@
     "optional_dependency_groups": 13,
     "package_modules": 389,
     "public_api_exports": 70,
-    "tests": 6216,
+    "tests": 6235,
     "version": "0.99.3",
     "wire_message_types": 77,
-    "workflows": 15
+    "workflows": 17
   },
   "project": "SYNAPSE CHANNEL",
   "schema_version": "capability-manifest.v1"

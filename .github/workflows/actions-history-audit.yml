@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — read-only recent GitHub Actions history audit
+name: actions-history-audit
+
+on:
+  schedule:
+    # Weekly Monday 06:10 UTC, after link and commit-history checks.
+    - cron: "10 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  recent-main-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Collect the latest 500 main-branch runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh run list
+          --repo "${{ github.repository }}"
+          --branch main
+          --limit 500
+          --json databaseId,conclusion,status,workflowName,headSha,headBranch,createdAt,event
+          > actions-history.json
+      - name: Fail on unresolved workflow history
+        run: >-
+          python tools/audit_github_actions_history.py
+          --input actions-history.json
+          --exclude-workflow actions-history-audit
+          > actions-history-audit.json
+      - name: Upload raw and classified evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: actions-history-audit
+          path: actions-history*.json
+          if-no-files-found: error
+          retention-days: 30

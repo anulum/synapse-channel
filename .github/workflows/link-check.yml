@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — public documentation link integrity
+name: link-check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "*.md"
+      - "**/*.md"
+      - "docs/**"
+      - "mkdocs.yml"
+      - ".github/workflows/link-check.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "*.md"
+      - "**/*.md"
+      - "docs/**"
+      - "mkdocs.yml"
+      - ".github/workflows/link-check.yml"
+  schedule:
+    # External URLs drift independently of repository changes.
+    - cron: "30 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  public-docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Check tracked Markdown links
+        id: lychee
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: >-
+            --root-dir "${{ github.workspace }}"
+            --verbose
+            --no-progress
+            --exclude-all-private
+            --min-tls TLSv1_2
+            --max-concurrency 32
+            --max-redirects 10
+            --max-retries 3
+            --retry-wait-time 5
+            --timeout 20
+            --accept 200,204,206,301,302,303,307,308,403,429
+            './**/*.md'
+          fail: true
+          failIfEmpty: true
+          format: markdown
+          jobSummary: true
+          output: lychee/report.md
+      - name: Upload link report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: link-check-report
+          path: lychee/report.md
+          if-no-files-found: error
+          retention-days: 30
