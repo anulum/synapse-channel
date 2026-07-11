@@ -158,6 +158,31 @@ worth stating plainly:
   artifact hashes, and Git state for `synapse release --receipt`. It does not
   sandbox untrusted commands, review whether commands are sufficient, or turn a
   `supported` receipt into independent proof of correctness.
+- **Published distribution provenance.** Beginning with the first release after
+  0.99.3, each GitHub Release carries `SHA256SUMS` and a portable Sigstore bundle
+  for the exact wheel, source archive, and SBOM published from the tag workflow.
+  With a current GitHub CLI, verify the downloaded bytes and their GitHub-hosted
+  SLSA provenance before installing them:
+
+  ```bash
+  gh release download vX.Y.Z -R anulum/synapse-channel --dir synapse-release
+  cd synapse-release
+  sha256sum --check SHA256SUMS
+  bundle="synapse-channel-vX.Y.Z-provenance.sigstore.json"
+  while read -r _ artifact; do
+    gh attestation verify "$artifact" \
+      --repo anulum/synapse-channel \
+      --bundle "$bundle" \
+      --signer-workflow anulum/synapse-channel/.github/workflows/publish.yml \
+      --source-ref refs/tags/vX.Y.Z \
+      --deny-self-hosted-runners
+  done < SHA256SUMS
+  ```
+
+  Release 0.99.3 predates this signing workflow and has checksums but no
+  provenance bundle. A valid attestation binds bytes to the named repository,
+  workflow, and source ref; it is not a semantic safety review. It also does not
+  enable GitHub's separate owner-controlled immutable-release setting.
 
 [`synapse hub --team-secure`](docs/team-secure.md) is the multi-seat trust
 preset: it requires a connect token, an identity trust bundle with binding

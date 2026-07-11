@@ -45,13 +45,34 @@ jobs:
           path: release-artifact/
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-provenance
+          path: release-provenance/
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
       - name: Verify the exact release payload and digests
         working-directory: release-artifact
         run: |
           sha256sum --check --strict SHA256SUMS
           diff -u \
             <(sed -E 's/^[0-9a-f]{64}  //' SHA256SUMS | sort) \
-            <(find packages sbom -maxdepth 1 -type f -printf '%p\n' | sort)
+            <(find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | sort)
+      - name: Verify portable SLSA provenance before attaching assets
+        env:
+          PROVENANCE_BUNDLE: release-provenance/synapse-channel-${{ github.event.workflow_run.head_branch }}-provenance.sigstore.json
+          SOURCE_REF: refs/tags/${{ github.event.workflow_run.head_branch }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          while read -r _ artifact; do
+            gh attestation verify "release-artifact/$artifact" \
+              --repo "$GITHUB_REPOSITORY" \
+              --bundle "$PROVENANCE_BUNDLE" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/publish.yml" \
+              --source-ref "$SOURCE_REF" \
+              --source-digest "$SOURCE_SHA" \
+              --deny-self-hosted-runners
+          done < release-artifact/SHA256SUMS
       - name: Extract changelog for this tag
         env:
           SOURCE_TAG: ${{ github.event.workflow_run.head_branch }}
@@ -69,6 +90,5 @@ jobs:
           target_commitish: ${{ github.event.workflow_run.head_sha }}
           body_path: RELEASE_NOTES.md
           files: |
-            release-artifact/packages/*
-            release-artifact/SHA256SUMS
-            release-artifact/sbom/*
+            release-artifact/*
+            release-provenance/*

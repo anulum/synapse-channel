@@ -13,6 +13,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Security
+
+- Future tag releases now fail closed unless GitHub's first-party attestation
+  action signs SLSA provenance for every checksum-recorded wheel, source archive,
+  and SBOM before PyPI publication. The GitHub Release workflow independently
+  verifies the portable Sigstore bundle against the repository, tag, source
+  commit, and pinned publishing workflow before attaching the same canonical
+  files and a stable `synapse-channel-vX.Y.Z-provenance.sigstore.json` asset.
+  This applies beginning with the next release; it does not retroactively sign
+  the already-published 0.99.3 artifacts.
+
 ### Fixed
 
 - GitHub Releases and PyPI now receive the exact same wheel and source archive

@@ -14,29 +14,54 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 PUBLISH_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "publish.yml"
+SECURITY_POLICY = REPO_ROOT / "SECURITY.md"
 
 
 def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     publish = PUBLISH_WORKFLOW.read_text(encoding="utf-8")
+    security = SECURITY_POLICY.read_text(encoding="utf-8")
+    build, after_build = publish.split("\n  attest:", maxsplit=1)
+    attest, publish_job = after_build.split("\n  publish:", maxsplit=1)
 
     assert (release + publish).count("python -m build") == 1
-    assert "python -m build --outdir release-artifact/packages" in publish
-    assert "sha256sum packages/* sbom/* > SHA256SUMS" in publish
-    assert "name: release-dist" in publish
-    assert "actions/upload-artifact@" in publish
-    assert "release-artifact/sbom/synapse-channel-${GITHUB_REF_NAME}-sbom.cdx.json" in publish
+    assert "python -m build --outdir release-artifact" in build
+    assert "sha256sum *.whl *.tar.gz *-sbom.cdx.json > SHA256SUMS" in build
+    assert "release-artifact/synapse-channel-${GITHUB_REF_NAME}-sbom.cdx.json" in build
+    assert "name: release-dist" in build
+    assert "actions/upload-artifact@" in build
+    assert "id-token: write" not in build
     assert 'tags: ["v*"]' in publish
     assert "workflow_dispatch:" not in publish
-    assert "actions/download-artifact@" in publish
-    assert "sha256sum --check --strict SHA256SUMS" in publish
-    assert "find packages sbom -maxdepth 1 -type f" in publish
-    assert "packages-dir: release-artifact/packages/" in publish
+
+    assert "needs: build" in attest
+    assert "artifact-metadata: write" in attest
+    assert "attestations: write" in attest
+    assert "id-token: write" in attest
+    assert "name: release-dist" in attest
+    assert "sha256sum --check --strict SHA256SUMS" in attest
+    assert "find . -maxdepth 1 -type f ! -name SHA256SUMS" in attest
+    assert "actions/attest@a1948c3f048ba23858d222213b7c278aabede763" in attest
+    assert "subject-checksums: release-artifact/SHA256SUMS" in attest
+    assert "steps.provenance.outputs.bundle-path" in attest
+    assert "synapse-channel-${GITHUB_REF_NAME}-provenance.sigstore.json" in attest
+    assert "name: release-provenance" in attest
+    assert attest.index("sha256sum --check") < attest.index("actions/attest@")
+
+    assert "needs: [build, attest]" in publish_job
+    assert "id-token: write" in publish_job
+    assert "actions/download-artifact@" in publish_job
+    assert "sha256sum --check --strict SHA256SUMS" in publish_job
+    assert "find . -maxdepth 1 -type f ! -name SHA256SUMS" in publish_job
+    assert "cp release-artifact/*.whl release-artifact/*.tar.gz publish-dist/" in publish_job
+    assert "packages-dir: publish-dist/" in publish_job
     assert "skip-existing:" not in publish
-    assert publish.count("id-token: write") == 1
-    assert publish.index("  publish:") < publish.index("id-token: write")
-    assert publish.index("actions/download-artifact@") < publish.index("sha256sum --check")
-    assert publish.index("sha256sum --check") < publish.index("gh-action-pypi-publish@")
+    assert publish.count("id-token: write") == 2
+    assert publish_job.index("actions/download-artifact@") < publish_job.index("sha256sum --check")
+    assert publish_job.index("sha256sum --check") < publish_job.index("cp release-artifact/*.whl")
+    assert publish_job.index("cp release-artifact/*.whl") < publish_job.index(
+        "gh-action-pypi-publish@"
+    )
 
     assert "workflow_run:" in release
     assert "workflows: [publish]" in release
@@ -45,13 +70,34 @@ def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     assert "ref: ${{ github.event.workflow_run.head_sha }}" in release
     assert "run-id: ${{ github.event.workflow_run.id }}" in release
     assert "github-token: ${{ secrets.GITHUB_TOKEN }}" in release
+    assert release.count("actions/download-artifact@") == 2
+    assert "name: release-dist" in release
+    assert "name: release-provenance" in release
     assert "sha256sum --check --strict SHA256SUMS" in release
-    assert "find packages sbom -maxdepth 1 -type f" in release
+    assert "find . -maxdepth 1 -type f ! -name SHA256SUMS" in release
+    assert "gh attestation verify" in release
+    assert '--bundle "$PROVENANCE_BUNDLE"' in release
+    assert '--repo "$GITHUB_REPOSITORY"' in release
+    assert '"$GITHUB_REPOSITORY/.github/workflows/publish.yml"' in release
+    assert '--source-ref "$SOURCE_REF"' in release
+    assert '--source-digest "$SOURCE_SHA"' in release
+    assert "--deny-self-hosted-runners" in release
     assert "tag_name: ${{ github.event.workflow_run.head_branch }}" in release
     assert "target_commitish: ${{ github.event.workflow_run.head_sha }}" in release
-    assert "release-artifact/sbom/*" in release
+    assert "release-artifact/*" in release
+    assert "release-provenance/*" in release
     assert "PyPI is then live while the GitHub Release is absent" in release
     assert release.index("actions/download-artifact@") < release.index("sha256sum --check")
-    assert release.index("sha256sum --check") < release.index("action-gh-release@")
+    assert release.index("sha256sum --check") < release.index("gh attestation verify")
+    assert release.index("gh attestation verify") < release.index("action-gh-release@")
     assert "python -m build" not in release
     assert "id-token: write" not in release
+
+    assert "gh release download vX.Y.Z" in security
+    assert "sha256sum --check SHA256SUMS" in security
+    assert 'bundle="synapse-channel-vX.Y.Z-provenance.sigstore.json"' in security
+    assert 'gh attestation verify "$artifact"' in security
+    assert "--repo anulum/synapse-channel" in security
+    assert "--signer-workflow anulum/synapse-channel/.github/workflows/publish.yml" in security
+    assert "--source-ref refs/tags/vX.Y.Z" in security
+    assert "--deny-self-hosted-runners" in security

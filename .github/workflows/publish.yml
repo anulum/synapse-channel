@@ -9,7 +9,8 @@ name: publish
 
 # Keep the trusted-publish job tag-triggered so its OIDC identity and attestations
 # remain bound to refs/tags/v*. release.yml consumes this run's immutable artifact
-# afterward; neither workflow performs a second build.
+# afterward; neither workflow performs a second build. Attestation failure blocks
+# PyPI publication, and recovery reruns this tag workflow from the failed job.
 on:
   push:
     tags: ["v*"]
@@ -28,22 +29,21 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install --require-hashes -r .github/requirements/requirements-tools.txt
-      - run: python -m build --outdir release-artifact/packages
-      - run: python -m twine check release-artifact/packages/*
+      - run: python -m build --outdir release-artifact
+      - run: python -m twine check release-artifact/*.whl release-artifact/*.tar.gz
       - name: Generate CycloneDX SBOM for the built wheel
         run: |
           python -m venv .sbom-venv
           # The build job has no OIDC permission. The pinned SBOM tool observes the
           # exact wheel that the later trusted-publish job receives.
-          .sbom-venv/bin/python -m pip install release-artifact/packages/*.whl
+          .sbom-venv/bin/python -m pip install release-artifact/*.whl
           python -m pip install --require-hashes -r .github/requirements/requirements-sbom.txt
-          mkdir -p release-artifact/sbom
           cyclonedx-py environment .sbom-venv/bin/python \
             --output-format JSON \
-            --output-file "release-artifact/sbom/synapse-channel-${GITHUB_REF_NAME}-sbom.cdx.json"
+            --output-file "release-artifact/synapse-channel-${GITHUB_REF_NAME}-sbom.cdx.json"
       - name: Record the exact release payload and digests
         working-directory: release-artifact
-        run: sha256sum packages/* sbom/* > SHA256SUMS
+        run: sha256sum *.whl *.tar.gz *-sbom.cdx.json > SHA256SUMS
       - name: Preserve the canonical release payload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -51,8 +51,47 @@ jobs:
           path: release-artifact/
           if-no-files-found: error
 
-  publish:
+  attest:
     needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-dist
+          path: release-artifact/
+      - name: Verify the exact release payload before signing
+        working-directory: release-artifact
+        run: |
+          sha256sum --check --strict SHA256SUMS
+          diff -u \
+            <(sed -E 's/^[0-9a-f]{64}  //' SHA256SUMS | sort) \
+            <(find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | sort)
+      - name: Sign SLSA provenance for the canonical payload
+        id: provenance
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-checksums: release-artifact/SHA256SUMS
+      - name: Preserve the portable Sigstore bundle
+        env:
+          BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          mkdir -p release-provenance
+          cp "$BUNDLE_PATH" \
+            "release-provenance/synapse-channel-${GITHUB_REF_NAME}-provenance.sigstore.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-provenance
+          path: release-provenance/
+          if-no-files-found: error
+
+  publish:
+    needs: [build, attest]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -70,7 +109,11 @@ jobs:
           sha256sum --check --strict SHA256SUMS
           diff -u \
             <(sed -E 's/^[0-9a-f]{64}  //' SHA256SUMS | sort) \
-            <(find packages sbom -maxdepth 1 -type f -printf '%p\n' | sort)
+            <(find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | sort)
+      - name: Stage only verified Python distributions
+        run: |
+          mkdir publish-dist
+          cp release-artifact/*.whl release-artifact/*.tar.gz publish-dist/
       - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
-          packages-dir: release-artifact/packages/
+          packages-dir: publish-dist/
