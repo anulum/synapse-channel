@@ -12,7 +12,7 @@
   const esc = (value) => {
     const node = document.createElement("div");
     node.textContent = value == null ? "" : String(value);
-    return node.innerHTML;
+    return node.innerHTML.replace(/"/gu, "&quot;").replace(/'/gu, "&#39;");
   };
   const score = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
   const level = (value) => (["red", "amber", "green"].includes(value) ? value : "green");
