@@ -39,6 +39,7 @@ from synapse_channel.adapters import (
     resolve_target,
     tool_for,
 )
+from synapse_channel.cli_claude_claim_hook import add_parser as add_claude_claim_hook_parser
 from synapse_channel.client.agent import default_hub_uri
 
 Which = Callable[[str], str | None]
@@ -173,6 +174,8 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Detect coding tools and wire them to the hub with a claim-aware adapter.",
     )
     group = parser.add_subparsers(dest="adapters_command", required=True)
+
+    add_claude_claim_hook_parser(group)
 
     lister = group.add_parser("list", help="Detect tools and report adapter status (read-only).")
     _add_common(lister)
