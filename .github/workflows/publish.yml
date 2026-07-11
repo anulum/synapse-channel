@@ -4,21 +4,15 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — publish to PyPI when a release tag is pushed
+# SYNAPSE CHANNEL — build once and publish the canonical distributions to PyPI
 name: publish
 
-# Trigger on the tag push itself, not on `release: published`. release.yml
-# creates the GitHub Release with the default GITHUB_TOKEN, and GitHub does not
-# run workflows from events a GITHUB_TOKEN created (its loop guard), so a
-# `release: published` trigger never fired and every release had to be published
-# to PyPI by hand. The tag push is a real event that fires both release.yml and
-# this workflow in parallel. Trusted publishing is bound to (repository, this
-# workflow file, the `pypi` environment), not to the trigger, so OIDC still
-# authenticates.
+# Keep the trusted-publish job tag-triggered so its OIDC identity and attestations
+# remain bound to refs/tags/v*. release.yml consumes this run's immutable artifact
+# afterward; neither workflow performs a second build.
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,30 +20,57 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - run: python -m pip install --require-hashes -r .github/requirements/requirements-tools.txt
-      - run: python -m build
-      - run: python -m twine check dist/*
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - run: python -m build --outdir release-artifact/packages
+      - run: python -m twine check release-artifact/packages/*
+      - name: Generate CycloneDX SBOM for the built wheel
+        run: |
+          python -m venv .sbom-venv
+          # The build job has no OIDC permission. The pinned SBOM tool observes the
+          # exact wheel that the later trusted-publish job receives.
+          .sbom-venv/bin/python -m pip install release-artifact/packages/*.whl
+          python -m pip install --require-hashes -r .github/requirements/requirements-sbom.txt
+          mkdir -p release-artifact/sbom
+          cyclonedx-py environment .sbom-venv/bin/python \
+            --output-format JSON \
+            --output-file "release-artifact/sbom/synapse-channel-${GITHUB_REF_NAME}-sbom.cdx.json"
+      - name: Record the exact release payload and digests
+        working-directory: release-artifact
+        run: sha256sum packages/* sbom/* > SHA256SUMS
+      - name: Preserve the canonical release payload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: dist
-          path: dist/
+          name: release-dist
+          path: release-artifact/
+          if-no-files-found: error
 
   publish:
     needs: build
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
+      actions: read
+      contents: read
       id-token: write
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: dist
-          path: dist/
+          name: release-dist
+          path: release-artifact/
+      - name: Verify the exact release payload and digests
+        working-directory: release-artifact
+        run: |
+          sha256sum --check --strict SHA256SUMS
+          diff -u \
+            <(sed -E 's/^[0-9a-f]{64}  //' SHA256SUMS | sort) \
+            <(find packages sbom -maxdepth 1 -type f -printf '%p\n' | sort)
       - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
-          skip-existing: true
+          packages-dir: release-artifact/packages/

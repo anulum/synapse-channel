@@ -15,6 +15,15 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- GitHub Releases and PyPI now receive the exact same wheel and source archive
+  from one tag build. The tag-bound OIDC publish workflow records the complete
+  distributions and SBOM in `SHA256SUMS`, preserves them as one immutable
+  Actions artifact, verifies them before upload, and never tolerates an existing
+  file from a rebuilt run. Only after PyPI succeeds does the GitHub Release
+  workflow consume that exact source-run artifact; it rechecks the file set and
+  every SHA-256 digest, pins the source SHA and version tag, and remains safely
+  rerunnable without rebuilding if GitHub release creation fails.
+
 - The handshake-abort log filter now recognises the reconnect-storm
   signature: `ConnectionClosedError` with no close frame received or sent.
   That class subclasses `WebSocketException` rather than `ConnectionError`
