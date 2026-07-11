@@ -24,8 +24,9 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - run: python -m pip install --require-hashes -r .github/requirements/requirements-tools.txt
-      - run: pre-commit run --all-files --show-diff-on-failure
+      - run: python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
+      - run: python -m pip install -e . --no-deps
+      - run: python -m pre_commit run --all-files --show-diff-on-failure
       # The pre-commit gitleaks hook scans staged changes, which an
       # --all-files CI run leaves empty; this sweep covers the whole
       # checkout so a secret already in the tree cannot hide.

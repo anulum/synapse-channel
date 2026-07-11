@@ -30,6 +30,13 @@ development environment and the standards a change must meet to be merged.
    make install-hooks
    ```
 
+   A commit that stages Python or `pyproject.toml` runs strict mypy across the
+   whole configured tree. Expect this correctness gate to add tens of seconds;
+   it deliberately ignores staged-file narrowing. The hook prefers the
+   repository `.venv` on POSIX or Windows. If the dev environment lives
+   elsewhere, set `SYNAPSE_MYPY_PYTHON` to its absolute Python path; an invalid
+   override fails closed.
+
 ## Development workflow
 
 The `Makefile` wraps the common tasks (`make help` lists them):

@@ -1266,7 +1266,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 554 |
 | Wire message types | 77 |
 | CLI subcommands | 160 |
-| Test functions | 6203 |
+| Test functions | 6213 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 15 |
@@ -1347,8 +1347,12 @@ commit needs exactly one vendor-neutral `Seat: <seat-suffix>` trailer and the ex
 project authorship line. A dedicated workflow audits every introduced commit and
 rechecks the complete forward-only history weekly. Main-branch CI also gives each push
 head its own concurrency group and never cancels it; pull-request and manual runs may
-still replace stale work on their shared ref. The threat model and how to report a
-vulnerability are in [`SECURITY.md`](SECURITY.md).
+still replace stale work on their shared ref. Staging Python or `pyproject.toml`
+also runs strict whole-tree mypy through the repository virtual environment—never
+only the changed filenames. `SYNAPSE_MYPY_PYTHON=/absolute/path/to/python` selects
+an intentional alternate environment and fails closed when the path is invalid.
+The threat model and how to report a vulnerability are in
+[`SECURITY.md`](SECURITY.md).
 
 ## Known limitations
 

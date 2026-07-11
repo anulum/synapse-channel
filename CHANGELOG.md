@@ -34,6 +34,13 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Staging Python or `pyproject.toml` now runs strict whole-tree mypy in the
+  pre-commit gate instead of relying on later CI or partial-path checks. A small
+  cross-platform resolver prefers the repository virtual environment, supports
+  one explicit fail-closed interpreter override, and invokes mypy with fixed
+  non-shell arguments. The remote pre-commit job installs the same hash-locked
+  development environment before running the hook.
+
 - Commit identity discipline is now enforced instead of relying on operator
   habit. `make install-hooks` installs a `commit-msg` gate requiring exactly
   one vendor-neutral Synapse seat suffix and the exact project authorship line;

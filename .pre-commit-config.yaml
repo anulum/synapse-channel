@@ -34,6 +34,13 @@ repos:
       - id: gitleaks
   - repo: local
     hooks:
+      - id: mypy-whole-tree
+        name: strict whole-tree mypy
+        entry: python tools/run_mypy_hook.py
+        language: system
+        stages: [pre-commit]
+        pass_filenames: false
+        files: ^(pyproject\.toml|(src|tests|benchmarks|tools|examples)/.*\.py)$
       - id: commit-trailers
         name: seat, authorship, and commit-subject policy
         entry: python tools/check_commit_trailers.py
