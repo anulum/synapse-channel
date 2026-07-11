@@ -98,6 +98,10 @@ jobs:
           }
           with ZipFile(wheels[0]) as archive:
               names = set(archive.namelist())
+              notice_name = next(
+                  name for name in names if name.endswith("/licenses/NOTICE.md")
+              )
+              notice = archive.read(notice_name).decode("utf-8")
           packaged = {
               name.removeprefix("synapse_github_app/")
               for name in names
@@ -111,4 +115,7 @@ jobs:
               if ".dist-info/licenses/" in name
           }
           assert license_files == {"LICENSE", "NOTICE.md"}, license_files
+          for dependency in ("PyJWT", "cryptography", "synapse-channel", "websockets"):
+              assert dependency in notice, dependency
+          assert "depends only on" not in notice
           PY
