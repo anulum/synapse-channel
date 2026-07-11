@@ -136,7 +136,7 @@ This repository is the open **write-side**. The reference **read-side** adapter 
 the calibrated retrieval, the verification, and the honest abstention — is
 [**Remanentia**](https://remanentia.com): *"Evidence memory for local AI systems … Retrieve
 first. Verify next. Answer last."* Remanentia's verification step uses
-[**Director-Class-AI**](https://github.com/anulum/director-class-ai) (and the open
+**Director-Class-AI** (and the open
 [**Director-AI**](https://github.com/anulum/director-ai) grounding base) to verify answers
 against retrieved evidence and block unsupported outputs — the read-side enforcement of the
 honesty contract above. Synapse Channel runs perfectly well without any of them; they are the
