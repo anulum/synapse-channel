@@ -59,6 +59,18 @@ The hub itself stays protocol-agnostic and the core install keeps its single
 dependency — the MCP and A2A adapters are optional extras (`pip install
 'synapse-channel[mcp]'`). See the [MCP guide](docs/mcp.md).
 
+```bash
+python -m pip install synapse-channel && synapse demo
+```
+
+<p align="center">
+  <a href="https://pypi.org/project/synapse-channel/"><strong>Get the Python package</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#first-60-seconds">Run the first 60 seconds</a>
+  &nbsp;·&nbsp;
+  <a href="docs/quickstart.md">Read the quickstart</a>
+</p>
+
 ## Coordinate. Observe. Govern.
 
 Synapse's daily promise is three explicit loops:
@@ -77,6 +89,21 @@ Synapse's daily promise is three explicit loops:
   for the live hub event store (plus whole-file AES-GCM envelopes for relay
   logs, A2A state, cursors, and archives). See
   [SQLCipher live event store](#sqlcipher-live-event-store-at-rest) below.
+
+## Feature wall
+
+The visual cells below are labelled capture placeholders, not missing images.
+Short product recordings will replace them after the demo capture pass; the
+linked commands and documentation describe the shipped behaviour today.
+
+| Shipped coordination surface | Labelled visual slot |
+|---|---|
+| **Claim before edit.** [`synapse git-init`](#git-native-claims) installs claim-aware Git hooks; `synapse git-claim` records an exact worktree, branch, and path scope so an overlapping claim can be refused before files diverge. | **Visual placeholder — claim gutter:** one owner is visible while a competing edit is refused. |
+| **Share the plan.** `synapse task` and [`synapse board`](docs/coordination-model.md) keep task state, dependencies, and ready work on the hub instead of in separate agent notes. | **Visual placeholder — board:** a blocked task becomes ready when its dependency completes. |
+| **Hand work over without an ownership gap.** [Atomic handoff](docs/coordination-model.md#4-hand-off-and-recover) moves the held task, scope, status, and checkpoint to an online recipient without a release-and-reclaim window. | **Visual placeholder — handoff:** ownership and checkpoint move together between two seats. |
+| **Expose a dark seat.** After 30 continuous seconds without the owner's exact waiter, the hub emits one [`dark_seat_alert`](docs/protocol.md) for affected claims or assigned work, including the permanent-arm remedy; it does not release or reassign work automatically. | **Visual placeholder — dark-seat alert:** the missing waiter and exact re-arm command appear beside the affected work. |
+| **Read the fleet from one cockpit.** [`synapse dashboard`](docs/studio.md) serves the local command centre, claims, tasks, conflicts, security posture, and an optional durable event feed; the read-only Studio projection adds no new hub authority. | **Visual placeholder — cockpit:** live claims, task risk, and recent events share one operator view. |
+| **Connect existing agent protocols at the edge.** [`synapse mcp`](docs/mcp.md) exposes coordination tools and read-only resources over stdio; the [A2A bridge](docs/a2a-conformance.md) exposes a local Agent Card and HTTP+JSON surface while keeping its partial validation boundary explicit. | **Visual placeholder — MCP and A2A:** an existing agent reaches the same hub through either adapter. |
 
 ## At a glance
 
