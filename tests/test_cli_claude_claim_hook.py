@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from synapse_channel import cli as cli_module
+from synapse_channel import cli_claude_claim_hook as hook_cli
 from synapse_channel.claude_claim_guard import GuardVerdict
 from synapse_channel.cli_adapters import add_parsers
 from synapse_channel.cli_claude_claim_hook import _cmd_claude_claim_hook, render_hook_config
@@ -57,6 +59,35 @@ def test_render_hook_config_is_exec_form_scoped_and_token_safe(tmp_path: Path) -
     assert command_args[command_args.index("--token-file") + 1] == str(token_file.resolve())
     assert "do-not-embed" not in json.dumps(config)
     assert "allow" not in json.dumps(config)
+
+
+def test_main_resolves_nested_hook_token_file_before_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    token_file = tmp_path / "hub.token"
+    token_file.write_text("secured-token\n", encoding="utf-8")
+    observed: dict[str, str | None] = {}
+
+    def capture(args: argparse.Namespace) -> int:
+        observed["token"] = args.token
+        observed["token_file"] = args.token_file
+        return 0
+
+    monkeypatch.setattr(hook_cli, "_cmd_claude_claim_hook", capture)
+    assert (
+        cli_module.main(
+            [
+                "adapters",
+                "claude-claim-hook",
+                "--identity",
+                "seat/one",
+                "--token-file",
+                str(token_file),
+            ]
+        )
+        == 0
+    )
+    assert observed == {"token": "secured-token", "token_file": str(token_file)}
 
 
 def test_runtime_success_is_silent(

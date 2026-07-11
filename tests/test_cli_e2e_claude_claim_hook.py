@@ -98,6 +98,55 @@ def test_live_claim_allows_owned_file_and_denies_unclaimed_file(tmp_path: Path) 
         assert malformed_output["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
+def test_printed_token_file_recipe_authenticates_secured_hub(tmp_path: Path) -> None:
+    repo = git_repo(tmp_path / "repo")
+    token_file = tmp_path / "hub.token"
+    token_file.write_text("secured-token\n", encoding="utf-8")
+    with isolated_hub(tmp_path, extra_args=("--token-file", str(token_file))) as hub:
+        claimed = run_cli(
+            "git-claim",
+            "CLAUDE-TOKEN-E2E",
+            "--paths",
+            "README.md",
+            "--auto-release-on",
+            "manual",
+            "--name",
+            "seat/one",
+            "--token-file",
+            str(token_file),
+            uri=hub.uri,
+            cwd=repo,
+        )
+        assert claimed.ok(), claimed.output
+
+        rendered = run_cli(
+            "adapters",
+            "claude-claim-hook",
+            "--identity",
+            "seat/one",
+            "--token-file",
+            str(token_file),
+            "--print-config",
+            "--synapse-bin",
+            sys.executable,
+            uri=hub.uri,
+            cwd=repo,
+        )
+        assert rendered.ok(), rendered.output
+        hook = json.loads(rendered.stdout)["hooks"]["PreToolUse"][0]["hooks"][0]
+        command_args = hook["args"]
+        assert command_args[command_args.index("--token-file") + 1] == str(token_file.resolve())
+        assert "secured-token" not in json.dumps(hook)
+
+        allowed = run_cli(
+            *command_args,
+            stdin=_event(repo, repo / "README.md"),
+            cwd=repo,
+        )
+        assert allowed.ok(), allowed.output
+        assert allowed.stdout == ""
+
+
 def test_unreachable_hub_denies_on_exit_zero(tmp_path: Path) -> None:
     repo = git_repo(tmp_path / "repo")
     unused_port = free_port()
