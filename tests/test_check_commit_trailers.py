@@ -163,7 +163,7 @@ def test_repository_wires_local_and_remote_trailer_gates() -> None:
     workflow = (REPO_ROOT / ".github/workflows/commit-trailers.yml").read_text(encoding="utf-8")
     preflight = (REPO_ROOT / "tools/preflight.sh").read_text(encoding="utf-8")
 
-    assert "default_install_hook_types: [pre-commit, commit-msg]" in config
+    assert "default_install_hook_types: [pre-commit, commit-msg, pre-push]" in config
     assert "stages: [commit-msg]" in config
     assert "python tools/check_commit_trailers.py" in config
     assert "fetch-depth: 0" in workflow
