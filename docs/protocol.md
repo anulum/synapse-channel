@@ -270,6 +270,14 @@ as a normal JSON decode error instead of recursing through the interpreter.
 Run `PYTHONPATH=src python tools/fuzz_protocol_decode.py --smoke` for the
 deterministic seed corpus, or install Atheris and run
 `PYTHONPATH=src python tools/fuzz_protocol_decode.py` for an open-ended fuzzing
-session. This is not an external protocol-conformance certification; it is local
-coverage for malformed bytes, malformed JSON, quoted bracket runs, valid nested
-JSON, and depth-limit rejection.
+session. The read-only `fuzz.yml` workflow also runs weekly and on manual
+dispatch. It gives each Hypothesis property 1,000 generated examples against the
+actual `loads_bounded()` decoder and `EventStore` persistence path, including
+reopen, cursor-walk, and deletion invariants. A discovered counterexample must
+be promoted to a committed `@example` regression so it survives the ephemeral CI
+Hypothesis database.
+
+This is not an external protocol-conformance certification; it is automated
+local property-based coverage for malformed bytes, malformed JSON, quoted
+bracket runs, valid nested JSON, depth-limit rejection, and persistence
+round-trips.

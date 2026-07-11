@@ -304,8 +304,12 @@ agents.
   documented in `docs/a2a-deployment-threat-model.md`.
 - `tools/fuzz_protocol_decode.py` provides local decoder hardening evidence for
   malformed bytes, malformed JSON, quoted bracket runs, valid nested JSON, and
-  depth-limit rejection. It is not an external protocol-conformance
-  certification.
+  depth-limit rejection. A weekly and manually dispatchable read-only workflow
+  adds 1,000-example Hypothesis properties over the production wire decoder and
+  SQLite event-store reopen, cursor, and deletion paths. Falsifying examples are
+  committed as explicit regressions rather than relying on CI's ephemeral
+  Hypothesis database. This automated property-based fuzzing is not an external
+  protocol-conformance certification.
 
 ## Licensing
 

@@ -15,6 +15,14 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- A read-only property-based fuzz workflow now exercises the production bounded
+  wire decoder and SQLite event store on a weekly or manual schedule. Separate
+  Hypothesis targets cover arbitrary wire bytes, JSON round-trips, depth bombs,
+  persistence across reopen, bounded cursor walks, and exact deletion with
+  1,000 examples per property. Any falsifying case is promoted to a committed
+  regression; the workflow is automated local evidence, not external protocol
+  certification.
+
 - Future tag releases now fail closed unless GitHub's first-party attestation
   action signs SLSA provenance for every checksum-recorded wheel, source archive,
   and SBOM before PyPI publication. The GitHub Release workflow independently
