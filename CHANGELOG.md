@@ -78,6 +78,14 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- The declared runtime floor `websockets>=12.0` was false metadata:
+  production modules across the client, core transport, and demo layers
+  import `websockets.asyncio`, which ships since websockets 13.0, so a 12.x
+  environment resolved by the old floor failed with `ModuleNotFoundError`
+  on first import. Both public declarations (`pyproject.toml` and
+  `requirements.txt`) now state `>=13.0` and a packaging test pins the
+  floor.
+
 - `synapse demo` and the packaged coding-fleet demo no longer print an
   `opening handshake failed` traceback on stderr during a clean first run.
   Both readiness probes opened and closed a bare TCP socket, which the hub

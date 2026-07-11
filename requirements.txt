@@ -3,4 +3,4 @@
 # The bus runs on the standard library plus one transport dependency. The
 # authoritative declaration is in pyproject.toml; this file mirrors it for
 # pip-based installs.
-websockets>=12.0
+websockets>=13.0

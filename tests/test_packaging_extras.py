@@ -84,6 +84,19 @@ def test_runtime_dependencies_stay_minimal() -> None:
     assert names == ["websockets"]
 
 
+def test_websockets_floor_supports_the_asyncio_api() -> None:
+    # Production modules import websockets.asyncio, which ships since
+    # websockets 13.0; a 12.x environment resolved by the old >=12.0 floor
+    # raised ModuleNotFoundError on first import. Both public declarations
+    # must state the true floor.
+    dependencies = _load_pyproject()["project"]["dependencies"]
+    websockets_pin = next(dep for dep in dependencies if dep.startswith("websockets"))
+    assert websockets_pin == "websockets>=13.0"
+
+    requirements = (_PYPROJECT.parent / "requirements.txt").read_text(encoding="utf-8")
+    assert "websockets>=13.0" in requirements.splitlines()
+
+
 @pytest.mark.parametrize("extra", _FEATURE_EXTRAS)
 def test_feature_extra_is_declared_and_non_empty(extra: str) -> None:
     extras = _extras()
