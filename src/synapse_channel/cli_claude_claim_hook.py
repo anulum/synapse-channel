@@ -33,6 +33,22 @@ from synapse_channel.claude_claim_guard import (
 from synapse_channel.client.agent import default_hub_uri
 
 HookEvaluator = Callable[..., Awaitable[GuardVerdict]]
+_MIN_READY_TIMEOUT = 0.1
+
+
+def _normalise_ready_timeout(value: float) -> float:
+    """Return the bounded finite-positive timeout shared by every CLI path."""
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError("--ready-timeout must be finite and greater than zero")
+    return max(_MIN_READY_TIMEOUT, value)
+
+
+def _parse_ready_timeout(value: str) -> float:
+    """Parse one finite-positive ``--ready-timeout`` value for argparse."""
+    try:
+        return _normalise_ready_timeout(float(value))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 async def _await_verdict(awaitable: Awaitable[GuardVerdict]) -> GuardVerdict:
@@ -69,7 +85,7 @@ def render_hook_config(
     by Claude first. Secrets are never embedded; a secured hub is referenced only
     through ``--token-file``.
     """
-    bounded_timeout = max(0.1, float(ready_timeout))
+    bounded_timeout = _normalise_ready_timeout(float(ready_timeout))
     args = [
         "adapters",
         "claude-claim-hook",
@@ -133,7 +149,7 @@ def _cmd_claude_claim_hook(
                 identity=args.identity,
                 uri=args.uri,
                 token=args.token,
-                timeout=max(0.1, float(args.ready_timeout)),
+                timeout=_normalise_ready_timeout(float(args.ready_timeout)),
             )
         )
     except Exception:
@@ -162,7 +178,7 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
     )
     parser.add_argument(
         "--ready-timeout",
-        type=float,
+        type=_parse_ready_timeout,
         default=2.0,
         help="Seconds allowed for each connect and state-snapshot phase (default: 2).",
     )

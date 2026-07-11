@@ -89,6 +89,26 @@ async def test_state_fetch_timeout_is_a_controlled_denial() -> None:
         )
 
 
+@pytest.mark.parametrize("timeout", [float("inf"), float("-inf"), float("nan"), 0.0])
+@pytest.mark.asyncio
+async def test_state_fetch_rejects_unbounded_timeout_before_connect(timeout: float) -> None:
+    class MustNotStart(_AgentBase):
+        def __init__(self, _name: str, callback: Callback, **_kwargs: object) -> None:
+            raise AssertionError("invalid timeout must fail before the agent starts")
+
+        async def request_state(self) -> None:
+            raise AssertionError("invalid timeout must not request state")
+
+    with pytest.raises(StateSnapshotError, match="finite"):
+        await fetch_state_snapshot(
+            uri="ws://hub",
+            requester="guard",
+            token=None,
+            timeout=timeout,
+            agent_factory=MustNotStart,
+        )
+
+
 @pytest.mark.asyncio
 async def test_state_fetch_rejects_non_mapping_snapshot() -> None:
     class InvalidAgent(_AgentBase):

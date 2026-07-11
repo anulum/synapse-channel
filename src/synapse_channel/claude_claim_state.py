@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import math
 from collections.abc import Callable
 from typing import Any, Protocol
 
@@ -43,6 +44,15 @@ AgentFactory = Callable[..., StateAgent]
 
 class StateSnapshotError(RuntimeError):
     """The authoritative hub snapshot could not be obtained safely."""
+
+
+def _validated_phase_timeout(timeout: float) -> float:
+    """Return a finite positive state-query deadline or fail closed."""
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise StateSnapshotError(
+            "Synapse state query timeout must be finite and greater than zero."
+        )
+    return timeout
 
 
 async def fetch_state_snapshot(
@@ -76,6 +86,7 @@ async def fetch_state_snapshot(
     StateSnapshotError
         If connection, timeout, or response validation fails.
     """
+    phase_timeout = _validated_phase_timeout(timeout)
     received = asyncio.Event()
     result: list[dict[str, Any]] = []
 
@@ -90,11 +101,11 @@ async def fetch_state_snapshot(
     agent = agent_factory(requester, collect, uri=uri, verbose=False, token=token)
     connection = asyncio.create_task(agent.connect())
     try:
-        if not await agent.wait_until_ready(timeout=timeout):
+        if not await agent.wait_until_ready(timeout=phase_timeout):
             raise StateSnapshotError("Synapse hub is unavailable; Edit/Write denied fail-closed.")
         await agent.request_state()
         try:
-            await asyncio.wait_for(received.wait(), timeout=timeout)
+            await asyncio.wait_for(received.wait(), timeout=phase_timeout)
         except asyncio.TimeoutError as exc:
             raise StateSnapshotError(
                 "Synapse state query timed out; Edit/Write denied fail-closed."

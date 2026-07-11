@@ -37,6 +37,13 @@ def test_nested_parser_requires_identity() -> None:
     assert args.ready_timeout == 2.0
 
 
+@pytest.mark.parametrize("value", ["inf", "-inf", "nan", "0", "not-a-number"])
+def test_nested_parser_rejects_invalid_ready_timeout(value: str) -> None:
+    with pytest.raises(SystemExit) as raised:
+        _args("--identity", "seat/one", "--ready-timeout", value)
+    assert raised.value.code == 2
+
+
 def test_render_hook_config_is_exec_form_scoped_and_token_safe(tmp_path: Path) -> None:
     token_file = tmp_path / "hub.token"
     token_file.write_text("do-not-embed", encoding="utf-8")
@@ -59,6 +66,18 @@ def test_render_hook_config_is_exec_form_scoped_and_token_safe(tmp_path: Path) -
     assert command_args[command_args.index("--token-file") + 1] == str(token_file.resolve())
     assert "do-not-embed" not in json.dumps(config)
     assert "allow" not in json.dumps(config)
+
+
+@pytest.mark.parametrize("value", [float("inf"), float("-inf"), float("nan"), 0.0])
+def test_render_hook_config_rejects_unbounded_timeout(value: float) -> None:
+    with pytest.raises(ValueError, match="finite"):
+        render_hook_config(
+            identity="seat/one",
+            uri="ws://hub",
+            ready_timeout=value,
+            token_file=None,
+            synapse_bin=sys.executable,
+        )
 
 
 def test_main_resolves_nested_hook_token_file_before_dispatch(
@@ -131,6 +150,20 @@ def test_runtime_exception_fails_closed_without_exit_one(
     output = json.loads(capsys.readouterr().out)
     assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
     assert "boom" not in json.dumps(output)
+
+
+def test_runtime_nonfinite_timeout_fails_closed_before_evaluation(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def must_not_run(*_args: object, **_kwargs: object) -> GuardVerdict:
+        raise AssertionError("invalid timeout must fail before evaluation")
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO("{}"))
+    args = _args("--identity", "seat/one")
+    args.ready_timeout = float("inf")
+    assert _cmd_claude_claim_hook(args, evaluator=must_not_run) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 def test_print_config_writes_only_stdout(
