@@ -13,6 +13,8 @@ import logging
 from collections.abc import Iterator
 
 import pytest
+from websockets.exceptions import ConnectionClosedError, WebSocketException
+from websockets.frames import Close, CloseCode
 
 from synapse_channel.core.logging_setup import HandshakeAbortFilter, configure_logging
 
@@ -57,6 +59,42 @@ def test_drops_a_handshake_whose_cause_chain_is_a_benign_disconnect() -> None:
     # the __cause__ chain, not the top exception.
     wrapper = RuntimeError("did not receive a valid HTTP request")
     wrapper.__cause__ = EOFError("connection closed while reading HTTP request line")
+    record = _record("opening handshake failed", wrapper)
+
+    assert HandshakeAbortFilter().filter(record) is False
+
+
+def test_drops_a_frameless_connection_closed_error() -> None:
+    # The 0.99.3 reconnect-storm signature: the live hub logged four full
+    # tracebacks of ConnectionClosedError("no close frame received or sent").
+    # The real class subclasses WebSocketException, NOT ConnectionError, and
+    # carries no cause chain, so only the frameless-close rule can match it.
+    exc = ConnectionClosedError(None, None)
+    assert str(exc) == "no close frame received or sent"
+    assert not isinstance(exc, ConnectionError)
+    assert isinstance(exc, WebSocketException)
+    assert exc.__cause__ is None and exc.__context__ is None
+    record = _record("opening handshake failed", exc)
+
+    assert HandshakeAbortFilter().filter(record) is False
+
+
+def test_keeps_a_framed_connection_closed_error() -> None:
+    # A close frame in either direction carries a genuine close code — that is
+    # a completed conversation, not a mid-handshake vanish, and must stay
+    # loggable in both orientations.
+    received = ConnectionClosedError(Close(CloseCode.INTERNAL_ERROR, "server error"), None)
+    sent = ConnectionClosedError(None, Close(CloseCode.PROTOCOL_ERROR, "protocol error"))
+
+    assert HandshakeAbortFilter().filter(_record("opening handshake failed", received)) is True
+    assert HandshakeAbortFilter().filter(_record("opening handshake failed", sent)) is True
+
+
+def test_drops_a_wrapper_whose_chain_ends_in_a_frameless_close() -> None:
+    # The frameless close must also be recognised through the cause chain,
+    # exactly like the other benign aborts.
+    wrapper = RuntimeError("connection closed during handshake")
+    wrapper.__cause__ = ConnectionClosedError(None, None)
     record = _record("opening handshake failed", wrapper)
 
     assert HandshakeAbortFilter().filter(record) is False
@@ -125,6 +163,21 @@ def test_a_benign_handshake_abort_is_suppressed_end_to_end() -> None:
         except EOFError as exc:
             raise RuntimeError("did not receive a valid HTTP request") from exc
     except RuntimeError:
+        ws_logger.error("opening handshake failed", exc_info=True)
+
+    assert "opening handshake failed" not in stream.getvalue()
+
+
+def test_a_frameless_close_is_suppressed_end_to_end() -> None:
+    # Through the real configured handler the reconnect-storm record must be
+    # dropped while the stream stays usable for everything else.
+    stream = io.StringIO()
+    configure_logging(stream=stream)
+    ws_logger = logging.getLogger("synapse.hub.ws")
+
+    try:
+        raise ConnectionClosedError(None, None)
+    except ConnectionClosedError:
         ws_logger.error("opening handshake failed", exc_info=True)
 
     assert "opening handshake failed" not in stream.getvalue()

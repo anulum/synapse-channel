@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- The handshake-abort log filter now recognises the reconnect-storm
+  signature: `ConnectionClosedError` with no close frame received or sent.
+  That class subclasses `WebSocketException` rather than `ConnectionError`
+  and carries no cause chain, so the live 0.99.3 hub logged four full
+  `opening handshake failed` tracebacks while its clients reconnected after
+  a restart. The rule is fail-narrow — a framed close (a genuine close code
+  in either direction) and every other handshake error stay loggable.
+
 ## [0.99.3] - 2026-07-11
 
 ### Added

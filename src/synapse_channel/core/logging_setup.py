@@ -21,6 +21,8 @@ import json
 import logging
 from typing import IO, Any
 
+from websockets.exceptions import ConnectionClosedError
+
 ROOT_LOGGER_NAME = "synapse"
 """The logger namespace every module logs under (``synapse.hub``, ``synapse.worker``)."""
 
@@ -74,6 +76,19 @@ class JsonFormatter(logging.Formatter):
 _BENIGN_HANDSHAKE_ABORTS = (EOFError, ConnectionError, TimeoutError)
 
 
+def _is_frameless_close(exc: BaseException) -> bool:
+    """Whether ``exc`` is a connection closed with no close frame either way.
+
+    During a reconnect storm websockets raises ``ConnectionClosedError`` with
+    both ``rcvd`` and ``sent`` unset when the peer vanishes mid-handshake —
+    before any close frame exists. That class subclasses ``WebSocketException``
+    rather than ``ConnectionError`` and carries no cause chain, so the plain
+    abort tuple cannot match it. A framed close (a real close code in either
+    direction) is a genuine event and stays loggable.
+    """
+    return isinstance(exc, ConnectionClosedError) and exc.rcvd is None and exc.sent is None
+
+
 def _is_benign_disconnect(exc: BaseException | None) -> bool:
     """Whether ``exc`` or any exception it chains from is a plain connection abort.
 
@@ -81,10 +96,12 @@ def _is_benign_disconnect(exc: BaseException | None) -> bool:
     exception (e.g. an ``InvalidMessage`` raised ``from`` an ``EOFError`` when a
     peer drops the connection mid-request), so the benign case must be recognised
     through the ``__cause__``/``__context__`` chain, not just the top exception.
+    A frameless ``ConnectionClosedError`` (no close frame received or sent) is
+    the same benign mid-handshake disconnect and is matched exactly as such.
     """
     seen: set[int] = set()
     while exc is not None and id(exc) not in seen:
-        if isinstance(exc, _BENIGN_HANDSHAKE_ABORTS):
+        if isinstance(exc, _BENIGN_HANDSHAKE_ABORTS) or _is_frameless_close(exc):
             return True
         seen.add(id(exc))
         exc = exc.__cause__ or exc.__context__
