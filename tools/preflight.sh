@@ -38,6 +38,7 @@ run "version sync"         "$V/python" tools/check_version_sync.py
 run "MCP surface audit"    "$V/python" tools/audit_mcp_surface.py --check
 run "release claim hygiene" "$V/python" tools/check_release_claim_hygiene.py --check
 run "commercial claim hygiene" "$V/python" tools/check_commercial_claim_hygiene.py --check
+run "commit trailer history" "$V/python" tools/check_commit_trailers.py
 run "bandit tooling audit" "$V/python" -m bandit -q tools/audit_dependency_tooling.py \
   tools/check_dev_dependency_drift.py
 # ci.yml: typecheck

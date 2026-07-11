@@ -24,6 +24,15 @@ All notable changes to this project are documented here.
   This applies beginning with the next release; it does not retroactively sign
   the already-published 0.99.3 artifacts.
 
+### Changed
+
+- Commit identity discipline is now enforced instead of relying on operator
+  habit. `make install-hooks` installs a `commit-msg` gate requiring exactly
+  one vendor-neutral Synapse seat suffix and the exact project authorship line;
+  it also rejects forbidden self-promotional subject language. A SHA-pinned
+  workflow audits every introduced commit and the complete forward-only history
+  weekly, and the same audit runs in local preflight.
+
 ### Fixed
 
 - GitHub Releases and PyPI now receive the exact same wheel and source archive

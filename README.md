@@ -1265,10 +1265,10 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 554 |
 | Wire message types | 77 |
 | CLI subcommands | 160 |
-| Test functions | 6184 |
+| Test functions | 6193 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
-| GitHub Actions workflows | 13 |
+| GitHub Actions workflows | 14 |
 | Optional-dependency groups | 13 |
 
 This snapshot is a static inventory generated from the source tree. Performance and coverage claims have their own committed evidence — see `VALIDATION.md` and `benchmarks/`.
@@ -1340,8 +1340,12 @@ The supply chain is gated the same way: a gitleaks pre-commit hook on staged cha
 plus a digest-pinned full-tree gitleaks sweep in CI; a hash-locked CI toolchain
 (uv-compiled with `--generate-hashes`, installed with `--require-hashes`) with GitHub
 Actions pinned to full commit SHAs and Docker base images pinned to digests; and
-`pip-audit` on every push alongside the CodeQL and OpenSSF Scorecard workflows. The
-threat model and how to report a vulnerability are in [`SECURITY.md`](SECURITY.md).
+`pip-audit` on every push alongside the CodeQL and OpenSSF Scorecard workflows.
+`make install-hooks` also installs the repository's `commit-msg` gate: every new
+commit needs exactly one vendor-neutral `Seat: <seat-suffix>` trailer and the exact
+project authorship line. A dedicated workflow audits every introduced commit and
+rechecks the complete forward-only history weekly. The threat model and how to report
+a vulnerability are in [`SECURITY.md`](SECURITY.md).
 
 ## Known limitations
 

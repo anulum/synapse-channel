@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — forward-only commit-message audit
+name: commit-trailers
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Select the forward-only audit range
+        id: range
+        env:
+          ACTOR: ${{ github.actor }}
+          AFTER_SHA: ${{ github.event.after }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request)
+              if [ "$ACTOR" = "dependabot[bot]" ] || [[ "$HEAD_REF" = dependabot/* ]]; then
+                # The push audit checks the final squash commit on main.
+                range=""
+              else
+                range="$BASE_SHA..$HEAD_SHA"
+              fi
+              ;;
+            push)
+              if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+                range="$AFTER_SHA^!"
+              elif git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+                range="$BEFORE_SHA..$AFTER_SHA"
+              else
+                range="$AFTER_SHA^!"
+              fi
+              ;;
+            *)
+              range="d668a54628d974d62eed44801c65573539e302da..HEAD"
+              ;;
+          esac
+          echo "range=$range" >> "$GITHUB_OUTPUT"
+          echo "Audit range: $range"
+      - name: Enforce commit trailers and subject policy
+        if: steps.range.outputs.range != ''
+        run: python tools/check_commit_trailers.py --range "${{ steps.range.outputs.range }}"

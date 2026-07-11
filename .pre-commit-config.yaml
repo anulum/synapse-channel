@@ -5,6 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — pre-commit configuration
+default_install_hook_types: [pre-commit, commit-msg]
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.18
@@ -33,6 +34,11 @@ repos:
       - id: gitleaks
   - repo: local
     hooks:
+      - id: commit-trailers
+        name: seat, authorship, and commit-subject policy
+        entry: python tools/check_commit_trailers.py
+        language: system
+        stages: [commit-msg]
       - id: version-sync
         name: version is in sync (pyproject == __init__/README/CITATION)
         entry: python tools/check_version_sync.py
