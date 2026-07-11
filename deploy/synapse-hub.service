@@ -20,7 +20,9 @@
 [Unit]
 Description=SYNAPSE CHANNEL coordination hub (local-first, loopback)
 Documentation=https://github.com/anulum/synapse-channel
-After=default.target
+# No After=default.target here: WantedBy=default.target gives the target an
+# implicit After= on this unit, and that boot ordering cycle makes systemd
+# delete the presence/arm start jobs.
 
 [Service]
 Type=simple

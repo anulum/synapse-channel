@@ -16,6 +16,8 @@ from synapse_channel.service_setup import (
     install_arm_service,
     install_user_services,
     render_arm_unit,
+    render_hub_unit,
+    render_presence_unit,
     service_suggestions,
 )
 
@@ -39,6 +41,35 @@ def test_render_arm_unit_adds_remote_uri_and_token_file() -> None:
 
     assert "--uri wss://hub.example:8876" in unit
     assert "--token-file /home/user/.config/synapse/token" in unit
+
+
+def test_rendered_units_never_order_after_their_install_target() -> None:
+    # A unit that is WantedBy=default.target and also ordered
+    # After=default.target creates a boot ordering cycle; systemd breaks it by
+    # deleting dependent start jobs, so presence/arm never start at boot.
+    units = {
+        "hub": render_hub_unit(synapse_bin="/bin/synapse"),
+        "presence": render_presence_unit(synapse_bin="/bin/synapse"),
+        "arm": render_arm_unit(synapse_bin="/bin/synapse"),
+    }
+    for name, unit in units.items():
+        assert "WantedBy=default.target" in unit, name
+        assert "After=default.target" not in unit, name
+
+
+def test_checked_in_deploy_templates_have_no_boot_ordering_cycle() -> None:
+    deploy_dir = Path(__file__).resolve().parents[1] / "deploy"
+    for filename in (
+        "synapse-hub.service",
+        "synapse-presence@.service",
+        "synapse-arm@.service",
+    ):
+        template = (deploy_dir / filename).read_text(encoding="utf-8")
+        directives = "\n".join(
+            line for line in template.splitlines() if not line.lstrip().startswith("#")
+        )
+        assert "WantedBy=default.target" in directives, filename
+        assert "After=default.target" not in directives, filename
 
 
 def test_checked_in_arm_template_matches_generated_runtime_contract() -> None:

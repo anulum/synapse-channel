@@ -76,6 +76,16 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- The generated `synapse-hub.service` and the checked-in deploy template no
+  longer order the hub `After=default.target`. Combined with
+  `WantedBy=default.target` that ordering formed a boot cycle — systemd gives
+  target units an implicit `After=` on their `Wants=` dependencies — and
+  systemd broke it by deleting the dependent `synapse-presence@` and
+  `synapse-arm@` start jobs, so presence holders and durable wake listeners
+  stayed dead after every reboot while reading `enabled`. Regression tests now
+  assert that no rendered or checked-in unit installing into `default.target`
+  orders itself after it.
+
 - `EventStore.delete()` now uses one static parameterised `DELETE` statement
   through `executemany()` instead of constructing an `IN` clause. This removes
   the `B608` suppression without depending on optional SQLite JSON1 support,

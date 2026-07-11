@@ -66,6 +66,9 @@ def user_systemd_dir(*, home: Path | None = None) -> Path:
 
 def render_hub_unit(*, synapse_bin: str) -> str:
     """Render the local-first hub user service."""
+    # The hub must not be ordered After=default.target: WantedBy=default.target
+    # gives the target an implicit After= on this unit, and the resulting boot
+    # ordering cycle makes systemd delete the presence/arm start jobs.
     return (
         "# SPDX-License-"
         "Identifier: AGPL-3.0-or-later\n"
@@ -77,8 +80,7 @@ def render_hub_unit(*, synapse_bin: str) -> str:
         "# SYNAPSE CHANNEL — generated user service for the coordination hub\n\n"
         "[Unit]\n"
         "Description=SYNAPSE CHANNEL coordination hub (local-first, loopback)\n"
-        "Documentation=https://github.com/anulum/synapse-channel\n"
-        "After=default.target\n\n"
+        "Documentation=https://github.com/anulum/synapse-channel\n\n"
         "[Service]\n"
         "Type=simple\n"
         f"ExecStart={synapse_bin} hub --port 8876 --db %h/synapse/hub.db "
