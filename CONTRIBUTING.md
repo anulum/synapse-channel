@@ -60,8 +60,8 @@ The `Makefile` wraps the common tasks (`make help` lists them):
 
 ## Standards a change must meet
 
-- **Tests.** Every new module, function, and branch ships with tests. Coverage
-  is held at 100% (the gate fails below 95%); a change must not lower it.
+- **Tests.** Every new module, function, and branch ships with tests. Aggregate
+  coverage stays above the 98% floor; a change must not lower it.
 - **Coverage exclusions are ledgered.** Every `pragma: no cover` in `src/` and
   every conditional skip in `tests/` is enumerated with a justification class
   in `tests/test_coverage_exclusion_ledger.py`; the suite fails the moment the

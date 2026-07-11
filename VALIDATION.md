@@ -18,11 +18,11 @@ clear. The figures below are reproducible from the repository.
 - A test suite across the `tests/` tree exercises every package module. The
   current test-function, module, and surface counts are in the README's capability
   inventory, which CI keeps in sync with the source tree.
-- Coverage of the `synapse_channel` package is **100%** — no lines or branches
-  missed, with branch coverage on. The gate fails below 95%; in practice it is held
-  at 100%.
-- Tests are deterministic: time is injected, transports are faked, and no test
-  reaches the network.
+- CI keeps aggregate line and branch coverage above the enforced **98%** floor;
+  current Python 3.10–3.13 reports are above 99%.
+- Tests are designed to be deterministic: time and remote transports are injected
+  where practical, while end-to-end cases use throwaway localhost services and
+  external hardware or network paths remain explicitly gated.
 
 Run them with:
 
@@ -43,7 +43,7 @@ Every change must clear these gates (run locally with `make preflight`):
 | Release claim hygiene | `tools/check_release_claim_hygiene.py --check` | changelog/release prose has no agent-authorship, quality-label, or conformance overclaims |
 | Commercial claim hygiene | `tools/check_commercial_claim_hygiene.py --check` | commercial docs preserve the AGPL/commercial boundary and no feature-split claims |
 | Types | `mypy` (strict) | no errors |
-| Tests + coverage | `pytest --cov` | pass, ≥ 95% (held at 100%) |
+| Tests + coverage | `pytest --cov` | pass, ≥ 98% (currently above 99%) |
 | Licensing | `reuse lint` | REUSE 3.x compliant |
 | Spelling | `typos` | clean |
 | Security lint | `bandit` | clean |
@@ -52,7 +52,7 @@ Every change must clear these gates (run locally with `make preflight`):
 ## Coverage policy
 
 The coverage gate is configured in `pyproject.toml` (`[tool.coverage]`,
-`fail_under = 95`). Branch coverage is on. The only excluded lines are the
+`fail_under = 98`). Branch coverage is on. The only excluded lines are the
 standard non-executable guards (`if __name__ == "__main__":`, `if TYPE_CHECKING:`,
 `pragma: no cover`); no functional code is excluded.
 

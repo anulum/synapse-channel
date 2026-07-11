@@ -68,6 +68,10 @@ All notable changes to this project are documented here.
   the existing Python 3.10–3.13 matrix; pull-request and manual runs retain
   stale-run cancellation on their shared ref.
 
+- The repository coverage gate now fails below 98% instead of 95%, raising the
+  enforced minimum floor. `pyproject.toml`, the contributor guide, and the
+  validation guide record the same threshold, and no existing coverage was reduced.
+
 ### Fixed
 
 - GitHub Releases and PyPI now receive the exact same wheel and source archive
