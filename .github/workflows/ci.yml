@@ -17,8 +17,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A main push gets a commit-specific group and cannot cancel an earlier head.
+  # Pull-request and manual runs keep replacing stale work on their shared ref.
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   lint:

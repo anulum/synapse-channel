@@ -33,6 +33,11 @@ All notable changes to this project are documented here.
   workflow audits every introduced commit and the complete forward-only history
   weekly, and the same audit runs in local preflight.
 
+- Main-branch CI no longer cancels an in-progress earlier head when another
+  commit lands. Every push is keyed by its immutable commit SHA and must finish
+  the existing Python 3.10–3.13 matrix; pull-request and manual runs retain
+  stale-run cancellation on their shared ref.
+
 ### Fixed
 
 - GitHub Releases and PyPI now receive the exact same wheel and source archive

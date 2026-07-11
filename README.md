@@ -1265,7 +1265,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 554 |
 | Wire message types | 77 |
 | CLI subcommands | 160 |
-| Test functions | 6193 |
+| Test functions | 6195 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 14 |
@@ -1344,8 +1344,10 @@ Actions pinned to full commit SHAs and Docker base images pinned to digests; and
 `make install-hooks` also installs the repository's `commit-msg` gate: every new
 commit needs exactly one vendor-neutral `Seat: <seat-suffix>` trailer and the exact
 project authorship line. A dedicated workflow audits every introduced commit and
-rechecks the complete forward-only history weekly. The threat model and how to report
-a vulnerability are in [`SECURITY.md`](SECURITY.md).
+rechecks the complete forward-only history weekly. Main-branch CI also gives each push
+head its own concurrency group and never cancels it; pull-request and manual runs may
+still replace stale work on their shared ref. The threat model and how to report a
+vulnerability are in [`SECURITY.md`](SECURITY.md).
 
 ## Known limitations
 
