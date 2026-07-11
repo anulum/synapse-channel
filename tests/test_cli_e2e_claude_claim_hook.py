@@ -12,7 +12,7 @@ import json
 import sys
 from pathlib import Path
 
-from cli_e2e_helpers import git_repo, isolated_hub, run_cli
+from cli_e2e_helpers import free_port, git_repo, isolated_hub, run_cli
 
 
 def _event(repo: Path, target: Path) -> str:
@@ -70,6 +70,52 @@ def test_live_claim_allows_owned_file_and_denies_unclaimed_file(tmp_path: Path) 
         assert denied.ok(), denied.output
         output = json.loads(denied.stdout)
         assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+        wrong_owner = run_cli(
+            "adapters",
+            "claude-claim-hook",
+            "--identity",
+            "seat/two",
+            stdin=_event(repo, repo / "src" / "owned.py"),
+            uri=hub.uri,
+            cwd=repo,
+        )
+        assert wrong_owner.ok(), wrong_owner.output
+        wrong_owner_output = json.loads(wrong_owner.stdout)
+        assert wrong_owner_output["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+        malformed = run_cli(
+            "adapters",
+            "claude-claim-hook",
+            "--identity",
+            "seat/one",
+            stdin="{not-json",
+            uri=hub.uri,
+            cwd=repo,
+        )
+        assert malformed.ok(), malformed.output
+        malformed_output = json.loads(malformed.stdout)
+        assert malformed_output["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_unreachable_hub_denies_on_exit_zero(tmp_path: Path) -> None:
+    repo = git_repo(tmp_path / "repo")
+    unused_port = free_port()
+    result = run_cli(
+        "adapters",
+        "claude-claim-hook",
+        "--identity",
+        "seat/one",
+        "--ready-timeout",
+        "0.05",
+        stdin=_event(repo, repo / "README.md"),
+        uri=f"ws://127.0.0.1:{unused_port}",
+        cwd=repo,
+    )
+    assert result.ok(), result.output
+    output = json.loads(result.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert "unavailable" in output["hookSpecificOutput"]["permissionDecisionReason"]
 
 
 def test_cli_prints_mergeable_config_without_writing_settings(tmp_path: Path) -> None:
