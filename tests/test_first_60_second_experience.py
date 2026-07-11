@@ -8,6 +8,9 @@
 
 from __future__ import annotations
 
+import logging
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -69,6 +72,65 @@ def test_public_docs_explain_the_60_second_install_doctor_demo_path() -> None:
     assert "synapse doctor" in combined
     assert "synapse demo" in combined
     assert "success: coordination demo completed" in combined
+
+
+async def test_demo_run_emits_no_handshake_abort_records(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The real demo flow keeps hub handshake-abort tracebacks off stderr.
+
+    The readiness probe aborts one WebSocket handshake by design; the demo
+    suppresses the ``synapse.hub.ws`` logger only for that probe and must
+    restore the exact prior level, so a record captured here means the scoped
+    suppression regressed (wrong logger name, wrong scope, or a leak).
+    """
+    with caplog.at_level(logging.DEBUG, logger="synapse.hub.ws"):
+        level_during = logging.getLogger("synapse.hub.ws").level
+        log = await run_coordination_demo(_free_port())
+        assert logging.getLogger("synapse.hub.ws").level == level_during
+
+    assert any("handed TEST off to PLANNER" in line for line in log)
+    handshake_records = [
+        record
+        for record in caplog.records
+        if record.name.startswith("synapse.hub.ws")
+        and "opening handshake failed" in record.getMessage()
+    ]
+    assert handshake_records == []
+
+
+def test_demo_import_has_no_global_logging_side_effect() -> None:
+    """Importing the demo module leaves every logger untouched (isolated run)."""
+    script = (
+        "import logging\n"
+        "names = ('websockets.server', 'synapse.hub.ws')\n"
+        "def snap():\n"
+        "    return {n: (logging.getLogger(n).level, list(logging.getLogger(n).filters))"
+        " for n in names}\n"
+        "before = snap()\n"
+        "import synapse_channel.demo\n"
+        "after = snap()\n"
+        "assert before == after, (before, after)\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, check=False
+    )
+    assert proc.returncode == 0, proc.stderr
+
+
+async def test_demo_probe_leaves_logger_levels_untouched_on_both_exits() -> None:
+    """The clean-handshake probe never mutates logger state, success or timeout."""
+    from synapse_channel import demo as demo_module
+
+    ws_logger = logging.getLogger("synapse.hub.ws")
+    previous_level = ws_logger.level
+    ws_logger.setLevel(logging.WARNING)
+    try:
+        with pytest.raises(TimeoutError, match="did not start listening"):
+            await demo_module._await_listening(demo_module._free_port(), timeout=0.05)
+        assert ws_logger.level == logging.WARNING
+    finally:
+        ws_logger.setLevel(previous_level)
 
 
 async def test_demo_helpers_time_out_honestly(tmp_path: object) -> None:

@@ -11,14 +11,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
 import socket
 from collections.abc import Callable
 from typing import Any
 
-from synapse_channel import SynapseAgent, SynapseHub
+from websockets.asyncio.client import connect as ws_connect
 
-logging.getLogger("websockets.server").setLevel(logging.CRITICAL)
+from synapse_channel import SynapseAgent, SynapseHub
 
 
 class CodingFleetInbox:
@@ -74,18 +73,25 @@ def _free_port() -> int:
 
 
 async def _await_listening(port: int, timeout: float = 3.0) -> None:
-    """Block until ``port`` accepts a TCP connection or the timeout elapses."""
+    """Block until the hub accepts a WebSocket handshake or the timeout elapses.
+
+    The probe completes one real WebSocket handshake and closes it cleanly
+    instead of opening a bare TCP socket: an aborted TCP probe makes the hub's
+    WebSocket server log ``opening handshake failed`` with a full traceback —
+    and it records that abort after the probe returns, so no probe-scoped
+    logger suppression can catch it. A clean handshake produces no error
+    record at all, keeps a first run's stderr quiet without mutating any
+    logger, and leaves genuine handshake errors visible.
+    """
     loop = asyncio.get_event_loop()
     deadline = loop.time() + timeout
     while loop.time() < deadline:
         try:
-            _, writer = await asyncio.open_connection("localhost", port)
-        except OSError:
+            connection = await ws_connect(f"ws://localhost:{port}", open_timeout=1.0)
+        except (OSError, TimeoutError, asyncio.TimeoutError):
             await asyncio.sleep(0.02)
             continue
-        writer.close()
-        with contextlib.suppress(Exception):
-            await writer.wait_closed()
+        await connection.close()
         return
     raise TimeoutError(f"hub did not start listening on {port}")
 

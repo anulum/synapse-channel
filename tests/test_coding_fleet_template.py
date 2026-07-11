@@ -8,6 +8,9 @@
 
 from __future__ import annotations
 
+import logging
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -111,6 +114,59 @@ async def test_coding_fleet_helpers_time_out_honestly() -> None:
         await inbox.wait_for(lambda _m: False, timeout=0.05)
     with pytest.raises(TimeoutError, match="did not start listening"):
         await coding_fleet._await_listening(coding_fleet._free_port(), timeout=0.05)
+
+
+async def test_coding_fleet_run_emits_no_handshake_abort_records(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The real fleet-demo flow keeps hub handshake-abort tracebacks off stderr."""
+    with caplog.at_level(logging.DEBUG, logger="synapse.hub.ws"):
+        level_during = logging.getLogger("synapse.hub.ws").level
+        log = await run_coding_agents_demo(_free_port())
+        assert logging.getLogger("synapse.hub.ws").level == level_during
+
+    assert any("disjoint scope, granted" in line for line in log)
+    handshake_records = [
+        record
+        for record in caplog.records
+        if record.name.startswith("synapse.hub.ws")
+        and "opening handshake failed" in record.getMessage()
+    ]
+    assert handshake_records == []
+
+
+def test_coding_fleet_import_has_no_global_logging_side_effect() -> None:
+    """Importing the fleet demo leaves every logger untouched (isolated run)."""
+    script = (
+        "import logging\n"
+        "names = ('websockets.server', 'synapse.hub.ws')\n"
+        "def snap():\n"
+        "    return {n: (logging.getLogger(n).level, list(logging.getLogger(n).filters))"
+        " for n in names}\n"
+        "before = snap()\n"
+        "import synapse_channel.coding_fleet\n"
+        "after = snap()\n"
+        "assert before == after, (before, after)\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, check=False
+    )
+    assert proc.returncode == 0, proc.stderr
+
+
+async def test_coding_fleet_probe_leaves_logger_levels_untouched_on_both_exits() -> None:
+    """The clean-handshake probe never mutates logger state, success or timeout."""
+    from synapse_channel import coding_fleet
+
+    ws_logger = logging.getLogger("synapse.hub.ws")
+    previous_level = ws_logger.level
+    ws_logger.setLevel(logging.WARNING)
+    try:
+        with pytest.raises(TimeoutError, match="did not start listening"):
+            await coding_fleet._await_listening(coding_fleet._free_port(), timeout=0.05)
+        assert ws_logger.level == logging.WARNING
+    finally:
+        ws_logger.setLevel(previous_level)
 
 
 def test_coding_fleet_demo_refuses_an_empty_narration(

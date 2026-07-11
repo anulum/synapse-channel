@@ -78,6 +78,16 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- `synapse demo` and the packaged coding-fleet demo no longer print an
+  `opening handshake failed` traceback on stderr during a clean first run.
+  Both readiness probes opened and closed a bare TCP socket, which the hub
+  logs as an aborted handshake at `ERROR` — after the probe returns, so no
+  probe-scoped suppression could catch it, and the old import-time silencing
+  targeted the obsolete `websockets.server` logger anyway. The probes now
+  complete one real WebSocket handshake and close it cleanly: no error
+  record exists to hide, neither module mutates process-wide logging at
+  import, and genuine handshake errors stay visible.
+
 - The generated `synapse-hub.service` and the checked-in deploy template no
   longer order the hub `After=default.target`. Combined with
   `WantedBy=default.target` that ordering formed a boot cycle — systemd gives
