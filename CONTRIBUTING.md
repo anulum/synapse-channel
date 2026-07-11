@@ -37,6 +37,13 @@ development environment and the standards a change must meet to be merged.
    elsewhere, set `SYNAPSE_MYPY_PYTHON` to its absolute Python path; an invalid
    override fails closed.
 
+   The installed pre-push hooks are deliberately lightweight. They check the
+   generated capability snapshot, commit-trailer history, and version surfaces
+   in seconds. They do not run pytest, coverage, or `tools/preflight.sh`; CI owns
+   exhaustive tests for ordinary pushes. Run the exhaustive script locally only
+   when the current task explicitly reserves resources for it or for an
+   owner-authorised release verification.
+
 ## Development workflow
 
 The `Makefile` wraps the common tasks (`make help` lists them):

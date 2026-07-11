@@ -34,6 +34,13 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- `make install-hooks` now installs a lightweight pre-push stage alongside the
+  pre-commit and commit-message hooks. It fails on stale generated capability
+  counts, invalid commit-trailer history, or version-surface drift, and
+  deliberately runs no pytest, coverage, or exhaustive preflight. The latter is
+  reserved for explicitly requested/resource-reserved verification while CI
+  owns the full suite on ordinary pushes.
+
 - Staging Python or `pyproject.toml` now runs strict whole-tree mypy in the
   pre-commit gate instead of relying on later CI or partial-path checks. A small
   cross-platform resolver prefers the repository virtual environment, supports

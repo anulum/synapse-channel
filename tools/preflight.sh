@@ -5,11 +5,14 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — pre-push gate that mirrors CI; a green run here means CI is green.
+# SYNAPSE CHANNEL — exhaustive verification for explicitly reserved runs.
 #
-# Run this before EVERY push: `bash tools/preflight.sh`. It runs the exact checks the
-# CI workflows gate on, so a local pass guarantees a green CI. The ONE residual gap is
-# the test matrix: CI runs pytest on 3.10–3.13, this runs only the local interpreter.
+# This is intentionally not the ordinary pre-push hook. Use it when the CEO asks
+# for a local exhaustive run in the current turn, resources are explicitly
+# reserved, or an owner-authorised release needs local verification. Ordinary
+# pushes run seconds-scale metadata/history checks and let CI own the exhaustive
+# suite. The one residual gap is the matrix: CI tests Python 3.10–3.13, while this
+# script uses only the local interpreter.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 V=.venv/bin

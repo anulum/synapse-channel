@@ -22,7 +22,7 @@ help: ## Show available targets
 install: ## Install the package with its dev toolchain (editable)
 	$(PIP) install -e ".[dev,benchmark]"
 
-install-hooks: ## Install the pre-commit git hooks
+install-hooks: ## Install pre-commit, commit-msg, and lightweight pre-push hooks
 	$(PY) -m pre_commit install
 
 lint: ## Check style (ruff lint + format check)

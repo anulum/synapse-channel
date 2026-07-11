@@ -5,33 +5,44 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — pre-commit configuration
-default_install_hook_types: [pre-commit, commit-msg]
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+default_stages: [pre-commit]
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.18
     hooks:
       - id: ruff
         args: [--fix]
+        stages: [pre-commit]
       - id: ruff-format
+        stages: [pre-commit]
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        stages: [pre-commit]
       - id: end-of-file-fixer
+        stages: [pre-commit]
       - id: check-yaml
+        stages: [pre-commit]
       - id: check-toml
+        stages: [pre-commit]
       - id: check-merge-conflict
+        stages: [pre-commit]
       - id: check-added-large-files
         args: [--maxkb=500]
+        stages: [pre-commit]
   - repo: https://github.com/crate-ci/typos
     rev: v1.46.1
     hooks:
       - id: typos
         args: [--config, _typos.toml]
+        stages: [pre-commit]
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:
       - id: gitleaks
+        stages: [pre-commit]
   - repo: local
     hooks:
       - id: mypy-whole-tree
@@ -41,6 +52,27 @@ repos:
         stages: [pre-commit]
         pass_filenames: false
         files: ^(pyproject\.toml|(src|tests|benchmarks|tools|examples)/.*\.py)$
+      - id: pre-push-capability-manifest
+        name: capability snapshot is current before push
+        entry: python tools/capability_manifest.py --check
+        language: system
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+      - id: pre-push-commit-trailers
+        name: commit trailer history is valid before push
+        entry: python tools/check_commit_trailers.py
+        language: system
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+      - id: pre-push-version-sync
+        name: version surfaces agree before push
+        entry: python tools/check_version_sync.py
+        language: system
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
       - id: commit-trailers
         name: seat, authorship, and commit-subject policy
         entry: python tools/check_commit_trailers.py
@@ -52,3 +84,4 @@ repos:
         language: system
         files: ^(pyproject\.toml|src/synapse_channel/__init__\.py|README\.md|CITATION\.cff)$
         pass_filenames: false
+        stages: [pre-commit]

@@ -1266,7 +1266,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 554 |
 | Wire message types | 77 |
 | CLI subcommands | 160 |
-| Test functions | 6213 |
+| Test functions | 6216 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 53 |
 | GitHub Actions workflows | 15 |
@@ -1351,6 +1351,9 @@ still replace stale work on their shared ref. Staging Python or `pyproject.toml`
 also runs strict whole-tree mypy through the repository virtual environment—never
 only the changed filenames. `SYNAPSE_MYPY_PYTHON=/absolute/path/to/python` selects
 an intentional alternate environment and fails closed when the path is invalid.
+The installed pre-push stage stays seconds-scale: it rejects a stale capability
+snapshot, invalid commit-trailer history, or version-surface drift. It runs no
+pytest, coverage, or exhaustive preflight; CI owns those checks on every push.
 The threat model and how to report a vulnerability are in
 [`SECURITY.md`](SECURITY.md).
 
