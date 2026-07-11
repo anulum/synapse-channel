@@ -97,9 +97,17 @@ async def _await_listening(port: int, timeout: float = 3.0) -> None:
     """
     loop = asyncio.get_event_loop()
     deadline = loop.time() + timeout
-    while loop.time() < deadline:
+    while True:
+        # Each handshake attempt is bounded by the caller's remaining budget so
+        # a listener that accepts TCP but never answers the handshake cannot
+        # stretch the probe past its deadline.
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            break
         try:
-            connection = await ws_connect(f"ws://localhost:{port}", open_timeout=1.0)
+            connection = await ws_connect(
+                f"ws://localhost:{port}", open_timeout=min(1.0, remaining)
+            )
         except (OSError, TimeoutError, asyncio.TimeoutError):
             await asyncio.sleep(0.02)
             continue

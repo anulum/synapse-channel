@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import subprocess
 import sys
@@ -79,10 +80,10 @@ async def test_demo_run_emits_no_handshake_abort_records(
 ) -> None:
     """The real demo flow keeps hub handshake-abort tracebacks off stderr.
 
-    The readiness probe aborts one WebSocket handshake by design; the demo
-    suppresses the ``synapse.hub.ws`` logger only for that probe and must
-    restore the exact prior level, so a record captured here means the scoped
-    suppression regressed (wrong logger name, wrong scope, or a leak).
+    The readiness probe completes one clean WebSocket handshake and no logger
+    is mutated anywhere, so an ``opening handshake failed`` record captured
+    here means a regression reintroduced an aborting probe — or surfaced a
+    genuine hub-side error the demo must not hide.
     """
     with caplog.at_level(logging.DEBUG, logger="synapse.hub.ws"):
         level_during = logging.getLogger("synapse.hub.ws").level
@@ -116,6 +117,35 @@ def test_demo_import_has_no_global_logging_side_effect() -> None:
         [sys.executable, "-c", script], capture_output=True, text=True, check=False
     )
     assert proc.returncode == 0, proc.stderr
+
+
+async def test_demo_probe_deadline_holds_against_stalled_listener() -> None:
+    """A listener that accepts TCP but never handshakes cannot stretch the probe.
+
+    Each handshake attempt must be bounded by the remaining caller budget; a
+    fixed per-attempt open timeout would hold a 0.2 s probe open for a full
+    second against a stalled listener.
+    """
+    from synapse_channel import demo as demo_module
+
+    release = asyncio.Event()
+
+    async def _stall(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await release.wait()
+        writer.close()
+
+    listener = await asyncio.start_server(_stall, "localhost", 0)
+    port = int(listener.sockets[0].getsockname()[1])
+    loop = asyncio.get_event_loop()
+    started = loop.time()
+    try:
+        with pytest.raises(TimeoutError, match="did not start listening"):
+            await demo_module._await_listening(port, timeout=0.2)
+    finally:
+        release.set()
+        listener.close()
+        await listener.wait_closed()
+    assert loop.time() - started < 0.9
 
 
 async def test_demo_probe_leaves_logger_levels_untouched_on_both_exits() -> None:

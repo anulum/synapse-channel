@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import subprocess
 import sys
@@ -152,6 +153,35 @@ def test_coding_fleet_import_has_no_global_logging_side_effect() -> None:
         [sys.executable, "-c", script], capture_output=True, text=True, check=False
     )
     assert proc.returncode == 0, proc.stderr
+
+
+async def test_coding_fleet_probe_deadline_holds_against_stalled_listener() -> None:
+    """A listener that accepts TCP but never handshakes cannot stretch the probe.
+
+    Each handshake attempt must be bounded by the remaining caller budget; a
+    fixed per-attempt open timeout would hold a 0.2 s probe open for a full
+    second against a stalled listener.
+    """
+    from synapse_channel import coding_fleet
+
+    release = asyncio.Event()
+
+    async def _stall(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await release.wait()
+        writer.close()
+
+    listener = await asyncio.start_server(_stall, "localhost", 0)
+    port = int(listener.sockets[0].getsockname()[1])
+    loop = asyncio.get_event_loop()
+    started = loop.time()
+    try:
+        with pytest.raises(TimeoutError, match="did not start listening"):
+            await coding_fleet._await_listening(port, timeout=0.2)
+    finally:
+        release.set()
+        listener.close()
+        await listener.wait_closed()
+    assert loop.time() - started < 0.9
 
 
 async def test_coding_fleet_probe_leaves_logger_levels_untouched_on_both_exits() -> None:
