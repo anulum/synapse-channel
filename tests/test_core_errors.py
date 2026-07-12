@@ -71,6 +71,16 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "auto_action_store",
         Exception,
     ),
+    "CapabilityCardSigningError": (
+        "synapse_channel.core.capability_card_signing",
+        "capability_card_signing",
+        ValueError,
+    ),
+    "CapabilityCardTrustError": (
+        "synapse_channel.core.capability_card_trust",
+        "capability_card_trust",
+        ValueError,
+    ),
     "ClaimCoverageError": (
         "synapse_channel.git.claim_coverage",
         "claim_coverage",
