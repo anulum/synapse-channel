@@ -20,6 +20,7 @@ import pytest
 
 from cli_processes_helpers import _hub_ns
 from synapse_channel import cli_processes
+from synapse_channel.core.capability_card_history import PersistentCapabilityCardHistory
 from synapse_channel.core.hub import (
     InsecureBindError,
     SynapseHub,
@@ -1012,6 +1013,7 @@ def test_cmd_hub_threads_capability_card_trust(tmp_path: Path) -> None:
         cli_processes._cmd_hub(
             _hub_ns(
                 capability_card_trust=str(trust),
+                capability_card_history_db=str(tmp_path / "card-history.db"),
                 capability_card_clock_skew_seconds=4.0,
                 capability_card_history_capacity=7,
                 capability_card_history_retention_seconds=8.0,
@@ -1024,6 +1026,8 @@ def test_cmd_hub_threads_capability_card_trust(tmp_path: Path) -> None:
     bundle = captured["capability_card_trust_bundle"]
     assert "P:key" in bundle.keys
     assert bundle.clock_skew_seconds == 4.0
+    assert isinstance(bundle.history, PersistentCapabilityCardHistory)
+    assert bundle.history.path == tmp_path / "card-history.db"
     assert bundle.history.max_entries == 7
     assert bundle.history.retention_seconds == 8.0
 
@@ -1038,6 +1042,36 @@ def test_cmd_hub_rejects_malformed_capability_card_trust(
         cli_processes._cmd_hub(_hub_ns(capability_card_trust=str(trust)), runner=_close_runner) == 2
     )
     assert "invalid capability-card trust JSON" in capsys.readouterr().err
+
+
+def test_cmd_hub_rejects_history_without_trust_and_malformed_history(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    history = tmp_path / "card-history.db"
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(capability_card_history_db=str(history)),
+            runner=_close_runner,
+        )
+        == 2
+    )
+    assert "--capability-card-history-db requires" in capsys.readouterr().err
+    assert not history.exists()
+
+    trust = tmp_path / "capability-card-trust.json"
+    trust.write_text('{"keys": []}', encoding="utf-8")
+    history.touch(mode=0o600)
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(
+                capability_card_trust=str(trust),
+                capability_card_history_db=str(history),
+            ),
+            runner=_close_runner,
+        )
+        == 2
+    )
+    assert "unknown or missing schema" in capsys.readouterr().err
 
 
 def test_cmd_hub_threads_private_directed_messages() -> None:

@@ -171,6 +171,14 @@ def add_hub_security_arguments(hub: argparse.ArgumentParser) -> None:
         "Unsigned and failed cards remain visible with an explicit verification result.",
     )
     hub.add_argument(
+        "--capability-card-history-db",
+        default="",
+        metavar="FILE",
+        help="Optional owner-only SQLite database that preserves signed-card replay and "
+        "downgrade history across hub restarts. Requires --capability-card-trust; it does "
+        "not enable admission enforcement.",
+    )
+    hub.add_argument(
         "--capability-card-clock-skew-seconds",
         type=float,
         default=DEFAULT_CAPABILITY_CARD_CLOCK_SKEW_SECONDS,

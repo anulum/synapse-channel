@@ -54,6 +54,7 @@ class CapabilityCardHistoryResult(str, Enum):
     SEQUENCE_MISMATCH = "sequence_mismatch"
     CAPABILITY_DOWNGRADE = "capability_downgrade"
     HISTORY_FULL = "history_full"
+    HISTORY_UNAVAILABLE = "history_unavailable"
 
 
 @dataclass(frozen=True)

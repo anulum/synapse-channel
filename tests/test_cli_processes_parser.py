@@ -65,6 +65,7 @@ def test_parser_hub_identity_binding_flags() -> None:
 def test_parser_hub_capability_card_trust_flags() -> None:
     defaults = cli.build_parser().parse_args(["hub"])
     assert defaults.capability_card_trust == ""
+    assert defaults.capability_card_history_db == ""
     assert defaults.capability_card_clock_skew_seconds == 30.0
     assert defaults.capability_card_history_capacity == 4096
     assert defaults.capability_card_history_retention_seconds == 3600.0
@@ -74,6 +75,8 @@ def test_parser_hub_capability_card_trust_flags() -> None:
             "hub",
             "--capability-card-trust",
             "/tmp/cards.json",
+            "--capability-card-history-db",
+            "/tmp/cards-history.db",
             "--capability-card-clock-skew-seconds",
             "4",
             "--capability-card-history-capacity",
@@ -83,6 +86,7 @@ def test_parser_hub_capability_card_trust_flags() -> None:
         ]
     )
     assert args.capability_card_trust == "/tmp/cards.json"
+    assert args.capability_card_history_db == "/tmp/cards-history.db"
     assert args.capability_card_clock_skew_seconds == 4.0
     assert args.capability_card_history_capacity == 7
     assert args.capability_card_history_retention_seconds == 8.0

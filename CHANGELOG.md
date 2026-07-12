@@ -21,8 +21,11 @@ All notable changes to this project are documented here.
   signing and hub verification. Manifests, directories, dashboards, MCP resources,
   and Agent Cards expose explicit valid, unsigned, key/signature/expiry, replay,
   downgrade, binding, digest, and bounded-history results. Unsigned wire behaviour
-  stays compatible; verification grants no authority, and replay/downgrade history
-  remains bounded and in memory rather than claiming durable enforced admission.
+  stays compatible and verification grants no authority. The bounded in-memory
+  history remains the default; an opt-in owner-only SQLite store now preserves
+  replay and downgrade floors across hub restarts, rejects corrupt state at startup,
+  and projects runtime persistence failure as `history_unavailable`. Recovery and
+  safe-reset instructions ship with it; enforced admission remains separate.
 
 - Grok is now a fully enabled Participant Fabric provider and the fifth
   provider-native file-claim guard. Its parser is pinned to a real stable

@@ -36,7 +36,9 @@ The first complete advisory runtime ships:
   advertisement with an increasing in-process sequence;
 - `synapse hub --capability-card-trust ...` verifies cards against explicit
   agent and project bindings, a validity window, key expiry/revocation, and a
-  bounded in-memory sequence/downgrade history;
+  bounded sequence/downgrade history. The in-memory default preserves legacy
+  operation; `--capability-card-history-db` opts into an owner-only SQLite
+  history that survives hub restarts;
 - manifest, directory, fallback dashboard, and A2A projections show the
   advisory result.
 
@@ -64,6 +66,7 @@ gate; it enables truthful diagnostics:
 ```bash
 synapse hub \
   --capability-card-trust ./capability-card-trust.json \
+  --capability-card-history-db ./capability-card-history.db \
   --capability-card-clock-skew-seconds 30 \
   --capability-card-history-capacity 4096 \
   --capability-card-history-retention-seconds 3600
@@ -99,7 +102,8 @@ synapse capability-card verify signed-card.json \
 
 The one-shot verifier checks the signature and bindings but intentionally does
 not consume sequence state. Replay and downgrade checks happen on the live hub,
-where consecutive advertisements share one bounded history.
+where consecutive advertisements share one bounded history. Omit
+`--capability-card-history-db` to retain the bounded in-memory default.
 
 ## Trust-bundle profile
 
@@ -169,25 +173,66 @@ covers its own key id, sequence, validity window, and claimed digest.
 | `project_scope_mismatch` | Card, sender namespace, and allowed project binding disagree. |
 | `manifest_mismatch` | A caller-required manifest digest differs from the signed card. |
 | `history_full` | Bounded lifecycle state could not admit a new binding without evicting a live replay guard. |
+| `history_unavailable` | The configured durable history could not validate or commit lifecycle state, so the card is not reported as valid. |
 
 A capability downgrade is recorded and surfaced for review; it is not silently
 upgraded to `valid`. It still does not create an execution denial because card
 verification is advisory in this tranche.
 
+## Durable history and recovery
+
+`--capability-card-history-db FILE` creates or opens a dedicated SQLite database.
+It requires `--capability-card-trust`, uses full synchronous transactions and
+DELETE journalling, and serializes concurrent writers with an immediate
+transaction. On POSIX, the database must be a regular non-symlink file owned by
+the current user with mode `0600`. Startup validates the schema, retained rows,
+configured capacity, and SQLite quick check; ambiguity or corruption stops the
+hub before it binds. A runtime lock, I/O, or validation failure rolls back the
+transaction and projects `history_unavailable` instead of `valid`.
+
+The database contains card identities, key ids, sequence floors, route-capability
+floors, digests, and timestamps. It contains no private signing key, but it is
+still security state: deleting or replacing it removes replay and downgrade
+memory. This is the opt-in cross-restart replay and downgrade floor. Use one
+database for one logical trust domain; SQLite safely serializes
+processes that accidentally share it, but separate hubs should normally have
+separate files.
+
+Recovery is explicit:
+
+1. Stop the hub before making a simple filesystem backup, then copy the history
+   database and trust bundle together and preserve owner-only permissions.
+2. Before restore, run `sqlite3 capability-card-history.db 'PRAGMA quick_check;'`
+   against the stopped copy. Restore the matched history and trust files, then
+   start the hub normally; startup validates them again.
+3. If no valid history backup exists, do not delete the database and continue
+   under the same signing key. Revoke the old key id, enrol a fresh key id, archive
+   the damaged database for audit, and start a new history database. Old cards
+   then fail as revoked instead of becoming replay candidates after a silent reset.
+4. A stock worker's live sequence is still process-local and has no sequence-resume
+   flag. Rotate it to a fresh enrolled key id before restart, or use an external
+   publisher that persists and supplies a monotonically higher sequence. Restarting
+   the stock worker at sequence one under the old key is correctly reported as
+   `sequence_mismatch`; the hub never guesses a higher value on its behalf.
+
+This is a recovery playbook for advisory provenance state, not a backup service,
+distributed database, or managed key-delivery system.
+
 ## Lifecycle and honest limits
 
 - Card replay/downgrade history is bounded by binding count and time.
-- History is currently **in memory**. A hub restart clears it; signed timestamps
-  and expiry still reject stale cards, but durable cross-restart sequence
-  protection is not claimed.
+- History uses the in-memory default unless the operator supplies
+  `--capability-card-history-db`. The SQLite option preserves replay and downgrade
+  floors across hub restarts; it does not persist live capability cards themselves.
 - A worker sequence is in-process. Operators that publish offline cards must
   persist and increase their own sequence.
 - Credential rotation uses a new key id. Revocation blocks new verification
   immediately while old projected evidence retains its recorded result.
 - Capability cards themselves remain ephemeral and are forgotten when their
   live agent disconnects or their ordinary card TTL expires.
-- No enforcement flag exists yet. Enforcement must wait for recovery-key,
-  rotation, durable replay, rollback, and operator playbooks.
+- No enforcement flag exists yet. Durable history and recovery instructions now
+  ship, but enforced admission still needs managed key distribution, an explicit
+  rollout/rollback policy, and a separate owner-approved CLI contract.
 
 ## Relationship to other controls
 

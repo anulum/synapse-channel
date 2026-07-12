@@ -16,6 +16,7 @@ import pytest
 from synapse_channel.core.capability_card_signing import sign_capability_card
 from synapse_channel.core.capability_card_trust import (
     CapabilityCardHistory,
+    CapabilityCardHistoryResult,
     CapabilityCardTrustBundle,
 )
 from synapse_channel.core.capability_card_verification import (
@@ -273,6 +274,17 @@ def test_history_full_is_visible_and_one_shot_verify_does_not_remember() -> None
 
     signed, trust = _fixture()
     assert _verify(signed, trust, remember=False).result is CapabilityCardVerificationResult.VALID
+
+
+def test_history_persistence_failure_is_not_reported_as_valid() -> None:
+    class UnavailableHistory(CapabilityCardHistory):
+        def assess_and_remember(self, **_values: object) -> CapabilityCardHistoryResult:
+            return CapabilityCardHistoryResult.HISTORY_UNAVAILABLE
+
+    signed, trust = _fixture(history=UnavailableHistory())
+    result = _verify(signed, trust)
+    assert result.result is CapabilityCardVerificationResult.HISTORY_UNAVAILABLE
+    assert result.detail == "card history could not durably record lifecycle state"
     assert _verify(signed, trust, remember=False).result is CapabilityCardVerificationResult.VALID
 
 

@@ -44,6 +44,7 @@ class CapabilityCardVerificationResult(str, Enum):
     PROJECT_SCOPE_MISMATCH = "project_scope_mismatch"
     MANIFEST_MISMATCH = "manifest_mismatch"
     HISTORY_FULL = "history_full"
+    HISTORY_UNAVAILABLE = "history_unavailable"
 
 
 @dataclass(frozen=True)
@@ -305,6 +306,10 @@ def _history_verification(
         CapabilityCardHistoryResult.HISTORY_FULL: (
             CapabilityCardVerificationResult.HISTORY_FULL,
             "bounded card history is full; no replay-safe admission state was recorded",
+        ),
+        CapabilityCardHistoryResult.HISTORY_UNAVAILABLE: (
+            CapabilityCardVerificationResult.HISTORY_UNAVAILABLE,
+            "card history could not durably record lifecycle state",
         ),
     }
     result, detail = mapping[history_result]

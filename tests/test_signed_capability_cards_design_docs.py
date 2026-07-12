@@ -72,6 +72,7 @@ def test_signed_capability_cards_define_runtime_and_lifecycle_controls() -> None
         "synapse capability-card verify",
         "synapse worker --capability-card-key",
         "synapse hub --capability-card-trust",
+        "--capability-card-history-db",
     )
     for surface in runtime_surfaces:
         assert surface in text
@@ -85,6 +86,8 @@ def test_signed_capability_cards_define_runtime_and_lifecycle_controls() -> None
         "trust bundle",
         "capability downgrade",
         "expiry",
+        "history_unavailable",
+        "cross-restart",
     )
     for control in required_controls:
         assert control in text
@@ -101,7 +104,8 @@ def test_signed_capability_cards_keep_boundaries_clear() -> None:
         "replace signed events",
         "sandbox agents",
         "no enforcement flag exists yet",
-        "in memory",
+        "in-memory default",
+        "recovery",
         "advisory discovery",
     )
     for boundary in required_boundaries:

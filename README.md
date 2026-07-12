@@ -814,8 +814,10 @@ profile; `worker --capability-card-key ...` signs live advertisements and
 `hub --capability-card-trust ...` verifies them. Every projection exposes an
 explicit result, including `valid`, `missing_signature`, key/signature/expiry
 failures, replay, downgrade, binding, digest, and history-capacity failures.
-Verification remains advisory, history is bounded and in memory, and unsigned
-cards remain compatible.
+Verification remains advisory and unsigned cards remain compatible. History is
+bounded and in memory by default; `hub --capability-card-history-db FILE` adds an
+owner-only SQLite replay/downgrade floor across hub restarts and fails visibly as
+`history_unavailable` when it cannot commit lifecycle state.
 
 ### Official Go client
 
@@ -898,7 +900,7 @@ explicitly does *not* claim:
 | [Policy engine](docs/policy-engine.md) | First tranche implemented (advisory) | Required tests, strict typing, owner approval, evidence freshness, artifact parity, and no-merge-without-receipt rules evaluated over git-native claims, receipts, and event-log evidence. | Blocking anything by itself — operators decide what becomes a hook or CI gate. |
 | [Signed events and mTLS](docs/signed-events-mtls.md) | Library/runtime primitives shipped; packaged profile staged | Ed25519 event verification, replay/scope checks, mutual-TLS server contexts, and certificate-pin trust bundles for guarded multi-host paths. | Hub CLI loading of signed-event trust and client CAs; managed key lifecycle; payload encryption; external federation certification. |
 | [Differential-privacy blackboard](docs/differential-privacy-blackboard.md) | Design target | Redacted and noisy board projections for multi-organisation views; raw local board data stays exact for the operator. | Payload encryption; replacing private or E2E channels; anonymising raw logs. |
-| [Signed capability cards](docs/signed-capability-cards.md) | Shipped (advisory) | Separate Ed25519 card keys and scoped trust bundles; strict canonical signing; expiry, revocation, replay/downgrade, binding, and digest diagnostics projected through manifests, directories, dashboards, MCP resources, and Agent Cards. | Authorising tools; replacing per-message auth or signed events; sandboxing agents; durable cross-restart replay state; managed key distribution; enforced admission. |
+| [Signed capability cards](docs/signed-capability-cards.md) | Shipped (advisory) | Separate Ed25519 card keys and scoped trust bundles; strict canonical signing; expiry, revocation, binding, digest, and replay/downgrade diagnostics; optional owner-only SQLite history across hub restarts; projection through manifests, directories, dashboards, MCP resources, and Agent Cards. | Authorising tools; replacing per-message auth or signed events; sandboxing agents; managed key distribution; enforced admission. |
 
 `synapse git-init` records the exact identity and hub URI in local Git config,
 optionally records a token-*file path* (never token content), installs only the
@@ -1367,11 +1369,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.4 |
 | Public API exports | 70 |
-| Package modules | 429 |
-| Classes | 601 |
+| Package modules | 430 |
+| Classes | 603 |
 | Wire message types | 77 |
 | CLI subcommands | 170 |
-| Test functions | 6712 |
+| Test functions | 6730 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 55 |
 | GitHub Actions workflows | 18 |

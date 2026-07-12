@@ -37,6 +37,7 @@ def test_security_argument_defaults_preserve_local_first_posture(
     assert args.require_role_claim is False
     assert args.require_identity_binding is False
     assert args.capability_card_trust == ""
+    assert args.capability_card_history_db == ""
     assert args.capability_card_clock_skew_seconds == 30.0
     assert args.capability_card_history_capacity == 4096
     assert args.capability_card_history_retention_seconds == 3600.0
@@ -78,6 +79,8 @@ def test_security_argument_registrar_accepts_complete_explicit_surface(
             "--require-identity-binding",
             "--capability-card-trust",
             "cards.json",
+            "--capability-card-history-db",
+            "cards-history.db",
             "--capability-card-clock-skew-seconds",
             "4",
             "--capability-card-history-capacity",
@@ -105,6 +108,7 @@ def test_security_argument_registrar_accepts_complete_explicit_surface(
     assert args.identity_trust == "trust.json"
     assert args.require_identity_binding is True
     assert args.capability_card_trust == "cards.json"
+    assert args.capability_card_history_db == "cards-history.db"
     assert args.capability_card_clock_skew_seconds == 4.0
     assert args.capability_card_history_capacity == 7
     assert args.capability_card_history_retention_seconds == 8.0

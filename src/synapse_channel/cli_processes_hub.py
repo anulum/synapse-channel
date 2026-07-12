@@ -23,10 +23,12 @@ from typing import Any
 from synapse_channel.cli_processes_runtime import _run
 from synapse_channel.core.acl import AclError, load_acl_policy
 from synapse_channel.core.auth import TokenAuthenticator
+from synapse_channel.core.capability_card_history import PersistentCapabilityCardHistory
 from synapse_channel.core.capability_card_trust import (
     DEFAULT_CAPABILITY_CARD_CLOCK_SKEW_SECONDS,
     DEFAULT_CAPABILITY_CARD_HISTORY_CAPACITY,
     DEFAULT_CAPABILITY_CARD_HISTORY_RETENTION_SECONDS,
+    CapabilityCardTrustBundle,
     CapabilityCardTrustError,
     load_capability_card_trust_bundle,
 )
@@ -198,6 +200,24 @@ def _cmd_hub(
         return 2
     try:
         capability_card_trust_path = getattr(args, "capability_card_trust", "")
+        capability_card_history_path = getattr(args, "capability_card_history_db", "")
+        history_capacity = getattr(
+            args,
+            "capability_card_history_capacity",
+            DEFAULT_CAPABILITY_CARD_HISTORY_CAPACITY,
+        )
+        history_retention = getattr(
+            args,
+            "capability_card_history_retention_seconds",
+            DEFAULT_CAPABILITY_CARD_HISTORY_RETENTION_SECONDS,
+        )
+        if capability_card_history_path and not capability_card_trust_path:
+            print(
+                "synapse hub: --capability-card-history-db requires "
+                "--capability-card-trust; there are no card keys to verify.",
+                file=sys.stderr,
+            )
+            return 2
         capability_card_trust_bundle = (
             load_capability_card_trust_bundle(
                 capability_card_trust_path,
@@ -206,20 +226,22 @@ def _cmd_hub(
                     "capability_card_clock_skew_seconds",
                     DEFAULT_CAPABILITY_CARD_CLOCK_SKEW_SECONDS,
                 ),
-                history_capacity=getattr(
-                    args,
-                    "capability_card_history_capacity",
-                    DEFAULT_CAPABILITY_CARD_HISTORY_CAPACITY,
-                ),
-                history_retention_seconds=getattr(
-                    args,
-                    "capability_card_history_retention_seconds",
-                    DEFAULT_CAPABILITY_CARD_HISTORY_RETENTION_SECONDS,
-                ),
+                history_capacity=history_capacity,
+                history_retention_seconds=history_retention,
             )
             if capability_card_trust_path
             else None
         )
+        if capability_card_trust_bundle is not None and capability_card_history_path:
+            capability_card_trust_bundle = CapabilityCardTrustBundle(
+                keys=capability_card_trust_bundle.keys,
+                history=PersistentCapabilityCardHistory(
+                    capability_card_history_path,
+                    max_entries=history_capacity,
+                    retention_seconds=history_retention,
+                ),
+                clock_skew_seconds=capability_card_trust_bundle.clock_skew_seconds,
+            )
     except CapabilityCardTrustError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
