@@ -31,6 +31,9 @@ Justification classes
     failure, stream-specific refusals).
 ``entrypoint``
     ``if __name__ == "__main__"`` dispatch lines.
+``interpreter-guard``
+    Compatibility branches that execute only on another supported Python
+    interpreter version (for example, the Python 3.10 ``tomli`` fallback).
 ``blocking-wrapper``
     A process-blocking serve wrapper whose factory is covered by real tests.
 ``platform-guard``
@@ -74,6 +77,7 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
     "src/synapse_channel/core/tls.py": (2, "protocol-body"),
     "src/synapse_channel/ergonomics.py": (1, "entrypoint"),
     "src/synapse_channel/ergonomics_inbox.py": (2, "protocol-body"),
+    "src/synapse_channel/kimi_hook_installer.py": (1, "interpreter-guard"),
     "src/synapse_channel/locks.py": (2, "protocol-body"),
     "src/synapse_channel/observed_peers.py": (1, "protocol-body"),
     "src/synapse_channel/reap.py": (3, "protocol-body"),
@@ -89,6 +93,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_cli_e2e_agent_tmux.py": (1, "optional-dep-guard"),
     "tests/test_cli_sqlcipher.py": (2, "optional-dep-guard"),
     "tests/test_cli_streams_sqlcipher.py": (1, "optional-dep-guard"),
+    "tests/test_dashboard_access_store.py": (1, "platform-guard"),
     "tests/test_dashboard_feeds_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_hub_sqlcipher_e2e.py": (1, "optional-dep-guard"),
     "tests/test_multihub_mcp_sqlcipher.py": (1, "optional-dep-guard"),
