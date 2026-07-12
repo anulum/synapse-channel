@@ -118,10 +118,16 @@ def _render_manifest(manifest: ManifestCards) -> str:
         contract_text = (
             f" · contracts: {len(contracts)}" if isinstance(contracts, list) and contracts else ""
         )
+        verification = card.get("verification", {})
+        verification_text = (
+            _escape(verification.get("result", "missing_signature"))
+            if isinstance(verification, Mapping)
+            else "missing_signature"
+        )
         rows.append(
             "<li>"
             f"<strong>{_escape(card.get('agent', '-'))}</strong> "
-            f"<small>{class_text}{contract_text}</small><br>"
+            f"<small>{class_text}{contract_text} · signature: {verification_text}</small><br>"
             f"{_escape(card.get('description', ''))}"
             "</li>"
         )

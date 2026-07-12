@@ -13,6 +13,8 @@ from collections.abc import Mapping
 from typing import Any
 
 from synapse_channel.client.agent_outbound_types import _OutboundAgent
+from synapse_channel.core.capability import normalized_capability_card
+from synapse_channel.core.capability_card_signing import sign_capability_card
 from synapse_channel.core.protocol import MessageType
 
 __all__ = ["AgentCapabilityMixin"]
@@ -33,6 +35,7 @@ class AgentCapabilityMixin:
         | Mapping[str, Mapping[str, Any]]
         | None = None,
         meta: dict[str, Any] | None = None,
+        manifest_digest: str = "",
     ) -> None:
         """Advertise this agent's capability card to the hub.
 
@@ -51,20 +54,62 @@ class AgentCapabilityMixin:
             mappings may either be one contract or a task-class keyed mapping.
         meta : dict[str, Any] or None, optional
             Additional descriptive metadata.
+        manifest_digest : str, optional
+            Digest of the package/tool manifest this advertisement describes.
         """
-        extra: dict[str, Any] = {}
-        if description:
-            extra["description"] = description
-        if skills:
-            extra["skills"] = list(skills)
-        if task_classes:
-            extra["task_classes"] = list(task_classes)
-        if model:
-            extra["model"] = model
-        if contracts:
-            extra["contracts"] = (
-                dict(contracts) if isinstance(contracts, Mapping) else list(contracts)
+        if self._capability_card_key is None:
+            extra: dict[str, Any] = {}
+            if description:
+                extra["description"] = description
+            if skills:
+                extra["skills"] = list(skills)
+            if task_classes:
+                extra["task_classes"] = list(task_classes)
+            if model:
+                extra["model"] = model
+            if contracts:
+                extra["contracts"] = (
+                    dict(contracts) if isinstance(contracts, Mapping) else list(contracts)
+                )
+            if meta:
+                extra["meta"] = meta
+            if manifest_digest:
+                extra["manifest_digest"] = manifest_digest
+            await self.send_message(MessageType.ADVERTISE, target="System", **extra)
+            return
+
+        card = normalized_capability_card(
+            self.name,
+            description=description,
+            skills=skills,
+            task_classes=task_classes,
+            model=model,
+            project=self._capability_card_project,
+            manifest_digest=manifest_digest,
+            contracts=contracts,
+            meta=meta,
+        )
+        self._capability_card_sequence += 1
+        card = sign_capability_card(
+            card,
+            key_id=self._capability_card_key_id,
+            private_key=self._capability_card_key,
+            sequence=self._capability_card_sequence,
+            lifetime_seconds=self._capability_card_lifetime_seconds,
+        )
+        extra = {
+            key: card[key]
+            for key in (
+                "description",
+                "skills",
+                "task_classes",
+                "model",
+                "project",
+                "manifest_digest",
+                "contracts",
+                "meta",
+                "signature",
             )
-        if meta:
-            extra["meta"] = meta
+            if card.get(key)
+        }
         await self.send_message(MessageType.ADVERTISE, target="System", **extra)

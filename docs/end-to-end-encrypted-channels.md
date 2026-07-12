@@ -132,5 +132,5 @@ opt-in and explicit. The
 [signed events and mTLS design](signed-events-mtls.md) can authenticate visible
 envelopes and trusted peers later, but it does not encrypt payloads. For
 advertisement tamper evidence, see the
-[signed capability cards design](signed-capability-cards.md). For audience
+[signed capability cards runtime](signed-capability-cards.md). For audience
 scoping without body encryption, see the [private channels design](private-channels.md).

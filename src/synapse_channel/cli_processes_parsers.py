@@ -31,6 +31,9 @@ from synapse_channel.core.agent_liveness import (
     DEFAULT_WAITER_LIVENESS_WINDOW,
     DEFAULT_WARN_STALE_RECIPIENTS,
 )
+from synapse_channel.core.capability_card_signing import (
+    DEFAULT_CAPABILITY_CARD_LIFETIME_SECONDS,
+)
 from synapse_channel.core.hub import (
     DEFAULT_COMPACT_HINT_THRESHOLD,
     DEFAULT_HOST,
@@ -382,6 +385,31 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         action="append",
         default=None,
         help="Routing class to advertise (repeatable); defaults to 'chat'.",
+    )
+    worker.add_argument(
+        "--capability-card-key",
+        default=None,
+        metavar="FILE",
+        help="Owner-only Ed25519 PEM used to sign this worker's capability card.",
+    )
+    worker.add_argument(
+        "--capability-card-key-id",
+        default="",
+        metavar="ID",
+        help="Public id of --capability-card-key in the hub card-trust bundle.",
+    )
+    worker.add_argument(
+        "--capability-card-project",
+        default="",
+        metavar="PROJECT",
+        help="Optional assertion of the worker name prefix before '/'; must match it.",
+    )
+    worker.add_argument(
+        "--capability-card-lifetime-seconds",
+        type=float,
+        default=DEFAULT_CAPABILITY_CARD_LIFETIME_SECONDS,
+        metavar="SECONDS",
+        help="Signed-card lifetime; defaults to the live capability TTL.",
     )
     worker.set_defaults(func=_cmd_worker)
 

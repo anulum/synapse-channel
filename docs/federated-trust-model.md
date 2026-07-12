@@ -39,8 +39,9 @@ federation layer would compose — it would add no new trust root of its own:
   pins, project scope, signing-key scope, and revocation for multi-host hubs.
 - **Release receipts** — bounded, evidence-bearing receipts with epistemic
   status, carried on `release_granted` and recorded on the board.
-- **Signed capability cards** (design) — a planned card-signing profile, see
-  [signed capability cards](signed-capability-cards.md).
+- **Signed capability cards** — a shipped advisory card-signing profile with a
+  separate scoped trust bundle. Federation does not distribute or enrol those keys
+  automatically; see [signed capability cards](signed-capability-cards.md).
 
 The deny-by-default **policy bundle** has shipped in `core/federation.py`: a
 `FederationPeer` records, per remote domain, the local namespaces it may address, the

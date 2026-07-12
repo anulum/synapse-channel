@@ -71,7 +71,7 @@ is consumed by explicit runtime gates — notably `--require-acl` and
 `--federation-store` — but running a governance command does not silently enable
 enforcement or widen trust.
 
-`acl`  `approval`  `compact`  `encrypt-key`  `federation`  `merkle`  `policy-check`  `postmortem`  `release`  `reproduce`  `role`  `sqlcipher`  `supervisor`  `verify-release`
+`acl`  `approval`  `capability-card`  `compact`  `encrypt-key`  `federation`  `merkle`  `policy-check`  `postmortem`  `release`  `reproduce`  `role`  `sqlcipher`  `supervisor`  `verify-release`
 
 ### Experimental — `experimental`
 

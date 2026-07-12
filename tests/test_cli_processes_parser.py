@@ -62,6 +62,32 @@ def test_parser_hub_identity_binding_flags() -> None:
     assert args.require_identity_binding is True
 
 
+def test_parser_hub_capability_card_trust_flags() -> None:
+    defaults = cli.build_parser().parse_args(["hub"])
+    assert defaults.capability_card_trust == ""
+    assert defaults.capability_card_clock_skew_seconds == 30.0
+    assert defaults.capability_card_history_capacity == 4096
+    assert defaults.capability_card_history_retention_seconds == 3600.0
+
+    args = cli.build_parser().parse_args(
+        [
+            "hub",
+            "--capability-card-trust",
+            "/tmp/cards.json",
+            "--capability-card-clock-skew-seconds",
+            "4",
+            "--capability-card-history-capacity",
+            "7",
+            "--capability-card-history-retention-seconds",
+            "8",
+        ]
+    )
+    assert args.capability_card_trust == "/tmp/cards.json"
+    assert args.capability_card_clock_skew_seconds == 4.0
+    assert args.capability_card_history_capacity == 7
+    assert args.capability_card_history_retention_seconds == 8.0
+
+
 def test_parser_hub_private_directed_messages_flag() -> None:
     assert cli.build_parser().parse_args(["hub"]).private_directed_messages is False
     args = cli.build_parser().parse_args(["hub", "--private-directed-messages"])
@@ -132,6 +158,26 @@ def test_parser_worker_task_class() -> None:
         ["worker", "--task-class", "reason", "--task-class", "heavy"]
     )
     assert worker.task_class == ["reason", "heavy"]
+
+
+def test_parser_worker_capability_card_signing_options() -> None:
+    worker = cli.build_parser().parse_args(
+        [
+            "worker",
+            "--capability-card-key",
+            "card.pem",
+            "--capability-card-key-id",
+            "P:key",
+            "--capability-card-project",
+            "P",
+            "--capability-card-lifetime-seconds",
+            "45",
+        ]
+    )
+    assert worker.capability_card_key == "card.pem"
+    assert worker.capability_card_key_id == "P:key"
+    assert worker.capability_card_project == "P"
+    assert worker.capability_card_lifetime_seconds == 45.0
 
 
 def test_parser_worker_tiered_provider_and_heavy_model() -> None:

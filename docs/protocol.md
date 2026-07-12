@@ -43,10 +43,12 @@ machine key or operator trust bundle, and opt-in ACL evaluation refuses
 unauthorised mutating frames before state changes. These additive fields and
 checks do not replace the connect token or change the default local wire flow.
 
-The planned [signed capability cards design](signed-capability-cards.md) keeps
-`advertise` and `manifest_request` as ordinary discovery messages while adding a
-future card-signature profile for tamper evidence. It is not implemented yet and
-does not turn capability cards into authorization or executable trust.
+The [signed capability cards runtime](signed-capability-cards.md) keeps
+`advertise` and `manifest_request` as ordinary discovery messages while optionally
+adding a domain-separated Ed25519 signature and manifest digest. The hub binds the
+signed project to the connected sender's namespace and projects an explicit
+verification result. Verification remains advisory and does not turn capability
+cards into authorization or executable trust.
 
 The planned
 [differential-privacy blackboard design](differential-privacy-blackboard.md)
@@ -90,9 +92,11 @@ the manifest shape:
 Malformed contract entries are ignored rather than rejecting the advertisement.
 Capability contracts are discovery metadata for routing, dashboards, A2A Agent
 Card metadata, and human review; they do not execute checks, authorize callers,
-or certify external conformance. The signed capability cards design defines a
-future tamper-evidence profile for these advertisements without changing the
-current wire format.
+or certify external conformance. A signed advertisement may also carry
+`manifest_digest` and a `signature` envelope containing version, algorithm, key id,
+sequence, signing/expiry timestamps, card digest, and signature value. Both fields
+are additive: unsigned clients retain their legacy outbound shape, while projected
+cards expose `project`, `manifest_digest`, `signature`, and `verification`.
 
 ## Hub → agent
 

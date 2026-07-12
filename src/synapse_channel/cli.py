@@ -160,6 +160,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_semantic_routing:add_parsers", ("route-task",)),
     ("synapse_channel.cli_resource_bidding:add_parsers", ("resource-bids",)),
     ("synapse_channel.cli_sandbox:add_parsers", ("sandbox",)),
+    ("synapse_channel.cli_capability_cards:add_parsers", ("capability-card",)),
     ("synapse_channel.cli_memory_projection:add_parsers", ("memory-recall",)),
     ("synapse_channel.cli_services:add_parsers", ("init", "worker-session")),
     ("synapse_channel.cli_agent_tmux:add_parsers", ("agent-tmux",)),

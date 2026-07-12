@@ -4,8 +4,8 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — signed capability card design documentation tests
-"""Guard the signed capability card design boundaries."""
+# SYNAPSE CHANNEL — signed capability card documentation tests
+"""Guard the signed capability card runtime and its honest boundaries."""
 
 from __future__ import annotations
 
@@ -25,8 +25,8 @@ def _collapsed(path: Path) -> str:
     return " ".join(_read(path).lower().split())
 
 
-def test_signed_capability_cards_design_is_publicly_discoverable() -> None:
-    """The signed card design must be linked from public trust docs."""
+def test_signed_capability_cards_are_publicly_discoverable() -> None:
+    """The signed card runtime must be linked from public trust docs."""
     nav = _read(ROOT / "mkdocs.yml")
     readme = _read(ROOT / "README.md")
     security = _read(ROOT / "SECURITY.md")
@@ -44,8 +44,8 @@ def test_signed_capability_cards_design_is_publicly_discoverable() -> None:
     assert "signed-capability-cards.md" in encrypted_channels
 
 
-def test_signed_capability_cards_design_defines_signing_profile() -> None:
-    """The design must define how card signatures bind advertisements."""
+def test_signed_capability_cards_define_signing_profile() -> None:
+    """The public guide must define how signatures bind advertisements."""
     text = _collapsed(SIGNED_CAPABILITY_CARDS_DOC)
 
     required_terms = (
@@ -62,14 +62,24 @@ def test_signed_capability_cards_design_defines_signing_profile() -> None:
         assert term in text
 
 
-def test_signed_capability_cards_design_defines_lifecycle_controls() -> None:
-    """The design must cover replay, rotation, and downgrade controls."""
+def test_signed_capability_cards_define_runtime_and_lifecycle_controls() -> None:
+    """The guide must cover shipped verbs, replay, rotation, and downgrade."""
     text = _collapsed(SIGNED_CAPABILITY_CARDS_DOC)
 
+    runtime_surfaces = (
+        "synapse capability-card keygen",
+        "synapse capability-card sign",
+        "synapse capability-card verify",
+        "synapse worker --capability-card-key",
+        "synapse hub --capability-card-trust",
+    )
+    for surface in runtime_surfaces:
+        assert surface in text
+
     required_controls = (
-        "sequence binding",
-        "timestamp window",
-        "replay protection",
+        "sequence",
+        "validity window",
+        "replay",
         "credential rotation",
         "revocation",
         "trust bundle",
@@ -80,18 +90,18 @@ def test_signed_capability_cards_design_defines_lifecycle_controls() -> None:
         assert control in text
 
 
-def test_signed_capability_cards_design_keeps_boundaries_clear() -> None:
-    """The design must not claim card verification is implemented today."""
+def test_signed_capability_cards_keep_boundaries_clear() -> None:
+    """The guide must separate advisory verification from authority."""
     text = _collapsed(SIGNED_CAPABILITY_CARDS_DOC)
 
     required_boundaries = (
-        "design target",
-        "not implemented yet",
-        "does not authorize tools",
-        "does not replace per-message authentication",
-        "does not replace signed events",
-        "does not sandbox agents",
-        "local-first tradeoff",
+        "implemented as advisory tamper evidence",
+        "do not authorize tools",
+        "replace message authentication",
+        "replace signed events",
+        "sandbox agents",
+        "no enforcement flag exists yet",
+        "in memory",
         "advisory discovery",
     )
     for boundary in required_boundaries:

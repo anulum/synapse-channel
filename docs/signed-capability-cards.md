@@ -5,163 +5,206 @@ Commercial license available
 © Code 2020–2026 Miroslav Šotek. All rights reserved.
 ORCID: 0009-0009-3560-0851
 Contact: www.anulum.li | protoscience@anulum.li
-SYNAPSE CHANNEL — signed capability cards design
+SYNAPSE CHANNEL — signed capability cards
 -->
 
-# Signed capability cards design
+# Signed capability cards
 
-Signed capability cards are a design target for making agent advertisements
-tamper-evident before a router, directory, dashboard, or bridge projects them
-into work recommendations. They are not implemented yet. Today, capability
-cards remain advisory discovery metadata published by connected agents and
-trusted according to the operator's local process trust.
+SYNAPSE can attach a domain-separated Ed25519 signature to an agent capability
+advertisement and verify it before projecting the card into manifests,
+directories, dashboards, MCP resources, or A2A Agent Cards. Verification makes
+discovery metadata tamper-evident. It is deliberately **advisory**: a valid card
+does not authorize a tool, grant an ACL permission, execute code, prove that an
+advertised capability works, or replace signed messages and connection identity.
 
-The goal is narrow: sign the capability advertisement itself so downstream
-surfaces can report whether the card still matches the agent, project,
-manifest, and key material that claimed to publish it. A signed capability card
-does not authorize tools, does not replace per-message authentication, does not
-replace signed events, and does not sandbox agents.
+Unsigned cards keep working. Every projected card carries an explicit
+`verification.result`; an unsigned card is `missing_signature`, while a signed
+card with a failure remains visible with the exact failure instead of being
+hidden or presented as verified.
 
-## Card signing profile
+## Runtime status
 
-The signed bytes should come from a **canonical card** derived from stable
-capability-card fields:
+The first complete advisory runtime ships:
 
-- Agent name and future agent id.
-- Project namespace and optional worktree or seat scope.
-- Task classes, skills, model label, description, and capability contracts.
-- Resource-offer references when a directory entry joins live resources with a
-  card.
-- Manifest digest and card digest for the hub snapshot that contained the
-  advertisement.
+- `synapse capability-card keygen` creates a profile-separated owner-only
+  Ed25519 private key and can enrol its public key into a separate trust bundle;
+- `synapse capability-card sign` signs strict canonical card JSON and refuses
+  duplicate JSON keys or output-file replacement;
+- `synapse capability-card verify` performs one-shot cryptographic and binding
+  verification without changing live replay history;
+- `synapse worker --capability-card-key ...` signs each normalized live
+  advertisement with an increasing in-process sequence;
+- `synapse hub --capability-card-trust ...` verifies cards against explicit
+  agent and project bindings, a validity window, key expiry/revocation, and a
+  bounded in-memory sequence/downgrade history;
+- manifest, directory, fallback dashboard, and A2A projections show the
+  advisory result.
 
-The **card signature** should be a small envelope attached to the card without
-changing the discovery shape:
+The feature adds no required cloud service and no required dependency to the
+core-only path. Ed25519 operations use the existing optional security dependency.
+With no card trust bundle and no signing key, legacy unsigned behaviour remains
+byte-compatible on the client wire.
+
+## Operator walkthrough
+
+Create a separate card-signing key and trust file:
+
+```bash
+synapse capability-card keygen \
+  --key-id SYNAPSE-CHANNEL:worker:2026-07 \
+  --private-out ./worker-card.pem \
+  --agent SYNAPSE-CHANNEL/worker \
+  --project SYNAPSE-CHANNEL \
+  --trust ./capability-card-trust.json
+```
+
+Start an advisory-verifying hub. The trust file does not enable an enforcement
+gate; it enables truthful diagnostics:
+
+```bash
+synapse hub \
+  --capability-card-trust ./capability-card-trust.json \
+  --capability-card-clock-skew-seconds 30 \
+  --capability-card-history-capacity 4096 \
+  --capability-card-history-retention-seconds 3600
+```
+
+Start a namespaced worker with the corresponding private key:
+
+```bash
+synapse worker \
+  --prefix SYNAPSE-CHANNEL/ \
+  --name worker \
+  --capability-card-key ./worker-card.pem \
+  --capability-card-key-id SYNAPSE-CHANNEL:worker:2026-07 \
+  --capability-card-project SYNAPSE-CHANNEL
+```
+
+`synapse manifest` then renders `verify=valid`. A missing, unknown, revoked,
+expired, replayed, downgraded, or tampered card stays listed with its own result.
+
+For an offline card, put the stable advertisement fields in `card.json`, then:
+
+```bash
+synapse capability-card sign card.json \
+  --key ./worker-card.pem \
+  --key-id SYNAPSE-CHANNEL:worker:2026-07 \
+  --sequence 1 \
+  --out signed-card.json
+
+synapse capability-card verify signed-card.json \
+  --trust ./capability-card-trust.json \
+  --json
+```
+
+The one-shot verifier checks the signature and bindings but intentionally does
+not consume sequence state. Replay and downgrade checks happen on the live hub,
+where consecutive advertisements share one bounded history.
+
+## Trust-bundle profile
+
+Card keys are separate from connection-identity, event-signing, federation, and
+receipt-signing material. The public JSON shape is:
 
 ```json
 {
-  "agent": "SYNAPSE-CHANNEL/coder",
-  "task_classes": ["code-review", "docs"],
-  "contracts": [],
-  "signature": {
-    "version": 1,
-    "key_id": "SYNAPSE-CHANNEL:agent:2026-06",
-    "algorithm": "ed25519",
-    "signed_at": "2026-06-28T12:00:00Z",
-    "expires_at": "2026-06-28T13:00:00Z",
-    "sequence": 42,
-    "value": "base64..."
-  }
+  "keys": [
+    {
+      "key_id": "SYNAPSE-CHANNEL:worker:2026-07",
+      "public_key": "base64-raw-ed25519-public-key",
+      "agents": ["SYNAPSE-CHANNEL/worker"],
+      "projects": ["SYNAPSE-CHANNEL"],
+      "expires_at": 1785600000.0,
+      "revoked": false
+    }
+  ]
 }
 ```
 
-Canonicalisation must sort object keys, preserve strings and integers exactly,
-reject duplicate JSON keys before signing, and exclude the signature value from
-the signed bytes. The key id identifies the verification key or trust-bundle
-entry; it is never a secret.
+Agent and project arrays are mandatory and non-empty. There is no wildcard and
+no trust-on-first-use. Duplicate key ids, malformed base64, non-Ed25519 keys,
+non-finite expiry, and malformed revocation state fail hub startup.
 
-## Binding requirements
+## Signing profile
 
-A card signature is useful only when it binds the advertisement to the context
-that made it meaningful:
+The signer normalizes the stable card fields and attaches this envelope:
 
-- **Agent binding:** the signed card must name the agent id or advertised sender
-  that is allowed to publish it.
-- **Project namespace binding:** a card signed for one project must not verify
-  inside another project namespace.
-- **Manifest digest:** the signature should bind the card digest and the
-  manifest digest when the card is projected into `synapse manifest`,
-  `synapse directory`, dashboard snapshots, MCP resources, or A2A Agent Cards.
-- **Sequence binding:** each signed update should carry the previous accepted
-  sequence or an increasing sequence number for the same agent and key id.
-- **Timestamp window:** admission should reject cards outside an
-  operator-configured clock-skew window.
+```json
+{
+  "version": 1,
+  "key_id": "SYNAPSE-CHANNEL:worker:2026-07",
+  "algorithm": "ed25519",
+  "signed_at": 1783879200.0,
+  "expires_at": 1783879500.0,
+  "sequence": 42,
+  "card_digest": "sha256-hex",
+  "value": "base64-signature"
+}
+```
 
-These bindings provide tamper evidence for route-relevant metadata. They do not
-prove that the advertised tool exists, that the agent will execute a task, or
-that a caller may invoke any advertised capability.
+Canonical JSON sorts object keys, preserves JSON strings and integers, uses
+compact UTF-8 encoding, rejects duplicate input keys and non-finite values, and
+removes only `signature.value` from the signed bytes. The bytes and card digest
+have distinct `SYNAPSE-CAPABILITY-CARD-...-V1` domain prefixes, so a card
+signature cannot verify as a signed event, receipt, or connection proof.
+
+`advertised_at` and `verification` are hub projection fields and are excluded;
+the advertiser cannot know them before admission. The stable digest excludes the
+whole signature envelope, preventing recursive content. The signature still
+covers its own key id, sequence, validity window, and claimed digest.
 
 ## Verification results
 
-Verification should produce explicit results for humans, policy checks, and
-postmortems:
-
 | Result | Meaning |
 | --- | --- |
-| `valid` | The signature, binding, expiry, and trust-bundle checks passed. |
-| `missing_signature` | The card is unsigned and should remain advisory discovery. |
-| `unknown_key` | The key id is absent from the current trust bundle. |
-| `revoked_key` | The trust bundle marks the key as revoked. |
-| `bad_signature` | The card signature does not verify over the canonical card. |
-| `expired` | The card is outside its expiry or timestamp window. |
-| `sequence_mismatch` | Sequence binding or replay protection failed. |
-| `capability_downgrade` | A newer signed card removed a capability in a way policy flagged for review. |
+| `valid` | Signature, digest, agent/project binding, expiry, and lifecycle checks passed. |
+| `missing_signature` | Card is unsigned and remains advisory discovery. |
+| `unknown_key` | Key id is absent from the card trust bundle. |
+| `revoked_key` | Operator marked the key revoked. |
+| `bad_signature` | Envelope, digest, canonical JSON, or Ed25519 signature is invalid. |
+| `expired` | Key or card is outside its accepted validity window. |
+| `sequence_mismatch` | Sequence did not increase for the same agent/key binding. |
+| `capability_downgrade` | A newer valid card removed a task class, skill, or contract. |
+| `agent_mismatch` | Card, socket sender, and allowed agent binding disagree. |
+| `project_scope_mismatch` | Card, sender namespace, and allowed project binding disagree. |
+| `manifest_mismatch` | A caller-required manifest digest differs from the signed card. |
+| `history_full` | Bounded lifecycle state could not admit a new binding without evicting a live replay guard. |
 
-Unsigned cards should still work in local shared-token mode. Surfaces that show
-unsigned or failed cards should label the verification result rather than hiding
-the card or presenting it as verified.
+A capability downgrade is recorded and surfaced for review; it is not silently
+upgraded to `valid`. It still does not create an execution denial because card
+verification is advisory in this tranche.
 
-## Lifecycle controls
+## Lifecycle and honest limits
 
-Signed cards need a small lifecycle before enforcement can be safe:
+- Card replay/downgrade history is bounded by binding count and time.
+- History is currently **in memory**. A hub restart clears it; signed timestamps
+  and expiry still reject stale cards, but durable cross-restart sequence
+  protection is not claimed.
+- A worker sequence is in-process. Operators that publish offline cards must
+  persist and increase their own sequence.
+- Credential rotation uses a new key id. Revocation blocks new verification
+  immediately while old projected evidence retains its recorded result.
+- Capability cards themselves remain ephemeral and are forgotten when their
+  live agent disconnects or their ordinary card TTL expires.
+- No enforcement flag exists yet. Enforcement must wait for recovery-key,
+  rotation, durable replay, rollback, and operator playbooks.
 
-- **Replay protection:** remember recent card digests, sequences, and key ids
-  for each agent binding, bounded by retention and expiry.
-- **Expiry:** keep card lifetimes short enough that stale routing claims age out
-  without manual cleanup.
-- **Credential rotation:** publish a new key id and allow the old key to verify
-  retained cards until its replay and expiry windows close.
-- **Revocation:** block new cards from a revoked key immediately while preserving
-  old evidence with a `revoked_key` verification result.
-- **Trust bundle:** store accepted public keys, key ids, project namespaces,
-  expiry dates, and revocation entries in operator-managed local configuration.
-- **Capability downgrade review:** flag route-relevant removals, such as a card
-  dropping a contract or task class that release receipts still reference.
+## Relationship to other controls
 
-The local-first tradeoff is operational complexity. A single-owner loopback hub
-can keep unsigned advisory discovery. Multi-operator or exposed deployments
-need trust-bundle review, credential rotation, revocation, replay windows, and
-clear diagnostics before signed cards become an enforced runtime requirement.
-
-## Relationship to other designs
-
-- [Identity and ACL](identity-and-acl.md) decides who may advertise, update, or
-  project a capability card. Signed capability cards make the advertisement
-  tamper-evident; they do not authorize the action.
+- [Identity and ACL](identity-and-acl.md) decides who may advertise or execute;
+  card signing only authenticates the advertisement.
 - [Per-message authentication](per-message-authentication.md) authenticates
-  selected frames after connect authentication. Signed capability cards verify
-  the card content that those frames may carry.
-- [Signed events and mTLS](signed-events-mtls.md) verify selected durable
-  coordination records and trusted peers. Signed capability cards have a
-  separate profile because advertisements have expiry, downgrade, and manifest
-  projection concerns. Card-update events can be carried through the signed
-  event runtime, but card-content signing and downgrade policy remain this
-  separate profile.
-- [End-to-end encrypted channels](end-to-end-encrypted-channels.md) may later
-  use signed capability cards for public encryption-key discovery. Cards do not
-  encrypt payloads or protect decrypted plaintext.
-- [Policy engine](policy-engine.md) can consume verification results as
-  advisory evidence before any local hook enforces them.
-
-## Migration path
-
-Migration should preserve current local ergonomics:
-
-1. Keep unsigned cards accepted and marked as `missing_signature`.
-2. Add signed-card diagnostics to manifests, directories, dashboards, and A2A
-   Agent Card projections.
-3. Let project namespaces opt into warnings for expired cards, unknown keys,
-   replay failures, and capability downgrade events.
-4. Enable enforcement only after operators have recovery keys, trust-bundle
-   export/import, credential rotation, revocation, and rollback instructions.
+  selected frames and has its own key/profile/replay state.
+- [Signed events and mTLS](signed-events-mtls.md) protect durable events and
+  configured peers; their signatures cannot substitute for card signatures.
+- [Sandboxed tools and marketplace](sandboxed-tools-and-marketplace.md) uses a
+  signed card as provenance, a permission manifest as requested authority, the
+  WASM runtime as enforcement, and a run receipt as evidence.
 
 ## Boundaries
 
-This is a design target, not implemented yet. Signed capability cards do not
-authorize tools, do not replace per-message authentication, do not replace
-signed events, do not replace identity and ACL enforcement, do not sandbox
-agents, and do not certify external interoperability.
-
-Signed cards provide advisory discovery with tamper evidence. Runtime tool
-execution, process isolation, route selection, external A2A conformance, and
-operator approval remain separate concerns.
+Signed capability cards are implemented as advisory tamper evidence. They do
+not authorize tools, replace message authentication, replace signed events,
+sandbox agents, validate external A2A conformance, or certify that advertised
+capabilities work. Runtime marketplace distribution and enforced signed-card
+admission remain separate, unshipped layers.

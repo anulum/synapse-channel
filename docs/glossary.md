@@ -159,12 +159,12 @@ not replace per-message authentication or signed events.
 
 ### Signed capability cards
 
-Design target for tamper-evident capability advertisements. A signed capability
-card binds a canonical card, card signature, key id, agent binding, manifest
-digest, signed sequence metadata, timestamp window, expiry, replay protection,
-credential rotation, revocation, trust bundle, capability downgrade diagnostics,
-and verification result. It is not implemented yet; unsigned cards remain
-advisory discovery.
+Shipped advisory runtime for tamper-evident capability advertisements. A signed
+capability card binds canonical card JSON, an Ed25519 card signature, key id, agent
+and project scope, manifest digest, sequence, validity window, expiry, and an
+explicit verification result. A separate trust bundle supplies rotation and
+revocation; bounded in-memory history reports replay and capability downgrade.
+Unsigned cards remain advisory discovery, and a valid result grants no authority.
 
 ### Paranoid mode
 

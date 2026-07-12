@@ -49,6 +49,8 @@ def test_marketplace_requires_the_preconditions_first() -> None:
     assert "signed capability card" in text
     assert "permission manifest" in text
     assert "run receipt" in text
+    assert "all four runtime preconditions now exist" in text
+    assert "distribution layer remains unbuilt" in text
 
 
 def test_sandboxed_tools_keeps_one_authorization_path_and_local_first() -> None:

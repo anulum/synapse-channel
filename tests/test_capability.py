@@ -27,8 +27,15 @@ def test_card_as_dict_exposes_all_fields() -> None:
         "skills": ["ollama"],
         "task_classes": ["chat"],
         "model": "gemma3:4b",
+        "project": "",
+        "manifest_digest": "",
         "contracts": [],
         "meta": {"vram": "8G"},
+        "signature": {},
+        "verification": {
+            "detail": "card is unsigned and remains advisory discovery",
+            "result": "missing_signature",
+        },
         "advertised_at": 5.0,
     }
 

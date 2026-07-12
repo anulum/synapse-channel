@@ -275,12 +275,15 @@ owner recovery, and full multi-tenant IAM remain outside this runtime. Identity
 and ACL do not replace per-message authentication, signed events, TLS, or host
 process isolation.
 
-The planned [signed capability cards](docs/signed-capability-cards.md) profile
-scopes tamper-evident capability advertisements for manifests, directories,
-dashboards, MCP resources, and A2A Agent Card projections. It is not implemented
-yet, leaves unsigned local cards as advisory discovery, and does not authorize
-tools, replace per-message authentication, replace signed events, or sandbox
-agents.
+The [signed capability cards](docs/signed-capability-cards.md) runtime verifies
+domain-separated Ed25519 advertisements for manifests, directories, dashboards,
+MCP resources, and A2A Agent Card projections. Card keys live in a separate,
+explicitly scoped trust bundle; verification reports unknown/revoked keys, bad
+signatures, expiry, replay, downgrade, binding, digest, and bounded-history failures.
+Unsigned local cards remain visible as advisory discovery. Replay/downgrade history
+is bounded and currently in memory, and no enforcement flag exists: a verified card
+does not authorize tools, replace per-message authentication, replace signed events,
+or sandbox agents.
 
 ## Out of scope / known limitations
 

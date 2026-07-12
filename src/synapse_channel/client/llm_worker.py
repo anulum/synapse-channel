@@ -30,6 +30,9 @@ from synapse_channel.client.chat_backends import (
     RuleBasedClient,
     sanitize_text,
 )
+from synapse_channel.core.capability_card_signing import (
+    DEFAULT_CAPABILITY_CARD_LIFETIME_SECONDS,
+)
 from synapse_channel.core.protocol import MessageType
 
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
@@ -119,6 +122,11 @@ class SynapseLLMWorker:
     heavy_model : str, optional
         Model used for the ``heavy`` tier when ``provider="tiered"``; defaults to
         ``model`` when empty.
+    capability_card_key_path, capability_card_key_id, capability_card_project : str, optional
+        Separate Ed25519 card-signing credential and project binding. All are
+        opt-in; unsigned advisory discovery remains the default.
+    capability_card_lifetime_seconds : float, optional
+        Lifetime recorded in each signed advertisement.
     """
 
     def __init__(
@@ -137,6 +145,10 @@ class SynapseLLMWorker:
         token: str | None = None,
         task_classes: tuple[str, ...] | list[str] = ("chat",),
         heavy_model: str = "",
+        capability_card_key_path: str | None = None,
+        capability_card_key_id: str = "",
+        capability_card_project: str = "",
+        capability_card_lifetime_seconds: float = DEFAULT_CAPABILITY_CARD_LIFETIME_SECONDS,
     ) -> None:
         self.name = name
         self.uri = uri
@@ -154,7 +166,14 @@ class SynapseLLMWorker:
         self.last_reply_ts = 0.0
 
         self.agent = SynapseAgent(
-            self.name, on_message_callback=self.on_message, uri=self.uri, token=token
+            self.name,
+            on_message_callback=self.on_message,
+            uri=self.uri,
+            token=token,
+            capability_card_key_path=capability_card_key_path,
+            capability_card_key_id=capability_card_key_id,
+            capability_card_project=capability_card_project,
+            capability_card_lifetime_seconds=capability_card_lifetime_seconds,
         )
         self.client: ChatBackend = self._build_client()
 

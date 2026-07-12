@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.journal import record_resource
 from synapse_channel.core.protocol import MessageType
 
@@ -39,8 +40,11 @@ async def handle_advertise(
         skills=skills,
         task_classes=task_classes,
         model=str(data.get("model") or ""),
+        project=project_of(sender),
+        manifest_digest=str(data.get("manifest_digest") or ""),
         contracts=data.get("contracts"),
         meta=meta if isinstance(meta, dict) else None,
+        signature=data.get("signature"),
     )
     await hub._broadcast(
         hub._system(

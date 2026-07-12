@@ -55,6 +55,7 @@ from synapse_channel.core.agent_liveness import (
 )
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
+from synapse_channel.core.capability_card_trust import CapabilityCardTrustBundle
 from synapse_channel.core.channels import ChannelRegistry
 from synapse_channel.core.dark_seat import DarkSeatMonitor
 from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
@@ -344,6 +345,9 @@ class SynapseHub:
         Ed25519 trust bundle accepted as an alternative signed-event
         verification path when ``require_per_message_auth`` is enabled.
         ``None`` leaves HMAC frame authentication as the only enforcing path.
+    capability_card_trust_bundle : CapabilityCardTrustBundle or None, optional
+        Separate Ed25519 trust and bounded lifecycle state used only to label
+        capability-card advertisements. Verification stays advisory and default-off.
     multihub_serving_policy : MultiHubServingPolicy or None, optional
         Deny-by-default gate for serving the event log to peer hubs over a multi-hub pull.
         ``None`` (the default) serves every peer; a policy refuses a peer whose live
@@ -453,6 +457,7 @@ class SynapseHub:
         per_message_auth_window_seconds: float = DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
         per_message_auth_replay_capacity: int = 4096,
         signed_event_trust_bundle: EventSignatureTrustBundle | None = None,
+        capability_card_trust_bundle: CapabilityCardTrustBundle | None = None,
         acl_policy: AclPolicy | None = None,
         require_acl: bool = False,
         role_grants: RoleGrants | None = None,
@@ -498,6 +503,7 @@ class SynapseHub:
             max_entries=safe_int(per_message_auth_replay_capacity, default=4096, min_value=1),
         )
         self.signed_event_trust_bundle = signed_event_trust_bundle
+        self.capability_card_trust_bundle = capability_card_trust_bundle
         self.acl_policy = acl_policy
         self.require_acl = bool(require_acl)
         self.role_grants = role_grants
@@ -629,7 +635,7 @@ class SynapseHub:
         self.agent_roles = self.clients.agent_roles
         self.socket_agent = self.clients.socket_agent
         self._waits: dict[str, str] = {}
-        self.capabilities = CapabilityRegistry()
+        self.capabilities = CapabilityRegistry(trust_bundle=capability_card_trust_bundle)
         self._connection = HubConnection(
             self.clients,
             self.capabilities,

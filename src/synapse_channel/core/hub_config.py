@@ -49,6 +49,7 @@ from synapse_channel.core.agent_liveness import (
     DEFAULT_WARN_STALE_RECIPIENTS,
 )
 from synapse_channel.core.auth import TokenAuthenticator
+from synapse_channel.core.capability_card_trust import CapabilityCardTrustBundle
 from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
 from synapse_channel.core.dead_letter_forwarding_transport import forward_dead_letter
@@ -174,6 +175,7 @@ class HubAuthConfig:
     per_message_auth_window_seconds: float = DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS
     per_message_auth_replay_capacity: int = 4096
     signed_event_trust_bundle: EventSignatureTrustBundle | None = None
+    capability_card_trust_bundle: CapabilityCardTrustBundle | None = None
     acl_policy: AclPolicy | None = None
     require_acl: bool = False
     role_grants: RoleGrants | None = None

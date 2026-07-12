@@ -85,10 +85,20 @@ def skill_from_manifest_card(card: JsonMap) -> JsonMap:
         "outputModes": list(DEFAULT_OUTPUT_MODES),
     }
     contracts = card.get("contracts")
+    metadata: JsonMap = {}
     if isinstance(contracts, list):
         contract_metadata = [dict(item) for item in contracts if isinstance(item, dict)]
         if contract_metadata:
-            skill["metadata"] = {"synapse": {"contracts": contract_metadata}}
+            metadata["contracts"] = contract_metadata
+    verification = card.get("verification")
+    if isinstance(verification, dict):
+        metadata["capabilityCardVerification"] = {
+            key: verification[key]
+            for key in ("result", "key_id", "sequence", "card_digest")
+            if key in verification
+        }
+    if metadata:
+        skill["metadata"] = {"synapse": metadata}
     return skill
 
 

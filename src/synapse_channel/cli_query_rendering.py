@@ -302,4 +302,13 @@ def _print_manifest(manifest: list[dict[str, Any]]) -> None:
         suffix = (
             f" (contracts: {len(contracts)})" if isinstance(contracts, list) and contracts else ""
         )
-        print(f"  {card.get('agent')} [{classes}] model={model}: {description}{suffix}")
+        verification = card.get("verification")
+        result = (
+            str(verification.get("result") or "missing_signature")
+            if isinstance(verification, dict)
+            else "missing_signature"
+        )
+        print(
+            f"  {card.get('agent')} [{classes}] model={model} verify={result}: "
+            f"{description}{suffix}"
+        )

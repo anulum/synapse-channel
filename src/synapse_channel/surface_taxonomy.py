@@ -127,6 +127,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "release": GOVERNANCE,
     "supervisor": GOVERNANCE,
     "compact": GOVERNANCE,
+    "capability-card": GOVERNANCE,
     "encrypt-key": GOVERNANCE,
     "sqlcipher": GOVERNANCE,
     # newer or advisory surfaces still settling

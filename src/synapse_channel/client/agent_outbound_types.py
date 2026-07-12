@@ -32,6 +32,11 @@ class _OutboundAgent(Protocol):
     _identity_key: Ed25519PrivateKey | None
     _identity_key_id: str
     _identity_sequence: int
+    _capability_card_key: Ed25519PrivateKey | None
+    _capability_card_key_id: str
+    _capability_card_project: str
+    _capability_card_sequence: int
+    _capability_card_lifetime_seconds: float
 
     async def send_message(
         self,

@@ -15,6 +15,15 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Signed capability cards now ship as an advisory Ed25519 runtime. Separate
+  owner-only card keys and explicitly agent/project-scoped trust bundles feed
+  strict canonical `capability-card keygen|sign|verify` verbs plus opt-in worker
+  signing and hub verification. Manifests, directories, dashboards, MCP resources,
+  and Agent Cards expose explicit valid, unsigned, key/signature/expiry, replay,
+  downgrade, binding, digest, and bounded-history results. Unsigned wire behaviour
+  stays compatible; verification grants no authority, and replay/downgrade history
+  remains bounded and in memory rather than claiming durable enforced admission.
+
 - Grok is now a fully enabled Participant Fabric provider and the fifth
   provider-native file-claim guard. Its parser is pinned to a real stable
   `grok 0.2.93` capture of native `thought` / `text` / `end` events, so

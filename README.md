@@ -371,6 +371,7 @@ synapse task update BUILD --status done              # mark a plan task done so 
 syn ack BUILD --evidence "pytest -q"                 # post evidence and mark a board task done
 synapse supervisor --idle-seconds 300 --history-multiplier 3  # re-offer stalled plan tasks
 synapse manifest                                     # print capability cards, including contract counts
+synapse capability-card keygen --key-id PROJECT:worker:v1 --private-out ./card.pem --agent PROJECT/worker --project PROJECT --trust ./card-trust.json
 synapse directory                                    # print discovery-only agents/resources
 synapse route-task BUILD --limit 3 --event-store ./synapse.db  # add observed evidence
 synapse resource-bids BUILD --resource-kind gpu      # rank live resource offers without reserving capacity
@@ -807,6 +808,15 @@ Capability cards can also carry declarative capability contracts: per-task-class
 postconditions — discovery metadata for routing and review, not a grant of
 executable trust.
 
+They can now carry a domain-separated Ed25519 signature from a separate
+card-signing key. `synapse capability-card keygen|sign|verify` manages the local
+profile; `worker --capability-card-key ...` signs live advertisements and
+`hub --capability-card-trust ...` verifies them. Every projection exposes an
+explicit result, including `valid`, `missing_signature`, key/signature/expiry
+failures, replay, downgrade, binding, digest, and history-capacity failures.
+Verification remains advisory, history is bounded and in memory, and unsigned
+cards remain compatible.
+
 ### Official Go client
 
 `clients/go/synapse` provides the official Go client for read-only ops and CI
@@ -888,7 +898,7 @@ explicitly does *not* claim:
 | [Policy engine](docs/policy-engine.md) | First tranche implemented (advisory) | Required tests, strict typing, owner approval, evidence freshness, artifact parity, and no-merge-without-receipt rules evaluated over git-native claims, receipts, and event-log evidence. | Blocking anything by itself — operators decide what becomes a hook or CI gate. |
 | [Signed events and mTLS](docs/signed-events-mtls.md) | Library/runtime primitives shipped; packaged profile staged | Ed25519 event verification, replay/scope checks, mutual-TLS server contexts, and certificate-pin trust bundles for guarded multi-host paths. | Hub CLI loading of signed-event trust and client CAs; managed key lifecycle; payload encryption; external federation certification. |
 | [Differential-privacy blackboard](docs/differential-privacy-blackboard.md) | Design target | Redacted and noisy board projections for multi-organisation views; raw local board data stays exact for the operator. | Payload encryption; replacing private or E2E channels; anonymising raw logs. |
-| [Signed capability cards](docs/signed-capability-cards.md) | Design target | Tamper-evident capability advertisements for manifests, directories, dashboards, MCP resources, and Agent Card projections. | Authorising tools; replacing per-message auth or signed events; sandboxing agents. |
+| [Signed capability cards](docs/signed-capability-cards.md) | Shipped (advisory) | Separate Ed25519 card keys and scoped trust bundles; strict canonical signing; expiry, revocation, replay/downgrade, binding, and digest diagnostics projected through manifests, directories, dashboards, MCP resources, and Agent Cards. | Authorising tools; replacing per-message auth or signed events; sandboxing agents; durable cross-restart replay state; managed key distribution; enforced admission. |
 
 `synapse git-init` records the exact identity and hub URI in local Git config,
 optionally records a token-*file path* (never token content), installs only the
@@ -1202,11 +1212,13 @@ asks what it would take to run untrusted tool code safely — a capability-limit
 WebAssembly sandbox (deny-by-default filesystem, network, and resources) — and
 only then a marketplace built on signed capability cards, an explicit permission
 manifest, and run receipts. No untrusted code runs without the sandbox, and no
-executable marketplace ships before all the preconditions exist. The sandbox itself
-ships today behind the optional `[wasm]` extra; the
+executable marketplace ships before all the preconditions exist. The sandbox ships
+behind the optional `[wasm]` extra, while signed capability cards, the permission
+model, and bounded run receipts supply the other runtime prerequisites; the
 [WASM sandbox getting-started guide](docs/wasm-sandbox-getting-started.md) walks an
 operator from a tool's source through `validate`, `test`, and `run`. The marketplace
-remains a boundary specification — local-first and deny-by-default throughout.
+distribution layer remains a boundary specification — local-first and deny-by-default
+throughout.
 
 The [managed GitHub App design](docs/managed-github-app.md) pins the boundary for
 hosted cross-PR conflict prediction: the prediction itself reuses the existing
@@ -1355,11 +1367,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.4 |
 | Public API exports | 70 |
-| Package modules | 425 |
-| Classes | 593 |
+| Package modules | 429 |
+| Classes | 601 |
 | Wire message types | 77 |
-| CLI subcommands | 166 |
-| Test functions | 6659 |
+| CLI subcommands | 170 |
+| Test functions | 6709 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 55 |
 | GitHub Actions workflows | 18 |

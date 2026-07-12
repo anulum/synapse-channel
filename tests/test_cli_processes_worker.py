@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from collections.abc import Coroutine
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -16,6 +17,7 @@ import pytest
 from cli_processes_helpers import _worker_ns
 from synapse_channel import cli_processes
 from synapse_channel.client.llm_worker import DEFAULT_OLLAMA_BASE_URL, SynapseLLMWorker
+from synapse_channel.core.identity_keys import generate_signing_key, write_signing_key
 
 
 def _close_runner(coro: Coroutine[Any, Any, None]) -> None:
@@ -100,6 +102,45 @@ def test_cmd_worker_threads_task_classes() -> None:
         cli_processes._cmd_worker(_worker_ns(), runner=_close_runner, on_worker=record_worker) == 0
     )
     assert captured["task_classes"] == ("chat",)
+
+
+def test_cmd_worker_threads_capability_card_signing(tmp_path: Path) -> None:
+    key = tmp_path / "card.pem"
+    write_signing_key(key, generate_signing_key())
+    captured: dict[str, Any] = {}
+
+    def record_worker(worker: SynapseLLMWorker) -> None:
+        captured["key_id"] = worker.agent._capability_card_key_id
+        captured["project"] = worker.agent._capability_card_project
+        captured["lifetime"] = worker.agent._capability_card_lifetime_seconds
+
+    assert (
+        cli_processes._cmd_worker(
+            _worker_ns(
+                prefix="P/",
+                capability_card_key=str(key),
+                capability_card_key_id="P:key",
+                capability_card_project="P",
+                capability_card_lifetime_seconds=45.0,
+            ),
+            runner=_close_runner,
+            on_worker=record_worker,
+        )
+        == 0
+    )
+    assert captured == {"key_id": "P:key", "project": "P", "lifetime": 45.0}
+
+
+def test_cmd_worker_reports_incomplete_card_signing_config(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert (
+        cli_processes._cmd_worker(
+            _worker_ns(capability_card_key="missing.pem"), runner=_close_runner
+        )
+        == 2
+    )
+    assert "must be supplied together" in capsys.readouterr().err
 
 
 def test_egress_warning_openai_flags_context_and_key() -> None:

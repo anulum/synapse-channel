@@ -35,6 +35,9 @@ from synapse_channel.client.agent_lifecycle import (
 )
 from synapse_channel.client.agent_outbound import AgentOutboundMixin
 from synapse_channel.client.agent_queries import AgentQueryMixin
+from synapse_channel.core.capability_card_signing import (
+    DEFAULT_CAPABILITY_CARD_LIFETIME_SECONDS,
+)
 from synapse_channel.core.identity_keys import load_signing_key
 from synapse_channel.core.message_auth import MessageAuthKey
 from synapse_channel.core.wake_capability import WAKE_DIRECT, normalize_wake_capability
@@ -143,6 +146,16 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
     per_message_auth_secret : str or bytes or None, optional
         HMAC secret paired with ``per_message_auth_key_id``. Both fields must be
         set to sign frames.
+    capability_card_key_path : str or None, optional
+        Owner-only Ed25519 PEM used only to sign capability advertisements.
+    capability_card_key_id : str, optional
+        Public id of ``capability_card_key_path`` in the hub's separate card trust
+        bundle. A path and id must be supplied together.
+    capability_card_project : str, optional
+        Optional assertion of the namespace prefix in ``name``. Signed live cards
+        require a namespaced agent, and this value must match that hub-resolved prefix.
+    capability_card_lifetime_seconds : float, optional
+        Lifetime recorded in each signed advertisement.
     ping_interval : float, optional
         Seconds between client keepalive pings, so a half-open connection — a hub
         that was killed, an ungraceful restart, or an eviction whose close frame
@@ -177,6 +190,10 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         per_message_auth_secret: str | bytes | None = None,
         identity_key_path: str | None = None,
         identity_key_id: str = "",
+        capability_card_key_path: str | None = None,
+        capability_card_key_id: str = "",
+        capability_card_project: str = "",
+        capability_card_lifetime_seconds: float = DEFAULT_CAPABILITY_CARD_LIFETIME_SECONDS,
         machine_identity: bool = True,
         ping_interval: float = 20.0,
         ping_timeout: float = 20.0,
@@ -231,6 +248,31 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         self._identity_key = load_signing_key(identity_key_path) if identity_key_path else None
         self._identity_key_id = str(identity_key_id)
         self._identity_sequence = 0
+        if bool(capability_card_key_path) != bool(capability_card_key_id.strip()):
+            raise ValueError(
+                "capability_card_key_path and capability_card_key_id must be supplied together"
+            )
+        inferred_project = name.split("/", 1)[0] if "/" in name else ""
+        requested_project = str(capability_card_project).strip()
+        if capability_card_key_path and not inferred_project:
+            raise ValueError("a signed live capability card requires a namespaced agent name")
+        if capability_card_key_path and requested_project not in ("", inferred_project):
+            raise ValueError(
+                "capability_card_project must match the agent namespace resolved by the hub"
+            )
+        self._capability_card_project = inferred_project or requested_project
+        self._capability_card_key = (
+            load_signing_key(capability_card_key_path) if capability_card_key_path else None
+        )
+        self._capability_card_key_id = str(capability_card_key_id).strip()
+        self._capability_card_sequence = 0
+        self._capability_card_lifetime_seconds = float(capability_card_lifetime_seconds)
+        if (
+            self._capability_card_lifetime_seconds <= 0.0
+            or self._capability_card_lifetime_seconds != self._capability_card_lifetime_seconds
+            or self._capability_card_lifetime_seconds == float("inf")
+        ):
+            raise ValueError("capability_card_lifetime_seconds must be finite and positive")
         self.ping_interval = float(ping_interval)
         self.ping_timeout = float(ping_timeout)
 

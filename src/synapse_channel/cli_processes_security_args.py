@@ -15,6 +15,11 @@ from synapse_channel.cli_deprecated_options import (
     METRICS_QUERY_FLAG_REMOVAL_VERSION,
     DeprecatedMetricsQueryTokenAction,
 )
+from synapse_channel.core.capability_card_trust import (
+    DEFAULT_CAPABILITY_CARD_CLOCK_SKEW_SECONDS,
+    DEFAULT_CAPABILITY_CARD_HISTORY_CAPACITY,
+    DEFAULT_CAPABILITY_CARD_HISTORY_RETENTION_SECONDS,
+)
 from synapse_channel.core.hub import DEFAULT_AUTH_TIMEOUT
 from synapse_channel.core.message_auth import DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS
 
@@ -157,6 +162,34 @@ def add_hub_security_arguments(hub: argparse.ArgumentParser) -> None:
         help="Require a socket's first frame to carry a valid identity signature verified "
         "against --identity-trust before the name binds; an unproven socket is refused and "
         "closed. Off by default, so an open hub is unchanged. Requires --identity-trust.",
+    )
+    hub.add_argument(
+        "--capability-card-trust",
+        default="",
+        metavar="FILE",
+        help="Separate Ed25519 trust bundle for advisory signed capability cards. "
+        "Unsigned and failed cards remain visible with an explicit verification result.",
+    )
+    hub.add_argument(
+        "--capability-card-clock-skew-seconds",
+        type=float,
+        default=DEFAULT_CAPABILITY_CARD_CLOCK_SKEW_SECONDS,
+        metavar="SECONDS",
+        help="Clock skew tolerated when checking signed-card validity windows.",
+    )
+    hub.add_argument(
+        "--capability-card-history-capacity",
+        type=int,
+        default=DEFAULT_CAPABILITY_CARD_HISTORY_CAPACITY,
+        metavar="N",
+        help="Bounded agent/key histories retained for card replay and downgrade checks.",
+    )
+    hub.add_argument(
+        "--capability-card-history-retention-seconds",
+        type=float,
+        default=DEFAULT_CAPABILITY_CARD_HISTORY_RETENTION_SECONDS,
+        metavar="SECONDS",
+        help="How long expired signed-card history remains for replay detection.",
     )
     hub.add_argument(
         "--private-directed-messages",

@@ -9,14 +9,27 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+from pathlib import Path
 from typing import Any
 
 import pytest
 
-from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import (
+    AgentHandle,
+    Recorder,
+    _free_port,
+    close_agents,
+    connect_agent,
+    running_hub,
+)
 from synapse_channel import cli_queries
+from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.auth import TokenAuthenticator
+from synapse_channel.core.capability_card_trust import CapabilityCardTrustBundle
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.identity_keys import generate_signing_key, write_signing_key
+from synapse_channel.core.message_auth import EventSignatureKey
 
 
 def test_print_manifest_renders_cards(capsys: pytest.CaptureFixture[str]) -> None:
@@ -32,8 +45,8 @@ def test_print_manifest_renders_cards(capsys: pytest.CaptureFixture[str]) -> Non
     ]
     cli_queries._print_manifest(manifest)
     out = capsys.readouterr().out
-    assert "FAST [chat] model=m: quick (contracts: 1)" in out
-    assert "BARE [none] model=-:" in out
+    assert "FAST [chat] model=m verify=missing_signature: quick (contracts: 1)" in out
+    assert "BARE [none] model=- verify=missing_signature:" in out
 
 
 async def _advertise_manifest_agent(
@@ -59,7 +72,7 @@ async def test_manifest_prints_snapshot(capsys: pytest.CaptureFixture[str]) -> N
             await close_agents(handle)
 
     assert code == 0
-    assert "FAST [chat] model=m: q" in capsys.readouterr().out
+    assert "FAST [chat] model=m verify=missing_signature: q" in capsys.readouterr().out
 
 
 async def test_manifest_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
@@ -99,7 +112,47 @@ async def test_manifest_threads_token_to_agent(capsys: pytest.CaptureFixture[str
             await close_agents(handle)
 
     assert code == 0
-    assert "FAST [chat] model=m: q" in capsys.readouterr().out
+    assert "FAST [chat] model=m verify=missing_signature: q" in capsys.readouterr().out
+
+
+async def test_signed_worker_card_verifies_on_real_hub(tmp_path: Path) -> None:
+    private_key = generate_signing_key()
+    key_path = tmp_path / "card.pem"
+    write_signing_key(key_path, private_key)
+    trusted = EventSignatureKey.from_private_key(
+        key_id="P:key",
+        private_key=private_key,
+        senders=frozenset({"P/worker"}),
+        projects=frozenset({"P"}),
+    )
+    hub = SynapseHub(
+        capability_card_trust_bundle=CapabilityCardTrustBundle(keys={trusted.key_id: trusted})
+    )
+    async with running_hub(hub) as (_hub, uri):
+        recorder = Recorder()
+        agent = SynapseAgent(
+            "P/worker",
+            recorder,
+            uri=uri,
+            machine_identity=False,
+            capability_card_key_path=str(key_path),
+            capability_card_key_id="P:key",
+        )
+        task = asyncio.create_task(agent.connect())
+        handle = AgentHandle(agent=agent, recorder=recorder, task=task)
+        try:
+            assert await agent.wait_until_ready(timeout=3.0)
+            await agent.advertise(description="signed", task_classes=["code"])
+            advertised = await recorder.wait_for(
+                lambda message: message.get("type") == "capability_advertised"
+            )
+        finally:
+            await close_agents(handle)
+
+    card = advertised["card"]
+    assert card["project"] == "P"
+    assert card["verification"]["result"] == "valid"
+    assert card["verification"]["key_id"] == "P:key"
 
 
 def test_cmd_manifest_dispatches_real_query() -> None:

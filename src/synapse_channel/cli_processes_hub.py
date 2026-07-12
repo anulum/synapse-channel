@@ -23,6 +23,13 @@ from typing import Any
 from synapse_channel.cli_processes_runtime import _run
 from synapse_channel.core.acl import AclError, load_acl_policy
 from synapse_channel.core.auth import TokenAuthenticator
+from synapse_channel.core.capability_card_trust import (
+    DEFAULT_CAPABILITY_CARD_CLOCK_SKEW_SECONDS,
+    DEFAULT_CAPABILITY_CARD_HISTORY_CAPACITY,
+    DEFAULT_CAPABILITY_CARD_HISTORY_RETENTION_SECONDS,
+    CapabilityCardTrustError,
+    load_capability_card_trust_bundle,
+)
 from synapse_channel.core.federation import FederationBundle, bundle_can_authorise
 from synapse_channel.core.federation_store import FederationStoreError, bundle_from_store
 from synapse_channel.core.federation_wire import FederationWireError, decode_federation_offer
@@ -189,6 +196,33 @@ def _cmd_hub(
             file=sys.stderr,
         )
         return 2
+    try:
+        capability_card_trust_path = getattr(args, "capability_card_trust", "")
+        capability_card_trust_bundle = (
+            load_capability_card_trust_bundle(
+                capability_card_trust_path,
+                clock_skew_seconds=getattr(
+                    args,
+                    "capability_card_clock_skew_seconds",
+                    DEFAULT_CAPABILITY_CARD_CLOCK_SKEW_SECONDS,
+                ),
+                history_capacity=getattr(
+                    args,
+                    "capability_card_history_capacity",
+                    DEFAULT_CAPABILITY_CARD_HISTORY_CAPACITY,
+                ),
+                history_retention_seconds=getattr(
+                    args,
+                    "capability_card_history_retention_seconds",
+                    DEFAULT_CAPABILITY_CARD_HISTORY_RETENTION_SECONDS,
+                ),
+            )
+            if capability_card_trust_path
+            else None
+        )
+    except CapabilityCardTrustError as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        return 2
     federation_bundle: FederationBundle | None = None
     if args.federation_observe_only and not args.federation_store:
         print(
@@ -313,6 +347,7 @@ def _cmd_hub(
         "require_per_message_auth": args.require_message_auth,
         "per_message_auth_window_seconds": args.message_auth_window_seconds,
         "per_message_auth_replay_capacity": args.message_auth_replay_capacity,
+        "capability_card_trust_bundle": capability_card_trust_bundle,
         "acl_policy": acl_policy,
         "require_acl": args.require_acl,
         "role_grants": role_grants,

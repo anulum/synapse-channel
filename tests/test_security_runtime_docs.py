@@ -104,7 +104,7 @@ def test_federation_cli_and_docs_keep_operator_confirmation_explicit() -> None:
 
 
 def test_public_claims_separate_shipped_controls_from_staged_work() -> None:
-    """Known stale whole-profile claims must stay removed without promoting designs."""
+    """Known stale claims must stay removed while shipped profiles stay explicit."""
     combined = "\n".join(
         _read(path)
         for path in (
@@ -132,7 +132,7 @@ def test_public_claims_separate_shipped_controls_from_staged_work() -> None:
     ):
         assert stale_claim not in collapsed
 
-    assert "signed capability cards are a design target" in _collapsed(
+    assert "signed capability cards are implemented as advisory tamper evidence" in _collapsed(
         "docs/signed-capability-cards.md"
     )
     assert "they are not implemented yet" in _collapsed("docs/differential-privacy-blackboard.md")

@@ -63,6 +63,8 @@ class CapabilityDirectoryEntry:
         Offered resource capacity.
     meta : dict[str, Any], optional
         Detached metadata copied from the source card or resource offer.
+    verification : dict[str, Any], optional
+        Explicit signed-card diagnostic for agent entries. It remains advisory.
     """
 
     id: str
@@ -78,6 +80,7 @@ class CapabilityDirectoryEntry:
     resource_name: str = ""
     capacity: int = 0
     meta: dict[str, Any] = field(default_factory=dict)
+    verification: dict[str, Any] = field(default_factory=dict)
     trust: str = "discovery-only"
 
     def as_dict(self) -> dict[str, Any]:
@@ -96,6 +99,7 @@ class CapabilityDirectoryEntry:
             "resource_name": self.resource_name,
             "capacity": self.capacity,
             "meta": copy.deepcopy(self.meta),
+            "verification": copy.deepcopy(self.verification),
             "trust": self.trust,
         }
 
@@ -155,6 +159,16 @@ def _contract_count(value: object) -> int:
     return sum(1 for item in value if isinstance(item, Mapping))
 
 
+def _verification(value: object) -> dict[str, Any]:
+    """Return a detached card-verification mapping with an honest unsigned default."""
+    if isinstance(value, Mapping):
+        return {str(key): copy.deepcopy(item) for key, item in value.items()}
+    return {
+        "detail": "card is unsigned and remains advisory discovery",
+        "result": "missing_signature",
+    }
+
+
 def _agent_entry(card: JsonMap) -> CapabilityDirectoryEntry | None:
     """Build a directory entry from one manifest card."""
     agent = _text(card.get("agent"))
@@ -171,6 +185,7 @@ def _agent_entry(card: JsonMap) -> CapabilityDirectoryEntry | None:
         model=_text(card.get("model")),
         contracts=_contract_count(card.get("contracts")),
         meta=_meta(card.get("meta")),
+        verification=_verification(card.get("verification")),
     )
 
 

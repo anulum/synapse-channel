@@ -990,6 +990,9 @@ synapse multihub observe --peer-db ./peer.db --json     # fold a peer hub's log 
 synapse multihub follow --peer-uri ws://peer:8876       # pull a peer's board over a connection
 synapse multihub follow --peer-uri wss://peer:8877 --pin sha256:HEX  # pin a self-signed TLS peer
 synapse supervisor --idle-seconds 300 --history-multiplier 3
+synapse capability-card keygen --key-id PROJECT:worker:v1 --private-out ./card.pem --agent PROJECT/worker --project PROJECT --trust ./card-trust.json
+synapse capability-card sign ./card.json --key ./card.pem --key-id PROJECT:worker:v1 --sequence 1 --out ./signed-card.json
+synapse capability-card verify ./signed-card.json --trust ./card-trust.json --json
 ```
 
 `synapse manifest` prints live capability cards advertised by connected agents.
@@ -998,6 +1001,17 @@ contract count while JSON surfaces such as the MCP manifest resource, A2A Agent
 Card metadata, and dashboard snapshot retain the full `contracts` entries with
 `task_class`, `input_schema`, `output_schema`, `preconditions`, and
 `postconditions`.
+
+`synapse capability-card keygen|sign|verify` manages a separate Ed25519
+advertisement-signing profile. `keygen` writes an owner-only private key and can
+enrol the public key into an explicitly agent/project-scoped trust bundle; `sign`
+emits strict canonical JSON without overwriting an output; `verify` performs a
+one-shot check without consuming live replay history. A worker opts in with
+`--capability-card-key`, `--capability-card-key-id`, and
+`--capability-card-project`; a hub opts in with `--capability-card-trust` and
+bounded clock/history controls. Results are advisory and visible on every card;
+unsigned cards remain `missing_signature`, and live replay/downgrade history is
+currently in memory.
 
 `synapse directory` builds a read-only capability directory from the live
 manifest plus resource offers from the state snapshot. It supports `--agent`,

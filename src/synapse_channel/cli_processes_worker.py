@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 
 from synapse_channel.cli_processes_runtime import _run
 from synapse_channel.client.llm_worker import SynapseLLMWorker
+from synapse_channel.core.identity_keys import IdentityKeyError
 from synapse_channel.core.logging_setup import configure_logging
 
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
@@ -71,20 +72,30 @@ def _cmd_worker(
     warning = _egress_warning(args.provider, args.base_url)
     if warning:
         print(f"[{name}] WARNING: {warning}.", file=sys.stderr)
-    worker = SynapseLLMWorker(
-        name=name,
-        uri=args.uri,
-        provider=args.provider,
-        model=args.model,
-        base_url=args.base_url,
-        api_key_env=args.api_key_env,
-        max_context=args.max_context,
-        reply_target_mode=args.reply_target_mode,
-        min_reply_interval=args.min_reply_interval,
-        token=args.token,
-        task_classes=tuple(args.task_class) if args.task_class else ("chat",),
-        heavy_model=args.heavy_model,
-    )
+    try:
+        worker = SynapseLLMWorker(
+            name=name,
+            uri=args.uri,
+            provider=args.provider,
+            model=args.model,
+            base_url=args.base_url,
+            api_key_env=args.api_key_env,
+            max_context=args.max_context,
+            reply_target_mode=args.reply_target_mode,
+            min_reply_interval=args.min_reply_interval,
+            token=args.token,
+            task_classes=tuple(args.task_class) if args.task_class else ("chat",),
+            heavy_model=args.heavy_model,
+            capability_card_key_path=getattr(args, "capability_card_key", None),
+            capability_card_key_id=getattr(args, "capability_card_key_id", ""),
+            capability_card_project=getattr(args, "capability_card_project", ""),
+            capability_card_lifetime_seconds=getattr(
+                args, "capability_card_lifetime_seconds", 300.0
+            ),
+        )
+    except (ImportError, IdentityKeyError, ValueError) as exc:
+        print(f"[{name}] configuration error: {exc}", file=sys.stderr)
+        return 2
     if on_worker is not None:
         on_worker(worker)
     try:

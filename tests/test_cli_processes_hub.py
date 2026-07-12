@@ -25,6 +25,7 @@ from synapse_channel.core.hub import (
     SynapseHub,
 )
 from synapse_channel.core.hub_config import HubConfig, config_fingerprint
+from synapse_channel.core.identity_keys import generate_signing_key, public_key_b64
 from synapse_channel.core.ratelimit import RateLimiter
 
 
@@ -982,6 +983,61 @@ def test_cmd_hub_require_identity_binding_without_trust_errors(
 ) -> None:
     assert cli_processes._cmd_hub(_hub_ns(require_identity_binding=True), runner=_close_runner) == 2
     assert "--require-identity-binding requires --identity-trust" in capsys.readouterr().err
+
+
+def test_cmd_hub_threads_capability_card_trust(tmp_path: Path) -> None:
+    trust = tmp_path / "capability-card-trust.json"
+    trust.write_text(
+        json.dumps(
+            {
+                "keys": [
+                    {
+                        "agents": ["P/worker"],
+                        "key_id": "P:key",
+                        "projects": ["P"],
+                        "public_key": public_key_b64(generate_signing_key()),
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(
+                capability_card_trust=str(trust),
+                capability_card_clock_skew_seconds=4.0,
+                capability_card_history_capacity=7,
+                capability_card_history_retention_seconds=8.0,
+            ),
+            runner=_close_runner,
+            hub_factory=build_hub,
+        )
+        == 0
+    )
+    bundle = captured["capability_card_trust_bundle"]
+    assert "P:key" in bundle.keys
+    assert bundle.clock_skew_seconds == 4.0
+    assert bundle.history.max_entries == 7
+    assert bundle.history.retention_seconds == 8.0
+
+
+def test_cmd_hub_rejects_malformed_capability_card_trust(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    trust = tmp_path / "capability-card-trust.json"
+    trust.write_text("{not json", encoding="utf-8")
+
+    assert (
+        cli_processes._cmd_hub(_hub_ns(capability_card_trust=str(trust)), runner=_close_runner) == 2
+    )
+    assert "invalid capability-card trust JSON" in capsys.readouterr().err
 
 
 def test_cmd_hub_threads_private_directed_messages() -> None:

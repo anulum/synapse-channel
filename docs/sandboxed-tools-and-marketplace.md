@@ -13,8 +13,8 @@ Synapse coordinates agents, and now also runs untrusted tool code safely: a tool
 plugin executes under a capability-limited sandbox with no authority beyond what an
 operator grants. Distributing such tools through a marketplace is the gated next step.
 The two are one design with one rule: **no executable marketplace before the sandbox,
-the permissions, the signing, and the evidence all exist.** The sandbox is the
-precondition — it now ships; the marketplace is what it unlocks.
+the permissions, the signing, and the evidence all exist.** Those four runtime
+preconditions now ship and compose; the distribution layer remains unbuilt.
 
 ## Runtime status
 
@@ -30,8 +30,9 @@ operator approves. The surrounding trust and discovery scaffolding it builds on:
 - **The WASM runtime** (`core/wasm_sandbox.py`) enforces a granted manifest: memory and
   fuel caps, a wall-clock backstop, WASI preopened paths, and no sockets. Each run emits
   a bounded run receipt.
-- **Signed capability cards** (design, see [signed capability cards](signed-capability-cards.md))
-  would give a card verifiable provenance and a key id — a marketplace precondition.
+- **Signed capability cards** (see [signed capability cards](signed-capability-cards.md))
+  now give advertisements advisory Ed25519 provenance, explicit key and scope
+  binding, expiry, revocation, replay/downgrade diagnostics, and projection results.
 - **Identity and ACLs** (see [identity and ACL](identity-and-acl.md)) provide
   deny-by-default, scoped permissions; the sandbox reuses them.
 - The **outbound MCP client** calls external MCP tools behind a deny-by-default
@@ -103,7 +104,7 @@ or a grant stops future runs.
 
 ## Trust chain
 
-The trust chain is end to end and reuses the design set: a [signed capability
+The trust chain is end to end and reuses the shipped trust set: a [signed capability
 card](signed-capability-cards.md) proves *what* a tool is and *who* signed it;
 [identity and ACL](identity-and-acl.md) decides *whether* it may run and with
 *which* grants; the WASM sandbox enforces those grants at runtime; and a receipt
@@ -113,16 +114,16 @@ trust root is introduced.
 
 ## Boundaries
 
-The **marketplace** is **not implemented**. The sandbox it builds on now ships; the
-marketplace remains a boundary specification, deliberately gated.
+The **marketplace** is **not implemented**. Its runtime trust preconditions now ship;
+the marketplace remains a boundary specification, deliberately gated.
 
 - **Untrusted code runs only inside the sandbox.** A tool executes only through
   `synapse sandbox run`, under an operator-approved manifest, bound to one module by
   content digest; the outbound MCP client trusts a remote server and is not a sandbox.
 - **No marketplace before the preconditions.** No executable marketplace ships
   before signed cards, the permission model, the sandbox, and run receipts all
-  exist and compose. The permission model, the sandbox, and run receipts now exist;
-  signed capability cards and the distribution layer remain.
+  exist and compose. All four runtime preconditions now exist; the distribution
+  layer remains unbuilt.
 - **Deny-by-default, always.** A sandboxed tool has no ambient authority; every
   filesystem, network, and resource grant is explicit, operator-approved,
   recorded, and revocable.

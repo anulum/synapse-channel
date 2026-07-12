@@ -183,6 +183,6 @@ Synapse, never a parallel one.
 
 - The [sandboxed tools and marketplace](sandboxed-tools-and-marketplace.md) design explains the
   trust chain end to end and the marketplace boundary it builds toward.
-- [Signed capability cards](signed-capability-cards.md) would give a distributed tool verifiable
-  provenance — a marketplace precondition.
+- [Signed capability cards](signed-capability-cards.md) now give distributed tool
+  advertisements advisory, scoped Ed25519 provenance — a marketplace precondition.
 - [Identity and ACL](identity-and-acl.md) is the deny-by-default model the sandbox reuses.
