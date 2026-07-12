@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel import cli_fleet_init
+from synapse_channel import cli_fleet_init, cli_participants
 from synapse_channel.cli_fleet_init import (
     DEFAULT_WORKSPACE,
     _cmd_fleet_init,
@@ -241,7 +241,21 @@ def test_an_available_declared_seat_is_planned_without_a_warning(
     assert f"synapse worker-session --identity {DEFAULT_WORKSPACE} -- claude" in out
 
 
-def test_grok_carries_the_turns_disabled_note(capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize(
+    ("schema_verified", "readiness_note"),
+    [
+        (True, ""),
+        (False, " [participant turns disabled]"),
+    ],
+)
+def test_grok_readiness_note_tracks_schema_verification(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    schema_verified: bool,
+    readiness_note: str,
+) -> None:
+    monkeypatch.setattr(cli_participants, "GROK_SCHEMA_VERIFIED", schema_verified)
     _cmd_fleet_init(
         _args(),
         doctor_stage=lambda fix: 0,
@@ -250,7 +264,7 @@ def test_grok_carries_the_turns_disabled_note(capsys: pytest.CaptureFixture[str]
         demo_runner=lambda: 0,
     )
     out = capsys.readouterr().out
-    assert "grok available: grok binary found [participant turns disabled]" in out
+    assert f"grok available: grok binary found{readiness_note}\n" in out
     assert "claude available: claude binary found\n" in out  # no note on other providers
 
 

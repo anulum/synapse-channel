@@ -24,6 +24,7 @@ from typing import Any
 
 import pytest
 
+from synapse_channel import cli_participants
 from synapse_channel.cli import build_parser
 from synapse_channel.cli_participants import PROVIDERS, refusal_for
 from synapse_channel.cli_participants_deliberate import (
@@ -158,7 +159,14 @@ def test_build_deliberants_numbers_repeated_providers(fabric: SimpleNamespace) -
     ]
 
 
-def test_build_deliberants_refuses_grok() -> None:
+def test_build_deliberants_gates_grok_only_when_schema_is_unverified(
+    fabric: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(PROVIDERS, "grok", PROVIDERS["scripted"])
+    seats = build_deliberants(["grok"], timeout=1.0)
+    assert [seat.identity for seat in seats] == ["participant/grok"]
+
+    monkeypatch.setattr(cli_participants, "GROK_SCHEMA_VERIFIED", False)
     with pytest.raises(ValueError, match="grok turns are disabled"):
         build_deliberants(["grok"], timeout=1.0)
 
@@ -168,7 +176,11 @@ def test_build_deliberants_rejects_an_unknown_provider() -> None:
         build_deliberants(["nonesuch"], timeout=1.0)
 
 
-def test_refusal_for_gates_only_grok() -> None:
+def test_refusal_for_tracks_grok_schema_verification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert refusal_for("grok") is None
+    monkeypatch.setattr(cli_participants, "GROK_SCHEMA_VERIFIED", False)
     assert refusal_for("grok") is not None
     assert refusal_for("claude") is None
 
@@ -177,13 +189,16 @@ def test_refusal_for_gates_only_grok() -> None:
 
 
 def test_exchange_prints_both_turns_with_markers(
-    fabric: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+    fabric: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    args = _exchange_args()
+    monkeypatch.setitem(PROVIDERS, "grok", PROVIDERS["scripted"])
+    args = _exchange_args("grok", "other")
     assert args.func is _cmd_exchange
     assert _cmd_exchange(args) == 0
     out = capsys.readouterr().out
-    assert out.index("— opener —") < out.index("[participant/scripted] scripted answer")
+    assert out.index("— opener —") < out.index("[participant/grok] scripted answer")
     assert out.index("— reactor —") < out.index("[participant/other] scripted answer")
 
 
@@ -201,8 +216,11 @@ def test_exchange_refuses_a_bad_spec(capsys: pytest.CaptureFixture[str]) -> None
 
 
 def test_exchange_refuses_grok_on_either_seat(
-    fabric: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+    fabric: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
+    monkeypatch.setattr(cli_participants, "GROK_SCHEMA_VERIFIED", False)
     assert _cmd_exchange(_exchange_args("scripted", "grok")) == 2
     assert "grok turns are disabled" in capsys.readouterr().out
 
@@ -255,9 +273,12 @@ def test_exchange_mints_a_fresh_topic_by_default(fabric: SimpleNamespace) -> Non
 
 
 def test_convene_auto_selects_a_colloquy_for_two_seats(
-    fabric: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+    fabric: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    args = _convene_args("scripted", "other")
+    monkeypatch.setitem(PROVIDERS, "grok", PROVIDERS["scripted"])
+    args = _convene_args("grok", "other")
     assert args.func is _cmd_convene
     assert _cmd_convene(args) == 0
     out = capsys.readouterr().out
@@ -295,7 +316,10 @@ def test_convene_symposium_without_a_moderator_is_refused(
     assert "requires a moderator" in capsys.readouterr().out
 
 
-def test_convene_refuses_grok_on_the_panel(capsys: pytest.CaptureFixture[str]) -> None:
+def test_convene_refuses_grok_on_the_panel(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli_participants, "GROK_SCHEMA_VERIFIED", False)
     assert _cmd_convene(_convene_args("grok", "claude")) == 2
     assert "grok turns are disabled" in capsys.readouterr().out
 
