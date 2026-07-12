@@ -21,6 +21,10 @@ Grok is registered but refused for turns while
 :data:`~synapse_channel.participants.grok_stream.GROK_SCHEMA_VERIFIED` is false:
 its stream schema is modelled on documentation, not verified against the real
 CLI, and driving an unverified schema silently would fabricate confidence.
+Gemini is gated the same way on
+:data:`~synapse_channel.participants.gemini_stream.GEMINI_SCHEMA_VERIFIED`: its
+event shape is read from the installed 0.47.0 bundle source but no behavioural
+capture exists yet, so turns stay refused rather than risk a silent misparse.
 """
 
 from __future__ import annotations
@@ -37,9 +41,11 @@ from synapse_channel.cli_participants_memory import (
 )
 from synapse_channel.participants.api_ollama import OllamaApiParticipant
 from synapse_channel.participants.envelope import TurnRequest
+from synapse_channel.participants.gemini_stream import GEMINI_SCHEMA_VERIFIED
 from synapse_channel.participants.grok_stream import GROK_SCHEMA_VERIFIED
 from synapse_channel.participants.headless_claude import HeadlessClaudeParticipant
 from synapse_channel.participants.headless_codex import CodexParticipant
+from synapse_channel.participants.headless_gemini import GeminiParticipant
 from synapse_channel.participants.headless_grok import GrokParticipant
 from synapse_channel.participants.headless_kimi import KimiParticipant
 from synapse_channel.participants.headless_ollama import OllamaParticipant
@@ -55,6 +61,7 @@ _MODEL_REQUIRED = frozenset({"ollama", "ollama-api"})
 PROVIDERS: dict[str, ParticipantBuilder] = {
     "claude": HeadlessClaudeParticipant,
     "codex": CodexParticipant,
+    "gemini": GeminiParticipant,
     "kimi": KimiParticipant,
     "ollama": OllamaParticipant,
     "ollama-api": OllamaApiParticipant,
@@ -68,6 +75,13 @@ _GROK_REFUSAL = (
     "misparse. Use another provider, or verify the schema first."
 )
 
+_GEMINI_REFUSAL = (
+    "gemini turns are disabled: GEMINI_SCHEMA_VERIFIED=False (stream schema read from "
+    "the installed 0.47.0 bundle source, not captured from a real run; OAuth-personal "
+    "accounts also fail CLI setup with IneligibleTierError). A turn could silently "
+    "misparse. Use another provider, or capture and verify the schema first."
+)
+
 
 def refusal_for(provider: str) -> str | None:
     """Return why ``provider`` must not take turns right now, or ``None`` when it may.
@@ -77,6 +91,8 @@ def refusal_for(provider: str) -> str | None:
     """
     if provider == "grok" and not GROK_SCHEMA_VERIFIED:
         return _GROK_REFUSAL
+    if provider == "gemini" and not GEMINI_SCHEMA_VERIFIED:
+        return _GEMINI_REFUSAL
     return None
 
 
@@ -131,9 +147,10 @@ def _cmd_list(args: argparse.Namespace) -> int:
     """Report every registered provider's readiness snapshot.
 
     Each provider is constructed with a throwaway identity and asked for its
-    :meth:`health` — a probe, never a turn. Grok's line carries the schema
-    caveat so the roster never over-promises. Exit code ``0`` regardless of
-    availability: this is a report, not a gate.
+    :meth:`health` — a probe, never a turn. A provider whose turns are refused
+    (see :func:`refusal_for`) carries the schema caveat on its line so the roster
+    never over-promises. Exit code ``0`` regardless of availability: this is a
+    report, not a gate.
     """
     healths = []
     for provider in sorted(PROVIDERS):
@@ -145,7 +162,9 @@ def _cmd_list(args: argparse.Namespace) -> int:
             probe=True,
         )
         health = participant.health()
-        note = "" if provider != "grok" else " [turns disabled: stream schema unverified]"
+        note = ""
+        if refusal_for(provider) is not None:
+            note = " [turns disabled: stream schema unverified]"
         healths.append((provider, health, note))
     if args.json:
         payload = [

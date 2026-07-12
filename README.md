@@ -100,7 +100,7 @@ linked commands and documentation describe the shipped behaviour today.
 | Shipped coordination surface | Labelled visual slot |
 |---|---|
 | **Claim before edit.** [`synapse git-init`](#git-native-claims) installs claim-aware Git hooks; `synapse git-claim` records an exact worktree, branch, and path scope so an overlapping claim can be refused before files diverge. | **Visual placeholder — claim gutter:** one owner is visible while a competing edit is refused. |
-| **Block unclaimed native file edits.** [Provider file-edit claim hooks](docs/claim-guard-hooks.md) adapt Claude Code `Edit|Write`, Codex `apply_patch`, and Kimi `Edit|Write` to one live-claim decision engine. | **Visual placeholder — edit denial:** an unclaimed provider edit stops before the native file tool runs. |
+| **Block unclaimed native file edits.** [Provider file-edit claim hooks](docs/claim-guard-hooks.md) adapt Claude Code `Edit|Write`, Codex `apply_patch`, Gemini CLI `replace|write_file`, and Kimi `Edit|Write` to one live-claim decision engine. | **Visual placeholder — edit denial:** an unclaimed provider edit stops before the native file tool runs. |
 | **Share the plan.** `synapse task` and [`synapse board`](docs/coordination-model.md) keep task state, dependencies, and ready work on the hub instead of in separate agent notes. | **Visual placeholder — board:** a blocked task becomes ready when its dependency completes. |
 | **Hand work over without an ownership gap.** [Atomic handoff](docs/coordination-model.md#4-hand-off-and-recover) moves the held task, scope, status, and checkpoint to an online recipient without a release-and-reclaim window. | **Visual placeholder — handoff:** ownership and checkpoint move together between two seats. |
 | **Expose a dark seat.** After 30 continuous seconds without the owner's exact waiter, the hub emits one [`dark_seat_alert`](docs/protocol.md) for affected claims or assigned work, including the permanent-arm remedy; it does not release or reassign work automatically. | **Visual placeholder — dark-seat alert:** the missing waiter and exact re-arm command appear beside the affected work. |
@@ -411,13 +411,15 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   an idle provider in this adapter; call `synapse_inbox` at turn start and keep
   `synapse arm install --identity NAME --start` active for prompt delivery.
 
-- **Claude Code / Codex / Kimi native file edits:** print a provider-native
-  `PreToolUse` recipe that checks the authoritative live claim before a supported
-  file tool runs.
+- **Claude Code / Codex / Gemini / Kimi native file edits:** print a
+  provider-native pre-tool recipe (`PreToolUse` for the Claude family,
+  `BeforeTool` for Gemini CLI) that checks the authoritative live claim before a
+  supported file tool runs.
 
   ```bash
   synapse adapters claude-claim-hook --identity my-repo/claude --print-config
   synapse adapters codex-claim-hook  --identity my-repo/codex  --print-config
+  synapse adapters gemini-claim-hook --identity my-repo/gemini --print-config
   synapse adapters kimi-claim-hook   --identity my-repo/kimi   --print-config
   synapse adapters kimi-claim-hook   --identity my-repo/kimi   --install-config
   ```
@@ -1353,7 +1355,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 589 |
 | Wire message types | 77 |
 | CLI subcommands | 164 |
-| Test functions | 6555 |
+| Test functions | 6557 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 55 |
 | GitHub Actions workflows | 18 |

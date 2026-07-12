@@ -12,13 +12,14 @@ SYNAPSE CHANNEL — provider file-edit claim hooks
 
 Synapse can stop a supported native file-edit call before it runs unless the
 configured identity owns a live claim for every target file. Claude Code, Codex,
-and Kimi use different hook payloads, so Synapse keeps their wire adapters small
-and sends all three through one claim decision engine.
+Gemini CLI, and Kimi use different hook payloads, so Synapse keeps their wire
+adapters small and sends all four through one claim decision engine.
 
 | Provider | Covered native tool | Path source | Recipe format |
 |---|---|---|---|
 | Claude Code | `Edit`, `Write` | absolute `tool_input.file_path` | `settings.json` fragment |
 | Codex | `apply_patch` (matcher aliases `Edit|Write`) | every add, update, delete, and move path in `tool_input.command` | `hooks.json` fragment |
+| Gemini CLI | `replace`, `write_file` on the native `BeforeTool` event | relative or absolute `tool_input.file_path` | `settings.json` `hooks` fragment |
 | Kimi Code | `Edit`, `Write` | relative or absolute `tool_input.path` | `config.toml` fragment |
 
 The decision requires the exact worktree, branch, path coverage, editable task
@@ -49,6 +50,10 @@ synapse adapters codex-claim-hook \
   --identity my-repo/codex \
   --print-config
 
+synapse adapters gemini-claim-hook \
+  --identity my-repo/gemini \
+  --print-config
+
 synapse adapters kimi-claim-hook \
   --identity my-repo/kimi \
   --print-config
@@ -56,10 +61,13 @@ synapse adapters kimi-claim-hook \
 
 With `--print-config`, these commands only print mergeable fragments and never
 write provider configuration. Merge the Claude fragment into
-`.claude/settings.json`, the Codex fragment into `.codex/hooks.json`, or the Kimi
-fragment into `$KIMI_CODE_HOME/config.toml` (default
-`~/.kimi-code/config.toml`), then use the provider's normal hook inspection flow.
-Codex requires operators to review and trust a new or changed non-managed hook.
+`.claude/settings.json`, the Codex fragment into `.codex/hooks.json`, the Gemini
+fragment into the `hooks` key of `.gemini/settings.json`, or the Kimi fragment
+into `$KIMI_CODE_HOME/config.toml` (default `~/.kimi-code/config.toml`), then use
+the provider's normal hook inspection flow. Codex requires operators to review
+and trust a new or changed non-managed hook. Gemini's hook `timeout` field is in
+milliseconds, and the printed fragment already uses that unit; Gemini also
+refuses project-scope hooks inside untrusted folders.
 
 Kimi also has an explicit reversible installer:
 
@@ -110,6 +118,13 @@ avoids provider conventions in which an ordinary non-zero error means
   sides of a move. Codex documents `PreToolUse` as a guardrail rather than a
   complete enforcement boundary: alternate shell, `unified_exec`, MCP, or future
   tool paths may perform equivalent writes without this matcher.
+- **Gemini CLI:** the guard speaks Gemini's native contract — the `BeforeTool`
+  event, `replace`/`write_file` tool names, and a top-level
+  `{"decision": "deny", "reason": …}` blocking response — verified against the
+  installed 0.47.0 bundle source. `run_shell_command` and MCP tool paths remain
+  outside this matcher, and Gemini's hook runner treats a plain non-JSON hook
+  crash with exit 1 as a non-blocking warning, so Synapse always emits the
+  structured deny object on exit zero for handled failures.
 - **Kimi Code:** the handler converts all failures it receives into structured
   denial on exit zero. Kimi documents its hook runner itself as fail-open if the
   process crashes or exceeds the host timeout. Synapse leaves headroom and catches
@@ -136,5 +151,7 @@ claim their scope explicitly.
 ## Source references
 
 - [Codex hooks](https://developers.openai.com/codex/hooks)
+- [Gemini CLI](https://github.com/google-gemini/gemini-cli) — the `BeforeTool`
+  contract above was read from the installed 0.47.0 bundle source
 - [Kimi Code hooks](https://moonshotai.github.io/kimi-code/en/customization/hooks)
 - [Git-native claims](git-claims.md)

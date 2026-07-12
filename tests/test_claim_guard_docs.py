@@ -16,12 +16,20 @@ def test_provider_claim_hook_guide_is_discoverable_and_honest() -> None:
 
     assert "docs/claim-guard-hooks.md" in readme
     assert "claim-guard-hooks.md" in nav
-    for command in ("claude-claim-hook", "codex-claim-hook", "kimi-claim-hook"):
+    for command in (
+        "claude-claim-hook",
+        "codex-claim-hook",
+        "gemini-claim-hook",
+        "kimi-claim-hook",
+    ):
         assert command in readme
         assert command in guide
     assert "guardrail rather than" in guide
     assert "complete enforcement boundary" in guide
     assert "hook runner itself as fail-open" in guide
+    assert "BeforeTool" in guide
+    assert '{"decision": "deny", "reason": …}' in guide
+    assert "milliseconds" in guide
     assert "--install-config" in guide
     assert "--uninstall-config" in guide
     assert "$KIMI_CODE_HOME/config.toml" in guide

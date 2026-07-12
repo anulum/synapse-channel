@@ -15,6 +15,19 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Gemini CLI becomes the seventh registered participant provider and the fourth
+  file-edit claim guard. The guard speaks Gemini's native hook contract —
+  `BeforeTool` event, `replace`/`write_file` tool names, `tool_input.file_path`,
+  and a top-level `{"decision": "deny", "reason": …}` blocking response on exit
+  zero — verified against the installed 0.47.0 bundle source, with an anchored
+  `^(replace|write_file)$` matcher and a millisecond hook timeout in the printed
+  `settings.json` fragment (`synapse adapters gemini-claim-hook`). The headless
+  driver (`gemini -p … -o stream-json --approval-mode plan`) parses the CLI's
+  `init`/`message`/`error`/`result` events, but turns stay refused while
+  `GEMINI_SCHEMA_VERIFIED` is false: the stream shape is source-verified, not
+  behaviourally captured (OAuth-personal setup fails with `IneligibleTierError`),
+  so the roster carries the caveat instead of over-promising — the same
+  discipline the Grok lane followed.
 - Codex and Kimi now join Claude Code on provider-native, live-claim file-edit
   guards. A shared resolver canonicalises every target against its Git worktree
   and requires exact worktree, branch, path, task-state, and owner coverage;

@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — real CLI/hub journeys for Codex and Kimi claim guards
+# SYNAPSE_CHANNEL — real CLI/hub journeys for Codex, Gemini, and Kimi claim guards
 
 from __future__ import annotations
 
@@ -46,9 +46,25 @@ def _kimi_event(repo: Path, path: str) -> str:
     )
 
 
+def _gemini_event(repo: Path, path: str) -> str:
+    return json.dumps(
+        {
+            "session_id": "gemini-session",
+            "transcript_path": str(repo / "transcript.json"),
+            "cwd": str(repo),
+            "hook_event_name": "BeforeTool",
+            "timestamp": "2026-07-12T15:30:00.000Z",
+            "tool_name": "write_file",
+            "tool_input": {"file_path": path, "content": "content\n"},
+        }
+    )
+
+
 def _rendered_command(provider: str, output: str) -> str:
     if provider == "codex-claim-hook":
         return str(json.loads(output)["hooks"]["PreToolUse"][0]["hooks"][0]["command"])
+    if provider == "gemini-claim-hook":
+        return str(json.loads(output)["hooks"]["BeforeTool"][0]["hooks"][0]["command"])
     if sys.version_info >= (3, 11):
         import tomllib
     else:  # pragma: no cover - exercised only on Python 3.10
@@ -57,13 +73,24 @@ def _rendered_command(provider: str, output: str) -> str:
     return str(tomllib.loads(output)["hooks"][0]["command"])
 
 
-@pytest.mark.parametrize(
-    ("command", "event"),
-    [
-        ("codex-claim-hook", _codex_event),
-        ("kimi-claim-hook", _kimi_event),
-    ],
-)
+def _deny_reason(provider: str, stdout: str) -> str:
+    """Return the denial reason from the provider's native structured deny."""
+    output = json.loads(stdout)
+    if provider == "gemini-claim-hook":
+        assert output["decision"] == "deny"
+        return str(output["reason"])
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+    return str(output["hookSpecificOutput"]["permissionDecisionReason"])
+
+
+_PROVIDER_CASES = [
+    ("codex-claim-hook", _codex_event),
+    ("gemini-claim-hook", _gemini_event),
+    ("kimi-claim-hook", _kimi_event),
+]
+
+
+@pytest.mark.parametrize(("command", "event"), _PROVIDER_CASES)
 def test_live_claim_allows_owned_and_denies_unclaimed_file(
     tmp_path: Path, command: str, event: Callable[[Path, str], str]
 ) -> None:
@@ -106,17 +133,10 @@ def test_live_claim_allows_owned_and_denies_unclaimed_file(
             cwd=repo,
         )
         assert denied.ok(), denied.output
-        output = json.loads(denied.stdout)
-        assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+        assert "claim" in _deny_reason(command, denied.stdout).lower()
 
 
-@pytest.mark.parametrize(
-    ("command", "event"),
-    [
-        ("codex-claim-hook", _codex_event),
-        ("kimi-claim-hook", _kimi_event),
-    ],
-)
+@pytest.mark.parametrize(("command", "event"), _PROVIDER_CASES)
 def test_printed_recipe_authenticates_token_secured_hub(
     tmp_path: Path, command: str, event: Callable[[Path, str], str]
 ) -> None:

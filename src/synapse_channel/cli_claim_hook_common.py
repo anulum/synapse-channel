@@ -112,8 +112,14 @@ def run_claim_hook(
     evaluator: HookEvaluator,
     failure_reason: str,
     async_runner: Callable[[Awaitable[GuardVerdict]], GuardVerdict] = _run_awaitable,
+    payload_renderer: Callable[[str], dict[str, object]] | None = None,
 ) -> int:
-    """Evaluate stdin and convert every handled failure to deny JSON on exit zero."""
+    """Evaluate stdin and convert every handled failure to deny JSON on exit zero.
+
+    ``payload_renderer`` maps a denial reason to the provider's structured deny object;
+    when omitted, the Claude-family ``PreToolUse`` shape shared by Codex and Kimi
+    applies. Gemini passes its native top-level ``decision``/``reason`` renderer.
+    """
     raw = sys.stdin.read()
     try:
         verdict = async_runner(
@@ -129,9 +135,11 @@ def run_claim_hook(
         verdict = GuardVerdict(False, failure_reason)
     if verdict.allowed:
         return 0
-    from synapse_channel.file_claim_guard import denial_payload
+    if payload_renderer is None:
+        from synapse_channel.file_claim_guard import denial_payload
 
-    print(json.dumps(denial_payload(verdict.reason), ensure_ascii=False))
+        payload_renderer = denial_payload
+    print(json.dumps(payload_renderer(verdict.reason), ensure_ascii=False))
     return 0
 
 

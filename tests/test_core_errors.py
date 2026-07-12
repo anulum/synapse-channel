@@ -143,6 +143,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "file_claim_guard",
         RuntimeError,
     ),
+    "GeminiClaimGuardError": (
+        "synapse_channel.gemini_claim_guard",
+        "gemini_claim_guard",
+        RuntimeError,
+    ),
     "GitError": ("synapse_channel.git.gitclaim", "git", RuntimeError),
     "HubTLSConfigError": ("synapse_channel.core.tls", "hub_tls_config", ValueError),
     "IdentityBindingError": (
