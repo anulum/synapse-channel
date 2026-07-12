@@ -15,7 +15,10 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from synapse_channel.agent_tmux import (
+    DEFAULT_AGENT_PANE_COMMANDS,
     AgentTmuxConfig,
     _backoff_delay,
     agent_binary,
@@ -235,6 +238,38 @@ def test_status_detects_kimi_from_quoted_env_start_command(tmp_path: Path) -> No
 
     assert result.pane_command == "fish"
     assert result.agent_active is True
+
+
+def test_registry_dir_falls_back_to_runtime_dir_then_tmp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _config(tmp_path, agent_command=("codex",))
+    config = replace(config, registry_dir=None)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "runtime"))
+    assert registry_path(config).parent == tmp_path / "runtime" / "synapse-agent-tmux"
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    assert registry_path(config).parent.name == "synapse-agent-tmux"
+
+
+def test_default_pane_commands_cover_every_first_class_provider_binary() -> None:
+    """Every shipped provider binary is detected out of the box as a live pane."""
+    assert {"codex", "kimi", "claude", "grok", "gemini", "node"} <= DEFAULT_AGENT_PANE_COMMANDS
+
+
+def test_status_detects_grok_and_gemini_panes_by_default(tmp_path: Path) -> None:
+    for binary in ("grok", "gemini"):
+        config = _config(tmp_path, agent_command=("codex",))
+        runner = RecordingRunner(
+            [
+                _result(["tmux", "has-session"], 0),
+                _result(["tmux", "display-message"], 0, f"{binary}\tfish\n"),
+            ]
+        )
+
+        result = status(config, runner=runner)
+
+        assert result.pane_command == binary
+        assert result.agent_active is True
 
 
 def test_status_reports_inactive_when_agent_binary_absent(tmp_path: Path) -> None:

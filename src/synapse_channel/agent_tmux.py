@@ -42,14 +42,16 @@ from typing import Protocol
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 
-DEFAULT_AGENT_PANE_COMMANDS = frozenset({"codex", "node", "kimi", "claude"})
+DEFAULT_AGENT_PANE_COMMANDS = frozenset({"codex", "node", "kimi", "claude", "grok", "gemini"})
 """Pane command names that, on their own, indicate a live agent stack.
 
 Terminal agents usually run under a shell (``fish``/``bash``), so the live agent
 is normally identified from the pane's *start* command rather than its current
 command. This set covers the cases where the agent binary is itself the pane
-command; it is unioned with the per-config binary derived from
-:attr:`AgentTmuxConfig.agent_command`.
+command — every first-class provider binary (Codex, Kimi, Claude, Grok, Gemini,
+plus ``node`` for Node-launched stacks) — and it is unioned with the per-config
+binary derived from :attr:`AgentTmuxConfig.agent_command`, so a custom or renamed
+binary is always detected too.
 """
 
 DEFAULT_SUBMIT_DELAY = 0.4

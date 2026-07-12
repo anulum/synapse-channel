@@ -38,6 +38,13 @@ All notable changes to this project are documented here.
   kebab-case `~/.grok/skills/synapse/SKILL.md` contract required by the
   installed CLI, without changing Kimi's distinct skill schema.
 
+
+- The generic tmux waker's default pane detection now recognises every
+  first-class provider binary out of the box: `grok` and `gemini` join
+  `codex`/`kimi`/`claude`/`node` in `DEFAULT_AGENT_PANE_COMMANDS`, so an
+  interactive Grok or Gemini pane is detected as a live agent without an
+  explicit `agent_command` override (which continues to union any custom
+  binary into the set).
 - Gemini CLI becomes the seventh registered participant provider and the fourth
   file-edit claim guard. The guard speaks Gemini's native hook contract —
   `BeforeTool` event, `replace`/`write_file` tool names, `tool_input.file_path`,
