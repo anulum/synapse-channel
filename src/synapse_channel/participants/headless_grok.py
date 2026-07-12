@@ -7,28 +7,25 @@
 # SYNAPSE_CHANNEL — headless Grok CLI participant driver
 """Drive a Grok CLI session headlessly as a bus participant.
 
-.. warning::
+.. note::
 
-   **Grok support is ready.** The driver is built and unit-tested. Prior workstation-level
-   reliability issues with the Grok CLI were reported in June 2026 escalations (freezes and
-   memory pressure on the target Linux machine). As of observed releases (0.2.91+), the binary
-   is present at ``/home/anulum/.local/bin/grok`` (``grok --version`` reports stable) and is
-   detected by ``synapse participant list``. The main remaining gate is schema verification:
-   the streaming-json output was not captured from a real run (see
+   **Grok is a first-class headless provider.** The live ``streaming-json`` schema is verified
+   against a real ``grok`` 0.2.93 capture (``thought`` / ``text`` / ``end`` events — not a
+   Claude-family envelope); see
    :mod:`~synapse_channel.participants.grok_stream` and
-   :data:`~synapse_channel.participants.grok_stream.GROK_SCHEMA_VERIFIED`). The argv is
-   verified against ``grok --help``; the parsed event shape follows the assumed
-   Claude-Code-family convention and should be re-verified against a current stable trace before
-   fully enabling the gated smoke (triple-gated and currently skipped).
+   :data:`~synapse_channel.participants.grok_stream.GROK_SCHEMA_VERIFIED`. The binary is detected
+   by ``synapse participant list`` and turns are enabled when that flag is true. The gated smoke
+   still requires an operator opt-in (``SYNAPSE_GROK_SMOKE=1``) because it spawns a real binary.
+   Prior workstation freezes on early Grok CLI builds (June 2026) are historical context only.
 
 A fifth concrete :class:`~synapse_channel.participants.participant.Participant`, on the
 ``HEADLESS`` channel: the bus owns the invocation, spawning ``grok --single <prompt>
---output-format streaming-json`` (adding ``-r <id>`` to resume a session) and reading its event
-stream. Grok is a Claude-Code-family CLI, so unlike Codex/Kimi/Ollama it has a real
-system-prompt append (``--rules``), which carries the shared bus context — role, ground rules,
-and any fenced peer contribution — without folding it into the user prompt, and it runs in
-read-only plan mode (``--permission-mode plan``) so a reasoning turn cannot modify the
-workspace.
+--output-format streaming-json`` (adding ``-r <id>`` to resume a session) and reading its native
+event stream via :func:`~synapse_channel.participants.grok_stream.parse_grok_stream`. Unlike
+Codex/Kimi/Ollama, Grok exposes a system-prompt append (``--rules``), which carries the shared
+bus context — role, ground rules, and any fenced peer contribution — without folding it into
+the user prompt, and it runs in read-only plan mode (``--permission-mode plan``) so a reasoning
+turn cannot modify the workspace.
 
 As with the other headless drivers, the heavy logic is a synchronous, dependency-injected
 :meth:`GrokParticipant.run_turn` (hermetically testable with a fake runner) and the async
@@ -97,8 +94,10 @@ def build_grok_argv(
 ) -> list[str]:
     """Build the headless Grok command line for one turn.
 
-    Every flag is verified against ``grok --help`` (Grok 0.2.64); the *output schema* the
-    resulting stream carries is the part that is unverified (see the module warning).
+    Every flag is verified against ``grok --help``. Stream events are parsed by
+    :func:`~synapse_channel.participants.grok_stream.parse_grok_stream` against the
+    verified native ``thought`` / ``text`` / ``end`` capture (see
+    :data:`~synapse_channel.participants.grok_stream.GROK_SCHEMA_VERIFIED`).
 
     Parameters
     ----------
@@ -143,8 +142,11 @@ def build_grok_argv(
 class GrokParticipant:
     """A Grok CLI session driven headlessly as a uniform bus participant.
 
-    Built for completeness; not run on this machine (see the module warning). Parameters mirror
-    the other headless drivers.
+    First-class Participant Fabric provider: stream events are parsed with the
+    verified native ``thought`` / ``text`` / ``end`` schema from a real
+    ``grok`` 0.2.93 capture
+    (:data:`~synapse_channel.participants.grok_stream.GROK_SCHEMA_VERIFIED`).
+    Parameters mirror the other headless drivers.
 
     Parameters
     ----------
@@ -196,9 +198,10 @@ class GrokParticipant:
         Returns
         -------
         ParticipantHealth
-            ``available`` is true when the configured binary is found. The binary resolving
-            says nothing about whether a turn will run: Grok participant real smoke
-            is schema-gated, and prior CLI reliability issues are resolved.
+            ``available`` is true when the configured binary is found. Turn enablement
+            is separate: ``synapse ask --provider grok`` is gated on
+            :data:`~synapse_channel.participants.grok_stream.GROK_SCHEMA_VERIFIED`, and
+            the opt-in real smoke still requires ``SYNAPSE_GROK_SMOKE=1``.
         """
         resolved = shutil.which(self._binary)
         return ParticipantHealth(

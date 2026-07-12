@@ -149,6 +149,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         RuntimeError,
     ),
     "GitError": ("synapse_channel.git.gitclaim", "git", RuntimeError),
+    "GrokClaimGuardError": (
+        "synapse_channel.grok_claim_guard",
+        "grok_claim_guard",
+        RuntimeError,
+    ),
     "HubTLSConfigError": ("synapse_channel.core.tls", "hub_tls_config", ValueError),
     "IdentityBindingError": (
         "synapse_channel.core.identity_binding",

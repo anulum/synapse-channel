@@ -5,16 +5,14 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — gated real smoke test for the headless Grok participant
-"""A gated end-to-end smoke test that would drive a real headless Grok turn.
+"""A gated end-to-end smoke test that drives a real headless Grok turn.
 
-**Triple-gated and not run here on purpose.** Grok support is ready, but not recommended until
-xAI ships a stable Grok CLI: the CLI is not yet stable, so its output schema is unverified
-(:data:`~synapse_channel.participants.grok_stream.GROK_SCHEMA_VERIFIED` is ``False``). On top of
-the usual two gates — the ``grok`` binary on ``PATH`` and ``SYNAPSE_PARTICIPANT_REAL_SMOKE=1`` —
-this smoke also requires ``SYNAPSE_GROK_SMOKE=1`` so it stays skipped even in the environment
-that runs the other providers' real smokes. Run it, and use what it prints, only once a stable
-Grok CLI is available and the stream schema has been captured and verified at source; until then
-it is the test that confirms the Grok schema is still unverified.
+The live ``streaming-json`` schema is already verified against a real
+``grok`` 0.2.93 capture
+(:data:`~synapse_channel.participants.grok_stream.GROK_SCHEMA_VERIFIED` is
+``True``), so ``synapse ask --provider grok`` is enabled. This smoke remains
+**opt-in** because it spawns a real binary: it requires the ``grok`` binary on
+``PATH``, ``SYNAPSE_PARTICIPANT_REAL_SMOKE=1``, and ``SYNAPSE_GROK_SMOKE=1``.
 """
 
 from __future__ import annotations
@@ -25,19 +23,21 @@ import shutil
 import pytest
 
 from synapse_channel.participants.envelope import TurnRequest
+from synapse_channel.participants.grok_stream import GROK_SCHEMA_VERIFIED
 from synapse_channel.participants.headless_grok import GrokParticipant
 
 _REAL_SMOKE_ENABLED = (
     bool(shutil.which("grok"))
     and os.environ.get("SYNAPSE_PARTICIPANT_REAL_SMOKE") == "1"
     and os.environ.get("SYNAPSE_GROK_SMOKE") == "1"
+    and GROK_SCHEMA_VERIFIED
 )
 
 _SKIP_REASON = (
-    "Grok participant real smoke requires SYNAPSE_GROK_SMOKE=1 and "
-    "SYNAPSE_PARTICIPANT_REAL_SMOKE=1 plus a captured+verified stream schema "
-    "from a real stable grok run (GROK_SCHEMA_VERIFIED). "
-    "Prior CLI reliability issues (June 2026) are resolved; the gate is now schema verification."
+    "Grok participant real smoke is opt-in: requires SYNAPSE_GROK_SMOKE=1, "
+    "SYNAPSE_PARTICIPANT_REAL_SMOKE=1, grok on PATH, and GROK_SCHEMA_VERIFIED=True. "
+    "The stream schema is already verified against grok 0.2.93; the gate here is "
+    "operator consent to spawn a real binary."
 )
 
 pytestmark = pytest.mark.skipif(not _REAL_SMOKE_ENABLED, reason=_SKIP_REASON)

@@ -31,6 +31,7 @@ from synapse_channel.adapters import (
 _CLAUDE = tool_for("claude-code")  # html, file, home scope
 _AIDER = tool_for("aider")  # html, append, project scope
 _WINDSURF = tool_for("windsurf")  # hash, append, project scope
+_GROK = tool_for("grok")  # Grok skill, file, home scope
 _KIMI = tool_for("kimi")  # skill, file, KIMI_CODE_HOME scope
 _KIMI_PROJECT = tool_for("kimi-project")  # skill, file, project scope, explicit-only
 
@@ -58,6 +59,9 @@ def test_resolve_target_honours_scope(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     assert resolve_target(_CLAUDE, home=home, project=project) == home / ".claude/synapse.md"
     assert resolve_target(_AIDER, home=home, project=project) == project / "CONVENTIONS.md"
+    assert resolve_target(_GROK, home=home, project=project) == home / (
+        ".grok/skills/synapse/SKILL.md"
+    )
     expected_kimi = home / ".kimi-code" / "skills" / "synapse" / "SKILL.md"
     assert resolve_target(_KIMI, home=home, project=project) == expected_kimi
     expected_kimi_project = project / ".kimi-code" / "skills" / "synapse" / "SKILL.md"
@@ -111,6 +115,18 @@ def test_render_block_skill_style_has_frontmatter_and_contract() -> None:
     assert f"<!-- {MARKER_BEGIN} -->" in skill
     assert skill.rstrip().endswith(f"<!-- {MARKER_END} -->")
     assert "hub/agent" in skill and "ws://h:9" in skill and "Claim before edit" in skill
+
+
+def test_render_block_grok_skill_uses_verified_kebab_case_schema() -> None:
+    skill = render_block(_GROK, identity="hub/grok", hub_uri="ws://h:10")
+    assert skill.startswith("---\n")
+    assert "name: synapse" in skill
+    assert "when-to-use:" in skill
+    assert "whenToUse:" not in skill
+    assert "type: prompt" not in skill
+    assert "disableModelInvocation" not in skill
+    assert f"<!-- {MARKER_BEGIN} -->" in skill
+    assert "hub/grok" in skill and "ws://h:10" in skill
 
 
 def test_contains_block_detects_presence() -> None:

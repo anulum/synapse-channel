@@ -2121,11 +2121,16 @@ the workflow are counted in a trailing note instead of shown, the exit code
 signals scoped collisions only (`0` none, `1` at least one, `2` on an invalid
 workflow, missing store, or the `--max-nodes` ceiling); `participant`
 is the operator surface over the Participant Fabric — `list` probes each
-registered provider driver (claude, codex, kimi, ollama, ollama-api, grok)
-without taking a turn, and `ask` runs exactly one turn against one provider and
-prints the answer, or the full typed turn result with `--json`. Grok turns stay
-refused while `GROK_SCHEMA_VERIFIED` is false (stream schema not yet captured from a real
-binary on this host; prior June 2026 CLI reliability issues are no longer observed).
+registered provider driver (claude, codex, gemini, grok, kimi, ollama,
+ollama-api) without taking a turn, and `ask` runs exactly one turn against one
+provider and prints the answer, or the full typed turn result with `--json`.
+Grok turns are enabled after the native `thought` / `text` / `end` stream was
+captured from stable Grok 0.2.93; Gemini turns are likewise enabled from its
+real-emitter capture. Both schema flags remain wired as fail-closed gates for a
+future wire change. Grok coordination installs through
+`synapse adapters install grok`, while
+`synapse adapters grok-claim-hook --print-config` emits its native file-edit
+guard recipe.
 `--model`
 is required for `ollama` and `ollama-api` (their drivers configure no default).
 

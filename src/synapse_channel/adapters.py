@@ -77,7 +77,8 @@ class AdapterTool:
         (a marked block inside a file the tool also uses).
     comment : str
         Marker comment style: ``"html"`` (``<!-- … -->``), ``"hash"`` (``# …``), or
-        ``"skill"`` (Kimi SKILL.md with YAML frontmatter).
+        ``"skill"`` (Kimi SKILL.md) / ``"grok-skill"`` (Grok SKILL.md), whose
+        frontmatter schemas intentionally differ.
     """
 
     key: str
@@ -160,6 +161,16 @@ CATALOGUE: tuple[AdapterTool, ...] = (
         scope=HOME_SCOPE,
         mode=FILE_MODE,
         comment="html",
+    ),
+    AdapterTool(
+        key="grok",
+        label="Grok Build TUI",
+        binaries=("grok",),
+        detect_paths=(".grok",),
+        target=".grok/skills/synapse/SKILL.md",
+        scope=HOME_SCOPE,
+        mode=FILE_MODE,
+        comment="grok-skill",
     ),
     AdapterTool(
         key="kimi",
@@ -256,6 +267,17 @@ def _contract_body(*, identity: str, hub_uri: str) -> str:
 def render_block(tool: AdapterTool, *, identity: str, hub_uri: str) -> str:
     """Render the marker-wrapped adapter block for ``tool`` in its comment style."""
     body = _contract_body(identity=identity, hub_uri=hub_uri)
+    if tool.comment == "grok-skill":
+        return (
+            "---\n"
+            "name: synapse\n"
+            "description: "
+            "Synapse coordination rules — claim before edit, release on commit, reach the hub.\n"
+            "when-to-use: "
+            "Always, before modifying files or making commitments in a Synapse workspace.\n"
+            "---\n\n"
+            f"<!-- {MARKER_BEGIN} -->\n{body}<!-- {MARKER_END} -->\n"
+        )
     if tool.comment == "skill":
         return (
             "---\n"

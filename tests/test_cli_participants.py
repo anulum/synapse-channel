@@ -30,6 +30,8 @@ from synapse_channel.cli_participants import (
     build_participant,
 )
 from synapse_channel.participants.envelope import TurnRequest
+from synapse_channel.participants.gemini_stream import GEMINI_SCHEMA_VERIFIED
+from synapse_channel.participants.grok_stream import GROK_SCHEMA_VERIFIED
 from synapse_channel.participants.participant import (
     ParticipantChannel,
     ParticipantHealth,
@@ -160,9 +162,11 @@ def test_build_participant_constructs_each_registered_provider() -> None:
 # --- participant list ------------------------------------------------------------
 
 
-def test_list_reports_every_provider_with_grok_caveat(
+def test_list_reports_every_provider_without_stale_schema_caveats(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    assert GROK_SCHEMA_VERIFIED is True
+    assert GEMINI_SCHEMA_VERIFIED is True
     parser = build_parser()
     args = parser.parse_args(["participant", "list"])
     assert args.func is _cmd_list
@@ -171,7 +175,18 @@ def test_list_reports_every_provider_with_grok_caveat(
     assert f"Participant providers ({len(PROVIDERS)}):" in out
     for provider in PROVIDERS:
         assert f"  {provider} [" in out
-    assert "[turns disabled: stream schema unverified]" in out
+    assert "[turns disabled: stream schema unverified]" not in out
+
+
+def test_list_notes_grok_only_when_its_schema_flag_drops(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(cli_participants, "GROK_SCHEMA_VERIFIED", False)
+    parser = build_parser()
+    args = parser.parse_args(["participant", "list"])
+    assert _cmd_list(args) == 0
+    assert "[turns disabled: stream schema unverified]" in capsys.readouterr().out
 
 
 def test_list_json_carries_the_health_fields(capsys: pytest.CaptureFixture[str]) -> None:
@@ -182,7 +197,7 @@ def test_list_json_carries_the_health_fields(capsys: pytest.CaptureFixture[str])
     by_provider = {entry["provider"]: entry for entry in payload}
     assert set(by_provider) == set(PROVIDERS)
     assert {"identity", "channel", "available", "detail"} <= set(by_provider["claude"])
-    assert "unverified" in by_provider["grok"]["detail"]
+    assert "unverified" not in by_provider["grok"]["detail"]
     assert "unverified" not in by_provider["gemini"]["detail"]
 
 
@@ -210,11 +225,17 @@ def test_ask_defaults_identity_and_generates_a_topic(
 
 
 def test_ask_refuses_grok_while_the_schema_is_unverified(
+    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    monkeypatch.setattr(cli_participants, "GROK_SCHEMA_VERIFIED", False)
     args = _ask_args(provider="grok")
     assert _cmd_ask(args) == 2
     assert "grok turns are disabled" in capsys.readouterr().out
+
+
+def test_grok_turns_are_enabled_after_real_emitter_capture() -> None:
+    assert cli_participants.refusal_for("grok") is None
 
 
 def test_gemini_turns_are_enabled_after_real_emitter_capture() -> None:

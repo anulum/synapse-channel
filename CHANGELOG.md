@@ -15,6 +15,20 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Grok is now a fully enabled Participant Fabric provider and the fifth
+  provider-native file-claim guard. Its parser is pinned to a real stable
+  `grok 0.2.93` capture of native `thought` / `text` / `end` events, so
+  `GROK_SCHEMA_VERIFIED` is true and `participant ask grok` no longer carries
+  the stale unverified-schema refusal. The small Grok hook adapter feeds
+  camelCase `PreToolUse` events through the shared provider-neutral claim
+  engine and emits Grok's top-level deny JSON on exit zero for every handled
+  parse, Git, state, transport, timeout, or runtime failure. The printed
+  `grok-claim-hook` recipe covers `search_replace` and compatibility aliases
+  without embedding tokens; public docs retain Grok's host-level fail-open and
+  alternate-tool limits. `adapters install grok` writes the separate
+  kebab-case `~/.grok/skills/synapse/SKILL.md` contract required by the
+  installed CLI, without changing Kimi's distinct skill schema.
+
 - Gemini CLI becomes the seventh registered participant provider and the fourth
   file-edit claim guard. The guard speaks Gemini's native hook contract —
   `BeforeTool` event, `replace`/`write_file` tool names, `tool_input.file_path`,
@@ -2902,7 +2916,7 @@ All notable changes to this project are documented here.
   --permission-mode plan`, routing shared context through Grok's `--rules` system-prompt append
   and resuming a session via `--resume`. The argv is verified against `grok --help` (Grok
   0.2.64); the *stream schema* was not captured at source at addition time (GROK_SCHEMA_VERIFIED=False).
-  Parser targets assumed Claude-Code-family convention. Real smoke gated pending capture+verification against stable grok. (Note 2026-07: prior CLI reliability issues resolved per operator reports; grok 0.2.91+ stable and detected; remaining gate is schema verification.) 100% line+branch.
+  Parser targets assumed Claude-Code-family convention. Real smoke gated pending capture+verification against stable grok. (Note 2026-07: prior CLI reliability issues resolved per operator reports; grok 0.2.91+ stable and detected; the then-remaining schema gate is resolved by the real 0.2.93 capture recorded under [Unreleased].) 100% line+branch.
 - Added the bus-mediated turn relay, the foundation for the Participant Fabric's PTY and MCP
   channels. Where a headless participant spawns a fresh process and reads its stdout, a
   long-lived peer instead receives the turn over the bus and answers over the bus; `relay_turn`

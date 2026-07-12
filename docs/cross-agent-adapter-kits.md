@@ -11,10 +11,10 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 Synapse coordinates whichever agents an operator already runs. The adapter kits
 are the thin, claim-aware glue that wires a specific coding tool — Claude Code,
-Codex, Kimi Code, Cursor, Aider, Copilot, and the Python orchestration frameworks
-— into the hub so that tool claims its file scope before editing and releases it
-on commit, without Synapse pretending to be that tool or shipping a persona
-library.
+Codex, Gemini CLI, Grok, Kimi Code, Cursor, Aider, Copilot, and the Python
+orchestration frameworks — into the hub so that tool claims its file scope
+before editing and releases it on commit, without Synapse pretending to be that
+tool or shipping a persona library.
 
 This document began as the design contract for the adapter installer. The native
 editor/CLI installer is now shipped; the contract and boundaries remain here so
@@ -73,6 +73,7 @@ Tools fall into two shapes, and the kit needs both:
    | --- | --- | --- |
    | Claude Code | `~/.claude/` (or project `.claude/`) | Markdown |
    | Codex | `~/.codex/` | TOML |
+   | Grok | `~/.grok/skills/synapse/SKILL.md` | Agent Skill (kebab-case frontmatter) |
    | Kimi Code | `$KIMI_CODE_HOME/skills/synapse/SKILL.md` (default `~/.kimi-code/skills/synapse/SKILL.md`) or project `.kimi-code/skills/synapse/SKILL.md` | Agent Skill |
    | Cursor | `.cursor/rules/synapse.mdc` | Cursor `.mdc` |
    | Aider | append to `./CONVENTIONS.md` | Markdown |
@@ -109,16 +110,19 @@ The command set is read-first and reversible:
 ```bash
 synapse adapters list                       # who is installed and where
 synapse adapters install --identity proj/me # wire every detected tool
+synapse adapters install grok --identity proj/grok # user-level Grok skill
 synapse adapters install kimi-project --identity proj/me # explicit project skill
 synapse adapters install kimi --identity proj/me --with-hook # skill + native edit guard
 synapse adapters uninstall cursor           # remove just one
 ```
 
 Two write shapes follow each tool's convention: a **dedicated file** Synapse owns
-(Claude Code, Codex, Kimi Code, Cursor, Copilot, Gemini CLI — uninstall deletes it) or a
-**marked block appended** to a file the tool also uses (Aider `CONVENTIONS.md`,
-Windsurf `.windsurfrules` — uninstall strips only the block). `--home`/`--project`
-override the roots; tool detection is a binary on `PATH` or a config directory.
+(Claude Code, Codex, Gemini CLI, Grok, Kimi Code, Cursor, Copilot — uninstall
+deletes it) or a **marked block appended** to a file the tool also uses (Aider
+`CONVENTIONS.md`, Windsurf `.windsurfrules` — uninstall strips only the block).
+`--home`/`--project` override the roots; tool detection is a binary on `PATH` or
+a config directory. Grok and Kimi deliberately use different Agent Skill
+frontmatter because their installed 0.2.93 and 0.23.3 contracts differ.
 
 Kimi exposes both official skill scopes. `kimi` installs the detected user-level
 skill under `$KIMI_CODE_HOME/skills/` (default `~/.kimi-code/skills/`);

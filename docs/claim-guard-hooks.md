@@ -12,21 +12,22 @@ SYNAPSE CHANNEL — provider file-edit claim hooks
 
 Synapse can stop a supported native file-edit call before it runs unless the
 configured identity owns a live claim for every target file. Claude Code, Codex,
-Gemini CLI, and Kimi use different hook payloads, so Synapse keeps their wire
-adapters small and sends all four through one claim decision engine.
+Gemini CLI, Grok, and Kimi use different hook payloads, so Synapse keeps their
+wire adapters small and sends all five through one claim decision engine.
 
 | Provider | Covered native tool | Path source | Recipe format |
 |---|---|---|---|
 | Claude Code | `Edit`, `Write` | absolute `tool_input.file_path` | `settings.json` fragment |
 | Codex | `apply_patch` (matcher aliases `Edit|Write`) | every add, update, delete, and move path in `tool_input.command` | `hooks.json` fragment |
 | Gemini CLI | `replace`, `write_file` on the native `BeforeTool` event | relative or absolute `tool_input.file_path` | `settings.json` `hooks` fragment |
+| Grok | `search_replace` (plus `Edit` / `Write` / `MultiEdit` compatibility aliases and the older `write` spelling) | relative or absolute `toolInput.path` | global `~/.grok/hooks/*.json` fragment |
 | Kimi Code | `Edit`, `Write` | relative or absolute `tool_input.path` | `config.toml` fragment |
 
 The decision requires the exact worktree, branch, path coverage, editable task
 state, and unambiguous owner. A missing claim, competing owner, malformed event,
-invalid Git context, stale state, unavailable hub, or query timeout produces a
-structured `permissionDecision: deny` response. Successful checks print nothing
-and leave the provider's ordinary permission flow unchanged.
+invalid Git context, stale state, unavailable hub, or query timeout produces the
+provider's structured deny response. Successful checks print nothing and leave
+the provider's ordinary permission flow unchanged.
 
 ## Getting started
 
@@ -54,6 +55,10 @@ synapse adapters gemini-claim-hook \
   --identity my-repo/gemini \
   --print-config
 
+synapse adapters grok-claim-hook \
+  --identity my-repo/grok \
+  --print-config
+
 synapse adapters kimi-claim-hook \
   --identity my-repo/kimi \
   --print-config
@@ -62,12 +67,14 @@ synapse adapters kimi-claim-hook \
 With `--print-config`, these commands only print mergeable fragments and never
 write provider configuration. Merge the Claude fragment into
 `.claude/settings.json`, the Codex fragment into `.codex/hooks.json`, the Gemini
-fragment into the `hooks` key of `.gemini/settings.json`, or the Kimi fragment
-into `$KIMI_CODE_HOME/config.toml` (default `~/.kimi-code/config.toml`), then use
-the provider's normal hook inspection flow. Codex requires operators to review
-and trust a new or changed non-managed hook. Gemini's hook `timeout` field is in
+fragment into the `hooks` key of `.gemini/settings.json`, save the Grok fragment
+as one global `~/.grok/hooks/*.json` file, or merge the Kimi fragment into
+`$KIMI_CODE_HOME/config.toml` (default `~/.kimi-code/config.toml`), then use the
+provider's normal hook inspection flow. Codex requires operators to review and
+trust a new or changed non-managed hook. Gemini's hook `timeout` field is in
 milliseconds, and the printed fragment already uses that unit; Gemini also
-refuses project-scope hooks inside untrusted folders.
+refuses project-scope hooks inside untrusted folders. Grok global hooks are
+always trusted; a project `.grok/hooks/` copy would require folder trust.
 
 Kimi also has an explicit reversible installer:
 
@@ -125,6 +132,13 @@ avoids provider conventions in which an ordinary non-zero error means
   outside this matcher, and Gemini's hook runner treats a plain non-JSON hook
   crash with exit 1 as a non-blocking warning, so Synapse always emits the
   structured deny object on exit zero for handled failures.
+- **Grok:** the guard speaks the installed 0.2.93 contract — camelCase
+  `PreToolUse` input, native `search_replace` path data, and top-level
+  `{"decision": "deny", "reason": …}` output. Grok's host runner treats hook
+  timeouts, crashes, and malformed output as fail-open, so Synapse bounds the
+  query and converts every handled failure to explicit deny JSON on exit zero.
+  `run_terminal_command` and any future write-capable tool outside the matcher
+  remain outside this bounded guard.
 - **Kimi Code:** the handler converts all failures it receives into structured
   denial on exit zero. Kimi documents its hook runner itself as fail-open if the
   process crashes or exceeds the host timeout. Synapse leaves headroom and catches
@@ -153,5 +167,7 @@ claim their scope explicitly.
 - [Codex hooks](https://developers.openai.com/codex/hooks)
 - [Gemini CLI](https://github.com/google-gemini/gemini-cli) — the `BeforeTool`
   contract above was read from the installed 0.47.0 bundle source
+- Grok 0.2.93 — the `PreToolUse`, matcher-alias, input, deny, timeout, and
+  fail-open contracts above were read from the installed user guide
 - [Kimi Code hooks](https://moonshotai.github.io/kimi-code/en/customization/hooks)
 - [Git-native claims](git-claims.md)

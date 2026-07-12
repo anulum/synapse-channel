@@ -4,66 +4,107 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — parser for Grok CLI `--output-format streaming-json` output
-"""Parse the ``streaming-json`` stream emitted by headless ``grok --single``.
+# SYNAPSE_CHANNEL — parser for Grok CLI streaming-json output
+"""Parse the streaming-json stream emitted by headless Grok.
 
-.. warning::
+Schema verification
+-------------------
+Captured on 2026-07-12 from stable Grok 0.2.93 with a read-only, single-turn
+request. The live shape is not the Claude Code stream-json convention:
 
-   **Grok support is ready.** The driver and parser are built and unit-tested. Prior
-   workstation-level reliability issues with the Grok CLI were reported in mid-2026 (see
-   internal escalation records from June 2026). As of current Grok releases (0.2.91+ observed),
-   the binary is present and detected by ``synapse participant list``. The remaining gate is
-   schema verification per the verified-at-source rule: the ``streaming-json`` output shape
-   has not yet been captured from a real ``grok --single --output-format streaming-json`` run
-   against the stable CLI on this host. This parser therefore follows the documented
-   Claude-Code-family convention (delegating to the shared stream parser). Re-capture and
-   re-verify against a current stable Grok CLI, then set :data:`GROK_SCHEMA_VERIFIED` to
-   ``True`` and enable the gated smoke. The flag records this state.
+- thought events carry streamed reasoning fragments in data;
+- text events carry streamed answer fragments in data;
+- end carries stopReason, sessionId, and requestId.
 
-Grok is a Claude-Code-family CLI — its ``--help`` maps its own flags onto Claude Code's
-(``--allow`` ↔ ``--allowedTools``, ``--system-prompt-override`` ↔ ``--system-prompt``) — so its
-``streaming-json`` is **assumed** to follow the same line-delimited event convention as Claude
-Code's ``stream-json`` (a ``system`` init event carrying ``session_id``, ``assistant`` events
-whose message content holds ``thinking`` and ``text`` blocks, and a terminal ``result`` event
-that is authoritative for the answer, session token, and cost). On that assumption this parser
-delegates to :func:`~synapse_channel.participants.stream_json.parse_claude_stream`, so a single
-implementation covers both and there is no second, hand-fabricated schema to drift. If a real
-capture later shows Grok diverges, this is the one place to specialise.
+The immutable capture is
+tests/fixtures/grok_stream/real_single_pong.ndjson, SHA-256
+71ffaeaa567aa59290318afa7284804c3bd7c264a7fec1907edfc15cc0f5e44c.
+If a future Grok release changes the wire shape, re-capture and re-verify it
+before updating this parser.
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
+from typing import Any
 
-from synapse_channel.participants.stream_json import StreamOutcome, parse_claude_stream
+from synapse_channel.participants.stream_json import NO_RESULT_SUBTYPE, StreamOutcome
 
-GROK_SCHEMA_VERIFIED = False
-"""Whether the Grok stream schema has been captured from a real run. Currently ``False``.
-
-Prior June 2026 escalations documented the Grok CLI as heavy/unreliable on the target
-workstation (freezes, memory pressure). Those specific issues are no longer observed (binary
-present at 0.2.91+, detected by the CLI). The flag remains ``False`` because no real
-``grok --single --output-format streaming-json`` trace has been captured on this host against
-a stable release (verified-at-source rule). Flip to ``True`` only after such a capture confirms
-the event shape, then enable full smoke tests.
-"""
+GROK_SCHEMA_VERIFIED = True
+"""The parser is pinned to a real stable Grok 0.2.93 capture."""
 
 
 def parse_grok_stream(lines: Iterable[str]) -> StreamOutcome:
-    """Parse Grok ``--output-format streaming-json`` lines into a :class:`StreamOutcome`.
+    """Distil native Grok events into one participant stream outcome."""
+    thought_parts: list[str] = []
+    text_parts: list[str] = []
+    session_id = ""
+    stop_reason = ""
+    saw_end = False
 
-    Delegates to :func:`~synapse_channel.participants.stream_json.parse_claude_stream` on the
-    assumption — see this module's warning and :data:`GROK_SCHEMA_VERIFIED` — that Grok's
-    streaming-json follows the same Claude-Code-family event convention.
+    for line in lines:
+        event = _decode(line)
+        if event is None:
+            continue
+        event_type = event.get("type")
+        if event_type == "thought":
+            fragment = event.get("data")
+            if isinstance(fragment, str) and fragment:
+                thought_parts.append(fragment)
+        elif event_type == "text":
+            fragment = event.get("data")
+            if isinstance(fragment, str) and fragment:
+                text_parts.append(fragment)
+        elif event_type == "end":
+            saw_end = True
+            session_id = _str_field(event, "sessionId", "session_id") or session_id
+            stop_reason = _str_field(event, "stopReason", "stop_reason") or stop_reason
+            final = event.get("data")
+            if isinstance(final, str) and final and not text_parts:
+                text_parts.append(final)
 
-    Parameters
-    ----------
-    lines : Iterable[str]
-        The provider's stdout split into lines.
+    answer = "".join(text_parts)
+    rationale = "".join(thought_parts)
+    if not saw_end:
+        return StreamOutcome(
+            answer=answer,
+            rationale=rationale,
+            session_id=session_id,
+            is_error=True,
+            subtype=NO_RESULT_SUBTYPE,
+            cost_usd=0.0,
+            num_turns=0,
+            stop_reason=stop_reason,
+        )
+    return StreamOutcome(
+        answer=answer,
+        rationale=rationale,
+        session_id=session_id,
+        is_error=False,
+        subtype="success",
+        cost_usd=0.0,
+        num_turns=1,
+        stop_reason=stop_reason or "end_turn",
+    )
 
-    Returns
-    -------
-    StreamOutcome
-        The distilled outcome, under the unverified Claude-family schema assumption.
-    """
-    return parse_claude_stream(lines)
+
+def _decode(line: str) -> dict[str, Any] | None:
+    """Return one JSON-object line, or None for stream noise."""
+    text = line.strip()
+    if not text:
+        return None
+    try:
+        decoded: object = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return decoded if isinstance(decoded, dict) else None
+
+
+def _str_field(event: dict[str, Any], *keys: str) -> str:
+    """Return the first non-empty string among the candidate keys."""
+    for key in keys:
+        value = event.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""

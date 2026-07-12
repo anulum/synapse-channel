@@ -86,9 +86,9 @@ def build_deliberants(specs: Sequence[str], *, timeout: float) -> list[Participa
     Raises
     ------
     ValueError
-        For a refused provider (grok while its stream schema is unverified), an
-        unknown provider, an empty provider part, or a model-less turn request to
-        a provider whose driver has no default model.
+        For a provider whose stream-schema verification flag is false, an unknown
+        provider, an empty provider part, or a model-less turn request to a
+        provider whose driver has no default model.
     """
     seats: list[Participant] = []
     seen: dict[str, int] = {}

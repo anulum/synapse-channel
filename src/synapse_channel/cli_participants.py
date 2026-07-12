@@ -17,10 +17,10 @@ reachable only as a library import. This command group is its operator surface:
 prints the answer — or the full typed
 :class:`~synapse_channel.participants.envelope.TurnResult` with ``--json``.
 
-Grok is registered but refused for turns while
-:data:`~synapse_channel.participants.grok_stream.GROK_SCHEMA_VERIFIED` is false:
-its stream schema is modelled on documentation, not verified against the real
-CLI, and driving an unverified schema silently would fabricate confidence.
+Grok is a first-class provider after its native ``thought`` / ``text`` /
+``end`` stream was captured from stable Grok 0.2.93. The
+:data:`~synapse_channel.participants.grok_stream.GROK_SCHEMA_VERIFIED` gate
+remains fail-closed so a future wire change can disable turns until re-verified.
 Gemini carries the same gate on
 :data:`~synapse_channel.participants.gemini_stream.GEMINI_SCHEMA_VERIFIED`; that
 flag is now true — the envelope was captured from the installed 0.47.0 binary's
@@ -71,9 +71,9 @@ PROVIDERS: dict[str, ParticipantBuilder] = {
 """Registered provider drivers, keyed by the name the operator selects."""
 
 _GROK_REFUSAL = (
-    "grok turns are disabled: GROK_SCHEMA_VERIFIED=False (stream schema not captured "
-    "from a real stable run; prior CLI issues resolved). A turn could silently "
-    "misparse. Use another provider, or verify the schema first."
+    "grok turns are disabled: GROK_SCHEMA_VERIFIED=False (the current CLI stream "
+    "schema is not verified at source). A turn could silently misparse. Use another "
+    "provider, or re-capture and verify the schema first."
 )
 
 _GEMINI_REFUSAL = (

@@ -20,6 +20,7 @@ def test_provider_claim_hook_guide_is_discoverable_and_honest() -> None:
         "claude-claim-hook",
         "codex-claim-hook",
         "gemini-claim-hook",
+        "grok-claim-hook",
         "kimi-claim-hook",
     ):
         assert command in readme
@@ -30,6 +31,8 @@ def test_provider_claim_hook_guide_is_discoverable_and_honest() -> None:
     assert "BeforeTool" in guide
     assert '{"decision": "deny", "reason": …}' in guide
     assert "milliseconds" in guide
+    assert "~/.grok/hooks/" in guide
+    assert "search_replace" in guide
     assert "--install-config" in guide
     assert "--uninstall-config" in guide
     assert "$KIMI_CODE_HOME/config.toml" in guide

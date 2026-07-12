@@ -411,23 +411,27 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   an idle provider in this adapter; call `synapse_inbox` at turn start and keep
   `synapse arm install --identity NAME --start` active for prompt delivery.
 
-- **Claude Code / Codex / Gemini / Kimi native file edits:** print a
+- **Claude Code / Codex / Gemini / Grok / Kimi native file edits:** print a
   provider-native pre-tool recipe (`PreToolUse` for the Claude family,
-  `BeforeTool` for Gemini CLI) that checks the authoritative live claim before a
-  supported file tool runs.
+  Grok, and Kimi; `BeforeTool` for Gemini CLI) that checks the authoritative live
+  claim before a supported file tool runs.
 
   ```bash
   synapse adapters claude-claim-hook --identity my-repo/claude --print-config
   synapse adapters codex-claim-hook  --identity my-repo/codex  --print-config
   synapse adapters gemini-claim-hook --identity my-repo/gemini --print-config
+  synapse adapters grok-claim-hook   --identity my-repo/grok   --print-config
   synapse adapters kimi-claim-hook   --identity my-repo/kimi   --print-config
   synapse adapters kimi-claim-hook   --identity my-repo/kimi   --install-config
   ```
 
-  `--print-config` is read-only. Kimi's opt-in installer writes only one marked
-  block in `$KIMI_CODE_HOME/config.toml` (default `~/.kimi-code/config.toml`),
-  and `--uninstall-config` removes only that block. The equivalent combined path
-  is `synapse adapters install kimi --identity my-repo/kimi --with-hook`.
+  `--print-config` is read-only. Save the Grok fragment under
+  `~/.grok/hooks/*.json`; `synapse adapters install grok` separately installs
+  the kebab-case `~/.grok/skills/synapse/SKILL.md` coordination skill. Kimi's
+  opt-in installer writes only one marked block in
+  `$KIMI_CODE_HOME/config.toml` (default `~/.kimi-code/config.toml`), and
+  `--uninstall-config` removes only that block. The equivalent combined Kimi
+  path is `synapse adapters install kimi --identity my-repo/kimi --with-hook`.
 
   The [provider claim-hook guide](docs/claim-guard-hooks.md) documents exact tool
   coverage, token-file setup, and the native-host limits. These are bounded file
@@ -1351,11 +1355,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.4 |
 | Public API exports | 70 |
-| Package modules | 423 |
-| Classes | 592 |
+| Package modules | 425 |
+| Classes | 593 |
 | Wire message types | 77 |
-| CLI subcommands | 165 |
-| Test functions | 6612 |
+| CLI subcommands | 166 |
+| Test functions | 6659 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 55 |
 | GitHub Actions workflows | 18 |

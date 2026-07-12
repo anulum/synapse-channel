@@ -8,10 +8,9 @@
 """Tests for :mod:`synapse_channel.participants.headless_grok`.
 
 Every turn is driven through an injected fake runner, so the suite exercises the driver's argv
-construction (verified against ``grok --help``), stream delegation, and failure handling
-without ever invoking the real Grok CLI — which is intentionally not run on this machine. The
-argv assertions are the verified part; the parsed event shape rides on the unverified
-Claude-family assumption documented in the driver.
+construction (verified against ``grok --help``), stream parsing, and failure handling without
+ever invoking the real Grok CLI. Fake stdout uses the verified native Grok
+``thought`` / ``text`` / ``end`` streaming-json shape.
 """
 
 from __future__ import annotations
@@ -32,20 +31,20 @@ from synapse_channel.participants.participant import ParticipantChannel
 
 
 def _stream(answer: str = "pong", *, session: str = "gs-1") -> str:
-    init = json.dumps({"type": "system", "subtype": "init", "session_id": session})
-    result = json.dumps(
-        {
-            "type": "result",
-            "subtype": "success",
-            "is_error": False,
-            "result": answer,
-            "session_id": session,
-            "total_cost_usd": 0.0,
-            "num_turns": 1,
-            "stop_reason": "end_turn",
-        }
-    )
-    return "\n".join([init, result]) + "\n"
+    """Build a minimal native Grok streaming-json transcript."""
+    lines = [
+        json.dumps({"type": "thought", "data": "reasoning "}),
+        json.dumps({"type": "text", "data": answer}),
+        json.dumps(
+            {
+                "type": "end",
+                "stopReason": "EndTurn",
+                "sessionId": session,
+                "requestId": "req-test",
+            }
+        ),
+    ]
+    return "\n".join(lines) + "\n"
 
 
 class _FakeRunner:
