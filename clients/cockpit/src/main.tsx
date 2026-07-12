@@ -20,6 +20,7 @@ import "@fontsource/jetbrains-mono/500.css";
 import "@fontsource/jetbrains-mono/700.css";
 import "./styles/global.css";
 import "./styles/auth.css";
+import "./styles/access.css";
 
 const mount = document.getElementById("cockpit");
 if (mount === null) throw new Error("cockpit mount node #cockpit is missing");

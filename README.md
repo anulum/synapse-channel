@@ -452,10 +452,16 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   loads its token-free static shell, asks for that bearer, and retains it only
   in the tab's session storage. It never accepts the bearer in a URL. When the
   token is omitted on an exposed bind, Synapse generates and prints a startup
-  token. With `--operator`, its command palette exposes governed message,
-  task-declaration, and task-update forms; each reports the hub's strict outcome
-  and grants no authority beyond the hub's validation, ACL, rate limit, and audit
-  decision. With `--feeds-db`, the cockpit's Audit tab incrementally renders the
+  token. Teams can instead pass an owner-only
+  `--dashboard-access-file` mapping separate viewer/operator/admin token files
+  to browser principals and distinct relay identities. The server-authored
+  capability descriptor removes unauthorized write controls from the DOM and
+  command search, but every POST is still re-authorized server-side and at the
+  hub; admin currently gains no mutation beyond the three shipped operator
+  writes. With `--operator`, the authorized command palette exposes governed
+  message, task-declaration, and task-update forms; each reports the hub's
+  strict outcome and grants no authority beyond the hub's validation, ACL, rate
+  limit, and audit decision. With `--feeds-db`, the cockpit's Audit tab incrementally renders the
   universal receipt ledger and governed operator-relay history as two distinct,
   bounded store-attested feeds; absence and stale last-good data remain visible.
   Add
@@ -1320,11 +1326,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.4 |
 | Public API exports | 70 |
-| Package modules | 406 |
-| Classes | 576 |
+| Package modules | 410 |
+| Classes | 581 |
 | Wire message types | 77 |
 | CLI subcommands | 162 |
-| Test functions | 6405 |
+| Test functions | 6439 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 54 |
 | GitHub Actions workflows | 18 |

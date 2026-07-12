@@ -37,10 +37,10 @@ export function AuthVeil({ reason, onUnlock }: AuthVeilProps): JSX.Element {
     <main className="auth-veil" aria-labelledby="auth-title">
       <form className="auth-card" onSubmit={submit}>
         <span className="auth-card__eyebrow">SYNAPSE·CHANNEL</span>
-        <h1 id="auth-title">Unlock operator cockpit</h1>
+        <h1 id="auth-title">Unlock cockpit</h1>
         <p>
-          This dashboard protects its live feeds. Paste the bearer printed by the dashboard
-          process; it stays in this tab&apos;s session storage only.
+          This dashboard protects its live feeds. Paste the bearer provided for your dashboard
+          principal; it stays in this tab&apos;s session storage only.
         </p>
         <label htmlFor="dashboard-bearer">Dashboard bearer token</label>
         <input

@@ -32,6 +32,7 @@ def test_cockpit_assets_mapping() -> None:
         "risk-panel.js": "text/javascript",
         "studio-command.css": "text/css",
         "studio-command.js": "text/javascript",
+        "studio-access.js": "text/javascript",
         "studio.css": "text/css",
         "studio-feeds.js": "text/javascript",
     }

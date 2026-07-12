@@ -7,7 +7,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — app shell smoke tests: the wired deck against a stubbed hub
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -39,6 +39,23 @@ const SNAPSHOT = {
   risk: { level: "green", signals: [], safe_next_work: [] },
 };
 
+function accessDescriptor(role: "viewer" | "operator" | "admin"): object {
+  const writes = role !== "viewer";
+  return {
+    version: 1,
+    principal: role,
+    role,
+    capabilities: {
+      read: true,
+      message_send: writes,
+      task_declare: writes,
+      task_update: writes,
+    },
+    operator_armed: true,
+    trust_boundary: "presentation hints only; HTTP and hub policy enforce writes",
+  };
+}
+
 beforeEach(() => {
   window.sessionStorage.clear();
   resetCockpitAuth();
@@ -50,6 +67,9 @@ beforeEach(() => {
     "fetch",
     vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.startsWith("/dashboard-access.json")) {
+        return Promise.resolve(new Response(JSON.stringify(accessDescriptor("viewer"))));
+      }
       if (url.startsWith("/snapshot.json")) {
         return Promise.resolve(new Response(JSON.stringify(SNAPSHOT), { status: 200 }));
       }
@@ -124,9 +144,12 @@ describe("App", () => {
     const fetcher = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const authorization = new Headers(init?.headers).get("Authorization");
-      if (url.startsWith("/snapshot.json")) {
+      if (url.startsWith("/dashboard-access.json") || url.startsWith("/snapshot.json")) {
         if (authorization !== "Bearer current-token" || revoked) {
           return Promise.resolve(new Response("no", { status: 401 }));
+        }
+        if (url.startsWith("/dashboard-access.json")) {
+          return Promise.resolve(new Response(JSON.stringify(accessDescriptor("operator"))));
         }
         return Promise.resolve(new Response(JSON.stringify(SNAPSHOT), { status: 200 }));
       }
@@ -135,7 +158,7 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetcher);
     render(<App />);
 
-    await waitFor(() => expect(screen.getByText("Unlock operator cockpit")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Unlock cockpit")).toBeTruthy());
     expect(screen.queryByText("worker")).toBeNull();
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }));
     expect(screen.queryByLabelText("Search commands")).toBeNull();
@@ -153,10 +176,44 @@ describe("App", () => {
 
     revoked = true;
     await authenticatedFetch("/snapshot.json");
-    await waitFor(() => expect(screen.getByText("Unlock operator cockpit")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Unlock cockpit")).toBeTruthy());
     expect(screen.queryByText("worker")).toBeNull();
     expect(
       fetcher.mock.calls.every(([input]) => !String(input).includes("current-token")),
     ).toBe(true);
+  });
+
+  it("removes write DOM and restores command focus on a capability downgrade", async () => {
+    let role: "viewer" | "operator" = "operator";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.startsWith("/dashboard-access.json")) {
+          return Promise.resolve(new Response(JSON.stringify(accessDescriptor(role))));
+        }
+        if (url.startsWith("/snapshot.json")) {
+          return Promise.resolve(new Response(JSON.stringify(SNAPSHOT)));
+        }
+        return Promise.resolve(new Response("nf", { status: 404 }));
+      }),
+    );
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("operator · operator")).toBeTruthy());
+    const trigger = screen.getByRole("button", { name: "Open command palette" });
+    await userEvent.click(trigger);
+    expect(screen.getAllByText(/^operator:/u)).toHaveLength(3);
+
+    role = "viewer";
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(screen.getByText("viewer · viewer")).toBeTruthy());
+    await waitFor(() => expect(screen.queryByLabelText("Search commands")).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+    expect(screen.getByText("Dashboard access changed; write controls were removed.")).toBeTruthy();
+
+    await userEvent.click(trigger);
+    expect(screen.queryByText(/^operator:/u)).toBeNull();
+    await userEvent.type(screen.getByLabelText("Search commands"), "operator");
+    expect(screen.getByText("no command matches")).toBeTruthy();
   });
 });

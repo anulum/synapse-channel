@@ -83,6 +83,22 @@ def test_dashboard_parser_wires_command() -> None:
     assert args.dashboard_token == "viewer"
 
 
+def test_dashboard_parser_wires_principal_access_policy() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "dashboard",
+            "--dashboard-access-file",
+            "./dashboard-access.json",
+            "--operator",
+        ]
+    )
+
+    assert args.dashboard_access_file == Path("./dashboard-access.json")
+    assert args.dashboard_token is None
+    assert args.operator is True
+    assert args.operator_name is None
+
+
 def test_dashboard_refuses_non_loopback_without_override() -> None:
     with pytest.raises(ValueError, match="loopback"):
         validate_dashboard_bind("0.0.0.0", allow_non_loopback=False)  # nosec B104

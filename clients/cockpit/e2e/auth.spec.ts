@@ -15,7 +15,7 @@ if (bearer === undefined || bearer === "") {
 
 test("the production cockpit unlocks, governs writes, and locks on 401", async ({ page }) => {
   await page.goto("/cockpit/");
-  await expect(page.getByRole("heading", { name: "Unlock operator cockpit" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Unlock cockpit" })).toBeVisible();
   expect(page.url()).not.toContain(bearer);
 
   await page.getByLabel("Dashboard bearer token").fill("wrong-e2e-bearer");
@@ -129,7 +129,7 @@ test("the production cockpit unlocks, governs writes, and locks on 401", async (
   await page.route("**/snapshot.json*", async (route) => {
     await route.fulfill({ status: 401, contentType: "text/plain", body: "revoked\n" });
   });
-  await expect(page.getByRole("heading", { name: "Unlock operator cockpit" })).toBeVisible({
+  await expect(page.getByRole("heading", { name: "Unlock cockpit" })).toBeVisible({
     timeout: 8_000,
   });
   expect(await page.evaluate(() => sessionStorage.getItem("synapse-cockpit-bearer"))).toBeNull();

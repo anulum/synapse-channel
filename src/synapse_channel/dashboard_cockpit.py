@@ -32,6 +32,7 @@ COCKPIT_ASSETS: Final[dict[str, str]] = {
     "studio.css": "text/css",
     "studio-command.css": "text/css",
     "studio-command.js": "text/javascript",
+    "studio-access.js": "text/javascript",
     "studio-feeds.js": "text/javascript",
 }
 """Servable cockpit asset file names mapped to their content types."""

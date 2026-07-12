@@ -11,6 +11,7 @@ import readmeSource from "../README.md?raw";
 import workerSource from "../public/sw.js?raw";
 
 const REQUEST_MODULES = [
+  "access.ts",
   "auditFeeds.ts",
   "causality.ts",
   "eventsTail.ts",

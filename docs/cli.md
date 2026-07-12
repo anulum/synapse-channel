@@ -312,6 +312,65 @@ per task. These are the same deterministic local scorers as the CLI, remain
 advisory-only, and never claim work, assign owners, reserve capacity, or grant
 execution authority.
 
+### Dashboard browser principals
+
+For more than one browser identity, use `--dashboard-access-file FILE` instead
+of the compatibility `--dashboard-token`. The version-one policy maps a token
+file to a display principal, role, and (for write-capable principals) a distinct
+hub relay identity:
+
+```json
+{
+  "version": 1,
+  "principals": [
+    {"id": "review", "role": "viewer", "token_file": "viewer.token"},
+    {
+      "id": "ops-a",
+      "role": "operator",
+      "token_file": "operator.token",
+      "operator_name": "operator:studio/ops-a"
+    },
+    {
+      "id": "owner",
+      "role": "admin",
+      "token_file": "admin.token",
+      "operator_name": "operator:studio/owner"
+    }
+  ]
+}
+```
+
+Relative token paths resolve beside the policy. On POSIX, the policy and every
+token must be owner-readable regular files with no group/world permissions;
+symlinks are refused. Each UTF-8 bearer is 32–4096 bytes with no whitespace or
+control characters, optionally followed by one newline. The loader caps the
+policy at 64 principals and 256 KiB and rejects unknown fields/roles/versions,
+duplicate JSON keys, ids, tokens, or relay identities before binding HTTP.
+
+```bash
+chmod 600 ~/.config/synapse/dashboard-access.json ~/.config/synapse/*.token
+synapse dashboard --operator \
+  --dashboard-access-file ~/.config/synapse/dashboard-access.json \
+  --cockpit-dist clients/cockpit/dist
+```
+
+An operator or admin entry requires `--operator`; a viewer-only policy does
+not. `--dashboard-access-file` cannot be combined with `--dashboard-token` or
+the compatibility `--operator-name`, because each write principal carries its
+own attribution. The authenticated `/dashboard-access.json` response contains
+only principal id, display role, current capability booleans, operator-arming
+state, and the presentation trust boundary. It is `no-store`, varies on
+`Authorization`, and contains no token, hash, path, or ACL rule.
+
+Capabilities, not role names, decide which React controls exist. A viewer has
+read only; operator and admin currently receive the same three shipped write
+capabilities, with no invented admin verb. This document is a presentation
+hint only: every POST rechecks the bearer and route server-side. Missing/bad
+credentials receive `401`, a known principal without the capability receives
+`403`, and unarmed write routes remain `404`; the hub then applies its own ACL
+and durable audit as before. Without an access file, the existing one-token and
+open-loopback behavior is unchanged.
+
 With `--feeds-db <hub.db>` (`--reliability-db` is the same flag's original
 name) the dashboard serves twelve feeds off the **durable event store** —
 available when the hub is down, real sequences and timestamps, behind the
@@ -378,8 +437,9 @@ cockpit can act on the fleet rather than only observe it:
 
 The write-path is **off by default** — without the flag every route answers 404,
 indistinguishable from an unknown path, and the dashboard stays a pure observer.
-When armed, a write still requires the dashboard bearer token, is rate-limited,
-and is sent under the identity `operator:<name>` (set with `--operator-name`),
+When armed, a write still requires a recognized dashboard bearer and exact
+route capability, is rate-limited, and uses either the compatibility identity
+`operator:<name>` (`--operator-name`) or its access-file principal identity,
 never impersonating an agent. The relay reimplements neither authorisation nor
 auditing: the hub applies its own ACL to the relayed frame and records it in the
 durable log, so every operator action is authorised at the hub and shows up in

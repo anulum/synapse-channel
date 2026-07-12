@@ -316,6 +316,22 @@ describe("bounded audit stores", () => {
     await vi.advanceTimersByTimeAsync(10);
     expect(states).toHaveLength(before);
 
+    let resolveAbsent: ((response: Response) => void) | undefined;
+    const absentFetch = vi.fn<typeof fetch>().mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveAbsent = resolve;
+        }),
+    );
+    const absentStates: ReceiptsState[] = [];
+    const absent = createReceiptsStore({ fetcher: absentFetch, pollMs: 1_000 });
+    absent.subscribe((state) => absentStates.push(state));
+    const absentCount = absentStates.length;
+    absent.stop();
+    resolveAbsent?.(new Response("not configured", { status: 404 }));
+    await vi.advanceTimersByTimeAsync(10);
+    expect(absentStates).toHaveLength(absentCount);
+
     let rejectFetch: ((reason: Error) => void) | undefined;
     const rejecting = vi.fn<typeof fetch>().mockImplementation(
       () =>

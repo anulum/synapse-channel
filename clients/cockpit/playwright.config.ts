@@ -14,11 +14,15 @@ import { defineConfig, devices } from "@playwright/test";
 const host = "127.0.0.1";
 const dashboardPort = process.env["SYNAPSE_COCKPIT_E2E_DASHBOARD_PORT"] ?? "18765";
 const bearer = process.env["SYNAPSE_COCKPIT_E2E_TOKEN"] ?? `cockpit-e2e-${randomUUID()}`;
+const viewerBearer = process.env["SYNAPSE_COCKPIT_E2E_VIEWER_TOKEN"] ?? `cockpit-viewer-${randomUUID()}`;
+const adminBearer = process.env["SYNAPSE_COCKPIT_E2E_ADMIN_TOKEN"] ?? `cockpit-admin-${randomUUID()}`;
 const localPython = "../../.venv/bin/python";
 const python = process.env["SYNAPSE_COCKPIT_E2E_PYTHON"] ??
   (existsSync(localPython) ? localPython : "python");
 
 process.env["SYNAPSE_COCKPIT_E2E_TOKEN"] = bearer;
+process.env["SYNAPSE_COCKPIT_E2E_VIEWER_TOKEN"] = viewerBearer;
+process.env["SYNAPSE_COCKPIT_E2E_ADMIN_TOKEN"] = adminBearer;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -46,6 +50,8 @@ export default defineConfig({
       ...process.env,
       PYTHONUNBUFFERED: "1",
       SYNAPSE_COCKPIT_E2E_TOKEN: bearer,
+      SYNAPSE_COCKPIT_E2E_VIEWER_TOKEN: viewerBearer,
+      SYNAPSE_COCKPIT_E2E_ADMIN_TOKEN: adminBearer,
       SYNAPSE_COCKPIT_E2E_DASHBOARD_PORT: dashboardPort,
     },
   },

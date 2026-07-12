@@ -36,6 +36,7 @@ def test_board_and_command_assets_are_fixed_servable_package_data() -> None:
         "board-columns.js": "text/javascript",
         "studio-command.css": "text/css",
         "studio-command.js": "text/javascript",
+        "studio-access.js": "text/javascript",
         "studio-feeds.js": "text/javascript",
     }
     assert {name: COCKPIT_ASSETS[name] for name in expected} == expected
@@ -44,6 +45,7 @@ def test_board_and_command_assets_are_fixed_servable_package_data() -> None:
     command_css = load_cockpit_asset("studio-command.css")
     assert "prefers-reduced-motion" in command_css
     assert "SynapseStudioCommand" in load_cockpit_asset("studio-command.js")
+    assert "SynapseStudioAccess" in load_cockpit_asset("studio-access.js")
     assert "SynapseStudioFeeds" in load_cockpit_asset("studio-feeds.js")
 
 

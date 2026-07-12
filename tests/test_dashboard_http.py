@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import cast
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -27,7 +26,6 @@ from synapse_channel.core.hub_config import HubConfig, HubLimits, config_fingerp
 from synapse_channel.core.journal import EventKind, record_operator_relay
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.dashboard import (
-    _DashboardHandler,
     fetch_dashboard_snapshot,
     start_dashboard_server,
 )
@@ -509,23 +507,6 @@ def test_dashboard_public_docs_describe_local_readonly_surface() -> None:
     assert "branch-conflict candidates" in cli_docs
     assert "not run git" in cli_docs
     assert "--a2a-state-file" in cli_docs
-
-
-def test_dashboard_handler_authorizes_everything_without_a_token() -> None:
-    """With no configured bearer token the loopback surface stays open."""
-    import types
-
-    from synapse_channel.dashboard import _DashboardHandler
-
-    stub = cast("_DashboardHandler", types.SimpleNamespace(dashboard_token=None, headers={}))
-    assert _DashboardHandler._authorized(stub) is True
-    bearer = cast(
-        "_DashboardHandler",
-        types.SimpleNamespace(dashboard_token="secret", headers={"Authorization": "Bearer secret"}),
-    )
-    assert _DashboardHandler._authorized(bearer) is True
-    wrong = cast("_DashboardHandler", types.SimpleNamespace(dashboard_token="secret", headers={}))
-    assert _DashboardHandler._authorized(wrong) is False
 
 
 async def test_dashboard_studio_json_includes_observed_fleet_from_live_peer() -> None:

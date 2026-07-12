@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import signal
 from pathlib import Path
@@ -71,18 +72,46 @@ async def _await_hub(uri: str, timeout: float = 5.0) -> None:
     raise TimeoutError(f"hub did not listen at {uri}")
 
 
+def _access_policy(root: Path, tokens: dict[str, str]) -> Path:
+    """Write a private three-principal policy used only by this harness."""
+    principals: list[dict[str, str]] = []
+    for role in ("viewer", "operator", "admin"):
+        token = tokens[role]
+        if len(token.encode("utf-8")) < 32:
+            raise ValueError(f"SYNAPSE_COCKPIT_E2E_{role.upper()}_TOKEN must be at least 32 bytes")
+        token_path = root / f"{role}.token"
+        token_path.write_text(token, encoding="utf-8")
+        token_path.chmod(0o600)
+        principal = {"id": role, "role": role, "token_file": token_path.name}
+        if role == "operator":
+            principal["operator_name"] = "operator:cockpit-e2e"
+        elif role == "admin":
+            principal["operator_name"] = "operator:cockpit-e2e-admin"
+        principals.append(principal)
+    policy_path = root / "dashboard-access.json"
+    policy_path.write_text(
+        json.dumps({"version": 1, "principals": principals}),
+        encoding="utf-8",
+    )
+    policy_path.chmod(0o600)
+    return policy_path
+
+
 async def _serve() -> None:
     """Run the real hub and read-gated operator dashboard until terminated."""
     dashboard_port = _port_from_env("SYNAPSE_COCKPIT_E2E_DASHBOARD_PORT", DEFAULT_DASHBOARD_PORT)
     hub_port = _port_from_env("SYNAPSE_COCKPIT_E2E_HUB_PORT", DEFAULT_HUB_PORT)
-    bearer = os.environ.get("SYNAPSE_COCKPIT_E2E_TOKEN", "")
-    if bearer == "":
-        raise ValueError("SYNAPSE_COCKPIT_E2E_TOKEN must be non-empty")
+    tokens = {
+        "viewer": os.environ.get("SYNAPSE_COCKPIT_E2E_VIEWER_TOKEN", ""),
+        "operator": os.environ.get("SYNAPSE_COCKPIT_E2E_TOKEN", ""),
+        "admin": os.environ.get("SYNAPSE_COCKPIT_E2E_ADMIN_TOKEN", ""),
+    }
     dist = Path(__file__).resolve().parents[1] / "dist"
     if not (dist / "index.html").is_file():
         raise FileNotFoundError("build the cockpit before running the browser gate")
 
     scratch = TemporaryDirectory(prefix="synapse-cockpit-e2e-")
+    access_file = _access_policy(Path(scratch.name), tokens)
     event_db = Path(scratch.name) / "hub.db"
     journal = EventStore(event_db)
     record_operator_relay(
@@ -115,11 +144,10 @@ async def _serve() -> None:
             response_timeout=2.0,
             refresh_seconds=1,
             allow_non_loopback=False,
-            dashboard_token=bearer,
+            dashboard_access_file=access_file,
             cockpit_dist=dist,
             reliability_db=event_db,
             operator=True,
-            operator_name="operator:cockpit-e2e",
         )
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()

@@ -19,6 +19,8 @@ describe("AuthVeil", () => {
   it("names the refusal, rejects an empty token, and submits a non-empty bearer", async () => {
     const onUnlock = vi.fn().mockReturnValue(true);
     render(<AuthVeil reason="The previous bearer was refused." onUnlock={onUnlock} />);
+    expect(screen.getByRole("heading", { name: "Unlock cockpit" })).toBeTruthy();
+    expect(screen.queryByText("Unlock operator cockpit")).toBeNull();
     expect(screen.getByRole("alert").textContent).toContain("previous bearer");
 
     const input = screen.getByLabelText("Dashboard bearer token");

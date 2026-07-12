@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from synapse_channel.dashboard_access_http import DASHBOARD_ACCESS_PATH
 from synapse_channel.dashboard_studio import STUDIO_REFERENCE_PATH
 from synapse_channel.dashboard_studio_command import (
     DEFAULT_POLL_SECONDS,
@@ -48,6 +49,7 @@ def test_page_carries_every_instrument_hook() -> None:
         'id="cc-posture"',
         'id="cc-peers"',
         'id="cc-connection"',
+        'id="cc-access"',
         'id="cc-hub"',
         'id="cc-version"',
         'id="cc-offline"',
@@ -87,10 +89,17 @@ def test_page_carries_the_accessible_claims_fallback_and_board_boundary() -> Non
 def test_runtime_config_binds_only_fixed_paths_and_poll_interval() -> None:
     script = _runtime_config(poll_seconds=8)
     assert f'"snapshotUrl":"{STUDIO_SNAPSHOT_PATH}"' in script
+    assert f'"accessUrl":"{DASHBOARD_ACCESS_PATH}"' in script
     assert f'"eventsUrl":"{EVENTS_FEED_PATH}"' in script
     assert f'"operatorActionsUrl":"{OPERATOR_ACTIONS_FEED_PATH}"' in script
     assert '"pollMs":8000' in script
     assert "Object.freeze" in script
+
+
+def test_access_asset_precedes_the_self_starting_command_asset() -> None:
+    assert STUDIO_COMMAND_SCRIPTS.index("studio-access.js") < STUDIO_COMMAND_SCRIPTS.index(
+        "studio-command.js"
+    )
 
 
 def test_default_poll_interval_is_applied() -> None:

@@ -13,6 +13,7 @@ import argparse
 import time
 from pathlib import Path
 
+from synapse_channel.cli_dashboard_access import add_dashboard_access_arguments
 from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.dashboard import start_dashboard_server
 from synapse_channel.observed_peers import (
@@ -37,6 +38,7 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
             allow_non_loopback=args.allow_non_loopback,
             a2a_state_file=args.a2a_state_file,
             dashboard_token=args.dashboard_token,
+            dashboard_access_file=args.dashboard_access_file,
             reliability_db=args.reliability_db,
             reliability_db_key_file=getattr(args, "feeds_db_key_file", None),
             federation_store=args.federation_store,
@@ -119,15 +121,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
     )
     dashboard.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
-    dashboard.add_argument(
-        "--dashboard-token",
-        default=None,
-        help=(
-            "Bearer token required by dashboard data/page requests and writes; the "
-            "validated React cockpit shell stays token-free so its unlock veil can "
-            "load. Generated automatically for non-loopback binds when omitted."
-        ),
-    )
+    add_dashboard_access_arguments(dashboard)
     dashboard.add_argument(
         "--a2a-state-file",
         type=Path,
@@ -178,25 +172,6 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             "Built cockpit directory (clients/cockpit/dist) served read-only "
             "under /cockpit/; paths escaping the directory or with "
             "unrecognised suffixes are refused."
-        ),
-    )
-    dashboard.add_argument(
-        "--operator",
-        action="store_true",
-        help=(
-            "Arm the operator write-path (POST /message, /task, /task/update) so the "
-            "cockpit can relay chat and delegate board tasks to the fleet. Off by "
-            "default: without it every write is a 404 and the dashboard stays a "
-            "read-only observer. Writes still require the dashboard bearer token and "
-            "are authorised and audited by the hub."
-        ),
-    )
-    dashboard.add_argument(
-        "--operator-name",
-        default=None,
-        help=(
-            "Sender identity for relayed operator writes; 'operator:<name>' when "
-            "omitted, so operator actions are attributed and never impersonate an agent."
         ),
     )
     dashboard.add_argument(

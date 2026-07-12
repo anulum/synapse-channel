@@ -8,6 +8,7 @@
 // SYNAPSE_CHANNEL — HUD behaviour tests
 
 import { cleanup, render, screen } from "@testing-library/react";
+import { createRef } from "react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -91,5 +92,24 @@ describe("Hud", () => {
     );
     expect(screen.getByLabelText("Switch to dark theme").textContent).toBe("dark");
     expect(screen.getByLabelText("Toggle display density").textContent).toBe("cozy");
+  });
+
+  it("hosts the role control and exposes a focusable command trigger", async () => {
+    const onOpen = vi.fn();
+    const trigger = createRef<HTMLButtonElement>();
+    render(
+      <Hud
+        kpis={[]}
+        live
+        stamp="—"
+        accessControl={<span>viewer · review</span>}
+        commandTriggerRef={trigger}
+        onOpenPalette={onOpen}
+      />,
+    );
+    expect(screen.getByText("viewer · review")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Open command palette" }));
+    expect(onOpen).toHaveBeenCalledOnce();
+    expect(trigger.current).toBeInstanceOf(HTMLButtonElement);
   });
 });

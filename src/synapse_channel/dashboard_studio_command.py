@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 
+from synapse_channel.dashboard_access_http import DASHBOARD_ACCESS_PATH
 from synapse_channel.dashboard_studio import STUDIO_REFERENCE_PATH
 from synapse_channel.studio_snapshot import STUDIO_SNAPSHOT_PATH
 
@@ -43,6 +44,7 @@ STUDIO_COMMAND_STYLES = (
 STUDIO_COMMAND_SCRIPTS = (
     "board-columns.js",
     "studio-feeds.js",
+    "studio-access.js",
     "studio-command.js",
 )
 """Fixed package scripts loaded in dependency order by the shell."""
@@ -51,6 +53,7 @@ STUDIO_COMMAND_SCRIPTS = (
 def _runtime_config(*, poll_seconds: int) -> str:
     """Return the secret-free JavaScript runtime configuration."""
     payload = {
+        "accessUrl": DASHBOARD_ACCESS_PATH,
         "eventsUrl": EVENTS_FEED_PATH,
         "operatorActionsUrl": OPERATOR_ACTIONS_FEED_PATH,
         "pollMs": max(1, int(poll_seconds)) * 1000,
@@ -110,6 +113,9 @@ def render_studio_command_html(*, poll_seconds: int = DEFAULT_POLL_SECONDS) -> s
         <div class="cc-headerbar" aria-label="Hub status">
           <span id="cc-connection" class="syn-verdict syn-verdict--amber">connecting</span>
           <span id="cc-verdict" class="syn-verdict syn-verdict--amber">unknown</span>
+          <div class="cc-chip" role="status" aria-live="polite">
+            <span>access</span><b id="cc-access">loading</b>
+          </div>
           <div class="cc-chip"><span>hub</span><b id="cc-hub">unknown</b></div>
           <div class="cc-chip"><span>version</span><b id="cc-version">unknown</b></div>
         </div>

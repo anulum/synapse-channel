@@ -12,6 +12,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Palette } from "../../src/components/Palette";
+import type { DashboardCapabilities } from "../../src/lib/access";
 import { resetCockpitAuth, unlockCockpit } from "../../src/lib/auth";
 import { buildCommands } from "../../src/lib/palette";
 
@@ -26,7 +27,13 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
-const COMMANDS = buildCommands(["quantum/worker"], ["t-1"]);
+const OPERATOR: DashboardCapabilities = {
+  read: true,
+  message_send: true,
+  task_declare: true,
+  task_update: true,
+};
+const COMMANDS = buildCommands(["quantum/worker"], ["t-1"], OPERATOR);
 
 describe("Palette", () => {
   it("renders nothing while closed", () => {
@@ -34,6 +41,23 @@ describe("Palette", () => {
       <Palette open={false} commands={COMMANDS} onClose={() => {}} onRun={() => {}} />,
     );
     expect(container.innerHTML).toBe("");
+  });
+
+  it("contains no write DOM or search result when the catalogue is viewer-only", async () => {
+    const commands = buildCommands(["quantum/worker"], ["t-1"], {
+      read: true,
+      message_send: false,
+      task_declare: false,
+      task_update: false,
+    });
+    render(<Palette open commands={commands} onClose={() => {}} onRun={() => {}} />);
+    expect(document.querySelector('[class*="--write"]')).toBeNull();
+    expect(screen.queryByText(/operator:/u)).toBeNull();
+    await userEvent.type(screen.getByLabelText("Search commands"), "operator");
+    expect(screen.getByText("no command matches")).toBeTruthy();
+    await userEvent.keyboard("{Enter}");
+    expect(screen.queryByLabelText("Message recipient")).toBeNull();
+    expect(screen.queryByLabelText("Task id")).toBeNull();
   });
 
   it("ranks matches as typed and runs the chosen command from the keyboard", async () => {

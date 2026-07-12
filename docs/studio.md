@@ -107,6 +107,29 @@ hub id, version, verdict, and connection state from `/studio.json`. It honours
 information is legible without animation. Vanilla HTML, the `studio.css` tokens, and
 dependency-free ES — no build step, no external request.
 
+### Browser roles and capabilities
+
+Both Studio surfaces read the authenticated, server-authored
+`/dashboard-access.json` descriptor. The dependency-free command centre remains
+read-only and shows a neutral `role · principal` pill; malformed, unreachable,
+or unauthenticated access fails visibly as `access unavailable`. It adds no
+empty operator/admin controls.
+
+The built React cockpit probes access before exposing its live shell. It uses
+the descriptor's capability booleans—not the display role—to build the command
+catalogue. Viewer DOM, search results, and keyboard selection contain no
+message/task write entry. Operator and admin currently see exactly message,
+task declare, and task update; admin has a distinct badge but no fabricated
+admin action. A capability downgrade closes the palette/form, moves focus to
+the command trigger, and announces that write controls were removed. The role
+is never persisted as authority.
+
+Conditional rendering grants nothing. The browser bearer is independently
+resolved on every POST, then the dashboard applies the exact route capability,
+JSON/media/size/rate gates, principal-specific relay identity, and the existing
+hub ACL and durable audit. See [Dashboard browser principals](cli.md#dashboard-browser-principals)
+for the private token-file policy and status-code contract.
+
 The security-posture panel sits beside the Coordination Clock and summarises five shipped
 safety surfaces: sandbox grants, ACL/role visibility, the dashboard exposure guard,
 signed federation / peer observation, and receipt evidence. Rows are evidence-bound:

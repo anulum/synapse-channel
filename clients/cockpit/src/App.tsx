@@ -22,6 +22,7 @@ import { Palette } from "./components/Palette";
 import { PanelBoundary } from "./components/PanelBoundary";
 import { ReliabilityPanel } from "./components/ReliabilityPanel";
 import { RiskRail } from "./components/RiskRail";
+import { RoleBadge } from "./components/RoleBadge";
 import { TaskBoard } from "./components/TaskBoard";
 import { TimeTravelBar } from "./components/TimeTravelBar";
 import { ToastStack } from "./components/ToastStack";
@@ -47,12 +48,10 @@ import { focusClaims, focusTasks } from "./lib/focus";
 import { buildCommands, type Command } from "./lib/palette";
 import { readPref, writePref } from "./lib/prefs";
 import { factsOf, toastsBetween, type FleetFacts, type Toast } from "./lib/toasts";
-import {
-  cockpitAuthSnapshot,
-  subscribeCockpitAuth,
-  unlockCockpit,
-} from "./lib/auth";
+import { capabilitiesOf, lostWriteCapability } from "./lib/access";
+import { cockpitAuthSnapshot, lockCockpit, subscribeCockpitAuth, unlockCockpit } from "./lib/auth";
 import { useCockpitFeeds } from "./hooks/useCockpitFeeds";
+import { useDashboardAccess } from "./hooks/useDashboardAccess";
 
 export function App(): JSX.Element {
   const auth = useSyncExternalStore(
@@ -61,6 +60,8 @@ export function App(): JSX.Element {
     cockpitAuthSnapshot,
   );
   const authBlocked = auth.phase === "locked";
+  const access = useDashboardAccess(authBlocked, auth.revision);
+  const shellBlocked = authBlocked || access.phase === "loading";
   const {
     snap,
     stamp,
@@ -77,7 +78,7 @@ export function App(): JSX.Element {
     anomalyReport,
     receipts,
     operatorActions,
-  } = useCockpitFeeds(authBlocked, auth.revision);
+  } = useCockpitFeeds(shellBlocked, auth.revision);
   const [brush, setBrush] = useState<TimeWindow | null>(null);
   // Phone-width segment: one deck section at a time; CSS ignores this above
   // 640px, where the whole deck renders as always.
@@ -130,16 +131,28 @@ export function App(): JSX.Element {
 
   // The command palette: Ctrl/Cmd+K anywhere.
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const commandTrigger = useRef<HTMLButtonElement | null>(null);
+  const [accessNotice, setAccessNotice] = useState("");
+  const capabilities = capabilitiesOf(access);
+  const previousCapabilities = useRef(capabilities);
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
-      if (!authBlocked && event.key.toLowerCase() === "k" && (event.ctrlKey || event.metaKey)) {
+      if (!shellBlocked && event.key.toLowerCase() === "k" && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
         setPaletteOpen((current) => !current);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [authBlocked]);
+  }, [shellBlocked]);
+  useEffect(() => {
+    const previous = previousCapabilities.current;
+    previousCapabilities.current = capabilities;
+    if (authBlocked || !lostWriteCapability(previous, capabilities)) return;
+    setPaletteOpen(false);
+    setAccessNotice("Dashboard access changed; write controls were removed.");
+    commandTrigger.current?.focus();
+  }, [authBlocked, capabilities]);
 
   // The detail drawer's subject: one agent or one task, or nothing.
   const [inspected, setInspected] = useState<
@@ -288,8 +301,9 @@ export function App(): JSX.Element {
       buildCommands(
         roster.map((entry) => entry.agent),
         liveBoard.map((task) => task.taskId),
+        capabilities,
       ),
-    [roster, liveBoard],
+    [roster, liveBoard, capabilities],
   );
 
   const runPaletteCommand = useCallback(
@@ -308,7 +322,7 @@ export function App(): JSX.Element {
   );
 
   useEffect(() => {
-    if (!authBlocked) return;
+    if (!shellBlocked) return;
     if (travelTimer.current !== undefined) clearTimeout(travelTimer.current);
     for (const timer of toastTimers.current) clearTimeout(timer);
     toastTimers.current.clear();
@@ -322,14 +336,17 @@ export function App(): JSX.Element {
     setInspected(null);
     setTraceRequest(undefined);
     setToasts([]);
-  }, [authBlocked]);
+  }, [shellBlocked]);
 
   if (authBlocked) {
     return <AuthVeil reason={auth.reason} onUnlock={unlockCockpit} />;
   }
+  if (access.phase === "loading")
+    return <main className="access-probe" role="status">checking dashboard access…</main>;
 
   return (
     <div className="shell">
+      <span className="visually-hidden" role="status" aria-live="polite">{accessNotice}</span>
       <Hud
         kpis={kpis}
         live={snap.status === "live"}
@@ -342,6 +359,14 @@ export function App(): JSX.Element {
         rosterNames={roster.map((entry) => entry.agent)}
         density={density}
         onToggleDensity={onToggleDensity}
+        accessControl={
+          <RoleBadge
+            access={access}
+            onChangeAccess={() => lockCockpit("Paste another dashboard bearer to change access.")}
+          />
+        }
+        commandTriggerRef={commandTrigger}
+        onOpenPalette={() => setPaletteOpen(true)}
       />
       <PanelBoundary name="Activity spine">
         <ActivitySpine

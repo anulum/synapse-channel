@@ -5,20 +5,12 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — read-only local dashboard snapshot and HTTP serving
-"""Read-only local dashboard over the live Synapse hub.
-
-The dashboard is deliberately small: it opens a normal Synapse client, asks the
-hub for roster, state, board, and manifest snapshots, then renders those
-read-side values as HTML or JSON. It does not mutate hub state, does not store
-snapshots, and binds to loopback by default because the rendered page can expose
-task names, claim scopes, and agent identities.
-"""
+"""Serve loopback-first read-side hub snapshots and governed dashboard actions."""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import hmac
 import json
 import threading
 import time
@@ -27,11 +19,26 @@ from dataclasses import asdict, dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, ClassVar, Final
+from typing import Any, ClassVar, Final, cast
 from urllib.parse import urlsplit
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.dashboard_access import (
+    DashboardAccessPolicy,
+    DashboardPrincipal,
+    compatibility_access_policy,
+)
+from synapse_channel.dashboard_access_http import (
+    DASHBOARD_ACCESS_PATH,
+    MESSAGE_PATH,
+    TASK_PATH,
+    AccessHttpDecision,
+    access_descriptor_decision,
+    read_decision,
+    write_decision,
+)
+from synapse_channel.dashboard_access_store import load_dashboard_access_policy
 from synapse_channel.dashboard_bind import (
     _resolve_dashboard_token,
     validate_dashboard_bind,
@@ -385,15 +392,6 @@ RECEIPTS_PATH = "/receipts.json"
 COCKPIT_DIST_PREFIX = "/cockpit/"
 """URL prefix under which an operator-named cockpit build directory is served."""
 
-MESSAGE_PATH = "/message"
-"""Operator write endpoint (POST) relaying one chat message to the fleet."""
-
-TASK_PATH = "/task"
-"""Operator write endpoint (POST) declaring one board task for the fleet."""
-
-TASK_UPDATE_PATH = "/task/update"
-"""Operator write endpoint (POST) updating a board task's status or progress note."""
-
 OPERATOR_RATE_MAX: Final = 30
 """Operator write actions permitted within :data:`OPERATOR_RATE_WINDOW_SECONDS`."""
 
@@ -435,14 +433,11 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     response_timeout: ClassVar[float]
     refresh_seconds: ClassVar[int]
     a2a_state_file: ClassVar[Path | None]
-    dashboard_token: ClassVar[str | None]
-    token_protects_reads: ClassVar[bool]
+    access_policy: ClassVar[DashboardAccessPolicy]
     reliability_db: ClassVar[Path | None]
     reliability_db_key_file: ClassVar[Path | None]
     federation_store: ClassVar[Path | None]
     cockpit_dist: ClassVar[Path | None]
-    operator_enabled: ClassVar[bool]
-    operator_name: ClassVar[str]
     operator_rate_limiter: ClassVar[WriteRateLimiter]
     observed_peers: ClassVar[tuple[ObservedPeerSpec, ...]]
     observed_token: ClassVar[str | None]
@@ -452,24 +447,21 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         """Serve the dashboard HTML page, JSON snapshot, or a 404 response."""
         path = urlsplit(self.path).path
-        # Reads are gated only when the token protects reads. The validated React
-        # shell is the narrow exception: navigation cannot carry an Authorization
-        # header, so its known static files must load before the in-app unlock veil
-        # can attach the bearer to data requests. The same containment, suffix, and
-        # regular-file checks as the authenticated route decide that exception;
-        # `/cockpit/*` is never accepted as a blanket bypass.
-        reads_gated = self.dashboard_token is not None and self.token_protects_reads
-        if reads_gated and not self._authorized():
+        authorization = self.headers.get("Authorization")
+        if path == DASHBOARD_ACCESS_PATH:
+            self._write_access_decision(
+                access_descriptor_decision(self.access_policy, authorization)
+            )
+            return
+        access = read_decision(self.access_policy, authorization)
+        if not access.allowed:
+            # The validated React shell is the narrow exception: navigation cannot
+            # carry Authorization, so fixed files load before its unlock veil.
             public_asset = serve_public_cockpit_asset(self.cockpit_dist, COCKPIT_DIST_PREFIX, path)
             if public_asset is not None:
                 self._write_response(public_asset)
                 return
-            self._write(
-                HTTPStatus.UNAUTHORIZED,
-                b"dashboard authorization required\n",
-                content_type="text/plain",
-                authenticate=True,
-            )
+            self._write_access_decision(access)
             return
         # Bind optional SQLCipher key for every store-backed feed on this request.
         with event_store_key(self.reliability_db_key_file):
@@ -556,36 +548,22 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         self._write(HTTPStatus.OK, html_body, content_type="text/html")
 
     def do_POST(self) -> None:
-        """Relay one operator write action, or refuse it.
+        """Re-resolve one principal and relay only its exact route capability.
 
-        Off by default: without operator mode every write route is a 404,
-        indistinguishable from an unknown path, so a read-only dashboard reveals
-        no write surface at all. When armed, a write must be an
-        ``application/json`` request — a cross-origin web page can only send a
-        CORS "simple" content type without a preflight, and this surface answers
-        no preflight, so requiring JSON blocks a browser on another origin from
-        driving an operator write (a local CSRF). A write also carries the
-        dashboard bearer token, which is always present under operator mode (a
-        token is generated for the write-path even on loopback, so a same-host
-        non-browser process cannot write unauthenticated), is rate-limited, and is
-        authorised and audited by the hub — this handler only validates the body
-        and relays the frame.
+        Unarmed routes stay undisclosed as 404. Armed writes require a known
+        bearer, JSON media type, rate limit, bounded body, and a principal-specific
+        relay identity; the hub still authorizes and audits the resulting action.
         """
-        if not self.operator_enabled:
-            self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
-            return
-        if self.dashboard_token is not None and not self._authorized():
-            self._write(
-                HTTPStatus.UNAUTHORIZED,
-                b"dashboard authorization required\n",
-                content_type="text/plain",
-                authenticate=True,
-            )
-            return
         route = urlsplit(self.path).path
-        if route not in (MESSAGE_PATH, TASK_PATH, TASK_UPDATE_PATH):
-            self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
+        access = write_decision(
+            self.access_policy,
+            self.headers.get("Authorization"),
+            route,
+        )
+        if not access.allowed:
+            self._write_access_decision(access)
             return
+        principal = cast(DashboardPrincipal, access.principal)
         if not is_json_media_type(self.headers.get("Content-Type", "")):
             self._write(
                 HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
@@ -617,7 +595,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             execute_relay(
                 plan,
                 uri=self.uri,
-                operator_name=self.operator_name,
+                operator_name=cast(str, principal.operator_name),
                 token=self.token,
                 ready_timeout=self.ready_timeout,
                 response_timeout=self.response_timeout,
@@ -670,16 +648,20 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         """Write one computed feed/operator response through ``_write``."""
         self._write(response.status, response.body, content_type=response.content_type)
 
+    def _write_access_decision(self, decision: AccessHttpDecision) -> None:
+        """Write one complete access response with its cache-variance contract."""
+        status = cast(HTTPStatus, decision.status)
+        self._write(
+            status,
+            decision.body,
+            content_type="application/json" if status is HTTPStatus.OK else "text/plain",
+            authenticate=decision.authenticate,
+            extra_headers=decision.headers,
+        )
+
     def log_message(self, _format: str, *_args: object) -> None:
         """Suppress stdlib access-log noise during CLI and tests."""
         return None
-
-    def _authorized(self) -> bool:
-        """Return whether the request supplies the configured bearer token."""
-        if self.dashboard_token is None:
-            return True
-        authorization = self.headers.get("Authorization", "") or ""
-        return hmac.compare_digest(authorization, f"Bearer {self.dashboard_token}")
 
     def _write(
         self,
@@ -688,6 +670,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         *,
         content_type: str,
         authenticate: bool = False,
+        extra_headers: tuple[tuple[str, str], ...] = (),
     ) -> None:
         """Write one HTTP response with browser-hardening headers."""
         self.send_response(status.value)
@@ -697,6 +680,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         for header, value in _SECURITY_HEADERS:
+            self.send_header(header, value)
+        for header, value in extra_headers:
             self.send_header(header, value)
         self.end_headers()
         self.wfile.write(body)
@@ -711,14 +696,11 @@ def _handler_class(
     response_timeout: float,
     refresh_seconds: int,
     a2a_state_file: Path | None,
-    dashboard_token: str | None,
-    token_protects_reads: bool,
+    access_policy: DashboardAccessPolicy,
     reliability_db: Path | None,
     reliability_db_key_file: Path | None,
     federation_store: Path | None,
     cockpit_dist: Path | None,
-    operator_enabled: bool,
-    operator_name: str,
     operator_rate_limiter: WriteRateLimiter,
     observed_peers: tuple[ObservedPeerSpec, ...],
     observed_token: str | None,
@@ -733,14 +715,11 @@ def _handler_class(
     bound_response_timeout = response_timeout
     bound_refresh_seconds = refresh_seconds
     bound_a2a_state_file = a2a_state_file
-    bound_dashboard_token = dashboard_token
-    bound_token_protects_reads = token_protects_reads
+    bound_access_policy = access_policy
     bound_reliability_db = reliability_db
     bound_reliability_db_key_file = reliability_db_key_file
     bound_federation_store = federation_store
     bound_cockpit_dist = cockpit_dist
-    bound_operator_enabled = operator_enabled
-    bound_operator_name = operator_name
     bound_operator_rate_limiter = operator_rate_limiter
     bound_observed_peers = observed_peers
     bound_observed_token = observed_token
@@ -757,14 +736,11 @@ def _handler_class(
         response_timeout = bound_response_timeout
         refresh_seconds = bound_refresh_seconds
         a2a_state_file = bound_a2a_state_file
-        dashboard_token = bound_dashboard_token
-        token_protects_reads = bound_token_protects_reads
+        access_policy = bound_access_policy
         reliability_db = bound_reliability_db
         reliability_db_key_file = bound_reliability_db_key_file
         federation_store = bound_federation_store
         cockpit_dist = bound_cockpit_dist
-        operator_enabled = bound_operator_enabled
-        operator_name = bound_operator_name
         operator_rate_limiter = bound_operator_rate_limiter
         observed_peers = bound_observed_peers
         observed_token = bound_observed_token
@@ -787,6 +763,7 @@ def start_dashboard_server(
     allow_non_loopback: bool,
     a2a_state_file: str | Path | None = None,
     dashboard_token: str | None = None,
+    dashboard_access_file: str | Path | None = None,
     reliability_db: str | Path | None = None,
     reliability_db_key_file: str | Path | None = None,
     federation_store: str | Path | None = None,
@@ -822,6 +799,9 @@ def start_dashboard_server(
         token is generated automatically when the caller does not provide one and
         either the bind is non-loopback or ``operator`` writes are armed — so the
         operator write-path is never reachable unauthenticated, even on loopback.
+    dashboard_access_file : str, pathlib.Path, or None, optional
+        Strict owner-only principal/token-file policy. Mutually exclusive with
+        ``dashboard_token`` and the legacy global ``operator_name``.
     reliability_db : str, pathlib.Path, or None, optional
         Hub event store powering the store-backed feeds —
         ``/reliability.json``, ``/events.json``, ``/causality.json``,
@@ -844,14 +824,32 @@ def start_dashboard_server(
         Handle with URL helpers and a close method.
     """
     validate_dashboard_bind(host, allow_non_loopback=allow_non_loopback)
-    effective_dashboard_token, dashboard_token_generated, token_protects_reads = (
-        _resolve_dashboard_token(
-            host,
-            allow_non_loopback=allow_non_loopback,
-            dashboard_token=dashboard_token,
-            operator=operator,
+    if dashboard_access_file is not None:
+        if dashboard_token is not None:
+            raise ValueError("--dashboard-access-file cannot be combined with --dashboard-token")
+        if operator_name is not None:
+            raise ValueError("--dashboard-access-file carries each operator identity")
+        access_policy = load_dashboard_access_policy(
+            dashboard_access_file,
+            operator_armed=operator,
         )
-    )
+        effective_dashboard_token = None
+        dashboard_token_generated = False
+    else:
+        effective_dashboard_token, dashboard_token_generated, token_protects_reads = (
+            _resolve_dashboard_token(
+                host,
+                allow_non_loopback=allow_non_loopback,
+                dashboard_token=dashboard_token,
+                operator=operator,
+            )
+        )
+        access_policy = compatibility_access_policy(
+            dashboard_token=effective_dashboard_token,
+            token_protects_reads=token_protects_reads,
+            operator_armed=operator,
+            operator_name=(operator_name if operator_name else f"operator:{name}"),
+        )
     handler = _handler_class(
         uri=uri,
         name=name,
@@ -860,16 +858,13 @@ def start_dashboard_server(
         response_timeout=response_timeout,
         refresh_seconds=max(1, int(refresh_seconds)),
         a2a_state_file=Path(a2a_state_file) if a2a_state_file is not None else None,
-        dashboard_token=effective_dashboard_token,
-        token_protects_reads=token_protects_reads,
+        access_policy=access_policy,
         reliability_db=Path(reliability_db) if reliability_db is not None else None,
         reliability_db_key_file=(
             Path(reliability_db_key_file) if reliability_db_key_file is not None else None
         ),
         federation_store=Path(federation_store) if federation_store is not None else None,
         cockpit_dist=Path(cockpit_dist) if cockpit_dist is not None else None,
-        operator_enabled=operator,
-        operator_name=(operator_name if operator_name else f"operator:{name}"),
         operator_rate_limiter=WriteRateLimiter(
             max_calls=OPERATOR_RATE_MAX, window_seconds=OPERATOR_RATE_WINDOW_SECONDS
         ),

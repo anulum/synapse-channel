@@ -10,6 +10,8 @@
 // keyboard. Navigation commands steer panels the pointer already steers;
 // governed write commands open focused forms and never bypass the hub.
 
+import type { DashboardCapabilities } from "./access";
+
 export { sendOperatorMessage, type OperatorSendResult } from "./operatorActions";
 
 /** What a palette entry does when chosen. */
@@ -41,16 +43,20 @@ export interface Command {
 export function buildCommands(
   agents: readonly string[],
   taskIds: readonly string[],
+  capabilities: DashboardCapabilities,
 ): Command[] {
   const commands: Command[] = [
     { id: "toggle-theme", kind: "toggle-theme", title: "toggle theme (dark / light)", subject: "", keywords: "palette colours" },
     { id: "toggle-density", kind: "toggle-density", title: "toggle density (cozy / compact)", subject: "", keywords: "rows spacing" },
     { id: "toggle-travel", kind: "toggle-travel", title: "time travel (scrub fleet state)", subject: "", keywords: "history replay state-at" },
     { id: "clear-focus", kind: "clear-focus", title: "clear focus lens", subject: "", keywords: "my work reset" },
-    { id: "operator-message", kind: "operator-message", title: "operator: send a message…", subject: "", keywords: "write chat relay say" },
-    { id: "operator-task-declare", kind: "operator-task-declare", title: "operator: declare a task…", subject: "", keywords: "write board create dependency" },
-    { id: "operator-task-update", kind: "operator-task-update", title: "operator: update a task…", subject: "", keywords: "write board status note progress" },
   ];
+  if (capabilities.message_send)
+    commands.push({ id: "operator-message", kind: "operator-message", title: "operator: send a message…", subject: "", keywords: "write chat relay say" });
+  if (capabilities.task_declare)
+    commands.push({ id: "operator-task-declare", kind: "operator-task-declare", title: "operator: declare a task…", subject: "", keywords: "write board create dependency" });
+  if (capabilities.task_update)
+    commands.push({ id: "operator-task-update", kind: "operator-task-update", title: "operator: update a task…", subject: "", keywords: "write board status note progress" });
   for (const agent of agents) {
     commands.push(
       { id: `focus:${agent}`, kind: "focus-agent", title: `focus ${agent}`, subject: agent, keywords: "lens my work" },

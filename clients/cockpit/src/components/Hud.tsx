@@ -6,7 +6,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — the HUD strip: mark, KPI triad, liveness beacon
 
-import type { JSX } from "react";
+import type { JSX, ReactNode, Ref } from "react";
 
 /** One headline metric with a redundant delta (arrow + colour + sign). */
 export interface Kpi {
@@ -37,6 +37,10 @@ interface HudProps {
   readonly density?: "cozy" | "compact";
   /** Density toggle; the control renders only when provided. */
   readonly onToggleDensity?: (() => void) | undefined;
+  /** Server-authored role orientation, supplied by the shell. */
+  readonly accessControl?: ReactNode;
+  readonly commandTriggerRef?: Ref<HTMLButtonElement>;
+  readonly onOpenPalette?: (() => void) | undefined;
 }
 
 function deltaClass(delta: number): string {
@@ -52,7 +56,7 @@ function deltaText(delta: number): string {
   return "• 0";
 }
 
-export function Hud({ kpis, live, stamp, onSelect, theme = "dark", onToggleTheme, focus = "", onFocusChange, rosterNames = [], density = "cozy", onToggleDensity }: HudProps): JSX.Element {
+export function Hud({ kpis, live, stamp, onSelect, theme = "dark", onToggleTheme, focus = "", onFocusChange, rosterNames = [], density = "cozy", onToggleDensity, accessControl, commandTriggerRef, onOpenPalette }: HudProps): JSX.Element {
   return (
     <header className="hud">
       <div className="hud__mark">
@@ -90,6 +94,18 @@ export function Hud({ kpis, live, stamp, onSelect, theme = "dark", onToggleTheme
         )}
       </div>
 
+      {accessControl}
+      {onOpenPalette !== undefined && (
+        <button
+          ref={commandTriggerRef}
+          type="button"
+          className="hud__commands"
+          aria-label="Open command palette"
+          onClick={onOpenPalette}
+        >
+          commands <kbd>Ctrl K</kbd>
+        </button>
+      )}
       {onFocusChange !== undefined && (
         <span className={`hud__focus${focus !== "" ? " hud__focus--on" : ""}`}>
           <input

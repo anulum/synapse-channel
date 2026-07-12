@@ -15,6 +15,17 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Dashboard Studio can now authenticate distinct `viewer`, `operator`, and
+  `admin` browser principals from a strict owner-only
+  `--dashboard-access-file`. The token-free `/dashboard-access.json`
+  descriptor drives capability-filtered rendering, while every write request
+  independently re-resolves its bearer and exact route capability before the
+  existing rate-limit, relay, hub ACL, and audit chain. Viewer DOM and command
+  search contain no write controls; operator/admin expose only the three
+  shipped writes under distinct relay identities, and a live downgrade closes
+  write UI, restores command-trigger focus, and announces the change. The
+  dependency-free Studio shows a fail-visible role pill and remains read-only.
+
 - Participant `ask`, `exchange`, and `convene` can now opt into bounded,
   token-file-authenticated REMANENTIA recall. The stdlib HTTP adapter binds an
   operator-supplied origin to the fixed `/recall` path, refuses redirects,
