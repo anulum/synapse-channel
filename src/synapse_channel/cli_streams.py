@@ -33,7 +33,7 @@ from synapse_channel.core.compaction import RetentionPolicy, compact
 from synapse_channel.core.journal import MEMORY_KINDS
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType, addresses_project, is_recipient
-from synapse_channel.relay import decode_lite, load_offset, read_jsonl_since, save_offset
+from synapse_channel.core.relay import decode_lite, load_offset, read_jsonl_since, save_offset
 
 
 def _format_relay_line(message: dict[str, Any], *, hide_channel_body: bool = False) -> str:

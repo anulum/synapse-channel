@@ -98,9 +98,9 @@ if TYPE_CHECKING:
         system_message,
         wakes,
     )
+    from synapse_channel.core.relay import decode_lite, encode_lite
     from synapse_channel.core.scoping import paths_overlap, scopes_conflict
     from synapse_channel.core.state import ResourceOffer, SynapseState, TaskClaim
-    from synapse_channel.relay import decode_lite, encode_lite
 
 #: Public name → "module:attribute" it resolves to. Every ``__all__`` entry
 #: except ``__version__`` must appear here; the contract tests pin the two
@@ -173,8 +173,8 @@ _EXPORTS: dict[str, str] = {
     "ResourceOffer": "synapse_channel.core.state:ResourceOffer",
     "SynapseState": "synapse_channel.core.state:SynapseState",
     "TaskClaim": "synapse_channel.core.state:TaskClaim",
-    "decode_lite": "synapse_channel.relay:decode_lite",
-    "encode_lite": "synapse_channel.relay:encode_lite",
+    "decode_lite": "synapse_channel.core.relay:decode_lite",
+    "encode_lite": "synapse_channel.core.relay:encode_lite",
 }
 
 

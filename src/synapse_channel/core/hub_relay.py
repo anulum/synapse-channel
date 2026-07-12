@@ -12,7 +12,7 @@ disconnected observer can catch up from the file later, even when no socket was
 connected at the time. :class:`RelayMirror` owns that responsibility on its own —
 the append, the lite encoding, and the self-trimming that bounds the file — so the
 hub keeps only a one-line call. The log is written in the compact lite envelope
-(:func:`~synapse_channel.relay.encode_lite`) and trimmed back to ``max_lines`` once
+(:func:`~synapse_channel.core.relay.encode_lite`) and trimmed back to ``max_lines`` once
 that many lines have accrued since the last trim, bounding it to roughly twice that.
 """
 
@@ -21,7 +21,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.relay import append_jsonl, encode_lite, trim_jsonl_tail
+from synapse_channel.core.relay import append_jsonl, encode_lite, trim_jsonl_tail
 
 
 class RelayMirror:

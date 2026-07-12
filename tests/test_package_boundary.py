@@ -16,28 +16,19 @@ adapters, sandbox, benchmarks, the CLI). This test walks every core module's
 imports and asserts that invariant, so a new upward import fails the suite
 instead of silently welding a feature into the kernel.
 
-The layering is already clean; this pins it. One historical exception is
-allowed and named below — low-level plumbing that belongs in the kernel and is
-tracked to be folded in.
+The layering is clean; this pins it with no exceptions. The historical
+``synapse_channel.relay`` path remains a downward-only compatibility facade,
+but kernel modules must import its canonical ``core.relay`` implementation.
 """
 
 from __future__ import annotations
 
 import ast
+import importlib
 from pathlib import Path
 
 _CORE = Path(__file__).resolve().parent.parent / "src" / "synapse_channel" / "core"
 _PACKAGE = "synapse_channel"
-
-# The kernel may import from these non-core siblings. Each entry is debt to
-# fold into the kernel, not a licence to add more — keep this list shrinking.
-_ALLOWED_NON_CORE = frozenset(
-    {
-        # Low-level NDJSON relay log + compact lite-wire codec: kernel plumbing
-        # the hub's relay mirror uses; belongs in core, tracked to move.
-        "synapse_channel.relay",
-    }
-)
 
 
 def _imported_synapse_modules(source: str) -> set[str]:
@@ -55,30 +46,28 @@ def _imported_synapse_modules(source: str) -> set[str]:
     return modules
 
 
-def test_kernel_imports_only_kernel_or_the_named_exceptions() -> None:
+def test_kernel_imports_only_kernel_modules() -> None:
     leaks: dict[str, set[str]] = {}
     for path in sorted(_CORE.rglob("*.py")):
         imported = _imported_synapse_modules(path.read_text(encoding="utf-8"))
         upward = {
             name
             for name in imported
-            if not name.startswith(f"{_PACKAGE}.core.")
-            and name != f"{_PACKAGE}.core"
-            and name not in _ALLOWED_NON_CORE
+            if not name.startswith(f"{_PACKAGE}.core.") and name != f"{_PACKAGE}.core"
         }
         if upward:
             leaks[str(path.relative_to(_CORE.parent.parent))] = upward
     assert not leaks, (
         "the coordination kernel reached up into feature layers — a split-blocking "
-        f"import. Fix the import or, only for genuine kernel plumbing, add it to "
-        f"_ALLOWED_NON_CORE with a reason:\n{leaks}"
+        f"import. Move the dependency into core or invert the dependency:\n{leaks}"
     )
 
 
-def test_the_allowed_exceptions_are_actually_used() -> None:
-    """A named exception that no core module imports is stale — drop it."""
-    every_import: set[str] = set()
-    for path in _CORE.rglob("*.py"):
-        every_import |= _imported_synapse_modules(path.read_text(encoding="utf-8"))
-    stale = _ALLOWED_NON_CORE - every_import
-    assert not stale, f"remove these unused kernel-boundary exceptions: {stale}"
+def test_legacy_relay_path_reexports_the_canonical_kernel_objects() -> None:
+    """The compatibility facade must not fork state or implementations."""
+    canonical = importlib.import_module("synapse_channel.core.relay")
+    legacy = importlib.import_module("synapse_channel.relay")
+
+    assert legacy.__all__ == canonical.__all__
+    for name in canonical.__all__:
+        assert getattr(legacy, name) is getattr(canonical, name)

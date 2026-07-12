@@ -42,6 +42,14 @@ All notable changes to this project are documented here.
   and unavailable or empty memory remains visible without failing the provider
   turn.
 
+### Changed
+
+- The compact relay codec, NDJSON log, byte cursor, and command normaliser now
+  live inside `synapse_channel.core`, removing the kernel's sole upward import.
+  The existing `synapse_channel.relay` path remains a small compatibility
+  facade that re-exports the identical objects, so public imports and wire/log
+  behaviour do not change.
+
 ## [0.99.4] - 2026-07-11
 
 ### Added

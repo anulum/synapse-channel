@@ -38,7 +38,7 @@ from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind, replay
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType, build_envelope
-from synapse_channel.relay import encode_lite
+from synapse_channel.core.relay import encode_lite
 
 
 @dataclass(frozen=True)
@@ -154,7 +154,7 @@ def probe_encode_lite(iterations: int) -> ProbeResult:
     """Measure lite relay encoding throughput and byte reduction.
 
     Encodes ``iterations`` realistic broadcast envelopes with
-    :func:`~synapse_channel.relay.encode_lite` and reports messages per
+    :func:`~synapse_channel.core.relay.encode_lite` and reports messages per
     second plus the byte ratio against the full wire envelope.
     """
     envelopes = [

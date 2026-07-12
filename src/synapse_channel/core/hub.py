@@ -227,7 +227,7 @@ class SynapseHub:
     relay_log : str or pathlib.Path or None, optional
         When given, every broadcast message is also mirrored to this newline-
         delimited log in the compact lite format (see
-        :func:`~synapse_channel.relay.encode_lite`), so a token-budgeted agent
+        :func:`~synapse_channel.core.relay.encode_lite`), so a token-budgeted agent
         can observe the channel by tailing a file instead of holding a socket.
         ``None`` disables the mirror.
     relay_max_lines : int, optional

@@ -19,8 +19,8 @@ from urllib.parse import quote
 
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.protocol import MessageType, is_recipient
+from synapse_channel.core.relay import decode_lite
 from synapse_channel.mailbox_cursor import load_cursor, save_cursor
-from synapse_channel.relay import decode_lite
 
 DEFAULT_MCP_INBOX_LIMIT = 50
 """Default messages returned by one MCP inbox call."""
