@@ -1,0 +1,5 @@
+{"type":"init","timestamp":"2026-07-12T14:36:17.126Z","session_id":"118df715-61bf-4c76-a4f4-d8b850e29e70","model":"gemini-3.1-pro-preview"}
+{"type":"message","timestamp":"2026-07-12T14:36:17.254Z","role":"user","content":"Reply with exactly one word: pong"}
+{"type":"message","timestamp":"2026-07-12T14:36:17.456Z","role":"assistant","content":"po","delta":true}
+{"type":"message","timestamp":"2026-07-12T14:36:17.458Z","role":"assistant","content":"ng","delta":true}
+{"type":"result","timestamp":"2026-07-12T14:36:17.475Z","status":"success","stats":{"total_tokens":10,"input_tokens":8,"output_tokens":2,"cached":0,"input":8,"duration_ms":350,"tool_calls":0,"models":{"gemini-2.5-pro":{"total_tokens":10,"input_tokens":8,"output_tokens":2,"cached":0,"input":8}}}}

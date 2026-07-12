@@ -183,7 +183,7 @@ def test_list_json_carries_the_health_fields(capsys: pytest.CaptureFixture[str])
     assert set(by_provider) == set(PROVIDERS)
     assert {"identity", "channel", "available", "detail"} <= set(by_provider["claude"])
     assert "unverified" in by_provider["grok"]["detail"]
-    assert "unverified" in by_provider["gemini"]["detail"]
+    assert "unverified" not in by_provider["gemini"]["detail"]
 
 
 # --- participant ask -------------------------------------------------------------
@@ -217,12 +217,15 @@ def test_ask_refuses_grok_while_the_schema_is_unverified(
     assert "grok turns are disabled" in capsys.readouterr().out
 
 
-def test_ask_refuses_gemini_while_the_schema_is_unverified(
-    capsys: pytest.CaptureFixture[str],
+def test_gemini_turns_are_enabled_after_real_emitter_capture() -> None:
+    assert cli_participants.refusal_for("gemini") is None
+
+
+def test_gemini_refusal_returns_if_the_schema_flag_drops(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    args = _ask_args(provider="gemini")
-    assert _cmd_ask(args) == 2
-    assert "gemini turns are disabled" in capsys.readouterr().out
+    monkeypatch.setattr(cli_participants, "GEMINI_SCHEMA_VERIFIED", False)
+    assert cli_participants.refusal_for("gemini") == cli_participants._GEMINI_REFUSAL
 
 
 def test_ask_reports_a_configuration_refusal(capsys: pytest.CaptureFixture[str]) -> None:

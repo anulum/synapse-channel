@@ -9,9 +9,19 @@
 
 Schema verification
 -------------------
-The event shape below was read on 2026-07-12 directly from the **installed**
+The event shape below was first read on 2026-07-12 directly from the **installed**
 ``gemini`` 0.47.0 bundle source (``StreamJsonFormatter.emitEvent`` call sites in
-``/usr/lib/node_modules/@google/gemini-cli/bundle``), one JSON object per line:
+``/usr/lib/node_modules/@google/gemini-cli/bundle``) and then **behaviourally
+captured the same day from a real run of that installed binary**:
+
+``gemini -p "Reply with exactly one word: pong" -o stream-json
+--fake-responses-non-strict <ndjson>``
+
+The hidden ``--fake-responses-non-strict`` harness replaces only the model API
+client (``FakeContentGenerator``), so the whole real CLI pipeline — turn loop,
+``StreamJsonFormatter``, stdout framing — emitted the captured envelope; no API
+account is required and the OAuth-personal ``IneligibleTierError`` path is never
+reached. One JSON object per line:
 
 - ``{"type": "init", "timestamp": …, "session_id": …, "model": …}`` — first event.
 - ``{"type": "message", "timestamp": …, "role": "user", "content": …}`` — prompt echo.
@@ -22,12 +32,13 @@ The event shape below was read on 2026-07-12 directly from the **installed**
 - ``{"type": "result", "timestamp": …, "status": "success" | "error", "stats": …,
   "error"?: {"type": …, "message": …}}`` — the single terminal event.
 
-:data:`GEMINI_SCHEMA_VERIFIED` remains ``False`` because that reading is source-level,
-not behavioural: a live capture on this workstation is blocked by the CLI's
-``IneligibleTierError`` (Gemini Code Assist for individuals was retired in favour of
-Antigravity), so no real run has confirmed the emitted bytes. Capture one real
-``gemini -p "…" -o stream-json`` stream on an API-key or eligible account, pin the
-fixture, and only then flip the flag — exactly the discipline the Grok lane followed.
+Fixture: ``tests/fixtures/gemini_stream/real_emitter_single_pong.ndjson``
+(SHA-256 ``7340a9925e74df070cab9a83947f01b155f2bdbcd3429b540dd782c1f8e2dd84``).
+
+:data:`GEMINI_SCHEMA_VERIFIED` is therefore ``True``. The capture's model *content*
+was synthetic by necessity; the envelope — the only thing this parser reads — came
+from the real emitter. If a future Gemini release changes the wire shape,
+re-capture, update this parser, and re-verify at source.
 """
 
 from __future__ import annotations
@@ -38,12 +49,13 @@ from typing import Any
 
 from synapse_channel.participants.stream_json import NO_RESULT_SUBTYPE, StreamOutcome
 
-GEMINI_SCHEMA_VERIFIED = False
+GEMINI_SCHEMA_VERIFIED = True
 """Whether the Gemini stream schema has been captured from a real run of a stable CLI.
 
-``False`` until a behavioural capture lands: the shape is currently verified against the
-installed 0.47.0 bundle source only (see the module docstring), and turns stay refused so
-an unconfirmed schema cannot silently misparse.
+``True``: the envelope was captured from the installed 0.47.0 binary's real emitter
+via the ``--fake-responses-non-strict`` harness (see the module docstring for the
+exact command and the pinned fixture). Only the model API client was substituted;
+the stream framing this parser reads came from the shipped code path.
 """
 
 

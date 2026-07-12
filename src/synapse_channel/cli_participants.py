@@ -21,10 +21,11 @@ Grok is registered but refused for turns while
 :data:`~synapse_channel.participants.grok_stream.GROK_SCHEMA_VERIFIED` is false:
 its stream schema is modelled on documentation, not verified against the real
 CLI, and driving an unverified schema silently would fabricate confidence.
-Gemini is gated the same way on
-:data:`~synapse_channel.participants.gemini_stream.GEMINI_SCHEMA_VERIFIED`: its
-event shape is read from the installed 0.47.0 bundle source but no behavioural
-capture exists yet, so turns stay refused rather than risk a silent misparse.
+Gemini carries the same gate on
+:data:`~synapse_channel.participants.gemini_stream.GEMINI_SCHEMA_VERIFIED`; that
+flag is now true — the envelope was captured from the installed 0.47.0 binary's
+real emitter — so Gemini turns are enabled, and the gate stays in place to refuse
+them again should a future release change the wire shape.
 """
 
 from __future__ import annotations
@@ -76,10 +77,9 @@ _GROK_REFUSAL = (
 )
 
 _GEMINI_REFUSAL = (
-    "gemini turns are disabled: GEMINI_SCHEMA_VERIFIED=False (stream schema read from "
-    "the installed 0.47.0 bundle source, not captured from a real run; OAuth-personal "
-    "accounts also fail CLI setup with IneligibleTierError). A turn could silently "
-    "misparse. Use another provider, or capture and verify the schema first."
+    "gemini turns are disabled: GEMINI_SCHEMA_VERIFIED=False (stream schema not "
+    "captured from the current CLI's real emitter). A turn could silently misparse. "
+    "Use another provider, or re-capture and verify the schema first."
 )
 
 

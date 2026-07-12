@@ -23,11 +23,14 @@ All notable changes to this project are documented here.
   `^(replace|write_file)$` matcher and a millisecond hook timeout in the printed
   `settings.json` fragment (`synapse adapters gemini-claim-hook`). The headless
   driver (`gemini -p … -o stream-json --approval-mode plan`) parses the CLI's
-  `init`/`message`/`error`/`result` events, but turns stay refused while
-  `GEMINI_SCHEMA_VERIFIED` is false: the stream shape is source-verified, not
-  behaviourally captured (OAuth-personal setup fails with `IneligibleTierError`),
-  so the roster carries the caveat instead of over-promising — the same
-  discipline the Grok lane followed.
+  `init`/`message`/`error`/`result` events, and `GEMINI_SCHEMA_VERIFIED` is true:
+  the envelope was behaviourally captured from the installed binary's real
+  emitter via the CLI's own `--fake-responses-non-strict` harness (only the
+  model API client is substituted; no account required), with the fixture
+  SHA-256-pinned. The schema gate stays wired so turns are refused again should
+  a future release change the wire shape. Account-side, OAuth-personal setup
+  still fails with `IneligibleTierError`; live model turns need an API key or
+  an eligible account.
 - Codex and Kimi now join Claude Code on provider-native, live-claim file-edit
   guards. A shared resolver canonicalises every target against its Git worktree
   and requires exact worktree, branch, path, task-state, and owner coverage;

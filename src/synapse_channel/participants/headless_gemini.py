@@ -9,15 +9,15 @@
 
 .. note::
 
-   **Gemini turns are refused until the stream schema is behaviourally verified.** The
-   driver is built and unit-tested against the event shape read from the installed
-   ``gemini`` 0.47.0 bundle source, but no live capture exists on this workstation: the
-   CLI's OAuth-personal tier now fails setup with ``IneligibleTierError`` (individuals
-   were moved to Antigravity), so runs need an API-key or eligible account. See
-   :mod:`~synapse_channel.participants.gemini_stream` and
-   :data:`~synapse_channel.participants.gemini_stream.GEMINI_SCHEMA_VERIFIED` — capture
-   one real stream, pin the fixture, flip the flag, and turns enable, exactly as the
-   Grok lane did.
+   **Gemini is a first-class headless provider.** The ``stream-json`` envelope is
+   verified against a capture from the installed ``gemini`` 0.47.0 binary's real
+   emitter (the ``--fake-responses-non-strict`` harness substitutes only the model
+   API client); see :mod:`~synapse_channel.participants.gemini_stream` and
+   :data:`~synapse_channel.participants.gemini_stream.GEMINI_SCHEMA_VERIFIED`. Turns
+   are enabled while that flag is true. Note the account-side constraint: the CLI's
+   OAuth-personal tier fails setup with ``IneligibleTierError`` (individuals were
+   moved to Antigravity), so live model turns need an API-key or eligible account —
+   the driver reports that failure as an ordinary error result.
 
 A sixth concrete :class:`~synapse_channel.participants.participant.Participant`, on the
 ``HEADLESS`` channel: the bus owns the invocation, spawning ``gemini -p <prompt>

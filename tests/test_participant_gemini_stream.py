@@ -8,7 +8,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+from pathlib import Path
 
 from synapse_channel.participants.gemini_stream import (
     GEMINI_SCHEMA_VERIFIED,
@@ -21,13 +23,17 @@ def _line(payload: dict[str, object]) -> str:
     return json.dumps(payload)
 
 
+_REAL_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "gemini_stream" / "real_emitter_single_pong.ndjson"
+)
+_REAL_FIXTURE_SHA256 = "7340a9925e74df070cab9a83947f01b155f2bdbcd3429b540dd782c1f8e2dd84"
+
+
 def _full_stream() -> list[str]:
     """One synthetic turn matching the installed 0.47.0 bundle emitters.
 
-    Synthetic by necessity — a live capture is blocked by ``IneligibleTierError`` on
-    this workstation — and shaped field-for-field on the ``StreamJsonFormatter``
-    ``emitEvent`` call sites; it is NOT a real capture, which is exactly why
-    :data:`GEMINI_SCHEMA_VERIFIED` stays false.
+    Shaped field-for-field on the ``StreamJsonFormatter`` ``emitEvent`` call sites;
+    the separate real-emitter capture below is the behavioural proof.
     """
     return [
         _line(
@@ -75,9 +81,26 @@ def _full_stream() -> list[str]:
     ]
 
 
-def test_schema_flag_stays_false_until_behavioural_capture() -> None:
-    """Source-level bundle reading is not a live capture; turns must stay refused."""
-    assert GEMINI_SCHEMA_VERIFIED is False
+def test_schema_flag_is_true_after_real_emitter_capture() -> None:
+    """The envelope was captured from the installed binary's real emitter."""
+    assert GEMINI_SCHEMA_VERIFIED is True
+
+
+def test_real_emitter_capture_is_pinned_and_parses() -> None:
+    """Parse the byte-exact capture from the installed 0.47.0 binary.
+
+    Captured with ``gemini -p "Reply with exactly one word: pong" -o stream-json
+    --fake-responses-non-strict <ndjson>`` — the whole real CLI pipeline emitted
+    these lines; only the model API client was substituted.
+    """
+    data = _REAL_FIXTURE.read_bytes()
+    assert hashlib.sha256(data).hexdigest() == _REAL_FIXTURE_SHA256
+    outcome = parse_gemini_stream(data.decode("utf-8").splitlines())
+    assert outcome.answer == "pong"
+    assert not outcome.is_error
+    assert outcome.subtype == "success"
+    assert outcome.session_id
+    assert outcome.stop_reason == "end_turn"
 
 
 def test_parse_full_stream_concatenates_assistant_deltas() -> None:
