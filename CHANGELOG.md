@@ -15,6 +15,12 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Studio now serves pinned, self-hosted Space Grotesk, Inter, and JetBrains
+  Mono variable WOFF2 subsets from the package itself. The six Latin and Latin
+  Extended files total 217,608 bytes, retain system fallbacks for other scripts,
+  carry exact source hashes and OFL-1.1 provenance, and are included in the
+  wheel; no browser font request leaves the dashboard origin.
+
 - Dashboard Studio can now authenticate distinct `viewer`, `operator`, and
   `admin` browser principals from a strict owner-only
   `--dashboard-access-file`. The token-free `/dashboard-access.json`

@@ -31,7 +31,10 @@ hub offline.
   live pulse, and the three verdict colours used nowhere else.
 - **Type** — three roles: a display face for labels and numerals, a body face for
   prose, and a monospace face that carries the data (task ids, leases, paths, hashes).
-  A system-font stack ships today; self-hosted faces drop in behind the same variables.
+  Space Grotesk, Inter, and JetBrains Mono now ship as pinned, same-origin variable
+  WOFF2 assets behind those role variables. Latin and Latin Extended cover product
+  copy and Central-European names in 217,608 bytes; other scripts retain the system
+  fallbacks. The browser makes no font request to an external origin.
 - **Components** — panels and cards (elevation by tint and a hairline, never shadows),
   status dots, the verdict pill, mono data rows, the navigation rail, and an indigo
   focus ring. Motion is restrained and stilled under `prefers-reduced-motion`.

@@ -10,9 +10,11 @@
  * Instrument-panel language: a deep ink base, one indigo-violet brand hue, and
  * red/amber/green reserved exclusively for verdicts so risk reads at a glance. Pure
  * CSS custom properties + a small component kit; no build step, no external request.
- * Fonts use a system-stack fallback now; self-hosted woff2 (Space Grotesk / Inter /
- * JetBrains Mono) drop in behind the same role variables without touching components.
+ * Space Grotesk, Inter, and JetBrains Mono are self-hosted from bounded package assets;
+ * system stacks remain the fallback for scripts outside the vendored subsets.
  */
+
+@import url("studio-fonts.css");
 
 :root {
   /* — palette: instrument, not neon — */

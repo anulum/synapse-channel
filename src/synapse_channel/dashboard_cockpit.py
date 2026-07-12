@@ -22,7 +22,7 @@ from typing import Final
 
 _ASSETS_DIR: Final = Path(__file__).parent / "dashboard_assets"
 
-COCKPIT_ASSETS: Final[dict[str, str]] = {
+_TEXT_COCKPIT_ASSETS: Final[dict[str, str]] = {
     "board-columns.css": "text/css",
     "board-columns.js": "text/javascript",
     "cockpit.css": "text/css",
@@ -30,12 +30,28 @@ COCKPIT_ASSETS: Final[dict[str, str]] = {
     "risk-panel.css": "text/css",
     "risk-panel.js": "text/javascript",
     "studio.css": "text/css",
+    "studio-fonts.css": "text/css",
     "studio-command.css": "text/css",
     "studio-command.js": "text/javascript",
     "studio-access.js": "text/javascript",
     "studio-feeds.js": "text/javascript",
 }
-"""Servable cockpit asset file names mapped to their content types."""
+
+STUDIO_FONT_ASSETS: Final[tuple[str, ...]] = (
+    "fonts/inter-latin-ext.woff2",
+    "fonts/inter-latin.woff2",
+    "fonts/jetbrains-mono-latin-ext.woff2",
+    "fonts/jetbrains-mono-latin.woff2",
+    "fonts/space-grotesk-latin-ext.woff2",
+    "fonts/space-grotesk-latin.woff2",
+)
+"""Allowlisted Studio font subsets, bounded to Latin and Latin Extended."""
+
+COCKPIT_ASSETS: Final[dict[str, str]] = {
+    **_TEXT_COCKPIT_ASSETS,
+    **{asset_name: "font/woff2" for asset_name in STUDIO_FONT_ASSETS},
+}
+"""Servable fixed dashboard assets mapped to their content types."""
 
 _COCKPIT_ASSET_PATHS: Final[dict[str, Path]] = {
     asset_name: _ASSETS_DIR / asset_name for asset_name in COCKPIT_ASSETS
@@ -50,8 +66,8 @@ fixed files or nothing at all.
 
 
 @lru_cache(maxsize=len(COCKPIT_ASSETS))
-def load_cockpit_asset(name: str) -> str:
-    """Return the text of a named cockpit asset.
+def load_cockpit_asset_bytes(name: str) -> bytes:
+    """Return the bytes of one allowlisted fixed dashboard asset.
 
     Parameters
     ----------
@@ -60,8 +76,8 @@ def load_cockpit_asset(name: str) -> str:
 
     Returns
     -------
-    str
-        UTF-8 asset contents.
+    bytes
+        Exact packaged asset bytes.
 
     Raises
     ------
@@ -72,7 +88,18 @@ def load_cockpit_asset(name: str) -> str:
         asset_path = _COCKPIT_ASSET_PATHS[name]
     except KeyError:
         raise KeyError(name) from None
-    return asset_path.read_text(encoding="utf-8")
+    return asset_path.read_bytes()
+
+
+@lru_cache(maxsize=len(_TEXT_COCKPIT_ASSETS))
+def load_cockpit_asset(name: str) -> str:
+    """Return the UTF-8 text of one allowlisted textual dashboard asset.
+
+    Binary font assets are intentionally available only through the byte loader.
+    """
+    if name not in _TEXT_COCKPIT_ASSETS:
+        raise KeyError(name)
+    return load_cockpit_asset_bytes(name).decode("utf-8")
 
 
 def _panel(title: str, body_id: str, *, count_id: str | None = None, scroll: bool = False) -> str:

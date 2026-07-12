@@ -8,7 +8,11 @@
 
 from __future__ import annotations
 
-from synapse_channel.dashboard_cockpit import COCKPIT_ASSETS, load_cockpit_asset
+from synapse_channel.dashboard_cockpit import (
+    COCKPIT_ASSETS,
+    STUDIO_FONT_ASSETS,
+    load_cockpit_asset,
+)
 from synapse_channel.dashboard_studio import (
     STUDIO_REFERENCE_PATH,
     _dot_row,
@@ -26,6 +30,14 @@ def test_studio_css_is_a_servable_asset_with_the_design_tokens() -> None:
     # the three type roles
     for role in ("--syn-font-display", "--syn-font-body", "--syn-font-mono"):
         assert role in css
+    assert '@import url("studio-fonts.css")' in css
+    font_css = load_cockpit_asset("studio-fonts.css")
+    assert "https://" not in font_css
+    assert "http://" not in font_css
+    for family in ("Space Grotesk", "Inter", "JetBrains Mono"):
+        assert f'font-family: "{family}"' in font_css
+    for asset_name in STUDIO_FONT_ASSETS:
+        assert asset_name in font_css
     # accessibility floor: reduced-motion stills the live pulse
     assert "prefers-reduced-motion" in css
 
@@ -34,6 +46,7 @@ def test_board_and_command_assets_are_fixed_servable_package_data() -> None:
     expected = {
         "board-columns.css": "text/css",
         "board-columns.js": "text/javascript",
+        "studio-fonts.css": "text/css",
         "studio-command.css": "text/css",
         "studio-command.js": "text/javascript",
         "studio-access.js": "text/javascript",

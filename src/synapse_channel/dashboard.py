@@ -45,7 +45,7 @@ from synapse_channel.dashboard_bind import (
 )
 from synapse_channel.dashboard_cockpit import (
     COCKPIT_ASSETS,
-    load_cockpit_asset,
+    load_cockpit_asset_bytes,
 )
 from synapse_channel.dashboard_feed_serving import (
     FeedResponse,
@@ -474,7 +474,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if asset_name in COCKPIT_ASSETS:
             self._write(
                 HTTPStatus.OK,
-                load_cockpit_asset(asset_name).encode("utf-8"),
+                load_cockpit_asset_bytes(asset_name),
                 content_type=COCKPIT_ASSETS[asset_name],
             )
             return

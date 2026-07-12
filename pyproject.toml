@@ -17,6 +17,7 @@ description = "Local-first coordination bus for AI agents across one repository 
 readme = "README.md"
 requires-python = ">=3.10"
 license = "AGPL-3.0-or-later"
+license-files = ["LICENSE", "NOTICE.md", "LICENSES/*"]
 authors = [
   { name = "Miroslav Šotek", email = "protoscience@anulum.li" },
 ]
@@ -154,7 +155,13 @@ Funding = "https://www.anulum.li/licensing"
 where = ["src"]
 
 [tool.setuptools.package-data]
-synapse_channel = ["py.typed", "dashboard_assets/*.css", "dashboard_assets/*.js"]
+synapse_channel = [
+  "py.typed",
+  "dashboard_assets/*.css",
+  "dashboard_assets/*.js",
+  "dashboard_assets/fonts/*.md",
+  "dashboard_assets/fonts/*.woff2",
+]
 
 [tool.ruff]
 line-length = 100

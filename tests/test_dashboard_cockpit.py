@@ -8,14 +8,20 @@
 
 from __future__ import annotations
 
+import hashlib
+from urllib.request import urlopen
+
 import pytest
 
+from dashboard_helpers import _feeds_server
 from hub_e2e_helpers import http_get, running_hub
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.dashboard import start_dashboard_server
 from synapse_channel.dashboard_cockpit import (
     COCKPIT_ASSETS,
+    STUDIO_FONT_ASSETS,
     load_cockpit_asset,
+    load_cockpit_asset_bytes,
     render_cockpit_html,
 )
 
@@ -34,7 +40,9 @@ def test_cockpit_assets_mapping() -> None:
         "studio-command.js": "text/javascript",
         "studio-access.js": "text/javascript",
         "studio.css": "text/css",
+        "studio-fonts.css": "text/css",
         "studio-feeds.js": "text/javascript",
+        **{name: "font/woff2" for name in STUDIO_FONT_ASSETS},
     }
 
 
@@ -55,6 +63,58 @@ def test_cockpit_assets_render_the_risk_view() -> None:
 def test_load_cockpit_asset_rejects_unknown() -> None:
     with pytest.raises(KeyError):
         load_cockpit_asset("../secrets.css")
+    with pytest.raises(KeyError):
+        load_cockpit_asset("fonts/inter-latin.woff2")
+    with pytest.raises(KeyError):
+        load_cockpit_asset_bytes("../secrets.woff2")
+
+
+def test_studio_font_assets_are_pinned_bounded_woff2() -> None:
+    expected_hashes = {
+        "fonts/inter-latin-ext.woff2": (
+            "34b9c504cab7a73e37b746343a449132e56cf7b5481af2cb81dc74dcff25c956"
+        ),
+        "fonts/inter-latin.woff2": (
+            "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62"
+        ),
+        "fonts/jetbrains-mono-latin-ext.woff2": (
+            "db5ff4db83e580426280e9337a58dc57d3a83784a1b03ad80914651594441d52"
+        ),
+        "fonts/jetbrains-mono-latin.woff2": (
+            "83c005d49d8a6a50474c73a5a36ac0468076e9c4a29da7bdb14995d80560a5be"
+        ),
+        "fonts/space-grotesk-latin-ext.woff2": (
+            "952dddb45d2f96f71cbf3b7f510b24379afc3c89ea02fcf89d377b45d62c0166"
+        ),
+        "fonts/space-grotesk-latin.woff2": (
+            "0640890476fc1198ab4de571fb658de443c4d85b66466ec09534a8737ab1ce9d"
+        ),
+    }
+
+    assert set(STUDIO_FONT_ASSETS) == set(expected_hashes)
+    total_bytes = 0
+    for asset_name, expected_hash in expected_hashes.items():
+        body = load_cockpit_asset_bytes(asset_name)
+        assert body.startswith(b"wOF2")
+        assert len(body) < 100_000
+        assert hashlib.sha256(body).hexdigest() == expected_hash
+        total_bytes += len(body)
+    assert total_bytes == 217_608
+
+
+def test_dashboard_serves_a_binary_studio_font_with_the_exact_type() -> None:
+    server = _feeds_server()
+    try:
+        with urlopen(server.url("/fonts/inter-latin.woff2"), timeout=3) as response:
+            status = response.status
+            content_type = response.headers.get_content_type()
+            body = response.read()
+    finally:
+        server.close()
+
+    assert status == 200
+    assert content_type == "font/woff2"
+    assert body == load_cockpit_asset_bytes("fonts/inter-latin.woff2")
 
 
 # ---------- shell rendering ----------
