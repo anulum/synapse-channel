@@ -15,6 +15,22 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Codex and Kimi now join Claude Code on provider-native, live-claim file-edit
+  guards. A shared resolver canonicalises every target against its Git worktree
+  and requires exact worktree, branch, path, task-state, and owner coverage;
+  Codex extracts all add/update/delete/move paths from one `apply_patch`, while
+  Kimi validates its `Edit|Write` path shape. New read-only recipe commands emit
+  token-file-safe Codex `hooks.json` and Kimi `config.toml` fragments, and every
+  handled parse, Git, state, transport, timeout, or runtime failure returns
+  structured denial on exit zero. Public docs keep Codex alternate-tool and Kimi
+  host-level fail-open limitations explicit rather than claiming filesystem
+  isolation. The reversible adapter installer also emits valid Kimi Agent Skills
+  at user scope (`kimi`, respecting `$KIMI_CODE_HOME`) or explicit project scope
+  (`kimi-project`), preserving Kimi's Project-over-User precedence. Skill install
+  does not touch `config.toml`; the opt-in `--with-hook` / `--install-config`
+  path manages one marked hook block with bounded reads, owner and symlink checks,
+  mode-preserving atomic replacement, and compare-before-write refusal.
+
 - Studio now serves pinned, self-hosted Space Grotesk, Inter, and JetBrains
   Mono variable WOFF2 subsets from the package itself. The six Latin and Latin
   Extended files total 217,608 bytes, retain system fallbacks for other scripts,

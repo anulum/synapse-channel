@@ -23,9 +23,10 @@ the commands are testable against a temporary tree.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from synapse_channel.adapters import (
@@ -40,9 +41,24 @@ from synapse_channel.adapters import (
     tool_for,
 )
 from synapse_channel.cli_claude_claim_hook import add_parser as add_claude_claim_hook_parser
+from synapse_channel.cli_codex_claim_hook import add_parser as add_codex_claim_hook_parser
+from synapse_channel.cli_kimi_claim_hook import add_parser as add_kimi_claim_hook_parser
 from synapse_channel.client.agent import default_hub_uri
+from synapse_channel.kimi_hook_config_file import (
+    KimiHookConfigFileError,
+    install_hook_config,
+    resolve_kimi_config_path,
+    uninstall_hook_config,
+)
+from synapse_channel.kimi_hook_installer import (
+    KimiHookInstallerError,
+)
+
+_KIMI_KEYS = frozenset({"kimi", "kimi-project"})
+"""Adapter keys whose tool uses KIMI's ``[[hooks]]`` claim guard."""
 
 Which = Callable[[str], str | None]
+Environment = Mapping[str, str]
 
 
 def _roots(args: argparse.Namespace) -> tuple[Path, Path]:
@@ -52,9 +68,14 @@ def _roots(args: argparse.Namespace) -> tuple[Path, Path]:
     return home, project
 
 
-def _is_installed(tool: AdapterTool, *, home: Path, project: Path) -> bool:
+def _target_environment(args: argparse.Namespace) -> Environment:
+    """Return provider path variables, isolated when ``--home`` is explicit."""
+    return {} if args.home else os.environ
+
+
+def _is_installed(tool: AdapterTool, *, home: Path, project: Path, environ: Environment) -> bool:
     """Return whether a Synapse adapter block is present for ``tool``."""
-    target = resolve_target(tool, home=home, project=project)
+    target = resolve_target(tool, home=home, project=project, environ=environ)
     if not target.is_file():
         return False
     return contains_block(target.read_text(encoding="utf-8"))
@@ -70,6 +91,7 @@ def _selected(args: argparse.Namespace) -> list[AdapterTool]:
 def _cmd_list(args: argparse.Namespace, *, which: Which = shutil.which) -> int:
     """Detect tools and report adapter status; writes nothing."""
     home, project = _roots(args)
+    environ = _target_environment(args)
     try:
         tools = _selected(args)
     except KeyError as exc:
@@ -77,9 +99,9 @@ def _cmd_list(args: argparse.Namespace, *, which: Which = shutil.which) -> int:
         return 2
     print(f"{'tool':<16} {'detected':<9} {'adapter':<11} target")
     for tool in tools:
-        detected = detect_installed(tool, home=home, which=which)
-        installed = _is_installed(tool, home=home, project=project)
-        target = resolve_target(tool, home=home, project=project)
+        detected = detect_installed(tool, home=home, which=which, environ=environ)
+        installed = _is_installed(tool, home=home, project=project, environ=environ)
+        target = resolve_target(tool, home=home, project=project, environ=environ)
         print(
             f"{tool.key:<16} {'yes' if detected else 'no':<9} "
             f"{'installed' if installed else '-':<11} {target}"
@@ -88,10 +110,17 @@ def _cmd_list(args: argparse.Namespace, *, which: Which = shutil.which) -> int:
 
 
 def _install_one(
-    tool: AdapterTool, *, home: Path, project: Path, identity: str, hub_uri: str, dry_run: bool
+    tool: AdapterTool,
+    *,
+    home: Path,
+    project: Path,
+    environ: Environment,
+    identity: str,
+    hub_uri: str,
+    dry_run: bool,
 ) -> str:
     """Plan and (unless ``dry_run``) write ``tool``'s adapter, returning a status line."""
-    target = resolve_target(tool, home=home, project=project)
+    target = resolve_target(tool, home=home, project=project, environ=environ)
     block = render_block(tool, identity=identity, hub_uri=hub_uri)
     existing = target.read_text(encoding="utf-8") if target.is_file() else None
     content = plan_install(existing, block, mode=tool.mode)
@@ -102,38 +131,84 @@ def _install_one(
     return f"  {tool.key:<16} {verb} {target}"
 
 
+def _install_kimi_hook(
+    args: argparse.Namespace, *, home: Path, environ: Environment, dry_run: bool
+) -> str:
+    """Install the Synapse claim hook into KIMI's config.toml, returning a status line."""
+    config_path = resolve_kimi_config_path(args.kimi_config, environ=environ, home=home)
+    if dry_run:
+        return f"  kimi-hook        would install hook at {config_path}"
+    result = install_hook_config(
+        config_path,
+        identity=args.identity,
+        uri=args.uri,
+        ready_timeout=args.ready_timeout,
+        token_file=args.token_file,
+        synapse_bin=args.synapse_bin,
+    )
+    if result.outcome == "unchanged":
+        return f"  kimi-hook        already installed at {config_path}"
+    return f"  kimi-hook        {result.outcome} {config_path}"
+
+
+def _uninstall_kimi_hook(args: argparse.Namespace, *, home: Path, environ: Environment) -> str:
+    """Remove the Synapse claim hook from KIMI's config.toml, returning a status line."""
+    config_path = resolve_kimi_config_path(args.kimi_config, environ=environ, home=home)
+    result = uninstall_hook_config(config_path)
+    if result.outcome == "not-installed":
+        return "  kimi-hook        not installed"
+    if result.outcome == "removed":
+        return f"  kimi-hook        cleared {config_path}"
+    return f"  kimi-hook        removed {config_path}"
+
+
 def _cmd_install(args: argparse.Namespace, *, which: Which = shutil.which) -> int:
     """Write the claim-aware adapter for detected (or named) tools."""
     home, project = _roots(args)
+    environ = _target_environment(args)
     try:
         chosen = _selected(args)
     except KeyError as exc:
         print(f"unknown tool {exc}", file=sys.stderr)
         return 2
     if not args.tools:
-        chosen = [tool for tool in chosen if detect_installed(tool, home=home, which=which)]
+        chosen = [
+            tool
+            for tool in chosen
+            if detect_installed(tool, home=home, which=which, environ=environ)
+        ]
     if not chosen:
         print("no tools detected; name a tool explicitly to install anyway")
         return 0
-    print("dry run — no files written:" if args.dry_run else "installed adapters:")
-    for tool in chosen:
-        print(
-            _install_one(
-                tool,
-                home=home,
-                project=project,
-                identity=args.identity,
-                hub_uri=args.uri,
-                dry_run=args.dry_run,
+    if args.with_hook and not any(tool.key in _KIMI_KEYS for tool in chosen):
+        print("--with-hook requires selecting kimi or kimi-project", file=sys.stderr)
+        return 2
+    try:
+        print("dry run — no files written:" if args.dry_run else "installed adapters:")
+        for tool in chosen:
+            print(
+                _install_one(
+                    tool,
+                    home=home,
+                    project=project,
+                    environ=environ,
+                    identity=args.identity,
+                    hub_uri=args.uri,
+                    dry_run=args.dry_run,
+                )
             )
-        )
+        if args.with_hook:
+            print(_install_kimi_hook(args, home=home, environ=environ, dry_run=args.dry_run))
+    except (KimiHookConfigFileError, KimiHookInstallerError, OSError, ValueError) as exc:
+        print(f"cannot install KIMI hook: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 
-def _uninstall_one(tool: AdapterTool, *, home: Path, project: Path) -> str:
+def _uninstall_one(tool: AdapterTool, *, home: Path, project: Path, environ: Environment) -> str:
     """Remove ``tool``'s adapter content, returning a status line."""
-    target = resolve_target(tool, home=home, project=project)
-    if not _is_installed(tool, home=home, project=project):
+    target = resolve_target(tool, home=home, project=project, environ=environ)
+    if not _is_installed(tool, home=home, project=project, environ=environ):
         return f"  {tool.key:<16} not installed"
     content = plan_uninstall(target.read_text(encoding="utf-8"), mode=tool.mode)
     if content is None:
@@ -149,21 +224,35 @@ def _uninstall_one(tool: AdapterTool, *, home: Path, project: Path) -> str:
 def _cmd_uninstall(args: argparse.Namespace) -> int:
     """Remove only Synapse-written adapter content for named (or all) tools."""
     home, project = _roots(args)
+    environ = _target_environment(args)
     try:
         chosen = _selected(args)
     except KeyError as exc:
         print(f"unknown tool {exc}", file=sys.stderr)
         return 2
-    print("uninstalled adapters:")
-    for tool in chosen:
-        print(_uninstall_one(tool, home=home, project=project))
+    if args.with_hook and not any(tool.key in _KIMI_KEYS for tool in chosen):
+        print("--with-hook requires selecting kimi or kimi-project", file=sys.stderr)
+        return 2
+    try:
+        print("uninstalled adapters:")
+        for tool in chosen:
+            print(_uninstall_one(tool, home=home, project=project, environ=environ))
+        if args.with_hook:
+            print(_uninstall_kimi_hook(args, home=home, environ=environ))
+    except (KimiHookConfigFileError, KimiHookInstallerError, OSError, ValueError) as exc:
+        print(f"cannot uninstall adapter or KIMI hook: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 
 def _add_common(parser: argparse.ArgumentParser) -> None:
     """Add the home/project override options shared by every adapters subcommand."""
     parser.add_argument("tools", nargs="*", help="Tool keys; default is all (or all detected).")
-    parser.add_argument("--home", default=None, help="Override the home root (for testing).")
+    parser.add_argument(
+        "--home",
+        default=None,
+        help="Override the home root and ignore KIMI_CODE_HOME (for testing).",
+    )
     parser.add_argument("--project", default=None, help="Override the project root.")
 
 
@@ -176,6 +265,8 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     group = parser.add_subparsers(dest="adapters_command", required=True)
 
     add_claude_claim_hook_parser(group)
+    add_codex_claim_hook_parser(group)
+    add_kimi_claim_hook_parser(group)
 
     lister = group.add_parser("list", help="Detect tools and report adapter status (read-only).")
     _add_common(lister)
@@ -186,8 +277,36 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     installer.add_argument("--identity", default="your-agent", help="Identity to record.")
     installer.add_argument("--uri", default=default_hub_uri(), help="Hub URI to record.")
     installer.add_argument("--dry-run", action="store_true", help="Print planned writes only.")
+    installer.add_argument(
+        "--with-hook",
+        action="store_true",
+        help="Also install the KIMI PreToolUse hook into $KIMI_CODE_HOME/config.toml.",
+    )
+    installer.add_argument(
+        "--token-file", default=None, help="Hub token file referenced by the KIMI hook."
+    )
+    installer.add_argument(
+        "--ready-timeout",
+        type=float,
+        default=2.0,
+        help="Seconds allowed for each KIMI hook state-snapshot phase (default: 2).",
+    )
+    installer.add_argument(
+        "--synapse-bin", default=None, help="Synapse executable resolved into the KIMI hook."
+    )
+    installer.add_argument(
+        "--kimi-config", default=None, help="Override $KIMI_CODE_HOME/config.toml."
+    )
     installer.set_defaults(func=_cmd_install)
 
     remover = group.add_parser("uninstall", help="Remove only Synapse-written adapter content.")
     _add_common(remover)
+    remover.add_argument(
+        "--with-hook",
+        action="store_true",
+        help="Also remove the KIMI PreToolUse hook block from $KIMI_CODE_HOME/config.toml.",
+    )
+    remover.add_argument(
+        "--kimi-config", default=None, help="Override $KIMI_CODE_HOME/config.toml."
+    )
     remover.set_defaults(func=_cmd_uninstall)

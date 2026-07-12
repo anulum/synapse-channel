@@ -8,12 +8,12 @@
 """Cross-agent adapter kits: route an existing coding tool to the hub.
 
 An adapter is the thin, claim-aware glue that wires a specific coding tool — Claude
-Code, Codex, Cursor, Aider, Copilot, Windsurf, Gemini CLI — into Synapse so the tool
-claims its file scope before editing and releases it on commit, without Synapse
-pretending to be that tool or shipping a persona. Every adapter carries the *same*
-small contract (claim before edit, release on commit via the git hooks, reach the
-hub) rendered into the tool's own conventions format, between explicit markers so it
-can be removed exactly.
+Code, Codex, Kimi Code, Cursor, Aider, Copilot, Windsurf, or Gemini CLI — into
+Synapse so the tool claims its file scope before editing and releases it on commit,
+without Synapse pretending to be that tool or shipping a persona. Every adapter
+carries the *same* small contract (claim before edit, release on commit via the git
+hooks, reach the hub) rendered into the tool's own conventions format, between
+explicit markers so it can be removed exactly.
 
 This module is the **pure** half: the tool catalogue, detection logic, target
 resolution, contract rendering, and the string transforms that plan an install or an
@@ -25,7 +25,8 @@ only points a tool at the claims, releases, and presence that already exist.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import os
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,6 +48,9 @@ HOME_SCOPE = "home"
 PROJECT_SCOPE = "project"
 """The adapter target is resolved under the project working directory."""
 
+KIMI_HOME_SCOPE = "kimi-home"
+"""The adapter target is resolved under ``$KIMI_CODE_HOME`` or ``~/.kimi-code``."""
+
 
 @dataclass(frozen=True)
 class AdapterTool:
@@ -61,16 +65,19 @@ class AdapterTool:
     binaries : tuple[str, ...]
         Executable names that, if found on ``PATH``, mark the tool installed.
     detect_paths : tuple[str, ...]
-        Home-relative paths whose existence also marks the tool installed.
+        Paths whose existence also marks the tool installed, relative to the
+        applicable home root (including ``$KIMI_CODE_HOME`` for Kimi).
     target : str
         Path of the adapter file, relative to its scope.
     scope : str
-        :data:`HOME_SCOPE` or :data:`PROJECT_SCOPE` — what ``target`` is relative to.
+        :data:`HOME_SCOPE`, :data:`PROJECT_SCOPE`, or :data:`KIMI_HOME_SCOPE` — what
+        ``target`` is relative to.
     mode : str
         :data:`FILE_MODE` (Synapse owns the whole file) or :data:`APPEND_MODE`
         (a marked block inside a file the tool also uses).
     comment : str
-        Marker comment style: ``"html"`` (``<!-- … -->``) or ``"hash"`` (``# …``).
+        Marker comment style: ``"html"`` (``<!-- … -->``), ``"hash"`` (``# …``), or
+        ``"skill"`` (Kimi SKILL.md with YAML frontmatter).
     """
 
     key: str
@@ -154,6 +161,26 @@ CATALOGUE: tuple[AdapterTool, ...] = (
         mode=FILE_MODE,
         comment="html",
     ),
+    AdapterTool(
+        key="kimi",
+        label="Kimi Code",
+        binaries=("kimi",),
+        detect_paths=("",),
+        target="skills/synapse/SKILL.md",
+        scope=KIMI_HOME_SCOPE,
+        mode=FILE_MODE,
+        comment="skill",
+    ),
+    AdapterTool(
+        key="kimi-project",
+        label="Kimi Code (project skill)",
+        binaries=(),
+        detect_paths=(),
+        target=".kimi-code/skills/synapse/SKILL.md",
+        scope=PROJECT_SCOPE,
+        mode=FILE_MODE,
+        comment="skill",
+    ),
 )
 """The tools the adapter kit can wire, surveyed against per-tool config conventions."""
 
@@ -165,16 +192,50 @@ def tool_for(key: str) -> AdapterTool:
     return _BY_KEY[key.strip().lower()]
 
 
-def detect_installed(tool: AdapterTool, *, home: Path, which: Callable[[str], str | None]) -> bool:
+def _scope_root(
+    tool: AdapterTool,
+    *,
+    home: Path,
+    project: Path,
+    environ: Mapping[str, str] | None,
+) -> Path:
+    """Resolve the injected root for one adapter scope without touching the filesystem."""
+    if tool.scope == HOME_SCOPE:
+        return home
+    if tool.scope == PROJECT_SCOPE:
+        return project
+    if tool.scope == KIMI_HOME_SCOPE:
+        values = os.environ if environ is None else environ
+        configured = values.get("KIMI_CODE_HOME", "").strip()
+        if configured:
+            return Path(os.path.abspath(Path(configured).expanduser()))
+        return home / ".kimi-code"
+    raise ValueError(f"unknown adapter scope {tool.scope!r} for {tool.key!r}")
+
+
+def detect_installed(
+    tool: AdapterTool,
+    *,
+    home: Path,
+    which: Callable[[str], str | None],
+    environ: Mapping[str, str] | None = None,
+) -> bool:
     """Return whether ``tool`` looks installed: a binary on ``PATH`` or a config dir present."""
     if any(which(binary) for binary in tool.binaries):
         return True
-    return any((home / path).exists() for path in tool.detect_paths)
+    root = _scope_root(tool, home=home, project=home, environ=environ)
+    return any((root / path).exists() for path in tool.detect_paths)
 
 
-def resolve_target(tool: AdapterTool, *, home: Path, project: Path) -> Path:
+def resolve_target(
+    tool: AdapterTool,
+    *,
+    home: Path,
+    project: Path,
+    environ: Mapping[str, str] | None = None,
+) -> Path:
     """Return the absolute adapter-file path for ``tool`` under its scope."""
-    root = home if tool.scope == HOME_SCOPE else project
+    root = _scope_root(tool, home=home, project=project, environ=environ)
     return root / tool.target
 
 
@@ -195,6 +256,19 @@ def _contract_body(*, identity: str, hub_uri: str) -> str:
 def render_block(tool: AdapterTool, *, identity: str, hub_uri: str) -> str:
     """Render the marker-wrapped adapter block for ``tool`` in its comment style."""
     body = _contract_body(identity=identity, hub_uri=hub_uri)
+    if tool.comment == "skill":
+        return (
+            "---\n"
+            "name: synapse\n"
+            "description: "
+            "Synapse coordination rules — claim before edit, release on commit, reach the hub.\n"
+            "type: prompt\n"
+            "whenToUse: "
+            "Always, before modifying files or making commitments in a Synapse workspace.\n"
+            "disableModelInvocation: false\n"
+            "---\n\n"
+            f"<!-- {MARKER_BEGIN} -->\n{body}<!-- {MARKER_END} -->\n"
+        )
     if tool.comment == "html":
         return f"<!-- {MARKER_BEGIN} -->\n{body}<!-- {MARKER_END} -->\n"
     return f"# {MARKER_BEGIN}\n{body}# {MARKER_END}\n"

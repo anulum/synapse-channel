@@ -11,15 +11,14 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 Synapse coordinates whichever agents an operator already runs. The adapter kits
 are the thin, claim-aware glue that wires a specific coding tool — Claude Code,
-Codex, Cursor, Aider, Copilot, and the Python orchestration frameworks — into the
-hub so that tool claims its file scope before editing and releases it on commit,
-without Synapse pretending to be that tool or shipping a persona library.
+Codex, Kimi Code, Cursor, Aider, Copilot, and the Python orchestration frameworks
+— into the hub so that tool claims its file scope before editing and releases it
+on commit, without Synapse pretending to be that tool or shipping a persona
+library.
 
-This is a design. Parts of the wiring already exist; a single detect-and-install
-step that writes a per-tool adapter into each installed tool's native config does
-not. The design pins the adapter contract and the boundaries before that
-installer is built, so an adapter never does more than carry claim-safety into a
-tool's own conventions.
+This document began as the design contract for the adapter installer. The native
+editor/CLI installer is now shipped; the contract and boundaries remain here so
+an adapter never does more than carry claim-safety into a tool's own conventions.
 
 ## Runtime status
 
@@ -74,6 +73,7 @@ Tools fall into two shapes, and the kit needs both:
    | --- | --- | --- |
    | Claude Code | `~/.claude/` (or project `.claude/`) | Markdown |
    | Codex | `~/.codex/` | TOML |
+   | Kimi Code | `$KIMI_CODE_HOME/skills/synapse/SKILL.md` (default `~/.kimi-code/skills/synapse/SKILL.md`) or project `.kimi-code/skills/synapse/SKILL.md` | Agent Skill |
    | Cursor | `.cursor/rules/synapse.mdc` | Cursor `.mdc` |
    | Aider | append to `./CONVENTIONS.md` | Markdown |
    | GitHub Copilot | `~/.github/` | Markdown |
@@ -109,14 +109,27 @@ The command set is read-first and reversible:
 ```bash
 synapse adapters list                       # who is installed and where
 synapse adapters install --identity proj/me # wire every detected tool
+synapse adapters install kimi-project --identity proj/me # explicit project skill
+synapse adapters install kimi --identity proj/me --with-hook # skill + native edit guard
 synapse adapters uninstall cursor           # remove just one
 ```
 
 Two write shapes follow each tool's convention: a **dedicated file** Synapse owns
-(Claude Code, Codex, Cursor, Copilot, Gemini CLI — uninstall deletes it) or a
+(Claude Code, Codex, Kimi Code, Cursor, Copilot, Gemini CLI — uninstall deletes it) or a
 **marked block appended** to a file the tool also uses (Aider `CONVENTIONS.md`,
 Windsurf `.windsurfrules` — uninstall strips only the block). `--home`/`--project`
 override the roots; tool detection is a binary on `PATH` or a config directory.
+
+Kimi exposes both official skill scopes. `kimi` installs the detected user-level
+skill under `$KIMI_CODE_HOME/skills/` (default `~/.kimi-code/skills/`);
+`kimi-project` is explicit-only and installs under the current project's
+`.kimi-code/skills/`. Kimi resolves scopes in the documented order
+**Project > User > Extra > Built-in**, so a project-specific identity and hub
+override the user default. Skill installation itself does not modify
+`config.toml`. The separate opt-in `--with-hook` flag installs the native
+`PreToolUse` claim guard once even when both Kimi skill scopes are selected.
+`--home` overrides and isolates the default user root for tests; otherwise both
+the user Skill and hook config respect `$KIMI_CODE_HOME`.
 
 ## Prior art
 

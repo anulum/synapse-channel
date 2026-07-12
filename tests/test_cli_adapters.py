@@ -9,11 +9,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
+import synapse_channel.cli_adapters as cli_adapters
 from synapse_channel.adapters import MARKER_BEGIN
 from synapse_channel.cli_adapters import _cmd_install, _cmd_list, add_parsers
 
@@ -35,6 +37,14 @@ def _which(*present: str) -> Callable[[str], str | None]:
 
 def _claude(home: Path) -> Path:
     return home / ".claude/synapse.md"
+
+
+def _kimi_user(home: Path) -> Path:
+    return home / ".kimi-code/skills/synapse/SKILL.md"
+
+
+def _kimi_project(project: Path) -> Path:
+    return project / ".kimi-code/skills/synapse/SKILL.md"
 
 
 def test_list_reports_all_tools_and_detection(
@@ -72,6 +82,294 @@ def test_install_named_writes_file_and_append_adapters(tmp_path: Path) -> None:
     conventions = (tmp_path / "CONVENTIONS.md").read_text(encoding="utf-8")
     assert conventions.startswith("My rules.")
     assert MARKER_BEGIN in conventions
+
+
+def test_install_kimi_user_and_project_skills_is_reversible(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    monkeypatch.setenv("KIMI_CODE_HOME", str(tmp_path / "must-not-be-used"))
+    install = _args(
+        "install",
+        "kimi",
+        "kimi-project",
+        "--home",
+        str(home),
+        "--project",
+        str(project),
+        "--identity",
+        "proj/kimi",
+        "--uri",
+        "ws://127.0.0.1:8876",
+    )
+    assert _cmd_install(install, which=_which()) == 0
+    for target in (_kimi_user(home), _kimi_project(project)):
+        text = target.read_text(encoding="utf-8")
+        assert text.startswith("---\nname: synapse\n")
+        assert "proj/kimi" in text and "ws://127.0.0.1:8876" in text
+        assert text.count(MARKER_BEGIN) == 1
+
+    uninstall = _args(
+        "uninstall",
+        "kimi",
+        "kimi-project",
+        "--home",
+        str(home),
+        "--project",
+        str(project),
+    )
+    assert uninstall.func(uninstall) == 0
+    assert not _kimi_user(home).exists()
+    assert not _kimi_project(project).exists()
+
+
+def test_install_kimi_with_hook_writes_config_toml(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    config_path = home / ".kimi-code" / "config.toml"
+    install = _args(
+        "install",
+        "kimi",
+        "--home",
+        str(home),
+        "--project",
+        str(project),
+        "--identity",
+        "proj/kimi",
+        "--uri",
+        "ws://127.0.0.1:8876",
+        "--with-hook",
+    )
+    assert _cmd_install(install, which=_which()) == 0
+    config_text = config_path.read_text(encoding="utf-8")
+    assert "[[hooks]]" in config_text
+    assert "synapse-channel:kimi-hook:begin" in config_text
+    assert "synapse-channel:kimi-hook:end" in config_text
+    assert "proj/kimi" in config_text
+
+
+def test_install_kimi_with_hook_is_idempotent(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    config_path = home / ".kimi-code" / "config.toml"
+    install = _args(
+        "install",
+        "kimi",
+        "--home",
+        str(home),
+        "--project",
+        str(project),
+        "--identity",
+        "proj/kimi",
+        "--uri",
+        "ws://127.0.0.1:8876",
+        "--with-hook",
+        "--kimi-config",
+        str(config_path),
+    )
+    assert _cmd_install(install, which=_which()) == 0
+    first = config_path.read_text(encoding="utf-8")
+    assert _cmd_install(install, which=_which()) == 0
+    second = config_path.read_text(encoding="utf-8")
+    assert second == first
+    assert second.count("synapse-channel:kimi-hook:begin") == 1
+
+
+def test_install_kimi_user_and_project_runs_hook_once(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    install = _args(
+        "install",
+        "kimi",
+        "kimi-project",
+        "--home",
+        str(home),
+        "--project",
+        str(project),
+        "--identity",
+        "proj/kimi",
+        "--with-hook",
+        "--synapse-bin",
+        sys.executable,
+    )
+    assert _cmd_install(install, which=_which()) == 0
+    hook_lines = [line for line in capsys.readouterr().out.splitlines() if "kimi-hook" in line]
+    assert len(hook_lines) == 1
+
+
+def test_install_with_hook_rejects_non_kimi_selection_before_writing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    install = _args(
+        "install",
+        "claude-code",
+        "--home",
+        str(tmp_path),
+        "--project",
+        str(tmp_path),
+        "--with-hook",
+    )
+    assert _cmd_install(install, which=_which()) == 2
+    assert "requires selecting kimi" in capsys.readouterr().err
+    assert not _claude(tmp_path).exists()
+
+
+def test_install_kimi_honours_kimi_code_home_for_skill_and_hook(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kimi_home = tmp_path / "custom-kimi"
+    project = tmp_path / "project"
+    monkeypatch.setenv("KIMI_CODE_HOME", str(kimi_home))
+    install = _args(
+        "install",
+        "kimi",
+        "--project",
+        str(project),
+        "--identity",
+        "proj/kimi",
+        "--with-hook",
+        "--synapse-bin",
+        sys.executable,
+    )
+    assert _cmd_install(install, which=_which()) == 0
+    assert (kimi_home / "skills" / "synapse" / "SKILL.md").is_file()
+    assert (kimi_home / "config.toml").is_file()
+
+
+def test_install_kimi_with_hook_dry_run_writes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    config_path = home / ".kimi-code" / "config.toml"
+    install = _args(
+        "install",
+        "kimi",
+        "--home",
+        str(home),
+        "--project",
+        str(project),
+        "--identity",
+        "proj/kimi",
+        "--dry-run",
+        "--with-hook",
+        "--kimi-config",
+        str(config_path),
+    )
+    assert _cmd_install(install, which=_which()) == 0
+    out = capsys.readouterr().out
+    assert "would install hook" in out
+    assert not config_path.exists()
+
+
+def test_uninstall_kimi_with_hook_removes_config_block(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    config_path = home / ".kimi-code" / "config.toml"
+    install = _args(
+        "install",
+        "kimi",
+        "--home",
+        str(home),
+        "--project",
+        str(project),
+        "--identity",
+        "proj/kimi",
+        "--with-hook",
+        "--kimi-config",
+        str(config_path),
+    )
+    assert _cmd_install(install, which=_which()) == 0
+
+    uninstall = _args(
+        "uninstall",
+        "kimi",
+        "--home",
+        str(home),
+        "--project",
+        str(project),
+        "--with-hook",
+        "--kimi-config",
+        str(config_path),
+    )
+    assert uninstall.func(uninstall) == 0
+    assert not config_path.exists()
+
+
+def test_uninstall_kimi_with_hook_reports_not_installed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = _args(
+        "uninstall",
+        "kimi",
+        "--home",
+        str(tmp_path / "home"),
+        "--project",
+        str(tmp_path / "project"),
+        "--with-hook",
+    )
+    assert args.func(args) == 0
+    assert "kimi-hook        not installed" in capsys.readouterr().out
+
+
+def test_uninstall_kimi_with_hook_preserves_other_config(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    config_path = home / ".kimi-code" / "config.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text('model = "x"\n', encoding="utf-8")
+    install = _args(
+        "install",
+        "kimi",
+        "--home",
+        str(home),
+        "--project",
+        str(project),
+        "--identity",
+        "proj/kimi",
+        "--with-hook",
+        "--synapse-bin",
+        sys.executable,
+    )
+    assert _cmd_install(install, which=_which()) == 0
+    capsys.readouterr()
+    uninstall = _args(
+        "uninstall",
+        "kimi",
+        "--home",
+        str(home),
+        "--project",
+        str(project),
+        "--with-hook",
+    )
+    assert uninstall.func(uninstall) == 0
+    assert "kimi-hook        cleared" in capsys.readouterr().out
+    assert config_path.read_text(encoding="utf-8") == 'model = "x"\n'
+
+
+def test_uninstall_with_hook_rejects_non_kimi_selection_before_removing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _claude(tmp_path).parent.mkdir(parents=True)
+    _claude(tmp_path).write_text(f"<!-- {MARKER_BEGIN} -->\n", encoding="utf-8")
+    uninstall = _args(
+        "uninstall",
+        "claude-code",
+        "--home",
+        str(tmp_path),
+        "--project",
+        str(tmp_path),
+        "--with-hook",
+    )
+    assert uninstall.func(uninstall) == 2
+    assert "requires selecting kimi" in capsys.readouterr().err
+    assert _claude(tmp_path).exists()
 
 
 def test_install_is_idempotent(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -116,6 +414,20 @@ def test_install_rejects_an_unknown_tool(
     args = _args("install", "bogus", "--home", str(tmp_path), "--project", str(tmp_path))
     assert _cmd_install(args, which=_which()) == 2
     assert "unknown tool" in capsys.readouterr().err
+
+
+def test_install_reports_controlled_io_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail(*_args: object, **_kwargs: object) -> str:
+        raise OSError("write failed")
+
+    monkeypatch.setattr(cli_adapters, "_install_one", fail)
+    args = _args("install", "claude-code", "--home", str(tmp_path), "--project", str(tmp_path))
+    assert _cmd_install(args, which=_which()) == 2
+    assert "cannot install KIMI hook: write failed" in capsys.readouterr().err
 
 
 def test_uninstall_removes_file_and_clears_block(
@@ -163,6 +475,20 @@ def test_uninstall_rejects_an_unknown_tool(
     args = _args("uninstall", "bogus", "--home", str(tmp_path), "--project", str(tmp_path))
     assert args.func(args) == 2
     assert "unknown tool" in capsys.readouterr().err
+
+
+def test_uninstall_reports_controlled_io_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail(*_args: object, **_kwargs: object) -> str:
+        raise OSError("remove failed")
+
+    monkeypatch.setattr(cli_adapters, "_uninstall_one", fail)
+    args = _args("uninstall", "claude-code", "--home", str(tmp_path), "--project", str(tmp_path))
+    assert args.func(args) == 2
+    assert "cannot uninstall adapter or KIMI hook: remove failed" in capsys.readouterr().err
 
 
 def test_default_roots_used_when_not_overridden() -> None:

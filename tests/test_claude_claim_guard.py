@@ -176,6 +176,23 @@ async def test_evaluate_hook_event_allows_live_covering_claim(tmp_path: Path) ->
     assert verdict.allowed
 
 
+@pytest.mark.asyncio
+async def test_evaluate_hook_event_denies_malformed_input_before_query() -> None:
+    async def must_not_run(**_kwargs: object) -> dict[str, Any]:
+        raise AssertionError("malformed input must not query the hub")
+
+    verdict = await evaluate_hook_event(
+        "not-json",
+        identity="seat/one",
+        uri="ws://hub",
+        token=None,
+        timeout=0.1,
+        state_fetcher=must_not_run,
+    )
+    assert not verdict.allowed
+    assert "not valid JSON" in verdict.reason
+
+
 def test_denial_payload_uses_current_pretooluse_schema() -> None:
     assert denial_payload("claim required") == {
         "hookSpecificOutput": {

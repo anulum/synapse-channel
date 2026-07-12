@@ -102,6 +102,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         RuntimeError,
     ),
     "ClaimWireError": ("synapse_channel.core.multihub_claim_wire", "claim_wire", ValueError),
+    "CodexClaimGuardError": (
+        "synapse_channel.codex_claim_guard",
+        "codex_claim_guard",
+        RuntimeError,
+    ),
     "DeadLetterForwardError": (
         "synapse_channel.core.dead_letter_forwarding",
         "dead_letter_forward",
@@ -133,6 +138,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         ValueError,
     ),
     "FederationWireError": ("synapse_channel.core.federation_wire", "federation_wire", ValueError),
+    "FileClaimGuardError": (
+        "synapse_channel.file_claim_guard",
+        "file_claim_guard",
+        RuntimeError,
+    ),
     "GitError": ("synapse_channel.git.gitclaim", "git", RuntimeError),
     "HubTLSConfigError": ("synapse_channel.core.tls", "hub_tls_config", ValueError),
     "IdentityBindingError": (
@@ -143,6 +153,21 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
     "IdentityError": ("synapse_channel.core.identity", "identity", ValueError),
     "IdentityKeyError": ("synapse_channel.core.identity_keys", "identity_key", ValueError),
     "InsecureBindError": ("synapse_channel.core.hub_exposure", "insecure_bind", RuntimeError),
+    "KimiClaimGuardError": (
+        "synapse_channel.kimi_claim_guard",
+        "kimi_claim_guard",
+        RuntimeError,
+    ),
+    "KimiHookConfigFileError": (
+        "synapse_channel.kimi_hook_config_file",
+        "kimi_hook_config_file",
+        ValueError,
+    ),
+    "KimiHookInstallerError": (
+        "synapse_channel.kimi_hook_installer",
+        "kimi_hook_installer",
+        ValueError,
+    ),
     "McpAccessError": ("synapse_channel.core.mcp_outbound", "mcp_access", PermissionError),
     "McpConfigError": ("synapse_channel.core.mcp_outbound", "mcp_config", ValueError),
     "McpToolError": ("synapse_channel.core.mcp_outbound", "mcp_tool", RuntimeError),

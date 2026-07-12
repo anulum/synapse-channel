@@ -100,6 +100,7 @@ linked commands and documentation describe the shipped behaviour today.
 | Shipped coordination surface | Labelled visual slot |
 |---|---|
 | **Claim before edit.** [`synapse git-init`](#git-native-claims) installs claim-aware Git hooks; `synapse git-claim` records an exact worktree, branch, and path scope so an overlapping claim can be refused before files diverge. | **Visual placeholder — claim gutter:** one owner is visible while a competing edit is refused. |
+| **Block unclaimed native file edits.** [Provider file-edit claim hooks](docs/claim-guard-hooks.md) adapt Claude Code `Edit|Write`, Codex `apply_patch`, and Kimi `Edit|Write` to one live-claim decision engine. | **Visual placeholder — edit denial:** an unclaimed provider edit stops before the native file tool runs. |
 | **Share the plan.** `synapse task` and [`synapse board`](docs/coordination-model.md) keep task state, dependencies, and ready work on the hub instead of in separate agent notes. | **Visual placeholder — board:** a blocked task becomes ready when its dependency completes. |
 | **Hand work over without an ownership gap.** [Atomic handoff](docs/coordination-model.md#4-hand-off-and-recover) moves the held task, scope, status, and checkpoint to an online recipient without a release-and-reclaim window. | **Visual placeholder — handoff:** ownership and checkpoint move together between two seats. |
 | **Expose a dark seat.** After 30 continuous seconds without the owner's exact waiter, the hub emits one [`dark_seat_alert`](docs/protocol.md) for affected claims or assigned work, including the permanent-arm remedy; it does not release or reassign work automatically. | **Visual placeholder — dark-seat alert:** the missing waiter and exact re-arm command appear beside the affected work. |
@@ -409,6 +410,26 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   [`examples/mcp/.mcp.json`](examples/mcp/.mcp.json) template. MCP does not wake
   an idle provider in this adapter; call `synapse_inbox` at turn start and keep
   `synapse arm install --identity NAME --start` active for prompt delivery.
+
+- **Claude Code / Codex / Kimi native file edits:** print a provider-native
+  `PreToolUse` recipe that checks the authoritative live claim before a supported
+  file tool runs.
+
+  ```bash
+  synapse adapters claude-claim-hook --identity my-repo/claude --print-config
+  synapse adapters codex-claim-hook  --identity my-repo/codex  --print-config
+  synapse adapters kimi-claim-hook   --identity my-repo/kimi   --print-config
+  synapse adapters kimi-claim-hook   --identity my-repo/kimi   --install-config
+  ```
+
+  `--print-config` is read-only. Kimi's opt-in installer writes only one marked
+  block in `$KIMI_CODE_HOME/config.toml` (default `~/.kimi-code/config.toml`),
+  and `--uninstall-config` removes only that block. The equivalent combined path
+  is `synapse adapters install kimi --identity my-repo/kimi --with-hook`.
+
+  The [provider claim-hook guide](docs/claim-guard-hooks.md) documents exact tool
+  coverage, token-file setup, and the native-host limits. These are bounded file
+  guards, not complete Bash or filesystem isolation.
 
 - **Aider, or any non-MCP tool:** claim a file scope before editing and let a git
   hook release it on commit, so two sessions never touch the same files.
@@ -1149,12 +1170,14 @@ approval), post-incident replay (postmortem, reliability), and memory (the inges
 seam). It is an architecture, not a scheduler: only claims gate a mutation, and
 everything else is read-only or advisory.
 
-The planned [cross-agent adapter kits](docs/cross-agent-adapter-kits.md) design
-specifies a `synapse adapters` step that detects installed coding tools (Claude
-Code, Codex, Cursor, Aider, Copilot) and writes a thin claim-aware adapter into
-each tool's native config, plus thin client shims for Python frameworks. Adapters
-carry only "claim before edit, release on commit, reach the hub" — Synapse stays
-persona-neutral and adds no new coordination primitive.
+The shipped [cross-agent adapter kits](docs/cross-agent-adapter-kits.md) expose
+`synapse adapters` to detect installed coding tools and write a thin claim-aware
+adapter into each tool's native config. Kimi Code supports both its user-level
+`kimi` skill (under `$KIMI_CODE_HOME`) and an explicit higher-priority
+`kimi-project` skill; its native claim hook is a separate opt-in. Python-framework
+shims remain a documented thin-client pattern. Adapters carry only "claim before
+edit, release on commit, reach the hub" — Synapse stays persona-neutral and adds
+no new coordination primitive.
 
 The [multi-hub sync (CRDT) research](docs/multi-hub-sync.md) asks whether several
 hubs could synchronise state while keeping claim safety and local-first. Its
@@ -1326,13 +1349,13 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.4 |
 | Public API exports | 70 |
-| Package modules | 411 |
-| Classes | 581 |
+| Package modules | 419 |
+| Classes | 589 |
 | Wire message types | 77 |
-| CLI subcommands | 162 |
-| Test functions | 6441 |
+| CLI subcommands | 164 |
+| Test functions | 6555 |
 | Benchmark harnesses | 6 |
-| Documentation pages | 54 |
+| Documentation pages | 55 |
 | GitHub Actions workflows | 18 |
 | Optional-dependency groups | 13 |
 

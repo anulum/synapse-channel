@@ -40,8 +40,13 @@ def test_cross_agent_adapter_kits_pins_the_adapter_contract() -> None:
     # the two shapes: native config files and python client shims
     assert "editor and cli agents" in text
     assert "thin client shim" in text
-    for tool in ("claude code", "codex", "cursor", "aider"):
+    for tool in ("claude code", "codex", "kimi code", "cursor", "aider"):
         assert tool in text
+    assert "~/.kimi-code/skills/synapse/skill.md" in text
+    assert "$kimi_code_home/skills/synapse/skill.md" in text
+    assert ".kimi-code/skills/synapse/skill.md" in text
+    assert "project > user" in text
+    assert "--with-hook" in text
 
 
 def test_cross_agent_adapter_kits_grounds_in_shipped_wiring() -> None:
