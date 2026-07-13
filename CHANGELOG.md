@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Path-based claim enforcement now rejects symlink loops and broken path
+  components consistently on Python 3.10–3.13 while retaining support for
+  valid paths whose final file or directory does not exist yet.
+
 ## [0.99.5] - 2026-07-13
 
 ### Documentation

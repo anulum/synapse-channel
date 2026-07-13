@@ -22,6 +22,7 @@ from pathlib import Path
 
 from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runner
 from synapse_channel.git.githook import install_hooks
+from synapse_channel.path_resolution import resolve_weakly_fail_closed
 
 SCAFFOLD_DIR = ".synapse"
 """Repository-relative directory the onboarding scaffold is written into."""
@@ -88,7 +89,7 @@ def persist_claim_check_config(
     canonical_token: str | None = None
     if token_file:
         try:
-            canonical_token = str(Path(token_file).expanduser().resolve(strict=False))
+            canonical_token = str(resolve_weakly_fail_closed(Path(token_file).expanduser()))
         except (OSError, RuntimeError) as exc:
             raise GitError("the Synapse token-file path is invalid") from exc
         runner(["config", "--local", "synapse.tokenFile", canonical_token])

@@ -22,6 +22,7 @@ from typing import Any
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.lifecycle import TaskStatus
 from synapse_channel.core.scoping import normalize_path
+from synapse_channel.path_resolution import resolve_weakly_fail_closed
 
 EDITABLE_STATUSES = frozenset({TaskStatus.CLAIMED, TaskStatus.WORKING})
 """Live task states in which the owner may mutate claimed files."""
@@ -75,7 +76,7 @@ def _claim_covers_path(
     if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
         raise ClaimCoverageError("Hub returned malformed claim paths.")
     try:
-        claimed_root = Path(worktree).resolve(strict=False)
+        claimed_root = resolve_weakly_fail_closed(Path(worktree))
     except (OSError, RuntimeError, ValueError) as exc:
         raise ClaimCoverageError("Hub returned an invalid claim worktree.") from exc
     if claimed_root != root:
@@ -122,7 +123,7 @@ def decide_claim_coverage(
     if not all(isinstance(path, str) for path in paths):
         raise ClaimCoverageError("Claim coverage targets must be path strings.")
     try:
-        canonical_root = root.resolve(strict=False)
+        canonical_root = resolve_weakly_fail_closed(root)
     except (OSError, RuntimeError, ValueError) as exc:
         raise ClaimCoverageError("Claim coverage worktree is invalid.") from exc
 

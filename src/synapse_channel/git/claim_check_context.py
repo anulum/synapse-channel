@@ -18,6 +18,7 @@ from pathlib import Path
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runner
+from synapse_channel.path_resolution import resolve_weakly_fail_closed
 
 _PLACEHOLDERS = frozenset({"ME", "USER", "YOUR_IDENTITY"})
 
@@ -80,7 +81,7 @@ def _resolve_token_file(raw: str, *, root: Path) -> Path | None:
     if not candidate.is_absolute():
         candidate = root / candidate
     try:
-        return candidate.resolve(strict=False)
+        return resolve_weakly_fail_closed(candidate)
     except (OSError, RuntimeError) as exc:
         raise ClaimCheckConfigError("The configured Synapse token-file path is invalid.") from exc
 
@@ -99,7 +100,7 @@ def resolve_claim_check_context(
     if not root_text:
         raise ClaimCheckConfigError("Git returned no repository root.")
     try:
-        root = Path(root_text).resolve(strict=False)
+        root = resolve_weakly_fail_closed(Path(root_text))
     except (OSError, RuntimeError) as exc:
         raise ClaimCheckConfigError("Git returned an invalid repository root.") from exc
     try:

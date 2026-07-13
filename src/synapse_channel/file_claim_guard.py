@@ -19,6 +19,7 @@ from synapse_channel.claim_state import ClaimStateError, fetch_state_snapshot
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.git.claim_coverage import ClaimCoverageError, decide_claim_coverage
 from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runner
+from synapse_channel.path_resolution import resolve_weakly_fail_closed
 
 StateFetcher = Callable[..., Awaitable[dict[str, Any]]]
 
@@ -68,7 +69,7 @@ def _absolute_target(path: Path, cwd: Path) -> Path:
         raise FileClaimGuardError("Provider hook cwd must be absolute.")
     candidate = path if path.is_absolute() else cwd / path
     try:
-        return candidate.resolve(strict=False)
+        return resolve_weakly_fail_closed(candidate)
     except (OSError, RuntimeError, ValueError) as exc:
         raise FileClaimGuardError("Provider mutation target is not a valid path.") from exc
 
