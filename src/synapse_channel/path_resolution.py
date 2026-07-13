@@ -12,9 +12,13 @@ from __future__ import annotations
 import stat
 from pathlib import Path
 
+from synapse_channel.core.errors import SynapseError
 
-class PathResolutionError(OSError):
+
+class PathResolutionError(SynapseError, OSError):
     """A path cannot be resolved without accepting an invalid component."""
+
+    code = "path_resolution"
 
 
 def resolve_weakly_fail_closed(path: Path) -> Path:

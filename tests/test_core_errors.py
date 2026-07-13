@@ -204,6 +204,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
     "MultiHubWireError": ("synapse_channel.core.multihub_wire", "multihub_wire", ValueError),
     "ParanoidModeError": ("synapse_channel.core.paranoid", "paranoid_mode", ValueError),
     "PayloadCryptoError": ("synapse_channel.core.payload_crypto", "payload_crypto", ValueError),
+    "PathResolutionError": (
+        "synapse_channel.path_resolution",
+        "path_resolution",
+        OSError,
+    ),
     "PolicyError": ("synapse_channel.core.policy_engine", "policy", ValueError),
     "ReceiptSigningError": ("synapse_channel.core.receipt_signing", "receipt_signing", ValueError),
     "RelayTransportError": (
