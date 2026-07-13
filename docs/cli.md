@@ -641,11 +641,15 @@ suspicious scope may block more work but cannot miss a conflict.
 filenames and parses `git diff --cached --name-status -z --find-renames
 --find-copies`; copies and renames require claims for both names. An empty index
 returns success before resolving identity or contacting a hub. Otherwise the
-explicit `--name`, local `synapse.identity`, and an ambient `SYN_PROJECT` plus
-`SYN_IDENTITY` pair must agree. `git-init --name <exact-owner>` writes that local
-identity, the selected URI, and at most a token-file path. It installs only the
-post-commit/post-merge release hooks; a repository must wire the checker into its
-pre-commit framework to make it blocking. See [Git-native claims](git-claims.md).
+explicit `--name`, worktree-scoped `synapse.identity`, and an ambient
+`SYN_PROJECT` plus `SYN_IDENTITY` pair must agree. Run
+`git-init --name <exact-owner>` once in every linked worktree; it enables Git's
+per-worktree config and writes that seat's identity, selected URI, and at most a
+token-file path without leaving a shared identity fallback. It installs only the
+post-commit/post-merge release hooks; those convenience scripts remain
+repository-wide, so mixed-identity linked worktrees should use manual release. A
+repository must wire the checker into its pre-commit framework to make it
+blocking. See [Git-native claims](git-claims.md).
 
 Use `syn locks` for the operator view before releasing or asking another owner to
 release. It queries the live state snapshot as `<identity>-locks`, filters to the

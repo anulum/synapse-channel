@@ -27,11 +27,15 @@ class _Runner:
         *,
         branch: str = "main",
         config: dict[str, str] | None = None,
+        common_config: dict[str, str] | None = None,
+        worktree_config: bool = True,
         detached: bool = False,
     ) -> None:
         self.root = root
         self.branch = branch
         self.config = config or {}
+        self.common_config = common_config or {}
+        self.worktree_config = worktree_config
         self.detached = detached
         self.calls: list[list[str]] = []
 
@@ -43,7 +47,12 @@ class _Runner:
             if self.detached:
                 raise GitError("not a symbolic ref")
             return self.branch
+        if args[:6] == ["config", "--local", "--type=bool", "--get", "--default", "false"]:
+            assert args[6] == "extensions.worktreeConfig"
+            return "true" if self.worktree_config else "false"
         if args[:5] == ["config", "--local", "--get", "--default", ""]:
+            return self.common_config.get(args[5], "")
+        if args[:5] == ["config", "--worktree", "--get", "--default", ""]:
             return self.config.get(args[5], "")
         raise AssertionError(args)
 
@@ -76,6 +85,29 @@ def test_config_identity_uri_and_relative_token_file_resolve_under_root(tmp_path
     assert context.identity == "project/agent"
     assert context.uri == "wss://configured"
     assert context.token_file == (root / ".secrets/hub.token").resolve()
+
+
+def test_legacy_local_config_remains_readable_until_git_init_migrates_it(tmp_path: Path) -> None:
+    context = resolve_claim_check_context(
+        runner=_Runner(
+            tmp_path,
+            common_config={"synapse.identity": "legacy/agent", "synapse.uri": "ws://legacy"},
+            worktree_config=False,
+        ),
+        environment={},
+    )
+    assert context.identity == "legacy/agent"
+    assert context.uri == "ws://legacy"
+
+
+def test_enabled_worktree_config_never_inherits_a_shared_identity(tmp_path: Path) -> None:
+    runner = _Runner(
+        tmp_path,
+        common_config={"synapse.identity": "other/seat"},
+        worktree_config=True,
+    )
+    with pytest.raises(ClaimCheckConfigError, match="No claim identity"):
+        resolve_claim_check_context(runner=runner, environment={})
 
 
 def test_agreeing_session_pair_is_accepted_and_requester_is_stable(tmp_path: Path) -> None:

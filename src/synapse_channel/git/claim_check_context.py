@@ -17,6 +17,7 @@ from pathlib import Path
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.git.claim_check_config import read_claim_check_config
 from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runner
 from synapse_channel.path_resolution import resolve_weakly_fail_closed
 
@@ -39,10 +40,6 @@ class ClaimCheckContext:
     uri: str
     token_file: Path | None
     requester: str
-
-
-def _config_value(key: str, *, runner: GitRunner) -> str:
-    return runner(["config", "--local", "--get", "--default", "", key]).strip()
 
 
 def _session_identity(environment: Mapping[str, str]) -> str:
@@ -112,17 +109,19 @@ def resolve_claim_check_context(
 
     selected_identity = _resolve_identity(
         explicit=identity,
-        configured=_config_value("synapse.identity", runner=runner),
+        configured=read_claim_check_config("synapse.identity", runner=runner),
         environment=env,
     )
     selected_uri = (
         (uri or "").strip()
-        or _config_value("synapse.uri", runner=runner)
+        or read_claim_check_config("synapse.uri", runner=runner)
         or env.get("SYNAPSE_URI", "").strip()
         or DEFAULT_HUB_URI
     )
     selected_token_file = _resolve_token_file(
-        token_file if token_file is not None else _config_value("synapse.tokenFile", runner=runner),
+        token_file
+        if token_file is not None
+        else read_claim_check_config("synapse.tokenFile", runner=runner),
         root=root,
     )
     digest = hashlib.sha256(selected_identity.encode("utf-8")).hexdigest()[:16]

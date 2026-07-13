@@ -15,6 +15,17 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- `synapse git-init` now stores staged-claim identity, hub URI, and the optional
+  token-file path in Git's official per-worktree config. Linked worktrees can
+  therefore use different exact seat identities without overwriting one another;
+  migration removes the old shared values only after the current worktree is
+  configured and refuses unsafe `core.worktree` / `core.bare=true` layouts with
+  an explicit repair instead of guessing.
+
+- The MCP guide now reflects the live official-registry state: SYNAPSE CHANNEL
+  is active there, while a newer `server.json` remains only a prepared update
+  until the immutable registry record exposes that exact version.
+
 - Path-based claim enforcement now rejects symlink loops and broken path
   components consistently on Python 3.10–3.13 while retaining support for
   valid paths whose final file or directory does not exist yet.

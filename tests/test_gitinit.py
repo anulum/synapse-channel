@@ -26,6 +26,7 @@ from synapse_channel.git.gitinit import (
 class _ConfigRunner:
     def __init__(self, root: Path) -> None:
         self.root = root
+        self.common: dict[str, str] = {}
         self.values: dict[str, str] = {}
         self.calls: list[list[str]] = []
 
@@ -33,12 +34,26 @@ class _ConfigRunner:
         self.calls.append(args)
         if args == ["rev-parse", "--show-toplevel"]:
             return str(self.root)
+        if args[:6] == ["config", "--local", "--type=bool", "--get", "--default", "false"]:
+            return (
+                "true"
+                if self.common.get(args[6], "").lower() in {"1", "on", "true", "yes"}
+                else "false"
+            )
         if args[:5] == ["config", "--local", "--get", "--default", ""]:
+            return self.common.get(args[5], "")
+        if args[:5] == ["config", "--worktree", "--get", "--default", ""]:
             return self.values.get(args[5], "")
         if args[:3] == ["config", "--local", "--unset-all"]:
+            self.common.pop(args[3], None)
+            return ""
+        if args[:3] == ["config", "--worktree", "--unset-all"]:
             self.values.pop(args[3], None)
             return ""
         if args[:2] == ["config", "--local"] and len(args) == 4:
+            self.common[args[2]] = args[3]
+            return ""
+        if args[:2] == ["config", "--worktree"] and len(args) == 4:
             self.values[args[2]] = args[3]
             return ""
         raise AssertionError(args)
@@ -74,6 +89,8 @@ def test_init_repo_installs_hooks_and_writes_scaffold(tmp_path: Path) -> None:
     assert "off `trunk`" in body
     assert "git-claim <task-id> --paths src/area --name ME" in body
     assert "synapse git-claim-check --staged" in body
+    assert "synapse git-init --name <exact-seat-identity>" in body
+    assert "--auto-release-on manual" in body
     assert "only the post-commit and post-merge" in body
     assert runner.values["synapse.identity"] == "ME"
     assert runner.values["synapse.uri"] == "ws://h"
@@ -152,7 +169,7 @@ def test_init_repo_clears_a_stale_token_file_when_omitted(tmp_path: Path) -> Non
         runner=runner,
     )
     assert "synapse.tokenFile" not in runner.values
-    assert ["config", "--local", "--unset-all", "synapse.tokenFile"] in runner.calls
+    assert ["config", "--worktree", "--unset-all", "synapse.tokenFile"] in runner.calls
 
 
 def test_init_repo_reports_an_invalid_token_file_path(tmp_path: Path) -> None:

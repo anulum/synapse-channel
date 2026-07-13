@@ -175,11 +175,24 @@ or releases a claim. Its bounded denial lists all ordinary uncovered paths so th
 operator can acquire the exact claim and retry.
 
 Identity resolution is deliberately strict. Populated sources must agree in this
-order: explicit `--name`, local `synapse.identity`, then an agreeing
+order: explicit `--name`, worktree-scoped `synapse.identity`, then an agreeing
 `SYN_PROJECT` plus `SYN_IDENTITY` pair. A bare ambient identity, placeholder such
-as `USER`, disagreement, or detached HEAD is refused. `git-init` persists
-`synapse.identity` and `synapse.uri` in local Git config; `--token-file` persists
-only its canonical path as `synapse.tokenFile`, never token content.
+as `USER`, disagreement, or detached HEAD is refused. `git-init` enables Git's
+official `extensions.worktreeConfig` support and persists `synapse.identity` and
+`synapse.uri` in the current worktree's config; `--token-file` persists only its
+canonical path as `synapse.tokenFile`, never token content. Legacy repository-local
+values remain readable until `git-init` is rerun, then they are removed so another
+linked worktree fails closed instead of inheriting the wrong seat.
+
+Run `synapse git-init --name <exact-seat>` once inside every linked worktree. Git
+requires `core.worktree` and `core.bare=true` to be moved out of the shared config
+before enabling per-worktree config; Synapse detects that uncommon layout and
+refuses with the upstream migration instruction instead of guessing. The staged
+gate is worktree-safe after this migration. The auto-release hook scripts are a
+separate, repository-wide convenience and still carry the most recently installed
+identity; mixed-identity linked worktrees should claim with
+`--auto-release-on manual` and release explicitly until those hooks become
+worktree-aware.
 
 This repository dogfoods the gate through the pre-commit framework:
 

@@ -237,10 +237,11 @@ mcp>=1.28.0` runtime hint. The `synapse-channel` console entry starts this MCP
 face directly for package launchers; humans can keep using `synapse mcp`.
 
 The official MCP Registry is still a preview and its published versions are
-immutable. The metadata is validated and release-ready here, but it cannot be
-published until a new PyPI release contains the same version, console entry,
-and README `mcp-name` ownership marker. The already-published 0.99.1 package
-predates those files. Check live publication rather than assuming it:
+immutable. SYNAPSE CHANNEL is already active there: the live record was version
+`0.99.2` when verified on 2026-07-13. Registry metadata does not automatically
+follow PyPI or this repository, so the newer version in `server.json` is a
+prepared update until the registry query returns that exact version. Check live
+publication rather than inferring it from local metadata:
 
 ```bash
 curl --get --data-urlencode \

@@ -31,6 +31,16 @@ def _runner(
             return str(root)
         if args == ["symbolic-ref", "--quiet", "--short", "HEAD"]:
             return "main"
+        if args == [
+            "config",
+            "--local",
+            "--type=bool",
+            "--get",
+            "--default",
+            "false",
+            "extensions.worktreeConfig",
+        ]:
+            return "false"
         if args[:5] == ["config", "--local", "--get", "--default", ""]:
             return values.get(args[5], "")
         raise AssertionError(args)

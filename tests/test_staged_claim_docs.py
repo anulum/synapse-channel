@@ -23,10 +23,12 @@ def test_public_guides_document_the_shipped_gate_and_identity_boundary() -> None
     claims = _read("docs/git-claims.md")
     assert "synapse git-claim-check --staged" in readme
     assert "empty staged index succeeds without a hub" in readme
-    assert "explicit `--name`, local `synapse.identity`" in cli
+    assert "explicit `--name`, worktree-scoped `synapse.identity`" in cli
+    assert "without leaving a shared identity fallback" in cli
     assert "git diff --cached --name-status" in claims
     assert "A `PROJECT:git` serialization lock cannot satisfy" in claims
     assert "never token content" in claims
+    assert "Run `synapse git-init --name <exact-seat>` once inside every linked worktree" in claims
 
 
 def test_git_init_boundary_is_not_overstated() -> None:

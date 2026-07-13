@@ -20,9 +20,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runner
+from synapse_channel.git.claim_check_config import persist_claim_check_config
+from synapse_channel.git.gitclaim import GitRunner, _default_git_runner
 from synapse_channel.git.githook import install_hooks
-from synapse_channel.path_resolution import resolve_weakly_fail_closed
 
 SCAFFOLD_DIR = ".synapse"
 """Repository-relative directory the onboarding scaffold is written into."""
@@ -59,7 +59,14 @@ def _scaffold_body(*, name: str, base_branch: str) -> str:
         "and the file-scope claims never overlap on disk:\n\n"
         "```\n"
         "git worktree add ../<repo>-<task-id> -b claim/<task-id>\n"
+        "cd ../<repo>-<task-id>\n"
+        "synapse git-init --name <exact-seat-identity>\n"
         "```\n\n"
+        "The staged gate stores its identity and hub settings in Git's per-worktree\n"
+        "config, so one seat cannot overwrite another. Run `git-init` once in each\n"
+        "worktree. The auto-release scripts remain repository-wide and carry the\n"
+        "most recently installed identity; mixed-identity linked worktrees should\n"
+        "claim with `--auto-release-on manual` and release explicitly.\n\n"
         "## Claiming and releasing\n\n"
         "```\n"
         f"synapse git-claim <task-id> --paths src/area --name {name}\n"
@@ -78,29 +85,6 @@ def _scaffold_body(*, name: str, base_branch: str) -> str:
         "`pass_filenames: false`; the checker reads Git directly. `git-init` installs\n"
         "only the post-commit and post-merge auto-release hooks.\n"
     )
-
-
-def persist_claim_check_config(
-    *, uri: str, name: str, token_file: str | None, runner: GitRunner
-) -> tuple[list[str], str | None]:
-    """Write non-secret repository-local claim-check configuration."""
-    runner(["config", "--local", "synapse.identity", name])
-    runner(["config", "--local", "synapse.uri", uri])
-    canonical_token: str | None = None
-    if token_file:
-        try:
-            canonical_token = str(resolve_weakly_fail_closed(Path(token_file).expanduser()))
-        except (OSError, RuntimeError) as exc:
-            raise GitError("the Synapse token-file path is invalid") from exc
-        runner(["config", "--local", "synapse.tokenFile", canonical_token])
-    elif runner(["config", "--local", "--get", "--default", "", "synapse.tokenFile"]).strip():
-        runner(["config", "--local", "--unset-all", "synapse.tokenFile"])
-    results = ["recorded local synapse.identity and synapse.uri for staged claim checks"]
-    if canonical_token:
-        results.append("recorded local synapse.tokenFile path (token content was not stored)")
-    else:
-        results.append("cleared local synapse.tokenFile (no token file requested)")
-    return results, canonical_token
 
 
 def init_repo(
