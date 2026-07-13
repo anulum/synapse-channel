@@ -7,120 +7,180 @@ ORCID: 0009-0009-3560-0851
 Contact: www.anulum.li | protoscience@anulum.li
 -->
 
-# SYNAPSE CHANNEL — VS Code / Cursor extension
+<p align="center">
+  <img src="media/icon.png" width="128" height="128" alt="SYNAPSE CHANNEL hub icon">
+</p>
 
-Bring the coordination bus into the editor: claim the file you are about to edit,
-release it when you are done, watch the shared board, and see hub health in the
-status bar — so two agents (or two people) never edit the same file at once.
+# SYNAPSE CHANNEL for VS Code and Cursor
 
-This is an installable experimental preview. The structure, editor-agnostic
-logic, tests, per-line claim gutter, and repeatable version-pinned `.vsix`
-packaging path are in place. It is intentionally kept separate from the core
-Python package and is not published in the VS Code Marketplace yet.
+Coordinate people and coding agents before their edits collide. The extension
+connects an editor to a SYNAPSE CHANNEL hub, shows current ownership, and keeps
+claim and release operations beside the code they protect.
+
+Version 0.3.0 is an experimental preview. Packaging produces an official
+`vsce` archive for registry submission and a payload-equivalent, deterministic
+archive for local review. Registry availability is established only by that
+registry's listing.
+
+## See coordination in the editor
+
+The Explorer board and status bar show live hub state while gutter markers make
+another participant's claim visible before you edit the file.
+
+![A real VS Code Extension Development Host showing a live SYNAPSE board and another participant's file claim](media/marketplace-board.png)
+
+The overview ruler and every visible claimed line carry the same ownership cue.
+Shape and hover text preserve the distinction without relying on colour alone.
+
+![A real VS Code Extension Development Host showing line and overview-ruler claim markers](media/marketplace-claims.png)
+
+Both images come from VS Code 1.128 connected to a disposable token-gated
+SYNAPSE hub. They show the shipped extension rather than a mock-up.
 
 ## What it does
 
-- **Status bar** — negotiated, live, stale-last-good, incompatible,
-  identity-mismatched, or offline hub state, plus live-agent and own-claim counts.
-- **`SYNAPSE: Claim current file`** — resolves the nearest canonical Git root
-  (or exact workspace root outside Git) and leases one repository-relative path
-  under a deterministic per-file task ID. Nested and multi-root workspaces do
-  not collapse into an implicit shared-root claim.
-- **`SYNAPSE: Release current file`** — releases only the active file's exact
-  task; another file claimed by the same identity remains held.
-- **`SYNAPSE board` view** — the shared plan's tasks and their status.
-- **Claim gutter and overview ruler** — every visible line covered by a file or
-  directory claim carries a restrained marker. A circle/check means your claim;
-  a diamond/exclamation means another agent's claim, and hover text names the
-  owner. Semantic `.synapse-symbol` claims mark only the document-symbol range
-  the editor resolves. If no range is available, one explicit alert marker is
-  shown instead of falsely widening the claim to the whole file.
-- **`SYNAPSE: Set hub token` / `Clear hub token`** — manage one encrypted
-  SecretStorage credential per hub URI without writing a bearer to settings.
+- **Live status** — distinguishes negotiated live state, stale last-good data,
+  incompatible protocol, identity mismatch, and offline state.
+- **Exact claims** — claims the active file in its canonical Git worktree.
+  Identical relative paths in different workspace roots remain independent.
+- **Exact release** — releases only the active file's task; other claims held by
+  the same identity remain active.
+- **Shared board** — presents declared tasks and their current state in the
+  Explorer.
+- **Claim gutter** — marks file, directory, worktree, and semantic-symbol scope.
+  An unresolved semantic symbol produces one alert marker and never widens into
+  a false whole-file claim.
+- **Per-hub credentials** — stores one bearer in VS Code SecretStorage for each
+  canonical hub URI. Tokens never belong in settings or workspace files.
 
-Configure the hub URI with `synapse.hubUri` (default
-`ws://127.0.0.1:8876`) and an optional `synapse.identity`. There is
-intentionally no token setting. Run **SYNAPSE: Set hub token** from the Command
-Palette; the password input is stored under the canonical hub URI in VS Code
-SecretStorage, encrypted by the editor host and not synced across machines.
-Changing the URI does not send the old hub's credential to the new endpoint.
-Changing `synapse.hubUri` or `synapse.identity` reconnects immediately using the
-credential stored for that exact canonical URI.
+Use these Command Palette actions:
+
+- `SYNAPSE: Claim current file`
+- `SYNAPSE: Release current file`
+- `SYNAPSE: Show board`
+- `SYNAPSE: Refresh hub health`
+- `SYNAPSE: Set hub token`
+- `SYNAPSE: Clear hub token`
+
+## Connect
+
+Set `synapse.hubUri` to the hub WebSocket URI. The default is
+`ws://127.0.0.1:8876`. Set `synapse.identity` only when the workspace must use an
+explicit registered identity; otherwise the extension derives one from the
+workspace.
+
+Run `SYNAPSE: Set hub token` to store a credential for the current URI. Changing
+the URI never sends the previous hub's credential to the new endpoint. Changing
+the URI or identity reconnects immediately and rejects an out-of-order
+credential read.
 
 Plain `ws://` is accepted only for `localhost`, IPv4 `127.0.0.0/8`, or IPv6
-`::1`. A non-loopback hub must use `wss://`; the extension refuses remote
-plaintext before opening a socket. The TLS certificate must be trusted by the
-editor host. Never put a token in the URI, settings JSON, a query parameter, or
-workspace files.
+`::1`. A non-loopback hub must use trusted `wss://`; the extension refuses
+remote plaintext before opening a socket. Never put a token in a URI, settings
+JSON, query parameter, source file, or workspace file.
 
-## Design
+## Install the reviewed VSIX
 
-The editor-agnostic fleet decisions — hub health, board items, claim marks, the
-claim request for a path, and the status-bar text — live in `src/fleetModel.ts`.
-`src/claimGutterModel.ts` separately projects file, directory, whole-worktree,
-and semantic claims into visible line and overview-ruler spans after an exact
-canonical worktree-and-path match;
-`src/claimGutter.ts` is the VS Code-only renderer. `src/hubAuth.ts` owns URI
-policy, the registration heartbeat, and the structural SecretStorage adapter;
-`src/configurationReconnect.ts` rejects stale, out-of-order credential reads;
-`src/hubJson.ts` and `src/hubProtocol.ts` enforce bounded JSON and strict wire
-projection; `src/connectionState.ts` owns negotiation and freshness;
-`src/hubTransport.ts` owns the reconnecting WebSocket lifecycle while its timer,
-close-policy, and public types stay in separate modules. `src/workspaceScope.ts`
-owns canonical multi-root scope and per-file task identity.
-`src/fleetController.ts` joins validated transport state to editor views.
-`src/extension.ts` remains thin activation glue, so no feature turns the entry
-point or controller into a Godfile.
-
-The editor advertises wire protocol 2, negotiates down to the hub's supported
-version, and permits mutations only in live compatible state. Unknown additive
-frames are ignored, while malformed known frames, unsupported protocol versions,
-identity-pin mismatches, and stale authority fail closed. Last-good board and
-claim data can remain visible while reconnecting to the same hub and identity,
-but cannot authorise a claim or release. Switching the hub or identity clears
-that projection, and authentication or seat-ownership refusals stop reconnects
-until the configuration or credential is changed.
-
-## Develop
+Build from the extension directory:
 
 ```bash
 npm ci
-npm run typecheck   # strict TypeScript, no emit
-npm run coverage    # focused unit + real-hub tests, enforced at >=95%
-npm run build       # compile to out/
 npm run package:vsix
 ```
 
-`npm run test:integration` launches two disposable token-gated Python hubs and a
-real VS Code Extension Development Host. It proves wrong-token refusal, isolated
-per-hub SecretStorage, URI and identity reconnects, authenticated roster
-transitions, canonical-root claims, and independent claim/release for two files.
-Its multi-root workspace also claims the same relative filename in two Git
-worktrees and verifies distinct task and worktree identities.
-On headless Linux, run it through `xvfb-run -a`.
-
-The version-pinned VS Code test runtime is cached under
-`clients/vscode/.vscode-test-cache`, not a root filesystem temporary cache. Both
-that cache and coverage output are ignored and excluded from the VSIX.
-
-`package:vsix` runs the production build through the official VS Code extension
-packager, then deterministically normalises entry order and timestamps using
-`SOURCE_DATE_EPOCH` (the release epoch is the default). CI packages twice and
-requires matching SHA-256 digests before accepting
-`dist/synapse-channel-vscode.vsix`. Install that exact local artifact with:
+Install the exact artifact in VS Code:
 
 ```bash
 code --install-extension dist/synapse-channel-vscode.vsix --force
-code --list-extensions --show-versions | grep '^anulum.synapse-channel-vscode@'
+code --list-extensions --show-versions | grep '^anulum.synapse-channel-vscode@0.3.0$'
 ```
 
-You can also use **Extensions → Views and More Actions… → Install from VSIX…**.
-The CI job builds the same package, verifies that its archive contains the
-runtime manifest and compiled entry point but no source/test/dependency trees,
-and uploads it as the `synapse-channel-vscode-vsix` workflow artifact.
+`dist/synapse-channel-vscode.registry.vsix` is the untouched archive emitted by
+the pinned official `vsce` packager. It is the submission artifact for the VS
+Code Marketplace and Open VSX. `dist/synapse-channel-vscode.vsix` contains the
+same extension payload with deterministic ZIP metadata for local installation,
+review, and reproducibility checks.
 
-The preview supports an open or token-gated loopback hub and a token-gated
-shared hub over trusted `wss://`. The token is connection authentication only;
-it does not add identity signatures, per-message authentication, certificate
-pinning, or Marketplace publication. The extension remains experimental rather
-than part of the supported-core tier.
+You can also choose **Extensions → Views and More Actions… → Install from
+VSIX…**. Cursor and VSCodium accept the same VSIX through their corresponding
+install-from-VSIX action or CLI.
+
+To upgrade a local install, repeat the install command with the reviewed newer
+VSIX and `--force`, then confirm the reported version. VS Code activates the
+newer package under the same `anulum.synapse-channel-vscode` identity. Review
+the [change log](CHANGELOG.md) and confirm the expected hub and credential state
+before reconnecting a sensitive workspace.
+
+## Security and privacy boundaries
+
+The extension sends coordination frames only to the configured hub. It does
+not include analytics, crash reporting, advertising, or a third-party telemetry
+SDK. VS Code, Cursor, VSCodium, a registry, and a separately operated hub can
+have their own logging or data policies.
+
+SecretStorage protects the hub token at rest through the editor host. The token
+authenticates the connection; it does not add identity signatures, per-message
+authentication, certificate pinning, or end-to-end encryption. Mutations remain
+disabled until protocol negotiation is live and compatible. Stale last-good
+views never authorise a claim or release.
+
+Read the extension [privacy notice](PRIVACY.md), [support policy](SUPPORT.md),
+[licence](LICENSE), and repository
+[security policy](https://github.com/anulum/synapse-channel/security/policy).
+
+## Compatibility
+
+| Surface | Supported path |
+|---|---|
+| VS Code 1.90+ | Local VSIX; VS Code Marketplace when listed there |
+| Cursor | Local VSIX; its configured registry when listed there |
+| VSCodium / Open VSX clients | Local VSIX; Open VSX when listed there |
+| Virtual workspaces | Not supported; canonical filesystem worktrees are required |
+| Untrusted workspaces | Not supported; trust is required before hub connection |
+
+## Develop and verify
+
+```bash
+npm ci
+npm run typecheck
+npm run coverage
+npm run build
+xvfb-run -a npm run test:integration  # headless Linux
+npm run package:vsix
+```
+
+The real Extension Development Host acceptance starts two disposable
+token-gated Python hubs. It proves wrong-token refusal, isolated per-hub
+SecretStorage, URI and identity reconnects, authenticated roster transitions,
+canonical-root claims, and independent claim/release across two Git worktrees.
+
+The upgrade acceptance installs packaged 0.2.0 and 0.3.0 releases into one
+disposable VS Code profile. It stores a token through the real editor UI and
+requires 0.3.0 to reconnect to the same token-gated hub without re-entry.
+
+`package:vsix` preserves the official pinned `vsce` output, creates a separate
+archive with normalised ZIP order and timestamps, and validates both payloads.
+CI packages twice and requires equal SHA-256 digests for the deterministic
+archive. Registry media and policy links are pinned to the exact Git commit;
+the post-push `verify:registry-links` gate requires every pinned URL to return a
+successful response before submission.
+
+The package verifier checks the manifest and packaged entry point, fully
+decodes every packaged image, validates listing and legal/support/privacy
+links, and rejects source, tests, dependency trees, caches, common secret
+filenames, and high-confidence embedded credentials.
+
+The version-pinned VS Code test runtime is cached under
+`.vscode-test-cache/` on the working drive. That cache, coverage output, source,
+tests, scripts, and dependencies stay outside the VSIX.
+
+## Support
+
+Report reproducible bugs through the
+[issue tracker](https://github.com/anulum/synapse-channel/issues). Use
+[Discussions](https://github.com/anulum/synapse-channel/discussions) for usage
+questions and workflow feedback. Report vulnerabilities privately according to
+the [security policy](https://github.com/anulum/synapse-channel/security/policy).
+
+SYNAPSE CHANNEL is available under AGPL-3.0-or-later. Commercial licensing is
+available for deployments that need different terms.

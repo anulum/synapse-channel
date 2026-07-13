@@ -6,6 +6,7 @@
   "version": "0.3.0",
   "license": "AGPL-3.0-or-later",
   "publisher": "anulum",
+  "icon": "media/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/anulum/synapse-channel.git",
@@ -20,20 +21,78 @@
     "vscode": "^1.90.0",
     "node": ">=20"
   },
-  "categories": ["SCM Providers", "Other"],
+  "categories": [
+    "SCM Providers",
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "agents",
+    "claims",
+    "collaboration",
+    "coordination",
+    "fleet",
+    "multi-agent",
+    "ownership",
+    "synapse"
+  ],
+  "galleryBanner": {
+    "color": "#0c1118",
+    "theme": "dark"
+  },
+  "preview": true,
+  "pricing": "Free",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Claim paths and hub state can expose workspace metadata. Trust the workspace before connecting it to a hub."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "Canonical filesystem worktrees are required for exact claim identity."
+    }
+  },
+  "extensionKind": [
+    "workspace"
+  ],
   "main": "./out/extension.js",
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "commands": [
-      { "command": "synapse.claimFile", "title": "SYNAPSE: Claim current file" },
-      { "command": "synapse.releaseFile", "title": "SYNAPSE: Release current file" },
-      { "command": "synapse.showBoard", "title": "SYNAPSE: Show board" },
-      { "command": "synapse.refreshHealth", "title": "SYNAPSE: Refresh hub health" },
-      { "command": "synapse.setHubToken", "title": "SYNAPSE: Set hub token" },
-      { "command": "synapse.clearHubToken", "title": "SYNAPSE: Clear hub token" }
+      {
+        "command": "synapse.claimFile",
+        "title": "SYNAPSE: Claim current file"
+      },
+      {
+        "command": "synapse.releaseFile",
+        "title": "SYNAPSE: Release current file"
+      },
+      {
+        "command": "synapse.showBoard",
+        "title": "SYNAPSE: Show board"
+      },
+      {
+        "command": "synapse.refreshHealth",
+        "title": "SYNAPSE: Refresh hub health"
+      },
+      {
+        "command": "synapse.setHubToken",
+        "title": "SYNAPSE: Set hub token"
+      },
+      {
+        "command": "synapse.clearHubToken",
+        "title": "SYNAPSE: Clear hub token"
+      }
     ],
     "views": {
-      "explorer": [{ "id": "synapseBoard", "name": "SYNAPSE board" }]
+      "explorer": [
+        {
+          "id": "synapseBoard",
+          "name": "SYNAPSE board"
+        }
+      ]
     },
     "configuration": {
       "title": "SYNAPSE CHANNEL",
@@ -56,20 +115,29 @@
     "build:integration": "tsc -p tsconfig.integration.json",
     "vscode:prepublish": "npm run build",
     "prepackage:vsix": "node -e \"require('node:fs').mkdirSync('dist',{recursive:true})\"",
-    "package:vsix": "vsce package --no-dependencies --out dist/synapse-channel-vscode.raw.vsix && node scripts/repack-vsix.mjs dist/synapse-channel-vscode.raw.vsix dist/synapse-channel-vscode.vsix",
+    "package:registry": "node scripts/package-registry-vsix.mjs",
+    "package:vsix": "npm run package:registry && node scripts/repack-vsix.mjs dist/synapse-channel-vscode.registry.vsix dist/synapse-channel-vscode.vsix && npm run verify:marketplace",
+    "verify:marketplace": "node scripts/verify-marketplace-package.mjs dist/synapse-channel-vscode.registry.vsix && node scripts/verify-marketplace-package.mjs dist/synapse-channel-vscode.vsix",
+    "verify:registry-links": "node scripts/verify-marketplace-package.mjs --require-live-links dist/synapse-channel-vscode.registry.vsix",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
-    "test:integration": "npm run build && npm run build:integration && node dist/integration/launch.cjs"
+    "test:integration": "npm run build && npm run build:integration && node dist/integration/launch.cjs",
+    "test:upgrade": "npm run build:integration && node dist/integration/upgradeLaunch.cjs"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/pngjs": "6.0.5",
     "@types/vscode": "^1.90.0",
+    "@types/ws": "8.18.1",
     "@vitest/coverage-v8": "3.2.6",
     "@vscode/test-electron": "2.5.2",
     "@vscode/vsce": "3.9.2",
     "fflate": "0.8.2",
+    "ovsx": "1.0.2",
+    "pngjs": "7.0.0",
     "typescript": "^5.6.0",
-    "vitest": "^3.2.6"
+    "vitest": "^3.2.6",
+    "ws": "8.21.0"
   }
 }
