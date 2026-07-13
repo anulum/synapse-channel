@@ -18,6 +18,7 @@
 
 import * as vscode from "vscode";
 import { ClaimGutter } from "./claimGutter.js";
+import { ConfigurationReconnectGate } from "./configurationReconnect.js";
 import { FleetController } from "./fleetController.js";
 import { HubCredentialStore, hubConnectionVerdict } from "./hubAuth.js";
 import { type BoardItem } from "./fleetModel.js";
@@ -52,19 +53,16 @@ function resolveIdentity(configured: string): string {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  const config = vscode.workspace.getConfiguration("synapse");
-  const identity = resolveIdentity(config.get<string>("identity", ""));
-
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBar.command = "synapse.showBoard";
   const board = new BoardProvider();
   const gutter = new ClaimGutter(context.extensionUri);
   let renderVisibleGutters = (): void => {};
-  const controller = new FleetController(identity, statusBar, board, () => {
+  const controller = new FleetController(statusBar, board, () => {
     renderVisibleGutters();
   });
   const renderGutter = (editor: vscode.TextEditor): void => {
-    void gutter.render(editor, controller.claimSnapshot(), identity);
+    void gutter.render(editor, controller.claimSnapshot(), controller.identity());
   };
   renderVisibleGutters = (): void => {
     for (const editor of vscode.window.visibleTextEditors) {
@@ -72,26 +70,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   };
   const credentials = new HubCredentialStore(context.secrets);
+  const reconnects = new ConfigurationReconnectGate();
   const configuredUri = (): string =>
     vscode.workspace.getConfiguration("synapse").get<string>("hubUri", "ws://127.0.0.1:8876");
+  const configuredIdentity = (): string =>
+    resolveIdentity(vscode.workspace.getConfiguration("synapse").get<string>("identity", ""));
   const reconnectConfiguredHub = async (): Promise<void> => {
+    const generation = reconnects.begin();
     const uri = configuredUri();
+    const identity = configuredIdentity();
     const verdict = hubConnectionVerdict(uri);
     if (!verdict.allowed) {
-      controller.connect(uri);
+      controller.connect(identity, uri);
       void vscode.window.showErrorMessage(verdict.reason);
       return;
     }
-    try {
-      const token = await credentials.get(verdict.uri);
-      const error = controller.connect(verdict.uri, token);
-      if (error !== undefined) {
-        void vscode.window.showErrorMessage(error);
-      }
-    } catch (error) {
-      controller.connect(verdict.uri);
-      const reason = error instanceof Error ? error.message : "SecretStorage access failed.";
-      void vscode.window.showErrorMessage(`Could not read the SYNAPSE hub token: ${reason}`);
+    const tokenRead = await reconnects.read(generation, () => credentials.get(verdict.uri));
+    if (tokenRead.kind === "stale") {
+      return;
+    }
+    if (tokenRead.kind === "error") {
+      controller.connect(identity, verdict.uri);
+      void vscode.window.showErrorMessage("Could not read the SYNAPSE hub token from SecretStorage.");
+      return;
+    }
+    const error = controller.connect(identity, verdict.uri, tokenRead.value);
+    if (error !== undefined) {
+      void vscode.window.showErrorMessage(error);
     }
   };
 
@@ -117,9 +122,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       void vscode.window.showInformationMessage(
         `SYNAPSE hub token stored securely for ${new URL(verdict.uri).host}.`,
       );
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : "SecretStorage access failed.";
-      void vscode.window.showErrorMessage(`Could not store the SYNAPSE hub token: ${reason}`);
+    } catch {
+      void vscode.window.showErrorMessage("Could not store the SYNAPSE hub token in SecretStorage.");
     }
   };
 
@@ -135,9 +139,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       void vscode.window.showInformationMessage(
         `SYNAPSE hub token cleared for ${new URL(verdict.uri).host}.`,
       );
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : "SecretStorage access failed.";
-      void vscode.window.showErrorMessage(`Could not clear the SYNAPSE hub token: ${reason}`);
+    } catch {
+      void vscode.window.showErrorMessage("Could not clear the SYNAPSE hub token from SecretStorage.");
     }
   };
 
@@ -145,6 +148,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBar,
     gutter,
     vscode.window.registerTreeDataProvider("synapseBoard", board),
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("synapse.hubUri")
+          || event.affectsConfiguration("synapse.identity")) {
+        void reconnectConfiguredHub();
+      }
+    }),
     vscode.window.onDidChangeVisibleTextEditors(renderVisibleGutters),
     vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
       renderGutter(event.textEditor);

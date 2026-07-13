@@ -13,6 +13,24 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- The experimental VS Code/Cursor client now consumes a bounded strict editor
+  wire projection with version negotiation, stale-last-good state, fail-closed
+  mutations, bounded reconnect/backoff, and safe identity/auth close handling.
+  Claims and releases use canonical Git/workspace roots plus deterministic
+  per-file task IDs, so multi-root workspaces and two files held by one identity
+  remain distinct. Gutter projections require the exact canonical worktree and
+  path; stale credential reads cannot restore an older configuration; switching
+  hub or identity clears the previous projection; and terminal authentication or
+  seat-ownership refusals wait for an operator change instead of retrying. Focused
+  coverage is enforced above 95%, while a real VS Code
+  Extension Development Host exercises two independent token-gated hubs,
+  per-hub SecretStorage, configuration reconnects, identical relative paths in
+  two real Git roots, exact claims, and exact releases. Runtime, timer, protocol,
+  scope, and test-harness responsibilities
+  remain split below the documented Godfile threshold.
+
 ### Fixed
 
 - Failed headless provider turns no longer copy raw CLI stderr or process-start

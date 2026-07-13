@@ -7,11 +7,14 @@
 // SYNAPSE_CHANNEL — real token-gated hub Extension Development Host acceptance
 
 import { strict as assert } from "node:assert";
+import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
 import * as vscode from "vscode";
 
 interface ClaimRecord {
   task_id?: string;
   owner?: string;
+  worktree?: string;
   paths?: string[];
 }
 
@@ -126,13 +129,46 @@ async function waitForClaim(
   throw new Error(`Claim ${taskId} did not appear in the real hub state.`);
 }
 
+async function waitForClaimAbsent(uri: string, token: string, taskId: string): Promise<void> {
+  const deadline = Date.now() + 8_000;
+  do {
+    const frame = await queryHub(uri, token, "state_request", "state_snapshot");
+    const claim = frame.snapshot?.active_claims?.find((candidate) => candidate.task_id === taskId);
+    if (claim === undefined) {
+      return;
+    }
+    await delay(150);
+  } while (Date.now() < deadline);
+  throw new Error(`Claim ${taskId} did not leave the real hub state.`);
+}
+
+function exactTaskId(identity: string, worktree: string, path: string): string {
+  const digest = createHash("sha256")
+    .update(worktree)
+    .update("\0")
+    .update(path)
+    .digest("hex")
+    .slice(0, 16);
+  return `vscode/${identity}/${digest}`;
+}
+
 export async function run(): Promise<void> {
   const uri = requiredEnvironment("SYNAPSE_VSCODE_TEST_URI");
   const token = requiredEnvironment("SYNAPSE_VSCODE_TEST_TOKEN");
-  const folder = vscode.workspace.workspaceFolders?.[0];
+  const secondUri = requiredEnvironment("SYNAPSE_VSCODE_TEST_URI_2");
+  const secondToken = requiredEnvironment("SYNAPSE_VSCODE_TEST_TOKEN_2");
+  const folders = vscode.workspace.workspaceFolders;
+  const folder = folders?.[0];
+  const duplicateFolder = folders?.[1];
   assert.ok(folder, "The integration workspace must be open.");
+  assert.ok(duplicateFolder, "The integration workspace must expose two canonical roots.");
   const identity = `${folder.name}/vscode`;
-  const taskId = `vscode/${identity}`;
+  const worktree = realpathSync.native(folder.uri.fsPath);
+  const taskId = exactTaskId(identity, worktree, "sample.txt");
+  const secondTaskId = exactTaskId(identity, worktree, "second.txt");
+  const duplicateWorktree = realpathSync.native(duplicateFolder.uri.fsPath);
+  const duplicateTaskId = exactTaskId(identity, duplicateWorktree, "sample.txt");
+  assert.notEqual(taskId, duplicateTaskId);
   const extension = vscode.extensions.getExtension(EXTENSION_ID);
   assert.ok(extension, `Extension ${EXTENSION_ID} was not loaded.`);
 
@@ -156,13 +192,66 @@ export async function run(): Promise<void> {
     await vscode.commands.executeCommand("synapse.claimFile");
     const claim = await waitForClaim(uri, token, taskId);
     assert.equal(claim.owner, identity);
+    assert.equal(claim.worktree, worktree);
     assert.deepEqual(claim.paths, ["sample.txt"]);
 
+    const secondDocument = await vscode.workspace.openTextDocument(
+      vscode.Uri.joinPath(folder.uri, "second.txt"),
+    );
+    await vscode.window.showTextDocument(secondDocument);
+    await vscode.commands.executeCommand("synapse.claimFile");
+    const secondClaim = await waitForClaim(uri, token, secondTaskId);
+    assert.equal(secondClaim.worktree, worktree);
+    assert.deepEqual(secondClaim.paths, ["second.txt"]);
+    await vscode.commands.executeCommand("synapse.releaseFile");
+    await waitForClaimAbsent(uri, token, secondTaskId);
+    await waitForClaim(uri, token, taskId);
+
+    const duplicateDocument = await vscode.workspace.openTextDocument(
+      vscode.Uri.joinPath(duplicateFolder.uri, "sample.txt"),
+    );
+    await vscode.window.showTextDocument(duplicateDocument);
+    await vscode.commands.executeCommand("synapse.claimFile");
+    const duplicateClaim = await waitForClaim(uri, token, duplicateTaskId);
+    assert.equal(duplicateClaim.worktree, duplicateWorktree);
+    assert.deepEqual(duplicateClaim.paths, ["sample.txt"]);
+    await waitForClaim(uri, token, taskId);
+    await vscode.commands.executeCommand("synapse.releaseFile");
+    await waitForClaimAbsent(uri, token, duplicateTaskId);
+    await waitForClaim(uri, token, taskId);
+
+    await vscode.window.showTextDocument(document);
+    await vscode.commands.executeCommand("synapse.releaseFile");
+    await waitForClaimAbsent(uri, token, taskId);
+
+    await configuration.update("hubUri", secondUri, vscode.ConfigurationTarget.Global);
+    await waitForRoster(uri, token, identity, false);
+    await waitForRoster(secondUri, secondToken, identity, false);
+    await vscode.commands.executeCommand("synapse.setHubToken", secondToken);
+    await waitForRoster(secondUri, secondToken, identity, true);
+
+    await configuration.update("hubUri", uri, vscode.ConfigurationTarget.Global);
+    await waitForRoster(secondUri, secondToken, identity, false);
+    await waitForRoster(uri, token, identity, true);
+
+    await configuration.update("hubUri", secondUri, vscode.ConfigurationTarget.Global);
+    await waitForRoster(secondUri, secondToken, identity, true);
+    const replacementIdentity = `${folder.name}/vscode-secondary`;
+    await configuration.update("identity", replacementIdentity, vscode.ConfigurationTarget.Global);
+    await waitForRoster(secondUri, secondToken, identity, false);
+    await waitForRoster(secondUri, secondToken, replacementIdentity, true);
+
+    await vscode.commands.executeCommand("synapse.clearHubToken");
+    await waitForRoster(secondUri, secondToken, replacementIdentity, false);
+    await configuration.update("identity", undefined, vscode.ConfigurationTarget.Global);
+    await configuration.update("hubUri", uri, vscode.ConfigurationTarget.Global);
+    await waitForRoster(uri, token, identity, true);
     await vscode.commands.executeCommand("synapse.clearHubToken");
     await waitForRoster(uri, token, identity, false);
-    console.log("SYNAPSE_VSCODE_SECURE_HOST_ACCEPTANCE_PASS");
+    console.log("SYNAPSE_VSCODE_MULTI_HUB_SECURE_HOST_ACCEPTANCE_PASS");
   } finally {
     await vscode.commands.executeCommand("synapse.clearHubToken");
+    await configuration.update("identity", undefined, vscode.ConfigurationTarget.Global);
     await configuration.update("hubUri", undefined, vscode.ConfigurationTarget.Global);
   }
 }

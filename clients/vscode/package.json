@@ -56,16 +56,19 @@
     "build:integration": "tsc -p tsconfig.integration.json",
     "vscode:prepublish": "npm run build",
     "prepackage:vsix": "node -e \"require('node:fs').mkdirSync('dist',{recursive:true})\"",
-    "package:vsix": "vsce package --no-dependencies --out dist/synapse-channel-vscode.vsix",
+    "package:vsix": "vsce package --no-dependencies --out dist/synapse-channel-vscode.raw.vsix && node scripts/repack-vsix.mjs dist/synapse-channel-vscode.raw.vsix dist/synapse-channel-vscode.vsix",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
     "test:integration": "npm run build && npm run build:integration && node dist/integration/launch.cjs"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.90.0",
+    "@vitest/coverage-v8": "3.2.6",
     "@vscode/test-electron": "2.5.2",
     "@vscode/vsce": "3.9.2",
+    "fflate": "0.8.2",
     "typescript": "^5.6.0",
     "vitest": "^3.2.6"
   }

@@ -18,6 +18,7 @@ import {
   type SymbolNode,
 } from "./claimGutterModel.js";
 import { type RawClaim } from "./fleetModel.js";
+import { workspaceFileScope } from "./workspaceScope.js";
 
 type ProviderSymbol = vscode.DocumentSymbol | vscode.SymbolInformation;
 
@@ -174,8 +175,11 @@ export class ClaimGutter implements vscode.Disposable {
   ): Promise<void> {
     const epoch = (this.epochs.get(editor) ?? 0) + 1;
     this.epochs.set(editor, epoch);
-    const path = vscode.workspace.asRelativePath(editor.document.uri, false);
-    const targets = gutterClaimsForFile(claims, selfName, path);
+    const roots = vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [];
+    const scope = workspaceFileScope(editor.document.uri.fsPath, roots);
+    const targets = scope === undefined
+      ? []
+      : gutterClaimsForFile(claims, selfName, scope.worktree, scope.path);
     if (targets.length === 0) {
       this.clear(editor);
       return;

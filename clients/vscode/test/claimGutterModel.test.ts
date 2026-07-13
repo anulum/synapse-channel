@@ -53,10 +53,17 @@ const symbols: SymbolNode[] = [
   },
 ];
 
+const WORKTREE = "/repo";
+
 describe("gutterClaimsForFile", () => {
   it("projects exact, directory, and whole-worktree claims onto a file", () => {
     expect(
-      gutterClaimsForFile([{ owner: "me", paths: ["src/a.ts"] }], "me", "src/a.ts"),
+      gutterClaimsForFile(
+        [{ owner: "me", worktree: WORKTREE, paths: ["src/a.ts"] }],
+        "me",
+        WORKTREE,
+        "src/a.ts",
+      ),
     ).toEqual([
       {
         owner: "me",
@@ -65,7 +72,12 @@ describe("gutterClaimsForFile", () => {
       },
     ]);
     expect(
-      gutterClaimsForFile([{ owner: "other", paths: ["src"] }], "me", "src/a.ts"),
+      gutterClaimsForFile(
+        [{ owner: "other", worktree: WORKTREE, paths: ["src"] }],
+        "me",
+        WORKTREE,
+        "src/a.ts",
+      ),
     ).toEqual([
       {
         owner: "other",
@@ -74,22 +86,47 @@ describe("gutterClaimsForFile", () => {
       },
     ]);
     expect(
-      gutterClaimsForFile([{ owner: "other", paths: [] }], "me", "src/a.ts")[0]?.scope,
+      gutterClaimsForFile(
+        [{ owner: "other", worktree: WORKTREE, paths: [] }],
+        "me",
+        WORKTREE,
+        "src/a.ts",
+      )[0]?.scope,
     ).toEqual({ kind: "file", claimedPath: "" });
     expect(
-      gutterClaimsForFile([{ owner: "other" }], "me", "src/a.ts")[0]?.scope,
+      gutterClaimsForFile(
+        [{ owner: "other", worktree: WORKTREE }],
+        "me",
+        WORKTREE,
+        "src/a.ts",
+      )[0]?.scope,
     ).toEqual({ kind: "file", claimedPath: "" });
   });
 
   it("normalises separators without accepting files outside the workspace", () => {
     expect(
-      gutterClaimsForFile([{ owner: "me", paths: ["src"] }], "me", "src\\a.ts"),
+      gutterClaimsForFile(
+        [{ owner: "me", worktree: WORKTREE, paths: ["src"] }],
+        "me",
+        WORKTREE,
+        "src\\a.ts",
+      ),
     ).toHaveLength(1);
     expect(
-      gutterClaimsForFile([{ owner: "me", paths: [""] }], "me", "/tmp/a.ts"),
+      gutterClaimsForFile(
+        [{ owner: "me", worktree: WORKTREE, paths: [""] }],
+        "me",
+        WORKTREE,
+        "/tmp/a.ts",
+      ),
     ).toEqual([]);
     expect(
-      gutterClaimsForFile([{ owner: "me", paths: [""] }], "me", "../a.ts"),
+      gutterClaimsForFile(
+        [{ owner: "me", worktree: WORKTREE, paths: [""] }],
+        "me",
+        WORKTREE,
+        "../a.ts",
+      ),
     ).toEqual([]);
   });
 
@@ -98,10 +135,12 @@ describe("gutterClaimsForFile", () => {
       [
         {
           owner: "other",
+          worktree: WORKTREE,
           paths: ["src/a.ts/.synapse-symbol/Worker/handle%20request"],
         },
       ],
       "me",
+      WORKTREE,
       "src/a.ts",
     );
     expect(claims).toEqual([
@@ -122,15 +161,17 @@ describe("gutterClaimsForFile", () => {
   it("ignores semantic scopes for other files and malformed encodings", () => {
     expect(
       gutterClaimsForFile(
-        [{ owner: "other", paths: ["src/b.ts/.synapse-symbol/run"] }],
+        [{ owner: "other", worktree: WORKTREE, paths: ["src/b.ts/.synapse-symbol/run"] }],
         "me",
+        WORKTREE,
         "src/a.ts",
       ),
     ).toEqual([]);
     expect(
       gutterClaimsForFile(
-        [{ owner: "other", paths: ["src/a.ts/.synapse-symbol/%ZZ"] }],
+        [{ owner: "other", worktree: WORKTREE, paths: ["src/a.ts/.synapse-symbol/%ZZ"] }],
         "me",
+        WORKTREE,
         "src/a.ts",
       ),
     ).toEqual([]);
@@ -139,15 +180,30 @@ describe("gutterClaimsForFile", () => {
   it("prefers a whole-file claim over narrower stale semantic records", () => {
     const claims = gutterClaimsForFile(
       [
-        { owner: "me", paths: ["src/a.ts/.synapse-symbol/run"] },
-        { owner: "me", paths: ["src/a.ts"] },
+        { owner: "me", worktree: WORKTREE, paths: ["src/a.ts/.synapse-symbol/run"] },
+        { owner: "me", worktree: WORKTREE, paths: ["src/a.ts"] },
       ],
       "me",
+      WORKTREE,
       "src/a.ts",
     );
     expect(claims).toEqual([
       {
         owner: "me",
+        mine: true,
+        scope: { kind: "file", claimedPath: "src/a.ts" },
+      },
+    ]);
+  });
+
+  it("requires the exact canonical worktree for identical relative paths", () => {
+    const claims = [
+      { owner: "first", worktree: "/repo-one", paths: ["src/a.ts"] },
+      { owner: "second", worktree: "/repo-two", paths: ["src/a.ts"] },
+    ];
+    expect(gutterClaimsForFile(claims, "first", "/repo-one", "src/a.ts")).toEqual([
+      {
+        owner: "first",
         mine: true,
         scope: { kind: "file", claimedPath: "src/a.ts" },
       },

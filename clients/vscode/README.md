@@ -20,11 +20,14 @@ Python package and is not published in the VS Code Marketplace yet.
 
 ## What it does
 
-- **Status bar** — hub health (offline / up-no-live-agents / up-with-live-count)
-  and how many files you currently hold.
-- **`SYNAPSE: Claim current file`** — leases the active file's workspace-relative
-  path on the hub.
-- **`SYNAPSE: Release current file`** — releases your claim.
+- **Status bar** — negotiated, live, stale-last-good, incompatible,
+  identity-mismatched, or offline hub state, plus live-agent and own-claim counts.
+- **`SYNAPSE: Claim current file`** — resolves the nearest canonical Git root
+  (or exact workspace root outside Git) and leases one repository-relative path
+  under a deterministic per-file task ID. Nested and multi-root workspaces do
+  not collapse into an implicit shared-root claim.
+- **`SYNAPSE: Release current file`** — releases only the active file's exact
+  task; another file claimed by the same identity remains held.
 - **`SYNAPSE board` view** — the shared plan's tasks and their status.
 - **Claim gutter and overview ruler** — every visible line covered by a file or
   directory claim carries a restrained marker. A circle/check means your claim;
@@ -41,6 +44,8 @@ intentionally no token setting. Run **SYNAPSE: Set hub token** from the Command
 Palette; the password input is stored under the canonical hub URI in VS Code
 SecretStorage, encrypted by the editor host and not synced across machines.
 Changing the URI does not send the old hub's credential to the new endpoint.
+Changing `synapse.hubUri` or `synapse.identity` reconnects immediately using the
+credential stored for that exact canonical URI.
 
 Plain `ws://` is accepted only for `localhost`, IPv4 `127.0.0.0/8`, or IPv6
 `::1`. A non-loopback hub must use `wss://`; the extension refuses remote
@@ -53,31 +58,56 @@ workspace files.
 The editor-agnostic fleet decisions — hub health, board items, claim marks, the
 claim request for a path, and the status-bar text — live in `src/fleetModel.ts`.
 `src/claimGutterModel.ts` separately projects file, directory, whole-worktree,
-and semantic claims into visible line and overview-ruler spans;
+and semantic claims into visible line and overview-ruler spans after an exact
+canonical worktree-and-path match;
 `src/claimGutter.ts` is the VS Code-only renderer. `src/hubAuth.ts` owns URI
 policy, the registration heartbeat, and the structural SecretStorage adapter;
-`src/fleetController.ts` owns the WebSocket and hub-state lifecycle.
+`src/configurationReconnect.ts` rejects stale, out-of-order credential reads;
+`src/hubJson.ts` and `src/hubProtocol.ts` enforce bounded JSON and strict wire
+projection; `src/connectionState.ts` owns negotiation and freshness;
+`src/hubTransport.ts` owns the reconnecting WebSocket lifecycle while its timer,
+close-policy, and public types stay in separate modules. `src/workspaceScope.ts`
+owns canonical multi-root scope and per-file task identity.
+`src/fleetController.ts` joins validated transport state to editor views.
 `src/extension.ts` remains thin activation glue, so no feature turns the entry
 point or controller into a Godfile.
+
+The editor advertises wire protocol 2, negotiates down to the hub's supported
+version, and permits mutations only in live compatible state. Unknown additive
+frames are ignored, while malformed known frames, unsupported protocol versions,
+identity-pin mismatches, and stale authority fail closed. Last-good board and
+claim data can remain visible while reconnecting to the same hub and identity,
+but cannot authorise a claim or release. Switching the hub or identity clears
+that projection, and authentication or seat-ownership refusals stop reconnects
+until the configuration or credential is changed.
 
 ## Develop
 
 ```bash
 npm ci
 npm run typecheck   # strict TypeScript, no emit
-npm test            # Vitest unit tests for the model and auth policy
+npm run coverage    # focused unit + real-hub tests, enforced at >=95%
 npm run build       # compile to out/
 npm run package:vsix
 ```
 
-`npm run test:integration` launches a disposable real token-gated Python hub and
-a VS Code Extension Development Host. It proves wrong-token refusal, an actual
-SecretStorage store/read/delete cycle, authenticated roster presence, and a real
-file claim in the hub state. On headless Linux, run it through `xvfb-run -a`.
+`npm run test:integration` launches two disposable token-gated Python hubs and a
+real VS Code Extension Development Host. It proves wrong-token refusal, isolated
+per-hub SecretStorage, URI and identity reconnects, authenticated roster
+transitions, canonical-root claims, and independent claim/release for two files.
+Its multi-root workspace also claims the same relative filename in two Git
+worktrees and verifies distinct task and worktree identities.
+On headless Linux, run it through `xvfb-run -a`.
+
+The version-pinned VS Code test runtime is cached under
+`clients/vscode/.vscode-test-cache`, not a root filesystem temporary cache. Both
+that cache and coverage output are ignored and excluded from the VSIX.
 
 `package:vsix` runs the production build through the official VS Code extension
-packager and writes `dist/synapse-channel-vscode.vsix`. Install that exact local
-artifact with:
+packager, then deterministically normalises entry order and timestamps using
+`SOURCE_DATE_EPOCH` (the release epoch is the default). CI packages twice and
+requires matching SHA-256 digests before accepting
+`dist/synapse-channel-vscode.vsix`. Install that exact local artifact with:
 
 ```bash
 code --install-extension dist/synapse-channel-vscode.vsix --force

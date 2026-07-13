@@ -147,6 +147,7 @@ function affectsFile(claimedPath: string, filePath: string): boolean {
 export function gutterClaimsForFile(
   claims: readonly RawClaim[],
   selfName: string,
+  worktree: string,
   filePath: string,
 ): GutterClaim[] {
   const canonicalFile = normaliseEditorPath(filePath);
@@ -157,6 +158,9 @@ export function gutterClaimsForFile(
   const matches: GutterClaim[] = [];
   const seen = new Set<string>();
   for (const claim of claims) {
+    if (claim.worktree !== worktree) {
+      continue;
+    }
     const owner = claim.owner ?? "";
     const paths = claim.paths === undefined || claim.paths.length === 0 ? [""] : claim.paths;
     for (const rawPath of paths) {

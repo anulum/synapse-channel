@@ -44,6 +44,7 @@ out/
 .coverage
 .coverage.*
 htmlcov/
+coverage/
 coverage.xml
 
 # Built documentation site
@@ -59,6 +60,7 @@ docs/internal/
 
 # JS/TS client dependencies
 node_modules/
+.vscode-test-cache/
 BACKUP/
 ARCHIVE/
 target/
