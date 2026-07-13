@@ -14,6 +14,15 @@ import {
   parseHubEnvelope,
   type HubEnvelopeError,
 } from "./hubJson.js";
+import {
+  projectProgress,
+  projectRosterEvidence,
+  projectStateEvidence,
+  type HubDeadLetter,
+  type HubProgressNote,
+  type HubRelayApproval,
+  type HubRosterEvidence,
+} from "./hubEvidenceProtocol.js";
 
 export { MAX_HUB_FRAME_BYTES, MAX_HUB_JSON_DEPTH } from "./hubJson.js";
 
@@ -46,12 +55,14 @@ export interface HubWelcomeFrame {
 export interface HubRosterFrame {
   kind: "roster";
   agents: string[];
+  evidence: HubRosterEvidence | null;
 }
 
 /** Complete board projection. */
 export interface HubBoardFrame {
   kind: "board";
   tasks: HubTask[];
+  progress: HubProgressNote[];
 }
 
 /** Complete active-claim projection. */
@@ -59,6 +70,8 @@ export interface HubStateFrame {
   kind: "state";
   claims: HubClaim[];
   generatedAt: number | null;
+  deadLetters: HubDeadLetter[];
+  relayApprovals: HubRelayApproval[];
 }
 
 /** Mutation event requiring a fresh authoritative state query. */
@@ -66,6 +79,11 @@ export interface HubStateChangedFrame {
   kind: "state-changed";
   operation: "claim" | "release";
   taskId: string;
+}
+
+/** Board mutation requiring a fresh authoritative board query. */
+export interface HubBoardChangedFrame {
+  kind: "board-changed";
 }
 
 /** Additive frame outside the editor's current projection. */
@@ -81,6 +99,7 @@ export type HubFrame =
   | HubBoardFrame
   | HubStateFrame
   | HubStateChangedFrame
+  | HubBoardChangedFrame
   | HubIgnoredFrame;
 
 /** Safe failure categories; raw peer data is never reflected. */
@@ -176,18 +195,30 @@ export function decodeHubFrame(raw: string): HubDecodeResult {
   }
   if (wireType === "who_snapshot" || wireType === "presence_update") {
     const agents = stringArray(envelope["online_agents"]);
-    return agents === undefined
+    const evidence = agents === undefined
+      ? { ok: false as const }
+      : projectRosterEvidence(envelope, agents);
+    const rosterEvidence = evidence.ok && evidence.value === null && wireType === "who_snapshot"
+      ? {
+          mailbox: [],
+          liveness: [],
+          mailboxAvailable: false,
+          livenessAvailable: false,
+        }
+      : evidence.ok ? evidence.value : null;
+    return agents === undefined || !evidence.ok
       ? invalidKnownFrame()
-      : { ok: true, frame: { kind: "roster", agents } };
+      : { ok: true, frame: { kind: "roster", agents, evidence: rosterEvidence } };
   }
   if (wireType === "board_snapshot") {
     const board = envelope["board"];
     const tasks = isJsonRecord(board)
       ? projectionArray(board["tasks"], taskProjection)
       : undefined;
-    return tasks === undefined
+    const progress = isJsonRecord(board) ? projectProgress(board) : { ok: false as const };
+    return tasks === undefined || !progress.ok
       ? invalidKnownFrame()
-      : { ok: true, frame: { kind: "board", tasks } };
+      : { ok: true, frame: { kind: "board", tasks, progress: progress.value } };
   }
   if (wireType === "state_snapshot") {
     const snapshot = envelope["snapshot"];
@@ -198,7 +229,10 @@ export function decodeHubFrame(raw: string): HubDecodeResult {
     const generatedAt = validSnapshot === undefined
       ? null
       : finiteNumber(validSnapshot["generated_at"]);
-    return claims === undefined
+    const evidence = validSnapshot === undefined
+      ? { ok: false as const }
+      : projectStateEvidence(validSnapshot);
+    return claims === undefined || !evidence.ok
       ? invalidKnownFrame()
       : {
           ok: true,
@@ -206,6 +240,8 @@ export function decodeHubFrame(raw: string): HubDecodeResult {
             kind: "state",
             claims,
             generatedAt,
+            deadLetters: evidence.value.deadLetters,
+            relayApprovals: evidence.value.relayApprovals,
           },
         };
   }
@@ -221,6 +257,10 @@ export function decodeHubFrame(raw: string): HubDecodeResult {
             taskId,
           },
         };
+  }
+  if (wireType === "ledger_progress_posted" || wireType === "ledger_task_posted"
+      || wireType === "ledger_task_updated") {
+    return { ok: true, frame: { kind: "board-changed" } };
   }
   return { ok: true, frame: { kind: "ignored", wireType } };
 }

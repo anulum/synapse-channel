@@ -2,7 +2,7 @@
   "name": "synapse-channel-vscode",
   "private": true,
   "displayName": "SYNAPSE CHANNEL",
-  "description": "Claim files, release them, watch the board, and see hub health from inside VS Code or Cursor.",
+  "description": "Claim files, watch the board, and inspect coordination evidence from inside VS Code or Cursor.",
   "version": "0.3.0",
   "license": "AGPL-3.0-or-later",
   "publisher": "anulum",
@@ -74,8 +74,16 @@
         "title": "SYNAPSE: Show board"
       },
       {
+        "command": "synapse.showEvidence",
+        "title": "SYNAPSE: Show coordination evidence"
+      },
+      {
         "command": "synapse.refreshHealth",
         "title": "SYNAPSE: Refresh hub health"
+      },
+      {
+        "command": "synapse.refreshEvidence",
+        "title": "SYNAPSE: Refresh coordination evidence"
       },
       {
         "command": "synapse.setHubToken",
@@ -91,6 +99,10 @@
         {
           "id": "synapseBoard",
           "name": "SYNAPSE board"
+        },
+        {
+          "id": "synapseEvidence",
+          "name": "SYNAPSE evidence"
         }
       ]
     },

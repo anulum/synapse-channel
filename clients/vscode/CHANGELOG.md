@@ -9,6 +9,17 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # Change log
 
+## Unreleased
+
+- Add a read-only coordination evidence view that distinguishes self-attested
+  approval and release-receipt claims, pending relay quorum, mailbox backlog,
+  consume-liveness, retained delivery failures, and connection freshness.
+- Add explicit evidence refresh and a versioned read-only extension API for
+  integration consumers.
+- Extend real token-gated Extension Host acceptance through ledger-claim,
+  retained-delivery, authentication-failure, reconnect, command, and rendered
+  tree-item paths.
+
 ## 0.3.0
 
 - Add distinct own/other gutter and overview-ruler claim markers with hover

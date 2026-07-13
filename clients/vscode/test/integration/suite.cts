@@ -10,6 +10,10 @@ import { strict as assert } from "node:assert";
 import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import * as vscode from "vscode";
+import {
+  acceptCoordinationEvidence,
+  type SynapseExtensionApi,
+} from "./evidenceAcceptance.cjs";
 
 interface ClaimRecord {
   task_id?: string;
@@ -21,7 +25,9 @@ interface ClaimRecord {
 interface HubFrame {
   type?: string;
   online_agents?: string[];
-  snapshot?: { active_claims?: ClaimRecord[] };
+  snapshot?: {
+    active_claims?: ClaimRecord[];
+  };
 }
 
 const EXTENSION_ID = "anulum.synapse-channel-vscode";
@@ -142,6 +148,19 @@ async function waitForClaimAbsent(uri: string, token: string, taskId: string): P
   throw new Error(`Claim ${taskId} did not leave the real hub state.`);
 }
 
+async function waitForConnectionFailure(api: SynapseExtensionApi): Promise<void> {
+  const deadline = Date.now() + 8_000;
+  do {
+    if (api.evidenceSnapshot().some(
+      (item) => item.id === "connection" && item.severity === "critical",
+    )) {
+      return;
+    }
+    await delay(100);
+  } while (Date.now() < deadline);
+  throw new Error("Editor evidence did not expose the fail-closed connection state.");
+}
+
 function exactTaskId(identity: string, worktree: string, path: string): string {
   const digest = createHash("sha256")
     .update(worktree)
@@ -174,16 +193,20 @@ export async function run(): Promise<void> {
 
   const configuration = vscode.workspace.getConfiguration("synapse");
   await configuration.update("hubUri", uri, vscode.ConfigurationTarget.Global);
-  await extension.activate();
+  const api = await extension.activate() as SynapseExtensionApi;
+  assert.equal(api.apiVersion, 1);
   try {
     await vscode.commands.executeCommand("synapse.setHubToken", "incorrect-integration-token");
     await delay(400);
     await waitForRoster(uri, token, identity, false);
+    await waitForConnectionFailure(api);
 
     await vscode.commands.executeCommand("synapse.setHubToken", token);
     await waitForRoster(uri, token, identity, true);
     assert.equal(configuration.get<string>("token"), undefined);
     assert.equal(configuration.get<string>("hubToken"), undefined);
+
+    await acceptCoordinationEvidence(uri, token, api);
 
     const document = await vscode.workspace.openTextDocument(
       vscode.Uri.joinPath(folder.uri, "sample.txt"),

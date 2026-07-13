@@ -19,6 +19,8 @@
 import * as vscode from "vscode";
 import { ClaimGutter } from "./claimGutter.js";
 import { ConfigurationReconnectGate } from "./configurationReconnect.js";
+import { type EvidenceItem } from "./evidenceModel.js";
+import { EvidenceTree, type RenderedEvidenceItem } from "./evidenceTree.js";
 import { FleetController } from "./fleetController.js";
 import { HubCredentialStore, hubConnectionVerdict } from "./hubAuth.js";
 import { type BoardItem } from "./fleetModel.js";
@@ -52,13 +54,21 @@ function resolveIdentity(configured: string): string {
   return `${folder}/vscode`;
 }
 
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+/** Read-only API exposed to editor hosts and integration consumers. */
+export interface SynapseExtensionApi {
+  readonly apiVersion: 1;
+  evidenceSnapshot(): readonly EvidenceItem[];
+  renderedEvidenceSnapshot(): readonly RenderedEvidenceItem[];
+}
+
+export async function activate(context: vscode.ExtensionContext): Promise<SynapseExtensionApi> {
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBar.command = "synapse.showBoard";
   const board = new BoardProvider();
+  const evidence = new EvidenceTree();
   const gutter = new ClaimGutter(context.extensionUri);
   let renderVisibleGutters = (): void => {};
-  const controller = new FleetController(statusBar, board, () => {
+  const controller = new FleetController(statusBar, board, evidence, () => {
     renderVisibleGutters();
   });
   const renderGutter = (editor: vscode.TextEditor): void => {
@@ -148,6 +158,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBar,
     gutter,
     vscode.window.registerTreeDataProvider("synapseBoard", board),
+    vscode.window.registerTreeDataProvider("synapseEvidence", evidence),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("synapse.hubUri")
           || event.affectsConfiguration("synapse.identity")) {
@@ -168,16 +179,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("synapse.claimFile", () => controller.claimActiveFile()),
     vscode.commands.registerCommand("synapse.releaseFile", () => controller.releaseActiveFile()),
     vscode.commands.registerCommand("synapse.refreshHealth", () => controller.render()),
+    vscode.commands.registerCommand("synapse.refreshEvidence", () => controller.refreshEvidence()),
     vscode.commands.registerCommand("synapse.setHubToken", setHubToken),
     vscode.commands.registerCommand("synapse.clearHubToken", clearHubToken),
     vscode.commands.registerCommand("synapse.showBoard", () =>
       vscode.commands.executeCommand("synapseBoard.focus"),
+    ),
+    vscode.commands.registerCommand("synapse.showEvidence", () =>
+      vscode.commands.executeCommand("synapseEvidence.focus"),
     ),
     { dispose: () => controller.dispose() },
   );
 
   await reconnectConfiguredHub();
   renderVisibleGutters();
+  return Object.freeze({
+    apiVersion: 1 as const,
+    evidenceSnapshot: () => controller.evidenceSnapshot(),
+    renderedEvidenceSnapshot: () => evidence.renderedSnapshot(),
+  });
 }
 
 export function deactivate(): void {

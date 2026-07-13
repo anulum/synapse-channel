@@ -44,6 +44,7 @@ describe("decodeHubFrame real hub capture", () => {
           status: "open",
           title: "Captured editor contract",
         }],
+        progress: [],
       },
     });
     expect(state).toEqual({
@@ -57,6 +58,8 @@ describe("decodeHubFrame real hub capture", () => {
           paths: ["src/example.ts"],
         }],
         generatedAt: 1783966376.2166939,
+        deadLetters: [],
+        relayApprovals: [],
       },
     });
   });
@@ -168,6 +171,8 @@ describe("decodeHubFrame fail-closed boundaries", () => {
           paths: ["src/live.ts"],
         }],
         generatedAt: null,
+        deadLetters: [],
+        relayApprovals: [],
       },
     });
   });

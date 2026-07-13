@@ -47,6 +47,10 @@ SYNAPSE hub. They show the shipped extension rather than a mock-up.
   the same identity remain active.
 - **Shared board** — presents declared tasks and their current state in the
   Explorer.
+- **Coordination evidence** — presents self-attested ledger approval and
+  release-receipt claims, pending relay quorum, retained undeliverable-message
+  evidence, mailbox backlog, consume-liveness warnings, and connection
+  freshness in a separate read-only Explorer view.
 - **Claim gutter** — marks file, directory, worktree, and semantic-symbol scope.
   An unresolved semantic symbol produces one alert marker and never widens into
   a false whole-file claim.
@@ -58,6 +62,8 @@ Use these Command Palette actions:
 - `SYNAPSE: Claim current file`
 - `SYNAPSE: Release current file`
 - `SYNAPSE: Show board`
+- `SYNAPSE: Show coordination evidence`
+- `SYNAPSE: Refresh coordination evidence`
 - `SYNAPSE: Refresh hub health`
 - `SYNAPSE: Set hub token`
 - `SYNAPSE: Clear hub token`
@@ -124,6 +130,13 @@ authentication, certificate pinning, or end-to-end encryption. Mutations remain
 disabled until protocol negotiation is live and compatible. Stale last-good
 views never authorise a claim or release.
 
+The evidence view is advisory and read-only. Approval and release-receipt rows
+are structured but self-attested progress notes; the extension does not infer
+operator authority from their text. They come from the hub's bounded retained
+board window, not complete audit history. Mailbox backlog, retained delivery
+failure, and current wake capability remain distinct facts. Mailbox rows are
+pending counts, not read/unread status.
+
 Read the extension [privacy notice](PRIVACY.md), [support policy](SUPPORT.md),
 [licence](LICENSE), and repository
 [security policy](https://github.com/anulum/synapse-channel/security/policy).
@@ -152,7 +165,9 @@ npm run package:vsix
 The real Extension Development Host acceptance starts two disposable
 token-gated Python hubs. It proves wrong-token refusal, isolated per-hub
 SecretStorage, URI and identity reconnects, authenticated roster transitions,
-canonical-root claims, and independent claim/release across two Git worktrees.
+canonical-root claims, independent claim/release across two Git worktrees, and
+real self-attested ledger claims, retained delivery evidence, and connection
+state through the shipped extension API and actual rendered Explorer tree.
 
 The upgrade acceptance installs packaged 0.2.0 and 0.3.0 releases into one
 disposable VS Code profile. It stores a token through the real editor UI and

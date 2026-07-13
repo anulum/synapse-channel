@@ -17,8 +17,10 @@ export default defineConfig({
       include: [
         "src/configurationReconnect.ts",
         "src/connectionState.ts",
+        "src/evidenceModel.ts",
         "src/fleetModel.ts",
         "src/hubClosePolicy.ts",
+        "src/hubEvidenceProtocol.ts",
         "src/hubJson.ts",
         "src/hubProtocol.ts",
         "src/hubTransport.ts",

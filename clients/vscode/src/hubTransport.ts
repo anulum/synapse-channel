@@ -211,6 +211,7 @@ export class HubTransport {
       if (identity !== undefined) {
         this.sendFrame(registrationHeartbeat(identity));
         this.request("who_request");
+        this.request("state_request");
       }
     }, HUB_FRESHNESS_CHECK_MS, () => {
       if (epoch !== this.epoch) {

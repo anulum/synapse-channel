@@ -139,6 +139,7 @@ describe("HubTransport deterministic boundaries", () => {
     expect(frames.at(-1)).toEqual({ kind: "ignored", wireType: "future_additive" });
     vi.advanceTimersByTime(HUB_PROBE_INTERVAL_MS);
     expect(socket.sent.some((payload) => JSON.parse(payload).type === "who_request")).toBe(true);
+    expect(socket.sent.some((payload) => JSON.parse(payload).type === "state_request")).toBe(true);
 
     socket.readyState = FakeWebSocket.CONNECTING;
     expect(transport.mutate("release", { task_id: "T1" })).toEqual({

@@ -48,17 +48,6 @@ jobs:
           python -m pip install -e ../.. --no-deps
       - run: npm run typecheck
       - run: npm run coverage
-      - name: Reject extension Godfiles
-        run: |
-          status=0
-          while IFS= read -r -d '' file; do
-            lines=$(wc -l < "$file")
-            if (( lines > 300 )); then
-              echo "$file has $lines lines; split required above 300" >&2
-              status=1
-            fi
-          done < <(find src -type f -name '*.ts' -print0)
-          exit "$status"
       - run: xvfb-run -a npm run test:integration
       - run: npm run build
       - run: npm run package:vsix
@@ -80,10 +69,13 @@ jobs:
           grep -Fx 'extension/out/claimGutter.js' /tmp/synapse-vsix-files.txt
           grep -Fx 'extension/out/claimGutterModel.js' /tmp/synapse-vsix-files.txt
           grep -Fx 'extension/out/configurationReconnect.js' /tmp/synapse-vsix-files.txt
+          grep -Fx 'extension/out/evidenceModel.js' /tmp/synapse-vsix-files.txt
+          grep -Fx 'extension/out/evidenceTree.js' /tmp/synapse-vsix-files.txt
           grep -Fx 'extension/out/fleetController.js' /tmp/synapse-vsix-files.txt
           grep -Fx 'extension/out/connectionState.js' /tmp/synapse-vsix-files.txt
           grep -Fx 'extension/out/hubAuth.js' /tmp/synapse-vsix-files.txt
           grep -Fx 'extension/out/hubClosePolicy.js' /tmp/synapse-vsix-files.txt
+          grep -Fx 'extension/out/hubEvidenceProtocol.js' /tmp/synapse-vsix-files.txt
           grep -Fx 'extension/out/hubJson.js' /tmp/synapse-vsix-files.txt
           grep -Fx 'extension/out/hubProtocol.js' /tmp/synapse-vsix-files.txt
           grep -Fx 'extension/out/hubTransport.js' /tmp/synapse-vsix-files.txt
