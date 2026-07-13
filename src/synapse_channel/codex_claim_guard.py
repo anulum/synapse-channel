@@ -14,6 +14,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.apply_patch_paths import (
+    ApplyPatchPathError,
+)
+from synapse_channel.apply_patch_paths import (
+    parse_apply_patch_paths as _parse_apply_patch_paths,
+)
 from synapse_channel.claim_state import fetch_state_snapshot
 from synapse_channel.file_claim_guard import (
     FileClaimGuardError,
@@ -25,8 +31,6 @@ from synapse_channel.file_claim_guard import (
 from synapse_channel.git.gitclaim import GitRunner, _default_git_runner
 
 SUPPORTED_TOOL = "apply_patch"
-_FILE_PREFIXES = ("*** Add File: ", "*** Update File: ", "*** Delete File: ")
-_MOVE_PREFIXES = ("*** Move to: ", "*** Move from: ")
 
 
 class CodexClaimGuardError(FileClaimGuardError):
@@ -35,36 +39,19 @@ class CodexClaimGuardError(FileClaimGuardError):
     code = "codex_claim_guard"
 
 
+def parse_apply_patch_paths(command: str) -> tuple[Path, ...]:
+    """Extract Codex patch targets while preserving the provider error contract."""
+    try:
+        return _parse_apply_patch_paths(command)
+    except ApplyPatchPathError as exc:
+        raise CodexClaimGuardError(f"Codex {exc}") from exc
+
+
 def _required_string(data: Mapping[str, Any], key: str, *, location: str) -> str:
     value = data.get(key)
     if not isinstance(value, str) or not value.strip():
         raise CodexClaimGuardError(f"Codex hook input needs a non-empty {location}.{key} string.")
     return value.strip()
-
-
-def parse_apply_patch_paths(command: str) -> tuple[Path, ...]:
-    """Extract every source and destination path from one Codex patch command."""
-    lines = command.splitlines()
-    if not lines or lines[0] != "*** Begin Patch" or lines[-1] != "*** End Patch":
-        raise CodexClaimGuardError("Codex apply_patch input needs exact begin and end markers.")
-
-    paths: list[Path] = []
-    for line in lines[1:-1]:
-        prefix = next(
-            (item for item in (*_FILE_PREFIXES, *_MOVE_PREFIXES) if line.startswith(item)),
-            None,
-        )
-        if prefix is not None:
-            raw_path = line.removeprefix(prefix)
-            if not raw_path.strip() or raw_path != raw_path.strip() or "\0" in raw_path:
-                raise CodexClaimGuardError("Codex apply_patch contains an invalid file path.")
-            paths.append(Path(raw_path))
-        elif line.startswith("*** ") and line != "*** End of File":
-            raise CodexClaimGuardError("Codex apply_patch contains an unsupported control line.")
-    unique = tuple(dict.fromkeys(paths))
-    if not unique:
-        raise CodexClaimGuardError("Codex apply_patch contains no file mutation.")
-    return unique
 
 
 def parse_hook_request(raw: str) -> MutationRequest:
@@ -85,13 +72,14 @@ def parse_hook_request(raw: str) -> MutationRequest:
     cwd = Path(_required_string(decoded, "cwd", location="input"))
     if not cwd.is_absolute():
         raise CodexClaimGuardError("Codex hook cwd must be absolute.")
+    file_paths = parse_apply_patch_paths(
+        _required_string(tool_input, "command", location="tool_input")
+    )
     return MutationRequest(
         session_id=_required_string(decoded, "session_id", location="input"),
         tool_use_id=_required_string(decoded, "tool_use_id", location="input"),
         cwd=cwd,
-        file_paths=parse_apply_patch_paths(
-            _required_string(tool_input, "command", location="tool_input")
-        ),
+        file_paths=file_paths,
     )
 
 

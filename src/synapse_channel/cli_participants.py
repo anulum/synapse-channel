@@ -50,6 +50,9 @@ from synapse_channel.participants.headless_gemini import GeminiParticipant
 from synapse_channel.participants.headless_grok import GrokParticipant
 from synapse_channel.participants.headless_kimi import KimiParticipant
 from synapse_channel.participants.headless_ollama import OllamaParticipant
+from synapse_channel.participants.headless_opencode import OpenCodeParticipant
+from synapse_channel.participants.opencode_api import OpenCodeApiParticipant
+from synapse_channel.participants.opencode_stream import OPENCODE_SCHEMA_VERIFIED
 from synapse_channel.participants.participant import Participant
 
 ParticipantBuilder = Callable[..., Participant]
@@ -66,6 +69,8 @@ PROVIDERS: dict[str, ParticipantBuilder] = {
     "kimi": KimiParticipant,
     "ollama": OllamaParticipant,
     "ollama-api": OllamaApiParticipant,
+    "opencode": OpenCodeParticipant,
+    "opencode-api": OpenCodeApiParticipant,
     "grok": GrokParticipant,
 }
 """Registered provider drivers, keyed by the name the operator selects."""
@@ -82,6 +87,12 @@ _GEMINI_REFUSAL = (
     "Use another provider, or re-capture and verify the schema first."
 )
 
+_OPENCODE_REFUSAL = (
+    "opencode turns are disabled: OPENCODE_SCHEMA_VERIFIED=False (the installed CLI/server "
+    "contract is not pinned to a verified source and real-process capture). Use another "
+    "provider, or verify and pin the current OpenCode release first."
+)
+
 
 def refusal_for(provider: str) -> str | None:
     """Return why ``provider`` must not take turns right now, or ``None`` when it may.
@@ -93,6 +104,8 @@ def refusal_for(provider: str) -> str | None:
         return _GROK_REFUSAL
     if provider == "gemini" and not GEMINI_SCHEMA_VERIFIED:
         return _GEMINI_REFUSAL
+    if provider in {"opencode", "opencode-api"} and not OPENCODE_SCHEMA_VERIFIED:
+        return _OPENCODE_REFUSAL
     return None
 
 

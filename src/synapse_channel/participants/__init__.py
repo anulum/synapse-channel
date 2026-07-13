@@ -107,6 +107,11 @@ from synapse_channel.participants.headless_ollama import (
     build_ollama_argv,
     compose_ollama_prompt,
 )
+from synapse_channel.participants.headless_opencode import (
+    OpenCodeParticipant,
+    build_opencode_argv,
+    compose_opencode_prompt,
+)
 from synapse_channel.participants.kimi_stream import (
     extract_kimi_session,
     parse_kimi_stream,
@@ -134,6 +139,13 @@ from synapse_channel.participants.modes import (
 )
 from synapse_channel.participants.ollama_api_output import parse_ollama_api_response
 from synapse_channel.participants.ollama_output import parse_ollama_output
+from synapse_channel.participants.opencode_api import OpenCodeApiParticipant
+from synapse_channel.participants.opencode_stream import (
+    OPENCODE_SCHEMA_VERIFIED,
+    OPENCODE_SCHEMA_VERSION,
+    parse_opencode_api_response,
+    parse_opencode_stream,
+)
 from synapse_channel.participants.orchestration import (
     OrchestrationRound,
     OrchestrationSeat,
@@ -235,6 +247,10 @@ __all__ = [
     "HeadlessClaudeParticipant",
     "OllamaApiParticipant",
     "OllamaParticipant",
+    "OpenCodeApiParticipant",
+    "OpenCodeParticipant",
+    "OPENCODE_SCHEMA_VERIFIED",
+    "OPENCODE_SCHEMA_VERSION",
     "OrchestrationRound",
     "OrchestrationSeat",
     "OrchestrationTranscript",
@@ -268,11 +284,13 @@ __all__ = [
     "build_kimi_argv",
     "build_ollama_api_body",
     "build_ollama_argv",
+    "build_opencode_argv",
     "build_session_metric_report",
     "build_turn_result",
     "compose_codex_prompt",
     "compose_kimi_prompt",
     "compose_ollama_prompt",
+    "compose_opencode_prompt",
     "conduct_conversation",
     "conduct_exchange",
     "convene",
@@ -293,6 +311,8 @@ __all__ = [
     "parse_kimi_stream",
     "parse_ollama_api_response",
     "parse_ollama_output",
+    "parse_opencode_api_response",
+    "parse_opencode_stream",
     "parse_session_metric_note",
     "react_to_advice",
     "relay_turn",

@@ -45,6 +45,10 @@ from synapse_channel.cli_codex_claim_hook import add_parser as add_codex_claim_h
 from synapse_channel.cli_gemini_claim_hook import add_parser as add_gemini_claim_hook_parser
 from synapse_channel.cli_grok_claim_hook import add_parser as add_grok_claim_hook_parser
 from synapse_channel.cli_kimi_claim_hook import add_parser as add_kimi_claim_hook_parser
+from synapse_channel.cli_opencode_adapter import (
+    add_opencode_adapter_parser,
+    add_opencode_claim_hook_parser,
+)
 from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.kimi_hook_config_file import (
     KimiHookConfigFileError,
@@ -271,6 +275,8 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     add_gemini_claim_hook_parser(group)
     add_grok_claim_hook_parser(group)
     add_kimi_claim_hook_parser(group)
+    add_opencode_claim_hook_parser(group)
+    add_opencode_adapter_parser(group)
 
     lister = group.add_parser("list", help="Detect tools and report adapter status (read-only).")
     _add_common(lister)
