@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.5] - 2026-07-13
+
 ### Documentation
 
 - The public-face slice of the README — hero, value proposition, feature wall,
