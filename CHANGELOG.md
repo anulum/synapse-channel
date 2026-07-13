@@ -128,6 +128,13 @@ All notable changes to this project are documented here.
   facade that re-exports the identical objects, so public imports and wire/log
   behaviour do not change.
 
+### Fixed
+
+- `SECURITY.md` now describes signed-capability-card history truthfully: the
+  bounded in-memory default, opt-in owner-only SQLite replay/downgrade floors,
+  fail-visible `history_unavailable` result, and advisory no-enforcement boundary
+  match the shipped runtime. A documentation-accuracy regression pins the contract.
+
 ## [0.99.4] - 2026-07-11
 
 ### Added

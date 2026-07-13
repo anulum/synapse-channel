@@ -143,3 +143,17 @@ def test_benchmark_docs_pin_scope_scan_indexing_decision() -> None:
     assert "keep the scope-conflict scan linear inside the local-first envelope" in benchmarks
     assert "local-first ceiling of 100 active claims" in benchmarks
     assert "Loaded workstation evidence" in benchmarks
+
+
+def test_capability_card_history_security_boundary_matches_runtime() -> None:
+    """Security prose must describe both history modes without granting authority."""
+    prose = _single_spaced(_read_repo_text("SECURITY.md"))
+
+    assert "bounded in-memory default" in prose
+    assert "owner-only SQLite store" in prose
+    assert "`--capability-card-history-db`" in prose
+    assert "persists replay and downgrade floors across hub restarts" in prose
+    assert "runtime persistence failure reports `history_unavailable`" in prose
+    assert "no enforcement flag exists" in prose
+    assert "a verified card does not authorize tools" in prose
+    assert "currently in memory" not in prose

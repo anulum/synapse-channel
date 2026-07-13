@@ -281,9 +281,12 @@ MCP resources, and A2A Agent Card projections. Card keys live in a separate,
 explicitly scoped trust bundle; verification reports unknown/revoked keys, bad
 signatures, expiry, replay, downgrade, binding, digest, and bounded-history failures.
 Unsigned local cards remain visible as advisory discovery. Replay/downgrade history
-is bounded and currently in memory, and no enforcement flag exists: a verified card
-does not authorize tools, replace per-message authentication, replace signed events,
-or sandbox agents.
+uses a bounded in-memory default. The opt-in owner-only SQLite store enabled with
+`--capability-card-history-db` persists replay and downgrade floors across hub
+restarts; runtime persistence failure reports `history_unavailable` rather than a
+verified card. Verification remains advisory and no enforcement flag exists: a
+verified card does not authorize tools, replace per-message authentication, replace
+signed events, or sandbox agents.
 
 ## Out of scope / known limitations
 
