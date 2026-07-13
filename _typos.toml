@@ -19,4 +19,7 @@ extend-exclude = [
     "*.db",
     "*.ndjson",
     "benchmarks/results/*.json",
+    # Translated READMEs are non-English by definition; the checker's English
+    # dictionary misreads legitimate foreign words (e.g. French "sur") as typos.
+    "docs/readme/*.md",
 ]

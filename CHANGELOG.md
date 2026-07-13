@@ -13,6 +13,19 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Documentation
+
+- The public-face slice of the README — hero, value proposition, feature wall,
+  at-a-glance, layer map, install, first 60 seconds, trial path, and releases —
+  now ships in eight translations under `docs/readme/` (simplified Chinese,
+  Spanish, Brazilian Portuguese, Japanese, Korean, German, French, and Slovak),
+  linked from a language-switcher line at the top of the main README. The
+  English README stays canonical: generated blocks (capability snapshot,
+  citation) exist only there, each translation ends with a pointer to the full
+  English reference, and technical terms plus code identifiers stay in their
+  original form. The documentation site build excludes the translated files,
+  which live as GitHub-rendered pages only.
+
 ### Added
 
 - Signed capability cards now ship as an advisory Ed25519 runtime. Separate

@@ -37,6 +37,18 @@ SYNAPSE CHANNEL — repository overview
   <a href="https://doi.org/10.5281/zenodo.20801559"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.20801559.svg" alt="DOI"></a>
 </p>
 
+<p align="center">
+  <strong>English</strong> ·
+  <a href="docs/readme/README.zh-CN.md">简体中文</a> ·
+  <a href="docs/readme/README.es.md">Español</a> ·
+  <a href="docs/readme/README.pt-BR.md">Português (Brasil)</a> ·
+  <a href="docs/readme/README.ja.md">日本語</a> ·
+  <a href="docs/readme/README.ko.md">한국어</a> ·
+  <a href="docs/readme/README.de.md">Deutsch</a> ·
+  <a href="docs/readme/README.fr.md">Français</a> ·
+  <a href="docs/readme/README.sk.md">Slovenčina</a>
+</p>
+
 A local-first coordination bus for a fleet of AI agents working in parallel —
 within a single repository or spread across a whole ecosystem of them. One
 WebSocket hub is the shared source of truth for **presence**, **work claims**,

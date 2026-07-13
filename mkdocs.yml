@@ -16,6 +16,7 @@ copyright: "&copy; 1998–2026 Miroslav Šotek &middot; <a href='https://www.anu
 exclude_docs: |
   internal/
   _generated/
+  readme/
 
 theme:
   name: material
