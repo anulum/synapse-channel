@@ -15,6 +15,17 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- OpenCode 1.17.20 is now a pinned Participant Fabric and IDE bridge. A
+  reversible project/global adapter owns one local-stdio Synapse MCP entry and
+  one fail-closed native mutation plugin; strict ownership, bounded race-aware
+  file updates, token-file persistence, and uninstall preservation keep existing
+  OpenCode configuration outside its scope. Exact-version headless JSONL and
+  authenticated HTTP API participants, cancellation, remote attach delivery,
+  and an ACP protocol-v1 handshake are covered by isolated real-process tests.
+  The focused CI lane verifies the official OpenCode archive and extracted
+  binary hashes before exercising adapter lifecycle, claimed/denied native
+  writes, local turns, authenticated server access, and package contents.
+
 - The experimental VS Code/Cursor client now consumes a bounded strict editor
   wire projection with version negotiation, stale-last-good state, fail-closed
   mutations, bounded reconnect/backoff, and safe identity/auth close handling.

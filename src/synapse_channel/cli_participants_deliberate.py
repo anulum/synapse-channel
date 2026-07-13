@@ -43,6 +43,10 @@ from synapse_channel.cli_participants_memory import (
     add_memory_arguments,
     wrap_participants,
 )
+from synapse_channel.cli_participants_opencode import (
+    add_opencode_connection_arguments,
+    build_cli_participant,
+)
 from synapse_channel.core.accounting import ModelPrice
 from synapse_channel.participants.convene import ConvocationTranscript, convene
 from synapse_channel.participants.conversation import STOPPED_BUDGET
@@ -76,7 +80,12 @@ def parse_spec(spec: str) -> tuple[str, str]:
     return provider, model
 
 
-def build_deliberants(specs: Sequence[str], *, timeout: float) -> list[Participant]:
+def build_deliberants(
+    specs: Sequence[str],
+    *,
+    timeout: float,
+    args: argparse.Namespace | None = None,
+) -> list[Participant]:
     """Construct one participant per spec, numbering repeated providers.
 
     A provider may appear several times on one panel (two independent ``claude``
@@ -101,7 +110,16 @@ def build_deliberants(specs: Sequence[str], *, timeout: float) -> list[Participa
         identity = f"participant/{provider}"
         if seen[provider] > 1:
             identity = f"{identity}-{seen[provider]}"
-        seats.append(build_participant(provider, identity=identity, model=model, timeout=timeout))
+        seats.append(
+            build_cli_participant(
+                provider,
+                identity=identity,
+                model=model,
+                timeout=timeout,
+                args=args,
+                fallback=build_participant,
+            )
+        )
     return seats
 
 
@@ -188,7 +206,8 @@ def _cmd_exchange(args: argparse.Namespace) -> int:
     """
     try:
         opener, reactor = wrap_participants(
-            build_deliberants([args.opener, args.reactor], timeout=args.timeout), args
+            build_deliberants([args.opener, args.reactor], timeout=args.timeout, args=args),
+            args,
         )
     except ValueError as exc:
         print(str(exc))
@@ -405,7 +424,7 @@ def _cmd_convene(args: argparse.Namespace) -> int:
     """
     specs = list(args.panel) + ([args.moderator] if args.moderator else [])
     try:
-        seats = wrap_participants(build_deliberants(specs, timeout=args.timeout), args)
+        seats = wrap_participants(build_deliberants(specs, timeout=args.timeout, args=args), args)
     except ValueError as exc:
         print(str(exc))
         return 2
@@ -476,6 +495,7 @@ def _add_shared_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--json", action="store_true", help="Print the full typed transcript as JSON."
     )
+    add_opencode_connection_arguments(parser)
     add_memory_arguments(parser)
 
 

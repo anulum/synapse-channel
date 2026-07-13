@@ -40,6 +40,10 @@ from synapse_channel.cli_participants_memory import (
     add_memory_arguments,
     wrap_participants,
 )
+from synapse_channel.cli_participants_opencode import (
+    add_opencode_connection_arguments,
+    build_cli_participant,
+)
 from synapse_channel.participants.api_ollama import OllamaApiParticipant
 from synapse_channel.participants.envelope import TurnRequest
 from synapse_channel.participants.gemini_stream import GEMINI_SCHEMA_VERIFIED
@@ -214,11 +218,13 @@ def _cmd_ask(args: argparse.Namespace) -> int:
         return 2
     identity = args.identity or _default_identity(args.provider)
     try:
-        participant = build_participant(
+        participant = build_cli_participant(
             args.provider,
             identity=identity,
             model=args.model,
             timeout=args.timeout,
+            args=args,
+            fallback=build_participant,
         )
         participant = wrap_participants([participant], args)[0]
     except ValueError as exc:
@@ -299,6 +305,7 @@ def add_parsers(
         default=DEFAULT_ASK_TIMEOUT,
         help="Seconds the turn may take before the driver reports an error result.",
     )
+    add_opencode_connection_arguments(ask)
     add_memory_arguments(ask)
     ask.add_argument("--json", action="store_true", help="Print the full TurnResult as JSON.")
     ask.set_defaults(func=_cmd_ask)

@@ -88,6 +88,28 @@ Codex stores the stdio server in its MCP configuration. Use `--env
 SYN_PROJECT=my-repo --env SYN_IDENTITY=my-repo/codex` before the `--` separator
 if the server also needs those environment values.
 
+### OpenCode
+
+Install a local stdio MCP entry together with the native fail-closed mutation
+plugin:
+
+```bash
+synapse adapters opencode install \
+  --scope project \
+  --project . \
+  --identity my-repo/opencode
+
+synapse adapters opencode status --scope project --project .
+```
+
+The adapter owns only the marked `mcp.synapse` object and marked plugin file,
+preserves unrelated strict-JSON configuration, refuses unowned collisions, and
+can uninstall its own assets without deleting user settings. A remote Synapse
+hub is still reached by this local stdio MCP process; pass `--uri wss://…` and
+an owner-only `--token-file` path rather than embedding a raw secret. See the
+[OpenCode bridge](opencode.md) for project/global paths, the participant and API
+connectors, remote attach behavior, native hook limits, and ACP IDE setup.
+
 ### Cursor
 
 Cursor reads project servers from `.cursor/mcp.json` and global servers from

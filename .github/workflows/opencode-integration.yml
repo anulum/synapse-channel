@@ -1,0 +1,197 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — pinned OpenCode adapter and real-process acceptance
+name: opencode-integration
+
+on:
+  push:
+    paths:
+      - "src/synapse_channel/apply_patch_paths.py"
+      - "src/synapse_channel/codex_claim_guard.py"
+      - "src/synapse_channel/opencode_*.py"
+      - "src/synapse_channel/cli_adapters.py"
+      - "src/synapse_channel/cli_participants.py"
+      - "src/synapse_channel/cli_participants_deliberate.py"
+      - "src/synapse_channel/cli_participants_opencode.py"
+      - "src/synapse_channel/participants/__init__.py"
+      - "src/synapse_channel/participants/headless_opencode.py"
+      - "src/synapse_channel/participants/opencode_*.py"
+      - "tests/fixtures/opencode/**"
+      - "tests/test_*opencode*.py"
+      - "tests/test_apply_patch_paths.py"
+      - "docs/opencode.md"
+      - "docs/claim-guard-hooks.md"
+      - "docs/mcp.md"
+      - "mkdocs.yml"
+      - "pyproject.toml"
+      - ".github/requirements/**"
+      - ".github/workflows/opencode-integration.yml"
+  pull_request:
+    paths:
+      - "src/synapse_channel/apply_patch_paths.py"
+      - "src/synapse_channel/codex_claim_guard.py"
+      - "src/synapse_channel/opencode_*.py"
+      - "src/synapse_channel/cli_adapters.py"
+      - "src/synapse_channel/cli_participants.py"
+      - "src/synapse_channel/cli_participants_deliberate.py"
+      - "src/synapse_channel/cli_participants_opencode.py"
+      - "src/synapse_channel/participants/__init__.py"
+      - "src/synapse_channel/participants/headless_opencode.py"
+      - "src/synapse_channel/participants/opencode_*.py"
+      - "tests/fixtures/opencode/**"
+      - "tests/test_*opencode*.py"
+      - "tests/test_apply_patch_paths.py"
+      - "docs/opencode.md"
+      - "docs/claim-guard-hooks.md"
+      - "docs/mcp.md"
+      - "mkdocs.yml"
+      - "pyproject.toml"
+      - ".github/requirements/**"
+      - ".github/workflows/opencode-integration.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Install the complete focused Python toolchain
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
+          python -m pip install --require-hashes -r .github/requirements/requirements-tools.txt
+          python -m pip install -e . --no-deps
+          python -m pip check
+      - name: Install exact OpenCode 1.17.20 from its verified release asset
+        env:
+          OPENCODE_ARCHIVE_SHA256: b7100c0ad0980fba25d595123b4219a6fdc1fbd456dcb64859236741e199c564
+          OPENCODE_BINARY_SHA256: 373af49ceba30c1b64e964463a64f8065103f942f240933a955f6c461e1a67f6
+          OPENCODE_URL: https://github.com/anomalyco/opencode/releases/download/v1.17.20/opencode-linux-x64.tar.gz
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/opencode-linux-x64.tar.gz"
+          bin_dir="$RUNNER_TEMP/opencode-1.17.20/bin"
+          mkdir -p "$bin_dir"
+          curl --fail --location --proto '=https' --tlsv1.2 --retry 3 \
+            --output "$archive" "$OPENCODE_URL"
+          printf '%s  %s\n' "$OPENCODE_ARCHIVE_SHA256" "$archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$bin_dir"
+          test -f "$bin_dir/opencode"
+          chmod 0755 "$bin_dir/opencode"
+          printf '%s  %s\n' "$OPENCODE_BINARY_SHA256" "$bin_dir/opencode" \
+            | sha256sum --check --strict
+          test "$("$bin_dir/opencode" --version)" = "1.17.20"
+          echo "$bin_dir" >> "$GITHUB_PATH"
+          echo "OPENCODE_BIN=$bin_dir/opencode" >> "$GITHUB_ENV"
+      - name: Focused lint, formatting, typing, and security checks
+        run: |
+          set -euo pipefail
+          files=(
+            src/synapse_channel/apply_patch_paths.py
+            src/synapse_channel/codex_claim_guard.py
+            src/synapse_channel/opencode_claim_guard.py
+            src/synapse_channel/opencode_plugin.py
+            src/synapse_channel/opencode_adapter.py
+            src/synapse_channel/opencode_adapter_files.py
+            src/synapse_channel/cli_opencode_adapter.py
+            src/synapse_channel/cli_adapters.py
+            src/synapse_channel/cli_participants.py
+            src/synapse_channel/cli_participants_deliberate.py
+            src/synapse_channel/cli_participants_opencode.py
+            src/synapse_channel/participants/opencode_auth.py
+            src/synapse_channel/participants/opencode_stream.py
+            src/synapse_channel/participants/headless_opencode.py
+            src/synapse_channel/participants/opencode_api.py
+            tests/fixtures/opencode/acp.py
+            tests/fixtures/opencode/llm.py
+            tests/fixtures/opencode/process.py
+            tests/fixtures/opencode/runtime.py
+            tests/fixtures/opencode/server.py
+            tests/test_apply_patch_paths.py
+            tests/test_opencode_claim_guard.py
+            tests/test_opencode_plugin.py
+            tests/test_opencode_adapter.py
+            tests/test_opencode_adapter_files.py
+            tests/test_cli_opencode_adapter.py
+            tests/test_cli_participants_opencode.py
+            tests/test_opencode_auth.py
+            tests/test_opencode_stream.py
+            tests/test_participant_headless_opencode.py
+            tests/test_participant_opencode_api.py
+            tests/test_cli_e2e_opencode.py
+          )
+          ruff check "${files[@]}"
+          ruff format --check "${files[@]}"
+          mypy --strict "${files[@]}"
+          python -m bandit -q -c pyproject.toml \
+            src/synapse_channel/apply_patch_paths.py \
+            src/synapse_channel/opencode_claim_guard.py \
+            src/synapse_channel/opencode_plugin.py \
+            src/synapse_channel/opencode_adapter.py \
+            src/synapse_channel/opencode_adapter_files.py \
+            src/synapse_channel/cli_opencode_adapter.py \
+            src/synapse_channel/cli_participants_opencode.py \
+            src/synapse_channel/participants/opencode_auth.py \
+            src/synapse_channel/participants/opencode_stream.py \
+            src/synapse_channel/participants/headless_opencode.py \
+            src/synapse_channel/participants/opencode_api.py
+      - name: OpenCode unit and real-process acceptance
+        run: |
+          set -euo pipefail
+          pytest \
+            tests/test_apply_patch_paths.py \
+            tests/test_opencode_claim_guard.py \
+            tests/test_opencode_plugin.py \
+            tests/test_opencode_adapter.py \
+            tests/test_opencode_adapter_files.py \
+            tests/test_cli_opencode_adapter.py \
+            tests/test_cli_participants_opencode.py \
+            tests/test_opencode_auth.py \
+            tests/test_opencode_stream.py \
+            tests/test_participant_headless_opencode.py \
+            tests/test_participant_opencode_api.py \
+            tests/test_cli_e2e_opencode.py
+      - name: Build and inspect the distributable wheel
+        run: |
+          set -euo pipefail
+          python -m build --wheel --outdir "$RUNNER_TEMP/opencode-dist"
+          wheel=$(find "$RUNNER_TEMP/opencode-dist" -maxdepth 1 -type f -name '*.whl' -print -quit)
+          test -n "$wheel"
+          unzip -t "$wheel"
+          unzip -Z1 "$wheel" | sort > "$RUNNER_TEMP/opencode-wheel-files.txt"
+          for module in \
+            apply_patch_paths.py \
+            opencode_claim_guard.py \
+            opencode_plugin.py \
+            opencode_adapter.py \
+            opencode_adapter_files.py \
+            cli_opencode_adapter.py \
+            cli_participants_opencode.py \
+            participants/opencode_auth.py \
+            participants/opencode_stream.py \
+            participants/headless_opencode.py \
+            participants/opencode_api.py
+          do
+            grep -Fx "synapse_channel/$module" "$RUNNER_TEMP/opencode-wheel-files.txt"
+          done
+          python -m venv --system-site-packages "$RUNNER_TEMP/opencode-wheel-venv"
+          "$RUNNER_TEMP/opencode-wheel-venv/bin/python" -m pip install --no-deps "$wheel"
+          "$RUNNER_TEMP/opencode-wheel-venv/bin/synapse" adapters opencode --help
+          "$RUNNER_TEMP/opencode-wheel-venv/bin/synapse" participant list --json \
+            | python -c 'import json,sys; rows=json.load(sys.stdin); assert {"opencode", "opencode-api"} <= {row["provider"] for row in rows}'

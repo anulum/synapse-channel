@@ -1,0 +1,334 @@
+<!--
+SPDX-License-Identifier: AGPL-3.0-or-later
+Commercial license available
+© Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+© Code 2020–2026 Miroslav Šotek. All rights reserved.
+ORCID: 0009-0009-3560-0851
+Contact: www.anulum.li | protoscience@anulum.li
+-->
+
+# OpenCode bridge
+
+SYNAPSE CHANNEL integrates OpenCode through six deliberately separate surfaces.
+Use only the layers needed by one seat; installing the adapter does not silently
+start OpenCode, a Synapse hub, or a provider turn.
+
+| Surface | Purpose | Transport |
+|---|---|---|
+| Project/global adapter | Reversible OpenCode configuration | Filesystem |
+| Synapse MCP face | Claims, inbox, board, state, and coordination tools | Local stdio MCP |
+| Native mutation guard | Stop covered file tools before execution without a live claim | OpenCode plugin hook |
+| Headless participant | Run an exact-version local OpenCode turn | `opencode run --format json` |
+| Server participant | Run and cancel an authenticated long-lived server turn | Bounded HTTP(S) API |
+| ACP editor face | Use OpenCode from an ACP-compatible IDE | JSON-RPC over stdio |
+
+The verified contract is **OpenCode 1.17.20**, official tag commit
+`4473fc3c9055046183990a965d68df3db7ea6f62`. Both participant drivers refuse a
+different server or CLI version instead of attempting to parse an unknown
+schema.
+
+## Install the bridge
+
+Install the MCP extra and verify that OpenCode is the pinned version:
+
+```bash
+python -m pip install 'synapse-channel[mcp]'
+opencode --version
+# 1.17.20
+```
+
+Claim the paths this OpenCode seat may edit, then install the project adapter:
+
+```bash
+synapse git-claim OPENCODE-WORK \
+  --paths src tests \
+  --name my-repo/opencode \
+  --auto-release-on manual
+
+synapse adapters opencode install \
+  --scope project \
+  --project . \
+  --identity my-repo/opencode
+
+synapse adapters opencode status --scope project --project .
+```
+
+Project scope owns these two paths:
+
+```text
+.opencode/opencode.json
+.opencode/plugins/synapse-claim-guard.js
+```
+
+Global scope uses the OpenCode configuration root instead:
+
+```bash
+synapse adapters opencode install \
+  --scope global \
+  --identity workstation/opencode
+```
+
+The default global root is `${XDG_CONFIG_HOME:-$HOME/.config}/opencode`. Use
+`--config-root` only when OpenCode itself uses that same override.
+
+### Ownership and reversible changes
+
+The installer owns only:
+
+- the `mcp.synapse` object carrying
+  `SYNAPSE_ADAPTER_OWNER=synapse-channel`; and
+- the plugin file whose first line is the exact Synapse ownership marker.
+
+It refuses to overwrite an unowned entry or plugin. Configuration reads are
+bounded to one MiB. Automatic editing accepts strict JSON only and refuses to
+rewrite JSONC. Filesystem mutation rejects final-component symlinks,
+non-regular or foreign-owned files, snapshots changed before replacement, and
+unsafe modes. Replacement is same-directory, private, fsynced, and atomic.
+Existing user keys and the OpenCode `$schema` key are preserved.
+
+Inspect either generated asset without writing it:
+
+```bash
+synapse adapters opencode print-config \
+  --identity my-repo/opencode \
+  --asset config
+
+synapse adapters opencode print-config \
+  --identity my-repo/opencode \
+  --asset plugin
+```
+
+Remove only Synapse-owned assets:
+
+```bash
+synapse adapters opencode uninstall --scope project --project .
+```
+
+## MCP coordination inside OpenCode
+
+The adapter registers a local MCP server entry equivalent to:
+
+```json
+{
+  "mcp": {
+    "synapse": {
+      "type": "local",
+      "command": [
+        "synapse",
+        "mcp",
+        "--name",
+        "my-repo/opencode",
+        "--uri",
+        "ws://127.0.0.1:8765"
+      ],
+      "enabled": true,
+      "environment": {
+        "SYNAPSE_ADAPTER_OWNER": "synapse-channel"
+      },
+      "timeout": 30000
+    }
+  }
+}
+```
+
+This is a local stdio process even when its Synapse hub is remote. Point the
+process at `wss://…` with `--uri`; do not change the OpenCode MCP entry to an
+unverified remote MCP transport.
+
+For a secured hub, persist a file path rather than a token value:
+
+```bash
+synapse adapters opencode install \
+  --identity my-repo/opencode \
+  --uri wss://hub.example/ws \
+  --token-file /run/secrets/synapse-hub-token
+```
+
+`--token` is accepted only for a runtime or dry-run operation and is rejected
+for persistent adapter installation. The generated config never contains the
+secret value.
+
+After OpenCode starts, its Synapse MCP tools can claim/release work, read the
+board and live state, consume the durable inbox, and send handoffs. MCP tool
+availability is not wake delivery: keep the exact seat receiver armed as
+described in the [MCP wake pattern](mcp.md#wake-and-inbox-pattern).
+
+## Native fail-closed mutation guard
+
+The plugin observes OpenCode's `tool.execute.before` hook and guards exactly:
+
+| OpenCode tool | Path extraction |
+|---|---|
+| `edit` | `args.filePath` |
+| `write` | `args.filePath` |
+| `apply_patch` | every add, update, delete, and both sides of a move in `args.patchText` |
+
+For those tools, the plugin sends a bounded JSON event to
+`synapse adapters opencode-claim-hook`. It accepts only an explicit
+`{"allowed": true}` verdict. A malformed event, invalid Git context, missing
+or competing claim, unavailable hub, timeout, non-zero helper exit, excessive
+output, invalid UTF-8/JSON, or ambiguous verdict throws before the tool runs.
+OpenCode's ordinary permission policy still applies after an allowed verdict.
+
+Do not use `opencode run --auto` to compensate for a guard refusal. `--auto`
+changes OpenCode's permission behavior and is intentionally absent from the
+Synapse participant driver.
+
+The native hook is not an operating-system sandbox. Shell commands, custom
+tools, MCP tools, external programs, and future write-capable OpenCode tools
+outside the three names above are not intercepted. Install the staged Git gate
+as defense in depth:
+
+```bash
+synapse git-init --name my-repo/opencode
+synapse git-claim-check --staged --name my-repo/opencode
+```
+
+## Participant Fabric
+
+Two providers are registered:
+
+```bash
+synapse participant list
+synapse participant ask opencode "Review the current claim boundary"
+synapse participant ask opencode-api "Review the current claim boundary"
+```
+
+`opencode` runs a local `opencode run --format json` process and normalizes its
+typed JSONL events. `opencode-api` negotiates `/global/health`, requires version
+1.17.20, creates or resumes a session, posts a bounded text prompt, and maps the
+source-verified response. Cancellation performs a best-effort
+`/session/{id}/abort` request.
+
+The default API endpoint is `http://127.0.0.1:4096`. Configure an authenticated
+remote or long-lived server without placing its password on the command line:
+
+```bash
+synapse participant ask opencode-api \
+  "Review the current claim boundary" \
+  --opencode-directory /absolute/project \
+  --opencode-endpoint https://opencode.example \
+  --opencode-username opencode \
+  --opencode-password-file /run/secrets/opencode-server-password
+```
+
+The same `--opencode-*` options work on `participant exchange` and
+`participant convene`; every OpenCode seat receives the same connection policy.
+For the `opencode` provider, `--opencode-endpoint` selects `run --attach`, while
+`opencode-api` uses it as the direct API origin. `--opencode-binary` pins an
+alternate executable, `--opencode-thinking` includes verified thinking events,
+and `--opencode-allow-insecure-http` is the explicit remote-cleartext opt-out.
+
+Applications can construct the participant directly as well:
+
+```python
+from synapse_channel.participants import OpenCodeApiParticipant
+
+participant = OpenCodeApiParticipant(
+    "my-repo/opencode-api",
+    directory="/absolute/project",
+    endpoint="https://opencode.example",
+    username="opencode",
+    password_file="/run/secrets/opencode-server-password",
+)
+```
+
+The password reader opens one owner-only regular file without following a
+symlink, validates the same descriptor, bounds its size, and never places the
+secret in the endpoint URL. Literal loopback HTTP is allowed. Remote cleartext
+HTTP is refused unless an application explicitly opts into
+`allow_insecure_http=True`; remote deployment should use HTTPS.
+
+### Long-lived server and `run --attach`
+
+OpenCode itself can reuse a running server:
+
+```bash
+export OPENCODE_SERVER_PASSWORD="$(< /run/secrets/opencode-server-password)"
+opencode serve --hostname 127.0.0.1 --port 4096
+
+opencode run \
+  --attach http://127.0.0.1:4096 \
+  "Inspect the current task"
+```
+
+Run the client in a separate shell with the same private environment value, or
+use the Synapse participants' `password_file` argument. Do not pass the password
+with OpenCode's `--password` flag because command-line arguments may be visible
+to other local processes.
+
+Prefer the API participant when Synapse must capture a returned answer.
+OpenCode 1.17.20's non-interactive `run --attach` path posts the prompt but
+returns before its event subscriber is awaited, so the real CLI can exit zero
+with empty stdout even though the server received and executed the prompt. The
+focused acceptance test pins that behavior instead of treating an empty stream
+as a successful answer.
+
+The Synapse headless participant can be constructed with `attach=…` and an
+owner-only `password_file`; it passes Basic-auth values through the child
+environment rather than command-line arguments. Its parser still fails closed
+when the expected JSONL completion is absent.
+
+## ACP and IDE integration
+
+OpenCode 1.17.20 exposes an ACP subprocess:
+
+```bash
+opencode acp --cwd /absolute/project
+```
+
+It communicates as JSON-RPC over stdio. A real acceptance handshake verifies
+protocol version 1 and the pinned agent version. The source declares session
+load/list/resume/close/fork capabilities, embedded context and image prompts,
+HTTP and SSE MCP capabilities, and optional `terminal-auth` metadata. The ACP
+process loads the same project configuration, so the installed Synapse MCP entry
+and native mutation plugin remain part of the OpenCode runtime.
+
+Official OpenCode 1.17.20 documentation supplies configurations for Zed,
+JetBrains IDEs, Avante.nvim, and CodeCompanion.nvim. The common launch contract
+is:
+
+```json
+{
+  "agent_servers": {
+    "OpenCode": {
+      "command": "opencode",
+      "args": ["acp", "--cwd", "/absolute/project"]
+    }
+  }
+}
+```
+
+Use the editor's private environment or OpenCode auth store for model-provider
+credentials. Do not commit them into an ACP configuration. IDE permission UI is
+not a substitute for the native claim plugin; keep both enabled.
+
+## Acceptance and supply-chain gate
+
+The focused `opencode-integration` workflow installs the hash-locked Python
+dependency sets, pins OpenCode's official Linux x64 archive and extracted binary
+by SHA-256, verifies exact version 1.17.20, builds the wheel, checks its OpenCode
+modules, and runs only the OpenCode unit and real-process cohort.
+
+The real-process suite uses isolated home/config/data/state/cache roots and a
+local scripted provider. It proves:
+
+- local JSONL turns and an ACP initialize handshake;
+- Basic-auth refusal, authenticated `run --attach` prompt delivery, direct API
+  answer capture, and session behavior;
+- adapter install/status/upgrade/uninstall ownership;
+- an allowed claimed native write and a denied unclaimed native write; and
+- preservation of unrelated OpenCode configuration.
+
+These checks validate the pinned connector boundaries. They do not certify an
+external model account, an arbitrary IDE build, remote TLS termination, or
+filesystem isolation.
+
+## Source references
+
+- [OpenCode 1.17.20 release](https://github.com/anomalyco/opencode/releases/tag/v1.17.20)
+- [OpenCode MCP configuration](https://opencode.ai/docs/mcp-servers/)
+- [OpenCode ACP support](https://opencode.ai/docs/acp/)
+- [OpenCode CLI](https://opencode.ai/docs/cli/)
+- [Provider file-edit claim hooks](claim-guard-hooks.md)
+- [MCP server face](mcp.md)

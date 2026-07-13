@@ -12,8 +12,9 @@ SYNAPSE CHANNEL — provider file-edit claim hooks
 
 Synapse can stop a supported native file-edit call before it runs unless the
 configured identity owns a live claim for every target file. Claude Code, Codex,
-Gemini CLI, Grok, and Kimi use different hook payloads, so Synapse keeps their
-wire adapters small and sends all five through one claim decision engine.
+Gemini CLI, Grok, Kimi, and OpenCode use different hook payloads, so Synapse
+keeps their wire adapters small and sends all six through one claim decision
+engine.
 
 | Provider | Covered native tool | Path source | Recipe format |
 |---|---|---|---|
@@ -22,6 +23,7 @@ wire adapters small and sends all five through one claim decision engine.
 | Gemini CLI | `replace`, `write_file` on the native `BeforeTool` event | relative or absolute `tool_input.file_path` | `settings.json` `hooks` fragment |
 | Grok | `search_replace` (plus `Edit` / `Write` / `MultiEdit` compatibility aliases and the older `write` spelling) | relative or absolute `toolInput.path` | global `~/.grok/hooks/*.json` fragment |
 | Kimi Code | `Edit`, `Write` | relative or absolute `tool_input.path` | `config.toml` fragment |
+| OpenCode | `edit`, `write`, `apply_patch` on `tool.execute.before` | `args.filePath`, or every add/update/delete/move path in `args.patchText` | owned project/global plugin plus MCP config |
 
 The decision requires the exact worktree, branch, path coverage, editable task
 state, and unambiguous owner. A missing claim, competing owner, malformed event,
@@ -62,6 +64,10 @@ synapse adapters grok-claim-hook \
 synapse adapters kimi-claim-hook \
   --identity my-repo/kimi \
   --print-config
+
+synapse adapters opencode print-config \
+  --identity my-repo/opencode \
+  --asset plugin
 ```
 
 With `--print-config`, these commands only print mergeable fragments and never
@@ -75,6 +81,23 @@ trust a new or changed non-managed hook. Gemini's hook `timeout` field is in
 milliseconds, and the printed fragment already uses that unit; Gemini also
 refuses project-scope hooks inside untrusted folders. Grok global hooks are
 always trusted; a project `.grok/hooks/` copy would require folder trust.
+
+OpenCode has a reversible project/global installer that owns only its marked
+plugin and marked `mcp.synapse` entry:
+
+```bash
+synapse adapters opencode install \
+  --scope project \
+  --project . \
+  --identity my-repo/opencode
+
+synapse adapters opencode status --scope project --project .
+synapse adapters opencode uninstall --scope project --project .
+```
+
+The adapter refuses unowned collisions, symlinks, non-regular or foreign-owned
+files, unsafe modes, files changed before atomic replacement, oversized input,
+and JSONC rewrites. See the complete [OpenCode bridge](opencode.md).
 
 Kimi also has an explicit reversible installer:
 
@@ -143,6 +166,12 @@ avoids provider conventions in which an ordinary non-zero error means
   denial on exit zero. Kimi documents its hook runner itself as fail-open if the
   process crashes or exceeds the host timeout. Synapse leaves headroom and catches
   runtime exceptions, but it cannot change that host-level behavior.
+- **OpenCode:** the generated plugin accepts only an explicit allow response from
+  the bounded helper process. A helper crash, timeout, excessive output,
+  invalid UTF-8/JSON, ambiguous response, missing claim, or hub failure throws
+  from `tool.execute.before` before `edit`, `write`, or `apply_patch` runs.
+  Shell commands, custom tools, MCP tools, and future write-capable tool names
+  remain outside this matcher.
 
 Do not describe these adapters as complete shell or operating-system isolation.
 For a stricter deployment, combine them with provider sandboxing and deny
@@ -170,4 +199,6 @@ claim their scope explicitly.
 - Grok 0.2.93 — the `PreToolUse`, matcher-alias, input, deny, timeout, and
   fail-open contracts above were read from the installed user guide
 - [Kimi Code hooks](https://moonshotai.github.io/kimi-code/en/customization/hooks)
+- [OpenCode plugins](https://opencode.ai/docs/plugins/) — native
+  `tool.execute.before` contract pinned to 1.17.20
 - [Git-native claims](git-claims.md)
