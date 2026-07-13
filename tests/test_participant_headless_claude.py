@@ -160,7 +160,8 @@ def test_run_turn_nonzero_exit_without_output_is_error() -> None:
     result = seat.run_turn(_request())
     assert result["is_error"] is True
     assert "exited 2" in result["reason"]
-    assert "boom" in result["reason"]
+    assert "provider diagnostic withheld" in result["reason"]
+    assert "boom" not in result["reason"]
 
 
 def test_run_turn_nonzero_exit_with_answer_is_trusted() -> None:
@@ -176,7 +177,7 @@ def test_run_turn_nonzero_exit_with_empty_stderr_notes_no_output() -> None:
     runner = _FakeRunner(stdout="", stderr="", returncode=3)
     seat = HeadlessClaudeParticipant("SC/claude-a", runner=runner)
     result = seat.run_turn(_request())
-    assert "no output" in result["reason"]
+    assert "no diagnostic output" in result["reason"]
 
 
 # --- identity / channel / health ------------------------------------------------------

@@ -122,7 +122,7 @@ def test_health_reports_resolved_binary(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/gemini")
     health = GeminiParticipant("seat/gemini").health()
     assert health.available
-    assert health.detail == "gemini binary at /usr/bin/gemini"
+    assert health.detail == ("gemini binary at /usr/bin/gemini; account entitlement not probed")
     assert health.channel is ParticipantChannel.HEADLESS
 
 
@@ -153,7 +153,8 @@ def test_run_turn_nonzero_exit_with_no_answer_is_error() -> None:
     result = participant.run_turn(TurnRequest(topic_id="t1", prompt="ping?"))
     assert result["is_error"]
     assert "exited 55" in result["reason"]
-    assert "boom" in result["reason"]
+    assert "provider diagnostic withheld" in result["reason"]
+    assert "boom" not in result["reason"]
 
 
 def test_run_turn_nonzero_exit_with_answer_keeps_answer() -> None:

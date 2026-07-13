@@ -15,6 +15,14 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Failed headless provider turns no longer copy raw CLI stderr or process-start
+  exception text into relayable or durable results. Claude, Codex, Gemini, Grok,
+  Kimi, and Ollama now expose only the exit status plus a bounded safe
+  classification; unknown diagnostics are withheld. Gemini's binary-health row
+  also states that account entitlement was not probed, while a recognised retired
+  consumer-account failure points operators to Antigravity or an eligible
+  enterprise/API-key configuration.
+
 - `synapse git-init` now stores staged-claim identity, hub URI, and the optional
   token-file path in Git's official per-worktree config. Linked worktrees can
   therefore use different exact seat identities without overwriting one another;

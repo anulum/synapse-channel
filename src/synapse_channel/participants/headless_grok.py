@@ -56,6 +56,10 @@ from synapse_channel.participants.participant import (
     ParticipantChannel,
     ParticipantHealth,
 )
+from synapse_channel.participants.process_error import (
+    format_process_failure,
+    format_process_start_failure,
+)
 
 DEFAULT_BINARY = "grok"
 """Default Grok executable name resolved on ``PATH``."""
@@ -256,7 +260,7 @@ class GrokParticipant:
                 participant=self._identity,
                 channel=ParticipantChannel.HEADLESS,
                 request=request,
-                reason=f"failed to run {self._binary!r}: {exc}",
+                reason=format_process_start_failure(binary=self._binary, error=exc),
             )
         outcome = parse_grok_stream((completed.stdout or "").splitlines())
         if completed.returncode != 0 and outcome.answer == "":
@@ -264,8 +268,12 @@ class GrokParticipant:
                 participant=self._identity,
                 channel=ParticipantChannel.HEADLESS,
                 request=request,
-                reason=f"{self._binary!r} exited {completed.returncode}: "
-                f"{(completed.stderr or '').strip() or 'no output'}",
+                reason=format_process_failure(
+                    provider="grok",
+                    binary=self._binary,
+                    returncode=completed.returncode,
+                    stderr=completed.stderr or "",
+                ),
             )
         return build_turn_result(
             participant=self._identity,
