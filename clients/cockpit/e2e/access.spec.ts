@@ -53,6 +53,7 @@ test("viewer tampering cannot reach writes; operator/admin expose exactly shippe
   await page.keyboard.press("Escape");
 
   const viewerPost = await page.evaluate(async (bearer) => {
+    const document: Document = globalThis.document;
     const fake = document.createElement("button");
     fake.id = "forged-operator-control";
     fake.textContent = "forged operator action";
