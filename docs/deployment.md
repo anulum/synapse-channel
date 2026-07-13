@@ -203,7 +203,10 @@ For multi-seat fleets on one machine, start the hub with
 [`--team-secure`](team-secure.md) (token + identity trust + role grants + private
 directed messages). For an exposed or multi-host bind, add
 [`--paranoid`](paranoid-mode.md) (token, durable log, per-message auth, ACL,
-native WSS) or use both together. Use the [A2A deployment threat
+native WSS) or use both together. For a multi-seat hub that is also
+network-exposed, [`--secure`](secure-mode.md) composes both profiles and adds
+bounded per-agent, per-host, and per-host-connection flood limits in one switch.
+Use the [A2A deployment threat
 model](a2a-deployment-threat-model.md) for exposed `synapse a2a-serve`
 deployments.
 The planned [at-rest encryption profile](at-rest-encryption.md) is the storage

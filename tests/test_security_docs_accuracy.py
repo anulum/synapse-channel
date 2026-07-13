@@ -157,3 +157,40 @@ def test_capability_card_history_security_boundary_matches_runtime() -> None:
     assert "no enforcement flag exists" in prose
     assert "a verified card does not authorize tools" in prose
     assert "currently in memory" not in prose
+
+
+def test_container_bind_posture_documents_the_fail_closed_refusal() -> None:
+    """Container docs must state the startup refusal, never a mere warning."""
+    prose = _single_spaced(_read_repo_text("SECURITY.md"))
+
+    assert "Container image bind posture" in prose
+    assert "`InsecureBindError` and refuses to start" in prose
+    assert "`--insecure-off-loopback`" in prose
+    assert "127.0.0.1:8876:8876" in prose
+    assert "0.98.27, 0.99.2, 0.99.3, and 0.99.4" in prose
+    # A refused start must leave no artefact: the guard runs before the durable
+    # store is constructed (pinned behaviourally in test_cli_processes_hub.py).
+    assert "leaves no database file behind" in prose
+
+    dockerfile = _single_spaced(_read_repo_text("Dockerfile"))
+
+    assert "InsecureBindError" in dockerfile
+    assert "refuses to start" in dockerfile
+    assert "warns when bound off-loopback" not in dockerfile
+
+
+def test_container_reachability_prose_distinguishes_both_audiences() -> None:
+    """SECURITY.md must never again claim the publish flags alone decide reachability.
+
+    Same-network containers reach the hub container-to-container regardless of the
+    host publish, so the prose must name both audiences — host ingress and
+    container-network peers — and tie the shipped compose opt-out to bounding both.
+    """
+    prose = _single_spaced(_read_repo_text("SECURITY.md"))
+
+    assert "reachability is decided by the publish flags" not in prose
+    assert "Host ingress" in prose
+    assert "Container-network peers" in prose
+    assert "regardless of what the host publishes" in prose
+    assert "dedicated compose network that carries no other service" in prose
+    assert "attaching any container they do not fully trust" in prose

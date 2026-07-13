@@ -41,6 +41,55 @@ All notable changes to this project are documented here.
   two real Git roots, exact claims, and exact releases. Runtime, timer, protocol,
   scope, and test-harness responsibilities
   remain split below the documented Godfile threshold.
+- `synapse hub --secure` is the strict multi-seat production umbrella: it
+  composes the `--team-secure` trust profile and the `--paranoid` exposed-hub
+  profile, then bounds per-agent (100/s, burst 20), per-host (500/s, burst 100),
+  and per-host connection (10) flood limits. Missing operator material fails
+  closed before any socket binds, listing every absent input in one aggregate
+  error; a stricter positive limit is preserved and a rate, burst, or
+  connection cap above a preset ceiling is refused; startup prints one
+  consolidated report of the composed gates, effective limits, and the controls
+  the preset genuinely does not compose. It generates no credentials and enables
+  no metrics surface. See [Secure mode](docs/secure-mode.md).
+- `--message-auth-key-file` and `--metrics-token-file` read hub secrets from
+  owner-only (`chmod 600`) files instead of argv, so a per-message HMAC key or
+  metrics bearer token is not exposed in the process list. The key file carries
+  one `KEY_ID:SECRET:SENDER[,SENDER...]` entry per line (`#` comments allowed)
+  and merges with argv keys for rotation; an explicit `--metrics-token` wins
+  over its file, mirroring `--token`/`--token-file`. The loader refuses a group-
+  or world-readable file and reports problems by flag and path, never by content.
+
+### Security
+
+- The hub rejects a non-finite (`nan`, `inf`) `--rate`, `--burst`, `--host-rate`,
+  or `--host-burst` at the argument parser for every run: `nan` previously passed
+  every downstream comparison and then built no limiter at all, so a hub could
+  appear rate-limited while enforcing nothing. `--secure` additionally rejects a
+  non-finite value and holds each burst to its own ceiling.
+- The exposure guard now runs before the durable event store is constructed, so
+  a refused unauthenticated non-loopback bind leaves no database file on disk.
+- `SECURITY.md` distinguishes host ingress from container-network reachability:
+  same-network containers reach the hub container-to-container regardless of the
+  host publish flags. The shipped `docker-compose.yml` now attaches the hub to a
+  dedicated single-service network so both audiences are bounded.
+- The `--secure` report no longer copies the paranoid profile's
+  "compose `--team-secure`" missing-hook line, which the umbrella already
+  enforces; genuinely uncomposed controls (at-rest encryption, mutual TLS, …)
+  stay listed.
+
+### Documentation
+
+- `SECURITY.md` now explains the container image bind posture that external
+  audits kept re-flagging: the in-container `0.0.0.0` bind is required for
+  port publishing, the exposure guard refuses startup with `InsecureBindError`
+  on an unauthenticated non-loopback bind, and the shipped compose file pairs
+  a loopback-only publish with a dedicated network and the explicit
+  `--insecure-off-loopback` opt-out. The Dockerfile comment now states the
+  refusal instead of understating it as a warning, and documentation-accuracy
+  regressions pin both surfaces.
+- [Secure mode](docs/secure-mode.md) documents the file-backed secret flags and
+  the burst ceilings, and its production example delivers every secret from an
+  owner-only file instead of expanding it into argv.
 
 ### Fixed
 

@@ -15,14 +15,22 @@ services:
     # Loopback-only on the host: the hub is reachable at 127.0.0.1:8876 on this
     # machine and nowhere else. To reach it from other hosts, change to "8876:8876"
     # AND set a token (uncomment the --token command below) — never expose it open.
+    #
+    # The publish flags bound HOST ingress only. Containers are a separate
+    # audience: anything attached to the hub-isolated network below reaches the
+    # hub on hub:8876 directly, regardless of this loopback publish.
     ports:
       - "127.0.0.1:8876:8876"
+    networks:
+      - hub-isolated
     volumes:
       - synapse-data:/data
     # The hub must bind 0.0.0.0 *inside* the container for the published port to
     # reach it; --insecure-off-loopback accepts that bind. It is safe here only
-    # because the publish above is loopback-only, so the hub is not reachable off
-    # this host. The moment you expose the port beyond 127.0.0.1, drop
+    # because BOTH audiences are bounded: the publish above is loopback-only
+    # (host ingress), and hub-isolated below carries no other service (container
+    # peers). The moment you expose the port beyond 127.0.0.1, or attach any
+    # container you do not fully trust to hub-isolated, drop
     # --insecure-off-loopback and require a token instead (see the commented lines).
     command:
       - hub
@@ -31,8 +39,17 @@ services:
       - --db=/data/hub.db
       - --relay-log=/data/feed.ndjson
       - --insecure-off-loopback
-      # Exposing the port beyond loopback? Replace --insecure-off-loopback with:
+      # Exposing the port beyond loopback, or sharing hub-isolated with other
+      # containers? Replace --insecure-off-loopback with:
       # - --token=${SYNAPSE_TOKEN}
+
+networks:
+  # Dedicated single-service network. Any container joined here can reach the
+  # unauthenticated hub on hub:8876 (container-to-container traffic ignores the
+  # host publish flags), so keep untrusted services off this network — or add
+  # the --token line above before sharing it.
+  hub-isolated:
+    driver: bridge
 
 volumes:
   synapse-data:

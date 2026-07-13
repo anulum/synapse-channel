@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import contextlib
 import json
+import logging
 import ssl
 import sys
 import time
@@ -37,6 +38,7 @@ from synapse_channel.core.federation_store import FederationStoreError, bundle_f
 from synapse_channel.core.federation_wire import FederationWireError, decode_federation_offer
 from synapse_channel.core.hub import InsecureBindError, SynapseHub
 from synapse_channel.core.hub_config import HubConfig, config_fingerprint
+from synapse_channel.core.hub_exposure import guard_exposure
 from synapse_channel.core.identity_binding import IdentityBindingError, load_identity_trust_bundle
 from synapse_channel.core.logging_setup import configure_logging
 from synapse_channel.core.message_auth import MessageAuthKey
@@ -46,8 +48,19 @@ from synapse_channel.core.paranoid import ParanoidModeError, apply_paranoid_hub_
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
 from synapse_channel.core.role_grants import RoleGrantError, load_role_grants
+from synapse_channel.core.secret_files import (
+    SecretFileError,
+    read_secret_file,
+    read_secret_lines,
+)
+from synapse_channel.core.secure import SecureModeError, apply_secure_hub_profile
 from synapse_channel.core.team_secure import TeamSecureModeError, apply_team_secure_hub_profile
 from synapse_channel.core.tls import HubTLSConfigError, build_server_ssl_context
+
+_PRECHECK_LOGGER = logging.getLogger(__name__ + ".exposure_precheck")
+_PRECHECK_LOGGER.addHandler(logging.NullHandler())
+_PRECHECK_LOGGER.propagate = False
+"""Silent sink for the pre-store exposure check: serve() owns the warning pass."""
 
 
 def _parse_namespace_owners(values: list[str]) -> dict[str, str]:
@@ -84,18 +97,44 @@ async def _serve_with_watch(
 
 
 def _parse_message_auth_keys(values: list[str]) -> list[MessageAuthKey]:
-    """Parse ``KEY_ID:SECRET:SENDER[,SENDER...]`` CLI values."""
+    """Parse ``KEY_ID:SECRET:SENDER[,SENDER...]`` values from argv or a key file.
+
+    The error names the two flags and the expected shape, never the value, so a
+    malformed entry can be reported without echoing the secret beside it.
+    """
+    malformed = (
+        "--message-auth-key / --message-auth-key-file entries must use "
+        "KEY_ID:SECRET:SENDER[,SENDER...]"
+    )
     keys: list[MessageAuthKey] = []
     for value in values:
         parts = value.split(":", 2)
         if len(parts) != 3:
-            raise ValueError("--message-auth-key must use KEY_ID:SECRET:SENDER[,SENDER...]")
+            raise ValueError(malformed)
         key_id, secret, sender_csv = (part.strip() for part in parts)
         senders = frozenset(sender.strip() for sender in sender_csv.split(",") if sender.strip())
         if not key_id or not secret or not senders:
-            raise ValueError("--message-auth-key must use KEY_ID:SECRET:SENDER[,SENDER...]")
+            raise ValueError(malformed)
         keys.append(MessageAuthKey(key_id=key_id, secret=secret.encode("utf-8"), senders=senders))
     return keys
+
+
+def _resolve_file_backed_secrets(args: argparse.Namespace) -> None:
+    """Fold the owner-only ``*-file`` secret companions into their argv fields.
+
+    An explicit ``--metrics-token`` wins over its file, mirroring the global
+    ``--token``/``--token-file`` precedence; ``--message-auth-key-file`` entries
+    merge after any argv keys so both sources can rotate together. Runs before
+    the hardening presets, so file-delivered material satisfies their presence
+    checks exactly as argv material does.
+    """
+    metrics_token_file = getattr(args, "metrics_token_file", None)
+    if metrics_token_file and not args.metrics_token:
+        args.metrics_token = read_secret_file(metrics_token_file, flag="--metrics-token-file")
+    key_file = getattr(args, "message_auth_key_file", None)
+    if key_file:
+        entries = read_secret_lines(key_file, flag="--message-auth-key-file")
+        args.message_auth_key = [*args.message_auth_key, *entries]
 
 
 def _cmd_hub(
@@ -115,21 +154,38 @@ def _cmd_hub(
     """
     logging_configurator(log_format=args.log_format, level=args.log_level)
     try:
-        paranoid_report = apply_paranoid_hub_profile(args)
-    except ParanoidModeError as exc:
+        _resolve_file_backed_secrets(args)
+    except SecretFileError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
-    if paranoid_report is not None:
-        for line in paranoid_report.stderr_lines():
-            print(f"synapse hub: {line}", file=sys.stderr)
+    # The secure umbrella composes team-secure and paranoid itself and emits one
+    # consolidated report; when it is on, skip the subordinate profile passes so the
+    # operator does not see duplicate team-secure and paranoid reports.
     try:
-        team_secure_report = apply_team_secure_hub_profile(args)
-    except TeamSecureModeError as exc:
+        secure_report = apply_secure_hub_profile(args)
+    except SecureModeError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
-    if team_secure_report is not None:
-        for line in team_secure_report.stderr_lines():
+    if secure_report is not None:
+        for line in secure_report.stderr_lines():
             print(f"synapse hub: {line}", file=sys.stderr)
+    else:
+        try:
+            paranoid_report = apply_paranoid_hub_profile(args)
+        except ParanoidModeError as exc:
+            print(f"synapse hub: {exc}", file=sys.stderr)
+            return 2
+        if paranoid_report is not None:
+            for line in paranoid_report.stderr_lines():
+                print(f"synapse hub: {line}", file=sys.stderr)
+        try:
+            team_secure_report = apply_team_secure_hub_profile(args)
+        except TeamSecureModeError as exc:
+            print(f"synapse hub: {exc}", file=sys.stderr)
+            return 2
+        if team_secure_report is not None:
+            for line in team_secure_report.stderr_lines():
+                print(f"synapse hub: {line}", file=sys.stderr)
     try:
         ssl_context = tls_context_factory(certfile=args.tls_certfile, keyfile=args.tls_keyfile)
     except HubTLSConfigError as exc:
@@ -138,6 +194,26 @@ def _cmd_hub(
     db_key_file = getattr(args, "db_key_file", None)
     if db_key_file and not args.db:
         print("synapse hub: --db-key-file requires --db", file=sys.stderr)
+        return 2
+    authenticator = TokenAuthenticator([args.token]) if args.token else None
+    # Fail-closed exposure precheck: an insecure non-loopback bind is refused here,
+    # BEFORE the durable event store is constructed, so a refused start never leaves
+    # a database file on disk. serve() re-runs the same guard at the bind (embedded
+    # hubs keep their own guard); warnings are deferred to that pass, so this
+    # precheck stays silent and only the refusal surfaces.
+    try:
+        guard_exposure(
+            args.host,
+            authenticator=authenticator,
+            enable_metrics=args.metrics,
+            metrics_token=args.metrics_token,
+            metrics_query_token_ok=args.metrics_query_token_ok,
+            insecure_off_loopback=args.insecure_off_loopback,
+            tls_active=ssl_context is not None,
+            logger=_PRECHECK_LOGGER,
+        )
+    except InsecureBindError as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
     try:
         journal = store_factory(args.db, key_file=db_key_file) if args.db else None
@@ -152,7 +228,6 @@ def _cmd_hub(
         if args.host_rate > 0
         else None
     )
-    authenticator = TokenAuthenticator([args.token]) if args.token else None
     try:
         message_auth_keys = _parse_message_auth_keys(args.message_auth_key)
     except ValueError as exc:

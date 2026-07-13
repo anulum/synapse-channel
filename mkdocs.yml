@@ -93,6 +93,7 @@ nav:
   - Agent trust graph: agent-trust-graph.md
   - Paranoid mode: paranoid-mode.md
   - Team-secure mode: team-secure.md
+  - Secure mode: secure-mode.md
   - At-rest encryption: at-rest-encryption.md
   - Encrypted channels: end-to-end-encrypted-channels.md
   - Private channels: private-channels.md

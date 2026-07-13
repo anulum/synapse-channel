@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 
 from synapse_channel.cli_processes_hub import _cmd_hub
@@ -62,6 +63,23 @@ from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 from synapse_channel.core.state import MAX_CLAIMS_PER_AGENT, MAX_OFFERS_PER_AGENT
 
 
+def _finite_limit(value: str) -> float:
+    """Parse a rate or burst limit as a finite, non-negative float for argparse.
+
+    ``nan`` would silently disable the limiter downstream (``nan > 0`` is false)
+    while looking configured, and ``inf`` would configure an unbounded token
+    bucket, so both are rejected at the argument boundary for every hub run —
+    not only under a hardening preset.
+    """
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a number") from exc
+    if not math.isfinite(parsed) or parsed < 0:
+        raise argparse.ArgumentTypeError(f"{value!r} must be a finite non-negative number")
+    return parsed
+
+
 def _add_logging_args(parser: argparse.ArgumentParser) -> None:
     """Add the shared ``--log-format`` / ``--log-level`` options to a daemon parser."""
     parser.add_argument(
@@ -99,21 +117,27 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     hub.add_argument(
         "--rate",
-        type=float,
+        type=_finite_limit,
         default=0.0,
         help="Per-agent sustained message rate (msgs/sec); 0 disables rate limiting.",
     )
     hub.add_argument(
-        "--burst", type=float, default=20.0, help="Per-agent burst allowance for --rate."
+        "--burst",
+        type=_finite_limit,
+        default=20.0,
+        help="Per-agent burst allowance for --rate.",
     )
     hub.add_argument(
         "--host-rate",
-        type=float,
+        type=_finite_limit,
         default=0.0,
         help="Per-host sustained frame rate (frames/sec, heartbeats included); 0 disables it.",
     )
     hub.add_argument(
-        "--host-burst", type=float, default=40.0, help="Per-host burst allowance for --host-rate."
+        "--host-burst",
+        type=_finite_limit,
+        default=40.0,
+        help="Per-host burst allowance for --host-rate.",
     )
     hub.add_argument(
         "--max-history",

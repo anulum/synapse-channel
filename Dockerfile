@@ -33,9 +33,12 @@ VOLUME ["/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD ["synapse", "health"]
 
-# Bind 0.0.0.0 so the port is reachable across the container boundary. When the
-# port is published beyond the host, require a shared secret with --token (see
-# docs/deployment.md); the hub warns when bound off-loopback without one.
+# Bind 0.0.0.0 so the port is reachable across the container boundary; an
+# in-container loopback bind would leave published ports dead. The bind is
+# fail-closed: without --token the exposure guard raises InsecureBindError and
+# refuses to start, unless --insecure-off-loopback explicitly accepts a
+# host-guarded publish (the shipped docker-compose.yml publishes loopback-only).
+# See SECURITY.md "Container image bind posture" and docs/deployment.md.
 ENTRYPOINT ["synapse"]
 CMD ["hub", "--host", "0.0.0.0", "--port", "8876", \
      "--db", "/data/hub.db", "--relay-log", "/data/feed.ndjson"]

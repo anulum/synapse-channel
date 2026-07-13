@@ -220,6 +220,8 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
     "RoleGrantError": ("synapse_channel.core.role_grants", "role_grant", ValueError),
     "SandboxManifestError": ("synapse_channel.core.sandbox_policy", "sandbox_manifest", ValueError),
     "SandboxPathError": ("synapse_channel.core.sandbox_paths", "sandbox_path", RuntimeError),
+    "SecretFileError": ("synapse_channel.core.secret_files", "secret_file", ValueError),
+    "SecureModeError": ("synapse_channel.core.secure", "secure_mode", ValueError),
     "SqlCipherKeyError": (
         "synapse_channel.core.persistence_sqlcipher",
         "sqlcipher_key",

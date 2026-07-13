@@ -55,8 +55,12 @@ token and every frame are readable on the network path) — native WSS
 | Metrics query token | loopback debug only | loopback debug only | disabled | disabled |
 | Durable log (`--db`) | optional | recommended | recommended | recommended |
 | Identity binding + role claims + private directed | — | **`--team-secure`** | **`--team-secure`** | **`--team-secure`** + `--paranoid` |
-| One-flag preset | — | `--team-secure` | `--paranoid` | `--paranoid` (+ `--team-secure`) |
+| One-flag preset | — | `--team-secure` | `--paranoid` | `--secure` (composes both) |
 
+[`synapse hub --secure`](docs/secure-mode.md) is the strict multi-seat
+production umbrella: it composes `--team-secure` and `--paranoid`, adds bounded
+per-agent, per-host, and per-host-connection flood limits, fails closed listing
+all missing material at once, and prints one consolidated report.
 [`synapse hub --team-secure`](docs/team-secure.md) is the multi-seat trust
 preset (token, identity trust bundle, role grants, private directed messages).
 `synapse hub --paranoid` composes the team-LAN / internet-exposed column into a
@@ -88,6 +92,7 @@ tests named here are the repository evidence for that boundary.
 |---|---|---|---|
 | Multi-seat trust | `hub --team-secure --identity-trust FILE --role-grants FILE` forces identity binding, role-claim grants, and private directed routing. | `tests/test_team_secure_mode_runtime.py`, `tests/test_hub_identity_binding.py`, `tests/test_hub_role_claim.py` | It does not require TLS, ACL, HMAC, or a durable log; compose `--paranoid` for an exposed hub. |
 | Strict exposed-hub profile | `hub --paranoid` requires a token, `--db`, HMAC per-message authentication, ACL enforcement, native WSS, and metrics bearer auth when metrics are enabled. | `tests/test_paranoid_policy.py`, `tests/test_paranoid_mode_runtime.py` | It does not automatically enable identity binding, at-rest encryption, private/E2E channels, or mutual-TLS client verification. |
+| Secure production umbrella | `hub --secure` composes `--team-secure` and `--paranoid`, forces both profiles' gates, and bounds per-agent (100/s), per-host (500/s), and per-host-connection (10) flood limits. Missing material fails closed in one aggregate error; a stricter positive limit is kept and a limit above a ceiling is refused. | `tests/test_secure_preset.py`, `tests/test_secure_preset_runtime.py` | It generates no credentials, rotates no keys, verifies no client certificates, and composes only the controls the subordinate profiles already own. |
 | Identity and ACL | With the `encryption` extra, default clients sign registration with a machine key and the hub persists trust-on-first-use name pins. Operator bundles use `--identity-trust --require-identity-binding`; ACLs use `--acl-policy --require-acl`. | `tests/test_hub_identity_tofu.py`, `tests/test_hub_identity_binding.py`, `tests/test_hub_acl_enforcement.py` | Core-only clients without `cryptography` remain unsigned; read-surface ACLs and full multi-tenant IAM remain out of scope. |
 | Per-message and signed-event authentication | `--message-auth-key --require-message-auth` enforces HMAC on selected mutating frames. Embedded hubs may supply an `EventSignatureTrustBundle` as the Ed25519 alternative. | `tests/test_hub_per_message_auth.py`, `tests/test_message_auth.py`, `tests/test_agent_identity_signing.py` | The packaged hub CLI does not load an Ed25519 event-trust bundle; neither profile encrypts payloads. |
 | TLS and trusted peers | `--tls-certfile --tls-keyfile` enables native WSS. The library ships mutual-TLS server contexts and certificate-pin peer bundles used by guarded multi-hub paths. | `tests/test_hub_tls.py`, `tests/test_multihub_federation.py`, `tests/test_multihub_serving.py` | The packaged hub CLI does not expose a client-CA option, so native WSS alone is server TLS, not mutual TLS. |
@@ -287,6 +292,47 @@ restarts; runtime persistence failure reports `history_unavailable` rather than 
 verified card. Verification remains advisory and no enforcement flag exists: a
 verified card does not authorize tools, replace per-message authentication, replace
 signed events, or sandbox agents.
+
+### Container image bind posture
+
+The published container image starts the hub with `--host 0.0.0.0` because a
+container port can only be published if the process binds a non-loopback
+address inside the container's network namespace; an in-container `127.0.0.1`
+bind would leave every `docker run -p` and compose publish dead. Binding all
+interfaces inside the container does not by itself expose the hub — but
+reachability has two distinct audiences, and the publish flags govern only one
+of them. **Host ingress** is decided by the publish flags (`-p`, `ports:`): a
+loopback-only publish keeps the hub unreachable from other machines.
+**Container-network peers** are the other audience: any container attached to
+the same Docker network reaches the hub on `hub:8876` directly, container port
+to container port, regardless of what the host publishes. A loopback-only
+publish therefore bounds host ingress and nothing else; the containers sharing
+the hub's network must themselves be trusted, or the hub must require a token.
+
+The bind is guarded, not trusted. On any non-loopback bind the hub runs the
+exposure guard before opening sockets or durable stores: with no authenticator
+configured it raises `InsecureBindError` and refuses to start, so a bare
+`docker run -p 8876:8876` without a token stops at startup instead of serving
+an open hub. A refused start terminates before the durable event store is
+constructed, so it leaves no database file behind. The operator opt-out is
+explicit — `--insecure-off-loopback` acknowledges the accepted risk on the
+command line itself. The shipped `docker-compose.yml` publishes the port
+loopback-only (`127.0.0.1:8876:8876`), attaches the hub to a dedicated compose
+network that carries no other service, and passes that opt-out precisely
+because both audiences are then bounded: the host-side publish keeps the hub
+unreachable from other machines, and the single-service network keeps it
+unreachable from other containers. Its comments direct operators to require a
+token the moment either boundary widens — publishing beyond loopback, or
+attaching any container they do not fully trust to the hub's network.
+
+To expose a containerised hub beyond the host, provide a shared secret
+(`--token`, delivered from a file or environment secret) and terminate TLS
+(`--tls-certfile`/`--tls-keyfile`, or a wss:// proxy); `--paranoid` makes both
+mandatory. This posture is an intentional, repeatedly reviewed design:
+external security audits of 0.98.27, 0.99.2, 0.99.3, and 0.99.4 each raised
+the in-container `0.0.0.0` default, and each closed with the same disposition —
+the fail-closed startup refusal is the control, and a container image binding
+loopback would only break port publishing without adding security.
 
 ## Out of scope / known limitations
 

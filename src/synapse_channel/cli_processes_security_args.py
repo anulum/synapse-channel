@@ -57,6 +57,17 @@ def add_hub_security_arguments(hub: argparse.ArgumentParser) -> None:
         "missing; prints recommended next hardening steps on stderr.",
     )
     hub.add_argument(
+        "--secure",
+        action="store_true",
+        help="Strict multi-seat production umbrella: compose --team-secure and "
+        "--paranoid, then bound per-agent (100/s), per-host (500/s), and per-host "
+        "connection (10) flood limits. Requires a token, --db, --identity-trust, "
+        "--role-grants, a --message-auth-key, --acl-policy, and --tls-certfile/"
+        "--tls-keyfile (plus --metrics-token when --metrics is on); fails closed "
+        "listing all missing material at once. A stricter positive limit is kept; a "
+        "limit above a preset ceiling is refused. Prints one consolidated report.",
+    )
+    hub.add_argument(
         "--token",
         default=None,
         help="Require this shared-secret token from connecting agents (off by default).",
@@ -80,6 +91,14 @@ def add_hub_security_arguments(hub: argparse.ArgumentParser) -> None:
         "an exposed endpoint does not leak metadata (off by default).",
     )
     hub.add_argument(
+        "--metrics-token-file",
+        default=None,
+        metavar="PATH",
+        help="Read the metrics bearer token from this owner-only (chmod 600) file "
+        "instead of --metrics-token; prefer it for a real secret — an argv value "
+        "is visible to anyone running `ps`. An explicit --metrics-token wins.",
+    )
+    hub.add_argument(
         "--metrics-query-token-ok",
         action=DeprecatedMetricsQueryTokenAction,
         default=False,
@@ -97,6 +116,15 @@ def add_hub_security_arguments(hub: argparse.ArgumentParser) -> None:
         metavar="KEY_ID:SECRET:SENDER[,SENDER...]",
         help="Enable a sender-bound per-message HMAC key for signed mutating frames; "
         "repeat for rotation. Off by default.",
+    )
+    hub.add_argument(
+        "--message-auth-key-file",
+        default=None,
+        metavar="PATH",
+        help="Read KEY_ID:SECRET:SENDER[,SENDER...] entries (one per line, # comments "
+        "allowed) from this owner-only (chmod 600) file; prefer it for real secrets — "
+        "an argv value is visible to anyone running `ps`. Entries merge with any "
+        "--message-auth-key values for rotation.",
     )
     hub.add_argument(
         "--require-message-auth",

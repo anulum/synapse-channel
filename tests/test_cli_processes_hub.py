@@ -54,6 +54,130 @@ def test_cmd_hub_refuses_insecure_bind(capsys: pytest.CaptureFixture[str]) -> No
     assert "Refusing to bind" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("flag", ["--rate", "--burst", "--host-rate", "--host-burst"])
+@pytest.mark.parametrize("value", ["nan", "inf", "-inf", "-1"])
+def test_hub_parser_rejects_non_finite_or_negative_limits(flag: str, value: str) -> None:
+    """Every hub run rejects unusable limits at the argument boundary.
+
+    ``nan`` silently disables the limiter downstream (``nan > 0`` is false) while
+    looking configured, and ``inf`` configures an unbounded bucket; neither may
+    survive parsing — with or without a hardening preset.
+    """
+    from synapse_channel.cli import build_parser
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["hub", flag, value])
+
+
+def test_hub_parser_accepts_ordinary_finite_limits() -> None:
+    from synapse_channel.cli import build_parser
+
+    args = build_parser().parse_args(
+        ["hub", "--rate", "25", "--burst", "10", "--host-rate", "200", "--host-burst", "50"]
+    )
+    assert (args.rate, args.burst, args.host_rate, args.host_burst) == (25.0, 10.0, 200.0, 50.0)
+
+
+def _owner_only(path: Path, content: str) -> Path:
+    path.write_text(content, encoding="utf-8")
+    path.chmod(0o600)
+    return path
+
+
+def test_cmd_hub_metrics_token_file_feeds_the_hub(tmp_path: Path) -> None:
+    """`--metrics-token-file` delivers the bearer token without argv exposure."""
+    token_file = _owner_only(tmp_path / "metrics-token", "file-bearer\n")
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    ns = _hub_ns(metrics=True, metrics_token_file=str(token_file))
+    assert cli_processes._cmd_hub(ns, runner=_close_runner, hub_factory=build_hub) == 0
+    assert captured["metrics_token"] == "file-bearer"
+
+
+def test_cmd_hub_explicit_metrics_token_wins_over_the_file(tmp_path: Path) -> None:
+    """Precedence mirrors --token/--token-file: the explicit argv value wins."""
+    token_file = _owner_only(tmp_path / "metrics-token", "file-bearer\n")
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    ns = _hub_ns(metrics=True, metrics_token="argv-bearer", metrics_token_file=str(token_file))
+    assert cli_processes._cmd_hub(ns, runner=_close_runner, hub_factory=build_hub) == 0
+    assert captured["metrics_token"] == "argv-bearer"
+
+
+def test_cmd_hub_message_auth_key_file_merges_with_argv_keys(tmp_path: Path) -> None:
+    """File entries join argv keys, so both sources can rotate together."""
+    key_file = _owner_only(
+        tmp_path / "hmac-keys", "# rotation 2026-07-14\nfilekey:filesecret:BETA\n"
+    )
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    ns = _hub_ns(
+        message_auth_key=["argvkey:argvsecret:ALPHA"],
+        message_auth_key_file=str(key_file),
+    )
+    assert cli_processes._cmd_hub(ns, runner=_close_runner, hub_factory=build_hub) == 0
+    key_ids = [key.key_id for key in captured["per_message_auth_keys"]]
+    assert key_ids == ["argvkey", "filekey"]
+
+
+def test_cmd_hub_refuses_a_group_readable_secret_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A lax secret file fails closed by flag and path, never by content."""
+    token_file = tmp_path / "metrics-token"
+    token_file.write_text("leakable-bearer\n", encoding="utf-8")
+    token_file.chmod(0o644)
+
+    ns = _hub_ns(metrics=True, metrics_token_file=str(token_file))
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
+    err = capsys.readouterr().err
+    assert "--metrics-token-file" in err
+    assert "chmod 600" in err
+    assert "leakable-bearer" not in err
+
+
+def test_cmd_hub_insecure_bind_refusal_creates_no_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refused exposed bind fails before the durable store is constructed.
+
+    SECURITY.md promises the exposure guard runs before durable stores open and that
+    a refused start leaves no database file behind; this drives the real command with
+    the real ``EventStore`` (no injected factory) and pins exactly that.
+    """
+    db_path = tmp_path / "refused-hub.db"
+    assert cli_processes._cmd_hub(_hub_ns(host="0.0.0.0", db=str(db_path))) == 2
+    assert "Refusing to bind" in capsys.readouterr().err
+    assert not db_path.exists()
+
+
+def test_cmd_hub_insecure_bind_precheck_stays_silent_on_the_opt_out(
+    tmp_path: Path,
+) -> None:
+    """`--insecure-off-loopback` still starts, and the store is then constructed.
+
+    The precheck must not refuse (or double-log) the documented opt-out path: the
+    warning pass belongs to ``serve()``, so the precheck passes silently and the
+    durable store opens exactly as before.
+    """
+    db_path = tmp_path / "opted-in-hub.db"
+    ns = _hub_ns(host="0.0.0.0", db=str(db_path), insecure_off_loopback=True)
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 0
+    assert db_path.exists()
+
+
 def test_cmd_hub_threads_insecure_off_loopback() -> None:
     built: dict[str, Any] = {}
 
@@ -432,7 +556,10 @@ def test_cmd_hub_rejects_malformed_message_auth_key(capsys: pytest.CaptureFixtur
         == 2
     )
 
-    assert "--message-auth-key must use KEY_ID:SECRET:SENDER[,SENDER...]" in capsys.readouterr().err
+    assert (
+        "--message-auth-key / --message-auth-key-file entries must use "
+        "KEY_ID:SECRET:SENDER[,SENDER...]" in capsys.readouterr().err
+    )
 
 
 def test_cmd_hub_threads_acl_policy(tmp_path: Path) -> None:

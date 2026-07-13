@@ -68,6 +68,33 @@ def test_compose_off_loopback_bind_is_published_on_loopback_only() -> None:
         )
 
 
+def test_compose_off_loopback_hub_sits_on_a_dedicated_single_service_network() -> None:
+    """The container-peer audience must be bounded, not only host ingress.
+
+    Containers attached to the hub's network reach ``hub:8876`` container-to-container,
+    regardless of the host publish flags, so an ``--insecure-off-loopback`` hub must sit
+    on an explicitly declared network that no other compose service shares — and the
+    file must explain that boundary where the next operator will edit it.
+    """
+    document = _load(COMPOSE)
+    services = document["services"]
+    if "--insecure-off-loopback" not in _hub_command():
+        return
+    hub_networks = list(services["hub"].get("networks", []))
+    assert hub_networks, "an off-loopback hub must be attached to an explicit named network"
+    declared = document.get("networks") or {}
+    for network in hub_networks:
+        assert network in declared, f"hub network {network!r} must be declared in the file"
+    for name, service in services.items():
+        if name == "hub":
+            continue
+        shared = set(service.get("networks", [])) & set(hub_networks)
+        assert not shared, f"service {name!r} shares the hub network {sorted(shared)} untokened"
+    comments = COMPOSE.read_text(encoding="utf-8")
+    assert "regardless of" in comments, "the container-peer reachability comment must stay"
+    assert "keep untrusted services off this network" in comments
+
+
 def test_docker_workflow_smoke_tests_the_compose_file() -> None:
     """CI must exercise the compose file, not only build the image.
 
