@@ -34,7 +34,7 @@ def _messages() -> list[tuple[str, dict[str, Any]]]:
                 "method": "initialize",
                 "params": {
                     "protocolVersion": 1,
-                    "clientCapabilities": {"_meta": {"terminal-auth": True}},
+                    "clientCapabilities": {},
                     "clientInfo": {"name": "editor-client", "version": "1.0"},
                 },
             },
@@ -117,6 +117,29 @@ def test_trace_contract_accepts_minimised_real_lifecycle(tmp_path: Path) -> None
     assert "secret-token-value" not in raw
     assert stat.S_IMODE(trace.stat().st_mode) == 0o600
     assert '"mcp_capabilities":{"http":true,"sse":true}' in raw
+    assert '"terminal_auth_capable":false' in raw
+
+
+@pytest.mark.parametrize(
+    "client_capabilities",
+    [
+        {"auth": {"terminal": True}},
+        {"_meta": {"terminal-auth": True}},
+    ],
+)
+def test_trace_writer_normalises_terminal_auth_capability(
+    tmp_path: Path,
+    client_capabilities: dict[str, Any],
+) -> None:
+    trace = tmp_path / "trace.jsonl"
+
+    def mutate(messages: list[tuple[str, dict[str, Any]]]) -> None:
+        messages[0][1]["params"]["clientCapabilities"] = client_capabilities
+
+    _write_trace(trace, mutate=mutate)
+    initialize = json.loads(trace.read_text(encoding="utf-8").splitlines()[0])
+
+    assert initialize["terminal_auth_capable"] is True
 
 
 @pytest.mark.parametrize(
@@ -211,16 +234,26 @@ def test_trace_contract_refuses_wrong_agent_version(tmp_path: Path) -> None:
         _assert_trace(trace)
 
 
-def test_trace_contract_refuses_missing_mcp_or_terminal_auth(tmp_path: Path) -> None:
+def test_trace_contract_refuses_missing_mcp_capabilities(tmp_path: Path) -> None:
     trace = tmp_path / "trace.jsonl"
 
     def mutate(messages: list[tuple[str, dict[str, Any]]]) -> None:
         result = messages[1][1]["result"]
         result["agentCapabilities"] = {"mcpCapabilities": {"http": True, "sse": False}}
-        result["authMethods"] = []
 
     _write_trace(trace, mutate=mutate)
     with pytest.raises(AssertionError, match="MCP capabilities"):
+        _assert_trace(trace)
+
+
+def test_trace_contract_refuses_missing_opencode_terminal_auth(tmp_path: Path) -> None:
+    trace = tmp_path / "trace.jsonl"
+
+    def mutate(messages: list[tuple[str, dict[str, Any]]]) -> None:
+        messages[1][1]["result"]["authMethods"] = []
+
+    _write_trace(trace, mutate=mutate)
+    with pytest.raises(AssertionError, match="terminal authentication"):
         _assert_trace(trace)
 
 

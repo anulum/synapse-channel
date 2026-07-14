@@ -323,9 +323,11 @@ the exact OpenCode binary and a local deterministic provider:
 
 Release archives are SHA-256 verified; editor plugins are checked out at exact
 commits or verified by archive hash and declared version. Each editor must
-identify itself during ACP initialization, advertise terminal authentication,
-create exactly one session, deliver exactly one acceptance prompt, receive
-`end_turn`, and reach the deterministic provider. The same turn must prove the
+identify itself during ACP initialization, create exactly one session, deliver
+exactly one acceptance prompt, receive `end_turn`, and reach the deterministic
+provider. OpenCode must advertise its terminal-auth method; the proxy records a
+client terminal-auth opt-in when present but does not require that optional
+capability for a non-authentication prompt turn. The same turn must prove the
 full governance chain: denied write before ownership, native OpenCode MCP
 discovery of `synapse_git_claim`, exact Git/path claim, allowed claimed write,
 receipt-bearing release, and denied write after release. The durable hub journal

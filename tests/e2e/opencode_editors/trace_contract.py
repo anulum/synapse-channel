@@ -87,8 +87,6 @@ def assert_editor_trace(
     initialize = requests["initialize"]
     if initialize.get("protocol_version") != 1:
         raise AssertionError("editor did not request ACP protocol version 1")
-    if initialize.get("terminal_auth_capable") is not True:
-        raise AssertionError("editor did not advertise terminal authentication capability")
     client_info = initialize.get("client_info")
     client_name = client_info.get("name") if isinstance(client_info, Mapping) else None
     if client_name not in set(expected_client_names):

@@ -45,6 +45,12 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- The real-editor OpenCode E2E gate no longer rejects ACP clients that omit the
+  optional client-side terminal-auth capability during a non-authentication
+  prompt turn. It still fails closed unless OpenCode advertises its terminal-auth
+  method, and the evidence proxy recognises both the standard `auth.terminal`
+  form and the pinned legacy metadata form when an editor does opt in.
+
 - Auto-release git hooks are now worktree-aware. Git worktrees share one hooks
   directory, so the single `post-commit`/`post-merge` hook that `synapse git-hook`
   and `synapse git-init` install fired in every linked worktree under the identity

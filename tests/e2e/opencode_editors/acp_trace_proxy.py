@@ -129,10 +129,11 @@ class TraceWriter:
                     }
                 client_capabilities = params.get("clientCapabilities")
                 if isinstance(client_capabilities, Mapping):
+                    auth = client_capabilities.get("auth")
                     meta = client_capabilities.get("_meta")
                     event["terminal_auth_capable"] = (
-                        isinstance(meta, Mapping) and meta.get("terminal-auth") is True
-                    )
+                        isinstance(auth, Mapping) and auth.get("terminal") is True
+                    ) or (isinstance(meta, Mapping) and meta.get("terminal-auth") is True)
             elif method == "session/prompt":
                 length, digest = _prompt_fingerprint(params)
                 event["prompt_bytes"] = length
