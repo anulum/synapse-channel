@@ -58,7 +58,7 @@ def _window_name(window: str) -> str | None:
     completed = _xdotool("getwindowname", window)
     if completed.returncode != 0:
         return None
-    return completed.stdout.strip() or None
+    return completed.stdout.rstrip("\r\n")
 
 
 def _window_parentage(tree: str) -> tuple[str | None, str | None]:
@@ -89,6 +89,36 @@ def _window_is_root_child(window: str) -> bool:
         return False
     root, parent = _window_parentage(completed.stdout)
     return root is not None and parent == root
+
+
+def _xprop_window_id(output: str) -> int | None:
+    """Parse one X11 window id from an ``xprop`` property result."""
+    marker = "window id #"
+    for raw_line in output.splitlines():
+        if marker not in raw_line:
+            continue
+        fields = raw_line.split(marker, 1)[1].split()
+        if not fields:
+            return None
+        try:
+            return int(fields[0], 0)
+        except ValueError:
+            return None
+    return None
+
+
+def _window_transient_for(window: str) -> int | None:
+    """Return the XID that owns one transient top-level window."""
+    completed = subprocess.run(  # nosec B603
+        ["xprop", "-id", window, "WM_TRANSIENT_FOR"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    if completed.returncode != 0:
+        return None
+    return _xprop_window_id(completed.stdout)
 
 
 def _find_dialog_window(deadline: float, title: str) -> str:
@@ -125,9 +155,8 @@ def _find_project_window(deadline: float) -> str:
     raise RuntimeError("IntelliJ IDEA did not expose a visible project window")
 
 
-def _click(window: str, title: str, x: int, y: int, action: str) -> None:
-    """Click one deterministic point in an exact pinned agreement page."""
-    _require_agreement_window(window, title)
+def _pointer_click(window: str, x: int, y: int, action: str) -> None:
+    """Click one deterministic point after its caller validates the window."""
     _checked_xdotool(
         f"move to {action}",
         "mousemove",
@@ -160,7 +189,49 @@ def _complete_first_run_agreements(deadline: float) -> None:
     # semantic title and root-parent invariant are both mandatory.
     title = "Data Sharing"
     window = _find_dialog_window(deadline, title)
-    _click(window, title, 326, 432, "decline JetBrains usage-statistics sharing")
+    _require_agreement_window(window, title)
+    _pointer_click(window, 326, 432, "decline JetBrains usage-statistics sharing")
+
+
+def _is_islands_popup(window: str, project: str) -> bool:
+    """Match only the pinned onboarding transient owned by the project frame."""
+    title = _window_name(window)
+    try:
+        project_id = int(project)
+    except ValueError:
+        return False
+    return (
+        title is not None
+        and not title.strip()
+        and _window_geometry(window) == (386, 486)
+        and _window_is_root_child(window)
+        and _window_transient_for(window) == project_id
+    )
+
+
+def _find_islands_popup(deadline: float, project: str) -> str:
+    """Wait for the exact late first-run onboarding transient."""
+    while time.monotonic() < deadline:
+        result = _xdotool("search", "--onlyvisible", "--class", "jetbrains-.*")
+        if result.returncode == 0:
+            for window in reversed(result.stdout.splitlines()):
+                if _is_islands_popup(window, project):
+                    return window
+        time.sleep(0.25)
+    raise RuntimeError("IntelliJ IDEA did not expose the pinned Islands onboarding popup")
+
+
+def _skip_islands_onboarding(deadline: float, project: str) -> None:
+    """Dismiss the pinned onboarding transient and prove it disappeared."""
+    popup = _find_islands_popup(deadline, project)
+    if not _is_islands_popup(popup, project):
+        raise RuntimeError("refusing input outside the pinned Islands onboarding popup")
+    _pointer_click(popup, 191, 444, "skip the JetBrains Islands quick tour")
+    while time.monotonic() < deadline:
+        if _window_geometry(popup) is None:
+            return
+        time.sleep(0.25)
+    raise RuntimeError("JetBrains Islands onboarding popup remained after Skip")
 
 
 def _trace_has(trace: Path, marker: str) -> bool:
@@ -277,6 +348,8 @@ def main() -> int:
         try:
             deadline = time.monotonic() + _TIMEOUT_SECONDS
             _complete_first_run_agreements(deadline)
+            window = _find_project_window(deadline)
+            _skip_islands_onboarding(deadline, window)
             window = _find_project_window(deadline)
             # xvfb-run intentionally has no EWMH window manager.  Every action
             # targets the discovered X11 window directly, so activation is not

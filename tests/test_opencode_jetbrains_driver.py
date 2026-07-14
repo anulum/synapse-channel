@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from e2e.opencode_editors.jetbrains_client import _window_parentage
+from e2e.opencode_editors.jetbrains_client import _window_parentage, _xprop_window_id
 
 
 def test_xwininfo_parentage_distinguishes_dialog_from_content_child() -> None:
@@ -31,3 +31,11 @@ def test_xwininfo_parentage_distinguishes_dialog_from_content_child() -> None:
 def test_xwininfo_parentage_fails_closed_on_missing_fields() -> None:
     assert _window_parentage("") == (None, None)
     assert _window_parentage("Root window id:") == (None, None)
+
+
+def test_xprop_transient_parent_parser_accepts_only_a_window_id() -> None:
+    result = "WM_TRANSIENT_FOR(WINDOW): window id # 0x40006e\n"
+
+    assert _xprop_window_id(result) == 0x40006E
+    assert _xprop_window_id("WM_TRANSIENT_FOR:  not found.\n") is None
+    assert _xprop_window_id("WM_TRANSIENT_FOR(WINDOW): window id # invalid\n") is None

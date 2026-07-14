@@ -373,7 +373,10 @@ archives, verifies AI Assistant's required Full Line dependency, completes the
 real pinned first-run data-sharing UI, and explicitly declines telemetry. Its
 driver requires the exact top-level `Data Sharing` title, fixed dialog geometry,
 and X11 root parent before any pointer input, so the nested `Content window`
-cannot receive an accidental click. The
+cannot receive an accidental click. It then binds the late Islands onboarding
+popup to its exact geometry and `WM_TRANSIENT_FOR` project owner, selects the
+verified `Skip` action, and proves that transient disappeared before sending
+ACP shortcuts. The
 Zed lane opts into its documented software-rendered CI mode and completes the
 real isolated-project trust prompt. Each editor must
 identify itself during ACP initialization, create exactly one session, deliver
