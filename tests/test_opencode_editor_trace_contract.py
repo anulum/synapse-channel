@@ -20,6 +20,7 @@ import pytest
 from e2e.opencode_editors.acp_trace_proxy import (
     TraceWriter,
     _forward_client_line,
+    _lifecycle_environment,
     _new_trace_writer,
 )
 from e2e.opencode_editors.trace_contract import assert_editor_trace
@@ -324,6 +325,36 @@ def test_proxy_refuses_more_than_bounded_lifecycle_segments(tmp_path: Path) -> N
     finally:
         for writer in writers:
             writer.close()
+
+
+def test_proxy_isolates_each_lifecycle_runtime(tmp_path: Path) -> None:
+    trace = tmp_path / "trace.jsonl"
+    first = _new_trace_writer(trace)
+    second = _new_trace_writer(trace)
+    inherited = {"HOME": "/shared", "OPENCODE_CONFIG_CONTENT": '{"model":"test"}'}
+    try:
+        first_environment = _lifecycle_environment(first.path, inherited)
+        second_environment = _lifecycle_environment(second.path, inherited)
+    finally:
+        first.close()
+        second.close()
+
+    assert first_environment["OPENCODE_CONFIG_CONTENT"] == '{"model":"test"}'
+    assert second_environment["OPENCODE_CONFIG_CONTENT"] == '{"model":"test"}'
+    isolated_keys = (
+        "HOME",
+        "OPENCODE_TEST_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_STATE_HOME",
+        "XDG_CACHE_HOME",
+    )
+    for key in isolated_keys:
+        first_path = Path(first_environment[key])
+        second_path = Path(second_environment[key])
+        assert first_path != second_path
+        assert stat.S_IMODE(first_path.stat().st_mode) == 0o700
+        assert stat.S_IMODE(second_path.stat().st_mode) == 0o700
 
 
 def test_trace_contract_accepts_one_prompt_across_lifecycle_segments(tmp_path: Path) -> None:

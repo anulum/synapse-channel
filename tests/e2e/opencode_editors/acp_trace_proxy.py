@@ -152,6 +152,7 @@ class TraceWriter:
         if hasattr(os, "O_NOFOLLOW"):
             flags |= os.O_NOFOLLOW
         descriptor = os.open(path, flags, 0o600)
+        self.path = path
         self._stream = os.fdopen(descriptor, "w", encoding="utf-8")
         self._lock = threading.Lock()
         self._pending: dict[tuple[str, int | str], str] = {}
@@ -300,6 +301,41 @@ def _new_trace_writer(path: Path) -> TraceWriter:
     raise RuntimeError(f"ACP trace exceeded {_MAX_TRACE_SEGMENTS} lifecycle segments")
 
 
+def _private_directory(path: Path) -> Path:
+    """Create one exclusive private directory and verify its ownership and mode."""
+    path.mkdir(mode=0o700)
+    metadata = path.lstat()
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or metadata.st_uid != os.getuid()
+        or stat.S_IMODE(metadata.st_mode) != 0o700
+    ):
+        raise OSError(f"ACP lifecycle directory is not private and owned: {path}")
+    return path
+
+
+def _lifecycle_environment(trace_path: Path, environment: Mapping[str, str]) -> dict[str, str]:
+    """Give one concurrent OpenCode lifecycle an exclusive XDG and home runtime."""
+    runtime = _private_directory(Path(f"{trace_path}.runtime"))
+    home = _private_directory(runtime / "home")
+    config = _private_directory(runtime / "config")
+    data = _private_directory(runtime / "data")
+    state = _private_directory(runtime / "state")
+    cache = _private_directory(runtime / "cache")
+    child = dict(environment)
+    child.update(
+        {
+            "HOME": str(home),
+            "OPENCODE_TEST_HOME": str(home),
+            "XDG_CONFIG_HOME": str(config),
+            "XDG_DATA_HOME": str(data),
+            "XDG_STATE_HOME": str(state),
+            "XDG_CACHE_HOME": str(cache),
+        }
+    )
+    return child
+
+
 def _relay(
     source: BinaryIO,
     destination: BinaryIO,
@@ -354,10 +390,12 @@ def main() -> int:
     args.trace.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 
     trace = _new_trace_writer(args.trace)
+    child_environment = _lifecycle_environment(trace.path, os.environ)
     failures: queue.SimpleQueue[str] = queue.SimpleQueue()
     process = subprocess.Popen(  # nosec B603
         [str(args.opencode_bin), "acp", "--cwd", str(args.cwd)],
         cwd=args.cwd,
+        env=child_environment,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
