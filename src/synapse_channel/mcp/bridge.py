@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +34,7 @@ from synapse_channel.core.semantic_routing import (
     recommend_agents_for_task,
     recommendation_to_json,
 )
-from synapse_channel.mcp.git_claim import McpGitClaimError, resolve_mcp_git_claim_scope
+from synapse_channel.mcp.claim_actions import McpClaimActions
 from synapse_channel.mcp.inbox import DEFAULT_MCP_INBOX_LIMIT, McpFeedInbox
 from synapse_channel.mcp.resource_views import (
     agent_resource_to_json,
@@ -119,6 +119,7 @@ class SynapseHubBridge:
             token=token,
             roles=role_names,
         )
+        self.claim_actions = McpClaimActions(self.name, self.agent, self._await_reply)
 
     async def on_message(self, data: dict[str, Any]) -> None:
         """Resolve the first pending request whose matcher accepts ``data``.
@@ -168,30 +169,8 @@ class SynapseHubBridge:
                 self._waiters.remove(waiter)
 
     async def claim(self, task_id: str, paths: list[str] | None = None) -> str:
-        """Claim a task lease, optionally scoped to ``paths``, and report the outcome.
-
-        Parameters
-        ----------
-        task_id : str
-            Task identifier to lease.
-        paths : list[str] or None, optional
-            File/directory paths the claim intends to touch; empty claims the
-            whole worktree.
-
-        Returns
-        -------
-        str
-            A human-readable grant, denial, or no-response line.
-        """
-        scope = list(paths or [])
-        where = ", ".join(scope) if scope else "the whole worktree"
-        return await self._claim(
-            task_id,
-            paths=scope,
-            worktree="",
-            git=None,
-            where=where,
-        )
+        """Claim a task lease, optionally scoped to ordinary paths."""
+        return await self.claim_actions.claim(task_id, paths)
 
     async def git_claim(
         self,
@@ -202,81 +181,14 @@ class SynapseHubBridge:
         auto_release_on: str = "manual",
         whole_worktree: bool = False,
     ) -> str:
-        """Claim paths in the MCP process's current Git worktree.
-
-        Parameters
-        ----------
-        task_id : str
-            Task identifier to lease.
-        paths : Sequence[str] or None, optional
-            Bounded repository-relative paths. Whole-worktree claims require the
-            explicit ``whole_worktree`` flag.
-        base : str, optional
-            Intended integration branch. Defaults to ``main``.
-        auto_release_on : str, optional
-            Client-side release trigger. Defaults to the fail-safe ``manual``.
-        whole_worktree : bool, optional
-            Explicitly request the entire worktree. Defaults to ``False``.
-
-        Returns
-        -------
-        str
-            A human-readable grant, denial, or local resolution failure.
-        """
-        try:
-            scope = resolve_mcp_git_claim_scope(
-                paths,
-                base=base,
-                auto_release_on=auto_release_on,
-                whole_worktree=whole_worktree,
-            )
-        except McpGitClaimError as exc:
-            return f"git claim refused: {exc}"
-        where = (
-            f"{', '.join(scope.paths) if scope.paths else 'the whole worktree'} "
-            f"on branch {scope.git['branch']}"
-        )
-        return await self._claim(
+        """Claim bounded paths in the MCP process's current Git worktree."""
+        return await self.claim_actions.git_claim(
             task_id,
-            paths=list(scope.paths),
-            worktree=scope.worktree,
-            git=scope.git,
-            where=where,
+            paths,
+            base=base,
+            auto_release_on=auto_release_on,
+            whole_worktree=whole_worktree,
         )
-
-    async def _claim(
-        self,
-        task_id: str,
-        *,
-        paths: list[str],
-        worktree: str,
-        git: dict[str, str] | None,
-        where: str,
-    ) -> str:
-        """Send one plain or Git-scoped claim and correlate its reply."""
-
-        def match(data: dict[str, Any]) -> bool:
-            if data.get("task_id") != task_id:
-                return False
-            kind = data.get("type")
-            if kind == MessageType.CLAIM_GRANTED:
-                return data.get("owner") == self.name
-            return kind == MessageType.CLAIM_DENIED
-
-        reply = await self._await_reply(
-            match,
-            lambda: self.agent.claim(
-                task_id,
-                worktree=worktree,
-                paths=paths,
-                git=git,
-            ),
-        )
-        if reply is None:
-            return f"claim '{task_id}': no response from the hub"
-        if reply.get("type") == MessageType.CLAIM_GRANTED:
-            return f"claim granted: '{task_id}' ({where})"
-        return f"claim denied: '{task_id}' — {reply.get('payload') or 'held by another agent'}"
 
     async def release(
         self,
@@ -286,48 +198,13 @@ class SynapseHubBridge:
         changed_files: Sequence[str] = (),
         confidence: str = "",
     ) -> str:
-        """Release a held task lease and report the outcome.
-
-        Parameters
-        ----------
-        task_id : str
-            Identifier of the lease to release.
-
-        Returns
-        -------
-        str
-            A human-readable release, denial, or no-response line.
-        """
-
-        def match(data: dict[str, Any]) -> bool:
-            return data.get("task_id") == task_id and data.get("type") in {
-                MessageType.RELEASE_GRANTED,
-                MessageType.RELEASE_DENIED,
-            }
-
-        reply = await self._await_reply(
-            match,
-            lambda: self.agent.release(
-                task_id,
-                evidence=list(evidence),
-                changed_files=list(changed_files),
-                confidence=confidence,
-            ),
+        """Release a held task lease with optional receipt evidence."""
+        return await self.claim_actions.release(
+            task_id,
+            evidence=evidence,
+            changed_files=changed_files,
+            confidence=confidence,
         )
-        if reply is None:
-            return f"release '{task_id}': no response from the hub"
-        if reply.get("type") == MessageType.RELEASE_GRANTED:
-            receipt = reply.get("receipt")
-            if not isinstance(receipt, Mapping):
-                return f"released '{task_id}', but the hub returned no valid receipt"
-            if (
-                receipt.get("task_id") != task_id
-                or receipt.get("owner") != self.name
-                or receipt.get("released") is not True
-            ):
-                return f"released '{task_id}', but the hub returned a mismatched receipt"
-            return f"released '{task_id}' with receipt owner '{self.name}'"
-        return f"release denied: '{task_id}' — {reply.get('payload') or 'not the owner'}"
 
     async def send(self, target: str, message: str) -> str:
         """Send one chat message to an agent or the room (fire-and-forget).

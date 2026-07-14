@@ -12,6 +12,7 @@ import asyncio
 from typing import Any
 
 import synapse_channel.mcp.bridge as bridge_module
+import synapse_channel.mcp.claim_actions as claim_actions_module
 import synapse_channel.mcp.registration as registration_module
 import synapse_channel.mcp.server as compatibility_module
 import synapse_channel.mcp.stdio as stdio_module
@@ -62,6 +63,9 @@ def test_server_reexports_refactored_mcp_symbols() -> None:
     assert compatibility_module.MCP_EXTRA_HINT is registration_module.MCP_EXTRA_HINT
 
     assert compatibility_module.serve_stdio is stdio_module.serve_stdio
+
+    bridge = bridge_module.SynapseHubBridge(request_timeout=0.05)
+    assert isinstance(bridge.claim_actions, claim_actions_module.McpClaimActions)
 
 
 async def test_build_mcp_server_keeps_tool_and_resource_contract() -> None:
