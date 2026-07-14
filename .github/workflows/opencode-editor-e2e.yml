@@ -23,6 +23,7 @@ on:
       - "tests/fixtures/opencode/**"
       - "tests/test_cli_e2e_opencode_editors.py"
       - "tests/test_opencode_editor_trace_contract.py"
+      - "tests/test_opencode_jetbrains_driver.py"
       - "docs/opencode.md"
       - "docs/mcp.md"
   pull_request:
@@ -40,6 +41,7 @@ on:
       - "tests/fixtures/opencode/**"
       - "tests/test_cli_e2e_opencode_editors.py"
       - "tests/test_opencode_editor_trace_contract.py"
+      - "tests/test_opencode_jetbrains_driver.py"
       - "docs/opencode.md"
       - "docs/mcp.md"
   workflow_dispatch:
@@ -193,6 +195,12 @@ jobs:
             jetbrains)
               sudo apt-get update
               sudo apt-get install --no-install-recommends --yes \
+                imagemagick libasound2t64 libfreetype6 libxi6 libxrender1 \
+                libxtst6 libxkbcommon-x11-0 wmctrl x11-utils xdotool xvfb
+              for executable in import wmctrl xdotool xprop xwininfo xvfb-run; do
+                command -v "$executable"
+              done
+              dpkg-query --show --showformat='${Package}=${Version}\n' \
                 imagemagick libasound2t64 libfreetype6 libxi6 libxrender1 \
                 libxtst6 libxkbcommon-x11-0 wmctrl x11-utils xdotool xvfb
               archive="$RUNNER_TEMP/idea-2026.1.4.tar.gz"

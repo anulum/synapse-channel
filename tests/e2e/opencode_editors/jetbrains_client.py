@@ -265,7 +265,9 @@ def _write_acp_config(home: Path, proxy_argv: list[str]) -> None:
             }
         },
     }
-    (config_dir / "acp.json").write_text(json.dumps(config) + "\n", encoding="utf-8")
+    config_path = config_dir / "acp.json"
+    config_path.write_text(json.dumps(config) + "\n", encoding="utf-8")
+    config_path.chmod(0o600)
 
 
 def _write_keymap(config_root: Path) -> None:
@@ -302,6 +304,46 @@ def _screenshot(path: Path) -> None:
     )
 
 
+def _idea_command(
+    binary: Path,
+    *,
+    home: Path,
+    config_root: Path,
+    system_root: Path,
+    plugins: Path,
+    log_root: Path,
+    project: Path,
+) -> list[str]:
+    """Build the pinned IDEA command with an isolated JVM home."""
+    return [
+        str(binary),
+        f"-Duser.home={home}",
+        f"-Didea.config.path={config_root}",
+        f"-Didea.system.path={system_root}",
+        f"-Didea.plugins.path={plugins}",
+        f"-Didea.log.path={log_root}",
+        "-Didea.trust.all.projects=true",
+        "-Dide.no.platform.update=true",
+        "-Dide.browser.jcef.sandbox.enable=false",
+        str(project),
+    ]
+
+
+def _wait_for_local_agent(log_root: Path, deadline: float, process: subprocess.Popen[str]) -> None:
+    """Prove IDEA loaded the sole isolated ACP agent before UI input."""
+    idea_log = log_root / "idea.log"
+    marker = "Local ACP agents reloaded: 1 active"
+    while time.monotonic() < deadline:
+        if idea_log.is_file() and marker in idea_log.read_text(encoding="utf-8", errors="replace"):
+            return
+        if process.poll() is not None:
+            raise RuntimeError(
+                f"IntelliJ IDEA exited before loading the local ACP agent: {process.returncode}"
+            )
+        time.sleep(0.25)
+    raise RuntimeError("IntelliJ IDEA did not load the isolated local ACP agent")
+
+
 def main() -> int:
     binary = Path(_required_env("SYNAPSE_JETBRAINS_BIN"))
     plugins = Path(_required_env("SYNAPSE_JETBRAINS_PLUGINS"))
@@ -325,17 +367,15 @@ def main() -> int:
 
     output = artifacts / "intellij-process.log"
     screenshot = artifacts / "intellij.png"
-    command = [
-        str(binary),
-        f"-Didea.config.path={config_root}",
-        f"-Didea.system.path={system_root}",
-        f"-Didea.plugins.path={plugins}",
-        f"-Didea.log.path={log_root}",
-        "-Didea.trust.all.projects=true",
-        "-Dide.no.platform.update=true",
-        "-Dide.browser.jcef.sandbox.enable=false",
-        str(project),
-    ]
+    command = _idea_command(
+        binary,
+        home=home,
+        config_root=config_root,
+        system_root=system_root,
+        plugins=plugins,
+        log_root=log_root,
+        project=project,
+    )
     with output.open("w", encoding="utf-8") as log:
         process = subprocess.Popen(  # nosec B603
             command,
@@ -351,6 +391,7 @@ def main() -> int:
             window = _find_project_window(deadline)
             _skip_islands_onboarding(deadline, window)
             window = _find_project_window(deadline)
+            _wait_for_local_agent(log_root, deadline, process)
             # xvfb-run intentionally has no EWMH window manager.  Every action
             # targets the discovered X11 window directly, so activation is not
             # required and would fail on the headless runner.

@@ -9,7 +9,14 @@
 
 from __future__ import annotations
 
-from e2e.opencode_editors.jetbrains_client import _window_parentage, _xprop_window_id
+from pathlib import Path
+
+from e2e.opencode_editors.jetbrains_client import (
+    _idea_command,
+    _window_parentage,
+    _write_acp_config,
+    _xprop_window_id,
+)
 
 
 def test_xwininfo_parentage_distinguishes_dialog_from_content_child() -> None:
@@ -39,3 +46,33 @@ def test_xprop_transient_parent_parser_accepts_only_a_window_id() -> None:
     assert _xprop_window_id(result) == 0x40006E
     assert _xprop_window_id("WM_TRANSIENT_FOR:  not found.\n") is None
     assert _xprop_window_id("WM_TRANSIENT_FOR(WINDOW): window id # invalid\n") is None
+
+
+def test_idea_command_binds_jvm_home_to_the_isolated_profile(tmp_path: Path) -> None:
+    command = _idea_command(
+        tmp_path / "idea.sh",
+        home=tmp_path / "home",
+        config_root=tmp_path / "config",
+        system_root=tmp_path / "system",
+        plugins=tmp_path / "plugins",
+        log_root=tmp_path / "log",
+        project=tmp_path / "project",
+    )
+
+    assert command[1] == f"-Duser.home={tmp_path / 'home'}"
+    assert command[-1] == str(tmp_path / "project")
+
+
+def test_acp_config_is_private_and_contains_only_the_selected_agent(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+
+    _write_acp_config(home, ["/opt/opencode", "acp"])
+
+    config = home / ".jetbrains" / "acp.json"
+    assert config.stat().st_mode & 0o777 == 0o600
+    assert config.read_text(encoding="utf-8") == (
+        '{"default_mcp_settings": {"use_idea_mcp": false, "use_custom_mcp": false}, '
+        '"agent_servers": {"SYNAPSE OpenCode E2E": {"command": "/opt/opencode", '
+        '"args": ["acp"], "env": {}}}}\n'
+    )

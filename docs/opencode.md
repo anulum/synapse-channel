@@ -376,7 +376,9 @@ and X11 root parent before any pointer input, so the nested `Content window`
 cannot receive an accidental click. It then binds the late Islands onboarding
 popup to its exact geometry and `WM_TRANSIENT_FOR` project owner, selects the
 verified `Skip` action, and proves that transient disappeared before sending
-ACP shortcuts. The
+ACP shortcuts. IDEA's JVM home is bound to the same isolated profile that owns
+the private `acp.json`; the driver waits for exactly one active local ACP agent
+before opening the AI Assistant UI. The
 Zed lane opts into its documented software-rendered CI mode and completes the
 real isolated-project trust prompt. Each editor must
 identify itself during ACP initialization, create exactly one session, deliver
