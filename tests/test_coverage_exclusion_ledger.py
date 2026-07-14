@@ -99,6 +99,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_dashboard_feeds_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_hub_sqlcipher_e2e.py": (1, "optional-dep-guard"),
     "tests/test_multihub_mcp_sqlcipher.py": (1, "optional-dep-guard"),
+    "tests/test_opencode_compatibility_smoke.py": (2, "operator-smoke"),
     "tests/test_operator_sqlcipher_readers.py": (1, "optional-dep-guard"),
     "tests/test_packaging_extras.py": (1, "optional-dep-guard"),
     "tests/test_participant_api_ollama_smoke.py": (1, "operator-smoke"),
