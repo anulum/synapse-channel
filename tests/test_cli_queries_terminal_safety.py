@@ -55,7 +55,7 @@ def test_hub_query_renderers_make_remote_controls_visible(
     )
     _render_approvals(
         {
-            "pending": [
+            "pending_relay_approvals": [
                 {
                     "action": hostile,
                     "namespace": hostile,

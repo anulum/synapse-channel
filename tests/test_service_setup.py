@@ -22,6 +22,7 @@ from synapse_channel.service_setup import (
     render_presence_unit,
     service_suggestions,
 )
+from synapse_channel.terminal_text import terminal_text
 
 
 def test_render_arm_unit_uses_non_llm_synapse_arm() -> None:
@@ -119,6 +120,18 @@ def test_install_arm_service_writes_only_waiter_unit(tmp_path: Path) -> None:
     # targets must exist before the first start, so the data dirs are created.
     assert (tmp_path / "synapse").is_dir()
     assert (tmp_path / ".local" / "share" / "synapse").is_dir()
+
+    hostile = "repo/ux\x1b]52;c;YQ==\x07\nforged\u202e"
+    hostile_result = install_arm_service(
+        identity=hostile,
+        synapse_bin="/bin/synapse",
+        home=tmp_path,
+    )
+    hostile_command = hostile_result.lines[-1].removeprefix("run: ")
+    assert all(control not in hostile_command for control in ("\x1b", "\x07", "\n", "\u202e"))
+    _assert_copyable_service_command_quotes_identity(
+        hostile_command, hostile, tmp_path, expected_identity=terminal_text(hostile)
+    )
 
 
 def test_install_arm_service_start_enables_exact_escaped_instance(tmp_path: Path) -> None:
@@ -280,7 +293,11 @@ def test_service_suggestions_include_hub_presence_and_arm() -> None:
 
 
 def _assert_copyable_service_command_quotes_identity(
-    command: str, identity: str, tmp_path: Path
+    command: str,
+    identity: str,
+    tmp_path: Path,
+    *,
+    expected_identity: str | None = None,
 ) -> None:
     capture = tmp_path / "systemd-escape-argv"
     script = """
@@ -300,18 +317,23 @@ systemd-escape() {
 
     assert completed.returncode == 0
     assert completed.stderr == ""
-    assert capture.read_text(encoding="utf-8").splitlines()[-1] == identity
+    assert capture.read_text(encoding="utf-8").splitlines()[-1] == (
+        identity if expected_identity is None else expected_identity
+    )
 
 
 def test_service_suggestions_shell_quote_untrusted_identity(tmp_path: Path) -> None:
-    identity = "repo'$(printf INJECTED >&2)"
+    identity = "repo'$(printf INJECTED >&2)\x1b]52;c;YQ==\x07\nforged\u202e"
     command = service_suggestions(
         project="safe",
         identity=identity,
         synapse_bin="/bin/synapse",
     )[5]
 
-    _assert_copyable_service_command_quotes_identity(command, identity, tmp_path)
+    assert all(control not in command for control in ("\x1b", "\x07", "\n", "\u202e"))
+    _assert_copyable_service_command_quotes_identity(
+        command, identity, tmp_path, expected_identity=terminal_text(identity)
+    )
 
 
 def test_install_user_services_writes_three_units(tmp_path: Path) -> None:
@@ -329,7 +351,7 @@ def test_install_user_services_writes_three_units(tmp_path: Path) -> None:
 
 
 def test_install_user_services_shell_quotes_untrusted_project(tmp_path: Path) -> None:
-    project = "repo'$(printf INJECTED >&2)"
+    project = "repo'$(printf INJECTED >&2)\x1b]52;c;YQ==\x07\nforged\u202e"
     lines = install_user_services(
         project=project,
         identity="safe",
@@ -342,7 +364,10 @@ def test_install_user_services_shell_quotes_untrusted_project(tmp_path: Path) ->
         if line.startswith("run: ") and "synapse-presence" in line
     )
 
-    _assert_copyable_service_command_quotes_identity(command, project, tmp_path)
+    assert all(control not in command for control in ("\x1b", "\x07", "\n", "\u202e"))
+    _assert_copyable_service_command_quotes_identity(
+        command, project, tmp_path, expected_identity=terminal_text(project)
+    )
 
 
 def test_install_user_services_start_runs_systemctl(tmp_path: Path) -> None:

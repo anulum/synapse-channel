@@ -15,7 +15,6 @@ remain operator-readable templates; these helpers are the installed path.
 
 from __future__ import annotations
 
-import shlex
 import shutil
 import subprocess  # nosec B404 - fixed systemctl argv, never a shell string
 from dataclasses import dataclass
@@ -29,7 +28,7 @@ from synapse_channel.service_hardening import (
     LISTENER_WRITE_PATHS,
     hardening_directives,
 )
-from synapse_channel.terminal_text import terminal_text
+from synapse_channel.terminal_text import shell_command_arg, terminal_text
 
 
 class CommandRunner(Protocol):
@@ -253,7 +252,7 @@ def install_arm_service(
                 "run: systemctl --user daemon-reload",
                 "run: systemctl --user enable --now "
                 '"$(systemd-escape --template=synapse-arm@.service -- '
-                f'{shlex.quote(identity)})"',
+                f'{shell_command_arg(identity)})"',
             )
         )
         return ArmServiceInstallResult(True, tuple(lines))
@@ -320,10 +319,10 @@ def service_suggestions(
         "systemctl --user enable --now synapse-hub.service",
         "systemctl --user enable --now "
         '"$(systemd-escape --template=synapse-presence@.service -- '
-        f'{shlex.quote(project)})"',
+        f'{shell_command_arg(project)})"',
         "systemctl --user enable --now "
         '"$(systemd-escape --template=synapse-arm@.service -- '
-        f'{shlex.quote(identity)})"',
+        f'{shell_command_arg(identity)})"',
         "synapse install-shell-hook --shell auto",
         f"# installed synapse binary detected as: {terminal_text(synapse)}",
     ]
@@ -383,12 +382,12 @@ def install_user_services(
         lines.append(
             "run: systemctl --user enable --now "
             '"$(systemd-escape --template=synapse-presence@.service -- '
-            f'{shlex.quote(project)})"'
+            f'{shell_command_arg(project)})"'
         )
         lines.append(
             "run: systemctl --user enable --now "
             '"$(systemd-escape --template=synapse-arm@.service -- '
-            f'{shlex.quote(identity)})"'
+            f'{shell_command_arg(identity)})"'
         )
         return lines
 
