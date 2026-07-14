@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.8] - 2026-07-14
+
 ### Added
 
 - A machine-readable OpenCode compatibility contract now binds 1.17.20's
@@ -27,6 +29,18 @@ All notable changes to this project are documented here.
   runs the binary with isolated home/temp roots plus a credential-free
   environment allowlist. It requires the pinned agent version, MCP HTTP/SSE
   capabilities, and terminal-auth metadata on every executable lane.
+- `synapse doctor --a2a-policy` reports the effective A2A browser Origin/Host
+  boundary — opaque `null` origins rejected, the effective allow-list, and Host
+  authority binding when the list is enabled — and the claim-guard documentation
+  gains a provider × fail-closed matrix.
+- The multi-seat `synapse doctor` posture now surfaces a disabled or unobserved
+  hub flood limiter and points operators at `synapse hub --secure` or explicit
+  `--rate` / `--host-rate`.
+
+### Changed
+
+- The MCP surface is split into a transport bridge and a dedicated claim-actions
+  module so the two responsibilities evolve independently.
 
 ### Fixed
 
@@ -37,6 +51,23 @@ All notable changes to this project are documented here.
   it contains the exact `opencode auth login` command object with a non-empty
   label. Real OpenCode 1.17.20 command-object response shapes are pinned by
   regressions; the former impossible boolean fixture is gone.
+
+### Security
+
+- Hub connect-token files (`--token-file`, staged claim checks, and the worktree
+  auto-release hook) and the receipt-signing private key are now read through a
+  shared owner-only secret floor (`O_NOFOLLOW`, mode `0600`): a group/world-
+  readable, symlinked, or empty secret is refused fail-closed instead of trusted,
+  and the error never contains the secret. The CLI reports a refused token file
+  and exits cleanly rather than raising.
+- Shell integration and the reap runtime directory no longer fall back to a
+  shared world-writable `/tmp/synapse-shell`; a private cache directory
+  (`XDG_CACHE_HOME` / `~/.cache`, created mode `0700`) is preferred, with a
+  uid-keyed temp directory only as a last resort. Provider-tmux pidfiles follow
+  the same private parent.
+- The OpenCode compatibility installer hardens its auth and artifact gates,
+  rejects typed non-regular ZIP members, and canonicalises an owned macOS temp
+  root before extraction.
 
 ## [0.99.7] - 2026-07-14
 
