@@ -96,7 +96,7 @@ from collections.abc import Callable
 from typing import Any
 
 from synapse_channel import __version__
-from synapse_channel.core.secret_files import read_secret_file
+from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 
 
 class _VersionAction(argparse.Action):
@@ -381,7 +381,7 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(args, "token"):
         try:
             args.token = _resolve_token(args)
-        except OSError as exc:
+        except (OSError, SecretFileError) as exc:
             print(f"cannot read token file: {exc}", file=sys.stderr)
             return 2
     handler: Callable[[argparse.Namespace], int] = args.func

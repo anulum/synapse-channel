@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel.cli import TOKEN_ENV, _resolve_token
+from synapse_channel.cli import TOKEN_ENV, _resolve_token, main
 from synapse_channel.core.secret_files import SecretFileError
 
 
@@ -60,3 +60,19 @@ def test_env_fallback_when_no_file(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_none_when_no_source(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(TOKEN_ENV, raising=False)
     assert _resolve_token(_ns()) is None
+
+
+def test_main_reports_a_refused_token_file_without_crashing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The secret floor now raises SecretFileError (a ValueError, not OSError);
+    # ``main`` must still catch it and exit 2 gracefully, never leaking the secret.
+    monkeypatch.delenv(TOKEN_ENV, raising=False)
+    token_file = tmp_path / "t"
+    token_file.write_text("super-secret\n", encoding="utf-8")
+    token_file.chmod(0o644)
+    rc = main(["send", "--token-file", str(token_file), "--target", "all", "hi"])
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert "cannot read token file" in captured.err
+    assert "super-secret" not in captured.err
