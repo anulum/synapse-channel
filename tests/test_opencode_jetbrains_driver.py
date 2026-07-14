@@ -57,9 +57,10 @@ def test_idea_profile_enables_the_pinned_agent_selector_before_startup(
         "  </component>\n"
         "</application>\n"
     )
-    assert "NewChatAgentSelectorAction" in (tmp_path / "keymaps" / "SynapseE2E.xml").read_text(
-        encoding="utf-8"
-    )
+    keymap = (tmp_path / "keymaps" / "SynapseE2E.xml").read_text(encoding="utf-8")
+    assert "NewChatAgentSelectorAction" in keymap
+    assert "AIAssistant.Chat.SendActions.Send" in keymap
+    assert "control alt shift L" in keymap
 
 
 def test_xwininfo_parentage_distinguishes_dialog_from_content_child() -> None:

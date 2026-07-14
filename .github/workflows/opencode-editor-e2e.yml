@@ -215,10 +215,11 @@ jobs:
               mkdir "$RUNNER_TEMP/idea-2026.1.4"
               tar -xzf "$archive" -C "$RUNNER_TEMP/idea-2026.1.4"
               idea_bin=$(find "$RUNNER_TEMP/idea-2026.1.4" \
-                -type f -path '*/bin/idea.sh' -print -quit)
+                -type f -path '*/bin/idea' -print -quit)
               product_info=$(find "$RUNNER_TEMP/idea-2026.1.4" \
                 -type f -name product-info.json -print -quit)
               test -n "$idea_bin"
+              test -x "$idea_bin"
               test -n "$product_info"
               jq -e \
                 '.name == "IntelliJ IDEA" and .version == "2026.1.4" and
@@ -255,6 +256,8 @@ jobs:
                 '<registryKey key="llm.chat.new.chat.and.agent.selector.enabled" defaultValue="false" restartRequired="true"' \
                 <<< "$ai_assistant_xml"
               grep -Fq '<action id="NewChatAgentSelectorAction"' \
+                <<< "$ai_assistant_xml"
+              grep -Fq '<action id="AIAssistant.Chat.SendActions.Send"' \
                 <<< "$ai_assistant_xml"
               grep -Fq '<id>org.jetbrains.completion.full.line</id>' <<< "$full_line_xml"
               grep -Fq '<version>261.26222.65</version>' <<< "$full_line_xml"

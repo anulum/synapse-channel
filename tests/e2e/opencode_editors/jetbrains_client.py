@@ -334,6 +334,9 @@ def _write_idea_profile(config_root: Path) -> None:
   <action id="NewChatAgentSelectorAction">
     <keyboard-shortcut first-keystroke="control alt shift K" />
   </action>
+  <action id="AIAssistant.Chat.SendActions.Send">
+    <keyboard-shortcut first-keystroke="control alt shift L" />
+  </action>
 </keymap>
 """,
         encoding="utf-8",
@@ -508,7 +511,13 @@ def main() -> int:
                 "--",
                 prompt,
             )
-            _checked_xdotool("submit the ACP prompt", "key", "--window", window, "Return")
+            _checked_xdotool(
+                "invoke the pinned AI Chat send action",
+                "key",
+                "--window",
+                window,
+                "ctrl+alt+shift+l",
+            )
             _wait_for_trace(trace, '"response_to":"session/prompt"', deadline, process)
             _screenshot(screenshot)
             return 0
