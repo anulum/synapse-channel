@@ -1,0 +1,168 @@
+{
+  "artifacts": {
+    "darwin-arm64": {
+      "binary": "opencode",
+      "name": "opencode-darwin-arm64.zip",
+      "runner": "macos-15",
+      "sha256": "dc42114bb7a312e0c61c71456fed00d1e6d8b7647d279233125090804dc0218b",
+      "smoke": true
+    },
+    "darwin-x64": {
+      "binary": "opencode",
+      "name": "opencode-darwin-x64.zip",
+      "runner": "macos-15-intel",
+      "sha256": "ffd981d3c65a2787aa14f4d48317f1d44fc14f73907090fdb7bd55239fea11c2",
+      "smoke": true
+    },
+    "darwin-x64-baseline": {
+      "binary": "opencode",
+      "name": "opencode-darwin-x64-baseline.zip",
+      "runner": "",
+      "sha256": "b61f2602019dab9a0dd98daf846dc47abf6cd010de6be4d1814a6e97c230e59f",
+      "smoke": false
+    },
+    "linux-arm64": {
+      "binary": "opencode",
+      "name": "opencode-linux-arm64.tar.gz",
+      "runner": "ubuntu-24.04-arm",
+      "sha256": "0a41572e83a896eb008683589dfe09e17b941d06122608510f3e5f16d86d9afc",
+      "smoke": true
+    },
+    "linux-arm64-musl": {
+      "binary": "opencode",
+      "name": "opencode-linux-arm64-musl.tar.gz",
+      "runner": "",
+      "sha256": "cc24a56310d44a459c8a4a4d45d3bb1ea2920c65e3bde1e711a1a9f6497d8209",
+      "smoke": false
+    },
+    "linux-x64": {
+      "binary": "opencode",
+      "name": "opencode-linux-x64.tar.gz",
+      "runner": "ubuntu-24.04",
+      "sha256": "b7100c0ad0980fba25d595123b4219a6fdc1fbd456dcb64859236741e199c564",
+      "smoke": true
+    },
+    "linux-x64-baseline": {
+      "binary": "opencode",
+      "name": "opencode-linux-x64-baseline.tar.gz",
+      "runner": "",
+      "sha256": "527c5d61ddff27a5d140d80f4e1fac8bebd2805c20400dc99693cb3c761e9f40",
+      "smoke": false
+    },
+    "linux-x64-baseline-musl": {
+      "binary": "opencode",
+      "name": "opencode-linux-x64-baseline-musl.tar.gz",
+      "runner": "",
+      "sha256": "c9e8bc99609f96d60631576e9933497d61bd3bc5f6bcf5982a7e6b34c283e3d7",
+      "smoke": false
+    },
+    "linux-x64-musl": {
+      "binary": "opencode",
+      "name": "opencode-linux-x64-musl.tar.gz",
+      "runner": "",
+      "sha256": "0e897fac4e29175eae33ba2f8d65bd8ae7f67c1234ce2aeb01fbfd6ec8e4d213",
+      "smoke": false
+    },
+    "windows-arm64": {
+      "binary": "opencode.exe",
+      "name": "opencode-windows-arm64.zip",
+      "runner": "",
+      "sha256": "e1d33374eb1b6cd3abd609ae2feb0572214a68fd2a2bdcfd1003cc38b41d14b2",
+      "smoke": false
+    },
+    "windows-x64": {
+      "binary": "opencode.exe",
+      "name": "opencode-windows-x64.zip",
+      "runner": "windows-2025",
+      "sha256": "1d7438cf9b4c6b45fee325003b4452b06f4c14be29977ea81595a705165ec646",
+      "smoke": true
+    },
+    "windows-x64-baseline": {
+      "binary": "opencode.exe",
+      "name": "opencode-windows-x64-baseline.zip",
+      "runner": "",
+      "sha256": "c6231de3f830fcd3dbdbff4ef5686753b519997ee3773b6f5d091255814d5164",
+      "smoke": false
+    }
+  },
+  "components": [
+    {
+      "name": "Neovim",
+      "pin": "012bf3fcac5ade43914df3f174668bf64d05e049a4f032a388c027b1ebd78628",
+      "pin_type": "sha256",
+      "source": "https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-linux-x86_64.tar.gz",
+      "version": "0.12.4"
+    },
+    {
+      "name": "CodeCompanion.nvim",
+      "pin": "a8a754491999d97695d6134e8d3d98effe6b2a98",
+      "pin_type": "git-commit",
+      "source": "https://github.com/olimorris/codecompanion.nvim.git",
+      "version": "19.19.0"
+    },
+    {
+      "name": "plenary.nvim",
+      "pin": "74b06c6c75e4eeb3108ec01852001636d85a932b",
+      "pin_type": "git-commit",
+      "source": "https://github.com/nvim-lua/plenary.nvim.git",
+      "version": "commit-pinned"
+    },
+    {
+      "name": "Emacs",
+      "pin": "29.3",
+      "pin_type": "runtime-version",
+      "source": "ubuntu-24.04 apt repository",
+      "version": "29.3"
+    },
+    {
+      "name": "Shell Maker",
+      "pin": "071c6df3ca22a2f4c0daa689848ac9bd21bf4e2b",
+      "pin_type": "git-commit",
+      "source": "https://github.com/xenodium/shell-maker.git",
+      "version": "0.93.5"
+    },
+    {
+      "name": "acp.el",
+      "pin": "5140f4121156707245567b8fc3072d4c3b5c867f",
+      "pin_type": "git-commit",
+      "source": "https://github.com/xenodium/acp.el.git",
+      "version": "0.12.2"
+    },
+    {
+      "name": "Agent Shell",
+      "pin": "5351f9b0e983b00b2d21ecc41916635e2ed13ebe",
+      "pin_type": "git-commit",
+      "source": "https://github.com/xenodium/agent-shell.git",
+      "version": "0.59.1"
+    },
+    {
+      "name": "Zed",
+      "pin": "55eb5ef8b211c950a9009da30b7f603d2c9d2c80b207f9de94ffab6d31d58f8c",
+      "pin_type": "sha256",
+      "source": "https://github.com/zed-industries/zed/releases/download/v1.10.3/zed-linux-x86_64.tar.gz",
+      "version": "1.10.3"
+    },
+    {
+      "name": "PyCharm",
+      "pin": "790dc8a5124d1e3b38b4fff2feae654bf83eef67a67287719f4f3ca3dc07ca90",
+      "pin_type": "sha256",
+      "source": "https://github.com/JetBrains/intellij-community/releases/download/pycharm/2026.1.4/pycharm-2026.1.4.tar.gz",
+      "version": "2026.1.4"
+    },
+    {
+      "name": "JetBrains AI Assistant",
+      "pin": "c5fed8bb149836358b0a03b847a839b633bb78bdd6ec60c5bd7d39ccbfbaff43",
+      "pin_type": "sha256",
+      "source": "https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1104091",
+      "version": "261.26222.86"
+    }
+  ],
+  "schema_version": "synapse.opencode-compatibility.v1",
+  "upstream": {
+    "release_api": "https://api.github.com/repos/anomalyco/opencode/releases",
+    "repository": "anomalyco/opencode",
+    "tag": "v1.17.20",
+    "tag_commit": "4473fc3c9055046183990a965d68df3db7ea6f62",
+    "version": "1.17.20"
+  }
+}

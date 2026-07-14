@@ -17,6 +17,16 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- A machine-readable OpenCode compatibility contract now binds 1.17.20's
+  official tag commit, all twelve published CLI archive digests, five exact
+  GitHub runner lanes, and every editor/plugin pin used by the real-client gate.
+  A dedicated workflow re-verifies official release and tag-ref evidence,
+  reports newer stable releases as advisory drift without moving the pin, and
+  installs the exact Linux x64/arm64, macOS x64/arm64, and Windows x64 archives
+  before a real ACP v1 initialize exchange. Extraction accepts only the exact
+  regular root binary, refuses links and existing destinations, and requires the
+  pinned agent version, MCP HTTP/SSE capabilities, and terminal-auth metadata.
+
 - OpenCode's ACP editor gate now proves the governance path, not only a prompt
   round trip. Every pinned Neovim, Emacs, Zed, and JetBrains lane must discover
   `synapse_git_claim` through OpenCode's native MCP catalog, fail a write before

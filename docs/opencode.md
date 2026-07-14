@@ -305,6 +305,45 @@ not a substitute for the native claim plugin; keep both enabled.
 
 ## Acceptance and supply-chain gate
 
+The canonical compatibility source is
+`integrations/opencode/compatibility.json`.
+It binds the official repository, release tag and Git commit, all twelve
+published CLI archive digests, the five executable runner lanes, and every
+editor/runtime pin used by the real-client workflow. The strict verifier refuses
+unknown fields, missing platforms or editor components, changed release URLs or
+digests, tag-ref drift, draft/prerelease substitution, and runner-label drift:
+
+```bash
+python -m tools.opencode_compatibility_contract --check
+```
+
+The `opencode-compatibility` workflow verifies the pinned release against the
+official GitHub release and Git-ref APIs on every relevant push or pull request.
+Its weekly schedule also compares the pin with the latest stable release. A newer
+stable tag is an advisory update signal; it does not silently move the supported
+version. Any mutation of the immutable pinned release fails the job.
+
+Five host/architecture lanes download the official archive, verify its manifest
+SHA-256, extract only the exact regular root binary without overwriting an
+existing path, require CLI version 1.17.20, and perform a real ACP initialize
+exchange:
+
+| Platform artifact | Public runner | Gate |
+|---|---|---|
+| Linux x64 | `ubuntu-24.04` | Archive integrity + real ACP v1 |
+| Linux arm64 | `ubuntu-24.04-arm` | Archive integrity + real ACP v1 |
+| macOS arm64 | `macos-15` | Archive integrity + real ACP v1 |
+| macOS x64 | `macos-15-intel` | Archive integrity + real ACP v1 |
+| Windows x64 | `windows-2025` | Archive integrity + real ACP v1 |
+
+The remaining official Darwin x64 baseline, Linux x64 baseline, Linux musl,
+Linux baseline-musl, Linux arm64-musl, Windows arm64, and Windows x64 baseline
+archives remain digest-bound in the same manifest. They are not labelled as
+runtime-tested because GitHub-hosted jobs do not provide each corresponding
+runtime environment. Every executable lane must report the pinned `OpenCode`
+agent version, ACP protocol 1, HTTP and SSE MCP capabilities, and OpenCode's
+terminal-auth command metadata.
+
 The focused `opencode-integration` workflow installs the hash-locked Python
 dependency sets, pins OpenCode's official Linux x64 archive and extracted binary
 by SHA-256, verifies exact version 1.17.20, builds the wheel, checks its OpenCode
@@ -355,8 +394,9 @@ local scripted provider. It proves:
 - preservation of unrelated OpenCode configuration.
 
 These checks validate the pinned connector boundaries. They do not certify an
-external model account, an unpinned or arbitrary IDE build, remote TLS
-termination, or filesystem isolation.
+external model account, unpinned or arbitrary OpenCode/editor builds, the seven
+integrity-only archive variants, remote TLS termination, or filesystem
+isolation.
 
 ## Source references
 

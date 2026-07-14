@@ -1,0 +1,182 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — pinned OpenCode release drift and cross-platform ACP smoke
+name: opencode-compatibility
+
+on:
+  push:
+    paths:
+      - ".github/actionlint.yaml"
+      - ".github/workflows/opencode-compatibility.yml"
+      - ".github/workflows/opencode-editor-e2e.yml"
+      - ".github/workflows/opencode-integration.yml"
+      - ".github/requirements/**"
+      - "integrations/opencode/compatibility.json"
+      - "tools/opencode_compatibility_contract.py"
+      - "tools/opencode_compatibility_smoke.py"
+      - "tests/test_opencode_compatibility_contract.py"
+      - "tests/test_opencode_compatibility_smoke.py"
+      - "tests/fixtures/opencode/process.py"
+      - "src/synapse_channel/participants/opencode_stream.py"
+      - "docs/opencode.md"
+  pull_request:
+    paths:
+      - ".github/actionlint.yaml"
+      - ".github/workflows/opencode-compatibility.yml"
+      - ".github/workflows/opencode-editor-e2e.yml"
+      - ".github/workflows/opencode-integration.yml"
+      - ".github/requirements/**"
+      - "integrations/opencode/compatibility.json"
+      - "tools/opencode_compatibility_contract.py"
+      - "tools/opencode_compatibility_smoke.py"
+      - "tests/test_opencode_compatibility_contract.py"
+      - "tests/test_opencode_compatibility_smoke.py"
+      - "tests/fixtures/opencode/process.py"
+      - "src/synapse_channel/participants/opencode_stream.py"
+      - "docs/opencode.md"
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      latest-tag: ${{ steps.upstream.outputs.latest_tag }}
+      pinned-tag: ${{ steps.upstream.outputs.pinned_tag }}
+      update-available: ${{ steps.upstream.outputs.update_available }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Install the hash-locked focused toolchain
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
+          python -m pip install --require-hashes -r .github/requirements/requirements-tools.txt
+          python -m pip check
+      - name: Verify the local compatibility contract
+        run: |
+          set -euo pipefail
+          python -m tools.opencode_compatibility_contract --check
+          ruff check \
+            tools/opencode_compatibility_contract.py \
+            tools/opencode_compatibility_smoke.py \
+            tests/test_opencode_compatibility_contract.py \
+            tests/test_opencode_compatibility_smoke.py
+          ruff format --check \
+            tools/opencode_compatibility_contract.py \
+            tools/opencode_compatibility_smoke.py \
+            tests/test_opencode_compatibility_contract.py \
+            tests/test_opencode_compatibility_smoke.py
+          mypy --strict \
+            tools/opencode_compatibility_contract.py \
+            tools/opencode_compatibility_smoke.py \
+            tests/test_opencode_compatibility_contract.py \
+            tests/test_opencode_compatibility_smoke.py
+          python -m bandit -q -c pyproject.toml \
+            tools/opencode_compatibility_contract.py \
+            tools/opencode_compatibility_smoke.py
+          pytest \
+            tests/test_opencode_compatibility_contract.py \
+            tests/test_opencode_compatibility_smoke.py
+      - name: Verify official release evidence and check latest advisory
+        id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api repos/anomalyco/opencode/releases/tags/v1.17.20 \
+            > "$RUNNER_TEMP/opencode-release.json"
+          gh api repos/anomalyco/opencode/releases/latest \
+            > "$RUNNER_TEMP/opencode-latest.json"
+          gh api repos/anomalyco/opencode/git/ref/tags/v1.17.20 \
+            > "$RUNNER_TEMP/opencode-tag-ref.json"
+          python -m tools.opencode_compatibility_contract \
+            --release-json "$RUNNER_TEMP/opencode-release.json" \
+            --latest-json "$RUNNER_TEMP/opencode-latest.json" \
+            --tag-ref-json "$RUNNER_TEMP/opencode-tag-ref.json" \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Record compatibility advisory
+        env:
+          LATEST_TAG: ${{ steps.upstream.outputs.latest_tag }}
+          PINNED_TAG: ${{ steps.upstream.outputs.pinned_tag }}
+          UPDATE_AVAILABLE: ${{ steps.upstream.outputs.update_available }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## OpenCode compatibility"
+            echo
+            echo "- Pinned release: \`$PINNED_TAG\`"
+            echo "- Latest stable release: \`$LATEST_TAG\`"
+            echo "- Update available: \`$UPDATE_AVAILABLE\`"
+            echo
+            echo "A newer stable release is advisory only; immutable pin drift fails closed."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  cross-platform-acp:
+    if: github.event_name != 'schedule'
+    needs: contract
+    name: ${{ matrix.platform }} / ACP v1
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            runner: ubuntu-24.04
+            binary: opencode
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+            binary: opencode
+          - platform: darwin-arm64
+            runner: macos-15
+            binary: opencode
+          - platform: darwin-x64
+            runner: macos-15-intel
+            binary: opencode
+          - platform: windows-x64
+            runner: windows-2025
+            binary: opencode.exe
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Install the exact manifest-pinned release artifact
+        run: >-
+          python -m tools.opencode_compatibility_smoke install
+          --platform "${{ matrix.platform }}"
+          --destination "${{ runner.temp }}/synapse-opencode/${{ matrix.binary }}"
+          --report "${{ runner.temp }}/opencode-install-${{ matrix.platform }}.json"
+      - name: Exercise the real OpenCode ACP process
+        run: >-
+          python -m tools.opencode_compatibility_smoke smoke
+          --binary "${{ runner.temp }}/synapse-opencode/${{ matrix.binary }}"
+          --report "${{ runner.temp }}/opencode-smoke-${{ matrix.platform }}.json"
+      - name: Upload compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: opencode-compatibility-${{ matrix.platform }}
+          path: ${{ runner.temp }}/opencode-*.json
+          if-no-files-found: error
+          retention-days: 14
