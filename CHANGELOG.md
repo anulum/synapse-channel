@@ -15,6 +15,16 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- OpenCode's ACP editor gate now proves the governance path, not only a prompt
+  round trip. Every pinned Neovim, Emacs, Zed, and JetBrains lane must discover
+  `synapse_git_claim` through OpenCode's native MCP catalog, fail a write before
+  ownership, acquire an exact Git/path claim, allow only the claimed write,
+  release with durable evidence, and fail another write after release. The MCP
+  face resolves real Git context without silently widening paths and validates
+  the hub's release receipt. ACP evidence is private, content-minimised, bounded,
+  request-correlated, capability/version checked, and GUI readiness is driven by
+  observable session state rather than timing guesses.
+
 - A dedicated OpenCode editor E2E workflow now launches pinned real
   CodeCompanion.nvim, Emacs Agent Shell, Zed, and JetBrains AI Assistant
   clients against OpenCode 1.17.20 and a deterministic local provider. Each

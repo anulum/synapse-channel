@@ -323,23 +323,33 @@ the exact OpenCode binary and a local deterministic provider:
 
 Release archives are SHA-256 verified; editor plugins are checked out at exact
 commits or verified by archive hash and declared version. Each editor must
-identify itself during ACP initialization, create a session, deliver the exact
-acceptance prompt, receive `end_turn`, and reach the deterministic provider.
-Missing clients, changed identities, malformed traffic, absent responses, or a
-wrong OpenCode/model version fail the selected job. The evidence proxy writes a
-private bounded JSONL trace containing protocol metadata and only the prompt's
-byte length and SHA-256 digest, never its content.
+identify itself during ACP initialization, advertise terminal authentication,
+create exactly one session, deliver exactly one acceptance prompt, receive
+`end_turn`, and reach the deterministic provider. The same turn must prove the
+full governance chain: denied write before ownership, native OpenCode MCP
+discovery of `synapse_git_claim`, exact Git/path claim, allowed claimed write,
+receipt-bearing release, and denied write after release. The durable hub journal
+must retain exactly one matching claim, release, and assessment receipt.
+
+Missing clients, changed identities or capabilities, malformed or replayed
+traffic, unknown response IDs, absent responses, unsafe evidence paths, leaked
+prompt content, a wrong OpenCode/model version, or any governance mismatch fails
+the selected job. GUI lanes wait for observable ACP session state rather than
+fixed delays. The evidence proxy writes a private bounded JSONL trace containing
+protocol metadata and only the prompt's byte length and SHA-256 digest, never its
+content.
 
 The real-process suite uses isolated home/config/data/state/cache roots and a
 local scripted provider. It proves:
 
 - local JSONL turns and an ACP initialize handshake;
 - real CodeCompanion.nvim, Agent Shell, Zed, and JetBrains AI Assistant ACP
-  session/prompt round trips in their dedicated public-CI lanes;
+  governance turns in their dedicated public-CI lanes;
 - Basic-auth refusal, authenticated `run --attach` prompt delivery, direct API
   answer capture, and session behavior;
 - adapter install/status/upgrade/uninstall ownership;
-- an allowed claimed native write and a denied unclaimed native write; and
+- denied-before, claimed-and-allowed, receipt-release, and denied-after native
+  writes driven through each real editor and OpenCode's own MCP catalog; and
 - preservation of unrelated OpenCode configuration.
 
 These checks validate the pinned connector boundaries. They do not certify an

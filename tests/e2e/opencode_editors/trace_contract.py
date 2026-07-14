@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import stat
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,8 @@ def _read_trace(path: Path) -> list[dict[str, Any]]:
         raise AssertionError("editor did not produce a regular ACP trace")
     if path.stat().st_size > _MAX_TRACE_BYTES:
         raise AssertionError("editor ACP trace exceeds four MiB")
+    if stat.S_IMODE(path.stat().st_mode) & 0o077:
+        raise AssertionError("editor ACP trace is accessible by group or others")
     events: list[dict[str, Any]] = []
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         try:
@@ -44,25 +47,36 @@ def _read_trace(path: Path) -> list[dict[str, Any]]:
 
 
 def _request(events: Iterable[Mapping[str, Any]], method: str) -> Mapping[str, Any]:
-    for event in events:
-        if event.get("direction") == "client_to_agent" and event.get("method") == method:
-            return event
-    raise AssertionError(f"real editor never sent ACP {method}")
+    matches = [
+        event
+        for event in events
+        if event.get("direction") == "client_to_agent" and event.get("method") == method
+    ]
+    if len(matches) != 1:
+        raise AssertionError(f"real editor sent ACP {method} {len(matches)} times instead of once")
+    return matches[0]
 
 
 def _response(events: Iterable[Mapping[str, Any]], method: str) -> Mapping[str, Any]:
-    for event in events:
-        if event.get("direction") == "agent_to_client" and event.get("response_to") == method:
-            if event.get("error") is not False:
-                raise AssertionError(f"OpenCode returned an ACP error for {method}")
-            return event
-    raise AssertionError(f"real editor never received an ACP {method} response")
+    matches = [
+        event
+        for event in events
+        if event.get("direction") == "agent_to_client" and event.get("response_to") == method
+    ]
+    if len(matches) != 1:
+        raise AssertionError(
+            f"real editor received {len(matches)} ACP {method} responses instead of one"
+        )
+    if matches[0].get("error") is not False:
+        raise AssertionError(f"OpenCode returned an ACP error for {method}")
+    return matches[0]
 
 
 def assert_editor_trace(
     path: Path,
     *,
     expected_client_names: Iterable[str],
+    expected_agent_version: str,
     prompt: str,
 ) -> None:
     """Assert one protocol-v1 initialize, session creation, and prompt round trip."""
@@ -73,6 +87,8 @@ def assert_editor_trace(
     initialize = requests["initialize"]
     if initialize.get("protocol_version") != 1:
         raise AssertionError("editor did not request ACP protocol version 1")
+    if initialize.get("terminal_auth_capable") is not True:
+        raise AssertionError("editor did not advertise terminal authentication capability")
     client_info = initialize.get("client_info")
     client_name = client_info.get("name") if isinstance(client_info, Mapping) else None
     if client_name not in set(expected_client_names):
@@ -84,6 +100,12 @@ def assert_editor_trace(
     agent_info = initialize_response.get("agent_info")
     if not isinstance(agent_info, Mapping) or agent_info.get("name") != "OpenCode":
         raise AssertionError("ACP peer did not identify itself as OpenCode")
+    if agent_info.get("version") != expected_agent_version:
+        raise AssertionError("ACP peer reported an unexpected OpenCode version")
+    if initialize_response.get("mcp_capabilities") != {"http": True, "sse": True}:
+        raise AssertionError("OpenCode did not advertise the required MCP capabilities")
+    if initialize_response.get("terminal_auth_method") is not True:
+        raise AssertionError("OpenCode did not advertise terminal authentication")
     if responses["session/new"].get("session_id_present") is not True:
         raise AssertionError("OpenCode did not return a session id")
 
@@ -94,3 +116,17 @@ def assert_editor_trace(
         raise AssertionError("editor prompt digest differs from the acceptance prompt")
     if responses["session/prompt"].get("stop_reason") != "end_turn":
         raise AssertionError("OpenCode editor turn did not end cleanly")
+
+    positions = {id(event): index for index, event in enumerate(events)}
+    ordered = (
+        requests["initialize"],
+        responses["initialize"],
+        requests["session/new"],
+        responses["session/new"],
+        requests["session/prompt"],
+        responses["session/prompt"],
+    )
+    if [positions[id(event)] for event in ordered] != sorted(
+        positions[id(event)] for event in ordered
+    ):
+        raise AssertionError("ACP editor lifecycle events arrived out of order")

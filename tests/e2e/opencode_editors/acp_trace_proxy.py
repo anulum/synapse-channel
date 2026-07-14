@@ -22,6 +22,21 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 _MAX_LINE_BYTES = 1_048_576
+_MAX_TRACE_BYTES = 4_194_304
+_MAX_PENDING_REQUESTS = 4_096
+_DIRECTIONS = frozenset({"client_to_agent", "agent_to_client"})
+
+
+def _request_id(value: object) -> int | str | None:
+    """Return a valid JSON-RPC request id without accepting booleans."""
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return None
+    return value
+
+
+def _opposite(direction: str) -> str:
+    """Return the request direction corresponding to a response direction."""
+    return "agent_to_client" if direction == "client_to_agent" else "client_to_agent"
 
 
 def _prompt_fingerprint(params: object) -> tuple[int, str]:
@@ -50,7 +65,8 @@ class TraceWriter:
         descriptor = os.open(path, flags, 0o600)
         self._stream = os.fdopen(descriptor, "w", encoding="utf-8")
         self._lock = threading.Lock()
-        self._pending: dict[int | str, str] = {}
+        self._pending: dict[tuple[str, int | str], str] = {}
+        self._written_bytes = 0
 
     def close(self) -> None:
         """Flush and close the trace."""
@@ -69,23 +85,38 @@ class TraceWriter:
             raise ValueError("ACP evidence contains invalid UTF-8 JSON") from exc
         if not isinstance(message, dict):
             raise ValueError("ACP evidence message is not an object")
+        if message.get("jsonrpc") != "2.0":
+            raise ValueError("ACP evidence message is not JSON-RPC 2.0")
+        if direction not in _DIRECTIONS:
+            raise ValueError("ACP evidence direction is invalid")
 
         with self._lock:
             event = self._event(direction, message)
-            self._stream.write(json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n")
+            line = json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"
+            encoded_bytes = len(line.encode("utf-8"))
+            if self._written_bytes + encoded_bytes > _MAX_TRACE_BYTES:
+                raise ValueError("ACP evidence trace exceeds four MiB")
+            self._stream.write(line)
             self._stream.flush()
+            self._written_bytes += encoded_bytes
 
     def _event(self, direction: str, message: Mapping[str, Any]) -> dict[str, Any]:
         """Build one event while holding the pending-request lock."""
         event: dict[str, Any] = {"direction": direction}
         method = message.get("method")
-        request_id = message.get("id")
+        request_id = _request_id(message.get("id"))
         if isinstance(method, str):
+            if not method:
+                raise ValueError("ACP evidence method is empty")
             event["method"] = method
-            if isinstance(request_id, (int, str)):
+            if request_id is not None:
                 event["id"] = request_id
-                if direction == "client_to_agent":
-                    self._pending[request_id] = method
+                key = (direction, request_id)
+                if key in self._pending:
+                    raise ValueError("ACP evidence reused a pending request id")
+                if len(self._pending) >= _MAX_PENDING_REQUESTS:
+                    raise ValueError("ACP evidence has too many pending requests")
+                self._pending[key] = method
             params = message.get("params")
             if method == "initialize" and isinstance(params, Mapping):
                 event["protocol_version"] = params.get("protocolVersion")
@@ -96,19 +127,27 @@ class TraceWriter:
                         for key in ("name", "title", "version")
                         if isinstance(client_info.get(key), str)
                     }
+                client_capabilities = params.get("clientCapabilities")
+                if isinstance(client_capabilities, Mapping):
+                    meta = client_capabilities.get("_meta")
+                    event["terminal_auth_capable"] = (
+                        isinstance(meta, Mapping) and meta.get("terminal-auth") is True
+                    )
             elif method == "session/prompt":
                 length, digest = _prompt_fingerprint(params)
                 event["prompt_bytes"] = length
                 event["prompt_sha256"] = digest
             return event
-        if not isinstance(request_id, (int, str)):
+        if request_id is None:
             raise ValueError("ACP evidence message has neither method nor response id")
 
         event["id"] = request_id
-        event["response_to"] = self._pending.get(request_id)
+        response_to = self._pending.pop((_opposite(direction), request_id), None)
+        if response_to is None:
+            raise ValueError("ACP evidence response id has no pending request")
+        event["response_to"] = response_to
         event["error"] = "error" in message
         result = message.get("result")
-        response_to = event["response_to"]
         if isinstance(result, Mapping):
             if response_to == "initialize":
                 event["protocol_version"] = result.get("protocolVersion")
@@ -119,6 +158,21 @@ class TraceWriter:
                         for key in ("name", "version")
                         if isinstance(agent_info.get(key), str)
                     }
+                agent_capabilities = result.get("agentCapabilities")
+                if isinstance(agent_capabilities, Mapping):
+                    mcp_capabilities = agent_capabilities.get("mcpCapabilities")
+                    if isinstance(mcp_capabilities, Mapping):
+                        event["mcp_capabilities"] = {
+                            key: mcp_capabilities.get(key) is True for key in ("http", "sse")
+                        }
+                auth_methods = result.get("authMethods")
+                if isinstance(auth_methods, list):
+                    event["terminal_auth_method"] = any(
+                        isinstance(item, Mapping)
+                        and isinstance(item.get("_meta"), Mapping)
+                        and item["_meta"].get("terminal-auth") is True
+                        for item in auth_methods
+                    )
             elif response_to == "session/new":
                 event["session_id_present"] = isinstance(result.get("sessionId"), str)
             elif response_to == "session/prompt":

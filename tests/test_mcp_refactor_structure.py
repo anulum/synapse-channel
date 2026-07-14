@@ -18,6 +18,7 @@ import synapse_channel.mcp.stdio as stdio_module
 
 EXPECTED_TOOLS = {
     "synapse_claim",
+    "synapse_git_claim",
     "synapse_release",
     "synapse_send",
     "synapse_inbox",

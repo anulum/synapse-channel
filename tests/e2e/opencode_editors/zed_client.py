@@ -32,6 +32,14 @@ def _run_xdotool(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _checked_xdotool(action: str, *args: str) -> None:
+    """Run one GUI action and fail with its diagnostic output."""
+    completed = _run_xdotool(*args)
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic"
+        raise RuntimeError(f"xdotool could not {action}: {detail}")
+
+
 def _find_window(deadline: float) -> str:
     while time.monotonic() < deadline:
         for selector in (("--class", "zed"), ("--classname", "zed"), ("--name", "Zed")):
@@ -42,16 +50,27 @@ def _find_window(deadline: float) -> str:
     raise RuntimeError("Zed did not expose a visible window")
 
 
-def _trace_has_prompt(trace: Path) -> bool:
+def _trace_has(trace: Path, marker: str) -> bool:
     if not trace.is_file():
         return False
-    return '"method":"session/prompt"' in trace.read_text(encoding="utf-8")
+    return marker in trace.read_text(encoding="utf-8")
 
 
-def _trace_has_response(trace: Path) -> bool:
-    if not trace.is_file():
-        return False
-    return '"response_to":"session/prompt"' in trace.read_text(encoding="utf-8")
+def _wait_for_trace(
+    trace: Path,
+    marker: str,
+    deadline: float,
+    process: subprocess.Popen[str],
+    stage: str,
+) -> None:
+    """Wait for one semantic ACP milestone or a terminal process failure."""
+    while time.monotonic() < deadline:
+        if _trace_has(trace, marker):
+            return
+        if process.poll() is not None:
+            raise RuntimeError(f"Zed exited before {stage}: exit status {process.returncode}")
+        time.sleep(0.25)
+    raise RuntimeError(f"Zed never reached {stage} before timeout")
 
 
 def main() -> int:
@@ -107,29 +126,46 @@ def main() -> int:
         try:
             deadline = time.monotonic() + _TIMEOUT_SECONDS
             window = _find_window(deadline)
-            _run_xdotool("windowactivate", "--sync", window)
-            _run_xdotool("key", "--window", window, "ctrl+alt+shift+o")
-            time.sleep(2)
-            typed = _run_xdotool("type", "--window", window, "--delay", "1", "--", prompt)
-            if typed.returncode != 0:
-                raise RuntimeError(f"xdotool could not type the Zed prompt: {typed.stderr}")
-            _run_xdotool("key", "--window", window, "Return")
-            while time.monotonic() < deadline and not _trace_has_prompt(trace):
-                if process.poll() is not None:
-                    raise RuntimeError(
-                        f"Zed exited before ACP prompt delivery: {process.returncode}"
-                    )
-                time.sleep(0.25)
-            if not _trace_has_prompt(trace):
-                raise RuntimeError("Zed never sent an ACP prompt before timeout")
-            while time.monotonic() < deadline and not _trace_has_response(trace):
-                if process.poll() is not None:
-                    raise RuntimeError(
-                        f"Zed exited before ACP response delivery: {process.returncode}"
-                    )
-                time.sleep(0.25)
-            if not _trace_has_response(trace):
-                raise RuntimeError("Zed never received the ACP prompt response before timeout")
+            _checked_xdotool("activate the Zed window", "windowactivate", "--sync", window)
+            _checked_xdotool(
+                "open the configured ACP agent",
+                "key",
+                "--window",
+                window,
+                "ctrl+alt+shift+o",
+            )
+            _wait_for_trace(
+                trace,
+                '"method":"session/new"',
+                deadline,
+                process,
+                "ACP session creation",
+            )
+            _checked_xdotool(
+                "type the Zed prompt",
+                "type",
+                "--window",
+                window,
+                "--delay",
+                "1",
+                "--",
+                prompt,
+            )
+            _checked_xdotool("submit the Zed prompt", "key", "--window", window, "Return")
+            _wait_for_trace(
+                trace,
+                '"method":"session/prompt"',
+                deadline,
+                process,
+                "ACP prompt delivery",
+            )
+            _wait_for_trace(
+                trace,
+                '"response_to":"session/prompt"',
+                deadline,
+                process,
+                "ACP prompt response",
+            )
             subprocess.run(  # nosec B603
                 ["import", "-window", "root", str(screenshot)],
                 check=False,

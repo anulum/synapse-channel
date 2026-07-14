@@ -79,9 +79,36 @@ def build_mcp_server(
         return await bridge.claim(task_id, paths)
 
     @server.tool()
-    async def synapse_release(task_id: str) -> str:
-        """Release a task lease you hold."""
-        return await bridge.release(task_id)
+    async def synapse_git_claim(
+        task_id: str,
+        paths: list[str] | None = None,
+        base: str = "main",
+        auto_release_on: str = "manual",
+        whole_worktree: bool = False,
+    ) -> str:
+        """Claim bounded paths in the MCP process's current Git worktree."""
+        return await bridge.git_claim(
+            task_id,
+            paths,
+            base=base,
+            auto_release_on=auto_release_on,
+            whole_worktree=whole_worktree,
+        )
+
+    @server.tool()
+    async def synapse_release(
+        task_id: str,
+        evidence: list[str] | None = None,
+        changed_files: list[str] | None = None,
+        confidence: str = "",
+    ) -> str:
+        """Release a task lease with optional durable receipt evidence."""
+        return await bridge.release(
+            task_id,
+            evidence=evidence or (),
+            changed_files=changed_files or (),
+            confidence=confidence,
+        )
 
     @server.tool()
     async def synapse_send(target: str, message: str) -> str:

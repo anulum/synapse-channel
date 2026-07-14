@@ -13,11 +13,21 @@ import json
 import os
 import subprocess
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
 
+from cli_e2e_helpers import git_repo, isolated_hub, run_cli
+from e2e.opencode_editors.governance_contract import (
+    PROMPT,
+    RESPONSE,
+    assert_durable_governance,
+    assert_provider_governance,
+    enqueue_governance_turn,
+    source_environment,
+    synapse_launcher,
+)
 from e2e.opencode_editors.trace_contract import assert_editor_trace
 from fixtures.opencode.llm import ScriptedLlmServer
 from fixtures.opencode.process import OPENCODE_VERSION, TEST_MODEL, isolated_environment
@@ -27,8 +37,6 @@ _CLIENT_NAMES = {
     "neovim": ("CodeCompanion.nvim",),
     "zed": ("zed",),
 }
-_PROMPT = "Reply with the deterministic SYNAPSE editor acceptance token."
-_RESPONSE = "SYNAPSE_EDITOR_E2E_RESPONSE"
 
 
 def _required_env(name: str) -> str:
@@ -98,17 +106,7 @@ def _expected_client_names(client: str) -> tuple[str, ...]:
     return (_required_env("SYNAPSE_JETBRAINS_CLIENT_NAME"),)
 
 
-def _assert_provider_request(requests: Sequence[Mapping[str, object]]) -> None:
-    if len(requests) != 1:
-        raise AssertionError(f"expected one editor provider request, received {len(requests)}")
-    request = requests[0]
-    if request.get("model") != "test-model":
-        raise AssertionError(f"editor used an unexpected model: {request.get('model')!r}")
-    if _PROMPT not in json.dumps(request, sort_keys=True):
-        raise AssertionError("editor provider request omitted the acceptance prompt")
-
-
-def test_real_editor_client_completes_opencode_acp_turn(tmp_path: Path) -> None:
+def test_real_editor_client_enforces_synapse_governance(tmp_path: Path) -> None:
     client = os.environ.get("SYNAPSE_EDITOR_E2E_CLIENT", "").strip().lower()
     if not client:
         pytest.skip("dedicated editor acceptance workflow selects the real client")
@@ -120,17 +118,42 @@ def test_real_editor_client_completes_opencode_acp_turn(tmp_path: Path) -> None:
     artifact_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     trace = artifact_dir / f"{client}-acp.jsonl"
     home = tmp_path / "home"
-    project = tmp_path / "project"
+    project = git_repo(tmp_path / "project")
     home.mkdir(mode=0o700)
-    project.mkdir(mode=0o700)
+    project.chmod(0o700)
     opencode = _exact_opencode()
+    identity = f"editor/{client}"
+    launcher = synapse_launcher(tmp_path / "synapse-current")
+    config_path = project / ".opencode" / "opencode.json"
+    config_path.parent.mkdir(mode=0o700)
+    config_path.write_text(
+        json.dumps({"permission": {"write": "allow"}}) + "\n",
+        encoding="utf-8",
+    )
+    config_path.chmod(0o600)
 
-    with ScriptedLlmServer() as llm:
-        environment = isolated_environment(
-            home,
-            llm.url,
-            pure=True,
-            disable_project_config=True,
+    with ScriptedLlmServer() as llm, isolated_hub(tmp_path) as hub:
+        installed = run_cli(
+            "adapters",
+            "opencode",
+            "install",
+            "--identity",
+            identity,
+            "--project",
+            str(project),
+            "--synapse-bin",
+            str(launcher),
+            uri=hub.uri,
+            cwd=project,
+        )
+        assert installed.ok(), installed.output
+        environment = source_environment(
+            isolated_environment(
+                home,
+                llm.url,
+                pure=False,
+                disable_project_config=False,
+            )
         )
         config = json.loads(environment["OPENCODE_CONFIG_CONTENT"])
         config["model"] = TEST_MODEL
@@ -150,11 +173,11 @@ def test_real_editor_client_completes_opencode_acp_turn(tmp_path: Path) -> None:
                 "SYNAPSE_ACP_PROXY_ARGV_JSON": json.dumps(proxy_argv),
                 "SYNAPSE_ACP_TRACE": str(trace),
                 "SYNAPSE_EDITOR_E2E_PROJECT": str(project),
-                "SYNAPSE_EDITOR_E2E_PROMPT": _PROMPT,
-                "SYNAPSE_EDITOR_E2E_RESPONSE": _RESPONSE,
+                "SYNAPSE_EDITOR_E2E_PROMPT": PROMPT,
+                "SYNAPSE_EDITOR_E2E_RESPONSE": RESPONSE,
             }
         )
-        llm.enqueue_text(_RESPONSE)
+        enqueue_governance_turn(llm, project)
         command = _command(client, fixture_dir)
         completed = subprocess.run(  # nosec B603
             command,
@@ -173,6 +196,26 @@ def test_real_editor_client_completes_opencode_acp_turn(tmp_path: Path) -> None:
         assert_editor_trace(
             trace,
             expected_client_names=_expected_client_names(client),
-            prompt=_PROMPT,
+            expected_agent_version=OPENCODE_VERSION,
+            prompt=PROMPT,
         )
-        _assert_provider_request(llm.prompt_requests)
+        assert_provider_governance(llm.prompt_requests)
+        assert (project / "allowed.txt").read_text(encoding="utf-8") == "governed\n"
+        assert not (project / "denied-before.txt").exists()
+        assert not (project / "denied-after.txt").exists()
+
+        removed = run_cli(
+            "adapters",
+            "opencode",
+            "uninstall",
+            "--project",
+            str(project),
+            cwd=project,
+        )
+        assert removed.ok(), removed.output
+        assert json.loads(config_path.read_text(encoding="utf-8")) == {
+            "$schema": "https://opencode.ai/config.json",
+            "permission": {"write": "allow"},
+        }
+
+    assert_durable_governance(hub.db_path, project, identity)

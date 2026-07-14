@@ -44,6 +44,7 @@ async def test_build_registers_tools_and_resources() -> None:
     tool_names = {tool.name for tool in await server.list_tools()}
     assert {
         "synapse_claim",
+        "synapse_git_claim",
         "synapse_release",
         "synapse_send",
         "synapse_inbox",
@@ -84,7 +85,12 @@ async def test_every_tool_and_resource_wrapper_dispatches(tmp_path: Path) -> Non
         server = build_mcp_server(handle.bridge)
         try:
             await server.call_tool("synapse_claim", {"task_id": "T", "paths": ["a"]})
+            await server.call_tool(
+                "synapse_git_claim",
+                {"task_id": "G", "paths": ["tests/test_mcp_server_build.py"]},
+            )
             await server.call_tool("synapse_release", {"task_id": "T"})
+            await server.call_tool("synapse_release", {"task_id": "G"})
             await server.call_tool("synapse_send", {"target": "X", "message": "m"})
             inbox = await server.call_tool("synapse_inbox", {"limit": 3})
             await server.call_tool("synapse_handoff", {"task_id": "T", "to_agent": "Y"})

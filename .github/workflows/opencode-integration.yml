@@ -12,6 +12,7 @@ on:
     paths:
       - "src/synapse_channel/apply_patch_paths.py"
       - "src/synapse_channel/codex_claim_guard.py"
+      - "src/synapse_channel/mcp/**"
       - "src/synapse_channel/opencode_*.py"
       - "src/synapse_channel/cli_adapters.py"
       - "src/synapse_channel/cli_opencode_adapter.py"
@@ -24,6 +25,7 @@ on:
       - "tests/fixtures/opencode/**"
       - "tests/test_*opencode*.py"
       - "tests/test_apply_patch_paths.py"
+      - "tests/test_mcp_git_claim.py"
       - "tests/test_cli_participants.py"
       - "tests/test_cli_participants_deliberate.py"
       - "docs/opencode.md"
@@ -37,6 +39,7 @@ on:
     paths:
       - "src/synapse_channel/apply_patch_paths.py"
       - "src/synapse_channel/codex_claim_guard.py"
+      - "src/synapse_channel/mcp/**"
       - "src/synapse_channel/opencode_*.py"
       - "src/synapse_channel/cli_adapters.py"
       - "src/synapse_channel/cli_opencode_adapter.py"
@@ -49,6 +52,7 @@ on:
       - "tests/fixtures/opencode/**"
       - "tests/test_*opencode*.py"
       - "tests/test_apply_patch_paths.py"
+      - "tests/test_mcp_git_claim.py"
       - "tests/test_cli_participants.py"
       - "tests/test_cli_participants_deliberate.py"
       - "docs/opencode.md"
@@ -116,6 +120,9 @@ jobs:
             src/synapse_channel/opencode_plugin.py
             src/synapse_channel/opencode_adapter.py
             src/synapse_channel/opencode_adapter_files.py
+            src/synapse_channel/mcp/git_claim.py
+            src/synapse_channel/mcp/bridge.py
+            src/synapse_channel/mcp/registration.py
             src/synapse_channel/cli_opencode_adapter.py
             src/synapse_channel/cli_adapters.py
             src/synapse_channel/cli_participants.py
@@ -144,6 +151,7 @@ jobs:
             tests/test_participant_headless_opencode.py
             tests/test_participant_opencode_api.py
             tests/test_cli_e2e_opencode.py
+            tests/test_mcp_git_claim.py
           )
           ruff check "${files[@]}"
           ruff format --check "${files[@]}"
@@ -154,6 +162,9 @@ jobs:
             src/synapse_channel/opencode_plugin.py \
             src/synapse_channel/opencode_adapter.py \
             src/synapse_channel/opencode_adapter_files.py \
+            src/synapse_channel/mcp/git_claim.py \
+            src/synapse_channel/mcp/bridge.py \
+            src/synapse_channel/mcp/registration.py \
             src/synapse_channel/cli_opencode_adapter.py \
             src/synapse_channel/cli_participants_opencode.py \
             src/synapse_channel/participants/opencode_auth.py \
@@ -177,7 +188,8 @@ jobs:
             tests/test_opencode_stream.py \
             tests/test_participant_headless_opencode.py \
             tests/test_participant_opencode_api.py \
-            tests/test_cli_e2e_opencode.py
+            tests/test_cli_e2e_opencode.py \
+            tests/test_mcp_git_claim.py
       - name: Build and inspect the distributable wheel
         run: |
           set -euo pipefail
@@ -188,6 +200,7 @@ jobs:
           unzip -Z1 "$wheel" | sort > "$RUNNER_TEMP/opencode-wheel-files.txt"
           for module in \
             apply_patch_paths.py \
+            mcp/git_claim.py \
             opencode_claim_guard.py \
             opencode_plugin.py \
             opencode_adapter.py \

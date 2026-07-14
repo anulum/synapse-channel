@@ -33,6 +33,14 @@ def _xdotool(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _checked_xdotool(action: str, *args: str) -> None:
+    """Run one GUI action and fail with its diagnostic output."""
+    completed = _xdotool(*args)
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic"
+        raise RuntimeError(f"xdotool could not {action}: {detail}")
+
+
 def _find_window(deadline: float) -> str:
     while time.monotonic() < deadline:
         result = _xdotool("search", "--onlyvisible", "--class", "jetbrains-.*")
@@ -159,20 +167,44 @@ def main() -> int:
         try:
             deadline = time.monotonic() + _TIMEOUT_SECONDS
             window = _find_window(deadline)
-            _xdotool("windowactivate", "--sync", window)
-            _xdotool("key", "--window", window, "ctrl+alt+shift+j")
-            time.sleep(3)
-            _xdotool("key", "--window", window, "ctrl+alt+shift+k")
-            time.sleep(1)
-            selected = _xdotool("type", "--window", window, "--delay", "1", "--", _AGENT_NAME)
-            if selected.returncode != 0:
-                raise RuntimeError(f"could not select the ACP agent: {selected.stderr}")
-            _xdotool("key", "--window", window, "Return")
+            _checked_xdotool("activate the PyCharm window", "windowactivate", "--sync", window)
+            _checked_xdotool(
+                "open the AI Assistant tool window",
+                "key",
+                "--window",
+                window,
+                "ctrl+alt+shift+j",
+            )
+            _checked_xdotool(
+                "open the ACP agent selector",
+                "key",
+                "--window",
+                window,
+                "ctrl+alt+shift+k",
+            )
+            _checked_xdotool(
+                "select the ACP agent",
+                "type",
+                "--window",
+                window,
+                "--delay",
+                "1",
+                "--",
+                _AGENT_NAME,
+            )
+            _checked_xdotool("confirm the ACP agent", "key", "--window", window, "Return")
             _wait_for_trace(trace, '"method":"session/new"', deadline, process)
-            typed = _xdotool("type", "--window", window, "--delay", "1", "--", prompt)
-            if typed.returncode != 0:
-                raise RuntimeError(f"could not type the ACP prompt: {typed.stderr}")
-            _xdotool("key", "--window", window, "Return")
+            _checked_xdotool(
+                "type the ACP prompt",
+                "type",
+                "--window",
+                window,
+                "--delay",
+                "1",
+                "--",
+                prompt,
+            )
+            _checked_xdotool("submit the ACP prompt", "key", "--window", window, "Return")
             _wait_for_trace(trace, '"response_to":"session/prompt"', deadline, process)
             _screenshot(screenshot)
             return 0
