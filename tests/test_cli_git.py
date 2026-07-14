@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -356,7 +357,9 @@ def test_cmd_git_init_dispatches(capsys: pytest.CaptureFixture[str]) -> None:
     assert captured["base_branch"] == "trunk"
 
 
-def test_cmd_git_init_installs_services(capsys: pytest.CaptureFixture[str]) -> None:
+def test_cmd_git_init_installs_services(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     captured: dict[str, Any] = {}
 
     def install_services(**kwargs: Any) -> list[str]:
@@ -386,6 +389,29 @@ def test_cmd_git_init_installs_services(capsys: pytest.CaptureFixture[str]) -> N
     assert "synapse-arm@.service" in capsys.readouterr().out
     assert captured["project"] == "repo"
     assert captured["identity"] == "repo/ux"
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    home = tmp_path / "home"
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("HOME", str(home))
+    code = cli.main(
+        [
+            "git-init",
+            "--install-user-services",
+            "--synapse-bin",
+            "+/usr/bin/synapse",
+        ]
+    )
+    captured_io = capsys.readouterr()
+    assert code == 2
+    assert "ExecStart control prefix" in captured_io.err
+    assert "Traceback" not in captured_io.out + captured_io.err
+    assert not (repo / ".synapse").exists()
+    assert not (repo / ".git" / "hooks" / "post-commit").exists()
+    assert not (repo / ".git" / "hooks" / "post-merge").exists()
+    assert not home.exists()
 
 
 def test_cmd_git_init_reports_git_error(capsys: pytest.CaptureFixture[str]) -> None:

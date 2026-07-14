@@ -59,7 +59,11 @@ from synapse_channel.client.diagnostics import (
     summarise,
 )
 from synapse_channel.ops_redeploy import build_redeploy_checklist, render_redeploy_checklist
-from synapse_channel.service_setup import install_user_services, service_suggestions
+from synapse_channel.service_setup import (
+    install_user_services,
+    service_suggestions,
+    validate_systemd_executable,
+)
 
 RosterProbe = Callable[..., Awaitable[DoctorRoster | list[str] | None]]
 """Async callable that returns the live hub roster for doctor diagnostics."""
@@ -477,6 +481,18 @@ def _cmd_doctor(
             notify_runner(notify_cmd, findings, uri=args.uri)
         return code
 
+    install_requested = getattr(args, "install_user_services", False) or getattr(
+        args, "start_user_services", False
+    )
+    if (install_requested or getattr(args, "fix", False)) and getattr(
+        args, "synapse_bin", None
+    ) is not None:
+        try:
+            validate_systemd_executable(args.synapse_bin)
+        except ValueError as exc:
+            print(f"synapse doctor: {exc}", file=sys.stderr)
+            return 2
+
     code, lines, diagnoses = diagnose()
     for line in lines:
         print(line)
@@ -494,19 +510,21 @@ def _cmd_doctor(
             )
         ):
             print(line)
-    install_requested = getattr(args, "install_user_services", False) or getattr(
-        args, "start_user_services", False
-    )
     if install_requested:
         project, service_identity = _resolve_service_identity(
             args, env=env, cwd_basename=cwd_basename, home_basename=home_basename
         )
-        for line in service_installer(
-            project=project,
-            identity=service_identity,
-            synapse_bin=getattr(args, "synapse_bin", None),
-            start=getattr(args, "start_user_services", False),
-        ):
+        try:
+            service_lines = service_installer(
+                project=project,
+                identity=service_identity,
+                synapse_bin=getattr(args, "synapse_bin", None),
+                start=getattr(args, "start_user_services", False),
+            )
+        except ValueError as exc:
+            print(f"synapse doctor: {exc}", file=sys.stderr)
+            return 2
+        for line in service_lines:
             print(line)
     elif getattr(args, "fix", False):
         project, service_identity = _resolve_service_identity(
@@ -524,12 +542,17 @@ def _cmd_doctor(
                 f"[fix] auto-repairing {', '.join(repairable)}: installing and starting "
                 "the local user services"
             )
-            for line in service_installer(
-                project=project,
-                identity=service_identity,
-                synapse_bin=getattr(args, "synapse_bin", None),
-                start=True,
-            ):
+            try:
+                service_lines = service_installer(
+                    project=project,
+                    identity=service_identity,
+                    synapse_bin=getattr(args, "synapse_bin", None),
+                    start=True,
+                )
+            except ValueError as exc:
+                print(f"synapse doctor: {exc}", file=sys.stderr)
+                return 2
+            for line in service_lines:
                 print(line)
             code, lines, diagnoses = diagnose()
             print("[fix] re-check:")

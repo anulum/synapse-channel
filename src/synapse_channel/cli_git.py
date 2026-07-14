@@ -30,7 +30,11 @@ from synapse_channel.git.gitclaim import GitError, run_git_claim
 from synapse_channel.git.gitconflict import run_conflicts
 from synapse_channel.git.githook import check_hooks, install_hooks, run_git_release
 from synapse_channel.git.gitinit import init_repo
-from synapse_channel.service_setup import install_user_services, service_suggestions
+from synapse_channel.service_setup import (
+    install_user_services,
+    service_suggestions,
+    validate_systemd_executable,
+)
 from synapse_channel.terminal_text import shell_command_arg, shell_long_option
 
 AsyncGitCommand = Callable[..., Coroutine[Any, Any, int]]
@@ -135,6 +139,13 @@ def _cmd_git_init(
     guide (branch convention + worktree workflow). Everything is client-side and
     idempotent; a re-run refreshes its own files and never clobbers a user's.
     """
+    service_install_requested = args.install_user_services or args.start_user_services
+    if service_install_requested and args.synapse_bin is not None:
+        try:
+            validate_systemd_executable(args.synapse_bin)
+        except ValueError as exc:
+            print(f"git-init: {exc}", file=sys.stderr)
+            return 2
     try:
         lines = repo_initializer(
             uri=args.uri,
@@ -148,15 +159,18 @@ def _cmd_git_init(
         return 1
     project = args.service_project or cwd_name or Path.cwd().name
     identity = args.service_identity or project
-    if args.install_user_services or args.start_user_services:
-        lines.extend(
-            service_installer(
+    if service_install_requested:
+        try:
+            service_lines = service_installer(
                 project=project,
                 identity=identity,
                 synapse_bin=args.synapse_bin,
                 start=args.start_user_services,
             )
-        )
+        except ValueError as exc:
+            print(f"git-init: {exc}", file=sys.stderr)
+            return 2
+        lines.extend(service_lines)
     else:
         lines.append("service setup available: run `synapse git-init --install-user-services`")
         lines.extend(

@@ -376,7 +376,7 @@ def test_cmd_doctor_fix_reports_nothing_to_repair_when_healthy(
 
 
 def test_cmd_doctor_installs_user_services(
-    capsys: pytest.CaptureFixture[str],
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     captured: dict[str, Any] = {}
 
@@ -410,6 +410,24 @@ def test_cmd_doctor_installs_user_services(
         "start": True,
     }
     assert "systemctl --user daemon-reload" in capsys.readouterr().out
+
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    code = cli.main(
+        [
+            "doctor",
+            "--uri",
+            "ws://127.0.0.1:1",
+            "--install-user-services",
+            "--synapse-bin",
+            "+/usr/bin/synapse",
+        ]
+    )
+    captured_io = capsys.readouterr()
+    assert code == 2
+    assert "ExecStart control prefix" in captured_io.err
+    assert "Traceback" not in captured_io.out + captured_io.err
+    assert not home.exists()
 
 
 def test_main_routes_to_doctor(

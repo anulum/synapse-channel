@@ -14,7 +14,11 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from synapse_channel.client.agent import default_hub_uri
-from synapse_channel.service_setup import install_user_services, service_suggestions
+from synapse_channel.service_setup import (
+    install_user_services,
+    service_suggestions,
+    validate_systemd_executable,
+)
 from synapse_channel.worker_session import run_worker_session
 
 ServiceInstaller = Callable[..., list[str]]
@@ -40,6 +44,8 @@ def _cmd_init(
     identity = args.identity or project
     try:
         if args.install_user_services or args.start_user_services:
+            if args.synapse_bin is not None:
+                validate_systemd_executable(args.synapse_bin)
             lines = service_installer(
                 project=project,
                 identity=identity,

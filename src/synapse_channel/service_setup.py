@@ -69,7 +69,7 @@ def user_systemd_dir(*, home: Path | None = None) -> Path:
 
 def render_hub_unit(*, synapse_bin: str) -> str:
     """Render the local-first hub user service."""
-    executable = _systemd_executable(synapse_bin)
+    executable = validate_systemd_executable(synapse_bin)
     # The hub must not be ordered After=default.target: WantedBy=default.target
     # gives the target an implicit After= on this unit, and the resulting boot
     # ordering cycle makes systemd delete the presence/arm start jobs.
@@ -100,7 +100,7 @@ def render_hub_unit(*, synapse_bin: str) -> str:
 
 def render_presence_unit(*, synapse_bin: str) -> str:
     """Render the project presence-holder template unit."""
-    executable = _systemd_executable(synapse_bin)
+    executable = validate_systemd_executable(synapse_bin)
     return (
         "# SPDX-License-"
         "Identifier: AGPL-3.0-or-later\n"
@@ -143,8 +143,13 @@ def _unit_token(value: str, *, label: str) -> str:
     return value.replace("%", "%%")
 
 
-def _systemd_executable(value: str) -> str:
-    """Return a literal executable token with systemd control prefixes refused."""
+def validate_systemd_executable(value: str) -> str:
+    """Return a literal executable token with systemd control prefixes refused.
+
+    Public service-install entrypoints call this pure validator before any
+    repository, hook, scaffold, or service-file mutation. Unit renderers call it
+    again so direct library use retains the same fail-closed boundary.
+    """
     executable = _unit_token(value, label="synapse executable path")
     if executable[0] in _SYSTEMD_EXEC_PREFIXES:
         prefixes = "".join(sorted(_SYSTEMD_EXEC_PREFIXES))
@@ -162,7 +167,7 @@ def render_arm_unit(
     token_file: str | None = None,
 ) -> str:
     """Render the persistent non-LLM wake listener template unit."""
-    executable = _systemd_executable(synapse_bin)
+    executable = validate_systemd_executable(synapse_bin)
     hub_uri = _unit_token(uri, label="hub URI")
     extra_argument = ""
     if token_file is not None:
