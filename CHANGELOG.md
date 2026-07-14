@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.7] - 2026-07-14
+
 ### Added
 
 - OpenCode's ACP editor gate now proves the governance path, not only a prompt
@@ -51,6 +53,17 @@ All notable changes to this project are documented here.
   which reads the `synapse.identity` / `synapse.uri` / `synapse.tokenFile` recorded
   for the committing worktree and releases that seat's own claims, using the baked
   identity only as the fallback where a worktree records none.
+
+- The `pre-push-capability-manifest` hook no longer crashes when `git push` runs
+  from a linked worktree. The manifest scan inherited the push hook's `GIT_DIR` /
+  `GIT_WORK_TREE`, so `git ls-files` resolved the hook's repository instead of the
+  scanned directory and produced a phantom path; the scan now strips those Git
+  overrides so the `-C` directory alone decides the repository.
+
+### Changed
+
+- Bumped `softprops/action-gh-release` to v3.0.2 and the GitHub App development
+  requirements (coverage 7.15.1, mypy 2.3.0).
 
 ## [0.99.6] - 2026-07-14
 
