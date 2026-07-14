@@ -137,6 +137,24 @@ inside the hosts' 600-second hook ceiling.
 
 ## What fail-closed means here
 
+### Provider × fail-closed matrix (hook failure)
+
+Synapse always converts **handled** failures into a structured deny on exit 0.
+Hosts may still **fail open** when the hook process itself crashes, times out,
+or returns non-JSON. That host residual is the fail-open matrix:
+
+| Provider | Synapse handled failure | Host crash / timeout / bad JSON | Outside matcher (shell / MCP / other tools) |
+|---|---|---|---|
+| Claude Code | deny on exit 0 (`Edit`/`Write`) | host-dependent; structured deny preferred | **fail-open** for `Bash` and unguarded tools |
+| Codex | deny on exit 0 (`apply_patch`) | host documents PreToolUse as guardrail | **fail-open** for shell, `unified_exec`, MCP, other matchers |
+| Gemini CLI | structured `decision=deny` on exit 0 | host treats plain non-JSON exit 1 as warning (**fail-open**) | **fail-open** for `run_shell_command` and MCP |
+| Grok | structured `decision=deny` on exit 0 | host fail-open on timeout/crash/malformed | **fail-open** for `run_terminal_command` and unguarded tools |
+| Kimi Code | structured deny on exit 0 | host documents fail-open on crash/timeout | **fail-open** outside `Edit`/`Write` matcher |
+| OpenCode | plugin throws before mutation | helper crash/timeout → throw (**fail-closed** for covered tools) | **fail-open** for shell, custom tools, MCP, new tool names |
+
+See also [SECURITY.md — known limitations](../SECURITY.md#out-of-scope--known-limitations)
+for the residual that commit-time `git-claim-check` covers independently.
+
 The Synapse handler returns a valid deny object on exit zero for every handled
 parse, Git, state, transport, timeout, and unexpected runtime failure. This
 avoids provider conventions in which an ordinary non-zero error means

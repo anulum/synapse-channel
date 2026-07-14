@@ -353,7 +353,15 @@ loopback would only break port publishing without adding security.
   externally validated for full A2A conformance. Remote conformance, real webhook
   receiver behavior, and operator-visible production deployment receipts remain
   external validation work. The A2A-specific exposed-edge threat model is
-  documented in `docs/a2a-deployment-threat-model.md`.
+  documented in `docs/a2a-deployment-threat-model.md`. The Origin/Host browser
+  boundary is **opt-in** (`synapse a2a-serve --allow-origin`); opaque `null`
+  origins are always rejected. Print the effective policy with
+  `synapse doctor --a2a-policy` (and optional `--a2a-allow-origin` mirrors).
+- Provider file-edit claim hooks are **not** a full OS sandbox. Synapse fail-closes
+  handled hook failures, but several hosts fail open on crash/timeout, and shell
+  or MCP write paths stay outside the matchers. See the provider × fail-closed
+  matrix in [`docs/claim-guard-hooks.md`](docs/claim-guard-hooks.md). Commit-time
+  `synapse git-claim-check --staged` remains the independent second gate.
 - `tools/fuzz_protocol_decode.py` provides local decoder hardening evidence for
   malformed bytes, malformed JSON, quoted bracket runs, valid nested JSON, and
   depth-limit rejection. A weekly and manually dispatchable read-only workflow

@@ -16,6 +16,7 @@ import pytest
 
 from synapse_channel.client.diagnostics import (
     Diagnosis,
+    check_a2a_origin_policy,
     check_deaf_agents,
     check_disk_space,
     check_exposure,
@@ -282,6 +283,34 @@ class TestUnreadAddressees:
 
         assert verdict.status == "warn"
         assert "and 2 more" in verdict.detail
+
+
+# --- check_a2a_origin_policy --------------------------------------------------
+
+
+def test_a2a_origin_policy_warns_when_allow_list_off() -> None:
+    diagnosis = check_a2a_origin_policy()
+    assert diagnosis.check == "a2a_origin_policy"
+    assert diagnosis.status == "warn"
+    assert "opaque null" in diagnosis.detail
+    assert "OFF" in diagnosis.detail
+    assert "--allow-origin" in diagnosis.remedy or "a2a-allow-origin" in diagnosis.remedy
+
+
+def test_a2a_origin_policy_pass_with_normalised_origins() -> None:
+    diagnosis = check_a2a_origin_policy(
+        allow_origins=(" HTTPS://IDE.Example/ ", "http://127.0.0.1:8877")
+    )
+    assert diagnosis.status == "pass"
+    assert "ON" in diagnosis.detail
+    assert "https://ide.example" in diagnosis.detail
+    assert "http://127.0.0.1:8877" in diagnosis.detail
+
+
+def test_a2a_origin_policy_fails_opaque_null() -> None:
+    diagnosis = check_a2a_origin_policy(allow_origins=("null",))
+    assert diagnosis.status == "fail"
+    assert "invalid" in diagnosis.detail
 
 
 # --- check_multi_seat_posture -------------------------------------------------

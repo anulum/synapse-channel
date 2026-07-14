@@ -49,6 +49,36 @@ def bearer_token_matches(authorization: str, token: str) -> bool:
     return hmac.compare_digest(authorization, f"Bearer {token}")
 
 
+def describe_a2a_origin_policy(*, allow_origins: tuple[str, ...] = ()) -> dict[str, object]:
+    """Return the effective A2A browser Origin/Host policy for operators.
+
+    Parameters
+    ----------
+    allow_origins : tuple[str, ...]
+        Raw ``--allow-origin`` values the operator intends to enable (may be empty).
+
+    Returns
+    -------
+    dict[str, object]
+        Stable mapping: whether opaque ``null`` is rejected, whether the allow-list
+        is active, the normalised origins, and that Host authority binding applies
+        when the list is non-empty.
+
+    Raises
+    ------
+    ValueError
+        If any supplied origin fails :func:`normalise_origin`.
+    """
+    normalised = tuple(normalise_origin(origin) for origin in allow_origins)
+    return {
+        "opaque_null_rejected": True,
+        "allow_list_enabled": bool(normalised),
+        "allow_origins": list(normalised),
+        "host_authority_binding_when_enabled": True,
+        "default_allow_list": "off",
+    }
+
+
 def normalise_origin(value: str) -> str:
     """Validate and normalise one concrete HTTP(S) web origin.
 

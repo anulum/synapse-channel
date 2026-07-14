@@ -39,3 +39,11 @@ def test_provider_claim_hook_guide_is_discoverable_and_honest() -> None:
     assert "final-component symlink" in guide
     assert "not complete Bash or filesystem isolation" in readme
     assert "git-claim-check --staged" in guide
+    # SCH-H-NEW-05: provider × fail-closed matrix for hook-host residuals
+    assert "Provider × fail-closed matrix" in guide
+    assert "Host crash / timeout / bad JSON" in guide
+    for provider in ("Claude Code", "Codex", "Gemini CLI", "Grok", "Kimi Code", "OpenCode"):
+        assert provider in guide
+    security = Path("SECURITY.md").read_text(encoding="utf-8")
+    assert "docs/claim-guard-hooks.md" in security
+    assert "doctor --a2a-policy" in security

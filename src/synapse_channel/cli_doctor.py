@@ -46,6 +46,7 @@ from synapse_channel.cli_queries import AgentFactory
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.client.diagnostics import (
     Diagnosis,
+    check_a2a_origin_policy,
     check_deaf_agents,
     check_disk_space,
     check_exposure,
@@ -241,6 +242,8 @@ async def _diagnose(
     role_grants: str | Path | None = None,
     event_store_path: str | Path | None = None,
     event_store_key_file: str | Path | None = None,
+    a2a_policy: bool = False,
+    a2a_allow_origins: tuple[str, ...] = (),
 ) -> tuple[int, list[str], list[Diagnosis]]:
     """Resolve the identity, run every check, and return the summarised verdicts.
 
@@ -314,6 +317,8 @@ async def _diagnose(
             force=multi_seat,
         )
     )
+    if a2a_policy or a2a_allow_origins:
+        diagnoses.append(check_a2a_origin_policy(allow_origins=a2a_allow_origins))
     diagnoses.append(
         check_unread_addressees(
             feed_lines=feed_tail_reader(env),
@@ -453,6 +458,8 @@ def _cmd_doctor(
                 role_grants=getattr(args, "role_grants", None) or None,
                 event_store_path=getattr(args, "db_path", None),
                 event_store_key_file=getattr(args, "db_key_file", None),
+                a2a_policy=bool(getattr(args, "a2a_policy", False)),
+                a2a_allow_origins=tuple(getattr(args, "a2a_allow_origin", ()) or ()),
             )
         )
 
@@ -742,6 +749,24 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help=(
             "Owner-only SQLCipher key file for the event store; when set, doctor "
             "opens --db-path with the key (requires synapse-channel[sqlcipher])."
+        ),
+    )
+    doctor.add_argument(
+        "--a2a-policy",
+        action="store_true",
+        help=(
+            "Report the A2A Origin/Host browser-boundary policy (opaque null always "
+            "rejected; allow-list off by default). Combine with --a2a-allow-origin."
+        ),
+    )
+    doctor.add_argument(
+        "--a2a-allow-origin",
+        action="append",
+        default=[],
+        metavar="ORIGIN",
+        help=(
+            "Concrete HTTP(S) origin to include in the A2A allow-list policy report "
+            "(repeatable; same shape as synapse a2a-serve --allow-origin)."
         ),
     )
     doctor.set_defaults(func=_cmd_doctor)

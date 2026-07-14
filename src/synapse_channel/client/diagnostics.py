@@ -259,6 +259,54 @@ def check_waiter(roster: list[str] | None, waiter_name: str) -> Diagnosis:
     )
 
 
+def check_a2a_origin_policy(*, allow_origins: tuple[str, ...] = ()) -> Diagnosis:
+    """Report the effective A2A Origin/Host browser-boundary policy (SCH-H-NEW-04).
+
+    Always records that opaque ``null`` origins are rejected. When no allow-list
+    entries are supplied the check warns that the browser boundary is off by
+    default; when entries are supplied they are normalised and listed.
+    """
+    from synapse_channel.a2a_http_protocol import describe_a2a_origin_policy
+
+    try:
+        policy = describe_a2a_origin_policy(allow_origins=allow_origins)
+    except ValueError as exc:
+        return Diagnosis(
+            check="a2a_origin_policy",
+            status="fail",
+            detail=f"invalid --a2a-allow-origin value: {exc}",
+            remedy="pass exact HTTP(S) origins such as https://ide.example (no opaque null)",
+        )
+    enabled = bool(policy["allow_list_enabled"])
+    raw_origins = policy["allow_origins"]
+    origins: list[str] = (
+        [str(item) for item in raw_origins] if isinstance(raw_origins, list) else []
+    )
+    origin_text = ", ".join(origins) if origins else "(none)"
+    detail = (
+        "opaque null origins rejected; "
+        f"allow-list {'ON' if enabled else 'OFF (default)'}; "
+        f"origins=[{origin_text}]; "
+        "Host authority binding enforced when allow-list is on"
+    )
+    if enabled:
+        return Diagnosis(
+            check="a2a_origin_policy",
+            status="pass",
+            detail=detail,
+            remedy="mirror these origins on synapse a2a-serve --allow-origin …",
+        )
+    return Diagnosis(
+        check="a2a_origin_policy",
+        status="warn",
+        detail=detail,
+        remedy=(
+            "for browser-facing A2A, pass --a2a-allow-origin (and a2a-serve "
+            "--allow-origin) for each concrete origin; opaque null is always rejected"
+        ),
+    )
+
+
 def check_multi_seat_posture(
     *,
     roster: list[str] | None,

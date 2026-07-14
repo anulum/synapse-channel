@@ -18,6 +18,7 @@ import pytest
 from a2a_server_helpers import HandlerHarness, RecordingAgent
 from synapse_channel import cli_a2a
 from synapse_channel.a2a_http_protocol import (
+    describe_a2a_origin_policy,
     endpoint_authorities,
     normalise_authority,
     normalise_origin,
@@ -356,6 +357,17 @@ def test_normalise_origin_lowercases_and_trims(value: str, expected: str) -> Non
 def test_normalise_origin_refuses_non_exact_principals(value: str) -> None:
     with pytest.raises(ValueError, match="exact|opaque"):
         normalise_origin(value)
+
+
+def test_describe_a2a_origin_policy_reports_defaults_and_enabled_list() -> None:
+    off = describe_a2a_origin_policy()
+    assert off["opaque_null_rejected"] is True
+    assert off["allow_list_enabled"] is False
+    assert off["default_allow_list"] == "off"
+    assert off["host_authority_binding_when_enabled"] is True
+    on = describe_a2a_origin_policy(allow_origins=("https://ide.example",))
+    assert on["allow_list_enabled"] is True
+    assert on["allow_origins"] == ["https://ide.example"]
 
 
 def test_endpoint_authorities_cover_only_the_advertised_default_port() -> None:
