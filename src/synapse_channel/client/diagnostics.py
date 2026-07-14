@@ -266,6 +266,7 @@ def check_multi_seat_posture(
     identity_trust: str | PathLike[str] | None = None,
     role_grants: str | PathLike[str] | None = None,
     force: bool = False,
+    rate_limit_enabled: bool | None = None,
 ) -> Diagnosis:
     """Advise multi-seat trust materials when more than one seat is live.
 
@@ -274,6 +275,13 @@ def check_multi_seat_posture(
     bundle + role-grant store). Solo loopback remains a pass so everyday single-
     agent use is not noisy. Missing materials are warnings, not failures — the
     operator may still be on open loopback deliberately.
+
+    Flood limits are a separate multi-seat footgun: the hub leaves per-agent and
+    per-host rate limiters off unless ``--rate`` / ``--host-rate`` are positive or
+    ``--secure`` composes them. Pass ``rate_limit_enabled=False`` when the live
+    hub is known to have limiters disabled, ``True`` when they are confirmed on,
+    or leave ``None`` when the doctor cannot observe hub flood settings (still
+    surfaces an advisory so multi-seat fleets are not silent on the class).
     """
     if roster is None:
         return Diagnosis(
@@ -303,21 +311,36 @@ def check_multi_seat_posture(
         gaps.append("identity trust bundle missing")
     if roles_path is None or not roles_path.is_file():
         gaps.append("role-grants store missing")
+    if rate_limit_enabled is False:
+        gaps.append("flood rate limiters disabled")
+    elif rate_limit_enabled is None:
+        gaps.append("flood rate limiters not confirmed")
     detail = f"multi-seat roster ({len(agents)} agent(s), {len(waiters)} waiter(s))" + (
-        f": {'; '.join(gaps)}" if gaps else ": token + trust + role-grants present"
+        f": {'; '.join(gaps)}" if gaps else ": token + trust + role-grants + rate limits present"
+    )
+    flood_remedy = (
+        "bound multi-seat floods with `synapse hub --secure` (composes per-agent and "
+        "per-host rates) or explicit positive `--rate` / `--host-rate` "
+        "(limiters stay off when rate is 0)"
     )
     if gaps:
-        return Diagnosis(
-            check="multi-seat",
-            status="warn",
-            detail=detail,
-            remedy=(
+        trust_bits = [g for g in gaps if not g.startswith("flood rate")]
+        remedy_parts: list[str] = []
+        if trust_bits:
+            remedy_parts.append(
                 "for multi-seat trust: set --token, enrol keys "
                 "(`synapse identity keygen … --enroll`), grant roles "
                 "(`synapse role grant …`), then start "
                 "`synapse hub --team-secure --identity-trust … --role-grants …` "
                 "(see docs/team-secure.md and the multi-seat golden path)"
-            ),
+            )
+        if any(g.startswith("flood rate") for g in gaps):
+            remedy_parts.append(flood_remedy)
+        return Diagnosis(
+            check="multi-seat",
+            status="warn",
+            detail=detail,
+            remedy="; ".join(remedy_parts),
         )
     return Diagnosis(
         check="multi-seat",
@@ -325,7 +348,8 @@ def check_multi_seat_posture(
         detail=detail,
         remedy=(
             "start the hub with --team-secure (and the trust/role paths) if it is "
-            "not already; private directed messages require that profile"
+            "not already; private directed messages require that profile; keep "
+            "flood bounds via --secure or explicit --rate/--host-rate"
         ),
     )
 

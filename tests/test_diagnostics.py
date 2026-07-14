@@ -313,7 +313,9 @@ def test_multi_seat_detects_multiple_agents_without_materials() -> None:
     assert "no connect token" in diagnosis.detail
     assert "identity trust" in diagnosis.detail
     assert "role-grants" in diagnosis.detail
+    assert "flood rate limiters not confirmed" in diagnosis.detail
     assert "--team-secure" in diagnosis.remedy
+    assert "--secure" in diagnosis.remedy or "--rate" in diagnosis.remedy
 
 
 def test_multi_seat_force_single_agent_with_materials(tmp_path: Path) -> None:
@@ -327,9 +329,10 @@ def test_multi_seat_force_single_agent_with_materials(tmp_path: Path) -> None:
         identity_trust=trust,
         role_grants=roles,
         force=True,
+        rate_limit_enabled=True,
     )
     assert diagnosis.status == "pass"
-    assert "token + trust + role-grants present" in diagnosis.detail
+    assert "token + trust + role-grants + rate limits present" in diagnosis.detail
     assert "--team-secure" in diagnosis.remedy
 
 
@@ -339,6 +342,7 @@ def test_multi_seat_token_but_missing_files_is_warn() -> None:
         token="t",
         identity_trust="/no/such/trust.json",
         role_grants="/no/such/roles.json",
+        rate_limit_enabled=True,
     )
     assert diagnosis.status == "warn"
     assert "identity trust bundle missing" in diagnosis.detail
@@ -353,6 +357,39 @@ def test_multi_seat_two_waiters_counts_as_multi() -> None:
     )
     assert diagnosis.status == "warn"
     assert "multi-seat" in diagnosis.detail
+
+
+def test_multi_seat_warns_when_rate_limiters_disabled(tmp_path: Path) -> None:
+    trust = tmp_path / "trust.json"
+    roles = tmp_path / "roles.json"
+    trust.write_text("{}", encoding="utf-8")
+    roles.write_text("{}", encoding="utf-8")
+    diagnosis = check_multi_seat_posture(
+        roster=["a/one", "a/two"],
+        token="secret",
+        identity_trust=trust,
+        role_grants=roles,
+        rate_limit_enabled=False,
+    )
+    assert diagnosis.status == "warn"
+    assert "flood rate limiters disabled" in diagnosis.detail
+    assert "--secure" in diagnosis.remedy or "--rate" in diagnosis.remedy
+
+
+def test_multi_seat_warns_when_rate_limiters_unobserved(tmp_path: Path) -> None:
+    trust = tmp_path / "trust.json"
+    roles = tmp_path / "roles.json"
+    trust.write_text("{}", encoding="utf-8")
+    roles.write_text("{}", encoding="utf-8")
+    diagnosis = check_multi_seat_posture(
+        roster=["a/one", "a/two"],
+        token="secret",
+        identity_trust=trust,
+        role_grants=roles,
+    )
+    assert diagnosis.status == "warn"
+    assert "flood rate limiters not confirmed" in diagnosis.detail
+    assert "--secure" in diagnosis.remedy or "--rate" in diagnosis.remedy
 
 
 # --- check_deaf_agents -------------------------------------------------------
