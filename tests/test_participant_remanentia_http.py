@@ -109,6 +109,7 @@ async def test_authenticated_recall_uses_fixed_path_and_floors_every_hit(
 ) -> None:
     token_file = tmp_path / "token"
     token_file.write_text("top-secret\n", encoding="utf-8")
+    token_file.chmod(0o600)
     live_server.plan.body = _response("q", [_entry(), _entry(name="second.md", score=None)])
     recall = RemanentiaHttpRecall(live_server.url, token_file=token_file)
 
@@ -259,8 +260,24 @@ async def test_token_file_failures_are_bounded_and_never_echo_the_path(
     token_file = tmp_path / "sensitive-name-token"
     if contents is not None:
         token_file.write_bytes(contents)
+        token_file.chmod(0o600)
     recall = RemanentiaHttpRecall(live_server.url, token_file=token_file)
     with pytest.raises((ValueError, RuntimeError), match=message) as failure:
+        await recall.recall("q", top_k=1)
+    assert str(token_file) not in str(failure.value)
+    assert live_server.plan.requests == []
+
+
+@pytest.mark.asyncio
+async def test_group_readable_token_file_is_refused_without_path_echo(
+    live_server: _LiveServer, tmp_path: Path
+) -> None:
+    """SCH-H-NEW-11: owner-only secret floor rejects mode 0644 tokens."""
+    token_file = tmp_path / "leaky-token"
+    token_file.write_text("still-secret", encoding="utf-8")
+    token_file.chmod(0o644)
+    recall = RemanentiaHttpRecall(live_server.url, token_file=token_file)
+    with pytest.raises(RuntimeError, match="unavailable") as failure:
         await recall.recall("q", top_k=1)
     assert str(token_file) not in str(failure.value)
     assert live_server.plan.requests == []
@@ -319,6 +336,7 @@ async def test_server_error_body_url_and_token_are_not_reflected(
 ) -> None:
     token_file = tmp_path / "token"
     token_file.write_text("hidden-token", encoding="utf-8")
+    token_file.chmod(0o600)
     live_server.plan.status = 500
     live_server.plan.body = b"hidden-token https://private.invalid/secret"
     with pytest.raises(RuntimeError, match="memory service request failed") as failure:

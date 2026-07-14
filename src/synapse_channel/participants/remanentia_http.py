@@ -21,6 +21,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 from synapse_channel.participants.memory_contract import (
     MemoryHit,
     MemoryRecallResult,
@@ -170,21 +171,28 @@ class RemanentiaHttpRecall:
         return self._parse(payload, query, top_k)
 
     def _token(self) -> str | None:
+        """Return the bearer from an owner-only token file (SCH-H-NEW-11).
+
+        Uses the shared secret floor (O_NOFOLLOW, euid owner, group/other bits
+        clear) so memory credentials match hub token-file discipline. Errors
+        never echo the path, preserving the participant non-reflection contract.
+        """
         path = self.token_file
         if path is None:
             return None
-        path = Path(path)
         try:
-            raw = path.read_bytes()
-        except OSError:
+            token = read_secret_file(path, flag="memory-token-file")
+        except SecretFileError as exc:
+            message = str(exc)
+            if "empty" in message:
+                raise ValueError("memory token file is empty or exceeds its size limit") from None
+            if "UTF-8" in message:
+                raise ValueError("memory token file is not valid UTF-8") from None
+            # Missing, symlink, wrong owner/mode, oversized raw open, etc.
             raise RuntimeError("memory token file is unavailable") from None
-        if not raw or len(raw) > MAX_TOKEN_BYTES:
+        if len(token.encode("utf-8")) > MAX_TOKEN_BYTES:
             raise ValueError("memory token file is empty or exceeds its size limit")
-        try:
-            token = raw.decode("utf-8").strip()
-        except UnicodeDecodeError:
-            raise ValueError("memory token file is not valid UTF-8") from None
-        if not token or any(character.isspace() or ord(character) < 33 for character in token):
+        if any(character.isspace() or ord(character) < 33 for character in token):
             raise ValueError("memory token file contains an invalid bearer token")
         return token
 

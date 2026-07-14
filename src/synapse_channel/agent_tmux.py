@@ -37,7 +37,6 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from tempfile import gettempdir
 from typing import Protocol
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI
@@ -209,10 +208,15 @@ def _project_from_identity(identity: str) -> str:
 
 
 def _registry_dir(config: AgentTmuxConfig) -> Path:
-    """Return the registry directory for ``config``."""
+    """Return the registry directory for ``config`` (SCH-H-NEW-12)."""
     if config.registry_dir is not None:
         return config.registry_dir
-    return Path(os.environ.get("XDG_RUNTIME_DIR") or gettempdir()) / "synapse-agent-tmux"
+    root = os.environ.get("XDG_RUNTIME_DIR", "").strip()
+    if root:
+        return Path(root) / "synapse-agent-tmux"
+    from synapse_channel.reap import private_runtime_parent
+
+    return private_runtime_parent() / "synapse-agent-tmux"
 
 
 def registry_path(config: AgentTmuxConfig) -> Path:

@@ -248,7 +248,12 @@ def test_registry_dir_falls_back_to_runtime_dir_then_tmp(
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "runtime"))
     assert registry_path(config).parent == tmp_path / "runtime" / "synapse-agent-tmux"
     monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
-    assert registry_path(config).parent.name == "synapse-agent-tmux"
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    parent = registry_path(config).parent
+    assert parent.name == "synapse-agent-tmux"
+    # SCH-H-NEW-12: private cache, not shared /tmp/synapse-agent-tmux
+    assert parent == tmp_path / "home" / ".cache" / "synapse-agent-tmux"
 
 
 def test_default_pane_commands_cover_every_first_class_provider_binary() -> None:

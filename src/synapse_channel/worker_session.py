@@ -17,7 +17,6 @@ import subprocess  # nosec B404
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from tempfile import gettempdir
 
 from synapse_channel.agent_tmux import AgentTmuxConfig, start_session
 from synapse_channel.client.agent import DEFAULT_HUB_URI
@@ -42,18 +41,32 @@ def _safe_key(identity: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in identity)
 
 
+def _private_sidecar_runtime(env: Mapping[str, str], leaf: str) -> Path:
+    """Return a private runtime dir for sidecars (SCH-H-NEW-12).
+
+    Prefer ``XDG_RUNTIME_DIR``; otherwise use the same private-cache parent as
+    the shell hooks (never a shared world-writable ``/tmp/synapse-*``).
+    """
+    from synapse_channel.reap import private_runtime_parent
+
+    root = env.get("XDG_RUNTIME_DIR", "").strip()
+    if root:
+        runtime = Path(root) / leaf
+    else:
+        runtime = private_runtime_parent(env) / leaf
+    runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
+    return runtime
+
+
 def _sidecar_log_path(identity: str, env: Mapping[str, str]) -> Path:
     """Return the quiet sidecar log path for a worker-session identity."""
-    runtime = Path(env.get("XDG_RUNTIME_DIR") or gettempdir()) / "synapse-worker-session"
-    runtime.mkdir(parents=True, exist_ok=True)
+    runtime = _private_sidecar_runtime(env, "synapse-worker-session")
     return runtime / f"{_safe_key(identity)}.log"
 
 
 def _terminal_tmux_runtime_dir(env: Mapping[str, str]) -> Path:
     """Return the runtime directory for tmux provider waiters."""
-    runtime = Path(env.get("XDG_RUNTIME_DIR") or gettempdir()) / "synapse-provider-tmux"
-    runtime.mkdir(parents=True, exist_ok=True)
-    return runtime
+    return _private_sidecar_runtime(env, "synapse-provider-tmux")
 
 
 def _default_tmux_session(identity: str) -> str:
