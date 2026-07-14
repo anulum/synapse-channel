@@ -97,6 +97,11 @@ async function startHub(
       tokenFile,
       "--db",
       database,
+      // Keep identity pins in memory: the default persists trust-on-first-use pins
+      // to a shared ~/synapse/identity-pins.json, so a machine that has already
+      // pinned this identity elsewhere would refuse the test's unsigned client.
+      "--identity-pins",
+      "",
     ],
     {
       cwd: REPOSITORY_ROOT,
@@ -162,7 +167,9 @@ describe("HubTransport real process boundary", () => {
       await waitFor(
         () => transport.state().phase === "live",
         "the first live handshake",
-        () => `phase=${transport.state().phase}; transitions=${states.map((state) => state.phase).join(",")}`,
+        () =>
+          `phase=${transport.state().phase}; transitions=${states.map((state) => state.phase).join(",")}; `
+          + `frames=${frames.map((frame) => frame.kind).join(",")}`,
       );
 
       expect(transport.mutate("claim", {
