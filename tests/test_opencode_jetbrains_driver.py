@@ -24,24 +24,50 @@ from e2e.opencode_editors.jetbrains_client import (
 )
 
 
-def test_idea_log_wait_accepts_only_the_requested_readiness_marker(tmp_path: Path) -> None:
-    marker = "No session managers found for agent 'SYNAPSE OpenCode E2E'"
-    (tmp_path / "idea.log").write_text(f"{marker}\n", encoding="utf-8")
+def test_idea_log_wait_requires_all_readiness_markers_in_order(tmp_path: Path) -> None:
+    markers = (
+        "Required plugins check passed",
+        "Starting ACP client session ",
+        "Received notification: AvailableCommandsUpdate",
+    )
+    idea_log = tmp_path / "idea.log"
+    idea_log.write_text("\n".join(markers) + "\n", encoding="utf-8")
 
     _wait_for_idea_log(
         tmp_path,
-        marker,
+        markers,
         float("inf"),
         lambda: None,
     )
 
+    idea_log.write_text("\n".join(reversed(markers)) + "\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="IDEA log never contained"):
         _wait_for_idea_log(
             tmp_path,
-            "other marker",
+            markers,
             0.0,
             lambda: None,
         )
+
+
+def test_idea_log_wait_fails_closed_when_idea_exits(tmp_path: Path) -> None:
+    (tmp_path / "idea.log").write_text("Required plugins check passed\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="IntelliJ IDEA exited before log evidence"):
+        _wait_for_idea_log(
+            tmp_path,
+            (
+                "Required plugins check passed",
+                "Starting ACP client session ",
+            ),
+            float("inf"),
+            lambda: 1,
+        )
+
+
+def test_idea_log_wait_rejects_an_empty_readiness_contract(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="at least one IDEA log marker is required"):
+        _wait_for_idea_log(tmp_path, (), float("inf"), lambda: None)
 
 
 def test_idea_profile_enables_the_pinned_agent_selector_before_startup(

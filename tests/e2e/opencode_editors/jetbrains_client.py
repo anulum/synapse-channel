@@ -26,6 +26,11 @@ _USER_AGREEMENT_VERSION = "2.0"
 _USER_AGREEMENT_ENV = "SYNAPSE_JETBRAINS_EULA_ACCEPTED_VERSION"
 _DATA_SHARING_TITLE = "Data Sharing"
 _AGENT_SELECTOR_REGISTRY_KEY = "llm.chat.new.chat.and.agent.selector.enabled"
+_ACP_SESSION_READY_MARKERS = (
+    "Required plugins check passed",
+    "Starting ACP client session ",
+    "Received notification: AvailableCommandsUpdate",
+)
 
 
 def _required_tool(name: str) -> str:
@@ -395,17 +400,31 @@ def _idea_command(
 
 
 def _wait_for_idea_log(
-    log_root: Path, marker: str, deadline: float, poll: Callable[[], int | None]
+    log_root: Path,
+    markers: str | tuple[str, ...],
+    deadline: float,
+    poll: Callable[[], int | None],
 ) -> None:
-    """Wait for exact IDEA log evidence while proving the process remains live."""
+    """Wait for ordered IDEA log evidence while proving the process remains live."""
+    required = (markers,) if isinstance(markers, str) else markers
+    if not required:
+        raise ValueError("at least one IDEA log marker is required")
     idea_log = log_root / "idea.log"
     while time.monotonic() < deadline:
-        if idea_log.is_file() and marker in idea_log.read_text(encoding="utf-8", errors="replace"):
-            return
+        if idea_log.is_file():
+            contents = idea_log.read_text(encoding="utf-8", errors="replace")
+            position = 0
+            for marker in required:
+                position = contents.find(marker, position)
+                if position < 0:
+                    break
+                position += len(marker)
+            else:
+                return
         if poll() is not None:
-            raise RuntimeError(f"IntelliJ IDEA exited before log evidence {marker!r}")
+            raise RuntimeError(f"IntelliJ IDEA exited before log evidence {required!r}")
         time.sleep(0.25)
-    raise RuntimeError(f"IntelliJ IDEA log never contained {marker!r}")
+    raise RuntimeError(f"IntelliJ IDEA log never contained ordered markers {required!r}")
 
 
 def main() -> int:
@@ -501,6 +520,12 @@ def main() -> int:
             )
             _wait_for_trace(trace, '"method":"initialize"', deadline, process)
             _wait_for_trace(trace, '"method":"session/new"', deadline, process)
+            _wait_for_idea_log(
+                log_root,
+                _ACP_SESSION_READY_MARKERS,
+                deadline,
+                process.poll,
+            )
             _checked_xdotool(
                 "type the ACP prompt",
                 "type",
