@@ -23,8 +23,14 @@ from synapse_channel.service_setup import (
     render_hub_unit,
     render_presence_unit,
     service_suggestions,
+    validate_systemd_executable,
 )
 from synapse_channel.terminal_text import terminal_text
+
+MAX_ABSOLUTE_EXECUTABLE = "/" + "/".join(["x" * 255] * 15 + ["y" * 254])
+OVERLONG_ABSOLUTE_EXECUTABLE = "/" + "/".join(["x" * 255] * 16)
+OVERSIZED_COMPONENT_EXECUTABLE = "/" + "x" * 256
+OVERSIZED_UTF8_COMPONENT_EXECUTABLE = "/" + "é" * 128
 
 
 def test_render_arm_unit_uses_non_llm_synapse_arm(
@@ -51,6 +57,13 @@ def test_render_arm_unit_uses_non_llm_synapse_arm(
     assert f"ExecStart={longest_simple_name} hub" in render_hub_unit(
         synapse_bin=longest_simple_name
     )
+    assert len(MAX_ABSOLUTE_EXECUTABLE.encode("utf-8")) == 4095
+    assert len(OVERLONG_ABSOLUTE_EXECUTABLE.encode("utf-8")) == 4096
+    assert validate_systemd_executable(MAX_ABSOLUTE_EXECUTABLE) == MAX_ABSOLUTE_EXECUTABLE
+    max_utf8_component = "/" + "é" * 127 + "x"
+    assert validate_systemd_executable(max_utf8_component) == max_utf8_component
+    normalized_by_systemd = "/usr/bin/../bin/synapse"
+    assert validate_systemd_executable(normalized_by_systemd) == normalized_by_systemd
 
 
 def test_render_arm_unit_adds_remote_uri_and_token_file() -> None:
@@ -88,6 +101,13 @@ def test_render_arm_unit_escapes_systemd_percent_specifiers() -> None:
         ("..", "valid simple file name"),
         (";", "valid simple file name"),
         ("x" * 256, "valid simple file name"),
+        (OVERSIZED_COMPONENT_EXECUTABLE, "absolute path"),
+        (OVERSIZED_UTF8_COMPONENT_EXECUTABLE, "absolute path"),
+        (OVERLONG_ABSOLUTE_EXECUTABLE, "absolute path"),
+        ("/", "absolute path"),
+        ("/usr/bin/", "absolute path"),
+        ("/usr/bin/.", "absolute path"),
+        ("/usr/bin/..", "absolute path"),
         *((f"{prefix}/usr/bin/synapse", "ExecStart control prefix") for prefix in "@-:+!|"),
     ],
 )
@@ -420,10 +440,17 @@ def test_install_user_services_writes_three_units(tmp_path: Path) -> None:
         "..",
         ";",
         "x" * 256,
+        OVERSIZED_COMPONENT_EXECUTABLE,
+        OVERSIZED_UTF8_COMPONENT_EXECUTABLE,
+        OVERLONG_ABSOLUTE_EXECUTABLE,
+        "/",
+        "/usr/bin/",
+        "/usr/bin/.",
+        "/usr/bin/..",
     )
     for index, synapse_bin in enumerate(rejected_values):
         rejected_home = tmp_path / f"rejected-relative-{index}"
-        with pytest.raises(ValueError, match="valid simple file name"):
+        with pytest.raises(ValueError, match="simple file name|absolute path"):
             install_user_services(
                 project="repo",
                 identity="repo/ux",

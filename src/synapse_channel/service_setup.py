@@ -39,6 +39,9 @@ _SYSTEMD_INVALID_SIMPLE_EXECUTABLES = frozenset({".", "..", ";"})
 _SYSTEMD_SIMPLE_NAME_MAX_BYTES = 255
 """Linux ``NAME_MAX`` used by systemd's simple executable-name predicate."""
 
+_SYSTEMD_PATH_MAX_BYTES = 4096
+"""Linux ``PATH_MAX`` including the trailing NUL expected by systemd."""
+
 
 class CommandRunner(Protocol):
     """Callable compatible with :func:`subprocess.run` for injectable tests."""
@@ -164,7 +167,22 @@ def validate_systemd_executable(value: str) -> str:
             "synapse executable path must not start with a systemd ExecStart control "
             f"prefix ({prefixes})"
         )
-    if not Path(value).is_absolute() and (
+    if Path(value).is_absolute():
+        encoded = value.encode("utf-8")
+        oversized_component = any(
+            len(component.encode("utf-8")) > _SYSTEMD_SIMPLE_NAME_MAX_BYTES
+            for component in value.split("/")
+        )
+        if (
+            len(encoded) >= _SYSTEMD_PATH_MAX_BYTES
+            or oversized_component
+            or value.endswith(("/", "/.", "/.."))
+        ):
+            raise ValueError(
+                "synapse executable absolute path must not imply a directory, must keep "
+                "each component within 255 UTF-8 bytes, and must remain below PATH_MAX"
+            )
+    elif (
         "/" in value
         or value in _SYSTEMD_INVALID_SIMPLE_EXECUTABLES
         or len(value.encode("utf-8")) > _SYSTEMD_SIMPLE_NAME_MAX_BYTES
