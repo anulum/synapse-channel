@@ -31,6 +31,8 @@ _USER_AGREEMENT_VERSION = "2.0"
 _USER_AGREEMENT_ENV = "SYNAPSE_JETBRAINS_EULA_ACCEPTED_VERSION"
 _DATA_SHARING_TITLE = "Data Sharing"
 _AGENT_SELECTOR_REGISTRY_KEY = "llm.chat.new.chat.and.agent.selector.enabled"
+_AGENT_SELECTOR_TITLE = "win0"
+_AGENT_SELECTOR_GEOMETRY = (310, 407)
 _CHAT_INPUT_READY_MARKER = "AIAssistantInputSendAction#presentation@AIAssistantChatInputRight"
 _ACP_SESSION_READY_MARKERS = (
     "Required plugins check passed",
@@ -293,6 +295,32 @@ def _find_islands_popup(deadline: float, project: str) -> str:
     raise RuntimeError("IntelliJ IDEA did not expose the pinned Islands onboarding popup")
 
 
+def _is_agent_selector_popup(window: str, project: str) -> bool:
+    """Match only the pinned agent selector transient owned by the project frame."""
+    try:
+        project_id = int(project)
+    except ValueError:
+        return False
+    return (
+        _window_name(window) == _AGENT_SELECTOR_TITLE
+        and _window_geometry(window) == _AGENT_SELECTOR_GEOMETRY
+        and _window_is_root_child(window)
+        and _window_transient_for(window) == project_id
+    )
+
+
+def _find_agent_selector_popup(deadline: float, project: str) -> str:
+    """Wait for the exact pinned agent selector before sending text input."""
+    while time.monotonic() < deadline:
+        result = _xdotool("search", "--onlyvisible", "--class", "jetbrains-.*")
+        if result.returncode == 0:
+            for window in reversed(result.stdout.splitlines()):
+                if _is_agent_selector_popup(window, project):
+                    return window
+        time.sleep(0.25)
+    raise RuntimeError("IntelliJ IDEA did not expose the pinned ACP agent selector popup")
+
+
 def _skip_islands_onboarding(deadline: float, project: str) -> None:
     """Dismiss the pinned onboarding transient and prove it disappeared."""
     popup = _find_islands_popup(deadline, project)
@@ -519,6 +547,7 @@ def main() -> int:
                 process.poll,
                 retry=lambda: _show_ai_chat(window),
             )
+            selection_deadline = time.monotonic() + _AGENT_SELECTION_TIMEOUT_SECONDS
             _checked_xdotool(
                 "open the ACP agent selector",
                 "key",
@@ -526,18 +555,18 @@ def main() -> int:
                 window,
                 "ctrl+alt+shift+k",
             )
+            selector = _find_agent_selector_popup(selection_deadline, window)
             _checked_xdotool(
                 "select the ACP agent",
                 "type",
                 "--window",
-                window,
+                selector,
                 "--delay",
                 "1",
                 "--",
                 _AGENT_NAME,
             )
-            _checked_xdotool("confirm the ACP agent", "key", "--window", window, "Return")
-            selection_deadline = time.monotonic() + _AGENT_SELECTION_TIMEOUT_SECONDS
+            _checked_xdotool("confirm the ACP agent", "key", "--window", selector, "Return")
             _wait_for_idea_log(
                 log_root,
                 "Creating AcpSessionLifecycleManager for agent 'acp.synapse-opencode-e2e'",

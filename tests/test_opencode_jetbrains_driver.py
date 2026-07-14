@@ -152,6 +152,33 @@ def test_xprop_transient_parent_parser_accepts_only_a_window_id() -> None:
     assert _xprop_window_id("WM_TRANSIENT_FOR(WINDOW): window id # invalid\n") is None
 
 
+def test_agent_selector_popup_requires_pinned_window_invariants(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(jetbrains_client, "_window_name", lambda _window: "win0")
+    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: (310, 407))
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: True)
+    monkeypatch.setattr(jetbrains_client, "_window_transient_for", lambda _window: 123)
+
+    assert jetbrains_client._is_agent_selector_popup("selector", "123") is True
+    assert jetbrains_client._is_agent_selector_popup("selector", "invalid") is False
+
+    monkeypatch.setattr(jetbrains_client, "_window_name", lambda _window: "other")
+    assert jetbrains_client._is_agent_selector_popup("selector", "123") is False
+    monkeypatch.setattr(jetbrains_client, "_window_name", lambda _window: "win0")
+
+    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: (311, 407))
+    assert jetbrains_client._is_agent_selector_popup("selector", "123") is False
+    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: (310, 407))
+
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: False)
+    assert jetbrains_client._is_agent_selector_popup("selector", "123") is False
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: True)
+
+    monkeypatch.setattr(jetbrains_client, "_window_transient_for", lambda _window: 124)
+    assert jetbrains_client._is_agent_selector_popup("selector", "123") is False
+
+
 def test_idea_command_binds_jvm_home_to_the_isolated_profile(tmp_path: Path) -> None:
     command = _idea_command(
         tmp_path / "idea.sh",
