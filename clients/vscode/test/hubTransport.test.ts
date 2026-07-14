@@ -14,7 +14,8 @@ import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { WebSocket as NodeWebSocket } from "ws";
 import { type HubConnectionState } from "../src/connectionState.js";
 import { type HubFrame } from "../src/hubProtocol.js";
 import { HubTransport } from "../src/hubTransport.js";
@@ -144,6 +145,7 @@ describe("HubTransport real process boundary", () => {
     let hub = await startHub(python, port, tokenFile, database);
     const states: HubConnectionState[] = [];
     const frames: HubFrame[] = [];
+    vi.stubGlobal("WebSocket", NodeWebSocket);
     const transport = new HubTransport({
       onConnectionState: (state) => states.push(state),
       onFrame: (frame) => frames.push(frame),
@@ -157,7 +159,11 @@ describe("HubTransport real process boundary", () => {
         sent: false,
         reason: "SYNAPSE mutation withheld because the hub state is not live and compatible.",
       });
-      await waitFor(() => transport.state().phase === "live", "the first live handshake");
+      await waitFor(
+        () => transport.state().phase === "live",
+        "the first live handshake",
+        () => `phase=${transport.state().phase}; transitions=${states.map((state) => state.phase).join(",")}`,
+      );
 
       expect(transport.mutate("claim", {
         task_id: "vscode/transport",
@@ -191,6 +197,7 @@ describe("HubTransport real process boundary", () => {
       expect(transport.state().phase).toBe("live");
     } finally {
       transport.dispose();
+      vi.unstubAllGlobals();
       await stopHub(hub);
       await rm(temporary, { recursive: true, force: true });
     }
