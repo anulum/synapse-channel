@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.claim_state import ClaimStateError, fetch_state_snapshot
+from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 from synapse_channel.git.claim_check_context import (
     ClaimCheckConfigError,
     resolve_claim_check_context,
@@ -69,12 +70,18 @@ def _coverage_reason(
 
 
 def _token(environment: Mapping[str, str], token_file: Path | None) -> str | None:
+    """Resolve the connect token from an owner-only file or the environment.
+
+    A configured token file is loaded through
+    :func:`~synapse_channel.core.secret_files.read_secret_file` so symlink
+    targets and group/world-readable modes cannot supply a connect secret.
+    """
     if token_file is None:
         return environment.get("SYNAPSE_TOKEN", "").strip() or None
-    value = token_file.read_text(encoding="utf-8").strip()
-    if not value:
-        raise ClaimCheckConfigError("The configured Synapse token file is empty.")
-    return value
+    try:
+        return read_secret_file(token_file, flag="--token-file")
+    except SecretFileError as exc:
+        raise ClaimCheckConfigError(str(exc)) from exc
 
 
 async def run_staged_claim_check(

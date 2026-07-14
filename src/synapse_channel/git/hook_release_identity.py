@@ -27,9 +27,9 @@ nothing is raised.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 from synapse_channel.git.claim_check_config import read_claim_check_config
 from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runner
 
@@ -60,21 +60,23 @@ class ReleaseIdentity:
 
 
 def _read_token(token_file: str) -> str | None:
-    """Read a hub token from a worktree-configured file, or ``None`` when unusable.
+    """Read a hub token from an owner-only worktree-configured file.
 
-    A blank configuration, a missing file, or an unreadable one all yield
-    ``None`` rather than raising: the auto-release hook must not block a commit,
-    and a tokenless release simply cannot authenticate to a secured hub (which
+    Uses :func:`~synapse_channel.core.secret_files.read_secret_file` so a
+    group/world-readable or symlinked token file never supplies a connect
+    secret (security fail-closed). A blank configuration, a missing file, or a
+    secret-floor refusal still yields ``None`` rather than raising: the
+    auto-release hook must not block a commit, and a tokenless release simply
+    cannot authenticate to a secured hub (which
     :func:`synapse_channel.git.githook.run_git_release` already treats as a
     no-op, not an error).
     """
     if not token_file.strip():
         return None
     try:
-        content = Path(token_file).expanduser().read_text(encoding="utf-8")
-    except OSError:
+        return read_secret_file(token_file, flag="synapse.tokenFile")
+    except SecretFileError:
         return None
-    return content.strip() or None
 
 
 def resolve_release_identity(*, runner: GitRunner = _default_git_runner) -> ReleaseIdentity | None:

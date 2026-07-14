@@ -158,6 +158,7 @@ async def test_diagnostic_character_budget_can_omit_the_first_path(tmp_path: Pat
 async def test_token_file_content_is_used_but_not_reported(tmp_path: Path) -> None:
     token_file = tmp_path / "token"
     token_file.write_text("super-secret\n", encoding="utf-8")
+    token_file.chmod(0o600)
     captured: dict[str, Any] = {}
 
     async def fetch(**kwargs: Any) -> dict[str, Any]:
@@ -173,6 +174,22 @@ async def test_token_file_content_is_used_but_not_reported(tmp_path: Path) -> No
     assert result.allowed is True
     assert captured["token"] == "super-secret"
     assert "super-secret" not in result.reason
+
+
+@pytest.mark.asyncio
+async def test_world_readable_token_file_denies_without_leaking_secret(tmp_path: Path) -> None:
+    token_file = tmp_path / "token"
+    token_file.write_text("super-secret\n", encoding="utf-8")
+    token_file.chmod(0o644)
+    result = await run_staged_claim_check(
+        runner=_runner(tmp_path, "M\0src/a.py\0"),
+        token_file=str(token_file),
+        environment={},
+        state_fetcher=_fetch({"active_claims": [_claim(tmp_path)]}),
+    )
+    assert result.allowed is False
+    assert "super-secret" not in result.reason
+    assert "chmod 600" in result.reason
 
 
 @pytest.mark.asyncio
@@ -198,6 +215,7 @@ async def test_missing_or_empty_token_file_denies(tmp_path: Path, contents: str 
     token_file = tmp_path / "token"
     if contents is not None:
         token_file.write_text(contents, encoding="utf-8")
+        token_file.chmod(0o600)
     result = await run_staged_claim_check(
         runner=_runner(tmp_path, "M\0src/a.py\0"),
         token_file=str(token_file),

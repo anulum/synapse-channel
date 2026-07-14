@@ -120,6 +120,7 @@ def test_load_signing_key_reports_a_missing_file(tmp_path: Path) -> None:
 def test_load_signing_key_rejects_non_pem_content(tmp_path: Path) -> None:
     path = tmp_path / "garbage.key"
     path.write_bytes(b"not a pem")
+    path.chmod(0o600)
     with pytest.raises(ReceiptSigningError, match="not a PEM private key"):
         load_receipt_signing_key(path)
 
@@ -135,8 +136,22 @@ def test_load_signing_key_rejects_a_non_ed25519_key(tmp_path: Path) -> None:
     )
     path = tmp_path / "ecdsa.key"
     path.write_bytes(pem)
+    path.chmod(0o600)
     with pytest.raises(ReceiptSigningError, match="must be Ed25519"):
         load_receipt_signing_key(path)
+
+
+def test_load_signing_key_refuses_world_readable_without_key_material(tmp_path: Path) -> None:
+    path = tmp_path / "loose.key"
+    path.write_text(
+        "-----BEGIN PRIVATE KEY-----\nmust-not-appear\n-----END PRIVATE KEY-----\n",
+        encoding="utf-8",
+    )
+    path.chmod(0o644)
+    with pytest.raises(ReceiptSigningError, match="cannot read receipt-signing key") as excinfo:
+        load_receipt_signing_key(path)
+    assert "must-not-appear" not in str(excinfo.value)
+    assert "chmod 600" in str(excinfo.value)
 
 
 def test_load_verification_key_reports_a_missing_file(tmp_path: Path) -> None:

@@ -205,20 +205,29 @@ def generate_receipt_signing_key(path: str | Path) -> ReceiptVerificationKey:
 def load_receipt_signing_key(path: str | Path) -> ReceiptSigningKey:
     """Load the private receipt-signing key written by ``merkle keygen``.
 
+    The private PEM is read through the shared owner-only secret floor so a
+    group/world-readable or symlinked key file is refused the same way as hub
+    connect-token files. The error never includes key material.
+
     Raises
     ------
     ReceiptSigningError
-        When the file is unreadable, is not PEM, or holds a non-Ed25519 key.
+        When the file is unreadable, is not owner-only, is not PEM, or holds a
+        non-Ed25519 key.
     """
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+    from synapse_channel.core.secret_files import SecretFileError, read_secret_file
+
     key_path = Path(path)
     try:
-        pem = key_path.read_bytes()
-    except OSError as exc:
+        # PEM is UTF-8; strip only outer whitespace (matches exclusive 0o600 write).
+        pem_text = read_secret_file(key_path, flag="receipt-signing-key")
+    except SecretFileError as exc:
         msg = f"cannot read receipt-signing key {key_path}: {exc}"
         raise ReceiptSigningError(msg) from exc
+    pem = pem_text.encode("utf-8")
     try:
         private_key = serialization.load_pem_private_key(pem, password=None)
     except (ValueError, TypeError) as exc:

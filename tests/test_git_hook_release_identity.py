@@ -28,6 +28,13 @@ _TOKEN_FILE = "synapse.tokenFile"
 _WORKTREE_EXT = "extensions.worktreeConfig"
 
 
+def _owner_only(path: Path, content: str) -> Path:
+    """Write a connect-token file the shared secret floor accepts."""
+    path.write_text(content, encoding="utf-8")
+    path.chmod(0o600)
+    return path
+
+
 def _config_runner(
     values: dict[str, str],
     *,
@@ -61,8 +68,7 @@ def test_release_identity_is_frozen() -> None:
 
 
 def test_resolves_full_worktree_identity(tmp_path: Path) -> None:
-    token_path = tmp_path / "hub.token"
-    token_path.write_text("  s3cret\n", encoding="utf-8")
+    token_path = _owner_only(tmp_path / "hub.token", "  s3cret\n")
     runner = _config_runner(
         {_IDENTITY: "proj/claude-a7c2", _URI: "ws://hub:9", _TOKEN_FILE: str(token_path)}
     )
@@ -121,14 +127,12 @@ def test_read_token_blank_is_none() -> None:
 
 
 def test_read_token_reads_and_strips(tmp_path: Path) -> None:
-    token_path = tmp_path / "t"
-    token_path.write_text("\ntok-en \n", encoding="utf-8")
+    token_path = _owner_only(tmp_path / "t", "\ntok-en \n")
     assert _read_token(str(token_path)) == "tok-en"
 
 
 def test_read_token_empty_file_is_none(tmp_path: Path) -> None:
-    token_path = tmp_path / "empty"
-    token_path.write_text("   \n", encoding="utf-8")
+    token_path = _owner_only(tmp_path / "empty", "   \n")
     assert _read_token(str(token_path)) is None
 
 
@@ -139,6 +143,13 @@ def test_read_token_missing_file_is_none(tmp_path: Path) -> None:
 def test_read_token_expands_user(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     home = tmp_path / "home"
     home.mkdir()
-    (home / ".hubtoken").write_text("home-token\n", encoding="utf-8")
+    _owner_only(home / ".hubtoken", "home-token\n")
     monkeypatch.setenv("HOME", str(home))
     assert _read_token("~/.hubtoken") == "home-token"
+
+
+def test_read_token_refuses_world_readable_without_using_content(tmp_path: Path) -> None:
+    token_path = tmp_path / "loose"
+    token_path.write_text("must-not-load\n", encoding="utf-8")
+    token_path.chmod(0o644)
+    assert _read_token(str(token_path)) is None

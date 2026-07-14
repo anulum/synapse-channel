@@ -93,10 +93,10 @@ import importlib
 import os
 import sys
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 from synapse_channel import __version__
+from synapse_channel.core.secret_files import read_secret_file
 
 
 class _VersionAction(argparse.Action):
@@ -305,6 +305,10 @@ def _resolve_token(args: argparse.Namespace) -> str | None:
     process list. (This describes which source is *used*, not which is more secure
     — a value passed as ``--token`` is exposed regardless of what wins.)
 
+    When ``--token-file`` is set, the path is loaded through the shared
+    owner-only secret floor (:func:`~synapse_channel.core.secret_files.read_secret_file`):
+    symlink targets, group/world-readable modes, and empty files are refused.
+
     Parameters
     ----------
     args : argparse.Namespace
@@ -317,14 +321,15 @@ def _resolve_token(args: argparse.Namespace) -> str | None:
 
     Raises
     ------
-    OSError
-        When ``--token-file`` names a file that is missing or cannot be read.
+    SecretFileError
+        When ``--token-file`` names a missing, empty, non-regular, foreign-owned,
+        or group/world-accessible file (or secure validation is unavailable).
     """
     if args.token:
         return str(args.token)
     token_file = getattr(args, "token_file", None)
     if token_file:
-        return Path(token_file).read_text(encoding="utf-8").strip()
+        return read_secret_file(token_file, flag="--token-file")
     return os.environ.get(TOKEN_ENV) or None
 
 
