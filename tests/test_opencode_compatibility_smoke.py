@@ -86,11 +86,14 @@ def _tar_archive(path: Path, *, member_type: bytes = tarfile.REGTYPE) -> Path:
     return path
 
 
-def _zip_archive(path: Path, *, symlink: bool = False) -> Path:
+def _zip_archive(path: Path, *, member_type: int = stat.S_IFREG) -> Path:
     member = zipfile.ZipInfo("opencode")
-    member.external_attr = ((stat.S_IFLNK if symlink else stat.S_IFREG) | 0o755) << 16
+    member.external_attr = (member_type | 0o755) << 16
     with zipfile.ZipFile(path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr(member, b"../outside" if symlink else _PAYLOAD)
+        archive.writestr(
+            member,
+            b"../outside" if member_type == stat.S_IFLNK else _PAYLOAD,
+        )
     return path
 
 
@@ -119,7 +122,20 @@ def test_installer_refuses_link_members(tmp_path: Path, archive_kind: str) -> No
     archive = (
         _tar_archive(tmp_path / "opencode-link.tar.gz", member_type=tarfile.SYMTYPE)
         if archive_kind == "tar"
-        else _zip_archive(tmp_path / "opencode-link.zip", symlink=True)
+        else _zip_archive(tmp_path / "opencode-link.zip", member_type=stat.S_IFLNK)
+    )
+    destination = tmp_path / "opencode"
+
+    with pytest.raises(SmokeError, match="regular file"):
+        install_archive(archive, _artifact(archive), destination)
+
+    assert not destination.exists()
+
+
+def test_installer_refuses_fifo_marked_zip_member(tmp_path: Path) -> None:
+    archive = _zip_archive(
+        tmp_path / "opencode-fifo.zip",
+        member_type=stat.S_IFIFO,
     )
     destination = tmp_path / "opencode"
 

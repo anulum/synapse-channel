@@ -300,10 +300,11 @@ def _copy_zip_binary(path: Path, artifact: Artifact, destination: IO[bytes]) -> 
             raise SmokeError("OpenCode ZIP must contain only the exact root binary")
         member = members[0]
         mode = member.external_attr >> 16
+        file_type = stat.S_IFMT(mode)
         if (
             member.filename != artifact.binary
             or member.is_dir()
-            or stat.S_ISLNK(mode)
+            or file_type not in (0, stat.S_IFREG)
             or member.file_size > _MAX_BINARY_BYTES
         ):
             raise SmokeError(
