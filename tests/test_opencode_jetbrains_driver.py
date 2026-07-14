@@ -84,11 +84,65 @@ def test_acp_config_is_private_and_contains_only_the_selected_agent(tmp_path: Pa
 def test_first_run_refuses_automated_legal_acceptance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.delenv("SYNAPSE_JETBRAINS_EULA_ACCEPTED_VERSION", raising=False)
     monkeypatch.setattr(
         jetbrains_client,
         "_find_first_run_dialog",
         lambda _deadline: ("123", "IntelliJ IDEA User Agreement"),
     )
 
-    with pytest.raises(RuntimeError, match="v2.0 requires explicit repository-owner"):
+    with pytest.raises(
+        RuntimeError,
+        match="SYNAPSE_JETBRAINS_EULA_ACCEPTED_VERSION=2.0",
+    ):
         jetbrains_client._complete_first_run_agreements(1.0)
+
+
+def test_first_run_accepts_only_attested_v2_then_declines_telemetry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dialogs = iter(
+        [
+            ("eula", "IntelliJ IDEA User Agreement"),
+            ("sharing", "Data Sharing"),
+        ]
+    )
+    checks: list[tuple[str, str]] = []
+    clicks: list[tuple[str, int, int, str]] = []
+    monkeypatch.setenv("SYNAPSE_JETBRAINS_EULA_ACCEPTED_VERSION", "2.0")
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_find_first_run_dialog",
+        lambda _deadline: next(dialogs),
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_require_agreement_window",
+        lambda window, title: checks.append((window, title)),
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_pointer_click",
+        lambda window, x, y, action: clicks.append((window, x, y, action)),
+    )
+    jetbrains_client._complete_first_run_agreements(float("inf"))
+
+    assert checks == [
+        ("eula", "IntelliJ IDEA User Agreement"),
+        ("eula", "IntelliJ IDEA User Agreement"),
+        ("sharing", "Data Sharing"),
+    ]
+    assert [(window, x, y) for window, x, y, _action in clicks] == [
+        ("eula", 44, 392),
+        ("eula", 542, 432),
+        ("sharing", 326, 432),
+    ]
+
+
+def test_user_agreement_rejects_wrong_attested_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SYNAPSE_JETBRAINS_EULA_ACCEPTED_VERSION", "2.1")
+
+    with pytest.raises(RuntimeError, match="refusing owner attestation '2.1'"):
+        jetbrains_client._require_user_agreement_authorization()

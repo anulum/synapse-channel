@@ -20,6 +20,7 @@ _AGENT_NAME = "SYNAPSE OpenCode E2E"
 _TIMEOUT_SECONDS = 150.0
 _USER_AGREEMENT_TITLE = "IntelliJ IDEA User Agreement"
 _USER_AGREEMENT_VERSION = "2.0"
+_USER_AGREEMENT_ENV = "SYNAPSE_JETBRAINS_EULA_ACCEPTED_VERSION"
 _DATA_SHARING_TITLE = "Data Sharing"
 
 
@@ -190,15 +191,39 @@ def _complete_first_run_agreements(deadline: float) -> None:
     """Explicitly decline telemetry in the pinned first-run data-sharing UI."""
     window, title = _find_first_run_dialog(deadline)
     if title == _USER_AGREEMENT_TITLE:
-        raise RuntimeError(
-            "JetBrains User Agreement "
-            f"v{_USER_AGREEMENT_VERSION} requires explicit repository-owner "
-            "authorization; refusing automated legal acceptance"
-        )
+        _accept_user_agreement(window, title)
+        while time.monotonic() < deadline:
+            window, title = _find_first_run_dialog(deadline)
+            if title == _DATA_SHARING_TITLE:
+                break
+            time.sleep(0.25)
+        else:
+            raise RuntimeError("IntelliJ IDEA did not advance to Data Sharing")
     # The nested "Content window" has the same class and geometry, so the
     # semantic title and root-parent invariant are both mandatory.
     _require_agreement_window(window, title)
     _pointer_click(window, 326, 432, "decline JetBrains usage-statistics sharing")
+
+
+def _require_user_agreement_authorization() -> None:
+    """Require the repository owner's exact version-bound legal attestation."""
+    accepted = os.environ.get(_USER_AGREEMENT_ENV, "").strip()
+    if accepted != _USER_AGREEMENT_VERSION:
+        raise RuntimeError(
+            f"JetBrains User Agreement v{_USER_AGREEMENT_VERSION} requires "
+            f"{_USER_AGREEMENT_ENV}={_USER_AGREEMENT_VERSION}; refusing "
+            f"owner attestation {accepted!r}"
+        )
+
+
+def _accept_user_agreement(window: str, title: str) -> None:
+    """Accept only the exact agreement version attested by the owner."""
+    _require_user_agreement_authorization()
+    _require_agreement_window(window, title)
+    _pointer_click(window, 44, 392, "confirm the JetBrains User Agreement checkbox")
+    time.sleep(0.25)
+    _require_agreement_window(window, title)
+    _pointer_click(window, 542, 432, "accept the JetBrains User Agreement")
 
 
 def _is_islands_popup(window: str, project: str) -> bool:

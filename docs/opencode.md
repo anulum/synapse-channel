@@ -378,7 +378,12 @@ popup to its exact geometry and `WM_TRANSIENT_FOR` project owner, selects the
 verified `Skip` action, and proves that transient disappeared before sending
 ACP shortcuts. IDEA's JVM home is bound to the same isolated profile that owns
 the private `acp.json`; the driver waits for exactly one active local ACP agent
-before opening the AI Assistant UI. The
+before opening the AI Assistant UI. The repository owner records legal consent
+through the non-secret `JETBRAINS_USER_AGREEMENT_ACCEPTED_VERSION` repository
+variable. The driver accepts only the pinned `2.0` agreement, fails closed on a
+missing or different attestation, and still explicitly declines telemetry. A
+future agreement revision therefore requires a new affirmative owner decision
+and code review. The
 Zed lane opts into its documented software-rendered CI mode and completes the
 real isolated-project trust prompt. Each editor must
 identify itself during ACP initialization, create exactly one session, deliver

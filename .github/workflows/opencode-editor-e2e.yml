@@ -83,6 +83,7 @@ jobs:
     env:
       SYNAPSE_EDITOR_E2E_CLIENT: ${{ matrix.client }}
       SYNAPSE_EDITOR_E2E_ARTIFACT_DIR: ${{ github.workspace }}/.e2e-artifacts/${{ matrix.client }}
+      SYNAPSE_JETBRAINS_EULA_ACCEPTED_VERSION: ${{ vars.JETBRAINS_USER_AGREEMENT_ACCEPTED_VERSION }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -193,6 +194,7 @@ jobs:
               echo "SYNAPSE_ZED_BIN=$zed_bin" >> "$GITHUB_ENV"
               ;;
             jetbrains)
+              test "$SYNAPSE_JETBRAINS_EULA_ACCEPTED_VERSION" = "2.0"
               sudo apt-get update
               sudo apt-get install --no-install-recommends --yes \
                 imagemagick libasound2t64 libfreetype6 libxi6 libxrender1 \
