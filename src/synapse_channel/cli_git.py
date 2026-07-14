@@ -30,6 +30,7 @@ from synapse_channel.git.gitclaim import GitError, run_git_claim
 from synapse_channel.git.gitconflict import run_conflicts
 from synapse_channel.git.githook import check_hooks, install_hooks, run_git_release
 from synapse_channel.git.gitinit import init_repo
+from synapse_channel.git.hook_release_identity import ReleaseIdentity, resolve_release_identity
 from synapse_channel.service_setup import (
     default_synapse_bin,
     install_user_services,
@@ -249,6 +250,7 @@ def _cmd_git_release(
     args: argparse.Namespace,
     *,
     release_runner: AsyncGitCommand = run_git_release,
+    identity_resolver: Callable[..., ReleaseIdentity | None] = resolve_release_identity,
     async_runner: Callable[[Coroutine[Any, Any, int]], int] = asyncio.run,
 ) -> int:
     """Release branch-scoped claims whose paths were just committed or merged.
@@ -258,6 +260,11 @@ def _cmd_git_release(
     auto-detects which claims to drop from the git diff — so a stray positional or
     a missing ``--trigger`` is answered with a hint at the right command rather than
     a bare argparse error (the trap that sent agents to the wrong verb).
+
+    With ``--resolve-identity`` (the form the installed hooks use) the releasing
+    seat, hub, and token come from the current worktree's git config, so one shared
+    hook releases each worktree's own claims. When that worktree has no recorded
+    identity the baked ``--name`` / ``--uri`` / ``--token`` are used unchanged.
     """
     if args.task_id is not None:
         release_command = (
@@ -278,9 +285,12 @@ def _cmd_git_release(
             file=sys.stderr,
         )
         return 2
-    return async_runner(
-        release_runner(uri=args.uri, name=args.name, trigger=args.trigger, token=args.token)
-    )
+    uri, name, token = args.uri, args.name, args.token
+    if getattr(args, "resolve_identity", False):
+        resolved = identity_resolver()
+        if resolved is not None:
+            uri, name, token = resolved.uri, resolved.name, resolved.token
+    return async_runner(release_runner(uri=uri, name=name, trigger=args.trigger, token=token))
 
 
 def _cmd_conflicts(
@@ -486,6 +496,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         choices=["commit", "merge"],
         default=None,
         help="Which auto-release trigger fired (required for the hook-invoked release).",
+    )
+    git_release.add_argument(
+        "--resolve-identity",
+        action="store_true",
+        help="Release as the seat recorded for the current worktree by `synapse git-init` "
+        "(its synapse.identity/uri/tokenFile), falling back to --name/--uri. The installed "
+        "hooks pass this so one shared hook releases each worktree's own claims.",
     )
     git_release.add_argument("--uri", default=default_hub_uri())
     git_release.add_argument("--name", default="USER")

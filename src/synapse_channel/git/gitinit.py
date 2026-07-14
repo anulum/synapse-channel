@@ -65,9 +65,10 @@ def _scaffold_body(*, name: str, base_branch: str) -> str:
         "```\n\n"
         "The staged gate stores its identity and hub settings in Git's per-worktree\n"
         "config, so one seat cannot overwrite another. Run `git-init` once in each\n"
-        "worktree. The auto-release scripts remain repository-wide and carry the\n"
-        "most recently installed identity; mixed-identity linked worktrees should\n"
-        "claim with `--auto-release-on manual` and release explicitly.\n\n"
+        "worktree. The auto-release hooks are repository-wide but read that same\n"
+        "per-worktree identity at commit time, so each worktree releases its own\n"
+        "claims even when several seats share the checkout; `--auto-release-on manual`\n"
+        "stays available whenever you would rather release explicitly.\n\n"
         "## Claiming and releasing\n\n"
         "```\n"
         f"synapse git-claim {shell_long_option('--paths', 'src/area')} "
@@ -109,7 +110,9 @@ def init_repo(
     Parameters
     ----------
     uri, name : str
-        Hub URI and agent identity baked into the installed hooks.
+        Hub URI and agent identity recorded for this worktree and baked into the
+        installed hooks as the fallback; the hooks prefer the current worktree's
+        recorded identity at run time.
     base_branch : str, optional
         The integration branch the convention branches off. Defaults to ``main``.
     token_file : str or None, optional

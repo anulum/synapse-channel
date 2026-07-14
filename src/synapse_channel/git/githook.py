@@ -62,6 +62,14 @@ def _hook_script(
 ) -> str:
     """Build the shell-script body of a hook that calls ``synapse git-release``.
 
+    The hook passes ``--resolve-identity`` so ``git-release`` first reads the seat
+    identity, hub, and token file recorded for the *current* worktree by
+    ``synapse git-init``. Because git worktrees share one hooks directory, that
+    per-worktree resolution is what lets a single shared hook release each
+    worktree's own claims instead of the installer's. The baked ``--uri`` /
+    ``--name`` / ``--token-file`` remain as the fallback used wherever a worktree
+    has no recorded identity, preserving the single-worktree behaviour.
+
     Every value baked into the script is shell-quoted, so a name, URI, token path,
     or executable path containing spaces or shell metacharacters can neither break
     the hook nor inject a command into it. ``synapse_bin`` is the resolved path to
@@ -72,7 +80,7 @@ def _hook_script(
     return (
         "#!/bin/sh\n"
         f"{HOOK_MARKER}\n"
-        f"{shell_command_arg(synapse_bin)} git-release "
+        f"{shell_command_arg(synapse_bin)} git-release --resolve-identity "
         f"{shell_long_option('--trigger', trigger)} {shell_long_option('--uri', uri)} "
         f"{shell_long_option('--name', name)}{auth} || true\n"
     )
@@ -96,9 +104,12 @@ def install_hooks(
     Parameters
     ----------
     uri, name : str
-        Hub URI and agent identity baked into the hook's ``git-release`` call.
+        Hub URI and agent identity baked into the hook's ``git-release`` call as
+        the fallback; the installed hook prefers the identity recorded for the
+        current worktree at run time (see :func:`_hook_script`).
     token_file : str or None, optional
-        A token file passed through to ``git-release`` for a secured hub.
+        A token file passed through to ``git-release`` for a secured hub, used as
+        the fallback when the current worktree records no token file.
     synapse_bin : str or None, optional
         Path to the ``synapse`` executable to invoke from the hook; when ``None``
         the absolute path of ``synapse`` on the current ``PATH`` is baked in, so

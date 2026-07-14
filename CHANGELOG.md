@@ -13,6 +13,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Auto-release git hooks are now worktree-aware. Git worktrees share one hooks
+  directory, so the single `post-commit`/`post-merge` hook that `synapse git-hook`
+  and `synapse git-init` install fired in every linked worktree under the identity
+  baked at install time — mixed-identity worktrees had to fall back to
+  `--auto-release-on manual`. The hook now passes `git-release --resolve-identity`,
+  which reads the `synapse.identity` / `synapse.uri` / `synapse.tokenFile` recorded
+  for the committing worktree and releases that seat's own claims, using the baked
+  identity only as the fallback where a worktree records none.
+
 ## [0.99.6] - 2026-07-14
 
 ### Added

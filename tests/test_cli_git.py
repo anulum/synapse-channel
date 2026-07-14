@@ -17,6 +17,7 @@ import pytest
 
 from synapse_channel import cli, cli_git
 from synapse_channel.git.gitclaim import GitError
+from synapse_channel.git.hook_release_identity import ReleaseIdentity
 
 # --- git-claim ---------------------------------------------------------------
 
@@ -694,6 +695,86 @@ def test_cmd_git_release_missing_trigger_explains(capsys: pytest.CaptureFixture[
     ns = argparse.Namespace(task_id=None, trigger=None, uri="ws://h", name="ME", token=None)
     assert cli_git._cmd_git_release(ns) == 2
     assert "--trigger" in capsys.readouterr().err
+
+
+def test_parser_git_release_resolve_identity() -> None:
+    plain = cli.build_parser().parse_args(["git-release", "--trigger", "commit"])
+    assert plain.resolve_identity is False
+    flagged = cli.build_parser().parse_args(
+        ["git-release", "--trigger", "commit", "--resolve-identity"]
+    )
+    assert flagged.resolve_identity is True
+
+
+def test_cmd_git_release_prefers_resolved_worktree_identity() -> None:
+    captured: dict[str, Any] = {}
+
+    async def release_claims(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 0
+
+    ns = argparse.Namespace(
+        task_id=None,
+        uri="ws://baked",
+        name="INSTALLER",
+        trigger="commit",
+        token="baked-tok",
+        resolve_identity=True,
+    )
+    resolved = ReleaseIdentity(uri="ws://worktree", name="proj/seat", token="wt-tok")
+    assert (
+        cli_git._cmd_git_release(
+            ns, release_runner=release_claims, identity_resolver=lambda: resolved
+        )
+        == 0
+    )
+    assert captured["uri"] == "ws://worktree"
+    assert captured["name"] == "proj/seat"
+    assert captured["token"] == "wt-tok"
+
+
+def test_cmd_git_release_falls_back_when_no_worktree_identity() -> None:
+    captured: dict[str, Any] = {}
+
+    async def release_claims(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 0
+
+    ns = argparse.Namespace(
+        task_id=None,
+        uri="ws://baked",
+        name="INSTALLER",
+        trigger="merge",
+        token="baked-tok",
+        resolve_identity=True,
+    )
+    assert (
+        cli_git._cmd_git_release(ns, release_runner=release_claims, identity_resolver=lambda: None)
+        == 0
+    )
+    assert captured["uri"] == "ws://baked"
+    assert captured["name"] == "INSTALLER"
+    assert captured["token"] == "baked-tok"
+
+
+def test_cmd_git_release_without_resolve_flag_never_resolves() -> None:
+    captured: dict[str, Any] = {}
+
+    async def release_claims(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 0
+
+    def _forbidden_resolver() -> ReleaseIdentity | None:  # pragma: no cover - must not run
+        raise AssertionError("resolver must not be consulted without --resolve-identity")
+
+    ns = argparse.Namespace(task_id=None, uri="ws://baked", name="ME", trigger="commit", token=None)
+    assert (
+        cli_git._cmd_git_release(
+            ns, release_runner=release_claims, identity_resolver=_forbidden_resolver
+        )
+        == 0
+    )
+    assert captured["name"] == "ME"
 
 
 # --- conflicts ---------------------------------------------------------------

@@ -188,11 +188,14 @@ Run `synapse git-init --name <exact-seat>` once inside every linked worktree. Gi
 requires `core.worktree` and `core.bare=true` to be moved out of the shared config
 before enabling per-worktree config; Synapse detects that uncommon layout and
 refuses with the upstream migration instruction instead of guessing. The staged
-gate is worktree-safe after this migration. The auto-release hook scripts are a
-separate, repository-wide convenience and still carry the most recently installed
-identity; mixed-identity linked worktrees should claim with
-`--auto-release-on manual` and release explicitly until those hooks become
-worktree-aware.
+gate is worktree-safe after this migration. The auto-release hook scripts are
+repository-wide — git worktrees share one hooks directory — but they now pass
+`git-release --resolve-identity`, so at commit time each reads the
+`synapse.identity` / `synapse.uri` / `synapse.tokenFile` recorded for the worktree
+that produced the commit and releases that seat's claims. Mixed-identity linked
+worktrees therefore auto-release correctly; the identity baked at install time is
+only the fallback for a worktree with no recorded identity, and
+`--auto-release-on manual` remains available whenever explicit release is preferred.
 
 This repository dogfoods the gate through the pre-commit framework:
 

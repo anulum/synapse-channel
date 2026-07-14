@@ -43,10 +43,21 @@ def test_install_hooks_writes_executable_hooks(tmp_path: Path) -> None:
         hook = tmp_path / filename
         body = hook.read_text(encoding="utf-8")
         assert HOOK_MARKER in body
-        assert f"git-release --trigger={trigger}" in body
+        assert f"git-release --resolve-identity --trigger={trigger}" in body
         assert "--name=ME" in body
         assert os.access(hook, os.X_OK)
         assert hook.stat().st_mode & stat.S_IXUSR
+
+
+def test_install_hooks_pass_resolve_identity(tmp_path: Path) -> None:
+    # The hook prefers the current worktree's recorded identity at run time, so a
+    # single shared hook releases each worktree's own claims. The baked --name stays
+    # as the fallback for a worktree with no recorded identity.
+    install_hooks(uri="ws://h", name="ME", hooks_dir=tmp_path)
+    for filename in ("post-commit", "post-merge"):
+        body = (tmp_path / filename).read_text(encoding="utf-8")
+        assert "git-release --resolve-identity " in body
+        assert "--name=ME" in body  # fallback preserved
 
 
 def test_install_hooks_bakes_token_file(tmp_path: Path) -> None:
@@ -60,7 +71,7 @@ def test_install_hooks_bakes_an_explicit_synapse_bin(tmp_path: Path) -> None:
         uri="ws://h", name="ME", synapse_bin="/opt/synapse/bin/synapse", hooks_dir=tmp_path
     )
     body = (tmp_path / "post-commit").read_text(encoding="utf-8")
-    assert "/opt/synapse/bin/synapse git-release --trigger=commit" in body
+    assert "/opt/synapse/bin/synapse git-release --resolve-identity --trigger=commit" in body
 
 
 def test_install_hooks_resolves_an_absolute_synapse_from_path(tmp_path: Path) -> None:
