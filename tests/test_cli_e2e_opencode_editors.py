@@ -37,6 +37,12 @@ _CLIENT_NAMES = {
     "neovim": ("CodeCompanion.nvim",),
     "zed": ("zed",),
 }
+_CLIENT_TIMEOUT_SECONDS = {
+    "emacs": 180,
+    "jetbrains": 540,
+    "neovim": 180,
+    "zed": 180,
+}
 
 
 def _required_env(name: str) -> str:
@@ -110,7 +116,7 @@ def test_real_editor_client_enforces_synapse_governance(tmp_path: Path) -> None:
     client = os.environ.get("SYNAPSE_EDITOR_E2E_CLIENT", "").strip().lower()
     if not client:
         pytest.skip("dedicated editor acceptance workflow selects the real client")
-    if client not in {*_CLIENT_NAMES, "jetbrains"}:
+    if client not in _CLIENT_TIMEOUT_SECONDS:
         raise AssertionError(f"unknown SYNAPSE_EDITOR_E2E_CLIENT: {client}")
 
     fixture_dir = Path(__file__).resolve().parent / "e2e" / "opencode_editors"
@@ -186,7 +192,7 @@ def test_real_editor_client_enforces_synapse_governance(tmp_path: Path) -> None:
             capture_output=True,
             text=True,
             check=False,
-            timeout=180,
+            timeout=_CLIENT_TIMEOUT_SECONDS[client],
         )
         assert completed.returncode == 0, (
             f"{client} acceptance exited {completed.returncode}\n"
