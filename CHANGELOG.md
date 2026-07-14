@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.6] - 2026-07-14
+
 ### Added
 
 - OpenCode 1.17.20 is now a pinned Participant Fabric and IDE bridge. A
