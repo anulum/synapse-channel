@@ -28,6 +28,7 @@ _USER_AGREEMENT_VERSION = "2.0"
 _USER_AGREEMENT_ENV = "SYNAPSE_JETBRAINS_EULA_ACCEPTED_VERSION"
 _DATA_SHARING_TITLE = "Data Sharing"
 _AGENT_SELECTOR_REGISTRY_KEY = "llm.chat.new.chat.and.agent.selector.enabled"
+_CHAT_INPUT_READY_MARKER = "AIAssistantInputSendAction#presentation@AIAssistantChatInputRight"
 _ACP_SESSION_READY_MARKERS = (
     "Required plugins check passed",
     "Starting ACP client session ",
@@ -496,6 +497,12 @@ def main() -> int:
             _wait_for_idea_log(
                 log_root,
                 "No session managers found for agent 'SYNAPSE OpenCode E2E'",
+                startup_deadline,
+                process.poll,
+            )
+            _wait_for_idea_log(
+                log_root,
+                _CHAT_INPUT_READY_MARKER,
                 startup_deadline,
                 process.poll,
             )
