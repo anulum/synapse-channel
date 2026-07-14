@@ -85,6 +85,7 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
 
 #: Every conditional-skip line in ``tests/``, by file: (line count, justification class).
 SKIP_LEDGER: dict[str, tuple[int, str]] = {
+    "tests/fixtures/opencode/process.py": (2, "optional-dep-guard"),
     "tests/test_a2a_store.py": (3, "platform-guard"),
     "tests/test_analysis_sqlcipher_readers.py": (1, "optional-dep-guard"),
     "tests/test_at_rest_pkcs11.py": (1, "optional-dep-guard"),
@@ -110,6 +111,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_persistence_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_relay_trim.py": (2, "platform-guard"),
     "tests/test_reliability_workflow_sqlcipher.py": (1, "optional-dep-guard"),
+    "tests/test_secret_files.py": (5, "platform-guard"),
     "tests/test_session_capability_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_shell_integration.py": (1, "optional-dep-guard"),
     "tests/test_worker_session.py": (1, "platform-guard"),

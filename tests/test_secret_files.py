@@ -137,10 +137,10 @@ def test_secret_readers_refuse_foreign_owner(
     monkeypatch: pytest.MonkeyPatch,
     reader: Callable[..., object],
 ) -> None:
-    import synapse_channel.core.secret_files as module
-
     path = _secret(tmp_path, "owned-secret\n")
-    monkeypatch.setattr(module.os, "geteuid", lambda: path.stat().st_uid + 1)
+    monkeypatch.setattr(
+        "synapse_channel.core.secret_files.os.geteuid", lambda: path.stat().st_uid + 1
+    )
     with pytest.raises(SecretFileError, match="effective hub service user"):
         reader(path, flag="--message-auth-key-file")
 
@@ -163,10 +163,8 @@ def test_secret_reader_enforces_the_limit_after_the_file_grows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import synapse_channel.core.secret_files as module
-
     path = _secret(tmp_path, "initial\n")
-    original_fstat = module.os.fstat
+    original_fstat = os.fstat
 
     def fstat_then_grow(descriptor: int) -> os.stat_result:
         info = original_fstat(descriptor)
@@ -174,7 +172,7 @@ def test_secret_reader_enforces_the_limit_after_the_file_grows(
             stream.write(b"x" * (DEFAULT_SECRET_FILE_LIMIT + 1))
         return info
 
-    monkeypatch.setattr(module.os, "fstat", fstat_then_grow)
+    monkeypatch.setattr("synapse_channel.core.secret_files.os.fstat", fstat_then_grow)
     with pytest.raises(SecretFileError, match="byte secret-file limit"):
         read_secret_file(path, flag="--metrics-token-file")
 
@@ -195,13 +193,11 @@ def test_secret_reader_uses_the_validated_descriptor_after_path_replacement(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import synapse_channel.core.secret_files as module
-
     path = _secret(tmp_path, "descriptor-secret\n")
     replacement = tmp_path / "replacement"
     replacement.write_text("replacement-secret\n", encoding="utf-8")
     replacement.chmod(0o600)
-    original_open = module.os.open
+    original_open = os.open
 
     def open_then_replace(file: os.PathLike[str] | str, flags: int) -> int:
         descriptor = original_open(file, flags)
@@ -209,7 +205,7 @@ def test_secret_reader_uses_the_validated_descriptor_after_path_replacement(
         replacement.rename(path)
         return descriptor
 
-    monkeypatch.setattr(module.os, "open", open_then_replace)
+    monkeypatch.setattr("synapse_channel.core.secret_files.os.open", open_then_replace)
     assert read_secret_file(path, flag="--metrics-token-file") == "descriptor-secret"
 
 
