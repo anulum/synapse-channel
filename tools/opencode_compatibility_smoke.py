@@ -261,7 +261,10 @@ def main() -> int:
         artifact = contract.artifact(args.platform)
         if args.archive is None:
             with tempfile.TemporaryDirectory(prefix="synapse-opencode-download-") as temporary:
-                archive = Path(temporary) / artifact.name
+                # macOS exposes its private temp tree through /var -> /private/var.
+                # Resolve only this freshly created, process-owned root before
+                # appending the archive name; caller destinations stay fail-closed.
+                archive = Path(temporary).resolve(strict=True) / artifact.name
                 download_archive(contract, artifact, archive)
                 install_archive(archive, artifact, args.destination)
         else:

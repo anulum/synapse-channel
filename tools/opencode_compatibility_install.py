@@ -160,17 +160,24 @@ def _exclusive_output(path: Path) -> Iterator[tuple[BinaryIO, Path]]:
     parent_descriptor: int | None = None
     descriptor = -1
     try:
-        if os.name == "posix" and os.open in os.supports_dir_fd:
-            parent_descriptor = _open_posix_parent(absolute.parent)
-            descriptor = os.open(
-                absolute.name,
-                flags,
-                0o600,
-                dir_fd=parent_descriptor,
-            )
-        else:
-            _prepare_fallback_parent(absolute.parent)
-            descriptor = os.open(absolute, flags, 0o600)
+        try:
+            if os.name == "posix" and os.open in os.supports_dir_fd:
+                parent_descriptor = _open_posix_parent(absolute.parent)
+                descriptor = os.open(
+                    absolute.name,
+                    flags,
+                    0o600,
+                    dir_fd=parent_descriptor,
+                )
+            else:
+                _prepare_fallback_parent(absolute.parent)
+                descriptor = os.open(absolute, flags, 0o600)
+        except FileExistsError as exc:
+            raise SmokeError(f"OpenCode output already exists: {absolute}") from exc
+        except SmokeError:
+            raise
+        except OSError as exc:
+            raise SmokeError(f"cannot create exclusive OpenCode output: {absolute}: {exc}") from exc
         with os.fdopen(descriptor, "wb", closefd=True) as output:
             descriptor = -1
             try:
@@ -181,12 +188,6 @@ def _exclusive_output(path: Path) -> Iterator[tuple[BinaryIO, Path]]:
                 else:
                     absolute.unlink(missing_ok=True)
                 raise
-    except FileExistsError as exc:
-        raise SmokeError(f"OpenCode output already exists: {absolute}") from exc
-    except SmokeError:
-        raise
-    except OSError as exc:
-        raise SmokeError(f"cannot create exclusive OpenCode output: {absolute}") from exc
     finally:
         if descriptor >= 0:
             os.close(descriptor)
