@@ -13,7 +13,8 @@ import os
 import re
 import shlex
 from pathlib import Path
-from tempfile import gettempdir
+
+from synapse_channel.reap import provider_runtime_dir
 
 DEFAULT_PROVIDER_COMMANDS = (
     "codex",
@@ -67,7 +68,8 @@ def has_active_tmux_provider(identity: str) -> bool:
     Used by passive arm/wait logic and harnesses to yield early and avoid name
     collisions on the *-rx sidecar. The provider owns the name for pane injection
     (WAKE_PANE_BRIDGE / receiver wake capability). Mirrors the pidfile check in the
-    generated shell hooks (XDG_RUNTIME_DIR/synapse-provider-tmux/*.pid).
+    generated shell hooks (XDG_RUNTIME_DIR/synapse-provider-tmux/*.pid, or a
+    private cache fallback when XDG runtime is unset).
 
     ``SYN_TMUX_PROVIDER=1`` (running as the inner agent of a provider session)
     counts only for the SESSION'S OWN identity (``$SYN_IDENTITY``): the provider
@@ -82,7 +84,7 @@ def has_active_tmux_provider(identity: str) -> bool:
         and identity == os.environ.get("SYN_IDENTITY", "").strip()
     ):
         return True
-    runtime = Path(os.environ.get("XDG_RUNTIME_DIR") or gettempdir()) / "synapse-provider-tmux"
+    runtime = provider_runtime_dir()
     key = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in identity)
     pidfile = runtime / f"{key}.pid"
     if not pidfile.is_file():
@@ -278,11 +280,22 @@ function __synapse_auto_arm --on-event fish_prompt
     set -gx __SYNAPSE_AUTO_IDENTITY "$identity"
   end
 
-  set -l runtime "$XDG_RUNTIME_DIR/synapse-shell"
-  if test -z "$XDG_RUNTIME_DIR"
-    set runtime "/tmp/synapse-shell"
+  # Prefer XDG runtime; fall back to private cache (never shared /tmp/synapse-*).
+  set -l runtime
+  if test -n "$XDG_RUNTIME_DIR"
+    set runtime "$XDG_RUNTIME_DIR/synapse-shell"
+  else
+    set -l cache_home "$XDG_CACHE_HOME"
+    if test -z "$cache_home"
+      set cache_home "$HOME/.cache"
+    end
+    if test -n "$cache_home"
+      set runtime "$cache_home/synapse-shell"
+    else
+      set runtime "/tmp/synapse-shell-"(id -u)
+    end
   end
-  mkdir -p "$runtime" 2>/dev/null; or return 0
+  mkdir -p -m 700 "$runtime" 2>/dev/null; or return 0
   set -l key (__synapse_safe_key "$identity")
   set -l pidfile "$runtime/$key.pid"
   set -l logfile "$runtime/$key.log"
@@ -298,9 +311,19 @@ function __synapse_auto_arm --on-event fish_prompt
   if test "$SYN_TMUX_PROVIDER" = "1"
     return 0
   end
-  set -l provider_runtime "$XDG_RUNTIME_DIR/synapse-provider-tmux"
-  if test -z "$XDG_RUNTIME_DIR"
-    set provider_runtime "/tmp/synapse-provider-tmux"
+  set -l provider_runtime
+  if test -n "$XDG_RUNTIME_DIR"
+    set provider_runtime "$XDG_RUNTIME_DIR/synapse-provider-tmux"
+  else
+    set -l cache_home "$XDG_CACHE_HOME"
+    if test -z "$cache_home"
+      set cache_home "$HOME/.cache"
+    end
+    if test -n "$cache_home"
+      set provider_runtime "$cache_home/synapse-provider-tmux"
+    else
+      set provider_runtime "/tmp/synapse-provider-tmux-"(id -u)
+    end
   end
   set -l provider_pidfile "$provider_runtime/$key.pid"
   if test -r "$provider_pidfile"
@@ -320,9 +343,19 @@ function __synapse_release_waiter
   # provider's own tmux waker can own "$identity-rx" without a name collision.
   # The waiter is killed, not merely superseded, so it does not re-arm and fight.
   test -n "$SYN_IDENTITY"; or return 0
-  set -l runtime "$XDG_RUNTIME_DIR/synapse-shell"
-  if test -z "$XDG_RUNTIME_DIR"
-    set runtime "/tmp/synapse-shell"
+  set -l runtime
+  if test -n "$XDG_RUNTIME_DIR"
+    set runtime "$XDG_RUNTIME_DIR/synapse-shell"
+  else
+    set -l cache_home "$XDG_CACHE_HOME"
+    if test -z "$cache_home"
+      set cache_home "$HOME/.cache"
+    end
+    if test -n "$cache_home"
+      set runtime "$cache_home/synapse-shell"
+    else
+      set runtime "/tmp/synapse-shell-"(id -u)
+    end
   end
   set -l key (__synapse_safe_key "$SYN_IDENTITY")
   set -l pidfile "$runtime/$key.pid"
@@ -427,6 +460,7 @@ __synapse_auto_arm() {{
   [ "${{SYNAPSE_AUTO_CONNECT:-1}}" = "0" ] && return 0
   command -v synapse >/dev/null 2>&1 || return 0
   local project identity terminal_id runtime key pidfile logfile pid provider_pidfile
+  local cache provider_runtime
 
   if [ -n "${{SYN_PROJECT:-}}" ] && [ "${{__SYNAPSE_AUTO_PROJECT:-}}" != "$SYN_PROJECT" ]; then
     project="$SYN_PROJECT"
@@ -446,8 +480,18 @@ __synapse_auto_arm() {{
     export __SYNAPSE_AUTO_IDENTITY="$identity"
   fi
 
-  runtime="${{XDG_RUNTIME_DIR:-/tmp}}/synapse-shell"
-  mkdir -p "$runtime" 2>/dev/null || return 0
+  # Prefer XDG runtime; fall back to private cache (never shared /tmp/synapse-*).
+  if [ -n "${{XDG_RUNTIME_DIR:-}}" ]; then
+    runtime="$XDG_RUNTIME_DIR/synapse-shell"
+  else
+    cache="${{XDG_CACHE_HOME:-${{HOME:-}}/.cache}}"
+    if [ -n "$cache" ] && [ "$cache" != "/.cache" ]; then
+      runtime="$cache/synapse-shell"
+    else
+      runtime="${{TMPDIR:-/tmp}}/synapse-shell-$(id -u)"
+    fi
+  fi
+  mkdir -p -m 700 "$runtime" 2>/dev/null || return 0
   key="$(__synapse_safe_key "$identity")"
   pidfile="$runtime/$key.pid"
   logfile="$runtime/$key.log"
@@ -462,7 +506,17 @@ __synapse_auto_arm() {{
   if [ "${{SYN_TMUX_PROVIDER:-}}" = "1" ]; then
     return 0
   fi
-  provider_pidfile="${{XDG_RUNTIME_DIR:-/tmp}}/synapse-provider-tmux/$key.pid"
+  if [ -n "${{XDG_RUNTIME_DIR:-}}" ]; then
+    provider_runtime="$XDG_RUNTIME_DIR/synapse-provider-tmux"
+  else
+    cache="${{XDG_CACHE_HOME:-${{HOME:-}}/.cache}}"
+    if [ -n "$cache" ] && [ "$cache" != "/.cache" ]; then
+      provider_runtime="$cache/synapse-provider-tmux"
+    else
+      provider_runtime="${{TMPDIR:-/tmp}}/synapse-provider-tmux-$(id -u)"
+    fi
+  fi
+  provider_pidfile="$provider_runtime/$key.pid"
   if [ -r "$provider_pidfile" ]; then
     pid="$(cat "$provider_pidfile" 2>/dev/null || true)"
     if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
@@ -478,9 +532,18 @@ __synapse_release_waiter() {{
   # Stop the passive prompt-armed waiter (by its pidfile) so an interactive
   # provider's own tmux waker can own "$identity-rx" without a name collision.
   # The waiter is killed, not merely superseded, so it does not re-arm and fight.
-  local runtime key pidfile pid
+  local runtime key pidfile pid cache
   [ -n "${{SYN_IDENTITY:-}}" ] || return 0
-  runtime="${{XDG_RUNTIME_DIR:-/tmp}}/synapse-shell"
+  if [ -n "${{XDG_RUNTIME_DIR:-}}" ]; then
+    runtime="$XDG_RUNTIME_DIR/synapse-shell"
+  else
+    cache="${{XDG_CACHE_HOME:-${{HOME:-}}/.cache}}"
+    if [ -n "$cache" ] && [ "$cache" != "/.cache" ]; then
+      runtime="$cache/synapse-shell"
+    else
+      runtime="${{TMPDIR:-/tmp}}/synapse-shell-$(id -u)"
+    fi
+  fi
   key="$(__synapse_safe_key "$SYN_IDENTITY")"
   pidfile="$runtime/$key.pid"
   [ -r "$pidfile" ] || return 0

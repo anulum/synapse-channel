@@ -9,8 +9,10 @@
 
 The shell integration starts one background ``synapse arm`` process per resolved
 identity and records its PID in ``$XDG_RUNTIME_DIR/synapse-shell/<safe identity>.pid``
-or ``/tmp/synapse-shell`` when no XDG runtime directory exists. This module is the
-safe cleanup companion for that hook: it only looks at the pidfile for the resolved
+or, when no XDG runtime directory exists, under the operator's private cache
+(``$XDG_CACHE_HOME/synapse-shell`` / ``~/.cache/synapse-shell``, with a
+uid-keyed temp fallback only as last resort). This module is the safe cleanup
+companion for that hook: it only looks at the pidfile for the resolved
 ``syn`` identity, verifies a live process is actually that identity's
 ``synapse arm --name <identity>-rx --for <project>`` waiter before signalling it,
 and removes dead pidfiles without sending any signal.
@@ -127,6 +129,38 @@ def safe_key(identity: str) -> str:
     return SAFE_KEY_PATTERN.sub("_", identity)
 
 
+def private_runtime_parent(env: Mapping[str, str] | None = None) -> Path:
+    """Return a private directory parent when ``XDG_RUNTIME_DIR`` is unset.
+
+    Preference order matches the generated shell hooks:
+
+    1. ``$XDG_CACHE_HOME`` when set
+    2. ``$HOME/.cache`` when home is known
+    3. uid-keyed directory under the process temp root (never a shared
+       world-writable ``/tmp/synapse-*`` path shared by every user)
+
+    Parameters
+    ----------
+    env : Mapping[str, str] or None, optional
+        Environment mapping; defaults to ``os.environ``.
+
+    Returns
+    -------
+    Path
+        Private parent for ``synapse-shell`` / ``synapse-provider-tmux``.
+    """
+    from tempfile import gettempdir
+
+    env = os.environ if env is None else env
+    cache = env.get("XDG_CACHE_HOME", "").strip()
+    if cache:
+        return Path(cache)
+    home = env.get("HOME", "").strip()
+    if home:
+        return Path(home) / ".cache"
+    return Path(gettempdir()) / f"synapse-user-{os.getuid()}"
+
+
 def runtime_dir(env: Mapping[str, str] | None = None) -> Path:
     """Return the shell-hook runtime directory for ``env``.
 
@@ -139,12 +173,34 @@ def runtime_dir(env: Mapping[str, str] | None = None) -> Path:
     Returns
     -------
     Path
-        ``$XDG_RUNTIME_DIR/synapse-shell`` or ``/tmp/synapse-shell``.
+        ``$XDG_RUNTIME_DIR/synapse-shell`` when set; otherwise a private
+        cache path (never a shared world-writable ``/tmp/synapse-shell``).
     """
     env = os.environ if env is None else env
     root = env.get("XDG_RUNTIME_DIR", "").strip()
-    parent = Path(root) if root else Path(os.path.sep) / "tmp"
-    return parent / "synapse-shell"
+    if root:
+        return Path(root) / "synapse-shell"
+    return private_runtime_parent(env) / "synapse-shell"
+
+
+def provider_runtime_dir(env: Mapping[str, str] | None = None) -> Path:
+    """Return the tmux-provider pidfile directory for ``env``.
+
+    Parameters
+    ----------
+    env : Mapping[str, str] or None, optional
+        Environment mapping; defaults to ``os.environ``.
+
+    Returns
+    -------
+    Path
+        ``$XDG_RUNTIME_DIR/synapse-provider-tmux`` or private-cache fallback.
+    """
+    env = os.environ if env is None else env
+    root = env.get("XDG_RUNTIME_DIR", "").strip()
+    if root:
+        return Path(root) / "synapse-provider-tmux"
+    return private_runtime_parent(env) / "synapse-provider-tmux"
 
 
 def pidfile_for(identity: ReapIdentity, *, runtime: Path) -> Path:

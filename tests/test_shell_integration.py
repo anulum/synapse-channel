@@ -72,6 +72,22 @@ def test_render_shell_hook_auto_arms_and_wraps_default_providers() -> None:
     assert "PROMPT_COMMAND" in hook
 
 
+def test_shell_hooks_prefer_private_cache_over_shared_tmp() -> None:
+    """SCH-H-NEW-09: no world-shared /tmp/synapse-shell when XDG runtime is absent."""
+    for shell in ("bash", "zsh", "fish"):
+        hook = render_shell_hook(shell=shell, provider_commands=())
+        assert '/tmp/synapse-shell"' not in hook
+        assert "/tmp/synapse-shell'" not in hook
+        assert 'set runtime "/tmp/synapse-shell"' not in hook
+        assert "XDG_CACHE_HOME" in hook or "XDG_CACHE" in hook
+        assert "mkdir -p -m 700" in hook or "mkdir -p -m 700" in hook.replace("  ", " ")
+        # uid-keyed last resort only
+        if shell == "fish":
+            assert 'set runtime "/tmp/synapse-shell-"(id -u)' in hook
+        else:
+            assert "synapse-shell-$(id -u)" in hook
+
+
 def test_bash_auto_arm_skips_arming_when_a_provider_tmux_waker_is_live(tmp_path: Path) -> None:
     # Real bash execution: with a live worker-session tmux waker recorded in the
     # provider-tmux pidfile, __synapse_auto_arm must yield and record no arm.
@@ -144,7 +160,8 @@ def test_bash_hook_yields_to_an_active_provider_tmux_waker() -> None:
     # The prompt auto-arm must not arm a passive waiter on <identity>-rx when a
     # worker-session tmux waker already owns it, or the injecting waker is locked out.
     hook = render_shell_hook(shell="bash")
-    assert "synapse-provider-tmux/$key.pid" in hook
+    assert "synapse-provider-tmux" in hook
+    assert 'provider_pidfile="$provider_runtime/$key.pid"' in hook
     assert "__synapse_release_waiter() {" in hook
     # The provider wrapper releases the passive waiter before worker-session.
     release_index = hook.index("__synapse_release_waiter || true")

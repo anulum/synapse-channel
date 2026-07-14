@@ -24,6 +24,8 @@ from synapse_channel.reap import (
     _pid_exists,
     discover_waiters,
     main,
+    private_runtime_parent,
+    provider_runtime_dir,
     read_proc_cmdline,
     reap_waiter,
     runtime_dir,
@@ -45,7 +47,20 @@ def test_runtime_dir_matches_shell_hook_contract() -> None:
     assert runtime_dir({"XDG_RUNTIME_DIR": "/run/user/1000"}) == Path(
         "/run/user/1000/synapse-shell"
     )
-    assert runtime_dir({}) == Path("/tmp/synapse-shell")
+    # Without XDG runtime: private cache, never shared /tmp/synapse-shell.
+    assert runtime_dir({"HOME": "/home/op", "XDG_CACHE_HOME": ""}) == Path(
+        "/home/op/.cache/synapse-shell"
+    )
+    assert runtime_dir({"XDG_CACHE_HOME": "/var/cache/op"}) == Path("/var/cache/op/synapse-shell")
+    assert runtime_dir({}) != Path("/tmp/synapse-shell")
+    assert "synapse-shell" in str(runtime_dir({}))
+    assert provider_runtime_dir({"XDG_RUNTIME_DIR": "/run/user/1000"}) == Path(
+        "/run/user/1000/synapse-provider-tmux"
+    )
+    assert provider_runtime_dir({"HOME": "/home/op"}) == Path(
+        "/home/op/.cache/synapse-provider-tmux"
+    )
+    assert private_runtime_parent({"XDG_CACHE_HOME": "/c"}) == Path("/c")
 
 
 def test_discover_waiters_lists_identity_scoped_pidfiles(tmp_path: Path) -> None:
