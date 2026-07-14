@@ -19,7 +19,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 _AGENT_NAME = "SYNAPSE OpenCode E2E"
-_TIMEOUT_SECONDS = 150.0
+_STARTUP_TIMEOUT_SECONDS = 150.0
+_ACP_HANDSHAKE_TIMEOUT_SECONDS = 90.0
+_ACP_PROMPT_TIMEOUT_SECONDS = 90.0
 _MAX_TRACE_SEGMENTS = 8
 _USER_AGREEMENT_TITLE = "IntelliJ IDEA User Agreement"
 _USER_AGREEMENT_VERSION = "2.0"
@@ -469,13 +471,16 @@ def main() -> int:
             text=True,
         )
         try:
-            deadline = time.monotonic() + _TIMEOUT_SECONDS
-            _complete_first_run_agreements(deadline)
-            window = _find_project_window(deadline)
-            _skip_islands_onboarding(deadline, window)
-            window = _find_project_window(deadline)
+            startup_deadline = time.monotonic() + _STARTUP_TIMEOUT_SECONDS
+            _complete_first_run_agreements(startup_deadline)
+            window = _find_project_window(startup_deadline)
+            _skip_islands_onboarding(startup_deadline, window)
+            window = _find_project_window(startup_deadline)
             _wait_for_idea_log(
-                log_root, "Local ACP agents reloaded: 1 active", deadline, process.poll
+                log_root,
+                "Local ACP agents reloaded: 1 active",
+                startup_deadline,
+                process.poll,
             )
             # xvfb-run intentionally has no EWMH window manager.  Every action
             # targets the discovered X11 window directly, so activation is not
@@ -491,7 +496,7 @@ def main() -> int:
             _wait_for_idea_log(
                 log_root,
                 "No session managers found for agent 'SYNAPSE OpenCode E2E'",
-                deadline,
+                startup_deadline,
                 process.poll,
             )
             _checked_xdotool(
@@ -515,15 +520,16 @@ def main() -> int:
             _wait_for_idea_log(
                 log_root,
                 "Creating AcpSessionLifecycleManager for agent 'acp.synapse-opencode-e2e'",
-                deadline,
+                startup_deadline,
                 process.poll,
             )
-            _wait_for_trace(trace, '"method":"initialize"', deadline, process)
-            _wait_for_trace(trace, '"method":"session/new"', deadline, process)
+            handshake_deadline = time.monotonic() + _ACP_HANDSHAKE_TIMEOUT_SECONDS
+            _wait_for_trace(trace, '"method":"initialize"', handshake_deadline, process)
+            _wait_for_trace(trace, '"method":"session/new"', handshake_deadline, process)
             _wait_for_idea_log(
                 log_root,
                 _ACP_SESSION_READY_MARKERS,
-                deadline,
+                handshake_deadline,
                 process.poll,
             )
             _checked_xdotool(
@@ -543,7 +549,8 @@ def main() -> int:
                 window,
                 "ctrl+alt+shift+l",
             )
-            _wait_for_trace(trace, '"response_to":"session/prompt"', deadline, process)
+            prompt_deadline = time.monotonic() + _ACP_PROMPT_TIMEOUT_SECONDS
+            _wait_for_trace(trace, '"response_to":"session/prompt"', prompt_deadline, process)
             _screenshot(screenshot)
             return 0
         finally:
