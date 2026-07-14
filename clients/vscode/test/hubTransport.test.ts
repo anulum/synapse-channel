@@ -63,7 +63,7 @@ async function waitFor(
   predicate: () => boolean,
   label: string,
   diagnostic?: () => string,
-  timeoutMs = 20_000,
+  timeoutMs = 10_000,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -96,6 +96,11 @@ async function startHub(
       tokenFile,
       "--db",
       database,
+      // Keep identity pins in memory: the default persists trust-on-first-use pins
+      // to a shared ~/synapse/identity-pins.json, so a machine that has already
+      // pinned this identity elsewhere would refuse the test's unsigned client.
+      "--identity-pins",
+      "",
     ],
     {
       cwd: REPOSITORY_ROOT,
@@ -157,7 +162,13 @@ describe("HubTransport real process boundary", () => {
         sent: false,
         reason: "SYNAPSE mutation withheld because the hub state is not live and compatible.",
       });
-      await waitFor(() => transport.state().phase === "live", "the first live handshake");
+      await waitFor(
+        () => transport.state().phase === "live",
+        "the first live handshake",
+        () =>
+          `phase=${transport.state().phase} states=${JSON.stringify(states.map((s) => s.phase))} ` +
+          `frames=${JSON.stringify(frames.map((f) => f.kind))}`,
+      );
 
       expect(transport.mutate("claim", {
         task_id: "vscode/transport",
