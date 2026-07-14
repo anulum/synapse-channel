@@ -152,7 +152,7 @@ or returns non-JSON. That host residual is the fail-open matrix:
 | Kimi Code | structured deny on exit 0 | host documents fail-open on crash/timeout | **fail-open** outside `Edit`/`Write` matcher |
 | OpenCode | plugin throws before mutation | helper crash/timeout → throw (**fail-closed** for covered tools) | **fail-open** for shell, custom tools, MCP, new tool names |
 
-See also [SECURITY.md — known limitations](../SECURITY.md#out-of-scope--known-limitations)
+See also [SECURITY.md — known limitations](https://github.com/anulum/synapse-channel/blob/main/SECURITY.md#out-of-scope--known-limitations)
 for the residual that commit-time `git-claim-check` covers independently.
 
 The Synapse handler returns a valid deny object on exit zero for every handled
