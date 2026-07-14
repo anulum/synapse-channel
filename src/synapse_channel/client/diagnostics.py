@@ -259,6 +259,106 @@ def check_waiter(roster: list[str] | None, waiter_name: str) -> Diagnosis:
     )
 
 
+def check_mcp_posture(
+    *,
+    cwd: Path | None = None,
+    token: str | None = None,
+    token_file: str | PathLike[str] | None = None,
+    git_toplevel: str | None = None,
+    mcp_extra_available: bool | None = None,
+) -> Diagnosis:
+    """Report MCP security posture for operators (SCH-H-NEW-03).
+
+    Parameters
+    ----------
+    cwd : Path or None
+        Working directory used to resolve a Git worktree (defaults to process cwd).
+    token : str or None
+        Inline hub token from argv (discouraged).
+    token_file : path-like or None
+        Owner-only token file path preferred over argv.
+    git_toplevel : str or None
+        Injected ``git rev-parse --show-toplevel`` result for tests.
+    mcp_extra_available : bool or None
+        Injected MCP SDK availability; when ``None``, probe the optional import.
+    """
+    from synapse_channel.mcp.registration import (
+        MCP_EXTRA_HINT,
+        REQUIRED_MCP_CLAIM_TOOLS,
+        registered_mcp_tool_names,
+    )
+
+    findings: list[str] = []
+    remedies: list[str] = []
+    status: DoctorStatus = "pass"
+
+    if mcp_extra_available is None:
+        try:
+            importlib = __import__("importlib")
+            importlib.import_module("mcp.server.fastmcp")
+            mcp_extra_available = True
+        except ImportError:
+            mcp_extra_available = False
+    if not mcp_extra_available:
+        findings.append("mcp extra not installed")
+        remedies.append(MCP_EXTRA_HINT)
+        status = "warn"
+    else:
+        findings.append("mcp extra importable")
+
+    tools = registered_mcp_tool_names()
+    missing = sorted(REQUIRED_MCP_CLAIM_TOOLS - tools)
+    if missing:
+        findings.append(f"claim tools missing from inventory: {', '.join(missing)}")
+        remedies.append("rebuild/update synapse-channel so registration exports claim tools")
+        status = "fail"
+    else:
+        findings.append("claim tools registered: " + ", ".join(sorted(REQUIRED_MCP_CLAIM_TOOLS)))
+
+    if git_toplevel is None:
+        import subprocess
+
+        root = Path.cwd() if cwd is None else Path(cwd)
+        try:
+            proc = subprocess.run(  # nosec B603 B607 — fixed argv, no shell
+                ["git", "rev-parse", "--show-toplevel"],
+                cwd=root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            git_toplevel = proc.stdout.strip() if proc.returncode == 0 else ""
+        except OSError:
+            git_toplevel = ""
+    if git_toplevel:
+        findings.append(f"git worktree resolvable ({git_toplevel})")
+    else:
+        findings.append("git worktree not resolvable from cwd")
+        remedies.append("run doctor from a git checkout before using MCP git-claim tools")
+        if status == "pass":
+            status = "warn"
+
+    has_inline = bool(token)
+    has_file = bool(token_file)
+    if has_inline and not has_file:
+        findings.append("hub token present on argv (process-visible)")
+        remedies.append("prefer --token-file with mode 0600; avoid --token SECRET")
+        if status == "pass":
+            status = "warn"
+    elif has_file:
+        findings.append("hub token via token-file (preferred)")
+    else:
+        findings.append("no hub token configured (ok for open loopback)")
+
+    detail = "; ".join(findings)
+    return Diagnosis(
+        check="mcp_posture",
+        status=status,
+        detail=detail,
+        remedy="; ".join(remedies),
+    )
+
+
 def check_a2a_origin_policy(*, allow_origins: tuple[str, ...] = ()) -> Diagnosis:
     """Report the effective A2A Origin/Host browser-boundary policy (SCH-H-NEW-04).
 

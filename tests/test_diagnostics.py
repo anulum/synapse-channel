@@ -21,6 +21,7 @@ from synapse_channel.client.diagnostics import (
     check_disk_space,
     check_exposure,
     check_identity,
+    check_mcp_posture,
     check_multi_seat_posture,
     check_reachable,
     check_send_identity,
@@ -311,6 +312,48 @@ def test_a2a_origin_policy_fails_opaque_null() -> None:
     diagnosis = check_a2a_origin_policy(allow_origins=("null",))
     assert diagnosis.status == "fail"
     assert "invalid" in diagnosis.detail
+
+
+# --- check_mcp_posture --------------------------------------------------------
+
+
+def test_mcp_posture_pass_with_token_file_and_worktree() -> None:
+    diagnosis = check_mcp_posture(
+        token=None,
+        token_file="/run/secrets/hub.token",
+        git_toplevel="/repo",
+        mcp_extra_available=True,
+    )
+    assert diagnosis.check == "mcp_posture"
+    assert diagnosis.status == "pass"
+    assert "synapse_claim" in diagnosis.detail
+    assert "synapse_git_claim" in diagnosis.detail
+    assert "token-file" in diagnosis.detail
+    assert "worktree resolvable" in diagnosis.detail
+
+
+def test_mcp_posture_warns_on_argv_token_and_missing_extra() -> None:
+    diagnosis = check_mcp_posture(
+        token="visible-on-argv",
+        token_file=None,
+        git_toplevel="/repo",
+        mcp_extra_available=False,
+    )
+    assert diagnosis.status == "warn"
+    assert "argv" in diagnosis.detail
+    assert "mcp extra not installed" in diagnosis.detail
+    assert "token-file" in diagnosis.remedy
+
+
+def test_mcp_posture_warns_when_worktree_missing() -> None:
+    diagnosis = check_mcp_posture(
+        token=None,
+        token_file=None,
+        git_toplevel="",
+        mcp_extra_available=True,
+    )
+    assert diagnosis.status == "warn"
+    assert "worktree not resolvable" in diagnosis.detail
 
 
 # --- check_multi_seat_posture -------------------------------------------------

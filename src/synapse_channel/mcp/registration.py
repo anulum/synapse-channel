@@ -21,6 +21,43 @@ if TYPE_CHECKING:
 MCP_EXTRA_HINT = "The MCP face needs the optional extra: pip install 'synapse-channel[mcp]'"
 """Message shown when ``synapse mcp`` runs without the ``mcp`` SDK installed."""
 
+REQUIRED_MCP_CLAIM_TOOLS: frozenset[str] = frozenset(
+    {
+        "synapse_claim",
+        "synapse_git_claim",
+        "synapse_release",
+    }
+)
+"""Claim-path tools every MCP face must expose for git-claim coordination."""
+
+
+def registered_mcp_tool_names() -> frozenset[str]:
+    """Return the tool names wired by :func:`build_mcp_server` (static inventory).
+
+    Used by ``synapse doctor --mcp-policy`` so operators can confirm claim tools
+    are registered without starting a live MCP session.
+    """
+    return frozenset(
+        {
+            "synapse_claim",
+            "synapse_git_claim",
+            "synapse_release",
+            "synapse_send",
+            "synapse_inbox",
+            "synapse_handoff",
+            "synapse_task_declare",
+            "synapse_task_update",
+            "synapse_board",
+            "synapse_status",
+            "synapse_state",
+            "synapse_manifest",
+            "synapse_directory",
+            "synapse_route_task",
+            "synapse_resource_bids",
+            "synapse_memory_recall",
+        }
+    )
+
 
 def _require_fastmcp(
     import_module: Callable[[str], Any] = importlib.import_module,

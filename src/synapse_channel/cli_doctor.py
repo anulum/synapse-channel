@@ -51,6 +51,7 @@ from synapse_channel.client.diagnostics import (
     check_disk_space,
     check_exposure,
     check_identity,
+    check_mcp_posture,
     check_multi_seat_posture,
     check_reachable,
     check_send_identity,
@@ -244,6 +245,8 @@ async def _diagnose(
     event_store_key_file: str | Path | None = None,
     a2a_policy: bool = False,
     a2a_allow_origins: tuple[str, ...] = (),
+    mcp_policy: bool = False,
+    token_file: str | Path | None = None,
 ) -> tuple[int, list[str], list[Diagnosis]]:
     """Resolve the identity, run every check, and return the summarised verdicts.
 
@@ -319,6 +322,13 @@ async def _diagnose(
     )
     if a2a_policy or a2a_allow_origins:
         diagnoses.append(check_a2a_origin_policy(allow_origins=a2a_allow_origins))
+    if mcp_policy:
+        diagnoses.append(
+            check_mcp_posture(
+                token=token,
+                token_file=token_file,
+            )
+        )
     diagnoses.append(
         check_unread_addressees(
             feed_lines=feed_tail_reader(env),
@@ -460,6 +470,8 @@ def _cmd_doctor(
                 event_store_key_file=getattr(args, "db_key_file", None),
                 a2a_policy=bool(getattr(args, "a2a_policy", False)),
                 a2a_allow_origins=tuple(getattr(args, "a2a_allow_origin", ()) or ()),
+                mcp_policy=bool(getattr(args, "mcp_policy", False)),
+                token_file=getattr(args, "token_file", None),
             )
         )
 
@@ -604,6 +616,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "resolved identity); flags a <project>-<suffix> name that misses the project inbox.",
     )
     doctor.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    doctor.add_argument(
+        "--token-file",
+        default=None,
+        help="Owner-only hub token file (preferred over --token for MCP/hub auth).",
+    )
     doctor.add_argument(
         "--disk-path",
         default=os.path.abspath(os.sep),
@@ -767,6 +784,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help=(
             "Concrete HTTP(S) origin to include in the A2A allow-list policy report "
             "(repeatable; same shape as synapse a2a-serve --allow-origin)."
+        ),
+    )
+    doctor.add_argument(
+        "--mcp-policy",
+        action="store_true",
+        help=(
+            "Report MCP security posture: claim tools registered, git worktree, "
+            "token-file vs argv, optional mcp extra (SCH-H-NEW-03)."
         ),
     )
     doctor.set_defaults(func=_cmd_doctor)
