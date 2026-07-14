@@ -426,6 +426,13 @@ def test_cmd_git_init_installs_services(
     home = tmp_path / "home"
     monkeypatch.chdir(repo)
     monkeypatch.setenv("HOME", str(home))
+
+    def assert_no_git_init_mutation() -> None:
+        assert not (repo / ".synapse").exists()
+        assert not (repo / ".git" / "hooks" / "post-commit").exists()
+        assert not (repo / ".git" / "hooks" / "post-merge").exists()
+        assert not home.exists()
+
     code = cli.main(
         [
             "git-init",
@@ -438,10 +445,21 @@ def test_cmd_git_init_installs_services(
     assert code == 2
     assert "ExecStart control prefix" in captured_io.err
     assert "Traceback" not in captured_io.out + captured_io.err
-    assert not (repo / ".synapse").exists()
-    assert not (repo / ".git" / "hooks" / "post-commit").exists()
-    assert not (repo / ".git" / "hooks" / "post-merge").exists()
-    assert not home.exists()
+    assert_no_git_init_mutation()
+
+    code = cli.main(
+        [
+            "git-init",
+            "--install-user-services",
+            "--synapse-bin",
+            "./venv/bin/synapse",
+        ]
+    )
+    captured_io = capsys.readouterr()
+    assert code == 2
+    assert "absolute or a simple file name" in captured_io.err
+    assert "Traceback" not in captured_io.out + captured_io.err
+    assert_no_git_init_mutation()
 
     hostile_bin = tmp_path / "hostile bin"
     hostile_bin.mkdir()
@@ -454,10 +472,35 @@ def test_cmd_git_init_installs_services(
     assert code == 2
     assert "without whitespace" in captured_io.err
     assert "Traceback" not in captured_io.out + captured_io.err
-    assert not (repo / ".synapse").exists()
-    assert not (repo / ".git" / "hooks" / "post-commit").exists()
-    assert not (repo / ".git" / "hooks" / "post-merge").exists()
-    assert not home.exists()
+    assert_no_git_init_mutation()
+
+    relative_bin = repo / "relative-bin"
+    relative_bin.mkdir()
+    relative_executable = relative_bin / "synapse"
+    relative_executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    relative_executable.chmod(0o755)
+    monkeypatch.setenv("PATH", "relative-bin:/usr/bin:/bin")
+    with monkeypatch.context() as patch:
+        patch.setattr(cli_git, "default_synapse_bin", lambda: "relative-bin/synapse")
+        code = cli.main(["git-init", "--install-user-services"])
+    captured_io = capsys.readouterr()
+    assert code == 2
+    assert "absolute or a simple file name" in captured_io.err
+    assert "Traceback" not in captured_io.out + captured_io.err
+    assert_no_git_init_mutation()
+
+    code = cli.main(["git-init", "--install-user-services"])
+    captured_io = capsys.readouterr()
+    assert code == 0
+    assert "Traceback" not in captured_io.out + captured_io.err
+    assert (repo / ".synapse" / "git-claims.md").exists()
+    assert (repo / ".git" / "hooks" / "post-commit").exists()
+    assert (repo / ".git" / "hooks" / "post-merge").exists()
+    hub_unit = home / ".config" / "systemd" / "user" / "synapse-hub.service"
+    assert hub_unit.exists()
+    unit_text = hub_unit.read_text(encoding="utf-8")
+    assert f"ExecStart={relative_executable.resolve()} hub" in unit_text
+    assert "ExecStart=relative-bin/synapse" not in unit_text
 
 
 def test_cmd_git_init_reports_git_error(capsys: pytest.CaptureFixture[str]) -> None:

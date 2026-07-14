@@ -58,7 +58,8 @@ class ArmServiceInstallResult:
 
 def default_synapse_bin() -> str:
     """Return the preferred installed ``synapse`` executable path."""
-    return shutil.which("synapse") or "synapse"
+    executable = shutil.which("synapse")
+    return str(Path(executable).resolve()) if executable is not None else "synapse"
 
 
 def user_systemd_dir(*, home: Path | None = None) -> Path:
@@ -156,6 +157,10 @@ def validate_systemd_executable(value: str) -> str:
         raise ValueError(
             "synapse executable path must not start with a systemd ExecStart control "
             f"prefix ({prefixes})"
+        )
+    if "/" in executable and not Path(executable).is_absolute():
+        raise ValueError(
+            "synapse executable path must be absolute or a simple file name without slashes"
         )
     return executable
 

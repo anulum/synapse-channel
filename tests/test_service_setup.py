@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from synapse_channel.service_setup import (
+    default_synapse_bin,
     escaped_instance,
     install_arm_service,
     install_user_services,
@@ -25,7 +26,9 @@ from synapse_channel.service_setup import (
 from synapse_channel.terminal_text import terminal_text
 
 
-def test_render_arm_unit_uses_non_llm_synapse_arm() -> None:
+def test_render_arm_unit_uses_non_llm_synapse_arm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     unit = render_arm_unit(synapse_bin="/usr/bin/synapse")
     assert "ExecStart=/usr/bin/synapse arm" in unit
     assert "--directed-only" in unit
@@ -33,6 +36,15 @@ def test_render_arm_unit_uses_non_llm_synapse_arm() -> None:
     assert "Restart=always" in unit
     assert "Wants=synapse-hub.service" not in unit
     assert "After=synapse-hub.service" in unit
+
+    relative_bin = tmp_path / "relative-bin"
+    relative_bin.mkdir()
+    executable = relative_bin / "synapse"
+    executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    executable.chmod(0o755)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", "relative-bin")
+    assert default_synapse_bin() == str(executable.resolve())
 
 
 def test_render_arm_unit_adds_remote_uri_and_token_file() -> None:
@@ -64,6 +76,8 @@ def test_render_arm_unit_escapes_systemd_percent_specifiers() -> None:
         ("bad'path", "non-empty systemd token"),
         ("bad\\path", "non-empty systemd token"),
         ("bad$PATH", "non-empty systemd token"),
+        ("relative-bin/synapse", "absolute or a simple file name"),
+        ("./venv/bin/synapse", "absolute or a simple file name"),
         *((f"{prefix}/usr/bin/synapse", "ExecStart control prefix") for prefix in "@-:+!|"),
     ],
 )
@@ -373,6 +387,17 @@ def test_install_user_services_writes_three_units(tmp_path: Path) -> None:
                 project="repo",
                 identity="repo/ux",
                 synapse_bin=f"{prefix}/bin/synapse",
+                home=rejected_home,
+            )
+        assert not rejected_home.exists()
+
+    for index, synapse_bin in enumerate(("relative-bin/synapse", "./venv/bin/synapse")):
+        rejected_home = tmp_path / f"rejected-relative-{index}"
+        with pytest.raises(ValueError, match="absolute or a simple file name"):
+            install_user_services(
+                project="repo",
+                identity="repo/ux",
+                synapse_bin=synapse_bin,
                 home=rejected_home,
             )
         assert not rejected_home.exists()
