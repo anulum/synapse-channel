@@ -33,6 +33,9 @@ from synapse_channel.terminal_text import shell_command_arg, terminal_text
 _SYSTEMD_EXEC_PREFIXES = frozenset("@-:+!|")
 """Leading ``ExecStart=`` characters that alter systemd execution semantics."""
 
+_SYSTEMD_EXEC_GLOB_CHARS = frozenset("*?[")
+"""Bytes rejected by upstream ``string_is_safe(path, 0)``."""
+
 _SYSTEMD_INVALID_SIMPLE_EXECUTABLES = frozenset({".", "..", ";"})
 """Slash-free tokens that are invalid names or alter ``ExecStart=`` parsing."""
 
@@ -153,6 +156,20 @@ def _unit_token(value: str, *, label: str) -> str:
     return value.replace("%", "%%")
 
 
+def _systemd_executable_string_is_safe(value: str) -> bool:
+    """Return whether ``value`` matches systemd's UTF-8 and glob safety rules."""
+    for character in value:
+        codepoint = ord(character)
+        if (
+            character in _SYSTEMD_EXEC_GLOB_CHARS
+            or 0xD800 <= codepoint <= 0xDFFF
+            or 0xFDD0 <= codepoint <= 0xFDEF
+            or (codepoint & 0xFFFE) == 0xFFFE
+        ):
+            return False
+    return True
+
+
 def validate_systemd_executable(value: str) -> str:
     """Return a literal executable token with systemd control prefixes refused.
 
@@ -160,6 +177,10 @@ def validate_systemd_executable(value: str) -> str:
     repository, hook, scaffold, or service-file mutation. Unit renderers call it
     again so direct library use retains the same fail-closed boundary.
     """
+    if not _systemd_executable_string_is_safe(value):
+        raise ValueError(
+            "synapse executable path must be systemd-safe UTF-8 without glob metacharacters (*?[)"
+        )
     executable = _unit_token(value, label="synapse executable path")
     if executable[0] in _SYSTEMD_EXEC_PREFIXES:
         prefixes = "".join(sorted(_SYSTEMD_EXEC_PREFIXES))

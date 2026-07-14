@@ -31,6 +31,22 @@ MAX_ABSOLUTE_EXECUTABLE = "/" + "/".join(["x" * 255] * 15 + ["y" * 254])
 OVERLONG_ABSOLUTE_EXECUTABLE = "/" + "/".join(["x" * 255] * 16)
 OVERSIZED_COMPONENT_EXECUTABLE = "/" + "x" * 256
 OVERSIZED_UTF8_COMPONENT_EXECUTABLE = "/" + "é" * 128
+SYSTEMD_UNSAFE_EXECUTABLE_STRINGS = tuple(
+    value
+    for token in (
+        "*",
+        "?",
+        "[",
+        "\ud800",
+        "\ufdd0",
+        "\ufdef",
+        "\ufffe",
+        "\uffff",
+        "\U0001fffe",
+        "\U0010ffff",
+    )
+    for value in (f"synapse{token}", f"/bin/synapse{token}")
+)
 
 
 def test_render_arm_unit_uses_non_llm_synapse_arm(
@@ -64,6 +80,8 @@ def test_render_arm_unit_uses_non_llm_synapse_arm(
     assert validate_systemd_executable(max_utf8_component) == max_utf8_component
     normalized_by_systemd = "/usr/bin/../bin/synapse"
     assert validate_systemd_executable(normalized_by_systemd) == normalized_by_systemd
+    for valid_unicode in ("synapse-λ-😀", "/bin/synapse-λ-😀", "a;b"):
+        assert validate_systemd_executable(valid_unicode) == valid_unicode
 
 
 def test_render_arm_unit_adds_remote_uri_and_token_file() -> None:
@@ -108,6 +126,7 @@ def test_render_arm_unit_escapes_systemd_percent_specifiers() -> None:
         ("/usr/bin/", "absolute path"),
         ("/usr/bin/.", "absolute path"),
         ("/usr/bin/..", "absolute path"),
+        *((value, "systemd-safe UTF-8") for value in SYSTEMD_UNSAFE_EXECUTABLE_STRINGS),
         *((f"{prefix}/usr/bin/synapse", "ExecStart control prefix") for prefix in "@-:+!|"),
     ],
 )
@@ -447,10 +466,11 @@ def test_install_user_services_writes_three_units(tmp_path: Path) -> None:
         "/usr/bin/",
         "/usr/bin/.",
         "/usr/bin/..",
+        *SYSTEMD_UNSAFE_EXECUTABLE_STRINGS,
     )
     for index, synapse_bin in enumerate(rejected_values):
         rejected_home = tmp_path / f"rejected-relative-{index}"
-        with pytest.raises(ValueError, match="simple file name|absolute path"):
+        with pytest.raises(ValueError, match="simple file name|absolute path|systemd-safe"):
             install_user_services(
                 project="repo",
                 identity="repo/ux",

@@ -450,6 +450,22 @@ def test_cmd_git_init_installs_services(
     oversized_component = "/" + "x" * 256
     oversized_utf8_component = "/" + "é" * 128
     overlong_absolute = "/" + "/".join(["x" * 255] * 16)
+    unsafe_systemd_strings = tuple(
+        value
+        for token in (
+            "*",
+            "?",
+            "[",
+            "\ud800",
+            "\ufdd0",
+            "\ufdef",
+            "\ufffe",
+            "\uffff",
+            "\U0001fffe",
+            "\U0010ffff",
+        )
+        for value in (f"synapse{token}", f"/bin/synapse{token}")
+    )
     invalid_executables = (
         "./venv/bin/synapse",
         ".",
@@ -463,6 +479,7 @@ def test_cmd_git_init_installs_services(
         "/usr/bin/",
         "/usr/bin/.",
         "/usr/bin/..",
+        *unsafe_systemd_strings,
     )
     for invalid_name in invalid_executables:
         code = cli.main(
@@ -511,6 +528,7 @@ def test_cmd_git_init_installs_services(
         "/usr/bin/",
         "/usr/bin/.",
         "/usr/bin/..",
+        *unsafe_systemd_strings,
     )
     for invalid_name in injected_invalid_executables:
         with monkeypatch.context() as patch:
