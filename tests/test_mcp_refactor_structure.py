@@ -9,10 +9,13 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
+import synapse_channel.mcp.advisory_actions as advisory_actions_module
 import synapse_channel.mcp.bridge as bridge_module
 import synapse_channel.mcp.claim_actions as claim_actions_module
+import synapse_channel.mcp.plan_actions as plan_actions_module
 import synapse_channel.mcp.registration as registration_module
 import synapse_channel.mcp.server as compatibility_module
 import synapse_channel.mcp.stdio as stdio_module
@@ -66,6 +69,16 @@ def test_server_reexports_refactored_mcp_symbols() -> None:
 
     bridge = bridge_module.SynapseHubBridge(request_timeout=0.05)
     assert isinstance(bridge.claim_actions, claim_actions_module.McpClaimActions)
+    assert isinstance(bridge.plan_actions, plan_actions_module.McpPlanActions)
+    assert isinstance(bridge.advisory_actions, advisory_actions_module.McpAdvisoryActions)
+
+
+def test_bridge_module_stays_under_godfile_hygiene_budget() -> None:
+    """SCH-H-NEW-08 residual: bridge must not re-grow past the claim-split budget."""
+    source = Path(bridge_module.__file__).read_text(encoding="utf-8")
+    line_count = len(source.splitlines())
+    # Pre-split residual was 680L; plan+advisory extraction targets <500.
+    assert line_count < 500, f"mcp/bridge.py grew to {line_count} lines"
 
 
 async def test_build_mcp_server_keeps_tool_and_resource_contract() -> None:

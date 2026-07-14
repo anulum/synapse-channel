@@ -18,24 +18,11 @@ from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.core.capability_directory import build_capability_directory, directory_to_json
-from synapse_channel.core.capability_observations import read_observed_capability_index
-from synapse_channel.core.memory_projection import (
-    MemoryRecallInputError,
-    memory_recall_to_json,
-    read_memory_recall,
-)
 from synapse_channel.core.protocol import MessageType
-from synapse_channel.core.resource_bidding import (
-    recommend_resource_bids,
-    resource_bid_report_to_json,
-)
-from synapse_channel.core.semantic_routing import (
-    find_task,
-    recommend_agents_for_task,
-    recommendation_to_json,
-)
+from synapse_channel.mcp.advisory_actions import McpAdvisoryActions
 from synapse_channel.mcp.claim_actions import McpClaimActions
 from synapse_channel.mcp.inbox import DEFAULT_MCP_INBOX_LIMIT, McpFeedInbox
+from synapse_channel.mcp.plan_actions import McpPlanActions
 from synapse_channel.mcp.resource_views import (
     agent_resource_to_json,
     resource_kind_resource_to_json,
@@ -119,7 +106,15 @@ class SynapseHubBridge:
             token=token,
             roles=role_names,
         )
-        self.claim_actions = McpClaimActions(self.name, self.agent, self._await_reply)
+
+        # Look up ``self._await_reply`` on each call so test doubles that rebind
+        # the method on the bridge still reach the action facades.
+        async def await_reply(match: Matcher, send: Sender) -> dict[str, Any] | None:
+            return await self._await_reply(match, send)
+
+        self.claim_actions = McpClaimActions(self.name, self.agent, await_reply)
+        self.plan_actions = McpPlanActions(self.agent, await_reply)
+        self.advisory_actions = McpAdvisoryActions(self.agent, await_reply)
 
     async def on_message(self, data: dict[str, Any]) -> None:
         """Resolve the first pending request whose matcher accepts ``data``.
@@ -225,106 +220,20 @@ class SynapseHubBridge:
         return f"sent to {target}"
 
     async def handoff(self, task_id: str, to_agent: str) -> str:
-        """Hand a held task to another agent in one atomic step.
-
-        Parameters
-        ----------
-        task_id : str
-            Identifier of the held task.
-        to_agent : str
-            The agent to receive the task; must be online.
-
-        Returns
-        -------
-        str
-            A human-readable handoff, denial, or no-response line.
-        """
-
-        def match(data: dict[str, Any]) -> bool:
-            return data.get("task_id") == task_id and data.get("type") in {
-                MessageType.HANDOFF_GRANTED,
-                MessageType.HANDOFF_DENIED,
-            }
-
-        reply = await self._await_reply(match, lambda: self.agent.handoff(task_id, to_agent))
-        if reply is None:
-            return f"handoff '{task_id}': no response from the hub"
-        if reply.get("type") == MessageType.HANDOFF_GRANTED:
-            return f"handed off '{task_id}' to {to_agent}"
-        return f"handoff denied: '{task_id}' — {reply.get('payload') or 'rejected'}"
+        """Hand a held task to another agent in one atomic step."""
+        return await self.plan_actions.handoff(task_id, to_agent)
 
     async def task_declare(
         self, task_id: str, title: str, depends_on: list[str] | None = None
     ) -> str:
-        """Declare (or refine) a task on the shared plan.
-
-        Parameters
-        ----------
-        task_id : str
-            Stable task identifier.
-        title : str
-            Short human-readable name of the work.
-        depends_on : list[str] or None, optional
-            Prerequisite task ids; the hub refuses a dependency cycle.
-
-        Returns
-        -------
-        str
-            A confirmation, or a no-response line.
-        """
-        deps = tuple(depends_on or ())
-
-        def match(data: dict[str, Any]) -> bool:
-            return (
-                data.get("type") == MessageType.LEDGER_TASK_POSTED
-                and data.get("task", {}).get("task_id") == task_id
-            )
-
-        reply = await self._await_reply(
-            match, lambda: self.agent.post_task(task_id, title=title, depends_on=deps)
-        )
-        if reply is None:
-            return f"declare '{task_id}': no response from the hub"
-        task = reply.get("task", {})
-        return f"declared '{task_id}' — {task.get('title')}"
+        """Declare (or refine) a task on the shared plan."""
+        return await self.plan_actions.task_declare(task_id, title, depends_on)
 
     async def task_update(
         self, task_id: str, status: str | None = None, suggested_owner: str | None = None
     ) -> str:
-        """Update a plan task's status or suggested owner.
-
-        Parameters
-        ----------
-        task_id : str
-            Identifier of the task to update.
-        status : str or None, optional
-            New planning status (``open``/``in_progress``/``blocked``/``done``/
-            ``cancelled``); an unknown status is refused.
-        suggested_owner : str or None, optional
-            Replacement advisory owner.
-
-        Returns
-        -------
-        str
-            A confirmation, or a no-response line.
-        """
-
-        def match(data: dict[str, Any]) -> bool:
-            return (
-                data.get("type") == MessageType.LEDGER_TASK_UPDATED
-                and data.get("task", {}).get("task_id") == task_id
-            )
-
-        reply = await self._await_reply(
-            match,
-            lambda: self.agent.update_ledger_task(
-                task_id, status=status, suggested_owner=suggested_owner
-            ),
-        )
-        if reply is None:
-            return f"update '{task_id}': no response from the hub"
-        task = reply.get("task", {})
-        return f"updated '{task_id}' -> status={task.get('status')}"
+        """Update a plan task's status or suggested owner."""
+        return await self.plan_actions.task_update(task_id, status, suggested_owner)
 
     @staticmethod
     def _render(reply: dict[str, Any] | None, key: str, on_timeout: str) -> str:
@@ -507,72 +416,14 @@ class SynapseHubBridge:
         event_store: str | None = None,
         event_store_key_file: str | None = None,
     ) -> str:
-        """Return advisory semantic route recommendations for a board task.
-
-        Parameters
-        ----------
-        task_id : str
-            Board task id to route.
-        limit : int, optional
-            Maximum number of candidate agents. Defaults to ``5``.
-        include_zero : bool, optional
-            Include zero-score agents for diagnostics. Defaults to ``False``.
-        event_store : str or None, optional
-            Optional hub event-store path used for observed capability evidence.
-        event_store_key_file : str or None, optional
-            Owner-only SQLCipher key when ``event_store`` is encrypted.
-
-        Returns
-        -------
-        str
-            Recommendation JSON, or a no-response/missing-task line.
-        """
-        board_reply = await self._await_reply(
-            lambda data: data.get("type") == MessageType.BOARD_SNAPSHOT,
-            self.agent.request_board,
-        )
-        if board_reply is None:
-            return "the hub did not return semantic routing snapshots"
-        manifest_reply = await self._await_reply(
-            lambda data: data.get("type") == MessageType.MANIFEST_SNAPSHOT,
-            self.agent.request_manifest,
-        )
-        if manifest_reply is None:
-            return "the hub did not return semantic routing snapshots"
-        state_reply = await self._await_reply(
-            lambda data: data.get("type") == MessageType.STATE_SNAPSHOT,
-            self.agent.request_state,
-        )
-        if state_reply is None:
-            return "the hub did not return semantic routing snapshots"
-
-        board = board_reply.get("board", {})
-        task = find_task(board if isinstance(board, dict) else {}, task_id)
-        if task is None:
-            return f"task '{task_id}' is not on the board"
-        manifest = manifest_reply.get("manifest", [])
-        snapshot = state_reply.get("snapshot", {})
-        resources = snapshot.get("resources", []) if isinstance(snapshot, dict) else []
-        directory = build_capability_directory(
-            manifest=manifest if isinstance(manifest, list) else [],
-            resources=resources if isinstance(resources, list) else [],
-        )
-        observations = None
-        if event_store is not None:
-            try:
-                observations = read_observed_capability_index(
-                    event_store, key_file=event_store_key_file
-                )
-            except ValueError as exc:
-                return str(exc)
-        recommendation = recommend_agents_for_task(
-            task,
-            directory,
+        """Return advisory semantic route recommendations for a board task."""
+        return await self.advisory_actions.route_task(
+            task_id,
             limit=limit,
             include_zero=include_zero,
-            observations=observations,
+            event_store=event_store,
+            event_store_key_file=event_store_key_file,
         )
-        return recommendation_to_json(recommendation)
 
     async def resource_bids(
         self,
@@ -581,62 +432,13 @@ class SynapseHubBridge:
         limit: int = 5,
         include_zero: bool = False,
     ) -> str:
-        """Return advisory resource bids for a board task as JSON.
-
-        Parameters
-        ----------
-        task_id : str
-            Board task id to evaluate.
-        resource_kind : str or None, optional
-            Optional exact resource-kind filter.
-        limit : int, optional
-            Maximum number of candidates. Defaults to ``5``.
-        include_zero : bool, optional
-            Include zero-score resource offers for diagnostics.
-
-        Returns
-        -------
-        str
-            Resource bid JSON, or a no-response/missing-task line.
-        """
-        board_reply = await self._await_reply(
-            lambda data: data.get("type") == MessageType.BOARD_SNAPSHOT,
-            self.agent.request_board,
-        )
-        if board_reply is None:
-            return "the hub did not return resource bidding snapshots"
-        manifest_reply = await self._await_reply(
-            lambda data: data.get("type") == MessageType.MANIFEST_SNAPSHOT,
-            self.agent.request_manifest,
-        )
-        if manifest_reply is None:
-            return "the hub did not return resource bidding snapshots"
-        state_reply = await self._await_reply(
-            lambda data: data.get("type") == MessageType.STATE_SNAPSHOT,
-            self.agent.request_state,
-        )
-        if state_reply is None:
-            return "the hub did not return resource bidding snapshots"
-
-        board = board_reply.get("board", {})
-        task = find_task(board if isinstance(board, dict) else {}, task_id)
-        if task is None:
-            return f"task '{task_id}' is not on the board"
-        manifest = manifest_reply.get("manifest", [])
-        snapshot = state_reply.get("snapshot", {})
-        resources = snapshot.get("resources", []) if isinstance(snapshot, dict) else []
-        directory = build_capability_directory(
-            manifest=manifest if isinstance(manifest, list) else [],
-            resources=resources if isinstance(resources, list) else [],
-        )
-        report = recommend_resource_bids(
-            task,
-            directory,
+        """Return advisory resource bids for a board task as JSON."""
+        return await self.advisory_actions.resource_bids(
+            task_id,
             resource_kind=resource_kind,
             limit=limit,
             include_zero=include_zero,
         )
-        return resource_bid_report_to_json(report)
 
     async def memory_recall(
         self,
@@ -646,35 +448,11 @@ class SynapseHubBridge:
         since_seq: int = 0,
         event_store_key_file: str | None = None,
     ) -> str:
-        """Return deterministic local memory recall hits as JSON.
-
-        Parameters
-        ----------
-        event_store : str
-            Local hub event-store path to read.
-        query : str
-            Plain-text recall query.
-        limit : int, optional
-            Maximum recall hits. Defaults to ``5``.
-        since_seq : int, optional
-            Exclusive lower event-store sequence bound. Defaults to ``0``.
-        event_store_key_file : str or None, optional
-            Owner-only SQLCipher key when ``event_store`` is encrypted.
-
-        Returns
-        -------
-        str
-            Recall report JSON, or a local input error string.
-        """
-        try:
-            report = read_memory_recall(
-                event_store,
-                query,
-                since_seq=since_seq,
-                limit=limit,
-                key_file=event_store_key_file,
-            )
-        except (MemoryRecallInputError, ValueError, OSError) as exc:
-            # ValueError covers SqlCipherKeyError on encrypted stores.
-            return str(exc)
-        return memory_recall_to_json(report)
+        """Return deterministic local memory recall hits as JSON."""
+        return await self.advisory_actions.memory_recall(
+            event_store,
+            query,
+            limit=limit,
+            since_seq=since_seq,
+            event_store_key_file=event_store_key_file,
+        )

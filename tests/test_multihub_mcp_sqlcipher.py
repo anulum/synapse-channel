@@ -20,6 +20,7 @@ from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import sqlcipher_available
 from synapse_channel.core.state import TaskClaim
+from synapse_channel.mcp.advisory_actions import McpAdvisoryActions
 from synapse_channel.mcp.bridge import SynapseHubBridge
 
 pytestmark = pytest.mark.skipif(
@@ -128,10 +129,20 @@ def test_multihub_observe_wrong_key_fails_closed(
     )
 
 
+def _bare_bridge_with_advisory() -> SynapseHubBridge:
+    """``__new__`` bridge for pure local recall (no hub); advisory facade attached."""
+    bridge = SynapseHubBridge.__new__(SynapseHubBridge)
+    bridge.advisory_actions = McpAdvisoryActions(
+        agent=cast(Any, None),
+        await_reply=cast(Any, None),
+    )
+    return bridge
+
+
 @pytest.mark.asyncio
 async def test_mcp_memory_recall_reads_encrypted_store(tmp_path: Path) -> None:
     db, key = _encrypted_claim_store(tmp_path)
-    bridge = SynapseHubBridge.__new__(SynapseHubBridge)  # no hub connection needed
+    bridge = _bare_bridge_with_advisory()  # no hub connection needed
     out = await SynapseHubBridge.memory_recall(
         bridge,
         str(db),
@@ -150,7 +161,7 @@ async def test_mcp_memory_recall_reads_encrypted_store(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_mcp_memory_recall_without_key_fails_closed(tmp_path: Path) -> None:
     db, _key = _encrypted_claim_store(tmp_path)
-    bridge = SynapseHubBridge.__new__(SynapseHubBridge)
+    bridge = _bare_bridge_with_advisory()
     out = await SynapseHubBridge.memory_recall(
         bridge,
         str(db),
@@ -170,7 +181,7 @@ async def test_mcp_memory_recall_without_key_fails_closed(tmp_path: Path) -> Non
 async def test_mcp_memory_recall_wrong_key_fails_closed(tmp_path: Path) -> None:
     db, _key = _encrypted_claim_store(tmp_path)
     wrong = generate_key_file(tmp_path / "wrong-mem.key")
-    bridge = SynapseHubBridge.__new__(SynapseHubBridge)
+    bridge = _bare_bridge_with_advisory()
     out = await SynapseHubBridge.memory_recall(
         bridge,
         str(db),
@@ -230,6 +241,14 @@ def _stub_bridge_for_route_task() -> SynapseHubBridge:
         return item if predicate(item) else None
 
     cast(Any, bridge)._await_reply = _await_reply
+
+    async def await_reply(
+        predicate: Callable[[dict[str, Any]], bool],
+        request: Callable[[], Awaitable[None]],
+    ) -> dict[str, Any] | None:
+        return await bridge._await_reply(predicate, request)
+
+    bridge.advisory_actions = McpAdvisoryActions(bridge.agent, await_reply)
     return bridge
 
 
