@@ -53,16 +53,58 @@ def _window_geometry(window: str) -> tuple[int, int] | None:
         return None
 
 
-def _find_agreement_window(deadline: float) -> str:
-    """Wait past the JetBrains splash for the pinned agreement dialog."""
+def _window_name(window: str) -> str | None:
+    """Return one visible X11 window's semantic title, if it still exists."""
+    completed = _xdotool("getwindowname", window)
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip() or None
+
+
+def _window_parentage(tree: str) -> tuple[str | None, str | None]:
+    """Parse the root and parent XIDs from one ``xwininfo -tree`` result."""
+    root: str | None = None
+    parent: str | None = None
+    for raw_line in tree.splitlines():
+        line = raw_line.strip()
+        if line.startswith("Root window id:"):
+            fields = line.removeprefix("Root window id:").split()
+            root = fields[0] if fields else None
+        elif line.startswith("Parent window id:"):
+            fields = line.removeprefix("Parent window id:").split()
+            parent = fields[0] if fields else None
+    return root, parent
+
+
+def _window_is_root_child(window: str) -> bool:
+    """Return whether a visible window is a top-level child of the X11 root."""
+    completed = subprocess.run(  # nosec B603
+        ["xwininfo", "-id", window, "-tree"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    if completed.returncode != 0:
+        return False
+    root, parent = _window_parentage(completed.stdout)
+    return root is not None and parent == root
+
+
+def _find_dialog_window(deadline: float, title: str) -> str:
+    """Wait for one exact titled and sized page of the pinned agreement UI."""
     while time.monotonic() < deadline:
-        result = _xdotool("search", "--onlyvisible", "--class", "jetbrains-.*")
+        result = _xdotool("search", "--onlyvisible", "--name", f"^{title}$")
         if result.returncode == 0:
             for window in reversed(result.stdout.splitlines()):
-                if _window_geometry(window) == (600, 460):
+                if (
+                    _window_name(window) == title
+                    and _window_geometry(window) == (600, 460)
+                    and _window_is_root_child(window)
+                ):
                     return window
         time.sleep(0.25)
-    raise RuntimeError("IntelliJ IDEA did not expose the pinned 600x460 agreement dialog")
+    raise RuntimeError(f"IntelliJ IDEA did not expose the pinned {title!r} dialog")
 
 
 def _find_project_window(deadline: float) -> str:
@@ -72,14 +114,20 @@ def _find_project_window(deadline: float) -> str:
         if result.returncode == 0:
             for window in reversed(result.stdout.splitlines()):
                 geometry = _window_geometry(window)
-                if geometry is not None and geometry[0] > 640 and geometry[1] > 460:
+                if (
+                    geometry is not None
+                    and geometry[0] > 640
+                    and geometry[1] > 460
+                    and _window_is_root_child(window)
+                ):
                     return window
         time.sleep(0.25)
     raise RuntimeError("IntelliJ IDEA did not expose a visible project window")
 
 
-def _click(window: str, x: int, y: int, action: str) -> None:
-    """Click one deterministic point in the pinned 600x460 agreement UI."""
+def _click(window: str, title: str, x: int, y: int, action: str) -> None:
+    """Click one deterministic point in an exact pinned agreement page."""
+    _require_agreement_window(window, title)
     _checked_xdotool(
         f"move to {action}",
         "mousemove",
@@ -92,31 +140,27 @@ def _click(window: str, x: int, y: int, action: str) -> None:
     _checked_xdotool(action, "click", "1")
 
 
-def _require_agreement_geometry(window: str) -> None:
-    """Refuse pointer input unless the pinned agreement dialog is present."""
+def _require_agreement_window(window: str, title: str) -> None:
+    """Refuse pointer input unless the exact pinned agreement page is present."""
     geometry = _window_geometry(window)
-    if geometry != (600, 460):
+    actual_title = _window_name(window)
+    root_child = _window_is_root_child(window)
+    if geometry != (600, 460) or actual_title != title or not root_child:
         rendered = "?x?" if geometry is None else f"{geometry[0]}x{geometry[1]}"
         raise RuntimeError(
-            f"refusing JetBrains agreement input outside the pinned 600x460 UI: {rendered}"
+            "refusing JetBrains agreement input outside the pinned semantic UI: "
+            f"title={actual_title!r}, geometry={rendered}, root_child={root_child}"
         )
 
 
-def _complete_first_run_agreements(window: str) -> None:
-    """Accept the IDE terms and explicitly decline usage-statistics sharing."""
-    # AgreementUi is fixed at 600x460 in the pinned JetBrains platform.  Its
-    # first page requires an explicit checkbox before Continue is enabled.
-    time.sleep(1.0)
-    _require_agreement_geometry(window)
-    _click(window, 44, 392, "select the JetBrains terms checkbox")
-    time.sleep(0.25)
-    _click(window, 542, 432, "accept the JetBrains terms")
-    # The same modal immediately switches to the data-sharing page.  Its left
-    # action is the documented decline path; choosing it keeps CI telemetry off.
-    time.sleep(1.0)
-    _require_agreement_geometry(window)
-    _click(window, 451, 432, "decline JetBrains usage-statistics sharing")
-    time.sleep(1.0)
+def _complete_first_run_agreements(deadline: float) -> None:
+    """Explicitly decline telemetry in the pinned first-run data-sharing UI."""
+    # A clean 2026.1.4 profile opens directly on this fixed 600x460 dialog.
+    # Its nested "Content window" has the same class and geometry, so the
+    # semantic title and root-parent invariant are both mandatory.
+    title = "Data Sharing"
+    window = _find_dialog_window(deadline, title)
+    _click(window, title, 326, 432, "decline JetBrains usage-statistics sharing")
 
 
 def _trace_has(trace: Path, marker: str) -> bool:
@@ -232,8 +276,7 @@ def main() -> int:
         )
         try:
             deadline = time.monotonic() + _TIMEOUT_SECONDS
-            window = _find_agreement_window(deadline)
-            _complete_first_run_agreements(window)
+            _complete_first_run_agreements(deadline)
             window = _find_project_window(deadline)
             # xvfb-run intentionally has no EWMH window manager.  Every action
             # targets the discovered X11 window directly, so activation is not

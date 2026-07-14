@@ -370,7 +370,10 @@ Release archives are SHA-256 verified; editor plugins are checked out at exact
 commits or verified by archive hash and declared version. The JetBrains lane
 uses a single exact platform build (`261.26222.65`) for the IDE and both plugin
 archives, verifies AI Assistant's required Full Line dependency, completes the
-real first-run terms UI, and explicitly declines usage-statistics sharing. The
+real pinned first-run data-sharing UI, and explicitly declines telemetry. Its
+driver requires the exact top-level `Data Sharing` title, fixed dialog geometry,
+and X11 root parent before any pointer input, so the nested `Content window`
+cannot receive an accidental click. The
 Zed lane opts into its documented software-rendered CI mode and completes the
 real isolated-project trust prompt. Each editor must
 identify itself during ACP initialization, create exactly one session, deliver

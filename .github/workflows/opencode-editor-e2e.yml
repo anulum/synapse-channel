@@ -194,7 +194,7 @@ jobs:
               sudo apt-get update
               sudo apt-get install --no-install-recommends --yes \
                 imagemagick libasound2t64 libfreetype6 libxi6 libxrender1 \
-                libxtst6 libxkbcommon-x11-0 wmctrl xdotool xvfb
+                libxtst6 libxkbcommon-x11-0 wmctrl x11-utils xdotool xvfb
               archive="$RUNNER_TEMP/idea-2026.1.4.tar.gz"
               ai_assistant="$RUNNER_TEMP/ai-assistant-261.26222.65.zip"
               full_line="$RUNNER_TEMP/full-line-261.26222.65.zip"
@@ -263,6 +263,7 @@ jobs:
             tests/e2e/opencode_editors/trace_contract.py
             tests/e2e/opencode_editors/zed_client.py
             tests/test_cli_e2e_opencode_editors.py
+            tests/test_opencode_jetbrains_driver.py
             tests/test_opencode_editor_trace_contract.py
           )
           ruff check "${files[@]}"
@@ -275,9 +276,11 @@ jobs:
             || "$SYNAPSE_EDITOR_E2E_CLIENT" == "jetbrains" ]]; then
             xvfb-run -a -s '-screen 0 1920x1080x24' \
               pytest tests/test_opencode_editor_trace_contract.py \
+                tests/test_opencode_jetbrains_driver.py \
                 tests/test_cli_e2e_opencode_editors.py
           else
             pytest tests/test_opencode_editor_trace_contract.py \
+              tests/test_opencode_jetbrains_driver.py \
               tests/test_cli_e2e_opencode_editors.py
           fi
       - name: Upload bounded ACP evidence and GUI diagnostics
