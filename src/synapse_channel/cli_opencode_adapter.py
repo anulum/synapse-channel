@@ -31,6 +31,7 @@ from synapse_channel.opencode_adapter import (
     DEFAULT_MCP_TIMEOUT_MS,
     OpenCodeAdapterError,
     build_mcp_entry,
+    parse_config,
     plan_config_install,
     plan_config_uninstall,
     plan_plugin_install,
@@ -44,7 +45,7 @@ from synapse_channel.opencode_adapter_files import (
     remove_snapshot,
     write_text_snapshot,
 )
-from synapse_channel.opencode_claim_guard import evaluate_hook_event
+from synapse_channel.opencode_claim_guard import MAX_HOOK_EVENT_BYTES, evaluate_hook_event
 from synapse_channel.opencode_plugin import render_opencode_plugin
 
 
@@ -68,8 +69,11 @@ async def _evaluate(
 
 def _cmd_opencode_claim_hook(args: argparse.Namespace) -> int:
     """Emit exactly one explicit allow/deny verdict for the native plugin."""
-    raw = sys.stdin.read()
     try:
+        encoded = sys.stdin.buffer.read(MAX_HOOK_EVENT_BYTES + 1)
+        if len(encoded) > MAX_HOOK_EVENT_BYTES:
+            raise ValueError("OpenCode hook input exceeds its bounded limit.")
+        raw = encoded.decode("utf-8", errors="strict")
         verdict = asyncio.run(
             _evaluate(
                 raw,
@@ -204,8 +208,11 @@ def _cmd_status(args: argparse.Namespace) -> int:
         )
         config_snapshot = read_text_snapshot(paths.config)
         plugin_snapshot = read_text_snapshot(paths.plugin)
-        config = json.loads(config_snapshot.text) if config_snapshot.text.strip() else {}
-        entry = config.get("mcp", {}).get("synapse") if isinstance(config, dict) else None
+        config = parse_config(config_snapshot.text)
+        mcp = config.get("mcp")
+        if mcp is not None and not isinstance(mcp, dict):
+            raise OpenCodeAdapterError("OpenCode config field 'mcp' must be an object.")
+        entry = mcp.get("synapse") if isinstance(mcp, dict) else None
         config_owned = (
             isinstance(entry, dict)
             and isinstance(entry.get("environment"), dict)

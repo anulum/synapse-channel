@@ -18,6 +18,7 @@ from pathlib import Path
 from synapse_channel.core.errors import SynapseError
 
 DEFAULT_FILE_LIMIT = 1_048_576
+_UNSAFE_WRITE_BITS = stat.S_IWGRP | stat.S_IWOTH
 
 
 class OpenCodeAdapterFileError(SynapseError, OSError):
@@ -45,10 +46,81 @@ def _validate_file(path: Path, info: os.stat_result) -> None:
         raise OpenCodeAdapterFileError(f"OpenCode adapter path is not a regular file: {path}")
     if info.st_uid != os.getuid():
         raise OpenCodeAdapterFileError(f"OpenCode adapter path is not owned by this user: {path}")
+    if stat.S_IMODE(info.st_mode) & _UNSAFE_WRITE_BITS:
+        raise OpenCodeAdapterFileError(
+            f"OpenCode adapter path is writable by group or others: {path}"
+        )
+
+
+def _validate_directory_chain(path: Path) -> None:
+    """Reject replaceable or symlinked target directories up to a trusted ancestor."""
+    current = path
+    found_existing = False
+    while True:
+        try:
+            info = current.lstat()
+        except FileNotFoundError:
+            parent = current.parent
+            if parent == current:
+                raise OpenCodeAdapterFileError(
+                    f"OpenCode adapter has no existing parent directory: {path}"
+                ) from None
+            current = parent
+            continue
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            raise OpenCodeAdapterFileError(f"OpenCode adapter parent is unsafe: {current}")
+        mode = stat.S_IMODE(info.st_mode)
+        if not found_existing:
+            found_existing = True
+            if info.st_uid != os.getuid():
+                raise OpenCodeAdapterFileError(
+                    f"OpenCode adapter parent is not owned by this user: {current}"
+                )
+        if info.st_uid == os.getuid():
+            if mode & _UNSAFE_WRITE_BITS:
+                raise OpenCodeAdapterFileError(
+                    f"OpenCode adapter parent is writable by group or others: {current}"
+                )
+        else:
+            if mode & _UNSAFE_WRITE_BITS and not mode & stat.S_ISVTX:
+                raise OpenCodeAdapterFileError(
+                    f"OpenCode adapter ancestor is writable by group or others: {current}"
+                )
+            return
+        parent = current.parent
+        if parent == current:
+            return
+        current = parent
+
+
+def _mkdir_private_parents(path: Path) -> None:
+    """Create each missing parent with owner-only permissions."""
+    _validate_directory_chain(path)
+    missing: list[Path] = []
+    current = path
+    while True:
+        try:
+            current.lstat()
+            break
+        except FileNotFoundError:
+            missing.append(current)
+            parent = current.parent
+            if parent == current:
+                raise OpenCodeAdapterFileError(
+                    f"OpenCode adapter has no existing parent directory: {path}"
+                ) from None
+            current = parent
+    for directory in reversed(missing):
+        try:
+            directory.mkdir(mode=0o700)
+        except FileExistsError:
+            pass
+    _validate_directory_chain(path)
 
 
 def read_text_snapshot(path: Path, *, limit: int = DEFAULT_FILE_LIMIT) -> FileSnapshot:
     """Read one owner-controlled regular UTF-8 file without following its leaf symlink."""
+    _validate_directory_chain(path.parent)
     try:
         before = path.lstat()
     except FileNotFoundError:
@@ -108,9 +180,7 @@ def write_text_snapshot(path: Path, text: str, snapshot: FileSnapshot) -> None:
     data = text.encode("utf-8")
     if len(data) > DEFAULT_FILE_LIMIT:
         raise OpenCodeAdapterFileError(f"Updated OpenCode adapter file is too large: {path}")
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if path.parent.is_symlink() or not path.parent.is_dir():
-        raise OpenCodeAdapterFileError(f"OpenCode adapter parent is unsafe: {path.parent}")
+    _mkdir_private_parents(path.parent)
     _assert_current(path, snapshot)
     descriptor, name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(name)
@@ -134,6 +204,7 @@ def remove_snapshot(path: Path, snapshot: FileSnapshot) -> None:
     """Remove ``path`` only while its captured identity is unchanged."""
     if not snapshot.existed:
         return
+    _validate_directory_chain(path.parent)
     _assert_current(path, snapshot)
     path.unlink()
     _fsync_directory(path.parent)

@@ -165,13 +165,16 @@ def test_real_authenticated_server_attach_and_direct_api(tmp_path: Path) -> None
 def test_real_native_plugin_live_claim_and_adapter_lifecycle(tmp_path: Path) -> None:
     binary = find_opencode()
     repo = git_repo(tmp_path / "repo")
+    repo.chmod(0o700)
     home = tmp_path / "home"
     home.mkdir()
     config = repo / ".opencode" / "opencode.json"
-    config.parent.mkdir()
+    config.parent.mkdir(mode=0o700)
     config.write_text(json.dumps({"permission": {"write": "allow"}}) + "\n", encoding="utf-8")
+    config.chmod(0o600)
     launcher = _synapse_launcher(tmp_path / "synapse-current")
     allowed_path = repo / "allowed.txt"
+    whitespace_path = repo / "allowed.txt "
     denied_path = repo / "denied.txt"
 
     with ScriptedLlmServer() as llm, isolated_hub(tmp_path) as hub:
@@ -235,6 +238,27 @@ def test_real_native_plugin_live_claim_and_adapter_lifecycle(tmp_path: Path) -> 
         )
         _assert_success(allowed.returncode, allowed.stdout, allowed.stderr)
         assert allowed_path.read_text(encoding="utf-8") == "allowed\n"
+
+        llm.enqueue_tool("write", {"filePath": str(whitespace_path), "content": "bypass\n"})
+        llm.enqueue_text("whitespace continuation")
+        whitespace = run_opencode(
+            binary,
+            [
+                "run",
+                "--model",
+                TEST_MODEL,
+                "--format",
+                "json",
+                "--dir",
+                str(repo),
+                "try a whitespace-bearing path outside the claim",
+            ],
+            cwd=repo,
+            env=environment,
+        )
+        _assert_success(whitespace.returncode, whitespace.stdout, whitespace.stderr)
+        assert not whitespace_path.exists()
+        assert "claim" in whitespace.stdout.lower()
 
         llm.enqueue_tool("write", {"filePath": str(denied_path), "content": "denied\n"})
         llm.enqueue_text("denied continuation")

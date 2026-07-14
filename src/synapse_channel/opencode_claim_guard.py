@@ -27,6 +27,8 @@ from synapse_channel.git.gitclaim import GitRunner, _default_git_runner
 
 HOOK_EVENT = "tool.execute.before"
 SUPPORTED_TOOLS = frozenset({"edit", "write", "apply_patch"})
+MAX_HOOK_EVENT_BYTES = 1_048_576
+"""Maximum UTF-8 size accepted for one native OpenCode hook event."""
 
 
 class OpenCodeClaimGuardError(FileClaimGuardError):
@@ -44,11 +46,29 @@ def _required_string(data: Mapping[str, Any], key: str, *, location: str) -> str
     return value.strip()
 
 
+def _required_exact_path(data: Mapping[str, Any], key: str, *, location: str) -> str:
+    """Return a non-empty filesystem value without changing its semantics."""
+    value = data.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise OpenCodeClaimGuardError(
+            f"OpenCode hook input needs a non-empty {location}.{key} string."
+        )
+    if value != value.strip():
+        raise OpenCodeClaimGuardError(
+            f"OpenCode hook input {location}.{key} must not have surrounding whitespace."
+        )
+    return value
+
+
 def _mutation_paths(tool: str, tool_input: Mapping[str, Any]) -> tuple[Path, ...]:
     if tool in {"edit", "write"}:
-        return (Path(_required_string(tool_input, "filePath", location="tool_input")),)
+        return (Path(_required_exact_path(tool_input, "filePath", location="tool_input")),)
     try:
-        patch = _required_string(tool_input, "patchText", location="tool_input")
+        patch = tool_input.get("patchText")
+        if not isinstance(patch, str) or not patch.strip():
+            raise OpenCodeClaimGuardError(
+                "OpenCode hook input needs a non-empty tool_input.patchText string."
+            )
         return parse_apply_patch_paths(patch)
     except ApplyPatchPathError as exc:
         raise OpenCodeClaimGuardError(f"OpenCode {exc}") from exc
@@ -56,6 +76,12 @@ def _mutation_paths(tool: str, tool_input: Mapping[str, Any]) -> tuple[Path, ...
 
 def parse_hook_request(raw: str) -> MutationRequest:
     """Parse one OpenCode native plugin event into a provider-neutral request."""
+    if not isinstance(raw, str):
+        raise OpenCodeClaimGuardError("OpenCode hook input must be UTF-8 text.")
+    if len(raw) > MAX_HOOK_EVENT_BYTES or len(raw.encode("utf-8")) > MAX_HOOK_EVENT_BYTES:
+        raise OpenCodeClaimGuardError(
+            f"OpenCode hook input exceeds the {MAX_HOOK_EVENT_BYTES}-byte limit."
+        )
     try:
         decoded = json.loads(raw)
     except (json.JSONDecodeError, TypeError) as exc:
@@ -74,7 +100,7 @@ def parse_hook_request(raw: str) -> MutationRequest:
     tool_input = decoded.get("tool_input")
     if not isinstance(tool_input, dict):
         raise OpenCodeClaimGuardError("OpenCode hook input needs a tool_input object.")
-    cwd = Path(_required_string(decoded, "cwd", location="input"))
+    cwd = Path(_required_exact_path(decoded, "cwd", location="input"))
     if not cwd.is_absolute():
         raise OpenCodeClaimGuardError("OpenCode hook cwd must be absolute.")
     return MutationRequest(

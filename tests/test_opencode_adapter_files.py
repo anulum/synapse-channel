@@ -18,6 +18,14 @@ from synapse_channel.opencode_adapter_files import (
 )
 
 
+def _write_private(path: Path, value: str | bytes) -> None:
+    if isinstance(value, bytes):
+        path.write_bytes(value)
+    else:
+        path.write_text(value)
+    os.chmod(path, 0o600)
+
+
 def test_new_file_round_trip_is_atomic_and_private(tmp_path: Path) -> None:
     path = tmp_path / "nested" / "config.json"
     snapshot = read_text_snapshot(path)
@@ -31,16 +39,16 @@ def test_new_file_round_trip_is_atomic_and_private(tmp_path: Path) -> None:
 
 def test_concurrent_change_is_refused(tmp_path: Path) -> None:
     path = tmp_path / "config.json"
-    path.write_text("one")
+    _write_private(path, "one")
     snapshot = read_text_snapshot(path)
-    path.write_text("two")
+    _write_private(path, "two")
     with pytest.raises(OpenCodeAdapterFileError, match="changed concurrently"):
         write_text_snapshot(path, "three", snapshot)
 
 
 def test_leaf_symlink_is_refused(tmp_path: Path) -> None:
     target = tmp_path / "target"
-    target.write_text("x")
+    _write_private(target, "x")
     link = tmp_path / "link"
     link.symlink_to(target)
     with pytest.raises(OpenCodeAdapterFileError, match="regular file"):
@@ -49,32 +57,38 @@ def test_leaf_symlink_is_refused(tmp_path: Path) -> None:
 
 def test_oversized_and_non_utf8_files_are_refused(tmp_path: Path) -> None:
     path = tmp_path / "bad"
-    path.write_bytes(b"x" * 20)
+    _write_private(path, b"x" * 20)
     with pytest.raises(OpenCodeAdapterFileError, match="exceeds"):
         read_text_snapshot(path, limit=10)
-    path.write_bytes(b"\xff")
+    _write_private(path, b"\xff")
     with pytest.raises(OpenCodeAdapterFileError, match="not UTF-8"):
         read_text_snapshot(path)
 
 
-def test_existing_mode_is_preserved(tmp_path: Path) -> None:
+def test_safe_existing_mode_is_preserved_and_writable_mode_is_refused(tmp_path: Path) -> None:
     path = tmp_path / "config"
-    path.write_text("old")
+    _write_private(path, "old")
     os.chmod(path, 0o640)
     snapshot = read_text_snapshot(path)
     write_text_snapshot(path, "new", snapshot)
     assert path.stat().st_mode & 0o777 == 0o640
 
+    unsafe = tmp_path / "unsafe"
+    _write_private(unsafe, "owned marker")
+    os.chmod(unsafe, 0o666)
+    with pytest.raises(OpenCodeAdapterFileError, match="writable by group or others"):
+        read_text_snapshot(unsafe)
+
 
 def test_appeared_disappeared_and_oversized_write_are_refused(tmp_path: Path) -> None:
     appeared = tmp_path / "appeared"
     missing = read_text_snapshot(appeared)
-    appeared.write_text("now here")
+    _write_private(appeared, "now here")
     with pytest.raises(OpenCodeAdapterFileError, match="appeared concurrently"):
         write_text_snapshot(appeared, "new", missing)
 
     disappeared = tmp_path / "disappeared"
-    disappeared.write_text("old")
+    _write_private(disappeared, "old")
     captured = read_text_snapshot(disappeared)
     disappeared.unlink()
     with pytest.raises(OpenCodeAdapterFileError, match="disappeared"):
@@ -89,15 +103,21 @@ def test_parent_symlink_and_wrong_owner_are_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     real = tmp_path / "real"
-    real.mkdir()
+    real.mkdir(mode=0o700)
     linked = tmp_path / "linked"
     linked.symlink_to(real, target_is_directory=True)
     path = linked / "new"
     with pytest.raises(OpenCodeAdapterFileError, match="parent is unsafe"):
         write_text_snapshot(path, "x", read_text_snapshot(path))
 
+    writable_parent = tmp_path / "writable"
+    writable_parent.mkdir(mode=0o700)
+    os.chmod(writable_parent, 0o777)
+    with pytest.raises(OpenCodeAdapterFileError, match="writable by group or others"):
+        read_text_snapshot(writable_parent / "plugin.js")
+
     owned = tmp_path / "owned"
-    owned.write_text("x")
+    _write_private(owned, "x")
     monkeypatch.setattr(os, "getuid", lambda: owned.stat().st_uid + 1)
     with pytest.raises(OpenCodeAdapterFileError, match="not owned"):
         read_text_snapshot(owned)

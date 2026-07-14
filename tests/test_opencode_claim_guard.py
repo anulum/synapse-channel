@@ -13,6 +13,7 @@ import pytest
 from synapse_channel import opencode_claim_guard
 from synapse_channel.file_claim_guard import GuardVerdict, MutationRequest
 from synapse_channel.opencode_claim_guard import (
+    MAX_HOOK_EVENT_BYTES,
     OpenCodeClaimGuardError,
     evaluate_hook_event,
     parse_hook_request,
@@ -56,6 +57,8 @@ def test_parses_native_apply_patch_tool() -> None:
         (_event("bash", {}), "only edit, write, and apply_patch"),
         (_event("edit", []), "tool_input object"),
         (_event("edit", {"filePath": "a"}, cwd="relative"), "must be absolute"),
+        (_event("edit", {"filePath": "a.py "}), "surrounding whitespace"),
+        (_event("write", {"filePath": " a.py"}), "surrounding whitespace"),
         (_event("edit", {}), "filePath"),
         (
             _event(
@@ -64,6 +67,7 @@ def test_parses_native_apply_patch_tool() -> None:
             ),
             "unsupported control line",
         ),
+        ("x" * (MAX_HOOK_EVENT_BYTES + 1), "byte limit"),
     ],
 )
 def test_invalid_native_event_fails_closed(raw: str, message: str) -> None:
