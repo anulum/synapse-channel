@@ -73,6 +73,45 @@ def test_a2a_serve_publishes_an_agent_card_over_http(tmp_path: Path) -> None:
         assert isinstance(card["skills"], list)
 
 
+def test_a2a_serve_enforces_real_origin_and_host_boundaries(tmp_path: Path) -> None:
+    """The real CLI bind admits only its exact Origin and advertised Host boundary."""
+    with (
+        isolated_hub(tmp_path) as hub,
+        isolated_a2a_serve(
+            hub.uri,
+            allowed_origins=("https://ide.example",),
+        ) as base,
+    ):
+        card_url = f"{base}{A2A_AGENT_CARD_PATH}"
+        authority = base.removeprefix("http://")
+
+        allowed, body = http_get(
+            card_url,
+            headers={"Host": authority, "Origin": "https://IDE.example/"},
+        )
+        assert allowed == 200, body
+
+        denied_origin, body = http_get(
+            card_url,
+            headers={"Host": authority, "Origin": "https://evil.example"},
+        )
+        assert denied_origin == 403
+        assert json.loads(body)["detail"] == "Origin or Host not allowed"
+
+        no_origin, body = http_get(card_url, headers={"Host": authority})
+        assert no_origin == 200, body
+
+        hostile_host, body = http_get(card_url, headers={"Host": "attacker.example"})
+        assert hostile_host == 403
+        assert json.loads(body)["detail"] == "Origin or Host not allowed"
+
+        opaque_origin, _body = http_get(
+            card_url,
+            headers={"Host": authority, "Origin": "null"},
+        )
+        assert opaque_origin == 403
+
+
 # --- git claim hooks ---------------------------------------------------------
 
 

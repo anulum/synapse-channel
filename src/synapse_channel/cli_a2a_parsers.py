@@ -85,10 +85,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         action="append",
         default=None,
         metavar="ORIGIN",
-        help="Restrict browser requests to this exact Origin (scheme://host[:port], "
-        "or 'null'); repeat to allow several. Off by default; a request without an "
-        "Origin header (a non-browser client) is unaffected. Opt-in hardening against "
-        "DNS-rebinding and drive-by browser requests to the bridge.",
+        help="Restrict browser requests to this exact concrete Origin "
+        "(scheme://host[:port]); repeat to allow several. Opaque 'null' origins are "
+        "refused. When enabled, every request must also use the exact Host authority "
+        "advertised by --endpoint-url, including requests without Origin. Off by default.",
     )
     serve.add_argument(
         "--insecure-off-loopback",

@@ -79,12 +79,15 @@ policy require it. Do not use `--insecure-off-loopback` for a shared or public
 deployment; it exists only as an explicit local override.
 
 When a browser-based operator UI calls the bridge, add `--allow-origin` for each
-exact web origin that UI serves from (`scheme://host[:port]`, or `null` for a
-sandboxed page). The list is an opt-in defence against DNS rebinding and drive-by
-requests: with it configured the bridge refuses any request whose `Origin` header
-is not listed, on every route including the public agent card, before
-authentication. A non-browser client (which sends no `Origin` header) is
-unaffected, and with no list configured the check is a no-op.
+exact concrete web origin that UI serves from (`scheme://host[:port]`). Opaque
+`null` origins are refused because they do not identify one principal. The list
+is an opt-in defence against DNS rebinding and drive-by requests: with it
+configured, every request must address the exact Host authority advertised by
+`--endpoint-url`, and any present `Origin` must be listed. Both checks run on
+every route, including the public agent card, before authentication. A
+non-browser client without `Origin` remains compatible only through that exact
+Host boundary. A reverse proxy must therefore preserve the advertised Host. With
+no list configured the check is a no-op.
 
 ## Route Policy
 
@@ -105,7 +108,7 @@ unaffected, and with no list configured the check is a no-op.
 | Client configures a public-looking host that resolves to a local address. | Delivery rejects the target before sending. |
 | Webhook receiver redirects to a local address. | Redirect handler validates and rejects the new target before following it. |
 | Reverse proxy strips the `Authorization` header. | Protected routes fail authentication at the bridge. |
-| A hostile web page in the operator's browser calls the loopback bridge (DNS rebinding / drive-by). | With `--allow-origin` configured, a request whose `Origin` is not allow-listed is refused `403 Forbidden` on every route, the public card included; a non-browser client sends no `Origin` and is unaffected. |
+| A hostile web page in the operator's browser calls the loopback bridge (DNS rebinding / drive-by). | With `--allow-origin` configured, an unlisted or opaque `Origin` is refused `403 Forbidden`; a missing `Origin` still requires the exact advertised Host, so a rebound hostile authority is also refused. |
 | Bridge restarts with open tasks. | Persisted non-terminal tasks recover as failed according to the local state policy. |
 
 ## Logging And Receipts

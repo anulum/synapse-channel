@@ -1829,11 +1829,13 @@ Operational boundaries:
 - Bearer auth is opt-in with `--bearer-auth --a2a-token "$A2A_TOKEN"` and applies
   to protected bridge routes. The public Agent Card remains public discovery.
 - `--allow-origin ORIGIN` is opt-in browser hardening: restrict requests to the
-  exact web origins your browser UI serves from (`scheme://host[:port]`, or `null`
-  for a sandboxed page; repeat for several). A request whose `Origin` header is not
-  allow-listed is refused `403` on every route, the agent card included, before
-  authentication; a non-browser client sends no `Origin` and is unaffected. It
-  guards against DNS rebinding and drive-by browser requests to the bridge.
+  exact concrete web origins your browser UI serves from
+  (`scheme://host[:port]`; repeat for several). Opaque `null` origins are
+  refused. When enabled, every request must also use the exact Host authority
+  advertised by `--endpoint-url`, including requests without `Origin`; an
+  unlisted present `Origin` is refused `403` on every route, the agent card
+  included, before authentication. Reverse proxies must preserve that Host. The
+  paired boundary guards against DNS rebinding and drive-by browser requests.
 - `--state-file` persists bridge tasks and push configs. Corrupt state files fail
   fast; non-terminal persisted tasks recover as failed on restart; failed writes
   roll back the in-memory task/config view.

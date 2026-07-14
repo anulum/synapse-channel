@@ -47,9 +47,24 @@ def test_a2a_deployment_threat_model_pins_exposed_bridge_controls() -> None:
     assert "--bearer-auth --a2a-token" in threat_model
     assert "--insecure-off-loopback" in threat_model
     assert "DNS rebinding" in threat_model
+    assert "exact Host authority" in threat_model
+    assert "Opaque `null` origins are refused" in threat_model
+    assert "a non-browser client sends no `Origin` and is unaffected" not in threat_model
     assert "redact `Authorization`" in threat_model
     assert "operator deployment sign-off" in combined
     assert "A2A deployment threat model" in combined
+
+
+def test_secure_mode_docs_pin_same_descriptor_secret_file_boundary() -> None:
+    """Secure-mode guidance must match the fail-closed POSIX loader contract."""
+    prose = _single_spaced(_read_repo_text("docs/secure-mode.md"))
+
+    assert "effective hub service user" in prose
+    assert "`O_NOFOLLOW`" in prose
+    assert "same descriptor" in prose
+    assert "oversized content" in prose
+    assert "cannot prove POSIX ownership and mode invariants" in prose
+    assert "root-owned" not in prose
 
 
 def test_file_scope_docs_describe_literal_prefix_overlap_not_glob() -> None:

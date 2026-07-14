@@ -65,9 +65,10 @@ throughput claim.
 
 `--secure` still needs the operator to supply real material — the flag checks
 presence; the existing loaders remain the authority for parsing and cryptographic
-validation. Deliver every secret from an owner-only (`chmod 600`) file: an argv
-value is visible to anyone on the machine running `ps`, so the file-backed
-companions are the production forms.
+validation. Deliver every secret from an owner-only (`chmod 600`) regular file
+owned by the effective hub service user: an argv value is visible to anyone on
+the machine running `ps`, so the file-backed companions are the production
+forms on POSIX systems.
 
 ```bash
 synapse hub --secure \
@@ -82,10 +83,16 @@ synapse hub --secure \
 ```
 
 `--message-auth-key-file` holds one `KEY_ID:SECRET:SENDER[,SENDER...]` entry per
-line (`#` comments allowed), so key rotation is an edit to one root-owned file;
-entries merge with any argv `--message-auth-key` values. The loader refuses a
-file that other users can read and reports problems by flag and path, never by
-content. Missing material fails closed with one aggregate error. Add
+line (`#` comments allowed), so key rotation is an edit to one file owned by the
+same unprivileged account that runs the hub; entries merge with any argv
+`--message-auth-key` values. The loader opens one bounded descriptor with
+`O_NOFOLLOW`, then requires that same descriptor to be a regular file owned by
+the effective service user with no group/other permissions. Symlinks,
+non-regular files, foreign owners, oversized content, and path-replacement races
+fail closed. Errors name only the flag and path, never content. Platforms that
+cannot prove POSIX ownership and mode invariants refuse these file forms; run
+the hub under WSL/POSIX or use a separately validated native secret provider.
+Missing material fails closed with one aggregate error. Add
 `--metrics-token-file` (or `--metrics-token`) when `--metrics` is enabled; the
 explicit argv token wins when both are present, mirroring `--token`/`--token-file`.
 

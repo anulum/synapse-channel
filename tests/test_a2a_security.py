@@ -17,20 +17,30 @@ import pytest
 
 from a2a_server_helpers import HandlerHarness, RecordingAgent
 from synapse_channel import cli_a2a
-from synapse_channel.a2a_http_protocol import normalise_origin, origin_allowed
+from synapse_channel.a2a_http_protocol import (
+    endpoint_authorities,
+    normalise_authority,
+    normalise_origin,
+    origin_allowed,
+)
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.protocol import MAX_JSON_DEPTH
 
 
-def _bridge(*, allowed_origins: tuple[str, ...] = ()) -> A2ABridge:
+def _bridge(
+    *,
+    allowed_origins: tuple[str, ...] = (),
+    allowed_authorities: tuple[str, ...] = ("bridge.test",),
+) -> A2ABridge:
     return A2ABridge(
         agent=RecordingAgent(),
         agent_card={"name": "SYNAPSE CHANNEL"},
         target="WORKER",
         store=A2ATaskStore(),
         allowed_origins=allowed_origins,
+        allowed_authorities=allowed_authorities,
     )
 
 
@@ -323,7 +333,7 @@ def test_default_timeout_boundary_fails_stale_open_task() -> None:
         ("https://ide.example", "https://ide.example"),
         ("  HTTPS://IDE.Example/  ", "https://ide.example"),
         ("https://host:8443/", "https://host:8443"),
-        ("null", "null"),
+        ("http://[::1]:8877", "http://[::1]:8877"),
     ],
 )
 def test_normalise_origin_lowercases_and_trims(value: str, expected: str) -> None:
@@ -331,24 +341,80 @@ def test_normalise_origin_lowercases_and_trims(value: str, expected: str) -> Non
 
 
 @pytest.mark.parametrize(
-    ("origin_header", "allowed", "expected"),
+    "value",
     [
-        (None, (), True),  # feature off, no header
-        ("https://x", (), True),  # feature off
-        (None, ("https://x",), True),  # non-browser client sends no Origin
-        ("https://x", ("https://x",), True),  # exact match
-        ("https://X/", ("https://x",), True),  # normalised match
-        ("https://evil", ("https://x",), False),  # not listed
-        ("https://x", ("https://y", "https://x"), True),  # one of several
-        ("null", ("null",), True),  # opaque origin explicitly allowed
-        ("null", ("https://x",), False),  # opaque origin not allowed
-        ("https://x:443", ("https://x",), False),  # explicit port is part of the origin
+        "null",
+        "file://host",
+        "https://user@host",
+        "https://host/path",
+        "https://host:",
+        "https://bad host",
+        "https://host\\@attacker.example",
+        "https://host\x7f",
+    ],
+)
+def test_normalise_origin_refuses_non_exact_principals(value: str) -> None:
+    with pytest.raises(ValueError, match="exact|opaque"):
+        normalise_origin(value)
+
+
+def test_endpoint_authorities_cover_only_the_advertised_default_port() -> None:
+    assert endpoint_authorities("https://IDE.example/a2a/v1") == (
+        "ide.example",
+        "ide.example:443",
+    )
+    assert endpoint_authorities("http://127.0.0.1:8877") == ("127.0.0.1:8877",)
+    assert normalise_authority(" IDE.EXAMPLE:443 ") == "ide.example:443"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        "user@bridge.test",
+        "bridge.test:",
+        "bridge.test:invalid",
+        "bridge.test,attacker.test",
+        "bad host",
+    ],
+)
+def test_normalise_authority_refuses_ambiguous_host_values(value: str) -> None:
+    with pytest.raises(ValueError, match="exact"):
+        normalise_authority(value)
+
+
+def test_endpoint_authorities_refuse_credential_or_delimiter_ambiguity() -> None:
+    with pytest.raises(ValueError, match="authority"):
+        endpoint_authorities("https://user@bridge.test/a2a")
+    with pytest.raises(ValueError, match="authority"):
+        endpoint_authorities("https://bridge.test\\@attacker.example/a2a")
+    with pytest.raises(ValueError, match="authority"):
+        endpoint_authorities("https://bridge.test:/a2a")
+
+
+@pytest.mark.parametrize(
+    ("origin_header", "host_header", "allowed", "authorities", "expected"),
+    [
+        (None, None, (), (), True),  # feature off, no headers
+        ("https://x", "host", (), (), True),  # feature off
+        (None, "bridge.test", ("https://x",), ("bridge.test",), True),
+        (None, "evil.test", ("https://x",), ("bridge.test",), False),
+        ("https://x", "bridge.test", ("https://x",), ("bridge.test",), True),
+        ("https://X/", "bridge.test", ("https://x",), ("bridge.test",), True),
+        ("https://evil", "bridge.test", ("https://x",), ("bridge.test",), False),
+        ("https://x", "bridge.test", ("https://y", "https://x"), ("bridge.test",), True),
+        ("null", "bridge.test", ("https://x",), ("bridge.test",), False),
+        ("https://x:443", "bridge.test", ("https://x",), ("bridge.test",), False),
     ],
 )
 def test_origin_allowed_decisions(
-    origin_header: str | None, allowed: tuple[str, ...], expected: bool
+    origin_header: str | None,
+    host_header: str | None,
+    allowed: tuple[str, ...],
+    authorities: tuple[str, ...],
+    expected: bool,
 ) -> None:
-    assert origin_allowed(origin_header, allowed) is expected
+    assert origin_allowed(origin_header, host_header, allowed, authorities) is expected
 
 
 @pytest.mark.parametrize("method", ["GET", "POST", "DELETE"])
@@ -356,14 +422,18 @@ def test_disallowed_origin_is_refused_on_every_method(method: str) -> None:
     path = "/tasks" if method == "GET" else "/message:send"
     if method == "DELETE":
         path = "/tasks/t/pushNotificationConfigs/c"
-    harness = HandlerHarness(method, path, headers={"Origin": "https://evil.example"})
+    harness = HandlerHarness(
+        method,
+        path,
+        headers={"Host": "bridge.test", "Origin": "https://evil.example"},
+    )
     harness.handler.bridge = _bridge(allowed_origins=("https://ide.example",))
 
     status, body = harness.run()
 
     assert status == HTTPStatus.FORBIDDEN
     assert body["title"] == "Forbidden"
-    assert body["detail"] == "Origin not allowed"
+    assert body["detail"] == "Origin or Host not allowed"
 
 
 def test_allow_list_gates_even_the_public_agent_card() -> None:
@@ -371,7 +441,7 @@ def test_allow_list_gates_even_the_public_agent_card() -> None:
     harness = HandlerHarness(
         "GET",
         "/.well-known/agent-card.json",
-        headers={"Origin": "https://evil.example"},
+        headers={"Host": "bridge.test", "Origin": "https://evil.example"},
     )
     harness.handler.bridge = _bridge(allowed_origins=("https://ide.example",))
 
@@ -385,7 +455,7 @@ def test_allowed_origin_passes_through_to_the_route() -> None:
     harness = HandlerHarness(
         "GET",
         "/.well-known/agent-card.json",
-        headers={"Origin": "https://IDE.example/"},
+        headers={"Host": "bridge.test", "Origin": "https://IDE.example/"},
     )
     harness.handler.bridge = _bridge(allowed_origins=("https://ide.example",))
 
@@ -395,13 +465,40 @@ def test_allowed_origin_passes_through_to_the_route() -> None:
     assert body["name"] == "SYNAPSE CHANNEL"
 
 
-def test_missing_origin_header_is_unaffected_by_the_allow_list() -> None:
-    harness = HandlerHarness("GET", "/.well-known/agent-card.json")
+def test_missing_origin_requires_the_advertised_host_authority() -> None:
+    harness = HandlerHarness(
+        "GET",
+        "/.well-known/agent-card.json",
+        headers={"Host": "bridge.test"},
+    )
     harness.handler.bridge = _bridge(allowed_origins=("https://ide.example",))
 
     status, _body = harness.run()
 
     assert status == HTTPStatus.OK
+
+    hostile = HandlerHarness(
+        "GET",
+        "/.well-known/agent-card.json",
+        headers={"Host": "attacker.example"},
+    )
+    hostile.handler.bridge = _bridge(allowed_origins=("https://ide.example",))
+    denied, body = hostile.run()
+    assert denied == HTTPStatus.FORBIDDEN
+    assert body["detail"] == "Origin or Host not allowed"
+
+
+def test_opaque_origin_is_always_refused() -> None:
+    harness = HandlerHarness(
+        "GET",
+        "/.well-known/agent-card.json",
+        headers={"Host": "bridge.test", "Origin": "null"},
+    )
+    harness.handler.bridge = _bridge(allowed_origins=("https://ide.example",))
+
+    status, _body = harness.run()
+
+    assert status == HTTPStatus.FORBIDDEN
 
 
 def test_no_allow_list_admits_any_browser_origin() -> None:
@@ -439,6 +536,7 @@ def test_a2a_serve_threads_allow_origin_into_the_bridge() -> None:
             agent_card={},
             target=kwargs["target"],
             allowed_origins=kwargs["allowed_origins"],
+            allowed_authorities=kwargs["allowed_authorities"],
         )
 
     async def manifest(**_kwargs: object) -> list[dict[str, Any]]:
@@ -457,7 +555,7 @@ def test_a2a_serve_threads_allow_origin_into_the_bridge() -> None:
         documentation_url="https://anulum.github.io/synapse-channel",
         bearer_auth=False,
         a2a_token=None,
-        allow_origin=["https://IDE.example/", "null"],
+        allow_origin=["https://IDE.example/"],
         state_file=None,
         task_timeout=300.0,
         subscribe_timeout=0.0,
@@ -475,4 +573,35 @@ def test_a2a_serve_threads_allow_origin_into_the_bridge() -> None:
         )
         == 0
     )
-    assert captured["allowed_origins"] == ("https://IDE.example/", "null")
+    assert captured["allowed_origins"] == ("https://ide.example",)
+    assert captured["allowed_authorities"] == ("bridge.example", "bridge.example:443")
+
+
+def test_a2a_serve_refuses_opaque_origin_before_hub_access(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def fail_fetch_manifest(**_kwargs: object) -> list[dict[str, Any]]:
+        raise AssertionError("manifest fetch should not be reached")
+
+    args = argparse.Namespace(
+        uri="ws://hub",
+        name="A2A-BRIDGE",
+        token=None,
+        host="127.0.0.1",
+        port=8877,
+        endpoint_url="http://127.0.0.1:8877",
+        target="all",
+        bridge_name="SYNAPSE CHANNEL",
+        description=None,
+        documentation_url="https://anulum.github.io/synapse-channel",
+        bearer_auth=False,
+        a2a_token=None,
+        allow_origin=["null"],
+        state_file=None,
+        task_timeout=300.0,
+        subscribe_timeout=0.0,
+        insecure_off_loopback=False,
+    )
+
+    assert cli_a2a._cmd_a2a_serve(args, manifest_fetcher=fail_fetch_manifest) == 2
+    assert "opaque 'null' origins cannot be allow-listed" in capsys.readouterr().err

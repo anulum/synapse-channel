@@ -17,6 +17,7 @@ from typing import Any
 
 from synapse_channel.a2a import agent_card_from_manifest
 from synapse_channel.a2a_http import serve_a2a_http
+from synapse_channel.a2a_http_protocol import endpoint_authorities, normalise_origin
 from synapse_channel.a2a_server import A2ABridge, SynapseAgentRuntime
 from synapse_channel.a2a_store import A2ATaskStore
 from synapse_channel.cli_a2a_types import (
@@ -88,6 +89,14 @@ def _cmd_a2a_serve(
     server_runner: ServerRunner = serve_a2a_http,
 ) -> int:
     """Dispatch the ``a2a-serve`` subcommand."""
+    try:
+        allowed_origins = tuple(
+            normalise_origin(origin) for origin in (getattr(args, "allow_origin", None) or ())
+        )
+        allowed_authorities = endpoint_authorities(args.endpoint_url) if allowed_origins else ()
+    except ValueError as exc:
+        print(f"[{args.name}] Invalid A2A browser boundary: {exc}.", file=sys.stderr)
+        return 2
     if args.bearer_auth and not args.a2a_token:
         print(
             f"[{args.name}] --a2a-token is required when --bearer-auth is enabled.",
@@ -146,7 +155,8 @@ def _cmd_a2a_serve(
         store=store_factory(storage_path=args.state_file),
         submit=runtime.run,
         auth_token=args.a2a_token if args.bearer_auth else None,
-        allowed_origins=tuple(args.allow_origin or ()),
+        allowed_origins=allowed_origins,
+        allowed_authorities=allowed_authorities,
         task_timeout_seconds=args.task_timeout,
         subscribe_wait_seconds=args.subscribe_timeout,
     )

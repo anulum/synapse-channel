@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from pathlib import Path
 
@@ -16,6 +17,7 @@ import pytest
 
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.secret_files import (
+    DEFAULT_SECRET_FILE_LIMIT,
     SecretFileError,
     read_secret_file,
     read_secret_lines,
@@ -96,21 +98,119 @@ def test_read_secret_lines_missing_file_names_flag_not_content(tmp_path: Path) -
 
 
 @pytest.mark.parametrize("reader", [read_secret_file, read_secret_lines])
-def test_permission_check_is_skipped_on_non_posix_platforms(
+def test_secret_file_forms_fail_closed_on_non_posix_platforms(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     reader: Callable[..., object],
 ) -> None:
-    """On a platform without POSIX modes the read proceeds; the check is not expressible.
-
-    A group-readable file that would fail on Linux must still load on Windows, where
-    ``os.name != 'posix'`` and the mode bits carry no such meaning.
-    """
+    """A platform that cannot prove the owner boundary must refuse the file form."""
     import synapse_channel.core.secret_files as module
 
     monkeypatch.setattr(module, "_POSIX", False)
     path = _secret(tmp_path, "main:s3cret:ALPHA\n", mode=0o644)
-    assert reader(path, flag="--message-auth-key-file")
+    with pytest.raises(SecretFileError, match="validation is unavailable"):
+        reader(path, flag="--message-auth-key-file")
+
+
+@pytest.mark.parametrize("reader", [read_secret_file, read_secret_lines])
+@pytest.mark.skipif(os.name != "posix", reason="POSIX filesystem boundary")
+def test_secret_readers_refuse_symlinks_and_non_regular_files(
+    tmp_path: Path,
+    reader: Callable[..., object],
+) -> None:
+    target = _secret(tmp_path, "target-secret\n")
+    link = tmp_path / "secret-link"
+    link.symlink_to(target)
+    with pytest.raises(SecretFileError, match="securely open"):
+        reader(link, flag="--message-auth-key-file")
+
+    fifo = tmp_path / "secret-fifo"
+    os.mkfifo(fifo, mode=0o600)
+    with pytest.raises(SecretFileError, match="not a regular"):
+        reader(fifo, flag="--message-auth-key-file")
+
+
+@pytest.mark.parametrize("reader", [read_secret_file, read_secret_lines])
+@pytest.mark.skipif(os.name != "posix", reason="POSIX ownership boundary")
+def test_secret_readers_refuse_foreign_owner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reader: Callable[..., object],
+) -> None:
+    import synapse_channel.core.secret_files as module
+
+    path = _secret(tmp_path, "owned-secret\n")
+    monkeypatch.setattr(module.os, "geteuid", lambda: path.stat().st_uid + 1)
+    with pytest.raises(SecretFileError, match="effective hub service user"):
+        reader(path, flag="--message-auth-key-file")
+
+
+@pytest.mark.parametrize("reader", [read_secret_file, read_secret_lines])
+@pytest.mark.skipif(os.name != "posix", reason="POSIX size boundary")
+def test_secret_readers_refuse_oversize_files(
+    tmp_path: Path,
+    reader: Callable[..., object],
+) -> None:
+    path = _secret(tmp_path, "owned-secret\n")
+    path.write_bytes(b"x" * (DEFAULT_SECRET_FILE_LIMIT + 1))
+    path.chmod(0o600)
+    with pytest.raises(SecretFileError, match="byte secret-file limit"):
+        reader(path, flag="--message-auth-key-file")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor boundary")
+def test_secret_reader_enforces_the_limit_after_the_file_grows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import synapse_channel.core.secret_files as module
+
+    path = _secret(tmp_path, "initial\n")
+    original_fstat = module.os.fstat
+
+    def fstat_then_grow(descriptor: int) -> os.stat_result:
+        info = original_fstat(descriptor)
+        with path.open("ab") as stream:
+            stream.write(b"x" * (DEFAULT_SECRET_FILE_LIMIT + 1))
+        return info
+
+    monkeypatch.setattr(module.os, "fstat", fstat_then_grow)
+    with pytest.raises(SecretFileError, match="byte secret-file limit"):
+        read_secret_file(path, flag="--metrics-token-file")
+
+
+def test_secret_reader_refuses_invalid_utf8_without_echoing_bytes(tmp_path: Path) -> None:
+    path = tmp_path / "secret"
+    path.write_bytes(b"prefix-\xff-secret")
+    path.chmod(0o600)
+
+    with pytest.raises(SecretFileError, match="not valid UTF-8") as excinfo:
+        read_secret_file(path, flag="--metrics-token-file")
+
+    assert "prefix" not in str(excinfo.value)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor boundary")
+def test_secret_reader_uses_the_validated_descriptor_after_path_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import synapse_channel.core.secret_files as module
+
+    path = _secret(tmp_path, "descriptor-secret\n")
+    replacement = tmp_path / "replacement"
+    replacement.write_text("replacement-secret\n", encoding="utf-8")
+    replacement.chmod(0o600)
+    original_open = module.os.open
+
+    def open_then_replace(file: os.PathLike[str] | str, flags: int) -> int:
+        descriptor = original_open(file, flags)
+        path.unlink()
+        replacement.rename(path)
+        return descriptor
+
+    monkeypatch.setattr(module.os, "open", open_then_replace)
+    assert read_secret_file(path, flag="--metrics-token-file") == "descriptor-secret"
 
 
 def test_secret_file_error_is_a_synapse_error_with_stable_code(tmp_path: Path) -> None:

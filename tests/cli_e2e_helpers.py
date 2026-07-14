@@ -229,10 +229,16 @@ def _stop_group(proc: subprocess.Popen[str]) -> None:
             continue
 
 
-def http_get(url: str, timeout: float = 5.0) -> tuple[int, str]:
+def http_get(
+    url: str,
+    timeout: float = 5.0,
+    *,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, str]:
     """GET ``url`` and return ``(status, body)``; status 0 means unreachable."""
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310 - fixed http scheme
+        request = urllib.request.Request(url, headers=headers or {}, method="GET")
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
             return int(response.status), response.read().decode("utf-8")
     except urllib.error.HTTPError as error:
         return int(error.code), error.read().decode("utf-8")
@@ -245,7 +251,12 @@ A2A_AGENT_CARD_PATH = "/.well-known/agent-card.json"
 
 
 @contextmanager
-def isolated_a2a_serve(hub_uri: str, *, ready_timeout: float = 8.0) -> Iterator[str]:
+def isolated_a2a_serve(
+    hub_uri: str,
+    *,
+    allowed_origins: tuple[str, ...] = (),
+    ready_timeout: float = 8.0,
+) -> Iterator[str]:
     """Serve ``synapse a2a-serve`` against ``hub_uri``; yield its base HTTP URL.
 
     Blocks until the Agent Card endpoint answers, so the caller can fetch the card
@@ -254,6 +265,7 @@ def isolated_a2a_serve(hub_uri: str, *, ready_timeout: float = 8.0) -> Iterator[
     """
     port = free_port()
     base = f"http://127.0.0.1:{port}"
+    origin_args = [part for origin in allowed_origins for part in ("--allow-origin", origin)]
     proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
         [
             *_CLI,
@@ -268,6 +280,7 @@ def isolated_a2a_serve(hub_uri: str, *, ready_timeout: float = 8.0) -> Iterator[
             str(port),
             "--endpoint-url",
             base,
+            *origin_args,
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

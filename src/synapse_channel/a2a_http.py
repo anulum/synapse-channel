@@ -154,25 +154,30 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
             )
             return False
 
-        def _require_allowed_origin(self) -> bool:
-            """Refuse a browser-borne request whose Origin is not allow-listed.
+        def _require_browser_boundary(self) -> bool:
+            """Refuse a request outside the configured Origin/Host boundary.
 
             Runs before authentication and on every route, the public agent card
             included: the allow-list exists to stop a hostile web page (DNS
             rebinding, drive-by requests to a loopback bridge) from reading or
-            mutating anything through a victim's browser. Non-browser clients
-            send no ``Origin`` header and are unaffected; with no configured
-            list the check is a no-op.
+            mutating anything through a victim's browser. When the feature is
+            enabled, even a request without ``Origin`` must address the exact
+            advertised endpoint authority; with no list the check is a no-op.
             """
-            if origin_allowed(self.headers.get("Origin"), self.bridge.allowed_origins):
+            if origin_allowed(
+                self.headers.get("Origin"),
+                self.headers.get("Host"),
+                self.bridge.allowed_origins,
+                self.bridge.allowed_authorities,
+            ):
                 return True
             self._send_json(
                 HTTPStatus.FORBIDDEN,
                 problem_response(
                     HTTPStatus.FORBIDDEN,
                     "Forbidden",
-                    "Origin not allowed",
-                    reason="ORIGIN_NOT_ALLOWED",
+                    "Origin or Host not allowed",
+                    reason="ORIGIN_OR_HOST_NOT_ALLOWED",
                 ),
             )
             return False
@@ -199,7 +204,7 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
 
         def do_GET(self) -> None:
             """Serve A2A discovery and task-read endpoints."""
-            if not self._require_allowed_origin():
+            if not self._require_browser_boundary():
                 return
             parsed = urlparse(self.path)
             if parsed.path == "/.well-known/agent-card.json":
@@ -265,7 +270,7 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             """Serve A2A message-send and task-cancel endpoints."""
-            if not self._require_allowed_origin():
+            if not self._require_browser_boundary():
                 return
             parsed = urlparse(self.path)
             if not self._require_authorized():
@@ -415,7 +420,7 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
 
         def do_DELETE(self) -> None:
             """Serve A2A push-notification config deletion."""
-            if not self._require_allowed_origin():
+            if not self._require_browser_boundary():
                 return
             parsed = urlparse(self.path)
             if not self._require_authorized():
