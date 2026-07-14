@@ -41,6 +41,12 @@ All notable changes to this project are documented here.
 
 - The MCP surface is split into a transport bridge and a dedicated claim-actions
   module so the two responsibilities evolve independently.
+- The JetBrains and Zed OpenCode editor-E2E lanes are now advisory in continuous
+  integration: a headless runner has no desktop accessibility bus (AT-SPI
+  `org.a11y.Bus`), so these heavy GUI IDEs cannot reach the ACP `session/new`
+  handshake even under Xvfb. They run best-effort for signal (`continue-on-error`)
+  without gating the workflow; the full governance contract remains enforced by
+  the required, headless Neovim and Emacs lanes.
 
 ### Fixed
 

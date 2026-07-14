@@ -363,8 +363,8 @@ the exact OpenCode binary and a local deterministic provider:
 |---|---|
 | Neovim | Neovim 0.12.4 and CodeCompanion.nvim 19.19.0 |
 | Emacs | Emacs 29.3, Agent Shell 0.59.1, `acp.el` 0.12.2, and Shell Maker 0.93.5 |
-| Zed | Zed 1.10.3 under Xvfb through `agent::NewExternalAgentThread` |
-| JetBrains | PyCharm 2026.1.4 and AI Assistant 261.26222.68 under Xvfb |
+| Zed | Zed 1.10.3 under Xvfb through `agent::NewExternalAgentThread` (advisory in CI) |
+| JetBrains | PyCharm 2026.1.4 and AI Assistant 261.26222.68 under Xvfb (advisory in CI) |
 
 Release archives are SHA-256 verified; editor plugins are checked out at exact
 commits or verified by archive hash and declared version. Each editor must
@@ -387,6 +387,18 @@ the selected job. GUI lanes wait for observable ACP session state rather than
 fixed delays. The evidence proxy writes a private bounded JSONL trace containing
 protocol metadata and only the prompt's byte length and SHA-256 digest, never its
 content.
+
+The headless Neovim and Emacs lanes are **required** and gate the workflow. The
+Zed and JetBrains lanes are **advisory** in continuous integration: a headless
+runner has no desktop accessibility bus (AT-SPI `org.a11y.Bus`), so these heavy
+GUI IDEs cannot start far enough to reach the ACP `session/new` handshake even
+under Xvfb, and the IntelliJ platform declines to initialise its project store
+headless. Those two lanes therefore run best-effort for signal (`continue-on-error`)
+and do not block the workflow; the full governance chain above is enforced by the
+required, headless-capable Neovim and Emacs lanes. Running the Zed or JetBrains
+acceptance under a real desktop session (local or a self-hosted runner with a
+window manager and accessibility bus) exercises the same contract without the
+advisory caveat.
 
 The real-process suite uses isolated home/config/data/state/cache roots and a
 local scripted provider. It proves:

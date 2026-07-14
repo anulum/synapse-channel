@@ -56,6 +56,14 @@ jobs:
     name: ${{ matrix.client }} / OpenCode ACP
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ matrix.timeout }}
+    # Neovim and Emacs run headless and are REQUIRED lanes. Zed and JetBrains are
+    # heavy GUI IDEs: a GitHub headless runner has no desktop accessibility bus
+    # (AT-SPI org.a11y.Bus) and cannot start them far enough to reach the ACP
+    # session/new handshake even under Xvfb, so those two lanes are ADVISORY
+    # (continue-on-error) — they run best-effort for signal but do not gate the
+    # workflow. The governance contract is enforced by the required Neovim/Emacs
+    # lanes. See docs/opencode.md.
+    continue-on-error: ${{ matrix.advisory || false }}
     strategy:
       fail-fast: false
       matrix:
@@ -66,8 +74,10 @@ jobs:
             timeout: 25
           - client: zed
             timeout: 30
+            advisory: true
           - client: jetbrains
             timeout: 45
+            advisory: true
     env:
       SYNAPSE_EDITOR_E2E_CLIENT: ${{ matrix.client }}
       SYNAPSE_EDITOR_E2E_ARTIFACT_DIR: ${{ github.workspace }}/.e2e-artifacts/${{ matrix.client }}
