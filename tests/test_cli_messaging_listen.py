@@ -49,6 +49,33 @@ async def test_listen_prints_chat_and_presence(capsys: pytest.CaptureFixture[str
     assert "[presence] joined" in out
 
 
+async def test_listen_neutralises_terminal_controls(capsys: pytest.CaptureFixture[str]) -> None:
+    payload = "hello\x1b]52;c;YQ==\x07\nspoof"
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        listen_task = asyncio.create_task(
+            cli_messaging._listen(
+                uri=uri,
+                name="B-listener",
+                for_name="B",
+                max_messages=1,
+            )
+        )
+        sender = await connect_agent("A", uri)
+        try:
+            await _wait_for_presence(observer, "B-listener")
+            await sender.agent.chat(payload, target="B")
+            code = await listen_task
+        finally:
+            await close_agents(sender, observer)
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert r"A: hello\x1b]52;c;YQ==\x07\nspoof" in out
+    assert "\x1b" not in out
+    assert "\x07" not in out
+
+
 def test_cmd_listen_dispatches_real_command(capsys: pytest.CaptureFixture[str]) -> None:
     ns = argparse.Namespace(
         uri=f"ws://127.0.0.1:{_free_port()}",

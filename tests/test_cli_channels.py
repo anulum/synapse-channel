@@ -83,6 +83,25 @@ def test_print_reply_renders_channel_history_with_non_dict_rows(
     assert "legacy" not in out
 
 
+def test_print_reply_neutralises_channel_history_controls(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = cli_channels._print_reply(
+        {
+            "type": MessageType.CHANNEL_HISTORY,
+            "channel": "ops\x1b",
+            "messages": [{"sender": "alice\x07", "payload": "one\nspoof"}],
+        }
+    )
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert r"history ops\x1b" in out
+    assert r"alice\x07: one\nspoof" in out
+    assert "\x1b" not in out
+    assert "\x07" not in out
+
+
 async def test_channel_cli_create_then_list_against_real_hub(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

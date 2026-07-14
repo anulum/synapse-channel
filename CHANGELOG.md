@@ -63,6 +63,15 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- Operator-facing chat and channel output now renders ANSI, OSC, carriage-return,
+  newline, bidi, and other control characters as visible escape notation before
+  they reach a terminal. Service-setup commands also shell-quote project and
+  identity arguments and use the `systemd-escape --` boundary, closing a command-
+  substitution path in copied `init`, `git-init`, and doctor guidance.
+- Headless Claude turns now disable built-in tools, ambient MCP servers, skills,
+  plugins, hooks, browser integration, and customisations explicitly while also
+  selecting plan permission mode. Unsupported older CLIs fail closed rather than
+  accepting a bus prompt with weaker local execution policy.
 - The hub rejects a non-finite (`nan`, `inf`) `--rate`, `--burst`, `--host-rate`,
   or `--host-burst` at the argument parser for every run: `nan` previously passed
   every downstream comparison and then built no limiter at all, so a hub could

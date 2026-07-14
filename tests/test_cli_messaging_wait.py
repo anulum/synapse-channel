@@ -58,6 +58,27 @@ async def test_wait_returns_on_addressed_message(capsys: pytest.CaptureFixture[s
     assert "A: wake up" in capsys.readouterr().out
 
 
+async def test_wait_neutralises_terminal_controls(capsys: pytest.CaptureFixture[str]) -> None:
+    payload = "wake\x1b]52;c;YQ==\x07\nspoof"
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        wait_task = asyncio.create_task(
+            cli_messaging._wait(uri=uri, name="B-rx", for_name="B", timeout=2.0)
+        )
+        try:
+            await _wait_for_presence(observer, "B-rx")
+            await _send_chat(uri, "A", "B", payload)
+            code = await wait_task
+        finally:
+            await close_agents(observer)
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert r"A: wake\x1b]52;c;YQ==\x07\nspoof" in out
+    assert "\x1b" not in out
+    assert "\x07" not in out
+
+
 async def test_wait_reports_unreachable_hub(capsys: pytest.CaptureFixture[str]) -> None:
     code = await cli_messaging._wait(
         uri=f"ws://127.0.0.1:{_free_port()}",

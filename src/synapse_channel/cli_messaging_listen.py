@@ -23,6 +23,7 @@ from synapse_channel.core.payload_crypto import (
     load_payload_key,
 )
 from synapse_channel.core.protocol import MessageType, is_recipient
+from synapse_channel.terminal_text import terminal_chat_line, terminal_text
 
 
 async def _listen(
@@ -74,11 +75,13 @@ async def _listen(
         if msg_type == MessageType.CHAT:
             if for_name and not is_recipient(str(data.get("target", "all")), for_name):
                 return
-            print(f"{data.get('sender')}: {_render_chat_payload(data, decrypt_key)}")
+            print(terminal_chat_line(data.get("sender"), _render_chat_payload(data, decrypt_key)))
             did_print = True
         elif msg_type == MessageType.PRESENCE_UPDATE and not for_name:
-            online = ", ".join(data.get("online_agents", []))
-            print(f"[presence] {data.get('event')} -> online: {online}")
+            online = ", ".join(
+                terminal_text(agent_name) for agent_name in data.get("online_agents", [])
+            )
+            print(f"[presence] {terminal_text(data.get('event'))} -> online: {online}")
             did_print = True
         if did_print and max_messages is not None:
             printed += 1

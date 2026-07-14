@@ -309,9 +309,11 @@ def service_suggestions(
         "systemctl --user daemon-reload",
         "systemctl --user enable --now synapse-hub.service",
         "systemctl --user enable --now "
-        f'"$(systemd-escape --template=synapse-presence@.service {project!r})"',
+        '"$(systemd-escape --template=synapse-presence@.service -- '
+        f'{shlex.quote(project)})"',
         "systemctl --user enable --now "
-        f'"$(systemd-escape --template=synapse-arm@.service {identity!r})"',
+        '"$(systemd-escape --template=synapse-arm@.service -- '
+        f'{shlex.quote(identity)})"',
         "synapse install-shell-hook --shell auto",
         f"# installed synapse binary detected as: {synapse}",
     ]
@@ -370,11 +372,13 @@ def install_user_services(
         lines.append("run: systemctl --user enable --now synapse-hub.service")
         lines.append(
             "run: systemctl --user enable --now "
-            f'"$(systemd-escape --template=synapse-presence@.service {project!r})"'
+            '"$(systemd-escape --template=synapse-presence@.service -- '
+            f'{shlex.quote(project)})"'
         )
         lines.append(
             "run: systemctl --user enable --now "
-            f'"$(systemd-escape --template=synapse-arm@.service {identity!r})"'
+            '"$(systemd-escape --template=synapse-arm@.service -- '
+            f'{shlex.quote(identity)})"'
         )
         return lines
 

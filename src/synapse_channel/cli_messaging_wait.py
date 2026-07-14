@@ -31,6 +31,7 @@ from synapse_channel.machine_identity import machine_identity_agent_kwargs
 from synapse_channel.mailbox_cursor import load_cursor, save_cursor
 from synapse_channel.owner_lease import lease_agent_kwargs, lease_path
 from synapse_channel.shell_integration import has_active_tmux_provider
+from synapse_channel.terminal_text import terminal_chat_line
 from synapse_channel.waiter_identity import (
     legacy_project_scoped_terminal_sidecar,
     waiter_name,
@@ -247,7 +248,7 @@ async def _wait(
             # frame while the persisted cursor advanced past all of them silently
             # lost the rest (the 2026-07-10 P0 drain swallowed a backlog this way).
             for message in to_surface:
-                print(f"{message.get('sender')}: {message.get('payload')}")
+                print(terminal_chat_line(message.get("sender"), message.get("payload")))
             surfaced_seq[0] = max(
                 (
                     seq

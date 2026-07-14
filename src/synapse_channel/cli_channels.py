@@ -29,6 +29,7 @@ from synapse_channel.core.payload_crypto import (
     payload_key_fingerprint,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.terminal_text import terminal_chat_line, terminal_text
 
 AgentFactory = Callable[..., SynapseAgent]
 
@@ -130,23 +131,26 @@ def _print_reply(reply: dict[str, Any]) -> int:
     if str(reply.get("type", "")) == MessageType.CHANNEL_LIST:
         channels = reply.get("channels", [])
         names = channels if isinstance(channels, list) else []
-        print("channels: " + (", ".join(str(c) for c in names) if names else "(none)"))
+        print(
+            "channels: "
+            + (", ".join(terminal_text(channel) for channel in names) if names else "(none)")
+        )
         return 0
     if str(reply.get("type", "")) == MessageType.CHANNEL_HISTORY:
         channel = str(reply.get("channel") or "")
         messages = reply.get("messages", [])
         rows = messages if isinstance(messages, list) else []
-        print(f"history {channel}: {len(rows)} message(s)")
+        print(f"history {terminal_text(channel)}: {len(rows)} message(s)")
         for item in rows:
             if isinstance(item, dict):
-                print(f"{item.get('sender', '?')}: {item.get('payload', '')}")
+                print(terminal_chat_line(item.get("sender", "?"), item.get("payload", "")))
         return 0
     ok = bool(reply.get("ok"))
-    print(str(reply.get("payload") or ("ok" if ok else "failed")))
+    print(terminal_text(reply.get("payload") or ("ok" if ok else "failed")))
     if ok:
         members = reply.get("members", [])
         if isinstance(members, list) and members:
-            print("members: " + ", ".join(str(m) for m in members))
+            print("members: " + ", ".join(terminal_text(member) for member in members))
     return 0 if ok else 1
 
 

@@ -2257,6 +2257,15 @@ synapse participant costs ~/synapse/hub.db              # per-session spend and 
 synapse participant costs ~/synapse/hub.db --json       # the same report, machine-readable
 ```
 
+Headless provider prompts are an execution trust boundary, not shell text.
+SYNAPSE passes them as one argv value without a shell. Claude additionally runs
+with built-in tools disabled, an empty strict MCP configuration, safe mode,
+disabled skills/browser integration, and plan permissions; Codex uses its
+read-only sandbox; Gemini, Grok, and Kimi use their native non-mutating planning
+or approval modes. An older CLI that cannot enforce the pinned flags fails the
+turn instead of silently weakening it. Model output and peer contributions remain
+untrusted data and are fenced before another participant receives them.
+
 For a secured hub, pass `--token SECRET` to `worker`, `send`, `listen`, `board`,
 `manifest`, `release`, `a2a-card`, `a2a-serve`, and `task`.
 

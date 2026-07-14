@@ -34,22 +34,24 @@ from synapse_channel.core.journal import MEMORY_KINDS
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType, addresses_project, is_recipient
 from synapse_channel.core.relay import decode_lite, load_offset, read_jsonl_since, save_offset
+from synapse_channel.terminal_text import terminal_text
 
 
 def _format_relay_line(message: dict[str, Any], *, hide_channel_body: bool = False) -> str:
     """Render one decoded relay event as a single human-readable line."""
     timestamp = message.get("timestamp", 0.0)
     channel = str(message.get("channel") or "")
-    channel_note = f" channel={channel}" if channel else ""
+    channel_note = f" channel={terminal_text(channel)}" if channel else ""
     payload = (
         "<private channel body hidden>"
         if hide_channel_body and channel
-        else str(message.get("payload", ""))
+        else terminal_text(message.get("payload", ""))
     )
     return (
         f"[{float(timestamp):.3f}] "
-        f"{message.get('sender', '?')} -> {message.get('target', 'all')} "
-        f"({message.get('type', 'chat')}{channel_note}): {payload}"
+        f"{terminal_text(message.get('sender', '?'))} -> "
+        f"{terminal_text(message.get('target', 'all'))} "
+        f"({terminal_text(message.get('type', 'chat'))}{channel_note}): {payload}"
     )
 
 

@@ -68,6 +68,23 @@ def test_format_relay_line_renders_envelope() -> None:
     assert line == "[1.500] A -> B (chat): hi"
 
 
+def test_format_relay_line_neutralises_terminal_controls() -> None:
+    line = cli_streams._format_relay_line(
+        {
+            "timestamp": 1.5,
+            "sender": "A\x1b]52;c;YQ==\x07",
+            "target": "B\nspoof",
+            "type": "chat",
+            "payload": "one\rtwo\u202e",
+        }
+    )
+
+    assert line == r"[1.500] A\x1b]52;c;YQ==\x07 -> B\nspoof (chat): one\rtwo\u202e"
+    assert "\x1b" not in line
+    assert "\x07" not in line
+    assert "\u202e" not in line
+
+
 def test_cmd_relay_prints_decoded_events(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

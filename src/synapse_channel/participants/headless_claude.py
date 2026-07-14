@@ -107,9 +107,29 @@ def build_claude_argv(
     -------
     list[str]
         The argv, always requesting ``stream-json`` with ``--verbose`` (which the CLI
-        requires for streamed JSON under ``-p``).
+        requires for streamed JSON under ``-p``). Built-in tools, customisations,
+        slash commands, Chrome, and ambient MCP servers are disabled explicitly;
+        an older CLI that cannot enforce those flags fails instead of running a
+        weaker headless turn.
     """
-    argv = [binary, "-p", prompt, "--output-format", "stream-json", "--verbose"]
+    argv = [
+        binary,
+        "-p",
+        prompt,
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--permission-mode",
+        "plan",
+        "--tools",
+        "",
+        "--safe-mode",
+        "--strict-mcp-config",
+        "--mcp-config",
+        '{"mcpServers":{}}',
+        "--disable-slash-commands",
+        "--no-chrome",
+    ]
     if model:
         argv += ["--model", model]
     if append_system_prompt:

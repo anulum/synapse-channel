@@ -57,6 +57,37 @@ async def test_send_delivers_message_and_prints_replies(
     assert "FAST: pong" in out
 
 
+async def test_send_neutralises_terminal_controls_in_replies(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    payload = "pong\x1b]52;c;YQ==\x07\nspoof"
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        fast = await connect_agent("FAST", uri)
+        send_task = asyncio.create_task(
+            cli_messaging._send(
+                uri=uri,
+                name="USER",
+                target="FAST",
+                message="ping",
+                wait_seconds=0.2,
+            )
+        )
+        try:
+            await fast.recorder.wait_for(
+                lambda message: message.get("type") == "chat" and message.get("sender") == "USER"
+            )
+            await fast.agent.chat(payload, target="USER")
+            code = await send_task
+        finally:
+            await close_agents(fast)
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert r"FAST: pong\x1b]52;c;YQ==\x07\nspoof" in out
+    assert "\x1b" not in out
+    assert "\x07" not in out
+
+
 async def test_send_waits_but_prints_nothing_without_replies(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

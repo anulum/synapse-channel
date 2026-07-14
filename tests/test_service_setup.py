@@ -260,6 +260,41 @@ def test_service_suggestions_include_hub_presence_and_arm() -> None:
     assert "/bin/synapse" in text
 
 
+def _assert_copyable_service_command_quotes_identity(
+    command: str, identity: str, tmp_path: Path
+) -> None:
+    capture = tmp_path / "systemd-escape-argv"
+    script = """
+systemctl() { :; }
+systemd-escape() {
+  printf '%s\n' "$@" > "$CAPTURE"
+  printf 'escaped.service'
+}
+"""
+    completed = subprocess.run(
+        ["bash", "-c", f"{script}\n{command}"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={"CAPTURE": str(capture)},
+    )
+
+    assert completed.returncode == 0
+    assert completed.stderr == ""
+    assert capture.read_text(encoding="utf-8").splitlines()[-1] == identity
+
+
+def test_service_suggestions_shell_quote_untrusted_identity(tmp_path: Path) -> None:
+    identity = "repo'$(printf INJECTED >&2)"
+    command = service_suggestions(
+        project="safe",
+        identity=identity,
+        synapse_bin="/bin/synapse",
+    )[5]
+
+    _assert_copyable_service_command_quotes_identity(command, identity, tmp_path)
+
+
 def test_install_user_services_writes_three_units(tmp_path: Path) -> None:
     lines = install_user_services(
         project="repo",
@@ -272,6 +307,23 @@ def test_install_user_services_writes_three_units(tmp_path: Path) -> None:
     assert (unit_dir / "synapse-presence@.service").exists()
     assert (unit_dir / "synapse-arm@.service").exists()
     assert any("systemctl --user enable --now synapse-hub.service" in line for line in lines)
+
+
+def test_install_user_services_shell_quotes_untrusted_project(tmp_path: Path) -> None:
+    project = "repo'$(printf INJECTED >&2)"
+    lines = install_user_services(
+        project=project,
+        identity="safe",
+        synapse_bin="/bin/synapse",
+        home=tmp_path,
+    )
+    command = next(
+        line.removeprefix("run: ")
+        for line in lines
+        if line.startswith("run: ") and "synapse-presence" in line
+    )
+
+    _assert_copyable_service_command_quotes_identity(command, project, tmp_path)
 
 
 def test_install_user_services_start_runs_systemctl(tmp_path: Path) -> None:

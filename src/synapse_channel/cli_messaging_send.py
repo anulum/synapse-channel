@@ -27,6 +27,7 @@ from synapse_channel.core.payload_crypto import (
     payload_key_fingerprint,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.terminal_text import terminal_chat_line, terminal_text
 from synapse_channel.waiter_identity import waiter_owner
 
 
@@ -178,13 +179,13 @@ async def _send(
                     return 1
             else:
                 if require_recipient or not bool(receipt.get("delivered")):
-                    print(str(receipt.get("payload") or "delivery receipt received"))
+                    print(terminal_text(receipt.get("payload") or "delivery receipt received"))
                 if not bool(receipt.get("delivered")):
                     return 1
         if wait_seconds > 0:
             await asyncio.sleep(wait_seconds)
             for reply in replies:
-                print(f"{reply.get('sender')}: {reply.get('payload')}")
+                print(terminal_chat_line(reply.get("sender"), reply.get("payload")))
         return 0
     finally:
         agent.running = False
