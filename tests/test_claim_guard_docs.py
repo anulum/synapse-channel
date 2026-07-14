@@ -46,4 +46,8 @@ def test_provider_claim_hook_guide_is_discoverable_and_honest() -> None:
         assert provider in guide
     security = Path("SECURITY.md").read_text(encoding="utf-8")
     assert "docs/claim-guard-hooks.md" in security
+    assert (
+        "https://github.com/anulum/synapse-channel/blob/main/SECURITY.md#out-of-scope--known-limitations"
+        in guide
+    )
     assert "doctor --a2a-policy" in security
