@@ -15,6 +15,15 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- A dedicated OpenCode editor E2E workflow now launches pinned real
+  CodeCompanion.nvim, Emacs Agent Shell, Zed, and JetBrains AI Assistant
+  clients against OpenCode 1.17.20 and a deterministic local provider. Each
+  lane fails closed unless the editor identifies itself over ACP v1, creates a
+  session, sends the exact prompt, receives an `end_turn` response, and reaches
+  the expected model; supply-chain hashes or exact commits pin every downloaded
+  client surface. Bounded private traces retain protocol metadata and prompt
+  fingerprints without prompt content.
+
 - The `0.99.7` distribution gate now verifies the exact public PyPI wheel and
   source archive, the packaged MCP ownership marker, and the immutable official
   MCP Registry record before reporting publication. The operator flow pins and

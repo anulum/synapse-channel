@@ -277,8 +277,8 @@ OpenCode 1.17.20 exposes an ACP subprocess:
 opencode acp --cwd /absolute/project
 ```
 
-It communicates as JSON-RPC over stdio. A real acceptance handshake verifies
-protocol version 1 and the pinned agent version. The source declares session
+It communicates as JSON-RPC over stdio. Acceptance verifies protocol version 1
+and the pinned agent version. The source declares session
 load/list/resume/close/fork capabilities, embedded context and image prompts,
 HTTP and SSE MCP capabilities, and optional `terminal-auth` metadata. The ACP
 process loads the same project configuration, so the installed Synapse MCP entry
@@ -310,10 +310,32 @@ dependency sets, pins OpenCode's official Linux x64 archive and extracted binary
 by SHA-256, verifies exact version 1.17.20, builds the wheel, checks its OpenCode
 modules, and runs only the OpenCode unit and real-process cohort.
 
+The separate `opencode-editor-e2e` workflow does not substitute a synthetic ACP
+peer for an editor. Four fail-closed jobs launch the real client process against
+the exact OpenCode binary and a local deterministic provider:
+
+| Lane | Pinned client surface |
+|---|---|
+| Neovim | Neovim 0.12.4 and CodeCompanion.nvim 19.19.0 |
+| Emacs | Emacs 29.3, Agent Shell 0.59.1, `acp.el` 0.12.2, and Shell Maker 0.93.5 |
+| Zed | Zed 1.10.3 under Xvfb through `agent::NewExternalAgentThread` |
+| JetBrains | PyCharm 2026.1.4 and AI Assistant 261.26222.86 under Xvfb |
+
+Release archives are SHA-256 verified; editor plugins are checked out at exact
+commits or verified by archive hash and declared version. Each editor must
+identify itself during ACP initialization, create a session, deliver the exact
+acceptance prompt, receive `end_turn`, and reach the deterministic provider.
+Missing clients, changed identities, malformed traffic, absent responses, or a
+wrong OpenCode/model version fail the selected job. The evidence proxy writes a
+private bounded JSONL trace containing protocol metadata and only the prompt's
+byte length and SHA-256 digest, never its content.
+
 The real-process suite uses isolated home/config/data/state/cache roots and a
 local scripted provider. It proves:
 
 - local JSONL turns and an ACP initialize handshake;
+- real CodeCompanion.nvim, Agent Shell, Zed, and JetBrains AI Assistant ACP
+  session/prompt round trips in their dedicated public-CI lanes;
 - Basic-auth refusal, authenticated `run --attach` prompt delivery, direct API
   answer capture, and session behavior;
 - adapter install/status/upgrade/uninstall ownership;
@@ -321,8 +343,8 @@ local scripted provider. It proves:
 - preservation of unrelated OpenCode configuration.
 
 These checks validate the pinned connector boundaries. They do not certify an
-external model account, an arbitrary IDE build, remote TLS termination, or
-filesystem isolation.
+external model account, an unpinned or arbitrary IDE build, remote TLS
+termination, or filesystem isolation.
 
 ## Source references
 
@@ -330,5 +352,7 @@ filesystem isolation.
 - [OpenCode MCP configuration](https://opencode.ai/docs/mcp-servers/)
 - [OpenCode ACP support](https://opencode.ai/docs/acp/)
 - [OpenCode CLI](https://opencode.ai/docs/cli/)
+- [JetBrains ACP agents](https://www.jetbrains.com/help/ai-assistant/acp.html)
+- [Zed external agents](https://zed.dev/docs/ai/external-agents)
 - [Provider file-edit claim hooks](claim-guard-hooks.md)
 - [MCP server face](mcp.md)

@@ -1,0 +1,222 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — pinned real editor clients against OpenCode ACP
+name: opencode-editor-e2e
+
+on:
+  push:
+    paths:
+      - ".github/workflows/opencode-editor-e2e.yml"
+      - "tests/e2e/opencode_editors/**"
+      - "tests/fixtures/opencode/**"
+      - "tests/test_cli_e2e_opencode_editors.py"
+      - "docs/opencode.md"
+  pull_request:
+    paths:
+      - ".github/workflows/opencode-editor-e2e.yml"
+      - "tests/e2e/opencode_editors/**"
+      - "tests/fixtures/opencode/**"
+      - "tests/test_cli_e2e_opencode_editors.py"
+      - "docs/opencode.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
+
+jobs:
+  editor-client:
+    name: ${{ matrix.client }} / OpenCode ACP
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - client: neovim
+            timeout: 20
+          - client: emacs
+            timeout: 25
+          - client: zed
+            timeout: 30
+          - client: jetbrains
+            timeout: 45
+    env:
+      SYNAPSE_EDITOR_E2E_CLIENT: ${{ matrix.client }}
+      SYNAPSE_EDITOR_E2E_ARTIFACT_DIR: ${{ github.workspace }}/.e2e-artifacts/${{ matrix.client }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Install the hash-locked focused Python toolchain
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
+          python -m pip install -e . --no-deps
+          python -m pip check
+      - name: Install exact OpenCode 1.17.20
+        env:
+          OPENCODE_ARCHIVE_SHA256: b7100c0ad0980fba25d595123b4219a6fdc1fbd456dcb64859236741e199c564
+          OPENCODE_BINARY_SHA256: 373af49ceba30c1b64e964463a64f8065103f942f240933a955f6c461e1a67f6
+          OPENCODE_URL: https://github.com/anomalyco/opencode/releases/download/v1.17.20/opencode-linux-x64.tar.gz
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/opencode-linux-x64.tar.gz"
+          bin_dir="$RUNNER_TEMP/opencode-1.17.20/bin"
+          mkdir -p "$bin_dir"
+          curl --fail --location --proto '=https' --proto-redir '=https' \
+            --tlsv1.2 --retry 3 --output "$archive" "$OPENCODE_URL"
+          printf '%s  %s\n' "$OPENCODE_ARCHIVE_SHA256" "$archive" \
+            | sha256sum --check --strict
+          tar -xzf "$archive" -C "$bin_dir"
+          chmod 0755 "$bin_dir/opencode"
+          printf '%s  %s\n' "$OPENCODE_BINARY_SHA256" "$bin_dir/opencode" \
+            | sha256sum --check --strict
+          test "$("$bin_dir/opencode" --version)" = "1.17.20"
+          echo "OPENCODE_BIN=$bin_dir/opencode" >> "$GITHUB_ENV"
+      - name: Install exact editor client and ACP integration
+        env:
+          ACP_EL_COMMIT: 5140f4121156707245567b8fc3072d4c3b5c867f
+          AGENT_SHELL_COMMIT: 5351f9b0e983b00b2d21ecc41916635e2ed13ebe
+          CODECOMPANION_COMMIT: a8a754491999d97695d6134e8d3d98effe6b2a98
+          JETBRAINS_PLUGIN_SHA256: c5fed8bb149836358b0a03b847a839b633bb78bdd6ec60c5bd7d39ccbfbaff43
+          JETBRAINS_PLUGIN_URL: https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1104091
+          NEOVIM_SHA256: 012bf3fcac5ade43914df3f174668bf64d05e049a4f032a388c027b1ebd78628
+          NEOVIM_URL: https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-linux-x86_64.tar.gz
+          PLENARY_COMMIT: 74b06c6c75e4eeb3108ec01852001636d85a932b
+          PYCHARM_SHA256: 790dc8a5124d1e3b38b4fff2feae654bf83eef67a67287719f4f3ca3dc07ca90
+          PYCHARM_URL: https://github.com/JetBrains/intellij-community/releases/download/pycharm/2026.1.4/pycharm-2026.1.4.tar.gz
+          SHELL_MAKER_COMMIT: 071c6df3ca22a2f4c0daa689848ac9bd21bf4e2b
+          ZED_SHA256: 55eb5ef8b211c950a9009da30b7f603d2c9d2c80b207f9de94ffab6d31d58f8c
+          ZED_URL: https://github.com/zed-industries/zed/releases/download/v1.10.3/zed-linux-x86_64.tar.gz
+        run: |
+          set -euo pipefail
+          clone_commit() {
+            url="$1"
+            commit="$2"
+            destination="$3"
+            git init --quiet "$destination"
+            git -C "$destination" remote add origin "$url"
+            git -C "$destination" fetch --quiet --depth 1 origin "$commit"
+            git -C "$destination" checkout --quiet --detach FETCH_HEAD
+            test "$(git -C "$destination" rev-parse HEAD)" = "$commit"
+          }
+          case "$SYNAPSE_EDITOR_E2E_CLIENT" in
+            neovim)
+              archive="$RUNNER_TEMP/nvim-linux-x86_64.tar.gz"
+              curl --fail --location --proto '=https' --proto-redir '=https' \
+                --tlsv1.2 --retry 3 --output "$archive" "$NEOVIM_URL"
+              printf '%s  %s\n' "$NEOVIM_SHA256" "$archive" | sha256sum --check --strict
+              tar -xzf "$archive" -C "$RUNNER_TEMP"
+              clone_commit https://github.com/olimorris/codecompanion.nvim.git \
+                "$CODECOMPANION_COMMIT" "$RUNNER_TEMP/codecompanion.nvim"
+              clone_commit https://github.com/nvim-lua/plenary.nvim.git \
+                "$PLENARY_COMMIT" "$RUNNER_TEMP/plenary.nvim"
+              echo "SYNAPSE_NVIM_BIN=$RUNNER_TEMP/nvim-linux-x86_64/bin/nvim" >> "$GITHUB_ENV"
+              echo "SYNAPSE_CODECOMPANION_DIR=$RUNNER_TEMP/codecompanion.nvim" >> "$GITHUB_ENV"
+              echo "SYNAPSE_PLENARY_DIR=$RUNNER_TEMP/plenary.nvim" >> "$GITHUB_ENV"
+              ;;
+            emacs)
+              sudo apt-get update
+              sudo apt-get install --no-install-recommends --yes emacs-nox
+              test "$(emacs --batch -Q --eval '(princ emacs-version)')" = "29.3"
+              clone_commit https://github.com/xenodium/shell-maker.git \
+                "$SHELL_MAKER_COMMIT" "$RUNNER_TEMP/shell-maker"
+              clone_commit https://github.com/xenodium/acp.el.git \
+                "$ACP_EL_COMMIT" "$RUNNER_TEMP/acp.el"
+              clone_commit https://github.com/xenodium/agent-shell.git \
+                "$AGENT_SHELL_COMMIT" "$RUNNER_TEMP/agent-shell"
+              echo "SYNAPSE_EMACS_BIN=$(command -v emacs)" >> "$GITHUB_ENV"
+              echo "SYNAPSE_SHELL_MAKER_DIR=$RUNNER_TEMP/shell-maker" >> "$GITHUB_ENV"
+              echo "SYNAPSE_ACP_EL_DIR=$RUNNER_TEMP/acp.el" >> "$GITHUB_ENV"
+              echo "SYNAPSE_AGENT_SHELL_DIR=$RUNNER_TEMP/agent-shell" >> "$GITHUB_ENV"
+              ;;
+            zed)
+              sudo apt-get update
+              sudo apt-get install --no-install-recommends --yes \
+                imagemagick libasound2t64 libegl1 libfontconfig1 libvulkan1 \
+                libwayland-client0 libx11-xcb1 libxcb1 libxkbcommon-x11-0 \
+                wmctrl xdotool xvfb
+              archive="$RUNNER_TEMP/zed-linux-x86_64.tar.gz"
+              curl --fail --location --proto '=https' --proto-redir '=https' \
+                --tlsv1.2 --retry 3 --output "$archive" "$ZED_URL"
+              printf '%s  %s\n' "$ZED_SHA256" "$archive" | sha256sum --check --strict
+              mkdir "$RUNNER_TEMP/zed-1.10.3"
+              tar -xzf "$archive" -C "$RUNNER_TEMP/zed-1.10.3"
+              zed_bin=$(find "$RUNNER_TEMP/zed-1.10.3" -type f -path '*/bin/zed' -print -quit)
+              test -n "$zed_bin"
+              chmod 0755 "$zed_bin"
+              echo "SYNAPSE_ZED_BIN=$zed_bin" >> "$GITHUB_ENV"
+              ;;
+            jetbrains)
+              sudo apt-get update
+              sudo apt-get install --no-install-recommends --yes \
+                imagemagick libasound2t64 libfreetype6 libxi6 libxrender1 \
+                libxtst6 libxkbcommon-x11-0 wmctrl xdotool xvfb
+              archive="$RUNNER_TEMP/pycharm-2026.1.4.tar.gz"
+              plugin="$RUNNER_TEMP/ai-assistant-261.26222.86.zip"
+              curl --fail --location --proto '=https' --proto-redir '=https' \
+                --tlsv1.2 --retry 3 --output "$archive" "$PYCHARM_URL"
+              printf '%s  %s\n' "$PYCHARM_SHA256" "$archive" | sha256sum --check --strict
+              mkdir "$RUNNER_TEMP/pycharm-2026.1.4"
+              tar -xzf "$archive" -C "$RUNNER_TEMP/pycharm-2026.1.4"
+              pycharm_bin=$(find "$RUNNER_TEMP/pycharm-2026.1.4" \
+                -type f -path '*/bin/pycharm.sh' -print -quit)
+              test -n "$pycharm_bin"
+              curl --fail --location --proto '=https' --proto-redir '=https' \
+                --tlsv1.2 --retry 3 --output "$plugin" "$JETBRAINS_PLUGIN_URL"
+              printf '%s  %s\n' "$JETBRAINS_PLUGIN_SHA256" "$plugin" \
+                | sha256sum --check --strict
+              mkdir "$RUNNER_TEMP/jetbrains-plugins"
+              unzip -q "$plugin" -d "$RUNNER_TEMP/jetbrains-plugins"
+              test -f "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/ml-llm.jar"
+              grep -q '<version>261.26222.86</version>' \
+                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/META-INF/plugin.xml"
+              echo "SYNAPSE_JETBRAINS_BIN=$pycharm_bin" >> "$GITHUB_ENV"
+              echo "SYNAPSE_JETBRAINS_PLUGINS=$RUNNER_TEMP/jetbrains-plugins" >> "$GITHUB_ENV"
+              echo "SYNAPSE_JETBRAINS_CLIENT_NAME=JetBrains.PyCharm" >> "$GITHUB_ENV"
+              ;;
+          esac
+      - name: Focused editor contract checks
+        run: |
+          set -euo pipefail
+          files=(
+            tests/e2e/__init__.py
+            tests/e2e/opencode_editors/__init__.py
+            tests/e2e/opencode_editors/acp_trace_proxy.py
+            tests/e2e/opencode_editors/jetbrains_client.py
+            tests/e2e/opencode_editors/trace_contract.py
+            tests/e2e/opencode_editors/zed_client.py
+            tests/test_cli_e2e_opencode_editors.py
+          )
+          ruff check "${files[@]}"
+          ruff format --check "${files[@]}"
+          mypy --strict "${files[@]}"
+      - name: Real editor client to OpenCode ACP turn
+        run: |
+          set -euo pipefail
+          if [[ "$SYNAPSE_EDITOR_E2E_CLIENT" == "zed" \
+            || "$SYNAPSE_EDITOR_E2E_CLIENT" == "jetbrains" ]]; then
+            xvfb-run -a -s '-screen 0 1920x1080x24' \
+              pytest tests/test_cli_e2e_opencode_editors.py
+          else
+            pytest tests/test_cli_e2e_opencode_editors.py
+          fi
+      - name: Upload bounded ACP evidence and GUI diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: opencode-editor-e2e-${{ matrix.client }}
+          path: ${{ env.SYNAPSE_EDITOR_E2E_ARTIFACT_DIR }}
+          if-no-files-found: error
+          retention-days: 14
