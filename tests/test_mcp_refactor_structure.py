@@ -72,11 +72,30 @@ async def test_build_mcp_server_keeps_tool_and_resource_contract() -> None:
     bridge = bridge_module.SynapseHubBridge(request_timeout=0.05)
     server = registration_module.build_mcp_server(bridge)
 
-    assert {tool.name for tool in await server.list_tools()} == EXPECTED_TOOLS
+    live_tools = {tool.name for tool in await server.list_tools()}
+    assert live_tools == EXPECTED_TOOLS
+    # Doctor inventory is a static frozenset — pin it to the built server so
+    # "claim tools registered" cannot silently drift (SCH-H-NEW-03 fidelity).
+    assert registration_module.registered_mcp_tool_names() == frozenset(live_tools)
     assert {str(resource.uri) for resource in await server.list_resources()} == EXPECTED_RESOURCES
     assert {
         template.uriTemplate for template in await server.list_resource_templates()
     } == EXPECTED_RESOURCE_TEMPLATES
+
+
+async def test_registered_mcp_tool_names_matches_built_server() -> None:
+    """Drift-guard: registered_mcp_tool_names() must equal build_mcp_server tools.
+
+    The doctor posture check reads the static inventory without starting MCP;
+    without this equality gate the REQUIRED_MCP_CLAIM_TOOLS subset check is
+    tautological against a hand-maintained list that can diverge from @server.tool.
+    """
+    bridge = bridge_module.SynapseHubBridge(request_timeout=0.05)
+    server = registration_module.build_mcp_server(bridge)
+    live = {tool.name for tool in await server.list_tools()}
+    inventory = registration_module.registered_mcp_tool_names()
+    assert inventory == frozenset(live)
+    assert registration_module.REQUIRED_MCP_CLAIM_TOOLS <= inventory
 
 
 async def test_bridge_waiter_storage_and_resolution_contract() -> None:

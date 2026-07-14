@@ -36,6 +36,10 @@ def registered_mcp_tool_names() -> frozenset[str]:
 
     Used by ``synapse doctor --mcp-policy`` so operators can confirm claim tools
     are registered without starting a live MCP session.
+
+    Keep this frozenset in lock-step with the ``@server.tool`` registrations in
+    :func:`build_mcp_server`. Tests assert equality against
+    ``await server.list_tools()`` so the doctor inventory cannot silently drift.
     """
     return frozenset(
         {

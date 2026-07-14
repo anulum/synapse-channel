@@ -18,6 +18,7 @@ from mcp_server_helpers import start_bridge
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.mcp.inbox import McpFeedInbox
+from synapse_channel.mcp.registration import registered_mcp_tool_names
 from synapse_channel.mcp.server import (
     MCP_EXTRA_HINT,
     SynapseHubBridge,
@@ -42,24 +43,8 @@ def test_require_fastmcp_missing_raises() -> None:
 async def test_build_registers_tools_and_resources() -> None:
     server = build_mcp_server(SynapseHubBridge(request_timeout=0.05))
     tool_names = {tool.name for tool in await server.list_tools()}
-    assert {
-        "synapse_claim",
-        "synapse_git_claim",
-        "synapse_release",
-        "synapse_send",
-        "synapse_inbox",
-        "synapse_handoff",
-        "synapse_task_declare",
-        "synapse_task_update",
-        "synapse_board",
-        "synapse_status",
-        "synapse_state",
-        "synapse_manifest",
-        "synapse_directory",
-        "synapse_route_task",
-        "synapse_memory_recall",
-        "synapse_resource_bids",
-    } <= tool_names
+    # Exact match (not subset): pins doctor static inventory to the live server.
+    assert tool_names == set(registered_mcp_tool_names())
     resource_uris = {str(resource.uri) for resource in await server.list_resources()}
     assert any("board" in uri for uri in resource_uris)
     assert any("state" in uri for uri in resource_uris)
