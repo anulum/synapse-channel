@@ -81,6 +81,16 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Bearer token required by protected A2A bridge routes.",
     )
     serve.add_argument(
+        "--allow-origin",
+        action="append",
+        default=None,
+        metavar="ORIGIN",
+        help="Restrict browser requests to this exact Origin (scheme://host[:port], "
+        "or 'null'); repeat to allow several. Off by default; a request without an "
+        "Origin header (a non-browser client) is unaffected. Opt-in hardening against "
+        "DNS-rebinding and drive-by browser requests to the bridge.",
+    )
+    serve.add_argument(
         "--insecure-off-loopback",
         action="store_true",
         help="Allow a non-loopback A2A bind without bearer authentication.",

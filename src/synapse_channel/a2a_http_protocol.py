@@ -48,6 +48,56 @@ def bearer_token_matches(authorization: str, token: str) -> bool:
     return hmac.compare_digest(authorization, f"Bearer {token}")
 
 
+def normalise_origin(value: str) -> str:
+    """Normalise one Origin value or allow-list entry for exact comparison.
+
+    Parameters
+    ----------
+    value : str
+        A web origin such as ``https://ide.example:8443``, or the literal
+        ``null`` a browser sends for an opaque origin.
+
+    Returns
+    -------
+    str
+        The value lower-cased with surrounding whitespace and any single
+        trailing slash removed. Origins are compared as whole strings —
+        scheme, host, and explicit port must all match — so an entry admits
+        exactly the origin the operator wrote and nothing wider.
+    """
+    return value.strip().rstrip("/").lower()
+
+
+def origin_allowed(origin_header: str | None, allowed_origins: tuple[str, ...]) -> bool:
+    """Decide whether a request passes the optional browser-origin allow-list.
+
+    The list is an opt-in hardening against browser-borne requests (DNS
+    rebinding, malicious pages calling a loopback bridge): with no list
+    configured every request passes unchanged, and a request without an
+    ``Origin`` header always passes because non-browser clients do not send
+    one. With a list configured, a present ``Origin`` must match one entry
+    exactly after :func:`normalise_origin`; a browser's opaque ``null`` origin
+    passes only when ``null`` itself is listed.
+
+    Parameters
+    ----------
+    origin_header : str or None
+        The request's ``Origin`` header, or ``None`` when absent.
+    allowed_origins : tuple of str
+        Normalised allow-list entries; empty means the feature is off.
+
+    Returns
+    -------
+    bool
+        Whether the request may proceed.
+    """
+    if not allowed_origins:
+        return True
+    if origin_header is None:
+        return True
+    return normalise_origin(origin_header) in allowed_origins
+
+
 def non_negative_int(value: object, *, default: int = 0) -> int:
     """Parse ``value`` as an integer clamped to zero or greater."""
     try:

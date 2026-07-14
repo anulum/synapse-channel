@@ -78,6 +78,14 @@ bridge on a private interface only when the surrounding host firewall and proxy
 policy require it. Do not use `--insecure-off-loopback` for a shared or public
 deployment; it exists only as an explicit local override.
 
+When a browser-based operator UI calls the bridge, add `--allow-origin` for each
+exact web origin that UI serves from (`scheme://host[:port]`, or `null` for a
+sandboxed page). The list is an opt-in defence against DNS rebinding and drive-by
+requests: with it configured the bridge refuses any request whose `Origin` header
+is not listed, on every route including the public agent card, before
+authentication. A non-browser client (which sends no `Origin` header) is
+unaffected, and with no list configured the check is a no-op.
+
 ## Route Policy
 
 | Route class | Public without bearer auth | Protected posture |
@@ -97,6 +105,7 @@ deployment; it exists only as an explicit local override.
 | Client configures a public-looking host that resolves to a local address. | Delivery rejects the target before sending. |
 | Webhook receiver redirects to a local address. | Redirect handler validates and rejects the new target before following it. |
 | Reverse proxy strips the `Authorization` header. | Protected routes fail authentication at the bridge. |
+| A hostile web page in the operator's browser calls the loopback bridge (DNS rebinding / drive-by). | With `--allow-origin` configured, a request whose `Origin` is not allow-listed is refused `403 Forbidden` on every route, the public card included; a non-browser client sends no `Origin` and is unaffected. |
 | Bridge restarts with open tasks. | Persisted non-terminal tasks recover as failed according to the local state policy. |
 
 ## Logging And Receipts

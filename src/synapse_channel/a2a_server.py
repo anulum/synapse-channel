@@ -18,13 +18,13 @@ import asyncio
 import threading
 import time
 import uuid
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Sequence
 from typing import Any, cast
 
 from synapse_channel import a2a_errors
 from synapse_channel.a2a import JsonMap
 from synapse_channel.a2a_events import A2ATaskEvents
-from synapse_channel.a2a_http_protocol import non_negative_int
+from synapse_channel.a2a_http_protocol import non_negative_int, normalise_origin
 from synapse_channel.a2a_push import PushDeliverer, deliver_push_notification, http_push_deliverer
 from synapse_channel.a2a_rpc import dispatch_json_rpc
 from synapse_channel.a2a_store import A2ATaskStore
@@ -152,6 +152,7 @@ class A2ABridge:
         submit: Callable[[Coroutine[Any, Any, Any]], Any] | None = None,
         push_deliverer: PushDeliverer | None = None,
         auth_token: str | None = None,
+        allowed_origins: Sequence[str] = (),
         task_timeout_seconds: float = 300.0,
         subscribe_wait_seconds: float = 0.0,
     ) -> None:
@@ -162,6 +163,9 @@ class A2ABridge:
         self._submit = submit
         self._push_deliverer = push_deliverer or http_push_deliverer
         self.auth_token = auth_token
+        # Normalised once here so the per-request check is a plain membership
+        # test and the HTTP edge never re-implements origin comparison rules.
+        self.allowed_origins = tuple(normalise_origin(origin) for origin in allowed_origins)
         self.task_timeout_seconds = max(task_timeout_seconds, 0.0)
         self.subscribe_wait_seconds = max(subscribe_wait_seconds, 0.0)
         self._pending_by_target: dict[str, list[str]] = {}

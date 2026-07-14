@@ -146,6 +146,7 @@ def _cmd_a2a_serve(
         store=store_factory(storage_path=args.state_file),
         submit=runtime.run,
         auth_token=args.a2a_token if args.bearer_auth else None,
+        allowed_origins=tuple(args.allow_origin or ()),
         task_timeout_seconds=args.task_timeout,
         subscribe_wait_seconds=args.subscribe_timeout,
     )

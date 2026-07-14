@@ -11,19 +11,27 @@ from __future__ import annotations
 import argparse
 import hmac
 from http import HTTPStatus
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from a2a_server_helpers import HandlerHarness, RecordingAgent
 from synapse_channel import cli_a2a
+from synapse_channel.a2a_http_protocol import normalise_origin, origin_allowed
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
+from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.protocol import MAX_JSON_DEPTH
 
 
-def _bridge() -> A2ABridge:
-    return A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+def _bridge(*, allowed_origins: tuple[str, ...] = ()) -> A2ABridge:
+    return A2ABridge(
+        agent=RecordingAgent(),
+        agent_card={"name": "SYNAPSE CHANNEL"},
+        target="WORKER",
+        store=A2ATaskStore(),
+        allowed_origins=allowed_origins,
+    )
 
 
 def _message(task_id: str, text: str = "work") -> dict[str, object]:
@@ -304,3 +312,167 @@ def test_default_timeout_boundary_fails_stale_open_task() -> None:
     assert len(expired) == 1
     assert after_deadline is not None
     assert after_deadline["status"]["state"] == "TASK_STATE_FAILED"
+
+
+# --- Origin allow-list (optional browser-origin hardening, TODO 4166) ----------
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("https://ide.example", "https://ide.example"),
+        ("  HTTPS://IDE.Example/  ", "https://ide.example"),
+        ("https://host:8443/", "https://host:8443"),
+        ("null", "null"),
+    ],
+)
+def test_normalise_origin_lowercases_and_trims(value: str, expected: str) -> None:
+    assert normalise_origin(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("origin_header", "allowed", "expected"),
+    [
+        (None, (), True),  # feature off, no header
+        ("https://x", (), True),  # feature off
+        (None, ("https://x",), True),  # non-browser client sends no Origin
+        ("https://x", ("https://x",), True),  # exact match
+        ("https://X/", ("https://x",), True),  # normalised match
+        ("https://evil", ("https://x",), False),  # not listed
+        ("https://x", ("https://y", "https://x"), True),  # one of several
+        ("null", ("null",), True),  # opaque origin explicitly allowed
+        ("null", ("https://x",), False),  # opaque origin not allowed
+        ("https://x:443", ("https://x",), False),  # explicit port is part of the origin
+    ],
+)
+def test_origin_allowed_decisions(
+    origin_header: str | None, allowed: tuple[str, ...], expected: bool
+) -> None:
+    assert origin_allowed(origin_header, allowed) is expected
+
+
+@pytest.mark.parametrize("method", ["GET", "POST", "DELETE"])
+def test_disallowed_origin_is_refused_on_every_method(method: str) -> None:
+    path = "/tasks" if method == "GET" else "/message:send"
+    if method == "DELETE":
+        path = "/tasks/t/pushNotificationConfigs/c"
+    harness = HandlerHarness(method, path, headers={"Origin": "https://evil.example"})
+    harness.handler.bridge = _bridge(allowed_origins=("https://ide.example",))
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.FORBIDDEN
+    assert body["title"] == "Forbidden"
+    assert body["detail"] == "Origin not allowed"
+
+
+def test_allow_list_gates_even_the_public_agent_card() -> None:
+    """A hostile page must not read the discovery card through a victim's browser."""
+    harness = HandlerHarness(
+        "GET",
+        "/.well-known/agent-card.json",
+        headers={"Origin": "https://evil.example"},
+    )
+    harness.handler.bridge = _bridge(allowed_origins=("https://ide.example",))
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.FORBIDDEN
+    assert body["title"] == "Forbidden"
+
+
+def test_allowed_origin_passes_through_to_the_route() -> None:
+    harness = HandlerHarness(
+        "GET",
+        "/.well-known/agent-card.json",
+        headers={"Origin": "https://IDE.example/"},
+    )
+    harness.handler.bridge = _bridge(allowed_origins=("https://ide.example",))
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.OK
+    assert body["name"] == "SYNAPSE CHANNEL"
+
+
+def test_missing_origin_header_is_unaffected_by_the_allow_list() -> None:
+    harness = HandlerHarness("GET", "/.well-known/agent-card.json")
+    harness.handler.bridge = _bridge(allowed_origins=("https://ide.example",))
+
+    status, _body = harness.run()
+
+    assert status == HTTPStatus.OK
+
+
+def test_no_allow_list_admits_any_browser_origin() -> None:
+    harness = HandlerHarness(
+        "GET", "/.well-known/agent-card.json", headers={"Origin": "https://anything.example"}
+    )
+    harness.handler.bridge = _bridge()
+
+    status, _body = harness.run()
+
+    assert status == HTTPStatus.OK
+
+
+def test_a2a_serve_threads_allow_origin_into_the_bridge() -> None:
+    """The CLI flag reaches the bridge, normalised, without touching the bind gate."""
+    captured: dict[str, Any] = {}
+
+    class _Runtime:
+        def __init__(self, _agent: Any) -> None:
+            pass
+
+        def start(self, **_kwargs: Any) -> bool:
+            return True
+
+        def run(self, _coro: Any) -> Any:
+            return None
+
+        def stop(self) -> None:
+            return None
+
+    def capturing_bridge(**kwargs: Any) -> A2ABridge:
+        captured.update(kwargs)
+        return A2ABridge(
+            agent=RecordingAgent(),
+            agent_card={},
+            target=kwargs["target"],
+            allowed_origins=kwargs["allowed_origins"],
+        )
+
+    async def manifest(**_kwargs: object) -> list[dict[str, Any]]:
+        return [{"name": "worker", "capabilities": ["chat"]}]
+
+    args = argparse.Namespace(
+        uri="ws://hub",
+        name="A2A-BRIDGE",
+        token=None,
+        host="127.0.0.1",
+        port=8877,
+        endpoint_url="https://bridge.example/a2a",
+        target="all",
+        bridge_name="SYNAPSE CHANNEL",
+        description=None,
+        documentation_url="https://anulum.github.io/synapse-channel",
+        bearer_auth=False,
+        a2a_token=None,
+        allow_origin=["https://IDE.example/", "null"],
+        state_file=None,
+        task_timeout=300.0,
+        subscribe_timeout=0.0,
+        insecure_off_loopback=False,
+    )
+
+    assert (
+        cli_a2a._cmd_a2a_serve(
+            args,
+            manifest_fetcher=manifest,
+            agent_factory=lambda *a, **k: cast(SynapseAgent, object()),
+            runtime_factory=_Runtime,
+            bridge_factory=capturing_bridge,
+            server_runner=lambda **_kwargs: None,
+        )
+        == 0
+    )
+    assert captured["allowed_origins"] == ("https://IDE.example/", "null")

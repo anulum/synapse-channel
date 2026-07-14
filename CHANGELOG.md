@@ -91,6 +91,14 @@ All notable changes to this project are documented here.
   the burst ceilings, and its production example delivers every secret from an
   owner-only file instead of expanding it into argv.
 
+- `synapse a2a-serve --allow-origin ORIGIN` restricts browser requests to an
+  opt-in allow-list of exact web origins (`scheme://host[:port]`, or `null`),
+  repeatable for several. A request whose `Origin` header is not listed is
+  refused `403` on every route — the public agent card included — before
+  authentication; a non-browser client sends no `Origin` and is unaffected, and
+  with no list configured the check is a no-op. Hardens the loopback bridge
+  against DNS rebinding and drive-by browser requests.
+
 ### Fixed
 
 - Failed headless provider turns no longer copy raw CLI stderr or process-start
