@@ -41,14 +41,39 @@ def _checked_xdotool(action: str, *args: str) -> None:
         raise RuntimeError(f"xdotool could not {action}: {detail}")
 
 
-def _find_window(deadline: float) -> str:
+def _window_geometry(window: str) -> tuple[int, int] | None:
+    """Return one visible X11 window's dimensions, or ``None`` if it vanished."""
+    completed = _xdotool("getwindowgeometry", "--shell", window)
+    if completed.returncode != 0:
+        return None
+    geometry = dict(line.split("=", 1) for line in completed.stdout.splitlines() if "=" in line)
+    try:
+        return int(geometry["WIDTH"]), int(geometry["HEIGHT"])
+    except (KeyError, ValueError):
+        return None
+
+
+def _find_agreement_window(deadline: float) -> str:
+    """Wait past the JetBrains splash for the pinned agreement dialog."""
     while time.monotonic() < deadline:
         result = _xdotool("search", "--onlyvisible", "--class", "jetbrains-.*")
-        if result.returncode == 0 and result.stdout.splitlines():
-            return result.stdout.splitlines()[-1]
-        result = _xdotool("search", "--onlyvisible", "--name", "IntelliJ IDEA")
-        if result.returncode == 0 and result.stdout.splitlines():
-            return result.stdout.splitlines()[-1]
+        if result.returncode == 0:
+            for window in reversed(result.stdout.splitlines()):
+                if _window_geometry(window) == (600, 460):
+                    return window
+        time.sleep(0.25)
+    raise RuntimeError("IntelliJ IDEA did not expose the pinned 600x460 agreement dialog")
+
+
+def _find_project_window(deadline: float) -> str:
+    """Wait past fixed-size first-run windows for the real project frame."""
+    while time.monotonic() < deadline:
+        result = _xdotool("search", "--onlyvisible", "--class", "jetbrains-.*")
+        if result.returncode == 0:
+            for window in reversed(result.stdout.splitlines()):
+                geometry = _window_geometry(window)
+                if geometry is not None and geometry[0] > 640 and geometry[1] > 460:
+                    return window
         time.sleep(0.25)
     raise RuntimeError("IntelliJ IDEA did not expose a visible project window")
 
@@ -69,15 +94,11 @@ def _click(window: str, x: int, y: int, action: str) -> None:
 
 def _require_agreement_geometry(window: str) -> None:
     """Refuse pointer input unless the pinned agreement dialog is present."""
-    completed = _xdotool("getwindowgeometry", "--shell", window)
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic"
-        raise RuntimeError(f"cannot inspect the JetBrains agreement window: {detail}")
-    geometry = dict(line.split("=", 1) for line in completed.stdout.splitlines() if "=" in line)
-    if geometry.get("WIDTH") != "600" or geometry.get("HEIGHT") != "460":
+    geometry = _window_geometry(window)
+    if geometry != (600, 460):
+        rendered = "?x?" if geometry is None else f"{geometry[0]}x{geometry[1]}"
         raise RuntimeError(
-            "refusing JetBrains agreement input outside the pinned 600x460 UI: "
-            f"{geometry.get('WIDTH', '?')}x{geometry.get('HEIGHT', '?')}"
+            f"refusing JetBrains agreement input outside the pinned 600x460 UI: {rendered}"
         )
 
 
@@ -211,9 +232,9 @@ def main() -> int:
         )
         try:
             deadline = time.monotonic() + _TIMEOUT_SECONDS
-            window = _find_window(deadline)
+            window = _find_agreement_window(deadline)
             _complete_first_run_agreements(window)
-            window = _find_window(deadline)
+            window = _find_project_window(deadline)
             # xvfb-run intentionally has no EWMH window manager.  Every action
             # targets the discovered X11 window directly, so activation is not
             # required and would fail on the headless runner.
