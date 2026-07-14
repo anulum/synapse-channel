@@ -11,6 +11,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from e2e.opencode_editors import jetbrains_client
 from e2e.opencode_editors.jetbrains_client import (
     _idea_command,
     _window_parentage,
@@ -76,3 +79,16 @@ def test_acp_config_is_private_and_contains_only_the_selected_agent(tmp_path: Pa
         '"agent_servers": {"SYNAPSE OpenCode E2E": {"command": "/opt/opencode", '
         '"args": ["acp"], "env": {}}}}\n'
     )
+
+
+def test_first_run_refuses_automated_legal_acceptance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_find_first_run_dialog",
+        lambda _deadline: ("123", "IntelliJ IDEA User Agreement"),
+    )
+
+    with pytest.raises(RuntimeError, match="v2.0 requires explicit repository-owner"):
+        jetbrains_client._complete_first_run_agreements(1.0)

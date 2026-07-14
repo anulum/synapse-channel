@@ -18,6 +18,9 @@ from pathlib import Path
 
 _AGENT_NAME = "SYNAPSE OpenCode E2E"
 _TIMEOUT_SECONDS = 150.0
+_USER_AGREEMENT_TITLE = "IntelliJ IDEA User Agreement"
+_USER_AGREEMENT_VERSION = "2.0"
+_DATA_SHARING_TITLE = "Data Sharing"
 
 
 def _required_env(name: str) -> str:
@@ -121,20 +124,21 @@ def _window_transient_for(window: str) -> int | None:
     return _xprop_window_id(completed.stdout)
 
 
-def _find_dialog_window(deadline: float, title: str) -> str:
-    """Wait for one exact titled and sized page of the pinned agreement UI."""
+def _find_first_run_dialog(deadline: float) -> tuple[str, str]:
+    """Wait for one recognised top-level page of the pinned first-run UI."""
     while time.monotonic() < deadline:
-        result = _xdotool("search", "--onlyvisible", "--name", f"^{title}$")
-        if result.returncode == 0:
-            for window in reversed(result.stdout.splitlines()):
-                if (
-                    _window_name(window) == title
-                    and _window_geometry(window) == (600, 460)
-                    and _window_is_root_child(window)
-                ):
-                    return window
+        for title in (_USER_AGREEMENT_TITLE, _DATA_SHARING_TITLE):
+            result = _xdotool("search", "--onlyvisible", "--name", f"^{title}$")
+            if result.returncode == 0:
+                for window in reversed(result.stdout.splitlines()):
+                    if (
+                        _window_name(window) == title
+                        and _window_geometry(window) == (600, 460)
+                        and _window_is_root_child(window)
+                    ):
+                        return window, title
         time.sleep(0.25)
-    raise RuntimeError(f"IntelliJ IDEA did not expose the pinned {title!r} dialog")
+    raise RuntimeError("IntelliJ IDEA did not expose a recognised pinned first-run dialog")
 
 
 def _find_project_window(deadline: float) -> str:
@@ -184,11 +188,15 @@ def _require_agreement_window(window: str, title: str) -> None:
 
 def _complete_first_run_agreements(deadline: float) -> None:
     """Explicitly decline telemetry in the pinned first-run data-sharing UI."""
-    # A clean 2026.1.4 profile opens directly on this fixed 600x460 dialog.
-    # Its nested "Content window" has the same class and geometry, so the
+    window, title = _find_first_run_dialog(deadline)
+    if title == _USER_AGREEMENT_TITLE:
+        raise RuntimeError(
+            "JetBrains User Agreement "
+            f"v{_USER_AGREEMENT_VERSION} requires explicit repository-owner "
+            "authorization; refusing automated legal acceptance"
+        )
+    # The nested "Content window" has the same class and geometry, so the
     # semantic title and root-parent invariant are both mandatory.
-    title = "Data Sharing"
-    window = _find_dialog_window(deadline, title)
     _require_agreement_window(window, title)
     _pointer_click(window, 326, 432, "decline JetBrains usage-statistics sharing")
 
