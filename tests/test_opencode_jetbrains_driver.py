@@ -16,10 +16,32 @@ import pytest
 from e2e.opencode_editors import jetbrains_client
 from e2e.opencode_editors.jetbrains_client import (
     _idea_command,
+    _wait_for_idea_log,
     _window_parentage,
     _write_acp_config,
     _xprop_window_id,
 )
+
+
+def test_idea_log_wait_accepts_only_the_requested_readiness_marker(tmp_path: Path) -> None:
+    (tmp_path / "idea.log").write_text(
+        "Default-agent CDN readiness wait finished\n", encoding="utf-8"
+    )
+
+    _wait_for_idea_log(
+        tmp_path,
+        "Default-agent CDN readiness wait finished",
+        float("inf"),
+        lambda: None,
+    )
+
+    with pytest.raises(RuntimeError, match="IDEA log never contained 'other marker'"):
+        _wait_for_idea_log(
+            tmp_path,
+            "other marker",
+            0.0,
+            lambda: None,
+        )
 
 
 def test_xwininfo_parentage_distinguishes_dialog_from_content_child() -> None:

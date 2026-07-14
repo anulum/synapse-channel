@@ -14,6 +14,7 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 _AGENT_NAME = "SYNAPSE OpenCode E2E"
@@ -362,19 +363,18 @@ def _idea_command(
     ]
 
 
-def _wait_for_local_agent(log_root: Path, deadline: float, process: subprocess.Popen[str]) -> None:
-    """Prove IDEA loaded the sole isolated ACP agent before UI input."""
+def _wait_for_idea_log(
+    log_root: Path, marker: str, deadline: float, poll: Callable[[], int | None]
+) -> None:
+    """Wait for exact IDEA log evidence while proving the process remains live."""
     idea_log = log_root / "idea.log"
-    marker = "Local ACP agents reloaded: 1 active"
     while time.monotonic() < deadline:
         if idea_log.is_file() and marker in idea_log.read_text(encoding="utf-8", errors="replace"):
             return
-        if process.poll() is not None:
-            raise RuntimeError(
-                f"IntelliJ IDEA exited before loading the local ACP agent: {process.returncode}"
-            )
+        if poll() is not None:
+            raise RuntimeError(f"IntelliJ IDEA exited before log evidence {marker!r}")
         time.sleep(0.25)
-    raise RuntimeError("IntelliJ IDEA did not load the isolated local ACP agent")
+    raise RuntimeError(f"IntelliJ IDEA log never contained {marker!r}")
 
 
 def main() -> int:
@@ -424,7 +424,9 @@ def main() -> int:
             window = _find_project_window(deadline)
             _skip_islands_onboarding(deadline, window)
             window = _find_project_window(deadline)
-            _wait_for_local_agent(log_root, deadline, process)
+            _wait_for_idea_log(
+                log_root, "Local ACP agents reloaded: 1 active", deadline, process.poll
+            )
             # xvfb-run intentionally has no EWMH window manager.  Every action
             # targets the discovered X11 window directly, so activation is not
             # required and would fail on the headless runner.
@@ -435,6 +437,15 @@ def main() -> int:
                 "--window",
                 window,
                 "ctrl+alt+shift+j",
+            )
+            _wait_for_idea_log(
+                log_root, "Default-agent CDN readiness wait finished", deadline, process.poll
+            )
+            _wait_for_idea_log(
+                log_root,
+                "No session managers found for agent 'SYNAPSE OpenCode E2E'",
+                deadline,
+                process.poll,
             )
             _checked_xdotool(
                 "open the ACP agent selector",
@@ -454,6 +465,13 @@ def main() -> int:
                 _AGENT_NAME,
             )
             _checked_xdotool("confirm the ACP agent", "key", "--window", window, "Return")
+            _wait_for_idea_log(
+                log_root,
+                "Creating AcpSessionLifecycleManager for agent 'acp.synapse-opencode-e2e'",
+                deadline,
+                process.poll,
+            )
+            _wait_for_trace(trace, '"method":"initialize"', deadline, process)
             _wait_for_trace(trace, '"method":"session/new"', deadline, process)
             _checked_xdotool(
                 "type the ACP prompt",
