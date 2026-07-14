@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from synapse_channel import cli
+from synapse_channel.core.secret_files import SecretFileError
 
 
 @contextmanager
@@ -144,6 +145,7 @@ def test_resolve_token_prefers_cli() -> None:
 def test_resolve_token_from_file(tmp_path: Path) -> None:
     f = tmp_path / "tok"
     f.write_text("file-tok\n", encoding="utf-8")
+    f.chmod(0o600)  # the token file is read through the owner-only secret floor
     assert cli._resolve_token(argparse.Namespace(token=None, token_file=str(f))) == "file-tok"
 
 
@@ -155,6 +157,7 @@ def test_resolve_token_from_env() -> None:
 def test_resolve_token_precedence(tmp_path: Path) -> None:
     f = tmp_path / "tok"
     f.write_text("file-tok", encoding="utf-8")
+    f.chmod(0o600)  # owner-only so the secret floor accepts the file
     with _env_var("SYNAPSE_TOKEN", "env-tok"):
         assert cli._resolve_token(argparse.Namespace(token="cli", token_file=str(f))) == "cli"
         assert cli._resolve_token(argparse.Namespace(token=None, token_file=str(f))) == "file-tok"
@@ -167,7 +170,8 @@ def test_resolve_token_none() -> None:
 
 def test_resolve_token_missing_file(tmp_path: Path) -> None:
     ns = argparse.Namespace(token=None, token_file=str(tmp_path / "nope"))
-    with pytest.raises(FileNotFoundError):
+    # The owner-only secret floor raises SecretFileError (not a bare OSError).
+    with pytest.raises(SecretFileError):
         cli._resolve_token(ns)
 
 
@@ -188,16 +192,13 @@ def test_main_reports_missing_token_file(
 
 def test_main_reports_unreadable_token_file(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    # A group/world-readable token file is refused by the owner-only secret floor;
+    # ``main`` must report it (exit 2), not crash on the SecretFileError.
     secret = tmp_path / "tok"
     secret.write_text("t", encoding="utf-8")
-
-    def refuse(self: Path, **_kwargs: str) -> str:
-        raise PermissionError(13, "Permission denied", str(self))
-
-    monkeypatch.setattr("synapse_channel.cli.Path.read_text", refuse)
+    secret.chmod(0o644)
     assert cli.main(["send", "hi", "--token-file", str(secret)]) == 2
     assert "cannot read token file" in capsys.readouterr().err
 
