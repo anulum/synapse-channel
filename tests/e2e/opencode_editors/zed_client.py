@@ -114,11 +114,15 @@ def main() -> int:
 
     log_path = artifacts / "zed-process.log"
     screenshot = artifacts / "zed.png"
+    process_env = dict(os.environ)
+    # The pinned Linux build documents this opt-in for software-rendered CI.
+    # Without it Zed presents a modal GPU warning before the trust prompt.
+    process_env["ZED_ALLOW_EMULATED_GPU"] = "1"
     with log_path.open("w", encoding="utf-8") as log:
         process = subprocess.Popen(  # nosec B603
             [str(zed), "--foreground", "--user-data-dir", str(data_root), str(project)],
             cwd=project,
-            env=dict(os.environ),
+            env=process_env,
             stdout=log,
             stderr=subprocess.STDOUT,
             text=True,
@@ -130,6 +134,19 @@ def main() -> int:
             # targets the discovered X11 window directly, so activation is not
             # required and would fail on the headless runner.
             _checked_xdotool("focus the Zed window", "windowfocus", "--sync", window)
+            # Each run has an isolated data directory, so Zed correctly asks
+            # whether the synthetic repository is trusted.  The dialog binds
+            # Enter to "Trust and Continue"; exercise that real first-run UI
+            # before invoking the configured ACP action.
+            time.sleep(1.0)
+            _checked_xdotool(
+                "trust the synthetic Zed project",
+                "key",
+                "--window",
+                window,
+                "Return",
+            )
+            time.sleep(1.0)
             _checked_xdotool(
                 "open the configured ACP agent",
                 "key",

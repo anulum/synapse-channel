@@ -79,7 +79,7 @@ def test_repository_uses_one_complete_immutable_compatibility_contract() -> None
     assert contract.version == "1.17.20"
     assert len(contract.artifacts) == 12
     assert sum(artifact.smoke for artifact in contract.artifacts) == 5
-    assert len(contract.components) == 10
+    assert len(contract.components) == 11
     assert_repository_contract(contract)
 
 
@@ -233,7 +233,7 @@ def test_contract_cli_writes_machine_readable_advisory(tmp_path: Path) -> None:
     assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout) == {
         "artifact_count": 12,
-        "component_count": 10,
+        "component_count": 11,
         "latest_tag": "v1.18.0",
         "pinned_is_latest": False,
         "pinned_tag": "v1.17.20",

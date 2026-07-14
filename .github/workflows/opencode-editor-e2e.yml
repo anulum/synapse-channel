@@ -119,13 +119,15 @@ jobs:
           ACP_EL_COMMIT: 5140f4121156707245567b8fc3072d4c3b5c867f
           AGENT_SHELL_COMMIT: 5351f9b0e983b00b2d21ecc41916635e2ed13ebe
           CODECOMPANION_COMMIT: a8a754491999d97695d6134e8d3d98effe6b2a98
-          JETBRAINS_PLUGIN_SHA256: 0727124610ee90a809b20e6964ecf135774eae21018a9a4aaa8193d414cffda8
-          JETBRAINS_PLUGIN_URL: https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1097427
+          JETBRAINS_AI_ASSISTANT_SHA256: 8d5352e2c03fa419cc169c2e4dc1b9009247d52d641f4b8883029f347a61ceaf
+          JETBRAINS_AI_ASSISTANT_URL: https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1095694
+          JETBRAINS_FULL_LINE_SHA256: 497bdf80d4600d947ebdbcdb440c7f68b21a048ec4fd77ad6a0171ae9d0bf0d8
+          JETBRAINS_FULL_LINE_URL: https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1095696
           NEOVIM_SHA256: 012bf3fcac5ade43914df3f174668bf64d05e049a4f032a388c027b1ebd78628
           NEOVIM_URL: https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-linux-x86_64.tar.gz
           PLENARY_COMMIT: 74b06c6c75e4eeb3108ec01852001636d85a932b
-          PYCHARM_SHA256: 790dc8a5124d1e3b38b4fff2feae654bf83eef67a67287719f4f3ca3dc07ca90
-          PYCHARM_URL: https://github.com/JetBrains/intellij-community/releases/download/pycharm/2026.1.4/pycharm-2026.1.4.tar.gz
+          INTELLIJ_IDEA_SHA256: 3104d85d9507ff882065e3f8eb9506402b4a8129092d2682662bb6e9c4f063fc
+          INTELLIJ_IDEA_URL: https://download.jetbrains.com/idea/idea-2026.1.4.tar.gz
           SHELL_MAKER_COMMIT: 071c6df3ca22a2f4c0daa689848ac9bd21bf4e2b
           ZED_SHA256: 55eb5ef8b211c950a9009da30b7f603d2c9d2c80b207f9de94ffab6d31d58f8c
           ZED_URL: https://github.com/zed-industries/zed/releases/download/v1.10.3/zed-linux-x86_64.tar.gz
@@ -193,30 +195,60 @@ jobs:
               sudo apt-get install --no-install-recommends --yes \
                 imagemagick libasound2t64 libfreetype6 libxi6 libxrender1 \
                 libxtst6 libxkbcommon-x11-0 wmctrl xdotool xvfb
-              archive="$RUNNER_TEMP/pycharm-2026.1.4.tar.gz"
-              plugin="$RUNNER_TEMP/ai-assistant-261.26222.68.zip"
+              archive="$RUNNER_TEMP/idea-2026.1.4.tar.gz"
+              ai_assistant="$RUNNER_TEMP/ai-assistant-261.26222.65.zip"
+              full_line="$RUNNER_TEMP/full-line-261.26222.65.zip"
               curl --fail --location --proto '=https' --proto-redir '=https' \
-                --tlsv1.2 --retry 3 --output "$archive" "$PYCHARM_URL"
-              printf '%s  %s\n' "$PYCHARM_SHA256" "$archive" | sha256sum --check --strict
-              mkdir "$RUNNER_TEMP/pycharm-2026.1.4"
-              tar -xzf "$archive" -C "$RUNNER_TEMP/pycharm-2026.1.4"
-              pycharm_bin=$(find "$RUNNER_TEMP/pycharm-2026.1.4" \
-                -type f -path '*/bin/pycharm.sh' -print -quit)
-              test -n "$pycharm_bin"
+                --tlsv1.2 --retry 3 --output "$archive" "$INTELLIJ_IDEA_URL"
+              printf '%s  %s\n' "$INTELLIJ_IDEA_SHA256" "$archive" \
+                | sha256sum --check --strict
+              mkdir "$RUNNER_TEMP/idea-2026.1.4"
+              tar -xzf "$archive" -C "$RUNNER_TEMP/idea-2026.1.4"
+              idea_bin=$(find "$RUNNER_TEMP/idea-2026.1.4" \
+                -type f -path '*/bin/idea.sh' -print -quit)
+              product_info=$(find "$RUNNER_TEMP/idea-2026.1.4" \
+                -type f -name product-info.json -print -quit)
+              test -n "$idea_bin"
+              test -n "$product_info"
+              jq -e \
+                '.name == "IntelliJ IDEA" and .version == "2026.1.4" and
+                 .buildNumber == "261.26222.65" and .productCode == "IU"' \
+                "$product_info" >/dev/null
               curl --fail --location --proto '=https' --proto-redir '=https' \
-                --tlsv1.2 --retry 3 --output "$plugin" "$JETBRAINS_PLUGIN_URL"
-              printf '%s  %s\n' "$JETBRAINS_PLUGIN_SHA256" "$plugin" \
+                --tlsv1.2 --retry 3 --output "$ai_assistant" \
+                "$JETBRAINS_AI_ASSISTANT_URL"
+              printf '%s  %s\n' "$JETBRAINS_AI_ASSISTANT_SHA256" "$ai_assistant" \
+                | sha256sum --check --strict
+              curl --fail --location --proto '=https' --proto-redir '=https' \
+                --tlsv1.2 --retry 3 --output "$full_line" "$JETBRAINS_FULL_LINE_URL"
+              printf '%s  %s\n' "$JETBRAINS_FULL_LINE_SHA256" "$full_line" \
                 | sha256sum --check --strict
               mkdir "$RUNNER_TEMP/jetbrains-plugins"
-              unzip -q "$plugin" -d "$RUNNER_TEMP/jetbrains-plugins"
+              unzip -q "$ai_assistant" -d "$RUNNER_TEMP/jetbrains-plugins"
+              unzip -q "$full_line" -d "$RUNNER_TEMP/jetbrains-plugins"
               test -f "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/ml-llm.jar"
-              plugin_xml=$(unzip -p \
+              test -f "$RUNNER_TEMP/jetbrains-plugins/fullLine/lib/fullLine.jar"
+              ai_assistant_xml=$(unzip -p \
                 "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/ml-llm.jar" \
                 META-INF/plugin.xml)
-              grep -q '<version>261.26222.68</version>' <<< "$plugin_xml"
-              echo "SYNAPSE_JETBRAINS_BIN=$pycharm_bin" >> "$GITHUB_ENV"
+              full_line_xml=$(unzip -p \
+                "$RUNNER_TEMP/jetbrains-plugins/fullLine/lib/fullLine.jar" \
+                META-INF/plugin.xml)
+              grep -Fq '<id>com.intellij.ml.llm</id>' <<< "$ai_assistant_xml"
+              grep -Fq '<version>261.26222.65</version>' <<< "$ai_assistant_xml"
+              grep -Fq \
+                '<idea-version since-build="261.26222.65" until-build="261.26222.65" />' \
+                <<< "$ai_assistant_xml"
+              grep -Fq '<plugin id="org.jetbrains.completion.full.line" />' \
+                <<< "$ai_assistant_xml"
+              grep -Fq '<id>org.jetbrains.completion.full.line</id>' <<< "$full_line_xml"
+              grep -Fq '<version>261.26222.65</version>' <<< "$full_line_xml"
+              grep -Fq \
+                '<idea-version since-build="261.26222.65" until-build="261.26222.65" />' \
+                <<< "$full_line_xml"
+              echo "SYNAPSE_JETBRAINS_BIN=$idea_bin" >> "$GITHUB_ENV"
               echo "SYNAPSE_JETBRAINS_PLUGINS=$RUNNER_TEMP/jetbrains-plugins" >> "$GITHUB_ENV"
-              echo "SYNAPSE_JETBRAINS_CLIENT_NAME=JetBrains.PyCharm" >> "$GITHUB_ENV"
+              echo "SYNAPSE_JETBRAINS_CLIENT_NAME=JetBrains.IntelliJ IDEA" >> "$GITHUB_ENV"
               ;;
           esac
       - name: Focused editor contract checks

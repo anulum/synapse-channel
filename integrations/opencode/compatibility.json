@@ -143,18 +143,25 @@
       "version": "1.10.3"
     },
     {
-      "name": "PyCharm",
-      "pin": "790dc8a5124d1e3b38b4fff2feae654bf83eef67a67287719f4f3ca3dc07ca90",
+      "name": "IntelliJ IDEA",
+      "pin": "3104d85d9507ff882065e3f8eb9506402b4a8129092d2682662bb6e9c4f063fc",
       "pin_type": "sha256",
-      "source": "https://github.com/JetBrains/intellij-community/releases/download/pycharm/2026.1.4/pycharm-2026.1.4.tar.gz",
+      "source": "https://download.jetbrains.com/idea/idea-2026.1.4.tar.gz",
       "version": "2026.1.4"
     },
     {
       "name": "JetBrains AI Assistant",
-      "pin": "0727124610ee90a809b20e6964ecf135774eae21018a9a4aaa8193d414cffda8",
+      "pin": "8d5352e2c03fa419cc169c2e4dc1b9009247d52d641f4b8883029f347a61ceaf",
       "pin_type": "sha256",
-      "source": "https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1097427",
-      "version": "261.26222.68"
+      "source": "https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1095694",
+      "version": "261.26222.65"
+    },
+    {
+      "name": "JetBrains Full Line Code Completion",
+      "pin": "497bdf80d4600d947ebdbcdb440c7f68b21a048ec4fd77ad6a0171ae9d0bf0d8",
+      "pin_type": "sha256",
+      "source": "https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1095696",
+      "version": "261.26222.65"
     }
   ],
   "schema_version": "synapse.opencode-compatibility.v1",

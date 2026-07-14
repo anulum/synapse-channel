@@ -364,10 +364,15 @@ the exact OpenCode binary and a local deterministic provider:
 | Neovim | Neovim 0.12.4 and CodeCompanion.nvim 19.19.0 |
 | Emacs | Emacs 29.3, Agent Shell 0.59.1, `acp.el` 0.12.2, and Shell Maker 0.93.5 |
 | Zed | Zed 1.10.3 under Xvfb through `agent::NewExternalAgentThread` (advisory in CI) |
-| JetBrains | PyCharm 2026.1.4 and AI Assistant 261.26222.68 under Xvfb (advisory in CI) |
+| JetBrains | IntelliJ IDEA 2026.1.4, AI Assistant 261.26222.65, and required Full Line Code Completion 261.26222.65 under Xvfb (advisory in CI) |
 
 Release archives are SHA-256 verified; editor plugins are checked out at exact
-commits or verified by archive hash and declared version. Each editor must
+commits or verified by archive hash and declared version. The JetBrains lane
+uses a single exact platform build (`261.26222.65`) for the IDE and both plugin
+archives, verifies AI Assistant's required Full Line dependency, completes the
+real first-run terms UI, and explicitly declines usage-statistics sharing. The
+Zed lane opts into its documented software-rendered CI mode and completes the
+real isolated-project trust prompt. Each editor must
 identify itself during ACP initialization, create exactly one session, deliver
 exactly one acceptance prompt, receive `end_turn`, and reach the deterministic
 provider. OpenCode must advertise its exact command-shaped terminal-auth method.

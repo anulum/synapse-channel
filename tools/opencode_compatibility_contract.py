@@ -56,8 +56,9 @@ _EXPECTED_COMPONENTS = frozenset(
         "acp.el",
         "Agent Shell",
         "Zed",
-        "PyCharm",
+        "IntelliJ IDEA",
         "JetBrains AI Assistant",
+        "JetBrains Full Line Code Completion",
     }
 )
 

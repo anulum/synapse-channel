@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — real JetBrains AI Assistant ACP acceptance driver
-"""Drive a pinned PyCharm and AI Assistant through its public ACP UI."""
+"""Drive a pinned IntelliJ IDEA and AI Assistant through its public ACP UI."""
 
 from __future__ import annotations
 
@@ -46,11 +46,56 @@ def _find_window(deadline: float) -> str:
         result = _xdotool("search", "--onlyvisible", "--class", "jetbrains-.*")
         if result.returncode == 0 and result.stdout.splitlines():
             return result.stdout.splitlines()[-1]
-        result = _xdotool("search", "--onlyvisible", "--name", "PyCharm")
+        result = _xdotool("search", "--onlyvisible", "--name", "IntelliJ IDEA")
         if result.returncode == 0 and result.stdout.splitlines():
             return result.stdout.splitlines()[-1]
         time.sleep(0.25)
-    raise RuntimeError("PyCharm did not expose a visible project window")
+    raise RuntimeError("IntelliJ IDEA did not expose a visible project window")
+
+
+def _click(window: str, x: int, y: int, action: str) -> None:
+    """Click one deterministic point in the pinned 600x460 agreement UI."""
+    _checked_xdotool(
+        f"move to {action}",
+        "mousemove",
+        "--sync",
+        "--window",
+        window,
+        str(x),
+        str(y),
+    )
+    _checked_xdotool(action, "click", "1")
+
+
+def _require_agreement_geometry(window: str) -> None:
+    """Refuse pointer input unless the pinned agreement dialog is present."""
+    completed = _xdotool("getwindowgeometry", "--shell", window)
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic"
+        raise RuntimeError(f"cannot inspect the JetBrains agreement window: {detail}")
+    geometry = dict(line.split("=", 1) for line in completed.stdout.splitlines() if "=" in line)
+    if geometry.get("WIDTH") != "600" or geometry.get("HEIGHT") != "460":
+        raise RuntimeError(
+            "refusing JetBrains agreement input outside the pinned 600x460 UI: "
+            f"{geometry.get('WIDTH', '?')}x{geometry.get('HEIGHT', '?')}"
+        )
+
+
+def _complete_first_run_agreements(window: str) -> None:
+    """Accept the IDE terms and explicitly decline usage-statistics sharing."""
+    # AgreementUi is fixed at 600x460 in the pinned JetBrains platform.  Its
+    # first page requires an explicit checkbox before Continue is enabled.
+    time.sleep(1.0)
+    _require_agreement_geometry(window)
+    _click(window, 44, 392, "select the JetBrains terms checkbox")
+    time.sleep(0.25)
+    _click(window, 542, 432, "accept the JetBrains terms")
+    # The same modal immediately switches to the data-sharing page.  Its left
+    # action is the documented decline path; choosing it keeps CI telemetry off.
+    time.sleep(1.0)
+    _require_agreement_geometry(window)
+    _click(window, 451, 432, "decline JetBrains usage-statistics sharing")
+    time.sleep(1.0)
 
 
 def _trace_has(trace: Path, marker: str) -> bool:
@@ -66,9 +111,9 @@ def _wait_for_trace(
         if _trace_has(trace, marker):
             return
         if process.poll() is not None:
-            raise RuntimeError(f"PyCharm exited before ACP evidence: {process.returncode}")
+            raise RuntimeError(f"IntelliJ IDEA exited before ACP evidence: {process.returncode}")
         time.sleep(0.25)
-    raise RuntimeError(f"PyCharm ACP trace never contained {marker}")
+    raise RuntimeError(f"IntelliJ IDEA ACP trace never contained {marker}")
 
 
 def _write_acp_config(home: Path, proxy_argv: list[str]) -> None:
@@ -133,7 +178,7 @@ def main() -> int:
 
     home = Path(_required_env("HOME"))
     artifacts = Path(_required_env("SYNAPSE_EDITOR_E2E_ARTIFACT_DIR"))
-    runtime_root = Path(_required_env("XDG_DATA_HOME")) / "pycharm-e2e"
+    runtime_root = Path(_required_env("XDG_DATA_HOME")) / "intellij-e2e"
     config_root = runtime_root / "config"
     system_root = runtime_root / "system"
     log_root = runtime_root / "log"
@@ -142,8 +187,8 @@ def main() -> int:
     _write_acp_config(home, proxy_argv)
     _write_keymap(config_root)
 
-    output = artifacts / "pycharm-process.log"
-    screenshot = artifacts / "pycharm.png"
+    output = artifacts / "intellij-process.log"
+    screenshot = artifacts / "intellij.png"
     command = [
         str(binary),
         f"-Didea.config.path={config_root}",
@@ -167,10 +212,12 @@ def main() -> int:
         try:
             deadline = time.monotonic() + _TIMEOUT_SECONDS
             window = _find_window(deadline)
+            _complete_first_run_agreements(window)
+            window = _find_window(deadline)
             # xvfb-run intentionally has no EWMH window manager.  Every action
             # targets the discovered X11 window directly, so activation is not
             # required and would fail on the headless runner.
-            _checked_xdotool("focus the PyCharm window", "windowfocus", "--sync", window)
+            _checked_xdotool("focus the IntelliJ IDEA window", "windowfocus", "--sync", window)
             _checked_xdotool(
                 "open the AI Assistant tool window",
                 "key",
@@ -224,7 +271,7 @@ def main() -> int:
                 print(output.read_text(encoding="utf-8")[-12000:], file=sys.stderr)
             idea_log = log_root / "idea.log"
             if idea_log.is_file():
-                (artifacts / "pycharm-idea-tail.log").write_text(
+                (artifacts / "intellij-idea-tail.log").write_text(
                     idea_log.read_text(encoding="utf-8", errors="replace")[-200_000:],
                     encoding="utf-8",
                 )
