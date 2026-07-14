@@ -20,6 +20,8 @@ from pathlib import Path
 
 _AGENT_NAME = "SYNAPSE OpenCode E2E"
 _STARTUP_TIMEOUT_SECONDS = 150.0
+_CHAT_READY_TIMEOUT_SECONDS = 90.0
+_AGENT_SELECTION_TIMEOUT_SECONDS = 90.0
 _ACP_HANDSHAKE_TIMEOUT_SECONDS = 90.0
 _ACP_PROMPT_TIMEOUT_SECONDS = 90.0
 _MAX_TRACE_SEGMENTS = 8
@@ -494,16 +496,17 @@ def main() -> int:
                 window,
                 "ctrl+alt+shift+j",
             )
+            chat_deadline = time.monotonic() + _CHAT_READY_TIMEOUT_SECONDS
             _wait_for_idea_log(
                 log_root,
                 "No session managers found for agent 'SYNAPSE OpenCode E2E'",
-                startup_deadline,
+                chat_deadline,
                 process.poll,
             )
             _wait_for_idea_log(
                 log_root,
                 _CHAT_INPUT_READY_MARKER,
-                startup_deadline,
+                chat_deadline,
                 process.poll,
             )
             _checked_xdotool(
@@ -524,10 +527,11 @@ def main() -> int:
                 _AGENT_NAME,
             )
             _checked_xdotool("confirm the ACP agent", "key", "--window", window, "Return")
+            selection_deadline = time.monotonic() + _AGENT_SELECTION_TIMEOUT_SECONDS
             _wait_for_idea_log(
                 log_root,
                 "Creating AcpSessionLifecycleManager for agent 'acp.synapse-opencode-e2e'",
-                startup_deadline,
+                selection_deadline,
                 process.poll,
             )
             handshake_deadline = time.monotonic() + _ACP_HANDSHAKE_TIMEOUT_SECONDS
