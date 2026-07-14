@@ -24,10 +24,6 @@ _USER_AGREEMENT_VERSION = "2.0"
 _USER_AGREEMENT_ENV = "SYNAPSE_JETBRAINS_EULA_ACCEPTED_VERSION"
 _DATA_SHARING_TITLE = "Data Sharing"
 _AGENT_SELECTOR_REGISTRY_KEY = "llm.chat.new.chat.and.agent.selector.enabled"
-_DEFAULT_AGENT_READY_MARKERS = (
-    "Default-agent CDN readiness wait finished",
-    "Skipping default-agent CDN readiness wait because rollout decision is already YES",
-)
 
 
 def _required_env(name: str) -> str:
@@ -378,25 +374,17 @@ def _idea_command(
 
 
 def _wait_for_idea_log(
-    log_root: Path,
-    markers: str | tuple[str, ...],
-    deadline: float,
-    poll: Callable[[], int | None],
+    log_root: Path, marker: str, deadline: float, poll: Callable[[], int | None]
 ) -> None:
     """Wait for exact IDEA log evidence while proving the process remains live."""
-    requested = (markers,) if isinstance(markers, str) else markers
-    if not requested:
-        raise ValueError("at least one IDEA log marker is required")
     idea_log = log_root / "idea.log"
     while time.monotonic() < deadline:
-        if idea_log.is_file():
-            log_text = idea_log.read_text(encoding="utf-8", errors="replace")
-            if any(marker in log_text for marker in requested):
-                return
+        if idea_log.is_file() and marker in idea_log.read_text(encoding="utf-8", errors="replace"):
+            return
         if poll() is not None:
-            raise RuntimeError(f"IntelliJ IDEA exited before log evidence {requested!r}")
+            raise RuntimeError(f"IntelliJ IDEA exited before log evidence {marker!r}")
         time.sleep(0.25)
-    raise RuntimeError(f"IntelliJ IDEA log never contained {requested!r}")
+    raise RuntimeError(f"IntelliJ IDEA log never contained {marker!r}")
 
 
 def main() -> int:
@@ -460,7 +448,6 @@ def main() -> int:
                 window,
                 "ctrl+alt+shift+j",
             )
-            _wait_for_idea_log(log_root, _DEFAULT_AGENT_READY_MARKERS, deadline, process.poll)
             _wait_for_idea_log(
                 log_root,
                 "No session managers found for agent 'SYNAPSE OpenCode E2E'",

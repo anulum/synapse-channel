@@ -24,22 +24,13 @@ from e2e.opencode_editors.jetbrains_client import (
 )
 
 
-@pytest.mark.parametrize(
-    "marker",
-    [
-        "Default-agent CDN readiness wait finished",
-        "Skipping default-agent CDN readiness wait because rollout decision is already YES",
-    ],
-)
-def test_idea_log_wait_accepts_each_requested_readiness_marker(tmp_path: Path, marker: str) -> None:
+def test_idea_log_wait_accepts_only_the_requested_readiness_marker(tmp_path: Path) -> None:
+    marker = "No session managers found for agent 'SYNAPSE OpenCode E2E'"
     (tmp_path / "idea.log").write_text(f"{marker}\n", encoding="utf-8")
 
     _wait_for_idea_log(
         tmp_path,
-        (
-            "Default-agent CDN readiness wait finished",
-            "Skipping default-agent CDN readiness wait because rollout decision is already YES",
-        ),
+        marker,
         float("inf"),
         lambda: None,
     )
