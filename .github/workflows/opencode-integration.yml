@@ -14,6 +14,7 @@ on:
       - "src/synapse_channel/codex_claim_guard.py"
       - "src/synapse_channel/opencode_*.py"
       - "src/synapse_channel/cli_adapters.py"
+      - "src/synapse_channel/cli_opencode_adapter.py"
       - "src/synapse_channel/cli_participants.py"
       - "src/synapse_channel/cli_participants_deliberate.py"
       - "src/synapse_channel/cli_participants_opencode.py"
@@ -23,6 +24,8 @@ on:
       - "tests/fixtures/opencode/**"
       - "tests/test_*opencode*.py"
       - "tests/test_apply_patch_paths.py"
+      - "tests/test_cli_participants.py"
+      - "tests/test_cli_participants_deliberate.py"
       - "docs/opencode.md"
       - "docs/claim-guard-hooks.md"
       - "docs/mcp.md"
@@ -36,6 +39,7 @@ on:
       - "src/synapse_channel/codex_claim_guard.py"
       - "src/synapse_channel/opencode_*.py"
       - "src/synapse_channel/cli_adapters.py"
+      - "src/synapse_channel/cli_opencode_adapter.py"
       - "src/synapse_channel/cli_participants.py"
       - "src/synapse_channel/cli_participants_deliberate.py"
       - "src/synapse_channel/cli_participants_opencode.py"
@@ -45,6 +49,8 @@ on:
       - "tests/fixtures/opencode/**"
       - "tests/test_*opencode*.py"
       - "tests/test_apply_patch_paths.py"
+      - "tests/test_cli_participants.py"
+      - "tests/test_cli_participants_deliberate.py"
       - "docs/opencode.md"
       - "docs/claim-guard-hooks.md"
       - "docs/mcp.md"
@@ -88,7 +94,8 @@ jobs:
           archive="$RUNNER_TEMP/opencode-linux-x64.tar.gz"
           bin_dir="$RUNNER_TEMP/opencode-1.17.20/bin"
           mkdir -p "$bin_dir"
-          curl --fail --location --proto '=https' --tlsv1.2 --retry 3 \
+          curl --fail --location --proto '=https' --proto-redir '=https' \
+            --tlsv1.2 --retry 3 \
             --output "$archive" "$OPENCODE_URL"
           printf '%s  %s\n' "$OPENCODE_ARCHIVE_SHA256" "$archive" | sha256sum --check --strict
           tar -xzf "$archive" -C "$bin_dir"
@@ -129,6 +136,8 @@ jobs:
             tests/test_opencode_adapter.py
             tests/test_opencode_adapter_files.py
             tests/test_cli_opencode_adapter.py
+            tests/test_cli_participants.py
+            tests/test_cli_participants_deliberate.py
             tests/test_cli_participants_opencode.py
             tests/test_opencode_auth.py
             tests/test_opencode_stream.py
@@ -161,6 +170,8 @@ jobs:
             tests/test_opencode_adapter.py \
             tests/test_opencode_adapter_files.py \
             tests/test_cli_opencode_adapter.py \
+            tests/test_cli_participants.py \
+            tests/test_cli_participants_deliberate.py \
             tests/test_cli_participants_opencode.py \
             tests/test_opencode_auth.py \
             tests/test_opencode_stream.py \
