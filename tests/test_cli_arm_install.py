@@ -189,6 +189,7 @@ def test_cli_main_persists_token_file_path_not_raw_token(
 ) -> None:
     token_file = tmp_path / "coordination-token"
     token_file.write_text("fixture-value\n", encoding="utf-8")
+    token_file.chmod(0o600)
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("SYNAPSE_TOKEN", raising=False)
 

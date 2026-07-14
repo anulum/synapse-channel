@@ -143,6 +143,7 @@ def test_printed_recipe_authenticates_token_secured_hub(
     repo = git_repo(tmp_path / command)
     token_file = tmp_path / "hub.token"
     token_file.write_text("secured-token\n", encoding="utf-8")
+    token_file.chmod(0o600)
     with isolated_hub(tmp_path, extra_args=("--token-file", str(token_file))) as hub:
         claimed = run_cli(
             "git-claim",

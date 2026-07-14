@@ -48,6 +48,7 @@ def test_nested_parser_rejects_invalid_ready_timeout(value: str) -> None:
 def test_render_hook_config_is_shell_command_and_token_safe(tmp_path: Path) -> None:
     token_file = tmp_path / "hub.token"
     token_file.write_text("do-not-embed", encoding="utf-8")
+    token_file.chmod(0o600)
     config = render_hook_config(
         identity="seat/one",
         uri="wss://hub.example/ws",
@@ -175,6 +176,7 @@ def test_token_file_is_read_for_runtime(
 ) -> None:
     token_file = tmp_path / "hub.token"
     token_file.write_text("secured-token\n", encoding="utf-8")
+    token_file.chmod(0o600)
     seen: dict[str, str | None] = {}
 
     async def capture(*_args: object, **kwargs: object) -> GuardVerdict:

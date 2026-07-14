@@ -47,6 +47,7 @@ def test_nested_parser_rejects_invalid_ready_timeout(value: str) -> None:
 def test_render_hook_config_is_exec_form_scoped_and_token_safe(tmp_path: Path) -> None:
     token_file = tmp_path / "hub.token"
     token_file.write_text("do-not-embed", encoding="utf-8")
+    token_file.chmod(0o600)
     config = render_hook_config(
         identity="seat/one",
         uri="wss://hub.example/ws",
@@ -85,6 +86,7 @@ def test_main_resolves_nested_hook_token_file_before_dispatch(
 ) -> None:
     token_file = tmp_path / "hub.token"
     token_file.write_text("secured-token\n", encoding="utf-8")
+    token_file.chmod(0o600)
     observed: dict[str, str | None] = {}
 
     def capture(args: argparse.Namespace) -> int:
