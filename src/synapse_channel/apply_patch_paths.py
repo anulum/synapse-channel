@@ -11,12 +11,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from synapse_channel.core.errors import SynapseError
+
 _FILE_PREFIXES = ("*** Add File: ", "*** Update File: ", "*** Delete File: ")
 _MOVE_PREFIXES = ("*** Move to: ", "*** Move from: ")
 
 
-class ApplyPatchPathError(ValueError):
+class ApplyPatchPathError(SynapseError, ValueError):
     """An ``apply_patch`` document is malformed or has no mutation target."""
+
+    code = "apply_patch_path"
 
 
 def parse_apply_patch_paths(command: str) -> tuple[Path, ...]:
