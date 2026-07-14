@@ -44,7 +44,7 @@ from synapse_channel.core.causality import (
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.replay import SNAPSHOT_KINDS
-from synapse_channel.terminal_text import terminal_text
+from synapse_channel.core.terminal_text import terminal_text
 
 
 @dataclass(frozen=True)

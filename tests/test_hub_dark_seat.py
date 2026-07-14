@@ -58,7 +58,7 @@ async def test_live_hub_alerts_an_unarmed_claimant_and_realerts_after_waiter_los
             assert first["claims"] == ["WORK"]
             assert first["tasks"] == []
             assert first["target"] == "all"
-            assert "--name DARK --for DARK" in str(first["remedy"])
+            assert "--name=DARK --for=DARK" in str(first["remedy"])
 
             waiter = await connect_agent(
                 "DARK-rx",

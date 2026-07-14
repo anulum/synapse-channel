@@ -56,7 +56,7 @@ from synapse_channel.core.message_auth import (
     verify_event_signature,
 )
 from synapse_channel.core.protocol import MessageType
-from synapse_channel.terminal_text import shell_command_arg, shell_long_option
+from synapse_channel.core.terminal_text import shell_command_arg, shell_long_option
 
 logger = logging.getLogger("synapse.hub")
 

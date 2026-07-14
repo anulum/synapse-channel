@@ -51,6 +51,7 @@ from synapse_channel.service_setup import (
 )
 
 _DEPLOY = Path(__file__).resolve().parent.parent / "deploy"
+_TEST_SYN_BIN = "/home/test/.local/bin/synapse"
 
 _FORBIDDEN_IN_USER_UNITS = (
     "CapabilityBoundingSet=",
@@ -64,9 +65,9 @@ _FORBIDDEN_IN_USER_UNITS = (
 
 def _rendered_units() -> dict[str, str]:
     return {
-        "synapse-hub.service": render_hub_unit(synapse_bin="%h/.local/bin/synapse"),
-        "synapse-presence@.service": render_presence_unit(synapse_bin="%h/.local/bin/synapse"),
-        "synapse-arm@.service": render_arm_unit(synapse_bin="%h/.local/bin/synapse"),
+        "synapse-hub.service": render_hub_unit(synapse_bin=_TEST_SYN_BIN),
+        "synapse-presence@.service": render_presence_unit(synapse_bin=_TEST_SYN_BIN),
+        "synapse-arm@.service": render_arm_unit(synapse_bin=_TEST_SYN_BIN),
     }
 
 
@@ -139,15 +140,15 @@ def test_no_forbidden_directive_anywhere() -> None:
 
 
 def test_hub_unit_carries_hub_block() -> None:
-    unit = render_hub_unit(synapse_bin="%h/.local/bin/synapse")
+    unit = render_hub_unit(synapse_bin=_TEST_SYN_BIN)
     assert hardening_directives(write_paths=HUB_WRITE_PATHS, nofile=HUB_NOFILE) in unit
     assert f"LimitNOFILE={HUB_NOFILE}" in unit
 
 
 def test_presence_and_arm_units_carry_listener_block() -> None:
     listener_block = hardening_directives(write_paths=LISTENER_WRITE_PATHS, nofile=LISTENER_NOFILE)
-    assert listener_block in render_presence_unit(synapse_bin="%h/.local/bin/synapse")
-    assert listener_block in render_arm_unit(synapse_bin="%h/.local/bin/synapse")
+    assert listener_block in render_presence_unit(synapse_bin=_TEST_SYN_BIN)
+    assert listener_block in render_arm_unit(synapse_bin=_TEST_SYN_BIN)
 
 
 def test_rendered_units_still_parse_as_unit_files() -> None:
@@ -194,10 +195,18 @@ def test_listener_default_storage_stays_under_the_declared_roots(
 
 
 def test_hub_write_paths_cover_the_db_and_relay_arguments() -> None:
-    unit = render_hub_unit(synapse_bin="%h/.local/bin/synapse")
+    unit = render_hub_unit(synapse_bin=_TEST_SYN_BIN)
     exec_line = next(line for line in unit.splitlines() if line.startswith("ExecStart="))
-    written_arguments = [token for token in exec_line.split() if token.startswith("%h/")]
-    assert written_arguments, "hub ExecStart no longer writes under %h — update this test"
+    written_arguments = [
+        value
+        for token in exec_line.split()
+        for option, separator, value in (token.partition("="),)
+        if separator and option in {"--db", "--relay-log"}
+    ]
+    assert set(written_arguments) == {
+        "%h/synapse/feed.ndjson",
+        "%h/synapse/hub.db",
+    }, "hub write arguments changed — update the sandbox roots"
     roots = _expanded(HUB_WRITE_PATHS, Path("/HOME"))
     for token in written_arguments:
         target = Path(token.replace("%h", "/HOME"))

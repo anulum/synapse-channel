@@ -28,6 +28,7 @@ from synapse_channel.core.delivery_receipts import (
 )
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.terminal_text import terminal_text
 from synapse_channel.core.universal_receipts import (
     UNIVERSAL_RECEIPT_EVENT_KINDS,
     UniversalReceipt,
@@ -36,7 +37,6 @@ from synapse_channel.core.universal_receipts import (
     universal_receipt_to_json,
     universal_receipts_from_events,
 )
-from synapse_channel.terminal_text import terminal_text
 
 TASK_EVENT_KINDS = frozenset(
     {

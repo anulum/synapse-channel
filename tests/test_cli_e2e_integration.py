@@ -48,7 +48,7 @@ def test_install_shell_hook_writes_a_guarded_block_to_the_home_rc(tmp_path: Path
     body = rc.read_text(encoding="utf-8")
     # The block is delimited so re-running replaces it rather than duplicating.
     assert ">>> synapse-channel shell integration >>>" in body
-    assert "command -v synapse" in body
+    assert "command -v -- synapse" in body
 
 
 def test_ingest_drains_events_and_a_cursor_resumes_without_repeats(tmp_path: Path) -> None:

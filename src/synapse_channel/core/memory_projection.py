@@ -26,7 +26,7 @@ from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.journal import MEMORY_KINDS, EventKind
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.persistence import EventStore, StoredEvent
-from synapse_channel.terminal_text import terminal_text
+from synapse_channel.core.terminal_text import terminal_text
 
 MEMORY_RECALL_TRUST_BOUNDARY = (
     "Memory recall is deterministic local projection over durable event-log records; "

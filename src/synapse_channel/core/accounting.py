@@ -32,7 +32,7 @@ from typing import Any
 
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore, StoredEvent
-from synapse_channel.terminal_text import terminal_text
+from synapse_channel.core.terminal_text import terminal_text
 
 USAGE_NOTE_KIND = "usage"
 """Progress-note ``kind`` marking a structured model-usage record."""
