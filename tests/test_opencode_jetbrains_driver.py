@@ -19,29 +19,56 @@ from e2e.opencode_editors.jetbrains_client import (
     _wait_for_idea_log,
     _window_parentage,
     _write_acp_config,
+    _write_idea_profile,
     _xprop_window_id,
 )
 
 
-def test_idea_log_wait_accepts_only_the_requested_readiness_marker(tmp_path: Path) -> None:
-    (tmp_path / "idea.log").write_text(
-        "Default-agent CDN readiness wait finished\n", encoding="utf-8"
-    )
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "Default-agent CDN readiness wait finished",
+        "Skipping default-agent CDN readiness wait because rollout decision is already YES",
+    ],
+)
+def test_idea_log_wait_accepts_each_requested_readiness_marker(tmp_path: Path, marker: str) -> None:
+    (tmp_path / "idea.log").write_text(f"{marker}\n", encoding="utf-8")
 
     _wait_for_idea_log(
         tmp_path,
-        "Default-agent CDN readiness wait finished",
+        (
+            "Default-agent CDN readiness wait finished",
+            "Skipping default-agent CDN readiness wait because rollout decision is already YES",
+        ),
         float("inf"),
         lambda: None,
     )
 
-    with pytest.raises(RuntimeError, match="IDEA log never contained 'other marker'"):
+    with pytest.raises(RuntimeError, match="IDEA log never contained"):
         _wait_for_idea_log(
             tmp_path,
             "other marker",
             0.0,
             lambda: None,
         )
+
+
+def test_idea_profile_enables_the_pinned_agent_selector_before_startup(
+    tmp_path: Path,
+) -> None:
+    _write_idea_profile(tmp_path)
+
+    assert (tmp_path / "options" / "ide.general.xml").read_text(encoding="utf-8") == (
+        "<application>\n"
+        '  <component name="Registry">\n'
+        '    <entry key="llm.chat.new.chat.and.agent.selector.enabled" '
+        'value="true" />\n'
+        "  </component>\n"
+        "</application>\n"
+    )
+    assert "NewChatAgentSelectorAction" in (tmp_path / "keymaps" / "SynapseE2E.xml").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_xwininfo_parentage_distinguishes_dialog_from_content_child() -> None:

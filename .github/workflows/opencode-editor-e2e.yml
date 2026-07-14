@@ -251,6 +251,11 @@ jobs:
                 <<< "$ai_assistant_xml"
               grep -Fq '<plugin id="org.jetbrains.completion.full.line" />' \
                 <<< "$ai_assistant_xml"
+              grep -Fq \
+                '<registryKey key="llm.chat.new.chat.and.agent.selector.enabled" defaultValue="false" restartRequired="true"' \
+                <<< "$ai_assistant_xml"
+              grep -Fq '<action id="NewChatAgentSelectorAction"' \
+                <<< "$ai_assistant_xml"
               grep -Fq '<id>org.jetbrains.completion.full.line</id>' <<< "$full_line_xml"
               grep -Fq '<version>261.26222.65</version>' <<< "$full_line_xml"
               grep -Fq \
