@@ -30,6 +30,9 @@ from synapse_channel.service_hardening import (
 )
 from synapse_channel.terminal_text import shell_command_arg, terminal_text
 
+_SYSTEMD_EXEC_PREFIXES = frozenset("@-:+!|")
+"""Leading ``ExecStart=`` characters that alter systemd execution semantics."""
+
 
 class CommandRunner(Protocol):
     """Callable compatible with :func:`subprocess.run` for injectable tests."""
@@ -66,7 +69,7 @@ def user_systemd_dir(*, home: Path | None = None) -> Path:
 
 def render_hub_unit(*, synapse_bin: str) -> str:
     """Render the local-first hub user service."""
-    executable = _unit_token(synapse_bin, label="synapse executable path")
+    executable = _systemd_executable(synapse_bin)
     # The hub must not be ordered After=default.target: WantedBy=default.target
     # gives the target an implicit After= on this unit, and the resulting boot
     # ordering cycle makes systemd delete the presence/arm start jobs.
@@ -97,7 +100,7 @@ def render_hub_unit(*, synapse_bin: str) -> str:
 
 def render_presence_unit(*, synapse_bin: str) -> str:
     """Render the project presence-holder template unit."""
-    executable = _unit_token(synapse_bin, label="synapse executable path")
+    executable = _systemd_executable(synapse_bin)
     return (
         "# SPDX-License-"
         "Identifier: AGPL-3.0-or-later\n"
@@ -131,12 +134,25 @@ def _unit_token(value: str, *, label: str) -> str:
     if (
         not value
         or terminal_text(value) != value
-        or any(character.isspace() or character in {'"', "'", "\\"} for character in value)
+        or any(character.isspace() or character in {'"', "'", "\\", "$"} for character in value)
     ):
         raise ValueError(
-            f"{label} must be one non-empty token without whitespace, controls, or quotes"
+            f"{label} must be one non-empty systemd token without whitespace, controls, "
+            "quotes, backslashes, or '$' expansion"
         )
     return value.replace("%", "%%")
+
+
+def _systemd_executable(value: str) -> str:
+    """Return a literal executable token with systemd control prefixes refused."""
+    executable = _unit_token(value, label="synapse executable path")
+    if executable[0] in _SYSTEMD_EXEC_PREFIXES:
+        prefixes = "".join(sorted(_SYSTEMD_EXEC_PREFIXES))
+        raise ValueError(
+            "synapse executable path must not start with a systemd ExecStart control "
+            f"prefix ({prefixes})"
+        )
+    return executable
 
 
 def render_arm_unit(
@@ -146,7 +162,7 @@ def render_arm_unit(
     token_file: str | None = None,
 ) -> str:
     """Render the persistent non-LLM wake listener template unit."""
-    executable = _unit_token(synapse_bin, label="synapse executable path")
+    executable = _systemd_executable(synapse_bin)
     hub_uri = _unit_token(uri, label="hub URI")
     extra_argument = ""
     if token_file is not None:
@@ -360,15 +376,14 @@ def install_user_services(
         Human-readable actions taken or exact follow-up commands.
     """
     synapse = synapse_bin or default_synapse_bin()
-    unit_dir = user_systemd_dir(home=home)
-    unit_dir.mkdir(parents=True, exist_ok=True)
-    writable = _ensure_writable_dirs(home)
-
     units = {
         "synapse-hub.service": render_hub_unit(synapse_bin=synapse),
         "synapse-presence@.service": render_presence_unit(synapse_bin=synapse),
         "synapse-arm@.service": render_arm_unit(synapse_bin=synapse),
     }
+    unit_dir = user_systemd_dir(home=home)
+    unit_dir.mkdir(parents=True, exist_ok=True)
+    writable = _ensure_writable_dirs(home)
     lines = [f"ensured {unit_dir}"]
     lines.extend(f"ensured {directory}" for directory in writable)
     for filename, body in units.items():

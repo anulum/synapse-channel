@@ -38,19 +38,25 @@ def _cmd_init(
     """Dispatch ``synapse init`` for local user-service setup."""
     project = args.project or project_resolver()
     identity = args.identity or project
-    if args.install_user_services or args.start_user_services:
-        lines = service_installer(
-            project=project,
-            identity=identity,
-            synapse_bin=args.synapse_bin,
-            start=args.start_user_services,
-        )
-    else:
-        lines = [
-            "User services are not installed automatically unless requested.",
-            "To install/start the local hub, project presence, and wake listener:",
-            *suggestion_builder(project=project, identity=identity, synapse_bin=args.synapse_bin),
-        ]
+    try:
+        if args.install_user_services or args.start_user_services:
+            lines = service_installer(
+                project=project,
+                identity=identity,
+                synapse_bin=args.synapse_bin,
+                start=args.start_user_services,
+            )
+        else:
+            lines = [
+                "User services are not installed automatically unless requested.",
+                "To install/start the local hub, project presence, and wake listener:",
+                *suggestion_builder(
+                    project=project, identity=identity, synapse_bin=args.synapse_bin
+                ),
+            ]
+    except ValueError as exc:
+        print(f"synapse init: {exc}")
+        return 2
     for line in lines:
         print(line)
     return 0

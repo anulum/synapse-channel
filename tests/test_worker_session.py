@@ -761,6 +761,12 @@ def test_cmd_init_installs_user_services(capsys: pytest.CaptureFixture[str]) -> 
     }
     assert "synapse-arm@.service" in capsys.readouterr().out
 
+    def reject_services(**_kwargs: Any) -> list[str]:
+        raise ValueError("synapse executable path must not start with a systemd prefix")
+
+    assert cli_services._cmd_init(ns, service_installer=reject_services) == 2
+    assert "must not start with a systemd prefix" in capsys.readouterr().out
+
 
 def test_provider_command_name_handles_an_empty_command() -> None:
     from synapse_channel.worker_session import _provider_command_name

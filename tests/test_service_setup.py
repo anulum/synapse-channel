@@ -57,10 +57,20 @@ def test_render_arm_unit_escapes_systemd_percent_specifiers() -> None:
     assert "--token-file=/home/user/token%%name" in unit
 
 
-@pytest.mark.parametrize("value", ["/bin/synapse\nExecStart=/bin/false", "bad'path", "bad\\path"])
-def test_rendered_units_reject_ambiguous_systemd_tokens(value: str) -> None:
-    with pytest.raises(ValueError, match="without whitespace, controls, or quotes"):
-        render_arm_unit(synapse_bin=value)
+@pytest.mark.parametrize(
+    ("value", "match"),
+    [
+        ("/bin/synapse\nExecStart=/bin/false", "non-empty systemd token"),
+        ("bad'path", "non-empty systemd token"),
+        ("bad\\path", "non-empty systemd token"),
+        ("bad$PATH", "non-empty systemd token"),
+        *((f"{prefix}/usr/bin/synapse", "ExecStart control prefix") for prefix in "@-:+!|"),
+    ],
+)
+def test_rendered_units_reject_ambiguous_systemd_tokens(value: str, match: str) -> None:
+    for renderer in (render_hub_unit, render_presence_unit, render_arm_unit):
+        with pytest.raises(ValueError, match=match):
+            renderer(synapse_bin=value)
 
 
 def test_rendered_units_never_order_after_their_install_target() -> None:
@@ -263,15 +273,22 @@ def test_install_arm_service_normalizes_missing_command(tmp_path: Path) -> None:
     assert "systemd-escape not installed" in result.lines[-1]
 
 
-def test_install_arm_service_rejects_unit_directive_injection(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "synapse_bin",
+    ["/bin/synapse\nExecStart=/bin/false", *(f"{prefix}/bin/synapse" for prefix in "@-:+!|")],
+)
+def test_install_arm_service_rejects_unit_directive_injection(
+    tmp_path: Path, synapse_bin: str
+) -> None:
     result = install_arm_service(
         identity="repo",
-        synapse_bin="/bin/synapse\nExecStart=/bin/false",
+        synapse_bin=synapse_bin,
         home=tmp_path,
     )
 
     assert result.ok is False
-    assert "without whitespace" in result.lines[-1]
+    assert "failed to write" in result.lines[-1]
+    assert not (tmp_path / ".config").exists()
 
 
 def test_install_arm_service_requires_nonempty_identity(tmp_path: Path) -> None:
@@ -348,6 +365,17 @@ def test_install_user_services_writes_three_units(tmp_path: Path) -> None:
     assert (unit_dir / "synapse-presence@.service").exists()
     assert (unit_dir / "synapse-arm@.service").exists()
     assert any("systemctl --user enable --now synapse-hub.service" in line for line in lines)
+
+    for index, prefix in enumerate("@-:+!|"):
+        rejected_home = tmp_path / f"rejected-{index}"
+        with pytest.raises(ValueError, match="ExecStart control prefix"):
+            install_user_services(
+                project="repo",
+                identity="repo/ux",
+                synapse_bin=f"{prefix}/bin/synapse",
+                home=rejected_home,
+            )
+        assert not rejected_home.exists()
 
 
 def test_install_user_services_shell_quotes_untrusted_project(tmp_path: Path) -> None:
