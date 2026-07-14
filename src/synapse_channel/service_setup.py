@@ -33,6 +33,12 @@ from synapse_channel.terminal_text import shell_command_arg, terminal_text
 _SYSTEMD_EXEC_PREFIXES = frozenset("@-:+!|")
 """Leading ``ExecStart=`` characters that alter systemd execution semantics."""
 
+_SYSTEMD_INVALID_SIMPLE_EXECUTABLES = frozenset({".", "..", ";"})
+"""Slash-free tokens that are invalid names or alter ``ExecStart=`` parsing."""
+
+_SYSTEMD_SIMPLE_NAME_MAX_BYTES = 255
+"""Linux ``NAME_MAX`` used by systemd's simple executable-name predicate."""
+
 
 class CommandRunner(Protocol):
     """Callable compatible with :func:`subprocess.run` for injectable tests."""
@@ -158,9 +164,14 @@ def validate_systemd_executable(value: str) -> str:
             "synapse executable path must not start with a systemd ExecStart control "
             f"prefix ({prefixes})"
         )
-    if "/" in executable and not Path(executable).is_absolute():
+    if not Path(value).is_absolute() and (
+        "/" in value
+        or value in _SYSTEMD_INVALID_SIMPLE_EXECUTABLES
+        or len(value.encode("utf-8")) > _SYSTEMD_SIMPLE_NAME_MAX_BYTES
+    ):
         raise ValueError(
-            "synapse executable path must be absolute or a simple file name without slashes"
+            "synapse executable path must be absolute or a valid simple file name without "
+            "slashes or systemd command metatokens"
         )
     return executable
 

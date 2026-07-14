@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -46,6 +47,11 @@ def test_render_arm_unit_uses_non_llm_synapse_arm(
     monkeypatch.setenv("PATH", "relative-bin")
     assert default_synapse_bin() == str(executable.resolve())
 
+    longest_simple_name = "x" * 255
+    assert f"ExecStart={longest_simple_name} hub" in render_hub_unit(
+        synapse_bin=longest_simple_name
+    )
+
 
 def test_render_arm_unit_adds_remote_uri_and_token_file() -> None:
     unit = render_arm_unit(
@@ -76,8 +82,12 @@ def test_render_arm_unit_escapes_systemd_percent_specifiers() -> None:
         ("bad'path", "non-empty systemd token"),
         ("bad\\path", "non-empty systemd token"),
         ("bad$PATH", "non-empty systemd token"),
-        ("relative-bin/synapse", "absolute or a simple file name"),
-        ("./venv/bin/synapse", "absolute or a simple file name"),
+        ("relative-bin/synapse", "valid simple file name"),
+        ("./venv/bin/synapse", "valid simple file name"),
+        (".", "valid simple file name"),
+        ("..", "valid simple file name"),
+        (";", "valid simple file name"),
+        ("x" * 256, "valid simple file name"),
         *((f"{prefix}/usr/bin/synapse", "ExecStart control prefix") for prefix in "@-:+!|"),
     ],
 )
@@ -87,7 +97,7 @@ def test_rendered_units_reject_ambiguous_systemd_tokens(value: str, match: str) 
             renderer(synapse_bin=value)
 
 
-def test_rendered_units_never_order_after_their_install_target() -> None:
+def test_rendered_units_never_order_after_their_install_target(tmp_path: Path) -> None:
     # A unit that is WantedBy=default.target and also ordered
     # After=default.target creates a boot ordering cycle; systemd breaks it by
     # deleting dependent start jobs, so presence/arm never start at boot.
@@ -99,6 +109,18 @@ def test_rendered_units_never_order_after_their_install_target() -> None:
     for name, unit in units.items():
         assert "WantedBy=default.target" in unit, name
         assert "After=default.target" not in unit, name
+
+    analyzer = shutil.which("systemd-analyze")
+    if analyzer is not None:
+        unit_path = tmp_path / "synapse-hub.service"
+        unit_path.write_text(render_hub_unit(synapse_bin="/bin/true"), encoding="utf-8")
+        completed = subprocess.run(
+            [analyzer, "verify", str(unit_path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stderr
 
 
 def test_checked_in_deploy_templates_have_no_boot_ordering_cycle() -> None:
@@ -391,9 +413,17 @@ def test_install_user_services_writes_three_units(tmp_path: Path) -> None:
             )
         assert not rejected_home.exists()
 
-    for index, synapse_bin in enumerate(("relative-bin/synapse", "./venv/bin/synapse")):
+    rejected_values = (
+        "relative-bin/synapse",
+        "./venv/bin/synapse",
+        ".",
+        "..",
+        ";",
+        "x" * 256,
+    )
+    for index, synapse_bin in enumerate(rejected_values):
         rejected_home = tmp_path / f"rejected-relative-{index}"
-        with pytest.raises(ValueError, match="absolute or a simple file name"):
+        with pytest.raises(ValueError, match="valid simple file name"):
             install_user_services(
                 project="repo",
                 identity="repo/ux",

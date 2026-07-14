@@ -447,19 +447,21 @@ def test_cmd_git_init_installs_services(
     assert "Traceback" not in captured_io.out + captured_io.err
     assert_no_git_init_mutation()
 
-    code = cli.main(
-        [
-            "git-init",
-            "--install-user-services",
-            "--synapse-bin",
-            "./venv/bin/synapse",
-        ]
-    )
-    captured_io = capsys.readouterr()
-    assert code == 2
-    assert "absolute or a simple file name" in captured_io.err
-    assert "Traceback" not in captured_io.out + captured_io.err
-    assert_no_git_init_mutation()
+    invalid_simple_names = ("./venv/bin/synapse", ".", "..", ";", "x" * 256)
+    for invalid_name in invalid_simple_names:
+        code = cli.main(
+            [
+                "git-init",
+                "--install-user-services",
+                "--synapse-bin",
+                invalid_name,
+            ]
+        )
+        captured_io = capsys.readouterr()
+        assert code == 2
+        assert "valid simple file name" in captured_io.err
+        assert "Traceback" not in captured_io.out + captured_io.err
+        assert_no_git_init_mutation()
 
     hostile_bin = tmp_path / "hostile bin"
     hostile_bin.mkdir()
@@ -480,14 +482,19 @@ def test_cmd_git_init_installs_services(
     relative_executable.write_text("#!/bin/sh\n", encoding="utf-8")
     relative_executable.chmod(0o755)
     monkeypatch.setenv("PATH", "relative-bin:/usr/bin:/bin")
-    with monkeypatch.context() as patch:
-        patch.setattr(cli_git, "default_synapse_bin", lambda: "relative-bin/synapse")
-        code = cli.main(["git-init", "--install-user-services"])
-    captured_io = capsys.readouterr()
-    assert code == 2
-    assert "absolute or a simple file name" in captured_io.err
-    assert "Traceback" not in captured_io.out + captured_io.err
-    assert_no_git_init_mutation()
+    for invalid_name in ("relative-bin/synapse", ".", "..", ";", "x" * 256):
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                cli_git,
+                "default_synapse_bin",
+                lambda invalid_name=invalid_name: invalid_name,
+            )
+            code = cli.main(["git-init", "--install-user-services"])
+        captured_io = capsys.readouterr()
+        assert code == 2
+        assert "valid simple file name" in captured_io.err
+        assert "Traceback" not in captured_io.out + captured_io.err
+        assert_no_git_init_mutation()
 
     code = cli.main(["git-init", "--install-user-services"])
     captured_io = capsys.readouterr()
