@@ -24,6 +24,7 @@ _CHAT_READY_TIMEOUT_SECONDS = 90.0
 _AGENT_SELECTION_TIMEOUT_SECONDS = 90.0
 _ACP_HANDSHAKE_TIMEOUT_SECONDS = 90.0
 _ACP_PROMPT_TIMEOUT_SECONDS = 90.0
+_CHAT_OPEN_RETRY_SECONDS = 5.0
 _MAX_TRACE_SEGMENTS = 8
 _USER_AGREEMENT_TITLE = "IntelliJ IDEA User Agreement"
 _USER_AGREEMENT_VERSION = "2.0"
@@ -69,6 +70,18 @@ def _checked_xdotool(action: str, *args: str) -> None:
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic"
         raise RuntimeError(f"xdotool could not {action}: {detail}")
+
+
+def _show_ai_chat(window: str) -> None:
+    """Focus the pinned IDEA frame and invoke its idempotent chat action."""
+    _checked_xdotool("focus the IntelliJ IDEA window", "windowfocus", "--sync", window)
+    _checked_xdotool(
+        "open the AI Assistant tool window",
+        "key",
+        "--window",
+        window,
+        "ctrl+alt+shift+j",
+    )
 
 
 def _window_geometry(window: str) -> tuple[int, int] | None:
@@ -409,12 +422,18 @@ def _wait_for_idea_log(
     markers: str | tuple[str, ...],
     deadline: float,
     poll: Callable[[], int | None],
+    *,
+    retry: Callable[[], None] | None = None,
+    retry_interval_seconds: float = _CHAT_OPEN_RETRY_SECONDS,
 ) -> None:
     """Wait for ordered IDEA log evidence while proving the process remains live."""
     required = (markers,) if isinstance(markers, str) else markers
     if not required:
         raise ValueError("at least one IDEA log marker is required")
+    if retry is not None and retry_interval_seconds <= 0:
+        raise ValueError("IDEA log retry interval must be positive")
     idea_log = log_root / "idea.log"
+    next_retry = 0.0
     while time.monotonic() < deadline:
         if idea_log.is_file():
             contents = idea_log.read_text(encoding="utf-8", errors="replace")
@@ -428,6 +447,10 @@ def _wait_for_idea_log(
                 return
         if poll() is not None:
             raise RuntimeError(f"IntelliJ IDEA exited before log evidence {required!r}")
+        now = time.monotonic()
+        if retry is not None and now >= next_retry:
+            retry()
+            next_retry = now + retry_interval_seconds
         time.sleep(0.25)
     raise RuntimeError(f"IntelliJ IDEA log never contained ordered markers {required!r}")
 
@@ -485,29 +508,16 @@ def main() -> int:
                 startup_deadline,
                 process.poll,
             )
-            # xvfb-run intentionally has no EWMH window manager.  Every action
-            # targets the discovered X11 window directly, so activation is not
-            # required and would fail on the headless runner.
-            _checked_xdotool("focus the IntelliJ IDEA window", "windowfocus", "--sync", window)
-            _checked_xdotool(
-                "open the AI Assistant tool window",
-                "key",
-                "--window",
-                window,
-                "ctrl+alt+shift+j",
-            )
             chat_deadline = time.monotonic() + _CHAT_READY_TIMEOUT_SECONDS
             _wait_for_idea_log(
                 log_root,
-                "No session managers found for agent 'SYNAPSE OpenCode E2E'",
+                (
+                    "No session managers found for agent 'SYNAPSE OpenCode E2E'",
+                    _CHAT_INPUT_READY_MARKER,
+                ),
                 chat_deadline,
                 process.poll,
-            )
-            _wait_for_idea_log(
-                log_root,
-                _CHAT_INPUT_READY_MARKER,
-                chat_deadline,
-                process.poll,
+                retry=lambda: _show_ai_chat(window),
             )
             _checked_xdotool(
                 "open the ACP agent selector",

@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
@@ -68,6 +69,39 @@ def test_idea_log_wait_fails_closed_when_idea_exits(tmp_path: Path) -> None:
 def test_idea_log_wait_rejects_an_empty_readiness_contract(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="at least one IDEA log marker is required"):
         _wait_for_idea_log(tmp_path, (), float("inf"), lambda: None)
+
+
+def test_idea_log_wait_rejects_nonpositive_retry_interval(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="retry interval must be positive"):
+        _wait_for_idea_log(
+            tmp_path,
+            "ready",
+            float("inf"),
+            lambda: None,
+            retry=lambda: None,
+            retry_interval_seconds=0.0,
+        )
+
+
+def test_idea_log_wait_retries_idempotent_ui_action_until_ready(tmp_path: Path) -> None:
+    attempts = 0
+
+    def expose_ready_marker() -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 2:
+            (tmp_path / "idea.log").write_text("chat input ready\n", encoding="utf-8")
+
+    _wait_for_idea_log(
+        tmp_path,
+        "chat input ready",
+        time.monotonic() + 1.0,
+        lambda: None,
+        retry=expose_ready_marker,
+        retry_interval_seconds=0.01,
+    )
+
+    assert attempts == 2
 
 
 def test_idea_profile_enables_the_pinned_agent_selector_before_startup(
