@@ -99,7 +99,9 @@ def _zip_archive(path: Path, *, member_type: int = stat.S_IFREG) -> Path:
 
 @pytest.mark.parametrize("archive_kind", ["tar", "zip"])
 def test_installer_extracts_only_the_verified_root_binary(
-    tmp_path: Path, archive_kind: str
+    tmp_path: Path,
+    archive_kind: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     archive = (
         _tar_archive(tmp_path / "opencode-test.tar.gz")
@@ -115,6 +117,27 @@ def test_installer_extracts_only_the_verified_root_binary(
     assert destination.stat().st_mode & stat.S_IXUSR
     with pytest.raises(SmokeError, match="already exists"):
         install_archive(archive, artifact, destination)
+
+    if archive_kind == "zip":
+        real_open = os.open
+
+        def reject_darwin_incompatible_flags(
+            path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+            flags: int,
+            mode: int = 0o777,
+            *,
+            dir_fd: int | None = None,
+        ) -> int:
+            if flags & os.O_CREAT and flags & getattr(os, "O_NOFOLLOW", 0):
+                raise OSError("Darwin rejects O_CREAT combined with O_NOFOLLOW")
+            if dir_fd is None:
+                return real_open(path, flags, mode)
+            return real_open(path, flags, mode, dir_fd=dir_fd)
+
+        monkeypatch.setattr(os, "open", reject_darwin_incompatible_flags)
+        portable_destination = tmp_path / "portable" / "opencode"
+        install_archive(archive, artifact, portable_destination)
+        assert portable_destination.read_bytes() == _PAYLOAD
 
 
 @pytest.mark.parametrize("archive_kind", ["tar", "zip"])

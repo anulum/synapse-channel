@@ -126,7 +126,9 @@ def main() -> int:
         try:
             deadline = time.monotonic() + _TIMEOUT_SECONDS
             window = _find_window(deadline)
-            _checked_xdotool("activate the Zed window", "windowactivate", "--sync", window)
+            # xvfb-run intentionally has no EWMH window manager.  Every action
+            # targets the discovered X11 window directly, so activation is not
+            # required and would fail on the headless runner.
             _checked_xdotool(
                 "open the configured ACP agent",
                 "key",

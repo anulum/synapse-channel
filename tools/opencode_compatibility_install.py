@@ -154,7 +154,9 @@ def _open_posix_parent(parent: Path) -> int:
 @contextmanager
 def _exclusive_output(path: Path) -> Iterator[tuple[BinaryIO, Path]]:
     absolute = _absolute(path)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    # O_CREAT | O_EXCL already refuses an existing symlink atomically.  Do not
+    # add O_NOFOLLOW here: Darwin rejects that flag combination with EINVAL.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     parent_descriptor: int | None = None
     descriptor = -1
     try:

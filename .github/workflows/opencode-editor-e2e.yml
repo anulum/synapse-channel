@@ -200,8 +200,10 @@ jobs:
               mkdir "$RUNNER_TEMP/jetbrains-plugins"
               unzip -q "$plugin" -d "$RUNNER_TEMP/jetbrains-plugins"
               test -f "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/ml-llm.jar"
-              grep -q '<version>261.26222.86</version>' \
-                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/META-INF/plugin.xml"
+              plugin_xml=$(unzip -p \
+                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/ml-llm.jar" \
+                META-INF/plugin.xml)
+              grep -q '<version>261.26222.86</version>' <<< "$plugin_xml"
               echo "SYNAPSE_JETBRAINS_BIN=$pycharm_bin" >> "$GITHUB_ENV"
               echo "SYNAPSE_JETBRAINS_PLUGINS=$RUNNER_TEMP/jetbrains-plugins" >> "$GITHUB_ENV"
               echo "SYNAPSE_JETBRAINS_CLIENT_NAME=JetBrains.PyCharm" >> "$GITHUB_ENV"
