@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from e2e.opencode_editors.acp_trace_proxy import TraceWriter
+from e2e.opencode_editors.acp_trace_proxy import TraceWriter, _forward_client_line
 from e2e.opencode_editors.trace_contract import assert_editor_trace
 from fixtures.opencode.process import OPENCODE_VERSION
 
@@ -48,7 +48,20 @@ def _messages() -> list[tuple[str, dict[str, Any]]]:
                     "protocolVersion": 1,
                     "agentInfo": {"name": "OpenCode", "version": OPENCODE_VERSION},
                     "agentCapabilities": {"mcpCapabilities": {"http": True, "sse": True}},
-                    "authMethods": [{"id": "terminal", "_meta": {"terminal-auth": True}}],
+                    "authMethods": [
+                        {
+                            "id": "opencode-login",
+                            "name": "Login with opencode",
+                            "description": "Run `opencode auth login` in the terminal",
+                            "_meta": {
+                                "terminal-auth": {
+                                    "command": "opencode",
+                                    "args": ["auth", "login"],
+                                    "label": "OpenCode Login",
+                                }
+                            },
+                        }
+                    ],
                 },
             },
         ),
@@ -118,6 +131,7 @@ def test_trace_contract_accepts_minimised_real_lifecycle(tmp_path: Path) -> None
     assert stat.S_IMODE(trace.stat().st_mode) == 0o600
     assert '"mcp_capabilities":{"http":true,"sse":true}' in raw
     assert '"terminal_auth_capable":false' in raw
+    assert '"terminal_auth_injected":false' in raw
 
 
 @pytest.mark.parametrize(
@@ -140,6 +154,69 @@ def test_trace_writer_normalises_terminal_auth_capability(
     initialize = json.loads(trace.read_text(encoding="utf-8").splitlines()[0])
 
     assert initialize["terminal_auth_capable"] is True
+
+
+@pytest.mark.parametrize(
+    ("client_capabilities", "injected"),
+    [
+        ({}, True),
+        ({"auth": {"terminal": True}}, True),
+        ({"_meta": {"terminal-auth": True}}, False),
+    ],
+)
+def test_proxy_forwards_legacy_terminal_auth_opt_in(
+    client_capabilities: dict[str, Any], injected: bool
+) -> None:
+    request = _messages()[0][1]
+    request["params"]["clientCapabilities"] = client_capabilities
+    raw = json.dumps(request).encode("utf-8") + b"\n"
+
+    forwarded, actual_injected = _forward_client_line(raw)
+
+    message = json.loads(forwarded)
+    assert actual_injected is injected
+    assert message["params"]["clientCapabilities"]["_meta"]["terminal-auth"] is True
+    if "auth" in client_capabilities:
+        assert message["params"]["clientCapabilities"]["auth"] == {"terminal": True}
+
+
+@pytest.mark.parametrize(
+    "client_capabilities",
+    [
+        {"auth": {"terminal": False}},
+        {"_meta": {"terminal-auth": False}},
+        {"auth": {"terminal": False}, "_meta": {"terminal-auth": False}},
+    ],
+)
+def test_proxy_never_overrides_explicit_terminal_auth_refusal(
+    client_capabilities: dict[str, Any],
+) -> None:
+    request = _messages()[0][1]
+    request["params"]["clientCapabilities"] = client_capabilities
+    raw = json.dumps(request).encode("utf-8") + b"\n"
+
+    forwarded, injected = _forward_client_line(raw)
+
+    assert forwarded == raw
+    assert injected is False
+
+
+@pytest.mark.parametrize(
+    "client_capabilities",
+    [
+        {"auth": {"terminal": False}, "_meta": {"terminal-auth": True}},
+        {"auth": {"terminal": "yes"}},
+        {"_meta": {"terminal-auth": {"command": "opencode"}}},
+    ],
+)
+def test_proxy_refuses_conflicting_or_non_boolean_client_capabilities(
+    client_capabilities: dict[str, Any],
+) -> None:
+    request = _messages()[0][1]
+    request["params"]["clientCapabilities"] = client_capabilities
+
+    with pytest.raises(ValueError):
+        _forward_client_line(json.dumps(request).encode("utf-8") + b"\n")
 
 
 @pytest.mark.parametrize(
@@ -251,6 +328,29 @@ def test_trace_contract_refuses_missing_opencode_terminal_auth(tmp_path: Path) -
 
     def mutate(messages: list[tuple[str, dict[str, Any]]]) -> None:
         messages[1][1]["result"]["authMethods"] = []
+
+    _write_trace(trace, mutate=mutate)
+    with pytest.raises(AssertionError, match="terminal authentication"):
+        _assert_trace(trace)
+
+
+@pytest.mark.parametrize(
+    "terminal_auth",
+    [
+        True,
+        {"command": "shell", "args": ["auth", "login"], "label": "OpenCode Login"},
+        {"command": "opencode", "args": ["login"], "label": "OpenCode Login"},
+        {"command": "opencode", "args": ["auth", "login"], "label": ""},
+    ],
+)
+def test_trace_contract_refuses_non_command_terminal_auth_metadata(
+    tmp_path: Path, terminal_auth: object
+) -> None:
+    trace = tmp_path / "trace.jsonl"
+
+    def mutate(messages: list[tuple[str, dict[str, Any]]]) -> None:
+        methods = messages[1][1]["result"]["authMethods"]
+        methods[0]["_meta"]["terminal-auth"] = terminal_auth
 
     _write_trace(trace, mutate=mutate)
     with pytest.raises(AssertionError, match="terminal authentication"):

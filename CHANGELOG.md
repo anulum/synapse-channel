@@ -13,8 +13,6 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-## [0.99.7] - 2026-07-14
-
 ### Added
 
 - A machine-readable OpenCode compatibility contract now binds 1.17.20's
@@ -24,8 +22,25 @@ All notable changes to this project are documented here.
   reports newer stable releases as advisory drift without moving the pin, and
   installs the exact Linux x64/arm64, macOS x64/arm64, and Windows x64 archives
   before a real ACP v1 initialize exchange. Extraction accepts only the exact
-  regular root binary, refuses links and existing destinations, and requires the
-  pinned agent version, MCP HTTP/SSE capabilities, and terminal-auth metadata.
+  regular root binary, bounds ZIP metadata and expanded tar streams, traverses
+  output parents without following links, refuses existing destinations, and
+  runs the binary with isolated home/temp roots plus a credential-free
+  environment allowlist. It requires the pinned agent version, MCP HTTP/SSE
+  capabilities, and terminal-auth metadata on every executable lane.
+
+### Fixed
+
+- The real-editor OpenCode E2E proxy now preserves the editor's original
+  terminal-auth capability in evidence while adding OpenCode's pinned legacy
+  opt-in only when omitted or when mapping the standard `auth.terminal` form.
+  It never overrides an explicit false and accepts the returned method only when
+  it contains the exact `opencode auth login` command object with a non-empty
+  label. Real OpenCode 1.17.20 command-object response shapes are pinned by
+  regressions; the former impossible boolean fixture is gone.
+
+## [0.99.7] - 2026-07-14
+
+### Added
 
 - OpenCode's ACP editor gate now proves the governance path, not only a prompt
   round trip. Every pinned Neovim, Emacs, Zed, and JetBrains lane must discover
@@ -54,12 +69,6 @@ All notable changes to this project are documented here.
   repository metadata or an older live version.
 
 ### Fixed
-
-- The real-editor OpenCode E2E gate no longer rejects ACP clients that omit the
-  optional client-side terminal-auth capability during a non-authentication
-  prompt turn. It still fails closed unless OpenCode advertises its terminal-auth
-  method, and the evidence proxy recognises both the standard `auth.terminal`
-  form and the pinned legacy metadata form when an editor does opt in.
 
 - Auto-release git hooks are now worktree-aware. Git worktrees share one hooks
   directory, so the single `post-commit`/`post-merge` hook that `synapse git-hook`

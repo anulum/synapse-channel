@@ -26,32 +26,34 @@ from typing import TYPE_CHECKING, Any, cast
 import pytest
 
 if TYPE_CHECKING:
+    from tools import opencode_compatibility_install as install_module
     from tools.opencode_compatibility_contract import (
         DEFAULT_MANIFEST,
         Artifact,
         load_compatibility,
     )
-    from tools.opencode_compatibility_smoke import (
+    from tools.opencode_compatibility_install import (
         SmokeError,
         artifact_url,
         install_archive,
-        smoke_binary,
         verify_archive,
     )
+    from tools.opencode_compatibility_smoke import _process_environment, smoke_binary
 else:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from tools import opencode_compatibility_install as install_module
     from tools.opencode_compatibility_contract import (
         DEFAULT_MANIFEST,
         Artifact,
         load_compatibility,
     )
-    from tools.opencode_compatibility_smoke import (
+    from tools.opencode_compatibility_install import (
         SmokeError,
         artifact_url,
         install_archive,
-        smoke_binary,
         verify_archive,
     )
+    from tools.opencode_compatibility_smoke import _process_environment, smoke_binary
 
 _PAYLOAD = b"real archive member bytes\n"
 
@@ -127,6 +129,21 @@ def test_installer_refuses_link_members(tmp_path: Path, archive_kind: str) -> No
     assert not destination.exists()
 
 
+def test_installer_refuses_symlinked_destination_ancestors(tmp_path: Path) -> None:
+    archive = _tar_archive(tmp_path / "opencode-test.tar.gz")
+    requested = tmp_path / "requested"
+    outside = tmp_path / "outside"
+    requested.mkdir()
+    outside.mkdir()
+    link = requested / "link"
+    link.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(SmokeError, match="exclusive OpenCode output"):
+        install_archive(archive, _artifact(archive), link / "opencode")
+
+    assert not (outside / "opencode").exists()
+
+
 def test_archive_verification_refuses_digest_drift(tmp_path: Path) -> None:
     archive = _tar_archive(tmp_path / "opencode-test.tar.gz")
     artifact = _artifact(archive)
@@ -151,7 +168,7 @@ def test_installer_removes_partial_destination_for_malformed_archives(
     archive.write_bytes(contents)
     destination = tmp_path / "opencode"
 
-    with pytest.raises(SmokeError, match="cannot inspect OpenCode archive"):
+    with pytest.raises(SmokeError, match="no valid end|non-empty bounded"):
         install_archive(archive, _artifact(archive), destination)
 
     assert not destination.exists()
@@ -160,7 +177,7 @@ def test_installer_removes_partial_destination_for_malformed_archives(
 @pytest.mark.parametrize(
     ("member", "payload", "message"),
     [
-        ("nested/opencode", _PAYLOAD, "exactly one root"),
+        ("nested/opencode", _PAYLOAD, "archive root"),
         ("opencode", b"", "empty binary"),
     ],
 )
@@ -176,6 +193,39 @@ def test_installer_refuses_missing_or_empty_root_binary(
         install_archive(archive, _artifact(archive), destination)
 
     assert not destination.exists()
+
+
+@pytest.mark.parametrize("archive_kind", ["tar", "zip"])
+def test_installer_refuses_archive_member_fanout(tmp_path: Path, archive_kind: str) -> None:
+    if archive_kind == "tar":
+        archive = tmp_path / "opencode-test.tar.gz"
+        with tarfile.open(archive, mode="w:gz") as bundle:
+            for index in range(17):
+                name = "opencode" if index == 0 else f"extra-{index}"
+                member = tarfile.TarInfo(name)
+                member.size = len(_PAYLOAD)
+                bundle.addfile(member, io.BytesIO(_PAYLOAD))
+    else:
+        archive = tmp_path / "opencode-test.zip"
+        with zipfile.ZipFile(archive, mode="w") as bundle:
+            bundle.writestr("opencode", _PAYLOAD)
+            for index in range(1, 17):
+                bundle.writestr(f"extra-{index}", _PAYLOAD)
+
+    with pytest.raises(SmokeError, match="metadata limit|only the exact root"):
+        install_archive(archive, _artifact(archive), tmp_path / "installed")
+
+
+def test_installer_refuses_excessive_tar_expansion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive = _tar_archive(tmp_path / "opencode-test.tar.gz")
+    monkeypatch.setattr(install_module, "_MAX_TAR_STREAM_BYTES", 32)
+
+    with pytest.raises(SmokeError, match="expanded-stream limit"):
+        install_archive(archive, _artifact(archive), tmp_path / "installed")
+
+    assert not (tmp_path / "installed").exists()
 
 
 def test_offline_install_cli_uses_the_same_manifest_and_archive_contract(tmp_path: Path) -> None:
@@ -236,6 +286,20 @@ def test_smoke_refuses_non_regular_or_wrong_version_executables(tmp_path: Path) 
         smoke_binary(Path(sys.executable).resolve(), contract)
 
 
+def test_smoke_environment_excludes_ambient_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SYNAPSE_AUDIT_SECRET", "ambient-sentinel")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "ambient-cloud-secret")
+
+    environment = _process_environment(tmp_path)
+
+    assert "SYNAPSE_AUDIT_SECRET" not in environment
+    assert "AWS_SECRET_ACCESS_KEY" not in environment
+    assert environment["HOME"] == str(tmp_path)
+    assert environment["OPENCODE_AUTH_CONTENT"] == "{}"
+
+
 def test_real_pinned_opencode_negotiates_the_expected_acp_face() -> None:
     configured = os.environ.get("OPENCODE_BIN", "").strip()
     discovered = configured or shutil.which("opencode") or ""
@@ -253,7 +317,8 @@ def test_real_pinned_opencode_negotiates_the_expected_acp_face() -> None:
     if version.returncode != 0 or version.stdout.strip() != contract.version:
         pytest.skip(f"real OpenCode compatibility smoke requires {contract.version}")
 
-    assert smoke_binary(binary, contract) == {
+    relative_binary = Path(os.path.relpath(binary, Path.cwd()))
+    assert smoke_binary(relative_binary, contract) == {
         "agent": "OpenCode",
         "mcp_http": True,
         "mcp_sse": True,

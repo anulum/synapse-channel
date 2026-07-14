@@ -25,6 +25,7 @@ _MAX_LINE_BYTES = 1_048_576
 _MAX_TRACE_BYTES = 4_194_304
 _MAX_PENDING_REQUESTS = 4_096
 _DIRECTIONS = frozenset({"client_to_agent", "agent_to_client"})
+_MISSING = object()
 
 
 def _request_id(value: object) -> int | str | None:
@@ -55,6 +56,92 @@ def _prompt_fingerprint(params: object) -> tuple[int, str]:
     return len(encoded), hashlib.sha256(encoded).hexdigest()
 
 
+def _forward_client_line(raw_line: bytes) -> tuple[bytes, bool]:
+    """Add OpenCode's legacy terminal-auth opt-in without hiding client intent."""
+    try:
+        message = json.loads(raw_line)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return raw_line, False
+    if (
+        not isinstance(message, dict)
+        or message.get("jsonrpc") != "2.0"
+        or message.get("method") != "initialize"
+    ):
+        return raw_line, False
+    params = message.get("params")
+    if not isinstance(params, dict):
+        return raw_line, False
+    raw_capabilities = params.get("clientCapabilities", _MISSING)
+    if raw_capabilities is _MISSING:
+        capabilities: dict[str, Any] = {}
+    elif isinstance(raw_capabilities, dict):
+        capabilities = raw_capabilities
+    else:
+        raise ValueError("ACP initialize clientCapabilities is not an object")
+
+    raw_auth = capabilities.get("auth", _MISSING)
+    if raw_auth is _MISSING:
+        auth: Mapping[str, Any] = {}
+    elif isinstance(raw_auth, Mapping):
+        auth = raw_auth
+    else:
+        raise ValueError("ACP initialize auth capability is not an object")
+    raw_meta = capabilities.get("_meta", _MISSING)
+    if raw_meta is _MISSING:
+        meta: Mapping[str, Any] = {}
+    elif isinstance(raw_meta, Mapping):
+        meta = raw_meta
+    else:
+        raise ValueError("ACP initialize capability metadata is not an object")
+
+    standard = auth.get("terminal", _MISSING)
+    legacy = meta.get("terminal-auth", _MISSING)
+    for name, value in (("auth.terminal", standard), ("_meta.terminal-auth", legacy)):
+        if value is not _MISSING and not isinstance(value, bool):
+            raise ValueError(f"ACP initialize {name} capability is not boolean")
+    if {standard, legacy} == {True, False}:
+        raise ValueError("ACP initialize terminal-auth capabilities conflict")
+    if standard is False or legacy is False or legacy is True:
+        return raw_line, False
+
+    forwarded_meta = dict(meta)
+    forwarded_meta["terminal-auth"] = True
+    forwarded_capabilities = dict(capabilities)
+    forwarded_capabilities["_meta"] = forwarded_meta
+    forwarded_params = dict(params)
+    forwarded_params["clientCapabilities"] = forwarded_capabilities
+    forwarded_message = dict(message)
+    forwarded_message["params"] = forwarded_params
+    forwarded = json.dumps(forwarded_message, separators=(",", ":")).encode("utf-8") + b"\n"
+    if len(forwarded) > _MAX_LINE_BYTES:
+        raise ValueError("normalised ACP initialize exceeds the one MiB limit")
+    return forwarded, True
+
+
+def _has_terminal_auth_method(methods: object) -> bool:
+    """Recognise the exact command-shaped terminal-auth method from OpenCode."""
+    if not isinstance(methods, list):
+        return False
+    for item in methods:
+        if not isinstance(item, Mapping) or item.get("id") != "opencode-login":
+            continue
+        meta = item.get("_meta")
+        if not isinstance(meta, Mapping):
+            continue
+        terminal_auth = meta.get("terminal-auth")
+        if not isinstance(terminal_auth, Mapping):
+            continue
+        label = terminal_auth.get("label")
+        if (
+            terminal_auth.get("command") == "opencode"
+            and terminal_auth.get("args") == ["auth", "login"]
+            and isinstance(label, str)
+            and bool(label.strip())
+        ):
+            return True
+    return False
+
+
 class TraceWriter:
     """Write one private, append-only, content-minimised JSONL trace."""
 
@@ -75,7 +162,13 @@ class TraceWriter:
             os.fsync(self._stream.fileno())
             self._stream.close()
 
-    def record(self, direction: str, raw_line: bytes) -> None:
+    def record(
+        self,
+        direction: str,
+        raw_line: bytes,
+        *,
+        terminal_auth_injected: bool = False,
+    ) -> None:
         """Record protocol metadata from one bounded JSON-RPC line."""
         if len(raw_line) > _MAX_LINE_BYTES:
             raise ValueError("ACP line exceeds the one MiB evidence limit")
@@ -91,7 +184,11 @@ class TraceWriter:
             raise ValueError("ACP evidence direction is invalid")
 
         with self._lock:
-            event = self._event(direction, message)
+            event = self._event(
+                direction,
+                message,
+                terminal_auth_injected=terminal_auth_injected,
+            )
             line = json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"
             encoded_bytes = len(line.encode("utf-8"))
             if self._written_bytes + encoded_bytes > _MAX_TRACE_BYTES:
@@ -100,7 +197,13 @@ class TraceWriter:
             self._stream.flush()
             self._written_bytes += encoded_bytes
 
-    def _event(self, direction: str, message: Mapping[str, Any]) -> dict[str, Any]:
+    def _event(
+        self,
+        direction: str,
+        message: Mapping[str, Any],
+        *,
+        terminal_auth_injected: bool,
+    ) -> dict[str, Any]:
         """Build one event while holding the pending-request lock."""
         event: dict[str, Any] = {"direction": direction}
         method = message.get("method")
@@ -120,6 +223,7 @@ class TraceWriter:
             params = message.get("params")
             if method == "initialize" and isinstance(params, Mapping):
                 event["protocol_version"] = params.get("protocolVersion")
+                event["terminal_auth_injected"] = terminal_auth_injected
                 client_info = params.get("clientInfo")
                 if isinstance(client_info, Mapping):
                     event["client_info"] = {
@@ -167,13 +271,7 @@ class TraceWriter:
                             key: mcp_capabilities.get(key) is True for key in ("http", "sse")
                         }
                 auth_methods = result.get("authMethods")
-                if isinstance(auth_methods, list):
-                    event["terminal_auth_method"] = any(
-                        isinstance(item, Mapping)
-                        and isinstance(item.get("_meta"), Mapping)
-                        and item["_meta"].get("terminal-auth") is True
-                        for item in auth_methods
-                    )
+                event["terminal_auth_method"] = _has_terminal_auth_method(auth_methods)
             elif response_to == "session/new":
                 event["session_id_present"] = isinstance(result.get("sessionId"), str)
             elif response_to == "session/prompt":
@@ -192,8 +290,15 @@ def _relay(
     """Copy complete JSONL messages between two ACP peers."""
     try:
         while line := source.readline(_MAX_LINE_BYTES + 1):
-            trace.record(direction, line)
-            destination.write(line)
+            forwarded, terminal_auth_injected = (
+                _forward_client_line(line) if direction == "client_to_agent" else (line, False)
+            )
+            trace.record(
+                direction,
+                line,
+                terminal_auth_injected=terminal_auth_injected,
+            )
+            destination.write(forwarded)
             destination.flush()
     except (BrokenPipeError, ValueError) as exc:
         failure = f"ACP trace proxy refused {direction} stream: {exc}"

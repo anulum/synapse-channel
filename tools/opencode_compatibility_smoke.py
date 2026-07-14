@@ -10,237 +10,55 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import queue
 import stat
 import subprocess  # nosec B404
-import tarfile
 import tempfile
 import threading
-import zipfile
-from collections.abc import Mapping
-from http.client import HTTPMessage
 from pathlib import Path
-from typing import IO
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
-from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from tools.opencode_compatibility_contract import (
     DEFAULT_MANIFEST,
-    Artifact,
     Compatibility,
     CompatibilityError,
     load_compatibility,
 )
+from tools.opencode_compatibility_install import (
+    SmokeError,
+    download_archive,
+    install_archive,
+    write_report,
+)
 
-_MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
-_MAX_BINARY_BYTES = 256 * 1024 * 1024
-_CHUNK_BYTES = 1024 * 1024
-_ALLOWED_DOWNLOAD_HOSTS = frozenset({"github.com", "objects.githubusercontent.com"})
-
-
-class SmokeError(RuntimeError):
-    """The pinned artifact could not be installed or its ACP face failed."""
-
-
-class _PinnedRedirectHandler(HTTPRedirectHandler):
-    def redirect_request(
-        self,
-        req: Request,
-        fp: IO[bytes],
-        code: int,
-        msg: str,
-        headers: HTTPMessage,
-        newurl: str,
-    ) -> Request | None:
-        _require_download_url(newurl)
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-
-def _require_download_url(url: str) -> None:
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower()
-    if parsed.scheme != "https" or (
-        host not in _ALLOWED_DOWNLOAD_HOSTS and not host.endswith(".githubusercontent.com")
-    ):
-        raise SmokeError(f"OpenCode download redirected outside approved HTTPS hosts: {url}")
-
-
-def artifact_url(contract: Compatibility, artifact: Artifact) -> str:
-    """Return the immutable official release URL for one manifest artifact."""
-    if contract.repository != "anomalyco/opencode":
-        raise SmokeError("OpenCode artifact URL requires the official repository")
-    url = (
-        f"https://github.com/{contract.repository}/releases/download/{contract.tag}/{artifact.name}"
-    )
-    _require_download_url(url)
-    return url
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    try:
-        with path.open("rb") as source:
-            for chunk in iter(lambda: source.read(_CHUNK_BYTES), b""):
-                digest.update(chunk)
-    except OSError as exc:
-        raise SmokeError(f"cannot read OpenCode archive: {path}") from exc
-    return digest.hexdigest()
-
-
-def verify_archive(path: Path, artifact: Artifact) -> None:
-    """Require a regular bounded archive with the manifest SHA-256 digest."""
-    try:
-        status = path.lstat()
-    except OSError as exc:
-        raise SmokeError(f"cannot inspect OpenCode archive: {path}") from exc
-    if not stat.S_ISREG(status.st_mode) or status.st_size > _MAX_ARCHIVE_BYTES:
-        raise SmokeError("OpenCode archive must be a bounded regular file")
-    actual = _sha256(path)
-    if actual != artifact.sha256:
-        raise SmokeError(
-            f"OpenCode archive digest mismatch for {artifact.name}: "
-            f"expected {artifact.sha256}, got {actual}"
-        )
-
-
-def download_archive(contract: Compatibility, artifact: Artifact, destination: Path) -> None:
-    """Download one exact release asset over HTTPS and verify it before use."""
-    if destination.exists() or destination.is_symlink():
-        raise SmokeError(f"download destination already exists: {destination}")
-    destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    request = Request(
-        artifact_url(contract, artifact),
-        headers={"Accept": "application/octet-stream", "User-Agent": "synapse-channel"},
-    )
-    opener = build_opener(_PinnedRedirectHandler())
-    written = 0
-    digest = hashlib.sha256()
-    try:
-        with opener.open(request, timeout=90) as response:  # nosec B310
-            _require_download_url(response.geturl())
-            length = response.headers.get("Content-Length")
-            if length is not None and int(length) > _MAX_ARCHIVE_BYTES:
-                raise SmokeError("OpenCode release archive exceeds the download limit")
-            with destination.open("xb") as output:
-                os.chmod(destination, 0o600)
-                while chunk := response.read(_CHUNK_BYTES):
-                    written += len(chunk)
-                    if written > _MAX_ARCHIVE_BYTES:
-                        raise SmokeError("OpenCode release archive exceeds the download limit")
-                    output.write(chunk)
-                    digest.update(chunk)
-                output.flush()
-                os.fsync(output.fileno())
-    except (HTTPError, URLError, OSError, ValueError, SmokeError) as exc:
-        destination.unlink(missing_ok=True)
-        if isinstance(exc, SmokeError):
-            raise
-        raise SmokeError(f"cannot download {artifact.name}: {exc}") from exc
-    if written == 0 or digest.hexdigest() != artifact.sha256:
-        destination.unlink(missing_ok=True)
-        raise SmokeError(
-            f"downloaded OpenCode archive failed integrity verification: {artifact.name}"
-        )
-
-
-def _copy_bounded(source: IO[bytes], destination: IO[bytes]) -> int:
-    written = 0
-    while chunk := source.read(_CHUNK_BYTES):
-        written += len(chunk)
-        if written > _MAX_BINARY_BYTES:
-            raise SmokeError("OpenCode binary exceeds the extraction limit")
-        destination.write(chunk)
-    if written == 0:
-        raise SmokeError("OpenCode archive contains an empty binary")
-    return written
-
-
-def _zip_member(archive: zipfile.ZipFile, name: str) -> zipfile.ZipInfo:
-    matches = [item for item in archive.infolist() if item.filename == name]
-    if len(matches) != 1:
-        raise SmokeError(f"OpenCode ZIP must contain exactly one root {name!r} member")
-    member = matches[0]
-    mode = member.external_attr >> 16
-    if member.is_dir() or stat.S_ISLNK(mode) or member.file_size > _MAX_BINARY_BYTES:
-        raise SmokeError("OpenCode ZIP binary member is not a bounded regular file")
-    return member
-
-
-def _tar_member(archive: tarfile.TarFile, name: str) -> tarfile.TarInfo:
-    matches = [item for item in archive.getmembers() if item.name == name]
-    if len(matches) != 1:
-        raise SmokeError(f"OpenCode tarball must contain exactly one root {name!r} member")
-    member = matches[0]
-    if not member.isfile() or member.size > _MAX_BINARY_BYTES:
-        raise SmokeError("OpenCode tarball binary member is not a bounded regular file")
-    return member
-
-
-def _copy_archive_member(archive_path: Path, artifact: Artifact, destination: IO[bytes]) -> int:
-    try:
-        if artifact.name.endswith(".zip"):
-            with zipfile.ZipFile(archive_path) as archive:
-                zip_member = _zip_member(archive, artifact.binary)
-                with archive.open(zip_member, "r") as source:
-                    return _copy_bounded(source, destination)
-        if artifact.name.endswith(".tar.gz"):
-            with tarfile.open(archive_path, mode="r:gz") as archive:
-                tar_member = _tar_member(archive, artifact.binary)
-                tar_source = archive.extractfile(tar_member)
-                if tar_source is None:
-                    raise SmokeError("OpenCode tarball binary member could not be opened")
-                with tar_source:
-                    return _copy_bounded(tar_source, destination)
-    except SmokeError:
-        raise
-    except (
-        EOFError,
-        KeyError,
-        OSError,
-        RuntimeError,
-        tarfile.TarError,
-        zipfile.BadZipFile,
-    ) as exc:
-        raise SmokeError(f"cannot inspect OpenCode archive: {archive_path}") from exc
-    raise SmokeError(f"unsupported OpenCode archive format: {artifact.name}")
-
-
-def install_archive(archive_path: Path, artifact: Artifact, destination: Path) -> None:
-    """Verify and extract only the exact root binary without overwriting a path."""
-    verify_archive(archive_path, artifact)
-    if destination.exists() or destination.is_symlink():
-        raise SmokeError(f"binary destination already exists: {destination}")
-    destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    descriptor = -1
-    try:
-        descriptor = os.open(destination, flags, 0o600)
-        with os.fdopen(descriptor, "wb", closefd=True) as output:
-            descriptor = -1
-            _copy_archive_member(archive_path, artifact, output)
-            output.flush()
-            os.fsync(output.fileno())
-        os.chmod(destination, 0o700)
-    except (OSError, SmokeError) as exc:
-        if descriptor >= 0:
-            os.close(descriptor)
-        destination.unlink(missing_ok=True)
-        if isinstance(exc, SmokeError):
-            raise
-        raise SmokeError(f"cannot install OpenCode binary: {destination}") from exc
+_SAFE_INHERITED_ENV = (
+    "COMSPEC",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "PATH",
+    "PATHEXT",
+    "SYSTEMROOT",
+    "WINDIR",
+)
 
 
 def _process_environment(home: Path) -> dict[str, str]:
-    environment = dict(os.environ)
+    environment = {
+        key: os.environ[key] for key in _SAFE_INHERITED_ENV if key in os.environ and os.environ[key]
+    }
+    temporary = home / "tmp"
     environment.update(
         {
+            "APPDATA": str(home / ".config"),
             "HOME": str(home),
+            "LOCALAPPDATA": str(home / ".local" / "share"),
+            "TEMP": str(temporary),
+            "TMP": str(temporary),
+            "TMPDIR": str(temporary),
+            "USER": "synapse-opencode",
+            "USERNAME": "synapse-opencode",
             "USERPROFILE": str(home),
             "XDG_CACHE_HOME": str(home / ".cache"),
             "XDG_CONFIG_HOME": str(home / ".config"),
@@ -320,27 +138,13 @@ def smoke_binary(
     binary: Path, contract: Compatibility, *, timeout: float = 30.0
 ) -> dict[str, object]:
     """Require the exact CLI version and one real ACP initialize exchange."""
+    binary = Path(os.path.abspath(binary))
     try:
         status = binary.lstat()
     except OSError as exc:
         raise SmokeError(f"cannot inspect OpenCode binary: {binary}") from exc
     if not stat.S_ISREG(status.st_mode):
         raise SmokeError("OpenCode smoke target must be a regular file")
-    try:
-        completed = subprocess.run(  # nosec B603
-            [str(binary), "--version"],
-            capture_output=True,
-            check=False,
-            text=True,
-            timeout=timeout,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise SmokeError("OpenCode CLI version probe failed") from exc
-    if completed.returncode != 0 or completed.stdout.strip() != contract.version:
-        raise SmokeError(
-            f"OpenCode CLI version mismatch: expected {contract.version}, "
-            f"got {completed.stdout.strip() or completed.stderr.strip() or 'no output'}"
-        )
 
     with tempfile.TemporaryDirectory(prefix="synapse-opencode-smoke-") as temporary:
         root = Path(temporary)
@@ -348,11 +152,30 @@ def smoke_binary(
         workspace = root / "workspace"
         home.mkdir(mode=0o700)
         workspace.mkdir(mode=0o700)
+        (home / "tmp").mkdir(mode=0o700)
+        environment = _process_environment(home)
+        try:
+            completed = subprocess.run(  # nosec B603
+                [str(binary), "--version"],
+                cwd=workspace,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+                timeout=timeout,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SmokeError("OpenCode CLI version probe failed") from exc
+        if completed.returncode != 0 or completed.stdout.strip() != contract.version:
+            raise SmokeError(
+                f"OpenCode CLI version mismatch: expected {contract.version}, "
+                f"got {completed.stdout.strip() or completed.stderr.strip() or 'no output'}"
+            )
         try:
             process = subprocess.Popen(  # nosec B603
                 [str(binary), "acp", "--cwd", str(workspace)],
                 cwd=workspace,
-                env=_process_environment(home),
+                env=environment,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -415,20 +238,6 @@ def smoke_binary(
             reader.join(timeout=2)
 
 
-def _write_report(path: Path | None, report: Mapping[str, object]) -> None:
-    if path is None:
-        return
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    try:
-        with path.open("x", encoding="utf-8") as output:
-            os.chmod(path, 0o600)
-            output.write(json.dumps(report, indent=2, sort_keys=True) + "\n")
-            output.flush()
-            os.fsync(output.fileno())
-    except OSError as exc:
-        raise SmokeError(f"cannot write compatibility report: {path}") from exc
-
-
 def main() -> int:
     """Install or smoke one manifest-pinned OpenCode release artifact."""
     parser = argparse.ArgumentParser()
@@ -463,11 +272,11 @@ def main() -> int:
             "platform": artifact.key,
             "version": contract.version,
         }
-        _write_report(args.report, report)
+        write_report(args.report, report)
         print(json.dumps(report, sort_keys=True))
         return 0
     report = smoke_binary(args.binary, contract, timeout=args.timeout)
-    _write_report(args.report, report)
+    write_report(args.report, report)
     print(json.dumps(report, sort_keys=True))
     return 0
 

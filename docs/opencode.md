@@ -324,9 +324,12 @@ stable tag is an advisory update signal; it does not silently move the supported
 version. Any mutation of the immutable pinned release fails the job.
 
 Five host/architecture lanes download the official archive, verify its manifest
-SHA-256, extract only the exact regular root binary without overwriting an
-existing path, require CLI version 1.17.20, and perform a real ACP initialize
-exchange:
+SHA-256, require a bounded single regular root member, and create the binary
+through component-by-component no-follow parent traversal without overwriting an
+existing path. The downloaded process receives a minimal cross-platform
+environment allowlist with isolated home/config/temp roots rather than caller
+credentials. Each lane then requires CLI version 1.17.20 and performs a real ACP
+initialize exchange:
 
 | Platform artifact | Public runner | Gate |
 |---|---|---|
@@ -336,7 +339,10 @@ exchange:
 | macOS x64 | `macos-15-intel` | Archive integrity + real ACP v1 |
 | Windows x64 | `windows-2025` | Archive integrity + real ACP v1 |
 
-The remaining official Darwin x64 baseline, Linux x64 baseline, Linux musl,
+ZIP entry counts are bounded from the end record before Python materialises the
+central directory; tar streams have independent member, binary, and expanded-byte
+ceilings. Relative binary arguments are made absolute before the isolated ACP
+workspace changes directory. The remaining official Darwin x64 baseline, Linux x64 baseline, Linux musl,
 Linux baseline-musl, Linux arm64-musl, Windows arm64, and Windows x64 baseline
 archives remain digest-bound in the same manifest. They are not labelled as
 runtime-tested because GitHub-hosted jobs do not provide each corresponding
@@ -364,9 +370,11 @@ Release archives are SHA-256 verified; editor plugins are checked out at exact
 commits or verified by archive hash and declared version. Each editor must
 identify itself during ACP initialization, create exactly one session, deliver
 exactly one acceptance prompt, receive `end_turn`, and reach the deterministic
-provider. OpenCode must advertise its terminal-auth method; the proxy records a
-client terminal-auth opt-in when present but does not require that optional
-capability for a non-authentication prompt turn. The same turn must prove the
+provider. OpenCode must advertise its exact command-shaped terminal-auth method.
+The proxy records the editor's original capability, maps the standard
+`auth.terminal` opt-in to OpenCode's pinned legacy metadata, and injects that
+legacy opt-in only when the editor omitted it. An explicit false is never
+overridden, and the evidence records whether injection occurred. The same turn must prove the
 full governance chain: denied write before ownership, native OpenCode MCP
 discovery of `synapse_git_claim`, exact Git/path claim, allowed claimed write,
 receipt-bearing release, and denied write after release. The durable hub journal
