@@ -15,12 +15,16 @@ import stat
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
+from synapse_channel.core.errors import SynapseError
+
 MAX_PASSWORD_BYTES = 8_192
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
-class OpenCodeAuthError(ValueError):
+class OpenCodeAuthError(SynapseError, ValueError):
     """An OpenCode endpoint or password file violates the connector policy."""
+
+    code = "opencode_auth"
 
 
 def validate_endpoint(endpoint: str, *, allow_insecure_http: bool = False) -> str:

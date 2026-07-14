@@ -66,6 +66,7 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         ValueError,
     ),
     "AclError": ("synapse_channel.core.acl", "acl", ValueError),
+    "ApplyPatchPathError": ("synapse_channel.apply_patch_paths", "apply_patch_path", ValueError),
     "AutoActionStoreError": (
         "synapse_channel.participants.auto_action_store",
         "auto_action_store",
@@ -202,6 +203,23 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         RuntimeError,
     ),
     "MultiHubWireError": ("synapse_channel.core.multihub_wire", "multihub_wire", ValueError),
+    "OpenCodeAdapterError": ("synapse_channel.opencode_adapter", "opencode_adapter", ValueError),
+    "OpenCodeAdapterFileError": (
+        "synapse_channel.opencode_adapter_files",
+        "opencode_adapter_file",
+        OSError,
+    ),
+    "OpenCodeApiError": ("synapse_channel.participants.opencode_api", "opencode_api", RuntimeError),
+    "OpenCodeAuthError": (
+        "synapse_channel.participants.opencode_auth",
+        "opencode_auth",
+        ValueError,
+    ),
+    "OpenCodeClaimGuardError": (
+        "synapse_channel.opencode_claim_guard",
+        "opencode_claim_guard",
+        RuntimeError,
+    ),
     "ParanoidModeError": ("synapse_channel.core.paranoid", "paranoid_mode", ValueError),
     "PayloadCryptoError": ("synapse_channel.core.payload_crypto", "payload_crypto", ValueError),
     "PathResolutionError": (

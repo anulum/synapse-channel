@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.participants.envelope import (
     TurnRequest,
     TurnResult,
@@ -43,8 +44,10 @@ DEFAULT_TIMEOUT = 600.0
 MAX_RESPONSE_BYTES = 8 * 1_048_576
 
 
-class OpenCodeApiError(RuntimeError):
+class OpenCodeApiError(SynapseError, RuntimeError):
     """The OpenCode API failed negotiation, transport, or schema validation."""
+
+    code = "opencode_api"
 
 
 class HttpRequester(Protocol):

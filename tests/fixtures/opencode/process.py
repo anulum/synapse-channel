@@ -16,6 +16,8 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+import pytest
+
 from fixtures.opencode.llm import provider_config
 
 OPENCODE_VERSION = "1.17.20"
@@ -55,15 +57,23 @@ def isolated_environment(
 
 
 def find_opencode() -> str:
-    """Return the exact installed OpenCode binary or fail the acceptance test."""
+    """Return the exact pinned OpenCode binary, or skip when it is unavailable.
+
+    These are real-process acceptance tests: they need the pinned ``opencode``
+    ``1.17.20`` binary installed (the dedicated ``opencode-integration`` workflow
+    provides it via ``OPENCODE_BIN``). When the binary is absent or the wrong
+    version — the general test matrix, where OpenCode is not installed — the test
+    skips rather than failing, so acceptance stays gated on the real binary
+    without reddening runs that never had it.
+    """
     binary = os.environ.get("OPENCODE_BIN", "").strip() or shutil.which("opencode")
     if binary is None:
-        raise AssertionError("OpenCode acceptance requires the pinned opencode binary")
+        pytest.skip("OpenCode acceptance requires the pinned opencode binary; not installed")
     completed = subprocess.run(  # nosec B603
         [binary, "--version"], capture_output=True, text=True, check=False, timeout=15
     )
     if completed.returncode != 0 or completed.stdout.strip() != OPENCODE_VERSION:
-        raise AssertionError(
+        pytest.skip(
             f"OpenCode acceptance requires version {OPENCODE_VERSION}, got "
             f"{completed.stdout.strip() or 'unavailable'}"
         )
