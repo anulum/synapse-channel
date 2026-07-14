@@ -366,6 +366,10 @@ def test_cmd_git_init_installs_services(
         captured.update(kwargs)
         return ["wrote synapse-arm@.service"]
 
+    def initialise_repo(**kwargs: Any) -> list[str]:
+        captured["repo_synapse_bin"] = kwargs["synapse_bin"]
+        return ["wrote .synapse/git-claims.md"]
+
     ns = argparse.Namespace(
         uri="ws://h",
         name="ME",
@@ -381,7 +385,7 @@ def test_cmd_git_init_installs_services(
     assert (
         cli_git._cmd_git_init(
             ns,
-            repo_initializer=lambda **kwargs: ["wrote .synapse/git-claims.md"],
+            repo_initializer=initialise_repo,
             service_installer=install_services,
         )
         == 0
@@ -389,6 +393,32 @@ def test_cmd_git_init_installs_services(
     assert "synapse-arm@.service" in capsys.readouterr().out
     assert captured["project"] == "repo"
     assert captured["identity"] == "repo/ux"
+    assert captured["synapse_bin"] == "/bin/synapse"
+    assert captured["repo_synapse_bin"] == captured["synapse_bin"]
+
+    resolved: dict[str, str] = {}
+
+    def initialise_with_default(**kwargs: Any) -> list[str]:
+        resolved["repo"] = kwargs["synapse_bin"]
+        return ["wrote .synapse/git-claims.md"]
+
+    def install_with_default(**kwargs: Any) -> list[str]:
+        resolved["service"] = kwargs["synapse_bin"]
+        return ["wrote synapse-arm@.service"]
+
+    ns.synapse_bin = None
+    with monkeypatch.context() as patch:
+        patch.setattr(cli_git, "default_synapse_bin", lambda: "/resolved/synapse")
+        assert (
+            cli_git._cmd_git_init(
+                ns,
+                repo_initializer=initialise_with_default,
+                service_installer=install_with_default,
+            )
+            == 0
+        )
+    assert resolved == {"repo": "/resolved/synapse", "service": "/resolved/synapse"}
+    capsys.readouterr()
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -407,6 +437,22 @@ def test_cmd_git_init_installs_services(
     captured_io = capsys.readouterr()
     assert code == 2
     assert "ExecStart control prefix" in captured_io.err
+    assert "Traceback" not in captured_io.out + captured_io.err
+    assert not (repo / ".synapse").exists()
+    assert not (repo / ".git" / "hooks" / "post-commit").exists()
+    assert not (repo / ".git" / "hooks" / "post-merge").exists()
+    assert not home.exists()
+
+    hostile_bin = tmp_path / "hostile bin"
+    hostile_bin.mkdir()
+    executable = hostile_bin / "synapse"
+    executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    executable.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{hostile_bin}:/usr/bin:/bin")
+    code = cli.main(["git-init", "--install-user-services"])
+    captured_io = capsys.readouterr()
+    assert code == 2
+    assert "without whitespace" in captured_io.err
     assert "Traceback" not in captured_io.out + captured_io.err
     assert not (repo / ".synapse").exists()
     assert not (repo / ".git" / "hooks" / "post-commit").exists()

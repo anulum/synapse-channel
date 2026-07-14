@@ -31,6 +31,7 @@ from synapse_channel.git.gitconflict import run_conflicts
 from synapse_channel.git.githook import check_hooks, install_hooks, run_git_release
 from synapse_channel.git.gitinit import init_repo
 from synapse_channel.service_setup import (
+    default_synapse_bin,
     install_user_services,
     service_suggestions,
     validate_systemd_executable,
@@ -140,9 +141,12 @@ def _cmd_git_init(
     idempotent; a re-run refreshes its own files and never clobbers a user's.
     """
     service_install_requested = args.install_user_services or args.start_user_services
-    if service_install_requested and args.synapse_bin is not None:
+    effective_synapse_bin = args.synapse_bin
+    if service_install_requested:
+        if effective_synapse_bin is None:
+            effective_synapse_bin = default_synapse_bin()
         try:
-            validate_systemd_executable(args.synapse_bin)
+            validate_systemd_executable(effective_synapse_bin)
         except ValueError as exc:
             print(f"git-init: {exc}", file=sys.stderr)
             return 2
@@ -152,7 +156,7 @@ def _cmd_git_init(
             name=args.name,
             base_branch=args.base,
             token_file=getattr(args, "token_file", None),
-            synapse_bin=args.synapse_bin,
+            synapse_bin=effective_synapse_bin,
         )
     except GitError as exc:
         print(f"git error: {exc}", file=sys.stderr)
@@ -164,7 +168,7 @@ def _cmd_git_init(
             service_lines = service_installer(
                 project=project,
                 identity=identity,
-                synapse_bin=args.synapse_bin,
+                synapse_bin=effective_synapse_bin,
                 start=args.start_user_services,
             )
         except ValueError as exc:
