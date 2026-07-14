@@ -30,6 +30,7 @@ from synapse_channel.core.semantic_routing import (
     recommend_agents_for_task,
     recommendation_to_json,
 )
+from synapse_channel.terminal_text import terminal_text
 
 
 def _cards(data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -62,18 +63,21 @@ def _board(data: dict[str, Any]) -> dict[str, Any]:
 def _render_recommendation(recommendation: RoutingRecommendation) -> None:
     """Print a compact text representation of ``recommendation``."""
     candidate_count = len(recommendation.candidates)
-    print(f"Route recommendations for {recommendation.task_id} ({candidate_count} candidates):")
+    print(
+        f"Route recommendations for {terminal_text(recommendation.task_id)} "
+        f"({candidate_count} candidates):"
+    )
     for candidate in recommendation.candidates:
-        reasons = ", ".join(candidate.reasons)
-        classes = ", ".join(candidate.task_classes) or "none"
-        skills = ", ".join(candidate.skills) or "none"
+        reasons = ", ".join(terminal_text(reason) for reason in candidate.reasons)
+        classes = ", ".join(terminal_text(item) for item in candidate.task_classes) or "none"
+        skills = ", ".join(terminal_text(skill) for skill in candidate.skills) or "none"
         print(
-            f"  {candidate.agent} score={candidate.score} "
+            f"  {terminal_text(candidate.agent)} score={candidate.score} "
             f"classes={classes} skills={skills} reasons={reasons}"
         )
     if recommendation.fallback_reason:
-        print(f"Fallback: {recommendation.fallback_reason}")
-    print(f"Advisory only: {recommendation.trust_boundary}")
+        print(f"Fallback: {terminal_text(recommendation.fallback_reason)}")
+    print(f"Advisory only: {terminal_text(recommendation.trust_boundary)}")
 
 
 async def _fetch_routing_inputs(
@@ -103,11 +107,13 @@ async def _fetch_routing_inputs(
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
             print(
-                describe_connect_failure(
-                    name,
-                    uri,
-                    close_code=agent.last_close_code,
-                    close_reason=agent.last_close_reason,
+                terminal_text(
+                    describe_connect_failure(
+                        name,
+                        uri,
+                        close_code=agent.last_close_code,
+                        close_reason=agent.last_close_reason,
+                    )
                 )
             )
             return None
@@ -119,7 +125,10 @@ async def _fetch_routing_inputs(
             await asyncio.sleep(0.025)
         if set(replies) != expected:
             missing = ", ".join(sorted(expected.difference(replies)))
-            print(f"[{name}] Hub did not return semantic routing snapshots: {missing}.")
+            print(
+                f"[{terminal_text(name)}] Hub did not return semantic routing snapshots: "
+                f"{terminal_text(missing)}."
+            )
             return None
         directory = build_capability_directory(
             manifest=_cards(replies[MessageType.MANIFEST_SNAPSHOT]),

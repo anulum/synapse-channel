@@ -193,6 +193,43 @@ def test_render_resource_bids_prints_the_fallback_reason(
     assert "Advisory only:" in out
 
 
+def test_render_resource_bids_makes_remote_controls_visible(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from synapse_channel.core.resource_bidding import ResourceBidCandidate, ResourceBidReport
+
+    hostile = "remote\x1b]52;c;YQ==\x07\nforged\u202e"
+    report = ResourceBidReport(
+        task_id=hostile,
+        query="gpu",
+        resource_kind="gpu",
+        candidates=(
+            ResourceBidCandidate(
+                agent=hostile,
+                resource_id="resource",
+                resource_kind=hostile,
+                resource_name=hostile,
+                capacity=1,
+                score=1,
+                reasons=(hostile,),
+                task_classes=(),
+                skills=(),
+                meta={},
+            ),
+        ),
+        fallback_reason=hostile,
+        trust_boundary=hostile,
+    )
+
+    cli_resource_bidding._render_resource_bids(report)
+
+    rendered = capsys.readouterr().out
+    assert "remote\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
+
+
 class _SilentBiddingAgent:
     """Connects and reports ready, but never delivers a single snapshot."""
 

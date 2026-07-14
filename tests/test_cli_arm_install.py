@@ -181,7 +181,7 @@ def test_cli_main_installs_waiter_into_home(
     assert code == 0
     unit = tmp_path / ".config" / "systemd" / "user" / "synapse-arm@.service"
     assert unit.exists()
-    assert "--for %I --directed-only --mailbox" in unit.read_text(encoding="utf-8")
+    assert "--for=%I --directed-only --mailbox" in unit.read_text(encoding="utf-8")
 
 
 def test_cli_main_persists_token_file_path_not_raw_token(
@@ -208,7 +208,7 @@ def test_cli_main_persists_token_file_path_not_raw_token(
     assert code == 0
     unit = tmp_path / ".config" / "systemd" / "user" / "synapse-arm@.service"
     text = unit.read_text(encoding="utf-8")
-    assert f"--token-file {token_file}" in text
+    assert f"--token-file={token_file}" in text
     assert "fixture-value" not in text
 
 

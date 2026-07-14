@@ -72,12 +72,13 @@ def test_create_coding_fleet_force_keeps_unrelated_files(tmp_path: Path) -> None
 def test_cmd_new_coding_fleet_prints_next_step(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    target = tmp_path / "fleet"
+    target = tmp_path / "$(touch injected)"
 
     assert cli.main(["new", "coding-fleet", str(target)]) == 0
 
     out = capsys.readouterr().out
     assert "created coding fleet workspace" in out
+    assert f"cd -- '{target}'" in out
     assert "python run_demo.py" in out
 
 

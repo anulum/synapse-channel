@@ -30,7 +30,7 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/synapse listen --name %i-presence --for %i --uri ws://localhost:8876
+ExecStart=%h/.local/bin/synapse listen --name=%i-presence --for=%i --uri=ws://localhost:8876
 Restart=always
 RestartSec=3
 NoNewPrivileges=yes

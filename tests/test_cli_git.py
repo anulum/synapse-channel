@@ -502,7 +502,22 @@ def test_cmd_git_release_positional_redirects_to_release(
     )
     assert cli_git._cmd_git_release(ns) == 2
     err = capsys.readouterr().err
-    assert "synapse release studio-panel --name ME" in err  # the verb they actually wanted
+    assert "synapse release --name=ME -- studio-panel" in err  # the verb they actually wanted
+
+
+def test_cmd_git_release_redirect_shell_quotes_hostile_fields(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    hostile = "--help$(touch injected)\x1b]0;fake\x07"
+    ns = argparse.Namespace(task_id=hostile, trigger=None, uri="ws://h", name=hostile, token=None)
+
+    assert cli_git._cmd_git_release(ns) == 2
+
+    err = capsys.readouterr().err
+    assert "\x1b" not in err
+    assert "\x07" not in err
+    assert "--name='--help$(touch injected)\\x1b]0;fake\\x07'" in err
+    assert "-- '--help$(touch injected)\\x1b]0;fake\\x07'" in err
 
 
 def test_cmd_git_release_missing_trigger_explains(capsys: pytest.CaptureFixture[str]) -> None:

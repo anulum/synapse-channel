@@ -36,6 +36,7 @@ from synapse_channel.core.universal_receipts import (
     universal_receipt_to_json,
     universal_receipts_from_events,
 )
+from synapse_channel.terminal_text import terminal_text
 
 TASK_EVENT_KINDS = frozenset(
     {
@@ -468,15 +469,16 @@ def render_human(result: QueryResult) -> str:
     """Render a query result as compact terminal text."""
     if result.kind == "task_timeline":
         task = _query_task_label(result.query)
-        lines = [f"task {task} timeline: {len(result.records)} event(s)"]
+        lines = [f"task {terminal_text(task)} timeline: {len(result.records)} event(s)"]
         lines.extend(_format_record(record) for record in result.records)
         return "\n".join(lines)
     if result.kind == "task_state":
         if not result.state:
             return "task state: not found"
         return (
-            f"task {result.state['task_id']} state: owner={result.state['owner']} "
-            f"status={result.state['status']} seq={result.state['event_seq']}"
+            f"task {terminal_text(result.state['task_id'])} state: "
+            f"owner={terminal_text(result.state['owner'])} "
+            f"status={terminal_text(result.state['status'])} seq={result.state['event_seq']}"
         )
     if result.kind == "path_touched":
         lines = [f"path touched: {len(result.records)} event(s)"]
@@ -489,18 +491,26 @@ def render_human(result: QueryResult) -> str:
         return "\n".join(lines)
     if result.kind == "channel_events":
         channel = _query_channel_label(result.query)
-        lines = [f"channel {channel}: {len(result.records)} event(s)"]
+        lines = [f"channel {terminal_text(channel)}: {len(result.records)} event(s)"]
         lines.extend(_format_channel_record(record) for record in result.records)
         return "\n".join(lines)
     if result.kind == "delivery_receipts":
         participant = _query_receipt_label(result.query)
-        lines = [f"delivery receipts {participant}: {len(result.receipt_events)} event(s)"]
-        lines.extend(format_receipt_event(event) for event in result.receipt_events)
+        lines = [
+            f"delivery receipts {terminal_text(participant)}: {len(result.receipt_events)} event(s)"
+        ]
+        lines.extend(terminal_text(format_receipt_event(event)) for event in result.receipt_events)
         return "\n".join(lines)
     if result.kind == "universal_receipts":
         participant = _query_receipt_label(result.query)
-        lines = [f"universal receipts {participant}: {len(result.universal_receipts)} item(s)"]
-        lines.extend(format_universal_receipt(receipt) for receipt in result.universal_receipts)
+        lines = [
+            f"universal receipts {terminal_text(participant)}: "
+            f"{len(result.universal_receipts)} item(s)"
+        ]
+        lines.extend(
+            terminal_text(format_universal_receipt(receipt))
+            for receipt in result.universal_receipts
+        )
         return "\n".join(lines)
     return f"{result.kind}: no renderer"
 
@@ -825,8 +835,9 @@ def _channel_record_to_json(record: QueryRecord) -> dict[str, object]:
 def _format_record(record: QueryRecord) -> str:
     """Render one selected event record."""
     return (
-        f"- seq={record.event.seq} ts={record.event.ts:.3f} kind={record.event.kind} "
-        f"task={record.task_id} owner={record.owner} status={record.status}"
+        f"- seq={record.event.seq} ts={record.event.ts:.3f} "
+        f"kind={terminal_text(record.event.kind)} task={terminal_text(record.task_id)} "
+        f"owner={terminal_text(record.owner)} status={terminal_text(record.status)}"
     )
 
 
@@ -834,8 +845,9 @@ def _format_channel_record(record: QueryRecord) -> str:
     """Render one channel event without its payload body."""
     payload = record.event.payload
     return (
-        f"- seq={record.event.seq} {record.event.kind} "
-        f"{payload.get('sender', '?')} channel={payload.get('channel', '')}"
+        f"- seq={record.event.seq} {terminal_text(record.event.kind)} "
+        f"{terminal_text(payload.get('sender', '?'))} "
+        f"channel={terminal_text(payload.get('channel', ''))}"
     )
 
 
@@ -843,12 +855,13 @@ def _format_conflict(item: dict[str, object]) -> str:
     """Render one reconstructed conflict pair."""
     raw_paths = item.get("paths", ())
     if isinstance(raw_paths, (list, tuple)):
-        path_text = ",".join(str(path) for path in raw_paths)
+        path_text = ",".join(terminal_text(path) for path in raw_paths)
     else:
-        path_text = str(raw_paths)
+        path_text = terminal_text(raw_paths)
     return (
-        f"- {item['left_task']}@{item['left_owner']} <-> "
-        f"{item['right_task']}@{item['right_owner']} paths={path_text}"
+        f"- {terminal_text(item['left_task'])}@{terminal_text(item['left_owner'])} <-> "
+        f"{terminal_text(item['right_task'])}@{terminal_text(item['right_owner'])} "
+        f"paths={path_text}"
     )
 
 

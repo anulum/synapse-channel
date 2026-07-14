@@ -1978,6 +1978,13 @@ synapse adapters install --project my-repo              # write the claim-aware 
 commands. It supports Linux systemd user services; native Windows installation
 is not claimed, so use WSL with systemd enabled.
 
+Generated shell wrappers, git hooks, and systemd units bind long-option values
+with `=` so an identity such as `--help` remains data, not a new option. Copyable
+operator commands additionally shell-quote terminal-safe values and place `--`
+before untrusted positional arguments. `shell-hook --provider` accepts only a
+bare command name; shell syntax, paths, and whitespace are refused before any
+startup code is printed.
+
 ## Governance and integrity
 
 Governance commands are advisory by default — they report, they do not block —
@@ -2264,7 +2271,17 @@ disabled skills/browser integration, and plan permissions; Codex uses its
 read-only sandbox; Gemini, Grok, and Kimi use their native non-mutating planning
 or approval modes. An older CLI that cannot enforce the pinned flags fails the
 turn instead of silently weakening it. Model output and peer contributions remain
-untrusted data and are fenced before another participant receives them.
+untrusted data and are fenced before another participant receives them. The
+guarded human-readable surfaces include Participant Fabric answers and health
+details, hub and peer snapshots, mailbox identities, routing and resource
+fields, capability-directory and outbound-MCP results, workflow-contention,
+event-query, memory-recall, and accounting reports, relay verdicts,
+acknowledgement errors, chat, and channel text; each
+renders terminal control characters as visible escape notation. Machine-readable
+JSON modes keep their stable JSON contract. Operator hints for mailbox replay,
+dead-letter draining, lease release, federation exchange, SQLCipher restart,
+redeploy, scaffolding, and claim commands apply the same shell and option
+boundaries before they are shown for copying.
 
 For a secured hub, pass `--token SECRET` to `worker`, `send`, `listen`, `board`,
 `manifest`, `release`, `a2a-card`, `a2a-serve`, and `task`.

@@ -44,6 +44,7 @@ from synapse_channel.core.causality import (
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.replay import SNAPSHOT_KINDS
+from synapse_channel.terminal_text import terminal_text
 
 
 @dataclass(frozen=True)
@@ -231,14 +232,17 @@ def render_advice_markdown(recommendations: list[YieldAdvice]) -> str:
     for advice in recommendations:
         lines.append("")
         lines.append(
-            f"## {advice.yielder.task_id} ({advice.yielder.owner}) should yield to "
-            f"{advice.holder.task_id} ({advice.holder.owner})"
+            f"## {terminal_text(advice.yielder.task_id)} "
+            f"({terminal_text(advice.yielder.owner)}) should yield to "
+            f"{terminal_text(advice.holder.task_id)} "
+            f"({terminal_text(advice.holder.owner)})"
         )
-        lines.append(f"- reason: {advice.reason}")
+        lines.append(f"- reason: {terminal_text(advice.reason)}")
         for label, standing in (("keeps", advice.holder), ("yields", advice.yielder)):
-            blocked = ", ".join(standing.blocked_tasks) or "none"
+            blocked = ", ".join(terminal_text(task) for task in standing.blocked_tasks) or "none"
             lines.append(
-                f"- {label}: {standing.task_id} ({standing.owner}, seq {standing.seq}) "
+                f"- {label}: {terminal_text(standing.task_id)} "
+                f"({terminal_text(standing.owner)}, seq {standing.seq}) "
                 f"blocks {standing.blocking_count} downstream task(s): {blocked}"
             )
         lines.append("- advisory only: no claim is preempted; coordinate the yield explicitly")

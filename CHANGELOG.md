@@ -63,11 +63,18 @@ All notable changes to this project are documented here.
 
 ### Security
 
-- Operator-facing chat and channel output now renders ANSI, OSC, carriage-return,
-  newline, bidi, and other control characters as visible escape notation before
-  they reach a terminal. Service-setup commands also shell-quote project and
-  identity arguments and use the `systemd-escape --` boundary, closing a command-
-  substitution path in copied `init`, `git-init`, and doctor guidance.
+- Human-readable chat, channel, hub-query, mailbox, routing, resource-bid,
+  federation-relay, peer-hub, capability-directory, outbound-MCP, workflow,
+  event-query, memory-recall, accounting, acknowledgement, and Participant
+  Fabric output now renders ANSI, OSC, carriage-return, newline, bidi, and other
+  control characters as visible escape notation before they reach a terminal.
+  Copyable operator commands shell-quote terminal-safe values, bind long-option
+  values with `=`, and terminate positional options with `--`. Generated shell
+  wrappers, git hooks, and systemd units use the same option boundary; custom
+  shell providers must be bare command names. This closes command-substitution,
+  option capture, and shell-function injection paths in setup, doctor, locks,
+  federation exchange, SQLCipher guidance, claim helpers, `fleet-init`, and
+  automatic waiter, provider, hook, and service-start flows.
 - Headless Claude turns now disable built-in tools, ambient MCP servers, skills,
   plugins, hooks, browser integration, and customisations explicitly while also
   selecting plan permission mode. Unsupported older CLIs fail closed rather than

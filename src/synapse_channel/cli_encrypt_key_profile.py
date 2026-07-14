@@ -31,6 +31,7 @@ from synapse_channel.core.at_rest import (
     require_encrypted_profile,
     restore_profile_backup,
 )
+from synapse_channel.terminal_text import shell_long_option, terminal_text
 
 
 def _surfaces(args: argparse.Namespace) -> tuple[AtRestSurface, ...]:
@@ -147,10 +148,17 @@ def _cmd_migrate_sqlcipher(args: argparse.Namespace) -> int:
             key_file=args.key,
         )
     except (ValueError, FileNotFoundError, FileExistsError, SqlCipherUnavailableError) as exc:
-        print(f"sqlcipher migrate problem: {exc}")
+        print(f"sqlcipher migrate problem: {terminal_text(exc)}")
         return 1
-    print(f"sqlcipher migrated {result['rows']} event(s): {args.source} -> {args.destination}")
-    print("start the hub with: synapse hub --db <destination> --db-key-file <key>")
+    print(
+        f"sqlcipher migrated {terminal_text(result['rows'])} event(s): "
+        f"{terminal_text(args.source)} -> {terminal_text(args.destination)}"
+    )
+    print(
+        "start the hub with: synapse hub "
+        f"{shell_long_option('--db', '<destination>')} "
+        f"{shell_long_option('--db-key-file', '<key>')}"
+    )
     return 0
 
 
@@ -174,10 +182,14 @@ def _cmd_rekey_sqlcipher(args: argparse.Namespace) -> int:
         SqlCipherUnavailableError,
         SqlCipherKeyError,
     ) as exc:
-        print(f"sqlcipher rekey problem: {exc}")
+        print(f"sqlcipher rekey problem: {terminal_text(exc)}")
         return 1
-    print(f"sqlcipher rekeyed: {result['path']}")
-    print(f"start the hub with: synapse hub --db {args.db} --db-key-file {args.new_key}")
+    print(f"sqlcipher rekeyed: {terminal_text(result['path'])}")
+    print(
+        "start the hub with: synapse hub "
+        f"{shell_long_option('--db', args.db)} "
+        f"{shell_long_option('--db-key-file', args.new_key)}"
+    )
     return 0
 
 

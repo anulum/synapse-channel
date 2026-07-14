@@ -47,6 +47,24 @@ def test_identity_audit_clean_inventory(tmp_path: Path, capsys: pytest.CaptureFi
     assert "credential=yes" in out
 
 
+def test_identity_audit_makes_inventory_controls_visible(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    hostile = "remote\x1b]52;c;YQ==\x07\nforged\u202e"
+    ids = _json(
+        tmp_path / "ids.json",
+        [{"agent_id": hostile, "project": "P", "credential_id": "k"}],
+    )
+
+    assert _run(["identity", "audit", "--identities", str(ids)]) == 0
+
+    rendered = capsys.readouterr().out
+    assert "remote\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
+
+
 def test_identity_audit_duplicate_returns_one(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -385,6 +403,32 @@ async def test_identity_reclaim_cli_renders_an_applied_result_without_an_audit_s
     )
     assert code == 0
     assert capsys.readouterr().out.strip() == "reclaimed identity pin for PROJ/stale"
+
+
+async def test_identity_reclaim_makes_hub_controls_visible(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    hostile = "remote\x1b]52;c;YQ==\x07\nforged\u202e"
+    code = await cli_identity._identity_reclaim(
+        uri="ws://hub",
+        operator="OPS/operator",
+        pin_name="PROJ/stale",
+        expected_key_id="machine-old",
+        reason="recover",
+        break_glass=False,
+        token=None,
+        ready_timeout=0.1,
+        result_timeout=0.1,
+        json_output=False,
+        agent_factory=_reclaim_factory({"type": "error", "payload": hostile}),
+    )
+
+    assert code == 1
+    rendered = capsys.readouterr().out
+    assert "remote\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
 
 
 def test_identity_reclaim_dispatches_the_async_command(monkeypatch: pytest.MonkeyPatch) -> None:

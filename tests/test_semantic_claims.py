@@ -120,11 +120,11 @@ def test_current_repo_claim_args_are_stable_for_api_selector() -> None:
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert result.stdout.strip() == (
-        "--paths src/synapse_channel/core/receipts.py/.synapse-symbol/ReleaseReceipt "
-        "--paths tests/test_hub_core_claims.py "
-        "--paths tests/test_release_receipts.py "
-        "--paths README.md "
-        "--paths docs/_generated/capability_manifest.json"
+        "--paths=src/synapse_channel/core/receipts.py/.synapse-symbol/ReleaseReceipt "
+        "--paths=tests/test_hub_core_claims.py "
+        "--paths=tests/test_release_receipts.py "
+        "--paths=README.md "
+        "--paths=docs/_generated/capability_manifest.json"
     )
 
 
@@ -275,10 +275,10 @@ def test_main_direct_json_and_claim_args(
         == 0
     )
     assert capsys.readouterr().out.strip() == (
-        "--paths src/synapse_channel/core/receipts.py "
-        "--paths tests/test_release_receipts.py "
-        "--paths README.md "
-        "--paths docs/_generated/capability_manifest.json"
+        "--paths=src/synapse_channel/core/receipts.py "
+        "--paths=tests/test_release_receipts.py "
+        "--paths=README.md "
+        "--paths=docs/_generated/capability_manifest.json"
     )
 
 

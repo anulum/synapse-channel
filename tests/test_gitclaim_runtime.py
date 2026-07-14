@@ -150,7 +150,7 @@ async def test_run_git_claim_warns_when_auto_release_hook_is_missing(
     assert rc == 0
     out = capsys.readouterr().out
     assert "will NOT fire" in out and "synapse git-hook" in out
-    assert "synapse release T1 --name me" in out
+    assert "synapse release --name=me -- T1" in out
 
 
 async def test_run_git_claim_silent_when_hook_is_installed(

@@ -32,6 +32,7 @@ from typing import Any
 
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.terminal_text import terminal_text
 
 USAGE_NOTE_KIND = "usage"
 """Progress-note ``kind`` marking a structured model-usage record."""
@@ -619,7 +620,7 @@ def _totals_to_json(totals: AccountingTotals) -> dict[str, object]:
 def _render_summary(summary: UsageSummary) -> str:
     """Render one usage summary row."""
     return (
-        f"- {summary.key}: calls={summary.calls} tokens={summary.total_tokens} "
+        f"- {terminal_text(summary.key)}: calls={summary.calls} tokens={summary.total_tokens} "
         f"(in={summary.input_tokens} out={summary.output_tokens}) "
         f"est_cost={summary.estimated_cost:.4f}"
     )
@@ -629,6 +630,7 @@ def _render_budget(status: BudgetStatus) -> str:
     """Render one budget evidence row."""
     flag = " OVER" if status.over_budget else ""
     return (
-        f"- {status.agent}: spent={status.spent:.4f} budget={status.budget:.4f} "
+        f"- {terminal_text(status.agent)}: spent={status.spent:.4f} "
+        f"budget={status.budget:.4f} "
         f"remaining={status.remaining:.4f}{flag}"
     )

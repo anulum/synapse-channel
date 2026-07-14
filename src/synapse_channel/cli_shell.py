@@ -29,7 +29,14 @@ def _cmd_shell_hook(
 ) -> int:
     """Print shell code for automatic terminal arming and provider wrappers."""
     providers = tuple(args.provider) if args.provider else DEFAULT_PROVIDER_COMMANDS
-    print(renderer(shell=args.shell, provider_commands=providers), end="")  # nosec B604 - shell names a dialect, no subprocess
+    try:
+        rendered = renderer(  # nosec B604 - shell selects a validated text dialect; no process
+            shell=args.shell, provider_commands=providers
+        )
+    except ValueError as exc:
+        print(str(exc))
+        return 2
+    print(rendered, end="")
     return 0
 
 

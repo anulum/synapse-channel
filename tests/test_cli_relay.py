@@ -72,6 +72,26 @@ def test_relay_applied_prints_and_exits_zero(capsys: pytest.CaptureFixture[str])
     assert "syn-peer applied relay 'release'" in out
 
 
+def test_relay_makes_peer_result_controls_visible(capsys: pytest.CaptureFixture[str]) -> None:
+    hostile = "remote\x1b]52;c;YQ==\x07\nforged\u202e"
+    result = RelayActionResult(
+        applied=True,
+        action=hostile,
+        namespace="SYNAPSE-CHANNEL",
+        task_id="t1",
+        owner_hub_id=hostile,
+        detail=hostile,
+    )
+
+    assert cli_relay._cmd_relay(_args(), relayer=_relayer(result)) == 0
+
+    rendered = capsys.readouterr().out
+    assert "remote\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
+
+
 def test_relay_refused_exits_one(capsys: pytest.CaptureFixture[str]) -> None:
     refused = RelayActionResult(
         applied=False,

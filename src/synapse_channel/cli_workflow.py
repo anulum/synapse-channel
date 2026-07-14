@@ -50,6 +50,7 @@ from synapse_channel.core.yield_advice import (
     render_advice_markdown,
     run_yield_advice,
 )
+from synapse_channel.terminal_text import terminal_text
 
 AgentFactory = Callable[..., SynapseAgent]
 """Factory for the client agent; injectable so the driver is testable."""
@@ -126,9 +127,9 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     try:
         workflow = parse_workflow(_load_workflow_file(args.file))
     except WorkflowError as exc:
-        print(str(exc), file=sys.stderr)
+        print(terminal_text(exc), file=sys.stderr)
         return 2
-    print(f"workflow '{workflow.name}' is valid: {len(workflow.steps)} steps")
+    print(f"workflow '{terminal_text(workflow.name)}' is valid: {len(workflow.steps)} steps")
     return 0
 
 
@@ -137,7 +138,7 @@ def _cmd_compile(args: argparse.Namespace) -> int:
     try:
         tasks = compile_to_tasks(parse_workflow(_load_workflow_file(args.file)))
     except WorkflowError as exc:
-        print(str(exc), file=sys.stderr)
+        print(terminal_text(exc), file=sys.stderr)
         return 2
     if args.json:
         payload = [
@@ -154,18 +155,23 @@ def _cmd_compile(args: argparse.Namespace) -> int:
     print(f"{len(tasks)} blackboard tasks:")
     for task in tasks:
         edges = [
-            f"{dep}:{task.required_status(dep)}" if task.required_status(dep) else dep
+            f"{terminal_text(dep)}:{terminal_text(task.required_status(dep))}"
+            if task.required_status(dep)
+            else terminal_text(dep)
             for dep in task.depends_on
         ]
         deps = ", ".join(edges) if edges else "(none)"
-        task_class = f" [{task.task_class}]" if task.task_class else ""
+        task_class = f" [{terminal_text(task.task_class)}]" if task.task_class else ""
         requires = (
             " requires "
-            + ", ".join(f"{name}={value}" for name, value in task.evidence_requirements)
+            + ", ".join(
+                f"{terminal_text(name)}={terminal_text(value)}"
+                for name, value in task.evidence_requirements
+            )
             if task.evidence_requirements
             else ""
         )
-        print(f"  {task.task_id}{task_class} <- {deps}{requires}")
+        print(f"  {terminal_text(task.task_id)}{task_class} <- {deps}{requires}")
     return 0
 
 
@@ -177,7 +183,7 @@ def _cmd_plan(args: argparse.Namespace) -> int:
         agents = _load_agents(args.agents)
         evidence = _load_evidence(args.evidence)
     except WorkflowError as exc:
-        print(str(exc), file=sys.stderr)
+        print(terminal_text(exc), file=sys.stderr)
         return 2
     state = derive_state(tasks, status, evidence=evidence)
     plan = plan_assignments(
@@ -201,8 +207,11 @@ def _cmd_plan(args: argparse.Namespace) -> int:
         return 0
     print("assignments:")
     for assignment in plan:
-        task_class = f" [{assignment.task_class}]" if assignment.task_class else ""
-        print(f"  {assignment.task_id}{task_class} -> {assignment.agent}")
+        task_class = f" [{terminal_text(assignment.task_class)}]" if assignment.task_class else ""
+        print(
+            f"  {terminal_text(assignment.task_id)}{task_class} "
+            f"-> {terminal_text(assignment.agent)}"
+        )
     return 0
 
 
@@ -223,7 +232,7 @@ def _cmd_contention(args: argparse.Namespace) -> int:
             key_file=getattr(args, "db_key_file", None),
         )
     except (WorkflowError, ValueError) as exc:
-        print(str(exc), file=sys.stderr)
+        print(terminal_text(exc), file=sys.stderr)
         return 2
     scoped = advice_involving(recommendations, [task.task_id for task in tasks])
     if args.json:
@@ -326,13 +335,13 @@ def _render_run(result: RunResult, *, json_out: bool) -> None:
     if result.assignments:
         print("assignments made:")
         for task_id, agent in result.assignments:
-            print(f"  {task_id} -> {agent}")
+            print(f"  {terminal_text(task_id)} -> {terminal_text(agent)}")
     else:
         print("no assignments made")
     if result.cancellations:
         print("retired (branch not taken):")
         for task_id in result.cancellations:
-            print(f"  {task_id}")
+            print(f"  {terminal_text(task_id)}")
 
 
 async def _drive_run(
@@ -356,11 +365,13 @@ async def _drive_run(
             agent
         ):
             print(
-                describe_connect_failure(
-                    args.name,
-                    args.uri,
-                    close_code=agent.last_close_code,
-                    close_reason=agent.last_close_reason,
+                terminal_text(
+                    describe_connect_failure(
+                        args.name,
+                        args.uri,
+                        close_code=agent.last_close_code,
+                        close_reason=agent.last_close_reason,
+                    )
                 )
             )
             return 1
@@ -392,7 +403,7 @@ def _cmd_run(args: argparse.Namespace, *, agent_factory: AgentFactory = SynapseA
         agents = _load_agents(args.agents)
         _load_evidence(args.evidence)
     except WorkflowError as exc:
-        print(str(exc), file=sys.stderr)
+        print(terminal_text(exc), file=sys.stderr)
         return 2
     return asyncio.run(_drive_run(args, tasks, agents, agent_factory=agent_factory))
 

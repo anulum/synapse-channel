@@ -194,6 +194,32 @@ def test_memory_recall_json_and_human_rendering_are_stable(tmp_path: Path) -> No
     assert MEMORY_RECALL_TRUST_BOUNDARY in rendered
 
 
+def test_render_memory_recall_makes_stored_controls_visible() -> None:
+    hostile = "remote\x1b]52;c;YQ==\x07\nforged\u202e"
+    report = recall_memory(
+        (
+            StoredEvent(
+                seq=1,
+                ts=1.0,
+                kind=EventKind.FINDING,
+                payload={
+                    "statement": f"memory {hostile}",
+                    "evidence_ref": hostile,
+                    "provenance": {"actor": hostile},
+                },
+            ),
+        ),
+        "memory",
+    )
+
+    rendered = render_memory_recall(report)
+
+    assert "remote\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
+
+
 def test_render_memory_recall_reports_empty_result() -> None:
     report = recall_memory((), "and the")
 

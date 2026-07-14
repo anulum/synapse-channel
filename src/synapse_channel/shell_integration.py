@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 from pathlib import Path
 from tempfile import gettempdir
@@ -29,6 +30,8 @@ DEFAULT_PROVIDER_COMMANDS = (
 START_MARKER = "# >>> synapse-channel shell integration >>>"
 END_MARKER = "# <<< synapse-channel shell integration <<<"
 SUPPORTED_SHELLS = frozenset({"bash", "fish", "zsh"})
+_PROVIDER_COMMAND_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.+-]*\Z")
+"""Bare command names safe as Bash, Zsh, and Fish wrapper declarations."""
 
 
 def pid_is_live_process(pid: int) -> bool:
@@ -140,17 +143,27 @@ def shell_rc_path(shell: str, *, home: Path | None = None, env_shell: str | None
     return root / ".bashrc"
 
 
+def _provider_command_name(command: str) -> str:
+    """Return a validated bare provider command name."""
+    name = command.strip()
+    if _PROVIDER_COMMAND_RE.fullmatch(name) is None:
+        raise ValueError(
+            "provider command must be a bare name using letters, digits, '_', '.', '+', or '-'"
+        )
+    return name
+
+
 def _provider_function(command: str) -> str:
     """Render one provider wrapper function."""
-    name = command.strip()
+    name = _provider_command_name(command)
     quoted = shlex.quote(name)
     return (
         f"{name}() {{\n"
         "  __synapse_auto_arm || true\n"
         f"  if command -v synapse >/dev/null 2>&1; then\n"
         "    __synapse_release_waiter || true\n"
-        '    SYNAPSE_AUTO_CONNECT=0 synapse worker-session --project "$SYN_PROJECT" '
-        f'--identity "$SYN_IDENTITY" -- {quoted} "$@"\n'
+        '    SYNAPSE_AUTO_CONNECT=0 synapse worker-session --project="$SYN_PROJECT" '
+        f'--identity="$SYN_IDENTITY" -- {quoted} "$@"\n'
         "  else\n"
         f'    command {quoted} "$@"\n'
         "  fi\n"
@@ -160,15 +173,15 @@ def _provider_function(command: str) -> str:
 
 def _fish_provider_function(command: str) -> str:
     """Render one Fish provider wrapper function."""
-    name = command.strip()
+    name = _provider_command_name(command)
     quoted = shlex.quote(name)
     return (
         f"function {name} --wraps {quoted}\n"
         "  __synapse_auto_arm >/dev/null 2>&1; or true\n"
         "  if command -q synapse\n"
         "    __synapse_release_waiter >/dev/null 2>&1; or true\n"
-        '    env SYNAPSE_AUTO_CONNECT=0 synapse worker-session --project "$SYN_PROJECT" '
-        f'--identity "$SYN_IDENTITY" -- {quoted} $argv\n'
+        '    env SYNAPSE_AUTO_CONNECT=0 synapse worker-session --project="$SYN_PROJECT" '
+        f'--identity="$SYN_IDENTITY" -- {quoted} $argv\n'
         "  else\n"
         f"    command {quoted} $argv\n"
         "  end\n"
@@ -296,7 +309,7 @@ function __synapse_auto_arm --on-event fish_prompt
       return 0
     end
   end
-  nohup synapse arm --name "$identity-rx" --for "$identity" --directed-only \
+  nohup synapse arm --name="$identity-rx" --for="$identity" --directed-only \
     --owner-pid $fish_pid >"$logfile" 2>&1 &
   echo $last_pid >"$pidfile"
   disown $last_pid 2>/dev/null
@@ -327,8 +340,8 @@ function __synapse_run_provider
   __synapse_auto_arm >/dev/null 2>&1; or true
   if command -q synapse
     __synapse_release_waiter >/dev/null 2>&1; or true
-    env SYNAPSE_AUTO_CONNECT=0 synapse worker-session --project "$SYN_PROJECT" \
-      --identity "$SYN_IDENTITY" -- "$command_name" $argv
+    env SYNAPSE_AUTO_CONNECT=0 synapse worker-session --project="$SYN_PROJECT" \
+      --identity="$SYN_IDENTITY" -- "$command_name" $argv
   else
     command "$command_name" $argv
   end
@@ -456,7 +469,7 @@ __synapse_auto_arm() {{
       return 0
     fi
   fi
-  nohup synapse arm --name "$identity-rx" --for "$identity" --directed-only \
+  nohup synapse arm --name="$identity-rx" --for="$identity" --directed-only \
     --owner-pid $$ >"$logfile" 2>&1 &
   printf '%s\n' "$!" >"$pidfile"
 }}
@@ -483,8 +496,8 @@ __synapse_run_provider() {{
   __synapse_auto_arm || true
   if command -v synapse >/dev/null 2>&1; then
     __synapse_release_waiter || true
-    SYNAPSE_AUTO_CONNECT=0 synapse worker-session --project "$SYN_PROJECT" \
-      --identity "$SYN_IDENTITY" -- "$command_name" "$@"
+    SYNAPSE_AUTO_CONNECT=0 synapse worker-session --project="$SYN_PROJECT" \
+      --identity="$SYN_IDENTITY" -- "$command_name" "$@"
   else
     command "$command_name" "$@"
   fi
@@ -500,14 +513,14 @@ def render_rc_block(*, shell: str, synapse_bin: str = "synapse") -> str:
     if resolved == "fish":
         return (
             f"{START_MARKER}\n"
-            f"if command -q {shlex.quote(synapse_bin)}\n"
+            f"if command -q -- {shlex.quote(synapse_bin)}\n"
             f"  {shlex.quote(synapse_bin)} shell-hook --shell fish | source\n"
             "end\n"
             f"{END_MARKER}\n"
         )
     return (
         f"{START_MARKER}\n"
-        f"if command -v {shlex.quote(synapse_bin)} >/dev/null 2>&1; then\n"
+        f"if command -v -- {shlex.quote(synapse_bin)} >/dev/null 2>&1; then\n"
         f'  eval "$({shlex.quote(synapse_bin)} shell-hook --shell {resolved})"\n'
         "fi\n"
         f"{END_MARKER}\n"

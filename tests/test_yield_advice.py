@@ -238,6 +238,21 @@ def test_markdown_names_the_yielder_and_the_advisory_boundary() -> None:
     assert "advisory only: no claim is preempted" in text
 
 
+def test_markdown_makes_claim_controls_visible() -> None:
+    hostile = "remote\x1b]52;c;YQ==\x07\nforged\u202e"
+    recommendations = _advise(
+        _claim(1, hostile, hostile, paths=("src/a.py",)),
+        _claim(2, "B", "bob", paths=("src/a.py",)),
+    )
+
+    rendered = render_advice_markdown(recommendations)
+
+    assert "remote\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
+
+
 def test_markdown_reports_a_quiet_log() -> None:
     text = render_advice_markdown([])
     assert "0 overlapping live claim pair(s)" in text

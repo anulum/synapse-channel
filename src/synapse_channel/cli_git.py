@@ -31,6 +31,7 @@ from synapse_channel.git.gitconflict import run_conflicts
 from synapse_channel.git.githook import check_hooks, install_hooks, run_git_release
 from synapse_channel.git.gitinit import init_repo
 from synapse_channel.service_setup import install_user_services, service_suggestions
+from synapse_channel.terminal_text import shell_command_arg, shell_long_option
 
 AsyncGitCommand = Callable[..., Coroutine[Any, Any, int]]
 """Async git command callable used by the CLI dispatchers."""
@@ -241,10 +242,13 @@ def _cmd_git_release(
     a bare argparse error (the trap that sent agents to the wrong verb).
     """
     if args.task_id is not None:
+        release_command = (
+            f"synapse release {shell_long_option('--name', args.name)} -- "
+            f"{shell_command_arg(args.task_id)}"
+        )
         print(
             f"git-release is hook-invoked and takes no task id (it auto-detects claims "
-            f"from the git diff). For a manual drop use: "
-            f"synapse release {args.task_id} --name {args.name}",
+            f"from the git diff). For a manual drop use: {release_command}",
             file=sys.stderr,
         )
         return 2

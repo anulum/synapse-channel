@@ -17,6 +17,7 @@ from synapse_channel.core.clock_skew import format_clock_skew
 from synapse_channel.core.mailbox_pending import format_pending_line
 from synapse_channel.core.wake_capability import WAKE_UNKNOWN, wake_capability_label
 from synapse_channel.observed_peers import ObservedPeerSnapshot
+from synapse_channel.terminal_text import shell_long_option, terminal_text
 from synapse_channel.waiter_identity import split_roster, waiter_name
 
 
@@ -86,24 +87,27 @@ def _render_who(
         prefix = f"{project}/"
         names = [name for name in names if name == project or name.startswith(prefix)]
     agents, waiters = split_roster(names)
-    scope = f" in {project}" if project else ""
+    scope = f" in {terminal_text(project)}" if project else ""
     print(f"Online{scope} ({len(agents)} agents · {len(waiters)} waiters):")
     marks = liveness or {}
     for agent_name in agents:
         capability = _wake_capability_suffix(agent_name, wake_capabilities)
         liveness_mark = _liveness_suffix(marks[agent_name]) if agent_name in marks else ""
-        print(f"  {agent_name}{capability}{liveness_mark}")
+        print(f"  {terminal_text(agent_name)}{capability}{liveness_mark}")
     if waiters:
         print(f"Waiters ({len(waiters)}):")
         for waiter in waiters:
-            print(f"  {waiter}{_wake_capability_suffix(waiter, wake_capabilities)}")
+            print(f"  {terminal_text(waiter)}{_wake_capability_suffix(waiter, wake_capabilities)}")
     unarmed = [
         agent_name
         for agent_name in agents
         if marks.get(agent_name, {}).get("has_live_waiter") is False
     ]
     if unarmed:
-        print(f"Unarmed (present, no live waiter): {', '.join(unarmed)}")
+        print(
+            "Unarmed (present, no live waiter): "
+            + ", ".join(terminal_text(agent_name) for agent_name in unarmed)
+        )
     if show_mailbox_pending:
         render_mailbox_pending(
             mailbox_pending,
@@ -134,15 +138,15 @@ def _render_who_me(
     waiter = waiter_name(name)
     presence = "online" if name in agents else "missing"
     waiter_state = "online" if waiter in agents else "missing"
-    print(f"Me: {name}")
+    print(f"Me: {terminal_text(name)}")
     print(f"  presence: {presence}")
-    print(f"  waiter: {waiter_state} ({waiter})")
+    print(f"  waiter: {waiter_state} ({terminal_text(waiter)})")
     print("  note: presence is not a wake loop; the waiter is what wakes quiet terminals.")
     if show_mailbox_pending:
         if mailbox_pending is None:
             print("  mailbox pending: unavailable (hub has no durable projection)")
         else:
-            print(f"  {format_pending_line(name, mailbox_pending.get(name, 0))}")
+            print(f"  {terminal_text(format_pending_line(name, mailbox_pending.get(name, 0)))}")
 
 
 def _render_state(
@@ -162,13 +166,17 @@ def _render_state(
         ]
     print(f"Active claims ({len(claims)}):")
     for claim in claims:
-        paths = ", ".join(claim.get("paths", [])) or "-"
-        checkpoint = claim.get("checkpoint") or "-"
+        paths = ", ".join(terminal_text(path) for path in claim.get("paths", [])) or "-"
+        checkpoint = terminal_text(claim.get("checkpoint") or "-")
         git = claim.get("git")
-        git_suffix = f" git={git['branch']}->{git['base']}" if git else ""
+        git_suffix = (
+            f" git={terminal_text(git['branch'])}->{terminal_text(git['base'])}" if git else ""
+        )
         print(
-            f"  {claim.get('task_id')} [{claim.get('status')}] "
-            f"owner={claim.get('owner')} paths={paths} checkpoint={checkpoint}{git_suffix}"
+            f"  {terminal_text(claim.get('task_id'))} "
+            f"[{terminal_text(claim.get('status'))}] "
+            f"owner={terminal_text(claim.get('owner'))} paths={paths} "
+            f"checkpoint={checkpoint}{git_suffix}"
         )
     _render_observed_claims(observed_peers, owner=owner)
 
@@ -182,7 +190,10 @@ def _render_observed_peers(
     print(f"Observed peers ({len(peers)}; advisory, not local authority):")
     for peer in peers:
         if not peer.reachable:
-            print(f"  observed@{peer.hub_id} unreachable: {peer.error or 'fetch failed'}")
+            print(
+                f"  observed@{terminal_text(peer.hub_id)} unreachable: "
+                f"{terminal_text(peer.error or 'fetch failed')}"
+            )
             continue
         agents = [
             agent
@@ -195,8 +206,15 @@ def _render_observed_peers(
             if peer.clock_skew_seconds is None
             else f" skew={format_clock_skew(peer.clock_skew_seconds)}"
         )
-        agent_text = ", ".join(agents) if agents else "no observed claim owners"
-        print(f"  observed@{peer.hub_id} online cursor={peer.cursor} lag={lag}{skew}: {agent_text}")
+        agent_text = (
+            ", ".join(terminal_text(agent) for agent in agents)
+            if agents
+            else "no observed claim owners"
+        )
+        print(
+            f"  observed@{terminal_text(peer.hub_id)} online "
+            f"cursor={peer.cursor} lag={lag}{skew}: {agent_text}"
+        )
 
 
 def _render_observed_claims(
@@ -208,17 +226,21 @@ def _render_observed_claims(
     rows: list[str] = []
     for peer in peers:
         if not peer.reachable:
-            rows.append(f"  observed@{peer.hub_id} unreachable: {peer.error or 'fetch failed'}")
+            rows.append(
+                f"  observed@{terminal_text(peer.hub_id)} unreachable: "
+                f"{terminal_text(peer.error or 'fetch failed')}"
+            )
             continue
         for observed in peer.state.observed_claims.values():
             claim = dict(observed.claim)
             claim_owner = str(claim.get("owner", ""))
             if owner and claim_owner != owner and not claim_owner.startswith(f"{owner}/"):
                 continue
-            paths = ", ".join(str(path) for path in claim.get("paths", []) or []) or "-"
+            paths = ", ".join(terminal_text(path) for path in claim.get("paths", []) or []) or "-"
             rows.append(
-                f"  {observed.task_id} [observed@{peer.hub_id}] "
-                f"owner={claim_owner or '-'} paths={paths}"
+                f"  {terminal_text(observed.task_id)} "
+                f"[observed@{terminal_text(peer.hub_id)}] "
+                f"owner={terminal_text(claim_owner or '-')} paths={paths}"
             )
     print(f"Observed claims ({len(rows)}; advisory, never local grants):")
     for row in rows:
@@ -241,10 +263,12 @@ def _render_dead_letters(snapshot: dict[str, Any]) -> None:
     for entry in entries:
         when = time.strftime("%Y-%m-%d %H:%M", time.localtime(float(entry.get("last_ts", 0.0))))
         print(
-            f"  {entry.get('target')}  count={entry.get('count')} "
-            f"from={entry.get('last_sender')}  last={when}"
+            f"  {terminal_text(entry.get('target'))}  count={entry.get('count')} "
+            f"from={terminal_text(entry.get('last_sender'))}  last={when}"
         )
-    print(f"  drain a name's backlog: syn inbox --as {entries[0].get('target')}")
+    print(
+        f"  drain a name's backlog: syn inbox {shell_long_option('--as', entries[0].get('target'))}"
+    )
 
 
 def _render_approvals(snapshot: dict[str, Any]) -> None:
@@ -264,8 +288,10 @@ def _render_approvals(snapshot: dict[str, Any]) -> None:
     print(f"Pending approvals ({len(entries)}: relays awaiting a second, different operator):")
     for entry in entries:
         print(
-            f"  {entry.get('action')} on {entry.get('namespace')}/{entry.get('task_id')}  "
-            f"requested by {entry.get('requester')}  awaiting a different operator"
+            f"  {terminal_text(entry.get('action'))} on "
+            f"{terminal_text(entry.get('namespace'))}/"
+            f"{terminal_text(entry.get('task_id'))}  requested by "
+            f"{terminal_text(entry.get('requester'))}  awaiting a different operator"
         )
     print(
         "  approve: a second, different operator re-issues the same "
@@ -280,24 +306,34 @@ def _print_board(board: dict[str, Any]) -> None:
     progress = board.get("progress", [])
     print(f"Tasks ({len(tasks)}):")
     for task in tasks:
-        deps = ", ".join(task.get("depends_on", []))
+        deps = ", ".join(terminal_text(dep) for dep in task.get("depends_on", []))
         suffix = f"  (deps: {deps})" if deps else ""
-        print(f"  [{task.get('status')}] {task.get('task_id')} — {task.get('title')}{suffix}")
-    print(f"Ready: {', '.join(ready) if ready else '(none)'}")
+        print(
+            f"  [{terminal_text(task.get('status'))}] "
+            f"{terminal_text(task.get('task_id'))} — "
+            f"{terminal_text(task.get('title'))}{suffix}"
+        )
+    print(
+        "Ready: " + (", ".join(terminal_text(task_id) for task_id in ready) if ready else "(none)")
+    )
     if progress:
         print("Recent progress:")
         for note in progress[-10:]:
             task_id = note.get("task_id") or "-"
-            print(f"  {note.get('author')} [{note.get('kind')}] {task_id}: {note.get('text')}")
+            print(
+                f"  {terminal_text(note.get('author'))} "
+                f"[{terminal_text(note.get('kind'))}] "
+                f"{terminal_text(task_id)}: {terminal_text(note.get('text'))}"
+            )
 
 
 def _print_manifest(manifest: list[dict[str, Any]]) -> None:
     """Render a capability manifest as readable lines on stdout."""
     print(f"Agents ({len(manifest)}):")
     for card in manifest:
-        classes = ", ".join(card.get("task_classes", [])) or "none"
-        model = card.get("model") or "-"
-        description = card.get("description", "")
+        classes = ", ".join(terminal_text(item) for item in card.get("task_classes", [])) or "none"
+        model = terminal_text(card.get("model") or "-")
+        description = terminal_text(card.get("description", ""))
         contracts = card.get("contracts")
         suffix = (
             f" (contracts: {len(contracts)})" if isinstance(contracts, list) and contracts else ""
@@ -309,6 +345,7 @@ def _print_manifest(manifest: list[dict[str, Any]]) -> None:
             else "missing_signature"
         )
         print(
-            f"  {card.get('agent')} [{classes}] model={model} verify={result}: "
+            f"  {terminal_text(card.get('agent'))} [{classes}] model={model} "
+            f"verify={terminal_text(result)}: "
             f"{description}{suffix}"
         )

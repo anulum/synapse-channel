@@ -37,6 +37,7 @@ from synapse_channel.core.operator_relay_transport import (
     relay_operator_action,
 )
 from synapse_channel.core.operator_relay_wire import RelayActionRequest, RelayActionResult
+from synapse_channel.terminal_text import terminal_text
 
 DEFAULT_LOCAL_ID = "operator-relay"
 """Default origin identity stamped on the relay; must match a grant on the peer's policy."""
@@ -84,7 +85,7 @@ def _cmd_relay(args: argparse.Namespace, *, relayer: Relayer = relay_operator_ac
             )
         )
     except RelayTransportError as exc:
-        print(f"could not relay the action: {exc}", file=sys.stderr)
+        print(f"could not relay the action: {terminal_text(exc)}", file=sys.stderr)
         return 2
     if args.json:
         print(
@@ -108,7 +109,10 @@ def _cmd_relay(args: argparse.Namespace, *, relayer: Relayer = relay_operator_ac
             verb = "recorded pending a second operator for"
         else:
             verb = "refused"
-        print(f"peer {result.owner_hub_id} {verb} relay {result.action!r}: {result.detail}")
+        print(
+            f"peer {terminal_text(result.owner_hub_id)} {verb} relay "
+            f"{terminal_text(result.action)!r}: {terminal_text(result.detail)}"
+        )
     if result.pending:
         return 3
     return 0 if result.applied else 1

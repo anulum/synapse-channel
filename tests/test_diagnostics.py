@@ -165,14 +165,25 @@ def test_check_waiter_warns_when_absent() -> None:
     diagnosis = check_waiter(["other"], "demorepo-rx")
     assert diagnosis.status == "warn"
     assert "will not wake you" in diagnosis.detail
-    assert "--for demorepo" in diagnosis.remedy
+    assert "--for=demorepo" in diagnosis.remedy
 
 
 def test_check_waiter_hints_exact_terminal_identity_when_absent() -> None:
     diagnosis = check_waiter(["other"], "user/terminal-14753-rx")
     assert diagnosis.status == "warn"
-    assert "--name user/terminal-14753-rx" in diagnosis.remedy
-    assert "--for user/terminal-14753 --directed-only" in diagnosis.remedy
+    assert "--name=user/terminal-14753-rx" in diagnosis.remedy
+    assert "--for=user/terminal-14753 --directed-only" in diagnosis.remedy
+
+
+def test_check_waiter_neutralises_hostile_identity_in_command() -> None:
+    waiter = "--help$(touch injected)\x1b]0;fake\x07-rx"
+
+    diagnosis = check_waiter([], waiter)
+
+    assert "\x1b" not in diagnosis.detail
+    assert "\x07" not in diagnosis.detail
+    assert "--name='--help$(touch injected)\\x1b]0;fake\\x07-rx'" in diagnosis.remedy
+    assert "--for='--help$(touch injected)\\x1b]0;fake\\x07'" in diagnosis.remedy
 
 
 # --- summarise ---------------------------------------------------------------
@@ -219,7 +230,7 @@ class TestUnreadAddressees:
         assert verdict.status == "warn"
         assert "ACME/coordinator (2 msg)" in verdict.detail
         assert "OTHER (1 msg)" in verdict.detail
-        assert "syn inbox --as ACME/coordinator" in verdict.remedy
+        assert "syn inbox --as=ACME/coordinator" in verdict.remedy
 
     def test_project_cursor_covers_its_sub_addresses(self) -> None:
         # relay --project matches 'project/...', so a drained project inbox
@@ -364,7 +375,7 @@ def test_deaf_agents_warns_on_arm_without_waiter() -> None:
     assert diagnosis.status == "warn"
     assert "FLUCTARA/codex-arm" in diagnosis.detail
     assert "SCPN/CORE" not in diagnosis.detail
-    assert "synapse wait --name FLUCTARA/codex-arm-rx" in diagnosis.remedy
+    assert "synapse wait --name=FLUCTARA/codex-arm-rx" in diagnosis.remedy
 
 
 def test_deaf_agents_lists_bound_and_counts_rest() -> None:

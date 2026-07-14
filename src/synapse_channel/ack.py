@@ -28,6 +28,7 @@ from typing import Any, Protocol
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import describe_connect_failure
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.terminal_text import terminal_text
 
 ACK_PROGRESS_KIND = "assessment"
 """Progress-note kind used for completion evidence."""
@@ -242,11 +243,13 @@ async def ack_task(
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
             print(
-                describe_connect_failure(
-                    identity.identity,
-                    uri,
-                    close_code=agent.last_close_code,
-                    close_reason=agent.last_close_reason,
+                terminal_text(
+                    describe_connect_failure(
+                        identity.identity,
+                        uri,
+                        close_code=agent.last_close_code,
+                        close_reason=agent.last_close_reason,
+                    )
                 )
             )
             return 1
@@ -266,10 +269,16 @@ async def ack_task(
             attempts=attempts,
         )
         if progress is None:
-            print(f"ack failed for {task}: no progress confirmation from hub.", file=sys.stderr)
+            print(
+                f"ack failed for {terminal_text(task)}: no progress confirmation from hub.",
+                file=sys.stderr,
+            )
             return 1
         if progress.get("type") == MessageType.ERROR:
-            print(f"ack failed for {task}: {_message_text(progress)}", file=sys.stderr)
+            print(
+                f"ack failed for {terminal_text(task)}: {terminal_text(_message_text(progress))}",
+                file=sys.stderr,
+            )
             return 1
 
         await agent.update_ledger_task(task, status="done")
@@ -287,13 +296,19 @@ async def ack_task(
             attempts=attempts,
         )
         if updated is None:
-            print(f"ack failed for {task}: no done confirmation from hub.", file=sys.stderr)
+            print(
+                f"ack failed for {terminal_text(task)}: no done confirmation from hub.",
+                file=sys.stderr,
+            )
             return 1
         if updated.get("type") == MessageType.ERROR:
-            print(f"ack failed for {task}: {_message_text(updated)}", file=sys.stderr)
+            print(
+                f"ack failed for {terminal_text(task)}: {terminal_text(_message_text(updated))}",
+                file=sys.stderr,
+            )
             return 1
 
-        print(f"acked {task} -> status=done")
+        print(f"acked {terminal_text(task)} -> status=done")
         return 0
     finally:
         agent.running = False
@@ -341,7 +356,7 @@ def main(identity: AckIdentity, argv: Sequence[str] | None = None) -> int:
     try:
         build_ack_text(evidence=args.evidence, artifacts=args.artifacts, note=args.note)
     except ValueError as exc:
-        print(f"syn ack: {exc}", file=sys.stderr)
+        print(f"syn ack: {terminal_text(exc)}", file=sys.stderr)
         return 2
     return asyncio.run(
         ack_task(

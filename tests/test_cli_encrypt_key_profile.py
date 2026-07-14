@@ -362,7 +362,9 @@ def test_rekey_sqlcipher_cli_rotates_real_store(
 
     old = generate_key_file(tmp_path / "old.key")
     new = generate_key_file(tmp_path / "new.key")
-    db = tmp_path / "hub.db"
+    hostile_dir = tmp_path / "$(touch injected)"
+    hostile_dir.mkdir()
+    db = hostile_dir / "hub.db"
     store = EventStore(db, key_file=old)
     store.append("chat", {"via": "cli-rekey"})
     store.close()
@@ -383,6 +385,7 @@ def test_rekey_sqlcipher_cli_rotates_real_store(
     out = capsys.readouterr().out
     assert "rekeyed" in out
     assert "--db-key-file" in out
+    assert f"--db='{db}'" in out
 
     with pytest.raises(SqlCipherKeyError):
         EventStore(db, key_file=old)

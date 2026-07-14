@@ -29,6 +29,7 @@ from synapse_channel.service_hardening import (
     LISTENER_WRITE_PATHS,
     hardening_directives,
 )
+from synapse_channel.terminal_text import terminal_text
 
 
 class CommandRunner(Protocol):
@@ -66,6 +67,7 @@ def user_systemd_dir(*, home: Path | None = None) -> Path:
 
 def render_hub_unit(*, synapse_bin: str) -> str:
     """Render the local-first hub user service."""
+    executable = _unit_token(synapse_bin, label="synapse executable path")
     # The hub must not be ordered After=default.target: WantedBy=default.target
     # gives the target an implicit After= on this unit, and the resulting boot
     # ordering cycle makes systemd delete the presence/arm start jobs.
@@ -83,8 +85,8 @@ def render_hub_unit(*, synapse_bin: str) -> str:
         "Documentation=https://github.com/anulum/synapse-channel\n\n"
         "[Service]\n"
         "Type=simple\n"
-        f"ExecStart={synapse_bin} hub --port 8876 --db %h/synapse/hub.db "
-        "--relay-log %h/synapse/feed.ndjson --relay-max-lines 20000\n"
+        f"ExecStart={executable} hub --port=8876 --db=%h/synapse/hub.db "
+        "--relay-log=%h/synapse/feed.ndjson --relay-max-lines=20000\n"
         "Restart=always\n"
         "RestartSec=2\n"
         + hardening_directives(write_paths=HUB_WRITE_PATHS, nofile=HUB_NOFILE)
@@ -96,6 +98,7 @@ def render_hub_unit(*, synapse_bin: str) -> str:
 
 def render_presence_unit(*, synapse_bin: str) -> str:
     """Render the project presence-holder template unit."""
+    executable = _unit_token(synapse_bin, label="synapse executable path")
     return (
         "# SPDX-License-"
         "Identifier: AGPL-3.0-or-later\n"
@@ -113,7 +116,8 @@ def render_presence_unit(*, synapse_bin: str) -> str:
         "StartLimitIntervalSec=0\n\n"
         "[Service]\n"
         "Type=simple\n"
-        f"ExecStart={synapse_bin} listen --name %I-presence --for %I --uri ws://localhost:8876\n"
+        f"ExecStart={executable} listen --name=%I-presence --for=%I "
+        "--uri=ws://localhost:8876\n"
         "Restart=always\n"
         "RestartSec=3\n"
         + hardening_directives(write_paths=LISTENER_WRITE_PATHS, nofile=LISTENER_NOFILE)
@@ -125,9 +129,15 @@ def render_presence_unit(*, synapse_bin: str) -> str:
 
 def _unit_token(value: str, *, label: str) -> str:
     """Return a safe single-token systemd value or reject ambiguous input."""
-    if not value or any(character.isspace() for character in value):
-        raise ValueError(f"{label} must be one non-empty token without whitespace")
-    return value
+    if (
+        not value
+        or terminal_text(value) != value
+        or any(character.isspace() or character in {'"', "'", "\\"} for character in value)
+    ):
+        raise ValueError(
+            f"{label} must be one non-empty token without whitespace, controls, or quotes"
+        )
+    return value.replace("%", "%%")
 
 
 def render_arm_unit(
@@ -142,7 +152,7 @@ def render_arm_unit(
     extra_argument = ""
     if token_file is not None:
         token_path = _unit_token(token_file, label="token file path")
-        extra_argument = f" --token-file {token_path}"
+        extra_argument = f" --token-file={token_path}"
     return (
         "# SPDX-License-"
         "Identifier: AGPL-3.0-or-later\n"
@@ -161,8 +171,8 @@ def render_arm_unit(
         "Type=simple\n"
         "Environment=SYN_PROJECT=%I\n"
         "Environment=SYN_IDENTITY=%I\n"
-        f"ExecStart={executable} arm --name %I-rx --for %I --directed-only "
-        f"--mailbox --uri {hub_uri}{extra_argument}\n"
+        f"ExecStart={executable} arm --name=%I-rx --for=%I --directed-only "
+        f"--mailbox --uri={hub_uri}{extra_argument}\n"
         "Restart=always\n"
         "RestartSec=2\n"
         + hardening_directives(write_paths=LISTENER_WRITE_PATHS, nofile=LISTENER_NOFILE)
@@ -285,7 +295,7 @@ def escaped_instance(
     names usable on systems without systemd.
     """
     proc = runner(
-        ["systemd-escape", f"--template={template}", identity],
+        ["systemd-escape", f"--template={template}", "--", identity],
         capture_output=True,
         text=True,
         check=False,
@@ -315,7 +325,7 @@ def service_suggestions(
         '"$(systemd-escape --template=synapse-arm@.service -- '
         f'{shlex.quote(identity)})"',
         "synapse install-shell-hook --shell auto",
-        f"# installed synapse binary detected as: {synapse}",
+        f"# installed synapse binary detected as: {terminal_text(synapse)}",
     ]
 
 

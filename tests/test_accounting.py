@@ -307,3 +307,18 @@ def test_render_human_with_budgets_marks_over() -> None:
     assert "By model" in text
     assert "Budgets (evidence, not enforcement)" in text
     assert "OVER" in text
+
+
+def test_render_human_makes_usage_identity_controls_visible() -> None:
+    hostile = "remote\x1b]52;c;YQ==\x07\u202e"
+    report = build_accounting_report(
+        [_usage_event(seq=1, author=hostile, model=hostile)],
+        budgets={hostile: 1.0},
+    )
+
+    rendered = render_human(report)
+
+    assert "remote\\x1b]52;c;YQ==\\x07\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered

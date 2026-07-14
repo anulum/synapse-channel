@@ -23,7 +23,9 @@ async def test_dead_letters_lists_the_blackhole_with_a_drain_remedy(
     async with running_hub(SynapseHub()) as (_, uri):
         sender = await connect_agent("SPEAKER", uri)
         try:
-            await sender.agent.send_message("chat", target="GHOST/coordinator", payload="anyone?")
+            await sender.agent.send_message(
+                "chat", target="--help$(touch injected)", payload="anyone?"
+            )
             await sender.agent.send_message("chat", target="all", payload="broadcast is fine")
             code = await cli_queries._dead_letters(uri=uri, name="U")
         finally:
@@ -32,11 +34,11 @@ async def test_dead_letters_lists_the_blackhole_with_a_drain_remedy(
     assert code == 0
     out = capsys.readouterr().out
     assert "Dead letters (1:" in out
-    assert "GHOST/coordinator" in out
+    assert "--help$(touch injected)" in out
     assert "count=1" in out
     assert "from=SPEAKER" in out
     assert "broadcast is fine" not in out  # audiences are not dead letters
-    assert "syn inbox --as GHOST/coordinator" in out  # the exact drain remedy
+    assert "syn inbox --as='--help$(touch injected)'" in out  # exact safe drain remedy
 
 
 async def test_dead_letters_states_an_empty_ledger_plainly(
@@ -84,7 +86,7 @@ def test_render_dead_letters_formats_worst_first_with_remedy(
     assert lines[0] == "Dead letters (2: directed messages the hub delivered to nobody live):"
     assert "A/coord  count=3 from=X" in lines[1]
     assert "B/coord  count=1 from=Y" in lines[2]
-    assert lines[-1] == "  drain a name's backlog: syn inbox --as A/coord"
+    assert lines[-1] == "  drain a name's backlog: syn inbox --as=A/coord"
 
 
 def test_render_dead_letters_states_absence(capsys: pytest.CaptureFixture[str]) -> None:

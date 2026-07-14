@@ -54,6 +54,7 @@ from synapse_channel.participants.envelope import TurnResult
 from synapse_channel.participants.exchange import ExchangeTranscript, conduct_exchange
 from synapse_channel.participants.modes import ConversationMode, policy_for, select_mode
 from synapse_channel.participants.participant import Participant
+from synapse_channel.terminal_text import terminal_text
 
 MODE_AUTO = "auto"
 """``--mode`` value asking :func:`~synapse_channel.participants.modes.select_mode` to choose."""
@@ -129,19 +130,22 @@ def _report_unavailable(participants: Sequence[Participant]) -> bool:
     for participant in participants:
         health = participant.health()
         if not health.available:
-            print(f"{health.identity} is unavailable: {health.detail}")
+            print(
+                f"{terminal_text(health.identity)} is unavailable: {terminal_text(health.detail)}"
+            )
             unavailable = True
     return unavailable
 
 
 def _print_turn(result: TurnResult) -> None:
     """Print one turn as an identity-labelled block, faithful about degraded turns."""
+    participant = terminal_text(result["participant"])
     if result["is_error"]:
-        print(f"[{result['participant']}] errored: {result['reason']}")
+        print(f"[{participant}] errored: {terminal_text(result['reason'])}")
     elif result["abstained"]:
-        print(f"[{result['participant']}] abstained: {result['reason']}")
+        print(f"[{participant}] abstained: {terminal_text(result['reason'])}")
     else:
-        print(f"[{result['participant']}] {result['answer']}")
+        print(f"[{participant}] {terminal_text(result['answer'])}")
 
 
 def _printing_sink(
@@ -210,7 +214,7 @@ def _cmd_exchange(args: argparse.Namespace) -> int:
             args,
         )
     except ValueError as exc:
-        print(str(exc))
+        print(terminal_text(exc))
         return 2
     if _report_unavailable((opener, reactor)):
         return 1
@@ -311,10 +315,10 @@ def _seat_plan(
 
 def _render_seat_plan(plan: _SeatPlan) -> str:
     """Render one seat's dry-run line."""
-    readiness = "ready" if plan.available else f"UNAVAILABLE ({plan.detail})"
+    readiness = "ready" if plan.available else f"UNAVAILABLE ({terminal_text(plan.detail)})"
     priced = "unpriced" if plan.estimated_cost_usd is None else f"~${plan.estimated_cost_usd:.4f}"
-    model = f" model={plan.model}" if plan.model else ""
-    return f"- {plan.identity}{model}: {plan.turns} turn(s), {priced}, {readiness}"
+    model = f" model={terminal_text(plan.model)}" if plan.model else ""
+    return f"- {terminal_text(plan.identity)}{model}: {plan.turns} turn(s), {priced}, {readiness}"
 
 
 def _dry_run_report(
@@ -340,7 +344,7 @@ def _dry_run_report(
     try:
         pricing = load_pricing_table(args.pricing)
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
+        print(terminal_text(exc), file=sys.stderr)
         return 2
     rounds = policy.critique_rounds + 1
     plans = [
@@ -426,7 +430,7 @@ def _cmd_convene(args: argparse.Namespace) -> int:
     try:
         seats = wrap_participants(build_deliberants(specs, timeout=args.timeout, args=args), args)
     except ValueError as exc:
-        print(str(exc))
+        print(terminal_text(exc))
         return 2
     moderator = seats.pop() if args.moderator else None
     if args.dry_run:
@@ -456,7 +460,7 @@ def _cmd_convene(args: argparse.Namespace) -> int:
             )
         )
     except ValueError as exc:
-        print(str(exc))
+        print(terminal_text(exc))
         return 2
     if args.json:
         print(json.dumps(_convocation_payload(transcript), sort_keys=True))

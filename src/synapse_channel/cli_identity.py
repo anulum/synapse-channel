@@ -42,6 +42,7 @@ from synapse_channel.core.identity_keys import (
     write_signing_key,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.terminal_text import terminal_text
 
 
 def _cmd_identity_audit(args: argparse.Namespace) -> int:
@@ -53,7 +54,7 @@ def _cmd_identity_audit(args: argparse.Namespace) -> int:
     try:
         inventory = IdentityInventory.from_file(args.identities)
     except IdentityError as exc:
-        print(f"identity error: {exc}")
+        print(f"identity error: {terminal_text(exc)}")
         return 2
     findings = inventory.audit()
     if args.json:
@@ -72,10 +73,14 @@ def _cmd_identity_audit(args: argparse.Namespace) -> int:
         for identity in inventory.identities():
             credential = "yes" if identity.credential_id else "MISSING"
             print(
-                f"  {identity.audit_subject} seat={identity.seat_id or '-'} credential={credential}"
+                f"  {terminal_text(identity.audit_subject)} "
+                f"seat={terminal_text(identity.seat_id or '-')} credential={credential}"
             )
         for finding in findings:
-            print(f"  [{finding.severity}] {finding.subject}: {finding.message}")
+            print(
+                f"  [{terminal_text(finding.severity)}] {terminal_text(finding.subject)}: "
+                f"{terminal_text(finding.message)}"
+            )
     return 1 if any(finding.severity == "fail" for finding in findings) else 0
 
 
@@ -98,12 +103,13 @@ def _cmd_identity_keygen(args: argparse.Namespace) -> int:
                 expires_at=args.expires_at,
             )
     except (IdentityKeyError, IdentityBindingError) as exc:
-        print(f"identity keygen error: {exc}")
+        print(f"identity keygen error: {terminal_text(exc)}")
         return 2
     if args.trust:
         print(
-            f"wrote identity key to {args.private_out}; enrolled {args.key_id} for "
-            f"{args.sender} in {args.trust}"
+            f"wrote identity key to {terminal_text(args.private_out)}; "
+            f"enrolled {terminal_text(args.key_id)} for {terminal_text(args.sender)} "
+            f"in {terminal_text(args.trust)}"
         )
         return 0
     entry: dict[str, object] = {
@@ -114,7 +120,8 @@ def _cmd_identity_keygen(args: argparse.Namespace) -> int:
     if args.expires_at is not None:
         entry["expires_at"] = args.expires_at
     print(
-        f"wrote identity key to {args.private_out}. Enrol this public entry in the hub's "
+        f"wrote identity key to {terminal_text(args.private_out)}. "
+        "Enrol this public entry in the hub's "
         "--identity-trust bundle:"
     )
     print(json.dumps({"keys": [entry]}, indent=2, sort_keys=True))
@@ -154,11 +161,13 @@ async def _identity_reclaim(
             agent
         ):
             print(
-                describe_connect_failure(
-                    operator,
-                    uri,
-                    close_code=agent.last_close_code,
-                    close_reason=agent.last_close_reason,
+                terminal_text(
+                    describe_connect_failure(
+                        operator,
+                        uri,
+                        close_code=agent.last_close_code,
+                        close_reason=agent.last_close_reason,
+                    )
                 )
             )
             return 2
@@ -194,9 +203,9 @@ async def _identity_reclaim(
             print(json.dumps(rendered, indent=2, sort_keys=True))
         elif rendered["applied"]:
             suffix = f" (audit seq {rendered['audit_seq']})" if rendered.get("audit_seq") else ""
-            print(f"reclaimed identity pin for {rendered['pin_name']}{suffix}")
+            print(f"reclaimed identity pin for {terminal_text(rendered['pin_name'])}{suffix}")
         else:
-            print(f"pin reclaim refused: {rendered['detail']}")
+            print(f"pin reclaim refused: {terminal_text(rendered['detail'])}")
         return 0 if rendered["applied"] else 1
     finally:
         agent.running = False

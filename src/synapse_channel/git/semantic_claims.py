@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shlex
 import sys
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
@@ -26,6 +25,7 @@ from pathlib import Path
 
 from synapse_channel.git import generated_dependency_claims, test_ownership_map
 from synapse_channel.git.semantic_scope import semantic_scope_path
+from synapse_channel.terminal_text import shell_long_option
 
 REPO_ROOT = Path.cwd()
 
@@ -371,10 +371,7 @@ def render_human(records: Sequence[SemanticClaimRecord]) -> str:
 def render_claim_args(records: Sequence[SemanticClaimRecord]) -> str:
     """Render unique claim paths as ``synapse git-claim`` path arguments."""
     paths = _unique_ordered(path for record in records for path in record.claim_paths)
-    parts: list[str] = []
-    for path in paths:
-        parts.extend(("--paths", path))
-    return " ".join(shlex.quote(part) for part in parts)
+    return " ".join(shell_long_option("--paths", path) for path in paths)
 
 
 def parse_args(argv: Sequence[str] | None = None) -> CliArgs:

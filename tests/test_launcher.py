@@ -14,6 +14,8 @@ import sys
 import time
 from collections.abc import Callable
 
+import pytest
+
 from http_server_helpers import LocalHttpResponder
 from hub_e2e_helpers import _free_port
 from synapse_channel.client.launcher import (
@@ -185,7 +187,9 @@ def test_shutdown_terminates_running_kills_stubborn_and_skips_exited() -> None:
 # --- run_team ----------------------------------------------------------------
 
 
-def test_run_team_returns_exit_code_of_first_dead_child() -> None:
+def test_run_team_returns_exit_code_of_first_dead_child(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     popen, launched = _launching_popen_factory(
         [
             _python_command("import time; time.sleep(30)"),
@@ -194,12 +198,16 @@ def test_run_team_returns_exit_code_of_first_dead_child() -> None:
     )
     result = run_team(
         9999,
+        prefix="--help$(touch injected)",
         popen=popen,
         sleep=lambda _seconds: time.sleep(0.05),
         detect=lambda prefs: "m",
     )
     assert result == 3
     assert all(proc.poll() is not None for proc in launched)
+    out = capsys.readouterr().out
+    assert "--uri=ws://localhost:9999 --name=USER" in out
+    assert "--target='--help$(touch injected)FAST' -- \"status?\"" in out
 
 
 def test_run_team_polls_again_while_children_alive() -> None:

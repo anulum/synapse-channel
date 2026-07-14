@@ -120,6 +120,32 @@ def test_mcp_call_invokes_a_tool(
     assert '"text": "hi"' in out
 
 
+def test_mcp_human_output_makes_server_controls_visible(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hostile = "remote\x1b]52;c;YQ==\x07\nforged\u202e"
+
+    class HostileClient:
+        async def list_tools(self, _server: str) -> list[dict[str, str]]:
+            return [{"name": hostile, "description": hostile}]
+
+        async def call_tool(self, _server: str, _tool: str, _arguments: dict[str, object]) -> str:
+            return hostile
+
+    monkeypatch.setattr(cli_mcp_call, "_build_client", lambda _path: HostileClient())
+
+    assert _run(["mcp-tools", "echo", "--config", str(_config(tmp_path))]) == 0
+    assert _run(["mcp-call", "echo", "echo", "--config", str(_config(tmp_path))]) == 0
+
+    rendered = capsys.readouterr().out
+    assert "remote\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
+
+
 def test_mcp_call_denies_a_non_allowlisted_tool(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

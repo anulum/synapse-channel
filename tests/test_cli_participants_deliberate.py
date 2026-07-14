@@ -202,6 +202,20 @@ def test_exchange_prints_both_turns_with_markers(
     assert out.index("— reactor —") < out.index("[participant/other] scripted answer")
 
 
+def test_exchange_makes_provider_turn_controls_visible(
+    fabric: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fabric.shape["scripted"]["answer"] = "answer\x1b]52;c;YQ==\x07\nforged\u202e"
+
+    assert _cmd_exchange(_exchange_args()) == 0
+
+    rendered = capsys.readouterr().out
+    assert "answer\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
+
+
 def test_exchange_reactor_sees_the_opener_as_fenced_data(fabric: SimpleNamespace) -> None:
     assert _cmd_exchange(_exchange_args()) == 0
     opener, reactor = fabric.created

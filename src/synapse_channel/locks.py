@@ -29,6 +29,7 @@ from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent, default_
 from synapse_channel.core.numeric_coercion import safe_float
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.scoping import DEFAULT_WORKTREE
+from synapse_channel.terminal_text import shell_command_arg, shell_long_option, terminal_text
 
 
 class LockIdentity(Protocol):
@@ -140,7 +141,7 @@ def _git_label(claim: Mapping[str, Any]) -> str:
 
 def _release_command(task_id: str, owner: str) -> str:
     """Return the explicit release command for one lease owner."""
-    return f"synapse release {task_id} --name {owner}"
+    return f"synapse release {shell_long_option('--name', owner)} -- {shell_command_arg(task_id)}"
 
 
 def build_rows(
@@ -200,12 +201,14 @@ def render_locks(rows: Sequence[LeaseRow], *, label: str, as_json: bool) -> None
     if as_json:
         print(json.dumps({"label": label, "leases": [asdict(row) for row in rows]}, indent=2))
         return
-    print(f"Active leases in {label} ({len(rows)}):")
+    print(f"Active leases in {terminal_text(label)} ({len(rows)}):")
     for row in rows:
         print(
-            f"  {row.task_id} [{row.status}] owner={row.owner} "
-            f"scope={row.scope} age={row.age} remaining={row.remaining} "
-            f"checkpoint={row.checkpoint} git={row.git} release={row.release_command}"
+            f"  {terminal_text(row.task_id)} [{terminal_text(row.status)}] "
+            f"owner={terminal_text(row.owner)} scope={terminal_text(row.scope)} "
+            f"age={terminal_text(row.age)} remaining={terminal_text(row.remaining)} "
+            f"checkpoint={terminal_text(row.checkpoint)} git={terminal_text(row.git)} "
+            f"release={terminal_text(row.release_command)}"
         )
 
 

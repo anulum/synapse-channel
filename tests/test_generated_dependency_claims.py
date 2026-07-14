@@ -65,7 +65,7 @@ def test_current_repo_claim_args_are_stable_for_source_filter() -> None:
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert result.stdout.strip() == (
-        "--paths README.md --paths docs/_generated/capability_manifest.json"
+        "--paths=README.md --paths=docs/_generated/capability_manifest.json"
     )
 
 
@@ -161,7 +161,7 @@ def test_main_direct_branches_cover_json_human_claim_args_and_unknown(
 
     assert claims_tool.main(["--repo-root", str(tmp_path), "--claim-args"]) == 0
     assert capsys.readouterr().out.strip() == (
-        "--paths README.md --paths docs/_generated/capability_manifest.json"
+        "--paths=README.md --paths=docs/_generated/capability_manifest.json"
     )
 
     assert claims_tool.main(["--repo-root", str(tmp_path), "--generated", "missing.txt"]) == 2

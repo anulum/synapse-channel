@@ -240,6 +240,37 @@ def test_render_recommendation_prints_the_fallback_reason(
     assert "Advisory only:" in out
 
 
+def test_render_recommendation_makes_remote_controls_visible(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from synapse_channel.core.semantic_routing import RoutingCandidate, RoutingRecommendation
+
+    hostile = "remote\x1b]52;c;YQ==\x07\nforged\u202e"
+    recommendation = RoutingRecommendation(
+        task_id=hostile,
+        query="build",
+        candidates=(
+            RoutingCandidate(
+                agent=hostile,
+                score=1,
+                reasons=(hostile,),
+                task_classes=(hostile,),
+                skills=(hostile,),
+            ),
+        ),
+        fallback_reason=hostile,
+        trust_boundary=hostile,
+    )
+
+    cli_semantic_routing._render_recommendation(recommendation)
+
+    rendered = capsys.readouterr().out
+    assert "remote\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
+
+
 async def test_route_task_reports_a_bad_observation_store(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

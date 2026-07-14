@@ -138,7 +138,9 @@ async def test_a_different_machine_key_is_refused_on_a_pinned_name(tmp_path: Pat
         assert reason == "identity pin mismatch"
         error = next(frame for frame in refusals if frame.get("type") == "error")
         assert "synapse identity reclaim" in error["payload"]
-        assert "--expected-key-id" in error["payload"]
+        assert "--operator=OPERATOR_IDENTITY" in error["payload"]
+        assert "--expected-key-id=" in error["payload"]
+        assert "--reason=REASON -- PROJ/tofu-owner" in error["payload"]
         stranger_task.cancel()
 
 

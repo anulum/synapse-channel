@@ -29,6 +29,7 @@ from synapse_channel.core.resource_bidding import (
     resource_bid_report_to_json,
 )
 from synapse_channel.core.semantic_routing import find_task
+from synapse_channel.terminal_text import terminal_text
 
 
 def _cards(data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -61,16 +62,18 @@ def _board(data: dict[str, Any]) -> dict[str, Any]:
 def _render_resource_bids(report: ResourceBidReport) -> None:
     """Print a compact text representation of ``report``."""
     candidate_count = len(report.candidates)
-    print(f"Resource bids for {report.task_id} ({candidate_count} candidates):")
+    print(f"Resource bids for {terminal_text(report.task_id)} ({candidate_count} candidates):")
     for candidate in report.candidates:
-        reasons = ", ".join(candidate.reasons)
+        reasons = ", ".join(terminal_text(reason) for reason in candidate.reasons)
         print(
-            f"  {candidate.agent} {candidate.resource_kind}/{candidate.resource_name} "
-            f"score={candidate.score} capacity={candidate.capacity} reasons={reasons}"
+            f"  {terminal_text(candidate.agent)} "
+            f"{terminal_text(candidate.resource_kind)}/"
+            f"{terminal_text(candidate.resource_name)} score={candidate.score} "
+            f"capacity={candidate.capacity} reasons={reasons}"
         )
     if report.fallback_reason:
-        print(f"Fallback: {report.fallback_reason}")
-    print(f"Advisory only: {report.trust_boundary}")
+        print(f"Fallback: {terminal_text(report.fallback_reason)}")
+    print(f"Advisory only: {terminal_text(report.trust_boundary)}")
 
 
 async def _fetch_bidding_inputs(
@@ -100,11 +103,13 @@ async def _fetch_bidding_inputs(
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
             print(
-                describe_connect_failure(
-                    name,
-                    uri,
-                    close_code=agent.last_close_code,
-                    close_reason=agent.last_close_reason,
+                terminal_text(
+                    describe_connect_failure(
+                        name,
+                        uri,
+                        close_code=agent.last_close_code,
+                        close_reason=agent.last_close_reason,
+                    )
                 )
             )
             return None
@@ -116,7 +121,10 @@ async def _fetch_bidding_inputs(
             await asyncio.sleep(0.025)
         if set(replies) != expected:
             missing = ", ".join(sorted(expected.difference(replies)))
-            print(f"[{name}] Hub did not return resource bidding snapshots: {missing}.")
+            print(
+                f"[{terminal_text(name)}] Hub did not return resource bidding snapshots: "
+                f"{terminal_text(missing)}."
+            )
             return None
         directory = build_capability_directory(
             manifest=_cards(replies[MessageType.MANIFEST_SNAPSHOT]),

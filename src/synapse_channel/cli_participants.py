@@ -58,6 +58,7 @@ from synapse_channel.participants.headless_opencode import OpenCodeParticipant
 from synapse_channel.participants.opencode_api import OpenCodeApiParticipant
 from synapse_channel.participants.opencode_stream import OPENCODE_SCHEMA_VERIFIED
 from synapse_channel.participants.participant import Participant
+from synapse_channel.terminal_text import terminal_text
 
 ParticipantBuilder = Callable[..., Participant]
 
@@ -199,7 +200,10 @@ def _cmd_list(args: argparse.Namespace) -> int:
     print(f"Participant providers ({len(healths)}):")
     for provider, health, note in healths:
         state = "available" if health.available else "unavailable"
-        print(f"  {provider} [{health.channel.value}] {state}: {health.detail}{note}")
+        print(
+            f"  {terminal_text(provider)} [{terminal_text(health.channel.value)}] "
+            f"{state}: {terminal_text(health.detail)}{note}"
+        )
     return 0
 
 
@@ -228,11 +232,11 @@ def _cmd_ask(args: argparse.Namespace) -> int:
         )
         participant = wrap_participants([participant], args)[0]
     except ValueError as exc:
-        print(str(exc))
+        print(terminal_text(exc))
         return 2
     health = participant.health()
     if not health.available:
-        print(f"{args.provider} is unavailable: {health.detail}")
+        print(f"{terminal_text(args.provider)} is unavailable: {terminal_text(health.detail)}")
         return 1
     request = TurnRequest(
         topic_id=args.topic or f"participant-cli-{uuid.uuid4().hex[:8]}",
@@ -245,9 +249,9 @@ def _cmd_ask(args: argparse.Namespace) -> int:
         print(json.dumps(result, sort_keys=True))
     elif result["is_error"] or result["abstained"]:
         verdict = "errored" if result["is_error"] else "abstained"
-        print(f"{args.provider} {verdict}: {result['reason']}")
+        print(f"{terminal_text(args.provider)} {verdict}: {terminal_text(result['reason'])}")
     else:
-        print(result["answer"])
+        print(terminal_text(result["answer"]))
     return 1 if result["is_error"] or result["abstained"] else 0
 
 

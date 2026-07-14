@@ -19,6 +19,7 @@ from typing import Any
 from synapse_channel.core.ledger import TERMINAL_LEDGER_STATUSES, LedgerTask
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.state_models import TaskClaim
+from synapse_channel.terminal_text import shell_long_option
 
 DEFAULT_DARK_SEAT_GRACE_SECONDS = 30.0
 """Continuous missing-waiter time allowed before the hub broadcasts an alert."""
@@ -143,8 +144,9 @@ class DarkSeatMonitor:
                     tasks=list(item.tasks),
                     missing_for_seconds=round(missing_for, 3),
                     remedy=(
-                        f"arm a permanent waiter: synapse arm --name {identity} "
-                        f"--for {identity} --directed-only"
+                        "arm a permanent waiter: synapse arm "
+                        f"{shell_long_option('--name', identity)} "
+                        f"{shell_long_option('--for', identity)} --directed-only"
                     ),
                 )
             )

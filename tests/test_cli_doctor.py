@@ -473,7 +473,7 @@ async def test_diagnose_surfaces_directed_messages_nobody_reads() -> None:
         )
     text = "\n".join(report)
     assert "GHOST/coordinator (1 msg)" in text
-    assert "syn inbox --as GHOST/coordinator" in text
+    assert "syn inbox --as=GHOST/coordinator" in text
     assert code == 0  # a blackhole warns; it does not fail the doctor
 
 

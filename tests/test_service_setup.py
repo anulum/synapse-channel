@@ -11,6 +11,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from synapse_channel.service_setup import (
     escaped_instance,
     install_arm_service,
@@ -39,8 +41,25 @@ def test_render_arm_unit_adds_remote_uri_and_token_file() -> None:
         token_file="/home/user/.config/synapse/token",
     )
 
-    assert "--uri wss://hub.example:8876" in unit
-    assert "--token-file /home/user/.config/synapse/token" in unit
+    assert "--uri=wss://hub.example:8876" in unit
+    assert "--token-file=/home/user/.config/synapse/token" in unit
+
+
+def test_render_arm_unit_escapes_systemd_percent_specifiers() -> None:
+    unit = render_arm_unit(
+        synapse_bin="/usr/bin/synapse",
+        uri="wss://hub.example/%2F",
+        token_file="/home/user/token%name",
+    )
+
+    assert "--uri=wss://hub.example/%%2F" in unit
+    assert "--token-file=/home/user/token%%name" in unit
+
+
+@pytest.mark.parametrize("value", ["/bin/synapse\nExecStart=/bin/false", "bad'path", "bad\\path"])
+def test_rendered_units_reject_ambiguous_systemd_tokens(value: str) -> None:
+    with pytest.raises(ValueError, match="without whitespace, controls, or quotes"):
+        render_arm_unit(synapse_bin=value)
 
 
 def test_rendered_units_never_order_after_their_install_target() -> None:
@@ -79,7 +98,7 @@ def test_checked_in_arm_template_matches_generated_runtime_contract() -> None:
 
     assert "After=synapse-hub.service" in template
     assert "Wants=synapse-hub.service" not in template
-    assert "--directed-only --mailbox --uri ws://localhost:8876" in template
+    assert "--directed-only --mailbox --uri=ws://localhost:8876" in template
     assert "Restart=always" in template
 
 
@@ -348,6 +367,32 @@ def test_install_user_services_start_runs_systemctl(tmp_path: Path) -> None:
     assert ["systemctl", "--user", "daemon-reload"] in commands
     assert ["systemctl", "--user", "enable", "--now", "synapse-hub.service"] in commands
     assert ["systemctl", "--user", "enable", "--now", "escaped.service"] in commands
+
+
+def test_install_user_services_start_terminates_escape_options(tmp_path: Path) -> None:
+    commands: list[list[str]] = []
+
+    def runner(
+        args: list[str], *, capture_output: bool = False, text: bool = False, check: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        if args[0] == "systemd-escape":
+            return subprocess.CompletedProcess(args, 0, stdout="escaped.service\n", stderr="")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    install_user_services(
+        project="--version",
+        identity="--help",
+        synapse_bin="/bin/synapse",
+        start=True,
+        home=tmp_path,
+        runner=runner,
+    )
+
+    assert commands[:2] == [
+        ["systemd-escape", "--template=synapse-presence@.service", "--", "--version"],
+        ["systemd-escape", "--template=synapse-arm@.service", "--", "--help"],
+    ]
 
 
 def test_install_user_services_reports_systemctl_failures(tmp_path: Path) -> None:

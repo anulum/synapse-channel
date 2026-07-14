@@ -50,6 +50,7 @@ from synapse_channel.core.multihub_transport import (
 )
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import SqlCipherKeyError
+from synapse_channel.terminal_text import terminal_text
 
 StoreFactory = Callable[[str], EventStore]
 FetcherFactory = Callable[..., EventFetcher]
@@ -61,7 +62,7 @@ def _render(state: ObservedState, peer_id: str, *, json_out: bool) -> None:
         print(json.dumps({"peer_id": peer_id, **state.to_dict()}, indent=2))
         return
     print(
-        f"observing peer '{peer_id}' — {len(state.board)} tasks, "
+        f"observing peer '{terminal_text(peer_id)}' — {len(state.board)} tasks, "
         f"{len(state.progress)} progress notes, {len(state.observed_claims)} observed claims"
     )
     if state.board:
@@ -70,19 +71,22 @@ def _render(state: ObservedState, peer_id: str, *, json_out: bool) -> None:
             task = state.board[task_id]
             status = task.get("status", "?")
             title = task.get("title", "")
-            print(f"  [{status}] {task_id} — {title}")
+            print(f"  [{terminal_text(status)}] {terminal_text(task_id)} — {terminal_text(title)}")
     if state.observed_claims:
         print("observed claims (advisory — not granted):")
         for task_id in sorted(state.observed_claims):
             observed = state.observed_claims[task_id]
             owner = observed.claim.get("owner", "?")
-            print(f"  {task_id} -> {owner} @ {observed.hub_id}")
+            print(
+                f"  {terminal_text(task_id)} -> {terminal_text(owner)} "
+                f"@ {terminal_text(observed.hub_id)}"
+            )
 
 
 def _cmd_observe(args: argparse.Namespace, *, store_factory: StoreFactory = EventStore) -> int:
     """Open a peer hub's event store, fold its log, and print the observed state."""
     if not Path(args.peer_db).is_file():
-        print(f"peer database not found: {args.peer_db}", file=sys.stderr)
+        print(f"peer database not found: {terminal_text(args.peer_db)}", file=sys.stderr)
         return 2
     peer_id = args.peer_id or Path(args.peer_db).stem
     key_file = getattr(args, "db_key_file", None)
@@ -93,12 +97,12 @@ def _cmd_observe(args: argparse.Namespace, *, store_factory: StoreFactory = Even
         else:
             store = store_factory(args.peer_db)
     except (sqlite3.Error, SqlCipherKeyError, ValueError) as exc:
-        print(f"could not read peer event store: {exc}", file=sys.stderr)
+        print(f"could not read peer event store: {terminal_text(exc)}", file=sys.stderr)
         return 2
     try:
         state = asyncio.run(MultiHubFollower().poll(peer_id, store_fetcher(store)))
     except (sqlite3.Error, SqlCipherKeyError, ValueError) as exc:
-        print(f"could not read peer event store: {exc}", file=sys.stderr)
+        print(f"could not read peer event store: {terminal_text(exc)}", file=sys.stderr)
         return 2
     finally:
         store.close()
@@ -124,7 +128,7 @@ def _cmd_follow(
     try:
         state = asyncio.run(MultiHubFollower().poll(peer_id, fetch))
     except MultiHubFetchError as exc:
-        print(f"could not follow peer hub: {exc}", file=sys.stderr)
+        print(f"could not follow peer hub: {terminal_text(exc)}", file=sys.stderr)
         return 2
     _render(state, peer_id, json_out=args.json)
     return 0

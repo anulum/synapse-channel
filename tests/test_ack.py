@@ -75,6 +75,15 @@ class ScriptedAgent:
                 }
             )
             return
+        if self.mode == "progress_control_error":
+            await self.callback(
+                {
+                    "type": MessageType.ERROR,
+                    "target": self.name,
+                    "text": "rejected\x1b]52;c;YQ==\x07\nforged\u202e",
+                }
+            )
+            return
         await self.callback(
             {
                 "type": MessageType.LEDGER_PROGRESS_POSTED,
@@ -284,6 +293,28 @@ async def test_ack_task_reports_confirmation_failures(
 
     assert code == 1
     assert expected in capsys.readouterr().err
+
+
+async def test_ack_task_makes_hub_error_controls_visible(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = await ack.ack_task(
+        AckIdentity(),
+        task_id="BUILD",
+        evidence=("pytest",),
+        artifacts=(),
+        note="",
+        uri="ws://hub",
+        attempts=1,
+        agent_factory=_scripted_factory("progress_control_error"),
+    )
+
+    rendered = capsys.readouterr().err
+    assert code == 1
+    assert "rejected\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
 
 
 def test_message_text_falls_back_to_message_repr() -> None:

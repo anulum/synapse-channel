@@ -82,6 +82,7 @@ from synapse_channel.core.federation_wire import (
     render_expiry,
     render_offer_fingerprints,
 )
+from synapse_channel.terminal_text import shell_command_arg, shell_long_option, terminal_text
 
 Clock = Callable[[], float]
 
@@ -247,7 +248,7 @@ def _cmd_offer(args: argparse.Namespace) -> int:
         return 2
     print(render_offer_fingerprints(peer))
     print()
-    print(f"serve it:  synapse hub --federation-offer {args.bundle}")
+    print(f"serve it:  synapse hub {shell_long_option('--federation-offer', args.bundle)}")
     print("then read the bundle fingerprint to the peer operator out-of-band; they")
     print("compare it against their `synapse federation fetch` output before importing.")
     return 0
@@ -281,10 +282,14 @@ def _cmd_fetch(args: argparse.Namespace, *, fetcher: Fetcher = fetch_federation_
     out.write_text(json.dumps(encode_federation_offer(peer), indent=2) + "\n", encoding="utf-8")
     print(render_offer_fingerprints(peer))
     print()
-    print(f"wrote the offered bundle to {out} — NOT imported.")
+    print(f"wrote the offered bundle to {terminal_text(out)} — NOT imported.")
     print("compare the bundle fingerprint with the peer operator out-of-band (their")
     print("`synapse federation offer` prints the same block), then import explicitly:")
-    print(f"  synapse federation import {out} --confirmed-by <operator> --source {args.uri}")
+    print(
+        "  synapse federation import "
+        f"{shell_long_option('--confirmed-by', '<operator>')} "
+        f"{shell_long_option('--source', args.uri)} -- {shell_command_arg(out)}"
+    )
     return 0
 
 

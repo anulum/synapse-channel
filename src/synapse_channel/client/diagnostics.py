@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse
 
 from synapse_channel.core.hub import is_loopback_host
+from synapse_channel.terminal_text import shell_long_option, terminal_text
 from synapse_channel.waiter_identity import split_roster, waiter_name, waiter_owner
 
 if TYPE_CHECKING:
@@ -240,16 +241,20 @@ def check_waiter(roster: list[str] | None, waiter_name: str) -> Diagnosis:
         return Diagnosis(
             check="waiter",
             status="pass",
-            detail=f"waiter {waiter_name!r} is live on the bus",
+            detail=f"waiter {terminal_text(waiter_name)!r} is live on the bus",
         )
     owner = waiter_owner(waiter_name)
     return Diagnosis(
         check="waiter",
         status="warn",
-        detail=f"no waiter {waiter_name!r} on the bus — directed messages will not wake you",
+        detail=(
+            f"no waiter {terminal_text(waiter_name)!r} on the bus — directed messages "
+            "will not wake you"
+        ),
         remedy=(
-            f"arm one in the background: synapse wait --name {waiter_name} "
-            f"--for {owner} --directed-only"
+            "arm one in the background: synapse wait "
+            f"{shell_long_option('--name', waiter_name)} "
+            f"{shell_long_option('--for', owner)} --directed-only"
         ),
     )
 
@@ -436,7 +441,7 @@ def check_deaf_agents(roster: list[str] | None) -> Diagnosis:
             status="pass",
             detail=f"every live agent has a -rx waiter ({len(agents)} agent(s))",
         )
-    listing = ", ".join(deaf[:3])
+    listing = ", ".join(terminal_text(agent) for agent in deaf[:3])
     more = f" and {len(deaf) - 3} more" if len(deaf) > 3 else ""
     sample = deaf[0]
     return Diagnosis(
@@ -444,8 +449,10 @@ def check_deaf_agents(roster: list[str] | None) -> Diagnosis:
         status="warn",
         detail=f"agents present without a wake waiter: {listing}{more}",
         remedy=(
-            f"arm waiters: synapse wait --name {waiter_name(sample)} "
-            f"--for {sample} --directed-only (repeat per deaf agent)"
+            "arm waiters: synapse wait "
+            f"{shell_long_option('--name', waiter_name(sample))} "
+            f"{shell_long_option('--for', sample)} --directed-only "
+            "(repeat per deaf agent)"
         ),
     )
 
@@ -499,13 +506,15 @@ def check_unread_addressees(
             detail="every directed address in the recent feed has a reader",
         )
     worst = sorted(unread.items(), key=lambda item: (-item[1], item[0]))
-    listing = ", ".join(f"{name} ({count} msg)" for name, count in worst[:3])
+    listing = ", ".join(f"{terminal_text(name)} ({count} msg)" for name, count in worst[:3])
     more = f" and {len(worst) - 3} more" if len(worst) > 3 else ""
     return Diagnosis(
         check="addressees",
         status="warn",
         detail=f"directed messages nobody reads: {listing}{more}",
-        remedy=f"drain them: syn inbox --as {worst[0][0]} (repeat --as per name)",
+        remedy=(
+            f"drain them: syn inbox {shell_long_option('--as', worst[0][0])} (repeat --as per name)"
+        ),
     )
 
 

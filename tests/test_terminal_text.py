@@ -8,7 +8,14 @@
 
 from __future__ import annotations
 
-from synapse_channel.terminal_text import terminal_chat_line, terminal_text
+import pytest
+
+from synapse_channel.terminal_text import (
+    shell_command_arg,
+    shell_long_option,
+    terminal_chat_line,
+    terminal_text,
+)
 
 
 def test_terminal_text_preserves_plain_unicode() -> None:
@@ -28,3 +35,20 @@ def test_terminal_text_exposes_terminal_and_format_controls() -> None:
 
 def test_terminal_chat_line_neutralises_sender_and_payload() -> None:
     assert terminal_chat_line("peer\x1b", "one\ntwo") == r"peer\x1b: one\ntwo"
+
+
+def test_shell_command_arg_neutralises_controls_and_shell_metacharacters() -> None:
+    assert shell_command_arg("$(touch injected)\x1b]0;fake\x07") == (
+        r"'$(touch injected)\x1b]0;fake\x07'"
+    )
+
+
+def test_shell_long_option_binds_leading_dash_and_empty_values() -> None:
+    assert shell_long_option("--name", "--help") == "--name=--help"
+    assert shell_long_option("--name", "") == "--name=''"
+
+
+@pytest.mark.parametrize("name", ["name", "--", "--name=value", "--bad option", "--bad_option"])
+def test_shell_long_option_rejects_non_bare_long_options(name: str) -> None:
+    with pytest.raises(ValueError, match="bare GNU-style long option"):
+        shell_long_option(name, "value")

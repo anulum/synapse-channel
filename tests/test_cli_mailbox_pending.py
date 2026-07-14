@@ -82,6 +82,20 @@ def test_render_preserves_unavailable_empty_and_singular_verdicts(
     assert "1 undelivered message pending for A" in singular
 
 
+def test_render_makes_remote_identity_controls_visible(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    identity = "seat\x1b]52;c;YQ==\x07\nforged\u202e"
+
+    render_mailbox_pending({identity: 1}, project=None)
+
+    rendered = capsys.readouterr().out
+    assert "seat\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
+
+
 async def test_real_who_defaults_to_top_twenty_and_all_flag_expands(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

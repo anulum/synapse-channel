@@ -15,12 +15,12 @@ copyable without letting a diagnostic command mutate long-running services.
 
 from __future__ import annotations
 
-import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.service_setup import CommandRunner, default_synapse_bin, escaped_instance
+from synapse_channel.terminal_text import shell_command_arg, shell_long_option, terminal_text
 
 EVENT_SUMMARY_SQL = "select kind, count(*) from events group by kind order by kind;"
 """SQLite query used by the durable replay checklist step."""
@@ -87,12 +87,12 @@ def build_redeploy_checklist(
         )
         arm_unit = escaped_instance(identity, template="synapse-arm@.service", runner=escape_runner)
     db = _shell_word(str(db_path))
-    quoted_project = shlex.quote(project)
-    quoted_uri = shlex.quote(hub_uri)
+    project_option = shell_long_option("--project", project)
+    uri_option = shell_long_option("--uri", hub_uri)
     return [
         RedeployCheck(
             label="Package and executable",
-            command=f"command -v {_shell_word(synapse)} && {_shell_word(synapse)} --version",
+            command=f"command -v -- {_shell_word(synapse)} && {_shell_word(synapse)} --version",
             expected="installed command reports the release version",
         ),
         RedeployCheck(
@@ -106,28 +106,30 @@ def build_redeploy_checklist(
         RedeployCheck(
             label="Presence daemon restart",
             command=(
-                f"systemctl --user restart {shlex.quote(presence_unit)} && "
-                f"systemctl --user status --no-pager {shlex.quote(presence_unit)}"
+                f"systemctl --user restart -- {shell_command_arg(presence_unit)} && "
+                "systemctl --user status --no-pager -- "
+                f"{shell_command_arg(presence_unit)}"
             ),
             expected=f"project presence for {project!r} reconnects",
         ),
         RedeployCheck(
             label="Wake listener restart",
             command=(
-                f"systemctl --user restart {shlex.quote(arm_unit)} && "
-                f"systemctl --user status --no-pager {shlex.quote(arm_unit)}"
+                f"systemctl --user restart -- {shell_command_arg(arm_unit)} && "
+                f"systemctl --user status --no-pager -- {shell_command_arg(arm_unit)}"
             ),
             expected=f"directed waiter for {identity!r} is armed",
         ),
         RedeployCheck(
             label="Roster reconnect",
-            command=f"synapse who --project {quoted_project} --uri {quoted_uri}",
+            command=f"synapse who {project_option} {uri_option}",
             expected="active claims and waiters are visible after restart",
         ),
         RedeployCheck(
             label="Durable state replay",
             command=(
-                f"sqlite3 {db} {shlex.quote(EVENT_SUMMARY_SQL)} && synapse state --uri {quoted_uri}"
+                f"sqlite3 -- {db} {shell_command_arg(EVENT_SUMMARY_SQL)} && "
+                f"synapse state {uri_option}"
             ),
             expected="event log is readable and replayed claims remain visible",
         ),
@@ -156,9 +158,9 @@ def render_redeploy_checklist(checks: list[RedeployCheck]) -> list[str]:
     for index, check in enumerate(checks, start=1):
         lines.extend(
             [
-                f"[{index}] {check.label}",
-                f"    command: {check.command}",
-                f"    expected: {check.expected}",
+                f"[{index}] {terminal_text(check.label)}",
+                f"    command: {terminal_text(check.command)}",
+                f"    expected: {terminal_text(check.expected)}",
             ]
         )
     return lines
@@ -167,5 +169,5 @@ def render_redeploy_checklist(checks: list[RedeployCheck]) -> list[str]:
 def _shell_word(value: str) -> str:
     """Return a shell word while preserving conventional ``~/`` expansion."""
     if value.startswith("~/"):
-        return value
-    return shlex.quote(value)
+        return f'"${{HOME}}"/{shell_command_arg(value[2:])}'
+    return shell_command_arg(value)

@@ -52,6 +52,7 @@ class _ScriptedParticipant:
         is_error: bool = False,
         abstained: bool = False,
         reason: str = "",
+        detail: str = "scripted",
     ) -> None:
         self._identity = identity
         self._model = model
@@ -61,6 +62,7 @@ class _ScriptedParticipant:
         self._is_error = is_error
         self._abstained = abstained
         self._reason = reason
+        self._detail = detail
         self.requests: list[TurnRequest] = []
 
     @property
@@ -76,7 +78,7 @@ class _ScriptedParticipant:
             identity=self._identity,
             channel=ParticipantChannel.HEADLESS,
             available=self._available,
-            detail="scripted",
+            detail=self._detail,
         )
 
     async def take_turn(self, request: TurnRequest) -> Any:
@@ -211,6 +213,35 @@ def test_ask_prints_the_answer_and_frames_the_request(
     assert args.func is _cmd_ask
     assert _cmd_ask(args) == 0
     assert capsys.readouterr().out.strip() == "scripted answer"
+
+
+def test_ask_makes_provider_answer_controls_visible(
+    scripted: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    scripted["answer"] = "answer\x1b]52;c;YQ==\x07\nforged\u202e"
+
+    assert _cmd_ask(_ask_args()) == 0
+
+    rendered = capsys.readouterr().out
+    assert "answer\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
+
+
+def test_list_makes_provider_health_controls_visible(
+    scripted: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    scripted["detail"] = "health\x1b]8;;https://example.invalid\x07link\x1b]8;;\x07\u202e"
+    args = build_parser().parse_args(["participant", "list"])
+
+    assert _cmd_list(args) == 0
+
+    rendered = capsys.readouterr().out
+    assert "health\\x1b]8;;https://example.invalid\\x07link\\x1b]8;;\\x07\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
 
 
 def test_ask_defaults_identity_and_generates_a_topic(

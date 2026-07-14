@@ -13,7 +13,7 @@
 #   mkdir -p ~/synapse ~/.local/share/synapse
 #   cp deploy/synapse-arm@.service ~/.config/systemd/user/
 #   systemctl --user daemon-reload
-#   systemctl --user enable --now "$(systemd-escape --template=synapse-arm@.service '<project-or-identity>')"
+#   systemctl --user enable --now "$(systemd-escape --template=synapse-arm@.service -- '<project-or-identity>')"
 #
 # %I expands to the unescaped instance name, so identities such as PROJECT/ux work
 # when enabled through systemd-escape.
@@ -32,7 +32,7 @@ StartLimitIntervalSec=0
 Type=simple
 Environment=SYN_PROJECT=%I
 Environment=SYN_IDENTITY=%I
-ExecStart=%h/.local/bin/synapse arm --name %I-rx --for %I --directed-only --mailbox --uri ws://localhost:8876
+ExecStart=%h/.local/bin/synapse arm --name=%I-rx --for=%I --directed-only --mailbox --uri=ws://localhost:8876
 Restart=always
 RestartSec=2
 NoNewPrivileges=yes

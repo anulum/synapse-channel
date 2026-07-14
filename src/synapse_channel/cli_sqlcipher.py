@@ -26,6 +26,8 @@ from __future__ import annotations
 import argparse
 import sys
 
+from synapse_channel.terminal_text import shell_long_option, terminal_text
+
 
 def _cmd_rekey(args: argparse.Namespace) -> int:
     """Rotate the SQLCipher page key using ``PRAGMA rekey`` (hub stopped)."""
@@ -47,10 +49,14 @@ def _cmd_rekey(args: argparse.Namespace) -> int:
         SqlCipherUnavailableError,
         SqlCipherKeyError,
     ) as exc:
-        print(f"synapse sqlcipher rekey: {exc}", file=sys.stderr)
+        print(f"synapse sqlcipher rekey: {terminal_text(exc)}", file=sys.stderr)
         return 1
-    print(f"sqlcipher rekeyed: {result['path']}")
-    print(f"start the hub with: synapse hub --db {args.db} --db-key-file {args.new_key}")
+    print(f"sqlcipher rekeyed: {terminal_text(result['path'])}")
+    print(
+        "start the hub with: synapse hub "
+        f"{shell_long_option('--db', args.db)} "
+        f"{shell_long_option('--db-key-file', args.new_key)}"
+    )
     return 0
 
 
@@ -75,10 +81,17 @@ def _cmd_migrate(args: argparse.Namespace) -> int:
         SqlCipherKeyError,
         OSError,
     ) as exc:
-        print(f"synapse sqlcipher migrate: {exc}", file=sys.stderr)
+        print(f"synapse sqlcipher migrate: {terminal_text(exc)}", file=sys.stderr)
         return 1
-    print(f"sqlcipher migrated {result['rows']} event(s): {args.source} -> {args.destination}")
-    print(f"start the hub with: synapse hub --db {args.destination} --db-key-file {args.key}")
+    print(
+        f"sqlcipher migrated {terminal_text(result['rows'])} event(s): "
+        f"{terminal_text(args.source)} -> {terminal_text(args.destination)}"
+    )
+    print(
+        "start the hub with: synapse hub "
+        f"{shell_long_option('--db', args.destination)} "
+        f"{shell_long_option('--db-key-file', args.key)}"
+    )
     return 0
 
 

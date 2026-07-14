@@ -83,7 +83,9 @@ def test_build_rows_filters_project_and_formats_scope_release_path() -> None:
             scope="mutex:SYNAPSE-CHANNEL:git",
             age="2m00s",
             remaining="4m00s",
-            release_command=("synapse release SYNAPSE-CHANNEL:git --name SYNAPSE-CHANNEL/codex-1"),
+            release_command=(
+                "synapse release --name=SYNAPSE-CHANNEL/codex-1 -- SYNAPSE-CHANNEL:git"
+            ),
             checkpoint="-",
             git="feature/x->main",
         ),
@@ -94,7 +96,7 @@ def test_build_rows_filters_project_and_formats_scope_release_path() -> None:
             scope="worktree:default paths=docs/cli.md",
             age="1m10s",
             remaining="2m10s",
-            release_command="synapse release docs --name SYNAPSE-CHANNEL",
+            release_command="synapse release --name=SYNAPSE-CHANNEL -- docs",
             checkpoint="cursor=9",
             git="-",
         ),
@@ -124,7 +126,42 @@ def test_render_locks_prints_operator_view(capsys: pytest.CaptureFixture[str]) -
     assert "Active leases in SYNAPSE-CHANNEL (2):" in out
     assert "SYNAPSE-CHANNEL:git [claimed]" in out
     assert "scope=mutex:SYNAPSE-CHANNEL:git" in out
-    assert "release=synapse release docs --name SYNAPSE-CHANNEL" in out
+    assert "release=synapse release --name=SYNAPSE-CHANNEL -- docs" in out
+
+
+def test_render_locks_neutralises_remote_controls_and_copy_command_injection(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    hostile = "--help$(touch injected)\x1b]0;fake\x07"
+    rows = build_rows(
+        {
+            "active_claims": [
+                {
+                    "task_id": hostile,
+                    "owner": hostile,
+                    "status": hostile,
+                    "claimed_at": 100.0,
+                    "lease_expires_at": 460.0,
+                    "worktree": hostile,
+                    "paths": [hostile],
+                    "checkpoint": hostile,
+                    "git": {"branch": hostile, "base": hostile},
+                }
+            ]
+        },
+        project=None,
+        owner=None,
+        now=220.0,
+    )
+
+    render_locks(rows, label=hostile, as_json=False)
+
+    out = capsys.readouterr().out
+    assert "\x1b" not in out
+    assert "\x07" not in out
+    assert r"\x1b]0;fake\x07" in out
+    assert "--name='--help$(touch injected)\\x1b]0;fake\\x07'" in out
+    assert "-- '--help$(touch injected)\\x1b]0;fake\\x07'" in out
 
 
 def test_render_locks_prints_json(capsys: pytest.CaptureFixture[str]) -> None:

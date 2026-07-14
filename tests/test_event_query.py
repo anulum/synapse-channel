@@ -462,6 +462,42 @@ def test_human_renderers_cover_state_path_conflicts_and_fallback(tmp_path: Path)
     assert event_query.render_human(fallback) == "unknown: no renderer"
 
 
+def test_human_renderer_makes_stored_event_controls_visible() -> None:
+    hostile = "remote\x1b]52;c;YQ==\x07\nforged\u202e"
+    record = event_query.QueryRecord(
+        event=StoredEvent(1, 1.0, hostile, {"task_id": hostile}),
+        task_id=hostile,
+        owner=hostile,
+        status=hostile,
+        worktree=hostile,
+        paths=(hostile,),
+    )
+    timeline = event_query.render_human(
+        event_query.QueryResult(kind="task_timeline", query="task T timeline", records=(record,))
+    )
+    conflicts = event_query.render_human(
+        event_query.QueryResult(
+            kind="conflicts",
+            query="conflicts at seq 1",
+            conflicts=[
+                {
+                    "left_task": hostile,
+                    "left_owner": hostile,
+                    "right_task": hostile,
+                    "right_owner": hostile,
+                    "paths": [hostile],
+                }
+            ],
+        )
+    )
+    rendered = timeline + conflicts
+
+    assert "remote\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
+
+
 def test_release_clears_task_state_at_cutoff(tmp_path: Path) -> None:
     db = tmp_path / "events.db"
     _seed_store(db)

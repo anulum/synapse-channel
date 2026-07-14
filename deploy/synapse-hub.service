@@ -26,7 +26,7 @@ Documentation=https://github.com/anulum/synapse-channel
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/synapse hub --port 8876 --db %h/synapse/hub.db --relay-log %h/synapse/feed.ndjson --relay-max-lines 20000
+ExecStart=%h/.local/bin/synapse hub --port=8876 --db=%h/synapse/hub.db --relay-log=%h/synapse/feed.ndjson --relay-max-lines=20000
 Restart=always
 RestartSec=2
 NoNewPrivileges=yes

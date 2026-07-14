@@ -406,6 +406,28 @@ def test_render_run_human_lists_assignments_and_retirements(
     assert "w/rollback" in out
 
 
+def test_render_run_human_makes_board_controls_visible(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    hostile = "remote\x1b]52;c;YQ==\x07\nforged\u202e"
+    result = RunResult(
+        complete=True,
+        timed_out=False,
+        polls=1,
+        assignments=((hostile, hostile),),
+        cancellations=(hostile,),
+        state=_empty_state(),
+    )
+
+    _render_run(result, json_out=False)
+
+    rendered = capsys.readouterr().out
+    assert "remote\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
+
+
 def test_render_run_human_reports_no_assignments(capsys: pytest.CaptureFixture[str]) -> None:
     result = RunResult(
         complete=False,

@@ -23,6 +23,7 @@ from pathlib import Path
 from synapse_channel.git.claim_check_config import persist_claim_check_config
 from synapse_channel.git.gitclaim import GitRunner, _default_git_runner
 from synapse_channel.git.githook import install_hooks
+from synapse_channel.terminal_text import shell_long_option
 
 SCAFFOLD_DIR = ".synapse"
 """Repository-relative directory the onboarding scaffold is written into."""
@@ -69,7 +70,8 @@ def _scaffold_body(*, name: str, base_branch: str) -> str:
         "claim with `--auto-release-on manual` and release explicitly.\n\n"
         "## Claiming and releasing\n\n"
         "```\n"
-        f"synapse git-claim <task-id> --paths src/area --name {name}\n"
+        f"synapse git-claim {shell_long_option('--paths', 'src/area')} "
+        f"{shell_long_option('--name', name)} -- <task-id>\n"
         "# ... edit, commit ...\n"
         "# the post-commit / post-merge hook auto-releases the claim (installed here)\n"
         "```\n\n"

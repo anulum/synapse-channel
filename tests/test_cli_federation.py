@@ -381,14 +381,14 @@ def test_offer_prints_the_fingerprint_block_and_serving_hint(
 ) -> None:
     from synapse_channel.core.federation_wire import bundle_fingerprint, decode_federation_offer
 
-    bundle = _write_bundle(tmp_path, _material())
+    bundle = _write_bundle(tmp_path, _material(), "$(touch injected).json")
     args = _args("offer", bundle)
     assert args.func(args) == 0
     out = capsys.readouterr().out
     peer = decode_federation_offer(_material())
     assert "domain:             acme" in out
     assert f"bundle fingerprint: {bundle_fingerprint(peer)}" in out
-    assert f"synapse hub --federation-offer {bundle}" in out
+    assert f"synapse hub --federation-offer='{bundle}'" in out
     assert "out-of-band" in out
 
 
@@ -443,18 +443,20 @@ def test_fetch_writes_the_bundle_and_prints_the_same_fingerprints(
     from synapse_channel.core.federation_store import peer_from_dict
     from synapse_channel.core.federation_wire import bundle_fingerprint, decode_federation_offer
 
-    out_file = tmp_path / "nested" / "peer.json"
+    out_file = tmp_path / "$(touch injected)" / "peer.json"
     captured: dict[str, object] = {}
-    args = _args("fetch", "ws://peer:8876", "--out", str(out_file))
+    uri = "ws://peer:8876/$(touch injected)"
+    args = _args("fetch", uri, "--out", str(out_file))
     assert _cmd_fetch(args, fetcher=_stub_fetcher(captured)) == 0
     peer = decode_federation_offer(_material())
     assert peer_from_dict(json.loads(out_file.read_text(encoding="utf-8"))) == peer
     out = capsys.readouterr().out
     assert f"bundle fingerprint: {bundle_fingerprint(peer)}" in out
     assert "NOT imported" in out
-    assert f"synapse federation import {out_file}" in out
-    assert "--source ws://peer:8876" in out
-    assert captured["uri"] == "ws://peer:8876"
+    assert "synapse federation import --confirmed-by='<operator>'" in out
+    assert f"--source='{uri}'" in out
+    assert f"-- '{out_file}'" in out
+    assert captured["uri"] == uri
     assert captured["local_id"] == "federation-fetch"
     assert captured["token"] is None
     assert captured["timeout"] == 10.0

@@ -25,6 +25,7 @@ from synapse_channel.core.capability_directory import (
     filter_capability_directory,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.terminal_text import terminal_text
 
 
 def _render_directory(directory: CapabilityDirectory) -> None:
@@ -32,20 +33,21 @@ def _render_directory(directory: CapabilityDirectory) -> None:
     print(f"Directory ({len(directory.entries)} entries):")
     for entry in directory.entries:
         if entry.entry_type == "agent":
-            classes = ", ".join(entry.task_classes) or "none"
-            skills = ", ".join(entry.skills) or "none"
-            model = entry.model or "-"
+            classes = ", ".join(terminal_text(value) for value in entry.task_classes) or "none"
+            skills = ", ".join(terminal_text(value) for value in entry.skills) or "none"
+            model = terminal_text(entry.model or "-")
             print(
-                f"  agent {entry.agent} [{classes}] skills={skills} "
+                f"  agent {terminal_text(entry.agent)} [{classes}] skills={skills} "
                 f"model={model} contracts={entry.contracts} "
-                f"trust={entry.trust}: {entry.description}"
+                f"trust={terminal_text(entry.trust)}: {terminal_text(entry.description)}"
             )
             continue
         print(
-            f"  resource {entry.agent} {entry.resource_kind}/{entry.resource_name} "
-            f"capacity={entry.capacity} trust={entry.trust}"
+            f"  resource {terminal_text(entry.agent)} "
+            f"{terminal_text(entry.resource_kind)}/{terminal_text(entry.resource_name)} "
+            f"capacity={entry.capacity} trust={terminal_text(entry.trust)}"
         )
-    print(f"Trust boundary: {directory.trust_boundary}")
+    print(f"Trust boundary: {terminal_text(directory.trust_boundary)}")
 
 
 def _cards(data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -90,11 +92,13 @@ async def _fetch_directory(
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
             print(
-                describe_connect_failure(
-                    name,
-                    uri,
-                    close_code=agent.last_close_code,
-                    close_reason=agent.last_close_reason,
+                terminal_text(
+                    describe_connect_failure(
+                        name,
+                        uri,
+                        close_code=agent.last_close_code,
+                        close_reason=agent.last_close_reason,
+                    )
                 )
             )
             return None
@@ -105,7 +109,10 @@ async def _fetch_directory(
             await asyncio.sleep(0.025)
         if set(replies) != expected:
             missing = ", ".join(sorted(expected.difference(replies)))
-            print(f"[{name}] Hub did not return capability directory snapshots: {missing}.")
+            print(
+                f"[{terminal_text(name)}] Hub did not return capability directory snapshots: "
+                f"{terminal_text(missing)}."
+            )
             return None
         return build_capability_directory(
             manifest=_cards(replies[MessageType.MANIFEST_SNAPSHOT]),

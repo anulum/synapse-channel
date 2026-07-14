@@ -119,7 +119,7 @@ async def test_monitor_waits_for_grace_deduplicates_and_rearms_after_recovery() 
     assert first["claims"] == ["WORK"]
     assert first["tasks"] == []
     assert first["missing_for_seconds"] == 10.0
-    assert "--name ALPHA --for ALPHA" in first["remedy"]
+    assert "--name=ALPHA --for=ALPHA" in first["remedy"]
 
     waiters.add("ALPHA")
     assert await monitor.check() == ()
@@ -129,6 +129,25 @@ async def test_monitor_waits_for_grace_deduplicates_and_rearms_after_recovery() 
     clock.now = 31.0
     assert await monitor.check() == ("ALPHA",)
     assert len(broadcasts) == 2
+
+
+async def test_monitor_shell_quotes_and_binds_hostile_identity_in_remedy() -> None:
+    identity = "--help$(touch injected)\x1b]0;fake\x07"
+    broadcasts: list[dict[str, Any]] = []
+    monitor = DarkSeatMonitor(
+        claims=lambda: {"WORK": _claim("WORK", identity, expires_at=1000.0)},
+        tasks=lambda: {},
+        has_live_waiter=lambda _identity: False,
+        broadcast=_append_async(broadcasts),
+        system=_system,
+        grace_seconds=0.0,
+        wall_clock=lambda: 100.0,
+    )
+
+    assert await monitor.check() == (identity,)
+    remedy = broadcasts[0]["remedy"]
+    assert "--name='--help$(touch injected)\\x1b]0;fake\\x07'" in remedy
+    assert "--for='--help$(touch injected)\\x1b]0;fake\\x07'" in remedy
 
 
 async def test_monitor_orders_alerts_and_handles_a_backwards_grace_clock() -> None:

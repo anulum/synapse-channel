@@ -107,9 +107,32 @@ def test_happy_path_runs_all_stages_and_prints_the_plan(
     assert f"created {DEFAULT_WORKSPACE}" in out
     for provider in PROVIDERS:
         assert f"{provider} available" in out
-        assert f"synapse worker-session --identity {DEFAULT_WORKSPACE} -- {provider}" in out
-    assert f'synapse arm --name {DEFAULT_WORKSPACE} --for "{DEFAULT_WORKSPACE},' in out
+        assert f"synapse worker-session --identity={DEFAULT_WORKSPACE} -- {provider}" in out
+    assert f"synapse arm --name={DEFAULT_WORKSPACE} --for='{DEFAULT_WORKSPACE}," in out
     assert "synapse doctor --fix" not in out  # doctor was healthy: no repair step
+
+
+def test_fleet_init_makes_provider_and_workspace_controls_visible(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    hostile = "remote\x1b]52;c;YQ==\x07\nforged\u202e"
+
+    assert (
+        _cmd_fleet_init(
+            _args("--no-smoke"),
+            doctor_stage=lambda _fix: 0,
+            creator=lambda _path, force=False: [hostile],
+            seat_probe=lambda _provider: (False, hostile),
+            demo_runner=lambda: 0,
+        )
+        == 0
+    )
+
+    rendered = capsys.readouterr().out
+    assert "remote\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
 
 
 def test_failing_doctor_is_reported_but_does_not_abort(
@@ -178,7 +201,51 @@ def test_explicit_path_and_force_reach_the_creator_and_the_plan(
     assert code == 0
     assert record == {"path": Path("fleets/alpha"), "force": True}
     out = capsys.readouterr().out
-    assert 'synapse arm --name alpha --for "alpha,alpha/*"' in out
+    assert "synapse arm --name=alpha --for='alpha,alpha/*'" in out
+
+
+def test_next_step_commands_shell_quote_workspace_arguments(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    args = _args("fleets/$(touch injected)", "--no-smoke", "--seat", "codex")
+
+    assert (
+        _cmd_fleet_init(
+            args,
+            doctor_stage=lambda _fix: 0,
+            creator=_creator_recording({}),
+            seat_probe=_all_available,
+            demo_runner=lambda: 0,
+        )
+        == 0
+    )
+
+    rendered = capsys.readouterr().out
+    assert "cd -- 'fleets/$(touch injected)' && python run_demo.py" in rendered
+    assert "--name='$(touch injected)' --for='$(touch injected),$(touch injected)/*'" in rendered
+    assert "--identity='$(touch injected)' -- codex" in rendered
+
+
+def test_next_step_commands_terminate_leading_dash_arguments(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    args = _args("fleets/--help", "--no-smoke", "--seat", "codex")
+
+    assert (
+        _cmd_fleet_init(
+            args,
+            doctor_stage=lambda _fix: 0,
+            creator=_creator_recording({}),
+            seat_probe=_all_available,
+            demo_runner=lambda: 0,
+        )
+        == 0
+    )
+
+    rendered = capsys.readouterr().out
+    assert "cd -- fleets/--help && python run_demo.py" in rendered
+    assert "synapse arm --name=--help --for='--help,--help/*'" in rendered
+    assert "synapse worker-session --identity=--help -- codex" in rendered
 
 
 def test_no_smoke_skips_the_demo(capsys: pytest.CaptureFixture[str]) -> None:
@@ -220,7 +287,7 @@ def test_declared_seats_are_planned_even_when_unavailable(
     assert code == 0
     out = capsys.readouterr().out
     assert "warning: declared seat 'codex' is not available" in out
-    assert f"synapse worker-session --identity {DEFAULT_WORKSPACE} -- codex" in out
+    assert f"synapse worker-session --identity={DEFAULT_WORKSPACE} -- codex" in out
     assert "-- claude" not in out  # undeclared providers stay out of a declared plan
 
 
@@ -238,7 +305,7 @@ def test_an_available_declared_seat_is_planned_without_a_warning(
     assert code == 0
     out = capsys.readouterr().out
     assert "warning: declared seat" not in out
-    assert f"synapse worker-session --identity {DEFAULT_WORKSPACE} -- claude" in out
+    assert f"synapse worker-session --identity={DEFAULT_WORKSPACE} -- claude" in out
 
 
 @pytest.mark.parametrize(

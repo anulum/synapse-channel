@@ -29,6 +29,7 @@ from typing import Any
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.git.gitclaim import AgentFactory, GitError, GitRunner, _default_git_runner
+from synapse_channel.terminal_text import shell_command_arg, shell_long_option
 
 HOOK_MARKER = "# synapse-git-hook"
 """Marker line that identifies a hook this tool wrote, so it is never clobbered."""
@@ -67,12 +68,13 @@ def _hook_script(
     the ``synapse`` executable (an absolute path hardens the hook against a
     ``PATH`` hijack).
     """
-    auth = f" --token-file {shlex.quote(token_file)}" if token_file else ""
+    auth = f" {shell_long_option('--token-file', token_file)}" if token_file else ""
     return (
         "#!/bin/sh\n"
         f"{HOOK_MARKER}\n"
-        f"{shlex.quote(synapse_bin)} git-release --trigger {trigger} "
-        f"--uri {shlex.quote(uri)} --name {shlex.quote(name)}{auth} || true\n"
+        f"{shell_command_arg(synapse_bin)} git-release "
+        f"{shell_long_option('--trigger', trigger)} {shell_long_option('--uri', uri)} "
+        f"{shell_long_option('--name', name)}{auth} || true\n"
     )
 
 

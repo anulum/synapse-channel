@@ -27,6 +27,7 @@ from synapse_channel.core.mcp_outbound import (
     OutboundMcpClient,
     load_outbound_config,
 )
+from synapse_channel.terminal_text import terminal_text
 
 
 def _build_client(config_path: str) -> OutboundMcpClient:
@@ -64,17 +65,17 @@ def _cmd_mcp_tools(args: argparse.Namespace) -> int:
         client = _build_client(args.config)
         tools = asyncio.run(client.list_tools(args.server))
     except (McpConfigError, McpAccessError, McpToolError) as exc:
-        print(f"mcp-tools error: {exc}")
+        print(f"mcp-tools error: {terminal_text(exc)}")
         return cli_exit_code_for_error(exc, default=2)
     except RuntimeError as exc:
-        print(f"mcp-tools error: {exc}")
+        print(f"mcp-tools error: {terminal_text(exc)}")
         return 2
     if args.json:
         print(json.dumps(tools, indent=2, sort_keys=True))
     else:
-        print(f"{args.server}: {len(tools)} allowed tool(s)")
+        print(f"{terminal_text(args.server)}: {len(tools)} allowed tool(s)")
         for tool in tools:
-            print(f"  {tool['name']}: {tool['description']}")
+            print(f"  {terminal_text(tool['name'])}: {terminal_text(tool['description'])}")
     return 0
 
 
@@ -85,12 +86,12 @@ def _cmd_mcp_call(args: argparse.Namespace) -> int:
         client = _build_client(args.config)
         result = asyncio.run(client.call_tool(args.server, args.tool, arguments))
     except (McpConfigError, McpAccessError, McpToolError, json.JSONDecodeError) as exc:
-        print(f"mcp-call error: {exc}")
+        print(f"mcp-call error: {terminal_text(exc)}")
         return cli_exit_code_for_error(exc, default=2)
     except RuntimeError as exc:
-        print(f"mcp-call error: {exc}")
+        print(f"mcp-call error: {terminal_text(exc)}")
         return 2
-    print(result)
+    print(terminal_text(result))
     return 0
 
 

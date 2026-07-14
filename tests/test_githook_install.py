@@ -43,8 +43,8 @@ def test_install_hooks_writes_executable_hooks(tmp_path: Path) -> None:
         hook = tmp_path / filename
         body = hook.read_text(encoding="utf-8")
         assert HOOK_MARKER in body
-        assert f"git-release --trigger {trigger}" in body
-        assert "--name ME" in body
+        assert f"git-release --trigger={trigger}" in body
+        assert "--name=ME" in body
         assert os.access(hook, os.X_OK)
         assert hook.stat().st_mode & stat.S_IXUSR
 
@@ -52,7 +52,7 @@ def test_install_hooks_writes_executable_hooks(tmp_path: Path) -> None:
 def test_install_hooks_bakes_token_file(tmp_path: Path) -> None:
     install_hooks(uri="ws://h", name="ME", token_file="/etc/synapse.token", hooks_dir=tmp_path)
     body = (tmp_path / "post-commit").read_text(encoding="utf-8")
-    assert "--token-file /etc/synapse.token" in body
+    assert "--token-file=/etc/synapse.token" in body
 
 
 def test_install_hooks_bakes_an_explicit_synapse_bin(tmp_path: Path) -> None:
@@ -60,7 +60,7 @@ def test_install_hooks_bakes_an_explicit_synapse_bin(tmp_path: Path) -> None:
         uri="ws://h", name="ME", synapse_bin="/opt/synapse/bin/synapse", hooks_dir=tmp_path
     )
     body = (tmp_path / "post-commit").read_text(encoding="utf-8")
-    assert "/opt/synapse/bin/synapse git-release --trigger commit" in body
+    assert "/opt/synapse/bin/synapse git-release --trigger=commit" in body
 
 
 def test_install_hooks_resolves_an_absolute_synapse_from_path(tmp_path: Path) -> None:
@@ -100,7 +100,7 @@ def test_install_hooks_overwrites_its_own_hook(tmp_path: Path) -> None:
     install_hooks(uri="ws://h", name="ME", hooks_dir=tmp_path)
     lines = install_hooks(uri="ws://h", name="ME2", hooks_dir=tmp_path)
     assert all("installed" in line for line in lines)
-    assert "--name ME2" in (tmp_path / "post-commit").read_text(encoding="utf-8")
+    assert "--name=ME2" in (tmp_path / "post-commit").read_text(encoding="utf-8")
 
 
 def test_install_hooks_skips_foreign_hook(tmp_path: Path) -> None:
@@ -189,11 +189,11 @@ def test_binary_resolvable_covers_each_path() -> None:
 
 
 def test_install_hooks_shell_quotes_values(tmp_path: Path) -> None:
-    # A name with shell metacharacters must be quoted, not injected into the hook.
-    install_hooks(uri="ws://h", name="x; echo PWNED #", hooks_dir=tmp_path)
+    # Metacharacters and a leading dash must remain one bound option value.
+    install_hooks(uri="ws://h", name="--help$(touch PWNED)", hooks_dir=tmp_path)
     body = (tmp_path / "post-commit").read_text(encoding="utf-8")
-    assert "'x; echo PWNED #'" in body
-    assert "--name x; echo" not in body
+    assert "--name='--help$(touch PWNED)'" in body
+    assert "--name --help" not in body
 
 
 def test_install_hooks_skips_binary_foreign_hook(tmp_path: Path) -> None:

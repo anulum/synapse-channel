@@ -57,7 +57,9 @@ def test_sqlcipher_rekey_cli_rotates_real_store(
     """Production ``synapse sqlcipher rekey`` uses PRAGMA rekey on a real store."""
     old = generate_key_file(tmp_path / "old.key")
     new = generate_key_file(tmp_path / "new.key")
-    db = tmp_path / "hub.db"
+    hostile_dir = tmp_path / "$(touch injected)"
+    hostile_dir.mkdir()
+    db = hostile_dir / "hub.db"
     store = EventStore(db, key_file=old)
     claim = TaskClaim(
         task_id="T-REKEY",
@@ -89,6 +91,8 @@ def test_sqlcipher_rekey_cli_rotates_real_store(
     assert code == 0
     out = capsys.readouterr().out
     assert "rekeyed" in out.lower()
+    assert f"--db='{db}'" in out
+    assert "$(touch injected)" in out
     with pytest.raises(SqlCipherKeyError):
         EventStore(db, key_file=old)
     opened = EventStore(db, key_file=new)

@@ -53,10 +53,10 @@ def _clean_shell_environment() -> dict[str, str]:
 
 def test_render_shell_hook_auto_arms_and_wraps_default_providers() -> None:
     hook = render_shell_hook(shell="bash")
-    assert 'synapse arm --name "$identity-rx" --for "$identity" --directed-only' in hook
+    assert 'synapse arm --name="$identity-rx" --for="$identity" --directed-only' in hook
     # the waiter is leashed to the arming shell so it cannot outlive the terminal
     assert "--owner-pid $$" in hook
-    assert 'synapse worker-session --project "$SYN_PROJECT"' in hook
+    assert 'synapse worker-session --project="$SYN_PROJECT"' in hook
     assert "SYNAPSE_AUTO_CONNECT=0 synapse worker-session" in hook
     assert "SYNAPSE_DEFAULT_PROJECT:-user" in hook
     assert ".synapse/project" in hook
@@ -148,7 +148,7 @@ def test_bash_hook_yields_to_an_active_provider_tmux_waker() -> None:
     assert "__synapse_release_waiter() {" in hook
     # The provider wrapper releases the passive waiter before worker-session.
     release_index = hook.index("__synapse_release_waiter || true")
-    worker_index = hook.index('synapse worker-session --project "$SYN_PROJECT"')
+    worker_index = hook.index('synapse worker-session --project="$SYN_PROJECT"')
     assert release_index < worker_index
 
 
@@ -159,7 +159,7 @@ def test_fish_hook_yields_to_an_active_provider_tmux_waker() -> None:
     assert "function __synapse_release_waiter" in hook
     assert "__synapse_release_waiter >/dev/null 2>&1; or true" in hook
     release_index = hook.index("__synapse_release_waiter >/dev/null 2>&1; or true")
-    worker_index = hook.index('synapse worker-session --project "$SYN_PROJECT"')
+    worker_index = hook.index('synapse worker-session --project="$SYN_PROJECT"')
     assert release_index < worker_index
 
 
@@ -176,7 +176,7 @@ def test_render_shell_hook_fish_uses_prompt_event() -> None:
     assert ".synapse/project" in hook
     assert "SYNAPSE_AUTO_PROJECT_FROM_CWD" in hook
     assert "function codex --wraps codex" in hook
-    assert 'synapse worker-session --project "$SYN_PROJECT"' in hook
+    assert 'synapse worker-session --project="$SYN_PROJECT"' in hook
     assert "disown $last_pid" in hook
     # the waiter is leashed to the arming fish so it cannot outlive the terminal
     assert "--owner-pid $fish_pid" in hook
@@ -222,8 +222,8 @@ def test_bash_shell_hook_uses_neutral_project_without_marker(tmp_path: Path) -> 
 
     assert proc.returncode == 0, proc.stderr
     text = record.read_text(encoding="utf-8")
-    assert "arm --name user/terminal-" in text
-    assert "--for user/terminal-" in text
+    assert "arm --name=user/terminal-" in text
+    assert "--for=user/terminal-" in text
     assert "repo" not in text
 
 
@@ -269,8 +269,8 @@ def test_bash_shell_hook_uses_marker_project_when_opted_in(tmp_path: Path) -> No
 
     assert proc.returncode == 0, proc.stderr
     text = record.read_text(encoding="utf-8")
-    assert "arm --name SYNAPSE-CHANNEL/terminal-" in text
-    assert "--for SYNAPSE-CHANNEL" in text
+    assert "arm --name=SYNAPSE-CHANNEL/terminal-" in text
+    assert "--for=SYNAPSE-CHANNEL" in text
 
 
 def test_shell_rc_path_detects_auto_shell(tmp_path: Path) -> None:
@@ -332,6 +332,16 @@ def test_cmd_shell_hook_prints_rendered_hook(capsys: Any) -> None:
     out = capsys.readouterr().out
     assert "codex()" in out
     assert "synapse worker-session" in out
+
+
+def test_cmd_shell_hook_rejects_provider_function_injection(capsys: Any) -> None:
+    ns = cli.build_parser().parse_args(["shell-hook", "--provider", "x; touch /tmp/injected #"])
+
+    assert cli_shell._cmd_shell_hook(ns) == 2
+
+    out = capsys.readouterr().out
+    assert "provider command must be a bare name" in out
+    assert "touch /tmp/injected" not in out
 
 
 def test_cmd_install_shell_hook_reports_install(capsys: Any) -> None:

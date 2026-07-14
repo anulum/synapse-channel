@@ -72,6 +72,34 @@ async def test_directory_prints_live_capabilities_and_resources(
     assert "discovery-only" in out
 
 
+async def test_directory_makes_live_hub_controls_visible(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    hostile = "remote\x1b]52;c;YQ==\x07\nforged\u202e"
+    async with running_hub(SynapseHub()) as (_, uri):
+        handle = await connect_agent("FAST", uri)
+        await handle.agent.advertise(
+            description=hostile,
+            skills=[hostile],
+            task_classes=[hostile],
+            model=hostile,
+        )
+        await handle.recorder.wait_for(
+            lambda message: message.get("type") == "capability_advertised"
+        )
+        try:
+            code = await cli_directory._directory(uri=uri, name="USER")
+        finally:
+            await close_agents(handle)
+
+    assert code == 0
+    rendered = capsys.readouterr().out
+    assert "remote\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
+
+
 async def test_directory_filters_and_prints_json(capsys: pytest.CaptureFixture[str]) -> None:
     async with running_hub(SynapseHub()) as (_, uri):
         handle = await _seed_directory_agent(uri)

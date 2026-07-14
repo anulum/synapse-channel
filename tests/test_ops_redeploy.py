@@ -28,7 +28,7 @@ def _fake_systemd_escape(
     """Return deterministic escaped systemd unit names for tests."""
     del capture_output, text, check
     template = args[1].removeprefix("--template=")
-    identity = args[2]
+    identity = args[-1]
     escaped = identity.replace("/", "-")
     unit = template.replace("@.service", f"@{escaped}.service")
     return subprocess.CompletedProcess(args=args, returncode=0, stdout=f"{unit}\n", stderr="")
@@ -59,8 +59,8 @@ def test_build_redeploy_checklist_contains_all_release_restart_checks() -> None:
     assert "systemctl --user restart synapse-hub.service" in rendered_commands
     assert "synapse-presence@repo.service" in rendered_commands
     assert "synapse-arm@repo-codex-main.service" in rendered_commands
-    assert "synapse who --project repo" in rendered_commands
-    assert "sqlite3 ~/synapse/hub.db" in rendered_commands
+    assert "synapse who --project=repo" in rendered_commands
+    assert 'sqlite3 -- "${HOME}"/synapse/hub.db' in rendered_commands
     assert "synapse git-hook test" in rendered_commands
 
 
@@ -109,8 +109,8 @@ def test_cmd_doctor_prints_redeploy_checklist(capsys: pytest.CaptureFixture[str]
     out = capsys.readouterr().out
     assert "synapse doctor: release redeploy checklist" in out
     assert "/opt/synapse/bin/synapse --version" in out
-    assert "synapse who --project repo" in out
-    assert "sqlite3 ~/synapse/hub.db" in out
+    assert "synapse who --project=repo" in out
+    assert 'sqlite3 -- "${HOME}"/synapse/hub.db' in out
 
 
 def test_redeploy_checklist_is_documented() -> None:

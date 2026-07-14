@@ -201,6 +201,28 @@ def test_follow_prints_board_claims_and_progress(capsys: pytest.CaptureFixture[s
     assert captured["token"] is None
 
 
+def test_follow_makes_peer_controls_visible(capsys: pytest.CaptureFixture[str]) -> None:
+    hostile = "remote\x1b]52;c;YQ==\x07\nforged\u202e"
+    events = [
+        StoredEvent(
+            1,
+            1.0,
+            EventKind.LEDGER_TASK,
+            {"task_id": hostile, "title": hostile, "status": hostile},
+        ),
+        StoredEvent(2, 2.0, EventKind.CLAIM, {"task_id": hostile, "owner": hostile}),
+    ]
+    args = _args("follow", "--peer-uri", "wss://east/", "--peer-id", hostile)
+
+    assert _cmd_follow(args, fetcher_factory=_fetcher_factory(events=events)) == 0
+
+    rendered = capsys.readouterr().out
+    assert "remote\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in rendered
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\u202e" not in rendered
+
+
 def test_follow_json_with_peer_id_and_token(capsys: pytest.CaptureFixture[str]) -> None:
     captured: dict[str, object] = {}
     args = _args(

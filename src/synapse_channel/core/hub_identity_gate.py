@@ -38,7 +38,6 @@ from __future__ import annotations
 import base64
 import binascii
 import logging
-import shlex
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -57,6 +56,7 @@ from synapse_channel.core.message_auth import (
     verify_event_signature,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.terminal_text import shell_command_arg, shell_long_option
 
 logger = logging.getLogger("synapse.hub")
 
@@ -277,9 +277,10 @@ class HubIdentityGate:
             else " after inspecting the in-memory pin through the hub operator"
         )
         reclaim_command = (
-            f"synapse identity reclaim {shlex.quote(sender)} "
-            "--operator OPERATOR_IDENTITY "
-            f"--expected-key-id {shlex.quote(pinned_key_id)} --reason REASON"
+            "synapse identity reclaim "
+            f"{shell_long_option('--operator', 'OPERATOR_IDENTITY')} "
+            f"{shell_long_option('--expected-key-id', pinned_key_id)} "
+            f"{shell_long_option('--reason', 'REASON')} -- {shell_command_arg(sender)}"
         )
         logger.warning(
             "identity pin refused name=%s pinned_key=%s detail=%s", sender, pinned_key_id, detail

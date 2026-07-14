@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from synapse_channel.core.mailbox_pending import format_pending_line
+from synapse_channel.terminal_text import terminal_text
 
 DEFAULT_MAILBOX_PENDING_LIMIT = 20
 """Positive mailbox identities shown by a default full-roster query."""
@@ -87,7 +88,7 @@ def render_mailbox_pending(
         scope += f"; showing top {len(display.rows)} by count"
     write(f"Mailbox pending ({scope}):")
     for identity, count in display.rows:
-        write(f"  {format_pending_line(identity, count)}")
+        write(f"  {terminal_text(format_pending_line(identity, count))}")
     if display.hidden_identities:
         write(
             f"  ... {display.hidden_identities} more identities; "

@@ -38,6 +38,7 @@ from synapse_channel.cli_participants import (
 )
 from synapse_channel.coding_fleet import main as run_coding_fleet_demo
 from synapse_channel.coding_fleet_template import create_coding_fleet
+from synapse_channel.terminal_text import shell_command_arg, shell_long_option, terminal_text
 
 DEFAULT_WORKSPACE = "synapse-fleet"
 """Workspace directory created when no path is given — persistent, not temporary."""
@@ -112,9 +113,9 @@ def _cmd_fleet_init(
     workspace = Path(args.path if args.path is not None else DEFAULT_WORKSPACE)
     try:
         for line in creator(workspace, force=args.force):
-            print(line)
+            print(terminal_text(line))
     except FileExistsError as exc:
-        print(f"synapse fleet-init: {exc}", file=sys.stderr)
+        print(f"synapse fleet-init: {terminal_text(exc)}", file=sys.stderr)
         return 2
 
     print("== 3/4 model seats ==")
@@ -142,14 +143,17 @@ def _report_seats(declared: list[str], seat_probe: SeatProbe) -> list[str]:
         is_available, detail = seat_probe(provider)
         state = "available" if is_available else "unavailable"
         note = " [participant turns disabled]" if refusal_for(provider) is not None else ""
-        print(f"  {provider} {state}: {detail}{note}")
+        print(f"  {terminal_text(provider)} {state}: {terminal_text(detail)}{note}")
         if is_available:
             available.append(provider)
     if not declared:
         return available
     for seat in declared:
         if seat not in available:
-            print(f"  warning: declared seat {seat!r} is not available on this machine yet")
+            print(
+                f"  warning: declared seat {terminal_text(seat)!r} "
+                "is not available on this machine yet"
+            )
     return list(declared)
 
 
@@ -161,17 +165,24 @@ def _print_plan(workspace: Path, seats: list[str], *, doctor_ok: bool) -> None:
     if not doctor_ok:
         print(f"  {step}. repair the local hub and waiter:  synapse doctor --fix")
         step += 1
-    print(f"  {step}. try the scaffolded fleet:          cd {workspace} && python run_demo.py")
+    print(
+        f"  {step}. try the scaffolded fleet:          "
+        f"cd -- {shell_command_arg(workspace)} && python run_demo.py"
+    )
     step += 1
     print(
         f"  {step}. arm your wake listener:            "
-        f'synapse arm --name {project} --for "{project},{project}/*"'
+        f"synapse arm {shell_long_option('--name', project)} "
+        f"{shell_long_option('--for', f'{project},{project}/*')}"
     )
     step += 1
     if seats:
         print(f"  {step}. seat your agents (each in its own terminal):")
         for seat in seats:
-            print(f"       synapse worker-session --identity {project} -- {seat}")
+            print(
+                f"       synapse worker-session {shell_long_option('--identity', project)} -- "
+                f"{shell_command_arg(seat)}"
+            )
         step += 1
     print(f"  {step}. claim-aware git hooks in your repo: synapse git-init")
     step += 1

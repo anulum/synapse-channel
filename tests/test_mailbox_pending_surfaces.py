@@ -100,6 +100,20 @@ def test_doctor_snapshot_parser_and_diagnosis_preserve_unavailability() -> None:
     assert diagnose_mailbox_pending({}, identity="PROJ/A").status == "pass"
 
 
+def test_doctor_diagnosis_renders_copyable_commands_safely() -> None:
+    identity = "--help$(touch injected)\x1b]0;fake\x07"
+
+    diagnosis = diagnose_mailbox_pending({identity: 1}, identity=identity)
+
+    assert diagnosis.detail == (
+        r"1 undelivered message pending for --help$(touch injected)\x1b]0;fake\x07"
+    )
+    assert diagnosis.remedy is not None
+    assert "--name='--help$(touch injected)\\x1b]0;fake\\x07-rx'" in diagnosis.remedy
+    assert "--for='--help$(touch injected)\\x1b]0;fake\\x07'" in diagnosis.remedy
+    assert "--as='--help$(touch injected)\\x1b]0;fake\\x07'" in diagnosis.remedy
+
+
 async def test_doctor_diagnose_includes_hub_mailbox_pending_finding() -> None:
     async def roster_probe(**_kwargs: Any) -> DoctorRoster:
         return DoctorRoster(("demorepo-rx",), {"demorepo": 2})

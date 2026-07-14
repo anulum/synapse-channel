@@ -26,6 +26,7 @@ from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.journal import MEMORY_KINDS, EventKind
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.terminal_text import terminal_text
 
 MEMORY_RECALL_TRUST_BOUNDARY = (
     "Memory recall is deterministic local projection over durable event-log records; "
@@ -317,22 +318,28 @@ def memory_recall_to_json(report: MemoryRecallReport) -> str:
 def render_memory_recall(report: MemoryRecallReport) -> str:
     """Render ``report`` as a compact human-readable recall view."""
     lines = [
-        f"Memory recall for: {report.query}",
-        f"Query tokens: {', '.join(report.query_tokens) if report.query_tokens else '(none)'}",
+        f"Memory recall for: {terminal_text(report.query)}",
+        "Query tokens: "
+        + (
+            ", ".join(terminal_text(token) for token in report.query_tokens)
+            if report.query_tokens
+            else "(none)"
+        ),
         f"Since seq: {report.since_seq}",
-        report.trust_boundary,
+        terminal_text(report.trust_boundary),
     ]
     if not report.hits:
         lines.append("No matching memory records.")
         return "\n".join(lines)
     for hit in report.hits:
-        task = f" task={hit.task_id}" if hit.task_id else ""
-        actor = f" actor={hit.actor}" if hit.actor else ""
-        evidence = f" evidence={hit.evidence_ref}" if hit.evidence_ref else ""
-        matches = ",".join(hit.matched_tokens)
+        task = f" task={terminal_text(hit.task_id)}" if hit.task_id else ""
+        actor = f" actor={terminal_text(hit.actor)}" if hit.actor else ""
+        evidence = f" evidence={terminal_text(hit.evidence_ref)}" if hit.evidence_ref else ""
+        matches = ",".join(terminal_text(token) for token in hit.matched_tokens)
         lines.append(
-            f"- seq={hit.seq} kind={hit.kind} source={hit.source}{task}{actor} "
-            f"score={hit.score:.3f} matches={matches}{evidence}: {hit.text}"
+            f"- seq={hit.seq} kind={terminal_text(hit.kind)} "
+            f"source={terminal_text(hit.source)}{task}{actor} "
+            f"score={hit.score:.3f} matches={matches}{evidence}: {terminal_text(hit.text)}"
         )
     return "\n".join(lines)
 

@@ -24,6 +24,8 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
+from synapse_channel.terminal_text import shell_long_option
+
 OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 FAST_MODEL_PREFERENCES = ["gemma3:4b", "gemma3:1b", "llama3", "gemma"]
 REASON_MODEL_PREFERENCES = ["gemma3:12b", "gemma4", "llama3", "gemma3:4b"]
@@ -149,9 +151,16 @@ def _print_instructions(port: int, prefix: str = "") -> None:
     uri = f"ws://localhost:{port}"
     print("\n--- READY ---")
     print("Join the channel from another pane/window:")
-    print(f"    synapse listen --uri {uri} --name USER")
+    print(
+        "    synapse listen "
+        f"{shell_long_option('--uri', uri)} {shell_long_option('--name', 'USER')}"
+    )
     print("Send a message from the command line:")
-    print(f'    synapse send --uri {uri} --name USER --target {prefix}FAST "status?"')
+    print(
+        "    synapse send "
+        f"{shell_long_option('--uri', uri)} {shell_long_option('--name', 'USER')} "
+        f'{shell_long_option("--target", f"{prefix}FAST")} -- "status?"'
+    )
     print("Workers reply when mentioned or when USER addresses the room.")
     print("Ctrl+C here stops the background workers + hub.\n")
 

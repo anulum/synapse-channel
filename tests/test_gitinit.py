@@ -87,7 +87,7 @@ def test_init_repo_installs_hooks_and_writes_scaffold(tmp_path: Path) -> None:
     body = (scaffold / SCAFFOLD_FILE).read_text(encoding="utf-8")
     assert SCAFFOLD_MARKER in body
     assert "off `trunk`" in body
-    assert "git-claim <task-id> --paths src/area --name ME" in body
+    assert "git-claim --paths=src/area --name=ME -- <task-id>" in body
     assert "synapse git-claim-check --staged" in body
     assert "synapse git-init --name <exact-seat-identity>" in body
     assert "--auto-release-on manual" in body
@@ -106,7 +106,7 @@ def test_init_repo_is_idempotent_and_updates_its_own_scaffold(tmp_path: Path) ->
         uri="ws://h", name="ME2", hooks_dir=hooks, scaffold_dir=scaffold, runner=runner
     )
     assert any("updated .synapse/" in line for line in lines)
-    assert "--name ME2" in (scaffold / SCAFFOLD_FILE).read_text(encoding="utf-8")
+    assert "--name=ME2" in (scaffold / SCAFFOLD_FILE).read_text(encoding="utf-8")
 
 
 def test_init_repo_skips_a_foreign_scaffold_file(tmp_path: Path) -> None:

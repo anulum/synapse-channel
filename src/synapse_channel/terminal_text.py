@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import re
+import shlex
 import unicodedata
 
 
@@ -43,3 +45,30 @@ def terminal_text(value: object) -> str:
 def terminal_chat_line(sender: object, payload: object) -> str:
     """Return one terminal-safe ``sender: payload`` line."""
     return f"{terminal_text(sender)}: {terminal_text(payload)}"
+
+
+def shell_command_arg(value: object) -> str:
+    """Return one terminal-safe, POSIX-shell-safe command argument.
+
+    This helper prevents shell metacharacter expansion in copyable operator
+    commands. Callers must still close the receiving command's option parser:
+    use :func:`shell_long_option` for long-option values or an explicit ``--``
+    before positional arguments that may start with a dash.
+    """
+    return shlex.quote(terminal_text(value))
+
+
+def shell_long_option(name: str, value: object) -> str:
+    """Return a copyable ``--long-option=value`` shell word.
+
+    Binding the value with ``=`` prevents a leading dash in the value from
+    being reinterpreted as a separate option by the receiving CLI.
+
+    Raises
+    ------
+    ValueError
+        If ``name`` is not a bare GNU-style long option.
+    """
+    if re.fullmatch(r"--[A-Za-z0-9][A-Za-z0-9-]*", name) is None:
+        raise ValueError("name must be a bare GNU-style long option")
+    return f"{name}={shell_command_arg(value)}"

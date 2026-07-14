@@ -15,6 +15,7 @@ from synapse_channel.cli_query_transport import AgentFactory, _query_hub
 from synapse_channel.client.diagnostics import Diagnosis
 from synapse_channel.core.mailbox_pending import format_pending_line, parse_pending_counts
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.terminal_text import shell_long_option, terminal_text
 
 
 @dataclass(frozen=True)
@@ -71,13 +72,13 @@ def diagnose_mailbox_pending(
         return Diagnosis(
             check="mailbox-pending",
             status="warn",
-            detail=f"mailbox pending count unavailable for {identity}",
+            detail=f"mailbox pending count unavailable for {terminal_text(identity)}",
             remedy=(
                 "use a hub with a durable --db on the current Synapse version, then re-run doctor"
             ),
         )
     count = counts.get(identity, 0)
-    detail = format_pending_line(identity, count)
+    detail = format_pending_line(terminal_text(identity), count)
     if count == 0:
         return Diagnosis(check="mailbox-pending", status="pass", detail=detail)
     return Diagnosis(
@@ -85,8 +86,10 @@ def diagnose_mailbox_pending(
         status="warn",
         detail=detail,
         remedy=(
-            f"replay with synapse arm --name {identity}-rx --for {identity} "
+            f"replay with synapse arm {shell_long_option('--name', f'{identity}-rx')} "
+            f"{shell_long_option('--for', identity)} "
             "--directed-only --mailbox --max-wakes 1; inspect bodies with "
-            f"syn inbox --as {identity}, then keep the permanent waiter armed"
+            f"syn inbox {shell_long_option('--as', identity)}, then keep the permanent "
+            "waiter armed"
         ),
     )

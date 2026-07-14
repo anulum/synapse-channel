@@ -36,6 +36,7 @@ from synapse_channel.git.semantic_claim_request import (
     resolve_semantic_request,
     write_semantic_evidence,
 )
+from synapse_channel.terminal_text import shell_command_arg, shell_long_option
 
 GitRunner = Callable[[list[str]], str]
 """Runs a git subcommand (argv after ``git``) and returns its stripped stdout."""
@@ -158,11 +159,14 @@ def _warn_if_auto_release_unbacked(
 
     if hook_installed(auto_release_on, runner=runner):
         return
+    release_command = (
+        f"synapse release {shell_long_option('--name', name)} -- {shell_command_arg(task_id)}"
+    )
     print(
         f"  note: auto-release on {auto_release_on} is enacted by a git hook that is "
         f"not installed in this clone — it will NOT fire. Run `synapse git-hook` once "
         f"to enable it, or drop the claim manually with "
-        f"`synapse release {task_id} --name {name}`."
+        f"`{release_command}`."
     )
 
 

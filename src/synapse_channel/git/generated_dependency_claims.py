@@ -20,11 +20,12 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
-import shlex
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+
+from synapse_channel.terminal_text import shell_long_option
 
 REPO_ROOT = Path.cwd()
 
@@ -249,10 +250,7 @@ def render_human(records: Sequence[DependencyRecord]) -> str:
 
 def render_claim_args(records: Sequence[DependencyRecord]) -> str:
     """Render selected generated outputs as ``synapse git-claim`` path args."""
-    parts: list[str] = []
-    for record in records:
-        parts.extend(("--paths", record.generated))
-    return " ".join(shlex.quote(part) for part in parts)
+    return " ".join(shell_long_option("--paths", record.generated) for record in records)
 
 
 def parse_args(argv: Sequence[str] | None = None) -> CliArgs:
