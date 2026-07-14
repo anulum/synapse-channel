@@ -1380,13 +1380,13 @@ on-channel model worker a question. Each starts its own in-process hub, so
 
 | Surface | Current inventory |
 |---|---:|
-| Package version | 0.99.6 |
+| Package version | 0.99.7 |
 | Public API exports | 70 |
 | Package modules | 449 |
 | Classes | 621 |
 | Wire message types | 77 |
 | CLI subcommands | 176 |
-| Test functions | 6991 |
+| Test functions | 7006 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 57 |
 | GitHub Actions workflows | 19 |
@@ -1631,7 +1631,7 @@ If you use SYNAPSE CHANNEL in your work, please cite it. Metadata is in
   title   = {SYNAPSE CHANNEL: Local-first multi-agent coordination bus},
   url      = {https://github.com/anulum/synapse-channel},
   doi      = {10.5281/zenodo.20801559},
-  version = {0.99.6},
+  version = {0.99.7},
   year     = {2026}
 }
 ```

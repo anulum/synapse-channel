@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- The `0.99.7` distribution gate now verifies the exact public PyPI wheel and
+  source archive, the packaged MCP ownership marker, and the immutable official
+  MCP Registry record before reporting publication. The operator flow pins and
+  verifies the official publisher binary, validates `server.json`, preserves the
+  owner-only authentication step, and refuses to infer registry publication from
+  repository metadata or an older live version.
+
 ### Fixed
 
 - Auto-release git hooks are now worktree-aware. Git worktrees share one hooks

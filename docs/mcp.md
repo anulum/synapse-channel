@@ -260,10 +260,60 @@ face directly for package launchers; humans can keep using `synapse mcp`.
 
 The official MCP Registry is still a preview and its published versions are
 immutable. SYNAPSE CHANNEL is already active there: the live record was version
-`0.99.2` when verified on 2026-07-13. Registry metadata does not automatically
+`0.99.2` when re-verified on 2026-07-14. Registry metadata does not automatically
 follow PyPI or this repository, so the newer version in `server.json` is a
 prepared update until the registry query returns that exact version. Check live
-publication rather than inferring it from local metadata:
+publication rather than inferring it from local metadata. The official
+[package rules](https://modelcontextprotocol.io/registry/package-types#pypi-packages)
+require the PyPI description to carry the exact `mcp-name` marker, and the
+[versioning rules](https://modelcontextprotocol.io/registry/versioning) make a
+published version immutable.
+
+Release operators use the following fail-closed order. Publishing is an owner
+action: preparation and validation do not authorise it.
+
+1. Release `synapse-channel==0.99.7` to PyPI through the normal attested tag
+   workflow. Wait until both the wheel and source archive are publicly visible,
+   then verify the package and ownership marker:
+
+   ```bash
+   .venv/bin/python tools/verify_mcp_registry_release.py \
+     --phase package --expect-version 0.99.7 --json
+   ```
+
+2. Download the audited official Linux publisher release and verify it before
+   execution. The digest below is the upstream `v1.7.9` release digest:
+
+   ```bash
+   curl -fL -o mcp-publisher_linux_amd64.tar.gz \
+     https://github.com/modelcontextprotocol/registry/releases/download/v1.7.9/mcp-publisher_linux_amd64.tar.gz
+   printf '%s  %s\n' \
+     ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac \
+     mcp-publisher_linux_amd64.tar.gz | sha256sum --check -
+   tar -xzf mcp-publisher_linux_amd64.tar.gz mcp-publisher
+   ./mcp-publisher --version
+   ./mcp-publisher validate server.json
+   ```
+
+3. After explicit owner approval, authenticate as the `anulum` GitHub namespace
+   owner and publish the exact file. The interactive token is handled by the
+   publisher and is never written to repository files or shell arguments:
+
+   ```bash
+   ./mcp-publisher login github
+   ./mcp-publisher publish server.json
+   ```
+
+4. Require the public record itself to prove completion:
+
+   ```bash
+   .venv/bin/python tools/verify_mcp_registry_release.py \
+     --phase registry --expect-version 0.99.7 --json
+   ```
+
+The verifier exits `0` only when the requested boundary matches, `1` for public
+metadata drift, and `2` when local metadata or public evidence is unavailable.
+The underlying exact-name query remains useful for independent inspection:
 
 ```bash
 curl --get --data-urlencode \
