@@ -109,8 +109,8 @@ jobs:
           ACP_EL_COMMIT: 5140f4121156707245567b8fc3072d4c3b5c867f
           AGENT_SHELL_COMMIT: 5351f9b0e983b00b2d21ecc41916635e2ed13ebe
           CODECOMPANION_COMMIT: a8a754491999d97695d6134e8d3d98effe6b2a98
-          JETBRAINS_PLUGIN_SHA256: c5fed8bb149836358b0a03b847a839b633bb78bdd6ec60c5bd7d39ccbfbaff43
-          JETBRAINS_PLUGIN_URL: https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1104091
+          JETBRAINS_PLUGIN_SHA256: 0727124610ee90a809b20e6964ecf135774eae21018a9a4aaa8193d414cffda8
+          JETBRAINS_PLUGIN_URL: https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1097427
           NEOVIM_SHA256: 012bf3fcac5ade43914df3f174668bf64d05e049a4f032a388c027b1ebd78628
           NEOVIM_URL: https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-linux-x86_64.tar.gz
           PLENARY_COMMIT: 74b06c6c75e4eeb3108ec01852001636d85a932b
@@ -184,7 +184,7 @@ jobs:
                 imagemagick libasound2t64 libfreetype6 libxi6 libxrender1 \
                 libxtst6 libxkbcommon-x11-0 wmctrl xdotool xvfb
               archive="$RUNNER_TEMP/pycharm-2026.1.4.tar.gz"
-              plugin="$RUNNER_TEMP/ai-assistant-261.26222.86.zip"
+              plugin="$RUNNER_TEMP/ai-assistant-261.26222.68.zip"
               curl --fail --location --proto '=https' --proto-redir '=https' \
                 --tlsv1.2 --retry 3 --output "$archive" "$PYCHARM_URL"
               printf '%s  %s\n' "$PYCHARM_SHA256" "$archive" | sha256sum --check --strict
@@ -203,7 +203,7 @@ jobs:
               plugin_xml=$(unzip -p \
                 "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/ml-llm.jar" \
                 META-INF/plugin.xml)
-              grep -q '<version>261.26222.86</version>' <<< "$plugin_xml"
+              grep -q '<version>261.26222.68</version>' <<< "$plugin_xml"
               echo "SYNAPSE_JETBRAINS_BIN=$pycharm_bin" >> "$GITHUB_ENV"
               echo "SYNAPSE_JETBRAINS_PLUGINS=$RUNNER_TEMP/jetbrains-plugins" >> "$GITHUB_ENV"
               echo "SYNAPSE_JETBRAINS_CLIENT_NAME=JetBrains.PyCharm" >> "$GITHUB_ENV"

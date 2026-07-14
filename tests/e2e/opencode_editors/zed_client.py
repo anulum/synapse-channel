@@ -129,6 +129,7 @@ def main() -> int:
             # xvfb-run intentionally has no EWMH window manager.  Every action
             # targets the discovered X11 window directly, so activation is not
             # required and would fail on the headless runner.
+            _checked_xdotool("focus the Zed window", "windowfocus", "--sync", window)
             _checked_xdotool(
                 "open the configured ACP agent",
                 "key",

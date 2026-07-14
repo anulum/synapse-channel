@@ -364,7 +364,7 @@ the exact OpenCode binary and a local deterministic provider:
 | Neovim | Neovim 0.12.4 and CodeCompanion.nvim 19.19.0 |
 | Emacs | Emacs 29.3, Agent Shell 0.59.1, `acp.el` 0.12.2, and Shell Maker 0.93.5 |
 | Zed | Zed 1.10.3 under Xvfb through `agent::NewExternalAgentThread` |
-| JetBrains | PyCharm 2026.1.4 and AI Assistant 261.26222.86 under Xvfb |
+| JetBrains | PyCharm 2026.1.4 and AI Assistant 261.26222.68 under Xvfb |
 
 Release archives are SHA-256 verified; editor plugins are checked out at exact
 commits or verified by archive hash and declared version. Each editor must

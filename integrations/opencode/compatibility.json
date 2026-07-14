@@ -151,10 +151,10 @@
     },
     {
       "name": "JetBrains AI Assistant",
-      "pin": "c5fed8bb149836358b0a03b847a839b633bb78bdd6ec60c5bd7d39ccbfbaff43",
+      "pin": "0727124610ee90a809b20e6964ecf135774eae21018a9a4aaa8193d414cffda8",
       "pin_type": "sha256",
-      "source": "https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1104091",
-      "version": "261.26222.86"
+      "source": "https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1097427",
+      "version": "261.26222.68"
     }
   ],
   "schema_version": "synapse.opencode-compatibility.v1",
