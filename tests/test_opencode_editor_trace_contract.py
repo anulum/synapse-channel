@@ -10,7 +10,10 @@
 from __future__ import annotations
 
 import json
+import shutil
 import stat
+import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -249,6 +252,33 @@ def test_trace_writer_refuses_oversized_frame(tmp_path: Path) -> None:
             writer.record("client_to_agent", b"x" * 1_048_577)
     finally:
         writer.close()
+
+
+def test_proxy_process_failure_wins_clean_child_exit_race(tmp_path: Path) -> None:
+    proxy = Path(__file__).resolve().parent / "e2e" / "opencode_editors" / "acp_trace_proxy.py"
+    clean_child = shutil.which("true")
+    assert clean_child is not None
+
+    for index in range(20):
+        completed = subprocess.run(  # nosec B603
+            [
+                sys.executable,
+                str(proxy),
+                "--trace",
+                str(tmp_path / f"trace-{index}.jsonl"),
+                "--opencode-bin",
+                clean_child,
+                "--cwd",
+                str(tmp_path),
+            ],
+            input=b"\xff\n",
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+
+        assert completed.returncode == 70
+        assert b"ACP trace proxy refused client_to_agent stream" in completed.stderr
 
 
 def test_trace_writer_refuses_unknown_or_reused_request_ids(tmp_path: Path) -> None:

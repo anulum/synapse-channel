@@ -430,20 +430,21 @@ def main() -> int:
     )
     for thread in threads:
         thread.start()
+    relay_failed = False
     try:
         while process.poll() is None:
             try:
                 failures.get(timeout=0.05)
             except queue.Empty:
                 continue
+            relay_failed = True
             process.terminate()
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
-            return 70
-        return process.returncode
+            break
     finally:
         if process.poll() is None:
             process.kill()
@@ -451,6 +452,17 @@ def main() -> int:
         for thread in threads:
             thread.join(timeout=2)
         trace.close()
+    while True:
+        try:
+            failures.get_nowait()
+        except queue.Empty:
+            break
+        relay_failed = True
+    if relay_failed:
+        return 70
+    if process.returncode is None:
+        raise RuntimeError("OpenCode ACP process did not expose an exit status")
+    return process.returncode
 
 
 if __name__ == "__main__":
