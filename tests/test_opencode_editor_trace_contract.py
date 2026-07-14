@@ -17,7 +17,11 @@ from typing import Any
 
 import pytest
 
-from e2e.opencode_editors.acp_trace_proxy import TraceWriter, _forward_client_line
+from e2e.opencode_editors.acp_trace_proxy import (
+    TraceWriter,
+    _forward_client_line,
+    _new_trace_writer,
+)
 from e2e.opencode_editors.trace_contract import assert_editor_trace
 from fixtures.opencode.process import OPENCODE_VERSION
 
@@ -287,6 +291,91 @@ def test_trace_writer_refuses_existing_or_symlink_path(tmp_path: Path) -> None:
         TraceWriter(existing)
     with pytest.raises(OSError):
         TraceWriter(symlink)
+
+
+def test_proxy_allocates_private_exclusive_lifecycle_segments(tmp_path: Path) -> None:
+    trace = tmp_path / "trace.jsonl"
+    first = _new_trace_writer(trace)
+    second = _new_trace_writer(trace)
+    first.close()
+    second.close()
+
+    assert trace.is_file()
+    assert Path(f"{trace}.1").is_file()
+    assert stat.S_IMODE(trace.stat().st_mode) == 0o600
+    assert stat.S_IMODE(Path(f"{trace}.1").stat().st_mode) == 0o600
+
+
+def test_proxy_refuses_unsafe_existing_lifecycle_segment(tmp_path: Path) -> None:
+    trace = tmp_path / "trace.jsonl"
+    trace.write_text("occupied\n", encoding="utf-8")
+    trace.chmod(0o644)
+
+    with pytest.raises(OSError, match="not a private owned file"):
+        _new_trace_writer(trace)
+
+
+def test_proxy_refuses_more_than_bounded_lifecycle_segments(tmp_path: Path) -> None:
+    trace = tmp_path / "trace.jsonl"
+    writers = [_new_trace_writer(trace) for _ in range(8)]
+    try:
+        with pytest.raises(RuntimeError, match="exceeded 8 lifecycle segments"):
+            _new_trace_writer(trace)
+    finally:
+        for writer in writers:
+            writer.close()
+
+
+def test_trace_contract_accepts_one_prompt_across_lifecycle_segments(tmp_path: Path) -> None:
+    trace = tmp_path / "trace.jsonl"
+    messages = _messages()
+    writer = TraceWriter(trace)
+    try:
+        for direction, message in messages[:4]:
+            writer.record(direction, json.dumps(message).encode("utf-8"))
+    finally:
+        writer.close()
+    _write_trace(Path(f"{trace}.1"))
+
+    _assert_trace(trace)
+
+
+def test_trace_contract_refuses_unsafe_lifecycle_segment(tmp_path: Path) -> None:
+    trace = tmp_path / "trace.jsonl"
+    _write_trace(trace)
+    unsafe = Path(f"{trace}.1")
+    unsafe.symlink_to(trace)
+
+    with pytest.raises(AssertionError, match="opened safely"):
+        _assert_trace(trace)
+
+
+def test_trace_contract_refuses_noncontiguous_lifecycle_segments(tmp_path: Path) -> None:
+    trace = tmp_path / "trace.jsonl"
+    _write_trace(trace)
+    _write_trace(Path(f"{trace}.2"))
+
+    with pytest.raises(AssertionError, match="not contiguous"):
+        _assert_trace(trace)
+
+
+def test_trace_contract_refuses_overflow_lifecycle_segment(tmp_path: Path) -> None:
+    trace = tmp_path / "trace.jsonl"
+    _write_trace(trace)
+    for index in range(1, 9):
+        _write_trace(Path(f"{trace}.{index}"))
+
+    with pytest.raises(AssertionError, match="exceeds 8 segments"):
+        _assert_trace(trace)
+
+
+def test_trace_contract_refuses_prompts_across_multiple_lifecycles(tmp_path: Path) -> None:
+    trace = tmp_path / "trace.jsonl"
+    _write_trace(trace)
+    _write_trace(Path(f"{trace}.1"))
+
+    with pytest.raises(AssertionError, match="2 prompt lifecycle traces"):
+        _assert_trace(trace)
 
 
 def test_trace_contract_refuses_wrong_client(tmp_path: Path) -> None:

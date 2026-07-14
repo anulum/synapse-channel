@@ -14,7 +14,8 @@ import hashlib
 import json
 import os
 import queue
-import subprocess
+import stat
+import subprocess  # nosec B404
 import sys
 import threading
 from collections.abc import Mapping
@@ -23,6 +24,7 @@ from typing import Any, BinaryIO
 
 _MAX_LINE_BYTES = 1_048_576
 _MAX_TRACE_BYTES = 4_194_304
+_MAX_TRACE_SEGMENTS = 8
 _MAX_PENDING_REQUESTS = 4_096
 _DIRECTIONS = frozenset({"client_to_agent", "agent_to_client"})
 _MISSING = object()
@@ -279,6 +281,25 @@ class TraceWriter:
         return event
 
 
+def _new_trace_writer(path: Path) -> TraceWriter:
+    """Create one exclusive trace segment without reopening an existing segment."""
+    candidates = (path, *(Path(f"{path}.{index}") for index in range(1, _MAX_TRACE_SEGMENTS)))
+    for candidate in candidates:
+        try:
+            return TraceWriter(candidate)
+        except FileExistsError:
+            metadata = candidate.lstat()
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_uid != os.getuid()
+                or stat.S_IMODE(metadata.st_mode) != 0o600
+            ):
+                raise OSError(
+                    f"existing ACP trace segment is not a private owned file: {candidate}"
+                ) from None
+    raise RuntimeError(f"ACP trace exceeded {_MAX_TRACE_SEGMENTS} lifecycle segments")
+
+
 def _relay(
     source: BinaryIO,
     destination: BinaryIO,
@@ -332,7 +353,7 @@ def main() -> int:
         parser.error("--cwd must be a directory")
     args.trace.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 
-    trace = TraceWriter(args.trace)
+    trace = _new_trace_writer(args.trace)
     failures: queue.SimpleQueue[str] = queue.SimpleQueue()
     process = subprocess.Popen(  # nosec B603
         [str(args.opencode_bin), "acp", "--cwd", str(args.cwd)],

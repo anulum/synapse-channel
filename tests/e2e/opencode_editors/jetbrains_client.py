@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
+import shutil
+import subprocess  # nosec B404
 import sys
 import time
 from collections.abc import Callable
@@ -19,11 +20,20 @@ from pathlib import Path
 
 _AGENT_NAME = "SYNAPSE OpenCode E2E"
 _TIMEOUT_SECONDS = 150.0
+_MAX_TRACE_SEGMENTS = 8
 _USER_AGREEMENT_TITLE = "IntelliJ IDEA User Agreement"
 _USER_AGREEMENT_VERSION = "2.0"
 _USER_AGREEMENT_ENV = "SYNAPSE_JETBRAINS_EULA_ACCEPTED_VERSION"
 _DATA_SHARING_TITLE = "Data Sharing"
 _AGENT_SELECTOR_REGISTRY_KEY = "llm.chat.new.chat.and.agent.selector.enabled"
+
+
+def _required_tool(name: str) -> str:
+    """Resolve one required desktop tool to an absolute executable path."""
+    executable = shutil.which(name)
+    if executable is None:
+        raise RuntimeError(f"required JetBrains E2E tool is unavailable: {name}")
+    return executable
 
 
 def _required_env(name: str) -> str:
@@ -35,7 +45,11 @@ def _required_env(name: str) -> str:
 
 def _xdotool(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # nosec B603
-        ["xdotool", *args], capture_output=True, text=True, check=False, timeout=10
+        [_required_tool("xdotool"), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
     )
 
 
@@ -85,7 +99,7 @@ def _window_parentage(tree: str) -> tuple[str | None, str | None]:
 def _window_is_root_child(window: str) -> bool:
     """Return whether a visible window is a top-level child of the X11 root."""
     completed = subprocess.run(  # nosec B603
-        ["xwininfo", "-id", window, "-tree"],
+        [_required_tool("xwininfo"), "-id", window, "-tree"],
         capture_output=True,
         text=True,
         check=False,
@@ -116,7 +130,7 @@ def _xprop_window_id(output: str) -> int | None:
 def _window_transient_for(window: str) -> int | None:
     """Return the XID that owns one transient top-level window."""
     completed = subprocess.run(  # nosec B603
-        ["xprop", "-id", window, "WM_TRANSIENT_FOR"],
+        [_required_tool("xprop"), "-id", window, "WM_TRANSIENT_FOR"],
         capture_output=True,
         text=True,
         check=False,
@@ -270,9 +284,11 @@ def _skip_islands_onboarding(deadline: float, project: str) -> None:
 
 
 def _trace_has(trace: Path, marker: str) -> bool:
-    if not trace.is_file():
-        return False
-    return marker in trace.read_text(encoding="utf-8")
+    paths = (trace, *(Path(f"{trace}.{index}") for index in range(1, _MAX_TRACE_SEGMENTS)))
+    return any(
+        path.is_file() and not path.is_symlink() and marker in path.read_text(encoding="utf-8")
+        for path in paths
+    )
 
 
 def _wait_for_trace(
@@ -344,7 +360,9 @@ def _write_idea_profile(config_root: Path) -> None:
 
 def _screenshot(path: Path) -> None:
     subprocess.run(  # nosec B603
-        ["import", "-window", "root", str(path)], check=False, timeout=15
+        [_required_tool("import"), "-window", "root", str(path)],
+        check=False,
+        timeout=15,
     )
 
 
