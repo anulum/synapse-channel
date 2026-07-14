@@ -189,3 +189,59 @@ def test_update_is_idempotent_when_current() -> None:
     metrics = cap.update(cap.REPO_ROOT, config)
     assert readme.read_text(encoding="utf-8") == before  # already current -> no change
     assert metrics["version"]
+
+
+def test_git_env_strips_inherited_git_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every Git hook override is removed so ``-C <dir>`` alone decides the repo."""
+    for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX"):
+        monkeypatch.setenv(key, "/somewhere/else")
+    monkeypatch.setenv("PATH", "/usr/bin")  # an unrelated var must survive
+
+    env = cap._git_env()
+
+    assert "GIT_DIR" not in env
+    assert "GIT_WORK_TREE" not in env
+    assert "GIT_INDEX_FILE" not in env
+    assert "GIT_PREFIX" not in env
+    assert env["PATH"] == "/usr/bin"
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+
+def test_git_tracked_py_files_ignores_inherited_git_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hook's leaked GIT_DIR/GIT_WORK_TREE must not misdirect the tracked-file scan.
+
+    ``git push`` runs its hooks with ``GIT_DIR`` set; a subprocess ``git -C <dir>``
+    then resolves the hook's repository instead of ``<dir>``, so ``git ls-files``
+    returns paths for the wrong worktree — from a linked worktree, a misdirected
+    phantom path that crashes the manifest read. The scan must strip those overrides.
+    """
+    scanned = tmp_path / "scanned"
+    scanned.mkdir()
+    _write_manifest_repo(scanned)
+    _git(scanned, "init", "-q")
+    _git(scanned, "add", "-A")
+    _git(scanned, "commit", "-qm", "init")
+
+    leaked = tmp_path / "leaked"
+    leaked.mkdir()
+    _git(leaked, "init", "-q")
+
+    # Emulate the pre-push hook context: an unrelated repository's Git env is inherited.
+    monkeypatch.setenv("GIT_DIR", str(leaked / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(leaked))
+
+    tracked = cap._git_tracked_py_files(scanned / "src" / "synapse_channel")
+
+    names = {path.name for path in tracked}
+    assert {"module.py", "cli.py", "__init__.py"} <= names
+    assert all("src/synapse_channel" in path.as_posix() for path in tracked)

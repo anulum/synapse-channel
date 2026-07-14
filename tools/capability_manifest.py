@@ -25,10 +25,45 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 import subprocess  # nosec B404
 import sys
 from pathlib import Path
 from typing import Any
+
+#: Git environment overrides a hook inherits (``git push``/``git commit`` set these).
+#: They take precedence over ``git -C <dir>`` and would make a subprocess resolve the
+#: hook's repository instead of the directory we asked about.
+_GIT_HOOK_ENV_OVERRIDES = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_COMMON_DIR",
+    "GIT_PREFIX",
+)
+
+
+def _git_env() -> dict[str, str]:
+    """Return the environment with Git's hook/worktree overrides removed.
+
+    A pre-push or pre-commit hook runs with ``GIT_DIR`` / ``GIT_WORK_TREE`` /
+    ``GIT_INDEX_FILE`` set. Those override the ``-C <dir>`` a subprocess ``git``
+    is told to use, so ``git ls-files`` returns paths for the hook's repository —
+    from a linked worktree, a wrongly joined phantom path. Stripping them lets the
+    ``-C`` directory alone decide the repository, so the manifest scan is correct
+    whether it runs standalone or from inside ``git push``.
+
+    Returns
+    -------
+    dict of str to str
+        A copy of ``os.environ`` without the inherited Git overrides.
+    """
+    env = dict(os.environ)
+    for key in _GIT_HOOK_ENV_OVERRIDES:
+        env.pop(key, None)
+    return env
+
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -80,12 +115,14 @@ def _count_all_exports(init_path: Path) -> int:
 
 def _git_tracked_py_files(root: Path) -> list[Path]:
     """Return Git-tracked Python files under ``root``, or an empty list."""
+    git_env = _git_env()
     try:
         top_level = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
             check=False,
             capture_output=True,
             text=True,
+            env=git_env,
         )  # nosec B603,B607
     except OSError:
         return []
@@ -101,6 +138,7 @@ def _git_tracked_py_files(root: Path) -> list[Path]:
         check=False,
         capture_output=True,
         text=True,
+        env=git_env,
     )  # nosec B603,B607
     if result.returncode != 0:
         return []
