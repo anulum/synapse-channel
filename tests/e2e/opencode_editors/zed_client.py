@@ -195,22 +195,38 @@ def main() -> int:
                 process,
                 "ACP session creation",
             )
+            _wait_for_trace(
+                trace,
+                '"response_to":"session/new"',
+                session_deadline,
+                process,
+                "ACP session response",
+            )
+            _wait_for_trace(
+                trace,
+                '"method":"session/update"',
+                session_deadline,
+                process,
+                "ACP session update",
+            )
+            bounded_sleep(session_deadline, 0.5)
             prompt_deadline = time.monotonic() + DEFAULT_ZED_TIMING.acp_prompt_seconds
             focus_window_for_input(window, deadline=prompt_deadline)
             checked_xdotool(
                 "type the Zed prompt",
                 "type",
+                "--clearmodifiers",
                 "--delay",
-                "1",
+                "12",
                 "--",
                 prompt,
                 deadline=prompt_deadline,
             )
+            focus_window_for_input(window, deadline=prompt_deadline)
             checked_xdotool(
                 "submit the Zed prompt",
                 "key",
-                "--window",
-                window,
+                "--clearmodifiers",
                 "Return",
                 deadline=prompt_deadline,
             )

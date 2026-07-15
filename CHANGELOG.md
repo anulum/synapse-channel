@@ -85,8 +85,10 @@ All notable changes to this project are documented here.
   malformed X11 window searches, and accepts only the intersection of anchored
   `dev.zed.Zed` class and instance identity with the pinned project title and a
   `_NET_WM_PID` owned by the isolated process group. It requires non-empty proxy
-  arguments, proves the exact owned X11 focus before current-focus prompt input,
-  applies absolute startup/session/prompt-input deadlines, derives
+  arguments, waits for the successful session response and initial update,
+  proves the exact raw owned X11 focus before modifier-cleared current-focus
+  prompt input and again before submission, applies absolute
+  startup/session/prompt-input deadlines, derives
   the outer timeout from every phase and cleanup reserve, kills the complete
   driver/editor/proxy/helper group, and fails if success screenshot evidence is
   absent. The JetBrains selector snapshot retries only a line-anchored canonical

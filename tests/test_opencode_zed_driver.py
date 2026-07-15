@@ -300,6 +300,8 @@ def test_main_uses_isolated_profile_and_runs_the_exact_acp_sequence(
     assert not (xdg_config / "zed" / "settings.json").exists()
     assert waits == [
         ('"method":"session/new"', 80.0, "ACP session creation"),
+        ('"response_to":"session/new"', 80.0, "ACP session response"),
+        ('"method":"session/update"', 80.0, "ACP session update"),
         ('"method":"session/prompt"', 90.0, "ACP prompt delivery"),
         ('"response_to":"session/prompt"', 90.0, "ACP prompt response"),
     ]
@@ -310,10 +312,15 @@ def test_main_uses_isolated_profile_and_runs_the_exact_acp_sequence(
     ) in actions
     assert (
         "type the Zed prompt",
-        ("type", "--delay", "1", "--", "governed prompt"),
+        ("type", "--clearmodifiers", "--delay", "12", "--", "governed prompt"),
         90.0,
     ) in actions
-    assert focused_inputs == [("123", 90.0)]
+    assert (
+        "submit the Zed prompt",
+        ("key", "--clearmodifiers", "Return"),
+        90.0,
+    ) in actions
+    assert focused_inputs == [("123", 90.0), ("123", 90.0)]
     assert process.terminated is True
     assert process.killed is expected_killed
     assert (artifacts / "zed.png").read_bytes() == b"png"

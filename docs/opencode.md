@@ -473,10 +473,12 @@ window's `_NET_WM_PID` to the isolated driver process group. Both WM_CLASS
 fields must equal pinned stable app ID `dev.zed.Zed`; that identity is part of
 the machine-readable compatibility contract. Title-only windows and unrelated
 Zed processes cannot receive input. Before prompt input the driver focuses the
-owned frame, re-reads the exact X11 input-focus XID, and only then types through
-the current-focus XTEST path that pinned Zed accepts. Startup, session, and prompt
-input each use absolute deadlines; the derived 305-second parent cap also
-reserves both screenshot attempts, direct leader cleanup, complete
+owned frame, requires the successful `session/new` response and initial
+`session/update`, re-reads the exact raw X11 input-focus XID, and only then types
+through a modifier-cleared current-focus XTEST path at a bounded key rate. It
+re-proves focus immediately before current-focus submission. Startup, session,
+and prompt input each use absolute deadlines; the derived 305-second parent cap
+also reserves both screenshot attempts, direct leader cleanup, complete
 driver/editor/proxy/helper process-group cleanup, and a separate supervision
 margin. JetBrains retries a batched selector snapshot only when every diagnostic
 line forms the canonical disappearing-window `BadWindow` plus
