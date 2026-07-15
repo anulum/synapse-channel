@@ -104,7 +104,7 @@
     "zed": {
       "component": "Zed",
       "name": "zed",
-      "version": "1.10.3",
+      "version": "1.10.3+stable.324.0c54c414d522234de7298039708ffe85a116892a",
       "x11_app_id": "dev.zed.Zed"
     }
   },

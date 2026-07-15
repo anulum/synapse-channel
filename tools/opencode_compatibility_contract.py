@@ -66,7 +66,12 @@ _EXPECTED_CLIENTS = {
     "emacs": ("agent-shell", "0.59.1", "Agent Shell", ""),
     "jetbrains": ("JetBrains.IntelliJ IDEA", "2026.1.4", "IntelliJ IDEA", ""),
     "neovim": ("CodeCompanion.nvim", "1.0.0", "CodeCompanion.nvim", ""),
-    "zed": ("zed", "1.10.3", "Zed", "dev.zed.Zed"),
+    "zed": (
+        "zed",
+        "1.10.3+stable.324.0c54c414d522234de7298039708ffe85a116892a",
+        "Zed",
+        "dev.zed.Zed",
+    ),
 }
 
 

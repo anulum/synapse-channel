@@ -84,6 +84,10 @@ def test_repository_uses_one_complete_immutable_compatibility_contract() -> None
     assert len(contract.clients) == 4
     assert contract.client("jetbrains").name == "JetBrains.IntelliJ IDEA"
     assert contract.client("neovim").version == "1.0.0"
+    assert (
+        contract.client("zed").version
+        == "1.10.3+stable.324.0c54c414d522234de7298039708ffe85a116892a"
+    )
     assert contract.client("zed").x11_app_id == "dev.zed.Zed"
     with pytest.raises(CompatibilityError, match="unknown OpenCode editor lane"):
         contract.client("unknown")

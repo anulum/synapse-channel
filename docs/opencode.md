@@ -363,7 +363,7 @@ the exact OpenCode binary and a local deterministic provider:
 |---|---|---|
 | Neovim | Neovim 0.12.4 and CodeCompanion.nvim 19.19.0 | `CodeCompanion.nvim` `1.0.0` |
 | Emacs | Emacs 29.3, Agent Shell 0.59.1, `acp.el` 0.12.2, and Shell Maker 0.93.5 | `agent-shell` `0.59.1` |
-| Zed | Zed 1.10.3 under Xvfb through `agent::NewExternalAgentThread` | `zed` `1.10.3` |
+| Zed | Zed 1.10.3 under Xvfb through `agent::NewExternalAgentThread` | `zed` `1.10.3+stable.324.0c54c414d522234de7298039708ffe85a116892a` |
 | JetBrains | IntelliJ IDEA 2026.1.4, AI Assistant 261.26222.65, and required Full Line Code Completion 261.26222.65 under Xvfb | `JetBrains.IntelliJ IDEA` `2026.1.4` |
 
 Version 2 of `integrations/opencode/compatibility.json` is authoritative for

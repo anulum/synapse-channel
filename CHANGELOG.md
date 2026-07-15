@@ -91,7 +91,10 @@ All notable changes to this project are documented here.
   startup/session/prompt-input deadlines, derives
   the outer timeout from every phase and cleanup reserve, kills the complete
   driver/editor/proxy/helper group, and fails if success screenshot evidence is
-  absent. The JetBrains selector snapshot retries only a line-anchored canonical
+  absent. Its evidence contract requires the full build-qualified ACP client
+  version emitted by the hash-pinned Zed archive, rather than mistaking the
+  release-only version for the wire identity. The JetBrains selector snapshot
+  retries only a line-anchored canonical
   `BadWindow`/`X_GetWindowAttributes` disappearance report, at most three times;
   mixed, duplicate, persistent, or different X11 failures remain fatal.
 
