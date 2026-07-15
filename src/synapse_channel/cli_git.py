@@ -31,6 +31,12 @@ from synapse_channel.git.gitconflict import run_conflicts
 from synapse_channel.git.githook import check_hooks, install_hooks, run_git_release
 from synapse_channel.git.gitinit import init_repo
 from synapse_channel.git.hook_release_identity import ReleaseIdentity, resolve_release_identity
+from synapse_channel.git.semantic_claim_suggest import (
+    render_draft_claim,
+    render_human,
+    render_json,
+    suggest_paths,
+)
 from synapse_channel.service_setup import (
     default_synapse_bin,
     install_user_services,
@@ -94,6 +100,43 @@ def _semantic_selectors_from_args(args: argparse.Namespace) -> tuple[str, ...]:
     return tuple(selectors)
 
 
+def _cmd_git_claim_suggest(args: argparse.Namespace) -> int:
+    """Suggest paths for a claim from a free-text intent.
+
+    This is the client-side slice of the auto-claim semantic layer. It does not
+    contact the hub and does not acquire a claim; it only prints ranked paths or
+    a draft ``synapse git-claim`` command that the agent or operator can review.
+    """
+    intent = (args.intent or "").strip()
+    if not intent:
+        print("git-claim suggest needs --intent <description>.", file=sys.stderr)
+        return 2
+    repo_root = Path.cwd()
+    try:
+        suggestions = suggest_paths(
+            repo_root,
+            intent,
+            limit=max(1, int(args.suggest_limit)),
+        )
+    except (OSError, ValueError) as exc:
+        print(f"semantic suggestion error: {exc}", file=sys.stderr)
+        return 1
+    if args.suggest_draft:
+        print(
+            render_draft_claim(
+                suggestions,
+                task_id=args.suggest_draft_task_id or "TASK-001",
+                name=args.name,
+                base=args.base,
+            )
+        )
+    elif args.suggest_json:
+        print(render_json(suggestions))
+    else:
+        print(render_human(suggestions))
+    return 0
+
+
 def _cmd_git_claim(
     args: argparse.Namespace,
     *,
@@ -103,11 +146,17 @@ def _cmd_git_claim(
     """Dispatch the ``git-claim`` subcommand: a claim scoped to the current git branch.
 
     The branch is resolved client-side; the hub stores it as opaque metadata and
-    never runs git itself.
+    never runs git itself. The task id ``suggest`` combined with ``--intent``
+    switches to intent-based path suggestion instead of claiming, so the existing
+    top-level parser stays backward-compatible. A real task genuinely named
+    ``suggest`` is still claimable — pass it without ``--intent`` (e.g. with
+    ``--paths``) and it is claimed like any other id.
     """
     task_id = _resolve_git_claim_task_id(args)
     if task_id is None:
         return 2
+    if task_id == "suggest" and args.intent:
+        return _cmd_git_claim_suggest(args)
     return async_runner(
         claim_runner(
             uri=args.uri,
@@ -414,6 +463,39 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         choices=["manual", "commit", "merge"],
         default="merge",
         help="When a git hook should release the claim; enacted by 'synapse git-hook'.",
+    )
+    git_claim.add_argument(
+        "--intent",
+        default=None,
+        help=(
+            "Free-text intent for `synapse git-claim suggest --intent ...`. "
+            "Ignored for ordinary claims."
+        ),
+    )
+    git_claim.add_argument(
+        "--limit",
+        dest="suggest_limit",
+        type=int,
+        default=10,
+        help="Maximum suggestions for `git-claim suggest` (default: 10).",
+    )
+    git_claim.add_argument(
+        "--draft",
+        dest="suggest_draft",
+        action="store_true",
+        help="For `git-claim suggest`, emit a draft `synapse git-claim` command.",
+    )
+    git_claim.add_argument(
+        "--draft-task-id",
+        dest="suggest_draft_task_id",
+        default="TASK-001",
+        help="Task id used in `--draft` output (default: TASK-001).",
+    )
+    git_claim.add_argument(
+        "--json",
+        dest="suggest_json",
+        action="store_true",
+        help="For `git-claim suggest`, emit JSON instead of human-readable text.",
     )
     git_claim.add_argument("--uri", default=default_hub_uri())
     git_claim.add_argument("--name", default="USER")
