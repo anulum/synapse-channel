@@ -229,6 +229,7 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         OSError,
     ),
     "PolicyError": ("synapse_channel.core.policy_engine", "policy", ValueError),
+    "PrivateDirError": ("synapse_channel.core.private_dir", "private_dir", ValueError),
     "ReceiptSigningError": ("synapse_channel.core.receipt_signing", "receipt_signing", ValueError),
     "RelayTransportError": (
         "synapse_channel.core.operator_relay_transport",
