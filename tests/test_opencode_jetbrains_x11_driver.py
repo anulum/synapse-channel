@@ -124,6 +124,7 @@ def test_xdotool_success_and_checked_diagnostics(
 def test_window_geometry_name_and_focus_parsers_cover_success_and_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    commands: list[tuple[str, ...]] = []
     results = iter(
         [
             subprocess.CompletedProcess([], 1, "", ""),
@@ -137,10 +138,21 @@ def test_window_geometry_name_and_focus_parsers_cover_success_and_failure(
             subprocess.CompletedProcess([], 0, "title\n", ""),
             subprocess.CompletedProcess([], 1, "", ""),
             subprocess.CompletedProcess([], 0, "invalid", ""),
-            subprocess.CompletedProcess([], 0, "0x123\n", ""),
+            subprocess.CompletedProcess([], 0, "123\n", "warning"),
+            subprocess.CompletedProcess([], 0, "+123\n", ""),
+            subprocess.CompletedProcess([], 0, "1_23\n", ""),
+            subprocess.CompletedProcess([], 0, "0x7b\n", ""),
+            subprocess.CompletedProcess([], 0, "0\n", ""),
+            subprocess.CompletedProcess([], 0, "0123\n", ""),
+            subprocess.CompletedProcess([], 0, "123\n", ""),
         ]
     )
-    monkeypatch.setattr(jetbrains_x11_driver, "_xdotool", lambda *_a, **_k: next(results))
+
+    def run_xdotool(*args: str, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        return next(results)
+
+    monkeypatch.setattr(jetbrains_x11_driver, "_xdotool", run_xdotool)
     assert jetbrains_x11_driver._window_rectangle("123") is None
     assert jetbrains_x11_driver._window_rectangle("123") == (0, 10, 20, 300, 400)
     monkeypatch.setattr(jetbrains_x11_driver, "_window_rectangle", lambda *_a, **_k: None)
@@ -155,7 +167,10 @@ def test_window_geometry_name_and_focus_parsers_cover_success_and_failure(
     assert jetbrains_x11_driver._window_name("123") == "title"
     assert jetbrains_x11_driver._focused_window_id() is None
     assert jetbrains_x11_driver._focused_window_id() is None
-    assert jetbrains_x11_driver._focused_window_id() == 0x123
+    for _ in range(6):
+        assert jetbrains_x11_driver._focused_window_id() is None
+    assert jetbrains_x11_driver._focused_window_id() == 123
+    assert commands[-9:] == [("getwindowfocus", "-f")] * 9
 
 
 @pytest.mark.parametrize("focused", [123, 300])

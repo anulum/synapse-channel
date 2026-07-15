@@ -285,13 +285,17 @@ def _required_window_transient_for(
 
 def _focused_window_id(*, deadline: float | None = None) -> int | None:
     """Return the XID that owns keyboard focus, if it can be proven."""
-    completed = _xdotool("getwindowfocus", deadline=deadline)
-    if completed.returncode != 0:
+    completed = _xdotool("getwindowfocus", "-f", deadline=deadline)
+    token = completed.stdout.strip()
+    if (
+        completed.returncode != 0
+        or completed.stderr.strip()
+        or not token.isdecimal()
+        or int(token) <= 0
+        or token != str(int(token))
+    ):
         return None
-    try:
-        return int(completed.stdout.strip(), 0)
-    except ValueError:
-        return None
+    return int(token)
 
 
 def _focus_window_for_input(window: str, *, deadline: float | None = None) -> None:

@@ -313,6 +313,7 @@ def _select_pinned_agent(
         capture_filtered_selector()
     if guard is not None:
         guard()
+    x11._focus_window_for_input(selector, deadline=deadline)
     x11._checked_xdotool(
         "confirm the exact SYNAPSE OpenCode ACP agent",
         "key",

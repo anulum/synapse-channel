@@ -407,7 +407,8 @@ input, it focuses the validated target and proves that keyboard focus belongs
 to that frame or reaches it through a bounded, cycle-free X11 parent chain;
 only then does it use the current-focus XTEST path accepted by Swing. The chat
 composer applies the same ownership proof after its bounded pointer focus.
-Agent-selector discovery batches
+The selector re-proves owned focus immediately before final confirmation, after
+all filtered-state evidence has been captured. Agent-selector discovery batches
 the visible JetBrains window geometry into one X11 query, then performs the
 more expensive root-child and transient-owner checks only for windows with the
 exact pinned selector dimensions. Malformed batch output, multiple matching

@@ -86,7 +86,7 @@ def focus_window_for_input(window: str, *, deadline: float) -> None:
         window,
         deadline=deadline,
     )
-    result = _run_xdotool("getwindowfocus", deadline=deadline)
+    result = _run_xdotool("getwindowfocus", "-f", deadline=deadline)
     token = result.stdout.strip()
     if (
         result.returncode != 0

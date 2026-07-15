@@ -110,7 +110,7 @@ def test_focus_window_for_input_proves_the_exact_current_xid(
         "_run_xdotool",
         lambda *args, **_kwargs: (
             _completed(stdout="123\n")
-            if args == ("getwindowfocus",)
+            if args == ("getwindowfocus", "-f")
             else _completed(2, stderr="unexpected")
         ),
     )

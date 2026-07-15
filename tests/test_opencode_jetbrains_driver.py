@@ -384,7 +384,10 @@ def test_agent_selector_filters_exact_name_confirms_once_and_proves_closure(
         ),
         ("key", "Return"),
     ]
-    assert focused == [("selector", float("inf"))]
+    assert focused == [
+        ("selector", float("inf")),
+        ("selector", float("inf")),
+    ]
     assert captures == [True]
     assert guarded == [True, True, True]
 

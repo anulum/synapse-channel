@@ -55,7 +55,8 @@ All notable changes to this project are documented here.
   pinned plugin gate precedes both independently scheduled session-readiness
   events without inventing an order between them, and proves the validated
   project frame, selector, or a bounded, cycle-free Swing descendant owns
-  keyboard focus before current-focus XTEST input. Selector discovery batches
+  keyboard focus before current-focus XTEST input and re-proves selector focus
+  immediately before confirmation. Selector discovery batches
   window geometry, validates
   exact root/transient ownership and cardinality only for pinned candidates,
   filters the exact pinned agent name, and proves the original selector XID and
