@@ -408,11 +408,22 @@ before issuing any global Swing keystroke. Agent-selector discovery batches
 the visible JetBrains window geometry into one X11 query, then performs the
 more expensive root-child and transient-owner checks only for windows with the
 exact pinned selector dimensions. Malformed batch output, multiple matching
-selectors, or a selector whose ownership changes before or after the absolute
-pointer click fails closed. Its readiness contract requires the pinned plugin
-check before both session start and available-command evidence, while allowing
-those independently scheduled completion events in either observed IDEA
-2026.1.4 order. IDEA starts as an
+selectors, or a selector whose ownership changes before or after filtering
+fails closed. The driver clears the selector filter, types the exact
+`SYNAPSE OpenCode E2E` name, revalidates its title and transient owner, captures
+the filtered result, and confirms with `Return`; a raw post-confirmation X11
+snapshot must prove both the original XID and every valid replacement selector
+are absent. Selector screenshots consume the selection phase's remaining
+deadline, are written through an owner-only temporary regular file, and are
+sealed to a previously absent destination. Its readiness contract requires the
+pinned plugin check before both session start and available-command evidence,
+while allowing those independently scheduled completion events in either
+observed IDEA 2026.1.4 order. Lifecycle baselines bind each log's device and
+inode, reject replacement or truncation, and reject any post-baseline chat or
+process event for an agent other than the exact pinned identity. The
+implementation keeps orchestration/selection, X11 transport/input, first-run
+setup, and evidence capture in separate responsibility modules. The generated
+IDEA ACP entry also refuses an empty or relative proxy executable. IDEA starts as an
 isolated process-group leader; cleanup terminates every helper with bounded
 `SIGTERM`/`SIGKILL` escalation. Its ACP initialization phase has a bounded
 three-minute budget for delayed plugin continuations on loaded headless hosts
@@ -421,10 +432,11 @@ plugin discovery under bounded host contention;
 every X11 subprocess receives the lesser of its ten-second ceiling and the
 phase's remaining absolute time, including commands inside candidate-window
 loops. The prompt phase begins before composer focus and submission. The parent
-runner therefore derives a 905-second cap from 750 seconds of bounded phases,
-15 seconds of evidence capture, 20 seconds of complete process-group cleanup,
-and a separate two-minute supervision margin. Evidence-capture and termination
-failures are aggregated, and capture failure cannot skip termination. The outer
+runner therefore derives a 920-second cap from 750 seconds of bounded phases,
+two 15-second standalone evidence attempts (final capture and cleanup fallback),
+20 seconds of complete process-group cleanup, and a separate two-minute
+supervision margin. Evidence-capture and termination failures are aggregated,
+and capture failure cannot skip termination. The outer
 editor journey always uninstalls the temporary project adapter and verifies the
 original OpenCode configuration was restored, including when the editor or
 evidence assertion fails.

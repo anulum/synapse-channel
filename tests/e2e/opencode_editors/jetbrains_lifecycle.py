@@ -15,8 +15,11 @@ import stat
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeVar
 
 _MAX_POST_BASELINE_LOG_BYTES = 4_194_304
+LogIdentity = tuple[int, int]
+Event = TypeVar("Event")
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +41,7 @@ class JetBrainsLifecycleObservation:
     trace_segments: tuple[Path, ...]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class JetBrainsLifecycleGuard:
     """Continuously enforce one selected JetBrains ACP lifecycle.
 
@@ -63,6 +66,9 @@ class JetBrainsLifecycleGuard:
         Exact registered ACP agent identifier.
     agent_name:
         Exact public agent name used in process-start evidence.
+    idea_identity, acp_identity:
+        Device and inode captured for each existing baseline log. An absent
+        log is bound to its first safe post-baseline creation.
     """
 
     idea_log: Path
@@ -72,6 +78,8 @@ class JetBrainsLifecycleGuard:
     acp_offset: int
     agent_id: str
     agent_name: str
+    idea_identity: LogIdentity | None = None
+    acp_identity: LogIdentity | None = None
 
     @classmethod
     def capture(
@@ -112,14 +120,18 @@ class JetBrainsLifecycleGuard:
             raise RuntimeError("JetBrains ACP trace exists before agent selection")
         idea_log = log_root / "idea.log"
         acp_log = log_root / "acp" / "acp.log"
+        idea_offset, idea_identity = _safe_baseline(idea_log)
+        acp_offset, acp_identity = _safe_baseline(acp_log)
         return cls(
             idea_log=idea_log,
             acp_log=acp_log,
             trace=trace,
-            idea_offset=_safe_size(idea_log),
-            acp_offset=_safe_size(acp_log),
+            idea_offset=idea_offset,
+            acp_offset=acp_offset,
             agent_id=agent_id,
             agent_name=agent_name,
+            idea_identity=idea_identity,
+            acp_identity=acp_identity,
         )
 
     def observe(self) -> JetBrainsLifecycleObservation:
@@ -136,37 +148,63 @@ class JetBrainsLifecycleGuard:
             If the evidence files are unsafe, truncated, oversized, malformed,
             or disagree across IDEA's mirrored logs.
         """
-        idea_contents = _read_since(self.idea_log, self.idea_offset)
-        acp_contents = _read_since(self.acp_log, self.acp_offset)
-        escaped_id = re.escape(self.agent_id)
-        escaped_name = re.escape(self.agent_name)
+        idea_contents, idea_identity = _read_since(
+            self.idea_log,
+            self.idea_offset,
+            self.idea_identity,
+        )
+        acp_contents, acp_identity = _read_since(
+            self.acp_log,
+            self.acp_offset,
+            self.acp_identity,
+        )
+        self.idea_identity = idea_identity
+        self.acp_identity = acp_identity
         chat_pattern = re.compile(
-            rf"Creating AcpSessionLifecycleManager for agent '{escaped_id}' "
+            r"Creating AcpSessionLifecycleManager for agent '(?P<agent>[^']+)' "
             r"in chat (?P<value>\S+)"
         )
         process_pattern = re.compile(
-            rf"\[{escaped_name}\] Process started with PID: "
+            r"\[(?P<agent>[^]]+)\] Process started with PID: "
             r"LocalPid\(value=(?P<value>[^)]+)\)"
         )
-        chat_values = _coherent_events(
+        chat_events = _coherent_events(
             "chat",
-            _matched_values(idea_contents, chat_pattern),
-            _matched_values(acp_contents, chat_pattern),
+            _matched_events(idea_contents, chat_pattern),
+            _matched_events(acp_contents, chat_pattern),
         )
-        process_values = _coherent_events(
+        process_events = _coherent_events(
             "process",
-            _matched_values(idea_contents, process_pattern),
-            _matched_values(acp_contents, process_pattern),
+            _matched_events(idea_contents, process_pattern),
+            _matched_events(acp_contents, process_pattern),
         )
+        unexpected_chat_agents = tuple(
+            agent for agent, _value in chat_events if agent != self.agent_id
+        )
+        unexpected_process_agents = tuple(
+            agent for agent, _value in process_events if agent != self.agent_name
+        )
+        if unexpected_chat_agents or unexpected_process_agents:
+            raise RuntimeError(
+                "JetBrains started an unexpected post-selection ACP lifecycle: "
+                f"chat_agents={unexpected_chat_agents!r}, "
+                f"process_agents={unexpected_process_agents!r}"
+            )
         return JetBrainsLifecycleObservation(
-            chat_ids=tuple(_canonical_chat_id(value) for value in chat_values),
-            process_ids=tuple(_process_id(value) for value in process_values),
+            chat_ids=tuple(_canonical_chat_id(value) for _agent, value in chat_events),
+            process_ids=tuple(_process_id(value) for _agent, value in process_events),
             trace_segments=_trace_segments(self.trace),
         )
 
     def idea_contents(self) -> str:
         """Return safe IDEA log contents appended after the captured baseline."""
-        return _read_since(self.idea_log, self.idea_offset)
+        contents, identity = _read_since(
+            self.idea_log,
+            self.idea_offset,
+            self.idea_identity,
+        )
+        self.idea_identity = identity
+        return contents
 
     def assert_at_most_one(self) -> JetBrainsLifecycleObservation:
         """Reject a second lifecycle while allowing the first to start.
@@ -250,34 +288,41 @@ class JetBrainsLifecycleGuard:
         return observation
 
 
-def _safe_size(path: Path) -> int:
-    """Return an owned regular file's size, treating absence as zero."""
+def _safe_baseline(path: Path) -> tuple[int, LogIdentity | None]:
+    """Return an owned regular file's size and identity, or an absent baseline."""
     try:
         metadata = path.lstat()
     except FileNotFoundError:
-        return 0
+        return 0, None
     if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid():
         raise RuntimeError(f"unsafe JetBrains lifecycle log: {path}")
-    return metadata.st_size
+    return metadata.st_size, (metadata.st_dev, metadata.st_ino)
 
 
-def _read_since(path: Path, offset: int) -> str:
-    """Read one bounded, owned regular log from a captured byte offset."""
+def _read_since(
+    path: Path,
+    offset: int,
+    expected_identity: LogIdentity | None,
+) -> tuple[str, LogIdentity | None]:
+    """Read a bounded log while preserving its captured device and inode."""
     if offset < 0:
         raise RuntimeError("JetBrains lifecycle log offset cannot be negative")
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags)
     except FileNotFoundError:
-        if offset:
+        if offset or expected_identity is not None:
             raise RuntimeError(f"JetBrains lifecycle log disappeared: {path}") from None
-        return ""
+        return "", None
     except OSError as exc:
         raise RuntimeError(f"JetBrains lifecycle log could not be opened: {path}") from exc
     try:
         metadata = os.fstat(descriptor)
         if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid():
             raise RuntimeError(f"unsafe JetBrains lifecycle log: {path}")
+        identity = (metadata.st_dev, metadata.st_ino)
+        if expected_identity is not None and identity != expected_identity:
+            raise RuntimeError(f"JetBrains lifecycle log was replaced: {path}")
         if metadata.st_size < offset:
             raise RuntimeError(f"JetBrains lifecycle log was truncated: {path}")
         length = metadata.st_size - offset
@@ -290,24 +335,39 @@ def _read_since(path: Path, offset: int) -> str:
             if not chunk:
                 raise RuntimeError(f"JetBrains lifecycle log changed while reading: {path}")
             payload.extend(chunk)
+        try:
+            current = path.lstat()
+        except FileNotFoundError:
+            raise RuntimeError(f"JetBrains lifecycle log changed while reading: {path}") from None
+        if (
+            not stat.S_ISREG(current.st_mode)
+            or current.st_uid != os.getuid()
+            or (current.st_dev, current.st_ino) != identity
+        ):
+            raise RuntimeError(f"JetBrains lifecycle log changed while reading: {path}")
     finally:
         os.close(descriptor)
     try:
-        return payload.decode("utf-8")
+        return payload.decode("utf-8"), identity
     except UnicodeDecodeError as exc:
         raise RuntimeError(f"JetBrains lifecycle log is not valid UTF-8: {path}") from exc
 
 
-def _matched_values(contents: str, pattern: re.Pattern[str]) -> tuple[str, ...]:
-    """Return ordered named values from one exact log-event pattern."""
-    return tuple(match.group("value") for match in pattern.finditer(contents))
+def _matched_events(
+    contents: str,
+    pattern: re.Pattern[str],
+) -> tuple[tuple[str, str], ...]:
+    """Return ordered agent/value pairs from one lifecycle event pattern."""
+    return tuple(
+        (match.group("agent"), match.group("value")) for match in pattern.finditer(contents)
+    )
 
 
 def _coherent_events(
     label: str,
-    idea_events: tuple[str, ...],
-    acp_events: tuple[str, ...],
-) -> tuple[str, ...]:
+    idea_events: tuple[Event, ...],
+    acp_events: tuple[Event, ...],
+) -> tuple[Event, ...]:
     """Reconcile mirrored IDEA and ACP logs without double-counting events."""
     if len(idea_events) >= len(acp_events) and idea_events[: len(acp_events)] == acp_events:
         return idea_events

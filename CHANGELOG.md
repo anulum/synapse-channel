@@ -53,11 +53,19 @@ All notable changes to this project are documented here.
   project frame or a bounded, cycle-free Swing descendant owns keyboard focus
   before prompt input. Selector discovery batches window geometry, validates
   exact root/transient ownership and cardinality only for pinned candidates,
-  and uses absolute pointer coordinates after revalidation. It constrains every
-  GUI subprocess by its phase's remaining absolute deadline and starts the
-  prompt deadline before composer input. Evidence-capture failures are
-  aggregated without skipping complete IDEA process-group termination, while
-  adapter removal preserves every non-owned OpenCode configuration entry.
+  filters the exact pinned agent name, and proves the original selector XID and
+  every valid replacement are absent after confirmation. Selector evidence is
+  phase-bounded, owner-only, non-empty, and sealed to a previously absent path.
+  Lifecycle reads bind the baseline log device/inode and reject rotation,
+  truncation, or any post-baseline event for a competing agent. The driver is
+  split by responsibility across orchestration/selection, X11 transport/input,
+  first-run setup, and evidence modules, each with strict typing and focused
+  branch coverage. It constrains every GUI subprocess by its phase's remaining
+  absolute deadline and starts the prompt deadline before composer input. The
+  parent timeout accounts for both final and cleanup-fallback screenshots;
+  evidence-capture failures are aggregated without skipping complete IDEA
+  process-group termination, while adapter removal preserves every non-owned
+  OpenCode configuration entry.
   The ACP evidence proxy rejects malformed responses before consuming their
   pending correlation, and the parent timeout is derived from every phase,
   evidence capture, cleanup, and a separate supervision margin.

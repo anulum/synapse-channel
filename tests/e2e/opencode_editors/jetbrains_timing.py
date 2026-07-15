@@ -35,7 +35,9 @@ class JetBrainsTimingBudget:
         Maximum duration of one X11 command. Each command also receives its
         phase's remaining absolute deadline, so it cannot extend that phase.
     screenshot_seconds:
-        Maximum final evidence screenshot duration.
+        Maximum duration of each standalone evidence capture. The driver can
+        attempt one final capture and one cleanup fallback; selector evidence
+        consumes its selection phase instead.
     cleanup_seconds:
         Maximum graceful plus forced process-group cleanup duration.
     parent_supervision_seconds:
@@ -82,7 +84,7 @@ class JetBrainsTimingBudget:
     @property
     def driver_budget_seconds(self) -> float:
         """Return the complete driver budget including evidence and cleanup."""
-        return self.phase_seconds + self.screenshot_seconds + self.cleanup_seconds
+        return self.phase_seconds + (2 * self.screenshot_seconds) + self.cleanup_seconds
 
     @property
     def parent_timeout_seconds(self) -> int:

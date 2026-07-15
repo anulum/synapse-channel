@@ -261,6 +261,25 @@ def test_lifecycle_guard_rejects_divergent_mirrored_logs(tmp_path: Path) -> None
         guard.observe()
 
 
+@pytest.mark.parametrize("surface", ["chat", "process"])
+def test_lifecycle_guard_rejects_any_unexpected_post_selection_agent(
+    tmp_path: Path,
+    surface: str,
+) -> None:
+    guard = _guard(tmp_path)
+    with guard.idea_log.open("a", encoding="utf-8") as stream:
+        if surface == "chat":
+            stream.write(
+                "2026 INFO - Creating AcpSessionLifecycleManager for agent "
+                f"'acp.registry.codex-acp' in chat {_SECOND_CHAT_ID}\n"
+            )
+        else:
+            stream.write("2026 INFO - [Codex] Process started with PID: LocalPid(value=284154)\n")
+
+    with pytest.raises(RuntimeError, match="unexpected post-selection ACP lifecycle"):
+        guard.observe()
+
+
 def test_lifecycle_guard_rejects_truncated_disappeared_and_non_utf8_logs(
     tmp_path: Path,
 ) -> None:
@@ -323,6 +342,33 @@ def test_lifecycle_guard_rejects_a_symlink_swapped_after_capture(tmp_path: Path)
         guard.observe()
 
 
+def test_lifecycle_guard_rejects_an_atomic_log_replacement(tmp_path: Path) -> None:
+    guard = _guard(tmp_path)
+    _append_lifecycle(guard)
+    replacement = tmp_path / "replacement.log"
+    replacement.write_text("baseline\n", encoding="utf-8")
+    replacement.replace(guard.idea_log)
+    _append_lifecycle(guard, chat_id=_SECOND_CHAT_ID, process_id="284154")
+
+    with pytest.raises(RuntimeError, match="log was replaced"):
+        guard.assert_at_most_one()
+
+
+def test_lifecycle_guard_binds_then_rejects_replacement_of_a_late_log(
+    tmp_path: Path,
+) -> None:
+    guard = _guard(tmp_path)
+    guard.acp_log.parent.mkdir()
+    guard.acp_log.touch()
+    guard.observe()
+    replacement = tmp_path / "replacement-acp.log"
+    replacement.touch()
+    replacement.replace(guard.acp_log)
+
+    with pytest.raises(RuntimeError, match="log was replaced"):
+        guard.observe()
+
+
 def test_lifecycle_guard_rejects_a_log_that_changes_during_read(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -332,6 +378,46 @@ def test_lifecycle_guard_rejects_a_log_that_changes_during_read(
         stream.write("new evidence\n")
     monkeypatch.setattr(os, "read", lambda _fd, _length: b"")
 
+    with pytest.raises(RuntimeError, match="changed while reading"):
+        guard.observe()
+
+
+def test_lifecycle_guard_rejects_log_disappearance_after_bounded_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    guard = _guard(tmp_path)
+    with guard.idea_log.open("a", encoding="utf-8") as stream:
+        stream.write("new evidence\n")
+    real_read = os.read
+
+    def read_then_remove(descriptor: int, length: int) -> bytes:
+        payload = real_read(descriptor, length)
+        guard.idea_log.unlink()
+        return payload
+
+    monkeypatch.setattr(os, "read", read_then_remove)
+    with pytest.raises(RuntimeError, match="changed while reading"):
+        guard.observe()
+
+
+def test_lifecycle_guard_rejects_inode_swap_after_bounded_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    guard = _guard(tmp_path)
+    with guard.idea_log.open("a", encoding="utf-8") as stream:
+        stream.write("new evidence\n")
+    replacement = tmp_path / "replacement-during-read.log"
+    replacement.write_text("replacement\n", encoding="utf-8")
+    real_read = os.read
+
+    def read_then_replace(descriptor: int, length: int) -> bytes:
+        payload = real_read(descriptor, length)
+        replacement.replace(guard.idea_log)
+        return payload
+
+    monkeypatch.setattr(os, "read", read_then_replace)
     with pytest.raises(RuntimeError, match="changed while reading"):
         guard.observe()
 
