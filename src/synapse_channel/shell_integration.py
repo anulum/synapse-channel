@@ -296,6 +296,13 @@ function __synapse_auto_arm --on-event fish_prompt
     end
   end
   mkdir -p -m 700 "$runtime" 2>/dev/null; or return 0
+  # -m 700 only applies on creation; re-tighten a pre-existing dir and refuse one
+  # we do not solely own or that is a symlink, so a precreated 0777 or planted
+  # runtime cannot host our pidfile/logfile (fail closed: no waiter over an unsafe dir).
+  chmod 700 "$runtime" 2>/dev/null
+  if not test -d "$runtime"; or test -L "$runtime"; or not test -O "$runtime"
+    return 0
+  end
   set -l key (__synapse_safe_key "$identity")
   set -l pidfile "$runtime/$key.pid"
   set -l logfile "$runtime/$key.log"
@@ -362,7 +369,18 @@ function __synapse_release_waiter
   test -r "$pidfile"; or return 0
   set -l pid (cat "$pidfile" 2>/dev/null)
   if test -n "$pid"
-    kill "$pid" 2>/dev/null
+    # Verify the PID is THIS identity's synapse arm waiter before signalling it, so
+    # a planted pidfile cannot turn this release into a blind kill of an unrelated
+    # process (mirrors reap.py's argv check; fail closed when the argv is unreadable).
+    set -l cmdline
+    if test -r "/proc/$pid/cmdline"
+      set cmdline (tr '\\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)
+    else
+      set cmdline (ps -o args= -p "$pid" 2>/dev/null)
+    end
+    if string match -q -- "* arm *--name=$SYN_IDENTITY-rx*" "$cmdline"
+      kill "$pid" 2>/dev/null
+    end
   end
   rm -f "$pidfile" 2>/dev/null
 end
@@ -492,6 +510,13 @@ __synapse_auto_arm() {{
     fi
   fi
   mkdir -p -m 700 "$runtime" 2>/dev/null || return 0
+  # -m 700 only applies on creation; re-tighten a pre-existing dir and refuse one
+  # we do not solely own or that is a symlink, so a precreated 0777 or planted
+  # runtime cannot host our pidfile/logfile (fail closed: no waiter over an unsafe dir).
+  chmod 700 "$runtime" 2>/dev/null
+  if [ ! -d "$runtime" ] || [ -L "$runtime" ] || [ ! -O "$runtime" ]; then
+    return 0
+  fi
   key="$(__synapse_safe_key "$identity")"
   pidfile="$runtime/$key.pid"
   logfile="$runtime/$key.log"
@@ -532,7 +557,7 @@ __synapse_release_waiter() {{
   # Stop the passive prompt-armed waiter (by its pidfile) so an interactive
   # provider's own tmux waker can own "$identity-rx" without a name collision.
   # The waiter is killed, not merely superseded, so it does not re-arm and fight.
-  local runtime key pidfile pid cache
+  local runtime key pidfile pid cache cmdline
   [ -n "${{SYN_IDENTITY:-}}" ] || return 0
   if [ -n "${{XDG_RUNTIME_DIR:-}}" ]; then
     runtime="$XDG_RUNTIME_DIR/synapse-shell"
@@ -548,7 +573,20 @@ __synapse_release_waiter() {{
   pidfile="$runtime/$key.pid"
   [ -r "$pidfile" ] || return 0
   pid="$(cat "$pidfile" 2>/dev/null || true)"
-  [ -n "$pid" ] && kill "$pid" 2>/dev/null
+  if [ -n "$pid" ]; then
+    # Verify the PID is THIS identity's synapse arm waiter before signalling it, so
+    # a planted pidfile cannot turn this release into a blind kill of an unrelated
+    # process (mirrors reap.py's argv check; fail closed when the argv is unreadable).
+    cmdline=""
+    if [ -r "/proc/$pid/cmdline" ]; then
+      cmdline="$(tr '\\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)"
+    else
+      cmdline="$(ps -o args= -p "$pid" 2>/dev/null || true)"
+    fi
+    case "$cmdline" in
+      *" arm "*"--name=$SYN_IDENTITY-rx"*) kill "$pid" 2>/dev/null ;;
+    esac
+  fi
   rm -f "$pidfile" 2>/dev/null
   return 0
 }}

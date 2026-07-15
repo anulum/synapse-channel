@@ -199,6 +199,179 @@ def test_render_shell_hook_fish_uses_prompt_event() -> None:
     assert "--owner-pid $fish_pid" in hook
 
 
+def test_shell_hook_repairs_and_guards_a_precreated_runtime_dir() -> None:
+    """F6b: ``mkdir -m 700`` is not enough — a pre-existing runtime dir is repaired
+    and a foreign-owned or symlinked one is refused, in every generated dialect."""
+    bash = render_shell_hook(shell="bash", provider_commands=())
+    zsh = render_shell_hook(shell="zsh", provider_commands=())
+    for posix in (bash, zsh):
+        assert 'chmod 700 "$runtime" 2>/dev/null' in posix
+        assert '[ ! -d "$runtime" ] || [ -L "$runtime" ] || [ ! -O "$runtime" ]' in posix
+    fish = render_shell_hook(shell="fish", provider_commands=())
+    assert 'chmod 700 "$runtime" 2>/dev/null' in fish
+    assert 'not test -d "$runtime"; or test -L "$runtime"; or not test -O "$runtime"' in fish
+
+
+def test_shell_hook_verifies_the_waiter_pid_before_signalling() -> None:
+    """F6b: the release path must confirm the PID is this identity's synapse arm
+    waiter (via its argv) before ``kill`` — never signal a planted stranger PID."""
+    bash = render_shell_hook(shell="bash", provider_commands=())
+    assert "cmdline=\"$(tr '\\0' ' ' < \"/proc/$pid/cmdline\" 2>/dev/null)\"" in bash
+    assert 'cmdline="$(ps -o args= -p "$pid" 2>/dev/null || true)"' in bash
+    assert '*" arm "*"--name=$SYN_IDENTITY-rx"*) kill "$pid" 2>/dev/null ;;' in bash
+    fish = render_shell_hook(shell="fish", provider_commands=())
+    assert "set cmdline (tr '\\0' ' ' < \"/proc/$pid/cmdline\" 2>/dev/null)" in fish
+    assert 'string match -q -- "* arm *--name=$SYN_IDENTITY-rx*" "$cmdline"' in fish
+
+
+def _run_bash(script: str) -> subprocess.CompletedProcess[str]:
+    """Run ``script`` under a hermetic bash, returning the completed process."""
+    return subprocess.run(
+        ["bash", "--noprofile", "--norc", "-c", script],
+        text=True,
+        capture_output=True,
+        env=_clean_shell_environment(),
+        check=False,
+    )
+
+
+def test_bash_auto_arm_repairs_a_precreated_world_writable_runtime(tmp_path: Path) -> None:
+    # A precreated 0777 runtime directory (the mode -m 700 silently leaves alone)
+    # must be re-tightened to 0700 before the hook writes its pidfile into it, and
+    # arming must still proceed for a directory the operator owns.
+    bindir = _write_fake_synapse(tmp_path)
+    run_dir = tmp_path / "run"
+    shell_dir = run_dir / "synapse-shell"
+    shell_dir.mkdir(parents=True)
+    shell_dir.chmod(0o777)
+    record = tmp_path / "record"
+    hook_path = tmp_path / "hook.sh"
+    hook_path.write_text(render_shell_hook(shell="bash", provider_commands=()), encoding="utf-8")
+
+    script = "\n".join(
+        [
+            f"export PATH={shlex.quote(str(bindir))}:$PATH",
+            f"export XDG_RUNTIME_DIR={shlex.quote(str(run_dir))}",
+            f"export SYNAPSE_RECORD={shlex.quote(str(record))}",
+            "export SYN_PROJECT=user SYN_IDENTITY=user/terminal-fixed",
+            f"source {shlex.quote(str(hook_path))}",
+            "__synapse_auto_arm",
+            "for _ in $(seq 1 100); do "
+            f"[ -s {shlex.quote(str(record))} ] && break; sleep 0.02; done",
+        ]
+    )
+    proc = _run_bash(script)
+
+    assert proc.returncode == 0, proc.stderr
+    assert (shell_dir.stat().st_mode & 0o777) == 0o700
+    assert "arm --name=user/terminal-fixed-rx" in record.read_text(encoding="utf-8")
+
+
+def test_bash_auto_arm_refuses_a_symlinked_runtime(tmp_path: Path) -> None:
+    # A symlinked runtime directory (an attacker aiming the hook at a directory it
+    # does not own) is refused outright: no arm is recorded and nothing is written
+    # through the link into the target.
+    bindir = _write_fake_synapse(tmp_path)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    (run_dir / "synapse-shell").symlink_to(target, target_is_directory=True)
+    record = tmp_path / "record"
+    hook_path = tmp_path / "hook.sh"
+    hook_path.write_text(render_shell_hook(shell="bash", provider_commands=()), encoding="utf-8")
+
+    script = "\n".join(
+        [
+            f"export PATH={shlex.quote(str(bindir))}:$PATH",
+            f"export XDG_RUNTIME_DIR={shlex.quote(str(run_dir))}",
+            f"export SYNAPSE_RECORD={shlex.quote(str(record))}",
+            "export SYN_PROJECT=user SYN_IDENTITY=user/terminal-fixed",
+            f"source {shlex.quote(str(hook_path))}",
+            "__synapse_auto_arm",
+            "sleep 0.1",
+        ]
+    )
+    proc = _run_bash(script)
+
+    assert proc.returncode == 0, proc.stderr
+    assert not record.exists() or record.read_text(encoding="utf-8").strip() == ""
+    assert list(target.iterdir()) == []
+
+
+def test_bash_release_waiter_refuses_to_kill_a_non_waiter_pid(tmp_path: Path) -> None:
+    # A pidfile planted with a stranger PID must never turn the release into a blind
+    # kill: the process survives because its argv is not this identity's arm waiter.
+    run_dir = tmp_path / "run"
+    (run_dir / "synapse-shell").mkdir(parents=True)
+    (run_dir / "synapse-shell").chmod(0o700)
+    pidfile = run_dir / "synapse-shell" / "user_terminal-fixed.pid"
+    outcome = tmp_path / "outcome"
+    hook_path = tmp_path / "hook.sh"
+    hook_path.write_text(render_shell_hook(shell="bash", provider_commands=()), encoding="utf-8")
+
+    script = "\n".join(
+        [
+            f"export XDG_RUNTIME_DIR={shlex.quote(str(run_dir))}",
+            "export SYN_PROJECT=user SYN_IDENTITY=user/terminal-fixed",
+            "sleep 30 &",
+            "stranger=$!",
+            f"printf '%s' \"$stranger\" > {shlex.quote(str(pidfile))}",
+            f"source {shlex.quote(str(hook_path))}",
+            "__synapse_release_waiter",
+            "sleep 0.2",
+            f'if kill -0 "$stranger" 2>/dev/null; then echo alive > {shlex.quote(str(outcome))};'
+            f" else echo killed > {shlex.quote(str(outcome))}; fi",
+            'kill "$stranger" 2>/dev/null',
+            'wait "$stranger" 2>/dev/null',
+            "exit 0",
+        ]
+    )
+    proc = _run_bash(script)
+
+    assert proc.returncode == 0, proc.stderr
+    assert outcome.read_text(encoding="utf-8").strip() == "alive"
+
+
+def test_bash_release_waiter_kills_the_verified_waiter(tmp_path: Path) -> None:
+    # The legitimate path is preserved: a process whose argv is this identity's
+    # synapse arm waiter is signalled and stopped when the provider wrapper releases it.
+    run_dir = tmp_path / "run"
+    (run_dir / "synapse-shell").mkdir(parents=True)
+    (run_dir / "synapse-shell").chmod(0o700)
+    pidfile = run_dir / "synapse-shell" / "user_terminal-fixed.pid"
+    outcome = tmp_path / "outcome"
+    hook_path = tmp_path / "hook.sh"
+    hook_path.write_text(render_shell_hook(shell="bash", provider_commands=()), encoding="utf-8")
+
+    waiter_argv = (
+        "synapse arm --name=user/terminal-fixed-rx --for=user/terminal-fixed "
+        "--directed-only --owner-pid 1"
+    )
+    script = "\n".join(
+        [
+            f"export XDG_RUNTIME_DIR={shlex.quote(str(run_dir))}",
+            "export SYN_PROJECT=user SYN_IDENTITY=user/terminal-fixed",
+            f"( exec -a {shlex.quote(waiter_argv)} sleep 30 ) &",
+            "waiter=$!",
+            f"printf '%s' \"$waiter\" > {shlex.quote(str(pidfile))}",
+            "sleep 0.2",
+            f"source {shlex.quote(str(hook_path))}",
+            "__synapse_release_waiter",
+            "sleep 0.3",
+            f'if kill -0 "$waiter" 2>/dev/null; then echo alive > {shlex.quote(str(outcome))};'
+            f" else echo killed > {shlex.quote(str(outcome))}; fi",
+            'kill "$waiter" 2>/dev/null',
+            'wait "$waiter" 2>/dev/null',
+            "exit 0",
+        ]
+    )
+    proc = _run_bash(script)
+
+    assert proc.returncode == 0, proc.stderr
+    assert outcome.read_text(encoding="utf-8").strip() == "killed"
+
+
 def test_bash_shell_hook_uses_neutral_project_without_marker(tmp_path: Path) -> None:
     bindir = _write_fake_synapse(tmp_path)
     repo = tmp_path / "repo"
