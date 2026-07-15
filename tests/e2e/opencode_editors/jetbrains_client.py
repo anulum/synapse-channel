@@ -134,6 +134,9 @@ def _visible_jetbrains_window_rectangles(*, deadline: float) -> tuple[X11WindowR
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "no diagnostic"
         raise RuntimeError(f"xdotool could not snapshot visible JetBrains windows: {detail}")
+    if result.stderr.strip() or not result.stdout.strip():
+        detail = result.stderr.strip() or "empty geometry output"
+        raise RuntimeError(f"xdotool returned an unclassifiable JetBrains snapshot: {detail}")
     try:
         return parse_window_rectangles(result.stdout)
     except ValueError as exc:

@@ -237,6 +237,12 @@ def test_required_selector_queries_reject_unclassifiable_x11_state(
             subprocess.CompletedProcess(
                 [],
                 0,
+                "Root window id: invalid\nParent window id: invalid\n",
+                "",
+            ),
+            subprocess.CompletedProcess(
+                [],
+                0,
                 "Root window id: 0x1\nParent window id: 0x2\n",
                 "",
             ),
@@ -247,6 +253,8 @@ def test_required_selector_queries_reject_unclassifiable_x11_state(
                 "",
             ),
             subprocess.CompletedProcess([], 1, "", "xprop failed"),
+            subprocess.CompletedProcess([], 0, "WM_TRANSIENT_FOR:  not found.\n", ""),
+            subprocess.CompletedProcess([], 0, "WM_TRANSIENT_FOR(WINDOW): malformed\n", ""),
             subprocess.CompletedProcess(
                 [],
                 0,
@@ -260,9 +268,14 @@ def test_required_selector_queries_reject_unclassifiable_x11_state(
         jetbrains_x11_driver._required_window_is_root_child("123")
     with pytest.raises(RuntimeError, match="malformed parentage"):
         jetbrains_x11_driver._required_window_is_root_child("123")
+    with pytest.raises(RuntimeError, match="malformed parentage"):
+        jetbrains_x11_driver._required_window_is_root_child("123")
     assert jetbrains_x11_driver._required_window_is_root_child("123") is False
     assert jetbrains_x11_driver._required_window_is_root_child("123") is True
     with pytest.raises(RuntimeError, match="xprop could not classify"):
+        jetbrains_x11_driver._required_window_transient_for("123")
+    assert jetbrains_x11_driver._required_window_transient_for("123") is None
+    with pytest.raises(RuntimeError, match="malformed transient ownership"):
         jetbrains_x11_driver._required_window_transient_for("123")
     assert jetbrains_x11_driver._required_window_transient_for("123") == 0x123
 

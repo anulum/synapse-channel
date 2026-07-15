@@ -183,7 +183,14 @@ def _required_window_is_root_child(
     root, parent = _window_parentage(completed.stdout)
     if root is None or parent is None:
         raise RuntimeError(f"xwininfo returned malformed parentage for X11 window {window}")
-    return parent == root
+    try:
+        root_id = int(root, 0)
+        parent_id = int(parent, 0)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"xwininfo returned malformed parentage for X11 window {window}"
+        ) from exc
+    return parent_id == root_id
 
 
 def _window_parent_ids(
@@ -257,7 +264,13 @@ def _required_window_transient_for(
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic"
         raise RuntimeError(f"xprop could not classify X11 window {window}: {detail}")
-    return _xprop_window_id(completed.stdout)
+    normalized = " ".join(completed.stdout.split())
+    if normalized == "WM_TRANSIENT_FOR: not found.":
+        return None
+    owner = _xprop_window_id(completed.stdout)
+    if owner is None:
+        raise RuntimeError(f"xprop returned malformed transient ownership for X11 window {window}")
+    return owner
 
 
 def _focused_window_id(*, deadline: float | None = None) -> int | None:

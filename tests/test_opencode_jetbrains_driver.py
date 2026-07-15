@@ -426,17 +426,64 @@ def test_agent_selector_rejects_unclassifiable_replacement_after_confirmation(
         lambda *_args, **_kwargs: True,
     )
 
-    def failed_transient_query(*_args: object, **_kwargs: object) -> int | None:
-        raise RuntimeError("xprop unavailable")
-
     monkeypatch.setattr(
         jetbrains_x11_driver,
-        "_required_window_transient_for",
-        failed_transient_query,
+        "_required_tool",
+        lambda name: f"/usr/bin/{name}",
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            [],
+            0,
+            "WM_TRANSIENT_FOR(WINDOW): malformed\n",
+            "",
+        ),
     )
     monkeypatch.setattr(jetbrains_x11_driver, "_checked_xdotool", lambda *_a, **_k: None)
 
-    with pytest.raises(RuntimeError, match="xprop unavailable"):
+    with pytest.raises(RuntimeError, match="malformed transient ownership"):
+        _select_pinned_agent("selector", "123", deadline=float("inf"))
+
+
+def test_agent_selector_rejects_malformed_replacement_parentage_after_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(jetbrains_client, "_is_agent_selector_popup", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_visible_agent_selector_popups",
+        lambda *_args, **_kwargs: ("selector",),
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_visible_jetbrains_window_rectangles",
+        lambda **_kwargs: (X11WindowRectangle("replacement", 0, 1, 2, 310, 407),),
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_required_window_name",
+        lambda *_args, **_kwargs: "win0",
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_required_tool",
+        lambda name: f"/usr/bin/{name}",
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            [],
+            0,
+            "Root window id: invalid\nParent window id: invalid\n",
+            "",
+        ),
+    )
+    monkeypatch.setattr(jetbrains_x11_driver, "_checked_xdotool", lambda *_a, **_k: None)
+
+    with pytest.raises(RuntimeError, match="malformed parentage"):
         _select_pinned_agent("selector", "123", deadline=float("inf"))
 
 
@@ -581,7 +628,13 @@ def test_visible_selector_snapshot_accepts_only_an_empty_search_miss(
 
 @pytest.mark.parametrize(
     ("returncode", "diagnostic"),
-    [(1, "display unavailable"), (2, "transport failed"), (124, "xdotool command timed out")],
+    [
+        (0, ""),
+        (0, "unexpected warning"),
+        (1, "display unavailable"),
+        (2, "transport failed"),
+        (124, "xdotool command timed out"),
+    ],
 )
 def test_visible_selector_snapshot_rejects_x11_failure(
     monkeypatch: pytest.MonkeyPatch,
@@ -599,7 +652,7 @@ def test_visible_selector_snapshot_rejects_x11_failure(
         ),
     )
 
-    with pytest.raises(RuntimeError, match="could not snapshot visible JetBrains windows"):
+    with pytest.raises(RuntimeError, match="JetBrains snapshot|snapshot visible JetBrains"):
         jetbrains_client._visible_jetbrains_window_rectangles(deadline=1.0)
 
 
