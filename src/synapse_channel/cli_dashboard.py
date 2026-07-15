@@ -51,6 +51,7 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
             observed_pins=resolve_observed_pins(
                 getattr(args, "observed_pins", ()), tuple(args.observed_peers)
             ),
+            allow_hosts=tuple(args.dashboard_allow_host),
         )
     except ValueError as exc:
         print(str(exc))
@@ -104,6 +105,19 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--allow-non-loopback",
         action="store_true",
         help="Permit dashboard binds outside loopback; use only behind trusted controls.",
+    )
+    dashboard.add_argument(
+        "--dashboard-allow-host",
+        action="append",
+        default=[],
+        metavar="HOST[:PORT]",
+        help=(
+            "Extra Host authority admitted by the DNS-rebinding boundary, for a "
+            "deliberate LAN or reverse-proxy exposure (repeatable). Loopback names "
+            "and a concrete bind host are always admitted; bracket an IPv6 literal. "
+            "A wildcard 0.0.0.0/:: bind relies on its read token instead, unless "
+            "hosts are listed here to re-enable strict filtering."
+        ),
     )
     dashboard.add_argument(
         "--refresh-seconds",

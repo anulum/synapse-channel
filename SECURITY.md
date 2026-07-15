@@ -150,6 +150,21 @@ When that boundary is crossed, the proportionate controls are:
   retention are bounded. Treat any non-loopback A2A bind as an exposed HTTP
   service: use bearer auth, keep state files private, and do not claim external
   A2A conformance until interoperability and webhook validation have run.
+- **Dashboard Host boundary.** The read-only `synapse dashboard` serves live JSON
+  and audit feeds unauthenticated on loopback so the browser cockpit — which
+  cannot attach an `Authorization` header on navigation — can load. That open read
+  path is a DNS-rebinding target, so an always-on `Host`-header boundary runs
+  before authentication on every read and write: a request is admitted only when
+  its `Host` names the loopback authority, the bind host at the served port, or a
+  host the operator explicitly approved with `--dashboard-allow-host`. A request
+  whose `Host` is absent, malformed, or the attacker-chosen rebinding authority is
+  refused with 403, so a page the operator visits cannot rebind its name to
+  loopback and read coordination state cross-origin. A wildcard `0.0.0.0`/`::`
+  bind names no fixed authority and already mandates a read token — which a
+  rebinding page cannot present — so the boundary defers to that token there
+  unless the operator lists exact hosts with `--dashboard-allow-host`. The
+  boundary is transport hardening, not a substitute for a token: keep the bind on
+  loopback and set a `--dashboard-token` before any deliberate exposure.
 
 The core hub and its state stay on the operator's machine, but two boundaries are
 worth stating plainly:

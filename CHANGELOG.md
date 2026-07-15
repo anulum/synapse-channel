@@ -15,6 +15,17 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- The read-only dashboard now enforces an always-on `Host`-header boundary
+  against DNS rebinding. Its live JSON and audit feeds are unauthenticated on
+  loopback so the browser cockpit can load, which made them a rebinding target: a
+  page the operator visits could rebind its own name to the loopback address and,
+  as a then-same-origin request, read coordination state cross-origin. A new
+  `dashboard_host_guard` derives the exact authorities a legitimate browser
+  presents — the loopback names and the bind host at the served port — and refuses
+  any request whose `Host` is absent, malformed, or unlisted, before
+  authentication and on both reads and writes. A deliberate LAN or reverse-proxy
+  exposure adds its hostname with the new `synapse dashboard --dashboard-allow-host`
+  flag.
 - A2A outbound webhook delivery is now DNS-rebinding resistant. A new
   `safe_webhook_transport` resolves each target once and pins the connection to
   the validated address, so a name cannot resolve to a permitted public address

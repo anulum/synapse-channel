@@ -83,6 +83,50 @@ def test_dashboard_parser_wires_command() -> None:
     assert args.dashboard_token == "viewer"
 
 
+def test_dashboard_parser_collects_repeated_allow_hosts() -> None:
+    """``--dashboard-allow-host`` accumulates each approved authority."""
+    args = cli.build_parser().parse_args(
+        [
+            "dashboard",
+            "--dashboard-allow-host",
+            "dash.internal",
+            "--dashboard-allow-host",
+            "proxy.example:443",
+        ]
+    )
+
+    assert args.dashboard_allow_host == ["dash.internal", "proxy.example:443"]
+
+
+def test_dashboard_parser_defaults_allow_hosts_to_empty() -> None:
+    """Without the flag the boundary admits only loopback and the bind host."""
+    args = cli.build_parser().parse_args(["dashboard"])
+
+    assert args.dashboard_allow_host == []
+
+
+def test_dashboard_dispatcher_forwards_allow_hosts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The dispatcher forwards approved hosts to the dashboard server."""
+    from synapse_channel import cli_dashboard
+
+    captured: dict[str, object] = {}
+
+    def _capture(**kwargs: object) -> _FakeDashboardServer:
+        captured.update(kwargs)
+        return _FakeDashboardServer(token=None, generated=False)
+
+    monkeypatch.setattr(cli_dashboard, "start_dashboard_server", _capture)
+    monkeypatch.setattr(
+        "synapse_channel.cli_dashboard.time.sleep",
+        lambda _: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+    args = _dashboard_args(dashboard_allow_host=["dash.internal"])
+    handler = args.func  # type: ignore[attr-defined]
+
+    assert int(handler(args)) == 0
+    assert captured["allow_hosts"] == ("dash.internal",)
+
+
 def test_dashboard_parser_wires_principal_access_policy() -> None:
     args = cli.build_parser().parse_args(
         [

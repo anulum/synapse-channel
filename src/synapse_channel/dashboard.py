@@ -66,6 +66,11 @@ from synapse_channel.dashboard_feed_serving import (
     serve_waits,
 )
 from synapse_channel.dashboard_fleet import build_fleet_visibility
+from synapse_channel.dashboard_host_guard import (
+    allowed_host_authorities,
+    host_allowed,
+    is_unspecified_host,
+)
 from synapse_channel.dashboard_operator import WriteRateLimiter
 from synapse_channel.dashboard_operator_writes import (
     execute_relay,
@@ -443,9 +448,40 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     observed_token: ClassVar[str | None]
     observed_timeout: ClassVar[float]
     observed_pins: ClassVar[dict[str, str] | None]
+    allowed_extra_hosts: ClassVar[tuple[str, ...]]
+
+    def _reject_foreign_host(self) -> bool:
+        """Refuse a request whose ``Host`` is not an admitted authority.
+
+        The open loopback read path is a DNS-rebinding target, so the transport
+        boundary runs before authentication: a request whose ``Host`` header does
+        not name the loopback, bind, or operator-approved authority is refused
+        with 403 and the caller stops. The boundary is Host-only by design; the
+        rebinding threat is browser-borne and a browser always sends origin-form
+        with its own ``Host``. A wildcard bind is off loopback and mandates a
+        read-protecting token, which already defeats rebinding, so the boundary is
+        relaxed there unless the operator narrowed the admissible hosts. Returns
+        whether the request was rejected.
+        """
+        # server_address is typed as a loose union on the base server; a TCP HTTP
+        # server always binds a concrete (host, port) pair.
+        bind_host, port = cast("tuple[str, int]", self.server.server_address)
+        if is_unspecified_host(str(bind_host)) and not self.allowed_extra_hosts:
+            return False
+        allowed = allowed_host_authorities(str(bind_host), int(port), self.allowed_extra_hosts)
+        if host_allowed(self.headers.get("Host"), allowed):
+            return False
+        self._write(
+            HTTPStatus.FORBIDDEN,
+            b"dashboard host authority not allowed\n",
+            content_type="text/plain",
+        )
+        return True
 
     def do_GET(self) -> None:
         """Serve the dashboard HTML page, JSON snapshot, or a 404 response."""
+        if self._reject_foreign_host():
+            return
         path = urlsplit(self.path).path
         authorization = self.headers.get("Authorization")
         if path == DASHBOARD_ACCESS_PATH:
@@ -554,6 +590,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         bearer, JSON media type, rate limit, bounded body, and a principal-specific
         relay identity; the hub still authorizes and audits the resulting action.
         """
+        if self._reject_foreign_host():
+            return
         route = urlsplit(self.path).path
         access = write_decision(
             self.access_policy,
@@ -706,6 +744,7 @@ def _handler_class(
     observed_token: str | None,
     observed_timeout: float,
     observed_pins: dict[str, str] | None,
+    allow_hosts: tuple[str, ...],
 ) -> type[_DashboardHandler]:
     """Create an isolated handler class for one dashboard server."""
     bound_uri = uri
@@ -725,6 +764,7 @@ def _handler_class(
     bound_observed_token = observed_token
     bound_observed_pins = observed_pins
     bound_observed_timeout = observed_timeout
+    bound_allow_hosts = allow_hosts
 
     class BoundDashboardHandler(_DashboardHandler):
         """Dashboard handler bound to one hub URI and dashboard identity."""
@@ -746,6 +786,7 @@ def _handler_class(
         observed_token = bound_observed_token
         observed_timeout = bound_observed_timeout
         observed_pins = bound_observed_pins
+        allowed_extra_hosts = bound_allow_hosts
 
     return BoundDashboardHandler
 
@@ -774,6 +815,7 @@ def start_dashboard_server(
     observed_token: str | None = None,
     observed_timeout: float = 10.0,
     observed_pins: dict[str, str] | None = None,
+    allow_hosts: tuple[str, ...] = (),
 ) -> DashboardServer:
     """Start a background dashboard HTTP server (read-only unless armed).
 
@@ -817,6 +859,11 @@ def start_dashboard_server(
     operator_name : str or None, optional
         Sender identity for relayed operator actions; ``operator:<name>`` when
         omitted, so operator writes are attributed and never impersonate an agent.
+    allow_hosts : tuple of str, optional
+        Extra ``Host`` authorities admitted by the always-on DNS-rebinding
+        boundary, for a deliberate LAN or reverse-proxy exposure. The loopback
+        names and the concrete bind host at the served port are always admitted;
+        every other authority — the shape of a rebinding attack — is refused.
 
     Returns
     -------
@@ -824,6 +871,8 @@ def start_dashboard_server(
         Handle with URL helpers and a close method.
     """
     validate_dashboard_bind(host, allow_non_loopback=allow_non_loopback)
+    # Surface a malformed operator-approved host at startup, not per request.
+    allowed_host_authorities(host, int(port), tuple(allow_hosts))
     if dashboard_access_file is not None:
         if dashboard_token is not None:
             raise ValueError("--dashboard-access-file cannot be combined with --dashboard-token")
@@ -872,6 +921,7 @@ def start_dashboard_server(
         observed_token=observed_token,
         observed_timeout=observed_timeout,
         observed_pins=observed_pins,
+        allow_hosts=tuple(allow_hosts),
     )
     server = ThreadingHTTPServer((host, int(port)), handler)
     thread = threading.Thread(target=server.serve_forever, name="synapse-dashboard", daemon=True)
