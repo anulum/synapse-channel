@@ -29,6 +29,7 @@ import json
 import urllib.request
 from typing import Any, Protocol
 
+from synapse_channel.core.http_response import read_bounded
 from synapse_channel.participants.envelope import (
     TurnRequest,
     TurnResult,
@@ -71,8 +72,7 @@ def _default_poster(url: str, body: bytes, *, timeout: float) -> bytes:
         url, data=body, headers={"Content-Type": "application/json"}, method="POST"
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310  # nosec B310
-        read = response.read()
-    return bytes(read)
+        return read_bounded(response, purpose="ollama API response")
 
 
 def build_ollama_api_body(*, model: str, prompt: str) -> bytes:

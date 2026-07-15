@@ -28,6 +28,8 @@ import urllib.parse
 import urllib.request
 from typing import Protocol
 
+from synapse_channel.core.http_response import read_bounded
+
 
 def sanitize_text(text: str, max_len: int = 400) -> str:
     """Collapse runs of whitespace and truncate to ``max_len`` characters.
@@ -157,9 +159,13 @@ class OpenAIChatClient:
         try:
             # scheme constrained to http/https at construction
             with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:  # nosec B310
-                raw = resp.read().decode("utf-8", errors="replace")
+                raw = read_bounded(resp, purpose="chat backend response").decode(
+                    "utf-8", errors="replace"
+                )
         except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
+            detail = read_bounded(exc, purpose="chat backend error body").decode(
+                "utf-8", errors="replace"
+            )
             raise RuntimeError(f"chat backend HTTP {exc.code}: {detail[:300]}") from exc
         except urllib.error.URLError as exc:
             raise RuntimeError(f"chat backend connection error: {exc}") from exc

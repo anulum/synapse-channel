@@ -72,6 +72,7 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "auto_action_store",
         Exception,
     ),
+    "BoundedReadError": ("synapse_channel.core.http_response", "bounded_read", ValueError),
     "CapabilityCardSigningError": (
         "synapse_channel.core.capability_card_signing",
         "capability_card_signing",

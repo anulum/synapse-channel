@@ -24,6 +24,7 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
+from synapse_channel.core.http_response import read_bounded
 from synapse_channel.terminal_text import shell_long_option
 
 OLLAMA_BASE_URL = "http://127.0.0.1:11434"
@@ -65,7 +66,7 @@ def detect_model(
     """
     try:
         with opener(f"{base_url}/api/tags", timeout=2) as response:
-            data = json.loads(response.read())
+            data = json.loads(read_bounded(response, purpose="ollama tags"))
         names: list[str] = [str(model["name"]) for model in data.get("models", [])]
     except Exception:
         return None
