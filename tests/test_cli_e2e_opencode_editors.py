@@ -35,14 +35,14 @@ from e2e.opencode_editors.governance_contract import (
     source_environment,
     synapse_launcher,
 )
-from e2e.opencode_editors.jetbrains_client import JETBRAINS_CLIENT_TIMEOUT_SECONDS
+from e2e.opencode_editors.jetbrains_timing import DEFAULT_JETBRAINS_TIMING
 from e2e.opencode_editors.trace_contract import assert_editor_trace
 from fixtures.opencode.llm import ScriptedLlmServer
 from fixtures.opencode.process import OPENCODE_VERSION, TEST_MODEL, isolated_environment
 
 _CLIENT_TIMEOUT_SECONDS = {
     "emacs": 180,
-    "jetbrains": JETBRAINS_CLIENT_TIMEOUT_SECONDS,
+    "jetbrains": DEFAULT_JETBRAINS_TIMING.parent_timeout_seconds,
     "neovim": 180,
     "zed": 180,
 }

@@ -50,8 +50,9 @@ All notable changes to this project are documented here.
 - The JetBrains lane now waits on a stable ACP lifecycle marker, proves the
   validated project frame owns keyboard focus before prompt input, terminates
   the complete isolated IDEA process group, gives delayed ACP initialization a
-  bounded three-minute budget with parent cleanup headroom, and restores the
-  project adapter configuration after both successful and failed editor runs.
+  bounded three-minute budget, derives the parent cap from all GUI, evidence,
+  and cleanup bounds, and restores the project adapter configuration after both
+  successful and failed editor runs.
 
 ## [0.99.8] - 2026-07-14
 

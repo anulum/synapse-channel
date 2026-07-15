@@ -18,14 +18,17 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from e2e.opencode_editors.jetbrains_timing import DEFAULT_JETBRAINS_TIMING
 from e2e.opencode_editors.process_group import terminate_isolated_process_group
 
 _AGENT_NAME = "SYNAPSE OpenCode E2E"
-_STARTUP_TIMEOUT_SECONDS = 150.0
-_CHAT_READY_TIMEOUT_SECONDS = 90.0
-_AGENT_SELECTION_TIMEOUT_SECONDS = 90.0
-_ACP_HANDSHAKE_TIMEOUT_SECONDS = 180.0
-_ACP_PROMPT_TIMEOUT_SECONDS = 90.0
+_STARTUP_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.startup_seconds
+_CHAT_READY_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.chat_ready_seconds
+_AGENT_SELECTION_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.agent_selection_seconds
+_ACP_HANDSHAKE_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.acp_handshake_seconds
+_ACP_PROMPT_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.acp_prompt_seconds
+_GUI_COMMAND_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.command_timeout_seconds
+_SCREENSHOT_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.screenshot_seconds
 _CHAT_OPEN_RETRY_SECONDS = 5.0
 _MAX_TRACE_SEGMENTS = 8
 _USER_AGREEMENT_TITLE = "IntelliJ IDEA User Agreement"
@@ -44,14 +47,6 @@ _ACP_SESSION_READY_MARKERS = (
 _PROJECT_MINIMUM_GEOMETRY = (1000, 700)
 _CHAT_COMPOSER_RIGHT_INSET = 240
 _CHAT_COMPOSER_BOTTOM_INSET = 130
-JETBRAINS_CLIENT_TIMEOUT_SECONDS = int(
-    _STARTUP_TIMEOUT_SECONDS
-    + _CHAT_READY_TIMEOUT_SECONDS
-    + _AGENT_SELECTION_TIMEOUT_SECONDS
-    + _ACP_HANDSHAKE_TIMEOUT_SECONDS
-    + _ACP_PROMPT_TIMEOUT_SECONDS
-    + 60.0
-)
 
 
 def _required_tool(name: str) -> str:
@@ -75,7 +70,7 @@ def _xdotool(*args: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         check=False,
-        timeout=10,
+        timeout=_GUI_COMMAND_TIMEOUT_SECONDS,
     )
 
 
@@ -141,7 +136,7 @@ def _window_is_root_child(window: str) -> bool:
         capture_output=True,
         text=True,
         check=False,
-        timeout=10,
+        timeout=_GUI_COMMAND_TIMEOUT_SECONDS,
     )
     if completed.returncode != 0:
         return False
@@ -172,7 +167,7 @@ def _window_transient_for(window: str) -> int | None:
         capture_output=True,
         text=True,
         check=False,
-        timeout=10,
+        timeout=_GUI_COMMAND_TIMEOUT_SECONDS,
     )
     if completed.returncode != 0:
         return None
@@ -490,7 +485,7 @@ def _screenshot(path: Path) -> None:
     subprocess.run(  # nosec B603
         [_required_tool("import"), "-window", "root", str(path)],
         check=False,
-        timeout=15,
+        timeout=_SCREENSHOT_TIMEOUT_SECONDS,
     )
 
 

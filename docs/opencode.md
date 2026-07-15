@@ -407,10 +407,12 @@ keyboard focus before issuing any global Swing keystroke. IDEA starts as an
 isolated process-group leader; cleanup terminates every helper with bounded
 `SIGTERM`/`SIGKILL` escalation. Its ACP initialization phase has a bounded
 three-minute budget for delayed plugin continuations on loaded headless hosts;
-the parent runner derives an 11-minute cap from every phase plus cleanup
-headroom. The outer editor journey always uninstalls the temporary project
-adapter and verifies the original OpenCode configuration was restored,
-including when the editor or evidence assertion fails.
+the parent runner derives its cap from every phase, all nine bounded composer
+commands, nested phase overhang, evidence capture, complete process-group
+cleanup, and a separate two-minute supervision margin. The outer editor journey
+always uninstalls the temporary project adapter and verifies the original
+OpenCode configuration was restored, including when the editor or evidence
+assertion fails.
 
 Missing clients, changed identity names or versions, changed capabilities,
 malformed or replayed traffic, unknown response IDs, absent responses, unsafe
