@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+import pytest
+
 from synapse_channel import worker_session
 
 
@@ -24,6 +26,19 @@ def test_private_sidecar_runtime_re_tightens_preexisting_mode(tmp_path: Path) ->
     out = worker_session._private_sidecar_runtime(env, leaf)
     assert out == runtime
     assert stat.S_IMODE(out.stat().st_mode) == 0o700
+
+
+def test_private_sidecar_runtime_refuses_symlink_leaf(tmp_path: Path) -> None:
+    from synapse_channel.core.private_dir import PrivateDirError
+
+    leaf = "synapse-worker-session"
+    real = tmp_path / "real-dir"
+    real.mkdir(mode=0o700)
+    link = tmp_path / leaf
+    link.symlink_to(real)
+    env = {"XDG_RUNTIME_DIR": str(tmp_path)}
+    with pytest.raises(PrivateDirError):
+        worker_session._private_sidecar_runtime(env, leaf)
 
 
 def test_start_tmux_waiter_prefers_token_file_over_inline_token(

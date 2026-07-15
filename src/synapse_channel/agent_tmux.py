@@ -24,7 +24,6 @@ text.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 
@@ -209,15 +208,32 @@ def _project_from_identity(identity: str) -> str:
 
 
 def _registry_dir(config: AgentTmuxConfig) -> Path:
-    """Return the registry directory for ``config`` (SCH-H-NEW-12)."""
+    """Return the registry directory for ``config`` (SCH-H-NEW-12 / REV-SEC-10).
+
+    Materialises the directory through
+    :func:`~synapse_channel.core.private_dir.ensure_private_dir` so a pre-existing
+    symlink, foreign-owned, or loose directory fails closed.
+    """
+    from synapse_channel.core.private_dir import ensure_private_dir
+
     if config.registry_dir is not None:
-        return config.registry_dir
+        return ensure_private_dir(
+            config.registry_dir,
+            parents=True,
+            purpose="agent-tmux registry directory",
+        )
     root = os.environ.get("XDG_RUNTIME_DIR", "").strip()
     if root:
-        return Path(root) / "synapse-agent-tmux"
-    from synapse_channel.reap import private_runtime_parent
+        runtime = Path(root) / "synapse-agent-tmux"
+    else:
+        from synapse_channel.reap import private_runtime_parent
 
-    return private_runtime_parent() / "synapse-agent-tmux"
+        runtime = private_runtime_parent() / "synapse-agent-tmux"
+    return ensure_private_dir(
+        runtime,
+        parents=True,
+        purpose="agent-tmux registry directory",
+    )
 
 
 def registry_path(config: AgentTmuxConfig) -> Path:
@@ -232,10 +248,8 @@ def _write_registry(
     last_inject_returncode: int | None = None,
 ) -> None:
     """Write the local wake-target registry atomically."""
+    # Parent is already an owner-only directory via :func:`_registry_dir`.
     path = registry_path(config)
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    with contextlib.suppress(OSError):
-        path.parent.chmod(0o700)
     record = RegistryRecord(
         identity=config.identity,
         session=config.session,

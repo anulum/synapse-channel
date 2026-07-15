@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import os
 import shlex
 
@@ -43,11 +42,14 @@ def _safe_key(identity: str) -> str:
 
 
 def _private_sidecar_runtime(env: Mapping[str, str], leaf: str) -> Path:
-    """Return a private runtime dir for sidecars (SCH-H-NEW-12).
+    """Return a private runtime dir for sidecars (SCH-H-NEW-12 / REV-SEC-10).
 
     Prefer ``XDG_RUNTIME_DIR``; otherwise use the same private-cache parent as
-    the shell hooks (never a shared world-writable ``/tmp/synapse-*``).
+    the shell hooks (never a shared world-writable ``/tmp/synapse-*``). The leaf
+    is materialised through :func:`~synapse_channel.core.private_dir.ensure_private_dir`
+    so a pre-existing symlink, foreign-owned, or loose directory fails closed.
     """
+    from synapse_channel.core.private_dir import ensure_private_dir
     from synapse_channel.reap import private_runtime_parent
 
     root = env.get("XDG_RUNTIME_DIR", "").strip()
@@ -55,11 +57,11 @@ def _private_sidecar_runtime(env: Mapping[str, str], leaf: str) -> Path:
         runtime = Path(root) / leaf
     else:
         runtime = private_runtime_parent(env) / leaf
-    runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
-    # mkdir mode is ignored when the directory already exists — re-tighten.
-    with contextlib.suppress(OSError):
-        runtime.chmod(0o700)
-    return runtime
+    return ensure_private_dir(
+        runtime,
+        parents=True,
+        purpose=f"worker-session sidecar ({leaf})",
+    )
 
 
 def _sidecar_log_path(identity: str, env: Mapping[str, str]) -> Path:
