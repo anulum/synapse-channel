@@ -16,6 +16,7 @@ import pytest
 
 from e2e.opencode_editors import jetbrains_client
 from e2e.opencode_editors.jetbrains_client import (
+    _CHAT_READY_MARKERS,
     _idea_command,
     _wait_for_idea_log,
     _window_parentage,
@@ -104,6 +105,26 @@ def test_idea_log_wait_retries_idempotent_ui_action_until_ready(tmp_path: Path) 
     assert attempts == 2
 
 
+def test_chat_readiness_uses_stable_lifecycle_events(tmp_path: Path) -> None:
+    idea_log = tmp_path / "idea.log"
+    idea_log.write_text(
+        "2026-07-15 AcpNewChatReadinessAwaiter - "
+        "Default-agent CDN readiness wait finished\n"
+        "2026-07-15 AcpSessionLifecycleManagerRegistry - "
+        "No session managers found for agent 'SYNAPSE OpenCode E2E'\n",
+        encoding="utf-8",
+    )
+
+    _wait_for_idea_log(
+        tmp_path,
+        _CHAT_READY_MARKERS,
+        float("inf"),
+        lambda: None,
+    )
+
+    assert "AIAssistantInputSendAction#presentation" not in idea_log.read_text(encoding="utf-8")
+
+
 def test_idea_profile_enables_the_pinned_agent_selector_before_startup(
     tmp_path: Path,
 ) -> None:
@@ -119,8 +140,7 @@ def test_idea_profile_enables_the_pinned_agent_selector_before_startup(
     )
     keymap = (tmp_path / "keymaps" / "SynapseE2E.xml").read_text(encoding="utf-8")
     assert "NewChatAgentSelectorAction" in keymap
-    assert "AIAssistant.Chat.SendActions.Send" in keymap
-    assert "control alt shift L" in keymap
+    assert "AIAssistant.Chat.SendActions.Send" not in keymap
 
 
 def test_xwininfo_parentage_distinguishes_dialog_from_content_child() -> None:
@@ -192,6 +212,84 @@ def test_idea_command_binds_jvm_home_to_the_isolated_profile(tmp_path: Path) -> 
 
     assert command[1] == f"-Duser.home={tmp_path / 'home'}"
     assert command[-1] == str(tmp_path / "project")
+
+
+def test_chat_composer_focus_targets_the_validated_project_frame(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actions: list[tuple[str, ...]] = []
+    clicks: list[tuple[str, int, int, str]] = []
+    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: (1400, 1000))
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: True)
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_checked_xdotool",
+        lambda _action, *args: actions.append(args),
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_pointer_click",
+        lambda window, x, y, action: clicks.append((window, x, y, action)),
+    )
+
+    jetbrains_client._focus_chat_composer("project")
+
+    assert actions == [("windowfocus", "--sync", "project")]
+    assert clicks == [("project", 1160, 870, "focus the JetBrains AI Chat composer")]
+
+
+@pytest.mark.parametrize("geometry", [None, (999, 1000), (1400, 699)])
+def test_chat_composer_focus_rejects_an_unvalidated_project_frame(
+    monkeypatch: pytest.MonkeyPatch,
+    geometry: tuple[int, int] | None,
+) -> None:
+    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: geometry)
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: True)
+
+    with pytest.raises(RuntimeError, match="outside a validated project frame"):
+        jetbrains_client._focus_chat_composer("project")
+
+
+def test_chat_composer_focus_rejects_a_nested_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: (1400, 1000))
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: False)
+
+    with pytest.raises(RuntimeError, match="root_child=False"):
+        jetbrains_client._focus_chat_composer("project")
+
+
+def test_chat_prompt_submission_targets_the_focused_swing_widget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    focused: list[str] = []
+    actions: list[tuple[str, tuple[str, ...]]] = []
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_focus_chat_composer",
+        lambda window: focused.append(window),
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_checked_xdotool",
+        lambda action, *args: actions.append((action, args)),
+    )
+
+    jetbrains_client._submit_chat_prompt("project", "governed prompt")
+
+    assert focused == ["project"]
+    assert actions == [
+        ("clear the ACP prompt composer", ("key", "ctrl+a")),
+        (
+            "type the ACP prompt",
+            ("type", "--delay", "1", "--", "governed prompt"),
+        ),
+        (
+            "invoke the pinned AI Chat send action",
+            ("key", "Return"),
+        ),
+    ]
 
 
 def test_acp_config_is_private_and_contains_only_the_selected_agent(tmp_path: Path) -> None:

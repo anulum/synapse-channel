@@ -33,12 +33,18 @@ _DATA_SHARING_TITLE = "Data Sharing"
 _AGENT_SELECTOR_REGISTRY_KEY = "llm.chat.new.chat.and.agent.selector.enabled"
 _AGENT_SELECTOR_TITLE = "win0"
 _AGENT_SELECTOR_GEOMETRY = (310, 407)
-_CHAT_INPUT_READY_MARKER = "AIAssistantInputSendAction#presentation@AIAssistantChatInputRight"
+_CHAT_READY_MARKERS = (
+    "Default-agent CDN readiness wait finished",
+    f"No session managers found for agent '{_AGENT_NAME}'",
+)
 _ACP_SESSION_READY_MARKERS = (
     "Required plugins check passed",
     "Starting ACP client session ",
     "Received notification: AvailableCommandsUpdate",
 )
+_PROJECT_MINIMUM_GEOMETRY = (1000, 700)
+_CHAT_COMPOSER_RIGHT_INSET = 240
+_CHAT_COMPOSER_BOTTOM_INSET = 130
 
 
 def _required_tool(name: str) -> str:
@@ -199,6 +205,49 @@ def _find_project_window(deadline: float) -> str:
                     return window
         time.sleep(0.25)
     raise RuntimeError("IntelliJ IDEA did not expose a visible project window")
+
+
+def _focus_chat_composer(window: str) -> None:
+    """Focus the chat composer inside one validated IDEA project frame."""
+    geometry = _window_geometry(window)
+    root_child = _window_is_root_child(window)
+    if (
+        geometry is None
+        or geometry[0] < _PROJECT_MINIMUM_GEOMETRY[0]
+        or geometry[1] < _PROJECT_MINIMUM_GEOMETRY[1]
+        or not root_child
+    ):
+        rendered = "?x?" if geometry is None else f"{geometry[0]}x{geometry[1]}"
+        raise RuntimeError(
+            "refusing JetBrains composer input outside a validated project frame: "
+            f"geometry={rendered}, root_child={root_child}"
+        )
+    _checked_xdotool("focus the IntelliJ IDEA window", "windowfocus", "--sync", window)
+    _pointer_click(
+        window,
+        geometry[0] - _CHAT_COMPOSER_RIGHT_INSET,
+        geometry[1] - _CHAT_COMPOSER_BOTTOM_INSET,
+        "focus the JetBrains AI Chat composer",
+    )
+
+
+def _submit_chat_prompt(window: str, prompt: str) -> None:
+    """Enter and submit a prompt through the focused Swing composer widget."""
+    _focus_chat_composer(window)
+    _checked_xdotool("clear the ACP prompt composer", "key", "ctrl+a")
+    _checked_xdotool(
+        "type the ACP prompt",
+        "type",
+        "--delay",
+        "1",
+        "--",
+        prompt,
+    )
+    _checked_xdotool(
+        "invoke the pinned AI Chat send action",
+        "key",
+        "Return",
+    )
 
 
 def _pointer_click(window: str, x: int, y: int, action: str) -> None:
@@ -385,9 +434,6 @@ def _write_idea_profile(config_root: Path) -> None:
   <action id="NewChatAgentSelectorAction">
     <keyboard-shortcut first-keystroke="control alt shift K" />
   </action>
-  <action id="AIAssistant.Chat.SendActions.Send">
-    <keyboard-shortcut first-keystroke="control alt shift L" />
-  </action>
 </keymap>
 """,
         encoding="utf-8",
@@ -539,10 +585,7 @@ def main() -> int:
             chat_deadline = time.monotonic() + _CHAT_READY_TIMEOUT_SECONDS
             _wait_for_idea_log(
                 log_root,
-                (
-                    "No session managers found for agent 'SYNAPSE OpenCode E2E'",
-                    _CHAT_INPUT_READY_MARKER,
-                ),
+                _CHAT_READY_MARKERS,
                 chat_deadline,
                 process.poll,
                 retry=lambda: _show_ai_chat(window),
@@ -582,24 +625,9 @@ def main() -> int:
                 handshake_deadline,
                 process.poll,
             )
-            _checked_xdotool(
-                "type the ACP prompt",
-                "type",
-                "--window",
-                window,
-                "--delay",
-                "1",
-                "--",
-                prompt,
-            )
-            _checked_xdotool(
-                "invoke the pinned AI Chat send action",
-                "key",
-                "--window",
-                window,
-                "ctrl+alt+shift+l",
-            )
+            _submit_chat_prompt(window, prompt)
             prompt_deadline = time.monotonic() + _ACP_PROMPT_TIMEOUT_SECONDS
+            _wait_for_trace(trace, '"method":"session/prompt"', prompt_deadline, process)
             _wait_for_trace(trace, '"response_to":"session/prompt"', prompt_deadline, process)
             _screenshot(screenshot)
             return 0
