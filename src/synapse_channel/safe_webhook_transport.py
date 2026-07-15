@@ -85,13 +85,16 @@ def is_public_address(raw_address: str) -> bool:
     return address.is_global
 
 
-def resolve_pinned_endpoint(hostname: str, port: int, *, allow_local: bool) -> str:
-    """Resolve ``hostname`` once and return one address to pin the connection to.
+def resolve_pinned_endpoints(hostname: str, port: int, *, allow_local: bool) -> list[str]:
+    """Resolve ``hostname`` once and return every address to pin the connection to.
 
     Every resolved address is inspected. Unless ``allow_local`` is set, a single
     non-public answer fails the whole resolution closed, so a name that maps to
     both a public and a private address — the shape of a rebinding attack — is
-    refused rather than silently connected to its public answer.
+    refused rather than silently connected to its public answer. The full list is
+    returned in resolver order so the caller can try each validated answer in turn
+    without re-resolving, which keeps a dual-stack host reachable while every
+    attempt is still confined to an address checked at resolution time.
 
     Parameters
     ----------
@@ -104,8 +107,8 @@ def resolve_pinned_endpoint(hostname: str, port: int, *, allow_local: bool) -> s
 
     Returns
     -------
-    str
-        The first resolved address; the caller pins the connection to it.
+    list[str]
+        The resolved addresses in resolver order; the caller pins to them.
 
     Raises
     ------
@@ -124,7 +127,42 @@ def resolve_pinned_endpoint(hostname: str, port: int, *, allow_local: bool) -> s
         for address in addresses:
             if not is_public_address(address):
                 raise URLError(LOCAL_TARGET_ERROR)
-    return addresses[0]
+    return addresses
+
+
+def _open_pinned_socket(addresses: list[str], port: int, timeout: float | None) -> socket.socket:
+    """Connect to the first reachable pinned address, trying each in order.
+
+    None of the addresses is re-resolved, so the socket can only reach an answer
+    that was validated at resolution time even when the caller falls back across a
+    dual-stack host.
+
+    Parameters
+    ----------
+    addresses : list of str
+        Non-empty list of validated addresses in preference order.
+    port : int
+        Target port.
+    timeout : float or None
+        Per-attempt socket timeout; ``None`` blocks.
+
+    Returns
+    -------
+    socket.socket
+        The first connection that opened successfully.
+
+    Raises
+    ------
+    OSError
+        The last connection error when no pinned address was reachable.
+    """
+    last_error: OSError = ConnectionError("no pinned webhook address was reachable")
+    for address in addresses:
+        try:
+            return socket.create_connection((address, port), timeout)
+        except OSError as exc:
+            last_error = exc
+    raise last_error
 
 
 class _PinnedHTTPConnection(http.client.HTTPConnection):
@@ -135,9 +173,9 @@ class _PinnedHTTPConnection(http.client.HTTPConnection):
         self._allow_local = allow_local
 
     def connect(self) -> None:
-        """Open the socket to the validated address, not a re-resolved name."""
-        pinned = resolve_pinned_endpoint(self.host, self.port, allow_local=self._allow_local)
-        self.sock = socket.create_connection((pinned, self.port), self.timeout)
+        """Open the socket to a validated address, not a re-resolved name."""
+        addresses = resolve_pinned_endpoints(self.host, self.port, allow_local=self._allow_local)
+        self.sock = _open_pinned_socket(addresses, self.port, self.timeout)
 
 
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
@@ -151,9 +189,9 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
         self._pinned_context = context
 
     def connect(self) -> None:
-        """Connect to the pinned address and verify TLS against the hostname."""
-        pinned = resolve_pinned_endpoint(self.host, self.port, allow_local=self._allow_local)
-        sock = socket.create_connection((pinned, self.port), self.timeout)
+        """Connect to a validated address and verify TLS against the hostname."""
+        addresses = resolve_pinned_endpoints(self.host, self.port, allow_local=self._allow_local)
+        sock = _open_pinned_socket(addresses, self.port, self.timeout)
         self.sock = self._pinned_context.wrap_socket(sock, server_hostname=self.host)
 
 

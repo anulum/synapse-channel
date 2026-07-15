@@ -50,67 +50,84 @@ def test_is_public_address_admits_only_globally_routable(address: str, public: b
     assert transport.is_public_address(address) is public
 
 
-def test_resolve_pinned_endpoint_returns_first_of_several_public_addresses(
+def _patch_getaddrinfo(monkeypatch: pytest.MonkeyPatch, answers: object) -> None:
+    monkeypatch.setattr("synapse_channel.safe_webhook_transport.socket.getaddrinfo", answers)
+
+
+def test_resolve_pinned_endpoints_returns_every_public_address(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        transport.socket,
-        "getaddrinfo",
+    _patch_getaddrinfo(
+        monkeypatch,
         lambda *_a, **_k: [
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443)),
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.1.1.1", 443)),
         ],
     )
-    assert transport.resolve_pinned_endpoint("host.invalid", 443, allow_local=False) == "8.8.8.8"
+    assert transport.resolve_pinned_endpoints("host.invalid", 443, allow_local=False) == [
+        "8.8.8.8",
+        "1.1.1.1",
+    ]
 
 
-def test_resolve_pinned_endpoint_rejects_any_non_public_answer(
+def test_resolve_pinned_endpoints_rejects_any_non_public_answer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        transport.socket,
-        "getaddrinfo",
+    _patch_getaddrinfo(
+        monkeypatch,
         lambda *_a, **_k: [
-            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("203.0.113.7", 443)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443)),
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443)),
         ],
     )
     with pytest.raises(URLError, match="must not target local networks"):
-        transport.resolve_pinned_endpoint("mixed.invalid", 443, allow_local=False)
+        transport.resolve_pinned_endpoints("mixed.invalid", 443, allow_local=False)
 
 
-def test_resolve_pinned_endpoint_allows_local_when_requested(
+def test_resolve_pinned_endpoints_allows_local_when_requested(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        transport.socket,
-        "getaddrinfo",
+    _patch_getaddrinfo(
+        monkeypatch,
         lambda *_a, **_k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 80))],
     )
-    assert transport.resolve_pinned_endpoint("localhost", 80, allow_local=True) == "127.0.0.1"
+    assert transport.resolve_pinned_endpoints("localhost", 80, allow_local=True) == ["127.0.0.1"]
 
 
-def test_resolve_pinned_endpoint_wraps_resolver_failure(
+def test_resolve_pinned_endpoints_wraps_resolver_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def boom(*_a: object, **_k: object) -> list[Any]:
         raise OSError("no such host")
 
-    monkeypatch.setattr(transport.socket, "getaddrinfo", boom)
+    _patch_getaddrinfo(monkeypatch, boom)
     with pytest.raises(URLError, match="could not resolve webhook target"):
-        transport.resolve_pinned_endpoint("nx.invalid", 80, allow_local=False)
+        transport.resolve_pinned_endpoints("nx.invalid", 80, allow_local=False)
 
 
-def test_resolve_pinned_endpoint_rejects_empty_resolution(
+def test_resolve_pinned_endpoints_rejects_empty_resolution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        transport.socket,
-        "getaddrinfo",
+    _patch_getaddrinfo(
+        monkeypatch,
         lambda *_a, **_k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ())],
     )
     with pytest.raises(URLError, match="could not resolve webhook target"):
-        transport.resolve_pinned_endpoint("empty.invalid", 80, allow_local=False)
+        transport.resolve_pinned_endpoints("empty.invalid", 80, allow_local=False)
+
+
+def test_open_pinned_socket_falls_back_to_the_next_address() -> None:
+    with _Receiver() as receiver:
+        # 127.0.0.2 is loopback with nothing listening; the fallback reaches the
+        # server on 127.0.0.1 without re-resolving.
+        sock = transport._open_pinned_socket(["127.0.0.2", "127.0.0.1"], receiver.port, 2.0)
+        sock.close()
+
+
+def test_open_pinned_socket_raises_when_no_address_is_reachable() -> None:
+    port = _free_port()
+    with pytest.raises(OSError):
+        transport._open_pinned_socket(["127.0.0.2", "127.0.0.3"], port, 2.0)
 
 
 def test_safe_opener_delivers_to_a_pinned_public_alias(
@@ -128,7 +145,7 @@ def test_safe_opener_delivers_to_a_pinned_public_alias(
                 return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
             return original(host, port, type=socket.SOCK_STREAM)
 
-        monkeypatch.setattr(transport.socket, "getaddrinfo", resolve)
+        monkeypatch.setattr("synapse_channel.safe_webhook_transport.socket.getaddrinfo", resolve)
         opener = transport.build_safe_opener(allow_local=True)
         req = Request(
             f"http://pinned.test:{receiver.port}/hook",

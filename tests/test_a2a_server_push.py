@@ -16,7 +16,7 @@ from urllib.error import URLError
 import pytest
 
 from a2a_server_helpers import HandlerHarness, RecordingAgent
-from synapse_channel import a2a_push
+from synapse_channel import a2a_push, safe_webhook_transport
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 
@@ -292,7 +292,7 @@ def test_http_push_deliverer_opens_the_safe_transport_and_bounds_the_read(
     )
     assert calls == [
         "http://public.example/hook",
-        ("read", a2a_push.safe_webhook_transport.WEBHOOK_MAX_RESPONSE_BYTES),
+        ("read", safe_webhook_transport.WEBHOOK_MAX_RESPONSE_BYTES),
     ]
 
 
